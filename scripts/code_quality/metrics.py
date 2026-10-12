@@ -9,14 +9,18 @@
         必须没有超 150 行的函数、没有复杂度超 15 的函数（新代码硬规则）。
     python3 scripts/code_quality/metrics.py lower [--slow] [--baseline FILE]
         把基线下调到当前值（只降不升）。
-    python3 scripts/code_quality/metrics.py long-functions [--min 300]
-        列出超长函数（附录 A 的进度来源）。
+    python3 scripts/code_quality/metrics.py rebase --keys K1,K2 --reason "原因"
+        口径变化时（例如全库格式化把长行拆开、函数变长）把指定指标重设为当前值，
+        原因记进基线的 _rebase_log。只用于口径变化，不许用来放过真实变差。
+    python3 scripts/code_quality/metrics.py long-functions [--min 300] [--md FILE]
+        列出超长函数（附录 A 的进度来源）；--md 输出带阶段归属的附录表。
 
 口径：
 - Python 范围：backend/ 与 sdk/simple-harness-sdk/src/，排除 vendor、dist、build、userdata、
   .venv、egg-info、tests 目录与 test_ 开头的文件。
 - 禁区不计：backend/deskpet/workflows/store/schema.py（表结构与迁移）与 migrator.run_migrations。
 - 前端范围：tauri-app/src/，排除 *.test.* 文件。
+- 函数内导入按导入的名字计（2026-10-12 起；拆行合并不影响计数）。
 """
 from __future__ import annotations
 
@@ -154,7 +158,7 @@ def ast_metrics() -> dict:
                         if n > 1500:
                             m["classes_over_1500"].append(f"{r}:{child.name}:{n}")
                     if in_func and isinstance(child, (ast.Import, ast.ImportFrom)):
-                        m["inner_imports"] += 1
+                        m["inner_imports"] += len(child.names)  # 按名字计，拆行合并不影响
                     if isinstance(child, ast.ImportFrom) and tree_name == "backend" and child.module \
                             and child.module.startswith(SDK_PACKAGES):
                         m["backend_sdk_module_paths"].add(child.module)
@@ -317,7 +321,10 @@ def new_file_violations(ref: str) -> list[str]:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("cmd", choices=["collect", "check", "lower", "long-functions"])
+    ap.add_argument("cmd", choices=["collect", "check", "lower", "rebase", "long-functions"])
+    ap.add_argument("--keys", default="")
+    ap.add_argument("--reason", default="")
+    ap.add_argument("--md")
     ap.add_argument("--slow", action="store_true")
     ap.add_argument("--out")
     ap.add_argument("--baseline", default=str(BASELINE))
@@ -329,9 +336,25 @@ def main() -> int:
         m = ast_metrics()
         rows = [x for k in ("funcs_over_300_backend", "funcs_over_300_sdk") for x in m[k]]
         rows = [r for r in rows if int(r.rsplit(":", 1)[1]) >= a.min]
-        for r in sorted(rows, key=lambda r: -int(r.rsplit(":", 1)[1])):
+        rows = sorted(rows, key=lambda r: -int(r.rsplit(":", 1)[1]))
+        for r in rows:
             print(r)
         print(f"合计 {len(rows)}")
+        if a.md:
+            def phase(path: str) -> str:
+                if path == "backend/main.py":
+                    return "阶段 2"
+                if path.startswith("sdk/"):
+                    return "阶段 5"
+                return "阶段 6"
+            out = ["# 附录 A：超长函数清单与归属", "",
+                   f"由 `metrics.py long-functions --min {a.min} --md` 生成（格式化后口径）。"
+                   "归属规则：主入口归阶段 2，SDK 归阶段 5，其余后端归阶段 6。禁区迁移函数不计。", "",
+                   "| 行数 | 文件 | 函数 | 归属 |", "|---|---|---|---|"]
+            for r in rows:
+                path, fn, n = r.rsplit(":", 2)
+                out.append(f"| {n} | {path} | {fn} | {phase(path)} |")
+            Path(a.md).write_text("\n".join(out) + "\n", encoding="utf-8")
         return 0
 
     m = collect(a.slow)
@@ -342,10 +365,23 @@ def main() -> int:
         return 0
 
     base = json.loads(Path(a.baseline).read_text(encoding="utf-8"))
+    if a.cmd == "rebase":
+        keys = [k for k in a.keys.split(",") if k]
+        if not keys or not a.reason:
+            raise SystemExit("rebase 需要 --keys 与 --reason")
+        log = base.setdefault("_rebase_log", [])
+        for k in keys:
+            if k not in m:
+                raise SystemExit(f"未知指标 {k}")
+            log.append({"key": k, "from": numeric(base.get(k)), "to": numeric(m[k]), "reason": a.reason})
+            base[k] = m[k]
+        Path(a.baseline).write_text(json.dumps(base, ensure_ascii=False, indent=1), encoding="utf-8")
+        print(f"重设 {len(keys)} 项：{', '.join(keys)}")
+        return 0
     if a.cmd == "lower":
         changed = 0
         for k, v in m.items():
-            if k.endswith("_by_rule") or k not in base:
+            if k.endswith("_by_rule") or k.startswith("_") or k not in base:
                 if k not in base and not k.endswith("_by_rule"):
                     base[k] = v
                 continue
@@ -359,13 +395,15 @@ def main() -> int:
 
     worse: list[str] = []
     for k, v in m.items():
-        if k.endswith("_by_rule") or k not in base or k in INFO_KEYS:
+        if k.endswith("_by_rule") or k.startswith("_") or k not in base or k in INFO_KEYS:
             continue
         nb, nv = numeric(base[k]), numeric(v)
         if nb is not None and nv is not None and nv > nb:
             extra = ""
             if isinstance(v, list) and isinstance(base[k], list):
-                extra = "；新出现：" + "，".join(sorted(set(v) - set(base[k]))[:5])
+                ident = lambda x: x.rsplit(":", 1)[0] if re.search(r":\d+$", x) else x  # noqa: E731
+                fresh = sorted({ident(x) for x in v} - {ident(x) for x in base[k]})
+                extra = "；新出现：" + "，".join(fresh[:5]) if fresh else "；（条目相同，只是数量口径变化）"
             worse.append(f"{k}: 基线 {nb} → 现在 {nv}{extra}")
     if a.new_since:
         worse += new_file_violations(a.new_since)

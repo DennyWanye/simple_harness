@@ -1,0 +1,35 @@
+name: Code Quality (ratchet + format)
+
+# 代码质量整治计划 1.6：指标只减不增；新建文件函数 ≤150 行、复杂度 ≤15；
+# Python 与前端格式必须是格式化工具的输出。慢指标（mypy、eslint、查重）在本地按阶段跑。
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  ratchet:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install ruff
+        run: pip install ruff==0.16.3
+      - name: Python format check
+        run: ruff format --check --config scripts/code_quality/ruff.toml backend sdk/simple-harness-sdk/src sdk/simple-harness-sdk/tests
+      - name: Frontend format check
+        working-directory: tauri-app
+        run: npx --yes prettier@3.3.3 --check "src/**/*.{ts,tsx}"
+      - name: Ratchet
+        run: |
+          BASE="${{ github.event.pull_request.base.sha || github.event.before }}"
+          if [ -z "$BASE" ] || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then BASE=HEAD~1; fi
+          python scripts/code_quality/metrics.py check --new-since "$BASE"
