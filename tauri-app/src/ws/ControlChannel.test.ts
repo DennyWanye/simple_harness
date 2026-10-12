@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ControlChannel } from "./ControlChannel";
 
-
 class FakeWebSocket {
   static readonly CONNECTING = 0;
   static readonly OPEN = 1;
@@ -40,7 +39,6 @@ class FakeWebSocket {
     this.onclose?.();
   }
 }
-
 
 describe("ControlChannel connection-scoped message cache", () => {
   afterEach(() => {
@@ -105,9 +103,7 @@ describe("ControlChannel connection-scoped message cache", () => {
     channel.connect();
     FakeWebSocket.instances[1].open();
 
-    expect(
-      channel.getLatestMessage("companion_control_challenge"),
-    ).toBeNull();
+    expect(channel.getLatestMessage("companion_control_challenge")).toBeNull();
   });
 });
 
@@ -117,43 +113,77 @@ import { boundPrimaryPort } from "../primary/boundPort";
 import { PrimaryController } from "../primary/controller";
 
 describe("primary bound connection lifecycle", () => {
-  afterEach(() => { vi.unstubAllGlobals(); FakeWebSocket.instances = []; });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    FakeWebSocket.instances = [];
+  });
   it("rehydrates a mount that missed bound, without adding a socket or signature flow", async () => {
     vi.stubGlobal("WebSocket", FakeWebSocket);
-    const channel = new ControlChannel(8100, "secret"); channel.connect();
-    const socket = FakeWebSocket.instances[0]; socket.open();
-    socket.receive({ type: "companion_profile_bound", payload: { profile_id: "p", profile_generation: 1 } });
-    const controller = new PrimaryController(boundPrimaryPort(channel)); const stop = controller.start();
+    const channel = new ControlChannel(8100, "secret");
+    channel.connect();
+    const socket = FakeWebSocket.instances[0];
+    socket.open();
+    socket.receive({
+      type: "companion_profile_bound",
+      payload: { profile_id: "p", profile_generation: 1 },
+    });
+    const controller = new PrimaryController(boundPrimaryPort(channel));
+    const stop = controller.start();
     await Promise.resolve();
-    expect(socket.sent.map((s) => JSON.parse(s)).filter((r) => r.type === "human_memory_request")).toEqual([
-      expect.objectContaining({ operation: "primary.open" }),
-    ]);
+    expect(
+      socket.sent.map((s) => JSON.parse(s)).filter((r) => r.type === "human_memory_request"),
+    ).toEqual([expect.objectContaining({ operation: "primary.open" })]);
     expect(FakeWebSocket.instances).toHaveLength(1);
-    stop(); channel.disconnect(); await Promise.resolve();
+    stop();
+    channel.disconnect();
+    await Promise.resolve();
   });
   it("drops stale bound before connected listeners run and never buffers primary enqueue", async () => {
     vi.stubGlobal("WebSocket", FakeWebSocket);
-    const channel = new ControlChannel(8100, "secret"); channel.connect(); FakeWebSocket.instances[0].open();
-    FakeWebSocket.instances[0].receive({ type: "companion_profile_bound", payload: { profile_id: "p", profile_generation: 1 } });
+    const channel = new ControlChannel(8100, "secret");
+    channel.connect();
+    FakeWebSocket.instances[0].open();
+    FakeWebSocket.instances[0].receive({
+      type: "companion_profile_bound",
+      payload: { profile_id: "p", profile_generation: 1 },
+    });
     channel.disconnect();
     expect(channel.getLatestMessage("companion_profile_bound")).toBeNull();
-    expect(channel.send({ type: "human_memory_request", request_id: "r", operation: "queue.enqueue", request: { text: "x" } })).toBe(false);
+    expect(
+      channel.send({
+        type: "human_memory_request",
+        request_id: "r",
+        operation: "queue.enqueue",
+        request: { text: "x" },
+      }),
+    ).toBe(false);
     const seen: unknown[] = [];
-    channel.onStateChange((state) => { if (state === "connected") seen.push(channel.getLatestMessage("companion_profile_bound")); });
-    channel.connect(); FakeWebSocket.instances[1].open();
+    channel.onStateChange((state) => {
+      if (state === "connected") seen.push(channel.getLatestMessage("companion_profile_bound"));
+    });
+    channel.connect();
+    FakeWebSocket.instances[1].open();
     expect(seen).toEqual([null]);
     expect(FakeWebSocket.instances[1].sent.some((s) => s.includes("queue.enqueue"))).toBe(false);
     channel.disconnect();
   });
   it("an unbind or rechallenge invalidates a cached bound on the same connection", async () => {
     vi.stubGlobal("WebSocket", FakeWebSocket);
-    const channel = new ControlChannel(8100, "secret"); channel.connect(); const socket = FakeWebSocket.instances[0]; socket.open();
-    socket.receive({ type: "companion_profile_bound", payload: { profile_id: "p", profile_generation: 1 } });
+    const channel = new ControlChannel(8100, "secret");
+    channel.connect();
+    const socket = FakeWebSocket.instances[0];
+    socket.open();
+    socket.receive({
+      type: "companion_profile_bound",
+      payload: { profile_id: "p", profile_generation: 1 },
+    });
     socket.receive({ type: "companion_control_rechallenge" });
-    const controller = new PrimaryController(boundPrimaryPort(channel)); const stop = controller.start();
+    const controller = new PrimaryController(boundPrimaryPort(channel));
+    const stop = controller.start();
     await Promise.resolve();
     expect(socket.sent.some((s) => s.includes("human_memory_request"))).toBe(false);
-    stop(); channel.disconnect();
+    stop();
+    channel.disconnect();
   });
 });
 
@@ -165,14 +195,34 @@ describe("ControlChannel checks orchestration replies against the public contrac
 
   it("hands listeners a protocol error instead of a reply that breaks its contract", () => {
     vi.stubGlobal("WebSocket", FakeWebSocket);
-    const channel = new ControlChannel(8100, "secret"); channel.connect(); const socket = FakeWebSocket.instances[0]; socket.open();
+    const channel = new ControlChannel(8100, "secret");
+    channel.connect();
+    const socket = FakeWebSocket.instances[0];
+    socket.open();
     const seen: unknown[] = [];
     channel.onMessage((message) => seen.push(message));
-    socket.receive({ type: "taskgraph.convergence_response",
-      payload: { request_id: "r1", ok: true, data: { schema_version: 2, mission_id: "m1", debug: true } } });
-    expect(seen).toEqual([{ type: "taskgraph.convergence_response", payload: { request_id: "r1", ok: false,
-      error_code: "protocol_error", error: "收到的数据格式不对，没有显示，请稍后重新读取。" } }]);
-    expect(JSON.stringify(channel.getLatestMessage("taskgraph.convergence_response"))).not.toContain("debug");
+    socket.receive({
+      type: "taskgraph.convergence_response",
+      payload: {
+        request_id: "r1",
+        ok: true,
+        data: { schema_version: 2, mission_id: "m1", debug: true },
+      },
+    });
+    expect(seen).toEqual([
+      {
+        type: "taskgraph.convergence_response",
+        payload: {
+          request_id: "r1",
+          ok: false,
+          error_code: "protocol_error",
+          error: "收到的数据格式不对，没有显示，请稍后重新读取。",
+        },
+      },
+    ]);
+    expect(
+      JSON.stringify(channel.getLatestMessage("taskgraph.convergence_response")),
+    ).not.toContain("debug");
     channel.disconnect();
   });
 });

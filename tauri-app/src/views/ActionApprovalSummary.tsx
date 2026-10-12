@@ -18,9 +18,16 @@ const PREVIOUS_OUTCOME: Record<string, string> = {
   human_ruled_not_applied: "你裁定它没有生效",
 };
 
-const note: React.CSSProperties = { marginLeft: tokens.space.xs, color: dark.textMuted, fontSize: tokens.text.xs.size };
+const note: React.CSSProperties = {
+  marginLeft: tokens.space.xs,
+  color: dark.textMuted,
+  fontSize: tokens.text.xs.size,
+};
 
-export const ActionApprovalSummary: React.FC<{ summary: unknown; action: unknown }> = ({ summary, action }) => {
+export const ActionApprovalSummary: React.FC<{ summary: unknown; action: unknown }> = ({
+  summary,
+  action,
+}) => {
   const written = record(summary);
   if (typeof written.text === "string") {
     // 旧格式：摘要本身是一段 `{text, source}` 文字，照原样显示并按来源标注
@@ -29,10 +36,18 @@ export const ActionApprovalSummary: React.FC<{ summary: unknown; action: unknown
       <>
         <div style={{ fontWeight: tokens.weight.semibold }}>
           动作审批：{written.text}
-          <span style={note}>{text(written.source) === "system" ? "（系统生成）" : "（模型生成，未核实）"}</span>
+          <span style={note}>
+            {text(written.source) === "system" ? "（系统生成）" : "（模型生成，未核实）"}
+          </span>
         </div>
-        {text(reason.text) ? <div>理由：{text(reason.text)}<span style={note}>{
-          text(reason.source) === "system" ? "（系统生成）" : "（模型生成，未核实）"}</span></div> : null}
+        {text(reason.text) ? (
+          <div>
+            理由：{text(reason.text)}
+            <span style={note}>
+              {text(reason.source) === "system" ? "（系统生成）" : "（模型生成，未核实）"}
+            </span>
+          </div>
+        ) : null}
       </>
     );
   }
@@ -44,7 +59,9 @@ export const ActionApprovalSummary: React.FC<{ summary: unknown; action: unknown
   const previousOutcome = PREVIOUS_OUTCOME[text(previous.outcome)];
   return (
     <>
-      <div style={{ fontWeight: tokens.weight.semibold }}>动作审批：{actionHeadline(summary, action)}</div>
+      <div style={{ fontWeight: tokens.weight.semibold }}>
+        动作审批：{actionHeadline(summary, action)}
+      </div>
       {reasonText ? (
         <div>
           理由：{reasonText}
@@ -54,8 +71,11 @@ export const ActionApprovalSummary: React.FC<{ summary: unknown; action: unknown
       {previousOutcome ? (
         <div data-testid="previous-attempt">
           {/* 只有服务拒绝时附上服务自己的原话；另外两种结局的 reason 是内部登记码，不给人看（2026-10-03 真机） */}
-          上次没有生效：{previousOutcome}{text(previous.outcome) === "service_refused" && text(previous.reason)
-            ? `（${text(previous.reason)}）` : ""}，这是重新提交的申请。
+          上次没有生效：{previousOutcome}
+          {text(previous.outcome) === "service_refused" && text(previous.reason)
+            ? `（${text(previous.reason)}）`
+            : ""}
+          ，这是重新提交的申请。
         </div>
       ) : null}
     </>

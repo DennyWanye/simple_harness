@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  buildSetModelMessage,
-  buildSetProviderMessage,
-} from "./sessionModelMessages";
+import { buildSetModelMessage, buildSetProviderMessage } from "./sessionModelMessages";
 import {
   buildRemoveMessage,
   buildReorderMessage,
@@ -31,9 +28,7 @@ describe("versioned Session/provider mutation authority", () => {
       expected_provider_incarnation_id: "inc-1",
       expected_provider_config_revision: 4,
     };
-    expect(buildSetProviderMessage("session", "relay", authority).payload).toMatchObject(
-      authority,
-    );
+    expect(buildSetProviderMessage("session", "relay", authority).payload).toMatchObject(authority);
     expect(
       buildSetModelMessage("session", "kimi-k3", { fast: true }, authority).payload,
     ).toMatchObject(authority);

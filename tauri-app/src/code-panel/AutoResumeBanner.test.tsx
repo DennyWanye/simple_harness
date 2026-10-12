@@ -16,10 +16,7 @@
  */
 import { describe, it, expect, beforeEach } from "vitest";
 
-import {
-  buildAutoResumeBannerText,
-  shouldShowAutoResumeBanner,
-} from "./AutoResumeBanner";
+import { buildAutoResumeBannerText, shouldShowAutoResumeBanner } from "./AutoResumeBanner";
 import { __test_dispatch } from "./controlWs";
 import { useSessionsStore } from "../stores/sessionsStore";
 
@@ -61,7 +58,15 @@ function resetStore() {
   // Reset zustand store state to a clean default for each test
   useSessionsStore.setState((s) => ({
     ...s,
-    sessions: { default: { ...s.sessions.default, auto_resume_attempts: 0, inflight: false, status: "idle" as const, messages: [] } },
+    sessions: {
+      default: {
+        ...s.sessions.default,
+        auto_resume_attempts: 0,
+        inflight: false,
+        status: "idle" as const,
+        messages: [],
+      },
+    },
     active_sid: "default",
   }));
 }

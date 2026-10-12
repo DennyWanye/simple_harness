@@ -1,12 +1,7 @@
 // SPDX-FileCopyrightText: 2026 DennyWanye
 // SPDX-License-Identifier: BUSL-1.1
 
-import {
-  useEffect,
-  useMemo,
-  useState,
-  type CSSProperties,
-} from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 
 import type { IncomingMessage } from "../types/messages";
 import {
@@ -121,17 +116,16 @@ export function CapabilityCenterPanel({
   initialOperations = EMPTY_OPERATIONS,
 }: Props) {
   const [tab, setTab] = useState<Tab>("capabilities");
-  const [capabilities, setCapabilities] =
-    useState<CapabilityDescriptor[]>(initialCapabilities);
-  const [operations, setOperations] =
-    useState<CapabilityOperation[]>(initialOperations);
+  const [capabilities, setCapabilities] = useState<CapabilityDescriptor[]>(initialCapabilities);
+  const [operations, setOperations] = useState<CapabilityOperation[]>(initialOperations);
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<CategoryFilter>("all");
   const [selectedId, setSelectedId] = useState<string | null>(
     initialCapabilities[0]?.capability_id ?? null,
   );
-  const [authorizationMode, setAuthorizationMode] =
-    useState<CapabilityAuthorizationMode>(readCachedAuthorizationMode);
+  const [authorizationMode, setAuthorizationMode] = useState<CapabilityAuthorizationMode>(
+    readCachedAuthorizationMode,
+  );
   const [notice, setNotice] = useState<string | null>(null);
 
   // One initial snapshot request + the existing push stream. There is no
@@ -153,11 +147,9 @@ export function CapabilityCenterPanel({
         setCapabilities(capabilityMessage.payload.capabilities);
         setSelectedId((current) =>
           current &&
-          capabilityMessage.payload.capabilities.some(
-            (item) => item.capability_id === current,
-          )
+          capabilityMessage.payload.capabilities.some((item) => item.capability_id === current)
             ? current
-            : capabilityMessage.payload.capabilities[0]?.capability_id ?? null,
+            : (capabilityMessage.payload.capabilities[0]?.capability_id ?? null),
         );
         return;
       }
@@ -175,10 +167,7 @@ export function CapabilityCenterPanel({
         const mode = message.payload.enabled ? "auto" : "manual";
         setAuthorizationMode(mode);
         try {
-          localStorage.setItem(
-            "deskpet.auto_mode",
-            String(message.payload.enabled),
-          );
+          localStorage.setItem("deskpet.auto_mode", String(message.payload.enabled));
         } catch {
           // The backend response remains authoritative if storage is disabled.
         }
@@ -199,15 +188,13 @@ export function CapabilityCenterPanel({
   // the capability snapshot arrives asynchronously after the filter changes.
   useEffect(() => {
     setSelectedId((current) =>
-      current &&
-      visibleCapabilities.some((item) => item.capability_id === current)
+      current && visibleCapabilities.some((item) => item.capability_id === current)
         ? current
-        : visibleCapabilities[0]?.capability_id ?? null,
+        : (visibleCapabilities[0]?.capability_id ?? null),
     );
   }, [visibleCapabilities]);
 
-  const selected =
-    visibleCapabilities.find((item) => item.capability_id === selectedId) ?? null;
+  const selected = visibleCapabilities.find((item) => item.capability_id === selectedId) ?? null;
 
   const sendOperationAction = (
     action: CapabilityOperationAction,
@@ -218,7 +205,9 @@ export function CapabilityCenterPanel({
       return;
     }
     channel.send(buildCapabilityOperationActionMessage(action, operation));
-    setNotice(`已提交${action === "cancel" ? "取消" : action === "retry" ? "重试" : action === "rollback" ? "回滚" : "卸载"}请求。`);
+    setNotice(
+      `已提交${action === "cancel" ? "取消" : action === "retry" ? "重试" : action === "rollback" ? "回滚" : "卸载"}请求。`,
+    );
   };
 
   const sendCapabilityMutation = (
@@ -242,217 +231,195 @@ export function CapabilityCenterPanel({
   const isPage = variant === "page";
 
   const panel = (
-      <section
-        role={isPage ? "region" : "dialog"}
-        aria-modal={isPage ? undefined : "true"}
-        aria-label="能力中心"
-        style={isPage ? pagePanelStyle : panelStyle}
-      >
-        <header style={headerStyle}>
-          <div>
-            <h2 style={titleText}>能力中心</h2>
-            <p style={subtitleStyle}>
-              查看可用能力、运行健康与安装/生成进度
-            </p>
-          </div>
-          <div style={{ display: "flex", gap: 8 }}>
-            <button
-              type="button"
-              onClick={onOpenLegacySkillStore}
-              className={INTERACTIVE_CLASS}
-              style={secondaryButtonStyle}
-            >
-              打开旧 Skill Store
-            </button>
-            {!isPage && onClose ? (
-              <button
-                type="button"
-                aria-label="关闭能力中心"
-                onClick={onClose}
-                style={iconButtonStyle}
-              >
-                ×
-              </button>
-            ) : null}
-          </div>
-        </header>
-
-        <div style={statusBarStyle}>
-          <span>
-            当前授权：{" "}
-            <strong>
-              {authorizationMode === "auto"
-                ? "Auto（直接执行）"
-                : "Manual（按需确认）"}
-            </strong>
-          </span>
-          <span>
-            进度来源：工作流推送
-          </span>
-          {!channel ? <span style={{ color: dark.warning }}>离线快照</span> : null}
+    <section
+      role={isPage ? "region" : "dialog"}
+      aria-modal={isPage ? undefined : "true"}
+      aria-label="能力中心"
+      style={isPage ? pagePanelStyle : panelStyle}
+    >
+      <header style={headerStyle}>
+        <div>
+          <h2 style={titleText}>能力中心</h2>
+          <p style={subtitleStyle}>查看可用能力、运行健康与安装/生成进度</p>
         </div>
-
-        <nav aria-label="能力中心视图" style={tabsStyle}>
+        <div style={{ display: "flex", gap: 8 }}>
           <button
             type="button"
-            aria-selected={tab === "capabilities"}
-            onClick={() => setTab("capabilities")}
-            className="bp-tab"
-            style={tabButtonStyle(tab === "capabilities")}
+            onClick={onOpenLegacySkillStore}
+            className={INTERACTIVE_CLASS}
+            style={secondaryButtonStyle}
           >
-            能力 ({capabilities.length})
+            打开旧 Skill Store
           </button>
-          <button
-            type="button"
-            aria-selected={tab === "operations"}
-            onClick={() => setTab("operations")}
-            className="bp-tab"
-            style={tabButtonStyle(tab === "operations")}
-          >
-            操作 ({operations.length})
-          </button>
-        </nav>
-
-        {notice ? (
-          <div role="status" style={noticeStyle}>
-            <span>{notice}</span>
+          {!isPage && onClose ? (
             <button
               type="button"
-              aria-label="关闭提示"
-              onClick={() => setNotice(null)}
-              style={inlineDismissStyle}
+              aria-label="关闭能力中心"
+              onClick={onClose}
+              style={iconButtonStyle}
             >
               ×
             </button>
-          </div>
-        ) : null}
+          ) : null}
+        </div>
+      </header>
 
-        {tab === "capabilities" ? (
-          <div style={bodyGridStyle}>
-            <aside style={listPaneStyle}>
-              <label style={fieldLabelStyle}>
-                搜索
-                <input
-                  aria-label="搜索能力"
-                  value={query}
-                  onChange={(event) => {
-                    const nextQuery = event.target.value;
-                    setQuery(nextQuery);
-                    setSelectedId(
-                      capabilities.find((capability) =>
-                        capabilityMatchesFilters(
-                          capability,
-                          category,
-                          nextQuery,
-                        ),
-                      )?.capability_id ?? null,
-                    );
-                  }}
-                  placeholder="名称、来源或 ID"
-                  style={inputStyle}
-                />
-              </label>
-              <label style={fieldLabelStyle}>
-                类别
-                <select
-                  aria-label="能力类别"
-                  value={category}
-                  onChange={(event) => {
-                    const nextCategory = event.target.value as CategoryFilter;
-                    setCategory(nextCategory);
-                    setSelectedId(
-                      capabilities.find((capability) =>
-                        capabilityMatchesFilters(
-                          capability,
-                          nextCategory,
-                          query,
-                        ),
-                      )?.capability_id ?? null,
-                    );
-                  }}
-                  style={inputStyle}
-                >
-                  <option value="all">全部</option>
-                  <option value="instruction">说明</option>
-                  <option value="tool">工具</option>
-                  <option value="mcp">MCP</option>
-                  <option value="pack">能力包</option>
-                </select>
-              </label>
+      <div style={statusBarStyle}>
+        <span>
+          当前授权：{" "}
+          <strong>
+            {authorizationMode === "auto" ? "Auto（直接执行）" : "Manual（按需确认）"}
+          </strong>
+        </span>
+        <span>进度来源：工作流推送</span>
+        {!channel ? <span style={{ color: dark.warning }}>离线快照</span> : null}
+      </div>
 
-              <div
-                data-testid="capability-list"
-                style={{
-                  display: "grid",
-                  // minmax(0,1fr)：隐式轨道默认以行内 nowrap 文本的
-                  // min-content 为下限，min 尺寸(800×560)下会撑破列宽
-                  // 出横向滚动条（WBUI-DEF-S03-01）
-                  gridTemplateColumns: "minmax(0, 1fr)",
-                  gap: 7,
-                  overflowY: "auto",
-                }}
-              >
-                {visibleCapabilities.map((capability) => (
-                  <button
-                    key={capability.capability_id}
-                    type="button"
-                    aria-pressed={selectedId === capability.capability_id}
-                    onClick={() => setSelectedId(capability.capability_id)}
-                    style={capabilityListItemStyle(
-                      selectedId === capability.capability_id,
-                    )}
-                  >
-                    <span style={{ minWidth: 0, textAlign: "left" }}>
-                      <strong style={ellipsisStyle}>{capability.name}</strong>
-                      <span style={listMetaStyle}>
-                        {capability.version} · {capability.source.label}
-                      </span>
-                    </span>
-                    <span
-                      style={{
-                        color: HEALTH_COLOR[capability.health],
-                        fontSize: tokens.text.sm.size,
-                      }}
-                    >
-                      {HEALTH_LABEL[capability.health]}
-                    </span>
-                  </button>
-                ))}
-                {visibleCapabilities.length === 0 ? (
-                  <div style={emptyStyle}>没有符合筛选条件的能力。</div>
-                ) : null}
-              </div>
-            </aside>
+      <nav aria-label="能力中心视图" style={tabsStyle}>
+        <button
+          type="button"
+          aria-selected={tab === "capabilities"}
+          onClick={() => setTab("capabilities")}
+          className="bp-tab"
+          style={tabButtonStyle(tab === "capabilities")}
+        >
+          能力 ({capabilities.length})
+        </button>
+        <button
+          type="button"
+          aria-selected={tab === "operations"}
+          onClick={() => setTab("operations")}
+          className="bp-tab"
+          style={tabButtonStyle(tab === "operations")}
+        >
+          操作 ({operations.length})
+        </button>
+      </nav>
 
-            <main style={detailPaneStyle}>
-              {selected ? (
-                <CapabilityDetail
-                  capability={selected}
-                  onMutation={sendCapabilityMutation}
-                />
-              ) : (
-                <div style={emptyStyle}>选择一项能力查看详情。</div>
-              )}
-            </main>
-          </div>
-        ) : (
-          <main
-            data-testid="capability-operation-list"
-            style={operationListStyle}
+      {notice ? (
+        <div role="status" style={noticeStyle}>
+          <span>{notice}</span>
+          <button
+            type="button"
+            aria-label="关闭提示"
+            onClick={() => setNotice(null)}
+            style={inlineDismissStyle}
           >
-            {operations.map((operation) => (
-              <CapabilityOperationCard
-                key={operation.operation_id}
-                operation={operation}
-                onAction={sendOperationAction}
+            ×
+          </button>
+        </div>
+      ) : null}
+
+      {tab === "capabilities" ? (
+        <div style={bodyGridStyle}>
+          <aside style={listPaneStyle}>
+            <label style={fieldLabelStyle}>
+              搜索
+              <input
+                aria-label="搜索能力"
+                value={query}
+                onChange={(event) => {
+                  const nextQuery = event.target.value;
+                  setQuery(nextQuery);
+                  setSelectedId(
+                    capabilities.find((capability) =>
+                      capabilityMatchesFilters(capability, category, nextQuery),
+                    )?.capability_id ?? null,
+                  );
+                }}
+                placeholder="名称、来源或 ID"
+                style={inputStyle}
               />
-            ))}
-            {operations.length === 0 ? (
-              <div style={emptyStyle}>目前没有能力安装或生成操作。</div>
-            ) : null}
+            </label>
+            <label style={fieldLabelStyle}>
+              类别
+              <select
+                aria-label="能力类别"
+                value={category}
+                onChange={(event) => {
+                  const nextCategory = event.target.value as CategoryFilter;
+                  setCategory(nextCategory);
+                  setSelectedId(
+                    capabilities.find((capability) =>
+                      capabilityMatchesFilters(capability, nextCategory, query),
+                    )?.capability_id ?? null,
+                  );
+                }}
+                style={inputStyle}
+              >
+                <option value="all">全部</option>
+                <option value="instruction">说明</option>
+                <option value="tool">工具</option>
+                <option value="mcp">MCP</option>
+                <option value="pack">能力包</option>
+              </select>
+            </label>
+
+            <div
+              data-testid="capability-list"
+              style={{
+                display: "grid",
+                // minmax(0,1fr)：隐式轨道默认以行内 nowrap 文本的
+                // min-content 为下限，min 尺寸(800×560)下会撑破列宽
+                // 出横向滚动条（WBUI-DEF-S03-01）
+                gridTemplateColumns: "minmax(0, 1fr)",
+                gap: 7,
+                overflowY: "auto",
+              }}
+            >
+              {visibleCapabilities.map((capability) => (
+                <button
+                  key={capability.capability_id}
+                  type="button"
+                  aria-pressed={selectedId === capability.capability_id}
+                  onClick={() => setSelectedId(capability.capability_id)}
+                  style={capabilityListItemStyle(selectedId === capability.capability_id)}
+                >
+                  <span style={{ minWidth: 0, textAlign: "left" }}>
+                    <strong style={ellipsisStyle}>{capability.name}</strong>
+                    <span style={listMetaStyle}>
+                      {capability.version} · {capability.source.label}
+                    </span>
+                  </span>
+                  <span
+                    style={{
+                      color: HEALTH_COLOR[capability.health],
+                      fontSize: tokens.text.sm.size,
+                    }}
+                  >
+                    {HEALTH_LABEL[capability.health]}
+                  </span>
+                </button>
+              ))}
+              {visibleCapabilities.length === 0 ? (
+                <div style={emptyStyle}>没有符合筛选条件的能力。</div>
+              ) : null}
+            </div>
+          </aside>
+
+          <main style={detailPaneStyle}>
+            {selected ? (
+              <CapabilityDetail capability={selected} onMutation={sendCapabilityMutation} />
+            ) : (
+              <div style={emptyStyle}>选择一项能力查看详情。</div>
+            )}
           </main>
-        )}
-      </section>
+        </div>
+      ) : (
+        <main data-testid="capability-operation-list" style={operationListStyle}>
+          {operations.map((operation) => (
+            <CapabilityOperationCard
+              key={operation.operation_id}
+              operation={operation}
+              onAction={sendOperationAction}
+            />
+          ))}
+          {operations.length === 0 ? (
+            <div style={emptyStyle}>目前没有能力安装或生成操作。</div>
+          ) : null}
+        </main>
+      )}
+    </section>
   );
 
   if (isPage) return panel;
@@ -489,15 +456,11 @@ function CapabilityDetail({
     >
       <header>
         <h3 style={{ margin: 0 }}>{capability.name}</h3>
-        <p style={{ ...subtitleStyle, marginTop: 5 }}>
-          {capability.description || "暂无说明"}
-        </p>
+        <p style={{ ...subtitleStyle, marginTop: 5 }}>{capability.description || "暂无说明"}</p>
       </header>
       <dl style={detailGridStyle}>
         <dt>类别</dt>
-        <dd>
-          {capability.categories.map((item) => CATEGORY_LABEL[item]).join("、")}
-        </dd>
+        <dd>{capability.categories.map((item) => CATEGORY_LABEL[item]).join("、")}</dd>
         <dt>版本</dt>
         <dd>{capability.version}</dd>
         <dt>来源</dt>
@@ -529,10 +492,7 @@ function CapabilityDetail({
             <dt>操作系统</dt>
             <dd>{capability.manifest.compatibility.os.join("、") || "未声明"}</dd>
             <dt>架构</dt>
-            <dd>
-              {capability.manifest.compatibility.architectures.join("、") ||
-                "未声明"}
-            </dd>
+            <dd>{capability.manifest.compatibility.architectures.join("、") || "未声明"}</dd>
             <dt>Python</dt>
             <dd>{capability.manifest.compatibility.python}</dd>
             <dt>权限</dt>
@@ -543,9 +503,7 @@ function CapabilityDetail({
           <div>
             <strong>Skills</strong>
             <div style={manifestValueStyle}>
-              {capability.manifest.entries.skills
-                .map((item) => item.path)
-                .join("、") || "无"}
+              {capability.manifest.entries.skills.map((item) => item.path).join("、") || "无"}
             </div>
           </div>
           <div>
@@ -554,11 +512,9 @@ function CapabilityDetail({
               <ul style={manifestListStyle}>
                 {capability.manifest.entries.tools.map((tool) => (
                   <li key={`${tool.id}:${tool.provider_name}`}>
-                    <code>{tool.provider_name}</code> · {tool.runtime} ·{" "}
-                    {tool.execution_profile}
+                    <code>{tool.provider_name}</code> · {tool.runtime} · {tool.execution_profile}
                     <div style={manifestValueStyle}>
-                      入口 {tool.entry} · Schema {tool.schema} · 健康检查{" "}
-                      {tool.healthcheck}
+                      入口 {tool.entry} · Schema {tool.schema} · 健康检查 {tool.healthcheck}
                     </div>
                   </li>
                 ))}
@@ -601,19 +557,13 @@ function CapabilityDetail({
             </ul>
           </details>
           <div style={manifestValueStyle}>
-            卸载：停止服务{" "}
-            {capability.manifest.uninstall.stop_servers ? "是" : "否"}；
+            卸载：停止服务 {capability.manifest.uninstall.stop_servers ? "是" : "否"}；
             无引用时移除环境{" "}
-            {capability.manifest.uninstall
-              .remove_environment_when_unreferenced
-              ? "是"
-              : "否"}
+            {capability.manifest.uninstall.remove_environment_when_unreferenced ? "是" : "否"}
           </div>
           <div style={manifestValueStyle}>
             Manifest SHA-256：
-            <code style={{ overflowWrap: "anywhere" }}>
-              {capability.manifest.manifest_hash}
-            </code>
+            <code style={{ overflowWrap: "anywhere" }}>{capability.manifest.manifest_hash}</code>
           </div>
         </section>
       ) : null}

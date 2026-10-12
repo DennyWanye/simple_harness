@@ -78,18 +78,24 @@ describe("Agent activity timeline", () => {
   });
 
   it("renders collapsed rows and keeps sensitive transport fields out of the DOM", () => {
-    render(<ActivityTimeline snapshot={snapshot({
-      activity_items: [{
-        stable_id: "tool-1",
-        kind: "tool",
-        title: "执行检查",
-        status: "completed",
-        detail_ref: "tool-1",
-        public_input: { path: "public.txt" },
-        public_result: { summary: "通过" },
-        context_visibility: "exclude",
-      }],
-    })} />);
+    render(
+      <ActivityTimeline
+        snapshot={snapshot({
+          activity_items: [
+            {
+              stable_id: "tool-1",
+              kind: "tool",
+              title: "执行检查",
+              status: "completed",
+              detail_ref: "tool-1",
+              public_input: { path: "public.txt" },
+              public_result: { summary: "通过" },
+              context_visibility: "exclude",
+            },
+          ],
+        })}
+      />,
+    );
     expect(screen.getByTestId("agent-activity-timeline")).toBeTruthy();
     expect(screen.getByText("执行检查")).toBeTruthy();
     expect(screen.queryByText("reasoning_content")).toBeNull();

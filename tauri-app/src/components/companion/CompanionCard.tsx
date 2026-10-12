@@ -8,11 +8,7 @@ import type { CompanionEvent } from "../../types/messages";
 export interface CompanionCardProps {
   event: CompanionEvent;
   onOpenDetail: (event: CompanionEvent) => void;
-  onAction: (
-    event: CompanionEvent,
-    action: string,
-    allow?: boolean,
-  ) => void | Promise<void>;
+  onAction: (event: CompanionEvent, action: string, allow?: boolean) => void | Promise<void>;
   busy?: boolean;
 }
 
@@ -32,22 +28,18 @@ function shortHash(value?: string): string {
 }
 
 function isReadOnly(event: CompanionEvent): boolean {
-  return event.tombstone === true ||
+  return (
+    event.tombstone === true ||
     terminalStatuses.has(event.decision?.status || "") ||
-    event.notification.available_actions.length === 0;
+    event.notification.available_actions.length === 0
+  );
 }
 
 function isInvalid(event: CompanionEvent): boolean {
-  return event.tombstone === true ||
-    terminalStatuses.has(event.decision?.status || "");
+  return event.tombstone === true || terminalStatuses.has(event.decision?.status || "");
 }
 
-export function CompanionCard({
-  event,
-  onOpenDetail,
-  onAction,
-  busy = false,
-}: CompanionCardProps) {
+export function CompanionCard({ event, onOpenDetail, onAction, busy = false }: CompanionCardProps) {
   const { notification, decision } = event;
   const readOnly = isReadOnly(event);
   const invalid = isInvalid(event);
@@ -59,9 +51,10 @@ export function CompanionCard({
       style={{
         width: "100%",
         boxSizing: "border-box",
-        border: event.importance === "important"
-          ? "1px solid rgba(251,191,36,0.52)"
-          : "1px solid rgba(129,140,248,0.36)",
+        border:
+          event.importance === "important"
+            ? "1px solid rgba(251,191,36,0.52)"
+            : "1px solid rgba(129,140,248,0.36)",
         borderRadius: 12,
         padding: 12,
         background: "linear-gradient(145deg, rgba(30,35,56,.96), rgba(19,24,39,.96))",
@@ -76,9 +69,16 @@ export function CompanionCard({
           <div>{notification.summary}</div>
         ) : (
           <>
-            <div><strong>改了什么：</strong>{notification.summary}</div>
-            <div><strong>为什么：</strong>证据与原因已记录，可在详情中查看。</div>
-            <div><strong>评测：</strong>评测报告与当前生效状态以详情页为准。</div>
+            <div>
+              <strong>改了什么：</strong>
+              {notification.summary}
+            </div>
+            <div>
+              <strong>为什么：</strong>证据与原因已记录，可在详情中查看。
+            </div>
+            <div>
+              <strong>评测：</strong>评测报告与当前生效状态以详情页为准。
+            </div>
           </>
         )}
       </div>
@@ -88,9 +88,7 @@ export function CompanionCard({
           <div>候选包：{shortHash(decision.candidate_package_hash)}</div>
           <div>代码摘要：{shortHash(decision.candidate_code_digest)}</div>
           <div>评测套件：{shortHash(decision.suite_hash)}</div>
-          {decision.status === "confirmed" && (
-            <strong>仅已授权本机评测，尚未激活。</strong>
-          )}
+          {decision.status === "confirmed" && <strong>仅已授权本机评测，尚未激活。</strong>}
           {!readOnly && (
             <div style={buttonRowStyle}>
               <button
@@ -98,7 +96,8 @@ export function CompanionCard({
                 disabled={busy}
                 onClick={() => void onAction(event, "evaluation_authorization", true)}
               >
-                允许在本机运行这份 exact code 进行评测（无 OS 沙箱，代码可直接访问本机文件/网络/凭据）
+                允许在本机运行这份 exact code 进行评测（无 OS
+                沙箱，代码可直接访问本机文件/网络/凭据）
               </button>
               <button
                 type="button"
@@ -117,7 +116,8 @@ export function CompanionCard({
           <div>包摘要：{shortHash(decision.candidate_package_hash)}</div>
           <div>代码摘要：{shortHash(decision.candidate_code_digest)}</div>
           <strong style={{ color: "#fbbf24" }}>
-            激活会让此代码以后可被调用；Job 仅管理生命周期，不提供 OS 沙箱，代码可直接访问本机文件/网络/凭据。
+            激活会让此代码以后可被调用；Job 仅管理生命周期，不提供 OS
+            沙箱，代码可直接访问本机文件/网络/凭据。
           </strong>
           <div>本次确认不代表允许以后任何外部发送、删除或付费动作。</div>
           {!readOnly && (
@@ -175,20 +175,12 @@ export function CompanionCard({
           </button>
         )}
         {!readOnly && notification.available_actions.includes("rollback") && (
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => void onAction(event, "rollback")}
-          >
+          <button type="button" disabled={busy} onClick={() => void onAction(event, "rollback")}>
             撤销
           </button>
         )}
         {!readOnly && notification.available_actions.includes("forget") && (
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => void onAction(event, "forget")}
-          >
+          <button type="button" disabled={busy} onClick={() => void onAction(event, "forget")}>
             遗忘
           </button>
         )}

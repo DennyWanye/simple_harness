@@ -104,12 +104,10 @@ export function validateProviderDraft(
  * we never accidentally re-save the redaction sentinel as a key.
  */
 export function prefillFromProvider(p: Provider): ProviderDraft {
-  const models = Array.isArray(p.models) && p.models.length > 0
-    ? p.models
-    : (p.model ? [p.model] : []);
-  const default_model = (p.default_model && models.includes(p.default_model))
-    ? p.default_model
-    : (models[0] || "");
+  const models =
+    Array.isArray(p.models) && p.models.length > 0 ? p.models : p.model ? [p.model] : [];
+  const default_model =
+    p.default_model && models.includes(p.default_model) ? p.default_model : models[0] || "";
   return {
     id: p.id,
     source: p.source,
@@ -267,9 +265,10 @@ export function AddProviderModal({
       for (const m of probedModels) {
         if (m && !merged.includes(m)) merged.push(m);
       }
-      const default_model = cur.default_model && merged.includes(cur.default_model)
-        ? cur.default_model
-        : (merged[0] || "");
+      const default_model =
+        cur.default_model && merged.includes(cur.default_model)
+          ? cur.default_model
+          : merged[0] || "";
       return { ...cur, models: merged, default_model };
     });
   }, [probedModels]);
@@ -294,9 +293,7 @@ export function AddProviderModal({
 
   const removeModel = (m: string) => {
     const models = draft.models.filter((x) => x !== m);
-    const default_model = draft.default_model === m
-      ? (models[0] || "")
-      : draft.default_model;
+    const default_model = draft.default_model === m ? models[0] || "" : draft.default_model;
     setDraft({ ...draft, models, default_model });
   };
 
@@ -381,7 +378,12 @@ export function AddProviderModal({
         </label>
 
         <label style={fieldStyle}>
-          <span>api_key {isEditing && <em style={{ fontSize: 10, color: dark.textMuted }}>(留空保留已存的 key)</em>}</span>
+          <span>
+            api_key{" "}
+            {isEditing && (
+              <em style={{ fontSize: 10, color: dark.textMuted }}>(留空保留已存的 key)</em>
+            )}
+          </span>
           <input
             data-testid="provider-api-key-input"
             type="password"
@@ -415,7 +417,10 @@ export function AddProviderModal({
               {showModels ? "▼" : "▶"}
             </button>
             <span style={{ flex: 1 }}>
-              models <em style={{ color: dark.textMuted, fontSize: 10 }}>(可配置多个；默认 model 用 ◉ 标记)</em>
+              models{" "}
+              <em style={{ color: dark.textMuted, fontSize: 10 }}>
+                (可配置多个；默认 model 用 ◉ 标记)
+              </em>
             </span>
             <button
               type="button"
@@ -434,66 +439,76 @@ export function AddProviderModal({
           </div>
           {showModels && (
             <div style={{ display: "grid", gap: 4, marginTop: 4 }}>
-            <div
-              style={{
-                display: "grid",
-                gap: 4,
-                // Cap height for long lists (100+ models from probe), with
-                // its own scroll so the modal's footer (取消/保存) stays
-                // visible without endless outer scrolling.
-                maxHeight: 220,
-                overflowY: "auto",
-                paddingRight: 2,
-              }}
-            >
-              {draft.models.length === 0 && (
-                <div style={{ fontSize: 11, color: dark.textFaint, padding: "4px 6px" }}>
-                  尚未配置 model（手动添加或点 🔍 自动获取）
-                </div>
-              )}
-              {draft.models.map((m) => (
-                <div
-                  key={m}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 6,
-                    padding: "3px 6px",
-                    border: `1px solid ${dark.border}`,
-                    borderRadius: 4,
-                    background: draft.default_model === m ? dark.accentSoft : dark.card,
-                  }}
-                >
-                  <label
-                    style={{ display: "flex", alignItems: "center", gap: 4, cursor: "pointer", flex: 1 }}
-                    title={draft.default_model === m ? "默认 model" : "点击设为默认"}
-                  >
-                    <input
-                      type="radio"
-                      name="default_model"
-                      checked={draft.default_model === m}
-                      onChange={() => setDraft({ ...draft, default_model: m })}
-                      aria-label={`设 ${m} 为默认`}
-                    />
-                    <span style={{ overflowWrap: "anywhere", fontFamily: "monospace", fontSize: 11 }}>{m}</span>
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => removeModel(m)}
+              <div
+                style={{
+                  display: "grid",
+                  gap: 4,
+                  // Cap height for long lists (100+ models from probe), with
+                  // its own scroll so the modal's footer (取消/保存) stays
+                  // visible without endless outer scrolling.
+                  maxHeight: 220,
+                  overflowY: "auto",
+                  paddingRight: 2,
+                }}
+              >
+                {draft.models.length === 0 && (
+                  <div style={{ fontSize: 11, color: dark.textFaint, padding: "4px 6px" }}>
+                    尚未配置 model（手动添加或点 🔍 自动获取）
+                  </div>
+                )}
+                {draft.models.map((m) => (
+                  <div
+                    key={m}
                     style={{
-                      background: "transparent",
-                      border: "none",
-                      color: dark.danger,
-                      cursor: "pointer",
-                      fontSize: 11,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      padding: "3px 6px",
+                      border: `1px solid ${dark.border}`,
+                      borderRadius: 4,
+                      background: draft.default_model === m ? dark.accentSoft : dark.card,
                     }}
-                    aria-label={`删除 ${m}`}
                   >
-                    删除
-                  </button>
-                </div>
-              ))}
-            </div>
+                    <label
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 4,
+                        cursor: "pointer",
+                        flex: 1,
+                      }}
+                      title={draft.default_model === m ? "默认 model" : "点击设为默认"}
+                    >
+                      <input
+                        type="radio"
+                        name="default_model"
+                        checked={draft.default_model === m}
+                        onChange={() => setDraft({ ...draft, default_model: m })}
+                        aria-label={`设 ${m} 为默认`}
+                      />
+                      <span
+                        style={{ overflowWrap: "anywhere", fontFamily: "monospace", fontSize: 11 }}
+                      >
+                        {m}
+                      </span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => removeModel(m)}
+                      style={{
+                        background: "transparent",
+                        border: "none",
+                        color: dark.danger,
+                        cursor: "pointer",
+                        fontSize: 11,
+                      }}
+                      aria-label={`删除 ${m}`}
+                    >
+                      删除
+                    </button>
+                  </div>
+                ))}
+              </div>
               <div style={{ display: "flex", gap: 4 }}>
                 <input
                   value={newModel}
@@ -519,11 +534,22 @@ export function AddProviderModal({
                 </button>
               </div>
               {probeError && (
-                <div style={errStyle}>自动获取失败：{/all connection attempts failed|connection refused|connecterror/i.test(probeError) ? "连不上这个服务地址，请检查 base_url 是否正确、服务是否在运行。" : probeError}</div>
+                <div style={errStyle}>
+                  自动获取失败：
+                  {/all connection attempts failed|connection refused|connecterror/i.test(
+                    probeError,
+                  )
+                    ? "连不上这个服务地址，请检查 base_url 是否正确、服务是否在运行。"
+                    : probeError}
+                </div>
               )}
             </div>
           )}
-          {saveError && <span role="alert" style={errStyle}>{saveError}</span>}
+          {saveError && (
+            <span role="alert" style={errStyle}>
+              {saveError}
+            </span>
+          )}
           {submitted && validation.errors.models && (
             <span style={errStyle}>{validation.errors.models}</span>
           )}
@@ -532,7 +558,15 @@ export function AddProviderModal({
         {/* 2026-08-09：「启用」开关原先只对 relay provider 显示，relay 移除后
             改为编辑既有 provider 时一律可见（新建的默认就是启用）。 */}
         {isEditing && (
-          <label style={{ ...fieldStyle, display: "flex", flexDirection: "row", alignItems: "center", gap: 6 }}>
+          <label
+            style={{
+              ...fieldStyle,
+              display: "flex",
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 6,
+            }}
+          >
             <input
               type="checkbox"
               checked={draft.enabled ?? true}
@@ -553,7 +587,7 @@ export function AddProviderModal({
             data-testid="provider-save-button"
             style={saveBtn}
           >
-            {saving ? "保存中…" : (isEditing ? "保存" : "添加")}
+            {saving ? "保存中…" : isEditing ? "保存" : "添加"}
           </button>
         </footer>
       </form>

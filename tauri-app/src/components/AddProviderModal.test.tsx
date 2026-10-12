@@ -66,10 +66,7 @@ describe("validateProviderDraft (add mode)", () => {
   });
 
   it("test_add_modal_validates_required_fields_clientside — non-kebab id fails", () => {
-    const v = validateProviderDraft(
-      { ...valid_draft, id: "Bad_ID" },
-      { editing: false },
-    );
+    const v = validateProviderDraft({ ...valid_draft, id: "Bad_ID" }, { editing: false });
     expect(v.ok).toBe(false);
     expect(v.errors.id).toMatch(/kebab/);
   });
@@ -90,16 +87,16 @@ describe("validateProviderDraft (add mode)", () => {
   });
 
   it("test_add_modal_validates_required_fields_clientside — empty models array fails", () => {
-    const v = validateProviderDraft({ ...valid_draft, models: [], default_model: "" }, { editing: false });
+    const v = validateProviderDraft(
+      { ...valid_draft, models: [], default_model: "" },
+      { editing: false },
+    );
     expect(v.ok).toBe(false);
     expect(v.errors.models).toMatch(/至少/);
   });
 
   it("test_add_modal_validates_required_fields_clientside — add without api_key fails", () => {
-    const v = validateProviderDraft(
-      { ...valid_draft, api_key: "" },
-      { editing: false },
-    );
+    const v = validateProviderDraft({ ...valid_draft, api_key: "" }, { editing: false });
     expect(v.ok).toBe(false);
     expect(v.errors.api_key).toMatch(/api_key/);
   });

@@ -68,18 +68,33 @@ export function useMissionsFeed(channel: MissionsChannel | null): void {
         cooling = null;
         quietWait = false;
         const wait = LIST_REFRESH_INTERVAL_MS - (Date.now() - lastSent);
-        if (wait <= 0) { sendList(); return; }
+        if (wait <= 0) {
+          sendList();
+          return;
+        }
         pending = true;
-        cooling = setTimeout(() => { cooling = null; if (pending) sendList(); }, wait);
+        cooling = setTimeout(() => {
+          cooling = null;
+          if (pending) sendList();
+        }, wait);
         return;
       }
-      if (cooling) { pending = true; return; }
+      if (cooling) {
+        pending = true;
+        return;
+      }
       if (urgent || Date.now() - lastSent >= QUIET_LIST_REFRESH_MS) sendList();
       else {
         pending = true;
         quietWait = true;
-        cooling = setTimeout(() => { cooling = null; quietWait = false; if (pending) sendList(); },
-          QUIET_LIST_REFRESH_MS - (Date.now() - lastSent));
+        cooling = setTimeout(
+          () => {
+            cooling = null;
+            quietWait = false;
+            if (pending) sendList();
+          },
+          QUIET_LIST_REFRESH_MS - (Date.now() - lastSent),
+        );
       }
     };
 
@@ -100,7 +115,8 @@ export function useMissionsFeed(channel: MissionsChannel | null): void {
           if (payload.request_id !== state.listRequestId) break;
           if (payload.ok === true) state.setMissions(asList(asRecord(payload.data).missions));
           // 推后第 3 批 U09：坏消息（通道已按公开合同换成协议错）不动上次的列表，只记下这句话给列表上方显示
-          else if (payload.error_code === PROTOCOL_ERROR) state.setListError(asText(payload.error) || PROTOCOL_ERROR_TEXT);
+          else if (payload.error_code === PROTOCOL_ERROR)
+            state.setListError(asText(payload.error) || PROTOCOL_ERROR_TEXT);
           break;
         case "mission_changed": {
           const missionId = asText(payload.mission_id);
@@ -132,8 +148,12 @@ export function useMissionsFeed(channel: MissionsChannel | null): void {
       statusRequest = null;
       useMissionsStore.getState().setListRequest(null);
       if (cooling) clearTimeout(cooling);
-      cooling = null; pending = false;
-      if (connection === "connected") { request("orchestration_status"); sendList(); }
+      cooling = null;
+      pending = false;
+      if (connection === "connected") {
+        request("orchestration_status");
+        sendList();
+      }
     });
     return () => {
       clearInterval(statusTimer);

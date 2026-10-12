@@ -83,9 +83,7 @@ describe("InputBar chat send", () => {
         turn_id: expect.any(String),
       }),
     });
-    expect(useSessionsStore.getState().sessions.default.messages.at(-1)?.text).toBe(
-      "你好啊",
-    );
+    expect(useSessionsStore.getState().sessions.default.messages.at(-1)?.text).toBe("你好啊");
   });
 
   it("sends selected text files as input_text attachments", async () => {
@@ -136,9 +134,7 @@ describe("InputBar chat send", () => {
       target: { files: [file] },
     });
 
-    expect((await screen.findByRole("alert")).textContent).toContain(
-      "超过单文件 8 MiB 限制",
-    );
+    expect((await screen.findByRole("alert")).textContent).toContain("超过单文件 8 MiB 限制");
     expect(screen.queryByTestId("attachment-list")).toBeNull();
   });
 
@@ -240,8 +236,7 @@ describe("InputBar chat send", () => {
     useSessionsStore.setState({ active_sid: "", sessions: {} });
     render(<InputBar placeholder="chat" />);
 
-    const request =
-      "安装这个skill https://github.com/DennyWanye/plan-test-skill";
+    const request = "安装这个skill https://github.com/DennyWanye/plan-test-skill";
     const input = screen.getByPlaceholderText("chat");
     fireEvent.change(input, { target: { value: request } });
     fireEvent.keyDown(input, {
@@ -323,17 +318,13 @@ describe("InputBar chat send", () => {
   });
 
   it("renders status from the selected task instead of stale session activity", () => {
-    useSessionsStore.getState().upsert_run_projection(
-      "default",
-      "run-completed",
-      {
-        task_scope_id: "scope-completed",
-        version: 1,
-        status: "completed",
-        inflight: false,
-        ui_state: "open",
-      },
-    );
+    useSessionsStore.getState().upsert_run_projection("default", "run-completed", {
+      task_scope_id: "scope-completed",
+      version: 1,
+      status: "completed",
+      inflight: false,
+      ui_state: "open",
+    });
     useSessionsStore.getState().upsert("default", {
       status: "running",
       selected_run_id: "run-completed",
@@ -347,17 +338,13 @@ describe("InputBar chat send", () => {
   });
 
   it("returns to idle after the selected task reaches a failed terminal state", () => {
-    useSessionsStore.getState().upsert_run_projection(
-      "default",
-      "run-failed",
-      {
-        task_scope_id: "scope-failed",
-        version: 1,
-        status: "failed",
-        inflight: false,
-        ui_state: "open",
-      },
-    );
+    useSessionsStore.getState().upsert_run_projection("default", "run-failed", {
+      task_scope_id: "scope-failed",
+      version: 1,
+      status: "failed",
+      inflight: false,
+      ui_state: "open",
+    });
     useSessionsStore.getState().upsert("default", {
       status: "error",
       selected_run_id: "run-failed",
@@ -396,19 +383,15 @@ describe("InputBar chat send", () => {
   });
 
   it("targets a selected waiting task with a fenced continuation", () => {
-    useSessionsStore.getState().upsert_run_projection(
-      "default",
-      "root-waiting",
-      {
-        task_scope_id: "scope-waiting",
-        version: 2,
-        conversation_boundary_ref: "boundary-waiting",
-        conversation_boundary_version: 4,
-        status: "waiting",
-        inflight: false,
-        ui_state: "open",
-      },
-    );
+    useSessionsStore.getState().upsert_run_projection("default", "root-waiting", {
+      task_scope_id: "scope-waiting",
+      version: 2,
+      conversation_boundary_ref: "boundary-waiting",
+      conversation_boundary_version: 4,
+      status: "waiting",
+      inflight: false,
+      ui_state: "open",
+    });
     render(<InputBar sessionId="default" placeholder="chat" />);
 
     const input = screen.getByRole("textbox");
@@ -429,32 +412,24 @@ describe("InputBar chat send", () => {
         conversation_boundary_version: 4,
       }),
     });
-    expect(
-      useSessionsStore.getState().sessions.default.messages.at(-1),
-    ).toMatchObject({
+    expect(useSessionsStore.getState().sessions.default.messages.at(-1)).toMatchObject({
       run_id: "root-waiting",
       task_scope_id: "scope-waiting",
       continuation_status: "waiting",
     });
-    expect(screen.getByTestId("continuation-target").textContent).toContain(
-      "将在安全边界读取",
-    );
+    expect(screen.getByTestId("continuation-target").textContent).toContain("将在安全边界读取");
   });
 
   it("queues steering on the selected running task instead of starting a root", () => {
-    useSessionsStore.getState().upsert_run_projection(
-      "default",
-      "root-running",
-      {
-        task_scope_id: "scope-running",
-        version: 3,
-        conversation_boundary_ref: "boundary-running",
-        conversation_boundary_version: 7,
-        status: "running",
-        inflight: true,
-        ui_state: "open",
-      },
-    );
+    useSessionsStore.getState().upsert_run_projection("default", "root-running", {
+      task_scope_id: "scope-running",
+      version: 3,
+      conversation_boundary_ref: "boundary-running",
+      conversation_boundary_version: 7,
+      status: "running",
+      inflight: true,
+      ui_state: "open",
+    });
     render(<InputBar sessionId="default" placeholder="chat" />);
 
     const input = screen.getByRole("textbox");
@@ -477,9 +452,7 @@ describe("InputBar chat send", () => {
         conversation_boundary_version: 7,
       }),
     });
-    expect(
-      useSessionsStore.getState().sessions.default.messages.at(-1),
-    ).toMatchObject({
+    expect(useSessionsStore.getState().sessions.default.messages.at(-1)).toMatchObject({
       run_id: "root-running",
       task_scope_id: "scope-running",
       continuation_status: "waiting",
@@ -496,8 +469,7 @@ describe("InputBar chat send", () => {
       shiftKey: false,
       nativeEvent: { isComposing: false },
     });
-    const pendingRequestId =
-      useSessionsStore.getState().sessions.default.pending_root_request_id;
+    const pendingRequestId = useSessionsStore.getState().sessions.default.pending_root_request_id;
     expect(pendingRequestId).toEqual(expect.any(String));
     expect(controlWS.send).toHaveBeenCalledTimes(1);
 
@@ -509,9 +481,7 @@ describe("InputBar chat send", () => {
     });
 
     expect(controlWS.send).toHaveBeenCalledTimes(1);
-    expect(
-      useSessionsStore.getState().sessions.default.messages.at(-1),
-    ).toMatchObject({
+    expect(useSessionsStore.getState().sessions.default.messages.at(-1)).toMatchObject({
       text: "帮我打开 Godot",
       deferred_send: true,
       deferred_parent_request_id: pendingRequestId,
@@ -520,16 +490,12 @@ describe("InputBar chat send", () => {
   });
 
   it("defers steering while the selected Run is starting without a boundary", () => {
-    useSessionsStore.getState().upsert_run_projection(
-      "default",
-      "root-starting",
-      {
-        task_scope_id: "scope-starting",
-        status: "starting",
-        inflight: true,
-        ui_state: "open",
-      },
-    );
+    useSessionsStore.getState().upsert_run_projection("default", "root-starting", {
+      task_scope_id: "scope-starting",
+      status: "starting",
+      inflight: true,
+      ui_state: "open",
+    });
     render(<InputBar sessionId="default" placeholder="chat" />);
     const input = screen.getByRole("textbox");
     fireEvent.change(input, { target: { value: "再补充一条" } });
@@ -540,9 +506,7 @@ describe("InputBar chat send", () => {
     });
 
     expect(controlWS.send).not.toHaveBeenCalled();
-    expect(
-      useSessionsStore.getState().sessions.default.messages.at(-1),
-    ).toMatchObject({
+    expect(useSessionsStore.getState().sessions.default.messages.at(-1)).toMatchObject({
       run_id: "root-starting",
       task_scope_id: "scope-starting",
       deferred_send: true,
@@ -578,10 +542,9 @@ describe("InputBar chat send", () => {
         run_id: "root-b",
       },
     });
-    expect(
-      useSessionsStore.getState().sessions.default.run_projections["root-a"]
-        .inflight,
-    ).toBe(true);
+    expect(useSessionsStore.getState().sessions.default.run_projections["root-a"].inflight).toBe(
+      true,
+    );
   });
 
   it("keeps stop available for a rehydrated waiting Run", () => {

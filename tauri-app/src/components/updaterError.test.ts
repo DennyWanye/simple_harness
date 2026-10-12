@@ -27,9 +27,7 @@ describe("formatUpdaterError", () => {
   });
 
   it("签名校验失败给出安全中止文案", () => {
-    expect(formatUpdaterError(new Error("signature verify failed"))).toContain(
-      "签名",
-    );
+    expect(formatUpdaterError(new Error("signature verify failed"))).toContain("签名");
   });
 
   it("未知错误回退到带原文的通用文案", () => {

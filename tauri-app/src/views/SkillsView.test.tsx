@@ -22,17 +22,13 @@ describe("SkillsView（T10，WB-6）", () => {
     expect(screen.getByRole("region", { name: "能力中心" })).toBeTruthy();
     // 页面化：无模态语义。
     expect(screen.queryByRole("dialog")).toBeNull();
-    expect(
-      screen.queryByRole("button", { name: "关闭能力中心" }),
-    ).toBeNull();
+    expect(screen.queryByRole("button", { name: "关闭能力中心" })).toBeNull();
   });
 
   it("互跳本地化：打开旧 Skill Store → 视图内切换；返回能力中心复原", () => {
     render(<SkillsView channel={null} />);
 
-    fireEvent.click(
-      screen.getByRole("button", { name: "打开旧 Skill Store" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "打开旧 Skill Store" }));
     // SkillStore 同样以 page 内嵌（非 dialog、无关闭钮）。
     expect(screen.getByRole("region", { name: "技能商店" })).toBeTruthy();
     expect(screen.queryByRole("dialog")).toBeNull();

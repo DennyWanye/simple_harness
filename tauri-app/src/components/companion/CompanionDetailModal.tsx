@@ -1,13 +1,7 @@
 // SPDX-FileCopyrightText: 2026 DennyWanye
 // SPDX-License-Identifier: BUSL-1.1
 
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  type CSSProperties,
-} from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 
 import type {
   CompanionDetailErrorResponse,
@@ -53,11 +47,7 @@ function errorText(code: CompanionDetailErrorResponse["payload"]["code"]): strin
   }
 }
 
-export function CompanionDetailModal({
-  event,
-  query,
-  onClose,
-}: CompanionDetailModalProps) {
+export function CompanionDetailModal({ event, query, onClose }: CompanionDetailModalProps) {
   const [section, setSection] = useState<CompanionDetailSection>("overview");
   const [items, setItems] = useState<CompanionDetailItem[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -65,38 +55,41 @@ export function CompanionDetailModal({
   const [error, setError] = useState<string | null>(null);
   const requestTokenRef = useRef(0);
 
-  const load = useCallback(async (cursor: string | null) => {
-    const token = ++requestTokenRef.current;
-    setLoading(true);
-    setError(null);
-    try {
-      const response = await query({
-        notification_id: event.notification.notification_id,
-        section,
-        cursor,
-        page_size: 20,
-        expected_detail_version: event.notification.detail_version,
-      });
-      if (requestTokenRef.current !== token) return;
-      if (response.type === "companion_detail_error") {
-        setError(errorText(response.payload.code));
-        if (
-          response.payload.code === "detail_changed" ||
-          response.payload.code === "cursor_invalid"
-        ) {
-          setItems([]);
-          setNextCursor(null);
+  const load = useCallback(
+    async (cursor: string | null) => {
+      const token = ++requestTokenRef.current;
+      setLoading(true);
+      setError(null);
+      try {
+        const response = await query({
+          notification_id: event.notification.notification_id,
+          section,
+          cursor,
+          page_size: 20,
+          expected_detail_version: event.notification.detail_version,
+        });
+        if (requestTokenRef.current !== token) return;
+        if (response.type === "companion_detail_error") {
+          setError(errorText(response.payload.code));
+          if (
+            response.payload.code === "detail_changed" ||
+            response.payload.code === "cursor_invalid"
+          ) {
+            setItems([]);
+            setNextCursor(null);
+          }
+          return;
         }
-        return;
+        setItems((previous) =>
+          cursor ? [...previous, ...response.payload.items] : response.payload.items,
+        );
+        setNextCursor(response.payload.next_cursor);
+      } finally {
+        if (requestTokenRef.current === token) setLoading(false);
       }
-      setItems((previous) =>
-        cursor ? [...previous, ...response.payload.items] : response.payload.items,
-      );
-      setNextCursor(response.payload.next_cursor);
-    } finally {
-      if (requestTokenRef.current === token) setLoading(false);
-    }
-  }, [event.notification.detail_version, event.notification.notification_id, query, section]);
+    },
+    [event.notification.detail_version, event.notification.notification_id, query, section],
+  );
 
   useEffect(() => {
     setItems([]);
@@ -104,9 +97,12 @@ export function CompanionDetailModal({
     void load(null);
   }, [load]);
 
-  useEffect(() => () => {
-    requestTokenRef.current += 1;
-  }, []);
+  useEffect(
+    () => () => {
+      requestTokenRef.current += 1;
+    },
+    [],
+  );
 
   return (
     <div
@@ -124,7 +120,9 @@ export function CompanionDetailModal({
               {event.notification.summary}
             </div>
           </div>
-          <button type="button" aria-label="关闭详情" onClick={onClose}>×</button>
+          <button type="button" aria-label="关闭详情" onClick={onClose}>
+            ×
+          </button>
         </header>
 
         <nav aria-label="详情章节" style={tabsStyle}>
@@ -141,7 +139,11 @@ export function CompanionDetailModal({
         </nav>
 
         <div style={{ overflow: "auto", flex: 1, minHeight: 120 }}>
-          {error && <div role="alert" style={{ color: "#fca5a5" }}>{error}</div>}
+          {error && (
+            <div role="alert" style={{ color: "#fca5a5" }}>
+              {error}
+            </div>
+          )}
           {!error && items.length === 0 && !loading && (
             <div style={{ color: "#94a3b8" }}>本章节暂无可见内容。</div>
           )}
@@ -152,9 +154,7 @@ export function CompanionDetailModal({
               {item.status && <div>状态：{item.status}</div>}
               {item.hash && <div>摘要：{item.hash}</div>}
               {item.occurred_at && <time>{item.occurred_at}</time>}
-              {detailMetadata(item) && (
-                <pre style={metadataStyle}>{detailMetadata(item)}</pre>
-              )}
+              {detailMetadata(item) && <pre style={metadataStyle}>{detailMetadata(item)}</pre>}
             </article>
           ))}
         </div>
@@ -166,11 +166,7 @@ export function CompanionDetailModal({
             </button>
           )}
           {nextCursor && !error && (
-            <button
-              type="button"
-              disabled={loading}
-              onClick={() => void load(nextCursor)}
-            >
+            <button type="button" disabled={loading} onClick={() => void load(nextCursor)}>
               {loading ? "加载中…" : "加载更多"}
             </button>
           )}
@@ -182,14 +178,13 @@ export function CompanionDetailModal({
 
 function detailMetadata(item: CompanionDetailItem): string {
   const metadata = Object.fromEntries(
-    Object.entries(item).filter(([key, value]) =>
-      !["id", "title", "summary", "status", "hash", "occurred_at"].includes(key) &&
-      value !== undefined
+    Object.entries(item).filter(
+      ([key, value]) =>
+        !["id", "title", "summary", "status", "hash", "occurred_at"].includes(key) &&
+        value !== undefined,
     ),
   );
-  return Object.keys(metadata).length > 0
-    ? JSON.stringify(metadata, null, 2)
-    : "";
+  return Object.keys(metadata).length > 0 ? JSON.stringify(metadata, null, 2) : "";
 }
 
 const overlayStyle: CSSProperties = {

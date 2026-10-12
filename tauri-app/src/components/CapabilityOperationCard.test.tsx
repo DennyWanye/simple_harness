@@ -14,9 +14,7 @@ import { CapabilityOperationCard } from "./CapabilityOperationCard";
 
 afterEach(cleanup);
 
-function operation(
-  overrides: Partial<CapabilityOperation> = {},
-): CapabilityOperation {
+function operation(overrides: Partial<CapabilityOperation> = {}): CapabilityOperation {
   return {
     operation_id: "operation-1",
     capability_id: "godot",
@@ -52,13 +50,11 @@ function operation(
 describe("CapabilityOperationCard", () => {
   it("shows progress, artifacts, receipts and every recovery action", () => {
     const onAction = vi.fn();
-    render(
-      <CapabilityOperationCard operation={operation()} onAction={onAction} />,
-    );
+    render(<CapabilityOperationCard operation={operation()} onAction={onAction} />);
 
-    expect(
-      screen.getByTestId("capability-operation-operation-1").textContent,
-    ).toContain("候选运行时已就绪");
+    expect(screen.getByTestId("capability-operation-operation-1").textContent).toContain(
+      "候选运行时已就绪",
+    );
     expect(screen.getByText("Auto 已授权（审计记录）")).toBeTruthy();
     expect(screen.getByText("project report")).toBeTruthy();
     expect(screen.getByText(/manifest hash/)).toBeTruthy();
@@ -120,9 +116,7 @@ describe("capability operation reducers", () => {
       latest_result: "published",
     });
 
-    expect(mergeCapabilityOperations(current, [stale])[0].latest_result).toBe(
-      "new",
-    );
+    expect(mergeCapabilityOperations(current, [stale])[0].latest_result).toBe("new");
     expect(mergeCapabilityOperations(current, [fresh])[0]).toMatchObject({
       event_seq: 5,
       phase: "published",
@@ -150,11 +144,7 @@ describe("capability operation reducers", () => {
 
   it("redacts common token and secret formats", () => {
     expect(
-      redactCapabilityText(
-        "token=abc123456; --api-key sk_secret123 Authorization: Bearer xyz789",
-      ),
-    ).toBe(
-      "token=[REDACTED]; --api-key [REDACTED] Authorization: Bearer [REDACTED]",
-    );
+      redactCapabilityText("token=abc123456; --api-key sk_secret123 Authorization: Bearer xyz789"),
+    ).toBe("token=[REDACTED]; --api-key [REDACTED] Authorization: Bearer [REDACTED]");
   });
 });

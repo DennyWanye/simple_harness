@@ -89,10 +89,7 @@ export function ConfirmDialog({
             '-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif',
         }}
       >
-        <h3
-          id="confirm-dialog-title"
-          style={{ fontSize: 14, margin: "0 0 10px", fontWeight: 600 }}
-        >
+        <h3 id="confirm-dialog-title" style={{ fontSize: 14, margin: "0 0 10px", fontWeight: 600 }}>
           {title}
         </h3>
         <div
@@ -137,12 +134,10 @@ export function ConfirmDialog({
               cursor: "pointer",
             }}
             onMouseEnter={(e) => {
-              (e.currentTarget as HTMLButtonElement).style.background =
-                confirmHover;
+              (e.currentTarget as HTMLButtonElement).style.background = confirmHover;
             }}
             onMouseLeave={(e) => {
-              (e.currentTarget as HTMLButtonElement).style.background =
-                confirmBg;
+              (e.currentTarget as HTMLButtonElement).style.background = confirmBg;
             }}
           >
             {confirm_label}

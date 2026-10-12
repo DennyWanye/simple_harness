@@ -25,7 +25,7 @@ function key(sessionId: string, rootRunId: string): string {
 
 function record(value: unknown): Record<string, unknown> | null {
   return value != null && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
+    ? (value as Record<string, unknown>)
     : null;
 }
 
@@ -67,21 +67,20 @@ function outcome(value: unknown): PublicRunAggregateOutcome {
       ? item.child_warnings.flatMap((warning) => {
           const child = record(warning);
           return child
-            ? [{
-                run_id: String(child.run_id ?? ""),
-                status: String(child.status ?? "unknown"),
-                evidence_refs: strings(child.evidence_refs),
-              }]
+            ? [
+                {
+                  run_id: String(child.run_id ?? ""),
+                  status: String(child.status ?? "unknown"),
+                  evidence_refs: strings(child.evidence_refs),
+                },
+              ]
             : [];
         })
       : [],
   };
 }
 
-function workflowSteps(
-  value: unknown,
-  phaseId: string,
-): PublicRunSemanticPhase["workflow_steps"] {
+function workflowSteps(value: unknown, phaseId: string): PublicRunSemanticPhase["workflow_steps"] {
   if (!Array.isArray(value)) return [];
   const byId = new Map<string, PublicRunSemanticPhase["workflow_steps"][number]>();
   value.forEach((entry, index) => {
@@ -91,14 +90,17 @@ function workflowSteps(
     const previous = byId.get(workflowStepId);
     byId.set(workflowStepId, {
       workflow_step_id: workflowStepId,
-      label: typeof publicStep.label === "string" ? publicStep.label : previous?.label ?? null,
-      status: typeof publicStep.status === "string" ? publicStep.status : previous?.status ?? null,
-      step_index: typeof publicStep.step_index === "number"
-        ? publicStep.step_index
-        : previous?.step_index ?? null,
-      step_total: typeof publicStep.step_total === "number"
-        ? publicStep.step_total
-        : previous?.step_total ?? null,
+      label: typeof publicStep.label === "string" ? publicStep.label : (previous?.label ?? null),
+      status:
+        typeof publicStep.status === "string" ? publicStep.status : (previous?.status ?? null),
+      step_index:
+        typeof publicStep.step_index === "number"
+          ? publicStep.step_index
+          : (previous?.step_index ?? null),
+      step_total:
+        typeof publicStep.step_total === "number"
+          ? publicStep.step_total
+          : (previous?.step_total ?? null),
     });
   });
   return [...byId.values()];
@@ -122,27 +124,36 @@ function phase(value: unknown, index: number): PublicRunSemanticPhase | null {
       ? item.items.flatMap((entry, itemIndex) => {
           const publicItem = record(entry);
           if (!publicItem) return [];
-          return [{
-            stable_id: String(publicItem.stable_id ?? `${phaseId}:item:${itemIndex}`),
-            kind: String(publicItem.kind ?? "fact"),
-            narration_code: typeof publicItem.narration_code === "string" ? publicItem.narration_code : null,
-            safe_text: typeof publicItem.safe_text === "string" ? publicItem.safe_text : null,
-            status: typeof publicItem.status === "string" ? publicItem.status : null,
-            action_code: typeof publicItem.action_code === "string" ? publicItem.action_code : null,
-            tool_name: typeof publicItem.tool_name === "string" ? publicItem.tool_name : null,
-            public_name: typeof publicItem.public_name === "string" ? publicItem.public_name : null,
-            safe_target_label: typeof publicItem.safe_target_label === "string" ? publicItem.safe_target_label : null,
-            detail_ref: typeof publicItem.detail_ref === "string" ? publicItem.detail_ref : null,
-            created_at: typeof publicItem.created_at === "number" ? publicItem.created_at : null,
-            context_visibility: "exclude",
-          }];
+          return [
+            {
+              stable_id: String(publicItem.stable_id ?? `${phaseId}:item:${itemIndex}`),
+              kind: String(publicItem.kind ?? "fact"),
+              narration_code:
+                typeof publicItem.narration_code === "string" ? publicItem.narration_code : null,
+              safe_text: typeof publicItem.safe_text === "string" ? publicItem.safe_text : null,
+              status: typeof publicItem.status === "string" ? publicItem.status : null,
+              action_code:
+                typeof publicItem.action_code === "string" ? publicItem.action_code : null,
+              tool_name: typeof publicItem.tool_name === "string" ? publicItem.tool_name : null,
+              public_name:
+                typeof publicItem.public_name === "string" ? publicItem.public_name : null,
+              safe_target_label:
+                typeof publicItem.safe_target_label === "string"
+                  ? publicItem.safe_target_label
+                  : null,
+              detail_ref: typeof publicItem.detail_ref === "string" ? publicItem.detail_ref : null,
+              created_at: typeof publicItem.created_at === "number" ? publicItem.created_at : null,
+              context_visibility: "exclude",
+            },
+          ];
         })
       : [],
     current_step: typeof item.current_step === "number" ? item.current_step : null,
     total_steps: typeof item.total_steps === "number" ? item.total_steps : null,
-    order_key: Array.isArray(item.order_key) && item.order_key.length === 4
-      ? item.order_key as [number, number, number, string]
-      : [index, 0, 0, phaseId],
+    order_key:
+      Array.isArray(item.order_key) && item.order_key.length === 4
+        ? (item.order_key as [number, number, number, string])
+        : [index, 0, 0, phaseId],
   };
 }
 
@@ -156,21 +167,28 @@ function tool(value: unknown, index: number): ToolPublicView | null {
     stable_id: String(item.stable_id ?? toolRef),
     phase_id: typeof item.phase_id === "string" ? item.phase_id : null,
     public_name: String(payload.public_name ?? payload.tool_name ?? "工具"),
-    action_label: String(payload.action_label ?? payload.activity_kind ?? payload.action_code ?? "执行操作"),
-    safe_target_label: typeof payload.safe_target_label === "string" ? payload.safe_target_label : null,
+    action_label: String(
+      payload.action_label ?? payload.activity_kind ?? payload.action_code ?? "执行操作",
+    ),
+    safe_target_label:
+      typeof payload.safe_target_label === "string" ? payload.safe_target_label : null,
     status: String(payload.status ?? "unknown"),
     duration_ms: typeof payload.duration_ms === "number" ? payload.duration_ms : null,
     public_input: payload.public_input ?? payload.safe_input,
     public_result: payload.public_result ?? payload.bounded_result,
-    result_available: payload.result_available === true ||
-      payload.public_result !== undefined || payload.bounded_result !== undefined,
-    details_available: payload.details_available === true ||
-      payload.public_input !== undefined || payload.safe_input !== undefined,
-    truncated: payload.truncated === true ||
+    result_available:
+      payload.result_available === true ||
+      payload.public_result !== undefined ||
+      payload.bounded_result !== undefined,
+    details_available:
+      payload.details_available === true ||
+      payload.public_input !== undefined ||
+      payload.safe_input !== undefined,
+    truncated:
+      payload.truncated === true ||
       (Array.isArray(payload.truncation_hashes) && payload.truncation_hashes.length > 0),
-    unavailable_reason: typeof payload.unavailable_reason === "string"
-      ? payload.unavailable_reason
-      : null,
+    unavailable_reason:
+      typeof payload.unavailable_reason === "string" ? payload.unavailable_reason : null,
     detail_ref: typeof item.detail_ref === "string" ? item.detail_ref : null,
     created_at: typeof item.created_at === "number" ? item.created_at : null,
     context_visibility: "exclude",
@@ -234,34 +252,40 @@ export function normalizePublicRunSnapshot(value: unknown): PublicRunSnapshotV3 
     const toolValues = item.tool_public_views ?? item.tools;
     const messageValues = item.public_messages ?? item.messages;
     const phaseTools = normalizedPhases.flatMap((semanticPhase) =>
-      semanticPhase.items.filter((publicItem) => publicItem.kind === "tool").map((publicItem) => ({
-        tool_ref: publicItem.detail_ref ?? publicItem.stable_id,
-        stable_id: publicItem.stable_id,
-        phase_id: semanticPhase.phase_id,
-        public_name: publicItem.public_name ?? publicItem.tool_name ?? publicItem.action_code ?? "工具",
-        action_label: publicItem.action_code ?? "执行操作",
-        safe_target_label: publicItem.safe_target_label,
-        status: publicItem.status ?? "unknown",
-        detail_ref: publicItem.detail_ref,
-        details_available: Boolean(publicItem.detail_ref),
-        result_available: Boolean(publicItem.detail_ref),
-        created_at: publicItem.created_at,
-      })));
+      semanticPhase.items
+        .filter((publicItem) => publicItem.kind === "tool")
+        .map((publicItem) => ({
+          tool_ref: publicItem.detail_ref ?? publicItem.stable_id,
+          stable_id: publicItem.stable_id,
+          phase_id: semanticPhase.phase_id,
+          public_name:
+            publicItem.public_name ?? publicItem.tool_name ?? publicItem.action_code ?? "工具",
+          action_label: publicItem.action_code ?? "执行操作",
+          safe_target_label: publicItem.safe_target_label,
+          status: publicItem.status ?? "unknown",
+          detail_ref: publicItem.detail_ref,
+          details_available: Boolean(publicItem.detail_ref),
+          result_available: Boolean(publicItem.detail_ref),
+          created_at: publicItem.created_at,
+        })),
+    );
     const phaseMessages = normalizedPhases.flatMap((semanticPhase) =>
-      semanticPhase.items.filter((publicItem) =>
-        publicItem.kind === "narration" && Boolean(publicItem.safe_text),
-      ).map((publicItem) => ({
-        message_id: publicItem.stable_id,
-        stable_id: publicItem.stable_id,
-        phase_id: semanticPhase.phase_id,
-        text: publicItem.safe_text ?? "",
-        created_at: publicItem.created_at ?? 0,
-      })));
+      semanticPhase.items
+        .filter((publicItem) => publicItem.kind === "narration" && Boolean(publicItem.safe_text))
+        .map((publicItem) => ({
+          message_id: publicItem.stable_id,
+          stable_id: publicItem.stable_id,
+          phase_id: semanticPhase.phase_id,
+          text: publicItem.safe_text ?? "",
+          created_at: publicItem.created_at ?? 0,
+        })),
+    );
     const phaseActivities = normalizedPhases.flatMap((semanticPhase) =>
       semanticPhase.items.map((publicItem) => ({
         stable_id: publicItem.stable_id,
         kind: publicItem.kind,
-        title: publicItem.public_name ?? publicItem.tool_name ?? publicItem.action_code ?? "执行记录",
+        title:
+          publicItem.public_name ?? publicItem.tool_name ?? publicItem.action_code ?? "执行记录",
         status: publicItem.status ?? "unknown",
         phase_id: semanticPhase.phase_id,
         action_code: publicItem.action_code,
@@ -275,7 +299,7 @@ export function normalizePublicRunSnapshot(value: unknown): PublicRunSnapshotV3 
         created_at: publicItem.created_at,
         truncated: false,
         context_visibility: "exclude" as const,
-      }))
+      })),
     );
     return {
       schema_version: "3",
@@ -318,18 +342,20 @@ export function normalizePublicRunSnapshot(value: unknown): PublicRunSnapshotV3 
         const call = record(entry);
         if (!call) return [];
         const toolRef = String(call.call_record_id ?? call.call_id ?? `legacy-tool-${index}`);
-        return [{
-          tool_ref: toolRef,
-          stable_id: toolRef,
-          public_name: String(call.tool_name ?? "工具"),
-          action_label: "历史记录",
-          safe_target_label: null,
-          status: String(call.outcome_status ?? call.admission_state ?? "unknown"),
-          result_available: false,
-          details_available: false,
-          unavailable_reason: "旧版记录没有可安全公开的详情",
-          context_visibility: "exclude",
-        } satisfies ToolPublicView];
+        return [
+          {
+            tool_ref: toolRef,
+            stable_id: toolRef,
+            public_name: String(call.tool_name ?? "工具"),
+            action_label: "历史记录",
+            safe_target_label: null,
+            status: String(call.outcome_status ?? call.admission_state ?? "unknown"),
+            result_available: false,
+            details_available: false,
+            unavailable_reason: "旧版记录没有可安全公开的详情",
+            context_visibility: "exclude",
+          } satisfies ToolPublicView,
+        ];
       })
     : [];
   return {
@@ -365,7 +391,12 @@ export function normalizePublicRunSnapshot(value: unknown): PublicRunSnapshotV3 
       context_visibility: "exclude" as const,
     })),
     context_visibility: "exclude",
-    totals: { workflow_facts: 0, content_facts: 0, provider_details: 0, tool_details: legacyTools.length },
+    totals: {
+      workflow_facts: 0,
+      content_facts: 0,
+      provider_details: 0,
+      tool_details: legacyTools.length,
+    },
     projection_complete: false,
     diagnostics: ["旧版运行记录仅显示安全摘要，详细阶段不可用"],
     legacy_fallback: true,
@@ -388,12 +419,14 @@ export const harnessPublicSnapshotStore = {
         current.projection_complete &&
         TERMINAL_OUTCOMES.has(current.aggregate_outcome.status) &&
         !TERMINAL_OUTCOMES.has(snapshot.aggregate_outcome.status)
-      ) return;
+      )
+        return;
       if (
         TERMINAL_OUTCOMES.has(current.aggregate_outcome.status) &&
         TERMINAL_OUTCOMES.has(snapshot.aggregate_outcome.status) &&
         current.aggregate_outcome.status !== snapshot.aggregate_outcome.status
-      ) return;
+      )
+        return;
     }
     snapshots.set(storeKey, snapshot);
     listeners.get(storeKey)?.forEach((listener) => listener());
@@ -418,7 +451,9 @@ export const harnessPublicSnapshotStore = {
       ...current,
       tool_public_views: current.tool_public_views.map((item) => {
         const update = updates.get(item.detail_ref ?? item.tool_ref) ?? updates.get(item.tool_ref);
-        return update ? { ...item, ...update, stable_id: item.stable_id, phase_id: item.phase_id } : item;
+        return update
+          ? { ...item, ...update, stable_id: item.stable_id, phase_id: item.phase_id }
+          : item;
       }),
     };
     snapshots.set(storeKey, next);
@@ -451,10 +486,11 @@ export function useHarnessPublicSnapshot(
 ): PublicRunSnapshotV3 | null {
   const safeRoot = rootRunId ?? "";
   return useSyncExternalStore(
-    (listener) => safeRoot
-      ? harnessPublicSnapshotStore.subscribe(sessionId, safeRoot, listener)
-      : () => undefined,
-    () => safeRoot ? harnessPublicSnapshotStore.get(sessionId, safeRoot) : null,
+    (listener) =>
+      safeRoot
+        ? harnessPublicSnapshotStore.subscribe(sessionId, safeRoot, listener)
+        : () => undefined,
+    () => (safeRoot ? harnessPublicSnapshotStore.get(sessionId, safeRoot) : null),
     () => null,
   );
 }

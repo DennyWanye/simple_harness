@@ -1,10 +1,6 @@
 import type { ContextUsageSnapshot } from "../types/messages";
 
-export type ContextDisplayState =
-  | "measured"
-  | "binding_only"
-  | "legacy_incomplete"
-  | "unavailable";
+export type ContextDisplayState = "measured" | "binding_only" | "legacy_incomplete" | "unavailable";
 
 export function contextDisplayState(
   snapshot: ContextUsageSnapshot | null | undefined,
@@ -20,7 +16,8 @@ export function contextDisplayState(
     snapshot.prompt_tokens < 0 ||
     !Number.isFinite(snapshot.effective_ceiling) ||
     snapshot.effective_ceiling <= 0
-  ) return "unavailable";
+  )
+    return "unavailable";
   return "measured";
 }
 
@@ -33,9 +30,10 @@ export function canonicalJson(value: unknown): string {
     return `[${value.map(canonicalJson).join(",")}]`;
   }
   const record = value as Record<string, unknown>;
-  return `{${Object.keys(record).sort().map((key) => (
-    `${JSON.stringify(key)}:${canonicalJson(record[key])}`
-  )).join(",")}}`;
+  return `{${Object.keys(record)
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`)
+    .join(",")}}`;
 }
 
 let requestSequence = 0;

@@ -71,7 +71,13 @@ export function ChatMissionCard({ missionId }: { missionId: string }): React.JSX
     if (!channel || getRequest.current) return;
     const requestId = newRequestKey();
     getRequest.current = requestId;
-    if (!channel.send({ type: "mission_get", request_id: requestId, payload: { mission_id: missionId } })) {
+    if (
+      !channel.send({
+        type: "mission_get",
+        request_id: requestId,
+        payload: { mission_id: missionId },
+      })
+    ) {
       getRequest.current = null;
     }
   }, [channel, missionId]);
@@ -138,12 +144,20 @@ export function ChatMissionCard({ missionId }: { missionId: string }): React.JSX
 
   const mission = record(detail?.mission);
   // 根任务（desktop-root-…）是整体汇总，不是步骤
-  const work = list(detail?.tasks).filter((task) => [undefined, null, "", "work"].includes(record(task).kind as string)
-    && !text(record(task).id).startsWith("desktop-root-"));
+  const work = list(detail?.tasks).filter(
+    (task) =>
+      [undefined, null, "", "work"].includes(record(task).kind as string) &&
+      !text(record(task).id).startsWith("desktop-root-"),
+  );
   const done = work.filter((task) => DONE_TASKS.has(text(record(task).status))).length;
-  const approvals = list(detail?.approvals).map(record).filter((a) => text(a.state) === "PENDING");
-  const questions = list(detail?.planning_questions).map(record).filter((q) => text(q.state) === "PENDING");
-  const published = list(detail?.actions).map(record)
+  const approvals = list(detail?.approvals)
+    .map(record)
+    .filter((a) => text(a.state) === "PENDING");
+  const questions = list(detail?.planning_questions)
+    .map(record)
+    .filter((q) => text(q.state) === "PENDING");
+  const published = list(detail?.actions)
+    .map(record)
     .filter((a) => text(a.state) === "SUCCEEDED" && text(a.published_path));
   const workspace = record(detail?.operation_workspace);
   const requirementsRevision = Number(record(workspace.requirements_ref).revision) || 0;
@@ -151,40 +165,78 @@ export function ChatMissionCard({ missionId }: { missionId: string }): React.JSX
   return (
     <section aria-label="后台任务" style={box} data-testid={`chat-mission-${missionId}`}>
       <div style={{ fontWeight: tokens.weight.semibold }}>
-        后台任务：{status ? STATUS_LABEL[status] ?? status : channel ? "读取中…" : "连接未就绪"}
+        后台任务：{status ? (STATUS_LABEL[status] ?? status) : channel ? "读取中…" : "连接未就绪"}
       </div>
       {text(mission.goal) ? <div>{text(mission.goal)}</div> : null}
-      {requirementsRevision > 1 ? <div style={muted} data-testid="chat-mission-requirements-revision">要求第 {requirementsRevision} 版</div> : null}
-      {work.length ? <div style={muted}>步骤：已完成 {done} / {work.length}</div> : null}
+      {requirementsRevision > 1 ? (
+        <div style={muted} data-testid="chat-mission-requirements-revision">
+          要求第 {requirementsRevision} 版
+        </div>
+      ) : null}
+      {work.length ? (
+        <div style={muted}>
+          步骤：已完成 {done} / {work.length}
+        </div>
+      ) : null}
       {text(workspace.state) === "CONFIRMATION_REQUIRED" ? (
-        <OperationWorkspace value={detail?.operation_workspace} channel={channel} onChanged={refresh} />
+        <OperationWorkspace
+          value={detail?.operation_workspace}
+          channel={channel}
+          onChanged={refresh}
+        />
       ) : null}
       {/* 规划器问用户的问题：与任务页同一个组件、同一条消息，在对话里就能答（2026-10-05） */}
-      {questions.length ? <PlanningQuestions questions={questions} channel={channel} onAnswered={refresh} /> : null}
+      {questions.length ? (
+        <PlanningQuestions questions={questions} channel={channel} onAnswered={refresh} />
+      ) : null}
       {approvals.map((approval) => {
         const approvalId = text(approval.request_id);
         const busy = deciding[approvalId] === true;
         const reason = reasons[approvalId] ?? "";
         return (
-          <div key={approvalId} style={{ ...box, borderColor: tokens.color.surface.hairline }} data-testid={`chat-approval-${approvalId}`}>
+          <div
+            key={approvalId}
+            style={{ ...box, borderColor: tokens.color.surface.hairline }}
+            data-testid={`chat-approval-${approvalId}`}
+          >
             {text(approval.kind) === "action" ? (
               <ActionApprovalSummary summary={approval.summary} action={approval.action} />
             ) : text(approval.kind) === "source_change" ? (
               <div>
-                {text(record(approval.source_change).operation) === "revoke" ? "撤销资料" : "把资料换成新版本"}：
-                {text(record(approval.source_change).path)}。批准后，用到旧版的步骤会重新规划。
+                {text(record(approval.source_change).operation) === "revoke"
+                  ? "撤销资料"
+                  : "把资料换成新版本"}
+                ：{text(record(approval.source_change).path)}。批准后，用到旧版的步骤会重新规划。
               </div>
             ) : (
               <div>有一项审批等你处理（{text(approval.kind) || "未知"}），请到任务编排页处理。</div>
             )}
             {text(approval.kind) === "action" || text(approval.kind) === "source_change" ? (
               <>
-                <input aria-label="拒绝理由" placeholder="拒绝时写一句理由" value={reason}
+                <input
+                  aria-label="拒绝理由"
+                  placeholder="拒绝时写一句理由"
+                  value={reason}
                   onChange={(event) => setReasons({ ...reasons, [approvalId]: event.target.value })}
-                  style={{ ...button, cursor: "text" }} />
+                  style={{ ...button, cursor: "text" }}
+                />
                 <div style={{ display: "flex", gap: tokens.space.sm }}>
-                  <button type="button" style={button} disabled={busy} onClick={() => decide(approvalId, "approve")}>批准</button>
-                  <button type="button" style={button} disabled={busy || !reason.trim()} onClick={() => decide(approvalId, "reject")}>拒绝</button>
+                  <button
+                    type="button"
+                    style={button}
+                    disabled={busy}
+                    onClick={() => decide(approvalId, "approve")}
+                  >
+                    批准
+                  </button>
+                  <button
+                    type="button"
+                    style={button}
+                    disabled={busy || !reason.trim()}
+                    onClick={() => decide(approvalId, "reject")}
+                  >
+                    拒绝
+                  </button>
                 </div>
               </>
             ) : null}
@@ -192,10 +244,18 @@ export function ChatMissionCard({ missionId }: { missionId: string }): React.JSX
         );
       })}
       {published.map((action) => (
-        <div key={text(action.action_key)}>已发布：{text(action.target)} → {text(action.published_path)}</div>
+        <div key={text(action.action_key)}>
+          已发布：{text(action.target)} → {text(action.published_path)}
+        </div>
       ))}
-      {status === "FAILED" && text(mission.stop_reason) ? <div style={muted}>停止原因：{text(mission.stop_reason)}</div> : null}
-      {error ? <div role="alert" style={{ color: tokens.color.danger.fg }}>{error}</div> : null}
+      {status === "FAILED" && text(mission.stop_reason) ? (
+        <div style={muted}>停止原因：{text(mission.stop_reason)}</div>
+      ) : null}
+      {error ? (
+        <div role="alert" style={{ color: tokens.color.danger.fg }}>
+          {error}
+        </div>
+      ) : null}
       <div style={muted}>完整过程在「任务编排」页。</div>
     </section>
   );

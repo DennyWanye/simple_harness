@@ -13,8 +13,7 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
-const LOCAL_FILE_EXTENSIONS =
-  /\.(pptx?|pptm|xlsx?|docx?|pdf|png|jpe?g|gif|md|txt|csv)$/i;
+const LOCAL_FILE_EXTENSIONS = /\.(pptx?|pptm|xlsx?|docx?|pdf|png|jpe?g|gif|md|txt|csv)$/i;
 
 const isLocalFileLink = (href?: string) => {
   if (!href) return false;
@@ -32,10 +31,7 @@ const isLocalFileLink = (href?: string) => {
 
 const localFilePathFromHref = (href: string) => {
   const withoutScheme = href.replace(/^file:\/\//i, "");
-  const withoutLeadingWindowsSlash = withoutScheme.replace(
-    /^\/([a-zA-Z]:[\\/])/,
-    "$1",
-  );
+  const withoutLeadingWindowsSlash = withoutScheme.replace(/^\/([a-zA-Z]:[\\/])/, "$1");
 
   try {
     return decodeURIComponent(withoutLeadingWindowsSlash);
@@ -45,11 +41,9 @@ const localFilePathFromHref = (href: string) => {
 };
 
 const openLocalFileLink = (href: string) => {
-  invoke("artifact_open", { path: localFilePathFromHref(href) }).catch(
-    (error) => {
-      console.warn("Failed to open local markdown link", error);
-    },
-  );
+  invoke("artifact_open", { path: localFilePathFromHref(href) }).catch((error) => {
+    console.warn("Failed to open local markdown link", error);
+  });
 };
 
 declare global {
@@ -82,7 +76,6 @@ if (typeof window !== "undefined" && !window.__deskpetLocalMarkdownLinkHandlerIn
     anchor.title = "用系统默认程序打开";
   });
 }
-
 
 import type { Message } from "../stores/sessionsStore";
 import { useSessionsStore } from "../stores/sessionsStore";
@@ -161,12 +154,7 @@ export function MessageBubble({ msg }: Props) {
         </div>
       );
     case "tool_call":
-      return (
-        <ToolCallCard
-          name={msg.tool_name ?? "(unknown)"}
-          args={msg.tool_args ?? {}}
-        />
-      );
+      return <ToolCallCard name={msg.tool_name ?? "(unknown)"} args={msg.tool_args ?? {}} />;
     case "tool_result":
       return (
         <ToolResultCard
@@ -188,11 +176,7 @@ export function MessageBubble({ msg }: Props) {
 function findMessageSession(outlineId: string) {
   const sessions = useSessionsStore.getState().sessions;
   for (const [sid, session] of Object.entries(sessions)) {
-    if (
-      session.messages.some(
-        (m) => m.role === "ppt_outline" && m.outline_id === outlineId,
-      )
-    ) {
+    if (session.messages.some((m) => m.role === "ppt_outline" && m.outline_id === outlineId)) {
       return sid;
     }
   }
@@ -275,18 +259,10 @@ export function splitThinkBlocks(text: string): ThinkSegment[] {
   return out;
 }
 
-function AssistantBubbleWithThink({
-  text,
-  streaming,
-}: {
-  text: string;
-  streaming: boolean;
-}) {
+function AssistantBubbleWithThink({ text, streaming }: { text: string; streaming: boolean }) {
   const segments = splitThinkBlocks(text);
   const hasNormal = segments.some((s) => s.kind === "normal" && s.text.trim());
-  const hasOpenThink = segments.some(
-    (s) => s.kind === "think" && !s.closed,
-  );
+  const hasOpenThink = segments.some((s) => s.kind === "think" && !s.closed);
   // Cursor decision: only show in the main bubble if we have visible
   // content actively streaming. If the only thing streaming right now
   // is an open <think> tag, the cursor lives in that reasoning bubble
@@ -300,9 +276,7 @@ function AssistantBubbleWithThink({
         if (seg.kind === "think") {
           // Open think during streaming → animate; closed/finalized → static.
           const suffix = !seg.closed && streaming ? " ▍" : "";
-          return (
-            <ReasoningBubble key={idx} text={seg.text + suffix} />
-          );
+          return <ReasoningBubble key={idx} text={seg.text + suffix} />;
         }
         return (
           <AssistantBubble
@@ -317,7 +291,14 @@ function AssistantBubbleWithThink({
 
 function AssistantBubble({ text }: { text: string }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", margin: "8px 0" }}>
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "flex-start",
+        margin: "8px 0",
+      }}
+    >
       <div
         data-bp-selectable=""
         style={{
@@ -344,7 +325,7 @@ function AssistantBubble({ text }: { text: string }) {
 export function ToolCallCard({ name, args }: { name: string; args: Record<string, unknown> }) {
   const [open, setOpen] = useState(false);
   const arg_summary = Object.entries(args)
-    .filter(([k]) => !k.startsWith("_"))   // hide injected _project_root etc.
+    .filter(([k]) => !k.startsWith("_")) // hide injected _project_root etc.
     .map(([k, v]) => {
       const s = typeof v === "string" ? v : JSON.stringify(v);
       const trimmed = s.length > 60 ? s.slice(0, 57) + "…" : s;
@@ -357,19 +338,14 @@ export function ToolCallCard({ name, args }: { name: string; args: Record<string
         <>
           <span style={{ color: "#67e8f9" }}>▶ {name}</span>
           {arg_summary && (
-            <span style={{ marginLeft: 8, color: "#94a3b8", fontSize: 11 }}>
-              {arg_summary}
-            </span>
+            <span style={{ marginLeft: 8, color: "#94a3b8", fontSize: 11 }}>{arg_summary}</span>
           )}
         </>
       }
       open={open}
       onToggle={() => setOpen((v) => !v)}
     >
-      <pre
-        data-bp-selectable=""
-        style={preStyle}
-      >
+      <pre data-bp-selectable="" style={preStyle}>
         {JSON.stringify(args, null, 2)}
       </pre>
     </ToolCard>
@@ -447,10 +423,7 @@ export function ToolResultCard({
   // WI-T1.4 last-mile: 优先走 ArtifactCard 分发（PRD §3 D2）。
   // 仅在 ok=true 且 result 含 artifacts[] 时启用 — 失败仍走旧路径
   // 显示错误细节。`artifacts` 字段不在 → 字节级回落旧渲染（TG-5 T5-5）。
-  const artifacts = useMemo(
-    () => (ok ? extractArtifactsFromResult(result) : []),
-    [ok, result],
-  );
+  const artifacts = useMemo(() => (ok ? extractArtifactsFromResult(result) : []), [ok, result]);
   if (ok && artifacts.length > 0) {
     return (
       <ToolCard
@@ -463,9 +436,11 @@ export function ToolResultCard({
             </span>
           </>
         }
-      open={true}
-      onToggle={() => { /* artifact 卡片本身可折叠 */ }}
-    >
+        open={true}
+        onToggle={() => {
+          /* artifact 卡片本身可折叠 */
+        }}
+      >
         <div data-testid="artifact-card-list" style={{ padding: "4px 8px" }}>
           {artifacts.map((a, i) => (
             <ArtifactCard key={i} artifact={a} toolName={name} />
@@ -496,9 +471,7 @@ export function ToolResultCard({
             </span>
           )}
           {hasHint && (
-            <span style={{ marginLeft: 8, color: "#f59e0b", fontSize: 11 }}>
-              💡 有修复建议
-            </span>
+            <span style={{ marginLeft: 8, color: "#f59e0b", fontSize: 11 }}>💡 有修复建议</span>
           )}
         </>
       }
@@ -629,9 +602,7 @@ export function PlanCard({
           style={{ fontSize: 11.5, color: "#cbd5e1", marginBottom: 8 }}
         >
           主要动作：
-          {actionCategories
-            .map((item) => ACTION_CATEGORY_LABELS[item] ?? item)
-            .join("、")}
+          {actionCategories.map((item) => ACTION_CATEGORY_LABELS[item] ?? item).join("、")}
         </div>
       )}
       {rationale && (
@@ -650,17 +621,12 @@ export function PlanCard({
         {steps.map((s, i) => (
           <li key={i} style={{ marginBottom: 3 }}>
             <strong style={{ color: "#e2e8f0" }}>{s.title}</strong>
-            {s.detail && (
-              <span style={{ color: "#94a3b8" }}> — {s.detail}</span>
-            )}
+            {s.detail && <span style={{ color: "#94a3b8" }}> — {s.detail}</span>}
           </li>
         ))}
       </ol>
       {awaiting && (
-        <div
-          data-testid="plan-confirm-bar"
-          style={{ display: "flex", gap: 8, marginTop: 10 }}
-        >
+        <div data-testid="plan-confirm-bar" style={{ display: "flex", gap: 8, marginTop: 10 }}>
           <button
             type="button"
             data-testid="plan-confirm-go"
@@ -705,7 +671,9 @@ export function PlanCard({
             ? `主要动作：${actionCategories.map((item) => ACTION_CATEGORY_LABELS[item] ?? item).join("、")}`
             : "",
           ...steps.map((s, i) => `${i + 1}. ${s.title}${s.detail ? ` — ${s.detail}` : ""}`),
-        ].filter(Boolean).join("\n")}
+        ]
+          .filter(Boolean)
+          .join("\n")}
         tone="dark"
       />
     </div>
@@ -714,7 +682,14 @@ export function PlanCard({
 
 function ReasoningBubble({ text }: { text: string }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", margin: "4px 0" }}>
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "flex-start",
+        margin: "4px 0",
+      }}
+    >
       <div
         data-bp-selectable=""
         style={{
@@ -740,7 +715,14 @@ function ReasoningBubble({ text }: { text: string }) {
 
 function SlashResultBubble({ text }: { text: string }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", margin: "8px 0" }}>
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "flex-start",
+        margin: "8px 0",
+      }}
+    >
       <div
         data-bp-selectable=""
         data-testid="slash-result-bubble"
@@ -755,8 +737,7 @@ function SlashResultBubble({ text }: { text: string }) {
           border: "1px solid rgba(99, 102, 241, 0.35)",
           whiteSpace: "pre-wrap",
           wordBreak: "break-word",
-          fontFamily:
-            'ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace',
+          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace',
         }}
       >
         {text}
@@ -809,7 +790,9 @@ function ToolCard({
       style={{
         margin: "8px 0",
         // 整张卡加同色 outline，让 hint 高亮在折叠/展开两种状态下都能被看见
-        ...(borderColor ? { outline: `1px solid ${borderColor}`, outlineOffset: 0, borderRadius: 6 } : {}),
+        ...(borderColor
+          ? { outline: `1px solid ${borderColor}`, outlineOffset: 0, borderRadius: 6 }
+          : {}),
       }}
     >
       <button
@@ -824,8 +807,7 @@ function ToolCard({
           border: `1px solid ${accent}`,
           color: "#e2e8f0",
           fontSize: 12,
-          fontFamily:
-            'ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace',
+          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace',
           borderRadius: open ? "6px 6px 0 0" : 6,
           cursor: "pointer",
         }}
@@ -843,8 +825,7 @@ const preStyle: React.CSSProperties = {
   background: "#0d1117",
   color: "#c9d1d9",
   fontSize: 11.5,
-  fontFamily:
-    'ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace',
+  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace',
   border: "1px solid rgba(148, 163, 184, 0.22)",
   borderTop: "none",
   borderRadius: "0 0 6px 6px",

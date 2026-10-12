@@ -54,7 +54,12 @@ class FakeChannel {
     const request = this.last(type);
     this.emit({
       type: `${type}_response`,
-      payload: { request_id: request?.request_id ?? request?.payload?.request_id, ok, data, error_code },
+      payload: {
+        request_id: request?.request_id ?? request?.payload?.request_id,
+        ok,
+        data,
+        error_code,
+      },
     });
   }
 }
@@ -74,7 +79,15 @@ const AVAILABLE = {
   active_missions: 0,
   allow_local_tests: false,
   allowed_tools: ["workspace_read_file", "workspace_write_file", "workspace_list"],
-  deployment_manifest: { features: { domains: { atomic_source_create: true, items: [{ id: "code-v1", version: "6" }], source_commands: ["register", "supersede", "revoke"] } } },
+  deployment_manifest: {
+    features: {
+      domains: {
+        atomic_source_create: true,
+        items: [{ id: "code-v1", version: "6" }],
+        source_commands: ["register", "supersede", "revoke"],
+      },
+    },
+  },
 };
 
 const MISSION_ROW = {
@@ -96,7 +109,11 @@ const DETAIL = {
       summary: { text: "写好了 NOTES.md", source: "model" },
       verification_layers: [
         { layer: "format_check", status: "PASS", detail: "" },
-        { layer: "code_test", status: "NOT_REQUIRED", detail: "not in the Task verification policy" },
+        {
+          layer: "code_test",
+          status: "NOT_REQUIRED",
+          detail: "not in the Task verification policy",
+        },
       ],
     },
   ],
@@ -117,7 +134,8 @@ const DETAIL = {
 
 function events(from: number, to: number) {
   const out = [];
-  for (let seq = from; seq <= to; seq += 1) out.push({ seq, type: "TaskCommitted", created_at: seq });
+  for (let seq = from; seq <= to; seq += 1)
+    out.push({ seq, type: "TaskCommitted", created_at: seq });
   return out;
 }
 
@@ -128,7 +146,10 @@ function renderAvailable() {
   return channel;
 }
 
-function openMission(detail: Record<string, unknown> = DETAIL, row: Record<string, unknown> = MISSION_ROW) {
+function openMission(
+  detail: Record<string, unknown> = DETAIL,
+  row: Record<string, unknown> = MISSION_ROW,
+) {
   const channel = renderAvailable();
   channel.reply("mission_list", { missions: [row] });
   fireEvent.click(screen.getByTestId(`mission-row-${String(row.id)}`));
@@ -138,7 +159,9 @@ function openMission(detail: Record<string, unknown> = DETAIL, row: Record<strin
 
 function clock(seconds: number): string {
   const d = new Date(seconds * 1000);
-  return [d.getHours(), d.getMinutes(), d.getSeconds()].map((n) => String(n).padStart(2, "0")).join(":");
+  return [d.getHours(), d.getMinutes(), d.getSeconds()]
+    .map((n) => String(n).padStart(2, "0"))
+    .join(":");
 }
 
 afterEach(() => {
@@ -149,19 +172,38 @@ afterEach(() => {
 // P33 G oracle, written before UI implementation. These are frontend controls;
 // P33-20 native/provider acceptance remains the main task's separate gate.
 describe("P33 G creation and explicit approval branches", () => {
-  it.each(["met", "unmet"])("preserves legacy code judgment arbitration and dispatches %s", (ruling) => {
-    const channel = openMission({ ...DETAIL, approvals: [{
-      request_id: "code-judgment", kind: "arbitration", topic: "judgment", state: "PENDING", options: ["met", "unmet"],
-    }] });
-    const approval = screen.getByTestId("approval-code-judgment");
-    const choice = within(approval).getByRole("button", { name: `裁决：${ruling}` }) as HTMLButtonElement;
-    expect(choice.disabled).toBe(true);
-    fireEvent.change(within(approval).getByLabelText("仲裁依据"), { target: { value: "实际验收依据" } });
-    fireEvent.click(choice);
-    expect(channel.last("mission_approval_decide")?.payload).toEqual({
-      approval_id: "code-judgment", decision: "arbitrate", ruling, basis: "实际验收依据",
-    });
-  });
+  it.each(["met", "unmet"])(
+    "preserves legacy code judgment arbitration and dispatches %s",
+    (ruling) => {
+      const channel = openMission({
+        ...DETAIL,
+        approvals: [
+          {
+            request_id: "code-judgment",
+            kind: "arbitration",
+            topic: "judgment",
+            state: "PENDING",
+            options: ["met", "unmet"],
+          },
+        ],
+      });
+      const approval = screen.getByTestId("approval-code-judgment");
+      const choice = within(approval).getByRole("button", {
+        name: `裁决：${ruling}`,
+      }) as HTMLButtonElement;
+      expect(choice.disabled).toBe(true);
+      fireEvent.change(within(approval).getByLabelText("仲裁依据"), {
+        target: { value: "实际验收依据" },
+      });
+      fireEvent.click(choice);
+      expect(channel.last("mission_approval_decide")?.payload).toEqual({
+        approval_id: "code-judgment",
+        decision: "arbitrate",
+        ruling,
+        basis: "实际验收依据",
+      });
+    },
+  );
 
   it("a Host without source support offers neither reference material nor strict quotes", () => {
     const channel = new FakeChannel();
@@ -173,41 +215,64 @@ describe("P33 G creation and explicit approval branches", () => {
   });
   it("shows the local shared256K window and submits its default profile", () => {
     const channel = renderAvailable();
-    channel.reply("orchestration_status", { ...AVAILABLE,
+    channel.reply("orchestration_status", {
+      ...AVAILABLE,
       default_context_profile_id: "local-context-256k-v1",
-      context_profiles: [{ profile_id: "local-context-256k-v1", max_input_tokens: 228352,
-        max_total_tokens: 262144, output_reserve: 32768, safety_margin: 1024,
-        default_max_output_tokens: 8192, max_output_tokens_ceiling: 32768, mission_max_tokens: 4000000 }],
+      context_profiles: [
+        {
+          profile_id: "local-context-256k-v1",
+          max_input_tokens: 228352,
+          max_total_tokens: 262144,
+          output_reserve: 32768,
+          safety_margin: 1024,
+          default_max_output_tokens: 8192,
+          max_output_tokens_ceiling: 32768,
+          mission_max_tokens: 4000000,
+        },
+      ],
     });
     fireEvent.click(screen.getByRole("button", { name: "新建任务" }));
     expect(screen.getByRole("option", { name: "256K 总窗口" })).toBeTruthy();
     expect(screen.getByText(/输入与输出共享 256K 总窗口；输入最多 223K/)).toBeTruthy();
     expect(screen.queryByText(/单次输出另计/)).toBeNull();
-    fireEvent.change(screen.getByLabelText("任务目标"), { target: { value: "local model report" } });
+    fireEvent.change(screen.getByLabelText("任务目标"), {
+      target: { value: "local model report" },
+    });
     fireEvent.change(screen.getByLabelText("成功条件"), { target: { value: "file:REPORT.md" } });
     fireEvent.click(screen.getByRole("button", { name: "提交任务" }));
-    expect(channel.last("mission_create")?.payload?.runtime_profile_id).toBe("local-context-256k-v1");
+    expect(channel.last("mission_create")?.payload?.runtime_profile_id).toBe(
+      "local-context-256k-v1",
+    );
   });
 
   it("selects the actual long context and announces its separate total budget", () => {
     const channel = renderAvailable();
-    channel.reply("orchestration_status", { ...AVAILABLE,
+    channel.reply("orchestration_status", {
+      ...AVAILABLE,
       default_context_profile_id: "deepseek-native-256k-v1",
       context_profiles: [262144, 524288].map((tokens) => ({
-        profile_id: `deepseek-native-${tokens / 1024}k-v1`, max_input_tokens: tokens,
-        default_max_output_tokens: 8192, max_output_tokens_ceiling: 32768,
+        profile_id: `deepseek-native-${tokens / 1024}k-v1`,
+        max_input_tokens: tokens,
+        default_max_output_tokens: 8192,
+        max_output_tokens_ceiling: 32768,
         mission_max_tokens: tokens === 262144 ? 4000000 : 8000000,
       })),
     });
     fireEvent.click(screen.getByRole("button", { name: "新建任务" }));
-    expect((screen.getByLabelText("输入上下文容量") as HTMLSelectElement).value).toBe("deepseek-native-256k-v1");
+    expect((screen.getByLabelText("输入上下文容量") as HTMLSelectElement).value).toBe(
+      "deepseek-native-256k-v1",
+    );
     expect(screen.getByLabelText("Token 上限").getAttribute("placeholder")).toContain("4000000");
-    fireEvent.change(screen.getByLabelText("输入上下文容量"), { target: { value: "deepseek-native-512k-v1" } });
+    fireEvent.change(screen.getByLabelText("输入上下文容量"), {
+      target: { value: "deepseek-native-512k-v1" },
+    });
     expect(screen.getByLabelText("Token 上限").getAttribute("placeholder")).toContain("8000000");
     fireEvent.change(screen.getByLabelText("任务目标"), { target: { value: "long references" } });
     fireEvent.change(screen.getByLabelText("成功条件"), { target: { value: "file:REPORT.md" } });
     fireEvent.click(screen.getByRole("button", { name: "提交任务" }));
-    expect(channel.last("mission_create")?.payload?.runtime_profile_id).toBe("deepseek-native-512k-v1");
+    expect(channel.last("mission_create")?.payload?.runtime_profile_id).toBe(
+      "deepseek-native-512k-v1",
+    );
   });
 
   it("keeps the creation key and capacity when a lost receipt is retried after default drift", () => {
@@ -215,37 +280,60 @@ describe("P33 G creation and explicit approval branches", () => {
     try {
       const channel = renderAvailable();
       const profiles = [262144, 524288].map((tokens) => ({
-        profile_id: `deepseek-native-${tokens / 1024}k-v1`, max_input_tokens: tokens,
-        default_max_output_tokens: 8192, max_output_tokens_ceiling: 32768,
+        profile_id: `deepseek-native-${tokens / 1024}k-v1`,
+        max_input_tokens: tokens,
+        default_max_output_tokens: 8192,
+        max_output_tokens_ceiling: 32768,
         mission_max_tokens: 8000000,
       }));
-      channel.reply("orchestration_status", { ...AVAILABLE, context_profiles: profiles, default_context_profile_id: profiles[0].profile_id });
+      channel.reply("orchestration_status", {
+        ...AVAILABLE,
+        context_profiles: profiles,
+        default_context_profile_id: profiles[0].profile_id,
+      });
       fireEvent.click(screen.getByRole("button", { name: "新建任务" }));
       fireEvent.change(screen.getByLabelText("任务目标"), { target: { value: "lost receipt" } });
       fireEvent.change(screen.getByLabelText("成功条件"), { target: { value: "file:REPORT.md" } });
       fireEvent.click(screen.getByRole("button", { name: "提交任务" }));
       const original = channel.last("mission_create")?.payload;
-      act(() => { vi.advanceTimersByTime(30001); });
-      channel.reply("orchestration_status", { ...AVAILABLE, context_profiles: profiles, default_context_profile_id: profiles[1].profile_id });
+      act(() => {
+        vi.advanceTimersByTime(30001);
+      });
+      channel.reply("orchestration_status", {
+        ...AVAILABLE,
+        context_profiles: profiles,
+        default_context_profile_id: profiles[1].profile_id,
+      });
       const send = channel.send;
       channel.send = () => false;
       fireEvent.click(screen.getByRole("button", { name: "提交任务" }));
       channel.send = send;
       fireEvent.click(screen.getByRole("button", { name: "提交任务" }));
       expect(channel.last("mission_create")?.payload).toEqual(original);
-    } finally { vi.useRealTimers(); }
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("clears an unsent context selection when the replacement Host has no long profiles", () => {
     const channel = renderAvailable();
-    channel.reply("orchestration_status", { ...AVAILABLE,
-      default_context_profile_id: "deepseek-native-512k-v1", context_profiles: [{
-        profile_id: "deepseek-native-512k-v1", max_input_tokens: 524288,
-        default_max_output_tokens: 8192, max_output_tokens_ceiling: 32768, mission_max_tokens: 8000000,
-      }],
+    channel.reply("orchestration_status", {
+      ...AVAILABLE,
+      default_context_profile_id: "deepseek-native-512k-v1",
+      context_profiles: [
+        {
+          profile_id: "deepseek-native-512k-v1",
+          max_input_tokens: 524288,
+          default_max_output_tokens: 8192,
+          max_output_tokens_ceiling: 32768,
+          mission_max_tokens: 8000000,
+        },
+      ],
     });
     fireEvent.click(screen.getByRole("button", { name: "新建任务" }));
-    fireEvent.change(screen.getByLabelText("输入上下文容量"), { target: { value: "deepseek-native-512k-v1" } });
+    fireEvent.change(screen.getByLabelText("输入上下文容量"), {
+      target: { value: "deepseek-native-512k-v1" },
+    });
     channel.reply("orchestration_status", AVAILABLE);
     fireEvent.change(screen.getByLabelText("任务目标"), { target: { value: "legacy entry" } });
     fireEvent.change(screen.getByLabelText("成功条件"), { target: { value: "file:REPORT.md" } });
@@ -256,11 +344,18 @@ describe("P33 G creation and explicit approval branches", () => {
 
   it("allows creation on a legacy Host after the initial long-context send was refused", () => {
     const channel = renderAvailable();
-    channel.reply("orchestration_status", { ...AVAILABLE,
-      default_context_profile_id: "deepseek-native-512k-v1", context_profiles: [{
-        profile_id: "deepseek-native-512k-v1", max_input_tokens: 524288,
-        default_max_output_tokens: 8192, max_output_tokens_ceiling: 32768, mission_max_tokens: 8000000,
-      }],
+    channel.reply("orchestration_status", {
+      ...AVAILABLE,
+      default_context_profile_id: "deepseek-native-512k-v1",
+      context_profiles: [
+        {
+          profile_id: "deepseek-native-512k-v1",
+          max_input_tokens: 524288,
+          default_max_output_tokens: 8192,
+          max_output_tokens_ceiling: 32768,
+          mission_max_tokens: 8000000,
+        },
+      ],
     });
     fireEvent.click(screen.getByRole("button", { name: "新建任务" }));
     fireEvent.change(screen.getByLabelText("任务目标"), { target: { value: "never sent" } });
@@ -280,28 +375,68 @@ describe("P33 G creation and explicit approval branches", () => {
   it("ignores a duplicate late snapshot/error even for the same selected Mission", () => {
     const channel = openMission();
     const old = channel.last("mission_get")!;
-    channel.emit({ type: "mission_get_response", payload: { request_id: old.request_id, ok: true, data: { ...DETAIL, mission: { ...DETAIL.mission, goal: "late replacement" } } } });
+    channel.emit({
+      type: "mission_get_response",
+      payload: {
+        request_id: old.request_id,
+        ok: true,
+        data: { ...DETAIL, mission: { ...DETAIL.mission, goal: "late replacement" } },
+      },
+    });
     expect(screen.queryByText("late replacement")).toBeNull();
-    channel.emit({ type: "mission_get_response", payload: { request_id: old.request_id, ok: false, error_code: "not_found" } });
+    channel.emit({
+      type: "mission_get_response",
+      payload: { request_id: old.request_id, ok: false, error_code: "not_found" },
+    });
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("late artifact content cannot replace a newly selected artifact", () => {
-    const channel = openMission({ ...DETAIL, artifacts: [
-      { id: "a", path: "a.md" }, { id: "b", path: "b.md" },
-    ] });
+    const channel = openMission({
+      ...DETAIL,
+      artifacts: [
+        { id: "a", path: "a.md" },
+        { id: "b", path: "b.md" },
+      ],
+    });
     fireEvent.click(within(screen.getByTestId("artifact-a")).getByRole("button"));
     const old = channel.last("mission_artifact_read")!;
     fireEvent.click(within(screen.getByTestId("artifact-b")).getByRole("button"));
-    channel.reply("mission_artifact_read", { artifact_id: "b", path: "b.md", encoding: "utf-8", content: "new analysis" });
-    channel.emit({ type: "mission_artifact_read_response", payload: { request_id: old.request_id, ok: true, data: { artifact_id: "a", path: "a.md", content: "old analysis" } } });
+    channel.reply("mission_artifact_read", {
+      artifact_id: "b",
+      path: "b.md",
+      encoding: "utf-8",
+      content: "new analysis",
+    });
+    channel.emit({
+      type: "mission_artifact_read_response",
+      payload: {
+        request_id: old.request_id,
+        ok: true,
+        data: { artifact_id: "a", path: "a.md", content: "old analysis" },
+      },
+    });
     expect(screen.getByText("new analysis")).toBeTruthy();
     expect(screen.queryByText("old analysis")).toBeNull();
   });
 
   it("shows the reference material panel only for a Mission that carries sources", () => {
-    openMission({ ...DETAIL, sources: [{ path: "sources/a.md", version_hash: "v1", kind: "markdown", revoked: false, superseded_by: null, revision: 1 }] });
-    expect(within(screen.getByRole("region", { name: "参考资料" })).getByText("sources/a.md")).toBeTruthy();
+    openMission({
+      ...DETAIL,
+      sources: [
+        {
+          path: "sources/a.md",
+          version_hash: "v1",
+          kind: "markdown",
+          revoked: false,
+          superseded_by: null,
+          revision: 1,
+        },
+      ],
+    });
+    expect(
+      within(screen.getByRole("region", { name: "参考资料" })).getByText("sources/a.md"),
+    ).toBeTruthy();
     cleanup();
     openMission(DETAIL);
     expect(screen.queryByRole("region", { name: "参考资料" })).toBeNull();
@@ -317,7 +452,9 @@ describe("P33 G creation and explicit approval branches", () => {
     fireEvent.change(screen.getByLabelText("成功条件"), { target: { value: "file:a.py" } });
     fireEvent.click(screen.getByRole("button", { name: "提交任务" }));
     expect(channel.last("mission_create")?.payload).toEqual({
-      goal: "write code", success_criteria: ["file:a.py"], idempotency_key: expect.any(String),
+      goal: "write code",
+      success_criteria: ["file:a.py"],
+      idempotency_key: expect.any(String),
     });
     expect(channel.all("mission_create_with_sources")).toHaveLength(0);
   });
@@ -326,11 +463,15 @@ describe("P33 G creation and explicit approval branches", () => {
     // 2026-09-26 真机测试：目标写"根据参考资料《新品需求说明》"却没附资料，执行者只好编数字
     renderAvailable();
     fireEvent.click(screen.getByRole("button", { name: "新建任务" }));
-    expect(screen.getByTestId("create-sources")).toBeTruthy();  // 不折叠，直接可见
-    fireEvent.change(screen.getByLabelText("任务目标"), { target: { value: "根据参考资料《新品需求说明》写推广方案" } });
+    expect(screen.getByTestId("create-sources")).toBeTruthy(); // 不折叠，直接可见
+    fireEvent.change(screen.getByLabelText("任务目标"), {
+      target: { value: "根据参考资料《新品需求说明》写推广方案" },
+    });
     fireEvent.change(screen.getByLabelText("成功条件"), { target: { value: "file:a.md" } });
     expect(screen.getByTestId("material-hint").textContent).toContain("还没有附上任何资料");
-    expect((screen.getByRole("button", { name: "提交任务" }) as HTMLButtonElement).disabled).toBe(false);  // 只提醒不拦截
+    expect((screen.getByRole("button", { name: "提交任务" }) as HTMLButtonElement).disabled).toBe(
+      false,
+    ); // 只提醒不拦截
     fireEvent.click(screen.getByRole("button", { name: "添加来源" }));
     fireEvent.change(screen.getByLabelText("来源路径 1"), { target: { value: "新品需求说明.md" } });
     fireEvent.change(screen.getByLabelText("来源正文 1"), { target: { value: "售价 299 元" } });
@@ -350,7 +491,11 @@ describe("P33 G creation and explicit approval branches", () => {
     fireEvent.click(screen.getByRole("button", { name: "提交任务" }));
     expect(channel.all("mission_create")).toHaveLength(0);
     expect(channel.last("mission_create_with_sources")?.payload).toEqual({
-      mission: { goal: "根据纪要整理待办", success_criteria: ["file:待办.md"], idempotency_key: expect.any(String) },
+      mission: {
+        goal: "根据纪要整理待办",
+        success_criteria: ["file:待办.md"],
+        idempotency_key: expect.any(String),
+      },
       sources: [{ path: "sources/纪要.md", content: "1. 登录页改版", kind: "markdown" }],
     });
   });
@@ -362,23 +507,33 @@ describe("P33 G creation and explicit approval branches", () => {
     fireEvent.click(screen.getByLabelText("严格引用模式"));
     fireEvent.change(screen.getByLabelText("任务目标"), { target: { value: "比较文档" } });
     fireEvent.change(screen.getByLabelText("成功条件"), { target: { value: "说明否定条件" } });
-    expect((screen.getByRole("button", { name: "提交任务" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "提交任务" }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
     // 2026-09-26：按钮变灰时说出还差什么，不再"点了没反应"
     expect(screen.getByTestId("submit-blocker").textContent).toContain("严格引用需要至少一份资料");
     fireEvent.click(screen.getByRole("button", { name: "添加来源" }));
     expect(screen.getByTestId("submit-blocker").textContent).toContain("每份来源资料都要填写路径");
     fireEvent.change(screen.getByLabelText("来源路径 1"), { target: { value: "sources/a.md" } });
-    fireEvent.change(screen.getByLabelText("来源正文 1"), { target: { value: "条件：不支持。\r\n| A | B |" } });
+    fireEvent.change(screen.getByLabelText("来源正文 1"), {
+      target: { value: "条件：不支持。\r\n| A | B |" },
+    });
     expect(screen.queryByTestId("submit-blocker")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "提交任务" }));
     expect(channel.all("mission_create")).toHaveLength(0);
     expect(channel.all("mission_source_register")).toHaveLength(0);
     const batch = channel.last("mission_create_with_sources")?.payload;
     expect(batch).toEqual({
-      mission: { goal: "比较文档", success_criteria: ["说明否定条件", STRICT_QUOTES_CRITERION], idempotency_key: expect.any(String) },
+      mission: {
+        goal: "比较文档",
+        success_criteria: ["说明否定条件", STRICT_QUOTES_CRITERION],
+        idempotency_key: expect.any(String),
+      },
       sources: [{ path: "sources/a.md", content: "条件：不支持。\n| A | B |", kind: "markdown" }],
     });
-    expect((screen.getByRole("button", { name: "提交任务" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "提交任务" }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
     channel.reply("mission_create_with_sources", {}, false, "invalid_request");
     expect((screen.getByLabelText("任务目标") as HTMLTextAreaElement).value).toBe("比较文档");
     expect(screen.getByRole("alert")).toBeTruthy();
@@ -387,32 +542,64 @@ describe("P33 G creation and explicit approval branches", () => {
   });
 
   it("unknown approval kind cannot inherit arbitration actions even with options", () => {
-    openMission({ ...DETAIL, approvals: [{ request_id: "unknown", kind: "future_kind", state: "PENDING", options: ["keep:c1", "unresolved"] }] });
+    openMission({
+      ...DETAIL,
+      approvals: [
+        {
+          request_id: "unknown",
+          kind: "future_kind",
+          state: "PENDING",
+          options: ["keep:c1", "unresolved"],
+        },
+      ],
+    });
     const approval = screen.getByTestId("approval-unknown");
     expect(within(approval).queryAllByRole("button")).toHaveLength(0);
     expect(approval.textContent).toContain("future_kind");
   });
 
   it("source_change shows its exact old/new binding and uses existing approve/reject", () => {
-    const channel = openMission({ ...DETAIL, approvals: [{
-      request_id: "source-approval", kind: "source_change", state: "PENDING",
-      source_change: { operation: "supersede", path: "sources/a.md", expected_version_hash: "old-hash", version_hash: "new-hash", old_revision: 3, kind: "markdown", reason: "replace" },
-    }] });
+    const channel = openMission({
+      ...DETAIL,
+      approvals: [
+        {
+          request_id: "source-approval",
+          kind: "source_change",
+          state: "PENDING",
+          source_change: {
+            operation: "supersede",
+            path: "sources/a.md",
+            expected_version_hash: "old-hash",
+            version_hash: "new-hash",
+            old_revision: 3,
+            kind: "markdown",
+            reason: "replace",
+          },
+        },
+      ],
+    });
     const approval = screen.getByTestId("approval-source-approval");
     expect(approval.textContent).toContain("old-hash");
     expect(approval.textContent).toContain("new-hash");
     expect(within(approval).queryByLabelText("仲裁依据")).toBeNull();
     fireEvent.click(within(approval).getByRole("button", { name: "批准" }));
-    expect(channel.last("mission_approval_decide")?.payload).toEqual({ approval_id: "source-approval", decision: "approve" });
+    expect(channel.last("mission_approval_decide")?.payload).toEqual({
+      approval_id: "source-approval",
+      decision: "approve",
+    });
   });
-
 });
 
 describe("MissionsView（HA-10）", () => {
   it("服务不可用时显示原因，不显示新建入口", () => {
     const channel = new FakeChannel();
     render(<Workbench channel={channel} />);
-    channel.reply("orchestration_status", { ...AVAILABLE, available: false, state: "unavailable", reason: "编排库目录不可写" });
+    channel.reply("orchestration_status", {
+      ...AVAILABLE,
+      available: false,
+      state: "unavailable",
+      reason: "编排库目录不可写",
+    });
     expect(screen.getByText(/编排服务不可用/)).toBeTruthy();
     expect(screen.getByText(/编排库目录不可写/)).toBeTruthy();
     expect(screen.queryByRole("button", { name: "新建任务" })).toBeNull();
@@ -453,8 +640,12 @@ describe("MissionsView（HA-10）", () => {
     const channel = renderAvailable();
     channel.reply("mission_list", { missions: [] });
     fireEvent.click(screen.getByRole("button", { name: "新建任务" }));
-    fireEvent.change(screen.getByRole("textbox", { name: "任务目标" }), { target: { value: "跑测试" } });
-    fireEvent.change(screen.getByRole("textbox", { name: "成功条件" }), { target: { value: "pytest:tests" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "任务目标" }), {
+      target: { value: "跑测试" },
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: "成功条件" }), {
+      target: { value: "pytest:tests" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "提交任务" }));
     channel.reply("mission_create", null, false, "local_tests_disabled");
     expect(screen.getByText(/本机执行测试代码已关闭/)).toBeTruthy();
@@ -463,7 +654,10 @@ describe("MissionsView（HA-10）", () => {
   it("别的视图的失败应答不在编排视图里报错", () => {
     const channel = renderAvailable();
     channel.reply("mission_list", { missions: [] });
-    channel.emit({ type: "skill_list_response", payload: { ok: false, error_code: "boom", error: "别处的错" } });
+    channel.emit({
+      type: "skill_list_response",
+      payload: { ok: false, error_code: "boom", error: "别处的错" },
+    });
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
@@ -480,7 +674,10 @@ describe("MissionsView（HA-10）", () => {
   it.each([
     [{ settled_tokens: 86732, reserved_tokens: 0 }, /Token 已结算 86732 · 当前预留 0/],
     [{ settled_tokens: null, reserved_tokens: null }, /Token 已结算 未知 · 当前预留 未知/],
-    [{ settled_tokens: 10, reserved_tokens: 0, overrun_calls: 2, overrun_tokens: 4321 }, /超出上限的调用 2 次（超出总上限 4321，已照实入账）/],
+    [
+      { settled_tokens: 10, reserved_tokens: 0, overrun_calls: 2, overrun_tokens: 4321 },
+      /超出上限的调用 2 次（超出总上限 4321，已照实入账）/,
+    ],
   ])("显示账本当前用量，未知不冒充零 %j", (usage, expected) => {
     openMission({
       ...DETAIL,
@@ -493,7 +690,9 @@ describe("MissionsView（HA-10）", () => {
     const channel = openMission();
     const reject = screen.getByRole("button", { name: "拒绝" }) as HTMLButtonElement;
     expect(reject.disabled).toBe(true);
-    fireEvent.change(screen.getByRole("textbox", { name: "拒绝理由" }), { target: { value: "先不改" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "拒绝理由" }), {
+      target: { value: "先不改" },
+    });
     expect(reject.disabled).toBe(false);
 
     fireEvent.click(screen.getByRole("button", { name: "批准" }));
@@ -506,17 +705,25 @@ describe("MissionsView（HA-10）", () => {
   it("人工复核把未通过理由原子提交；失败应答保留理由和可重试状态", () => {
     const channel = openMission({
       ...DETAIL,
-      approvals: [{ request_id: "review-1", kind: "review", state: "PENDING", summary: "请确认结果" }],
+      approvals: [
+        { request_id: "review-1", kind: "review", state: "PENDING", summary: "请确认结果" },
+      ],
     });
     const approval = screen.getByTestId("approval-review-1");
-    const reject = within(approval).getByRole("button", { name: "复核不通过" }) as HTMLButtonElement;
+    const reject = within(approval).getByRole("button", {
+      name: "复核不通过",
+    }) as HTMLButtonElement;
     expect(reject.disabled).toBe(true);
 
-    const reason = within(approval).getByRole("textbox", { name: "复核理由" }) as HTMLTextAreaElement;
+    const reason = within(approval).getByRole("textbox", {
+      name: "复核理由",
+    }) as HTMLTextAreaElement;
     fireEvent.change(reason, { target: { value: "引用未覆盖第二项准则" } });
     fireEvent.click(reject);
     expect(channel.last("mission_approval_decide")?.payload).toEqual({
-      approval_id: "review-1", decision: "review_fail", note: "引用未覆盖第二项准则",
+      approval_id: "review-1",
+      decision: "review_fail",
+      note: "引用未覆盖第二项准则",
     });
     expect(reject.disabled).toBe(true);
 
@@ -528,11 +735,17 @@ describe("MissionsView（HA-10）", () => {
   it("人工复核的 transport 拒绝不留下 pending 状态或丢失理由", () => {
     const channel = openMission({
       ...DETAIL,
-      approvals: [{ request_id: "review-transport", kind: "review", state: "PENDING", summary: "请确认结果" }],
+      approvals: [
+        { request_id: "review-transport", kind: "review", state: "PENDING", summary: "请确认结果" },
+      ],
     });
     const approval = screen.getByTestId("approval-review-transport");
-    const reason = within(approval).getByRole("textbox", { name: "复核理由" }) as HTMLTextAreaElement;
-    const reject = within(approval).getByRole("button", { name: "复核不通过" }) as HTMLButtonElement;
+    const reason = within(approval).getByRole("textbox", {
+      name: "复核理由",
+    }) as HTMLTextAreaElement;
+    const reject = within(approval).getByRole("button", {
+      name: "复核不通过",
+    }) as HTMLButtonElement;
     fireEvent.change(reason, { target: { value: "结果未满足准则" } });
     const send = channel.send;
     channel.send = () => false;
@@ -551,14 +764,21 @@ describe("MissionsView（HA-10）", () => {
     const dialog = await screen.findByRole("dialog");
     expect(channel.last("mission_cancel")).toBeUndefined();
     fireEvent.click(within(dialog).getByRole("button", { name: "取消任务" }));
-    await waitFor(() => expect(channel.last("mission_cancel")?.payload).toMatchObject({ mission_id: "mission-1" }));
+    await waitFor(() =>
+      expect(channel.last("mission_cancel")?.payload).toMatchObject({ mission_id: "mission-1" }),
+    );
   });
 
   it("mission_changed 推送更新列表里的状态", () => {
     const channel = renderAvailable();
     channel.reply("mission_list", { missions: [MISSION_ROW] });
-    channel.emit({ type: "mission_changed", payload: { mission_id: "mission-1", status: "COMPLETED", last_seq: 20 } });
-    expect(screen.getByTestId("mission-row-mission-1").getAttribute("data-status")).toBe("COMPLETED");
+    channel.emit({
+      type: "mission_changed",
+      payload: { mission_id: "mission-1", status: "COMPLETED", last_seq: 20 },
+    });
+    expect(screen.getByTestId("mission-row-mission-1").getAttribute("data-status")).toBe(
+      "COMPLETED",
+    );
   });
 });
 
@@ -587,7 +807,10 @@ describe("ui_state 词汇（P3.1 §3.4）", () => {
   });
 
   it("详情头用 ui_state 词，并带 data-ui-state / data-status", () => {
-    openMission({ ...DETAIL, mission: { ...DETAIL.mission, status: "ACTIVE", ui_state: "verifying" } });
+    openMission({
+      ...DETAIL,
+      mission: { ...DETAIL.mission, status: "ACTIVE", ui_state: "verifying" },
+    });
     const header = screen.getByTestId("mission-state");
     expect(header.textContent).toMatch(/状态：待验证/);
     expect(header.getAttribute("data-ui-state")).toBe("verifying");
@@ -610,7 +833,10 @@ describe("P2-5：视图不重复做常驻订阅的事", () => {
     expect(channel.all("orchestration_status")).toHaveLength(0);
     expect(channel.all("mission_list")).toHaveLength(0);
     expect(channel.all("orchestration_policy_status")).toHaveLength(1);
-    channel.emit({ type: "mission_list_response", payload: { ok: true, data: { missions: [MISSION_ROW] } } });
+    channel.emit({
+      type: "mission_list_response",
+      payload: { ok: true, data: { missions: [MISSION_ROW] } },
+    });
     expect(useMissionsStore.getState().missions).toHaveLength(0);
   });
 });
@@ -618,46 +844,96 @@ describe("P2-5：视图不重复做常驻订阅的事", () => {
 describe("P1-1 事件游标", () => {
   it("已加载到 seq 5，推送 last_seq 12 → 拉事件用 after_seq 5（不是 12），并刷新详情", () => {
     const channel = openMission();
-    channel.reply("mission_events", { mission_id: "mission-1", events: events(1, 5), through_seq: 5, has_more: false });
+    channel.reply("mission_events", {
+      mission_id: "mission-1",
+      events: events(1, 5),
+      through_seq: 5,
+      has_more: false,
+    });
     const gets = channel.all("mission_get").length;
-    channel.emit({ type: "mission_changed", payload: { mission_id: "mission-1", status: "RUNNING", last_seq: 12 } });
-    expect(channel.last("mission_events")?.payload).toMatchObject({ mission_id: "mission-1", after_seq: 5 });
+    channel.emit({
+      type: "mission_changed",
+      payload: { mission_id: "mission-1", status: "RUNNING", last_seq: 12 },
+    });
+    expect(channel.last("mission_events")?.payload).toMatchObject({
+      mission_id: "mission-1",
+      after_seq: 5,
+    });
     expect(channel.all("mission_get").length).toBe(gets + 1);
-    channel.reply("mission_events", { mission_id: "mission-1", events: events(6, 12), through_seq: 12, has_more: false });
-    expect(useMissionsStore.getState().events["mission-1"].map((e) => e.seq)).toEqual(events(1, 12).map((e) => e.seq));
+    channel.reply("mission_events", {
+      mission_id: "mission-1",
+      events: events(6, 12),
+      through_seq: 12,
+      has_more: false,
+    });
+    expect(useMissionsStore.getState().events["mission-1"].map((e) => e.seq)).toEqual(
+      events(1, 12).map((e) => e.seq),
+    );
   });
 
   it("没选中时收到过推送的 Mission，选中后从 0 开始拉", () => {
     const channel = renderAvailable();
     channel.reply("mission_list", { missions: [MISSION_ROW] });
-    channel.emit({ type: "mission_changed", payload: { mission_id: "mission-1", status: "RUNNING", last_seq: 12 } });
+    channel.emit({
+      type: "mission_changed",
+      payload: { mission_id: "mission-1", status: "RUNNING", last_seq: 12 },
+    });
     fireEvent.click(screen.getByTestId("mission-row-mission-1"));
-    expect(channel.last("mission_events")?.payload).toMatchObject({ mission_id: "mission-1", after_seq: 0 });
+    expect(channel.last("mission_events")?.payload).toMatchObject({
+      mission_id: "mission-1",
+      after_seq: 0,
+    });
   });
 
   it("请求在途时来的推送不并发重拉；这一页拉完仍有缺口就从新游标接着拉", () => {
     const channel = openMission();
     expect(channel.all("mission_events")).toHaveLength(1);
-    channel.emit({ type: "mission_changed", payload: { mission_id: "mission-1", status: "RUNNING", last_seq: 8 } });
+    channel.emit({
+      type: "mission_changed",
+      payload: { mission_id: "mission-1", status: "RUNNING", last_seq: 8 },
+    });
     expect(channel.all("mission_events")).toHaveLength(1); // one page in flight at a time
-    channel.reply("mission_events", { mission_id: "mission-1", events: events(1, 5), through_seq: 5, has_more: false });
+    channel.reply("mission_events", {
+      mission_id: "mission-1",
+      events: events(1, 5),
+      through_seq: 5,
+      has_more: false,
+    });
     expect(channel.all("mission_events")).toHaveLength(2);
     expect(channel.last("mission_events")?.payload).toMatchObject({ after_seq: 5 });
-    channel.reply("mission_events", { mission_id: "mission-1", events: events(6, 8), through_seq: 8, has_more: false });
+    channel.reply("mission_events", {
+      mission_id: "mission-1",
+      events: events(6, 8),
+      through_seq: 8,
+      has_more: false,
+    });
     expect(channel.all("mission_events")).toHaveLength(2); // caught up: no loop
   });
 
   it("推送没有超过游标时不拉事件", () => {
     const channel = openMission();
-    channel.reply("mission_events", { mission_id: "mission-1", events: events(1, 5), through_seq: 5, has_more: false });
-    channel.emit({ type: "mission_changed", payload: { mission_id: "mission-1", status: "RUNNING", last_seq: 5 } });
+    channel.reply("mission_events", {
+      mission_id: "mission-1",
+      events: events(1, 5),
+      through_seq: 5,
+      has_more: false,
+    });
+    channel.emit({
+      type: "mission_changed",
+      payload: { mission_id: "mission-1", status: "RUNNING", last_seq: 5 },
+    });
     expect(channel.all("mission_events")).toHaveLength(1);
   });
 
   it("快照游标落后于已加载事件时重取快照", () => {
     const channel = openMission({ ...DETAIL, through_seq: 3 });
     const gets = channel.all("mission_get").length;
-    channel.reply("mission_events", { mission_id: "mission-1", events: events(1, 5), through_seq: 5, has_more: false });
+    channel.reply("mission_events", {
+      mission_id: "mission-1",
+      events: events(1, 5),
+      through_seq: 5,
+      has_more: false,
+    });
     expect(channel.all("mission_get").length).toBe(gets + 1);
     channel.reply("mission_get", { ...DETAIL, through_seq: 5 });
     expect(channel.all("mission_get").length).toBe(gets + 1);
@@ -672,7 +948,11 @@ describe("P2-8 时间线", () => {
     const types = channel.sent.map((m) => m.type);
     expect(types.indexOf("mission_get")).toBeGreaterThanOrEqual(0);
     expect(types.indexOf("mission_get")).toBeLessThan(types.indexOf("mission_events"));
-    expect(channel.last("mission_events")?.payload).toEqual({ mission_id: "mission-1", after_seq: 0, limit: 200 });
+    expect(channel.last("mission_events")?.payload).toEqual({
+      mission_id: "mission-1",
+      after_seq: 0,
+      limit: 200,
+    });
     channel.reply("mission_get", DETAIL);
 
     for (let page = 0; page < 20; page += 1) {
@@ -690,9 +970,18 @@ describe("P2-8 时间线", () => {
     const more = screen.getByRole("button", { name: "加载更多事件" });
     fireEvent.click(more);
     expect(channel.all("mission_events")).toHaveLength(21);
-    expect(channel.last("mission_events")?.payload).toEqual({ mission_id: "mission-1", after_seq: 4000, limit: 200 });
+    expect(channel.last("mission_events")?.payload).toEqual({
+      mission_id: "mission-1",
+      after_seq: 4000,
+      limit: 200,
+    });
     expect(screen.queryByRole("button", { name: "加载更多事件" })).toBeNull(); // loading
-    channel.reply("mission_events", { mission_id: "mission-1", events: events(4001, 4010), through_seq: 4010, has_more: false });
+    channel.reply("mission_events", {
+      mission_id: "mission-1",
+      events: events(4001, 4010),
+      through_seq: 4010,
+      has_more: false,
+    });
     expect(screen.queryByRole("button", { name: "加载更多事件" })).toBeNull();
     expect(channel.all("mission_events")).toHaveLength(21);
   });
@@ -701,7 +990,10 @@ describe("P2-8 时间线", () => {
     const channel = openMission();
     channel.reply("mission_events", {
       mission_id: "mission-1",
-      events: [...events(1, 119), { seq: 120, type: "HumanCommentAdded", created_at: 120, summary: "请把第三点写短一点" }],
+      events: [
+        ...events(1, 119),
+        { seq: 120, type: "HumanCommentAdded", created_at: 120, summary: "请把第三点写短一点" },
+      ],
       through_seq: 120,
       has_more: false,
     });
@@ -713,18 +1005,28 @@ describe("P2-8 时间线", () => {
 
   it("不超过 50 条时不显示'共 N 条'提示", () => {
     const channel = openMission();
-    channel.reply("mission_events", { mission_id: "mission-1", events: events(1, 7), through_seq: 7, has_more: false });
+    channel.reply("mission_events", {
+      mission_id: "mission-1",
+      events: events(1, 7),
+      through_seq: 7,
+      has_more: false,
+    });
     expect(screen.queryByText(/显示最近 50 条/)).toBeNull();
     expect(screen.getByTestId("event-1")).toBeTruthy();
   });
 
   it("换选另一个 Mission 后，迟到的旧详情不覆盖当前详情", () => {
     const channel = renderAvailable();
-    channel.reply("mission_list", { missions: [MISSION_ROW, { ...MISSION_ROW, id: "mission-2", goal: "第二个" }] });
+    channel.reply("mission_list", {
+      missions: [MISSION_ROW, { ...MISSION_ROW, id: "mission-2", goal: "第二个" }],
+    });
     fireEvent.click(screen.getByTestId("mission-row-mission-1"));
     const first = channel.last("mission_get");
     fireEvent.click(screen.getByTestId("mission-row-mission-2"));
-    channel.emit({ type: "mission_get_response", payload: { request_id: first?.request_id, ok: true, data: DETAIL } });
+    channel.emit({
+      type: "mission_get_response",
+      payload: { request_id: first?.request_id, ok: true, data: DETAIL },
+    });
     expect(screen.queryByTestId("mission-state")).toBeNull();
   });
 });
@@ -803,7 +1105,9 @@ describe("P1-5 缺失界面", () => {
       approvals: [{ ...DETAIL.approvals[0], action: { ...DETAIL.approvals[0].action, ...action } }],
     });
 
-    openMission(withAction({ state: "AWAITING_APPROVAL", published_path: null, published_hash: null }));
+    openMission(
+      withAction({ state: "AWAITING_APPROVAL", published_path: null, published_hash: null }),
+    );
     const pending = within(screen.getByTestId("approval-approval-1")).getByTestId("action-outcome");
     expect(pending.textContent).toMatch(/已生成，未发布/);
     expect(pending.getAttribute("data-action-state")).toBe("AWAITING_APPROVAL");
@@ -832,9 +1136,19 @@ describe("P1-5 缺失界面", () => {
   it("b) 评论：空白时禁用；发表后清空并刷新详情与事件；审批卡显示已有评论", () => {
     const channel = openMission({
       ...DETAIL,
-      approvals: [{ ...DETAIL.approvals[0], comments: [{ principal_id: "local-user:abc", text: "看起来可以" }] }],
+      approvals: [
+        {
+          ...DETAIL.approvals[0],
+          comments: [{ principal_id: "local-user:abc", text: "看起来可以" }],
+        },
+      ],
     });
-    channel.reply("mission_events", { mission_id: "mission-1", events: events(1, 5), through_seq: 5, has_more: false });
+    channel.reply("mission_events", {
+      mission_id: "mission-1",
+      events: events(1, 5),
+      through_seq: 5,
+      has_more: false,
+    });
     expect(within(screen.getByTestId("approval-approval-1")).getByText(/看起来可以/)).toBeTruthy();
 
     const box = screen.getByRole("textbox", { name: "评论" }) as HTMLTextAreaElement;
@@ -845,7 +1159,10 @@ describe("P1-5 缺失界面", () => {
     fireEvent.change(box, { target: { value: "请补充第四点" } });
     expect(post.disabled).toBe(false);
     fireEvent.click(post);
-    expect(channel.last("mission_comment")?.payload).toEqual({ target_id: "mission-1", text: "请补充第四点" });
+    expect(channel.last("mission_comment")?.payload).toEqual({
+      target_id: "mission-1",
+      text: "请补充第四点",
+    });
 
     const gets = channel.all("mission_get").length;
     const pages = channel.all("mission_events").length;
@@ -859,7 +1176,10 @@ describe("P1-5 缺失界面", () => {
   it("c) 策略漂移：drift 非空时显示 role=status 提示；为空不显示", () => {
     const channel = renderAvailable();
     channel.reply("mission_list", { missions: [] });
-    channel.reply("orchestration_policy_status", { active_version_id: "policy-seed-abc", drift: [] });
+    channel.reply("orchestration_policy_status", {
+      active_version_id: "policy-seed-abc",
+      drift: [],
+    });
     expect(screen.queryByText(/配置与生效策略不一致/)).toBeNull();
     channel.reply("orchestration_policy_status", {
       active_version_id: "policy-seed-abc",
@@ -868,7 +1188,9 @@ describe("P1-5 缺失界面", () => {
       note: "",
       drift: [{ name: "mission_concurrency", config: 2, active: 1 }],
     });
-    const note = screen.getByText("配置与生效策略不一致：mission_concurrency 配置 2，生效 1（修改要经策略晋级才生效）");
+    const note = screen.getByText(
+      "配置与生效策略不一致：mission_concurrency 配置 2，生效 1（修改要经策略晋级才生效）",
+    );
     expect(note.getAttribute("role")).toBe("status");
   });
 
@@ -893,7 +1215,13 @@ describe("P1-5 缺失界面", () => {
       ...DETAIL,
       waiting_on: [
         { kind: "reconciliation", action_key: "act:v1", needs_human: true, since: 1789000300 },
-        { kind: "reconciliation", action_key: "act:v2", needs_human: true, state: "FAILED", since: 1789000400 },
+        {
+          kind: "reconciliation",
+          action_key: "act:v2",
+          needs_human: true,
+          state: "FAILED",
+          since: 1789000400,
+        },
       ],
     });
     const unknown = screen.getByTestId("resolve-act:v1");
@@ -901,10 +1229,15 @@ describe("P1-5 缺失界面", () => {
     expect(within(failed).queryByRole("button", { name: "已生效" })).toBeNull();
     const noEffect = within(unknown).getByRole("button", { name: "没生效" }) as HTMLButtonElement;
     expect(noEffect.disabled).toBe(true);
-    fireEvent.change(within(unknown).getByLabelText("裁定依据"), { target: { value: "查了发布目录，文件不在" } });
+    fireEvent.change(within(unknown).getByLabelText("裁定依据"), {
+      target: { value: "查了发布目录，文件不在" },
+    });
     fireEvent.click(within(unknown).getByRole("button", { name: "没生效" }));
-    expect(channel.last("mission_action_resolve")?.payload).toEqual(
-      { action_key: "act:v1", outcome: "failed", basis: "查了发布目录，文件不在" });
+    expect(channel.last("mission_action_resolve")?.payload).toEqual({
+      action_key: "act:v1",
+      outcome: "failed",
+      basis: "查了发布目录，文件不在",
+    });
   });
 
   it("d) 旧形态的 waiting_on（纯字符串）原样显示", () => {
@@ -919,19 +1252,38 @@ describe("Result final rejection", () => {
       ...DETAIL,
       mission: { ...DETAIL.mission, status: "FAILED", stop_reason: "max_attempts_reached" },
       tasks: [{ id: "task-1", goal: "原任务", status: "FAILED" }],
-      results: [{
-        result_id: "rejected", attempt_id: "attempt-1", verdict: "FAIL", verification_state: "DONE",
-        summary: { text: "原报告", source: "model" },
-        final_rejection: { reason: "stale_source", source_issues: [{
-          code: "stale_source", reason: "revoked", path: "sources/A.md", version: "old-version",
-        }] },
-        verification_layers: [
-          { layer: "rule_check", status: "PASS" }, { layer: "human_review", status: "PASS" },
-        ],
-      }, {
-        result_id: "other", attempt_id: "attempt-2", verdict: "FAIL", verification_state: "DONE",
-        final_rejection: null, verification_layers: [],
-      }],
+      results: [
+        {
+          result_id: "rejected",
+          attempt_id: "attempt-1",
+          verdict: "FAIL",
+          verification_state: "DONE",
+          summary: { text: "原报告", source: "model" },
+          final_rejection: {
+            reason: "stale_source",
+            source_issues: [
+              {
+                code: "stale_source",
+                reason: "revoked",
+                path: "sources/A.md",
+                version: "old-version",
+              },
+            ],
+          },
+          verification_layers: [
+            { layer: "rule_check", status: "PASS" },
+            { layer: "human_review", status: "PASS" },
+          ],
+        },
+        {
+          result_id: "other",
+          attempt_id: "attempt-2",
+          verdict: "FAIL",
+          verification_state: "DONE",
+          final_rejection: null,
+          verification_layers: [],
+        },
+      ],
       approvals: [{ request_id: "review-r1", kind: "review", state: "GRANTED" }],
     });
     const rejected = screen.getByTestId("result-final-rejected");
@@ -939,20 +1291,35 @@ describe("Result final rejection", () => {
     expect(rejected.textContent).toContain("来源已失效（stale_source）");
     expect(rejected.textContent).toContain("sources/A.md · 已撤销（revoked）");
     expect(rejected.textContent).toContain("old-version");
-    expect(screen.getByTestId("layer-attempt-1-rule_check").getAttribute("data-status")).toBe("PASS");
-    expect(screen.getByTestId("layer-attempt-1-human_review").getAttribute("data-status")).toBe("PASS");
+    expect(screen.getByTestId("layer-attempt-1-rule_check").getAttribute("data-status")).toBe(
+      "PASS",
+    );
+    expect(screen.getByTestId("layer-attempt-1-human_review").getAttribute("data-status")).toBe(
+      "PASS",
+    );
     const other = screen.getByTestId("result-final-other");
     expect(other.textContent).toContain("FAIL / DONE");
     expect(other.textContent).not.toMatch(/stale_source|sources\/A.md|拒绝原因/);
     expect(screen.getByText(/停止原因：max_attempts_reached/)).toBeTruthy();
   });
 
-  it.each([["PASS", "DONE"], ["FAIL", "PENDING"]])("does not render rejection for %s/%s", (verdict, verificationState) => {
-    openMission({ ...DETAIL, results: [{
-      result_id: "not-final-failure", attempt_id: "attempt-1", verdict, verification_state: verificationState,
-      final_rejection: { reason: "stale_source", source_issues: [{ path: "sources/A.md" }] },
-      verification_layers: [],
-    }] });
+  it.each([
+    ["PASS", "DONE"],
+    ["FAIL", "PENDING"],
+  ])("does not render rejection for %s/%s", (verdict, verificationState) => {
+    openMission({
+      ...DETAIL,
+      results: [
+        {
+          result_id: "not-final-failure",
+          attempt_id: "attempt-1",
+          verdict,
+          verification_state: verificationState,
+          final_rejection: { reason: "stale_source", source_issues: [{ path: "sources/A.md" }] },
+          verification_layers: [],
+        },
+      ],
+    });
     const status = screen.getByTestId("result-final-not-final-failure");
     expect(status.textContent).toContain(`${verdict} / ${verificationState}`);
     expect(status.textContent).not.toMatch(/结果最终未接受|拒绝原因|stale_source|sources\/A.md/);
@@ -969,12 +1336,22 @@ describe("P2-4 模型文本渲染", () => {
           attempt_id: "attempt-1",
           summary: { text: "写好了", source: "model" },
           verification_layers: [
-            { layer: "format_check", status: "PASS", summary: { text: "格式正确", source: "system" } },
-            { layer: "critic", status: "PASS", summary: { text: "看起来满足要求", source: "model" } },
+            {
+              layer: "format_check",
+              status: "PASS",
+              summary: { text: "格式正确", source: "system" },
+            },
+            {
+              layer: "critic",
+              status: "PASS",
+              summary: { text: "看起来满足要求", source: "model" },
+            },
           ],
         },
       ],
-      approvals: [{ ...DETAIL.approvals[0], summary: { text: "把 flag 设为 on", source: "model" } }],
+      approvals: [
+        { ...DETAIL.approvals[0], summary: { text: "把 flag 设为 on", source: "model" } },
+      ],
     });
     const task = screen.getByTestId("task-task-1");
     expect(task.textContent).toMatch(/写 NOTES\.md/);
@@ -1037,11 +1414,18 @@ describe("默认预算（原生验收 2026-09-12，裁决 C）", () => {
   it("占位符显示后端下发的默认值，留空时请求里不带 budget", () => {
     const channel = new FakeChannel();
     render(<Workbench channel={channel} />);
-    channel.reply("orchestration_status", { ...AVAILABLE, mission_budget_defaults: { max_tokens: 400000, max_attempts: 12 } });
+    channel.reply("orchestration_status", {
+      ...AVAILABLE,
+      mission_budget_defaults: { max_tokens: 400000, max_attempts: 12 },
+    });
     channel.reply("mission_list", { missions: [] });
     fireEvent.click(screen.getByRole("button", { name: "新建任务" }));
-    expect(screen.getByLabelText("Token 上限").getAttribute("placeholder")).toBe("Token 上限（留空=400000）");
-    expect(screen.getByLabelText("尝试次数上限").getAttribute("placeholder")).toBe("尝试次数上限（留空=12）");
+    expect(screen.getByLabelText("Token 上限").getAttribute("placeholder")).toBe(
+      "Token 上限（留空=400000）",
+    );
+    expect(screen.getByLabelText("尝试次数上限").getAttribute("placeholder")).toBe(
+      "尝试次数上限（留空=12）",
+    );
     fireEvent.change(screen.getByLabelText("任务目标"), { target: { value: "写 NOTES.md" } });
     fireEvent.change(screen.getByLabelText("成功条件"), { target: { value: "file:NOTES.md" } });
     fireEvent.click(screen.getByRole("button", { name: "提交任务" }));
@@ -1053,12 +1437,19 @@ describe("默认预算（原生验收 2026-09-12，裁决 C）", () => {
   it("没有下发默认值时，占位符仍是「可选」", () => {
     renderAvailable();
     fireEvent.click(screen.getByRole("button", { name: "新建任务" }));
-    expect(screen.getByLabelText("Token 上限").getAttribute("placeholder")).toBe("Token 上限（可选）");
+    expect(screen.getByLabelText("Token 上限").getAttribute("placeholder")).toBe(
+      "Token 上限（可选）",
+    );
   });
 
   it("详情显示实际生效的预算", () => {
-    openMission({ ...DETAIL, mission: { ...DETAIL.mission, budget: { max_tokens: 400000, max_attempts: 12 } } });
-    expect(screen.getByTestId("mission-budget").textContent).toBe("预算：Token 上限 400000 · 尝试次数上限 12");
+    openMission({
+      ...DETAIL,
+      mission: { ...DETAIL.mission, budget: { max_tokens: 400000, max_attempts: 12 } },
+    });
+    expect(screen.getByTestId("mission-budget").textContent).toBe(
+      "预算：Token 上限 400000 · 尝试次数上限 12",
+    );
   });
 });
 
@@ -1068,26 +1459,50 @@ describe("兜底刷新（2026-09-25 真机点击：等授权时画面不刷新�
     try {
       const channel = openMission();
       const gets = channel.all("mission_get").length;
-      act(() => { vi.advanceTimersByTime(5001); });
+      act(() => {
+        vi.advanceTimersByTime(5001);
+      });
       expect(channel.all("mission_get").length).toBe(gets + 1);
       expect(channel.last("mission_get")?.payload).toMatchObject({ mission_id: "mission-1" });
-    } finally { vi.useRealTimers(); }
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("任务已结束就不再轮询", () => {
     vi.useFakeTimers();
     try {
-      const channel = openMission({ ...DETAIL, mission: { ...(DETAIL as { mission: Record<string, unknown> }).mission, status: "COMPLETED" } });
+      const channel = openMission({
+        ...DETAIL,
+        mission: {
+          ...(DETAIL as { mission: Record<string, unknown> }).mission,
+          status: "COMPLETED",
+        },
+      });
       const gets = channel.all("mission_get").length;
-      act(() => { vi.advanceTimersByTime(15001); });
+      act(() => {
+        vi.advanceTimersByTime(15001);
+      });
       expect(channel.all("mission_get").length).toBe(gets);
-    } finally { vi.useRealTimers(); }
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
 describe("下一步提示（2026-09-25 真机点击：要人操作的按钮埋在长页面中间）", () => {
   it("等授权时顶部直接提示去授权", () => {
-    openMission({ ...DETAIL, planning_authorization_requests: [{ mission_id: "mission-1", request_id: "r1", intent_id: "i1", state: "AUTHORIZATION_REQUIRED" }] });
+    openMission({
+      ...DETAIL,
+      planning_authorization_requests: [
+        {
+          mission_id: "mission-1",
+          request_id: "r1",
+          intent_id: "i1",
+          state: "AUTHORIZATION_REQUIRED",
+        },
+      ],
+    });
     const banner = screen.getByTestId("mission-next-step");
     expect(banner.textContent).toMatch(/授权本轮规划/);
     // 授权按钮就在提示条里，页面上只有这一个
@@ -1096,14 +1511,26 @@ describe("下一步提示（2026-09-25 真机点击：要人操作的按钮埋�
   });
 
   it("完成要求可确认时优先提示去确认", () => {
-    openMission({ ...DETAIL, operation_workspace: { mission_id: "mission-1", state: "PROPOSED", editable: true, criteria: [] },
-      planning_authorization_requests: [{ request_id: "r1" }] });
+    openMission({
+      ...DETAIL,
+      operation_workspace: {
+        mission_id: "mission-1",
+        state: "PROPOSED",
+        editable: true,
+        criteria: [],
+      },
+      planning_authorization_requests: [{ request_id: "r1" }],
+    });
     expect(screen.getByTestId("mission-next-step").textContent).toMatch(/确认上述完成要求/);
     expect(screen.getByRole("button", { name: "去确认" })).toBeTruthy();
   });
 
   it("任务完成后提示查看产物；运行中只说明会提示", () => {
-    openMission({ ...DETAIL, approvals: [], mission: { ...(DETAIL as { mission: Record<string, unknown> }).mission, status: "COMPLETED" } });
+    openMission({
+      ...DETAIL,
+      approvals: [],
+      mission: { ...(DETAIL as { mission: Record<string, unknown> }).mission, status: "COMPLETED" },
+    });
     expect(screen.getByTestId("mission-next-step").textContent).toMatch(/任务已完成/);
     cleanup();
     openMission({ ...DETAIL, approvals: [] });
@@ -1111,10 +1538,13 @@ describe("下一步提示（2026-09-25 真机点击：要人操作的按钮埋�
   });
 
   it("已结束的任务不再提示回答问题或授权（2026-09-29 取消第十二、十三局后仍提示去回答）", () => {
-    openMission({ ...DETAIL, approvals: [],
+    openMission({
+      ...DETAIL,
+      approvals: [],
       mission: { ...(DETAIL as { mission: Record<string, unknown> }).mission, status: "CANCELLED" },
       planning_questions: [{ question_id: "q1", state: "PENDING" }],
-      planning_authorization_requests: [{ request_id: "r1" }] });
+      planning_authorization_requests: [{ request_id: "r1" }],
+    });
     expect(screen.getByTestId("mission-next-step").textContent).toMatch(/任务已取消/);
     expect(screen.queryByRole("button", { name: "去回答" })).toBeNull();
   });
@@ -1127,9 +1557,27 @@ describe("重启核对隔离的任务（第 2 批车道 R）", () => {
     const channel = renderAvailable();
     channel.reply("mission_list", {
       missions: [
-        { ...MISSION_ROW, id: "m-iso", status: "ACTIVE", ui_state: "running", recovery_isolated: { tables: ["tasks"] } },
-        { ...MISSION_ROW, id: "m-ok", status: "ACTIVE", ui_state: "running", recovery_isolated: null },
-        { ...MISSION_ROW, id: "m-gone", status: "CANCELLED", ui_state: "cancelled", recovery_isolated: { tables: ["tasks"] } },
+        {
+          ...MISSION_ROW,
+          id: "m-iso",
+          status: "ACTIVE",
+          ui_state: "running",
+          recovery_isolated: { tables: ["tasks"] },
+        },
+        {
+          ...MISSION_ROW,
+          id: "m-ok",
+          status: "ACTIVE",
+          ui_state: "running",
+          recovery_isolated: null,
+        },
+        {
+          ...MISSION_ROW,
+          id: "m-gone",
+          status: "CANCELLED",
+          ui_state: "cancelled",
+          recovery_isolated: { tables: ["tasks"] },
+        },
       ],
     });
     expect(screen.getByTestId("mission-row-m-iso").textContent).toContain(ISOLATED);
@@ -1150,20 +1598,46 @@ describe("重启核对隔离的任务（第 2 批车道 R）", () => {
 
 describe("结束态与产物排序（2026-09-25 真机点击）", () => {
   it("任务结束后不再显示取消；停止原因与 Task 状态显示中文", () => {
-    openMission({ ...DETAIL, approvals: [], mission: { ...(DETAIL as { mission: Record<string, unknown> }).mission, status: "COMPLETED", stop_reason: "verification_passed" },
-      tasks: [{ id: "task-1", goal: "写 NOTES.md", status: "BLOCKED", dependencies: [] }] });
+    openMission({
+      ...DETAIL,
+      approvals: [],
+      mission: {
+        ...(DETAIL as { mission: Record<string, unknown> }).mission,
+        status: "COMPLETED",
+        stop_reason: "verification_passed",
+      },
+      tasks: [{ id: "task-1", goal: "写 NOTES.md", status: "BLOCKED", dependencies: [] }],
+    });
     expect(screen.queryByRole("button", { name: "取消任务" })).toBeNull();
     expect(screen.getByTestId("mission-state").textContent).toMatch(/停止原因：验证通过/);
     expect(document.body.textContent).toMatch(/等待前置步骤/);
   });
 
   it("交付物排在前面，系统检查记录默认收起、可展开", () => {
-    openMission({ ...DETAIL, artifacts: [
-      { id: "a-check", path: ".assurance/checks/x/0.json", size_bytes: 10, verification_status: "UNVERIFIED", content_hash: "h1" },
-      { id: "a-notes", path: "NOTES.md", size_bytes: 20, verification_status: "PASS", content_hash: "h2" },
-    ] });
+    openMission({
+      ...DETAIL,
+      artifacts: [
+        {
+          id: "a-check",
+          path: ".assurance/checks/x/0.json",
+          size_bytes: 10,
+          verification_status: "UNVERIFIED",
+          content_hash: "h1",
+        },
+        {
+          id: "a-notes",
+          path: "NOTES.md",
+          size_bytes: 20,
+          verification_status: "PASS",
+          content_hash: "h2",
+        },
+      ],
+    });
     const rows = screen.getAllByTestId(/^artifact-/);
-    expect(rows.map((row) => row.getAttribute("data-testid"))).toEqual(["artifact-a-notes", "artifact-a-check"]);
+    expect(rows.map((row) => row.getAttribute("data-testid"))).toEqual([
+      "artifact-a-notes",
+      "artifact-a-check",
+    ]);
     expect(screen.getByTestId("artifact-a-check").hidden).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: /显示系统检查记录（1 个/ }));
     expect(screen.getByTestId("artifact-a-check").hidden).toBe(false);
@@ -1173,32 +1647,90 @@ describe("结束态与产物排序（2026-09-25 真机点击）", () => {
 describe("2026-09-26 推送带事件", () => {
   it("接得上游标：直接追加，不再发 mission_events", () => {
     const channel = openMission();
-    channel.reply("mission_events", { mission_id: "mission-1", events: events(1, 5), through_seq: 5, has_more: false });
-    channel.emit({ type: "mission_changed", payload: { mission_id: "mission-1", status: "ACTIVE", last_seq: 7,
-      from_seq: 5, events: events(6, 7), truncated: false } });
+    channel.reply("mission_events", {
+      mission_id: "mission-1",
+      events: events(1, 5),
+      through_seq: 5,
+      has_more: false,
+    });
+    channel.emit({
+      type: "mission_changed",
+      payload: {
+        mission_id: "mission-1",
+        status: "ACTIVE",
+        last_seq: 7,
+        from_seq: 5,
+        events: events(6, 7),
+        truncated: false,
+      },
+    });
     expect(channel.all("mission_events")).toHaveLength(1);
-    expect(useMissionsStore.getState().events["mission-1"].map((e) => e.seq)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    expect(useMissionsStore.getState().events["mission-1"].map((e) => e.seq)).toEqual([
+      1, 2, 3, 4, 5, 6, 7,
+    ]);
     expect(useMissionsStore.getState().eventCursor["mission-1"]).toBe(7);
   });
 
   it("有缺口或没带全：从本地游标分页补齐", () => {
     const channel = openMission();
-    channel.reply("mission_events", { mission_id: "mission-1", events: events(1, 5), through_seq: 5, has_more: false });
-    channel.emit({ type: "mission_changed", payload: { mission_id: "mission-1", status: "ACTIVE", last_seq: 9,
-      from_seq: 7, events: events(8, 9), truncated: false } });
+    channel.reply("mission_events", {
+      mission_id: "mission-1",
+      events: events(1, 5),
+      through_seq: 5,
+      has_more: false,
+    });
+    channel.emit({
+      type: "mission_changed",
+      payload: {
+        mission_id: "mission-1",
+        status: "ACTIVE",
+        last_seq: 9,
+        from_seq: 7,
+        events: events(8, 9),
+        truncated: false,
+      },
+    });
     expect(channel.last("mission_events")?.payload).toMatchObject({ after_seq: 5 });
-    channel.reply("mission_events", { mission_id: "mission-1", events: events(6, 9), through_seq: 9, has_more: false });
-    channel.emit({ type: "mission_changed", payload: { mission_id: "mission-1", status: "ACTIVE", last_seq: 70,
-      from_seq: 9, events: events(10, 59), truncated: true } });
+    channel.reply("mission_events", {
+      mission_id: "mission-1",
+      events: events(6, 9),
+      through_seq: 9,
+      has_more: false,
+    });
+    channel.emit({
+      type: "mission_changed",
+      payload: {
+        mission_id: "mission-1",
+        status: "ACTIVE",
+        last_seq: 70,
+        from_seq: 9,
+        events: events(10, 59),
+        truncated: true,
+      },
+    });
     expect(channel.last("mission_events")?.payload).toMatchObject({ after_seq: 9 });
     expect(channel.all("mission_events")).toHaveLength(3);
   });
 
   it("别的任务的推送不动当前任务的游标，也不拉事件", () => {
     const channel = openMission();
-    channel.reply("mission_events", { mission_id: "mission-1", events: events(1, 5), through_seq: 5, has_more: false });
-    channel.emit({ type: "mission_changed", payload: { mission_id: "mission-2", status: "ACTIVE", last_seq: 30,
-      from_seq: 20, events: events(21, 30), truncated: false } });
+    channel.reply("mission_events", {
+      mission_id: "mission-1",
+      events: events(1, 5),
+      through_seq: 5,
+      has_more: false,
+    });
+    channel.emit({
+      type: "mission_changed",
+      payload: {
+        mission_id: "mission-2",
+        status: "ACTIVE",
+        last_seq: 30,
+        from_seq: 20,
+        events: events(21, 30),
+        truncated: false,
+      },
+    });
     expect(channel.all("mission_events")).toHaveLength(1);
     expect(useMissionsStore.getState().events["mission-2"]).toBeUndefined();
   });
@@ -1207,15 +1739,27 @@ describe("2026-09-26 推送带事件", () => {
 describe("2026-09-26 列表进度条", () => {
   it("行里显示进度段和子任务完成数", () => {
     const channel = renderAvailable();
-    channel.reply("mission_list", { missions: [{ ...MISSION_ROW, status: "ACTIVE", ui_state: "running", task_counts: { completed: 1, total: 3 } }] });
-    const progress = within(screen.getByTestId("mission-row-mission-1")).getByTestId("mission-progress");
+    channel.reply("mission_list", {
+      missions: [
+        {
+          ...MISSION_ROW,
+          status: "ACTIVE",
+          ui_state: "running",
+          task_counts: { completed: 1, total: 3 },
+        },
+      ],
+    });
+    const progress = within(screen.getByTestId("mission-row-mission-1")).getByTestId(
+      "mission-progress",
+    );
     expect(progress.getAttribute("aria-label")).toBe("进度：执行");
     expect(progress.textContent).toContain("1/3");
   });
 });
 
 describe("2026-09-27 任务过程与性能", () => {
-  const beat = (from: number, to: number) => events(from, to).map((e) => ({ ...e, type: "HeartbeatReceived" }));
+  const beat = (from: number, to: number) =>
+    events(from, to).map((e) => ({ ...e, type: "HeartbeatReceived" }));
 
   it("任务过程标签；推送只有心跳时不重拉详情，有实质事件才拉", () => {
     const channel = openMission({ ...DETAIL, mission: { ...DETAIL.mission, status: "ACTIVE" } });
@@ -1224,23 +1768,60 @@ describe("2026-09-27 任务过程与性能", () => {
     // 2026-09-30：任务过程改走 SDK 正式接口，不再有 mission_story
     expect(channel.all("mission_story")).toHaveLength(0);
     expect(channel.all("taskgraph.execution_snapshot").length).toBeGreaterThan(0);
-    channel.reply("mission_events", { mission_id: "mission-1", events: events(1, 5), through_seq: 5, has_more: false });
+    channel.reply("mission_events", {
+      mission_id: "mission-1",
+      events: events(1, 5),
+      through_seq: 5,
+      has_more: false,
+    });
     const gets = channel.all("mission_get").length;
-    channel.emit({ type: "mission_changed", payload: { mission_id: "mission-1", status: "ACTIVE", last_seq: 7,
-      from_seq: 5, events: beat(6, 7), truncated: false } });
+    channel.emit({
+      type: "mission_changed",
+      payload: {
+        mission_id: "mission-1",
+        status: "ACTIVE",
+        last_seq: 7,
+        from_seq: 5,
+        events: beat(6, 7),
+        truncated: false,
+      },
+    });
     expect(channel.all("mission_get")).toHaveLength(gets);
     expect(useMissionsStore.getState().eventCursor["mission-1"]).toBe(7); // events still appended
-    channel.emit({ type: "mission_changed", payload: { mission_id: "mission-1", status: "ACTIVE", last_seq: 8,
-      from_seq: 7, events: events(8, 8), truncated: false } });
+    channel.emit({
+      type: "mission_changed",
+      payload: {
+        mission_id: "mission-1",
+        status: "ACTIVE",
+        last_seq: 8,
+        from_seq: 7,
+        events: events(8, 8),
+        truncated: false,
+      },
+    });
     expect(channel.all("mission_get")).toHaveLength(gets + 1);
   });
 
   it("状态变了即使只有心跳也拉详情", () => {
     const channel = openMission({ ...DETAIL, mission: { ...DETAIL.mission, status: "ACTIVE" } });
-    channel.reply("mission_events", { mission_id: "mission-1", events: events(1, 5), through_seq: 5, has_more: false });
+    channel.reply("mission_events", {
+      mission_id: "mission-1",
+      events: events(1, 5),
+      through_seq: 5,
+      has_more: false,
+    });
     const gets = channel.all("mission_get").length;
-    channel.emit({ type: "mission_changed", payload: { mission_id: "mission-1", status: "COMPLETED", last_seq: 6,
-      from_seq: 5, events: beat(6, 6), truncated: false } });
+    channel.emit({
+      type: "mission_changed",
+      payload: {
+        mission_id: "mission-1",
+        status: "COMPLETED",
+        last_seq: 6,
+        from_seq: 5,
+        events: beat(6, 6),
+        truncated: false,
+      },
+    });
     expect(channel.all("mission_get")).toHaveLength(gets + 1);
   });
 
@@ -1257,12 +1838,25 @@ describe("U09 任务列表与任务详情收到坏消息", () => {
   it("列表：保留上次的行，列表上方提示格式不对并标已过期；下一次好的列表把提示收掉", () => {
     const channel = renderAvailable();
     channel.reply("mission_list", { missions: [MISSION_ROW] });
-    channel.emit({ type: "mission_changed", payload: { mission_id: "mission-1", status: "COMPLETED", last_seq: 3 } });
+    channel.emit({
+      type: "mission_changed",
+      payload: { mission_id: "mission-1", status: "COMPLETED", last_seq: 3 },
+    });
     const again = channel.last("mission_list")!;
-    channel.emit(guardIncoming({ type: "mission_list_response", payload: { request_id: again.request_id, ok: true,
-      data: { missions: [{ ...MISSION_ROW, tenant_id: "other" }] } } }));
+    channel.emit(
+      guardIncoming({
+        type: "mission_list_response",
+        payload: {
+          request_id: again.request_id,
+          ok: true,
+          data: { missions: [{ ...MISSION_ROW, tenant_id: "other" }] },
+        },
+      }),
+    );
     expect(screen.getByTestId("mission-row-mission-1")).toBeTruthy();
-    expect(screen.getByTestId("mission-list-error").textContent).toBe(PROTOCOL_ERROR_TEXT + STALE_NOTE);
+    expect(screen.getByTestId("mission-list-error").textContent).toBe(
+      PROTOCOL_ERROR_TEXT + STALE_NOTE,
+    );
     channel.reply("mission_list", { missions: [MISSION_ROW] });
     expect(screen.queryByTestId("mission-list-error")).toBeNull();
   });
@@ -1270,24 +1864,72 @@ describe("U09 任务列表与任务详情收到坏消息", () => {
   it("详情：保留上次详情，提示格式不对并标已过期", () => {
     const channel = openMission();
     expect(screen.getByText("写好了 NOTES.md")).toBeTruthy();
-    channel.emit({ type: "mission_changed", payload: { mission_id: "mission-1", status: "COMPLETED", last_seq: 9,
-      from_seq: 0, events: [], truncated: true } });
+    channel.emit({
+      type: "mission_changed",
+      payload: {
+        mission_id: "mission-1",
+        status: "COMPLETED",
+        last_seq: 9,
+        from_seq: 0,
+        events: [],
+        truncated: true,
+      },
+    });
     const again = channel.last("mission_get")!;
-    channel.emit(guardIncoming({ type: "mission_get_response", payload: { request_id: again.request_id, ok: true,
-      data: { ...DETAIL, internal_paths: ["/tmp/x"] } } }));
+    channel.emit(
+      guardIncoming({
+        type: "mission_get_response",
+        payload: {
+          request_id: again.request_id,
+          ok: true,
+          data: { ...DETAIL, internal_paths: ["/tmp/x"] },
+        },
+      }),
+    );
     expect(screen.getByText(PROTOCOL_ERROR_TEXT + STALE_NOTE)).toBeTruthy();
     expect(screen.getByText("写好了 NOTES.md")).toBeTruthy();
   });
 
   it("事件：保留上次的时间线，提示格式不对并标已过期", () => {
     const channel = openMission();
-    channel.reply("mission_events", { mission_id: "mission-1", events: events(1, 5), through_seq: 5, has_more: false });
-    channel.emit({ type: "mission_changed", payload: { mission_id: "mission-1", status: "COMPLETED", last_seq: 9,
-      from_seq: 0, events: [], truncated: true } });
+    channel.reply("mission_events", {
+      mission_id: "mission-1",
+      events: events(1, 5),
+      through_seq: 5,
+      has_more: false,
+    });
+    channel.emit({
+      type: "mission_changed",
+      payload: {
+        mission_id: "mission-1",
+        status: "COMPLETED",
+        last_seq: 9,
+        from_seq: 0,
+        events: [],
+        truncated: true,
+      },
+    });
     const again = channel.last("mission_events")!;
-    channel.emit(guardIncoming({ type: "mission_events_response", payload: { request_id: again.request_id, ok: true,
-      data: { mission_id: "mission-1", events: [{ seq: 6, type: "X", payload: {} }], through_seq: 6, has_more: false } } }));
-    expect(screen.getAllByRole("alert").some((node) => node.textContent === PROTOCOL_ERROR_TEXT + STALE_NOTE)).toBe(true);
+    channel.emit(
+      guardIncoming({
+        type: "mission_events_response",
+        payload: {
+          request_id: again.request_id,
+          ok: true,
+          data: {
+            mission_id: "mission-1",
+            events: [{ seq: 6, type: "X", payload: {} }],
+            through_seq: 6,
+            has_more: false,
+          },
+        },
+      }),
+    );
+    expect(
+      screen
+        .getAllByRole("alert")
+        .some((node) => node.textContent === PROTOCOL_ERROR_TEXT + STALE_NOTE),
+    ).toBe(true);
     expect(useMissionsStore.getState().events["mission-1"]).toHaveLength(5);
   });
 });

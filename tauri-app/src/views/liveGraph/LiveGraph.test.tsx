@@ -15,29 +15,63 @@ const DETAIL = "taskgraph.execution_detail";
 class FakeChannel {
   readonly sent: ControlMessage[] = [];
   private readonly stateListeners = new Set<(state: ConnectionState) => void>();
-  onStateChange = (listener: (state: ConnectionState) => void) => { this.stateListeners.add(listener); return () => { this.stateListeners.delete(listener); }; };
-  setState(state: ConnectionState) { act(() => { for (const l of [...this.stateListeners]) l(state); }); }
+  onStateChange = (listener: (state: ConnectionState) => void) => {
+    this.stateListeners.add(listener);
+    return () => {
+      this.stateListeners.delete(listener);
+    };
+  };
+  setState(state: ConnectionState) {
+    act(() => {
+      for (const l of [...this.stateListeners]) l(state);
+    });
+  }
   private readonly listeners = new Set<(message: IncomingMessage) => void>();
-  send = (message: ControlMessage) => { this.sent.push(message); return true; };
+  send = (message: ControlMessage) => {
+    this.sent.push(message);
+    return true;
+  };
   onMessage = (listener: (message: IncomingMessage) => void) => {
     this.listeners.add(listener);
-    return () => { this.listeners.delete(listener); };
+    return () => {
+      this.listeners.delete(listener);
+    };
   };
   emit(message: unknown) {
-    act(() => { for (const listener of [...this.listeners]) listener(message as IncomingMessage); });
+    act(() => {
+      for (const listener of [...this.listeners]) listener(message as IncomingMessage);
+    });
   }
-  all(type: string): ControlMessage[] { return this.sent.filter((m) => m.type === type); }
+  all(type: string): ControlMessage[] {
+    return this.sent.filter((m) => m.type === type);
+  }
   reply(type: string, data: unknown, ok = true, code = "") {
     const request = [...this.sent].reverse().find((m) => m.type === type);
-    this.emit({ type: `${type}_response`, payload: { request_id: request?.request_id, ok, data,
-      error_code: ok ? undefined : code, error: ok ? undefined : "读不到" } });
+    this.emit({
+      type: `${type}_response`,
+      payload: {
+        request_id: request?.request_id,
+        ok,
+        data,
+        error_code: ok ? undefined : code,
+        error: ok ? undefined : "读不到",
+      },
+    });
   }
 }
 
 beforeAll(() => {
-  globalThis.ResizeObserver ??= class { observe() {} unobserve() {} disconnect() {} } as unknown as typeof ResizeObserver;
+  globalThis.ResizeObserver ??= class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  } as unknown as typeof ResizeObserver;
 });
-afterEach(() => { cleanup(); vi.useRealTimers(); useMissionsStore.getState().reset(); });
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+  useMissionsStore.getState().reset();
+});
 
 const MISSION_DETAIL = {
   mission: { id: M, goal: { text: "写说明并发布", source: "human" }, status: "ACTIVE" },
@@ -70,15 +104,32 @@ describe("LiveGraph（SDK 执行过程接口）", () => {
     const channel = mount();
     const full = snapshot();
     const nodes = full.execution_nodes as unknown[];
-    channel.reply(SNAP, { ...full, execution_nodes: nodes.slice(0, 4), complete: false, next_cursor: "c1" });
+    channel.reply(SNAP, {
+      ...full,
+      execution_nodes: nodes.slice(0, 4),
+      complete: false,
+      next_cursor: "c1",
+    });
     expect(channel.all(SNAP)).toHaveLength(2);
     expect(channel.all(SNAP)[1].payload).toEqual({ mission_id: M, cursor: "c1" });
     expect(screen.queryByText("全部步骤（3）")).toBeNull();
     channel.reply(SNAP, null, false, "SNAPSHOT_CHANGED");
     expect(channel.all(SNAP)).toHaveLength(3);
     expect(channel.all(SNAP)[2].payload).toEqual({ mission_id: M });
-    channel.reply(SNAP, { ...full, execution_nodes: nodes.slice(0, 4), complete: false, next_cursor: "c2" });
-    channel.reply(SNAP, { ...full, graph: null, occurrence_labels: null, execution_nodes: nodes.slice(4), next_cursor: null, complete: true });
+    channel.reply(SNAP, {
+      ...full,
+      execution_nodes: nodes.slice(0, 4),
+      complete: false,
+      next_cursor: "c2",
+    });
+    channel.reply(SNAP, {
+      ...full,
+      graph: null,
+      occurrence_labels: null,
+      execution_nodes: nodes.slice(4),
+      next_cursor: null,
+      complete: true,
+    });
     expect(screen.getByText("全部步骤（3）")).toBeTruthy();
   });
 
@@ -93,12 +144,18 @@ describe("LiveGraph（SDK 执行过程接口）", () => {
     fireEvent.click(within(timeline).getByText(/第 1 次执行 · 未通过/));
     expect(channel.all(DETAIL)).toHaveLength(1);
     expect(channel.all(DETAIL)[0].payload).toEqual({ mission_id: M, node_id: "attempt:b1" });
-    channel.reply(DETAIL, { mission_id: M, node: {}, turn: { coverage: "COMPLETE" }, hidden_items: 0, items: [
-      { t: "say", text: "我先读上一步的 NOTES.md" },
-      { t: "tool", tool: "workspace_read_file", ok: true, path: "NOTES.md", chars: 1200 },
-      { t: "tool", tool: "workspace_write_file", ok: false, error: "路径越界" },
-      { t: "submit", outcome: "candidate", text: "写了发布候选" },
-    ] });
+    channel.reply(DETAIL, {
+      mission_id: M,
+      node: {},
+      turn: { coverage: "COMPLETE" },
+      hidden_items: 0,
+      items: [
+        { t: "say", text: "我先读上一步的 NOTES.md" },
+        { t: "tool", tool: "workspace_read_file", ok: true, path: "NOTES.md", chars: 1200 },
+        { t: "tool", tool: "workspace_write_file", ok: false, error: "路径越界" },
+        { t: "submit", outcome: "candidate", text: "写了发布候选" },
+      ],
+    });
     const detail = screen.getByTestId("lg-detail-attempt:b1");
     expect(detail.textContent).toContain("我先读上一步的 NOTES.md");
     expect(detail.textContent).toContain("workspace_read_file：NOTES.md · 1200 字");
@@ -117,10 +174,18 @@ describe("LiveGraph（SDK 执行过程接口）", () => {
     vi.useFakeTimers();
     const channel = mount();
     channel.reply(SNAP, snapshot());
-    channel.emit({ type: "mission_changed", payload: { mission_id: M, status: "ACTIVE", last_seq: 11 } });
-    channel.emit({ type: "mission_changed", payload: { mission_id: M, status: "ACTIVE", last_seq: 12 } });
+    channel.emit({
+      type: "mission_changed",
+      payload: { mission_id: M, status: "ACTIVE", last_seq: 11 },
+    });
+    channel.emit({
+      type: "mission_changed",
+      payload: { mission_id: M, status: "ACTIVE", last_seq: 12 },
+    });
     expect(channel.all(SNAP)).toHaveLength(1);
-    act(() => { vi.advanceTimersByTime(800); });
+    act(() => {
+      vi.advanceTimersByTime(800);
+    });
     expect(channel.all(SNAP)).toHaveLength(2);
     channel.reply(SNAP, null, false, "SOURCE_UNAVAILABLE");
     expect(screen.getByRole("alert").textContent).toContain("可能已过期");
@@ -145,7 +210,10 @@ describe("LiveGraph（SDK 执行过程接口）", () => {
     fireEvent.click(within(list).getByText("发布：产出 NOTES.md"));
     const [why] = channel.all("taskgraph.why_not_ready");
     expect(why.payload).toEqual({ mission_id: M, occurrence_id: "b" });
-    channel.reply("taskgraph.why_not_ready", { reason_codes: ["WAITING_ORDER"], details: ["phase=PENDING", "上一步还没交付"] });
+    channel.reply("taskgraph.why_not_ready", {
+      reason_codes: ["WAITING_ORDER"],
+      details: ["phase=PENDING", "上一步还没交付"],
+    });
     const box = screen.getByTestId("lg-why-not-ready");
     expect(box.textContent).toContain("等上一步完成");
     expect(box.textContent).toContain("上一步还没交付");
@@ -178,18 +246,41 @@ describe("LiveGraph（SDK 执行过程接口）", () => {
     const channel = mount();
     channel.reply(SNAP, snapshot());
     expect(screen.getByText("全部步骤（3）")).toBeTruthy();
-    channel.emit({ type: "mission_changed", payload: { mission_id: M, status: "ACTIVE", last_seq: 2 } });
-    act(() => { vi.advanceTimersByTime(5000); });
+    channel.emit({
+      type: "mission_changed",
+      payload: { mission_id: M, status: "ACTIVE", last_seq: 2 },
+    });
+    act(() => {
+      vi.advanceTimersByTime(5000);
+    });
     const again = channel.all(SNAP).at(-1)!;
-    channel.emit(guardIncoming({ type: SNAP + "_response", payload: { request_id: again.request_id, ok: true,
-      data: { ...snapshot(), debug_row: 1 } } }));
-    expect(screen.getByRole("alert").textContent).toBe(PROTOCOL_ERROR_TEXT + "（下面是上次读到的画面，可能已过期）");
+    channel.emit(
+      guardIncoming({
+        type: SNAP + "_response",
+        payload: { request_id: again.request_id, ok: true, data: { ...snapshot(), debug_row: 1 } },
+      }),
+    );
+    expect(screen.getByRole("alert").textContent).toBe(
+      PROTOCOL_ERROR_TEXT + "（下面是上次读到的画面，可能已过期）",
+    );
     expect(screen.getByText("全部步骤（3）")).toBeTruthy();
     fireEvent.click(screen.getByRole("tab", { name: "时间线" }));
-    fireEvent.click(within(screen.getByRole("list", { name: "执行过程时间线" })).getByText(/第 1 次执行 · 未通过/));
+    fireEvent.click(
+      within(screen.getByRole("list", { name: "执行过程时间线" })).getByText(
+        /第 1 次执行 · 未通过/,
+      ),
+    );
     const ask = channel.all(DETAIL).at(-1)!;
-    channel.emit(guardIncoming({ type: DETAIL + "_response", payload: { request_id: ask.request_id, ok: true,
-      data: { mission_id: M, node: {}, items: [] } } }));
+    channel.emit(
+      guardIncoming({
+        type: DETAIL + "_response",
+        payload: {
+          request_id: ask.request_id,
+          ok: true,
+          data: { mission_id: M, node: {}, items: [] },
+        },
+      }),
+    );
     expect(screen.getByTestId("lg-detail-attempt:b1").textContent).toContain(PROTOCOL_ERROR_TEXT);
   });
 });

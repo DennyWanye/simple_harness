@@ -19,8 +19,17 @@ class FakeChannel {
   readonly sent: ControlMessage[] = [];
   readonly listeners = new Set<(message: IncomingMessage) => void>();
   readonly states = new Set<(state: ConnectionState) => void>();
-  onStateChange = (listener: (state: ConnectionState) => void) => { this.states.add(listener); return () => { this.states.delete(listener); }; };
-  state(state: ConnectionState) { act(() => { for (const listener of this.states) listener(state); }); }
+  onStateChange = (listener: (state: ConnectionState) => void) => {
+    this.states.add(listener);
+    return () => {
+      this.states.delete(listener);
+    };
+  };
+  state(state: ConnectionState) {
+    act(() => {
+      for (const listener of this.states) listener(state);
+    });
+  }
 
   send = (message: ControlMessage) => {
     this.sent.push(message);
@@ -87,7 +96,14 @@ describe("useMissionsFeed（P2-5）", () => {
     expect(channel.count("orchestration_status")).toBe(2);
     expect(channel.count("mission_list")).toBe(2);
     channel.reply("mission_list", { missions: [{ ...ROW, goal: "fresh" }] });
-    channel.emit({ type: "mission_list_response", payload: { request_id: old.request_id, ok: true, data: { missions: [{ ...ROW, goal: "old" }] } } });
+    channel.emit({
+      type: "mission_list_response",
+      payload: {
+        request_id: old.request_id,
+        ok: true,
+        data: { missions: [{ ...ROW, goal: "old" }] },
+      },
+    });
     expect(useMissionsStore.getState().missions[0].goal).toBe("fresh");
   });
   it("挂载时发 orchestration_status 与 mission_list（带信封 request_id）", () => {
@@ -105,17 +121,27 @@ describe("useMissionsFeed（P2-5）", () => {
     channel.reply("mission_list", { missions: [ROW] });
     const state = useMissionsStore.getState();
     expect(state.status?.available).toBe(true);
-    expect(state.missions[0]).toMatchObject({ id: "mission-1", ui_state: "waiting_person", pending_approvals: 2 });
+    expect(state.missions[0]).toMatchObject({
+      id: "mission-1",
+      ui_state: "waiting_person",
+      pending_approvals: 2,
+    });
   });
 
   it("mission_changed：applyChange，并节流重拉列表（≤1 次/秒）", () => {
     const channel = new FakeChannel();
     render(<Feed channel={channel} />);
     channel.reply("mission_list", { missions: [ROW] });
-    channel.emit({ type: "mission_changed", payload: { mission_id: "mission-1", status: "COMPLETED", last_seq: 9 } });
+    channel.emit({
+      type: "mission_changed",
+      payload: { mission_id: "mission-1", status: "COMPLETED", last_seq: 9 },
+    });
     expect(useMissionsStore.getState().missions[0].status).toBe("COMPLETED");
     expect(useMissionsStore.getState().lastSeq["mission-1"]).toBe(9);
-    channel.emit({ type: "mission_changed", payload: { mission_id: "mission-1", status: "COMPLETED", last_seq: 10 } });
+    channel.emit({
+      type: "mission_changed",
+      payload: { mission_id: "mission-1", status: "COMPLETED", last_seq: 10 },
+    });
     expect(channel.count("mission_list")).toBe(1); // still inside the first second
     act(() => vi.advanceTimersByTime(999));
     expect(channel.count("mission_list")).toBe(1);
@@ -123,7 +149,10 @@ describe("useMissionsFeed（P2-5）", () => {
     expect(channel.count("mission_list")).toBe(2); // one trailing refresh for both pushes
     act(() => vi.advanceTimersByTime(5000));
     expect(channel.count("mission_list")).toBe(2); // nothing pending, nothing sent
-    channel.emit({ type: "mission_changed", payload: { mission_id: "mission-1", status: "COMPLETED", last_seq: 11 } });
+    channel.emit({
+      type: "mission_changed",
+      payload: { mission_id: "mission-1", status: "COMPLETED", last_seq: 11 },
+    });
     expect(channel.count("mission_list")).toBe(3); // quiet for > 1 s: sent at once
   });
 
@@ -132,17 +161,26 @@ describe("useMissionsFeed（P2-5）", () => {
     render(<Feed channel={channel} />);
     channel.reply("mission_list", { missions: [ROW] });
     act(() => vi.advanceTimersByTime(1500));
-    channel.emit({ type: "mission_changed", payload: { mission_id: "mission-1", status: "ACTIVE", last_seq: 5 } });
+    channel.emit({
+      type: "mission_changed",
+      payload: { mission_id: "mission-1", status: "ACTIVE", last_seq: 5 },
+    });
     expect(channel.count("mission_list")).toBe(1); // same status: waits for the quiet interval
     act(() => vi.advanceTimersByTime(3000));
     expect(channel.count("mission_list")).toBe(1);
     act(() => vi.advanceTimersByTime(600));
     expect(channel.count("mission_list")).toBe(2); // 5 s after the previous list
     act(() => vi.advanceTimersByTime(1500));
-    channel.emit({ type: "mission_changed", payload: { mission_id: "mission-1", status: "COMPLETED", last_seq: 6 } });
+    channel.emit({
+      type: "mission_changed",
+      payload: { mission_id: "mission-1", status: "COMPLETED", last_seq: 6 },
+    });
     expect(channel.count("mission_list")).toBe(3); // a status change is urgent
     act(() => vi.advanceTimersByTime(1500));
-    channel.emit({ type: "mission_changed", payload: { mission_id: "mission-2", status: "CREATED", last_seq: 1 } });
+    channel.emit({
+      type: "mission_changed",
+      payload: { mission_id: "mission-2", status: "CREATED", last_seq: 1 },
+    });
     expect(channel.count("mission_list")).toBe(4); // a Mission the list does not have yet
   });
 
@@ -151,9 +189,15 @@ describe("useMissionsFeed（P2-5）", () => {
     render(<Feed channel={channel} />);
     channel.reply("mission_list", { missions: [ROW] });
     act(() => vi.advanceTimersByTime(1500));
-    channel.emit({ type: "mission_changed", payload: { mission_id: "mission-1", status: "ACTIVE", last_seq: 5 } });
+    channel.emit({
+      type: "mission_changed",
+      payload: { mission_id: "mission-1", status: "ACTIVE", last_seq: 5 },
+    });
     expect(channel.count("mission_list")).toBe(1); // quiet push: slow timer armed
-    channel.emit({ type: "mission_changed", payload: { mission_id: "mission-1", status: "COMPLETED", last_seq: 6 } });
+    channel.emit({
+      type: "mission_changed",
+      payload: { mission_id: "mission-1", status: "COMPLETED", last_seq: 6 },
+    });
     expect(channel.count("mission_list")).toBe(2); // status moved: sent now, not at 5 s
     act(() => vi.advanceTimersByTime(5000));
     expect(channel.count("mission_list")).toBe(2); // the slow timer was replaced, nothing extra
@@ -171,7 +215,10 @@ describe("useMissionsFeed（P2-5）", () => {
     const channel = new FakeChannel();
     const { unmount } = render(<Feed channel={channel} />);
     channel.reply("mission_list", { missions: [ROW] });
-    channel.emit({ type: "mission_changed", payload: { mission_id: "mission-1", status: "ACTIVE", last_seq: 3 } });
+    channel.emit({
+      type: "mission_changed",
+      payload: { mission_id: "mission-1", status: "ACTIVE", last_seq: 3 },
+    });
     unmount();
     expect(channel.listeners.size).toBe(0);
     act(() => vi.advanceTimersByTime(5000));
@@ -188,10 +235,15 @@ describe("useMissionsFeed（P2-5）", () => {
     );
     channel.reply("mission_list", { missions: [ROW] });
     expect(screen.getByTestId("nav-missions-badge").textContent).toBe("2");
-    channel.emit({ type: "mission_changed", payload: { mission_id: "mission-1", status: "ACTIVE", last_seq: 4 } });
+    channel.emit({
+      type: "mission_changed",
+      payload: { mission_id: "mission-1", status: "ACTIVE", last_seq: 4 },
+    });
     act(() => vi.advanceTimersByTime(1000));
     expect(channel.count("mission_list")).toBe(2);
-    channel.reply("mission_list", { missions: [{ ...ROW, pending_approvals: 0, ui_state: "running" }] });
+    channel.reply("mission_list", {
+      missions: [{ ...ROW, pending_approvals: 0, ui_state: "running" }],
+    });
     expect(screen.queryByTestId("nav-missions-badge")).toBeNull();
   });
 });

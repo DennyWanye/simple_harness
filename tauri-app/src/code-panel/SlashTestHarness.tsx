@@ -26,9 +26,7 @@ export function SlashTestHarness() {
     });
     // active_sid 设为 slashtest（如果 store 支持）
     try {
-      (store as unknown as { set_active_sid?: (s: string) => void }).set_active_sid?.(
-        "slashtest",
-      );
+      (store as unknown as { set_active_sid?: (s: string) => void }).set_active_sid?.("slashtest");
     } catch {
       /* no-op */
     }

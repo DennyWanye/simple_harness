@@ -25,8 +25,6 @@ export interface DiagnosticBundle {
  * Rust reveals the file in Explorer as a side effect. Throws on
  * Rust-side failure (e.g. data dir unresolvable).
  */
-export async function buildDiagnosticBundle(
-  userNote: string,
-): Promise<DiagnosticBundle> {
+export async function buildDiagnosticBundle(userNote: string): Promise<DiagnosticBundle> {
   return invoke<DiagnosticBundle>("build_diagnostic_bundle", { userNote });
 }

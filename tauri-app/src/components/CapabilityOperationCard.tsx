@@ -13,10 +13,7 @@ import { dark } from "../theme/components";
 
 interface Props {
   operation: CapabilityOperation;
-  onAction?: (
-    action: CapabilityOperationAction,
-    operation: CapabilityOperation,
-  ) => void;
+  onAction?: (action: CapabilityOperationAction, operation: CapabilityOperation) => void;
   compact?: boolean;
 }
 
@@ -59,34 +56,21 @@ const PHASE_LABEL: Record<CapabilityOperation["phase"], string> = {
   published: "已发布",
 };
 
-function SafeText({
-  children,
-  collapseAt = 180,
-}: {
-  children: unknown;
-  collapseAt?: number;
-}) {
+function SafeText({ children, collapseAt = 180 }: { children: unknown; collapseAt?: number }) {
   const safe = redactCapabilityText(children);
   if (!safe) return null;
   if (safe.length <= collapseAt) return <span>{safe}</span>;
   return (
     <details>
       <summary>{safe.slice(0, collapseAt)}…</summary>
-      <div style={{ marginTop: 6, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-        {safe}
-      </div>
+      <div style={{ marginTop: 6, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{safe}</div>
     </details>
   );
 }
 
-export function CapabilityOperationCard({
-  operation,
-  onAction,
-  compact = false,
-}: Props) {
+export function CapabilityOperationCard({ operation, onAction, compact = false }: Props) {
   const progress = capabilityOperationProgress(operation);
-  const failed =
-    operation.status === "failed" || operation.status === "unknown";
+  const failed = operation.status === "failed" || operation.status === "unknown";
   const accent = failed
     ? "#f87171"
     : operation.status === "succeeded"
@@ -222,7 +206,11 @@ export function CapabilityOperationCard({
           <ul style={listStyle}>
             {operation.verification_receipts.map((receipt) => (
               <li key={receipt.receipt_id}>
-                {receipt.status === "passed" ? "通过" : receipt.status === "failed" ? "失败" : "待确认"}
+                {receipt.status === "passed"
+                  ? "通过"
+                  : receipt.status === "failed"
+                    ? "失败"
+                    : "待确认"}
                 {" · "}
                 <SafeText>{receipt.summary}</SafeText>
                 {receipt.ref ? (

@@ -11,21 +11,47 @@ function fakeChannel() {
   return {
     sent,
     channel: {
-      send: (message: unknown) => { sent.push(message as Sent); return true; },
-      onMessage: (handler: (m: unknown) => void) => { handlers.add(handler); return () => handlers.delete(handler); },
+      send: (message: unknown) => {
+        sent.push(message as Sent);
+        return true;
+      },
+      onMessage: (handler: (m: unknown) => void) => {
+        handlers.add(handler);
+        return () => handlers.delete(handler);
+      },
     },
-    reply: (type: string, data: unknown, ok = true, error = "") => act(() => {
-      const request = [...sent].reverse().find((m) => m.type === type)!;
-      handlers.forEach((h) => h({ type: type + "_response", payload: { request_id: request.request_id, ok, data, error } }));
-    }),
-    push: (message: unknown) => act(() => { handlers.forEach((h) => h(message)); }),
+    reply: (type: string, data: unknown, ok = true, error = "") =>
+      act(() => {
+        const request = [...sent].reverse().find((m) => m.type === type)!;
+        handlers.forEach((h) =>
+          h({
+            type: type + "_response",
+            payload: { request_id: request.request_id, ok, data, error },
+          }),
+        );
+      }),
+    push: (message: unknown) =>
+      act(() => {
+        handlers.forEach((h) => h(message));
+      }),
   };
 }
 
 const STUCK = {
-  jobs: [{ job_id: "job-1", state: "READY", row_version: 4 }, { job_id: "job-0", state: "ABANDONED", row_version: 8 }],
-  blocked_notifications: [{ message_id: "msg-1", row_version: 6, kind: "CONVERGE", subject_key: "job-1",
-    error_code: "FOLLOWUP_HANDLER_FAILED", attempts: 5 }],
+  jobs: [
+    { job_id: "job-1", state: "READY", row_version: 4 },
+    { job_id: "job-0", state: "ABANDONED", row_version: 8 },
+  ],
+  blocked_notifications: [
+    {
+      message_id: "msg-1",
+      row_version: 6,
+      kind: "CONVERGE",
+      subject_key: "job-1",
+      error_code: "FOLLOWUP_HANDLER_FAILED",
+      attempts: 5,
+    },
+  ],
 };
 
 function mount() {
@@ -39,8 +65,14 @@ describe("改计划进度面板", () => {
 
   it("没卡住时什么都不显示", () => {
     const fake = mount();
-    expect(fake.sent[0]).toMatchObject({ type: "taskgraph.convergence", payload: { mission_id: "m-1" } });
-    fake.reply("taskgraph.convergence", { jobs: [{ job_id: "job-0", state: "APPLIED", row_version: 3 }], blocked_notifications: [] });
+    expect(fake.sent[0]).toMatchObject({
+      type: "taskgraph.convergence",
+      payload: { mission_id: "m-1" },
+    });
+    fake.reply("taskgraph.convergence", {
+      jobs: [{ job_id: "job-0", state: "APPLIED", row_version: 3 }],
+      blocked_notifications: [],
+    });
     expect(screen.queryByTestId("plan-change-panel")).toBeNull();
   });
 
@@ -53,7 +85,12 @@ describe("改计划进度面板", () => {
     fireEvent.change(screen.getByLabelText("放弃理由"), { target: { value: "先按原计划做完" } });
     fireEvent.click(abandon);
     const sent = fake.sent.find((m) => m.type === "taskgraph.abandon_convergence")!;
-    expect(sent.payload).toEqual({ mission_id: "m-1", job_id: "job-1", expected_version: 4, reason: "先按原计划做完" });
+    expect(sent.payload).toEqual({
+      mission_id: "m-1",
+      job_id: "job-1",
+      expected_version: 4,
+      reason: "先按原计划做完",
+    });
     fake.reply("taskgraph.abandon_convergence", {});
     expect(fake.sent.filter((m) => m.type === "taskgraph.convergence")).toHaveLength(2);
   });
@@ -64,7 +101,11 @@ describe("改计划进度面板", () => {
     expect(screen.getByText(/推进通知连续失败 5 次/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "重新发送" }));
     const sent = fake.sent.find((m) => m.type === "taskgraph.retry_notification")!;
-    expect(sent.payload).toMatchObject({ mission_id: "m-1", message_id: "msg-1", expected_version: 6 });
+    expect(sent.payload).toMatchObject({
+      mission_id: "m-1",
+      message_id: "msg-1",
+      expected_version: 6,
+    });
     fake.reply("taskgraph.retry_notification", null, false, "这条通知的状态已经变了，请刷新后再试");
     expect(screen.getByRole("alert").textContent).toContain("请刷新后再试");
   });
@@ -85,8 +126,15 @@ describe("改计划进度面板", () => {
     fake.reply("taskgraph.convergence", STUCK);
     fake.push({ type: "mission_changed", payload: { mission_id: "m-1" } });
     const request = [...fake.sent].reverse().find((m) => m.type === "taskgraph.convergence")!;
-    fake.push({ type: "taskgraph.convergence_response", payload: { request_id: request.request_id, ok: false,
-      error_code: "protocol_error", error: "收到的数据格式不对，没有显示，请稍后重新读取。" } });
+    fake.push({
+      type: "taskgraph.convergence_response",
+      payload: {
+        request_id: request.request_id,
+        ok: false,
+        error_code: "protocol_error",
+        error: "收到的数据格式不对，没有显示，请稍后重新读取。",
+      },
+    });
     expect(screen.getByText(/已过期：收到的数据格式不对，显示的是上次的情况/)).toBeTruthy();
     expect(screen.getByRole("button", { name: "重新发送" })).toBeTruthy();
   });

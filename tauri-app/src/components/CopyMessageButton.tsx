@@ -29,12 +29,7 @@ async function copyText(text: string) {
   if (!ok) throw new Error("copy command failed");
 }
 
-export function CopyMessageButton({
-  text,
-  align = "left",
-  tone = "dark",
-  inline = false,
-}: Props) {
+export function CopyMessageButton({ text, align = "left", tone = "dark", inline = false }: Props) {
   const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
 
   useEffect(() => {
@@ -53,8 +48,7 @@ export function CopyMessageButton({
     }
   };
 
-  const message =
-    state === "copied" ? "已复制" : state === "failed" ? "复制失败" : "复制消息";
+  const message = state === "copied" ? "已复制" : state === "failed" ? "复制失败" : "复制消息";
 
   const button = (
     <button

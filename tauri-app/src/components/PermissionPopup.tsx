@@ -18,17 +18,8 @@
 import React, { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 
-import type {
-  PermissionRequest,
-  PermissionCategory,
-} from "../types/skillPlatform";
-import {
-  backdropStyle,
-  bannerStyle,
-  buttonStyle,
-  dark,
-  surfaceModal,
-} from "../theme/components";
+import type { PermissionRequest, PermissionCategory } from "../types/skillPlatform";
+import { backdropStyle, bannerStyle, buttonStyle, dark, surfaceModal } from "../theme/components";
 import { tokens } from "../theme/tokens";
 
 type Decision = "allow" | "allow_session" | "deny";
@@ -155,8 +146,8 @@ export const PermissionPopup: React.FC<Props> = ({
     meta.level === "error"
       ? tokens.color.danger.bg
       : meta.level === "warning"
-      ? tokens.color.warning.bg
-      : tokens.color.info.bg;
+        ? tokens.color.warning.bg
+        : tokens.color.info.bg;
 
   const popup = (
     <div
@@ -328,16 +319,18 @@ export const PermissionPopup: React.FC<Props> = ({
           >
             拒绝<span style={{ opacity: 0.5, marginLeft: 6 }}>Esc</span>
           </button>
-          {allowSession && <button
-            type="button"
-            disabled={resolving}
-            className="bp-btn-secondary"
-            onClick={() => onResolve("allow_session")}
-            style={buttonStyle("secondary", "md")}
-            title="本会话内同类操作不再询问"
-          >
-            本会话始终允许
-          </button>}
+          {allowSession && (
+            <button
+              type="button"
+              disabled={resolving}
+              className="bp-btn-secondary"
+              onClick={() => onResolve("allow_session")}
+              style={buttonStyle("secondary", "md")}
+              title="本会话内同类操作不再询问"
+            >
+              本会话始终允许
+            </button>
+          )}
           <button
             ref={allowOnceRef}
             type="button"

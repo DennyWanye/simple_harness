@@ -46,9 +46,7 @@ describe("topicDisplayLabel", () => {
   });
 
   it("falls back to preview when no custom title", () => {
-    expect(
-      topicDisplayLabel({ preview: "晚安", session_id: "task-1" }),
-    ).toBe("晚安");
+    expect(topicDisplayLabel({ preview: "晚安", session_id: "task-1" })).toBe("晚安");
   });
 
   it("whitespace-only title is ignored (falls back)", () => {
@@ -62,9 +60,7 @@ describe("topicDisplayLabel", () => {
   });
 
   it("falls back to session_id when neither title nor preview", () => {
-    expect(
-      topicDisplayLabel({ preview: "", session_id: "task-9" }),
-    ).toBe("task-9");
+    expect(topicDisplayLabel({ preview: "", session_id: "task-9" })).toBe("task-9");
   });
 
   it("曾经的保留 id 不再有特殊标签（无 title/preview 时退回 sid）", () => {

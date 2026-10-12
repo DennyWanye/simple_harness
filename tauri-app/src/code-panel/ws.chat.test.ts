@@ -48,27 +48,34 @@ describe("ws.dispatch chat final dedupe", () => {
       type: "chat_v2_run_started",
       payload: { session_id: "default", run_id: "root-wait", projection_version: 4 },
     });
-    __test_register_pending_run_status_query(
-      "query-current", "default", "root-wait",
-    );
+    __test_register_pending_run_status_query("query-current", "default", "root-wait");
     __test_dispatch({
       type: "session_run_status_ack",
       payload: {
-        query_id: "query-current", session_id: "default",
-        root_run_id: "root-wait", run_version: 5, state: "waiting",
-        waiting_reason: "sdk_recovery_pending", allowed_actions: ["resume", "cancel"],
+        query_id: "query-current",
+        session_id: "default",
+        root_run_id: "root-wait",
+        run_version: 5,
+        state: "waiting",
+        waiting_reason: "sdk_recovery_pending",
+        allowed_actions: ["resume", "cancel"],
       },
     });
     let session = useSessionsStore.getState().sessions.default;
     expect(session.active_run_id).toBe("root-wait");
     expect(session.run_projections["root-wait"]).toMatchObject({
-      version: 5, status: "waiting", inflight: false,
+      version: 5,
+      status: "waiting",
+      inflight: false,
     });
     __test_dispatch({
       type: "session_run_status_ack",
       payload: {
-        query_id: "query-stale", session_id: "default",
-        root_run_id: "root-wait", run_version: 3, state: "completed",
+        query_id: "query-stale",
+        session_id: "default",
+        root_run_id: "root-wait",
+        run_version: 3,
+        state: "completed",
       },
     });
     session = useSessionsStore.getState().sessions.default;
@@ -81,18 +88,18 @@ describe("ws.dispatch chat final dedupe", () => {
       type: "chat_v2_run_started",
       payload: { session_id: "default", run_id: "root-match", projection_version: 2 },
     });
-    __test_register_pending_run_status_query(
-      "query-match", "default", "root-match",
-    );
+    __test_register_pending_run_status_query("query-match", "default", "root-match");
     __test_dispatch({
       type: "session_run_status_ack",
       payload: {
-        query_id: "query-match", session_id: "other",
-        root_run_id: "root-match", run_version: 3, state: "completed",
+        query_id: "query-match",
+        session_id: "other",
+        root_run_id: "root-match",
+        run_version: 3,
+        state: "completed",
       },
     });
-    expect(useSessionsStore.getState().sessions.default.active_run_id)
-      .toBe("root-match");
+    expect(useSessionsStore.getState().sessions.default.active_run_id).toBe("root-match");
   });
 
   it("clears active Run only after a versioned terminal interrupt ack", () => {
@@ -103,24 +110,31 @@ describe("ws.dispatch chat final dedupe", () => {
     __test_dispatch({
       type: "chat_v2_interrupted",
       payload: {
-        session_id: "default", run_id: "root-cancel", run_version: 2,
-        state: "running", cancelled: false,
+        session_id: "default",
+        run_id: "root-cancel",
+        run_version: 2,
+        state: "running",
+        cancelled: false,
       },
     });
-    expect(useSessionsStore.getState().sessions.default.active_run_id)
-      .toBe("root-cancel");
+    expect(useSessionsStore.getState().sessions.default.active_run_id).toBe("root-cancel");
     __test_dispatch({
       type: "chat_v2_interrupted",
       payload: {
-        session_id: "default", run_id: "root-cancel", run_version: 3,
-        state: "cancelled", cancelled: true,
+        session_id: "default",
+        run_id: "root-cancel",
+        run_version: 3,
+        state: "cancelled",
+        cancelled: true,
         terminal_event_ref: "sdk-run:root-cancel:terminal:v3",
       },
     });
     const session = useSessionsStore.getState().sessions.default;
     expect(session.active_run_id).toBeNull();
     expect(session.run_projections["root-cancel"]).toMatchObject({
-      version: 3, status: "cancelled", inflight: false,
+      version: 3,
+      status: "cancelled",
+      inflight: false,
     });
   });
 
@@ -154,8 +168,9 @@ describe("ws.dispatch chat final dedupe", () => {
       payload: { ...payload, session_id: "session-other" },
     });
     expect(useSessionsStore.getState().sessions.default.context_usage).toBeNull();
-    expect(useSessionsStore.getState().sessions["session-other"].context_usage?.model)
-      .toBe("session-model");
+    expect(useSessionsStore.getState().sessions["session-other"].context_usage?.model).toBe(
+      "session-model",
+    );
   });
 
   it("does not append a duplicate assistant bubble when chat_response already showed the final text", () => {
@@ -248,8 +263,7 @@ describe("ws.dispatch chat final dedupe", () => {
       },
     });
 
-    const [call, result] =
-      useSessionsStore.getState().sessions.default.messages;
+    const [call, result] = useSessionsStore.getState().sessions.default.messages;
     expect(call).toMatchObject({
       role: "tool_call",
       run_id: "run-tool",
@@ -315,49 +329,58 @@ describe("ws.dispatch chat final dedupe", () => {
       type: "session_messages_response",
       payload: {
         session_id: "default",
-        messages: [{
-          id: "call-row-failed",
-          role: "assistant",
-          text: "",
-          tool_calls: [{
-            id: "call-memory-recall",
-            type: "function",
-            function: { name: "memory_recall", arguments: "{}" },
-          }],
-          run_id: "run-outcome-history",
-          ts: 1_000,
-        }, {
-          id: "result-row-failed",
-          role: "tool",
-          text: failedEnvelope,
-          tool_call_id: "call-memory-recall",
-          run_id: "run-outcome-history",
-          ts: 2_000,
-        }, {
-          id: "call-row-ok",
-          role: "assistant",
-          text: "",
-          tool_calls: [{
-            id: "call-memory-search",
-            type: "function",
-            function: { name: "memory_search", arguments: "{}" },
-          }],
-          run_id: "run-outcome-history",
-          ts: 3_000,
-        }, {
-          id: "result-row-ok",
-          role: "tool",
-          text: succeededEnvelope,
-          tool_call_id: "call-memory-search",
-          run_id: "run-outcome-history",
-          ts: 4_000,
-        }],
+        messages: [
+          {
+            id: "call-row-failed",
+            role: "assistant",
+            text: "",
+            tool_calls: [
+              {
+                id: "call-memory-recall",
+                type: "function",
+                function: { name: "memory_recall", arguments: "{}" },
+              },
+            ],
+            run_id: "run-outcome-history",
+            ts: 1_000,
+          },
+          {
+            id: "result-row-failed",
+            role: "tool",
+            text: failedEnvelope,
+            tool_call_id: "call-memory-recall",
+            run_id: "run-outcome-history",
+            ts: 2_000,
+          },
+          {
+            id: "call-row-ok",
+            role: "assistant",
+            text: "",
+            tool_calls: [
+              {
+                id: "call-memory-search",
+                type: "function",
+                function: { name: "memory_search", arguments: "{}" },
+              },
+            ],
+            run_id: "run-outcome-history",
+            ts: 3_000,
+          },
+          {
+            id: "result-row-ok",
+            role: "tool",
+            text: succeededEnvelope,
+            tool_call_id: "call-memory-search",
+            run_id: "run-outcome-history",
+            ts: 4_000,
+          },
+        ],
       },
     });
 
-    const hydrated = useSessionsStore.getState().sessions.default.messages.filter(
-      (message) => message.role === "tool_result",
-    );
+    const hydrated = useSessionsStore
+      .getState()
+      .sessions.default.messages.filter((message) => message.role === "tool_result");
     expect(hydrated).toHaveLength(2);
     expect(hydrated[0]).toMatchObject({
       tool_name: "memory_recall",
@@ -375,12 +398,28 @@ describe("ws.dispatch chat final dedupe", () => {
   });
 
   it.each([
-    ["known failed outcome wins conflicts", { outcome: "failed", ok: true, status: "succeeded" }, false],
-    ["known succeeded outcome wins conflicts", { outcome: "succeeded", ok: false, status: "failed" }, true],
+    [
+      "known failed outcome wins conflicts",
+      { outcome: "failed", ok: true, status: "succeeded" },
+      false,
+    ],
+    [
+      "known succeeded outcome wins conflicts",
+      { outcome: "succeeded", ok: false, status: "failed" },
+      true,
+    ],
     ["unknown outcome falls back to explicit ok", { outcome: "future_state", ok: true }, true],
-    ["unknown outcome falls back to known status", { outcome: "future_state", status: "succeeded" }, true],
+    [
+      "unknown outcome falls back to known status",
+      { outcome: "future_state", status: "succeeded" },
+      true,
+    ],
     ["unknown outcome respects explicit failure", { outcome: "future_state", ok: false }, false],
-    ["all unknown structured state fails closed", { outcome: "future_state", status: "future_status" }, false],
+    [
+      "all unknown structured state fails closed",
+      { outcome: "future_state", status: "future_status" },
+      false,
+    ],
   ] as const)("hydrates malformed outcome safely: %s", (_label, envelope, expectedOk) => {
     resetStore();
     const raw = JSON.stringify({ tool: "memory_search", ...envelope });
@@ -388,12 +427,14 @@ describe("ws.dispatch chat final dedupe", () => {
       type: "session_messages_response",
       payload: {
         session_id: "default",
-        messages: [{
-          id: "matrix-result",
-          role: "tool",
-          text: raw,
-          ts: 1_000,
-        }],
+        messages: [
+          {
+            id: "matrix-result",
+            role: "tool",
+            text: raw,
+            ts: 1_000,
+          },
+        ],
       },
     });
 
@@ -424,22 +465,24 @@ describe("ws.dispatch chat final dedupe", () => {
       type: "session_messages_response",
       payload: {
         session_id: "default",
-        messages: [{
-          id: "web-failed",
-          role: "tool",
-          text: failed,
-          ts: 1_000,
-        }, {
-          id: "web-succeeded",
-          role: "tool",
-          text: succeeded,
-          ts: 2_000,
-        }],
+        messages: [
+          {
+            id: "web-failed",
+            role: "tool",
+            text: failed,
+            ts: 1_000,
+          },
+          {
+            id: "web-succeeded",
+            role: "tool",
+            text: succeeded,
+            ts: 2_000,
+          },
+        ],
       },
     });
 
-    const [failedRow, succeededRow] = useSessionsStore.getState()
-      .sessions.default.messages;
+    const [failedRow, succeededRow] = useSessionsStore.getState().sessions.default.messages;
     expect(failedRow).toMatchObject({
       role: "tool_result",
       tool_ok: false,
@@ -546,16 +589,12 @@ describe("ws.dispatch chat final dedupe", () => {
   });
 
   it("keeps durable reasoning summaries when the final response arrives", () => {
-    useSessionsStore.getState().upsert_run_projection(
-      "default",
-      "run-reasoning",
-      {
-        task_scope_id: "scope-reasoning",
-        status: "running",
-        inflight: true,
-        ui_state: "open",
-      },
-    );
+    useSessionsStore.getState().upsert_run_projection("default", "run-reasoning", {
+      task_scope_id: "scope-reasoning",
+      status: "running",
+      inflight: true,
+      ui_state: "open",
+    });
     __test_dispatch({
       type: "chat_response",
       payload: {
@@ -587,20 +626,20 @@ describe("ws.dispatch chat final dedupe", () => {
     });
 
     const messages = useSessionsStore.getState().sessions.default.messages;
-    expect(messages).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        role: "reasoning_summary",
-        text: "准备检查项目并启动编辑器。",
-      }),
-      expect.objectContaining({
-        role: "assistant",
-        text: "Godot 已打开。",
-      }),
-    ]));
+    expect(messages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          role: "reasoning_summary",
+          text: "准备检查项目并启动编辑器。",
+        }),
+        expect.objectContaining({
+          role: "assistant",
+          text: "Godot 已打开。",
+        }),
+      ]),
+    );
     expect(
-      messages.filter(
-        (message) => message.text === "准备检查项目并启动编辑器。",
-      ),
+      messages.filter((message) => message.text === "准备检查项目并启动编辑器。"),
     ).toHaveLength(1);
     expect(messages.some((message) => message.role === "assistant_delta")).toBe(false);
   });
@@ -690,13 +729,14 @@ describe("ws.dispatch chat final dedupe", () => {
     });
 
     const messages = useSessionsStore.getState().sessions.default.messages;
-    expect(messages.filter(
-      (message) => message.role === "assistant" && message.text === "检查完成。",
-    )).toHaveLength(1);
-    expect(messages.filter(
-      (message) =>
-        message.role === "reasoning_summary" && message.text === "检查完成。",
-    )).toHaveLength(1);
+    expect(
+      messages.filter((message) => message.role === "assistant" && message.text === "检查完成。"),
+    ).toHaveLength(1);
+    expect(
+      messages.filter(
+        (message) => message.role === "reasoning_summary" && message.text === "检查完成。",
+      ),
+    ).toHaveLength(1);
     expect(
       useSessionsStore.getState().sessions.default.run_projections["run-late-summary"],
     ).toMatchObject({ status: "completed", inflight: false });
@@ -723,9 +763,9 @@ describe("ws.dispatch chat final dedupe", () => {
     });
 
     const messages = useSessionsStore.getState().sessions.default.messages;
-    expect(messages.filter(
-      (message) => message.role === "assistant" && message.text === "最终正文",
-    )).toHaveLength(1);
+    expect(
+      messages.filter((message) => message.role === "assistant" && message.text === "最终正文"),
+    ).toHaveLength(1);
   });
 
   it("does not delete another Run's canonical final for a same-text summary", () => {
@@ -756,12 +796,14 @@ describe("ws.dispatch chat final dedupe", () => {
     });
 
     const messages = useSessionsStore.getState().sessions.default.messages;
-    expect(messages.filter(
-      (message) =>
-        message.role === "assistant" &&
-        message.run_id === "run-canonical-final" &&
-        message.text === "共享文本",
-    )).toHaveLength(1);
+    expect(
+      messages.filter(
+        (message) =>
+          message.role === "assistant" &&
+          message.run_id === "run-canonical-final" &&
+          message.text === "共享文本",
+      ),
+    ).toHaveLength(1);
   });
 
   it("does not delete an unscoped historical assistant for a scoped summary", () => {
@@ -788,12 +830,14 @@ describe("ws.dispatch chat final dedupe", () => {
     });
 
     const messages = useSessionsStore.getState().sessions.default.messages;
-    expect(messages.filter(
-      (message) =>
-        message.role === "assistant" &&
-        message.run_id === undefined &&
-        message.text === "相同公开文本",
-    )).toHaveLength(1);
+    expect(
+      messages.filter(
+        (message) =>
+          message.role === "assistant" &&
+          message.run_id === undefined &&
+          message.text === "相同公开文本",
+      ),
+    ).toHaveLength(1);
   });
 
   it("tracks a queued continuation until the Driver binds it", () => {
@@ -819,10 +863,9 @@ describe("ws.dispatch chat final dedupe", () => {
       },
     });
 
-    expect(
-      useSessionsStore.getState().sessions.default.messages.at(-1)
-        ?.continuation_status,
-    ).toBe("waiting");
+    expect(useSessionsStore.getState().sessions.default.messages.at(-1)?.continuation_status).toBe(
+      "waiting",
+    );
 
     __test_dispatch({
       type: "chat_v2_continuation_status",
@@ -835,10 +878,9 @@ describe("ws.dispatch chat final dedupe", () => {
       },
     });
 
-    expect(
-      useSessionsStore.getState().sessions.default.messages.at(-1)
-        ?.continuation_status,
-    ).toBe("bound");
+    expect(useSessionsStore.getState().sessions.default.messages.at(-1)?.continuation_status).toBe(
+      "bound",
+    );
   });
 
   it("marks an immediately bound continuation as read on acceptance", () => {
@@ -860,23 +902,18 @@ describe("ws.dispatch chat final dedupe", () => {
       },
     });
 
-    expect(
-      useSessionsStore.getState().sessions.default.messages.at(-1)
-        ?.continuation_status,
-    ).toBe("bound");
+    expect(useSessionsStore.getState().sessions.default.messages.at(-1)?.continuation_status).toBe(
+      "bound",
+    );
   });
 
   it("marks a rejected continuation without falsely failing the target Run", () => {
-    useSessionsStore.getState().upsert_run_projection(
-      "default",
-      "run-active",
-      {
-        task_scope_id: "scope-active",
-        status: "running",
-        inflight: true,
-        ui_state: "open",
-      },
-    );
+    useSessionsStore.getState().upsert_run_projection("default", "run-active", {
+      task_scope_id: "scope-active",
+      status: "running",
+      inflight: true,
+      ui_state: "open",
+    });
     useSessionsStore.getState().push_message("default", {
       role: "user",
       text: "过期边界上的补充",
@@ -897,9 +934,10 @@ describe("ws.dispatch chat final dedupe", () => {
     });
 
     const session = useSessionsStore.getState().sessions.default;
-    expect(session.messages.find(
-      (message) => message.request_id === "request-rejected",
-    )?.continuation_status).toBe("failed");
+    expect(
+      session.messages.find((message) => message.request_id === "request-rejected")
+        ?.continuation_status,
+    ).toBe("failed");
     expect(session.run_projections["run-active"].status).toBe("running");
   });
 
@@ -933,9 +971,7 @@ describe("ws.dispatch chat final dedupe", () => {
     const session = useSessionsStore.getState().sessions.default;
     expect(session.pending_root_request_id).toBeUndefined();
     expect(session.pending_root_turn_id).toBeUndefined();
-    const stuck = session.messages.find(
-      (message) => message.request_id === "request-root",
-    );
+    const stuck = session.messages.find((message) => message.request_id === "request-root");
     expect(stuck?.continuation_status).toBe("failed");
     expect(stuck?.deferred_send).toBeFalsy();
   });
@@ -953,9 +989,7 @@ describe("ws.dispatch chat final dedupe", () => {
       payload: { session_id: "default", error: "companion_session_read_only" },
     });
 
-    expect(
-      useSessionsStore.getState().sessions.default.pending_root_request_id,
-    ).toBeUndefined();
+    expect(useSessionsStore.getState().sessions.default.pending_root_request_id).toBeUndefined();
   });
 
   it("activates and creates the backend-selected session after a session switch", () => {
@@ -1063,28 +1097,20 @@ describe("ws.dispatch chat final dedupe", () => {
   });
 
   it("finishes only the workflow projection identified as the task root", () => {
-    useSessionsStore.getState().upsert_run_projection(
-      "default",
-      "run-active",
-      {
-        task_scope_id: "scope-active",
-        version: 0,
-        status: "running",
-        inflight: true,
-        ui_state: "open",
-      },
-    );
-    useSessionsStore.getState().upsert_run_projection(
-      "default",
-      "run-other",
-      {
-        task_scope_id: "scope-other",
-        version: 0,
-        status: "running",
-        inflight: true,
-        ui_state: "background",
-      },
-    );
+    useSessionsStore.getState().upsert_run_projection("default", "run-active", {
+      task_scope_id: "scope-active",
+      version: 0,
+      status: "running",
+      inflight: true,
+      ui_state: "open",
+    });
+    useSessionsStore.getState().upsert_run_projection("default", "run-other", {
+      task_scope_id: "scope-other",
+      version: 0,
+      status: "running",
+      inflight: true,
+      ui_state: "background",
+    });
 
     __test_dispatch({
       type: "workflow_final",
@@ -1147,16 +1173,12 @@ describe("ws.dispatch chat final dedupe", () => {
     expect(session.run_projections["root-3"].inflight).toBe(true);
     expect(
       session.messages.find(
-        (message) =>
-          message.role === "assistant_delta" &&
-          message.run_id === "root-1",
+        (message) => message.role === "assistant_delta" && message.run_id === "root-1",
       )?.text,
     ).toBe("partial-1");
     expect(
       session.messages.some(
-        (message) =>
-          message.role === "assistant_delta" &&
-          message.run_id === "root-2",
+        (message) => message.role === "assistant_delta" && message.run_id === "root-2",
       ),
     ).toBe(false);
     expect(session.messages.at(-1)).toMatchObject({
@@ -1273,8 +1295,7 @@ describe("ws.dispatch chat final dedupe", () => {
       },
     });
 
-    const events =
-      useSessionsStore.getState().sessions.default.companion_events ?? [];
+    const events = useSessionsStore.getState().sessions.default.companion_events ?? [];
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({
       event_id: "companion-event-1",
@@ -1314,8 +1335,7 @@ describe("ws.dispatch chat final dedupe", () => {
       },
     });
 
-    const projections =
-      useSessionsStore.getState().sessions.default.run_projections;
+    const projections = useSessionsStore.getState().sessions.default.run_projections;
     expect(projections["root-running"]).toMatchObject({
       status: "running",
       inflight: true,
@@ -1419,8 +1439,12 @@ describe("ws.dispatch chat final dedupe", () => {
         run_id: "run-1",
         seq: 8,
         payload: {
-          workflow_name: "PPT", stage: "生成完整页面", ordinal: 8, total: 12,
-          status: "started", text: "PPT进度：生成完整页面（8/12）",
+          workflow_name: "PPT",
+          stage: "生成完整页面",
+          ordinal: 8,
+          total: 12,
+          status: "started",
+          text: "PPT进度：生成完整页面（8/12）",
         },
       },
     });
@@ -1438,14 +1462,29 @@ describe("ws.dispatch chat final dedupe", () => {
     const dispatchWorkflow = (event_type: string, seq: number, payload: Record<string, unknown>) =>
       __test_dispatch({
         type: event_type === "workflow.final" ? "workflow_final" : "workflow_event",
-        payload: { session_id: "default", event_id: `e-${seq}`, event_type, run_id: "run-x", seq, payload },
+        payload: {
+          session_id: "default",
+          event_id: `e-${seq}`,
+          event_type,
+          run_id: "run-x",
+          seq,
+          payload,
+        },
       });
     dispatchWorkflow("workflow.accepted", 1, { workflow_name: "PPT", status: "running" });
     dispatchWorkflow("workflow.progress", 2, {
-      workflow_name: "PPT", stage: "等待确认大纲", ordinal: 6, total: 12, status: "waiting",
+      workflow_name: "PPT",
+      stage: "等待确认大纲",
+      ordinal: 6,
+      total: 12,
+      status: "waiting",
     });
     dispatchWorkflow("workflow.progress", 3, {
-      workflow_name: "PPT", stage: "生成完整页面", ordinal: 8, total: 12, status: "started",
+      workflow_name: "PPT",
+      stage: "生成完整页面",
+      ordinal: 8,
+      total: 12,
+      status: "started",
     });
     dispatchWorkflow("workflow.final_assistant", 4, { payload: { text: "PPT 做好了" } });
     dispatchWorkflow("workflow.final", 5, { workflow_name: "PPT", status: "completed" });
@@ -1576,7 +1615,9 @@ describe("ws.dispatch chat final dedupe", () => {
               tool: "artifact_create",
               ok: true,
               result: "legacy report preview",
-              artifacts: [{ kind: "text", title: "research_report", preview: "legacy report preview" }],
+              artifacts: [
+                { kind: "text", title: "research_report", preview: "legacy report preview" },
+              ],
             }),
             ts: 2000,
             workflow_event: {
@@ -1712,9 +1753,11 @@ describe("ws.dispatch chat final dedupe", () => {
     __test_dispatch(event);
     __test_dispatch(event);
 
-    const artifacts = useSessionsStore.getState().sessions.default.messages.filter(
-      (message) => message.id === "workflow-artifact:artifact-event-live",
-    );
+    const artifacts = useSessionsStore
+      .getState()
+      .sessions.default.messages.filter(
+        (message) => message.id === "workflow-artifact:artifact-event-live",
+      );
     expect(artifacts).toHaveLength(1);
     expect(artifacts[0]).toMatchObject({
       role: "tool_result",

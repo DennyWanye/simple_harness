@@ -52,9 +52,7 @@ vi.mock("../components/MessageStreamPanel", async (importOriginal) => {
   const mod = await importOriginal<Record<string, unknown>>();
   return {
     ...mod,
-    MessageStreamPanel: (props: {
-      chatMessages?: Array<{ role: string; text?: string }>;
-    }) => (
+    MessageStreamPanel: (props: { chatMessages?: Array<{ role: string; text?: string }> }) => (
       <div data-testid="stub-message-stream">
         {(props.chatMessages ?? []).map((message, index) => (
           <span
@@ -101,14 +99,12 @@ describe("ChatView（WB-4）", () => {
     vi.mocked(controlWS.send).mockClear();
     vi.mocked(controlWS.send).mockReturnValue(true);
     vi.mocked(controlWS.state).mockReturnValue("connected");
-    vi.mocked(controlWS.on_message).mockImplementation(
-      (fn: (msg: unknown) => void) => {
-        listeners.push(fn);
-        return () => {
-          listeners = listeners.filter((l) => l !== fn);
-        };
-      },
-    );
+    vi.mocked(controlWS.on_message).mockImplementation((fn: (msg: unknown) => void) => {
+      listeners.push(fn);
+      return () => {
+        listeners = listeners.filter((l) => l !== fn);
+      };
+    });
   });
 
   afterEach(() => {
@@ -135,9 +131,7 @@ describe("ChatView（WB-4）", () => {
 
   it("挂载即按会话发 hydration 四连发（消息/投影/上下文/provider）", () => {
     render(<ChatView activeSid="default" secret="s3cret" />);
-    const types = vi
-      .mocked(controlWS.send)
-      .mock.calls.map(([m]) => (m as { type: string }).type);
+    const types = vi.mocked(controlWS.send).mock.calls.map(([m]) => (m as { type: string }).type);
     expect(types).toEqual(
       expect.arrayContaining([
         "session_messages_load",
@@ -185,10 +179,9 @@ describe("ChatView（WB-4）", () => {
     });
     emit({ type: "companion_identity_status", payload: { ready: true } });
     // 就绪促升（companion_action_ready）由 ChatView 独家发送。
-    expect(controlWS.send_companion_action).toHaveBeenCalledWith(
-      "companion_action_ready",
-      { ready: true },
-    );
+    expect(controlWS.send_companion_action).toHaveBeenCalledWith("companion_action_ready", {
+      ready: true,
+    });
 
     vi.mocked(controlWS.send).mockClear();
     const input = screen.getByPlaceholderText("输入消息，Enter 发送…");
@@ -239,17 +232,17 @@ describe("ChatView（WB-4）", () => {
     vi.mocked(controlWS.send).mockClear();
     fireEvent.click(screen.getByTestId("chat-conn-retry"));
     // 重试入口通过 send 触发内部 schedule_reconnect。
-    expect(controlWS.send).toHaveBeenCalledWith(expect.objectContaining({
-      type: "project_catalog_page",
-      payload: expect.objectContaining({ pinned_session_id: "default" }),
-    }));
+    expect(controlWS.send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "project_catalog_page",
+        payload: expect.objectContaining({ pinned_session_id: "default" }),
+      }),
+    );
   });
 
   it("后端未就绪（secret 为空）显示等待状态条", () => {
     render(<ChatView activeSid="default" secret="" />);
-    expect(screen.getByTestId("chat-conn-status").textContent).toContain(
-      "后端启动中",
-    );
+    expect(screen.getByTestId("chat-conn-status").textContent).toContain("后端启动中");
   });
 
   it("keeps observable tool/progress inputs independent and removes both when both are hidden", () => {
@@ -260,45 +253,51 @@ describe("ChatView（WB-4）", () => {
         ...state.sessions,
         default: {
           ...original,
-          messages: [{
-            id: "summary-visible",
-            role: "reasoning_summary",
-            text: "公开工作叙述",
-            run_id: "run-visible",
-            reasoning_summary_id: "summary-visible",
-            reasoning_status: "running",
-            ts: 1_000,
-          }, {
-            id: "tool-call-visible",
-            role: "tool_call",
-            text: "",
-            run_id: "run-visible",
-            tool_name: "file_read",
-            tool_args: { path: "README.md" },
-            ts: 2_000,
-          }, {
-            id: "tool-result-visible",
-            role: "tool_result",
-            text: "",
-            run_id: "run-visible",
-            tool_name: "file_read",
-            tool_ok: true,
-            tool_result: "done",
-            ts: 3_000,
-          }, {
-            id: "final-visible",
-            role: "assistant",
-            text: "最终回复",
-            run_id: "run-visible",
-            ts: 4_000,
-          }],
+          messages: [
+            {
+              id: "summary-visible",
+              role: "reasoning_summary",
+              text: "公开工作叙述",
+              run_id: "run-visible",
+              reasoning_summary_id: "summary-visible",
+              reasoning_status: "running",
+              ts: 1_000,
+            },
+            {
+              id: "tool-call-visible",
+              role: "tool_call",
+              text: "",
+              run_id: "run-visible",
+              tool_name: "file_read",
+              tool_args: { path: "README.md" },
+              ts: 2_000,
+            },
+            {
+              id: "tool-result-visible",
+              role: "tool_result",
+              text: "",
+              run_id: "run-visible",
+              tool_name: "file_read",
+              tool_ok: true,
+              tool_result: "done",
+              ts: 3_000,
+            },
+            {
+              id: "final-visible",
+              role: "assistant",
+              text: "最终回复",
+              run_id: "run-visible",
+              ts: 4_000,
+            },
+          ],
         },
       },
     }));
     render(<ChatView activeSid="default" secret="s3cret" />);
-    const streamRoles = () => Array.from(
-      screen.getByTestId("stub-message-stream").querySelectorAll("[data-stream-role]"),
-    ).map((element) => element.getAttribute("data-stream-role"));
+    const streamRoles = () =>
+      Array.from(
+        screen.getByTestId("stub-message-stream").querySelectorAll("[data-stream-role]"),
+      ).map((element) => element.getAttribute("data-stream-role"));
 
     expect(streamRoles()).toEqual(["progress", "tool", "tool", "assistant"]);
 

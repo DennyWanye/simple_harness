@@ -37,24 +37,19 @@ export type { ContextUsageSnapshot } from "../types/messages";
 export type MessageRole =
   | "user"
   | "assistant"
-  | "assistant_delta"   // P4-S25 A1: streaming partial assistant content
-  | "reasoning_delta"   // Legacy live-only provider reasoning; never render as public CoT
+  | "assistant_delta" // P4-S25 A1: streaming partial assistant content
+  | "reasoning_delta" // Legacy live-only provider reasoning; never render as public CoT
   | "reasoning_summary" // Durable public execution summary, excluded from model context
   | "tool_call"
   | "tool_result"
-  | "plan"              // P4-S25 A2: plan card preceding execution
-  | "ppt_outline"       // PPT Pro WI-4: 大纲确认卡（后端 propose → 用户确认/修改/复用）
+  | "plan" // P4-S25 A2: plan card preceding execution
+  | "ppt_outline" // PPT Pro WI-4: 大纲确认卡（后端 propose → 用户确认/修改/复用）
   | "workflow_progress"
   | "workflow_stage"
-  | "slash_result"      // FEAT-A2: /slash 命令结果（help/goal/prefs/skill/error）
+  | "slash_result" // FEAT-A2: /slash 命令结果（help/goal/prefs/skill/error）
   | "error";
 
-export type WorkflowProgressStatus =
-  | "running"
-  | "waiting"
-  | "completed"
-  | "failed"
-  | "cancelled";
+export type WorkflowProgressStatus = "running" | "waiting" | "completed" | "failed" | "cancelled";
 
 export type WorkflowV5ControlAction =
   | "none"
@@ -96,11 +91,13 @@ export interface WorkflowV5ProgressProjection {
     unchanged: number | "none";
   };
   source_counts: { valid: number; first_party: number };
-  active_gap: "none" | {
-    status: "pending" | "running" | "completed" | "failed" | "cancelled";
-    work_kind: "query" | "source_target" | "fetch";
-    dimension_ordinal: number;
-  };
+  active_gap:
+    | "none"
+    | {
+        status: "pending" | "running" | "completed" | "failed" | "cancelled";
+        work_kind: "query" | "source_target" | "fetch";
+        dimension_ordinal: number;
+      };
   elapsed_seconds: number;
   soft_checkpoint: "none" | "before" | "reached";
   lease_reason: string;
@@ -119,12 +116,7 @@ export interface WorkflowV5ProgressProjection {
   rejection_reasons: Array<{ reason_code: string; count: number }>;
 }
 
-export type WorkflowV7ChildStatus =
-  | "queued"
-  | "running"
-  | "retrying"
-  | "valid"
-  | "insufficient";
+export type WorkflowV7ChildStatus = "queued" | "running" | "retrying" | "valid" | "insufficient";
 
 export interface WorkflowV7ChildProgress {
   child_id: string;
@@ -192,7 +184,7 @@ export interface Message {
   plan_auto_confirmed?: boolean;
   // superpowers 决策2 plan-confirm 硬门: 等用户点 [执行]/[取消]
   plan_awaiting_confirm?: boolean;
-  plan_sid?: string;  // which session this plan belongs to (for plan_confirm WS)
+  plan_sid?: string; // which session this plan belongs to (for plan_confirm WS)
   plan_run_id?: string;
   plan_decision_id?: string;
   plan_nonce?: string;
@@ -261,12 +253,7 @@ export interface Todo {
   status: "pending" | "in_progress" | "completed";
 }
 
-export type SessionStatus =
-  | "idle"
-  | "thinking"
-  | "running"
-  | "permission"
-  | "error";
+export type SessionStatus = "idle" | "thinking" | "running" | "permission" | "error";
 
 /** P5-S3-Inbox — single supervisor alert payload, kept in two places:
  *   • `supervisor_alert` (latest, drives PetStateMachine)
@@ -377,9 +364,7 @@ const TERMINAL_TASK_RUN_STATUSES = new Set<TaskRunProjectionStatus>([
   "cancelled",
 ]);
 
-function isTerminalTaskRunStatus(
-  status: TaskRunProjectionStatus | undefined,
-): boolean {
+function isTerminalTaskRunStatus(status: TaskRunProjectionStatus | undefined): boolean {
   return status !== undefined && TERMINAL_TASK_RUN_STATUSES.has(status);
 }
 
@@ -428,11 +413,7 @@ interface SessionsStore {
     status: NonNullable<Message["continuation_status"]>,
     error?: string,
   ): void;
-  upsert_run_projection(
-    sid: string,
-    runId: string,
-    patch: Partial<TaskRunProjectionState>,
-  ): void;
+  upsert_run_projection(sid: string, runId: string, patch: Partial<TaskRunProjectionState>): void;
   select_run_projection(sid: string, runId: string | null): void;
   close_run_projection(sid: string, runId: string): void;
   /** Replace the entire message list for a session — used by F5
@@ -461,11 +442,7 @@ interface SessionsStore {
     streamEpoch: string,
     content: string,
   ): void;
-  clear_companion_provisional(
-    runId?: string,
-    invocationId?: string,
-    streamEpoch?: string,
-  ): void;
+  clear_companion_provisional(runId?: string, invocationId?: string, streamEpoch?: string): void;
   /** superpowers 决策2: 用户点了 plan 卡片的 [执行]/[取消] 后，清掉该
    *  plan 消息的 awaiting_confirm（按钮消失）。msgId 可空 → 清该会话最近
    *  一条仍 awaiting 的 plan（超时取消路径用）。 */
@@ -546,11 +523,7 @@ function compatible_history_scope(left: Message, right: Message): boolean {
   // （task-*），两者永远不等 → 同一条消息被判成"不同作用域"而拒绝对账 →
   // 切走再切回后用户气泡渲染两次（r5 S05 真机实测，DB 只有一行）。
   if (left.run_id && right.run_id) return left.run_id === right.run_id;
-  if (
-    left.task_scope_id &&
-    right.task_scope_id &&
-    left.task_scope_id !== right.task_scope_id
-  ) {
+  if (left.task_scope_id && right.task_scope_id && left.task_scope_id !== right.task_scope_id) {
     return false;
   }
   return true;
@@ -562,9 +535,7 @@ function reconcile_live_messages_with_history(
 ): Message[] {
   const remainingLive = [...liveMessages];
   for (const historyMessage of historyMessages) {
-    let liveIndex = remainingLive.findIndex(
-      (message) => message.id === historyMessage.id,
-    );
+    let liveIndex = remainingLive.findIndex((message) => message.id === historyMessage.id);
     if (liveIndex < 0) {
       const historyKey = history_reconciliation_key(historyMessage);
       if (historyKey) {
@@ -592,9 +563,21 @@ const DEEP_RESEARCH_STAGE_METRICS: Record<string, readonly string[]> = {
   plan: ["question_count", "active_branch_count"],
   expand: ["query_count"],
   search: [
-    "providers", "providers_attempted", "providers_hit", "actual_requests", "hits",
-    "empty", "timeouts", "cooldown_skips", "busy_skips", "queue_timeouts", "probes",
-    "rescue_considered_count", "rescue_executed_count", "candidates", "kept",
+    "providers",
+    "providers_attempted",
+    "providers_hit",
+    "actual_requests",
+    "hits",
+    "empty",
+    "timeouts",
+    "cooldown_skips",
+    "busy_skips",
+    "queue_timeouts",
+    "probes",
+    "rescue_considered_count",
+    "rescue_executed_count",
+    "candidates",
+    "kept",
   ],
   direct: ["direct_sources", "candidates"],
   fetch: ["attempted", "succeeded", "dropped"],
@@ -603,42 +586,110 @@ const DEEP_RESEARCH_STAGE_METRICS: Record<string, readonly string[]> = {
   rerank: ["passages", "domains"],
   synth: ["sections", "claim_count"],
   cite: [
-    "citations", "domains", "supported", "unsupported", "support_rate",
-    "factual_claims_pre_repair", "supported_factual", "published", "discarded",
-    "repaired", "body_bytes",
+    "citations",
+    "domains",
+    "supported",
+    "unsupported",
+    "support_rate",
+    "factual_claims_pre_repair",
+    "supported_factual",
+    "published",
+    "discarded",
+    "repaired",
+    "body_bytes",
   ],
   persist: ["artifact_count", "report_bytes", "status"],
   finalize: [
-    "citations", "status", "published", "discarded", "repaired", "actual_requests",
-    "hits", "empty", "timeouts", "cooldown_skips", "busy_skips", "queue_timeouts",
-    "probes", "rescue_considered_count", "rescue_executed_count", "candidates",
+    "citations",
+    "status",
+    "published",
+    "discarded",
+    "repaired",
+    "actual_requests",
+    "hits",
+    "empty",
+    "timeouts",
+    "cooldown_skips",
+    "busy_skips",
+    "queue_timeouts",
+    "probes",
+    "rescue_considered_count",
+    "rescue_executed_count",
+    "candidates",
   ],
 };
 
 const DEEP_RESEARCH_SKIPPABLE_STAGES = new Set([
-  "fetch", "score", "gap", "rerank", "synth", "cite", "persist",
+  "fetch",
+  "score",
+  "gap",
+  "rerank",
+  "synth",
+  "cite",
+  "persist",
 ]);
 
 const WORKFLOW_RESULT_CODES = new Set([
-  "started", "waiting", "failed", "cancelled", "stage_ok", "stage_degraded",
-  "success", "partial", "degraded", "completed", "insufficient_evidence", "no_results",
+  "started",
+  "waiting",
+  "failed",
+  "cancelled",
+  "stage_ok",
+  "stage_degraded",
+  "success",
+  "partial",
+  "degraded",
+  "completed",
+  "insufficient_evidence",
+  "no_results",
 ]);
 
 const WORKFLOW_DIAGNOSTIC_CODES = new Set([
-  "cooldown", "half_open_busy", "timeout", "blocked", "captcha", "rate_limit",
-  "http_error", "invalid_response", "budget_exhausted", "provider_degraded",
-  "partial_results", "evidence_missing", "low_quality_evidence", "missing_exact_token",
-  "insufficient_support", "claim_unsupported", "claim_pruned", "deterministic_repair",
-  "insufficient_evidence", "artifact_missing", "no_results", "degraded",
-  "deadline_exhausted", "search_port_unavailable", "provider_failure",
-  "direct_failure", "fetch_failure", "blob_unavailable", "low_quality_source",
-  "low_quality_content", "search_degraded", "support_rate_below_threshold",
-  "published_factual_below_threshold", "citation_count_below_threshold",
-  "domain_count_below_threshold", "body_bytes_below_threshold",
+  "cooldown",
+  "half_open_busy",
+  "timeout",
+  "blocked",
+  "captcha",
+  "rate_limit",
+  "http_error",
+  "invalid_response",
+  "budget_exhausted",
+  "provider_degraded",
+  "partial_results",
+  "evidence_missing",
+  "low_quality_evidence",
+  "missing_exact_token",
+  "insufficient_support",
+  "claim_unsupported",
+  "claim_pruned",
+  "deterministic_repair",
+  "insufficient_evidence",
+  "artifact_missing",
+  "no_results",
+  "degraded",
+  "deadline_exhausted",
+  "search_port_unavailable",
+  "provider_failure",
+  "direct_failure",
+  "fetch_failure",
+  "blob_unavailable",
+  "low_quality_source",
+  "low_quality_content",
+  "search_degraded",
+  "support_rate_below_threshold",
+  "published_factual_below_threshold",
+  "citation_count_below_threshold",
+  "domain_count_below_threshold",
+  "body_bytes_below_threshold",
 ]);
 
 const WORKFLOW_DELIVERY_STATUSES = new Set<WorkflowDeliveryAggregate["status"]>([
-  "queued", "delivering", "delivered", "retrying", "fenced", "failed",
+  "queued",
+  "delivering",
+  "delivered",
+  "retrying",
+  "fenced",
+  "failed",
 ]);
 
 function workflowEventTime(event: WorkflowEventEnvelope): number {
@@ -657,7 +708,8 @@ function workflowErrorText(value: unknown): string | undefined {
         const friendly: Record<string, string> = {
           "provider:insufficient_balance": "模型服务余额不足，请充值或切换模型后重试。",
           // 2026-08-09：托管登录移除后没有"重新登录"这回事，改为指向设置页改 key。
-          "provider:relay_key_invalid": "模型服务密钥无效，请在「设置 → LLM Provider」更新 apiKey 后重试。",
+          "provider:relay_key_invalid":
+            "模型服务密钥无效，请在「设置 → LLM Provider」更新 apiKey 后重试。",
           "provider:empty_api_key": "没有可用的模型服务凭据，请登录或配置 API Key。",
         };
         return friendly[text] ?? text;
@@ -679,23 +731,40 @@ function parseWorkflowDeliveryAggregate(value: unknown): WorkflowDeliveryAggrega
   const runId = String(raw.run_id || "").trim();
   const manifestRef = String(raw.manifest_ref || "").trim();
   const countKeys = [
-    "required_total", "pending", "delivering", "delivered", "retrying", "fenced", "failed",
+    "required_total",
+    "pending",
+    "delivering",
+    "delivered",
+    "retrying",
+    "fenced",
+    "failed",
   ] as const;
   const counts = Object.fromEntries(countKeys.map((key) => [key, Number(raw[key])])) as Record<
-    typeof countKeys[number], number
+    (typeof countKeys)[number],
+    number
   >;
   const updatedAt = Number(raw.updated_at);
   if (
-    raw.schema_version !== 1 || !runId || !manifestRef ||
+    raw.schema_version !== 1 ||
+    !runId ||
+    !manifestRef ||
     !WORKFLOW_DELIVERY_STATUSES.has(status) ||
     !countKeys.every((key) => Number.isInteger(counts[key]) && counts[key] >= 0) ||
-    !Number.isFinite(updatedAt) || updatedAt < 0
-  ) return undefined;
+    !Number.isFinite(updatedAt) ||
+    updatedAt < 0
+  )
+    return undefined;
   if (
-    counts.pending + counts.delivering + counts.delivered + counts.retrying +
-      counts.fenced + counts.failed !== counts.required_total ||
+    counts.pending +
+      counts.delivering +
+      counts.delivered +
+      counts.retrying +
+      counts.fenced +
+      counts.failed !==
+      counts.required_total ||
     counts.required_total < 1
-  ) return undefined;
+  )
+    return undefined;
   return {
     schema_version: 1,
     run_id: runId,
@@ -726,17 +795,21 @@ function workflowResultCode(value: unknown): string | undefined {
 
 function workflowDiagnosticCodes(value: unknown): string[] | undefined {
   if (!Array.isArray(value)) return undefined;
-  const codes = Array.from(new Set(
-    value.map((item) => String(item)).filter((item) => WORKFLOW_DIAGNOSTIC_CODES.has(item)),
-  )).sort();
+  const codes = Array.from(
+    new Set(
+      value.map((item) => String(item)).filter((item) => WORKFLOW_DIAGNOSTIC_CODES.has(item)),
+    ),
+  ).sort();
   return codes.length > 0 ? codes : undefined;
 }
 
 function workflowSkippedStageIds(value: unknown): string[] | undefined {
   if (!Array.isArray(value)) return undefined;
-  const stages = Array.from(new Set(
-    value.map((item) => String(item)).filter((item) => DEEP_RESEARCH_SKIPPABLE_STAGES.has(item)),
-  ));
+  const stages = Array.from(
+    new Set(
+      value.map((item) => String(item)).filter((item) => DEEP_RESEARCH_SKIPPABLE_STAGES.has(item)),
+    ),
+  );
   return stages.length > 0 ? stages.slice(0, 7) : undefined;
 }
 
@@ -760,40 +833,87 @@ function sanitizeWorkflowMetrics(
 }
 
 const V5_ACTIONS = new Set([
-  "normalize_request", "model_dimensions", "plan_queries", "expand_queries",
-  "search_sources", "find_first_party_sources", "fetch_sources", "score_evidence",
-  "evaluate_gaps", "research_gap", "commit_gap_result", "rerank_evidence",
-  "synthesize_report", "audit_quality", "repair_report", "commit_repair",
-  "persist_report", "finalize_delivery", "finalize_insufficient",
+  "normalize_request",
+  "model_dimensions",
+  "plan_queries",
+  "expand_queries",
+  "search_sources",
+  "find_first_party_sources",
+  "fetch_sources",
+  "score_evidence",
+  "evaluate_gaps",
+  "research_gap",
+  "commit_gap_result",
+  "rerank_evidence",
+  "synthesize_report",
+  "audit_quality",
+  "repair_report",
+  "commit_repair",
+  "persist_report",
+  "finalize_delivery",
+  "finalize_insufficient",
 ]);
 const V5_RESULTS = new Set([
-  "started", "waiting", "failed", "cancelled", "completed", "insufficient_evidence",
+  "started",
+  "waiting",
+  "failed",
+  "cancelled",
+  "completed",
+  "insufficient_evidence",
 ]);
 const V5_CONTROL_ACTIONS = new Set<WorkflowV5ControlAction>([
-  "none", "generate_now", "continue_research", "retry_from_start", "cancel_settle",
+  "none",
+  "generate_now",
+  "continue_research",
+  "retry_from_start",
+  "cancel_settle",
 ]);
 const V5_CONTROL_STATUSES = new Set<WorkflowV5ControlStatus>([
-  "none", "open", "accepted", "observed", "settled", "consumed", "rejected", "expired",
+  "none",
+  "open",
+  "accepted",
+  "observed",
+  "settled",
+  "consumed",
+  "rejected",
+  "expired",
 ]);
 const V5_HARD_FAILURES = new Set([
-  "completed_core_uncovered", "unsupported_key_claim", "invalid_or_captcha_citation",
-  "secondary_replaces_available_official", "citation_dimension_mismatch",
+  "completed_core_uncovered",
+  "unsupported_key_claim",
+  "invalid_or_captcha_citation",
+  "secondary_replaces_available_official",
+  "citation_dimension_mismatch",
   "internal_diagnostics_leak",
 ]);
 const V5_LEASE_REASONS = new Set([
-  "none", "before_soft_or_lease_checkpoint", "lease_renewed_measurable_gain",
-  "lease_not_renewed_no_gain", "automatic_cap", "running",
-  "generate_now_settling", "cancelled", "plateau_settling",
-  "lease_no_gain_settling", "automatic_cap_settling",
+  "none",
+  "before_soft_or_lease_checkpoint",
+  "lease_renewed_measurable_gain",
+  "lease_not_renewed_no_gain",
+  "automatic_cap",
+  "running",
+  "generate_now_settling",
+  "cancelled",
+  "plateau_settling",
+  "lease_no_gain_settling",
+  "automatic_cap_settling",
 ]);
 const V5_GAP_REASONS = new Set([
-  "insufficient_admitted_passages", "insufficient_strong_distinct_families",
-  "winning_relevance_below_threshold", "duplicate_rate_above_threshold",
-  "invalid_rate_above_threshold", "first_party_requirement_unsatisfied", "evidence_gap",
+  "insufficient_admitted_passages",
+  "insufficient_strong_distinct_families",
+  "winning_relevance_below_threshold",
+  "duplicate_rate_above_threshold",
+  "invalid_rate_above_threshold",
+  "first_party_requirement_unsatisfied",
+  "evidence_gap",
 ]);
 const V5_REJECTION_REASONS = new Set([
-  "invalid_page", "body_too_short", "body_span_missing",
-  "dimension_relevance_below_threshold", "other_rejected",
+  "invalid_page",
+  "body_too_short",
+  "body_span_missing",
+  "dimension_relevance_below_threshold",
+  "other_rejected",
 ]);
 
 function nonNegativeInteger(value: unknown): number | undefined {
@@ -804,21 +924,28 @@ function v5MaybeCount(value: unknown): number | "none" | undefined {
   return value === "none" ? "none" : nonNegativeInteger(value);
 }
 
-function parseV5Progress(payload: Record<string, unknown>): WorkflowV5ProgressProjection | undefined {
+function parseV5Progress(
+  payload: Record<string, unknown>,
+): WorkflowV5ProgressProjection | undefined {
   if (
     payload.schema_version !== 5 ||
     payload.capability !== "deep_research_progress_v5" ||
     payload.workflow_name !== "deep_research" ||
     payload.workflow_version !== "v5"
-  ) return undefined;
+  )
+    return undefined;
   const action = String(payload.action || "");
   const result = String(payload.result || "");
   const nextStep = String(payload.next_step || "");
   const controlAction = String(payload.control_action || "") as WorkflowV5ControlAction;
   const controlStatus = String(payload.control_status || "") as WorkflowV5ControlStatus;
-  if (!V5_ACTIONS.has(action) || !V5_RESULTS.has(result) ||
+  if (
+    !V5_ACTIONS.has(action) ||
+    !V5_RESULTS.has(result) ||
     (nextStep !== "none" && !V5_ACTIONS.has(nextStep)) ||
-    !V5_CONTROL_ACTIONS.has(controlAction) || !V5_CONTROL_STATUSES.has(controlStatus)) {
+    !V5_CONTROL_ACTIONS.has(controlAction) ||
+    !V5_CONTROL_STATUSES.has(controlStatus)
+  ) {
     return undefined;
   }
   const dimensions = payload.dimension_counts as Record<string, unknown> | undefined;
@@ -845,29 +972,47 @@ function parseV5Progress(payload: Record<string, unknown>): WorkflowV5ProgressPr
     valid: nonNegativeInteger(sources.valid),
     first_party: nonNegativeInteger(sources.first_party),
   };
-  if (Object.values(dimensionCounts).some((value) => value === undefined) ||
+  if (
+    Object.values(dimensionCounts).some((value) => value === undefined) ||
     Object.values(dimensionChanges).some((value) => value === undefined) ||
-    Object.values(sourceCounts).some((value) => value === undefined)) return undefined;
+    Object.values(sourceCounts).some((value) => value === undefined)
+  )
+    return undefined;
 
   let activeGap: WorkflowV5ProgressProjection["active_gap"] = "none";
   if (payload.active_gap !== "none") {
     if (!payload.active_gap || typeof payload.active_gap !== "object") return undefined;
     const gap = payload.active_gap as Record<string, unknown>;
-    const gapStatus = String(gap.status || "") as Exclude<WorkflowV5ProgressProjection["active_gap"], "none">["status"];
-    const workKind = String(gap.work_kind || "") as Exclude<WorkflowV5ProgressProjection["active_gap"], "none">["work_kind"];
+    const gapStatus = String(gap.status || "") as Exclude<
+      WorkflowV5ProgressProjection["active_gap"],
+      "none"
+    >["status"];
+    const workKind = String(gap.work_kind || "") as Exclude<
+      WorkflowV5ProgressProjection["active_gap"],
+      "none"
+    >["work_kind"];
     const dimensionOrdinal = nonNegativeInteger(gap.dimension_ordinal);
-    if (!["pending", "running", "completed", "failed", "cancelled"].includes(gapStatus) ||
-      !["query", "source_target", "fetch"].includes(workKind) || dimensionOrdinal === undefined) {
+    if (
+      !["pending", "running", "completed", "failed", "cancelled"].includes(gapStatus) ||
+      !["query", "source_target", "fetch"].includes(workKind) ||
+      dimensionOrdinal === undefined
+    ) {
       return undefined;
     }
     activeGap = { status: gapStatus, work_kind: workKind, dimension_ordinal: dimensionOrdinal };
   }
-  if (!Array.isArray(payload.hard_failures) ||
-    payload.hard_failures.some((item) => typeof item !== "string" || !V5_HARD_FAILURES.has(item))) {
+  if (
+    !Array.isArray(payload.hard_failures) ||
+    payload.hard_failures.some((item) => typeof item !== "string" || !V5_HARD_FAILURES.has(item))
+  ) {
     return undefined;
   }
-  if (!Array.isArray(payload.failed_dimensions) || payload.failed_dimensions.length > 8 ||
-    !Array.isArray(payload.rejection_reasons) || payload.rejection_reasons.length > 5) {
+  if (
+    !Array.isArray(payload.failed_dimensions) ||
+    payload.failed_dimensions.length > 8 ||
+    !Array.isArray(payload.rejection_reasons) ||
+    payload.rejection_reasons.length > 5
+  ) {
     return undefined;
   }
   const failedDimensions: WorkflowV5ProgressProjection["failed_dimensions"] = [];
@@ -876,9 +1021,14 @@ function parseV5Progress(payload: Record<string, unknown>): WorkflowV5ProgressPr
     const item = value as Record<string, unknown>;
     const ordinal = nonNegativeInteger(item.dimension_ordinal);
     const failedStatus = String(item.status || "") as "uncovered" | "partially_covered";
-    if (ordinal === undefined || !["uncovered", "partially_covered"].includes(failedStatus) ||
-      !Array.isArray(item.reason_codes) || item.reason_codes.length < 1 || item.reason_codes.length > 6 ||
-      item.reason_codes.some((reason) => typeof reason !== "string" || !V5_GAP_REASONS.has(reason))) {
+    if (
+      ordinal === undefined ||
+      !["uncovered", "partially_covered"].includes(failedStatus) ||
+      !Array.isArray(item.reason_codes) ||
+      item.reason_codes.length < 1 ||
+      item.reason_codes.length > 6 ||
+      item.reason_codes.some((reason) => typeof reason !== "string" || !V5_GAP_REASONS.has(reason))
+    ) {
       return undefined;
     }
     failedDimensions.push({
@@ -901,15 +1051,24 @@ function parseV5Progress(payload: Record<string, unknown>): WorkflowV5ProgressPr
   const qualityScore = v5MaybeCount(payload.quality_score);
   const tokenBudgetRatio = v5MaybeCount(payload.token_budget_ratio);
   const elapsedSeconds = nonNegativeInteger(payload.elapsed_seconds);
-  const predicted = String(payload.predicted_delivery || "") as WorkflowV5ProgressProjection["predicted_delivery"];
-  const softCheckpoint = String(payload.soft_checkpoint || "") as WorkflowV5ProgressProjection["soft_checkpoint"];
+  const predicted = String(
+    payload.predicted_delivery || "",
+  ) as WorkflowV5ProgressProjection["predicted_delivery"];
+  const softCheckpoint = String(
+    payload.soft_checkpoint || "",
+  ) as WorkflowV5ProgressProjection["soft_checkpoint"];
   const leaseReason = String(payload.lease_reason || "");
   const parentOperation = String(payload.parent_operation || "");
-  if ([discarded, remainingGap, qualityScore, tokenBudgetRatio, elapsedSeconds].some((value) => value === undefined) ||
+  if (
+    [discarded, remainingGap, qualityScore, tokenBudgetRatio, elapsedSeconds].some(
+      (value) => value === undefined,
+    ) ||
     !["pending", "completed", "partial", "insufficient_evidence"].includes(predicted) ||
     !["none", "before", "reached"].includes(softCheckpoint) ||
     !V5_LEASE_REASONS.has(leaseReason) ||
-    !(parentOperation === "none" || /^op_[0-9a-f]{20}$/.test(parentOperation))) return undefined;
+    !(parentOperation === "none" || /^op_[0-9a-f]{20}$/.test(parentOperation))
+  )
+    return undefined;
   return {
     action,
     result,
@@ -917,7 +1076,8 @@ function parseV5Progress(payload: Record<string, unknown>): WorkflowV5ProgressPr
     remaining_gap: remainingGap!,
     next_step: nextStep,
     dimension_counts: dimensionCounts as WorkflowV5ProgressProjection["dimension_counts"],
-    dimension_status_changes: dimensionChanges as WorkflowV5ProgressProjection["dimension_status_changes"],
+    dimension_status_changes:
+      dimensionChanges as WorkflowV5ProgressProjection["dimension_status_changes"],
     source_counts: sourceCounts as WorkflowV5ProgressProjection["source_counts"],
     active_gap: activeGap,
     elapsed_seconds: elapsedSeconds!,
@@ -937,20 +1097,24 @@ function parseV5Progress(payload: Record<string, unknown>): WorkflowV5ProgressPr
 
 function isDeepResearchCompletedStage(payload: Record<string, unknown>): boolean {
   const stageId = String(payload.stage_id || "");
-  return Number(payload.schema_version) === 2 &&
+  return (
+    Number(payload.schema_version) === 2 &&
     String(payload.kind || "") === "stage" &&
     String(payload.workflow_name || "") === "deep_research" &&
     stageId in DEEP_RESEARCH_STAGE_METRICS &&
-    String(payload.status || payload.transition || "") === "completed";
+    String(payload.status || payload.transition || "") === "completed"
+  );
 }
 
 const V7_CHILD_STATUSES = new Set<WorkflowV7ChildStatus>([
-  "queued", "running", "retrying", "valid", "insufficient",
+  "queued",
+  "running",
+  "retrying",
+  "valid",
+  "insufficient",
 ]);
 
-function parseV7Children(
-  payload: Record<string, unknown>,
-): WorkflowV7ChildProgress[] | undefined {
+function parseV7Children(payload: Record<string, unknown>): WorkflowV7ChildProgress[] | undefined {
   if (
     payload.schema_version !== 7 ||
     payload.kind !== "research_children" ||
@@ -958,7 +1122,8 @@ function parseV7Children(
     !Array.isArray(payload.children) ||
     payload.children.length < 2 ||
     payload.children.length > 6
-  ) return undefined;
+  )
+    return undefined;
   const seen = new Set<string>();
   const result: WorkflowV7ChildProgress[] = [];
   for (const raw of payload.children) {
@@ -971,12 +1136,22 @@ function parseV7Children(
     const maxAttempts = Number(item.max_attempts);
     const nSources = Number(item.n_sources);
     if (
-      !/^dr-\d+$/.test(childId) || seen.has(childId) ||
-      !question || question.length > 600 || !V7_CHILD_STATUSES.has(status) ||
-      !Number.isInteger(attempt) || !Number.isInteger(maxAttempts) ||
-      attempt < 0 || maxAttempts < 1 || maxAttempts > 3 || attempt > maxAttempts ||
-      !Number.isInteger(nSources) || nSources < 0 || nSources > 10_000
-    ) return undefined;
+      !/^dr-\d+$/.test(childId) ||
+      seen.has(childId) ||
+      !question ||
+      question.length > 600 ||
+      !V7_CHILD_STATUSES.has(status) ||
+      !Number.isInteger(attempt) ||
+      !Number.isInteger(maxAttempts) ||
+      attempt < 0 ||
+      maxAttempts < 1 ||
+      maxAttempts > 3 ||
+      attempt > maxAttempts ||
+      !Number.isInteger(nSources) ||
+      nSources < 0 ||
+      nSources > 10_000
+    )
+      return undefined;
     result.push({
       child_id: childId,
       question,
@@ -984,9 +1159,8 @@ function parseV7Children(
       attempt,
       max_attempts: maxAttempts,
       n_sources: nSources,
-      reason_code: typeof item.reason_code === "string"
-        ? item.reason_code.slice(0, 128)
-        : undefined,
+      reason_code:
+        typeof item.reason_code === "string" ? item.reason_code.slice(0, 128) : undefined,
     });
     seen.add(childId);
   }
@@ -1000,20 +1174,25 @@ function appendWorkflowStage(
   runId: string,
   seq: number,
 ): Message[] {
-  const rootRunId = String(
-    event.root_run_id || event.task_root_run_id || "",
-  ).trim();
+  const rootRunId = String(event.root_run_id || event.task_root_run_id || "").trim();
   const taskScopeId = String(event.task_scope_id || "").trim();
   const v5 = parseV5Progress(payload);
   if (v5 && payload.kind === "stage" && payload.status === "completed") {
     const stageInstanceId = String(payload.stage_instance_id || "");
     const eventId = String(event.event_id || "").trim();
-    const visibility = payload.visibility === "visible" ? "visible" :
-      payload.visibility === "hidden" ? "hidden" : undefined;
+    const visibility =
+      payload.visibility === "visible"
+        ? "visible"
+        : payload.visibility === "hidden"
+          ? "hidden"
+          : undefined;
     if (!eventId || !/^[0-9a-f]{24}$/.test(stageInstanceId) || !visibility) return messages;
-    const duplicate = messages.some((message) =>
-      message.role === "workflow_stage" && message.workflow_run_id === runId &&
-      (message.workflow_stage_instance_id === stageInstanceId || message.workflow_event_id === eventId),
+    const duplicate = messages.some(
+      (message) =>
+        message.role === "workflow_stage" &&
+        message.workflow_run_id === runId &&
+        (message.workflow_stage_instance_id === stageInstanceId ||
+          message.workflow_event_id === eventId),
     );
     if (duplicate) return messages;
     const stageId = String(payload.public_stage_id || payload.stage_id || "");
@@ -1040,7 +1219,8 @@ function appendWorkflowStage(
       workflow_result: v5.result,
       workflow_discarded: typeof v5.discarded === "number" ? v5.discarded : undefined,
       workflow_next_stage: v5.next_step === "none" ? undefined : v5.next_step,
-      workflow_degraded: v5.hard_failures.length > 0 ||
+      workflow_degraded:
+        v5.hard_failures.length > 0 ||
         ["partial", "insufficient_evidence"].includes(v5.predicted_delivery),
       workflow_capability: "deep_research_progress_v5",
       workflow_visibility: visibility,
@@ -1054,10 +1234,11 @@ function appendWorkflowStage(
   if (!isDeepResearchCompletedStage(payload)) return messages;
   const eventId = String(event.event_id || "").trim();
   if (!eventId) return messages;
-  const duplicate = messages.some((message) =>
-    message.role === "workflow_stage" &&
-    message.workflow_run_id === runId &&
-    (message.workflow_event_id === eventId || message.workflow_seq === seq),
+  const duplicate = messages.some(
+    (message) =>
+      message.role === "workflow_stage" &&
+      message.workflow_run_id === runId &&
+      (message.workflow_event_id === eventId || message.workflow_seq === seq),
   );
   if (duplicate) return messages;
 
@@ -1093,9 +1274,7 @@ function appendWorkflowStage(
     workflow_published: workflowNumber(payload.published),
     workflow_discarded: workflowNumber(payload.discarded),
     workflow_repaired: workflowNumber(payload.repaired),
-    workflow_next_stage: typeof payload.next_stage === "string"
-      ? payload.next_stage
-      : undefined,
+    workflow_next_stage: typeof payload.next_stage === "string" ? payload.next_stage : undefined,
   };
   const insertAt = messages.findIndex((message) => message.ts > child.ts);
   const updated = [...messages];
@@ -1113,9 +1292,10 @@ export function applyWorkflowEvent(
   }
   if (eventType === "workflow.decision") {
     const payload = event.payload || {};
-    const prompt = payload.prompt && typeof payload.prompt === "object"
-      ? payload.prompt as Record<string, unknown>
-      : {};
+    const prompt =
+      payload.prompt && typeof payload.prompt === "object"
+        ? (payload.prompt as Record<string, unknown>)
+        : {};
     if (String(payload.decision_kind || prompt.kind || "") !== "ppt_outline") {
       return { messages, handled: true };
     }
@@ -1154,24 +1334,18 @@ export function applyWorkflowEvent(
   }
 
   const payload = event.payload || {};
-  const rootRunId = String(
-    event.root_run_id || event.task_root_run_id || "",
-  ).trim();
+  const rootRunId = String(event.root_run_id || event.task_root_run_id || "").trim();
   const taskScopeId = String(event.task_scope_id || "").trim();
   const incomingDelivery = parseWorkflowDeliveryAggregate(event.delivery_aggregate);
   const v5Projection = parseV5Progress(payload);
   const cardId = `workflow-run:${runId}`;
   let messagesWithStage = appendWorkflowStage(messages, event, payload, runId, seq);
   const index = messagesWithStage.findIndex(
-    (message) =>
-      message.role === "workflow_progress" && message.workflow_run_id === runId,
+    (message) => message.role === "workflow_progress" && message.workflow_run_id === runId,
   );
   let previous = index >= 0 ? messagesWithStage[index] : undefined;
   const incomingV7Children = parseV7Children(payload);
-  if (
-    previous && incomingV7Children &&
-    seq > (previous.workflow_v7_children_seq ?? -1)
-  ) {
+  if (previous && incomingV7Children && seq > (previous.workflow_v7_children_seq ?? -1)) {
     const updatedPrevious: Message = {
       ...previous,
       workflow_v7_children: incomingV7Children,
@@ -1186,11 +1360,12 @@ export function applyWorkflowEvent(
     (typeof previous?.workflow_seq === "number" && seq <= previous.workflow_seq)
   ) {
     if (
-      previous && incomingDelivery && incomingDelivery.run_id === runId &&
-      (!previous.workflow_delivery || (
-        previous.workflow_delivery.manifest_ref === incomingDelivery.manifest_ref &&
-        incomingDelivery.updated_at >= previous.workflow_delivery.updated_at
-      ))
+      previous &&
+      incomingDelivery &&
+      incomingDelivery.run_id === runId &&
+      (!previous.workflow_delivery ||
+        (previous.workflow_delivery.manifest_ref === incomingDelivery.manifest_ref &&
+          incomingDelivery.updated_at >= previous.workflow_delivery.updated_at))
     ) {
       const updated = [...messagesWithStage];
       updated[index] = { ...previous, workflow_delivery: incomingDelivery };
@@ -1200,31 +1375,35 @@ export function applyWorkflowEvent(
   }
 
   const incomingOrdinal = Number(payload.ordinal);
-  const ordinal = Number.isFinite(incomingOrdinal) && incomingOrdinal >= 0
-    ? incomingOrdinal
-    : previous?.workflow_ordinal ?? 0;
+  const ordinal =
+    Number.isFinite(incomingOrdinal) && incomingOrdinal >= 0
+      ? incomingOrdinal
+      : (previous?.workflow_ordinal ?? 0);
   const incomingTotal = Number(payload.total);
-  const total = Number.isFinite(incomingTotal) && incomingTotal >= 0
-    ? incomingTotal
-    : previous?.workflow_total ?? 0;
+  const total =
+    Number.isFinite(incomingTotal) && incomingTotal >= 0
+      ? incomingTotal
+      : (previous?.workflow_total ?? 0);
   let status: WorkflowProgressStatus = previous?.workflow_status ?? "running";
   let terminal = false;
   if (eventType === "workflow.progress") {
     const transition = String(payload.status || "started");
-    status = transition === "waiting"
-      ? "waiting"
-      : transition === "failed"
-        ? "failed"
-        : transition === "cancelled"
-          ? "cancelled"
-          : "running";
+    status =
+      transition === "waiting"
+        ? "waiting"
+        : transition === "failed"
+          ? "failed"
+          : transition === "cancelled"
+            ? "cancelled"
+            : "running";
   } else if (eventType === "workflow.final") {
     const finalStatus = String(payload.status || "failed");
-    status = finalStatus === "completed"
-      ? "completed"
-      : finalStatus === "cancelled"
-        ? "cancelled"
-        : "failed";
+    status =
+      finalStatus === "completed"
+        ? "completed"
+        : finalStatus === "cancelled"
+          ? "cancelled"
+          : "failed";
     terminal = true;
   } else {
     status = "running";
@@ -1233,12 +1412,12 @@ export function applyWorkflowEvent(
   const incomingVersion = String(payload.workflow_version || previous?.workflow_version || "");
   const preserveActiveV5Control = Boolean(
     previous?.workflow_v5 &&
-    previous.workflow_v5.control_action !== "none" &&
-    ["open", "accepted", "observed"].includes(previous.workflow_v5.control_status) &&
-    v5Projection?.control_action === "none" &&
-    v5Projection.control_status === "none" &&
-    eventType === "workflow.progress" &&
-    payload.kind !== "stage",
+      previous.workflow_v5.control_action !== "none" &&
+      ["open", "accepted", "observed"].includes(previous.workflow_v5.control_status) &&
+      v5Projection?.control_action === "none" &&
+      v5Projection.control_status === "none" &&
+      eventType === "workflow.progress" &&
+      payload.kind !== "stage",
   );
   let mergedV5 = v5Projection
     ? (payload.kind === "stage" && payload.status === "completed") || !previous?.workflow_v5
@@ -1248,7 +1427,10 @@ export function applyWorkflowEvent(
           action: v5Projection.action,
           result: v5Projection.result,
           next_step: v5Projection.next_step,
-          elapsed_seconds: Math.max(previous.workflow_v5.elapsed_seconds, v5Projection.elapsed_seconds),
+          elapsed_seconds: Math.max(
+            previous.workflow_v5.elapsed_seconds,
+            v5Projection.elapsed_seconds,
+          ),
           soft_checkpoint: v5Projection.soft_checkpoint,
           lease_reason: v5Projection.lease_reason,
           // A hidden next-stage `started` projection carries none/none because it
@@ -1265,30 +1447,36 @@ export function applyWorkflowEvent(
     : previous?.workflow_v5;
   if (eventType === "workflow.final" && incomingVersion === "v5" && mergedV5) {
     const matrix = Array.isArray(payload.action_matrix) ? payload.action_matrix : [];
-    const projected = matrix.find((item) =>
-      item && typeof item === "object" && (item as Record<string, unknown>).enabled === true &&
-      V5_CONTROL_ACTIONS.has(String((item as Record<string, unknown>).action_id) as WorkflowV5ControlAction)
+    const projected = matrix.find(
+      (item) =>
+        item &&
+        typeof item === "object" &&
+        (item as Record<string, unknown>).enabled === true &&
+        V5_CONTROL_ACTIONS.has(
+          String((item as Record<string, unknown>).action_id) as WorkflowV5ControlAction,
+        ),
     ) as Record<string, unknown> | undefined;
-    const recovery = payload.recovery_action === "retry_from_start" ? "retry_from_start" : undefined;
-    const terminalAction = String(projected?.action_id || recovery || "none") as WorkflowV5ControlAction;
+    const recovery =
+      payload.recovery_action === "retry_from_start" ? "retry_from_start" : undefined;
+    const terminalAction = String(
+      projected?.action_id || recovery || "none",
+    ) as WorkflowV5ControlAction;
     const delivery = String(payload.delivery_status || "");
     mergedV5 = {
       ...mergedV5,
       control_action: terminalAction,
       control_status: terminalAction === "none" ? "none" : "open",
       predicted_delivery: ["completed", "partial", "insufficient_evidence"].includes(delivery)
-        ? delivery as WorkflowV5ProgressProjection["predicted_delivery"]
+        ? (delivery as WorkflowV5ProgressProjection["predicted_delivery"])
         : mergedV5.predicted_delivery,
     };
   }
-  const incomingElapsedMs = v5Projection && (!previous?.workflow_v5 ||
-    (payload.kind === "stage" && payload.status === "completed"))
-    ? v5Projection.elapsed_seconds * 1000
-    : workflowNumber(payload.elapsed_ms);
-  const monotonicElapsedMs = Math.max(
-    previous?.workflow_elapsed_ms ?? 0,
-    incomingElapsedMs ?? 0,
-  );
+  const incomingElapsedMs =
+    v5Projection &&
+    (!previous?.workflow_v5 || (payload.kind === "stage" && payload.status === "completed"))
+      ? v5Projection.elapsed_seconds * 1000
+      : workflowNumber(payload.elapsed_ms);
+  const monotonicElapsedMs = Math.max(previous?.workflow_elapsed_ms ?? 0, incomingElapsedMs ?? 0);
 
   const next: Message = {
     id: cardId,
@@ -1305,8 +1493,7 @@ export function applyWorkflowEvent(
     workflow_version: String(payload.workflow_version || previous?.workflow_version || ""),
     workflow_status: status,
     workflow_stage: String(payload.stage || previous?.workflow_stage || "准备中"),
-    workflow_stage_id:
-      workflowSafeText(payload.stage_id, 64) ?? previous?.workflow_stage_id,
+    workflow_stage_id: workflowSafeText(payload.stage_id, 64) ?? previous?.workflow_stage_id,
     workflow_ordinal: ordinal,
     // Graph revision loops may return to an earlier stage. Keep the stage
     // truthful while the visual percentage remains monotonic.
@@ -1321,10 +1508,8 @@ export function applyWorkflowEvent(
     workflow_terminal: terminal,
     workflow_event_id: String(event.event_id || ""),
     workflow_elapsed_ms: monotonicElapsedMs,
-    workflow_started_at: previous?.workflow_started_at ?? Math.max(
-      0,
-      workflowEventTime(event) - monotonicElapsedMs,
-    ),
+    workflow_started_at:
+      previous?.workflow_started_at ?? Math.max(0, workflowEventTime(event) - monotonicElapsedMs),
     workflow_updated_at: workflowEventTime(event),
     workflow_warning_count:
       workflowNumber(payload.warning_count) ?? previous?.workflow_warning_count,
@@ -1333,10 +1518,12 @@ export function applyWorkflowEvent(
         workflowSafeText(payload.stage_id, 64) ?? previous?.workflow_stage_id ?? "finalize",
         payload.metrics,
       ) ?? previous?.workflow_metrics,
-    workflow_action: v5Projection?.action ??
-      workflowSafeText(payload.action) ?? previous?.workflow_action,
-    workflow_result: v5Projection?.result ??
-      workflowSafeText(payload.result ?? payload.text) ?? previous?.workflow_result,
+    workflow_action:
+      v5Projection?.action ?? workflowSafeText(payload.action) ?? previous?.workflow_action,
+    workflow_result:
+      v5Projection?.result ??
+      workflowSafeText(payload.result ?? payload.text) ??
+      previous?.workflow_result,
     workflow_result_code:
       workflowResultCode(payload.result_code ?? payload.status) ?? previous?.workflow_result_code,
     workflow_diagnostic_codes:
@@ -1351,24 +1538,20 @@ export function applyWorkflowEvent(
     workflow_error:
       eventType === "workflow.final" &&
       String(payload.workflow_version || previous?.workflow_version || "") !== "v5"
-        ? workflowErrorText(payload.terminal_error ?? payload.error) ?? previous?.workflow_error
+        ? (workflowErrorText(payload.terminal_error ?? payload.error) ?? previous?.workflow_error)
         : previous?.workflow_error,
     workflow_recovery_action:
       eventType === "workflow.final" && payload.recovery_action
         ? String(payload.recovery_action)
         : previous?.workflow_recovery_action,
-    workflow_capability: v5Projection
-      ? "deep_research_progress_v5"
-      : previous?.workflow_capability,
-    workflow_visibility: v5Projection &&
-      (payload.visibility === "hidden" || payload.visibility === "visible")
-      ? payload.visibility
-      : previous?.workflow_visibility,
+    workflow_capability: v5Projection ? "deep_research_progress_v5" : previous?.workflow_capability,
+    workflow_visibility:
+      v5Projection && (payload.visibility === "hidden" || payload.visibility === "visible")
+        ? payload.visibility
+        : previous?.workflow_visibility,
     workflow_v5: mergedV5,
     workflow_v7_children: incomingV7Children ?? previous?.workflow_v7_children,
-    workflow_v7_children_seq: incomingV7Children
-      ? seq
-      : previous?.workflow_v7_children_seq,
+    workflow_v7_children_seq: incomingV7Children ? seq : previous?.workflow_v7_children_seq,
     workflow_delivery: incomingDelivery ?? previous?.workflow_delivery,
   };
 
@@ -1387,9 +1570,10 @@ function stable_json(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(stable_json).join(",")}]`;
   if (value && typeof value === "object") {
     const record = value as Record<string, unknown>;
-    return `{${Object.keys(record).sort().map((key) =>
-      `${JSON.stringify(key)}:${stable_json(record[key])}`,
-    ).join(",")}}`;
+    return `{${Object.keys(record)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stable_json(record[key])}`)
+      .join(",")}}`;
   }
   return JSON.stringify(value);
 }
@@ -1398,13 +1582,16 @@ function same_companion_owner(
   owner: CompanionOwnerFence | null,
   event: Pick<CompanionEvent, "profile_id" | "profile_generation">,
 ): boolean {
-  return !!owner &&
+  return (
+    !!owner &&
     owner.profile_id === event.profile_id &&
-    owner.profile_generation === event.profile_generation;
+    owner.profile_generation === event.profile_generation
+  );
 }
 
 function valid_companion_event(event: CompanionEvent): boolean {
-  return !!event.event_id &&
+  return (
+    !!event.event_id &&
     !!event.profile_id &&
     Number.isInteger(event.profile_generation) &&
     event.profile_generation > 0 &&
@@ -1412,7 +1599,8 @@ function valid_companion_event(event: CompanionEvent): boolean {
     Number.isInteger(event.seq) &&
     event.seq >= 0 &&
     !!event.notification?.notification_id &&
-    Array.isArray(event.notification.available_actions);
+    Array.isArray(event.notification.available_actions)
+  );
 }
 
 export function reduce_companion_events(
@@ -1426,8 +1614,8 @@ export function reduce_companion_events(
   const index = current.findIndex((item) => item.event_id === event.event_id);
   if (index < 0) {
     return {
-      events: [...current, event].sort((a, b) =>
-        a.seq - b.seq || a.event_id.localeCompare(b.event_id),
+      events: [...current, event].sort(
+        (a, b) => a.seq - b.seq || a.event_id.localeCompare(b.event_id),
       ),
       handled: true,
     };
@@ -1458,10 +1646,7 @@ export function reduce_companion_events(
         detail_version: "",
       },
     };
-    if (
-      stable_json(nextWithoutDetailFence) !==
-      stable_json(previousWithoutDetailFence)
-    ) {
+    if (stable_json(nextWithoutDetailFence) !== stable_json(previousWithoutDetailFence)) {
       return { events: current, handled: false };
     }
     const events = [...current];
@@ -1499,14 +1684,11 @@ export function retract_companion_events(
   if (previous && event.redaction_version <= (previous.redaction_version ?? 0)) {
     return {
       events: current,
-      handled: event.redaction_version === previous.redaction_version &&
-        previous.tombstone === true,
+      handled:
+        event.redaction_version === previous.redaction_version && previous.tombstone === true,
     };
   }
-  if (
-    previous &&
-    previous.notification.notification_id !== event.notification_id
-  ) {
+  if (previous && previous.notification.notification_id !== event.notification_id) {
     return { events: current, handled: false };
   }
   const tombstone: CompanionEvent = {
@@ -1540,11 +1722,7 @@ export function retract_companion_events(
   return { events, handled: true };
 }
 
-function companion_stream_key(
-  runId: string,
-  invocationId: string,
-  streamEpoch: string,
-): string {
+function companion_stream_key(runId: string, invocationId: string, streamEpoch: string): string {
   return `${runId}\u001f${invocationId}\u001f${streamEpoch}`;
 }
 
@@ -1603,7 +1781,9 @@ export const useSessionsStore = create<SessionsStore>((set) => ({
   begin_project_catalog(append = false) {
     set((state) => ({
       project_catalog: {
-        ...(append ? state.project_catalog : { ...state.project_catalog, projects: [], next_cursor: null }),
+        ...(append
+          ? state.project_catalog
+          : { ...state.project_catalog, projects: [], next_cursor: null }),
         loading: true,
         error: null,
       },
@@ -1615,7 +1795,8 @@ export const useSessionsStore = create<SessionsStore>((set) => ({
       if (
         state.project_catalog.revision !== null &&
         page.catalog_revision < state.project_catalog.revision
-      ) return state;
+      )
+        return state;
       const sameRevision = state.project_catalog.revision === page.catalog_revision;
       const base = append && sameRevision ? state.project_catalog.projects : [];
       return {
@@ -1658,7 +1839,11 @@ export const useSessionsStore = create<SessionsStore>((set) => ({
     } as Parameters<typeof projectScopeKey>[0]);
     set((state) => {
       const current = state.project_session_pages[scopeKey];
-      if (current?.revision !== null && current?.revision !== undefined && page.catalog_revision < current.revision) {
+      if (
+        current?.revision !== null &&
+        current?.revision !== undefined &&
+        page.catalog_revision < current.revision
+      ) {
         return state;
       }
       const sameRevision = current?.revision === page.catalog_revision;
@@ -1745,9 +1930,7 @@ export const useSessionsStore = create<SessionsStore>((set) => ({
   upsert_context_usage(snapshot) {
     let accepted = false;
     set((state) => {
-      const sid = typeof snapshot.session_id === "string"
-        ? snapshot.session_id.trim()
-        : "";
+      const sid = typeof snapshot.session_id === "string" ? snapshot.session_id.trim() : "";
       const incomingVersion = snapshot.version;
       if (!sid || !Number.isInteger(incomingVersion) || (incomingVersion as number) < 0) {
         return state;
@@ -1783,10 +1966,7 @@ export const useSessionsStore = create<SessionsStore>((set) => ({
     const ts = msg.ts ?? Date.now();
     set((state) => {
       const cur = state.sessions[sid] ?? blank_session(sid);
-      const nextMessages = dedupe_ppt_outline_messages([
-        ...cur.messages,
-        { ...msg, id, ts },
-      ]);
+      const nextMessages = dedupe_ppt_outline_messages([...cur.messages, { ...msg, id, ts }]);
       return {
         sessions: {
           ...state.sessions,
@@ -1806,10 +1986,7 @@ export const useSessionsStore = create<SessionsStore>((set) => ({
       const cur = state.sessions[sid] ?? blank_session(sid);
       let changed = false;
       const messages = cur.messages.map((message) => {
-        if (
-          message.role !== "user" ||
-          message.request_id !== requestId
-        ) {
+        if (message.role !== "user" || message.request_id !== requestId) {
           return message;
         }
         changed = true;
@@ -1856,7 +2033,7 @@ export const useSessionsStore = create<SessionsStore>((set) => ({
       // an already completed, failed, or cancelled Run in the UI.
       const lifecycleStatus = isTerminalTaskRunStatus(existing?.status)
         ? existing!.status
-        : patch.status ?? existing?.status ?? "starting";
+        : (patch.status ?? existing?.status ?? "starting");
       const nextProjection: TaskRunProjectionState = {
         ...existing,
         ...patch,
@@ -1865,17 +2042,15 @@ export const useSessionsStore = create<SessionsStore>((set) => ({
         projection_id: patch.projection_id ?? existing?.projection_id,
         version: patch.version ?? existing?.version ?? 0,
         conversation_boundary_ref:
-          patch.conversation_boundary_ref ??
-          existing?.conversation_boundary_ref,
+          patch.conversation_boundary_ref ?? existing?.conversation_boundary_ref,
         conversation_boundary_version:
-          patch.conversation_boundary_version ??
-          existing?.conversation_boundary_version,
+          patch.conversation_boundary_version ?? existing?.conversation_boundary_version,
         request_id: patch.request_id ?? existing?.request_id,
         turn_id: patch.turn_id ?? existing?.turn_id,
         status: lifecycleStatus,
         inflight: isTerminalTaskRunStatus(lifecycleStatus)
           ? false
-          : patch.inflight ?? existing?.inflight ?? true,
+          : (patch.inflight ?? existing?.inflight ?? true),
         ui_state: patch.ui_state ?? existing?.ui_state ?? "open",
         started_at: patch.started_at ?? existing?.started_at ?? now,
         last_activity: patch.last_activity ?? now,
@@ -1891,33 +2066,32 @@ export const useSessionsStore = create<SessionsStore>((set) => ({
               ? {
                   ...message,
                   run_id: runId,
-                  task_scope_id:
-                    nextProjection.task_scope_id || message.task_scope_id,
+                  task_scope_id: nextProjection.task_scope_id || message.task_scope_id,
                   conversation_boundary_ref:
-                    nextProjection.conversation_boundary_ref ??
-                    message.conversation_boundary_ref,
+                    nextProjection.conversation_boundary_ref ?? message.conversation_boundary_ref,
                 }
               : message,
           )
         : cur.messages;
       const selectedRunId = cur.selected_run_id ?? runId;
-      const running = Object.values(projections).filter(
-        (item) => item.inflight,
-      );
+      const running = Object.values(projections).filter((item) => item.inflight);
       const waiting = Object.values(projections).filter(
         (item) => item.status === "waiting" && item.ui_state !== "closed",
       );
       const activeRunId = projections[selectedRunId]?.inflight
         ? selectedRunId
-        : running[0]?.run_id ?? null;
+        : (running[0]?.run_id ?? null);
       const selectedProjection = projections[selectedRunId];
-      const sessionStatus: SessionStatus = running.length > 0
-        ? "running"
-        : waiting.length > 0
-          ? cur.status === "permission" ? "permission" : "running"
-          : selectedProjection?.status === "failed"
-            ? "error"
-            : "idle";
+      const sessionStatus: SessionStatus =
+        running.length > 0
+          ? "running"
+          : waiting.length > 0
+            ? cur.status === "permission"
+              ? "permission"
+              : "running"
+            : selectedProjection?.status === "failed"
+              ? "error"
+              : "idle";
       return {
         sessions: {
           ...state.sessions,
@@ -1947,11 +2121,7 @@ export const useSessionsStore = create<SessionsStore>((set) => ({
           {
             ...item,
             ui_state:
-              id === runId
-                ? "open"
-                : item.ui_state === "open"
-                  ? "background"
-                  : item.ui_state,
+              id === runId ? "open" : item.ui_state === "open" ? "background" : item.ui_state,
           },
         ]),
       ) as Record<string, TaskRunProjectionState>;
@@ -1965,8 +2135,7 @@ export const useSessionsStore = create<SessionsStore>((set) => ({
             active_run_id:
               runId && projections[runId]?.inflight
                 ? runId
-                : Object.values(projections).find((item) => item.inflight)
-                    ?.run_id ?? null,
+                : (Object.values(projections).find((item) => item.inflight)?.run_id ?? null),
             last_activity: Date.now(),
           },
         },
@@ -1990,10 +2159,8 @@ export const useSessionsStore = create<SessionsStore>((set) => ({
       };
       const nextSelected =
         cur.selected_run_id === runId
-          ? Object.values(projections).find(
-              (item) => item.ui_state !== "closed",
-            )?.run_id ?? null
-          : cur.selected_run_id ?? null;
+          ? (Object.values(projections).find((item) => item.ui_state !== "closed")?.run_id ?? null)
+          : (cur.selected_run_id ?? null);
       return {
         sessions: {
           ...state.sessions,
@@ -2004,8 +2171,7 @@ export const useSessionsStore = create<SessionsStore>((set) => ({
             active_run_id:
               nextSelected && projections[nextSelected]?.inflight
                 ? nextSelected
-                : Object.values(projections).find((item) => item.inflight)
-                    ?.run_id ?? null,
+                : (Object.values(projections).find((item) => item.inflight)?.run_id ?? null),
             last_activity: Date.now(),
           },
         },
@@ -2096,10 +2262,7 @@ export const useSessionsStore = create<SessionsStore>((set) => ({
           .filter(Boolean),
       );
       const byId = new Map<string, Message>();
-      const reconciled = reconcile_live_messages_with_history(
-        cur.messages,
-        messages,
-      );
+      const reconciled = reconcile_live_messages_with_history(cur.messages, messages);
       for (const message of reconciled) {
         if (consumedEventIds.has(message.id) && message.role !== "workflow_progress") {
           continue;
@@ -2164,52 +2327,44 @@ export const useSessionsStore = create<SessionsStore>((set) => ({
     set((state) => {
       const sid = event.session_id || state.active_sid;
       const session = state.sessions[sid] ?? blank_session(sid);
-      const occurrences = Object.entries(state.sessions).flatMap(
-        ([candidateSid, candidate]) =>
-          (candidate.companion_events ?? [])
-            .filter((item) => item.event_id === event.event_id)
-            .map((item) => ({ sid: candidateSid, event: item })),
+      const occurrences = Object.entries(state.sessions).flatMap(([candidateSid, candidate]) =>
+        (candidate.companion_events ?? [])
+          .filter((item) => item.event_id === event.event_id)
+          .map((item) => ({ sid: candidateSid, event: item })),
       );
       const previous = occurrences
         .map((item) => item.event)
-        .sort((left, right) =>
-          (right.route_version ?? 0) - (left.route_version ?? 0) ||
-          right.seq - left.seq,
+        .sort(
+          (left, right) =>
+            (right.route_version ?? 0) - (left.route_version ?? 0) || right.seq - left.seq,
         )[0];
       const targetEvents = session.companion_events ?? [];
       const reducerInput =
         previous && !targetEvents.some((item) => item.event_id === event.event_id)
           ? [...targetEvents, previous]
           : targetEvents;
-      const reduced = reduce_companion_events(
-        reducerInput,
-        event,
-        state.companion_owner,
-      );
+      const reduced = reduce_companion_events(reducerInput, event, state.companion_owner);
       handled = reduced.handled;
-      const needsMove =
-        occurrences.length > 1 ||
-        occurrences.some((item) => item.sid !== sid);
+      const needsMove = occurrences.length > 1 || occurrences.some((item) => item.sid !== sid);
       const detailVersionChanged =
-        previous?.notification.detail_version !==
-        event.notification.detail_version;
-      if (
-        !reduced.handled ||
-        (reduced.events === targetEvents && !needsMove)
-      ) {
+        previous?.notification.detail_version !== event.notification.detail_version;
+      if (!reduced.handled || (reduced.events === targetEvents && !needsMove)) {
         return state;
       }
-      const streamPrefix = event.decision?.kind === "action_confirmation"
-        ? `${event.decision.run_id}\u001f`
-        : "";
+      const streamPrefix =
+        event.decision?.kind === "action_confirmation" ? `${event.decision.run_id}\u001f` : "";
       const companion_provisional_streams = streamPrefix
-        ? Object.fromEntries(Object.entries(state.companion_provisional_streams)
-            .filter(([key]) => !key.startsWith(streamPrefix)))
+        ? Object.fromEntries(
+            Object.entries(state.companion_provisional_streams).filter(
+              ([key]) => !key.startsWith(streamPrefix),
+            ),
+          )
         : state.companion_provisional_streams;
       const sessions = Object.fromEntries(
         Object.entries(state.sessions).map(([candidateSid, candidate]) => {
-          const filtered = (candidate.companion_events ?? [])
-            .filter((item) => item.event_id !== event.event_id);
+          const filtered = (candidate.companion_events ?? []).filter(
+            (item) => item.event_id !== event.event_id,
+          );
           const detailCache = { ...(candidate.companion_detail_cache ?? {}) };
           if (needsMove || detailVersionChanged) {
             delete detailCache[event.notification.notification_id];
@@ -2218,9 +2373,7 @@ export const useSessionsStore = create<SessionsStore>((set) => ({
             candidateSid,
             {
               ...candidate,
-              companion_events: candidateSid === sid
-                ? reduced.events
-                : filtered,
+              companion_events: candidateSid === sid ? reduced.events : filtered,
               companion_detail_cache: detailCache,
               ...(candidateSid === sid ? { last_activity: Date.now() } : {}),
             },
@@ -2248,37 +2401,28 @@ export const useSessionsStore = create<SessionsStore>((set) => ({
     set((state) => {
       const sid = event.session_id || state.active_sid;
       const session = state.sessions[sid] ?? blank_session(sid);
-      const occurrences = Object.entries(state.sessions).flatMap(
-        ([candidateSid, candidate]) =>
-          (candidate.companion_events ?? [])
-            .filter((item) => item.event_id === event.event_id)
-            .map((item) => ({ sid: candidateSid, event: item })),
+      const occurrences = Object.entries(state.sessions).flatMap(([candidateSid, candidate]) =>
+        (candidate.companion_events ?? [])
+          .filter((item) => item.event_id === event.event_id)
+          .map((item) => ({ sid: candidateSid, event: item })),
       );
       const previous = occurrences
         .map((item) => item.event)
-        .sort((left, right) =>
-          (right.redaction_version ?? 0) - (left.redaction_version ?? 0) ||
-          (right.route_version ?? 0) - (left.route_version ?? 0) ||
-          right.seq - left.seq,
+        .sort(
+          (left, right) =>
+            (right.redaction_version ?? 0) - (left.redaction_version ?? 0) ||
+            (right.route_version ?? 0) - (left.route_version ?? 0) ||
+            right.seq - left.seq,
         )[0];
       const targetEvents = session.companion_events ?? [];
       const reducerInput =
         previous && !targetEvents.some((item) => item.event_id === event.event_id)
           ? [...targetEvents, previous]
           : targetEvents;
-      const reduced = retract_companion_events(
-        reducerInput,
-        event,
-        state.companion_owner,
-      );
+      const reduced = retract_companion_events(reducerInput, event, state.companion_owner);
       handled = reduced.handled;
-      const needsMove =
-        occurrences.length > 1 ||
-        occurrences.some((item) => item.sid !== sid);
-      if (
-        !reduced.handled ||
-        (reduced.events === targetEvents && !needsMove)
-      ) {
+      const needsMove = occurrences.length > 1 || occurrences.some((item) => item.sid !== sid);
+      if (!reduced.handled || (reduced.events === targetEvents && !needsMove)) {
         return state;
       }
       const sessions = Object.fromEntries(
@@ -2289,10 +2433,12 @@ export const useSessionsStore = create<SessionsStore>((set) => ({
             candidateSid,
             {
               ...candidate,
-              companion_events: candidateSid === sid
-                ? reduced.events
-                : (candidate.companion_events ?? [])
-                    .filter((item) => item.event_id !== event.event_id),
+              companion_events:
+                candidateSid === sid
+                  ? reduced.events
+                  : (candidate.companion_events ?? []).filter(
+                      (item) => item.event_id !== event.event_id,
+                    ),
               companion_detail_cache: detailCache,
               ...(candidateSid === sid ? { last_activity: Date.now() } : {}),
             },
@@ -2347,9 +2493,10 @@ export const useSessionsStore = create<SessionsStore>((set) => ({
       if (!runId && !invocationId && !streamEpoch) {
         return { companion_provisional_streams: {} };
       }
-      const exact = runId && invocationId && streamEpoch
-        ? companion_stream_key(runId, invocationId, streamEpoch)
-        : null;
+      const exact =
+        runId && invocationId && streamEpoch
+          ? companion_stream_key(runId, invocationId, streamEpoch)
+          : null;
       return {
         companion_provisional_streams: Object.fromEntries(
           Object.entries(state.companion_provisional_streams).filter(([key]) => {
@@ -2383,8 +2530,7 @@ export const useSessionsStore = create<SessionsStore>((set) => ({
         return {
           ...m,
           ppt_outline_awaiting: false,
-          ppt_outline_decision_status:
-            decisionStatus ?? m.ppt_outline_decision_status,
+          ppt_outline_decision_status: decisionStatus ?? m.ppt_outline_decision_status,
         };
       });
       if (!cleared) return {};
@@ -2416,10 +2562,7 @@ export const useSessionsStore = create<SessionsStore>((set) => ({
       delete next[sid];
       // 删掉当前会话就落到剩下的任意一条；一条不剩即空态（""），
       // 不再回落到保留会话。
-      const active =
-        state.active_sid === sid
-          ? Object.keys(next)[0] ?? ""
-          : state.active_sid;
+      const active = state.active_sid === sid ? (Object.keys(next)[0] ?? "") : state.active_sid;
       return { sessions: next, active_sid: active };
     });
   },
@@ -2473,13 +2616,11 @@ export const useSessionsStore = create<SessionsStore>((set) => ({
     set((state) => {
       const cur = state.sessions[sid];
       if (!cur) return state;
-      const next_inbox = (cur.supervisor_inbox ?? []).filter(
-        (a) => a.alert_id !== alert_id,
-      );
+      const next_inbox = (cur.supervisor_inbox ?? []).filter((a) => a.alert_id !== alert_id);
       const next_alert =
         cur.supervisor_alert && cur.supervisor_alert.alert_id === alert_id
           ? null
-          : cur.supervisor_alert ?? null;
+          : (cur.supervisor_alert ?? null);
       return {
         sessions: {
           ...state.sessions,
@@ -2488,9 +2629,7 @@ export const useSessionsStore = create<SessionsStore>((set) => ({
             supervisor_inbox: next_inbox,
             supervisor_alert: next_alert,
             // Severity downgrades to green only when nothing pending.
-            supervisor_severity: next_inbox.length === 0
-              ? "green"
-              : cur.supervisor_severity,
+            supervisor_severity: next_inbox.length === 0 ? "green" : cur.supervisor_severity,
           },
         },
       };
@@ -2501,17 +2640,13 @@ export const useSessionsStore = create<SessionsStore>((set) => ({
     set((state) => {
       const next: Record<string, SessionState> = {};
       for (const [sid, s] of Object.entries(state.sessions)) {
-        const remaining = (s.supervisor_inbox ?? []).filter(
-          (a) => a.severity !== severity,
-        );
-        const cur_alert_dismissed =
-          s.supervisor_alert && s.supervisor_alert.severity === severity;
+        const remaining = (s.supervisor_inbox ?? []).filter((a) => a.severity !== severity);
+        const cur_alert_dismissed = s.supervisor_alert && s.supervisor_alert.severity === severity;
         next[sid] = {
           ...s,
           supervisor_inbox: remaining,
-          supervisor_alert: cur_alert_dismissed ? null : s.supervisor_alert ?? null,
-          supervisor_severity:
-            remaining.length === 0 ? "green" : s.supervisor_severity,
+          supervisor_alert: cur_alert_dismissed ? null : (s.supervisor_alert ?? null),
+          supervisor_severity: remaining.length === 0 ? "green" : s.supervisor_severity,
         };
       }
       return { sessions: next };
@@ -2606,10 +2741,7 @@ export function severity_score_breakdown(
   const age_seconds = Math.max(0, (now - (s.last_activity || now)) / 1000);
   // log2 of minutes-since-activity, clamped at 30 points (roughly 32 min
   // saturates the dial).
-  const age = Math.min(
-    30,
-    Math.log2(Math.max(1, age_seconds / 60)) * 6,
-  );
+  const age = Math.min(30, Math.log2(Math.max(1, age_seconds / 60)) * 6);
   const repeat = Math.min(40, Math.max(0, s.tool_signature_repeat ?? 0) * 10);
   const supervisor = SUPERVISOR_BOOST[s.supervisor_severity ?? "green"] ?? 0;
   const cur = s.current_iteration ?? 0;

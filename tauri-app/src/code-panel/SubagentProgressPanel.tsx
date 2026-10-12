@@ -108,9 +108,7 @@ const THEMES: Record<"light" | "dark", Theme> = {
   },
 };
 
-export function SubagentProgressPanel({
-  variant = "light",
-}: SubagentProgressPanelProps) {
+export function SubagentProgressPanel({ variant = "light" }: SubagentProgressPanelProps) {
   const runs = useSubagentStore((s) => s.runs);
   const metrics = useSubagentStore((s) => s.metrics);
   const clearTerminal = useSubagentStore((s) => s.clearTerminal);
@@ -175,9 +173,7 @@ export function SubagentProgressPanel({
           userSelect: "none",
         }}
       >
-        <span
-          style={{ fontSize: 11, opacity: 0.7, transition: "transform .15s" }}
-        >
+        <span style={{ fontSize: 11, opacity: 0.7, transition: "transform .15s" }}>
           {collapsed ? "▸" : "▾"}
         </span>
         <span>🤖 子代理并发</span>
@@ -237,10 +233,7 @@ export function SubagentProgressPanel({
                   opacity: terminal ? 0.72 : 1,
                 }}
               >
-                <span
-                  className={running ? "deskpet-subagent-pulse" : undefined}
-                  aria-hidden
-                >
+                <span className={running ? "deskpet-subagent-pulse" : undefined} aria-hidden>
                   {PHASE_ICON[phase]}
                 </span>
                 <span
@@ -307,11 +300,7 @@ export function SubagentProgressPanel({
               <span
                 data-testid="subagent-metric-rejected"
                 title="累计拒绝/取消（排队或运行中被取消）"
-                style={
-                  metrics.total_rejected > 0
-                    ? { color: "#ef4444" }
-                    : undefined
-                }
+                style={metrics.total_rejected > 0 ? { color: "#ef4444" } : undefined}
               >
                 拒绝 {metrics.total_rejected}
               </span>

@@ -3,10 +3,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import type {
-  ExternalWaitRequest,
-  ExternalWaitResponse,
-} from "../types/skillPlatform";
+import type { ExternalWaitRequest, ExternalWaitResponse } from "../types/skillPlatform";
 import type { ControlChannel } from "../ws/ControlChannel";
 
 type Payload = ExternalWaitRequest["payload"];
@@ -39,9 +36,7 @@ export function useExternalWaitRequests(channel: ControlChannel | null) {
         setActive(payload);
       } else if (
         currentRef.current.decision_id !== payload.decision_id &&
-        !queueRef.current.some(
-          (item) => item.decision_id === payload.decision_id,
-        )
+        !queueRef.current.some((item) => item.decision_id === payload.decision_id)
       ) {
         queueRef.current.push(payload);
       }

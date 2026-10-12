@@ -79,9 +79,7 @@ interface BreakdownResponse {
 const PUBLIC_PREVIEW_LIMIT = 600;
 
 function finiteNonNegative(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0
-    ? value
-    : null;
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
 }
 
 function optionalIdentity(value: unknown): string | null | undefined {
@@ -99,17 +97,20 @@ function normalizeBreakdownResponse(value: unknown): BreakdownResponse | null {
   const correlationId = optionalIdentity(raw.correlation_id);
   const snapshotId = optionalIdentity(raw.snapshot_id);
   const sampleId = optionalIdentity(raw.sample_id);
-  const version = raw.snapshot_version === null
-    ? null
-    : finiteNonNegative(raw.snapshot_version);
+  const version = raw.snapshot_version === null ? null : finiteNonNegative(raw.snapshot_version);
   const usageVersion = finiteNonNegative(raw.usage_version);
   if (
-    !sessionId || !correlationId || snapshotId === undefined ||
-    sampleId === undefined || version === undefined ||
+    !sessionId ||
+    !correlationId ||
+    snapshotId === undefined ||
+    sampleId === undefined ||
+    version === undefined ||
     (version !== null && !Number.isInteger(version)) ||
-    usageVersion === null || !Number.isInteger(usageVersion) ||
+    usageVersion === null ||
+    !Number.isInteger(usageVersion) ||
     !Array.isArray(raw.sections)
-  ) return null;
+  )
+    return null;
 
   const sections: BreakdownSection[] = [];
   for (const item of raw.sections) {
@@ -119,37 +120,48 @@ function normalizeBreakdownResponse(value: unknown): BreakdownResponse | null {
     const label = optionalIdentity(section.label);
     if (!kind || !label) return null;
     const tokenSource = section.token_source;
-    if (tokenSource !== "measured" && tokenSource !== "estimated" && tokenSource !== "unavailable") {
+    if (
+      tokenSource !== "measured" &&
+      tokenSource !== "estimated" &&
+      tokenSource !== "unavailable"
+    ) {
       return null;
     }
     const tokens = finiteNonNegative(section.tokens);
     if (tokenSource !== "unavailable" && tokens === null) return null;
-    const publicPreview = typeof section.public_preview === "string"
-      ? section.public_preview.slice(0, PUBLIC_PREVIEW_LIMIT)
-      : null;
+    const publicPreview =
+      typeof section.public_preview === "string"
+        ? section.public_preview.slice(0, PUBLIC_PREVIEW_LIMIT)
+        : null;
     sections.push({
       kind,
       label,
       tokens,
       token_source: tokenSource,
-      availability: section.availability === "unavailable" || tokenSource === "unavailable"
-        ? "unavailable"
-        : "available",
+      availability:
+        section.availability === "unavailable" || tokenSource === "unavailable"
+          ? "unavailable"
+          : "available",
       public_preview: publicPreview,
-      preview_truncated: section.preview_truncated === true ||
-        (typeof section.public_preview === "string" && section.public_preview.length > PUBLIC_PREVIEW_LIMIT),
+      preview_truncated:
+        section.preview_truncated === true ||
+        (typeof section.public_preview === "string" &&
+          section.public_preview.length > PUBLIC_PREVIEW_LIMIT),
       count: finiteNonNegative(section.count) ?? undefined,
     });
   }
 
   const history = Array.isArray(raw.history)
-    ? raw.history.filter((sample): sample is ContextHistorySample => Boolean(
-      sample && typeof sample === "object" &&
-      optionalIdentity((sample as Record<string, unknown>).sample_id) &&
-      optionalIdentity((sample as Record<string, unknown>).session_id) === sessionId &&
-      finiteNonNegative((sample as Record<string, unknown>).tokens_after) !== null &&
-      finiteNonNegative((sample as Record<string, unknown>).created_at) !== null,
-    ))
+    ? raw.history.filter((sample): sample is ContextHistorySample =>
+        Boolean(
+          sample &&
+            typeof sample === "object" &&
+            optionalIdentity((sample as Record<string, unknown>).sample_id) &&
+            optionalIdentity((sample as Record<string, unknown>).session_id) === sessionId &&
+            finiteNonNegative((sample as Record<string, unknown>).tokens_after) !== null &&
+            finiteNonNegative((sample as Record<string, unknown>).created_at) !== null,
+        ),
+      )
     : [];
 
   return {
@@ -159,9 +171,8 @@ function normalizeBreakdownResponse(value: unknown): BreakdownResponse | null {
     sample_id: sampleId,
     snapshot_version: version,
     usage_version: usageVersion,
-    snapshot_fingerprint: typeof raw.snapshot_fingerprint === "string"
-      ? raw.snapshot_fingerprint.slice(0, 160)
-      : "",
+    snapshot_fingerprint:
+      typeof raw.snapshot_fingerprint === "string" ? raw.snapshot_fingerprint.slice(0, 160) : "",
     availability: raw.availability === "available" ? "available" : "unavailable",
     project_name: typeof raw.project_name === "string" ? raw.project_name.slice(0, 160) : null,
     project_root: null,
@@ -209,36 +220,34 @@ function formatClock(value: number): string {
   });
 }
 
-function ContextHistoryChart({
-  history,
-}: {
-  history: ContextHistorySample[];
-}) {
-  const points = history.filter((sample) => (
-    sample.source === "measured" ||
-    sample.source === "compacted" ||
-    sample.event_type === "provider_attempt" ||
-    sample.event_type === "compaction"
-  )).flatMap((sample) => {
-    const after = {
-      time: sample.created_at,
-      tokens: sample.tokens_after,
-      sample,
-      phase: "after",
-    };
-    return sample.event_type === "compaction" &&
-      sample.tokens_before != null
-      ? [
-          {
-            time: sample.created_at - 0.001,
-            tokens: sample.tokens_before,
-            sample,
-            phase: "before",
-          },
-          after,
-        ]
-      : [after];
-  });
+function ContextHistoryChart({ history }: { history: ContextHistorySample[] }) {
+  const points = history
+    .filter(
+      (sample) =>
+        sample.source === "measured" ||
+        sample.source === "compacted" ||
+        sample.event_type === "provider_attempt" ||
+        sample.event_type === "compaction",
+    )
+    .flatMap((sample) => {
+      const after = {
+        time: sample.created_at,
+        tokens: sample.tokens_after,
+        sample,
+        phase: "after",
+      };
+      return sample.event_type === "compaction" && sample.tokens_before != null
+        ? [
+            {
+              time: sample.created_at - 0.001,
+              tokens: sample.tokens_before,
+              sample,
+              phase: "before",
+            },
+            after,
+          ]
+        : [after];
+    });
   if (!points.length) {
     return <div style={chartEmptyStyle}>暂无 Context 变化记录</div>;
   }
@@ -247,10 +256,7 @@ function ContextHistoryChart({
   const pad = { left: 46, right: 16, top: 16, bottom: 30 };
   const minTime = Math.min(...points.map((point) => point.time));
   const maxTime = Math.max(...points.map((point) => point.time));
-  const maxObservedTokens = Math.max(
-    1,
-    ...points.map((point) => point.tokens),
-  );
+  const maxObservedTokens = Math.max(1, ...points.map((point) => point.tokens));
   const maxTokens = Math.ceil(maxObservedTokens * 1.1);
   const plotWidth = width - pad.left - pad.right;
   const plotHeight = height - pad.top - pad.bottom;
@@ -259,11 +265,8 @@ function ContextHistoryChart({
     (maxTime === minTime
       ? (index / Math.max(1, points.length - 1)) * plotWidth
       : ((time - minTime) / (maxTime - minTime)) * plotWidth);
-  const y = (tokens: number) =>
-    pad.top + plotHeight - (tokens / maxTokens) * plotHeight;
-  const line = points
-    .map((point, index) => `${x(point.time, index)},${y(point.tokens)}`)
-    .join(" ");
+  const y = (tokens: number) => pad.top + plotHeight - (tokens / maxTokens) * plotHeight;
+  const line = points.map((point, index) => `${x(point.time, index)},${y(point.tokens)}`).join(" ");
   return (
     <div style={chartWrapStyle}>
       <svg
@@ -308,13 +311,7 @@ function ContextHistoryChart({
               cx={x(point.time, index)}
               cy={y(point.tokens)}
               r={compact ? 4 : 3}
-              fill={
-                compact
-                  ? point.phase === "before"
-                    ? "#f59e0b"
-                    : "#a855f7"
-                  : "#38bdf8"
-              }
+              fill={compact ? (point.phase === "before" ? "#f59e0b" : "#a855f7") : "#38bdf8"}
               stroke="#07101d"
               strokeWidth="1.5"
             >
@@ -328,21 +325,10 @@ function ContextHistoryChart({
             </circle>
           );
         })}
-        <text
-          x={pad.left}
-          y={height - 8}
-          fill="#64748b"
-          fontSize="9"
-        >
+        <text x={pad.left} y={height - 8} fill="#64748b" fontSize="9">
           {formatClock(minTime)}
         </text>
-        <text
-          x={width - pad.right}
-          y={height - 8}
-          textAnchor="end"
-          fill="#64748b"
-          fontSize="9"
-        >
+        <text x={width - pad.right} y={height - 8} textAnchor="end" fill="#64748b" fontSize="9">
           {formatClock(maxTime)}
         </text>
         <text
@@ -357,9 +343,18 @@ function ContextHistoryChart({
         </text>
       </svg>
       <div style={chartLegendStyle}>
-        <span><i style={{ ...legendDotStyle, background: "#38bdf8" }} />Context 大小</span>
-        <span><i style={{ ...legendDotStyle, background: "#f59e0b" }} />压缩前</span>
-        <span><i style={{ ...legendDotStyle, background: "#a855f7" }} />压缩后</span>
+        <span>
+          <i style={{ ...legendDotStyle, background: "#38bdf8" }} />
+          Context 大小
+        </span>
+        <span>
+          <i style={{ ...legendDotStyle, background: "#f59e0b" }} />
+          压缩前
+        </span>
+        <span>
+          <i style={{ ...legendDotStyle, background: "#a855f7" }} />
+          压缩后
+        </span>
       </div>
     </div>
   );
@@ -395,8 +390,12 @@ export function ContextBreakdownModal({
   const sendRef = useRef(send);
   const onMessageRef = useRef(onMessage);
   const acceptedRef = useRef<{ fingerprint: string } | null>(null);
-  useEffect(() => { sendRef.current = send; }, [send]);
-  useEffect(() => { onMessageRef.current = onMessage; }, [onMessage]);
+  useEffect(() => {
+    sendRef.current = send;
+  }, [send]);
+  useEffect(() => {
+    onMessageRef.current = onMessage;
+  }, [onMessage]);
 
   useEffect(() => {
     if (!open) {
@@ -410,26 +409,30 @@ export function ContextBreakdownModal({
     const requestId = newContextRequestId();
     const expectedSnapshotId = snapshot?.snapshot_id?.trim() || null;
     const expectedSampleId = snapshot?.sample_id?.trim() || null;
-    const expectedUsageVersion = Number.isInteger(snapshot?.version) && (snapshot?.version ?? -1) >= 0
-      ? snapshot!.version!
-      : null;
-    const expectedSnapshotVersion = Number.isInteger(snapshot?.snapshot_version) &&
-      (snapshot?.snapshot_version ?? -1) >= 0
-      ? snapshot!.snapshot_version!
-      : null;
+    const expectedUsageVersion =
+      Number.isInteger(snapshot?.version) && (snapshot?.version ?? -1) >= 0
+        ? snapshot!.version!
+        : null;
+    const expectedSnapshotVersion =
+      Number.isInteger(snapshot?.snapshot_version) && (snapshot?.snapshot_version ?? -1) >= 0
+        ? snapshot!.snapshot_version!
+        : null;
     let active = true;
     const off = onMessageRef.current((msg) => {
       if (msg?.type === "context_breakdown_response") {
         const p = normalizeBreakdownResponse(msg.payload);
         if (
-          !active || !p || p.session_id !== sessionId ||
+          !active ||
+          !p ||
+          p.session_id !== sessionId ||
           p.correlation_id !== requestId ||
           p.snapshot_id !== expectedSnapshotId ||
           p.sample_id !== expectedSampleId ||
           expectedUsageVersion === null ||
           p.usage_version !== expectedUsageVersion ||
           p.snapshot_version !== expectedSnapshotVersion
-        ) return;
+        )
+          return;
         const fingerprint = canonicalJson(p);
         const accepted = acceptedRef.current;
         if (accepted && accepted.fingerprint !== fingerprint) return;
@@ -475,9 +478,7 @@ export function ContextBreakdownModal({
     [data],
   );
   const effectiveProjectName =
-    projectName && projectName !== "(untitled)"
-      ? projectName
-      : data?.project_name || "当前项目";
+    projectName && projectName !== "(untitled)" ? projectName : data?.project_name || "当前项目";
   const effectiveProjectRoot = projectRoot || data?.project_root;
 
   if (!open) return null;
@@ -488,10 +489,19 @@ export function ContextBreakdownModal({
       aria-modal="true"
       aria-label="Context usage breakdown"
       style={overlayStyle}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
     >
       <div style={modalStyle}>
-        <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+        <header
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginBottom: 8,
+          }}
+        >
           <div style={{ minWidth: 0, flex: 1 }}>
             <h3
               title={`Context usage · ${sessionId}`}
@@ -525,11 +535,7 @@ export function ContextBreakdownModal({
               </div>
             )}
           </div>
-          <button
-            onClick={onClose}
-            aria-label="关闭"
-            style={{ ...closeBtn, flexShrink: 0 }}
-          >
+          <button onClick={onClose} aria-label="关闭" style={{ ...closeBtn, flexShrink: 0 }}>
             ✕
           </button>
         </header>
@@ -539,7 +545,11 @@ export function ContextBreakdownModal({
             <div
               role="status"
               data-testid="context-availability"
-              style={{ color: displayState === "binding_only" ? "#94a3b8" : "#f87171", fontSize: 11, marginBottom: 8 }}
+              style={{
+                color: displayState === "binding_only" ? "#94a3b8" : "#f87171",
+                fontSize: 11,
+                marginBottom: 8,
+              }}
             >
               {displayState === "binding_only"
                 ? "仅有本 Session 模型绑定；尚无真实模型请求，Context 用量不可用"
@@ -550,48 +560,100 @@ export function ContextBreakdownModal({
           )}
           {measured && snapshot && (
             <>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginBottom: 4 }}>
-              <span><b style={{ color }}>{snapshot.prompt_tokens.toLocaleString()}</b> / {snapshot.effective_ceiling.toLocaleString()} tokens</span>
-              <span style={{ color: "#94a3b8" }}>{pct.toFixed(1)}% measured</span>
-            </div>
-            <div style={{ position: "relative", height: 8, background: "#1f2937", borderRadius: 4, overflow: "hidden" }}>
-              <div style={{ width: `${pct}%`, height: "100%", background: color, transition: "width 240ms" }} />
-              {snapshot.compact_at > 0 && snapshot.effective_ceiling > 0 && (
-                <div title="compact 阈值" style={{
-                  position: "absolute",
-                  left: `${(snapshot.compact_at / snapshot.effective_ceiling) * 100}%`,
-                  top: 0, bottom: 0, width: 2, background: "#f59e0b", opacity: 0.8,
-                }} />
-              )}
-              {snapshot.recall_sweet > 0 && snapshot.effective_ceiling > 0 && (
-                <div title="recall sweet spot" style={{
-                  position: "absolute",
-                  left: `${(snapshot.recall_sweet / snapshot.effective_ceiling) * 100}%`,
-                  top: 0, bottom: 0, width: 1, background: "#fbbf24", opacity: 0.7,
-                }} />
-              )}
-            </div>
-            <div style={{ fontSize: 10, color: "#6b7280", marginTop: 4, display: "flex", gap: 12 }}>
-              {snapshot.cached_tokens > 0 && <span>cache hit: {fmtTokens(snapshot.cached_tokens)}</span>}
-              {snapshot.compact_at > 0 && <span>compact @ {fmtTokens(snapshot.compact_at)}</span>}
-              {snapshot.recall_sweet > 0 && <span>sweet @ {fmtTokens(snapshot.recall_sweet)}</span>}
-            </div>
-            <div style={{ color: "#64748b", fontSize: 10, marginTop: 5 }}>
-              实测 · sample {snapshot.sample_id || "不可用"} · snapshot {snapshot.snapshot_id || "不可用"}
-            </div>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  fontSize: 11,
+                  marginBottom: 4,
+                }}
+              >
+                <span>
+                  <b style={{ color }}>{snapshot.prompt_tokens.toLocaleString()}</b> /{" "}
+                  {snapshot.effective_ceiling.toLocaleString()} tokens
+                </span>
+                <span style={{ color: "#94a3b8" }}>{pct.toFixed(1)}% measured</span>
+              </div>
+              <div
+                style={{
+                  position: "relative",
+                  height: 8,
+                  background: "#1f2937",
+                  borderRadius: 4,
+                  overflow: "hidden",
+                }}
+              >
+                <div
+                  style={{
+                    width: `${pct}%`,
+                    height: "100%",
+                    background: color,
+                    transition: "width 240ms",
+                  }}
+                />
+                {snapshot.compact_at > 0 && snapshot.effective_ceiling > 0 && (
+                  <div
+                    title="compact 阈值"
+                    style={{
+                      position: "absolute",
+                      left: `${(snapshot.compact_at / snapshot.effective_ceiling) * 100}%`,
+                      top: 0,
+                      bottom: 0,
+                      width: 2,
+                      background: "#f59e0b",
+                      opacity: 0.8,
+                    }}
+                  />
+                )}
+                {snapshot.recall_sweet > 0 && snapshot.effective_ceiling > 0 && (
+                  <div
+                    title="recall sweet spot"
+                    style={{
+                      position: "absolute",
+                      left: `${(snapshot.recall_sweet / snapshot.effective_ceiling) * 100}%`,
+                      top: 0,
+                      bottom: 0,
+                      width: 1,
+                      background: "#fbbf24",
+                      opacity: 0.7,
+                    }}
+                  />
+                )}
+              </div>
+              <div
+                style={{ fontSize: 10, color: "#6b7280", marginTop: 4, display: "flex", gap: 12 }}
+              >
+                {snapshot.cached_tokens > 0 && (
+                  <span>cache hit: {fmtTokens(snapshot.cached_tokens)}</span>
+                )}
+                {snapshot.compact_at > 0 && <span>compact @ {fmtTokens(snapshot.compact_at)}</span>}
+                {snapshot.recall_sweet > 0 && (
+                  <span>sweet @ {fmtTokens(snapshot.recall_sweet)}</span>
+                )}
+              </div>
+              <div style={{ color: "#64748b", fontSize: 10, marginTop: 5 }}>
+                实测 · sample {snapshot.sample_id || "不可用"} · snapshot{" "}
+                {snapshot.snapshot_id || "不可用"}
+              </div>
             </>
           )}
         </div>
 
         <div style={{ borderTop: "1px solid #374151", paddingTop: 12 }}>
-          <div style={{ fontSize: 12, color: "#cbd5e1", marginBottom: 8 }}>
-            Context 变化记录
-          </div>
+          <div style={{ fontSize: 12, color: "#cbd5e1", marginBottom: 8 }}>Context 变化记录</div>
           <ContextHistoryChart history={data?.history ?? []} />
         </div>
 
         <div style={{ borderTop: "1px solid #374151", paddingTop: 12 }}>
-          <div style={{ fontSize: 12, color: "#cbd5e1", marginBottom: 8, display: "flex", justifyContent: "space-between" }}>
+          <div
+            style={{
+              fontSize: 12,
+              color: "#cbd5e1",
+              marginBottom: 8,
+              display: "flex",
+              justifyContent: "space-between",
+            }}
+          >
             <span>冻结请求构成（按项标记 measured / estimated / unavailable）</span>
             {data && (
               <span style={{ color: "#94a3b8", fontSize: 10 }}>
@@ -608,14 +670,21 @@ export function ContextBreakdownModal({
             </div>
           )}
           {!loading && !data && (
-            <div style={{ color: "#94a3b8", fontSize: 12, padding: 12 }}>
-              暂无数据
-            </div>
+            <div style={{ color: "#94a3b8", fontSize: 12, padding: 12 }}>暂无数据</div>
           )}
 
           {data && (
             <>
-              <div style={{ display: "flex", height: 10, borderRadius: 4, overflow: "hidden", marginBottom: 8, background: "#1f2937" }}>
+              <div
+                style={{
+                  display: "flex",
+                  height: 10,
+                  borderRadius: 4,
+                  overflow: "hidden",
+                  marginBottom: 8,
+                  background: "#1f2937",
+                }}
+              >
                 {data.sections.map((s, index) => {
                   const w = sectionTotal > 0 ? ((s.tokens ?? 0) / sectionTotal) * 100 : 0;
                   if (w <= 0) return null;
@@ -631,50 +700,66 @@ export function ContextBreakdownModal({
 
               <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "grid", gap: 6 }}>
                 {data.sections.map((s, index) => (
-                  <li key={`${s.kind}:${index}`} style={{
-                    background: "#111827",
-                    borderRadius: 4,
-                    padding: "8px 10px",
-                    border: "1px solid #1f2937",
-                  }}>
+                  <li
+                    key={`${s.kind}:${index}`}
+                    style={{
+                      background: "#111827",
+                      borderRadius: 4,
+                      padding: "8px 10px",
+                      border: "1px solid #1f2937",
+                    }}
+                  >
                     <button
                       type="button"
                       onClick={() => setExpanded((e) => ({ ...e, [s.kind]: !e[s.kind] }))}
                       style={{
-                        background: "transparent", border: "none", padding: 0, color: "inherit",
-                        cursor: "pointer", width: "100%",
-                        display: "flex", justifyContent: "space-between", alignItems: "center",
+                        background: "transparent",
+                        border: "none",
+                        padding: 0,
+                        color: "inherit",
+                        cursor: "pointer",
+                        width: "100%",
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
                       }}
                     >
                       <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
-                        <span style={{
-                          display: "inline-block",
-                          width: 8, height: 8, borderRadius: 2,
-                          background: SECTION_COLOR[s.kind] || "#64748b",
-                        }} />
+                        <span
+                          style={{
+                            display: "inline-block",
+                            width: 8,
+                            height: 8,
+                            borderRadius: 2,
+                            background: SECTION_COLOR[s.kind] || "#64748b",
+                          }}
+                        />
                         <b>{s.label}</b>
                         {typeof s.count === "number" && (
                           <span style={{ color: "#94a3b8", fontSize: 11 }}>· {s.count} 项</span>
                         )}
                       </span>
                       <span style={{ color: "#94a3b8", fontSize: 11 }}>
-                        {s.tokens === null ? "tokens 不可用" : `${fmtTokens(s.tokens)} tokens`} · {s.token_source} {expanded[s.kind] ? "▴" : "▾"}
+                        {s.tokens === null ? "tokens 不可用" : `${fmtTokens(s.tokens)} tokens`} ·{" "}
+                        {s.token_source} {expanded[s.kind] ? "▴" : "▾"}
                       </span>
                     </button>
                     {expanded[s.kind] && (
                       <div style={{ marginTop: 8 }}>
-                        <pre style={{
-                          margin: 0,
-                          fontSize: 10.5,
-                          color: "#cbd5e1",
-                          background: "#0b1120",
-                          padding: 8,
-                          borderRadius: 3,
-                          maxHeight: 180,
-                          overflow: "auto",
-                          whiteSpace: "pre-wrap",
-                          wordBreak: "break-word",
-                        }}>
+                        <pre
+                          style={{
+                            margin: 0,
+                            fontSize: 10.5,
+                            color: "#cbd5e1",
+                            background: "#0b1120",
+                            padding: 8,
+                            borderRadius: 3,
+                            maxHeight: 180,
+                            overflow: "auto",
+                            whiteSpace: "pre-wrap",
+                            wordBreak: "break-word",
+                          }}
+                        >
                           {s.public_preview || "无公开预览"}
                           {s.preview_truncated ? "…" : ""}
                         </pre>

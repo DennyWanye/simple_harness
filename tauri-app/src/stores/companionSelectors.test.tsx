@@ -36,12 +36,9 @@ describe("useCompanionProvisionalValues", () => {
     expect(renders).toBe(1);
 
     act(() => {
-      useSessionsStore.getState().upsert_companion_provisional(
-        "run-1",
-        "invocation-1",
-        "epoch-1",
-        "partial",
-      );
+      useSessionsStore
+        .getState()
+        .upsert_companion_provisional("run-1", "invocation-1", "epoch-1", "partial");
     });
     expect(renders).toBe(2);
     expect(screen.getByTestId("values").textContent).toBe("partial");

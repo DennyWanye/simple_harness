@@ -16,9 +16,7 @@ const PROVIDER_NOT_READY_PATTERNS = [
 
 export function chatErrorMessage(payload: ChatErrorPayload): string {
   const parts = [payload.error, payload.detail, payload.reason]
-    .filter((value): value is string =>
-      typeof value === "string" && value.trim().length > 0,
-    )
+    .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
     .map((value) => value.trim());
   const technical = parts.join(" — ");
 

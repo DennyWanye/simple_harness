@@ -17,7 +17,9 @@ const runProjection: TaskRunProjectionState = {
   last_activity: 1,
 };
 
-function snapshot(status: PublicRunSnapshotV3["aggregate_outcome"]["status"] = "running"): PublicRunSnapshotV3 {
+function snapshot(
+  status: PublicRunSnapshotV3["aggregate_outcome"]["status"] = "running",
+): PublicRunSnapshotV3 {
   return {
     schema_version: "3",
     projection_id: `projection-${status}`,
@@ -27,39 +29,49 @@ function snapshot(status: PublicRunSnapshotV3["aggregate_outcome"]["status"] = "
       status,
       explanation_code: status,
       evidence_refs: [],
-      child_warnings: status === "completed_with_recovery"
-        ? [{ run_id: "child-1", status: "failed", evidence_refs: [] }]
-        : [],
+      child_warnings:
+        status === "completed_with_recovery"
+          ? [{ run_id: "child-1", status: "failed", evidence_refs: [] }]
+          : [],
     },
-    semantic_phases: [{
-      phase_id: "execute",
-      taxonomy: "execute",
-      title: "创建项目",
-      status: status === "completed_with_recovery" ? "completed_with_recovery" : status === "completed" ? "completed" : "running",
-      mapping_reason: "tool_spec",
-      evidence_refs: [],
-      tool_refs: ["detail-1"],
-      child_refs: [],
-      workflow_steps: [],
-      items: [],
-      current_step: 1,
-      total_steps: 4,
-      order_key: [3, 0, 0, "execute"],
-    }],
-    tool_public_views: [{
-      tool_ref: "detail-1",
-      stable_id: "tool-1",
-      detail_ref: "detail-1",
-      phase_id: "execute",
-      public_name: "文件工具",
-      action_label: "写入文件",
-      safe_target_label: "project.godot",
-      status: "running",
-      details_available: true,
-      result_available: true,
-      truncated: false,
-      created_at: 1,
-    }],
+    semantic_phases: [
+      {
+        phase_id: "execute",
+        taxonomy: "execute",
+        title: "创建项目",
+        status:
+          status === "completed_with_recovery"
+            ? "completed_with_recovery"
+            : status === "completed"
+              ? "completed"
+              : "running",
+        mapping_reason: "tool_spec",
+        evidence_refs: [],
+        tool_refs: ["detail-1"],
+        child_refs: [],
+        workflow_steps: [],
+        items: [],
+        current_step: 1,
+        total_steps: 4,
+        order_key: [3, 0, 0, "execute"],
+      },
+    ],
+    tool_public_views: [
+      {
+        tool_ref: "detail-1",
+        stable_id: "tool-1",
+        detail_ref: "detail-1",
+        phase_id: "execute",
+        public_name: "文件工具",
+        action_label: "写入文件",
+        safe_target_label: "project.godot",
+        status: "running",
+        details_available: true,
+        result_available: true,
+        truncated: false,
+        created_at: 1,
+      },
+    ],
     public_messages: [],
     totals: { workflow_facts: 2, content_facts: 0, provider_details: 0, tool_details: 1 },
     projection_complete: status !== "running",
@@ -69,11 +81,9 @@ function snapshot(status: PublicRunSnapshotV3["aggregate_outcome"]["status"] = "
 
 function setup(projection: TaskRunProjectionState = runProjection) {
   const listeners = new Set<(message: unknown) => void>();
-  const sendCommand = vi.fn<(message: {
-    type: string;
-    request_id: string;
-    payload: Record<string, unknown>;
-  }) => boolean>(() => true);
+  const sendCommand = vi.fn<
+    (message: { type: string; request_id: string; payload: Record<string, unknown> }) => boolean
+  >(() => true);
   const view = render(
     <HarnessInspectorPanel
       open
@@ -125,7 +135,12 @@ describe("HarnessInspectorPanel public run view", () => {
     const requestId = view.sendCommand.mock.calls[0][0].request_id;
     act(() => vi.advanceTimersByTime(5_000));
     expect(view.sendCommand).toHaveBeenCalledTimes(1);
-    view.emit({ type: "harness_inspector_snapshot_response", request_id: requestId, ok: true, snapshot: snapshot() });
+    view.emit({
+      type: "harness_inspector_snapshot_response",
+      request_id: requestId,
+      ok: true,
+      snapshot: snapshot(),
+    });
     expect(screen.getByTestId("harness-run-graph")).toBeTruthy();
     expect(screen.getAllByText("创建项目").length).toBeGreaterThan(0);
     expect(screen.getAllByText("当前 2/4 步").length).toBeGreaterThan(0);
@@ -158,13 +173,15 @@ describe("HarnessInspectorPanel public run view", () => {
     const requestId = view.sendCommand.mock.calls[0][0].request_id;
     const terminal = snapshot("completed");
     terminal.semantic_phases[0].status = "running";
-    terminal.semantic_phases[0].workflow_steps = [{
-      workflow_step_id: "tool_execution",
-      label: "执行命令",
-      status: "running",
-      step_index: 0,
-      step_total: 1,
-    }];
+    terminal.semantic_phases[0].workflow_steps = [
+      {
+        workflow_step_id: "tool_execution",
+        label: "执行命令",
+        status: "running",
+        step_index: 0,
+        step_total: 1,
+      },
+    ];
     view.emit({
       type: "harness_inspector_snapshot_response",
       request_id: requestId,
@@ -254,10 +271,15 @@ describe("HarnessInspectorPanel public run view", () => {
     const view = setup();
     act(() => vi.runOnlyPendingTimers());
     const requestId = view.sendCommand.mock.calls[0][0].request_id;
-    view.emit({ type: "harness_inspector_snapshot_response", request_id: requestId, ok: true, snapshot: snapshot() });
+    view.emit({
+      type: "harness_inspector_snapshot_response",
+      request_id: requestId,
+      ok: true,
+      snapshot: snapshot(),
+    });
     fireEvent.click(screen.getByRole("button", { name: /查看.*输入/ }));
-    const detailsRequest = view.sendCommand.mock.calls.find(([message]) =>
-      message.type === "harness_inspector_details_request",
+    const detailsRequest = view.sendCommand.mock.calls.find(
+      ([message]) => message.type === "harness_inspector_details_request",
     )?.[0];
     expect(detailsRequest).toBeTruthy();
     if (!detailsRequest) throw new Error("details request was not sent");
@@ -266,31 +288,35 @@ describe("HarnessInspectorPanel public run view", () => {
       request_id: detailsRequest.request_id,
       projection_id: snapshot().projection_id,
       query_kind: "tool_details",
-      items: [{
-        source: "workflow",
-        stable_id: "tool-1",
-        root_run_id: "root-1",
-        kind: "tool",
-        created_at: 1,
-        public_payload: {
-          tool_name: "文件工具",
-          activity_kind: "写入文件",
-          action_code: "write_file",
-          safe_target_label: "project.godot",
-          status: "completed",
-          safe_input: { target: "project.godot" },
-          bounded_result: { summary: "已完成" },
-          truncation_hashes: [],
-          policy_hash: "policy",
-          interpreter_version: 1,
-          schema_version: 1,
+      items: [
+        {
+          source: "workflow",
+          stable_id: "tool-1",
+          root_run_id: "root-1",
+          kind: "tool",
+          created_at: 1,
+          public_payload: {
+            tool_name: "文件工具",
+            activity_kind: "写入文件",
+            action_code: "write_file",
+            safe_target_label: "project.godot",
+            status: "completed",
+            safe_input: { target: "project.godot" },
+            bounded_result: { summary: "已完成" },
+            truncation_hashes: [],
+            policy_hash: "policy",
+            interpreter_version: 1,
+            schema_version: 1,
+          },
         },
-      }],
+      ],
       next_cursor: null,
     });
     expect(screen.getByText(/project\.godot/)).toBeTruthy();
     expect(screen.queryByText(/已完成/)).toBeNull();
-    expect(screen.getByRole("button", { name: /查看.*结果/ }).getAttribute("aria-expanded")).toBe("false");
+    expect(screen.getByRole("button", { name: /查看.*结果/ }).getAttribute("aria-expanded")).toBe(
+      "false",
+    );
   });
 
   it("never renders raw secrets from an old schema", () => {

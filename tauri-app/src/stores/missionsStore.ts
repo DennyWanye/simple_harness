@@ -18,7 +18,8 @@
 import { create } from "zustand";
 import type { ControlChannel } from "../ws/ControlChannel";
 
-export type MissionsChannel = Pick<ControlChannel, "send" | "onMessage"> & Partial<Pick<ControlChannel, "onStateChange">>;
+export type MissionsChannel = Pick<ControlChannel, "send" | "onMessage"> &
+  Partial<Pick<ControlChannel, "onStateChange">>;
 
 export interface MissionRow {
   id: string;
@@ -71,8 +72,24 @@ export interface OrchestrationStatus {
   /** 部署默认预算：表单留空的项由后端按它补齐（没有无上限的 Mission）。 */
   mission_budget_defaults?: { max_tokens: number; max_attempts: number } | null;
   /** 第 2 批 H11 / 车道 P：本月全局预算——所有任务按建立月份合计的 token 月配额与用量（SDK 每月一个全局总账）。 */
-  global_budget?: { month: string; max_tokens: number; opened: boolean; used_tokens: number; reserved_tokens: number; remaining_tokens: number } | null;
-  context_profiles?: { profile_id: string; max_input_tokens: number; max_total_tokens?: number; output_reserve?: number; safety_margin?: number; default_max_output_tokens: number; max_output_tokens_ceiling: number; mission_max_tokens: number }[];
+  global_budget?: {
+    month: string;
+    max_tokens: number;
+    opened: boolean;
+    used_tokens: number;
+    reserved_tokens: number;
+    remaining_tokens: number;
+  } | null;
+  context_profiles?: {
+    profile_id: string;
+    max_input_tokens: number;
+    max_total_tokens?: number;
+    output_reserve?: number;
+    safety_margin?: number;
+    default_max_output_tokens: number;
+    max_output_tokens_ceiling: number;
+    mission_max_tokens: number;
+  }[];
   default_context_profile_id?: string | null;
   diagnostics_available?: boolean;
   assurance_available?: boolean;
@@ -90,14 +107,22 @@ export interface BackgroundHealthRow {
   stuck_item?: string | null;
 }
 
-const LOOP_LABEL: Record<string, string> = { index: "建索引", draining: "清理会话", recall: "找回旧内容", tool_probe: "工具检查", reap: "整理会话" };
+const LOOP_LABEL: Record<string, string> = {
+  index: "建索引",
+  draining: "清理会话",
+  recall: "找回旧内容",
+  tool_probe: "工具检查",
+  reap: "整理会话",
+};
 
 /** 后台循环连续失败 ≥3 次的一句话提示；没有就返回 null。 */
 export function backgroundTrouble(status: OrchestrationStatus | null | undefined): string | null {
   if (status?.state === "degraded")
     return `编排后台连续出错，任务可能停在原地：${status.reason ?? "原因未知"}。可在「反馈问题」里打包诊断信息。`;
   const rows = (status?.native_plane?.profiles ?? []).flatMap((p) => p.background ?? []);
-  const worst = rows.filter((r) => (r.consecutive_failures ?? 0) >= 3).sort((a, b) => b.consecutive_failures - a.consecutive_failures)[0];
+  const worst = rows
+    .filter((r) => (r.consecutive_failures ?? 0) >= 3)
+    .sort((a, b) => b.consecutive_failures - a.consecutive_failures)[0];
   if (!worst) return null;
   const code = worst.last_error_code ? `（${worst.last_error_code}）` : "";
   return `后台整理出错：${LOOP_LABEL[worst.loop] ?? worst.loop}，已连续 ${worst.consecutive_failures} 次${code}`;
@@ -172,12 +197,22 @@ interface MissionsState {
   setMissions: (missions: ReadonlyArray<MissionRow | Json>) => void;
   setListRequest: (requestId: string | null) => void;
   setListError: (error: string | null) => void;
-  appendEvents: (missionId: string, events: MissionEvent[], hasMore?: boolean, throughSeq?: number) => void;
+  appendEvents: (
+    missionId: string,
+    events: MissionEvent[],
+    hasMore?: boolean,
+    throughSeq?: number,
+  ) => void;
   setEventsLoading: (missionId: string, loading: boolean) => void;
   clearEventsLoading: () => void;
   applyChange: (change: MissionChange) => void;
   /** 推送带来的事件：起点正好接上游标才追加并前进游标，返回 true；否则不动，返回 false（调用方去分页补齐）。 */
-  appendPushed: (missionId: string, fromSeq: number, events: MissionEvent[], lastSeq: number) => boolean;
+  appendPushed: (
+    missionId: string,
+    fromSeq: number,
+    events: MissionEvent[],
+    lastSeq: number,
+  ) => boolean;
   select: (missionId: string | null) => void;
   setDetail: (detail: Record<string, unknown> | null) => void;
   setPolicy: (policy: Record<string, unknown> | null) => void;
@@ -206,7 +241,12 @@ const initial = {
 export const useMissionsStore = create<MissionsState>((set, get) => ({
   ...initial,
   setStatus: (status) => set({ status }),
-  setMissions: (missions) => set({ missions: missions.map(toRow).filter((row) => row.id), listStale: false, listError: null }),
+  setMissions: (missions) =>
+    set({
+      missions: missions.map(toRow).filter((row) => row.id),
+      listStale: false,
+      listError: null,
+    }),
   setListRequest: (listRequestId) => set({ listRequestId }),
   setListError: (listError) => set({ listError }),
   appendEvents: (missionId, incoming, hasMore, throughSeq) =>
@@ -219,7 +259,8 @@ export const useMissionsStore = create<MissionsState>((set, get) => ({
       }
       const merged = [...bySeq.values()].sort((a, b) => a.seq - b.seq);
       const top = merged.length ? merged[merged.length - 1].seq : 0;
-      const through = typeof throughSeq === "number" && Number.isFinite(throughSeq) ? throughSeq : 0;
+      const through =
+        typeof throughSeq === "number" && Number.isFinite(throughSeq) ? throughSeq : 0;
       return {
         events: { ...state.events, [missionId]: merged },
         eventCursor: {

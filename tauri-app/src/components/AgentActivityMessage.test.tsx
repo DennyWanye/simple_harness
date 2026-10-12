@@ -23,41 +23,47 @@ function snapshot(overrides: Partial<PublicRunSnapshotV3> = {}): PublicRunSnapsh
       evidence_refs: ["root:final"],
       child_warnings: [{ run_id: "child-1", status: "failed", evidence_refs: ["child:failed"] }],
     },
-    semantic_phases: [{
-      phase_id: "execute",
-      taxonomy: "execute",
-      title: "创建项目",
-      status: "completed_with_recovery",
-      mapping_reason: "tool_spec",
-      evidence_refs: [],
-      tool_refs: ["detail-1"],
-      child_refs: ["child-1"],
-      workflow_steps: [],
-      items: [],
-      order_key: [3, 0, 0, "execute"],
-    }],
-    tool_public_views: [{
-      tool_ref: "detail-1",
-      stable_id: "tool-1",
-      phase_id: "execute",
-      public_name: "文件工具",
-      action_label: "写入文件",
-      safe_target_label: "project.godot",
-      status: "completed",
-      public_input: { target: "project.godot" },
-      public_result: { summary: "已写入" },
-      details_available: true,
-      result_available: true,
-      truncated: false,
-      created_at: 2,
-    }],
-    public_messages: [{
-      message_id: "message-1",
-      stable_id: "message-1",
-      phase_id: "execute",
-      text: "我会先创建项目骨架。",
-      created_at: 1,
-    }],
+    semantic_phases: [
+      {
+        phase_id: "execute",
+        taxonomy: "execute",
+        title: "创建项目",
+        status: "completed_with_recovery",
+        mapping_reason: "tool_spec",
+        evidence_refs: [],
+        tool_refs: ["detail-1"],
+        child_refs: ["child-1"],
+        workflow_steps: [],
+        items: [],
+        order_key: [3, 0, 0, "execute"],
+      },
+    ],
+    tool_public_views: [
+      {
+        tool_ref: "detail-1",
+        stable_id: "tool-1",
+        phase_id: "execute",
+        public_name: "文件工具",
+        action_label: "写入文件",
+        safe_target_label: "project.godot",
+        status: "completed",
+        public_input: { target: "project.godot" },
+        public_result: { summary: "已写入" },
+        details_available: true,
+        result_available: true,
+        truncated: false,
+        created_at: 2,
+      },
+    ],
+    public_messages: [
+      {
+        message_id: "message-1",
+        stable_id: "message-1",
+        phase_id: "execute",
+        text: "我会先创建项目骨架。",
+        created_at: 1,
+      },
+    ],
     totals: { workflow_facts: 5, content_facts: 1, provider_details: 0, tool_details: 1 },
     projection_complete: true,
     diagnostics: [],
@@ -67,11 +73,13 @@ function snapshot(overrides: Partial<PublicRunSnapshotV3> = {}): PublicRunSnapsh
 
 describe("public Agent activity projection", () => {
   it("uses only server-approved narration with stable IDs", () => {
-    expect(buildAgentPublicOutputs(snapshot())).toEqual([{
-      id: "message-1",
-      text: "我会先创建项目骨架。",
-      ts: 1000,
-    }]);
+    expect(buildAgentPublicOutputs(snapshot())).toEqual([
+      {
+        id: "message-1",
+        text: "我会先创建项目骨架。",
+        ts: 1000,
+      },
+    ]);
     expect(buildAgentActivityTrace(snapshot())).toHaveLength(1);
   });
 
@@ -98,10 +106,7 @@ describe("public Agent activity projection", () => {
 
   it("deduplicates a stable item across the left and right consumers by identity", () => {
     const value = snapshot({
-      public_messages: [
-        snapshot().public_messages[0],
-        { ...snapshot().public_messages[0] },
-      ],
+      public_messages: [snapshot().public_messages[0], { ...snapshot().public_messages[0] }],
     });
     expect(buildAgentPublicOutputs(value)).toHaveLength(1);
   });
@@ -116,21 +121,27 @@ describe("public Agent activity projection", () => {
         started_at: 10,
         ended_at: 22.5,
       },
-      semantic_phases: [{
-        ...snapshot().semantic_phases[0],
-        status: "cancelled",
-        workflow_steps: [{
-          workflow_step_id: "tool_execution",
-          label: "执行命令",
+      semantic_phases: [
+        {
+          ...snapshot().semantic_phases[0],
+          status: "cancelled",
+          workflow_steps: [
+            {
+              workflow_step_id: "tool_execution",
+              label: "执行命令",
+              status: "running",
+              step_index: 0,
+              step_total: 1,
+            },
+          ],
+        },
+      ],
+      tool_public_views: [
+        {
+          ...snapshot().tool_public_views[0],
           status: "running",
-          step_index: 0,
-          step_total: 1,
-        }],
-      }],
-      tool_public_views: [{
-        ...snapshot().tool_public_views[0],
-        status: "running",
-      }],
+        },
+      ],
     });
 
     const [trace] = buildWorkflowTaskTraces(value);
@@ -153,21 +164,27 @@ describe("public Agent activity projection", () => {
         evidence_refs: ["root:final"],
         child_warnings: [],
       },
-      semantic_phases: [{
-        ...snapshot().semantic_phases[0],
-        status: "running",
-        workflow_steps: [{
-          workflow_step_id: "tool_execution",
-          label: "执行命令",
+      semantic_phases: [
+        {
+          ...snapshot().semantic_phases[0],
           status: "running",
-          step_index: 0,
-          step_total: 1,
-        }],
-      }],
-      tool_public_views: [{
-        ...snapshot().tool_public_views[0],
-        status: "running",
-      }],
+          workflow_steps: [
+            {
+              workflow_step_id: "tool_execution",
+              label: "执行命令",
+              status: "running",
+              step_index: 0,
+              step_total: 1,
+            },
+          ],
+        },
+      ],
+      tool_public_views: [
+        {
+          ...snapshot().tool_public_views[0],
+          status: "running",
+        },
+      ],
     });
 
     const [trace] = buildWorkflowTaskTraces(value);
@@ -189,29 +206,35 @@ describe("public Agent activity projection", () => {
         evidence_refs: [],
         child_warnings: [],
       },
-      semantic_phases: [{
-        ...snapshot().semantic_phases[0],
-        status: "running",
-        workflow_steps: [{
-          workflow_step_id: "llm_proposal",
-          label: "准备方案",
+      semantic_phases: [
+        {
+          ...snapshot().semantic_phases[0],
           status: "running",
-          step_index: 0,
-          step_total: 2,
-        }, {
-          workflow_step_id: "llm_proposal",
-          label: "准备方案",
-          status: "completed",
-          step_index: 0,
-          step_total: 2,
-        }, {
-          workflow_step_id: "tool_execution",
-          label: "执行工具",
-          status: "running",
-          step_index: 1,
-          step_total: 2,
-        }],
-      }],
+          workflow_steps: [
+            {
+              workflow_step_id: "llm_proposal",
+              label: "准备方案",
+              status: "running",
+              step_index: 0,
+              step_total: 2,
+            },
+            {
+              workflow_step_id: "llm_proposal",
+              label: "准备方案",
+              status: "completed",
+              step_index: 0,
+              step_total: 2,
+            },
+            {
+              workflow_step_id: "tool_execution",
+              label: "执行工具",
+              status: "running",
+              step_index: 1,
+              step_total: 2,
+            },
+          ],
+        },
+      ],
     });
 
     const [trace] = buildWorkflowTaskTraces(value);

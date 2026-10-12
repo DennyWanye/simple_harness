@@ -11,7 +11,7 @@ describe("permission mode production wiring", () => {
     expect(settings).not.toContain('localStorage.getItem("deskpet.auto_mode")');
     // 加载中 = 无权威快照 → 不可交互，且写入携带显式目标模式。
     expect(settings).toContain("const loading = policy === null;");
-    expect(settings).toContain("const checked = policy?.mode === \"auto\";");
+    expect(settings).toContain('const checked = policy?.mode === "auto";');
     expect(settings).toContain("buildAutoModeSetMessage(target,");
     expect(settings).toContain("自动模式（推荐）");
   });

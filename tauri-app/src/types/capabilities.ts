@@ -11,12 +11,7 @@
 
 export type CapabilityCategory = "instruction" | "tool" | "mcp" | "pack";
 export type CapabilityScope = "run" | "project" | "user" | "builtin";
-export type CapabilityHealth =
-  | "healthy"
-  | "degraded"
-  | "unavailable"
-  | "validating"
-  | "unknown";
+export type CapabilityHealth = "healthy" | "degraded" | "unavailable" | "validating" | "unknown";
 
 export type CapabilityOperationKind =
   | "activate"
@@ -39,8 +34,7 @@ export const CAPABILITY_OPERATION_PHASES = [
   "published",
 ] as const;
 
-export type CapabilityOperationPhase =
-  (typeof CAPABILITY_OPERATION_PHASES)[number];
+export type CapabilityOperationPhase = (typeof CAPABILITY_OPERATION_PHASES)[number];
 
 export type CapabilityOperationStatus =
   | "queued"
@@ -51,11 +45,7 @@ export type CapabilityOperationStatus =
   | "cancelled"
   | "unknown";
 
-export type CapabilityOperationAction =
-  | "cancel"
-  | "retry"
-  | "rollback"
-  | "uninstall";
+export type CapabilityOperationAction = "cancel" | "retry" | "rollback" | "uninstall";
 
 export type CapabilityAuthorizationMode = "manual" | "auto";
 
@@ -151,10 +141,7 @@ export interface CapabilityOperation {
   updated_at?: string;
 }
 
-export type CapabilityOperationPatch = Pick<
-  CapabilityOperation,
-  "operation_id"
-> &
+export type CapabilityOperationPatch = Pick<CapabilityOperation, "operation_id"> &
   Partial<Omit<CapabilityOperation, "operation_id">>;
 
 export interface CapabilityOperationEvent {
@@ -188,14 +175,11 @@ const PHASE_PROGRESS: Record<CapabilityOperationPhase, number> = {
   published: 100,
 };
 
-export function capabilityOperationProgress(
-  operation: CapabilityOperation,
-): number {
+export function capabilityOperationProgress(operation: CapabilityOperation): number {
   if (operation.status === "succeeded" || operation.phase === "published") {
     return 100;
   }
-  const projected =
-    operation.progress_percent ?? PHASE_PROGRESS[operation.phase] ?? 0;
+  const projected = operation.progress_percent ?? PHASE_PROGRESS[operation.phase] ?? 0;
   return Math.max(0, Math.min(100, Math.round(projected)));
 }
 
@@ -232,9 +216,7 @@ export function reduceCapabilityOperationEvent(
   current: CapabilityOperation[],
   event: CapabilityOperationEvent,
 ): CapabilityOperation[] {
-  const previous = current.find(
-    (item) => item.operation_id === event.operation.operation_id,
-  );
+  const previous = current.find((item) => item.operation_id === event.operation.operation_id);
   if (!previous) {
     // A new operation must first arrive as a complete projection. This avoids
     // rendering internal/raw event fragments as if they were safe UI data.
@@ -252,13 +234,9 @@ export function reduceCapabilityOperationEvent(
     ) {
       return current;
     }
-    return mergeCapabilityOperations(current, [
-      candidate as CapabilityOperation,
-    ]);
+    return mergeCapabilityOperations(current, [candidate as CapabilityOperation]);
   }
-  return mergeCapabilityOperations(current, [
-    { ...previous, ...event.operation },
-  ]);
+  return mergeCapabilityOperations(current, [{ ...previous, ...event.operation }]);
 }
 
 export function buildCapabilityOperationActionMessage(
@@ -295,10 +273,7 @@ export function buildCapabilityMutationMessage(
 const SECRET_PATTERNS: Array<[RegExp, string]> = [
   [/(authorization\s*:\s*bearer\s+)[^\s,;]+/gi, "$1[REDACTED]"],
   [/\b(?:sk|tsk|key)_[a-z0-9_-]{6,}\b/gi, "[REDACTED]"],
-  [
-    /((?:api[_-]?key|token|password|secret)\s*[:=]\s*)("[^"]*"|'[^']*'|[^\s,;]+)/gi,
-    "$1[REDACTED]",
-  ],
+  [/((?:api[_-]?key|token|password|secret)\s*[:=]\s*)("[^"]*"|'[^']*'|[^\s,;]+)/gi, "$1[REDACTED]"],
   [/(--(?:api-key|token|password|secret)\s+)[^\s]+/gi, "$1[REDACTED]"],
 ];
 
@@ -310,14 +285,11 @@ export function redactCapabilityText(value: unknown): string {
   return text;
 }
 
-export function isCapabilityListResponse(
-  message: unknown,
-): message is CapabilityListResponse {
+export function isCapabilityListResponse(message: unknown): message is CapabilityListResponse {
   if (!message || typeof message !== "object") return false;
   const typed = message as { type?: unknown; payload?: { capabilities?: unknown } };
   return (
-    (typed.type === "capability_list_response" ||
-      typed.type === "capabilities_list_response") &&
+    (typed.type === "capability_list_response" || typed.type === "capabilities_list_response") &&
     Array.isArray(typed.payload?.capabilities)
   );
 }
@@ -328,8 +300,7 @@ export function isCapabilityOperationsResponse(
   if (!message || typeof message !== "object") return false;
   const typed = message as { type?: unknown; payload?: { operations?: unknown } };
   return (
-    typed.type === "capability_operations_response" &&
-    Array.isArray(typed.payload?.operations)
+    typed.type === "capability_operations_response" && Array.isArray(typed.payload?.operations)
   );
 }
 
@@ -342,8 +313,7 @@ export function isCapabilityOperationEventMessage(
     payload?: { operation?: { operation_id?: unknown } };
   };
   return (
-    (typed.type === "capability_operation_event" ||
-      typed.type === "capability_operation_update") &&
+    (typed.type === "capability_operation_event" || typed.type === "capability_operation_update") &&
     typeof typed.payload?.operation?.operation_id === "string"
   );
 }

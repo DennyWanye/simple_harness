@@ -73,8 +73,7 @@ export function InlineCode({ children }: { children: React.ReactNode }) {
         padding: "1px 5px",
         borderRadius: 3,
         fontSize: "0.92em",
-        fontFamily:
-          'ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace',
+        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace',
       }}
     >
       {children}

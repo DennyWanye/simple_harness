@@ -17,8 +17,8 @@ import { invoke } from "@tauri-apps/api/core";
 export interface CloudConfigUpdate {
   base_url: string;
   model: string;
-  api_key?: string;   // empty/absent = keep current
-  strategy?: string;  // empty/absent = keep current
+  api_key?: string; // empty/absent = keep current
+  strategy?: string; // empty/absent = keep current
   /** WI-R2: false → api_key applied to the live provider but NOT
    *  persisted to llm_runtime.json (relay rotating `tsk_xxx` key).
    *  Absent/true → existing behaviour (key persisted). */
@@ -40,7 +40,7 @@ export interface CloudConfigResult {
  * the rejection string).
  */
 export async function updateCloudConfig(
-  _secret: string,  // kept for legacy callers; ignored — Rust knows the secret
+  _secret: string, // kept for legacy callers; ignored — Rust knows the secret
   update: CloudConfigUpdate,
 ): Promise<CloudConfigResult> {
   return invoke<CloudConfigResult>("update_cloud_config", { update });

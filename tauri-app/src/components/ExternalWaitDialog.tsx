@@ -4,13 +4,7 @@
 import React, { useEffect, useRef } from "react";
 
 import type { ExternalWaitRequest } from "../types/skillPlatform";
-import {
-  backdropStyle,
-  bannerStyle,
-  buttonStyle,
-  dark,
-  surfaceModal,
-} from "../theme/components";
+import { backdropStyle, bannerStyle, buttonStyle, dark, surfaceModal } from "../theme/components";
 import { tokens } from "../theme/tokens";
 
 interface Props {
@@ -18,10 +12,7 @@ interface Props {
   onComplete: () => void;
 }
 
-export const ExternalWaitDialog: React.FC<Props> = ({
-  request,
-  onComplete,
-}) => {
+export const ExternalWaitDialog: React.FC<Props> = ({ request, onComplete }) => {
   const completeRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
@@ -93,8 +84,8 @@ export const ExternalWaitDialog: React.FC<Props> = ({
             {request.required_action}
           </div>
           <div style={bannerStyle("warning")} role="status">
-            当前任务已安全暂停。处理上面的系统或第三方操作后返回检查；Simple
-            Harness 会重新探测真实结果，这不会记作一次执行失败。
+            当前任务已安全暂停。处理上面的系统或第三方操作后返回检查；Simple Harness
+            会重新探测真实结果，这不会记作一次执行失败。
           </div>
           <button
             ref={completeRef}

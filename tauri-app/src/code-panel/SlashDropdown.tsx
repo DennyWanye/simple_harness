@@ -60,9 +60,7 @@ export function SlashDropdown({
           padding: "8px 12px",
           cursor: "pointer",
           background: selected ? "rgba(37, 99, 235, 0.25)" : "transparent",
-          borderLeft: selected
-            ? "3px solid #60a5fa"
-            : "3px solid transparent",
+          borderLeft: selected ? "3px solid #60a5fa" : "3px solid transparent",
           display: "flex",
           flexDirection: "column",
           gap: 2,
@@ -97,9 +95,7 @@ export function SlashDropdown({
               )}
             </div>
             {cmd.description && (
-              <div style={{ color: "#94a3b8", fontSize: 11 }}>
-                {cmd.description}
-              </div>
+              <div style={{ color: "#94a3b8", fontSize: 11 }}>{cmd.description}</div>
             )}
           </div>
         );

@@ -176,12 +176,8 @@ const PATHS: Record<IconName, ReactElement> = {
   expand: (
     <path d="M9 4H5a1 1 0 0 0-1 1v4M15 4h4a1 1 0 0 1 1 1v4M9 20H5a1 1 0 0 1-1-1v-4M15 20h4a1 1 0 0 0 1-1v-4" />
   ),
-  pin: (
-    <path d="M9 4h6l-1 6 3.5 3.5H5.5L9 10 8 4ZM12 13.5V21" />
-  ),
-  edit: (
-    <path d="M4 20h4L18.5 9.5a2 2 0 0 0-2.83-2.83L5 17.5V20ZM14 8l2 2" />
-  ),
+  pin: <path d="M9 4h6l-1 6 3.5 3.5H5.5L9 10 8 4ZM12 13.5V21" />,
+  edit: <path d="M4 20h4L18.5 9.5a2 2 0 0 0-2.83-2.83L5 17.5V20ZM14 8l2 2" />,
   grid: (
     <>
       <rect x="4" y="4" width="7" height="7" rx="1.6" />

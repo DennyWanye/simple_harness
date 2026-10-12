@@ -49,14 +49,8 @@ import { InputBar } from "../code-panel/InputBar";
 import { ChangeModelModal } from "../code-panel/ChangeModelModal";
 import { PermissionPopup } from "../components/PermissionPopup";
 import { usePermissionRequests } from "../hooks/usePermissionRequests";
-import {
-  formatContextWindow,
-  useSessionModelsStore,
-} from "../code-panel/sessionModelsStore";
-import {
-  effective_provider_model,
-  useProvidersStore,
-} from "../code-panel/providersStore";
+import { formatContextWindow, useSessionModelsStore } from "../code-panel/sessionModelsStore";
+import { effective_provider_model, useProvidersStore } from "../code-panel/providersStore";
 import { controlWS } from "../code-panel/controlWs";
 import { useControlWsState } from "../hooks/useControlWsState";
 import { topicDisplayLabel } from "../chat/topicTitle";
@@ -79,10 +73,7 @@ import type {
   CompanionDetailResponse,
   CompanionEvent,
 } from "../types/messages";
-import type {
-  ProjectDirectoryRequest,
-  ProjectDirectoryResponse,
-} from "../types/skillPlatform";
+import type { ProjectDirectoryRequest, ProjectDirectoryResponse } from "../types/skillPlatform";
 import {
   companionActionCommand,
   resolveCompanionDetailSelection,
@@ -140,9 +131,7 @@ export function ChatView({ activeSid, secret, onSwitchSid = () => {} }: ChatView
   const workflowRetryDeferreds = useRef(new Map<string, WorkflowRetryDeferred>());
 
   const sessions = useSessionsStore((s) => s.sessions);
-  const messages = useSessionsStore(
-    (s) => s.sessions[activeSid]?.messages ?? EMPTY_MESSAGES,
-  );
+  const messages = useSessionsStore((s) => s.sessions[activeSid]?.messages ?? EMPTY_MESSAGES);
   const companionEvents = useSessionsStore(
     (s) => s.sessions[activeSid]?.companion_events ?? EMPTY_COMPANION_EVENTS,
   );
@@ -154,12 +143,8 @@ export function ChatView({ activeSid, secret, onSwitchSid = () => {} }: ChatView
   const companionIdentityReady = companionOwner !== null;
   const companionProvisional = useCompanionProvisionalValues();
   const [detailEvent, setDetailEvent] = useState<CompanionEvent | null>(null);
-  const selectedRunId = useSessionsStore(
-    (s) => s.sessions[activeSid]?.selected_run_id ?? null,
-  );
-  const runProjectionMap = useSessionsStore(
-    (s) => s.sessions[activeSid]?.run_projections,
-  );
+  const selectedRunId = useSessionsStore((s) => s.sessions[activeSid]?.selected_run_id ?? null);
+  const runProjectionMap = useSessionsStore((s) => s.sessions[activeSid]?.run_projections);
   const runProjections = useMemo(
     () =>
       Object.values(runProjectionMap ?? {})
@@ -168,49 +153,36 @@ export function ChatView({ activeSid, secret, onSwitchSid = () => {} }: ChatView
     [runProjectionMap],
   );
   const projectDirectoryRequest = useMemo(
-    () => selectVisibleProjectDirectoryRequest(
-      projectDirectoryRequests,
-      activeSid,
-      selectedRunId,
-      runProjectionMap,
-    ),
+    () =>
+      selectVisibleProjectDirectoryRequest(
+        projectDirectoryRequests,
+        activeSid,
+        selectedRunId,
+        runProjectionMap,
+      ),
     [activeSid, projectDirectoryRequests, runProjectionMap, selectedRunId],
   );
   const projectDirectoryError = projectDirectoryRequest
-    ? projectDirectoryErrors[projectDirectoryRequest.decision_id] ?? null
+    ? (projectDirectoryErrors[projectDirectoryRequest.decision_id] ?? null)
     : null;
   const visibleMessages = useMemo(
-    () => messages.filter(
-      (message) => isMessageVisibleForSelectedRun(message, selectedRunId),
-    ),
+    () => messages.filter((message) => isMessageVisibleForSelectedRun(message, selectedRunId)),
     [messages, selectedRunId],
   );
-  const preferred_model = useSessionsStore(
-    (s) => s.sessions[activeSid]?.preferred_model ?? null,
-  );
-  const model_params = useSessionsStore(
-    (s) => s.sessions[activeSid]?.model_params ?? null,
-  );
-  const provider_id = useSessionsStore(
-    (s) => s.sessions[activeSid]?.provider_id ?? null,
-  );
+  const preferred_model = useSessionsStore((s) => s.sessions[activeSid]?.preferred_model ?? null);
+  const model_params = useSessionsStore((s) => s.sessions[activeSid]?.model_params ?? null);
+  const provider_id = useSessionsStore((s) => s.sessions[activeSid]?.provider_id ?? null);
   const providers = useProvidersStore((s) => s.providers);
   const catalog_default_model = useSessionModelsStore((s) => s.default_model);
   const selectTaskProjection = useCallback(
     (runId: string) => {
       const session = useSessionsStore.getState().sessions[activeSid];
       const previousId = session?.selected_run_id ?? null;
-      const previous = previousId
-        ? session?.run_projections?.[previousId]
-        : undefined;
+      const previous = previousId ? session?.run_projections?.[previousId] : undefined;
       const next = session?.run_projections?.[runId];
       if (!next) return;
       useSessionsStore.getState().select_run_projection(activeSid, runId);
-      if (
-        previous &&
-        previous.run_id !== runId &&
-        previous.ui_state === "open"
-      ) {
+      if (previous && previous.run_id !== runId && previous.ui_state === "open") {
         controlWS.send({
           type: "task_projection_update",
           payload: {
@@ -244,16 +216,18 @@ export function ChatView({ activeSid, secret, onSwitchSid = () => {} }: ChatView
     contextUsage?.model?.trim() ||
     effective_provider_model(provider_id, providers) ||
     (!provider_id ? catalog_default_model.trim() : "");
-  const ctx_window = contextUsage?.context_window && contextUsage.context_window > 0
-    ? contextUsage.context_window
-    : null;
+  const ctx_window =
+    contextUsage?.context_window && contextUsage.context_window > 0
+      ? contextUsage.context_window
+      : null;
   const ctx_label = formatContextWindow(ctx_window);
 
   const projectSessionPages = useSessionsStore((state) => state.project_session_pages);
   const activeMeta = useMemo(
-    () => Object.values(projectSessionPages)
-      .flatMap((page) => page.sessions)
-      .find((session) => session.session_id === activeSid),
+    () =>
+      Object.values(projectSessionPages)
+        .flatMap((page) => page.sessions)
+        .find((session) => session.session_id === activeSid),
     [activeSid, projectSessionPages],
   );
   // 空态（无会话）时 topicDisplayLabel 会退回空串，标题栏就成了一片空白 ——
@@ -267,60 +241,57 @@ export function ChatView({ activeSid, secret, onSwitchSid = () => {} }: ChatView
     : "新对话（直接输入即可开始）";
 
   // ── companion 身份 / 目录确认 / 投影刷新监听（MessagePanelRoot 随迁）──
-  useEffect(() => controlWS.on_message((raw: unknown) => {
-    const message = raw as {
-      type?: unknown;
-      payload?: Record<string, unknown>;
-    };
-    if (message.type === "project_directory_request") {
-      const payload = (message as ProjectDirectoryRequest).payload;
-      if (payload?.decision_id && payload.session_id) {
-        const request = { ...payload, received_at: Date.now() };
-        setProjectDirectoryRequests((current) =>
-          storeProjectDirectoryRequest(current, request),
-        );
-        setProjectDirectoryErrors((current) => ({
-          ...current,
-          [payload.decision_id]: undefined,
-        }));
-      }
-    } else if (message.type === "project_directory_error") {
-      const decisionId = String(message.payload?.decision_id || "");
-      if (decisionId) {
-        setProjectDirectoryErrors((current) => ({
-          ...current,
-          [decisionId]: String(
-            message.payload?.error || "项目位置不可用，请重新选择。",
-          ),
-        }));
-      }
-    } else if (message.type === "companion_identity_status") {
-      const ready =
-        message.payload?.ready === true ||
-        message.payload?.status === "ready";
-      if (ready) {
-        // Promote this window's challenged lease with a Rust-signed,
-        // no-side-effect readiness command（ChatView 独家发送，避免与
-        // SessionList 双发）。
-        void controlWS.send_companion_action(
-          "companion_action_ready",
-          { ready: true },
-        );
-      }
-    } else if (shouldRefreshCompanionProjection(message)) {
-      // A detail fence may legitimately advance after the card was projected.
-      // Refresh the durable projection instead of disabling the whole view.
-      // 空态（无会话）没有可刷新的投影，直接跳过——保留会话移除后
-      // 不再有可兜底的固定 sid。
-      const sid = useSessionsStore.getState().active_sid;
-      if (sid) {
-        controlWS.send({
-          type: "session_messages_load",
-          payload: { session_id: sid, limit: 200 },
-        });
-      }
-    }
-  }), []);
+  useEffect(
+    () =>
+      controlWS.on_message((raw: unknown) => {
+        const message = raw as {
+          type?: unknown;
+          payload?: Record<string, unknown>;
+        };
+        if (message.type === "project_directory_request") {
+          const payload = (message as ProjectDirectoryRequest).payload;
+          if (payload?.decision_id && payload.session_id) {
+            const request = { ...payload, received_at: Date.now() };
+            setProjectDirectoryRequests((current) =>
+              storeProjectDirectoryRequest(current, request),
+            );
+            setProjectDirectoryErrors((current) => ({
+              ...current,
+              [payload.decision_id]: undefined,
+            }));
+          }
+        } else if (message.type === "project_directory_error") {
+          const decisionId = String(message.payload?.decision_id || "");
+          if (decisionId) {
+            setProjectDirectoryErrors((current) => ({
+              ...current,
+              [decisionId]: String(message.payload?.error || "项目位置不可用，请重新选择。"),
+            }));
+          }
+        } else if (message.type === "companion_identity_status") {
+          const ready = message.payload?.ready === true || message.payload?.status === "ready";
+          if (ready) {
+            // Promote this window's challenged lease with a Rust-signed,
+            // no-side-effect readiness command（ChatView 独家发送，避免与
+            // SessionList 双发）。
+            void controlWS.send_companion_action("companion_action_ready", { ready: true });
+          }
+        } else if (shouldRefreshCompanionProjection(message)) {
+          // A detail fence may legitimately advance after the card was projected.
+          // Refresh the durable projection instead of disabling the whole view.
+          // 空态（无会话）没有可刷新的投影，直接跳过——保留会话移除后
+          // 不再有可兜底的固定 sid。
+          const sid = useSessionsStore.getState().active_sid;
+          if (sid) {
+            controlWS.send({
+              type: "session_messages_load",
+              payload: { session_id: sid, limit: 200 },
+            });
+          }
+        }
+      }),
+    [],
+  );
 
   const confirmProjectDirectory = useCallback(
     (parentDirectory: string, folderName: string) => {
@@ -362,10 +333,7 @@ export function ChatView({ activeSid, secret, onSwitchSid = () => {} }: ChatView
 
   useEffect(() => {
     if (!detailEvent) return;
-    const current = resolveCompanionDetailSelection(
-      detailEvent,
-      companionEvents,
-    );
+    const current = resolveCompanionDetailSelection(detailEvent, companionEvents);
     // 同上：MessagePanelRoot 原样迁移的选中派生逻辑，行为等价优先。
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (current !== detailEvent) setDetailEvent(current);
@@ -378,9 +346,7 @@ export function ChatView({ activeSid, secret, onSwitchSid = () => {} }: ChatView
     return new Promise((resolve) => {
       let settled = false;
       let timeout: ReturnType<typeof setTimeout> | null = null;
-      const finish = (
-        response: CompanionDetailResponse | CompanionDetailErrorResponse,
-      ) => {
+      const finish = (response: CompanionDetailResponse | CompanionDetailErrorResponse) => {
         if (settled) return;
         settled = true;
         if (timeout) clearTimeout(timeout);
@@ -388,34 +354,36 @@ export function ChatView({ activeSid, secret, onSwitchSid = () => {} }: ChatView
         resolve(response);
       };
       const off = controlWS.on_message((raw: unknown) => {
-        const response = raw as
-          | CompanionDetailResponse
-          | CompanionDetailErrorResponse;
+        const response = raw as CompanionDetailResponse | CompanionDetailErrorResponse;
         if (
           response.request_id === requestId &&
-          (
-            response.type === "companion_detail_response" ||
-            response.type === "companion_detail_error"
-          )
+          (response.type === "companion_detail_response" ||
+            response.type === "companion_detail_error")
         ) {
           finish(response);
         }
       });
-      timeout = setTimeout(() => finish({
-        type: "companion_detail_error",
-        request_id: requestId,
-        payload: {
-          code: "unavailable",
-          message: "companion_detail_timeout",
-        },
-      }), 15_000);
-      if (!controlWS.send_command({
-        type: "companion_detail_get",
-        request_id: requestId,
-        // The owner is intentionally absent. The trusted connection binding
-        // supplies it server-side.
-        payload: request,
-      })) {
+      timeout = setTimeout(
+        () =>
+          finish({
+            type: "companion_detail_error",
+            request_id: requestId,
+            payload: {
+              code: "unavailable",
+              message: "companion_detail_timeout",
+            },
+          }),
+        15_000,
+      );
+      if (
+        !controlWS.send_command({
+          type: "companion_detail_get",
+          request_id: requestId,
+          // The owner is intentionally absent. The trusted connection binding
+          // supplies it server-side.
+          payload: request,
+        })
+      ) {
         finish({
           type: "companion_detail_error",
           request_id: requestId,
@@ -461,11 +429,13 @@ export function ChatView({ activeSid, secret, onSwitchSid = () => {} }: ChatView
         msg?.request_type === "workflow_run_retry_from_start"
       ) {
         deferreds.delete(requestId);
-        deferred.reject(workflowRetryError(
-          String(msg?.error?.message || "重试请求被拒绝"),
-          String(msg?.error?.code || "workflow_retry_rejected"),
-          true,
-        ));
+        deferred.reject(
+          workflowRetryError(
+            String(msg?.error?.message || "重试请求被拒绝"),
+            String(msg?.error?.code || "workflow_retry_rejected"),
+            true,
+          ),
+        );
       }
     });
     return () => {
@@ -477,74 +447,98 @@ export function ChatView({ activeSid, secret, onSwitchSid = () => {} }: ChatView
     };
   }, []);
 
-  const retryWorkflow = useCallback((
-    runId: string,
-    actionId: Exclude<WorkflowV5ControlAction, "none">,
-    retryKey: string,
-  ): Promise<{ run_id: string; accepted?: boolean }> => {
-    if (controlWS.state() !== "connected") {
-      return Promise.reject(workflowRetryError("连接后重试", "workflow_command_not_sent", false));
-    }
-    const request = <T extends Record<string, unknown>>(
-      type: string,
-      requestId: string,
-      payload: Record<string, unknown>,
-      responseType: string,
-    ): Promise<T> => new Promise((resolve, reject) => {
-      let settled = false;
-      const finish = () => {
-        if (settled) return false;
-        settled = true;
-        off();
-        window.clearTimeout(timer);
-        return true;
-      };
-      const off = controlWS.on_message((raw: unknown) => {
-        const message = raw as {
-          type?: unknown; request_id?: unknown; request_type?: unknown;
-          ok?: unknown; payload?: unknown; error?: { message?: unknown; code?: unknown };
-        };
-        if (message.request_id !== requestId) return;
-        if (message.type === responseType && message.ok === true && message.payload && typeof message.payload === "object") {
-          if (finish()) resolve(message.payload as T);
-        } else if (message.type === "workflow_ipc_error" && message.request_type === type) {
-          if (finish()) reject(workflowRetryError(
-            String(message.error?.message || "操作被拒绝"),
-            String(message.error?.code || "workflow_action_rejected"),
-            true,
-          ));
+  const retryWorkflow = useCallback(
+    (
+      runId: string,
+      actionId: Exclude<WorkflowV5ControlAction, "none">,
+      retryKey: string,
+    ): Promise<{ run_id: string; accepted?: boolean }> => {
+      if (controlWS.state() !== "connected") {
+        return Promise.reject(workflowRetryError("连接后重试", "workflow_command_not_sent", false));
+      }
+      const request = <T extends Record<string, unknown>>(
+        type: string,
+        requestId: string,
+        payload: Record<string, unknown>,
+        responseType: string,
+      ): Promise<T> =>
+        new Promise((resolve, reject) => {
+          let settled = false;
+          const finish = () => {
+            if (settled) return false;
+            settled = true;
+            off();
+            window.clearTimeout(timer);
+            return true;
+          };
+          const off = controlWS.on_message((raw: unknown) => {
+            const message = raw as {
+              type?: unknown;
+              request_id?: unknown;
+              request_type?: unknown;
+              ok?: unknown;
+              payload?: unknown;
+              error?: { message?: unknown; code?: unknown };
+            };
+            if (message.request_id !== requestId) return;
+            if (
+              message.type === responseType &&
+              message.ok === true &&
+              message.payload &&
+              typeof message.payload === "object"
+            ) {
+              if (finish()) resolve(message.payload as T);
+            } else if (message.type === "workflow_ipc_error" && message.request_type === type) {
+              if (finish())
+                reject(
+                  workflowRetryError(
+                    String(message.error?.message || "操作被拒绝"),
+                    String(message.error?.code || "workflow_action_rejected"),
+                    true,
+                  ),
+                );
+            }
+          });
+          const timer = window.setTimeout(() => {
+            if (finish())
+              reject(
+                workflowRetryError(
+                  "响应较慢，请重新连接后确认状态",
+                  "workflow_action_timeout",
+                  false,
+                ),
+              );
+          }, 20_000);
+          if (!controlWS.send_command({ type, request_id: requestId, payload })) {
+            if (finish())
+              reject(workflowRetryError("连接后重试", "workflow_command_not_sent", false));
+          }
+        });
+      return request<{ run_id: string; run_version?: number; run?: { run_version?: number } }>(
+        "workflow_run_detail",
+        `workflow-detail:${runId}:${retryKey}`,
+        { run_id: runId },
+        "workflow_run_detail_response",
+      ).then((detail) => {
+        const expectedVersion = detail.run_version ?? detail.run?.run_version;
+        if (!Number.isInteger(expectedVersion) || (expectedVersion as number) < 0) {
+          throw workflowRetryError("任务详情缺少版本号", "workflow_run_version_missing", true);
         }
+        return request<{ run_id: string; accepted?: boolean }>(
+          "workflow_run_action",
+          `workflow-action:${runId}:${retryKey}`,
+          {
+            run_id: runId,
+            action_id: actionId,
+            idempotency_key: retryKey,
+            expected_version: expectedVersion,
+          },
+          "workflow_run_action_response",
+        );
       });
-      const timer = window.setTimeout(() => {
-        if (finish()) reject(workflowRetryError("响应较慢，请重新连接后确认状态", "workflow_action_timeout", false));
-      }, 20_000);
-      if (!controlWS.send_command({ type, request_id: requestId, payload })) {
-        if (finish()) reject(workflowRetryError("连接后重试", "workflow_command_not_sent", false));
-      }
-    });
-    return request<{ run_id: string; run_version?: number; run?: { run_version?: number } }>(
-      "workflow_run_detail",
-      `workflow-detail:${runId}:${retryKey}`,
-      { run_id: runId },
-      "workflow_run_detail_response",
-    ).then((detail) => {
-      const expectedVersion = detail.run_version ?? detail.run?.run_version;
-      if (!Number.isInteger(expectedVersion) || (expectedVersion as number) < 0) {
-        throw workflowRetryError("任务详情缺少版本号", "workflow_run_version_missing", true);
-      }
-      return request<{ run_id: string; accepted?: boolean }>(
-        "workflow_run_action",
-        `workflow-action:${runId}:${retryKey}`,
-        {
-          run_id: runId,
-          action_id: actionId,
-          idempotency_key: retryKey,
-          expected_version: expectedVersion,
-        },
-        "workflow_run_action_response",
-      );
-    });
-  }, []);
+    },
+    [],
+  );
 
   // ── 会话切换 hydration（历史消息 / Run 投影 / 上下文 / provider 四连发；
   //    T8 归位：ChatView 常挂载、持有 activeSid，是回灌的唯一发起方）──
@@ -610,9 +604,7 @@ export function ChatView({ activeSid, secret, onSwitchSid = () => {} }: ChatView
         return;
       }
       if ((m.role as string) === "tool_call") {
-        const args = m.tool_args
-          ? JSON.stringify(m.tool_args).slice(0, 120)
-          : "";
+        const args = m.tool_args ? JSON.stringify(m.tool_args).slice(0, 120) : "";
         out.push({
           role: "tool",
           text: `🔧 调用 ${m.tool_name || "(工具)"}${args ? ` ${args}${args.length >= 120 ? "…" : ""}` : ""}`,
@@ -660,28 +652,11 @@ export function ChatView({ activeSid, secret, onSwitchSid = () => {} }: ChatView
       }
     });
     return out;
-  }, [
-    visibleMessages,
-    hideTools,
-    hideProgress,
-    activeSid,
-    companionProvisional,
-  ]);
-  const warnings = useMemo<InboxItem[]>(
-    () => collect_inbox(sessions, "yellow"),
-    [sessions],
-  );
-  const errors = useMemo<InboxItem[]>(
-    () => collect_inbox(sessions, "red"),
-    [sessions],
-  );
+  }, [visibleMessages, hideTools, hideProgress, activeSid, companionProvisional]);
+  const warnings = useMemo<InboxItem[]>(() => collect_inbox(sessions, "yellow"), [sessions]);
+  const errors = useMemo<InboxItem[]>(() => collect_inbox(sessions, "red"), [sessions]);
 
-  const onChoice = (
-    sid: string,
-    alert_id: string,
-    button_index: number,
-    button_text: string,
-  ) => {
+  const onChoice = (sid: string, alert_id: string, button_index: number, button_text: string) => {
     controlWS.send({
       type: "supervisor_user_choice",
       payload: {
@@ -704,11 +679,13 @@ export function ChatView({ activeSid, secret, onSwitchSid = () => {} }: ChatView
     // A valid bounded read is side-effect free and also triggers the channel's
     // internal reconnect queue. SessionList refreshes all expanded scopes once
     // the state returns to connected.
-    controlWS.send(projectRequest("project_catalog_page", {
-      cursor: null,
-      limit: 50,
-      pinned_session_id: activeSid || null,
-    }));
+    controlWS.send(
+      projectRequest("project_catalog_page", {
+        cursor: null,
+        limit: 50,
+        pinned_session_id: activeSid || null,
+      }),
+    );
   }, [activeSid]);
 
   return (
@@ -757,11 +734,7 @@ export function ChatView({ activeSid, secret, onSwitchSid = () => {} }: ChatView
           type="button"
           data-testid="chat-model-button"
           onClick={() => setShowModelModal(true)}
-          title={
-            eff_model
-              ? `模型与参数（当前 ${eff_model}）`
-              : "选择模型与参数"
-          }
+          title={eff_model ? `模型与参数（当前 ${eff_model}）` : "选择模型与参数"}
           aria-label="模型与参数"
           style={modelChipStyle}
         >
@@ -772,11 +745,7 @@ export function ChatView({ activeSid, secret, onSwitchSid = () => {} }: ChatView
               whiteSpace: "nowrap",
             }}
           >
-            {eff_model
-              ? ctx_label
-                ? `${eff_model}-${ctx_label}`
-                : eff_model
-              : "选择模型"}
+            {eff_model ? (ctx_label ? `${eff_model}-${ctx_label}` : eff_model) : "选择模型"}
           </span>
           <Icon name="edit" size={11} style={{ flexShrink: 0 }} />
         </button>
@@ -811,16 +780,8 @@ export function ChatView({ activeSid, secret, onSwitchSid = () => {} }: ChatView
           type="button"
           data-testid="harness-inspector-toggle"
           onClick={() => setHarnessInspectorOpen((open) => !open)}
-          title={
-            harnessInspectorOpen
-              ? "收起 Harness 运行观察"
-              : "打开 Harness 运行观察"
-          }
-          aria-label={
-            harnessInspectorOpen
-              ? "收起 Harness 运行观察"
-              : "打开 Harness 运行观察"
-          }
+          title={harnessInspectorOpen ? "收起 Harness 运行观察" : "打开 Harness 运行观察"}
+          aria-label={harnessInspectorOpen ? "收起 Harness 运行观察" : "打开 Harness 运行观察"}
           aria-pressed={harnessInspectorOpen}
           style={{
             ...iconBtnStyle,
@@ -917,12 +878,8 @@ export function ChatView({ activeSid, secret, onSwitchSid = () => {} }: ChatView
               projectDirectoryError={projectDirectoryError}
               onProjectDirectoryConfirm={confirmProjectDirectory}
               onSetFilter={setFilter}
-              onDismiss={(sid, id) =>
-                useSessionsStore.getState().dismiss_alert(sid, id)
-              }
-              onDismissAll={(sev) =>
-                useSessionsStore.getState().dismiss_all_alerts(sev)
-              }
+              onDismiss={(sid, id) => useSessionsStore.getState().dismiss_alert(sid, id)}
+              onDismissAll={(sev) => useSessionsStore.getState().dismiss_all_alerts(sev)}
               onJumpToSession={() => {
                 /* workbench 单线程视图 — nothing to jump to */
               }}
@@ -933,41 +890,38 @@ export function ChatView({ activeSid, secret, onSwitchSid = () => {} }: ChatView
             />
           </div>
 
-          {VOICE_INPUT_ENABLED && (realtimeVoice.state !== "idle" ||
-            realtimeVoice.transcript ||
-            realtimeVoice.responseText) && (
-            <div
-              data-testid="realtime-voice-status"
-              aria-live="polite"
-              style={{
-                margin: `0 ${tokens.space.md}px ${tokens.space.xs}px`,
-                ...bannerStyle(
-                  realtimeVoice.state === "error"
-                    ? "error"
-                    : realtimeVoice.state === "speaking"
-                      ? "success"
-                      : "info",
-                ),
-              }}
-            >
-              {realtimeVoice.state === "connecting" && "正在接通…"}
-              {realtimeVoice.state === "listening" && "正在聆听，可以直接说话"}
-              {realtimeVoice.state === "speaking" && "AI 正在回复，可直接打断"}
-              {realtimeVoice.state === "closing" && "正在挂断…"}
-              {realtimeVoice.state === "error" &&
-                `通话失败（${realtimeVoice.errorCode ?? "internal"}），点击重试`}
-              {realtimeVoice.transcript && (
-                <div style={{ marginTop: tokens.space.xs }}>
-                  你：{realtimeVoice.transcript}
-                </div>
-              )}
-              {realtimeVoice.responseText && (
-                <div style={{ marginTop: tokens.space.xs }}>
-                  AI：{realtimeVoice.responseText}
-                </div>
-              )}
-            </div>
-          )}
+          {VOICE_INPUT_ENABLED &&
+            (realtimeVoice.state !== "idle" ||
+              realtimeVoice.transcript ||
+              realtimeVoice.responseText) && (
+              <div
+                data-testid="realtime-voice-status"
+                aria-live="polite"
+                style={{
+                  margin: `0 ${tokens.space.md}px ${tokens.space.xs}px`,
+                  ...bannerStyle(
+                    realtimeVoice.state === "error"
+                      ? "error"
+                      : realtimeVoice.state === "speaking"
+                        ? "success"
+                        : "info",
+                  ),
+                }}
+              >
+                {realtimeVoice.state === "connecting" && "正在接通…"}
+                {realtimeVoice.state === "listening" && "正在聆听，可以直接说话"}
+                {realtimeVoice.state === "speaking" && "AI 正在回复，可直接打断"}
+                {realtimeVoice.state === "closing" && "正在挂断…"}
+                {realtimeVoice.state === "error" &&
+                  `通话失败（${realtimeVoice.errorCode ?? "internal"}），点击重试`}
+                {realtimeVoice.transcript && (
+                  <div style={{ marginTop: tokens.space.xs }}>你：{realtimeVoice.transcript}</div>
+                )}
+                {realtimeVoice.responseText && (
+                  <div style={{ marginTop: tokens.space.xs }}>AI：{realtimeVoice.responseText}</div>
+                )}
+              </div>
+            )}
 
           {/* 文本输入保持可用；旁边只有一个电话式 Realtime 主按钮。 */}
           <div
@@ -980,71 +934,66 @@ export function ChatView({ activeSid, secret, onSwitchSid = () => {} }: ChatView
           >
             <div style={{ flex: 1, minWidth: 0 }}>
               <InputBar
-                placeholder={
-                  companionIdentityReady
-                    ? "输入消息，Enter 发送…"
-                    : "正在恢复身份…"
-                }
+                placeholder={companionIdentityReady ? "输入消息，Enter 发送…" : "正在恢复身份…"}
                 disabled={!companionIdentityReady}
                 sessionId={activeSid}
               />
             </div>
-            {VOICE_INPUT_ENABLED && <button
-              type="button"
-              data-testid="realtime-call-button"
-              disabled={!secret || realtimeVoice.state === "closing"}
-              title={
-                !secret
-                  ? "后端启动中"
-                  : realtimeVoice.state === "idle"
+            {VOICE_INPUT_ENABLED && (
+              <button
+                type="button"
+                data-testid="realtime-call-button"
+                disabled={!secret || realtimeVoice.state === "closing"}
+                title={
+                  !secret
+                    ? "后端启动中"
+                    : realtimeVoice.state === "idle"
+                      ? "开始语音通话"
+                      : realtimeVoice.state === "error"
+                        ? "重试语音通话"
+                        : "挂断语音通话"
+                }
+                aria-label={
+                  realtimeVoice.state === "idle" || realtimeVoice.state === "error"
                     ? "开始语音通话"
-                    : realtimeVoice.state === "error"
-                      ? "重试语音通话"
-                      : "挂断语音通话"
-              }
-              aria-label={
-                realtimeVoice.state === "idle" || realtimeVoice.state === "error"
-                  ? "开始语音通话"
-                  : "挂断语音通话"
-              }
-              onClick={() => {
-                if (
-                  realtimeVoice.state === "idle" ||
-                  realtimeVoice.state === "error"
-                ) {
-                  void realtimeVoice.start();
-                } else {
-                  realtimeVoice.hangUp();
+                    : "挂断语音通话"
                 }
-              }}
-              style={{
-                ...buttonStyle(
-                  realtimeVoice.state === "idle" || realtimeVoice.state === "error"
-                    ? "primary"
-                    : "danger",
-                  "sm",
-                  !secret || realtimeVoice.state === "closing",
-                ),
-                height: 34,
-                margin: `0 ${tokens.space.md}px ${tokens.space.md}px 0`,
-              }}
-            >
-              <Icon
-                name={
-                  realtimeVoice.state === "idle" || realtimeVoice.state === "error"
-                    ? "mic"
-                    : "stop"
-                }
-                size={15}
-              />
-              {realtimeVoice.state === "error"
-                ? "重试"
-                : realtimeVoice.state === "idle"
-                  ? "开始通话"
-                  : realtimeVoice.state === "closing"
-                    ? "挂断中"
-                    : "挂断"}
-            </button>}
+                onClick={() => {
+                  if (realtimeVoice.state === "idle" || realtimeVoice.state === "error") {
+                    void realtimeVoice.start();
+                  } else {
+                    realtimeVoice.hangUp();
+                  }
+                }}
+                style={{
+                  ...buttonStyle(
+                    realtimeVoice.state === "idle" || realtimeVoice.state === "error"
+                      ? "primary"
+                      : "danger",
+                    "sm",
+                    !secret || realtimeVoice.state === "closing",
+                  ),
+                  height: 34,
+                  margin: `0 ${tokens.space.md}px ${tokens.space.md}px 0`,
+                }}
+              >
+                <Icon
+                  name={
+                    realtimeVoice.state === "idle" || realtimeVoice.state === "error"
+                      ? "mic"
+                      : "stop"
+                  }
+                  size={15}
+                />
+                {realtimeVoice.state === "error"
+                  ? "重试"
+                  : realtimeVoice.state === "idle"
+                    ? "开始通话"
+                    : realtimeVoice.state === "closing"
+                      ? "挂断中"
+                      : "挂断"}
+              </button>
+            )}
           </div>
         </div>
         <ProjectInspector activeSid={activeSid} onSwitchSid={onSwitchSid} />

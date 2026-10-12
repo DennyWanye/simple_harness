@@ -26,7 +26,16 @@ describe("missionsStore", () => {
 
   it("mission_changed 只前进 last_seq，不回退", () => {
     const store = useMissionsStore.getState();
-    store.setMissions([{ id: "m1", goal: "g", status: "RUNNING", stop_reason: null, created_at: 1, pending_approvals: 0 }]);
+    store.setMissions([
+      {
+        id: "m1",
+        goal: "g",
+        status: "RUNNING",
+        stop_reason: null,
+        created_at: 1,
+        pending_approvals: 0,
+      },
+    ]);
     store.applyChange({ mission_id: "m1", status: "COMPLETED", last_seq: 9 });
     store.applyChange({ mission_id: "m1", status: "RUNNING", last_seq: 5 }); // 迟到的旧推送
     const row = useMissionsStore.getState().missions.find((m) => m.id === "m1");
@@ -43,8 +52,20 @@ describe("missionsStore", () => {
 
   it("P1-1：推送只抬 lastSeq，事件游标只由已合并事件推进", () => {
     const store = useMissionsStore.getState();
-    store.setMissions([{ id: "m1", goal: "g", status: "ACTIVE", stop_reason: null, created_at: 1, pending_approvals: 0 }]);
-    store.appendEvents("m1", [1, 2, 3, 4, 5].map((seq) => ({ seq, type: "E", created_at: seq })));
+    store.setMissions([
+      {
+        id: "m1",
+        goal: "g",
+        status: "ACTIVE",
+        stop_reason: null,
+        created_at: 1,
+        pending_approvals: 0,
+      },
+    ]);
+    store.appendEvents(
+      "m1",
+      [1, 2, 3, 4, 5].map((seq) => ({ seq, type: "E", created_at: seq })),
+    );
     store.applyChange({ mission_id: "m1", status: "ACTIVE", last_seq: 12 });
     const state = useMissionsStore.getState();
     expect(state.lastSeq.m1).toBe(12);
@@ -63,7 +84,15 @@ describe("missionsStore", () => {
   it("推送改了 status 时丢掉旧的 ui_state（回退显示原始 status，等列表重拉）", () => {
     const store = useMissionsStore.getState();
     store.setMissions([
-      { id: "m1", goal: "g", status: "ACTIVE", stop_reason: null, created_at: 1, pending_approvals: 0, ui_state: "running" },
+      {
+        id: "m1",
+        goal: "g",
+        status: "ACTIVE",
+        stop_reason: null,
+        created_at: 1,
+        pending_approvals: 0,
+        ui_state: "running",
+      },
     ]);
     store.applyChange({ mission_id: "m1", status: "ACTIVE", last_seq: 2 });
     expect(useMissionsStore.getState().missions[0].ui_state).toBe("running");
@@ -74,7 +103,9 @@ describe("missionsStore", () => {
   it("列表行容忍只有 mission_id 的旧形态", () => {
     const store = useMissionsStore.getState();
     store.setMissions([
-      { mission_id: "m9", goal: "g", status: "ACTIVE" } as unknown as Parameters<typeof store.setMissions>[0][number],
+      { mission_id: "m9", goal: "g", status: "ACTIVE" } as unknown as Parameters<
+        typeof store.setMissions
+      >[0][number],
     ]);
     expect(useMissionsStore.getState().missions[0].id).toBe("m9");
   });
@@ -82,8 +113,22 @@ describe("missionsStore", () => {
   it("待审批总数是各 Mission 之和（侧栏角标）", () => {
     const store = useMissionsStore.getState();
     store.setMissions([
-      { id: "a", goal: "g", status: "RUNNING", stop_reason: null, created_at: 1, pending_approvals: 1 },
-      { id: "b", goal: "g", status: "RUNNING", stop_reason: null, created_at: 2, pending_approvals: 2 },
+      {
+        id: "a",
+        goal: "g",
+        status: "RUNNING",
+        stop_reason: null,
+        created_at: 1,
+        pending_approvals: 1,
+      },
+      {
+        id: "b",
+        goal: "g",
+        status: "RUNNING",
+        stop_reason: null,
+        created_at: 2,
+        pending_approvals: 2,
+      },
     ]);
     expect(useMissionsStore.getState().pendingApprovalTotal()).toBe(3);
   });

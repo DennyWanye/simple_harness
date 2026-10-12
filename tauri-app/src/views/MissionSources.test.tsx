@@ -16,26 +16,53 @@ class Channel {
   listeners = new Set<(message: IncomingMessage) => void>();
   stateListeners = new Set<(state: ConnectionState) => void>();
   onStateChange = (listener: (state: ConnectionState) => void) => {
-    this.stateListeners.add(listener); return () => { this.stateListeners.delete(listener); };
+    this.stateListeners.add(listener);
+    return () => {
+      this.stateListeners.delete(listener);
+    };
   };
-  changeState(state: ConnectionState) { act(() => { for (const listener of this.stateListeners) listener(state); }); }
-  send = (message: ControlMessage) => { this.sent.push(message); return true; };
+  changeState(state: ConnectionState) {
+    act(() => {
+      for (const listener of this.stateListeners) listener(state);
+    });
+  }
+  send = (message: ControlMessage) => {
+    this.sent.push(message);
+    return true;
+  };
   onMessage = (listener: (message: IncomingMessage) => void) => {
     this.listeners.add(listener);
-    return () => { this.listeners.delete(listener); };
+    return () => {
+      this.listeners.delete(listener);
+    };
   };
-  last(type: string) { return this.sent.filter((m) => m.type === type).at(-1)!; }
+  last(type: string) {
+    return this.sent.filter((m) => m.type === type).at(-1)!;
+  }
   reply(request: ControlMessage, data: unknown, ok = true, error_code?: string) {
-    act(() => { for (const listener of this.listeners) listener({
-      type: `${request.type}_response`, payload: { request_id: request.request_id, ok, data, error_code },
-    } as unknown as IncomingMessage); });
+    act(() => {
+      for (const listener of this.listeners)
+        listener({
+          type: `${request.type}_response`,
+          payload: { request_id: request.request_id, ok, data, error_code },
+        } as unknown as IncomingMessage);
+    });
   }
 }
-const SOURCE = { path: "sources/a.md", version_hash: "old-version-hash", kind: "markdown", revoked: false, superseded_by: null, revision: 1 };
+const SOURCE = {
+  path: "sources/a.md",
+  version_hash: "old-version-hash",
+  kind: "markdown",
+  revoked: false,
+  superseded_by: null,
+  revision: 1,
+};
 function setup(sources: Record<string, unknown>[] = [SOURCE]) {
   const channel = new Channel();
   const onChanged = vi.fn();
-  const view = render(<MissionSources missionId="m1" sources={sources} channel={channel} onChanged={onChanged} />);
+  const view = render(
+    <MissionSources missionId="m1" sources={sources} channel={channel} onChanged={onChanged} />,
+  );
   return { channel, onChanged, ...view };
 }
 afterEach(cleanup);
@@ -46,14 +73,27 @@ describe("mission reference material", () => {
     fireEvent.click(screen.getByRole("button", { name: "替换 sources/a.md" }));
     fireEvent.change(screen.getByLabelText("来源正文 1"), { target: { value: "new content" } });
     fireEvent.click(screen.getByRole("button", { name: "提交" }));
-    expect(channel.last("mission_source_supersede").payload).toEqual({ mission_id: "m1", path: "sources/a.md", content: "new content", kind: "markdown", expected_version_hash: "old-version-hash", idempotency_key: expect.any(String) });
+    expect(channel.last("mission_source_supersede").payload).toEqual({
+      mission_id: "m1",
+      path: "sources/a.md",
+      content: "new content",
+      kind: "markdown",
+      expected_version_hash: "old-version-hash",
+      idempotency_key: expect.any(String),
+    });
     expect(onChanged).not.toHaveBeenCalled();
     channel.reply(channel.last("mission_source_supersede"), { approval_required: true });
     expect(onChanged).toHaveBeenCalledOnce();
     fireEvent.click(screen.getByRole("button", { name: "撤销 sources/a.md" }));
     fireEvent.change(screen.getByLabelText("撤销理由"), { target: { value: "outdated" } });
     fireEvent.click(screen.getByRole("button", { name: "提交" }));
-    expect(channel.last("mission_source_revoke").payload).toEqual({ mission_id: "m1", path: "sources/a.md", expected_version_hash: "old-version-hash", reason: "outdated", idempotency_key: expect.any(String) });
+    expect(channel.last("mission_source_revoke").payload).toEqual({
+      mission_id: "m1",
+      path: "sources/a.md",
+      expected_version_hash: "old-version-hash",
+      reason: "outdated",
+      idempotency_key: expect.any(String),
+    });
   });
 
   it("registers one source through its explicit command and retries with the same key", () => {
@@ -63,7 +103,13 @@ describe("mission reference material", () => {
     fireEvent.change(screen.getByLabelText("来源正文 1"), { target: { value: "new evidence" } });
     fireEvent.click(screen.getByRole("button", { name: "提交" }));
     const request = channel.last("mission_source_register");
-    expect(request.payload).toEqual({ mission_id: "m1", path: "sources/new.md", content: "new evidence", kind: "markdown", idempotency_key: expect.any(String) });
+    expect(request.payload).toEqual({
+      mission_id: "m1",
+      path: "sources/new.md",
+      content: "new evidence",
+      kind: "markdown",
+      idempotency_key: expect.any(String),
+    });
     channel.reply(request, {}, false, "conflict");
     expect(onChanged).not.toHaveBeenCalled();
     expect(screen.getByRole("alert").textContent).toContain("conflict");
@@ -72,7 +118,10 @@ describe("mission reference material", () => {
   });
 
   it("offers no change on revoked or superseded versions", () => {
-    setup([{ ...SOURCE, revoked: true }, { ...SOURCE, version_hash: "v2", superseded_by: "v3" }]);
+    setup([
+      { ...SOURCE, revoked: true },
+      { ...SOURCE, version_hash: "v2", superseded_by: "v3" },
+    ]);
     expect(screen.queryByRole("button", { name: /^撤销 / })).toBeNull();
     expect(screen.queryByRole("button", { name: /^替换 / })).toBeNull();
     expect(screen.getByText(/已撤销/)).toBeTruthy();
@@ -99,7 +148,9 @@ describe("source import oracle", () => {
     fireEvent.change(screen.getByLabelText("导入来源文件"), { target: { files: [file] } });
     expect(onBusy).toHaveBeenLastCalledWith(true);
     await vi.waitFor(() => expect(onChange).toHaveBeenCalled());
-    expect(onChange.mock.calls[0][0]).toEqual([{ path: "sources/a.md", content: "first\r\n😀\rlast", kind: "markdown" }]);
+    expect(onChange.mock.calls[0][0]).toEqual([
+      { path: "sources/a.md", content: "first\r\n😀\rlast", kind: "markdown" },
+    ]);
     expect(onBusy).toHaveBeenLastCalledWith(false);
   });
 });

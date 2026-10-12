@@ -30,13 +30,7 @@ export function useRealtimeVoice(port: number, secret: string) {
   const stateRef = useRef<RealtimeVoiceState>("idle");
   const channelRef = useRef<RealtimeChannel | null>(null);
   const subscriptionsRef = useRef<Array<() => void>>([]);
-  const {
-    isPlaying,
-    bargeIn,
-    primeContext,
-    playPcm,
-    completeOutput,
-  } = useAudioPlayer();
+  const { isPlaying, bargeIn, primeContext, playPcm, completeOutput } = useAudioPlayer();
 
   const updateState = useCallback((next: RealtimeVoiceState) => {
     stateRef.current = next;
@@ -75,9 +69,7 @@ export function useRealtimeVoice(port: number, secret: string) {
         setTranscript(event.text);
       } else if (event.kind === "OutputText" && typeof event.text === "string") {
         const text = event.text;
-        setResponseText((current) =>
-          event.is_delta === true ? `${current}${text}` : text,
-        );
+        setResponseText((current) => (event.is_delta === true ? `${current}${text}` : text));
       } else if (event.kind === "OutputAudioStarted") {
         updateState("speaking");
       } else if (event.kind === "OutputAudioCompleted") {

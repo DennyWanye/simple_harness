@@ -86,9 +86,31 @@ const REPLIES: Record<string, ContractName> = {
 };
 
 export const supportedKeywords: ReadonlySet<string> = new Set([
-  "$schema", "$id", "$defs", "$ref", "type", "const", "enum", "required", "properties", "additionalProperties",
-  "items", "minItems", "maxItems", "uniqueItems", "contains", "minContains", "maxContains",
-  "minLength", "maxLength", "pattern", "minimum", "maximum", "allOf", "anyOf", "oneOf",
+  "$schema",
+  "$id",
+  "$defs",
+  "$ref",
+  "type",
+  "const",
+  "enum",
+  "required",
+  "properties",
+  "additionalProperties",
+  "items",
+  "minItems",
+  "maxItems",
+  "uniqueItems",
+  "contains",
+  "minContains",
+  "maxContains",
+  "minLength",
+  "maxLength",
+  "pattern",
+  "minimum",
+  "maximum",
+  "allOf",
+  "anyOf",
+  "oneOf",
 ]);
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -97,20 +119,36 @@ function isObject(value: unknown): value is Record<string, unknown> {
 
 function canonical(value: unknown): string {
   if (Array.isArray(value)) return "[" + value.map(canonical).join(",") + "]";
-  if (isObject(value)) return "{" + Object.keys(value).sort().map((key) => JSON.stringify(key) + ":" + canonical(value[key])).join(",") + "}";
+  if (isObject(value))
+    return (
+      "{" +
+      Object.keys(value)
+        .sort()
+        .map((key) => JSON.stringify(key) + ":" + canonical(value[key]))
+        .join(",") +
+      "}"
+    );
   return JSON.stringify(value);
 }
 
 function typeOk(value: unknown, name: string): boolean {
   switch (name) {
-    case "object": return isObject(value);
-    case "array": return Array.isArray(value);
-    case "string": return typeof value === "string";
-    case "integer": return typeof value === "number" && Number.isInteger(value);
-    case "number": return typeof value === "number" && Number.isFinite(value);
-    case "boolean": return typeof value === "boolean";
-    case "null": return value === null;
-    default: throw new Error(`合同里有未支持的类型 ${name}`);
+    case "object":
+      return isObject(value);
+    case "array":
+      return Array.isArray(value);
+    case "string":
+      return typeof value === "string";
+    case "integer":
+      return typeof value === "number" && Number.isInteger(value);
+    case "number":
+      return typeof value === "number" && Number.isFinite(value);
+    case "boolean":
+      return typeof value === "boolean";
+    case "null":
+      return value === null;
+    default:
+      throw new Error(`合同里有未支持的类型 ${name}`);
   }
 }
 
@@ -137,35 +175,47 @@ function check(node: Schema, value: unknown, document: Schema, path: string): st
     if (found) return found;
   }
   if ("const" in node && canonical(value) !== canonical(node.const)) return `${path}: 应为固定值`;
-  if (Array.isArray(node.enum) && !node.enum.some((item) => canonical(item) === canonical(value))) return `${path}: 不在允许的取值里`;
+  if (Array.isArray(node.enum) && !node.enum.some((item) => canonical(item) === canonical(value)))
+    return `${path}: 不在允许的取值里`;
   if (node.type !== undefined) {
-    const names = Array.isArray(node.type) ? node.type as string[] : [node.type as string];
+    const names = Array.isArray(node.type) ? (node.type as string[]) : [node.type as string];
     if (!names.some((name) => typeOk(value, name))) return `${path}: 类型不对`;
   }
   for (const option of (node.allOf as Schema[] | undefined) ?? []) {
     const found = check(option, value, document, path);
     if (found) return found;
   }
-  if (Array.isArray(node.anyOf) && !(node.anyOf as Schema[]).some((option) => check(option, value, document, path) === null)) {
+  if (
+    Array.isArray(node.anyOf) &&
+    !(node.anyOf as Schema[]).some((option) => check(option, value, document, path) === null)
+  ) {
     return `${path}: 一个备选都不符合`;
   }
-  if (Array.isArray(node.oneOf) && (node.oneOf as Schema[]).filter((option) => check(option, value, document, path) === null).length !== 1) {
+  if (
+    Array.isArray(node.oneOf) &&
+    (node.oneOf as Schema[]).filter((option) => check(option, value, document, path) === null)
+      .length !== 1
+  ) {
     return `${path}: 应恰好符合一个备选`;
   }
   if (typeof value === "string") {
-    const length = [...value].length;  // JSON Schema 按字符（码点）计长
+    const length = [...value].length; // JSON Schema 按字符（码点）计长
     if (typeof node.minLength === "number" && length < node.minLength) return `${path}: 太短`;
     if (typeof node.maxLength === "number" && length > node.maxLength) return `${path}: 太长`;
-    if (typeof node.pattern === "string" && !new RegExp(node.pattern, "u").test(value)) return `${path}: 格式不对`;
+    if (typeof node.pattern === "string" && !new RegExp(node.pattern, "u").test(value))
+      return `${path}: 格式不对`;
   }
   if (typeof value === "number") {
     if (typeof node.minimum === "number" && value < node.minimum) return `${path}: 小于下限`;
     if (typeof node.maximum === "number" && value > node.maximum) return `${path}: 大于上限`;
   }
   if (Array.isArray(value)) {
-    if (typeof node.minItems === "number" && value.length < node.minItems) return `${path}: 条目太少`;
-    if (typeof node.maxItems === "number" && value.length > node.maxItems) return `${path}: 条目太多`;
-    if (node.uniqueItems === true && new Set(value.map(canonical)).size !== value.length) return `${path}: 条目重复`;
+    if (typeof node.minItems === "number" && value.length < node.minItems)
+      return `${path}: 条目太少`;
+    if (typeof node.maxItems === "number" && value.length > node.maxItems)
+      return `${path}: 条目太多`;
+    if (node.uniqueItems === true && new Set(value.map(canonical)).size !== value.length)
+      return `${path}: 条目重复`;
     if (isObject(node.items)) {
       for (let index = 0; index < value.length; index += 1) {
         const found = check(node.items, value[index], document, `${path}[${index}]`);
@@ -174,14 +224,17 @@ function check(node: Schema, value: unknown, document: Schema, path: string): st
     }
     if (isObject(node.contains)) {
       const contains = node.contains;
-      const hits = value.filter((item, index) => check(contains, item, document, `${path}[${index}]`) === null).length;
+      const hits = value.filter(
+        (item, index) => check(contains, item, document, `${path}[${index}]`) === null,
+      ).length;
       const least = typeof node.minContains === "number" ? node.minContains : 1;
       if (hits < least) return `${path}: 缺少必需的条目`;
-      if (typeof node.maxContains === "number" && hits > node.maxContains) return `${path}: 必需条目过多`;
+      if (typeof node.maxContains === "number" && hits > node.maxContains)
+        return `${path}: 必需条目过多`;
     }
   }
   if (isObject(value)) {
-    const properties = isObject(node.properties) ? node.properties as Record<string, Schema> : {};
+    const properties = isObject(node.properties) ? (node.properties as Record<string, Schema>) : {};
     for (const key of (node.required as string[] | undefined) ?? []) {
       if (!(key in value)) return `${path}: 缺少字段 ${key}`;
     }
@@ -210,7 +263,9 @@ type Message = { type?: unknown; payload?: unknown };
 function verbOf(type: unknown): string | null {
   if (typeof type !== "string" || !type.endsWith("_response")) return null;
   const verb = type.slice(0, -"_response".length);
-  return verb in REPLIES || verb.startsWith("mission_assurance_") || verb.startsWith("taskgraph.") ? verb : null;
+  return verb in REPLIES || verb.startsWith("mission_assurance_") || verb.startsWith("taskgraph.")
+    ? verb
+    : null;
 }
 
 /** 这条回复哪里不合合同；不归公开合同管的消息返回 null。 */
@@ -218,8 +273,10 @@ function violationOf(verb: string, payload: unknown): string | null {
   if (!isObject(payload) || typeof payload.ok !== "boolean") return "回复外层不完整";
   const reply = REPLIES[verb];
   if (payload.ok && reply) return contractViolation(reply, payload.data);
-  if (!payload.ok && payload.assurance_error !== undefined) return contractViolation("host-error-v1", payload.assurance_error);
-  if (!payload.ok && payload.taskgraph_error !== undefined) return contractViolation("taskgraph-error-v1", payload.taskgraph_error);
+  if (!payload.ok && payload.assurance_error !== undefined)
+    return contractViolation("host-error-v1", payload.assurance_error);
+  if (!payload.ok && payload.taskgraph_error !== undefined)
+    return contractViolation("taskgraph-error-v1", payload.taskgraph_error);
   return null;
 }
 
@@ -245,5 +302,13 @@ export function guardIncoming<T extends Message>(message: T): T {
   } catch {
     requestId = undefined;
   }
-  return { ...message, payload: { request_id: requestId, ok: false, error_code: PROTOCOL_ERROR, error: PROTOCOL_ERROR_TEXT } };
+  return {
+    ...message,
+    payload: {
+      request_id: requestId,
+      ok: false,
+      error_code: PROTOCOL_ERROR,
+      error: PROTOCOL_ERROR_TEXT,
+    },
+  };
 }

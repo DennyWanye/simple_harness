@@ -47,9 +47,7 @@ export const IconButton: React.FC<{
     onMouseEnter={(e) => {
       const b = e.currentTarget;
       if (!active) {
-        b.style.background = danger
-          ? tokens.color.danger.soft
-          : dark.cardHover;
+        b.style.background = danger ? tokens.color.danger.soft : dark.cardHover;
         b.style.color = danger ? tokens.color.danger.bg : dark.text;
       }
       b.style.transform = "translateY(-1px)";

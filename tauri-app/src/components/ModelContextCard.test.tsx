@@ -35,9 +35,7 @@ describe("Context OS compaction model messages", () => {
       type: "context_compaction_set",
       payload: { model: "follow_session" },
     });
-    expect(buildContextCompactionSetMessage("gpt-5-mini").payload.model).toBe(
-      "gpt-5-mini",
-    );
+    expect(buildContextCompactionSetMessage("gpt-5-mini").payload.model).toBe("gpt-5-mini");
   });
 });
 

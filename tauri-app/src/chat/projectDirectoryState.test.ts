@@ -7,10 +7,7 @@ import {
   storeProjectDirectoryRequest,
 } from "./projectDirectoryState";
 
-function request(
-  sessionId: string,
-  runId: string,
-): ProjectDirectoryRequest["payload"] {
+function request(sessionId: string, runId: string): ProjectDirectoryRequest["payload"] {
   return {
     session_id: sessionId,
     run_id: runId,
@@ -50,65 +47,38 @@ describe("project directory request visibility", () => {
     const requests = storeProjectDirectoryRequest({}, selected);
 
     expect(
-      selectVisibleProjectDirectoryRequest(
-        requests,
-        "session-a",
-        "run-a",
-        { "run-a": projection("run-a", "waiting") },
-      ),
+      selectVisibleProjectDirectoryRequest(requests, "session-a", "run-a", {
+        "run-a": projection("run-a", "waiting"),
+      }),
     ).toEqual(selected);
   });
 
   it("does not leak the card into a newly selected Session", () => {
-    const requests = storeProjectDirectoryRequest(
-      {},
-      request("session-a", "run-a"),
-    );
+    const requests = storeProjectDirectoryRequest({}, request("session-a", "run-a"));
 
-    expect(
-      selectVisibleProjectDirectoryRequest(
-        requests,
-        "session-b",
-        null,
-        undefined,
-      ),
-    ).toBeNull();
+    expect(selectVisibleProjectDirectoryRequest(requests, "session-b", null, undefined)).toBeNull();
   });
 
   it("does not show the card for another Run in the same Session", () => {
-    const requests = storeProjectDirectoryRequest(
-      {},
-      request("session-a", "run-a"),
-    );
+    const requests = storeProjectDirectoryRequest({}, request("session-a", "run-a"));
 
     expect(
-      selectVisibleProjectDirectoryRequest(
-        requests,
-        "session-a",
-        "run-b",
-        {
-          "run-a": projection("run-a", "waiting"),
-          "run-b": projection("run-b", "running"),
-        },
-      ),
+      selectVisibleProjectDirectoryRequest(requests, "session-a", "run-b", {
+        "run-a": projection("run-a", "waiting"),
+        "run-b": projection("run-b", "running"),
+      }),
     ).toBeNull();
   });
 
   it.each(["starting", "running", "completed", "failed", "cancelled"] as const)(
     "hides the card when the owning Run is %s",
     (status) => {
-      const requests = storeProjectDirectoryRequest(
-        {},
-        request("session-a", "run-a"),
-      );
+      const requests = storeProjectDirectoryRequest({}, request("session-a", "run-a"));
 
       expect(
-        selectVisibleProjectDirectoryRequest(
-          requests,
-          "session-a",
-          "run-a",
-          { "run-a": projection("run-a", status) },
-        ),
+        selectVisibleProjectDirectoryRequest(requests, "session-a", "run-a", {
+          "run-a": projection("run-a", status),
+        }),
       ).toBeNull();
     },
   );

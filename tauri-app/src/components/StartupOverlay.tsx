@@ -51,9 +51,7 @@ function StartupOverlayImpl({
               </div>
             </div>
             <div style={titleStyle}>正在启动语音服务</div>
-            <div style={hintStyle}>
-              首次启动需要 20–60 秒加载模型，请耐心等待
-            </div>
+            <div style={hintStyle}>首次启动需要 20–60 秒加载模型，请耐心等待</div>
           </>
         )}
         {isError && (
@@ -112,8 +110,7 @@ export const StartupOverlay = memo(StartupOverlayImpl);
 const overlayStyle: React.CSSProperties = {
   position: "fixed",
   inset: 0,
-  background:
-    "radial-gradient(ellipse at center, rgba(10,12,20,0.78) 0%, rgba(4,5,9,0.90) 100%)",
+  background: "radial-gradient(ellipse at center, rgba(10,12,20,0.78) 0%, rgba(4,5,9,0.90) 100%)",
   backdropFilter: "blur(8px)",
   WebkitBackdropFilter: "blur(8px)",
   display: "grid",
@@ -131,11 +128,9 @@ const cardStyle: React.CSSProperties = {
   width: "100%",
   display: "grid",
   gap: 12,
-  boxShadow:
-    "0 24px 60px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.07)",
+  boxShadow: "0 24px 60px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.07)",
   color: dark.text,
-  fontFamily:
-    '"Inter","PingFang SC","Microsoft YaHei UI",sans-serif',
+  fontFamily: '"Inter","PingFang SC","Microsoft YaHei UI",sans-serif',
   fontSize: 13,
   animation: "bp-pop-in 280ms cubic-bezier(0.16,1,0.3,1)",
 };

@@ -21,9 +21,7 @@ import { useEffect } from "react";
 
 export type Lifecycle = "crashed" | "restarted" | "dead";
 
-export function useBackendLifecycle(
-  onEvent: (kind: Lifecycle, payload: string) => void,
-) {
+export function useBackendLifecycle(onEvent: (kind: Lifecycle, payload: string) => void) {
   useEffect(() => {
     let unlistenAll: Array<() => void> = [];
     let cancelled = false;

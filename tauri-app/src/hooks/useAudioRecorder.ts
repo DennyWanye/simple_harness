@@ -74,8 +74,7 @@ export function useAudioRecorder(onFrame: (pcm: ArrayBuffer) => void) {
     streamRef.current = stream;
     let blobUrl: string | null = null;
     try {
-      const nativeSR =
-        stream.getAudioTracks()[0].getSettings().sampleRate || 48000;
+      const nativeSR = stream.getAudioTracks()[0].getSettings().sampleRate || 48000;
       const ctx = new AudioContext({ sampleRate: nativeSR });
       contextRef.current = ctx;
 

@@ -27,10 +27,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 
 import type { ControlChannel } from "../ws/ControlChannel";
-import type {
-  IncomingMessage,
-  PendingPermissionItem,
-} from "../types/messages";
+import type { IncomingMessage, PendingPermissionItem } from "../types/messages";
 import { buttonStyle, dark, surfaceModal } from "../theme/components";
 import { tokens } from "../theme/tokens";
 
@@ -41,9 +38,10 @@ export type ApprovalDecision = "allow" | "allow_session" | "deny";
 // ----------------------------------------------------------------------
 
 /** 构造「列出当前 session pending 权限请求」的只读查询消息。 */
-export function buildPendingListMessage(
-  sessionId?: string,
-): { type: "permissions_pending_list"; payload: { session_id?: string } } {
+export function buildPendingListMessage(sessionId?: string): {
+  type: "permissions_pending_list";
+  payload: { session_id?: string };
+} {
   const payload: { session_id?: string } = {};
   if (sessionId) payload.session_id = sessionId;
   return { type: "permissions_pending_list", payload };
@@ -136,11 +134,7 @@ const CATEGORY_ACCENT: Record<string, string> = {
   mcp_call: tokens.color.warning.bg,
 };
 
-export const ApprovalCenterPanel: React.FC<Props> = ({
-  channel,
-  enabled = false,
-  sessionId,
-}) => {
+export const ApprovalCenterPanel: React.FC<Props> = ({ channel, enabled = false, sessionId }) => {
   const [pending, setPending] = useState<PendingPermissionItem[]>([]);
   const pendingRef = useRef<PendingPermissionItem[]>([]);
   pendingRef.current = pending;
@@ -271,9 +265,7 @@ export const ApprovalCenterPanel: React.FC<Props> = ({
             key={item.request_id}
             style={{
               border: `1px solid ${dark.border}`,
-              borderLeft: `3px solid ${
-                CATEGORY_ACCENT[item.category] ?? tokens.color.info.bg
-              }`,
+              borderLeft: `3px solid ${CATEGORY_ACCENT[item.category] ?? tokens.color.info.bg}`,
               borderRadius: tokens.radius.md,
               padding: tokens.space.sm,
               display: "flex",

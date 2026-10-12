@@ -9,13 +9,7 @@
  * 与刷新。mock @tauri-apps/api —— 与 code-panel/ArtifactCard.test.ts
  * 同款 invokeMock 模式。
  */
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ArtifactsView, type ArtifactListEntry } from "./ArtifactsView";
@@ -54,13 +48,9 @@ describe("ArtifactsView（T12，WB-7）", () => {
     render(<ArtifactsView />);
 
     expect(invokeMock).toHaveBeenCalledWith("list_artifacts");
-    await waitFor(() =>
-      expect(screen.getAllByTestId("artifact-item")).toHaveLength(2),
-    );
+    await waitFor(() => expect(screen.getAllByTestId("artifact-item")).toHaveLength(2));
     // 顺序：后端倒序返回，前端不重排。
-    const names = screen
-      .getAllByTestId("artifact-name")
-      .map((el) => el.textContent ?? "");
+    const names = screen.getAllByTestId("artifact-name").map((el) => el.textContent ?? "");
     expect(names[0]).toContain("report.pdf");
     expect(names[1]).toContain("notes.md");
     // meta：大小人类可读。
@@ -72,9 +62,7 @@ describe("ArtifactsView（T12，WB-7）", () => {
     invokeMock.mockResolvedValue([]);
     render(<ArtifactsView />);
 
-    await waitFor(() =>
-      expect(screen.getByTestId("artifacts-empty")).toBeTruthy(),
-    );
+    await waitFor(() => expect(screen.getByTestId("artifacts-empty")).toBeTruthy());
     expect(screen.getByText("暂无产物")).toBeTruthy();
     expect(screen.queryByTestId("artifact-item")).toBeNull();
   });
@@ -82,9 +70,7 @@ describe("ArtifactsView（T12，WB-7）", () => {
   it("「打开」「在文件夹中显示」按既有 command shape 发 invoke", async () => {
     invokeMock.mockResolvedValue(ENTRIES);
     render(<ArtifactsView />);
-    await waitFor(() =>
-      expect(screen.getAllByTestId("artifact-item")).toHaveLength(2),
-    );
+    await waitFor(() => expect(screen.getAllByTestId("artifact-item")).toHaveLength(2));
     invokeMock.mockClear();
     invokeMock.mockResolvedValue(undefined);
 
@@ -92,36 +78,24 @@ describe("ArtifactsView（T12，WB-7）", () => {
     expect(invokeMock).toHaveBeenCalledWith("artifact_open", {
       path: "/data/artifacts/report.pdf",
     });
-    await waitFor(() =>
-      expect(
-        screen.getByText("已请求系统打开文件"),
-      ).toBeTruthy(),
-    );
+    await waitFor(() => expect(screen.getByText("已请求系统打开文件")).toBeTruthy());
 
-    fireEvent.click(
-      screen.getAllByTestId("artifact-action-show_in_folder")[1],
-    );
+    fireEvent.click(screen.getAllByTestId("artifact-action-show_in_folder")[1]);
     expect(invokeMock).toHaveBeenCalledWith("artifact_show_in_folder", {
       path: "/data/artifacts/notes.md",
     });
-    await waitFor(() =>
-      expect(screen.getByText("已在文件夹中定位")).toBeTruthy(),
-    );
+    await waitFor(() => expect(screen.getByText("已在文件夹中定位")).toBeTruthy());
   });
 
   it("动作失败显示 alert 状态行，不破列表", async () => {
     invokeMock.mockResolvedValue(ENTRIES);
     render(<ArtifactsView />);
-    await waitFor(() =>
-      expect(screen.getAllByTestId("artifact-item")).toHaveLength(2),
-    );
+    await waitFor(() => expect(screen.getAllByTestId("artifact-item")).toHaveLength(2));
     invokeMock.mockRejectedValue("[open_failed] no handler");
 
     fireEvent.click(screen.getAllByTestId("artifact-action-open")[0]);
     await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
-    expect(screen.getByRole("alert").textContent).toContain(
-      "[open_failed] no handler",
-    );
+    expect(screen.getByRole("alert").textContent).toContain("[open_failed] no handler");
     expect(screen.getAllByTestId("artifact-item")).toHaveLength(2);
   });
 
@@ -134,9 +108,7 @@ describe("ArtifactsView（T12，WB-7）", () => {
 
     invokeMock.mockResolvedValue(ENTRIES);
     fireEvent.click(screen.getByTestId("artifacts-refresh"));
-    await waitFor(() =>
-      expect(screen.getAllByTestId("artifact-item")).toHaveLength(2),
-    );
+    await waitFor(() => expect(screen.getAllByTestId("artifact-item")).toHaveLength(2));
     expect(screen.queryByRole("alert")).toBeNull();
   });
 });

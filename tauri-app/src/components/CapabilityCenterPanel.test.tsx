@@ -71,11 +71,7 @@ const capabilities: CapabilityDescriptor[] = [
         ],
         mcp_servers: [],
       },
-      permissions: [
-        "filesystem_read",
-        "filesystem_write",
-        "process_execute",
-      ],
+      permissions: ["filesystem_read", "filesystem_write", "process_execute"],
       effects: ["read_only", "staged_file", "opaque_manual"],
       dependencies: {
         python: [],
@@ -109,9 +105,7 @@ const capabilities: CapabilityDescriptor[] = [
   },
 ];
 
-function operation(
-  overrides: Partial<CapabilityOperation> = {},
-): CapabilityOperation {
+function operation(overrides: Partial<CapabilityOperation> = {}): CapabilityOperation {
   return {
     operation_id: "operation-godot",
     capability_id: "godot",
@@ -150,26 +144,18 @@ describe("CapabilityCenterPanel", () => {
     );
 
     expect(screen.getByText("Godot 4 项目检测与 headless 检查")).toBeTruthy();
-    expect(
-      screen.getByTestId("capability-manifest-detail").textContent,
-    ).toContain("godot__detect");
-    expect(
-      screen.getByTestId("capability-manifest-detail").textContent,
-    ).toContain("godot >=4.0");
+    expect(screen.getByTestId("capability-manifest-detail").textContent).toContain("godot__detect");
+    expect(screen.getByTestId("capability-manifest-detail").textContent).toContain("godot >=4.0");
     fireEvent.change(screen.getByLabelText("搜索能力"), {
       target: { value: "Blender" },
     });
     expect(screen.queryByRole("button", { name: /Godot/ })).toBeNull();
-    expect(screen.getByTestId("capability-detail").textContent).toContain(
-      "Blender",
+    expect(screen.getByTestId("capability-detail").textContent).toContain("Blender");
+    expect(screen.getByRole("button", { name: /Blender/ }).getAttribute("aria-pressed")).toBe(
+      "true",
     );
-    expect(
-      screen.getByRole("button", { name: /Blender/ }).getAttribute("aria-pressed"),
-    ).toBe("true");
     fireEvent.click(screen.getByRole("button", { name: /Blender/ }));
-    expect(screen.getByTestId("capability-detail").textContent).toContain(
-      "缺少可执行文件",
-    );
+    expect(screen.getByTestId("capability-detail").textContent).toContain("缺少可执行文件");
 
     fireEvent.change(screen.getByLabelText("能力类别"), {
       target: { value: "pack" },
@@ -211,9 +197,9 @@ describe("CapabilityCenterPanel", () => {
         },
       });
     });
-    expect(
-      screen.getByTestId("capability-operation-operation-godot").textContent,
-    ).toContain("候选运行时健康");
+    expect(screen.getByTestId("capability-operation-operation-godot").textContent).toContain(
+      "候选运行时健康",
+    );
 
     for (const action of ["取消", "回滚", "卸载"]) {
       fireEvent.click(screen.getByRole("button", { name: action }));
@@ -272,9 +258,7 @@ describe("CapabilityCenterPanel", () => {
     // 页面化：不再是模态浮层（D5 page 分支去 backdrop/fixed）。
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(screen.queryByRole("presentation")).toBeNull();
-    expect(
-      screen.queryByRole("button", { name: "关闭能力中心" }),
-    ).toBeNull();
+    expect(screen.queryByRole("button", { name: "关闭能力中心" })).toBeNull();
 
     // 填满内容区（非 fixed 定位 + 100% 宽高）。
     const region = screen.getByRole("region", { name: "能力中心" });
@@ -307,12 +291,7 @@ describe("CapabilityCenterPanel", () => {
     expect(openLegacy).toHaveBeenCalledOnce();
 
     rendered.rerender(
-      <SkillStorePanel
-        open
-        channel={null}
-        onClose={vi.fn()}
-        onOpenCapabilityCenter={openLegacy}
-      />,
+      <SkillStorePanel open channel={null} onClose={vi.fn()} onOpenCapabilityCenter={openLegacy} />,
     );
     expect(screen.getByRole("button", { name: "已安装" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "市场" })).toBeTruthy();
@@ -327,9 +306,7 @@ describe("Capability Center wire builders", () => {
       type: "capability_install",
       payload: { capability_id: "godot" },
     });
-    expect(
-      buildCapabilityOperationActionMessage("rollback", operation()),
-    ).toEqual({
+    expect(buildCapabilityOperationActionMessage("rollback", operation())).toEqual({
       type: "capability_rollback",
       payload: {
         operation_id: "operation-godot",

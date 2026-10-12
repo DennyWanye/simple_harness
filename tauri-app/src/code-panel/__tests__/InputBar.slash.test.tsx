@@ -38,26 +38,27 @@ describe("fetchCommands", () => {
 
     const commands = await _testing.fetchCommands(true);
 
-    expect(fetchMock).toHaveBeenCalledWith(
-      expect.stringMatching(/\/api\/commands\/help$/),
-    );
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringMatching(/\/api\/commands\/help$/));
     expect(commands.map((item) => item.name)).toEqual(["plan-test"]);
   });
 
   it("does not retain a stale pre-install catalog", async () => {
-    const fetchMock = vi.spyOn(globalThis, "fetch")
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({ commands: [{ name: "help", description: "Help" }] }),
       } as Response)
       .mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ commands: [
-          { name: "help", description: "Help" },
-          { name: "plan-bs", description: "Plan BS" },
-          { name: "plan-task", description: "Plan Task" },
-          { name: "plan-test", description: "Plan Test" },
-        ] }),
+        json: async () => ({
+          commands: [
+            { name: "help", description: "Help" },
+            { name: "plan-bs", description: "Plan BS" },
+            { name: "plan-task", description: "Plan Task" },
+            { name: "plan-test", description: "Plan Test" },
+          ],
+        }),
       } as Response);
 
     await _testing.fetchCommands(true);
@@ -65,7 +66,10 @@ describe("fetchCommands", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(refreshed.map((item) => item.name)).toEqual([
-      "help", "plan-bs", "plan-task", "plan-test",
+      "help",
+      "plan-bs",
+      "plan-task",
+      "plan-test",
     ]);
   });
 });
@@ -139,10 +143,13 @@ describe("pushHistory", () => {
 
 describe("global Skill command refresh", () => {
   it("carries the client turn identity into slash dispatch", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => ({
-      ok: true,
-      json: async () => ({ commands: [] }),
-    })));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({ commands: [] }),
+      })),
+    );
 
     render(<InputBar sessionId="slash-identity" placeholder="slash identity" />);
     const input = screen.getByPlaceholderText("slash identity");
@@ -166,20 +173,24 @@ describe("global Skill command refresh", () => {
 
   it("refreshes the global catalog when a new slash input begins", async () => {
     let request = 0;
-    vi.stubGlobal("fetch", vi.fn(async () => {
-      request += 1;
-      return {
-        ok: true,
-        json: async () => ({
-          commands: request === 1
-            ? [{ name: "help", description: "help" }]
-            : [
-                { name: "help", description: "help" },
-                { name: "plan-test", description: "global plan skill" },
-              ],
-        }),
-      } as Response;
-    }));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        request += 1;
+        return {
+          ok: true,
+          json: async () => ({
+            commands:
+              request === 1
+                ? [{ name: "help", description: "help" }]
+                : [
+                    { name: "help", description: "help" },
+                    { name: "plan-test", description: "global plan skill" },
+                  ],
+          }),
+        } as Response;
+      }),
+    );
 
     render(<InputBar sessionId="slash-refresh" placeholder="slash" />);
     await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
@@ -201,9 +212,7 @@ describe("SlashDropdown", () => {
     {
       name: "goal",
       description: "set goal",
-      args_schema: [
-        { name: "text", type: "string", description: "", required: false },
-      ],
+      args_schema: [{ name: "text", type: "string", description: "", required: false }],
     },
   ];
 
@@ -215,18 +224,14 @@ describe("SlashDropdown", () => {
   });
 
   it("renders candidates with names + descriptions", () => {
-    render(
-      <SlashDropdown candidates={cmds} selectedIdx={0} onAccept={() => {}} />,
-    );
+    render(<SlashDropdown candidates={cmds} selectedIdx={0} onAccept={() => {}} />);
     expect(screen.queryByTestId("slash-dropdown")).not.toBeNull();
     expect(screen.queryByText(/show help/)).not.toBeNull();
     expect(screen.queryByText(/set goal/)).not.toBeNull();
   });
 
   it("highlights selectedIdx", () => {
-    render(
-      <SlashDropdown candidates={cmds} selectedIdx={1} onAccept={() => {}} />,
-    );
+    render(<SlashDropdown candidates={cmds} selectedIdx={1} onAccept={() => {}} />);
     const goalRow = screen.getByTestId("slash-item-goal");
     expect(goalRow.getAttribute("aria-selected")).toBe("true");
     const helpRow = screen.getByTestId("slash-item-help");
@@ -235,17 +240,13 @@ describe("SlashDropdown", () => {
 
   it("calls onAccept on mousedown", () => {
     const onAccept = vi.fn();
-    render(
-      <SlashDropdown candidates={cmds} selectedIdx={0} onAccept={onAccept} />,
-    );
+    render(<SlashDropdown candidates={cmds} selectedIdx={0} onAccept={onAccept} />);
     fireEvent.mouseDown(screen.getByTestId("slash-item-goal"));
     expect(onAccept).toHaveBeenCalledWith(1);
   });
 
   it("renders arg schema hint inline", () => {
-    render(
-      <SlashDropdown candidates={cmds} selectedIdx={0} onAccept={() => {}} />,
-    );
+    render(<SlashDropdown candidates={cmds} selectedIdx={0} onAccept={() => {}} />);
     expect(screen.queryByText(/\[text\]/)).not.toBeNull();
   });
 });
@@ -297,9 +298,7 @@ describe("ArgHintBar", () => {
     render(
       <ArgHintBar
         commandName="goal"
-        argSchema={[
-          { name: "text", type: "string", description: "", required: false },
-        ]}
+        argSchema={[{ name: "text", type: "string", description: "", required: false }]}
         currentArgIndex={0}
       />,
     );

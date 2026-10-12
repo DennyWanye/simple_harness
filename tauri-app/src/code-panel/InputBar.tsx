@@ -80,18 +80,13 @@ function pushHistory(entry: string) {
 let _cachedCommands: SlashCommand[] | null = null;
 
 async function fetchCommands(forceRefresh = false): Promise<SlashCommand[]> {
-  if (
-    !forceRefresh &&
-    _cachedCommands !== null &&
-    _cachedCommands.length > 0
-  ) return _cachedCommands;
+  if (!forceRefresh && _cachedCommands !== null && _cachedCommands.length > 0)
+    return _cachedCommands;
   try {
     // WI-T2-B fix v2.1: backend 绝对 URL，复用 backendPort.ts 单一源.
     // 相对路径在 Tauri WebView2 (tauri://) 或 vite dev 跨 5473→8400 都失效；
     // 必须显式 http://127.0.0.1:${BACKEND_PORT}/api/... 走 CORS.
-    const resp = await fetch(
-      `http://127.0.0.1:${BACKEND_PORT}/api/commands/help`,
-    );
+    const resp = await fetch(`http://127.0.0.1:${BACKEND_PORT}/api/commands/help`);
     if (!resp.ok) return [];
     const data = await resp.json();
     const out: SlashCommand[] = Array.isArray(data.commands) ? data.commands : [];
@@ -108,9 +103,7 @@ function filterCommands(all: SlashCommand[], q: string): SlashCommand[] {
   // 排序：prefix-match 优先，substring-match 次之
   const prefix = all.filter((c) => c.name.toLowerCase().startsWith(lower));
   const substr = all.filter(
-    (c) =>
-      !c.name.toLowerCase().startsWith(lower) &&
-      c.name.toLowerCase().includes(lower),
+    (c) => !c.name.toLowerCase().startsWith(lower) && c.name.toLowerCase().includes(lower),
   );
   return [...prefix, ...substr];
 }
@@ -163,11 +156,12 @@ export function InputBar({
   const selectedProjection = session?.selected_run_id
     ? session.run_projections?.[session.selected_run_id]
     : undefined;
-  const inflight = primary ? Boolean(primary.stop) :
-    !!session?.inflight ||
-    selectedProjection?.status === "starting" ||
-    selectedProjection?.status === "running" ||
-    selectedProjection?.status === "waiting";
+  const inflight = primary
+    ? Boolean(primary.stop)
+    : !!session?.inflight ||
+      selectedProjection?.status === "starting" ||
+      selectedProjection?.status === "running" ||
+      selectedProjection?.status === "waiting";
 
   // Commands are user-global and installs can complete while this view is
   // mounted. Fetch when the active Session changes; opening slash autocomplete
@@ -175,12 +169,16 @@ export function InputBar({
   useEffect(() => {
     if (isPrimary) return;
     let current = true;
-    fetchCommands().then((commands) => {
-      if (current) setAllCommands(commands);
-    }).catch(() => {
-      if (current) setAllCommands([]);
-    });
-    return () => { current = false; };
+    fetchCommands()
+      .then((commands) => {
+        if (current) setAllCommands(commands);
+      })
+      .catch(() => {
+        if (current) setAllCommands([]);
+      });
+    return () => {
+      current = false;
+    };
   }, [sid, isPrimary]);
 
   useEffect(
@@ -263,7 +261,7 @@ export function InputBar({
       try {
         await primary.submit(t, attachmentBlocks);
         // Only a durable enqueue ACK may consume this exact submitted draft.
-        set_text((current) => current === text ? "" : current);
+        set_text((current) => (current === text ? "" : current));
         setAttachments((current) => current.filter((item) => !attachments.includes(item)));
         setHistoryIdx(null);
         setDropdownOpen(false);
@@ -292,9 +290,7 @@ export function InputBar({
           new_session: true,
           request_id: identity.request_id,
           turn_id: identity.turn_id,
-          ...(attachmentBlocks.length > 0
-            ? { attachments: attachmentBlocks }
-            : {}),
+          ...(attachmentBlocks.length > 0 ? { attachments: attachmentBlocks } : {}),
         },
       });
       if (!sent) return;
@@ -331,10 +327,9 @@ export function InputBar({
       typeof activeSelectedProjection.conversation_boundary_version === "number"
         ? activeSelectedProjection
         : undefined;
-    const pendingParentRequestId =
-      !activeSelectedProjection
-        ? currentSession?.pending_root_request_id
-        : undefined;
+    const pendingParentRequestId = !activeSelectedProjection
+      ? currentSession?.pending_root_request_id
+      : undefined;
     const deferredProjection =
       !selectedProjection && activeSelectedProjection?.status === "starting"
         ? activeSelectedProjection
@@ -350,13 +345,11 @@ export function InputBar({
       turn_id: identity.turn_id,
       run_id: (selectedProjection || deferredProjection)?.run_id,
       task_scope_id: (selectedProjection || deferredProjection)?.task_scope_id,
-      conversation_boundary_ref:
-        (selectedProjection || deferredProjection)?.conversation_boundary_ref,
-      continuation_status:
-        selectedProjection || shouldDefer ? "waiting" : undefined,
+      conversation_boundary_ref: (selectedProjection || deferredProjection)
+        ?.conversation_boundary_ref,
+      continuation_status: selectedProjection || shouldDefer ? "waiting" : undefined,
       deferred_send: shouldDefer || undefined,
-      deferred_parent_request_id:
-        pendingParentRequestId || undefined,
+      deferred_parent_request_id: pendingParentRequestId || undefined,
     });
     if (t.startsWith("/")) {
       const m = t.slice(1).match(/^(\S+)\s*(.*)$/);
@@ -398,15 +391,12 @@ export function InputBar({
         session_id: sid,
         request_id: identity.request_id,
         turn_id: identity.turn_id,
-        ...(attachmentBlocks.length > 0
-          ? { attachments: attachmentBlocks }
-          : {}),
+        ...(attachmentBlocks.length > 0 ? { attachments: attachmentBlocks } : {}),
         ...(selectedProjection
           ? {
               target_root_run_id: selectedProjection.run_id,
               task_scope_id: selectedProjection.task_scope_id,
-              conversation_boundary_version:
-                selectedProjection.conversation_boundary_version,
+              conversation_boundary_version: selectedProjection.conversation_boundary_version,
             }
           : {}),
       },
@@ -419,12 +409,9 @@ export function InputBar({
         });
       }
       if (selectedProjection) {
-        useSessionsStore.getState().set_continuation_status(
-          sid,
-          identity.request_id,
-          "failed",
-          "控制通道未连接",
-        );
+        useSessionsStore
+          .getState()
+          .set_continuation_status(sid, identity.request_id, "failed", "控制通道未连接");
       }
       useSessionsStore.getState().push_message(sid, {
         role: "error",
@@ -463,13 +450,15 @@ export function InputBar({
       }
       try {
         const loaded = await Promise.all(
-          files.map(async (file, index): Promise<TextAttachment> => ({
-            id: `${file.name}:${file.lastModified}:${file.size}:${index}`,
-            name: file.name,
-            mediaType: file.type || "text/plain",
-            size: file.size,
-            data: await readTextFile(file),
-          })),
+          files.map(
+            async (file, index): Promise<TextAttachment> => ({
+              id: `${file.name}:${file.lastModified}:${file.size}:${index}`,
+              name: file.name,
+              mediaType: file.type || "text/plain",
+              size: file.size,
+              data: await readTextFile(file),
+            }),
+          ),
         );
         setAttachments((current) => [...current, ...loaded]);
         setAttachmentError("");
@@ -481,7 +470,10 @@ export function InputBar({
   );
 
   const stop = useCallback(() => {
-    if (primary) { primary.stop?.(); return; }
+    if (primary) {
+      primary.stop?.();
+      return;
+    }
     if (!sid) return;
     controlWS.send({
       type: "chat_v2_interrupt",
@@ -503,9 +495,11 @@ export function InputBar({
       // 每次开始一个新的 slash 输入都刷新本机全局 catalog。这样 Skill 在
       // 页面挂载后安装、或切换到显式目录的新 Session 时不会沿用旧缓存。
       if (v === "/" || allCommands.length === 0) {
-        fetchCommands(v === "/").then((cs) => {
-          if (cs.length) setAllCommands(cs);
-        }).catch(() => {});
+        fetchCommands(v === "/")
+          .then((cs) => {
+            if (cs.length) setAllCommands(cs);
+          })
+          .catch(() => {});
       }
       const firstWord = v.slice(1).split(/\s+/)[0] ?? "";
       const hasSpace = v.length > firstWord.length + 1;
@@ -517,9 +511,7 @@ export function InputBar({
       } else {
         // 已输空格 → 关 dropdown，看是否需 arg hint
         setDropdownOpen(false);
-        const cmdMatch = allCommands.find(
-          (c) => c.name.toLowerCase() === firstWord.toLowerCase(),
-        );
+        const cmdMatch = allCommands.find((c) => c.name.toLowerCase() === firstWord.toLowerCase());
         if (cmdMatch && cmdMatch.args_schema && cmdMatch.args_schema.length > 0) {
           setArgHintCmd(cmdMatch);
         } else {
@@ -559,18 +551,10 @@ export function InputBar({
     // Chromium reports isComposing; macOS WebKit can instead expose the IME
     // sentinel keyCode 229. The ref covers engines that omit both flags while
     // composition is still active.
-    if (
-      e.nativeEvent.isComposing ||
-      isComposingRef.current ||
-      nativeKeyCode === 229
-    ) {
+    if (e.nativeEvent.isComposing || isComposingRef.current || nativeKeyCode === 229) {
       return;
     }
-    if (
-      e.key === "Enter" &&
-      !e.shiftKey &&
-      suppressCompositionCommitEnterRef.current
-    ) {
+    if (e.key === "Enter" && !e.shiftKey && suppressCompositionCommitEnterRef.current) {
       e.preventDefault();
       suppressCompositionCommitEnterRef.current = false;
       if (compositionReleaseTimerRef.current !== null) {
@@ -611,9 +595,7 @@ export function InputBar({
       if (text === "" || atTop) {
         e.preventDefault();
         const nextIdx =
-          historyIdx === null
-            ? _slashInputHistory.length - 1
-            : Math.max(0, historyIdx - 1);
+          historyIdx === null ? _slashInputHistory.length - 1 : Math.max(0, historyIdx - 1);
         set_text(_slashInputHistory[nextIdx]);
         setHistoryIdx(nextIdx);
         return;
@@ -646,13 +628,12 @@ export function InputBar({
 
   const continuationTarget =
     selectedProjection &&
-    (selectedProjection.status === "waiting" ||
-      selectedProjection.status === "running") &&
+    (selectedProjection.status === "waiting" || selectedProjection.status === "running") &&
     typeof selectedProjection.conversation_boundary_version === "number"
       ? selectedProjection
       : undefined;
   const status = (() => {
-    if (primary) return submitting ? "等待入队确认" : primary.status ?? "等待主对话就绪";
+    if (primary) return submitting ? "等待入队确认" : (primary.status ?? "等待主对话就绪");
     if (!selectedProjection) return session?.status ?? "idle";
     if (
       selectedProjection.inflight ||
@@ -666,10 +647,7 @@ export function InputBar({
     }
     // Failure remains visible in the Harness timeline, but it is no longer
     // the current execution state. Keep the composer ready for a retry.
-    if (
-      selectedProjection.status === "failed" ||
-      selectedProjection.status === "cancelled"
-    ) {
+    if (selectedProjection.status === "failed" || selectedProjection.status === "cancelled") {
       return "idle";
     }
     return "idle";
@@ -730,9 +708,7 @@ export function InputBar({
                 disabled={inputDisabled}
                 className={INTERACTIVE_CLASS}
                 onClick={() =>
-                  setAttachments((current) =>
-                    current.filter((item) => item.id !== attachment.id),
-                  )
+                  setAttachments((current) => current.filter((item) => item.id !== attachment.id))
                 }
                 style={{
                   border: 0,
@@ -749,50 +725,63 @@ export function InputBar({
         </div>
       )}
       {composerError && (
-        <div role="alert" data-testid="composer-error" style={{ color: dark.danger, fontSize: tokens.text.sm.size }}>
+        <div
+          role="alert"
+          data-testid="composer-error"
+          style={{ color: dark.danger, fontSize: tokens.text.sm.size }}
+        >
           {composerError}
         </div>
       )}
       {/* 输入行：附件 · 文本域 · 发送，三者内嵌在同一张卡片里。 */}
-      <div style={{ display: "flex", gap: tokens.space.xs, alignItems: "flex-end", position: "relative" }}>
+      <div
+        style={{
+          display: "flex",
+          gap: tokens.space.xs,
+          alignItems: "flex-end",
+          position: "relative",
+        }}
+      >
         <SlashDropdown
           candidates={candidates}
           selectedIdx={selectedIdx}
           onAccept={acceptCandidate}
         />
         {/* 2026-09-25：主对话的附件发送尚未接通（发送必被拒），按钮先不显示，免得点了没反应。 */}
-        {!primary && <label
-          aria-label="附加文本文件"
-          title="附加文本文件"
-          className={INTERACTIVE_CLASS}
-          style={{
-            height: tokens.controlHeight,
-            minWidth: tokens.controlHeight,
-            display: "inline-flex",
-            alignItems: "center",
-            justifyContent: "center",
-            border: "1px solid transparent",
-            borderRadius: tokens.radius.md,
-            background: "transparent",
-            color: disabled ? dark.textFaint : dark.textMuted,
-            cursor: disabled ? "not-allowed" : "pointer",
-            boxSizing: "border-box",
-            flexShrink: 0,
-            transition,
-          }}
-        >
-          <Icon name="folder" size={16} />
-          <input
-            ref={fileInputRef}
-            data-testid="text-attachment-input"
-            type="file"
-            multiple
-            accept=".txt,.md,.csv,.json,.yaml,.yml,.log,text/plain,text/markdown,text/csv,application/json,application/yaml"
-            disabled={inputDisabled}
-            onChange={(event) => void onAttachmentChange(event)}
-            style={{ display: "none" }}
-          />
-        </label>}
+        {!primary && (
+          <label
+            aria-label="附加文本文件"
+            title="附加文本文件"
+            className={INTERACTIVE_CLASS}
+            style={{
+              height: tokens.controlHeight,
+              minWidth: tokens.controlHeight,
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              border: "1px solid transparent",
+              borderRadius: tokens.radius.md,
+              background: "transparent",
+              color: disabled ? dark.textFaint : dark.textMuted,
+              cursor: disabled ? "not-allowed" : "pointer",
+              boxSizing: "border-box",
+              flexShrink: 0,
+              transition,
+            }}
+          >
+            <Icon name="folder" size={16} />
+            <input
+              ref={fileInputRef}
+              data-testid="text-attachment-input"
+              type="file"
+              multiple
+              accept=".txt,.md,.csv,.json,.yaml,.yml,.log,text/plain,text/markdown,text/csv,application/json,application/yaml"
+              disabled={inputDisabled}
+              onChange={(event) => void onAttachmentChange(event)}
+              style={{ display: "none" }}
+            />
+          </label>
+        )}
         <textarea
           ref={taRef}
           value={text}
@@ -805,11 +794,11 @@ export function InputBar({
             disabled && placeholder
               ? placeholder
               : continuationTarget
-              ? "补充当前任务…"
-              : placeholder ??
-                (session?.project_root
-                  ? `跟 LLM 说点什么 — 当前项目: ${session.project_name}（输 / 命令）`
-                  : "输入消息开始一个任务... (输 / 弹命令补全)")
+                ? "补充当前任务…"
+                : (placeholder ??
+                  (session?.project_root
+                    ? `跟 LLM 说点什么 — 当前项目: ${session.project_name}（输 / 命令）`
+                    : "输入消息开始一个任务... (输 / 弹命令补全)"))
           }
           rows={1}
           style={{
@@ -832,21 +821,13 @@ export function InputBar({
         <button
           type="button"
           // 与 Enter 一致：有文字发送/续接；只有空文字 + inflight 才停止。
-          onClick={() =>
-            text.trim() ? void send() : inflight ? stop() : undefined
-          }
+          onClick={() => (text.trim() ? void send() : inflight ? stop() : undefined)}
           disabled={inputDisabled || (!inflight && !text.trim())}
           className={`${INTERACTIVE_CLASS}${text.trim() ? " sh-accent-fill" : ""}`}
           style={{
             height: tokens.controlHeight,
-            background: text.trim()
-              ? tokens.color.accent.bg
-              : "transparent",
-            color: text.trim()
-              ? tokens.color.accent.on
-              : inflight
-                ? dark.danger
-                : dark.textFaint,
+            background: text.trim() ? tokens.color.accent.bg : "transparent",
+            color: text.trim() ? tokens.color.accent.on : inflight ? dark.danger : dark.textFaint,
             border: text.trim() ? "1px solid transparent" : `1px solid ${dark.borderStrong}`,
             borderRadius: tokens.radius.md,
             padding: `0 ${tokens.space.lg}px`,
@@ -862,7 +843,14 @@ export function InputBar({
         </button>
       </div>
       {/* 第二排：低调的单行 meta（12 / 次级色）。 */}
-      <div style={{ display: "flex", alignItems: "center", gap: tokens.space.md, padding: `0 ${tokens.space.xs}px` }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: tokens.space.md,
+          padding: `0 ${tokens.space.xs}px`,
+        }}
+      >
         {continuationTarget && (
           <span
             data-testid="continuation-target"
@@ -895,7 +883,9 @@ export function InputBar({
               whiteSpace: "nowrap",
             }}
           >
-            {primary ? "Enter 发送 · Shift+Enter 换行" : "Enter 发送 · Shift+Enter 换行 · 文本附件 · / 命令"}
+            {primary
+              ? "Enter 发送 · Shift+Enter 换行"
+              : "Enter 发送 · Shift+Enter 换行 · 文本附件 · / 命令"}
           </span>
         </div>
       </div>
@@ -914,8 +904,19 @@ function StatusPill({ status }: { status: string }) {
   };
   const m = map[status] ?? { label: status, color: dark.textFaint };
   return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, color: dark.textMuted, whiteSpace: "nowrap" }}>
-      <span aria-hidden style={{ width: 6, height: 6, borderRadius: "50%", background: m.color, flexShrink: 0 }} />
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        color: dark.textMuted,
+        whiteSpace: "nowrap",
+      }}
+    >
+      <span
+        aria-hidden
+        style={{ width: 6, height: 6, borderRadius: "50%", background: m.color, flexShrink: 0 }}
+      />
       {m.label}
     </span>
   );

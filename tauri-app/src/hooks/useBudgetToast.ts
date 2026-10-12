@@ -12,21 +12,13 @@ import type { ControlChannel } from "../ws/ControlChannel";
 
 export type BudgetToastFn = (msg: string) => void;
 
-export function useBudgetToast(
-  getChannel: () => ControlChannel | null,
-  showToast: BudgetToastFn,
-) {
+export function useBudgetToast(getChannel: () => ControlChannel | null, showToast: BudgetToastFn) {
   useEffect(() => {
     const channel = getChannel();
     if (!channel) return;
     const unsubscribe = channel.onMessage((msg) => {
-      if (
-        msg.type === "chat_response" &&
-        msg.payload?.budget_exceeded === true
-      ) {
-        const reason = msg.payload.budget_reason
-          ? `（${msg.payload.budget_reason}）`
-          : "";
+      if (msg.type === "chat_response" && msg.payload?.budget_exceeded === true) {
+        const reason = msg.payload.budget_reason ? `（${msg.payload.budget_reason}）` : "";
         showToast(`今日云端预算已用尽，已降级到本地模型。${reason}`);
       }
     });

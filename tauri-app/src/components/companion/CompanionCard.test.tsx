@@ -5,10 +5,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { CompanionEvent } from "../../types/messages";
-import {
-  companionActionCommand,
-  resolveCompanionDetailSelection,
-} from "./actionProjection";
+import { companionActionCommand, resolveCompanionDetailSelection } from "./actionProjection";
 import { CompanionCard } from "./CompanionCard";
 
 function baseEvent(overrides: Partial<CompanionEvent> = {}): CompanionEvent {
@@ -50,13 +47,7 @@ describe("CompanionCard", () => {
         status: "open",
       },
     });
-    render(
-      <CompanionCard
-        event={event}
-        onOpenDetail={vi.fn()}
-        onAction={onAction}
-      />,
-    );
+    render(<CompanionCard event={event} onOpenDetail={vi.fn()} onAction={onAction} />);
 
     const button = screen.getByRole("button", {
       name: /允许在本机运行这份 exact code 进行评测/,
@@ -65,11 +56,7 @@ describe("CompanionCard", () => {
     expect(button.textContent).toContain("本机文件/网络/凭据");
     expect(screen.queryByRole("button", { name: /允许激活/ })).toBeNull();
     fireEvent.click(button);
-    expect(onAction).toHaveBeenCalledWith(
-      event,
-      "evaluation_authorization",
-      true,
-    );
+    expect(onAction).toHaveBeenCalledWith(event, "evaluation_authorization", true);
   });
 
   it("shows the persistent activation warning and exact digests", () => {
@@ -104,9 +91,11 @@ describe("CompanionCard", () => {
       "Job 仅管理生命周期，不提供 OS 沙箱",
     );
     expect(screen.getByText(/本次确认不代表允许以后任何外部发送/)).toBeTruthy();
-    expect(screen.getByRole("button", {
-      name: "允许激活 exact package/code",
-    })).toBeTruthy();
+    expect(
+      screen.getByRole("button", {
+        name: "允许激活 exact package/code",
+      }),
+    ).toBeTruthy();
   });
 
   it("renders resolved decisions read-only as stale", () => {
@@ -158,22 +147,26 @@ describe("typed Companion action projection", () => {
   });
 
   it("sends action confirmation as decision_id + allow only", () => {
-    const command = companionActionCommand(baseEvent({
-      decision: {
-        kind: "action_confirmation",
-        decision_id: "decision-1",
-        run_id: "run-secret",
-        call_id: "call-secret",
-        effect_id: "effect-secret",
-        tool_name: "pay",
-        redacted_target_summary: "已脱敏目标",
-        args_hash: "args-hash",
-        capability_hash: "capability-hash",
-        scope_hash: "scope-hash",
-        expires_at: "2026-07-26T00:00:00Z",
-        status: "open",
-      },
-    }), "action_confirmation", true);
+    const command = companionActionCommand(
+      baseEvent({
+        decision: {
+          kind: "action_confirmation",
+          decision_id: "decision-1",
+          run_id: "run-secret",
+          call_id: "call-secret",
+          effect_id: "effect-secret",
+          tool_name: "pay",
+          redacted_target_summary: "已脱敏目标",
+          args_hash: "args-hash",
+          capability_hash: "capability-hash",
+          scope_hash: "scope-hash",
+          expires_at: "2026-07-26T00:00:00Z",
+          status: "open",
+        },
+      }),
+      "action_confirmation",
+      true,
+    );
 
     expect(command).toEqual({
       commandKind: "companion_growth_action_decision",
@@ -182,62 +175,74 @@ describe("typed Companion action projection", () => {
   });
 
   it("keeps evaluation and activation nonce/ack projections separate", () => {
-    const evaluation = companionActionCommand(baseEvent({
-      decision: {
-        kind: "evaluation_authorization",
-        candidate_id: "candidate-1",
-        candidate_revision: 1,
-        candidate_package_hash: "package-hash",
-        suite_hash: "suite-hash",
-        runner_policy_hash: "runner-hash",
-        nonce: "eval-nonce",
-        decision_version: 1,
-        expires_at: "2026-07-26T00:00:00Z",
-      },
-    }), "evaluation_authorization", true);
-    const activation = companionActionCommand(baseEvent({
-      decision: {
-        kind: "activation",
-        candidate_id: "candidate-1",
-        pack_id: "pack-1",
-        candidate_version: "1.0.0",
-        candidate_package_hash: "package-hash",
-        evaluation_report_hash: "report-hash",
-        risk_assessment_hash: "risk-hash",
-        scope: "user",
-        scope_key: "profile-a",
-        owner_key: "companion:profile-a:1",
-        expected_binding_generation: 1,
-        nonce: "activation-nonce",
-        decision_version: 2,
-        expires_at: "2026-07-26T00:00:00Z",
-      },
-    }), "activation", true);
+    const evaluation = companionActionCommand(
+      baseEvent({
+        decision: {
+          kind: "evaluation_authorization",
+          candidate_id: "candidate-1",
+          candidate_revision: 1,
+          candidate_package_hash: "package-hash",
+          suite_hash: "suite-hash",
+          runner_policy_hash: "runner-hash",
+          nonce: "eval-nonce",
+          decision_version: 1,
+          expires_at: "2026-07-26T00:00:00Z",
+        },
+      }),
+      "evaluation_authorization",
+      true,
+    );
+    const activation = companionActionCommand(
+      baseEvent({
+        decision: {
+          kind: "activation",
+          candidate_id: "candidate-1",
+          pack_id: "pack-1",
+          candidate_version: "1.0.0",
+          candidate_package_hash: "package-hash",
+          evaluation_report_hash: "report-hash",
+          risk_assessment_hash: "risk-hash",
+          scope: "user",
+          scope_key: "profile-a",
+          owner_key: "companion:profile-a:1",
+          expected_binding_generation: 1,
+          nonce: "activation-nonce",
+          decision_version: 2,
+          expires_at: "2026-07-26T00:00:00Z",
+        },
+      }),
+      "activation",
+      true,
+    );
 
     expect(evaluation?.body.nonce).toBe("eval-nonce");
     expect(evaluation?.body).not.toHaveProperty("activation_risk_ack");
     expect(activation?.body.nonce).toBe("activation-nonce");
     expect(activation?.body.activation_risk_ack).toBe("none");
 
-    const executableActivation = companionActionCommand(baseEvent({
-      decision: {
-        kind: "activation",
-        candidate_id: "candidate-code",
-        pack_id: "pack-code",
-        candidate_version: "1.0.0",
-        candidate_package_hash: "package-code-hash",
-        candidate_code_digest: "code-digest-exact",
-        evaluation_report_hash: "report-code-hash",
-        risk_assessment_hash: "risk-code-hash",
-        scope: "user",
-        scope_key: "profile-a",
-        owner_key: "companion:profile-a:1",
-        expected_binding_generation: 1,
-        nonce: "activation-code-nonce",
-        decision_version: 3,
-        expires_at: "2026-07-26T00:00:00Z",
-      },
-    }), "activation", true);
+    const executableActivation = companionActionCommand(
+      baseEvent({
+        decision: {
+          kind: "activation",
+          candidate_id: "candidate-code",
+          pack_id: "pack-code",
+          candidate_version: "1.0.0",
+          candidate_package_hash: "package-code-hash",
+          candidate_code_digest: "code-digest-exact",
+          evaluation_report_hash: "report-code-hash",
+          risk_assessment_hash: "risk-code-hash",
+          scope: "user",
+          scope_key: "profile-a",
+          owner_key: "companion:profile-a:1",
+          expected_binding_generation: 1,
+          nonce: "activation-code-nonce",
+          decision_version: 3,
+          expires_at: "2026-07-26T00:00:00Z",
+        },
+      }),
+      "activation",
+      true,
+    );
     expect(executableActivation?.body.activation_risk_ack).toBe(
       "persistent_local_code_no_os_sandbox",
     );

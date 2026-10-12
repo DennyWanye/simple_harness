@@ -38,11 +38,15 @@ describe("ringPercent", () => {
     expect(ringPercent(null)).toBe(0);
     expect(ringPercent(undefined)).toBe(0);
     expect(ringPercent(snap({ effective_ceiling: 0 }))).toBe(0);
-    expect(ringPercent(snap({
-      source: "binding_only",
-      has_measurement: false,
-      prompt_tokens: 99,
-    }))).toBe(0);
+    expect(
+      ringPercent(
+        snap({
+          source: "binding_only",
+          has_measurement: false,
+          prompt_tokens: 99,
+        }),
+      ),
+    ).toBe(0);
   });
 
   it("computes percentage of effective_ceiling", () => {
@@ -82,15 +86,21 @@ describe("ringColor", () => {
 
 describe("ContextRing authority states", () => {
   it("renders unavailable as unavailable rather than a numeric zero", () => {
-    render(React.createElement(ContextRing, { showLabel: true, snapshot: snap({
-      source: "binding_only",
-      availability: "unavailable",
-      has_measurement: false,
-      prompt_tokens: 0,
-      effective_ceiling: 0,
-    }) }));
-    expect(screen.getByTestId("context-ring").getAttribute("aria-label"))
-      .toBe("Context usage unavailable");
+    render(
+      React.createElement(ContextRing, {
+        showLabel: true,
+        snapshot: snap({
+          source: "binding_only",
+          availability: "unavailable",
+          has_measurement: false,
+          prompt_tokens: 0,
+          effective_ceiling: 0,
+        }),
+      }),
+    );
+    expect(screen.getByTestId("context-ring").getAttribute("aria-label")).toBe(
+      "Context usage unavailable",
+    );
     expect(screen.getByText("—")).toBeTruthy();
     expect(screen.queryByText("0%")).toBeNull();
   });

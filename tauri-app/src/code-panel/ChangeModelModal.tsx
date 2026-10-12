@@ -64,20 +64,12 @@ export function ChangeModelModal({
   const catalog = useSessionModelsStore((s) => s.models);
   const default_model = useSessionModelsStore((s) => s.default_model);
   const binding = useSessionsStore((s) => s.sessions[session_id]);
-  const model_opts = buildModelOptionsFromCatalog(
-    current_model,
-    catalog,
-    default_model,
-  );
+  const model_opts = buildModelOptionsFromCatalog(current_model, catalog, default_model);
   const [model, set_model] = useState<string>(current_model ?? "");
   const [model_filter, set_model_filter] = useState("");
   const filtered_model_opts = filterModelOptions(model_opts, model_filter);
-  const selected_model = model_opts.some((o) => o.value === model)
-    ? model
-    : (current_model ?? "");
-  const selected_model_option = model_opts.find(
-    (option) => option.value === selected_model,
-  );
+  const selected_model = model_opts.some((o) => o.value === model) ? model : (current_model ?? "");
+  const selected_model_option = model_opts.find((option) => option.value === selected_model);
   const selected_model_is_visible = filtered_model_opts.some(
     (option) => option.value === selected_model,
   );
@@ -85,15 +77,9 @@ export function ChangeModelModal({
   // a single-select "推理模式" instead of two independent toggles.
   // "默认" = neither (provider default).
   const [reason_mode, set_reason_mode] = useState<ReasonMode>(
-    current_params?.thinking
-      ? "thinking"
-      : current_params?.fast
-        ? "fast"
-        : "default",
+    current_params?.thinking ? "thinking" : current_params?.fast ? "fast" : "default",
   );
-  const [effort, set_effort] = useState<EffortValue>(
-    current_params?.effort ?? "medium",
-  );
+  const [effort, set_effort] = useState<EffortValue>(current_params?.effort ?? "medium");
   // 用于查 caps / 上下文档位的「生效模型」：用户显式选了就用它,否则会话
   // 固定的 preferred_model,再否则 provider 默认。2026-06-26 修复:此前只取
   // `model || current_model`,「跟随 provider 默认」时两者皆空 → caps/档位
@@ -180,10 +166,8 @@ export function ChangeModelModal({
     controlWS.send(
       buildSetModelMessage(session_id, model, params, {
         expected_binding_epoch: binding?.binding_epoch ?? 0,
-        expected_provider_incarnation_id:
-          binding?.provider_incarnation_id ?? null,
-        expected_provider_config_revision:
-          binding?.provider_config_revision ?? null,
+        expected_provider_incarnation_id: binding?.provider_incarnation_id ?? null,
+        expected_provider_config_revision: binding?.provider_config_revision ?? null,
       }),
     );
     onClose();
@@ -194,22 +178,15 @@ export function ChangeModelModal({
     controlWS.send(
       buildSetModelMessage(session_id, null, undefined, {
         expected_binding_epoch: binding?.binding_epoch ?? 0,
-        expected_provider_incarnation_id:
-          binding?.provider_incarnation_id ?? null,
-        expected_provider_config_revision:
-          binding?.provider_config_revision ?? null,
+        expected_provider_incarnation_id: binding?.provider_incarnation_id ?? null,
+        expected_provider_config_revision: binding?.provider_config_revision ?? null,
       }),
     );
     onClose();
   };
 
   return (
-    <div
-      style={overlayStyle}
-      onClick={onClose}
-      role="dialog"
-      aria-label="改 model"
-    >
+    <div style={overlayStyle} onClick={onClose} role="dialog" aria-label="改 model">
       <div style={dialogStyle} onClick={(e) => e.stopPropagation()}>
         <header style={headerStyle}>模型与参数</header>
 
@@ -255,9 +232,7 @@ export function ChangeModelModal({
           </select>
           {/* Always show the effective model name; binding mechanics stay internal. */}
           {(model.trim() || default_model.trim()) && (
-            <span style={hintStyle}>
-              当前生效：{model.trim() || default_model.trim()}
-            </span>
+            <span style={hintStyle}>当前生效：{model.trim() || default_model.trim()}</span>
           )}
 
           {/* Reasoning mode — single-select (Thinking ⟺ Fast are
@@ -273,9 +248,7 @@ export function ChangeModelModal({
                   ...(caps.thinking
                     ? [{ value: "thinking" as ReasonMode, label: "Thinking" }]
                     : []),
-                  ...(caps.fast
-                    ? [{ value: "fast" as ReasonMode, label: "Fast" }]
-                    : []),
+                  ...(caps.fast ? [{ value: "fast" as ReasonMode, label: "Fast" }] : []),
                 ]}
                 value={reason_mode}
                 onChange={set_reason_mode}
@@ -336,9 +309,7 @@ export function ChangeModelModal({
           )}
 
           {!caps.thinking && !caps.fast && !caps.context && !caps.effort && (
-            <span style={hintStyle}>
-              该模型无可调参数（仅切换模型本身）
-            </span>
+            <span style={hintStyle}>该模型无可调参数（仅切换模型本身）</span>
           )}
         </div>
 
@@ -346,11 +317,7 @@ export function ChangeModelModal({
           <button type="button" onClick={onClose} style={btnSecondary}>
             取消
           </button>
-          <button
-            type="button"
-            onClick={clear_and_submit}
-            style={btnSecondary}
-          >
+          <button type="button" onClick={clear_and_submit} style={btnSecondary}>
             清空（回全局链）
           </button>
           <button type="button" onClick={submit} style={btnPrimary}>
@@ -468,7 +435,6 @@ const filterInputStyle: React.CSSProperties = {
   ...selectStyle,
   cursor: "text",
 };
-
 
 const segmentedWrapStyle: React.CSSProperties = {
   display: "flex",

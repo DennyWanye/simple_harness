@@ -31,9 +31,7 @@ export interface OnboardingConfig {
 
 export interface OnboardingWizardProps {
   /** Test (and persist) the LLM connection. Resolves ok=false on failure. */
-  onTestConnection: (
-    cfg: OnboardingConfig,
-  ) => Promise<{ ok: boolean; error?: string }>;
+  onTestConnection: (cfg: OnboardingConfig) => Promise<{ ok: boolean; error?: string }>;
   /** Called when the user finishes the wizard. Host writes the marker. */
   onComplete: () => void;
   /** Called when the user skips at any step. Host still writes the marker. */
@@ -140,8 +138,8 @@ function OnboardingWizardImpl({
           <div data-testid="onboarding-step-welcome">
             <h2 style={titleStyle}>欢迎使用 Simple Harness</h2>
             <p style={bodyStyle}>
-              Simple Harness 是一个住在你桌面上的 AI 工作台。它能陪你聊天、记住你
-              说过的事、帮你做 PPT、查资料，还能进入"代码模式"帮你写程序。
+              Simple Harness 是一个住在你桌面上的 AI 工作台。它能陪你聊天、记住你 说过的事、帮你做
+              PPT、查资料，还能进入"代码模式"帮你写程序。
             </p>
             <p style={bodyStyle}>很快就能开始 —— 整个过程不到 1 分钟。</p>
           </div>
@@ -234,11 +232,7 @@ function OnboardingWizardImpl({
 
         {/* Footer buttons */}
         <div style={footerStyle}>
-          <button
-            data-testid="onboarding-skip-btn"
-            style={skipBtnStyle}
-            onClick={onSkip}
-          >
+          <button data-testid="onboarding-skip-btn" style={skipBtnStyle} onClick={onSkip}>
             跳过
           </button>
           <div style={{ flex: 1 }} />
@@ -255,12 +249,14 @@ function OnboardingWizardImpl({
             <button
               data-testid="onboarding-next-btn"
               // 2026-09-25：不可用时要看得出来，并说明原因（之前是亮蓝色但点了没反应）
-              style={canAdvance ? primaryBtnStyle : { ...primaryBtnStyle, opacity: 0.45, cursor: "not-allowed", boxShadow: "none" }}
+              style={
+                canAdvance
+                  ? primaryBtnStyle
+                  : { ...primaryBtnStyle, opacity: 0.45, cursor: "not-allowed", boxShadow: "none" }
+              }
               title={canAdvance ? undefined : "先点「测试连接」，成功后才能继续"}
               disabled={!canAdvance}
-              onClick={() =>
-                setIndex((i) => Math.min(steps.length - 1, i + 1))
-              }
+              onClick={() => setIndex((i) => Math.min(steps.length - 1, i + 1))}
             >
               下一步
             </button>
@@ -303,10 +299,8 @@ const cardStyle: React.CSSProperties = {
   borderRadius: 20,
   padding: "28px 32px 22px",
   border: `1px solid ${dark.borderStrong}`,
-  boxShadow:
-    "0 32px 70px rgba(8,11,20,0.45), 0 4px 14px rgba(8,11,20,0.18)",
-  fontFamily:
-    '"Inter","PingFang SC","Microsoft YaHei UI",sans-serif',
+  boxShadow: "0 32px 70px rgba(8,11,20,0.45), 0 4px 14px rgba(8,11,20,0.18)",
+  fontFamily: '"Inter","PingFang SC","Microsoft YaHei UI",sans-serif',
   color: dark.text,
   animation: "bp-pop-in 280ms cubic-bezier(0.16,1,0.3,1)",
 };

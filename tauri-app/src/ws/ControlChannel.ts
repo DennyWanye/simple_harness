@@ -16,13 +16,7 @@ export type ConnectionState = "disconnected" | "connecting" | "connected";
  * etc.). PRD §6.3 + GOAL.md.
  */
 export const V2_CLIENT_VERSION = "v2.0";
-export const V2_CLIENT_SUPPORTS = [
-  "viseme",
-  "emotion",
-  "milestone",
-  "dnd",
-  "occlusion",
-] as const;
+export const V2_CLIENT_SUPPORTS = ["viseme", "emotion", "milestone", "dnd", "occlusion"] as const;
 export type V2Feature = (typeof V2_CLIENT_SUPPORTS)[number];
 
 export class ControlChannel {
@@ -106,23 +100,44 @@ export class ControlChannel {
         // PRD §6.3: intercept server_hello to populate the v2 feature set.
         // This is layered ON TOP of normal listener fan-out so debug UIs that
         // listen for server_hello (S2 diagnostics) still see the message.
-        const anyMsg = msg as unknown as { type?: string; payload?: { features?: unknown; version?: unknown } };
+        const anyMsg = msg as unknown as {
+          type?: string;
+          payload?: { features?: unknown; version?: unknown };
+        };
         if (typeof anyMsg.type === "string" && anyMsg.type) {
-          if (["companion_identity_unready", "companion_control_rechallenge", "companion_profile_unbound"].includes(anyMsg.type) ||
-              (anyMsg.type === "companion_identity_status" && (msg as unknown as { payload?: { ready?: boolean } }).payload?.ready === false)) {
+          if (
+            [
+              "companion_identity_unready",
+              "companion_control_rechallenge",
+              "companion_profile_unbound",
+            ].includes(anyMsg.type) ||
+            (anyMsg.type === "companion_identity_status" &&
+              (msg as unknown as { payload?: { ready?: boolean } }).payload?.ready === false)
+          ) {
             this.latestMessages.delete("companion_profile_bound");
           }
           if (anyMsg.type === "companion_identity_status") {
-            const current = msg as unknown as { payload?: { profile_id?: unknown; profile_generation?: unknown } };
-            const bound = this.latestMessages.get("companion_profile_bound") as unknown as { payload?: { profile_id?: unknown; profile_generation?: unknown } } | undefined;
-            if (current.payload?.profile_id && bound && (current.payload.profile_id !== bound.payload?.profile_id || current.payload.profile_generation !== bound.payload?.profile_generation)) {
+            const current = msg as unknown as {
+              payload?: { profile_id?: unknown; profile_generation?: unknown };
+            };
+            const bound = this.latestMessages.get("companion_profile_bound") as unknown as
+              | { payload?: { profile_id?: unknown; profile_generation?: unknown } }
+              | undefined;
+            if (
+              current.payload?.profile_id &&
+              bound &&
+              (current.payload.profile_id !== bound.payload?.profile_id ||
+                current.payload.profile_generation !== bound.payload?.profile_generation)
+            ) {
               this.latestMessages.delete("companion_profile_bound");
             }
           }
           this.latestMessages.set(anyMsg.type, msg);
         }
         if (anyMsg.type === "server_hello") {
-          const features = Array.isArray(anyMsg.payload?.features) ? anyMsg.payload!.features as unknown[] : [];
+          const features = Array.isArray(anyMsg.payload?.features)
+            ? (anyMsg.payload!.features as unknown[])
+            : [];
           this._serverFeatures.clear();
           for (const f of features) {
             if (typeof f === "string" && (V2_CLIENT_SUPPORTS as readonly string[]).includes(f)) {
@@ -166,7 +181,8 @@ export class ControlChannel {
   }
 
   send(msg: ControlMessage | import("../primary/requests").PrimaryWireRequest): boolean {
-    const identified = msg.type === "human_memory_request" ? msg : withClientTurnIdentity(msg as ControlMessage);
+    const identified =
+      msg.type === "human_memory_request" ? msg : withClientTurnIdentity(msg as ControlMessage);
     const serialized = JSON.stringify(identified);
     if (this.ws?.readyState === WebSocket.OPEN) {
       try {

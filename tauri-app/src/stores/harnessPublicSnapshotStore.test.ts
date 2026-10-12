@@ -52,13 +52,17 @@ describe("HarnessPublicSnapshotStore", () => {
     harnessPublicSnapshotStore.publish(snapshot("session-a", "root", 5, "cancelled"));
     harnessPublicSnapshotStore.publish(snapshot("session-a", "root", 4, "running"));
     harnessPublicSnapshotStore.publish(snapshot("session-a", "root", 6, "running"));
-    expect(harnessPublicSnapshotStore.get("session-a", "root")?.aggregate_outcome.status).toBe("cancelled");
+    expect(harnessPublicSnapshotStore.get("session-a", "root")?.aggregate_outcome.status).toBe(
+      "cancelled",
+    );
   });
 
   it("rejects conflicting terminal outcomes for the same root", () => {
     harnessPublicSnapshotStore.publish(snapshot("session-a", "root", 5, "completed"));
     harnessPublicSnapshotStore.publish(snapshot("session-a", "root", 6, "failed"));
-    expect(harnessPublicSnapshotStore.get("session-a", "root")?.aggregate_outcome.status).toBe("completed");
+    expect(harnessPublicSnapshotStore.get("session-a", "root")?.aggregate_outcome.status).toBe(
+      "completed",
+    );
   });
 
   it("accepts a newer terminal snapshot even when SQLite data_version restarts lower", () => {
@@ -72,7 +76,9 @@ describe("HarnessPublicSnapshotStore", () => {
     harnessPublicSnapshotStore.publish(running);
     harnessPublicSnapshotStore.publish(completed);
 
-    expect(harnessPublicSnapshotStore.get("session-a", "root")?.aggregate_outcome.status).toBe("completed");
+    expect(harnessPublicSnapshotStore.get("session-a", "root")?.aggregate_outcome.status).toBe(
+      "completed",
+    );
   });
 
   it("does not notify either surface twice for the same projection identity", () => {
@@ -99,57 +105,70 @@ describe("HarnessPublicSnapshotStore", () => {
   it("folds repeated workflow-step updates into one latest public row", () => {
     const normalized = normalizePublicRunSnapshot({
       ...snapshot("session-a", "root", 1),
-      semantic_phases: [{
-        phase_id: "plan",
-        taxonomy: "plan",
-        title: "规划",
-        status: "running",
-        workflow_steps: [
-          { workflow_step_id: "llm_proposal", label: "模型规划", status: "running", step_index: 1 },
-          { workflow_step_id: "llm_proposal", status: "completed", step_index: 1 },
-        ],
-      }],
+      semantic_phases: [
+        {
+          phase_id: "plan",
+          taxonomy: "plan",
+          title: "规划",
+          status: "running",
+          workflow_steps: [
+            {
+              workflow_step_id: "llm_proposal",
+              label: "模型规划",
+              status: "running",
+              step_index: 1,
+            },
+            { workflow_step_id: "llm_proposal", status: "completed", step_index: 1 },
+          ],
+        },
+      ],
     });
 
-    expect(normalized?.semantic_phases[0].workflow_steps).toEqual([{
-      workflow_step_id: "llm_proposal",
-      label: "模型规划",
-      status: "completed",
-      step_index: 1,
-      step_total: null,
-    }]);
+    expect(normalized?.semantic_phases[0].workflow_steps).toEqual([
+      {
+        workflow_step_id: "llm_proposal",
+        label: "模型规划",
+        status: "completed",
+        step_index: 1,
+        step_total: null,
+      },
+    ]);
   });
 
   it("unwraps only the allowlisted public payload from details envelopes", () => {
     harnessPublicSnapshotStore.publish({
       ...snapshot("session-a", "root", 1),
-      tool_public_views: [{
-        tool_ref: "tool-stable",
-        stable_id: "tool-stable",
-        detail_ref: "tool-stable",
-        public_name: "工具",
-        action_label: "执行",
-        status: "running",
-        result_available: true,
-        details_available: true,
-      }],
+      tool_public_views: [
+        {
+          tool_ref: "tool-stable",
+          stable_id: "tool-stable",
+          detail_ref: "tool-stable",
+          public_name: "工具",
+          action_label: "执行",
+          status: "running",
+          result_available: true,
+          details_available: true,
+        },
+      ],
     });
     const current = harnessPublicSnapshotStore.get("session-a", "root")!;
-    harnessPublicSnapshotStore.mergeToolDetails("session-a", "root", current.projection_id, [{
-      source: "workflow",
-      stable_id: "tool-stable",
-      root_run_id: "root",
-      kind: "tool",
-      created_at: 2,
-      raw_payload: "MUST_NOT_CROSS",
-      public_payload: {
-        tool_name: "文件工具",
-        activity_kind: "写入文件",
-        status: "completed",
-        safe_input: { target: "project.godot" },
-        bounded_result: { summary: "已完成" },
+    harnessPublicSnapshotStore.mergeToolDetails("session-a", "root", current.projection_id, [
+      {
+        source: "workflow",
+        stable_id: "tool-stable",
+        root_run_id: "root",
+        kind: "tool",
+        created_at: 2,
+        raw_payload: "MUST_NOT_CROSS",
+        public_payload: {
+          tool_name: "文件工具",
+          activity_kind: "写入文件",
+          status: "completed",
+          safe_input: { target: "project.godot" },
+          bounded_result: { summary: "已完成" },
+        },
       },
-    }]);
+    ]);
     const updated = harnessPublicSnapshotStore.get("session-a", "root")?.tool_public_views[0];
     expect(updated).toMatchObject({
       public_name: "文件工具",

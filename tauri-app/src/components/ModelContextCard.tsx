@@ -151,9 +151,7 @@ export function ModelContextCard({ getChannel }: Props) {
           return;
         }
         const resolved = p.resolved as ModelContextResolved;
-        const models = Object.keys(p.builtin || {}).filter(
-          (k) => k !== "_default",
-        );
+        const models = Object.keys(p.builtin || {}).filter((k) => k !== "_default");
         setState({ kind: "ready", model: p.model, resolved, models });
         setWindowEdit(String(resolved.context_window));
         setCompactEdit(String(resolved.compact_at_pct));
@@ -171,15 +169,17 @@ export function ModelContextCard({ getChannel }: Props) {
         setCompactionModels(p.available_models || []);
       } else if (msg.type === "context_compaction_set_ack") {
         const p = (msg as ContextCompactionSetAck).payload;
-        setCompactionSaveMsg(
-          p.ok ? "压缩模型已保存" : `保存失败：${p.reason || "未知错误"}`,
-        );
+        setCompactionSaveMsg(p.ok ? "压缩模型已保存" : `保存失败：${p.reason || "未知错误"}`);
       } else if ((msg as { type?: string }).type === "models_list_response") {
         // 中转站 live 目录 → 下拉全量(旁路订阅,不影响主分发)
-        const p = (msg as { payload?: {
-          models?: Array<{ id?: string }>;
-          default_model?: string;
-        } }).payload;
+        const p = (
+          msg as {
+            payload?: {
+              models?: Array<{ id?: string }>;
+              default_model?: string;
+            };
+          }
+        ).payload;
         const ids = (p?.models ?? [])
           .map((m) => (m && typeof m.id === "string" ? m.id : ""))
           .filter(Boolean);
@@ -187,7 +187,8 @@ export function ModelContextCard({ getChannel }: Props) {
         if (!userSelectedModel.current) {
           const active = p?.default_model?.trim() || ids[0] || "";
           if (active && active !== selectedModel.current) requestGet(active);
-          else if (!active) setState({ kind: "error", reason: "未配置默认模型，请先配置 Provider。" });
+          else if (!active)
+            setState({ kind: "error", reason: "未配置默认模型，请先配置 Provider。" });
         }
       }
     });
@@ -271,9 +272,7 @@ export function ModelContextCard({ getChannel }: Props) {
           {(() => {
             // 下拉 = 中转站目录全量 ∪ builtin 画像模型 ∪ 当前选中
             const builtin = state.kind === "ready" ? state.models : [];
-            const merged = Array.from(
-              new Set([...catalogIds, ...builtin, model]),
-            ).filter(Boolean);
+            const merged = Array.from(new Set([...catalogIds, ...builtin, model])).filter(Boolean);
             return merged.length > 0 ? (
               merged.map((m) => <option key={m}>{m}</option>)
             ) : (
@@ -288,16 +287,12 @@ export function ModelContextCard({ getChannel }: Props) {
       )}
 
       {state.kind === "error" && (
-        <div style={{ fontSize: "11px", color: dark.warning }}>
-          后端提示：{state.reason}
-        </div>
+        <div style={{ fontSize: "11px", color: dark.warning }}>后端提示：{state.reason}</div>
       )}
 
       {state.kind === "ready" && (
         <>
-          <div
-            style={{ fontSize: "11px", color: dark.text, lineHeight: 1.6 }}
-          >
+          <div style={{ fontSize: "11px", color: dark.text, lineHeight: 1.6 }}>
             <div>
               上下文总长度：
               <strong> {fmtTokens(state.resolved.context_window)}</strong>
@@ -305,11 +300,7 @@ export function ModelContextCard({ getChannel }: Props) {
             <div>
               compaction 触发：{(state.resolved.compact_at_pct * 100).toFixed(0)}
               %（≈
-              {fmtTokens(
-                Math.round(
-                  state.resolved.context_window * state.resolved.compact_at_pct,
-                ),
-              )}
+              {fmtTokens(Math.round(state.resolved.context_window * state.resolved.compact_at_pct))}
               ）
             </div>
             <div>
@@ -354,7 +345,9 @@ export function ModelContextCard({ getChannel }: Props) {
             >
               <option value="follow_session">跟随当前会话</option>
               {compactionModels.map((candidate) => (
-                <option key={candidate} value={candidate}>{candidate}</option>
+                <option key={candidate} value={candidate}>
+                  {candidate}
+                </option>
               ))}
             </select>
           </div>
@@ -397,15 +390,9 @@ export function ModelContextCard({ getChannel }: Props) {
             >
               保存压缩模型
             </button>
-            {saveMsg && (
-              <span style={{ fontSize: "10px", color: dark.textFaint }}>
-                {saveMsg}
-              </span>
-            )}
+            {saveMsg && <span style={{ fontSize: "10px", color: dark.textFaint }}>{saveMsg}</span>}
             {compactionSaveMsg && (
-              <span style={{ fontSize: "10px", color: dark.textFaint }}>
-                {compactionSaveMsg}
-              </span>
+              <span style={{ fontSize: "10px", color: dark.textFaint }}>{compactionSaveMsg}</span>
             )}
           </div>
           <div
@@ -438,17 +425,8 @@ function fmtTokens(n: number): string {
 
 function SourceBadge({ source }: { source: string }) {
   const color =
-    source === "project"
-      ? dark.success
-      : source === "global"
-        ? dark.warning
-        : dark.textFaint;
-  const label =
-    source === "project"
-      ? "项目覆盖"
-      : source === "global"
-        ? "全局覆盖"
-        : "内置默认";
+    source === "project" ? dark.success : source === "global" ? dark.warning : dark.textFaint;
+  const label = source === "project" ? "项目覆盖" : source === "global" ? "全局覆盖" : "内置默认";
   return (
     <span
       style={{

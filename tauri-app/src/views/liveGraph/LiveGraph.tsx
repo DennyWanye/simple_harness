@@ -13,15 +13,54 @@
  * - 读不到时保留旧画面并标明"可能已过期"；未启用/启用中的任务说清楚原因，不伪造图。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Background, Controls, Handle, MarkerType, Position, ReactFlow, type Edge, type Node, type NodeProps } from "@xyflow/react";
-import "@xyflow/react/dist/style.css";
-import { asList, asRecord, asText, newRequestKey, useMissionsStore, type MissionsChannel } from "../../stores/missionsStore";
 import {
-  DECISION_STATUS, DECISION_TYPE, STALL_SECONDS, TONE_COLOR, cleanText, execDisplay, mergePages, parseExecutionPage,
-  phaseDisplay, readinessLabel, stepDisplay, stepProgress, stepTitle,
-  type ExecNode, type ExecutionPage, type ExecutionView, type StructureNode,
+  Background,
+  Controls,
+  Handle,
+  MarkerType,
+  Position,
+  ReactFlow,
+  type Edge,
+  type Node,
+  type NodeProps,
+} from "@xyflow/react";
+import "@xyflow/react/dist/style.css";
+import {
+  asList,
+  asRecord,
+  asText,
+  newRequestKey,
+  useMissionsStore,
+  type MissionsChannel,
+} from "../../stores/missionsStore";
+import {
+  DECISION_STATUS,
+  DECISION_TYPE,
+  STALL_SECONDS,
+  TONE_COLOR,
+  cleanText,
+  execDisplay,
+  mergePages,
+  parseExecutionPage,
+  phaseDisplay,
+  readinessLabel,
+  stepDisplay,
+  stepProgress,
+  stepTitle,
+  type ExecNode,
+  type ExecutionPage,
+  type ExecutionView,
+  type StructureNode,
 } from "./model";
-import { AUTO_COLLAPSE_OVER, buildElkGraph, flatten, homesOf, structureKey, type DrawEdge, type Placed } from "./layoutModel";
+import {
+  AUTO_COLLAPSE_OVER,
+  buildElkGraph,
+  flatten,
+  homesOf,
+  structureKey,
+  type DrawEdge,
+  type Placed,
+} from "./layoutModel";
 import { layoutGraph } from "./layout";
 import "./LiveGraph.css";
 
@@ -43,7 +82,13 @@ const SNAPSHOT_TYPE = "taskgraph.execution_snapshot";
 const DETAIL_TYPE = "taskgraph.execution_detail";
 const WHY_TYPE = "taskgraph.why_not_ready";
 const ICON: Record<ExecNode["kind"], string> = {
-  attempt: "▶", check: "✔", review: "⚖", planning: "🧭", repair_request: "🔧", plan_revision: "📋", operation: "📤",
+  attempt: "▶",
+  check: "✔",
+  review: "⚖",
+  planning: "🧭",
+  repair_request: "🔧",
+  plan_revision: "📋",
+  operation: "📤",
 };
 
 function short(value: string, limit = TITLE_LIMIT): string {
@@ -52,12 +97,22 @@ function short(value: string, limit = TITLE_LIMIT): string {
 function clock(ms: number | null): string {
   if (!ms) return "";
   const d = new Date(ms);
-  return [d.getHours(), d.getMinutes(), d.getSeconds()].map((v) => String(v).padStart(2, "0")).join(":");
+  return [d.getHours(), d.getMinutes(), d.getSeconds()]
+    .map((v) => String(v).padStart(2, "0"))
+    .join(":");
 }
 
 type StepData = {
-  step: StructureNode; title: string; progress: string; attempts: number; collapsed: boolean; childCount: number;
-  group: boolean; foldable: boolean; onToggle: (id: string) => void; onPick: (id: string) => void;
+  step: StructureNode;
+  title: string;
+  progress: string;
+  attempts: number;
+  collapsed: boolean;
+  childCount: number;
+  group: boolean;
+  foldable: boolean;
+  onToggle: (id: string) => void;
+  onPick: (id: string) => void;
 };
 type ExecData = { node: ExecNode; onPick: (id: string) => void; picked: boolean };
 
@@ -68,25 +123,60 @@ function StepCard({ data }: NodeProps<Node<StepData>>) {
   const reason = readinessLabel(step.readiness);
   const waiting = display.tone === "idle" || display.tone === "ready" || display.tone === "person";
   return (
-    <div className={"lg-node" + (group ? " lg-group" : "") + (display.tone === "running" ? " lg-running" : "")
-      + (display.tone === "cancelled" ? " lg-cancelled" : "")} style={{ borderColor: color }}
-      data-testid={"lg-node-" + step.occurrence_id}>
+    <div
+      className={
+        "lg-node" +
+        (group ? " lg-group" : "") +
+        (display.tone === "running" ? " lg-running" : "") +
+        (display.tone === "cancelled" ? " lg-cancelled" : "")
+      }
+      style={{ borderColor: color }}
+      data-testid={"lg-node-" + step.occurrence_id}
+    >
       <Handle type="target" position={Position.Top} isConnectable={false} />
       <div className="lg-head">
-        {foldable && <button type="button" className="lg-fold" aria-expanded={!collapsed}
-          aria-label={(collapsed ? "展开" : "折叠") + "：" + title}
-          onClick={(event) => { event.stopPropagation(); data.onToggle(step.occurrence_id); }}>{collapsed ? "▸" : "▾"}</button>}
-        <button type="button" className="lg-title" title={title} onClick={() => data.onPick(step.occurrence_id)}>{short(title)}</button>
+        {foldable && (
+          <button
+            type="button"
+            className="lg-fold"
+            aria-expanded={!collapsed}
+            aria-label={(collapsed ? "展开" : "折叠") + "：" + title}
+            onClick={(event) => {
+              event.stopPropagation();
+              data.onToggle(step.occurrence_id);
+            }}
+          >
+            {collapsed ? "▸" : "▾"}
+          </button>
+        )}
+        <button
+          type="button"
+          className="lg-title"
+          title={title}
+          onClick={() => data.onPick(step.occurrence_id)}
+        >
+          {short(title)}
+        </button>
       </div>
       <div className="lg-meta">
         <span className="lg-dot" style={{ background: color }} />
         <span>{display.label}</span>
-        {waiting && reason && step.readiness !== "READY_CANDIDATE" && <span className="lg-muted">· {reason}</span>}
+        {waiting && reason && step.readiness !== "READY_CANDIDATE" && (
+          <span className="lg-muted">· {reason}</span>
+        )}
         {attempts > 1 && <span>· 执行 {attempts} 次</span>}
         {collapsed && childCount > 0 && <span>· 已折叠 {childCount} 项</span>}
       </div>
-      {progress && !group && <div className="lg-line" title={progress}>{progress}</div>}
-      {progress && group && <div className="lg-line lg-muted" title={progress}>{short(progress, 60)}</div>}
+      {progress && !group && (
+        <div className="lg-line" title={progress}>
+          {progress}
+        </div>
+      )}
+      {progress && group && (
+        <div className="lg-line lg-muted" title={progress}>
+          {short(progress, 60)}
+        </div>
+      )}
       <Handle type="source" position={Position.Bottom} isConnectable={false} />
     </div>
   );
@@ -98,21 +188,43 @@ function ExecCard({ data }: NodeProps<Node<ExecData>>) {
   const color = TONE_COLOR[status.tone];
   const line = node.summary ? cleanText(node.summary.text) : "";
   return (
-    <div className={"lg-exec" + (status.tone === "running" ? " lg-running" : "") + (picked ? " lg-picked" : "")}
-      style={{ borderColor: color }} data-testid={"lg-exec-" + node.node_id}>
+    <div
+      className={
+        "lg-exec" + (status.tone === "running" ? " lg-running" : "") + (picked ? " lg-picked" : "")
+      }
+      style={{ borderColor: color }}
+      data-testid={"lg-exec-" + node.node_id}
+    >
       <Handle type="target" position={Position.Top} isConnectable={false} />
-      <button type="button" className="lg-title" title={title + (line ? "：" + line : "")} onClick={() => data.onPick(node.node_id)}>
-        <span aria-hidden="true">{ICON[node.kind]} </span>{title}
-        <span className="lg-exec-status" style={{ color }}>{" · " + status.label}</span>
+      <button
+        type="button"
+        className="lg-title"
+        title={title + (line ? "：" + line : "")}
+        onClick={() => data.onPick(node.node_id)}
+      >
+        <span aria-hidden="true">{ICON[node.kind]} </span>
+        {title}
+        <span className="lg-exec-status" style={{ color }}>
+          {" · " + status.label}
+        </span>
       </button>
-      {line && <div className="lg-line" title={line}>{line}</div>}
+      {line && (
+        <div className="lg-line" title={line}>
+          {line}
+        </div>
+      )}
       <Handle type="source" position={Position.Bottom} isConnectable={false} />
     </div>
   );
 }
 
 const nodeTypes = { step: StepCard, exec: ExecCard };
-const EDGE_COLOR: Record<DrawEdge["kind"], string> = { order: "#8b5cf6", data: "#0284c7", process: "#64748b", rework: "#ef4444" };
+const EDGE_COLOR: Record<DrawEdge["kind"], string> = {
+  order: "#8b5cf6",
+  data: "#0284c7",
+  process: "#64748b",
+  rework: "#ef4444",
+};
 
 type Pending = { id: string; pages: ExecutionPage[]; restarted: boolean };
 
@@ -129,7 +241,9 @@ export function LiveGraph({ missionId, channel, detail, onLoadMoreEvents, onStal
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [showData, setShowData] = useState(false);
   const [showProcess, setShowProcess] = useState(true);
-  const [placed, setPlaced] = useState<{ key: string; nodes: Placed[]; edges: DrawEdge[] } | null>(null);
+  const [placed, setPlaced] = useState<{ key: string; nodes: Placed[]; edges: DrawEdge[] } | null>(
+    null,
+  );
   const [slow, setSlow] = useState(false);
   const [slowRead, setSlowRead] = useState(false);
   const [picked, setPicked] = useState<string | null>(null);
@@ -143,29 +257,42 @@ export function LiveGraph({ missionId, channel, detail, onLoadMoreEvents, onStal
   const autoCollapsed = useRef<number | null>(null);
   const [collapseReady, setCollapseReady] = useState<number | null>(null);
   const placedKey = useRef<string | null>(null);
-  useEffect(() => { shown.current = view; }, [view]);
+  useEffect(() => {
+    shown.current = view;
+  }, [view]);
 
   const events = useMissionsStore((state) => state.events[missionId]);
 
-  const sendPage = useCallback((cursor: string | null, pending: Pending | null) => {
-    if (!channel) return;
-    const id = newRequestKey();
-    request.current = { id, pages: pending?.pages ?? [], restarted: pending?.restarted ?? false };
-    setLoading(true);
-    const payload: Record<string, unknown> = { mission_id: missionId };
-    if (cursor) payload.cursor = cursor;
-    if (!channel.send({ type: SNAPSHOT_TYPE, request_id: id, payload })) {
-      request.current = null; setLoading(false); setError({ code: "offline", text: "连接不可用，请求未发送" }); return;
-    }
-    if (timeout.current) clearTimeout(timeout.current);
-    timeout.current = setTimeout(() => {
-      if (request.current?.id !== id) return;
-      request.current = null; setLoading(false); setError({ code: "timeout", text: "读取超时，已保留上次画面" });
-    }, TIMEOUT_MS);
-  }, [channel, missionId]);
+  const sendPage = useCallback(
+    (cursor: string | null, pending: Pending | null) => {
+      if (!channel) return;
+      const id = newRequestKey();
+      request.current = { id, pages: pending?.pages ?? [], restarted: pending?.restarted ?? false };
+      setLoading(true);
+      const payload: Record<string, unknown> = { mission_id: missionId };
+      if (cursor) payload.cursor = cursor;
+      if (!channel.send({ type: SNAPSHOT_TYPE, request_id: id, payload })) {
+        request.current = null;
+        setLoading(false);
+        setError({ code: "offline", text: "连接不可用，请求未发送" });
+        return;
+      }
+      if (timeout.current) clearTimeout(timeout.current);
+      timeout.current = setTimeout(() => {
+        if (request.current?.id !== id) return;
+        request.current = null;
+        setLoading(false);
+        setError({ code: "timeout", text: "读取超时，已保留上次画面" });
+      }, TIMEOUT_MS);
+    },
+    [channel, missionId],
+  );
 
   const refresh = useCallback(() => {
-    if (request.current) { again.current = true; return; }
+    if (request.current) {
+      again.current = true;
+      return;
+    }
     sendPage(null, null);
   }, [sendPage]);
 
@@ -173,20 +300,39 @@ export function LiveGraph({ missionId, channel, detail, onLoadMoreEvents, onStal
     refresh();
     const tick = setInterval(() => setNow(Date.now() / 1000), 30000);
     const reset = () => {
-      request.current = null; again.current = false; placedKey.current = null; autoCollapsed.current = null;
+      request.current = null;
+      again.current = false;
+      placedKey.current = null;
+      autoCollapsed.current = null;
       signature.current = null;
-      setView(null); setPlaced(null); setCollapseReady(null); setPicked(null); setLoading(false);
+      setView(null);
+      setPlaced(null);
+      setCollapseReady(null);
+      setPicked(null);
+      setLoading(false);
     };
     const off = channel?.onMessage((raw) => {
       const message = raw as unknown as { type?: string; payload?: unknown };
       const body = asRecord(message.payload);
       const type = message.type ?? "";
-      if (["companion_identity_unready", "companion_control_rechallenge", "companion_profile_unbound"].includes(type)
-        || (type === "companion_identity_status" && body.ready === false)) { reset(); return; }
+      if (
+        [
+          "companion_identity_unready",
+          "companion_control_rechallenge",
+          "companion_profile_unbound",
+        ].includes(type) ||
+        (type === "companion_identity_status" && body.ready === false)
+      ) {
+        reset();
+        return;
+      }
       if (type === "mission_changed") {
         if (body.mission_id !== missionId) return;
         if (debounce.current) clearTimeout(debounce.current);
-        debounce.current = setTimeout(() => { debounce.current = null; refresh(); }, DEBOUNCE_MS);
+        debounce.current = setTimeout(() => {
+          debounce.current = null;
+          refresh();
+        }, DEBOUNCE_MS);
         return;
       }
       if (type !== SNAPSHOT_TYPE + "_response") return;
@@ -196,7 +342,10 @@ export function LiveGraph({ missionId, channel, detail, onLoadMoreEvents, onStal
       if (timeout.current) clearTimeout(timeout.current);
       if (body.ok !== true) {
         const code = asText(body.error_code);
-        if (code === "SNAPSHOT_CHANGED" && !pending.restarted) { sendPage(null, { id: "", pages: [], restarted: true }); return; }
+        if (code === "SNAPSHOT_CHANGED" && !pending.restarted) {
+          sendPage(null, { id: "", pages: [], restarted: true });
+          return;
+        }
         setLoading(false);
         setError({ code, text: errorText(code, asText(body.error)) });
       } else {
@@ -209,24 +358,49 @@ export function LiveGraph({ missionId, channel, detail, onLoadMoreEvents, onStal
           }
           setLoading(false);
           const merged = mergePages(pages);
-          const sig = merged.execution_hash + "|" + merged.structure.map((n) => n.occurrence_id + ":" + n.phase + ":" + n.readiness).join(",");
-          if (sig !== signature.current) { signature.current = sig; setView(merged); }
-          setError(pages.length >= MAX_PAGES && !page.complete ? { code: "partial", text: "执行过程太长，只显示了前 " + MAX_PAGES + " 页" } : null);
+          const sig =
+            merged.execution_hash +
+            "|" +
+            merged.structure
+              .map((n) => n.occurrence_id + ":" + n.phase + ":" + n.readiness)
+              .join(",");
+          if (sig !== signature.current) {
+            signature.current = sig;
+            setView(merged);
+          }
+          setError(
+            pages.length >= MAX_PAGES && !page.complete
+              ? { code: "partial", text: "执行过程太长，只显示了前 " + MAX_PAGES + " 页" }
+              : null,
+          );
         } catch (caught) {
           setLoading(false);
-          setError({ code: "invalid", text: caught instanceof Error ? caught.message : "执行图响应无效" });
+          setError({
+            code: "invalid",
+            text: caught instanceof Error ? caught.message : "执行图响应无效",
+          });
         }
       }
-      if (again.current) { again.current = false; refresh(); }
+      if (again.current) {
+        again.current = false;
+        refresh();
+      }
     });
     const offState = channel?.onStateChange?.((state) => {
-      request.current = null; again.current = false; setLoading(false);
-      if (state === "connected") { refresh(); return; }
+      request.current = null;
+      again.current = false;
+      setLoading(false);
+      if (state === "connected") {
+        refresh();
+        return;
+      }
       // 断线：保留上次画面并说清楚（以前清空画面后一直显示"正在读取"）
       setError({ code: "offline", text: "与后台的连接断开了，重新连上后会自动刷新" });
     });
     return () => {
-      off?.(); offState?.(); clearInterval(tick);
+      off?.();
+      offState?.();
+      clearInterval(tick);
       if (debounce.current) clearTimeout(debounce.current);
       if (timeout.current) clearTimeout(timeout.current);
       request.current = null;
@@ -246,33 +420,64 @@ export function LiveGraph({ missionId, channel, detail, onLoadMoreEvents, onStal
         for (let at = node.parent; at; at = parentOf.get(at) ?? null) busy.add(at);
       }
       // eslint-disable-next-line react-hooks/set-state-in-effect -- once per plan revision, not per render
-      setCollapsed(new Set(view.structure.filter((n) => n.form === "compound" && n.parent && !busy.has(n.occurrence_id)).map((n) => n.occurrence_id)));
+      setCollapsed(
+        new Set(
+          view.structure
+            .filter((n) => n.form === "compound" && n.parent && !busy.has(n.occurrence_id))
+            .map((n) => n.occurrence_id),
+        ),
+      );
     }
     setCollapseReady(view.plan_revision);
   }, [view]);
 
-  const layoutKey = view && collapseReady === view.plan_revision ? structureKey(view, collapsed, showData, showProcess) : null;
+  const layoutKey =
+    view && collapseReady === view.plan_revision
+      ? structureKey(view, collapsed, showData, showProcess)
+      : null;
   useEffect(() => {
     const current = shown.current;
-    if (tab !== "graph" || layoutKey === null || !current || placedKey.current === layoutKey) return;
+    if (tab !== "graph" || layoutKey === null || !current || placedKey.current === layoutKey)
+      return;
     let cancelled = false;
     const plan = buildElkGraph(current, collapsed, showData, showProcess);
-    const slowTimer = setTimeout(() => { if (!cancelled) setSlow(true); }, 1000);
-    layoutGraph(plan.elk).then((output) => {
-      if (cancelled) return;
-      placedKey.current = layoutKey;
-      setPlaced({ key: layoutKey, nodes: flatten(output, plan.groups), edges: plan.edges });
-    }).catch((caught) => {
-      if (!cancelled) setError({ code: "layout", text: "排版失败：" + (caught instanceof Error ? caught.message : String(caught)) });
-    }).finally(() => { clearTimeout(slowTimer); if (!cancelled) setSlow(false); });
-    return () => { cancelled = true; clearTimeout(slowTimer); };
+    const slowTimer = setTimeout(() => {
+      if (!cancelled) setSlow(true);
+    }, 1000);
+    layoutGraph(plan.elk)
+      .then((output) => {
+        if (cancelled) return;
+        placedKey.current = layoutKey;
+        setPlaced({ key: layoutKey, nodes: flatten(output, plan.groups), edges: plan.edges });
+      })
+      .catch((caught) => {
+        if (!cancelled)
+          setError({
+            code: "layout",
+            text: "排版失败：" + (caught instanceof Error ? caught.message : String(caught)),
+          });
+      })
+      .finally(() => {
+        clearTimeout(slowTimer);
+        if (!cancelled) setSlow(false);
+      });
+    return () => {
+      cancelled = true;
+      clearTimeout(slowTimer);
+    };
     // collapsed/showData/showProcess are part of layoutKey
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [layoutKey, tab]);
 
-  const tasks = useMemo(() => new Map(asList(detail?.tasks).map((t) => [asText(t.id), t])), [detail]);
+  const tasks = useMemo(
+    () => new Map(asList(detail?.tasks).map((t) => [asText(t.id), t])),
+    [detail],
+  );
   const mission = asRecord(detail?.mission);
-  const structureById = useMemo(() => new Map((view?.structure ?? []).map((n) => [n.occurrence_id, n])), [view]);
+  const structureById = useMemo(
+    () => new Map((view?.structure ?? []).map((n) => [n.occurrence_id, n])),
+    [view],
+  );
   const execById = useMemo(() => new Map((view?.nodes ?? []).map((n) => [n.node_id, n])), [view]);
   const homes = useMemo(() => (view ? homesOf(view) : new Map<string, string>()), [view]);
   const attemptsOf = useMemo(() => {
@@ -286,97 +491,254 @@ export function LiveGraph({ missionId, channel, detail, onLoadMoreEvents, onStal
   }, [view]);
   const childCount = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const node of view?.structure ?? []) if (node.parent) counts.set(node.parent, (counts.get(node.parent) ?? 0) + 1);
-    if (showProcess) for (const home of homes.values()) counts.set(home, (counts.get(home) ?? 0) + 1);
+    for (const node of view?.structure ?? [])
+      if (node.parent) counts.set(node.parent, (counts.get(node.parent) ?? 0) + 1);
+    if (showProcess)
+      for (const home of homes.values()) counts.set(home, (counts.get(home) ?? 0) + 1);
     return counts;
   }, [view, homes, showProcess]);
-  const titleOf = useCallback((node: StructureNode): string => {
-    const goal = asRecord(tasks.get(node.task_id)?.goal);
-    const text = asText(goal.text ?? tasks.get(node.task_id)?.goal);
-    if (node.step) return stepTitle(node.step, text);
-    if (!node.parent) {
-      const missionGoal = asText(asRecord(mission.goal).text ?? mission.goal);
-      if (missionGoal) return missionGoal;
-    }
-    return text ? stepTitle(null, text) : "步骤";
-  }, [tasks, mission.goal]);
+  const titleOf = useCallback(
+    (node: StructureNode): string => {
+      const goal = asRecord(tasks.get(node.task_id)?.goal);
+      const text = asText(goal.text ?? tasks.get(node.task_id)?.goal);
+      if (node.step) return stepTitle(node.step, text);
+      if (!node.parent) {
+        const missionGoal = asText(asRecord(mission.goal).text ?? mission.goal);
+        if (missionGoal) return missionGoal;
+      }
+      return text ? stepTitle(null, text) : "步骤";
+    },
+    [tasks, mission.goal],
+  );
 
-  const toggle = useCallback((id: string) => setCollapsed((current) => {
-    const next = new Set(current);
-    if (next.has(id)) next.delete(id); else next.add(id);
-    return next;
-  }), []);
-  const pick = useCallback((id: string) => setPicked((current) => current === id ? null : id), []);
+  const toggle = useCallback(
+    (id: string) =>
+      setCollapsed((current) => {
+        const next = new Set(current);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        return next;
+      }),
+    [],
+  );
+  const pick = useCallback(
+    (id: string) => setPicked((current) => (current === id ? null : id)),
+    [],
+  );
 
-  const flowNodes: Node[] = useMemo(() => (placed?.nodes ?? []).flatMap((p): Node[] => {
-    const base = { id: p.id, position: { x: p.x, y: p.y }, ...(p.parent ? { parentId: p.parent } : {}),
-      draggable: false, connectable: false, selectable: false, style: { width: p.width, height: p.height },
-      width: p.width, height: p.height };
-    const step = structureById.get(p.id);
-    if (step) {
-      return [{ ...base, type: "step", data: { step, title: titleOf(step), progress: stepProgress(step, attemptsOf.get(step.occurrence_id) ?? []),
-        attempts: (attemptsOf.get(step.occurrence_id) ?? []).length, collapsed: collapsed.has(p.id),
-        childCount: childCount.get(p.id) ?? 0, group: p.group,
-        foldable: step.form === "compound" && (childCount.get(p.id) ?? 0) > 0, onToggle: toggle, onPick: pick } satisfies StepData }];
-    }
-    const exec = execById.get(p.id);
-    return exec ? [{ ...base, type: "exec", data: { node: exec, onPick: pick, picked: picked === exec.node_id } satisfies ExecData }] : [];
-  }), [placed, structureById, execById, titleOf, attemptsOf, collapsed, childCount, toggle, pick, picked]);
+  const flowNodes: Node[] = useMemo(
+    () =>
+      (placed?.nodes ?? []).flatMap((p): Node[] => {
+        const base = {
+          id: p.id,
+          position: { x: p.x, y: p.y },
+          ...(p.parent ? { parentId: p.parent } : {}),
+          draggable: false,
+          connectable: false,
+          selectable: false,
+          style: { width: p.width, height: p.height },
+          width: p.width,
+          height: p.height,
+        };
+        const step = structureById.get(p.id);
+        if (step) {
+          return [
+            {
+              ...base,
+              type: "step",
+              data: {
+                step,
+                title: titleOf(step),
+                progress: stepProgress(step, attemptsOf.get(step.occurrence_id) ?? []),
+                attempts: (attemptsOf.get(step.occurrence_id) ?? []).length,
+                collapsed: collapsed.has(p.id),
+                childCount: childCount.get(p.id) ?? 0,
+                group: p.group,
+                foldable: step.form === "compound" && (childCount.get(p.id) ?? 0) > 0,
+                onToggle: toggle,
+                onPick: pick,
+              } satisfies StepData,
+            },
+          ];
+        }
+        const exec = execById.get(p.id);
+        return exec
+          ? [
+              {
+                ...base,
+                type: "exec",
+                data: {
+                  node: exec,
+                  onPick: pick,
+                  picked: picked === exec.node_id,
+                } satisfies ExecData,
+              },
+            ]
+          : [];
+      }),
+    [
+      placed,
+      structureById,
+      execById,
+      titleOf,
+      attemptsOf,
+      collapsed,
+      childCount,
+      toggle,
+      pick,
+      picked,
+    ],
+  );
 
-  const flowEdges: Edge[] = useMemo(() => (placed?.edges ?? []).map((e) => ({
-    id: e.kind + ":" + e.source + ">" + e.target, source: e.source, target: e.target, type: "smoothstep",
-    label: e.kind === "rework" ? "再执行" : undefined,
-    style: { stroke: EDGE_COLOR[e.kind], strokeDasharray: e.kind === "data" || e.kind === "process" ? "5 4" : undefined,
-      strokeWidth: e.kind === "rework" ? 2 : 1 },
-    markerEnd: { type: MarkerType.ArrowClosed, color: EDGE_COLOR[e.kind] },
-  })), [placed]);
+  const flowEdges: Edge[] = useMemo(
+    () =>
+      (placed?.edges ?? []).map((e) => ({
+        id: e.kind + ":" + e.source + ">" + e.target,
+        source: e.source,
+        target: e.target,
+        type: "smoothstep",
+        label: e.kind === "rework" ? "再执行" : undefined,
+        style: {
+          stroke: EDGE_COLOR[e.kind],
+          strokeDasharray: e.kind === "data" || e.kind === "process" ? "5 4" : undefined,
+          strokeWidth: e.kind === "rework" ? 2 : 1,
+        },
+        markerEnd: { type: MarkerType.ArrowClosed, color: EDGE_COLOR[e.kind] },
+      })),
+    [placed],
+  );
 
   useEffect(() => {
     if (!loading) return undefined;
     const timer = setTimeout(() => setSlowRead(true), 8000);
-    return () => { clearTimeout(timer); setSlowRead(false); };
+    return () => {
+      clearTimeout(timer);
+      setSlowRead(false);
+    };
   }, [loading]);
-  const retry = useCallback(() => { request.current = null; again.current = false; setLoading(false); refresh(); }, [refresh]);
+  const retry = useCallback(() => {
+    request.current = null;
+    again.current = false;
+    setLoading(false);
+    refresh();
+  }, [refresh]);
 
   // 执行中、且这一步最后一条事件超过 10 分钟：只是提示，不改状态
   const stalledCount = useMemo(() => {
     const lastAt = new Map<string, number>();
-    for (const event of events ?? []) if (event.task_id) lastAt.set(event.task_id, Math.max(lastAt.get(event.task_id) ?? 0, Number(event.created_at) || 0));
-    return (view?.nodes ?? []).filter((n) => n.kind === "attempt" && ["RUNNING", "CLAIMED", "SUBMITTED"].includes(String(n.raw.status))
-      && now - (lastAt.get(String(n.raw.task_id)) ?? now) > STALL_SECONDS).length;
+    for (const event of events ?? [])
+      if (event.task_id)
+        lastAt.set(
+          event.task_id,
+          Math.max(lastAt.get(event.task_id) ?? 0, Number(event.created_at) || 0),
+        );
+    return (view?.nodes ?? []).filter(
+      (n) =>
+        n.kind === "attempt" &&
+        ["RUNNING", "CLAIMED", "SUBMITTED"].includes(String(n.raw.status)) &&
+        now - (lastAt.get(String(n.raw.task_id)) ?? now) > STALL_SECONDS,
+    ).length;
   }, [view, events, now]);
-  useEffect(() => { onStalled?.(stalledCount); }, [onStalled, stalledCount]);
+  useEffect(() => {
+    onStalled?.(stalledCount);
+  }, [onStalled, stalledCount]);
 
-  const pickedStep = picked ? structureById.get(picked) ?? null : null;
-  const pickedExec = picked ? execById.get(picked) ?? null : null;
+  const pickedStep = picked ? (structureById.get(picked) ?? null) : null;
+  const pickedExec = picked ? (execById.get(picked) ?? null) : null;
   const stale = error !== null && view !== null;
-  const timeline = useMemo(() => [...(view?.nodes ?? [])].sort((a, b) => (a.at_ms ?? 0) - (b.at_ms ?? 0) || a.node_id.localeCompare(b.node_id)), [view]);
+  const timeline = useMemo(
+    () =>
+      [...(view?.nodes ?? [])].sort(
+        (a, b) => (a.at_ms ?? 0) - (b.at_ms ?? 0) || a.node_id.localeCompare(b.node_id),
+      ),
+    [view],
+  );
 
   return (
     <section className="live-graph" aria-label="执行图" data-testid="live-graph">
       <div className="lg-bar">
         <div role="tablist" aria-label="执行图视图" className="lg-tabs">
-          {([["graph", "执行图"], ["timeline", "时间线"]] as const).map(([key, label]) => (
-            <button key={key} type="button" role="tab" aria-selected={tab === key} onClick={() => setTab(key)}>{label}</button>
+          {(
+            [
+              ["graph", "执行图"],
+              ["timeline", "时间线"],
+            ] as const
+          ).map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              role="tab"
+              aria-selected={tab === key}
+              onClick={() => setTab(key)}
+            >
+              {label}
+            </button>
           ))}
         </div>
-        {tab === "graph" && <>
-          <label><input type="checkbox" checked={showProcess} onChange={(e) => setShowProcess(e.target.checked)} /> 显示执行过程</label>
-          <label><input type="checkbox" checked={showData} onChange={(e) => setShowData(e.target.checked)} /> 显示数据依赖</label>
-        </>}
+        {tab === "graph" && (
+          <>
+            <label>
+              <input
+                type="checkbox"
+                checked={showProcess}
+                onChange={(e) => setShowProcess(e.target.checked)}
+              />{" "}
+              显示执行过程
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={showData}
+                onChange={(e) => setShowData(e.target.checked)}
+              />{" "}
+              显示数据依赖
+            </label>
+          </>
+        )}
         {loading && <span className="lg-muted">更新中…</span>}
-        {view?.coverage === "PENDING_IMPORT" && <span className="lg-muted">有模型回合正在进行</span>}
+        {view?.coverage === "PENDING_IMPORT" && (
+          <span className="lg-muted">有模型回合正在进行</span>
+        )}
         {stalledCount > 0 && <span className="lg-stall">{stalledCount} 次执行可能卡住</span>}
       </div>
-      {error && <p role="alert" className={error.code === "NOT_ENABLED" ? "lg-muted" : "lg-error"}>
-        {error.text}{stale ? "（下面是上次读到的画面，可能已过期）" : ""}</p>}
-      {slowRead && <p className="lg-muted lg-slow" role="status">读取较慢，可能后台正忙。<button type="button" onClick={retry}>重试</button></p>}
-      {!view && !error && <p className="lg-muted" role="status">正在读取执行图…</p>}
-      {slow && tab === "graph" && <p className="lg-muted" role="status">正在排版…</p>}
+      {error && (
+        <p role="alert" className={error.code === "NOT_ENABLED" ? "lg-muted" : "lg-error"}>
+          {error.text}
+          {stale ? "（下面是上次读到的画面，可能已过期）" : ""}
+        </p>
+      )}
+      {slowRead && (
+        <p className="lg-muted lg-slow" role="status">
+          读取较慢，可能后台正忙。
+          <button type="button" onClick={retry}>
+            重试
+          </button>
+        </p>
+      )}
+      {!view && !error && (
+        <p className="lg-muted" role="status">
+          正在读取执行图…
+        </p>
+      )}
+      {slow && tab === "graph" && (
+        <p className="lg-muted" role="status">
+          正在排版…
+        </p>
+      )}
       {view && tab === "graph" && (
         <div className={"lg-canvas" + (stale ? " lg-historical" : "")}>
-          <ReactFlow nodes={flowNodes} edges={flowEdges} nodeTypes={nodeTypes} fitView minZoom={0.2} maxZoom={1.5}
-            nodesDraggable={false} nodesConnectable={false} elementsSelectable={false} proOptions={{ hideAttribution: true }}>
+          <ReactFlow
+            nodes={flowNodes}
+            edges={flowEdges}
+            nodeTypes={nodeTypes}
+            fitView
+            minZoom={0.2}
+            maxZoom={1.5}
+            nodesDraggable={false}
+            nodesConnectable={false}
+            elementsSelectable={false}
+            proOptions={{ hideAttribution: true }}
+          >
             <Background gap={24} />
             <Controls showInteractive={false} />
           </ReactFlow>
@@ -385,12 +747,16 @@ export function LiveGraph({ missionId, channel, detail, onLoadMoreEvents, onStal
       {view && tab === "graph" && (
         <details className="lg-list">
           <summary>{"全部步骤（" + view.structure.length + "）"}</summary>
-          <ul>{view.structure.map((node) => (
-            <li key={node.occurrence_id}>
-              <button type="button" onClick={() => pick(node.occurrence_id)}>{short(titleOf(node))}</button>
-              {" · " + stepDisplay(node).label}
-            </li>
-          ))}</ul>
+          <ul>
+            {view.structure.map((node) => (
+              <li key={node.occurrence_id}>
+                <button type="button" onClick={() => pick(node.occurrence_id)}>
+                  {short(titleOf(node))}
+                </button>
+                {" · " + stepDisplay(node).label}
+              </li>
+            ))}
+          </ul>
         </details>
       )}
       {view && tab === "timeline" && (
@@ -401,27 +767,49 @@ export function LiveGraph({ missionId, channel, detail, onLoadMoreEvents, onStal
             const home = structureById.get(homes.get(node.node_id) ?? "");
             return (
               <li key={node.node_id}>
-                <button type="button" className="lg-tl-row" aria-expanded={picked === node.node_id} onClick={() => pick(node.node_id)}>
+                <button
+                  type="button"
+                  className="lg-tl-row"
+                  aria-expanded={picked === node.node_id}
+                  onClick={() => pick(node.node_id)}
+                >
                   <span className="lg-muted">{clock(node.at_ms)}</span>{" "}
-                  <span className="lg-dot" style={{ background: TONE_COLOR[status.tone] }} /> {title + " · " + status.label}
-                  {home && home.parent && <span className="lg-muted">{" · " + short(titleOf(home), 30)}</span>}
+                  <span className="lg-dot" style={{ background: TONE_COLOR[status.tone] }} />{" "}
+                  {title + " · " + status.label}
+                  {home && home.parent && (
+                    <span className="lg-muted">{" · " + short(titleOf(home), 30)}</span>
+                  )}
                   {node.summary && <span className="lg-line">{cleanText(node.summary.text)}</span>}
                 </button>
-                {picked === node.node_id && <ExecDetail missionId={missionId} channel={channel} node={node} />}
+                {picked === node.node_id && (
+                  <ExecDetail missionId={missionId} channel={channel} node={node} />
+                )}
               </li>
             );
           })}
         </ol>
       )}
       {tab === "graph" && pickedStep && (
-        <StepPanel step={pickedStep} title={titleOf(pickedStep)} execs={(view?.nodes ?? []).filter((n) => homes.get(n.node_id) === pickedStep.occurrence_id)}
-          onPick={pick} onClose={() => setPicked(null)} onLoadMoreEvents={onLoadMoreEvents} missionId={missionId} channel={channel} />
+        <StepPanel
+          step={pickedStep}
+          title={titleOf(pickedStep)}
+          execs={(view?.nodes ?? []).filter(
+            (n) => homes.get(n.node_id) === pickedStep.occurrence_id,
+          )}
+          onPick={pick}
+          onClose={() => setPicked(null)}
+          onLoadMoreEvents={onLoadMoreEvents}
+          missionId={missionId}
+          channel={channel}
+        />
       )}
       {tab === "graph" && pickedExec && (
         <aside className="lg-panel" aria-label="执行详情" data-testid="lg-panel">
           <div className="lg-bar">
             <strong>{ICON[pickedExec.kind] + " " + execDisplay(pickedExec).title}</strong>
-            <button type="button" onClick={() => setPicked(null)} aria-label="关闭详情">关闭</button>
+            <button type="button" onClick={() => setPicked(null)} aria-label="关闭详情">
+              关闭
+            </button>
           </div>
           <ExecDetail missionId={missionId} channel={channel} node={pickedExec} />
         </aside>
@@ -430,38 +818,76 @@ export function LiveGraph({ missionId, channel, detail, onLoadMoreEvents, onStal
   );
 }
 
-function StepPanel({ step, title, execs, onPick, onClose, onLoadMoreEvents, missionId, channel }: {
-  step: StructureNode; title: string; execs: ExecNode[]; onPick: (id: string) => void; onClose: () => void;
-  onLoadMoreEvents?: () => void; missionId: string; channel: MissionsChannel | null;
+function StepPanel({
+  step,
+  title,
+  execs,
+  onPick,
+  onClose,
+  onLoadMoreEvents,
+  missionId,
+  channel,
+}: {
+  step: StructureNode;
+  title: string;
+  execs: ExecNode[];
+  onPick: (id: string) => void;
+  onClose: () => void;
+  onLoadMoreEvents?: () => void;
+  missionId: string;
+  channel: MissionsChannel | null;
 }) {
   const display = stepDisplay(step);
-  const ended = display.tone === "done" || display.tone === "failed" || display.tone === "cancelled";
+  const ended =
+    display.tone === "done" || display.tone === "failed" || display.tone === "cancelled";
   const reason = ended ? null : readinessLabel(step.readiness);
   return (
     <aside className="lg-panel" aria-label="步骤详情" data-testid="lg-panel">
       <div className="lg-bar">
         <strong>{title}</strong>
-        <button type="button" onClick={onClose} aria-label="关闭详情">关闭</button>
+        <button type="button" onClick={onClose} aria-label="关闭详情">
+          关闭
+        </button>
       </div>
       <p>
         <span className="lg-dot" style={{ background: TONE_COLOR[display.tone] }} /> {display.label}
         {reason && <span className="lg-muted">{" · " + reason}</span>}
       </p>
-      {!ended && display.tone !== "running" && <WhyNotReady missionId={missionId} channel={channel} step={step} />}
-      {step.step && step.step.evidence.length > 0 && <>
-        <h4>这一步要交付</h4>
-        <ul>{step.step.evidence.map((text, index) => <li key={index}>{text}</li>)}</ul>
-      </>}
+      {!ended && display.tone !== "running" && (
+        <WhyNotReady missionId={missionId} channel={channel} step={step} />
+      )}
+      {step.step && step.step.evidence.length > 0 && (
+        <>
+          <h4>这一步要交付</h4>
+          <ul>
+            {step.step.evidence.map((text, index) => (
+              <li key={index}>{text}</li>
+            ))}
+          </ul>
+        </>
+      )}
       <h4>{"执行过程（" + execs.length + "）"}</h4>
-      {execs.length === 0 ? <p className="lg-muted">还没有执行。</p> : (
-        <ul>{execs.map((node) => {
-          const { title: name, status } = execDisplay(node);
-          return <li key={node.node_id}>
-            <button type="button" className="lg-link" onClick={() => onPick(node.node_id)}>{clock(node.at_ms) + " " + name}</button>
-            {" · " + status.label}
-            {node.summary && <span className="lg-muted">{" · " + short(cleanText(node.summary.text), 80)}</span>}
-          </li>;
-        })}</ul>
+      {execs.length === 0 ? (
+        <p className="lg-muted">还没有执行。</p>
+      ) : (
+        <ul>
+          {execs.map((node) => {
+            const { title: name, status } = execDisplay(node);
+            return (
+              <li key={node.node_id}>
+                <button type="button" className="lg-link" onClick={() => onPick(node.node_id)}>
+                  {clock(node.at_ms) + " " + name}
+                </button>
+                {" · " + status.label}
+                {node.summary && (
+                  <span className="lg-muted">
+                    {" · " + short(cleanText(node.summary.text), 80)}
+                  </span>
+                )}
+              </li>
+            );
+          })}
+        </ul>
       )}
       {onLoadMoreEvents && <p className="lg-muted">原始事件在页面下方「原始事件记录」。</p>}
     </aside>
@@ -469,7 +895,15 @@ function StepPanel({ step, title, execs, onPick, onClose, onLoadMoreEvents, miss
 }
 
 /** 点开一个还没开工的步骤：读 SDK 的"为什么还不开工"（原因代码 + 依据），读不到就说读不到。 */
-function WhyNotReady({ missionId, channel, step }: { missionId: string; channel: MissionsChannel | null; step: StructureNode }) {
+function WhyNotReady({
+  missionId,
+  channel,
+  step,
+}: {
+  missionId: string;
+  channel: MissionsChannel | null;
+  step: StructureNode;
+}) {
   const [body, setBody] = useState<Record<string, unknown> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const pending = useRef<string | null>(null);
@@ -482,24 +916,51 @@ function WhyNotReady({ missionId, channel, step }: { missionId: string; channel:
       const payload = asRecord(message.payload);
       if (message.type !== WHY_TYPE + "_response" || payload.request_id !== pending.current) return;
       pending.current = null;
-      if (payload.ok === true) { setBody(asRecord(payload.data)); setError(null); }
-      else setError(asText(payload.error) || "读取失败");
+      if (payload.ok === true) {
+        setBody(asRecord(payload.data));
+        setError(null);
+      } else setError(asText(payload.error) || "读取失败");
     });
-    if (!channel.send({ type: WHY_TYPE, request_id: id, payload: { mission_id: missionId, occurrence_id: step.occurrence_id } })) {
+    if (
+      !channel.send({
+        type: WHY_TYPE,
+        request_id: id,
+        payload: { mission_id: missionId, occurrence_id: step.occurrence_id },
+      })
+    ) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- a send failure is reported once
       setError("连接不可用，请求未发送");
     }
-    return () => { off?.(); pending.current = null; };
+    return () => {
+      off?.();
+      pending.current = null;
+    };
   }, [channel, missionId, step.occurrence_id, step.readiness]);
-  const codes = Array.isArray(body?.reason_codes) ? (body.reason_codes as unknown[]).map(String) : [];
-  const details = Array.isArray(body?.details) ? (body.details as unknown[]).map(String).filter((d) => !d.startsWith("phase=")) : [];
+  const codes = Array.isArray(body?.reason_codes)
+    ? (body.reason_codes as unknown[]).map(String)
+    : [];
+  const details = Array.isArray(body?.details)
+    ? (body.details as unknown[]).map(String).filter((d) => !d.startsWith("phase="))
+    : [];
   return (
     <div data-testid="lg-why-not-ready">
       <h4>为什么还不开工</h4>
-      {error ? <p className="lg-muted">{error}</p> : body === null ? <p className="lg-muted">读取中…</p> : (
+      {error ? (
+        <p className="lg-muted">{error}</p>
+      ) : body === null ? (
+        <p className="lg-muted">读取中…</p>
+      ) : (
         <ul>
-          {codes.length === 0 ? <li>没有挡着它的原因，等调度派发</li> : codes.map((code) => <li key={code}>{readinessLabel(code)}</li>)}
-          {details.map((detail, index) => <li key={"d" + index} className="lg-muted">{detail}</li>)}
+          {codes.length === 0 ? (
+            <li>没有挡着它的原因，等调度派发</li>
+          ) : (
+            codes.map((code) => <li key={code}>{readinessLabel(code)}</li>)
+          )}
+          {details.map((detail, index) => (
+            <li key={"d" + index} className="lg-muted">
+              {detail}
+            </li>
+          ))}
         </ul>
       )}
     </div>
@@ -509,7 +970,15 @@ function WhyNotReady({ missionId, channel, step }: { missionId: string; channel:
 type DetailItem = Record<string, unknown> & { t: string };
 
 /** 一个执行节点的回合详情：SDK 白名单过的模型原话、工具调用、提交与审阅理由。 */
-function ExecDetail({ missionId, channel, node }: { missionId: string; channel: MissionsChannel | null; node: ExecNode }) {
+function ExecDetail({
+  missionId,
+  channel,
+  node,
+}: {
+  missionId: string;
+  channel: MissionsChannel | null;
+  node: ExecNode;
+}) {
   const [body, setBody] = useState<Record<string, unknown> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const pending = useRef<string | null>(null);
@@ -521,65 +990,166 @@ function ExecDetail({ missionId, channel, node }: { missionId: string; channel: 
     const off = channel.onMessage((raw) => {
       const message = raw as unknown as { type?: string; payload?: unknown };
       const payload = asRecord(message.payload);
-      if (message.type !== DETAIL_TYPE + "_response" || payload.request_id !== pending.current) return;
+      if (message.type !== DETAIL_TYPE + "_response" || payload.request_id !== pending.current)
+        return;
       pending.current = null;
-      if (payload.ok === true) { setBody(asRecord(payload.data)); setError(null); }
-      else setError(asText(payload.error) || "读取失败");
+      if (payload.ok === true) {
+        setBody(asRecord(payload.data));
+        setError(null);
+      } else setError(asText(payload.error) || "读取失败");
     });
-    if (!channel.send({ type: DETAIL_TYPE, request_id: id, payload: { mission_id: missionId, node_id: node.node_id } })) {
+    if (
+      !channel.send({
+        type: DETAIL_TYPE,
+        request_id: id,
+        payload: { mission_id: missionId, node_id: node.node_id },
+      })
+    ) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- a send failure is reported once
       setError("连接不可用，请求未发送");
     }
-    return () => { off?.(); pending.current = null; };
+    return () => {
+      off?.();
+      pending.current = null;
+    };
   }, [channel, missionId, node.node_id, turnState]);
 
   const raw = node.raw;
   const facts: string[] = [];
   if (node.kind === "check") {
-    for (const layer of asList(raw.layers)) facts.push(asText(layer.layer) + "：" + asText(layer.status) + (layer.summary ? " · " + asText(layer.summary) : ""));
+    for (const layer of asList(raw.layers))
+      facts.push(
+        asText(layer.layer) +
+          "：" +
+          asText(layer.status) +
+          (layer.summary ? " · " + asText(layer.summary) : ""),
+      );
   }
   if (node.kind === "planning") {
     for (const d of asList(raw.decisions)) {
       const codes = Array.isArray(d.rejection_codes) ? d.rejection_codes.map(String) : [];
-      facts.push((DECISION_TYPE[asText(d.decision_type)] ?? (asText(d.decision_type) || "未解析")) + " · "
-        + (DECISION_STATUS[asText(d.status)] ?? asText(d.status)) + (codes.length ? " · 原因：" + codes.join("、") : ""));
+      facts.push(
+        (DECISION_TYPE[asText(d.decision_type)] ?? (asText(d.decision_type) || "未解析")) +
+          " · " +
+          (DECISION_STATUS[asText(d.status)] ?? asText(d.status)) +
+          (codes.length ? " · 原因：" + codes.join("、") : ""),
+      );
     }
   }
-  if (node.kind === "repair_request" && Array.isArray(raw.trigger_refs)) facts.push("由 " + (raw.source_event_type ? asText(raw.source_event_type) : "失败") + " 触发");
+  if (node.kind === "repair_request" && Array.isArray(raw.trigger_refs))
+    facts.push("由 " + (raw.source_event_type ? asText(raw.source_event_type) : "失败") + " 触发");
   const turn = asRecord(body?.turn);
   const items = asList(body?.items) as DetailItem[];
   return (
     <div className="lg-detail" data-testid={"lg-detail-" + node.node_id}>
       {node.summary && <p>{cleanText(node.summary.text)}</p>}
-      {facts.length > 0 && <ul>{facts.map((fact, index) => <li key={index}>{fact}</li>)}</ul>}
-      {node.turn && <p className="lg-muted">{"模型回合" + (node.turn.model ? "（" + node.turn.model + "）" : "")
-        + (turn.coverage === "PENDING_IMPORT" ? " · 进行中，内容会继续增加" : turn.coverage === "SOURCE_UNAVAILABLE" ? " · 回合记录暂不可读" : "")}</p>}
-      {error && <p role="alert" className="lg-error">{error}</p>}
+      {facts.length > 0 && (
+        <ul>
+          {facts.map((fact, index) => (
+            <li key={index}>{fact}</li>
+          ))}
+        </ul>
+      )}
+      {node.turn && (
+        <p className="lg-muted">
+          {"模型回合" +
+            (node.turn.model ? "（" + node.turn.model + "）" : "") +
+            (turn.coverage === "PENDING_IMPORT"
+              ? " · 进行中，内容会继续增加"
+              : turn.coverage === "SOURCE_UNAVAILABLE"
+                ? " · 回合记录暂不可读"
+                : "")}
+        </p>
+      )}
+      {error && (
+        <p role="alert" className="lg-error">
+          {error}
+        </p>
+      )}
       {node.turn && !body && !error && <p className="lg-muted">正在读取这一回合…</p>}
-      {items.length > 0 && <ol className="lg-items">{items.map((item, index) => <li key={index}><TurnItem item={item} /></li>)}</ol>}
-      {Number(body?.hidden_items) > 0 && <p className="lg-muted">{"更早的 " + Number(body?.hidden_items) + " 条已省略"}</p>}
+      {items.length > 0 && (
+        <ol className="lg-items">
+          {items.map((item, index) => (
+            <li key={index}>
+              <TurnItem item={item} />
+            </li>
+          ))}
+        </ol>
+      )}
+      {Number(body?.hidden_items) > 0 && (
+        <p className="lg-muted">{"更早的 " + Number(body?.hidden_items) + " 条已省略"}</p>
+      )}
     </div>
   );
 }
 
 function TurnItem({ item }: { item: DetailItem }) {
   switch (item.t) {
-    case "say": return <span>💬 {cleanText(asText(item.text))}</span>;
-    case "feedback": return <span>↩ 系统反馈：{cleanText(asText(item.text))}</span>;
-    case "submit": return <span>📨 提交{item.outcome ? "（" + asText(item.outcome) + "）" : ""}：{cleanText(asText(item.text))}</span>;
-    case "decision": return <span>🧭 决定「{DECISION_TYPE[asText(item.decision_type)] ?? asText(item.decision_type)}」：{cleanText(asText(item.text))}</span>;
-    case "method": return <span>🧩 设计步骤 {(Array.isArray(item.steps) ? item.steps.map(String) : []).join(" → ")}：{cleanText(asText(item.text))}</span>;
-    case "verdict": return <span>⚖ 结论 {asText(item.verdict)}
-      {asList(item.reasons).length > 0 && <ul>{asList(item.reasons).map((r, i) => <li key={i}>{(asText(r.verdict) ? "[" + asText(r.verdict) + "] " : "") + cleanText(asText(r.text))}</li>)}</ul>}
-    </span>;
+    case "say":
+      return <span>💬 {cleanText(asText(item.text))}</span>;
+    case "feedback":
+      return <span>↩ 系统反馈：{cleanText(asText(item.text))}</span>;
+    case "submit":
+      return (
+        <span>
+          📨 提交{item.outcome ? "（" + asText(item.outcome) + "）" : ""}：
+          {cleanText(asText(item.text))}
+        </span>
+      );
+    case "decision":
+      return (
+        <span>
+          🧭 决定「{DECISION_TYPE[asText(item.decision_type)] ?? asText(item.decision_type)}」：
+          {cleanText(asText(item.text))}
+        </span>
+      );
+    case "method":
+      return (
+        <span>
+          🧩 设计步骤 {(Array.isArray(item.steps) ? item.steps.map(String) : []).join(" → ")}：
+          {cleanText(asText(item.text))}
+        </span>
+      );
+    case "verdict":
+      return (
+        <span>
+          ⚖ 结论 {asText(item.verdict)}
+          {asList(item.reasons).length > 0 && (
+            <ul>
+              {asList(item.reasons).map((r, i) => (
+                <li key={i}>
+                  {(asText(r.verdict) ? "[" + asText(r.verdict) + "] " : "") +
+                    cleanText(asText(r.text))}
+                </li>
+              ))}
+            </ul>
+          )}
+        </span>
+      );
     case "tool": {
-      const parts = [asText(item.path), item.bytes != null ? item.bytes + " 字节" : "", item.chars != null ? item.chars + " 字" : "",
-        item.file_count != null ? item.file_count + " 个文件" : "", item.found != null ? "找到 " + item.found : "",
-        item.passed != null ? (item.passed ? "测试通过" : "测试未通过") : "", asText(item.tail)].filter(Boolean);
-      return <span>{item.ok ? "🔧" : "⚠"} {asText(item.tool)}{parts.length ? "：" + parts.join(" · ") : ""}
-        {!item.ok && item.error ? <span className="lg-error">{" · " + asText(item.error)}</span> : null}
-        {Number(item.count) > 1 ? <span className="lg-muted">{" ×" + Number(item.count)}</span> : null}</span>;
+      const parts = [
+        asText(item.path),
+        item.bytes != null ? item.bytes + " 字节" : "",
+        item.chars != null ? item.chars + " 字" : "",
+        item.file_count != null ? item.file_count + " 个文件" : "",
+        item.found != null ? "找到 " + item.found : "",
+        item.passed != null ? (item.passed ? "测试通过" : "测试未通过") : "",
+        asText(item.tail),
+      ].filter(Boolean);
+      return (
+        <span>
+          {item.ok ? "🔧" : "⚠"} {asText(item.tool)}
+          {parts.length ? "：" + parts.join(" · ") : ""}
+          {!item.ok && item.error ? (
+            <span className="lg-error">{" · " + asText(item.error)}</span>
+          ) : null}
+          {Number(item.count) > 1 ? (
+            <span className="lg-muted">{" ×" + Number(item.count)}</span>
+          ) : null}
+        </span>
+      );
     }
-    default: return null;
+    default:
+      return null;
   }
 }

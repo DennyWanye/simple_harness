@@ -4,13 +4,7 @@
 import React, { useEffect, useRef, useState } from "react";
 
 import type { ClarificationRequest } from "../types/skillPlatform";
-import {
-  backdropStyle,
-  buttonStyle,
-  dark,
-  inputStyle,
-  surfaceModal,
-} from "../theme/components";
+import { backdropStyle, buttonStyle, dark, inputStyle, surfaceModal } from "../theme/components";
 import { tokens } from "../theme/tokens";
 
 interface Props {
@@ -18,10 +12,7 @@ interface Props {
   onResolve: (answer: string) => void;
 }
 
-export const ClarificationDialog: React.FC<Props> = ({
-  current,
-  onResolve,
-}) => {
+export const ClarificationDialog: React.FC<Props> = ({ current, onResolve }) => {
   const [answer, setAnswer] = useState("");
   const inputRef = useRef<HTMLInputElement | null>(null);
 

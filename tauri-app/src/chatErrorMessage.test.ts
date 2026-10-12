@@ -13,7 +13,8 @@ describe("chatErrorMessage", () => {
   });
 
   it("preserves unknown provider diagnostics", () => {
-    expect(chatErrorMessage({ error: "HTTP 401", detail: "Unauthorized" }))
-      .toBe("HTTP 401 — Unauthorized");
+    expect(chatErrorMessage({ error: "HTTP 401", detail: "Unauthorized" })).toBe(
+      "HTTP 401 — Unauthorized",
+    );
   });
 });

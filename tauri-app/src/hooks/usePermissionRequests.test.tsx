@@ -30,13 +30,10 @@ class FakePanelChannel {
 
 class ReconnectingPanelChannel extends FakePanelChannel {
   state: "disconnected" | "connecting" | "connected" = "connecting";
-  private stateListener:
-    | ((state: "disconnected" | "connecting" | "connected") => void)
-    | null = null;
+  private stateListener: ((state: "disconnected" | "connecting" | "connected") => void) | null =
+    null;
 
-  onStateChange = (
-    listener: (state: "disconnected" | "connecting" | "connected") => void,
-  ) => {
+  onStateChange = (listener: (state: "disconnected" | "connecting" | "connected") => void) => {
     this.stateListener = listener;
     return () => {
       if (this.stateListener === listener) this.stateListener = null;
@@ -58,18 +55,14 @@ describe("usePermissionRequests", () => {
 
     expect(channel.sent).toEqual([]);
     act(() => channel.connect());
-    expect(channel.sent).toEqual([
-      { type: "permissions_pending_list", payload: {} },
-    ]);
+    expect(channel.sent).toEqual([{ type: "permissions_pending_list", payload: {} }]);
   });
 
   it("restores pending requests after reconnect and de-duplicates live replay", () => {
     const channel = new FakePanelChannel();
     const { result } = renderHook(() => usePermissionRequests(channel));
 
-    expect(channel.sent).toEqual([
-      { type: "permissions_pending_list", payload: {} },
-    ]);
+    expect(channel.sent).toEqual([{ type: "permissions_pending_list", payload: {} }]);
 
     const first = {
       request_id: "request-1",

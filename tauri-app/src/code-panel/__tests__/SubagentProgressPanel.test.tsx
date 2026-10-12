@@ -32,7 +32,14 @@ describe("SubagentProgressPanel", () => {
 
   it("distinguishes cancelled (failed+reason=cancelled) from genuine failure", () => {
     const s = useSubagentStore.getState();
-    s.upsert({ run_id: "c", kind: "research", task_id: "cx", status: "failed", reason: "cancelled", ts: 1 });
+    s.upsert({
+      run_id: "c",
+      kind: "research",
+      task_id: "cx",
+      status: "failed",
+      reason: "cancelled",
+      ts: 1,
+    });
     s.upsert({ run_id: "f", kind: "research", task_id: "fx", status: "failed", ts: 2 });
     render(<SubagentProgressPanel />);
     const rows = screen.getAllByTestId("subagent-run-row");
@@ -103,7 +110,9 @@ describe("SubagentProgressPanel", () => {
     render(<SubagentProgressPanel />);
     const summary = screen.getByTestId("subagent-metrics-summary");
     expect(within(summary).getByTestId("subagent-metric-peak").textContent).toMatch(/峰值\s*3/);
-    expect(within(summary).getByTestId("subagent-metric-queued").textContent).toMatch(/累计入队\s*7/);
+    expect(within(summary).getByTestId("subagent-metric-queued").textContent).toMatch(
+      /累计入队\s*7/,
+    );
     expect(within(summary).getByTestId("subagent-metric-rejected").textContent).toMatch(/拒绝\s*2/);
   });
 });

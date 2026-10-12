@@ -128,7 +128,11 @@ export const WorkbenchShell: React.FC<WorkbenchShellProps> = ({
             flexDirection: "column",
           }}
         >
-          <PrimaryChatView active={view === "chat"} channel={primaryChannel} onOpenSettings={() => onViewChange("settings")} />
+          <PrimaryChatView
+            active={view === "chat"}
+            channel={primaryChannel}
+            onOpenSettings={() => onViewChange("settings")}
+          />
         </div>
         {view === "missions" && <MissionsView {...(missionsProps ?? { channel: null })} />}
         {view === "skills" && <SkillsView {...skillsProps} />}

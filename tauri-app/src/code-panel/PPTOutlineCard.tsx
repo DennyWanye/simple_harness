@@ -45,9 +45,10 @@ export function PPTOutlineCard({
   const effectiveAwaiting = awaiting;
   const canSubmitFeedback = feedback.trim().length > 0;
   const sessionFence = sessionId ? { session_id: sessionId } : {};
-  const durableFence = runId && decisionId && nonce && version !== undefined
-    ? { ...sessionFence, run_id: runId, decision_id: decisionId, nonce, version }
-    : sessionFence;
+  const durableFence =
+    runId && decisionId && nonce && version !== undefined
+      ? { ...sessionFence, run_id: runId, decision_id: decisionId, nonce, version }
+      : sessionFence;
 
   useEffect(() => {
     if (!submitting || !awaiting) return;
@@ -91,9 +92,7 @@ export function PPTOutlineCard({
     <div data-testid="ppt-outline-card" style={cardStyle}>
       <div style={titleStyle}>PPT 大纲确认 · {topic || "未命名主题"}</div>
       <div style={metaStyle}>📚 {sourcesCount} 个调研来源</div>
-      {noResearch && (
-        <div style={warningStyle}>⚠️ 本次未取得调研来源，基于通用知识</div>
-      )}
+      {noResearch && <div style={warningStyle}>⚠️ 本次未取得调研来源，基于通用知识</div>}
 
       <div style={outlineStyle}>
         <ReactMarkdown>{outlineMd || "（暂无大纲内容）"}</ReactMarkdown>
@@ -159,13 +158,28 @@ export function PPTOutlineCard({
             </div>
           )}
           <div style={buttonBarStyle}>
-            <button type="button" disabled={submitting} onClick={() => decide("accept")} style={primaryButtonStyle}>
+            <button
+              type="button"
+              disabled={submitting}
+              onClick={() => decide("accept")}
+              style={primaryButtonStyle}
+            >
               ✅ 确认生成
             </button>
-            <button type="button" disabled={submitting} onClick={() => setEditing(true)} style={secondaryButtonStyle}>
+            <button
+              type="button"
+              disabled={submitting}
+              onClick={() => setEditing(true)}
+              style={secondaryButtonStyle}
+            >
               ✏️ 修改
             </button>
-            <button type="button" disabled={submitting} onClick={() => decide("cancel")} style={dangerButtonStyle}>
+            <button
+              type="button"
+              disabled={submitting}
+              onClick={() => decide("cancel")}
+              style={dangerButtonStyle}
+            >
               ✖ 取消
             </button>
           </div>

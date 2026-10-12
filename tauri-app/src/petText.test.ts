@@ -28,9 +28,7 @@ describe("isTraceLine", () => {
 
 describe("stripThink", () => {
   it("removes a closed think block, keeps the answer", () => {
-    expect(stripThink("<think>user greets me</think>嗨嗨～你好!")).toBe(
-      "嗨嗨～你好!",
-    );
+    expect(stripThink("<think>user greets me</think>嗨嗨～你好!")).toBe("嗨嗨～你好!");
   });
   it("removes an unclosed (still-streaming) think block", () => {
     expect(stripThink("正文<think>still reasoning and no close")).toBe("正文");
@@ -39,9 +37,7 @@ describe("stripThink", () => {
     expect(stripThink("<think>only reasoning here</think>")).toBe("");
   });
   it("passes through plain text untouched", () => {
-    expect(stripThink("我能帮你做的事情还挺多的")).toBe(
-      "我能帮你做的事情还挺多的",
-    );
+    expect(stripThink("我能帮你做的事情还挺多的")).toBe("我能帮你做的事情还挺多的");
   });
 });
 

@@ -35,10 +35,7 @@ export function useControlWsState(pollMs = 1000): ControlWsState {
  * 双源聚合取最差态（T8/T13 口径）：ControlChannel（identity_bind）与
  * controlWS（companion_action）任一未连接，整体就不算已连接。
  */
-export function worstConnectionState(
-  a: ControlWsState,
-  b: ControlWsState,
-): ControlWsState {
+export function worstConnectionState(a: ControlWsState, b: ControlWsState): ControlWsState {
   const rank: Record<ControlWsState, number> = {
     disconnected: 0,
     connecting: 1,

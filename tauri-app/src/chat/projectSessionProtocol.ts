@@ -11,15 +11,31 @@ import type {
 } from "../types/projectSessions";
 
 export type ProjectProtocolErrorCode =
-  | "invalid_request" | "path_empty" | "path_not_absolute" | "path_not_found"
-  | "path_not_directory" | "path_unreadable" | "git_probe_timeout"
-  | "git_root_invalid" | "project_not_found" | "project_identity_mismatch"
-  | "project_revision_conflict" | "project_runs_active" | "session_not_found"
-  | "session_deleted" | "request_id_conflict" | "binding_immutable"
-  | "execution_root_required" | "execution_root_not_directory"
-  | "workspace_unavailable" | "stale_cursor" | "cursor_invalid"
-  | "upgrade_incomplete" | "provider_registry_unavailable"
-  | "provider_binding_stale" | "session_create_failed";
+  | "invalid_request"
+  | "path_empty"
+  | "path_not_absolute"
+  | "path_not_found"
+  | "path_not_directory"
+  | "path_unreadable"
+  | "git_probe_timeout"
+  | "git_root_invalid"
+  | "project_not_found"
+  | "project_identity_mismatch"
+  | "project_revision_conflict"
+  | "project_runs_active"
+  | "session_not_found"
+  | "session_deleted"
+  | "request_id_conflict"
+  | "binding_immutable"
+  | "execution_root_required"
+  | "execution_root_not_directory"
+  | "workspace_unavailable"
+  | "stale_cursor"
+  | "cursor_invalid"
+  | "upgrade_incomplete"
+  | "provider_registry_unavailable"
+  | "provider_binding_stale"
+  | "session_create_failed";
 
 export interface ProjectProtocolError {
   code: ProjectProtocolErrorCode | string;
@@ -37,7 +53,8 @@ export interface ProjectWsEnvelope<T = Record<string, unknown>> {
 }
 
 export const newProjectRequestId = (): string =>
-  globalThis.crypto?.randomUUID?.() ?? `project-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  globalThis.crypto?.randomUUID?.() ??
+  `project-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
 export const projectRequest = <T>(type: string, payload: T): ProjectWsEnvelope<T> => ({
   type,
@@ -46,14 +63,23 @@ export const projectRequest = <T>(type: string, payload: T): ProjectWsEnvelope<T
 });
 
 export type ProjectPreviewResponse = ProjectProtocolResult<{ preview: ProjectRegistrationPreview }>;
-export type ProjectRegisterResponse = ProjectProtocolResult<{ project: ProjectDescriptor; created: boolean }>;
-export type SessionCreateResponse = ProjectProtocolResult<{ session: ProjectSessionDescriptor; replayed: boolean }>;
+export type ProjectRegisterResponse = ProjectProtocolResult<{
+  project: ProjectDescriptor;
+  created: boolean;
+}>;
+export type SessionCreateResponse = ProjectProtocolResult<{
+  session: ProjectSessionDescriptor;
+  replayed: boolean;
+}>;
 export type ProjectCatalogResponse = ProjectProtocolResult<Omit<ProjectCatalogPage, "request_id">>;
 export type ProjectSessionsResponse = ProjectProtocolResult<Omit<ProjectSessionPage, "request_id">>;
 export type ProjectInspectResponse = ProjectProtocolResult<Omit<ProjectInspection, "request_id">>;
 export type ProjectRelocateResponse = ProjectProtocolResult<{ project: ProjectDescriptor }>;
 
-export function responsePayload<T>(message: unknown, expectedType: string): {
+export function responsePayload<T>(
+  message: unknown,
+  expectedType: string,
+): {
   request_id: string;
   payload: T;
 } | null {

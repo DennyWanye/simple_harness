@@ -31,9 +31,7 @@ class FakeChannel {
 }
 
 function Harness({ channel }: { channel: FakeChannel }) {
-  const { current, complete } = useExternalWaitRequests(
-    channel as unknown as ControlChannel,
-  );
+  const { current, complete } = useExternalWaitRequests(channel as unknown as ControlChannel);
   return <ExternalWaitDialog request={current} onComplete={complete} />;
 }
 

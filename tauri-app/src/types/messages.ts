@@ -602,13 +602,7 @@ export interface HarnessInspectorDetailsResponse {
 // （memory_list / memory_delete / memory_thumbs_up / memory_clear / memory_export，
 //  以及 P4-S11 的 memory_search / memory_l1_* 与 WI-S2.1b 的 facts / forget / undo）
 
-
-
-
-
 // 记忆系统升级 WI-M1.1：评估反馈回路。点 👍/👎 后端落 memory_user_feedback。
-
-
 
 // --- P2-1-S3 settings / provider test ----------------------------------------
 
@@ -792,26 +786,17 @@ export interface DecisionsListResponse {
   };
 }
 
-
-
-
-
-
 // --- WI-S2.1b: facts view（事实 tab） + 🗑 + 5s undo --------------------
 //
 // 后端 ws 路由 `memory_facts_list` / `memory_forget` / `memory_forget_undo`
 // 由 backend/p4_ipc.py 实现。embedding 列在后端已剥离（JSON 不接 bytes），
 // 因此 FactItem 不含 embedding 字段。
 
-
-
-
 // --- P4-S16 Embedder status (SettingsPanel BGE-M3 卡片) ---------------------
 //
 // 让用户在前端直接看见当前 BGE-M3 是真模型还是 mock。后端 handler 在
 // backend/p4_ipc.py::_handle_embedder_status；service_context._p4_embedder
 // 缺失或抛错会带 reason 回传，UI 据此渲染降级状态。
-
 
 // --- Option A (2026-06-05) 首启模型下载进度 ------------------------------
 //
@@ -957,7 +942,17 @@ export interface WorkflowRunsListResponse {
       run_id: string;
       workflow_name: string;
       workflow_version: string;
-      status: "created" | "running" | "waiting" | "retryable" | "cancel_requested" | "cancelling" | "blocked" | "completed" | "failed" | "cancelled";
+      status:
+        | "created"
+        | "running"
+        | "waiting"
+        | "retryable"
+        | "cancel_requested"
+        | "cancelling"
+        | "blocked"
+        | "completed"
+        | "failed"
+        | "cancelled";
       created_at: number;
       updated_at: number;
       active_nodes: string[];
@@ -979,11 +974,53 @@ export interface WorkflowRunDetailResponse {
     run_id: string;
     run_version?: number;
     run?: WorkflowRunsListResponse["payload"]["runs"][number];
-    nodes: Array<{ id: string; label: string; status: string; attempt?: number; error?: string | null; recovery_action?: string | null; next_retry_at?: number | null; started_at?: number | null; ended_at?: number | null }>;
+    nodes: Array<{
+      id: string;
+      label: string;
+      status: string;
+      attempt?: number;
+      error?: string | null;
+      recovery_action?: string | null;
+      next_retry_at?: number | null;
+      started_at?: number | null;
+      ended_at?: number | null;
+    }>;
     edges: Array<{ source: string; target: string; label?: string }>;
-    spans: Array<{ span_id: string; parent_span_id?: string | null; name: string; kind: string; status: string; duration_ms?: number | null; error?: string | null; input_summary?: string | null; output_summary?: string | null; redacted?: boolean }>;
-    checkpoints: Array<{ checkpoint_id: string; checkpoint_ns?: string; node_id?: string | null; created_at: number; status: string; can_fork?: boolean; fork_reason?: string | null; requires_effect_confirmation?: boolean; effect_summary?: string | null }>;
-    evaluations: Array<{ evaluation_id: string; evaluator_name: string; evaluator_version: string; verdict: string; score?: number | null; explanation?: string | null; labels?: string[]; comment?: string | null; experiment_version?: string | null; created_at?: number | null }>;
+    spans: Array<{
+      span_id: string;
+      parent_span_id?: string | null;
+      name: string;
+      kind: string;
+      status: string;
+      duration_ms?: number | null;
+      error?: string | null;
+      input_summary?: string | null;
+      output_summary?: string | null;
+      redacted?: boolean;
+    }>;
+    checkpoints: Array<{
+      checkpoint_id: string;
+      checkpoint_ns?: string;
+      node_id?: string | null;
+      created_at: number;
+      status: string;
+      can_fork?: boolean;
+      fork_reason?: string | null;
+      requires_effect_confirmation?: boolean;
+      effect_summary?: string | null;
+    }>;
+    evaluations: Array<{
+      evaluation_id: string;
+      evaluator_name: string;
+      evaluator_version: string;
+      verdict: string;
+      score?: number | null;
+      explanation?: string | null;
+      labels?: string[];
+      comment?: string | null;
+      experiment_version?: string | null;
+      created_at?: number | null;
+    }>;
     decisions?: Array<{
       decision_id: string;
       run_id: string;
@@ -994,9 +1031,23 @@ export interface WorkflowRunDetailResponse {
       version: number;
       expires_at?: number | null;
       created_at: number;
-      options?: Array<{ label: string; value: unknown; description?: string | null; dangerous?: boolean }>;
+      options?: Array<{
+        label: string;
+        value: unknown;
+        description?: string | null;
+        dangerous?: boolean;
+      }>;
     }>;
-    deliveries?: Array<{ delivery_id: string; run_id?: string; channel?: string | null; status: string; attempts?: number; version: number; next_attempt_at?: number | null; last_error?: string | null }>;
+    deliveries?: Array<{
+      delivery_id: string;
+      run_id?: string;
+      channel?: string | null;
+      status: string;
+      attempts?: number;
+      version: number;
+      next_attempt_at?: number | null;
+      last_error?: string | null;
+    }>;
     delivery_aggregate?: WorkflowDeliveryAggregate | null;
   };
 }
@@ -1064,7 +1115,13 @@ export interface WorkflowDeliveryMutationResponse {
   type: "workflow_delivery_retry_response" | "workflow_delivery_discard_response";
   request_id: string;
   ok: true;
-  payload: { delivery_id: string; run_id?: string; status: string; version: number; audit?: string | null };
+  payload: {
+    delivery_id: string;
+    run_id?: string;
+    status: string;
+    version: number;
+    audit?: string | null;
+  };
 }
 
 export interface WorkflowRunRetryFromStartResponse {
@@ -1104,7 +1161,13 @@ export interface WorkflowIPCErrorResponse {
   request_type?: string | null;
   request_id?: string | null;
   ok: false;
-  error: { code: string; message: string; retryable: boolean; current_version?: number; details?: Record<string, unknown> };
+  error: {
+    code: string;
+    message: string;
+    retryable: boolean;
+    current_version?: number;
+    details?: Record<string, unknown>;
+  };
   payload: { error: WorkflowIPCErrorResponse["error"] };
 }
 
@@ -1130,8 +1193,7 @@ interface CompanionDecisionBase {
   expires_at: string;
 }
 
-export interface CompanionEvaluationAuthorizationDecision
-  extends CompanionDecisionBase {
+export interface CompanionEvaluationAuthorizationDecision extends CompanionDecisionBase {
   kind: "evaluation_authorization";
   candidate_id: string;
   candidate_revision: number;
@@ -1161,8 +1223,7 @@ export interface CompanionActivationDecision extends CompanionDecisionBase {
   activation_risk_ack?: "persistent_local_code_no_os_sandbox";
 }
 
-export interface CompanionActionConfirmationDecision
-  extends CompanionDecisionBase {
+export interface CompanionActionConfirmationDecision extends CompanionDecisionBase {
   kind: "action_confirmation";
   decision_id: string;
   run_id: string;

@@ -44,10 +44,7 @@ describe("data directory next-launch preference", () => {
 
     expect(isDataDirPreferenceNoop(current, "/data/current")).toBe(false);
     expect(
-      isDataDirPreferenceNoop(
-        { ...current, preference: "/data/current" },
-        "/data/current",
-      ),
+      isDataDirPreferenceNoop({ ...current, preference: "/data/current" }, "/data/current"),
     ).toBe(true);
   });
 });

@@ -81,9 +81,7 @@ describe("WI-TG-2 · buildDecisionMessage", () => {
       mkPending({ request_id: "b" }),
       mkPending({ request_id: "c" }),
     ];
-    const msgs = pending.map((p) =>
-      buildDecisionMessage(p.request_id, "allow"),
-    );
+    const msgs = pending.map((p) => buildDecisionMessage(p.request_id, "allow"));
     expect(msgs).toHaveLength(3);
     expect(msgs.map((m) => m.payload.request_id)).toEqual(["a", "b", "c"]);
     expect(msgs.every((m) => m.payload.decision === "allow")).toBe(true);
@@ -120,14 +118,8 @@ describe("WI-TG-2 · mergePending", () => {
   });
 
   it("test_snapshot_authoritative_replaces_when_base_empty", () => {
-    const snapshot = [
-      mkPending({ request_id: "a" }),
-      mkPending({ request_id: "b" }),
-    ];
-    expect(mergePending([], snapshot).map((p) => p.request_id)).toEqual([
-      "a",
-      "b",
-    ]);
+    const snapshot = [mkPending({ request_id: "a" }), mkPending({ request_id: "b" })];
+    expect(mergePending([], snapshot).map((p) => p.request_id)).toEqual(["a", "b"]);
   });
 });
 

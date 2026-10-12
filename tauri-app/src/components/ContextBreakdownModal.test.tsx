@@ -38,16 +38,18 @@ function fixture(overrides: Record<string, unknown> = {}) {
     snapshot_fingerprint: "sha256:public-7",
     availability: "available",
     model: "sf-glm-5.2",
-    sections: [{
-      kind: "system",
-      label: "System",
-      count: 1,
-      tokens: 1_000,
-      token_source: "estimated",
-      public_preview: "1 条已脱敏系统指令",
-      preview_truncated: false,
-      preview: "Authorization: Bearer sk-secret-value-123456",
-    }],
+    sections: [
+      {
+        kind: "system",
+        label: "System",
+        count: 1,
+        tokens: 1_000,
+        token_source: "estimated",
+        public_preview: "1 条已脱敏系统指令",
+        preview_truncated: false,
+        preview: "Authorization: Bearer sk-secret-value-123456",
+      },
+    ],
     total_estimated_tokens: 1_000,
     last_usage_prompt_tokens: 3_200,
     context_window: 128_000,
@@ -74,7 +76,9 @@ function setup(snapshot: ContextUsageSnapshot | null = measuredSnapshot) {
       send={send}
       onMessage={(next) => {
         listener = next;
-        return () => { listener = undefined; };
+        return () => {
+          listener = undefined;
+        };
       }}
     />,
   );
@@ -125,13 +129,21 @@ describe("ContextBreakdownModal authority fence", () => {
     const requestId = send.mock.calls[0][0].payload.request_id;
     emit(fixture({ correlation_id: requestId }));
     expect(await screen.findByText("System")).toBeTruthy();
-    emit(fixture({
-      correlation_id: requestId,
-      sections: [{
-        kind: "memory", label: "Memory", count: 1, tokens: 10,
-        token_source: "estimated", public_preview: "conflict",
-      }],
-    }));
+    emit(
+      fixture({
+        correlation_id: requestId,
+        sections: [
+          {
+            kind: "memory",
+            label: "Memory",
+            count: 1,
+            tokens: 10,
+            token_source: "estimated",
+            public_preview: "conflict",
+          },
+        ],
+      }),
+    );
     expect(screen.queryByText("Memory")).toBeNull();
     expect(screen.getByText("System")).toBeTruthy();
   });
@@ -152,17 +164,19 @@ describe("ContextBreakdownModal authority fence", () => {
     expect(screen.queryByText(/0 \/ 0 tokens/)).toBeNull();
     expect(screen.queryByText(/no model yet/i)).toBeNull();
     await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
-    emit(fixture({
-      correlation_id: send.mock.calls[0][0].payload.request_id,
-      snapshot_id: null,
-      snapshot_version: null,
-      sample_id: null,
-      usage_version: 7,
-      availability: "unavailable",
-      sections: [],
-      total_estimated_tokens: null,
-      last_usage_prompt_tokens: null,
-    }));
+    emit(
+      fixture({
+        correlation_id: send.mock.calls[0][0].payload.request_id,
+        snapshot_id: null,
+        snapshot_version: null,
+        sample_id: null,
+        usage_version: 7,
+        availability: "unavailable",
+        sections: [],
+        total_estimated_tokens: null,
+        last_usage_prompt_tokens: null,
+      }),
+    );
     expect(await screen.findByText("冻结请求构成不可用")).toBeTruthy();
     expect(screen.queryByText(/估算合计 0/)).toBeNull();
   });
@@ -171,9 +185,15 @@ describe("ContextBreakdownModal authority fence", () => {
     let listener: ((message: unknown) => void) | undefined;
     const send = vi.fn();
     const props = {
-      onClose: vi.fn(), sessionId: "session-1", snapshot: measuredSnapshot,
-      send, onMessage: (next: (message: unknown) => void) => {
-        listener = next; return () => { listener = undefined; };
+      onClose: vi.fn(),
+      sessionId: "session-1",
+      snapshot: measuredSnapshot,
+      send,
+      onMessage: (next: (message: unknown) => void) => {
+        listener = next;
+        return () => {
+          listener = undefined;
+        };
       },
     };
     const view = render(<ContextBreakdownModal open {...props} />);
@@ -184,10 +204,12 @@ describe("ContextBreakdownModal authority fence", () => {
     await waitFor(() => expect(send).toHaveBeenCalledTimes(2));
     const newId = send.mock.calls[1][0].payload.request_id;
     expect(newId).not.toBe(oldId);
-    act(() => listener?.({
-      type: "context_breakdown_response",
-      payload: fixture({ correlation_id: oldId }),
-    }));
+    act(() =>
+      listener?.({
+        type: "context_breakdown_response",
+        payload: fixture({ correlation_id: oldId }),
+      }),
+    );
     expect(screen.queryByText("System")).toBeNull();
   });
 });

@@ -11,11 +11,18 @@ import type { ControlMessage } from "../types/messages";
 import type { ControlChannel } from "../ws/ControlChannel";
 
 export type ProtectedPathRequest = {
-  request_id: string; session_id: string; path: string; op: "read" | "write"; tool: string; reason: string;
+  request_id: string;
+  session_id: string;
+  path: string;
+  op: "read" | "write";
+  tool: string;
+  reason: string;
 };
 export type ProtectedPathDecision = "allow_once" | "allow_session" | "deny";
 
-export function useProtectedPathRequests(channel: Pick<ControlChannel, "send" | "onMessage"> | null) {
+export function useProtectedPathRequests(
+  channel: Pick<ControlChannel, "send" | "onMessage"> | null,
+) {
   const [queue, setQueue] = useState<ProtectedPathRequest[]>([]);
 
   useEffect(() => {
@@ -26,17 +33,29 @@ export function useProtectedPathRequests(channel: Pick<ControlChannel, "send" | 
       const p = raw.payload;
       if (!p?.request_id || !p.path) return;
       const request: ProtectedPathRequest = {
-        request_id: p.request_id, session_id: p.session_id ?? "", path: p.path,
-        op: p.op === "read" ? "read" : "write", tool: p.tool ?? "", reason: p.reason ?? "",
+        request_id: p.request_id,
+        session_id: p.session_id ?? "",
+        path: p.path,
+        op: p.op === "read" ? "read" : "write",
+        tool: p.tool ?? "",
+        reason: p.reason ?? "",
       };
-      setQueue((current) => current.some((r) => r.request_id === request.request_id) ? current : [...current, request]);
+      setQueue((current) =>
+        current.some((r) => r.request_id === request.request_id) ? current : [...current, request],
+      );
     });
   }, [channel]);
 
-  const decide = useCallback((requestId: string, decision: ProtectedPathDecision) => {
-    channel?.send({ type: "protected_path_decision", payload: { request_id: requestId, decision } } as unknown as ControlMessage);
-    setQueue((current) => current.filter((r) => r.request_id !== requestId));
-  }, [channel]);
+  const decide = useCallback(
+    (requestId: string, decision: ProtectedPathDecision) => {
+      channel?.send({
+        type: "protected_path_decision",
+        payload: { request_id: requestId, decision },
+      } as unknown as ControlMessage);
+      setQueue((current) => current.filter((r) => r.request_id !== requestId));
+    },
+    [channel],
+  );
 
   return { queue, decide } as const;
 }

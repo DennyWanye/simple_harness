@@ -26,14 +26,7 @@
  */
 import { ChatMissionCard } from "../views/ChatMissionCard";
 import { MISSION_CARD_TOOLS, missionIdFromToolResult } from "../views/chatMission";
-import {
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  type CSSProperties,
-} from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
 // 娑堟伅娴佹粴鍔ㄤ綅缃寔涔呴敭(杩涘叆娑堟伅鐣岄潰鎭㈠涓婃浣嶇疆,瑙佷笅 useLayoutEffect)銆?
@@ -124,9 +117,7 @@ const LEGACY_SYNTHETIC_TOOL_PROGRESS = [
 
 export function isLegacySyntheticToolProgress(text: string): boolean {
   const normalized = text.trim();
-  return LEGACY_SYNTHETIC_TOOL_PROGRESS.some((pattern) =>
-    pattern.test(normalized),
-  );
+  return LEGACY_SYNTHETIC_TOOL_PROGRESS.some((pattern) => pattern.test(normalized));
 }
 
 export interface MessageStreamPanelProps {
@@ -141,12 +132,7 @@ export interface MessageStreamPanelProps {
   onDismiss: (sid: string, alert_id: string) => void;
   onDismissAll: (severity: "yellow" | "red") => void;
   onJumpToSession: (sid: string) => void;
-  onChoice: (
-    sid: string,
-    alert_id: string,
-    button_index: number,
-    button_text: string,
-  ) => void;
+  onChoice: (sid: string, alert_id: string, button_index: number, button_text: string) => void;
   onCompanionDetail?: (event: CompanionEvent) => void;
   onCompanionAction?: (
     event: CompanionEvent,
@@ -172,10 +158,7 @@ export interface MessageStreamPanelProps {
   agentSnapshot?: unknown;
   projectDirectoryRequest?: ProjectDirectoryRequest["payload"] | null;
   projectDirectoryError?: string | null;
-  onProjectDirectoryConfirm?: (
-    parentDirectory: string,
-    folderName: string,
-  ) => boolean;
+  onProjectDirectoryConfirm?: (parentDirectory: string, folderName: string) => boolean;
 }
 
 type StreamRow =
@@ -226,8 +209,11 @@ type StreamRow =
 
 const PALETTE = {
   warn: { accent: "#f59e0b", soft: "rgba(245, 158, 11, 0.18)", border: "rgba(245, 158, 11, 0.45)" },
-  err:  { accent: "#ef4444", soft: "rgba(239, 68, 68, 0.18)", border: "rgba(239, 68, 68, 0.45)" },
-  user: { bg: "linear-gradient(135deg, rgba(15, 76, 129, 0.96), rgba(12, 58, 105, 0.96))", fg: "#eaf6ff" },
+  err: { accent: "#ef4444", soft: "rgba(239, 68, 68, 0.18)", border: "rgba(239, 68, 68, 0.45)" },
+  user: {
+    bg: "linear-gradient(135deg, rgba(15, 76, 129, 0.96), rgba(12, 58, 105, 0.96))",
+    fg: "#eaf6ff",
+  },
   asst: { bg: "rgba(255, 255, 255, 0.055)", fg: "#e8edf6" },
 } as const;
 
@@ -258,16 +244,17 @@ export function MessageStreamPanel({
   // 锛堣皟鐢ㄦ柟鐓у父浼狅級锛屼絾褰撳墠 render 鏈敤鍒扳€斺€斿崐鎺ョ嚎鐨勮繃婊ゆ潯鐗规€с€傚厛涓嶈В鏋?
   // 浠ラ€氳繃 tsc noUnusedParameters锛涜鎭㈠杩囨护鏉?UI 鏃跺啀鎺ュ洖銆?
   const rows = useMemo(
-    () => buildRows(
-      chatMessages,
-      warnings,
-      errors,
-      companionEvents,
-      filter,
-      agentSnapshot,
-      projectDirectoryRequest,
-      runProjections,
-    ),
+    () =>
+      buildRows(
+        chatMessages,
+        warnings,
+        errors,
+        companionEvents,
+        filter,
+        agentSnapshot,
+        projectDirectoryRequest,
+        runProjections,
+      ),
     [
       chatMessages,
       warnings,
@@ -324,10 +311,7 @@ export function MessageStreamPanel({
     const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
     shouldStickToBottomRef.current = atBottom;
     try {
-      localStorage.setItem(
-        MSGSTREAM_SCROLL_KEY,
-        JSON.stringify({ top: el.scrollTop, atBottom }),
-      );
+      localStorage.setItem(MSGSTREAM_SCROLL_KEY, JSON.stringify({ top: el.scrollTop, atBottom }));
     } catch {
       /* localStorage 涓嶅彲鐢ㄦ椂蹇界暐,涓嶅奖鍝嶅姛鑳?*/
     }
@@ -350,16 +334,9 @@ export function MessageStreamPanel({
           鏃犲苟鍙戜换鍔℃椂璇ョ粍浠惰繑鍥?null锛屼笉鍗犱綅銆?*/}
       <SubagentProgressPanel variant="dark" />
 
-      <div
-        ref={listRef}
-        data-testid="msgstream-list"
-        style={listStyle}
-        onScroll={handleListScroll}
-      >
+      <div ref={listRef} data-testid="msgstream-list" style={listStyle} onScroll={handleListScroll}>
         {rows.length === 0 ? (
-          <div style={emptyStyle}>
-            {emptyMessage(filter)}
-          </div>
+          <div style={emptyStyle}>{emptyMessage(filter)}</div>
         ) : (
           rows.map((r) =>
             r.kind === "chat" ? (
@@ -369,8 +346,8 @@ export function MessageStreamPanel({
                 key={r.key}
                 runId={r.runId}
                 messages={r.messages}
-                runMessages={chatMessages.filter((message) =>
-                  "runId" in message && message.runId === r.runId
+                runMessages={chatMessages.filter(
+                  (message) => "runId" in message && message.runId === r.runId,
                 )}
                 runProjection={r.runProjection}
               />
@@ -389,8 +366,7 @@ export function MessageStreamPanel({
                 key={r.key}
                 event={r.event}
                 onOpenDetail={(event) => onCompanionDetail?.(event)}
-                onAction={(event, action, allow) =>
-                  onCompanionAction?.(event, action, allow)}
+                onAction={(event, action, allow) => onCompanionAction?.(event, action, allow)}
               />
             ) : r.kind === "workflow_group" ? (
               <WorkflowProgressGroup
@@ -410,9 +386,7 @@ export function MessageStreamPanel({
                 severity={r.severity}
                 onDismiss={() => onDismiss(r.item.session_id, r.item.alert_id)}
                 onJump={() => onJumpToSession(r.item.session_id)}
-                onChoice={(idx, text) =>
-                  onChoice(r.item.session_id, r.item.alert_id, idx, text)
-                }
+                onChoice={(idx, text) => onChoice(r.item.session_id, r.item.alert_id, idx, text)}
               />
             ),
           )
@@ -438,28 +412,27 @@ function buildRows(
 ): StreamRow[] {
   const rows: StreamRow[] = [];
   if (filter === "all" || filter === "chat") {
-    const taskTraces = agentSnapshot
-      ? buildWorkflowTaskTraces(agentSnapshot)
-      : [];
-    const taskTraceByRun = new Map(
-      taskTraces.map((trace) => [trace.runId, trace]),
-    );
+    const taskTraces = agentSnapshot ? buildWorkflowTaskTraces(agentSnapshot) : [];
+    const taskTraceByRun = new Map(taskTraces.map((trace) => [trace.runId, trace]));
     const consumedTaskTraceRunIds = new Set<string>();
     companionEvents.forEach((event) => {
       const parsed = event.occurred_at ? Date.parse(event.occurred_at) : NaN;
       rows.push({
         kind: "companion",
-        ts: Number.isFinite(parsed) ? parsed : event.received_at ?? Date.now(),
+        ts: Number.isFinite(parsed) ? parsed : (event.received_at ?? Date.now()),
         event,
         key: `companion:${event.profile_id}:${event.profile_generation}:${event.event_id}`,
       });
     });
-    const groups = new Map<string, {
-      summary?: Message;
-      stages: Message[];
-      anchor: number;
-      ts: number;
-    }>();
+    const groups = new Map<
+      string,
+      {
+        summary?: Message;
+        stages: Message[];
+        anchor: number;
+        ts: number;
+      }
+    >();
     chats.forEach((message, index) => {
       if (message.role !== "workflow_progress" && message.role !== "workflow_stage") return;
       const runId = String(message.message.workflow_run_id || "").trim();
@@ -472,16 +445,19 @@ function buildRows(
       group.anchor = Math.min(group.anchor, index);
       group.ts = Math.min(group.ts, message.ts);
       if (message.role === "workflow_progress") {
-        if (!group.summary ||
-            (message.message.workflow_seq ?? -1) >= (group.summary.workflow_seq ?? -1)) {
+        if (
+          !group.summary ||
+          (message.message.workflow_seq ?? -1) >= (group.summary.workflow_seq ?? -1)
+        ) {
           group.summary = message.message;
         }
       } else {
-        const duplicate = group.stages.some((stage) =>
-          (stage.workflow_event_id &&
-            stage.workflow_event_id === message.message.workflow_event_id) ||
-          (stage.workflow_seq !== undefined &&
-            stage.workflow_seq === message.message.workflow_seq),
+        const duplicate = group.stages.some(
+          (stage) =>
+            (stage.workflow_event_id &&
+              stage.workflow_event_id === message.message.workflow_event_id) ||
+            (stage.workflow_seq !== undefined &&
+              stage.workflow_seq === message.message.workflow_seq),
         );
         if (!duplicate) group.stages.push(message.message);
       }
@@ -489,12 +465,15 @@ function buildRows(
     });
 
     const emitted = new Set<string>();
-    const thinkingGroups = new Map<string, {
-      anchor: number;
-      ts: number;
-      messages: ThinkingStreamMessage[];
-      identities: Set<string>;
-    }>();
+    const thinkingGroups = new Map<
+      string,
+      {
+        anchor: number;
+        ts: number;
+        messages: ThinkingStreamMessage[];
+        identities: Set<string>;
+      }
+    >();
     chats.forEach((message, index) => {
       if (!isThinkingStreamMessage(message) || !message.runId) {
         return;
@@ -519,8 +498,8 @@ function buildRows(
         message.role,
         message.ts,
         message.text,
-        message.role === "tool" ? message.toolName ?? "" : message.status ?? "",
-        message.role === "tool" ? message.toolResultRaw ?? "" : message.phase ?? "",
+        message.role === "tool" ? (message.toolName ?? "") : (message.status ?? ""),
+        message.role === "tool" ? (message.toolResultRaw ?? "") : (message.phase ?? ""),
         message.role === "tool" ? JSON.stringify(message.toolArgs ?? null) : "",
       ].join("\u001f");
       if (!group.identities.has(identity)) {
@@ -556,13 +535,14 @@ function buildRows(
           const rootRunId = String(
             group.summary?.run_id || group.stages[0]?.run_id || runId,
           ).trim();
-          const taskTrace = taskTraceByRun.get(runId) ??
-            taskTraceByRun.get(rootRunId);
+          const taskTrace = taskTraceByRun.get(runId) ?? taskTraceByRun.get(rootRunId);
           const childRunProjection = runProjections[runId];
           const rootRunProjection = runProjections[rootRunId];
-          const childHasTerminalProjection = childRunProjection != null &&
+          const childHasTerminalProjection =
+            childRunProjection != null &&
             ["completed", "failed", "cancelled"].includes(childRunProjection.status);
-          const rootHasTerminalProjection = rootRunProjection != null &&
+          const rootHasTerminalProjection =
+            rootRunProjection != null &&
             ["completed", "failed", "cancelled"].includes(rootRunProjection.status);
           // A workflow card describes the child Run, so its own durable terminal
           // outcome must win over the Root's aggregate outcome. The Root remains
@@ -572,19 +552,20 @@ function buildRows(
             ? childRunProjection
             : rootHasTerminalProjection
               ? rootRunProjection
-              : childRunProjection ?? rootRunProjection;
+              : (childRunProjection ?? rootRunProjection);
           if (taskTrace) consumedTaskTraceRunIds.add(taskTrace.runId);
           rows.push({
             kind: "workflow_group",
             ts: group.ts,
             runId,
             summary: group.summary,
-            stages: [...group.stages].sort((a, b) =>
-              (a.workflow_seq ?? Number.MAX_SAFE_INTEGER) -
-                (b.workflow_seq ?? Number.MAX_SAFE_INTEGER) ||
-              String(a.workflow_event_id || a.id).localeCompare(
-                String(b.workflow_event_id || b.id),
-              ),
+            stages: [...group.stages].sort(
+              (a, b) =>
+                (a.workflow_seq ?? Number.MAX_SAFE_INTEGER) -
+                  (b.workflow_seq ?? Number.MAX_SAFE_INTEGER) ||
+                String(a.workflow_event_id || a.id).localeCompare(
+                  String(b.workflow_event_id || b.id),
+                ),
             ),
             taskTrace,
             runProjectionStatus: runProjection?.status,
@@ -626,10 +607,7 @@ function buildRows(
     }
     if (agentSnapshot) {
       const tracedRunIds = new Set(taskTraces.map((trace) => trace.runId));
-      for (const item of buildAgentActivityTrace(
-        agentSnapshot,
-        tracedRunIds,
-      )) {
+      for (const item of buildAgentActivityTrace(agentSnapshot, tracedRunIds)) {
         const msg: ChatStreamMessage = {
           role: "assistant",
           text: item.text,
@@ -679,18 +657,20 @@ function buildRows(
   return rows;
 }
 
-function isThinkingStreamMessage(
-  message: ChatStreamMessage,
-): message is ThinkingStreamMessage {
+function isThinkingStreamMessage(message: ChatStreamMessage): message is ThinkingStreamMessage {
   return message.role === "progress" || message.role === "tool";
 }
 
 function emptyMessage(f: StreamFilter): string {
   switch (f) {
-    case "chat": return "本次还没聊过。";
-    case "warn": return "暂无未处理的提醒。";
-    case "err":  return "暂无未处理的错误。";
-    default:     return "（消息流为空）";
+    case "chat":
+      return "本次还没聊过。";
+    case "warn":
+      return "暂无未处理的提醒。";
+    case "err":
+      return "暂无未处理的错误。";
+    default:
+      return "（消息流为空）";
   }
 }
 
@@ -709,12 +689,14 @@ function ChatRow({
   onWorkflowRetry?: MessageStreamPanelProps["onWorkflowRetry"];
 }) {
   if (msg.role === "workflow_progress" || msg.role === "workflow_stage") {
-    return <WorkflowProgressGroup
-      runId={msg.message.workflow_run_id || msg.message.id}
-      summary={msg.role === "workflow_progress" ? msg.message : undefined}
-      stages={msg.role === "workflow_stage" ? [msg.message] : []}
-      onWorkflowRetry={onWorkflowRetry}
-    />;
+    return (
+      <WorkflowProgressGroup
+        runId={msg.message.workflow_run_id || msg.message.id}
+        summary={msg.role === "workflow_progress" ? msg.message : undefined}
+        stages={msg.role === "workflow_stage" ? [msg.message] : []}
+        onWorkflowRetry={onWorkflowRetry}
+      />
+    );
   }
   if (msg.role === "ppt_outline") {
     const m = msg.message;
@@ -754,17 +736,15 @@ function ChatRow({
     if (msg.toolArgs) {
       return (
         <div data-role="tool" style={{ alignSelf: "flex-start", maxWidth: "96%" }}>
-          <ToolCallCard
-            name={msg.toolName || "(工具)"}
-            args={msg.toolArgs}
-          />
+          <ToolCallCard name={msg.toolName || "(工具)"} args={msg.toolArgs} />
         </div>
       );
     }
     // 2026-09-29：主 Agent 发起的后台任务在对话里显示成任务卡片（进度 + 人亲手点的确认/批准）
-    const missionId = MISSION_CARD_TOOLS.has(msg.toolName ?? "") && msg.toolOk !== false
-      ? missionIdFromToolResult(msg.toolResultRaw)
-      : "";
+    const missionId =
+      MISSION_CARD_TOOLS.has(msg.toolName ?? "") && msg.toolOk !== false
+        ? missionIdFromToolResult(msg.toolResultRaw)
+        : "";
     if (missionId) {
       return (
         <div data-role="tool" style={{ alignSelf: "flex-start", width: "96%", maxWidth: "96%" }}>
@@ -772,9 +752,10 @@ function ChatRow({
         </div>
       );
     }
-    const artifacts = msg.toolOk !== false && msg.toolResultRaw
-      ? extractArtifactsFromResult(msg.toolResultRaw)
-      : [];
+    const artifacts =
+      msg.toolOk !== false && msg.toolResultRaw
+        ? extractArtifactsFromResult(msg.toolResultRaw)
+        : [];
     if (artifacts.length > 0) {
       return (
         <div
@@ -867,25 +848,26 @@ function ChatRow({
           maxWidth: "100%",
           background: tone.bg,
           color: tone.fg,
-          borderColor: role === "user"
-            ? "rgba(125, 211, 252, 0.20)"
-            : "rgba(255,255,255,0.06)",
-          boxShadow: role === "user"
-            ? "inset 0 1px 0 rgba(255,255,255,0.08), 0 8px 18px rgba(8,47,73,0.22)"
-            : undefined,
+          borderColor: role === "user" ? "rgba(125, 211, 252, 0.20)" : "rgba(255,255,255,0.06)",
+          boxShadow:
+            role === "user"
+              ? "inset 0 1px 0 rgba(255,255,255,0.08), 0 8px 18px rgba(8,47,73,0.22)"
+              : undefined,
         }}
       >
-      {/* data-bp-selectable: 璁╂秷鎭鏂囧彲琚紶鏍囨嫋閫夊鍒讹紙index.css 鐨?
+        {/* data-bp-selectable: 璁╂秷鎭鏂囧彲琚紶鏍囨嫋閫夊鍒讹紙index.css 鐨?
           鍏ㄥ眬 user-select:none 榛樿浼氭尅浣忥級銆?
           assistant 鍥炲璧?markdown 娓叉煋锛堜唬鐮佸潡/鍒楄〃/鍔犵矖/鏈湴鏂囦欢閾炬帴锛夛紝
           涓?code 妯″紡涓€鑷达紱user 杈撳叆淇濇寔绾枃鏈紙pre-wrap 淇濈暀鎹㈣锛夈€?*/}
-      {role === "assistant" && text ? (
-        <div data-bp-selectable="" style={{ ...bodyStyle, whiteSpace: "normal" }}>
-          <MarkdownMessage>{text}</MarkdownMessage>
-        </div>
-      ) : (
-          <div data-bp-selectable="" style={bodyStyle}>{text || "(空)"}</div>
-      )}
+        {role === "assistant" && text ? (
+          <div data-bp-selectable="" style={{ ...bodyStyle, whiteSpace: "normal" }}>
+            <MarkdownMessage>{text}</MarkdownMessage>
+          </div>
+        ) : (
+          <div data-bp-selectable="" style={bodyStyle}>
+            {text || "(空)"}
+          </div>
+        )}
       </div>
       <MessageActionRow
         copyText={text || ""}
@@ -933,8 +915,10 @@ function thinkingStatus(
 ): TaskRunProjectionState["status"] {
   if (runProjection) return runProjection.status;
   const progressStatuses = messages
-    .filter((message): message is Extract<ChatStreamMessage, { role: "progress" }> =>
-      message.role === "progress")
+    .filter(
+      (message): message is Extract<ChatStreamMessage, { role: "progress" }> =>
+        message.role === "progress",
+    )
     .map((message) => message.status)
     .filter((status): status is NonNullable<typeof status> => status != null);
   // A durable terminal summary wins over a stale or out-of-order running
@@ -942,8 +926,9 @@ function thinkingStatus(
   if (progressStatuses.includes("failed")) return "failed";
   if (progressStatuses.includes("completed")) return "completed";
   if (progressStatuses.includes("running")) return "running";
-  const hasToolResult = messages.some((message) =>
-    message.role === "tool" && message.toolResultRaw !== undefined);
+  const hasToolResult = messages.some(
+    (message) => message.role === "tool" && message.toolResultRaw !== undefined,
+  );
   return hasToolResult ? "completed" : "running";
 }
 
@@ -993,19 +978,21 @@ function ThinkingProcessGroup({
   const timestamps = runMessages
     .map((message) => message.ts)
     .filter((value) => Number.isFinite(value) && value >= 0);
-  const startedAt = runProjection?.started_at ?? (
-    timestamps.length > 0 ? Math.min(...timestamps) : undefined
-  );
+  const startedAt =
+    runProjection?.started_at ?? (timestamps.length > 0 ? Math.min(...timestamps) : undefined);
   const endedAt = terminal
-    ? runProjection?.last_activity ?? (timestamps.length > 0 ? Math.max(...timestamps) : undefined)
+    ? (runProjection?.last_activity ??
+      (timestamps.length > 0 ? Math.max(...timestamps) : undefined))
     : now;
-  const elapsed = startedAt != null && endedAt != null
-    ? Math.max(0, endedAt - startedAt)
-    : 0;
+  const elapsed = startedAt != null && endedAt != null ? Math.max(0, endedAt - startedAt) : 0;
   const elapsedKnown = startedAt != null && endedAt != null && endedAt > startedAt;
   const headerLabel = terminal
-    ? elapsedKnown ? `耗时 ${formatThinkingDuration(elapsed)}` : "已完成"
-    : elapsedKnown ? `思考中 · ${formatThinkingDuration(elapsed)}` : "思考中";
+    ? elapsedKnown
+      ? `耗时 ${formatThinkingDuration(elapsed)}`
+      : "已完成"
+    : elapsedKnown
+      ? `思考中 · ${formatThinkingDuration(elapsed)}`
+      : "思考中";
   const bodyId = `thinking-process-body-${runId.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
 
   return (
@@ -1054,10 +1041,7 @@ function ThinkingProcessGroup({
           }}
         >
           {messages.map((message, index) => (
-            <ChatRow
-              key={`${message.role}:${message.ts}:${message.text}:${index}`}
-              msg={message}
-            />
+            <ChatRow key={`${message.role}:${message.ts}:${message.text}:${index}`} msg={message} />
           ))}
         </div>
       )}
@@ -1087,11 +1071,8 @@ export function ProjectDirectoryCard({
   const usesExistingProject = request.directory_mode === "use_existing";
   const trimmedParent = parent.trim();
   const displayParent =
-    trimmedParent.length > 1
-      ? trimmedParent.replace(/[\\/]+$/, "")
-      : trimmedParent;
-  const pathSeparator =
-    trimmedParent.includes("\\") && !trimmedParent.includes("/") ? "\\" : "/";
+    trimmedParent.length > 1 ? trimmedParent.replace(/[\\/]+$/, "") : trimmedParent;
+  const pathSeparator = trimmedParent.includes("\\") && !trimmedParent.includes("/") ? "\\" : "/";
   const finalPath = parent
     ? usesExistingProject
       ? displayParent
@@ -1115,8 +1096,7 @@ export function ProjectDirectoryCard({
   };
 
   const confirm = () => {
-    if (!parent || (!usesExistingProject && !folderName.trim()) || !onConfirm)
-      return;
+    if (!parent || (!usesExistingProject && !folderName.trim()) || !onConfirm) return;
     if (onConfirm(parent, folderName.trim())) setSubmitted(true);
   };
 
@@ -1194,15 +1174,10 @@ export function ProjectDirectoryCard({
             style={{
               ...projectDirectoryButtonStyle,
               justifySelf: "start",
-              opacity:
-                !parent || (!usesExistingProject && !folderName.trim())
-                  ? 0.45
-                  : 1,
+              opacity: !parent || (!usesExistingProject && !folderName.trim()) ? 0.45 : 1,
             }}
           >
-            {request.directory_mode === "use_existing"
-              ? "使用此文件夹"
-              : "在这里创建"}
+            {request.directory_mode === "use_existing" ? "使用此文件夹" : "在这里创建"}
           </button>
         </>
       )}
@@ -1275,14 +1250,9 @@ function PublicProgressRow({
           }}
         >
           <span>{phaseLabel}</span>
-          <span style={{ color: "#94a3b8", opacity: 0.55 }}>
-            {format_relative(message.ts)}
-          </span>
+          <span style={{ color: "#94a3b8", opacity: 0.55 }}>{format_relative(message.ts)}</span>
         </div>
-        <div
-          data-bp-selectable=""
-          style={{ fontSize: 12.5, lineHeight: 1.65 }}
-        >
+        <div data-bp-selectable="" style={{ fontSize: 12.5, lineHeight: 1.65 }}>
           <MarkdownMessage>{message.text}</MarkdownMessage>
         </div>
       </div>
@@ -1315,9 +1285,7 @@ function MessageActionRow({
         fontSize: 10.5,
       }}
     >
-      {typeof ts === "number" && (
-        <span style={{ opacity: 0.72 }}>{format_relative(ts)}</span>
-      )}
+      {typeof ts === "number" && <span style={{ opacity: 0.72 }}>{format_relative(ts)}</span>}
       <CopyMessageButton text={copyText} align={align} tone={tone} inline />
     </div>
   );
@@ -1341,8 +1309,8 @@ function AlertRow({
     item.project_name && item.project_name !== item.session_id
       ? item.project_name
       : item.session_id.length > 18
-      ? `${item.session_id.slice(0, 16)}...`
-      : item.session_id;
+        ? `${item.session_id.slice(0, 16)}...`
+        : item.session_id;
   return (
     <div
       role="button"
@@ -1378,10 +1346,7 @@ function AlertRow({
       <div data-bp-selectable="" style={bodyStyle}>
         {item.user_message || item.diagnosis || "(supervisor 未提供详情)"}
       </div>
-      <div
-        style={actionRowStyle}
-        onClick={(e) => e.stopPropagation()}
-      >
+      <div style={actionRowStyle} onClick={(e) => e.stopPropagation()}>
         {item.suggested_buttons.slice(0, 2).map((b, i) => (
           <button
             key={i}

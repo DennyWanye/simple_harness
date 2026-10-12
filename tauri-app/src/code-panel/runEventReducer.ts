@@ -60,7 +60,8 @@ export function reduceDurableRunEvent(
 ): DurableRunState {
   if (!validEnvelope(event) || event.live_cursor != null) return state;
   if (!Number.isSafeInteger(event.durable_seq) || Number(event.durable_seq) <= 0) return state;
-  if (state.seenEventIds.has(event.event_id) || Number(event.durable_seq) <= state.lastSeq) return state;
+  if (state.seenEventIds.has(event.event_id) || Number(event.durable_seq) <= state.lastSeq)
+    return state;
 
   const seenEventIds = new Set(state.seenEventIds);
   seenEventIds.add(event.event_id);
@@ -76,14 +77,17 @@ export function reduceDurableRunEvent(
  * 1; the previous epoch is retired so a late frame cannot overwrite the new
  * stream. Durable progress/final events never participate in this ordering.
  */
-export function reduceLiveStreamEvent(
-  state: LiveRunState,
-  event: RunEventEnvelope,
-): LiveRunState {
+export function reduceLiveStreamEvent(state: LiveRunState, event: RunEventEnvelope): LiveRunState {
   const cursor = event.live_cursor;
   if (!validEnvelope(event) || event.durable_seq != null || cursor == null) return state;
-  if (!hasText(cursor.stream_epoch) || !Number.isSafeInteger(cursor.live_seq) || cursor.live_seq <= 0) return state;
-  if (state.seenEventIds.has(event.event_id) || state.retiredEpochs.has(cursor.stream_epoch)) return state;
+  if (
+    !hasText(cursor.stream_epoch) ||
+    !Number.isSafeInteger(cursor.live_seq) ||
+    cursor.live_seq <= 0
+  )
+    return state;
+  if (state.seenEventIds.has(event.event_id) || state.retiredEpochs.has(cursor.stream_epoch))
+    return state;
 
   let currentEpoch = state.currentEpoch;
   let lastSeq = state.lastSeq;

@@ -17,9 +17,7 @@ export type SessionHydrationCommand = {
  * A restored topic has three independent read models. Keep them together so
  * the message stream, Harness Run selector and context ring cannot disagree.
  */
-export function sessionHydrationCommands(
-  sessionId: string,
-): SessionHydrationCommand[] {
+export function sessionHydrationCommands(sessionId: string): SessionHydrationCommand[] {
   return [
     {
       type: "session_messages_load",

@@ -108,8 +108,8 @@ function FeedbackPanelImpl({
         </div>
 
         <p style={hintStyle}>
-          描述你遇到的问题，Simple Harness 会打包诊断信息（崩溃记录 + 最近日志 +
-          匿名使用计数）。<strong>诊断包不含你的 API 密钥</strong>。
+          描述你遇到的问题，Simple Harness 会打包诊断信息（崩溃记录 + 最近日志 + 匿名使用计数）。
+          <strong>诊断包不含你的 API 密钥</strong>。
         </p>
 
         <textarea

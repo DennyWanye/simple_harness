@@ -40,9 +40,7 @@ function renderStream(messages: ChatStreamMessage[]) {
 describe("MessageStreamPanel — assistant markdown", () => {
   it("renders fenced code blocks as <code>, not raw ``` text", () => {
     const md = "金价模型:\n\n```text\n金价 ≈ 反美元资产\n```";
-    const { container } = renderStream([
-      { role: "assistant", text: md, ts: 1 },
-    ]);
+    const { container } = renderStream([{ role: "assistant", text: md, ts: 1 }]);
     const assistantRow = container.querySelector('[data-role="assistant"]')!;
     // markdown 渲染后会有真实的 <code> 元素，且正文里不再出现裸的 ``` 围栏。
     expect(assistantRow.querySelector("code")).not.toBeNull();
@@ -51,9 +49,7 @@ describe("MessageStreamPanel — assistant markdown", () => {
 
   it("renders bold + lists as real elements", () => {
     const md = "**核心关系**:\n\n- 实际利率↓ → 金价↑\n- 美元指数↓ → 金价↑";
-    const { container } = renderStream([
-      { role: "assistant", text: md, ts: 2 },
-    ]);
+    const { container } = renderStream([{ role: "assistant", text: md, ts: 2 }]);
     const assistantRow = container.querySelector('[data-role="assistant"]')!;
     expect(assistantRow.querySelector("strong")).not.toBeNull();
     expect(assistantRow.querySelectorAll("li").length).toBe(2);
@@ -62,14 +58,8 @@ describe("MessageStreamPanel — assistant markdown", () => {
   });
 
   it("renders GFM tables as real <table>, not raw pipes", () => {
-    const md = [
-      "| 事件 | 时间 | 金价表现 |",
-      "|---|---|---|",
-      "| 9·11 | 2001 | +20% |",
-    ].join("\n");
-    const { container } = renderStream([
-      { role: "assistant", text: md, ts: 4 },
-    ]);
+    const md = ["| 事件 | 时间 | 金价表现 |", "|---|---|---|", "| 9·11 | 2001 | +20% |"].join("\n");
+    const { container } = renderStream([{ role: "assistant", text: md, ts: 4 }]);
     const assistantRow = container.querySelector('[data-role="assistant"]')!;
     const table = assistantRow.querySelector("table");
     expect(table).not.toBeNull();
@@ -81,9 +71,7 @@ describe("MessageStreamPanel — assistant markdown", () => {
   });
 
   it("keeps user input as plain text (no markdown rendering)", () => {
-    const { container } = renderStream([
-      { role: "user", text: "**这是我打的字**", ts: 3 },
-    ]);
+    const { container } = renderStream([{ role: "user", text: "**这是我打的字**", ts: 3 }]);
     const userRow = container.querySelector('[data-role="user"]')!;
     // user 气泡保持纯文本：星号原样保留，不生成 <strong>。
     expect(userRow.querySelector("strong")).toBeNull();
@@ -99,9 +87,7 @@ describe("MessageStreamPanel — assistant markdown", () => {
         continuationStatus: "waiting",
       },
     ]);
-    expect(screen.getByRole("status").textContent).toContain(
-      "等待 Agent 读取",
-    );
+    expect(screen.getByRole("status").textContent).toContain("等待 Agent 读取");
 
     rerender(
       <MessageStreamPanel
@@ -124,9 +110,7 @@ describe("MessageStreamPanel — assistant markdown", () => {
         onChoice={() => {}}
       />,
     );
-    expect(screen.getByRole("status").textContent).toContain(
-      "Agent 已读取",
-    );
+    expect(screen.getByRole("status").textContent).toContain("Agent 已读取");
   });
 
   it("copies the corresponding message text from each copy button", async () => {
@@ -148,9 +132,7 @@ describe("MessageStreamPanel — assistant markdown", () => {
   });
 
   it("does not render copy buttons for tool trace rows", () => {
-    renderStream([
-      { role: "tool", text: "tool_call: web_fetch", ts: 1 },
-    ]);
+    renderStream([{ role: "tool", text: "tool_call: web_fetch", ts: 1 }]);
 
     expect(screen.queryByTestId("message-copy-button")).toBeNull();
   });

@@ -38,11 +38,7 @@ class FakeControlChannel {
 describe("ChatTurnTimeoutSetting", () => {
   it("does not render the default as persisted and ignores stale replies", async () => {
     const channel = new FakeControlChannel();
-    render(
-      <ChatTurnTimeoutSetting
-        getChannel={() => channel as unknown as ControlChannel}
-      />,
-    );
+    render(<ChatTurnTimeoutSetting getChannel={() => channel as unknown as ControlChannel} />);
 
     const input = screen.getByTestId("chat-turn-timeout-minutes") as HTMLInputElement;
     expect(input.disabled).toBe(true);
@@ -71,18 +67,12 @@ describe("ChatTurnTimeoutSetting", () => {
     });
     expect(input.disabled).toBe(false);
     expect(input.value).toBe("16");
-    expect(screen.getByTestId("chat-turn-timeout-status").textContent).toBe(
-      "已与后端同步",
-    );
+    expect(screen.getByTestId("chat-turn-timeout-status").textContent).toBe("已与后端同步");
 
     fireEvent.change(input, { target: { value: "17" } });
     const setMessage = channel.sent.at(-1)!;
-    expect(setMessage).toEqual(
-      buildChatTurnTimeoutSetMessage(17, String(setMessage.request_id)),
-    );
-    expect(screen.getByTestId("chat-turn-timeout-status").textContent).toBe(
-      "保存中…",
-    );
+    expect(setMessage).toEqual(buildChatTurnTimeoutSetMessage(17, String(setMessage.request_id)));
+    expect(screen.getByTestId("chat-turn-timeout-status").textContent).toBe("保存中…");
 
     act(() => {
       channel.emit({
@@ -92,8 +82,6 @@ describe("ChatTurnTimeoutSetting", () => {
       });
     });
     expect(input.value).toBe("17");
-    expect(screen.getByTestId("chat-turn-timeout-status").textContent).toBe(
-      "已与后端同步",
-    );
+    expect(screen.getByTestId("chat-turn-timeout-status").textContent).toBe("已与后端同步");
   });
 });

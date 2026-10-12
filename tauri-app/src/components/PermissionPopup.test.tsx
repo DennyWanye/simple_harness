@@ -31,9 +31,7 @@ describe("PermissionPopup", () => {
   it("shows exact tool arguments and stops the fenced Run without a deny race", () => {
     const order: string[] = [];
     const onStopRun = vi.fn(() => order.push("stop"));
-    const onResolve = vi.fn((decision: string) =>
-      order.push(`resolve:${decision}`),
-    );
+    const onResolve = vi.fn((decision: string) => order.push(`resolve:${decision}`));
 
     render(
       <PermissionPopup

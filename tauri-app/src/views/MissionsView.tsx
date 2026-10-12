@@ -124,10 +124,16 @@ const EVENT_PAGE_LIMIT = 200;
 export const STRICT_QUOTES_CRITERION =
   "每个结论都逐字引用所附资料里的原文，并注明出自哪份资料、哪一处；资料里找不到依据的内容不写成结论，而是明确说明资料未提及";
 /** 结构图（elkjs + React Flow）按需加载：默认看「任务过程」，不点结构图就不下载这两个库。 */
-const LiveGraph = lazy(() => import("./liveGraph/LiveGraph").then((m) => ({ default: m.LiveGraph })));
+const LiveGraph = lazy(() =>
+  import("./liveGraph/LiveGraph").then((m) => ({ default: m.LiveGraph })),
+);
 /** 只说明"后台还活着"、不改变详情内容的事件：推送只带这些时不重拉详情（2026-09-27 性能：
  *  运行中每几秒一次心跳，每次都重拉整份详情并重画整页）。等人操作的变化由 5 秒兜底刷新接住。 */
-const NOISE_EVENTS = new Set(["HeartbeatReceived", "AssuranceEvidenceChanged", "AssuranceUseValidityChecked"]);
+const NOISE_EVENTS = new Set([
+  "HeartbeatReceived",
+  "AssuranceEvidenceChanged",
+  "AssuranceUseValidityChecked",
+]);
 const MAX_AUTO_PAGES = 20;
 const TIMELINE_SIZE = 50;
 
@@ -171,14 +177,23 @@ const STOP_REASON_LABEL: Record<string, string> = {
   runtime_unavailable: "运行环境或模型服务不可用，已停止",
 };
 const TASK_STATUS_LABEL: Record<string, string> = {
-  PENDING: "等待", READY: "就绪", ACTIVE: "执行中", RUNNING: "执行中", BLOCKED: "等待前置步骤",
-  VERIFYING: "检查中", DONE: "完成", COMPLETED: "完成", FAILED: "失败", CANCELLED: "已取消", SKIPPED: "跳过",
+  PENDING: "等待",
+  READY: "就绪",
+  ACTIVE: "执行中",
+  RUNNING: "执行中",
+  BLOCKED: "等待前置步骤",
+  VERIFYING: "检查中",
+  DONE: "完成",
+  COMPLETED: "完成",
+  FAILED: "失败",
+  CANCELLED: "已取消",
+  SKIPPED: "跳过",
 };
 
 function stateLabel(uiState: unknown, status: unknown): string {
   const ui = text(uiState);
   const raw = text(status);
-  return ui ? UI_STATE_LABEL[ui] ?? ui : STATUS_LABEL[raw] ?? raw;
+  return ui ? (UI_STATE_LABEL[ui] ?? ui) : (STATUS_LABEL[raw] ?? raw);
 }
 
 /** 时间戳（秒 / 毫秒 / ISO 字符串）→ 本地 HH:MM:SS；认不出就返回 null。 */
@@ -191,7 +206,9 @@ function clock(value: unknown): string | null {
   } else return null;
   if (!Number.isFinite(ms)) return null;
   const d = new Date(ms);
-  return [d.getHours(), d.getMinutes(), d.getSeconds()].map((n) => String(n).padStart(2, "0")).join(":");
+  return [d.getHours(), d.getMinutes(), d.getSeconds()]
+    .map((n) => String(n).padStart(2, "0"))
+    .join(":");
 }
 
 function formatBytes(value: unknown): string {
@@ -203,7 +220,9 @@ function formatBytes(value: unknown): string {
 }
 
 function shortHash(value: unknown): string {
-  return text(value).replace(/^[a-z0-9]+:/i, "").slice(0, 12);
+  return text(value)
+    .replace(/^[a-z0-9]+:/i, "")
+    .slice(0, 12);
 }
 
 function show(value: unknown): string {
@@ -225,7 +244,8 @@ function waitLine(item: unknown): string {
 
 function eventLine(event: MissionEvent): string {
   const head = `#${event.seq} ${event.type}`;
-  if (event.type === "HumanCommentAdded" && event.summary != null) return `${head}：${plain(event.summary)}`;
+  if (event.type === "HumanCommentAdded" && event.summary != null)
+    return `${head}：${plain(event.summary)}`;
   return head;
 }
 
@@ -280,19 +300,25 @@ export function StepsNoLongerCounting({ rows }: { rows: unknown[] }) {
 /** 一行花费：已用 token、尝试次数（失败次数）、用量未知的次数。义务行与步骤行同一个写法。 */
 function spendLine(row: Json, label: string): string {
   const unknown = Number(row.unknown_usage_attempts) || 0;
-  return `${label} · 已用 ${Number(row.settled_tokens) || 0} token · 尝试 ${Number(row.attempts) || 0} 次（失败 ${Number(row.failed_attempts) || 0} 次）`
-    + (unknown ? `，另有 ${unknown} 次用量未知` : "");
+  return (
+    `${label} · 已用 ${Number(row.settled_tokens) || 0} token · 尝试 ${Number(row.attempts) || 0} 次（失败 ${Number(row.failed_attempts) || 0} 次）` +
+    (unknown ? `，另有 ${unknown} 次用量未知` : "")
+  );
 }
 
 export function BudgetByDuty({ rows }: { rows: unknown[] }) {
-  const spent = rows.map(record).filter((row) => Number(row.attempts) > 0 || Number(row.settled_tokens) > 0);
+  const spent = rows
+    .map(record)
+    .filter((row) => Number(row.attempts) > 0 || Number(row.settled_tokens) > 0);
   if (!spent.length) return null;
   const shown = spent.slice(0, BUDGET_ROWS_SHOWN);
   return (
     <details data-testid="mission-budget-by-duty" style={muted}>
       <summary>预算去向</summary>
       {shown.map((row) => {
-        const steps = list(row.steps).map(record).filter((step) => Number(step.attempts) > 0 || Number(step.settled_tokens) > 0);
+        const steps = list(row.steps)
+          .map(record)
+          .filter((step) => Number(step.attempts) > 0 || Number(step.settled_tokens) > 0);
         const line = spendLine(row, text(row.label) || text(row.obligation_id));
         return (
           <div key={text(row.obligation_id)} style={{ paddingLeft: (Number(row.depth) || 0) * 12 }}>
@@ -305,9 +331,15 @@ export function BudgetByDuty({ rows }: { rows: unknown[] }) {
                     {Number(step.branches) > 1 ? `（${Number(step.branches)} 个分支共用）` : ""}
                   </div>
                 ))}
-                {steps.length > BUDGET_ROWS_SHOWN ? <div style={{ paddingLeft: 12 }}>{`其余 ${steps.length - BUDGET_ROWS_SHOWN} 步`}</div> : null}
+                {steps.length > BUDGET_ROWS_SHOWN ? (
+                  <div
+                    style={{ paddingLeft: 12 }}
+                  >{`其余 ${steps.length - BUDGET_ROWS_SHOWN} 步`}</div>
+                ) : null}
               </details>
-            ) : line}
+            ) : (
+              line
+            )}
           </div>
         );
       })}
@@ -320,7 +352,9 @@ const heading: React.CSSProperties = { fontWeight: tokens.weight.semibold };
 const ModelText: React.FC<{ value: unknown }> = ({ value }) => (
   <span>
     {plain(value)}
-    <span style={{ marginLeft: tokens.space.xs, color: dark.textMuted, fontSize: tokens.text.xs.size }}>
+    <span
+      style={{ marginLeft: tokens.space.xs, color: dark.textMuted, fontSize: tokens.text.xs.size }}
+    >
       （模型生成，未核实）
     </span>
   </span>
@@ -328,11 +362,18 @@ const ModelText: React.FC<{ value: unknown }> = ({ value }) => (
 
 /** 验证层 summary：只有 source=model 才标注；source=system 或旧的纯字符串只显示文字。 */
 const LayerSummary: React.FC<{ value: unknown }> = ({ value }) =>
-  text(record(value).source) === "model" ? <ModelText value={value} /> : <span>{plain(value)}</span>;
+  text(record(value).source) === "model" ? (
+    <ModelText value={value} />
+  ) : (
+    <span>{plain(value)}</span>
+  );
 
 /** 顶部"下一步"提示（2026-09-25 真机点击：要人操作的按钮埋在长页面中间，用户找不到）。
  *  只读投影：从详情推出当前最该做的一件事，按钮跳到对应区域；不代替那一步本身。 */
-function nextStep(detail: Json, approvals: number): { text: string; target?: string; action?: string } {
+function nextStep(
+  detail: Json,
+  approvals: number,
+): { text: string; target?: string; action?: string } {
   const mission = record(detail.mission);
   const status = text(mission.status);
   const ws = record(detail.operation_workspace);
@@ -340,15 +381,38 @@ function nextStep(detail: Json, approvals: number): { text: string; target?: str
   const ended = ["COMPLETED", "FAILED", "CANCELLED"].includes(status);
   // 被隔离的任务不会再推进：别的"下一步"都不成立，先说这一句
   if (!ended && detail.recovery_isolated) return { text: RECOVERY_ISOLATED_TEXT };
-  if (!ended && text(ws.mission_id) && text(ws.state) && text(ws.state) !== "APPROVED" && ws.editable === true)
-    return { text: "下一步：在「完成要求」里勾选要交付的内容，再点「确认上述完成要求」。", target: "mission-step-requirements", action: "去确认" };
+  if (
+    !ended &&
+    text(ws.mission_id) &&
+    text(ws.state) &&
+    text(ws.state) !== "APPROVED" &&
+    ws.editable === true
+  )
+    return {
+      text: "下一步：在「完成要求」里勾选要交付的内容，再点「确认上述完成要求」。",
+      target: "mission-step-requirements",
+      action: "去确认",
+    };
   if (!ended && list(detail.planning_authorization_requests).length)
     return { text: "下一步：授权本轮规划，任务才会开始执行。" };
   if (!ended && list(detail.planning_questions).some((q) => text(record(q).state) === "PENDING"))
-    return { text: "下一步：回答任务提出的问题。", target: "mission-step-questions", action: "去回答" };
+    return {
+      text: "下一步：回答任务提出的问题。",
+      target: "mission-step-questions",
+      action: "去回答",
+    };
   if (approvals > 0)
-    return { text: `下一步：有 ${approvals} 项等你审批或复核。`, target: "mission-step-approvals", action: "去处理" };
-  if (status === "COMPLETED") return { text: "任务已完成，结果在下方「产物」里。", target: "mission-step-artifacts", action: "查看产物" };
+    return {
+      text: `下一步：有 ${approvals} 项等你审批或复核。`,
+      target: "mission-step-approvals",
+      action: "去处理",
+    };
+  if (status === "COMPLETED")
+    return {
+      text: "任务已完成，结果在下方「产物」里。",
+      target: "mission-step-artifacts",
+      action: "查看产物",
+    };
   if (status === "FAILED" && text(mission.stop_reason).toLowerCase() === "human_override")
     return { text: "任务已按你的接管操作停止。" };
   if (status === "FAILED") return { text: "任务失败了，原因见上方状态和下方「Task 与验证」。" };
@@ -359,7 +423,12 @@ function nextStep(detail: Json, approvals: number): { text: string; target?: str
 /** 完成要求还没确认时，提示条先让人去确认；授权仍留在原位置，不会同时出现两份。 */
 function nextStepBlocksAuthorization(detail: Json): boolean {
   const ws = record(detail.operation_workspace);
-  return !!(text(ws.mission_id) && text(ws.state) && text(ws.state) !== "APPROVED" && ws.editable === true);
+  return !!(
+    text(ws.mission_id) &&
+    text(ws.state) &&
+    text(ws.state) !== "APPROVED" &&
+    ws.editable === true
+  );
 }
 
 function jumpTo(id: string): void {
@@ -367,13 +436,18 @@ function jumpTo(id: string): void {
   target?.scrollIntoView?.({ behavior: "smooth", block: "start" });
 }
 
-const ArtifactPanel: React.FC<{ artifact: Json; verified?: boolean }> = ({ artifact, verified = false }) => {
+const ArtifactPanel: React.FC<{ artifact: Json; verified?: boolean }> = ({
+  artifact,
+  verified = false,
+}) => {
   const encoding = text(artifact.encoding);
   const content = typeof artifact.content === "string" ? artifact.content : null;
   const readable = encoding !== "binary" && content !== null;
   return (
     <section aria-label="产物内容" style={{ ...box, minWidth: 0 }}>
-      <div style={{ ...heading, minWidth: 0, overflowWrap: "anywhere", wordBreak: "break-word" }}>产物：{text(artifact.path)}</div>
+      <div style={{ ...heading, minWidth: 0, overflowWrap: "anywhere", wordBreak: "break-word" }}>
+        产物：{text(artifact.path)}
+      </div>
       <div style={{ ...muted, minWidth: 0, overflowWrap: "anywhere", wordBreak: "break-word" }}>
         {`hash：${text(artifact.content_hash)} · 大小：${formatBytes(artifact.size_bytes)}`}
       </div>
@@ -381,7 +455,8 @@ const ArtifactPanel: React.FC<{ artifact: Json; verified?: boolean }> = ({ artif
         <>
           <div style={muted}>
             {/* 2026-09-26 真机：列表写"已验证"，预览却一律写"未核实"。 */}
-            {verified ? "（已通过核验）" : "（模型生成，未核实）"}{artifact.truncated === true ? " · 内容过长，已截断" : ""}
+            {verified ? "（已通过核验）" : "（模型生成，未核实）"}
+            {artifact.truncated === true ? " · 内容过长，已截断" : ""}
           </div>
           <pre
             style={{
@@ -436,20 +511,45 @@ const TASK_ENDED = new Set(["DONE", "COMPLETED", "FAILED", "CANCELLED", "SKIPPED
  * 阶段 B 裁决第 3 类：一次对外动作结果不明（或失败了却证明不了没生效），系统判不了，由人裁定。
  * 依据必填；"没生效"之后系统会按原内容重新出一张审批卡。只能由人亲手点。
  */
-const ResolveOutcomeBox: React.FC<{ actionKey: string; failed: boolean; send: (type: string, payload?: Json) => unknown }> = ({ actionKey, failed, send }) => {
+const ResolveOutcomeBox: React.FC<{
+  actionKey: string;
+  failed: boolean;
+  send: (type: string, payload?: Json) => unknown;
+}> = ({ actionKey, failed, send }) => {
   const [basis, setBasis] = useState("");
   return (
     <div style={{ ...box, marginTop: tokens.space.xs }} data-testid={`resolve-${actionKey}`}>
       <div style={{ color: dark.textMuted }}>系统判断不了这次发布有没有生效，请你查看后裁定：</div>
-      <textarea aria-label="裁定依据" placeholder="写一句你依据什么判断（例如：查了发布目录）" style={field}
-        value={basis} onChange={(e) => setBasis(e.target.value)} />
+      <textarea
+        aria-label="裁定依据"
+        placeholder="写一句你依据什么判断（例如：查了发布目录）"
+        style={field}
+        value={basis}
+        onChange={(e) => setBasis(e.target.value)}
+      />
       <div style={{ display: "flex", gap: tokens.space.sm }}>
         {failed ? null : (
-          <button type="button" style={button} disabled={!basis.trim()}
-            onClick={() => send("mission_action_resolve", { action_key: actionKey, outcome: "succeeded", basis })}>已生效</button>
+          <button
+            type="button"
+            style={button}
+            disabled={!basis.trim()}
+            onClick={() =>
+              send("mission_action_resolve", { action_key: actionKey, outcome: "succeeded", basis })
+            }
+          >
+            已生效
+          </button>
         )}
-        <button type="button" style={button} disabled={!basis.trim()}
-          onClick={() => send("mission_action_resolve", { action_key: actionKey, outcome: "failed", basis })}>没生效</button>
+        <button
+          type="button"
+          style={button}
+          disabled={!basis.trim()}
+          onClick={() =>
+            send("mission_action_resolve", { action_key: actionKey, outcome: "failed", basis })
+          }
+        >
+          没生效
+        </button>
       </div>
     </div>
   );
@@ -459,22 +559,50 @@ const ResolveOutcomeBox: React.FC<{ actionKey: string; failed: boolean; send: (t
  * 代码评审第 1 轮 P1-5⑤：卡住的 Task 不一定被判为 blocked（例如一直在跑、在排队），
  * 人也要能接管。依据必填，与「回合结果未知」卡片用同一套命令与可访问名称。
  */
-const TakeoverBox: React.FC<{ taskId: string; send: (type: string, payload?: Json) => unknown }> = ({ taskId, send }) => {
+const TakeoverBox: React.FC<{
+  taskId: string;
+  send: (type: string, payload?: Json) => unknown;
+}> = ({ taskId, send }) => {
   const [open, setOpen] = useState(false);
   const [basis, setBasis] = useState("");
   if (!open) {
     return (
-      <button type="button" style={{ ...button, marginLeft: tokens.space.sm }} onClick={() => setOpen(true)}>
+      <button
+        type="button"
+        style={{ ...button, marginLeft: tokens.space.sm }}
+        onClick={() => setOpen(true)}
+      >
         接管这个 Task
       </button>
     );
   }
   return (
     <div style={{ ...box, marginTop: tokens.space.xs }}>
-      <textarea aria-label="接管依据" style={field} value={basis} onChange={(e) => setBasis(e.target.value)} />
+      <textarea
+        aria-label="接管依据"
+        style={field}
+        value={basis}
+        onChange={(e) => setBasis(e.target.value)}
+      />
       <div style={{ display: "flex", gap: tokens.space.sm }}>
-        <button type="button" style={button} disabled={!basis.trim()} onClick={() => send("mission_takeover", { task_id: taskId, action: "retry_with_note", basis })}>接管：重试</button>
-        <button type="button" style={button} disabled={!basis.trim()} onClick={() => send("mission_takeover", { task_id: taskId, action: "stop", basis })}>接管：停止</button>
+        <button
+          type="button"
+          style={button}
+          disabled={!basis.trim()}
+          onClick={() =>
+            send("mission_takeover", { task_id: taskId, action: "retry_with_note", basis })
+          }
+        >
+          接管：重试
+        </button>
+        <button
+          type="button"
+          style={button}
+          disabled={!basis.trim()}
+          onClick={() => send("mission_takeover", { task_id: taskId, action: "stop", basis })}
+        >
+          接管：停止
+        </button>
       </div>
     </div>
   );
@@ -482,13 +610,22 @@ const TakeoverBox: React.FC<{ taskId: string; send: (type: string, payload?: Jso
 
 export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
   // 2026-09-27 性能：按字段订阅。以前订阅整个 store，任何任务的每秒推送都让整页重画。
-  const store = useMissionsStore(useShallow((s) => ({
-    selectedId: s.selectedId, detail: s.detail, status: s.status, policy: s.policy, missions: s.missions, error: s.error, listError: s.listError,
-    selectedEvents: s.selectedId ? s.events[s.selectedId] : undefined,
-    selectedHasMore: s.selectedId ? s.eventsHasMore[s.selectedId] === true : false,
-    selectedLoading: s.selectedId ? s.eventsLoading[s.selectedId] === true : false,
-    select: s.select, setError: s.setError,
-  })));
+  const store = useMissionsStore(
+    useShallow((s) => ({
+      selectedId: s.selectedId,
+      detail: s.detail,
+      status: s.status,
+      policy: s.policy,
+      missions: s.missions,
+      error: s.error,
+      listError: s.listError,
+      selectedEvents: s.selectedId ? s.events[s.selectedId] : undefined,
+      selectedHasMore: s.selectedId ? s.eventsHasMore[s.selectedId] === true : false,
+      selectedLoading: s.selectedId ? s.eventsLoading[s.selectedId] === true : false,
+      select: s.select,
+      setError: s.setError,
+    })),
+  );
   const [graphTab, setGraphTab] = useState<"story" | "graph">("graph");
   const [creating, setCreating] = useState(false);
   const [goal, setGoal] = useState("");
@@ -511,7 +648,11 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
   const [comment, setComment] = useState("");
   const [showInternal, setShowInternal] = useState(false);
   const [artifact, setArtifact] = useState<Json | null>(null);
-  const artifactRequest = useRef<{ requestId: string; missionId: string | null; artifactId: string } | null>(null);
+  const artifactRequest = useRef<{
+    requestId: string;
+    missionId: string | null;
+    artifactId: string;
+  } | null>(null);
   const selectedRef = useRef<string | null>(null);
   /** 打开过的任务里"可能卡住"的步骤数（执行图算出，列表行显示提示）。 */
   const [stalled, setStalled] = useState<Record<string, number>>({});
@@ -549,7 +690,8 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
       reviewDecisionRequests.current.set(requestId, approvalId);
       setReviewPending((pending) => ({ ...pending, [approvalId]: true }));
       try {
-        if (channel?.send({ type: "mission_approval_decide", request_id: requestId, payload })) return;
+        if (channel?.send({ type: "mission_approval_decide", request_id: requestId, payload }))
+          return;
       } catch {
         // A throwing transport has the same local outcome as a rejected send.
       }
@@ -598,7 +740,11 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
       const state = useMissionsStore.getState();
       const after = state.eventCursor[missionId] ?? 0;
       requests.current.set(
-        send("mission_events", { mission_id: missionId, after_seq: after, limit: EVENT_PAGE_LIMIT }),
+        send("mission_events", {
+          mission_id: missionId,
+          after_seq: after,
+          limit: EVENT_PAGE_LIMIT,
+        }),
         missionId,
       );
       state.setEventsLoading(missionId, true);
@@ -623,7 +769,8 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
     setReviewPending({});
     artifactRequest.current = null;
     setArtifact(null);
-    if (createRequest.current) useMissionsStore.getState().setError("连接已变化，创建结果未知；可以使用原请求键重试");
+    if (createRequest.current)
+      useMissionsStore.getState().setError("连接已变化，创建结果未知；可以使用原请求键重试");
     createRequest.current = null;
     setCreatePending(false);
     useMissionsStore.getState().clearEventsLoading();
@@ -639,15 +786,21 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
         const missionId = text(payload.mission_id);
         if (!missionId || missionId !== selectedRef.current) return;
         const pushed = Array.isArray(payload.events) ? (payload.events as MissionEvent[]) : [];
-        const onlyNoise = payload.truncated !== true && pushed.length > 0 && pushed.every((e) => NOISE_EVENTS.has(e.type))
-          && text(payload.status) === text(record(state.detail?.mission).status);
+        const onlyNoise =
+          payload.truncated !== true &&
+          pushed.length > 0 &&
+          pushed.every((e) => NOISE_EVENTS.has(e.type)) &&
+          text(payload.status) === text(record(state.detail?.mission).status);
         if (!onlyNoise) fetchDetail(missionId);
         // 2026-09-26 推送带事件：接得上就直接追加；有缺口、没带全或分页在途时照旧分页补齐
         const lastSeq = Number(payload.last_seq) || 0;
         const events = Array.isArray(payload.events) ? (payload.events as MissionEvent[]) : [];
-        const appended = payload.truncated !== true && !state.eventsLoading[missionId]
-          && state.appendPushed(missionId, Number(payload.from_seq) || 0, events, lastSeq);
-        if (!appended && lastSeq > (state.eventCursor[missionId] ?? 0)) fetchEvents(missionId, true);
+        const appended =
+          payload.truncated !== true &&
+          !state.eventsLoading[missionId] &&
+          state.appendPushed(missionId, Number(payload.from_seq) || 0, events, lastSeq);
+        if (!appended && lastSeq > (state.eventCursor[missionId] ?? 0))
+          fetchEvents(missionId, true);
         return;
       }
       if (!OWN_RESPONSES.has(type)) return;
@@ -655,20 +808,34 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
       const ok = payload.ok === true;
       const data = record(payload.data);
       const requestId = text(payload.request_id);
-      const reviewApprovalId = type === "mission_approval_decide_response"
-        ? reviewDecisionRequests.current.get(requestId)
-        : undefined;
+      const reviewApprovalId =
+        type === "mission_approval_decide_response"
+          ? reviewDecisionRequests.current.get(requestId)
+          : undefined;
       if (reviewApprovalId !== undefined) {
         reviewDecisionRequests.current.delete(requestId);
         setReviewPending((pending) => ({ ...pending, [reviewApprovalId]: false }));
         if (ok) setReasons((current) => ({ ...current, [reviewApprovalId]: "" }));
       }
-      if ((type === "mission_create_response" || type === "mission_create_with_sources_response") && requestId !== createRequest.current) return;
+      if (
+        (type === "mission_create_response" || type === "mission_create_with_sources_response") &&
+        requestId !== createRequest.current
+      )
+        return;
       const tracked = requests.current.get(requestId);
-      if ((type === "mission_get_response" || type === "mission_events_response") && tracked === undefined) return;
+      if (
+        (type === "mission_get_response" || type === "mission_events_response") &&
+        tracked === undefined
+      )
+        return;
       if (type === "mission_artifact_read_response") {
         const pending = artifactRequest.current;
-        if (!pending || pending.requestId !== requestId || pending.missionId !== selectedRef.current) return;
+        if (
+          !pending ||
+          pending.requestId !== requestId ||
+          pending.missionId !== selectedRef.current
+        )
+          return;
         if (ok && data.artifact_id != null && data.artifact_id !== pending.artifactId) return;
         artifactRequest.current = null;
       }
@@ -677,8 +844,10 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
         const code = text(payload.error_code);
         const message = ERROR_TEXT[code] ?? (text(payload.error) || code || "请求失败");
         // 推后第 3 批 U09：详情、事件读到坏消息时保留上次的内容，并标明下面是旧的
-        const stale = code === PROTOCOL_ERROR && ((type === "mission_get_response" && state.detail !== null)
-          || (type === "mission_events_response" && (state.events[tracked ?? ""]?.length ?? 0) > 0));
+        const stale =
+          code === PROTOCOL_ERROR &&
+          ((type === "mission_get_response" && state.detail !== null) ||
+            (type === "mission_events_response" && (state.events[tracked ?? ""]?.length ?? 0) > 0));
         state.setError(stale ? message + STALE_NOTE : message);
       }
 
@@ -721,7 +890,8 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
             const snapshot = useMissionsStore.getState().detail;
             const through = snapshot?.through_seq;
             const cursor = useMissionsStore.getState().eventCursor[missionId] ?? 0;
-            if (ok && selected && typeof through === "number" && through < cursor) fetchDetail(missionId);
+            if (ok && selected && typeof through === "number" && through < cursor)
+              fetchDetail(missionId);
           }
           break;
         }
@@ -776,17 +946,28 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
       refreshSelected(open);
     }
     const offState = channel.onStateChange?.((connection) => {
-      flights.current = {}; requests.current.clear(); reviewDecisionRequests.current.clear(); setReviewPending({}); artifactRequest.current = null; setArtifact(null);
+      flights.current = {};
+      requests.current.clear();
+      reviewDecisionRequests.current.clear();
+      setReviewPending({});
+      artifactRequest.current = null;
+      setArtifact(null);
       useMissionsStore.getState().clearEventsLoading();
-      if (createRequest.current) useMissionsStore.getState().setError("连接已变化，创建结果未知；可以使用原请求键重试");
-      createRequest.current = null; setCreatePending(false);
+      if (createRequest.current)
+        useMissionsStore.getState().setError("连接已变化，创建结果未知；可以使用原请求键重试");
+      createRequest.current = null;
+      setCreatePending(false);
       if (createTimer.current) clearTimeout(createTimer.current);
       if (connection === "connected") {
         send("orchestration_policy_status");
         if (selectedRef.current) refreshSelected(selectedRef.current);
       }
     });
-    return () => { off(); offState?.(); if (createTimer.current) clearTimeout(createTimer.current); };
+    return () => {
+      off();
+      offState?.();
+      if (createTimer.current) clearTimeout(createTimer.current);
+    };
   }, [channel, send, flightOf, fetchDetail, fetchEvents, refreshSelected]);
 
   // 兜底刷新（2026-09-25 真机点击）：等人操作的状态（如"授权本轮规划"）不一定伴随新事件，
@@ -804,38 +985,67 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
   const domains = record(record(record(status?.deployment_manifest).features).domains);
   const proposedContextId = contextProfile ?? status?.default_context_profile_id ?? "";
   const contextOffered = status?.context_profiles ?? [];
-  const selectedContextId = createRetry.current || contextOffered.some((p) => p.profile_id === proposedContextId)
-    ? proposedContextId : status?.default_context_profile_id ?? "";
+  const selectedContextId =
+    createRetry.current || contextOffered.some((p) => p.profile_id === proposedContextId)
+      ? proposedContextId
+      : (status?.default_context_profile_id ?? "");
   const selectedContext = status?.context_profiles?.find((p) => p.profile_id === selectedContextId);
-  const defaultTokenCap = selectedContext?.mission_max_tokens ?? status?.mission_budget_defaults?.max_tokens;
+  const defaultTokenCap =
+    selectedContext?.mission_max_tokens ?? status?.mission_budget_defaults?.max_tokens;
   // 2026-09-25 UI 全量点击：Token 上限填 -5 时以前被悄悄忽略、按默认值创建。
-  const positiveIntOrBlank = (value: string) => !value.trim() || (Number.isSafeInteger(Number(value)) && Number(value) > 0);
+  const positiveIntOrBlank = (value: string) =>
+    !value.trim() || (Number.isSafeInteger(Number(value)) && Number(value) > 0);
   const validCaps = positiveIntOrBlank(maxTokens) && positiveIntOrBlank(maxAttempts);
   // 2026-09-25 UI 全量点击："pytest: 至少 6 个测试…" 被当成 pytest 命令参数运行，
   // 结果 "no tests ran"、任务失败。以 pytest: 开头的行后面只能是测试路径/参数。
-  const badPytestLines = criteria.split("\n").map((line) => line.trim())
-    .filter((line) => line.startsWith("pytest:") && !/^pytest:\s*[\w./\-:=\[\]]+(\s+[\w./\-:=\[\]]+)*$/.test(line));
+  const badPytestLines = criteria
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(
+      (line) =>
+        line.startsWith("pytest:") &&
+        !/^pytest:\s*[\w./\-:=\[\]]+(\s+[\w./\-:=\[\]]+)*$/.test(line),
+    );
   // 附资料建任务需要后台支持原子批次（与严格引用模式同一接口）
   const canAttachSources = domains.atomic_source_create === true;
-  const sourcesComplete = sources.every((source) => source.path.trim().length > 0 && source.path !== "sources/" && source.content.length > 0);
-  const submittable = validCaps && badPytestLines.length === 0 && !createPending && !sourceImporting && !!channel && goal.trim().length > 0 && criteria.split("\n").some((line) => line.trim().length > 0) &&
+  const sourcesComplete = sources.every(
+    (source) =>
+      source.path.trim().length > 0 && source.path !== "sources/" && source.content.length > 0,
+  );
+  const submittable =
+    validCaps &&
+    badPytestLines.length === 0 &&
+    !createPending &&
+    !sourceImporting &&
+    !!channel &&
+    goal.trim().length > 0 &&
+    criteria.split("\n").some((line) => line.trim().length > 0) &&
     (!selectedContextId || !!selectedContext) &&
     // 2026-09-26：任务可以附带参考资料（可选）；严格引用必须至少一份。
     (sources.length === 0 ? !strictQuotes : canAttachSources && sourcesComplete);
   // 2026-09-26 真机测试：目标写了"根据参考资料《新品需求说明》…"却没附资料，执行者找不到只好编数字。
   const mentionsMaterial = /参考资料|附件|资料里|资料中|根据资料|《[^》]+》/.test(goal);
-  const missingMaterialHint = mentionsMaterial && sources.length === 0
-    ? "目标里提到了参考资料，但还没有附上任何资料；需要的话请在上面「参考资料」里添加" : "";
+  const missingMaterialHint =
+    mentionsMaterial && sources.length === 0
+      ? "目标里提到了参考资料，但还没有附上任何资料；需要的话请在上面「参考资料」里添加"
+      : "";
   // 2026-09-26 真机点击：按钮变灰却不说原因，用户以为"点了没反应"。
-  const submitBlocker = createPending || submittable ? ""
-    : !channel ? "还没连上后台，请稍候"
-    : !goal.trim() ? "请填写任务目标"
-    : !criteria.split("\n").some((line) => line.trim()) ? "请至少写一条成功条件"
-    : sourceImporting ? "正在导入来源资料…"
-    : strictQuotes && sources.length === 0 ? "严格引用需要至少一份资料：在「参考资料」里点「添加来源」粘贴正文，或「导入来源文件」；不需要就在高级设置里取消勾选"
-    : !sourcesComplete
-      ? "每份来源资料都要填写路径（如 sources/笔记.md）和正文"
-    : "请检查上面标红的设置";
+  const submitBlocker =
+    createPending || submittable
+      ? ""
+      : !channel
+        ? "还没连上后台，请稍候"
+        : !goal.trim()
+          ? "请填写任务目标"
+          : !criteria.split("\n").some((line) => line.trim())
+            ? "请至少写一条成功条件"
+            : sourceImporting
+              ? "正在导入来源资料…"
+              : strictQuotes && sources.length === 0
+                ? "严格引用需要至少一份资料：在「参考资料」里点「添加来源」粘贴正文，或「导入来源文件」；不需要就在高级设置里取消勾选"
+                : !sourcesComplete
+                  ? "每份来源资料都要填写路径（如 sources/笔记.md）和正文"
+                  : "请检查上面标红的设置";
 
   const submit = () => {
     if (!submittable) return;
@@ -849,8 +1059,13 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
     const spec = {
       goal: goal.trim(),
       // 2026-10-02 用户决定（严格引用选 A）：不再由程序逐条核对引用，改成一条交给审阅员判断的要求。
-      success_criteria: [...criteria.split("\n").map((line) => line.trim()).filter(Boolean),
-        ...(strictQuotes ? [STRICT_QUOTES_CRITERION] : [])],
+      success_criteria: [
+        ...criteria
+          .split("\n")
+          .map((line) => line.trim())
+          .filter(Boolean),
+        ...(strictQuotes ? [STRICT_QUOTES_CRITERION] : []),
+      ],
       ...(selectedContext ? { runtime_profile_id: selectedContext.profile_id } : {}),
       ...(Object.keys(budget).length ? { budget } : {}),
     };
@@ -861,16 +1076,17 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
     });
     const withSources = sourcesOut.length > 0;
     const fingerprint = JSON.stringify([spec, withSources ? sourcesOut : []]);
-    if (createRetry.current?.fingerprint !== fingerprint) createRetry.current = { fingerprint, key: newKey() };
+    if (createRetry.current?.fingerprint !== fingerprint)
+      createRetry.current = { fingerprint, key: newKey() };
     const missionSpec = { ...spec, idempotency_key: createRetry.current.key };
     const requestId = newKey();
     createRequest.current = requestId;
     setCreatePending(true);
     store.setError(null);
     const accepted = channel?.send({
-      type: withSources ? "mission_create_with_sources" : "mission_create", request_id: requestId,
-      payload: !withSources ? missionSpec
-        : { mission: missionSpec, sources: sourcesOut },
+      type: withSources ? "mission_create_with_sources" : "mission_create",
+      request_id: requestId,
+      payload: !withSources ? missionSpec : { mission: missionSpec, sources: sourcesOut },
     });
     if (!accepted) {
       // No new request left the client. Preserve an earlier uncertain request, if any.
@@ -882,7 +1098,11 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
       return;
     }
     createTimer.current = setTimeout(() => {
-      if (createRequest.current === requestId) { createRequest.current = null; setCreatePending(false); useMissionsStore.getState().setError("创建超时，结果未知；可以使用原请求键重试"); }
+      if (createRequest.current === requestId) {
+        createRequest.current = null;
+        setCreatePending(false);
+        useMissionsStore.getState().setError("创建超时，结果未知；可以使用原请求键重试");
+      }
     }, 30000);
   };
 
@@ -902,7 +1122,8 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
 
   const onStalled = useCallback((count: number) => {
     const id = selectedRef.current;
-    if (id) setStalled((current) => current[id] === count ? current : { ...current, [id]: count });
+    if (id)
+      setStalled((current) => (current[id] === count ? current : { ...current, [id]: count }));
   }, []);
   const detail = store.detail;
   const mission = record(detail?.mission);
@@ -915,14 +1136,17 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
     () => list(detail?.approvals).filter((approval) => text(approval.state) === "PENDING"),
     [detail],
   );
-  const waiting: unknown[] = Array.isArray(detail?.waiting_on) ? (detail.waiting_on as unknown[]) : [];
+  const waiting: unknown[] = Array.isArray(detail?.waiting_on)
+    ? (detail.waiting_on as unknown[])
+    : [];
   const artifacts = list(detail?.artifacts);
   // 用户要的交付物在前；审阅/检查留下的内部记录（.assurance/…）默认收起（2026-09-25 真机点击）。
   const internals = artifacts.filter((item) => text(item.path).startsWith(".assurance/"));
   // 2026-09-25 UI 全量点击：每次尝试都登记一份产物，同一文件在列表里出现多次。
   // 每个路径只列一份：优先最后一份已验证的，否则最后一份。
   const deliverables = Array.from(
-    artifacts.filter((item) => !text(item.path).startsWith(".assurance/"))
+    artifacts
+      .filter((item) => !text(item.path).startsWith(".assurance/"))
       .reduce((byPath, item) => {
         const path = text(item.path);
         const kept = byPath.get(path);
@@ -936,7 +1160,11 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
 
   if (status && !status.available) {
     return (
-      <section data-testid="view-missions" aria-label="任务编排" style={{ flex: 1, padding: tokens.space.lg, color: dark.text }}>
+      <section
+        data-testid="view-missions"
+        aria-label="任务编排"
+        style={{ flex: 1, padding: tokens.space.lg, color: dark.text }}
+      >
         <div role="alert" style={box}>
           编排服务不可用：{status.reason ?? status.state}
         </div>
@@ -948,7 +1176,14 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
     <section
       data-testid="view-missions"
       aria-label="任务编排"
-      style={{ flex: 1, minWidth: 0, minHeight: 0, display: "flex", color: dark.text, fontFamily: tokens.font.ui }}
+      style={{
+        flex: 1,
+        minWidth: 0,
+        minHeight: 0,
+        display: "flex",
+        color: dark.text,
+        fontFamily: tokens.font.ui,
+      }}
     >
       {confirmDialog}
       <aside
@@ -964,15 +1199,35 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
         }}
       >
         {backgroundTrouble(status) ? (
-          <div role="alert" data-testid="background-trouble" style={{ ...box, borderColor: tokens.color.warning.bg, flexShrink: 0 }}>{backgroundTrouble(status)}</div>
+          <div
+            role="alert"
+            data-testid="background-trouble"
+            style={{ ...box, borderColor: tokens.color.warning.bg, flexShrink: 0 }}
+          >
+            {backgroundTrouble(status)}
+          </div>
         ) : null}
         {/* flexShrink 0: with many rows the column scrolls instead of squashing them (2026-09-25) */}
-        <button type="button" style={{ ...button, flexShrink: 0 }} onClick={() => { setCreating(true); store.select(null); selectedRef.current = null; setArtifact(null); }}>
+        <button
+          type="button"
+          style={{ ...button, flexShrink: 0 }}
+          onClick={() => {
+            setCreating(true);
+            store.select(null);
+            selectedRef.current = null;
+            setArtifact(null);
+          }}
+        >
           新建任务
         </button>
         {store.listError ? (
-          <div role="alert" data-testid="mission-list-error" style={{ ...box, borderColor: tokens.color.warning.bg, flexShrink: 0 }}>
-            {store.listError}{store.missions.length > 0 ? STALE_NOTE : ""}
+          <div
+            role="alert"
+            data-testid="mission-list-error"
+            style={{ ...box, borderColor: tokens.color.warning.bg, flexShrink: 0 }}
+          >
+            {store.listError}
+            {store.missions.length > 0 ? STALE_NOTE : ""}
           </div>
         ) : null}
         {store.missions.length === 0 ? (
@@ -987,7 +1242,16 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
               data-ui-state={row.ui_state || undefined}
               aria-current={selectedId === row.id ? "true" : undefined}
               onClick={() => open(row.id)}
-              style={{ ...button, height: "auto", flexShrink: 0, padding: tokens.space.sm, textAlign: "left", display: "flex", flexDirection: "column", gap: 2 }}
+              style={{
+                ...button,
+                height: "auto",
+                flexShrink: 0,
+                padding: tokens.space.sm,
+                textAlign: "left",
+                display: "flex",
+                flexDirection: "column",
+                gap: 2,
+              }}
             >
               <span>{row.goal}</span>
               <span style={muted}>
@@ -997,12 +1261,19 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
                 {stalled[row.id] ? ` · ${stalled[row.id]} 个步骤可能卡住` : ""}
               </span>
               {row.recovery_isolated && !TERMINAL.has(row.status) && (
-                <span data-testid={`mission-isolated-${row.id}`} style={{ color: dark.warning }}
-                  title={`对不上的表：${row.recovery_isolated.tables.join("、") || "未知"}`}>
+                <span
+                  data-testid={`mission-isolated-${row.id}`}
+                  style={{ color: dark.warning }}
+                  title={`对不上的表：${row.recovery_isolated.tables.join("、") || "未知"}`}
+                >
                   {RECOVERY_ISOLATED_TEXT}
                 </span>
               )}
-              <MissionProgress status={row.status} uiState={row.ui_state} counts={row.task_counts} />
+              <MissionProgress
+                status={row.status}
+                uiState={row.ui_state}
+                counts={row.task_counts}
+              />
             </button>
           ))
         )}
@@ -1013,7 +1284,13 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
             <div
               key={text(item.name)}
               role="status"
-              style={{ ...box, borderColor: tokens.color.warning.bg, padding: tokens.space.sm, marginTop: tokens.space.sm, fontSize: tokens.text.xs.size }}
+              style={{
+                ...box,
+                borderColor: tokens.color.warning.bg,
+                padding: tokens.space.sm,
+                marginTop: tokens.space.sm,
+                fontSize: tokens.text.xs.size,
+              }}
             >
               {`配置与生效策略不一致：${text(item.name)} 配置 ${show(item.config)}，生效 ${show(item.active)}（修改要经策略晋级才生效）`}
             </div>
@@ -1021,53 +1298,175 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
         </div>
       </aside>
 
-      <div style={{ flex: 1, minWidth: 0, overflowY: "auto", padding: tokens.space.lg, display: "flex", flexDirection: "column", gap: tokens.space.md }}>
+      <div
+        style={{
+          flex: 1,
+          minWidth: 0,
+          overflowY: "auto",
+          padding: tokens.space.lg,
+          display: "flex",
+          flexDirection: "column",
+          gap: tokens.space.md,
+        }}
+      >
         {store.error ? (
-          <div role="alert" style={{ ...box, borderColor: tokens.color.danger.bg }}>{store.error}</div>
+          <div role="alert" style={{ ...box, borderColor: tokens.color.danger.bg }}>
+            {store.error}
+          </div>
         ) : null}
 
         {creating ? (
           <div style={{ display: "flex", flexDirection: "column", gap: tokens.space.sm }}>
             <label htmlFor="mission-goal">任务目标</label>
-            <textarea id="mission-goal" aria-label="任务目标" style={field} disabled={createPending} value={goal} onChange={(e) => setGoal(e.target.value)} />
+            <textarea
+              id="mission-goal"
+              aria-label="任务目标"
+              style={field}
+              disabled={createPending}
+              value={goal}
+              onChange={(e) => setGoal(e.target.value)}
+            />
             <label htmlFor="mission-criteria">成功条件（每行一条）</label>
-            <textarea id="mission-criteria" aria-label="成功条件" style={field} disabled={createPending} value={criteria} onChange={(e) => setCriteria(e.target.value)} />
-            <PublishCriterionHelper criteria={criteria} onChange={setCriteria} disabled={createPending} publish={store.status?.publish} />
-            <div style={muted}>普通文字写要求即可；以 pytest: 开头的行会当作测试命令运行，后面写测试路径，例如 pytest: tests/</div>
-            {badPytestLines.length > 0 && <div role="alert" style={{ color: dark.danger }}>「{badPytestLines[0]}」会被当作测试命令运行，但 pytest: 后面不是测试路径。要写说明就去掉 pytest: 前缀。</div>}
-            {canAttachSources && <div data-testid="create-sources" style={{ display: "flex", flexDirection: "column", gap: tokens.space.xs }}>
-              <div style={{ fontWeight: tokens.weight.semibold }}>参考资料（可选）</div>
-              <div style={muted}>给任务附上会议纪要、需求文档等，执行时可以读取。目标里提到的资料要在这里附上，系统不会自己去找。</div>
-              <SourceDrafts sources={sources} onChange={setSources} disabled={createPending} onBusy={setSourceImporting} />
-            </div>}
+            <textarea
+              id="mission-criteria"
+              aria-label="成功条件"
+              style={field}
+              disabled={createPending}
+              value={criteria}
+              onChange={(e) => setCriteria(e.target.value)}
+            />
+            <PublishCriterionHelper
+              criteria={criteria}
+              onChange={setCriteria}
+              disabled={createPending}
+              publish={store.status?.publish}
+            />
+            <div style={muted}>
+              普通文字写要求即可；以 pytest: 开头的行会当作测试命令运行，后面写测试路径，例如
+              pytest: tests/
+            </div>
+            {badPytestLines.length > 0 && (
+              <div role="alert" style={{ color: dark.danger }}>
+                「{badPytestLines[0]}」会被当作测试命令运行，但 pytest:
+                后面不是测试路径。要写说明就去掉 pytest: 前缀。
+              </div>
+            )}
+            {canAttachSources && (
+              <div
+                data-testid="create-sources"
+                style={{ display: "flex", flexDirection: "column", gap: tokens.space.xs }}
+              >
+                <div style={{ fontWeight: tokens.weight.semibold }}>参考资料（可选）</div>
+                <div style={muted}>
+                  给任务附上会议纪要、需求文档等，执行时可以读取。目标里提到的资料要在这里附上，系统不会自己去找。
+                </div>
+                <SourceDrafts
+                  sources={sources}
+                  onChange={setSources}
+                  disabled={createPending}
+                  onBusy={setSourceImporting}
+                />
+              </div>
+            )}
             <details data-testid="create-advanced" open={strictQuotes || undefined}>
-            <summary style={{ cursor: "pointer", color: dark.textMuted }}>高级设置（可选，一般不用改）</summary>
-            <div style={{ display: "flex", flexDirection: "column", gap: tokens.space.sm, marginTop: tokens.space.sm }}>
-            {canAttachSources && <label style={{ display: "flex", alignItems: "flex-start", gap: tokens.space.xs }}>
-              <input aria-label="严格引用模式" type="checkbox" checked={strictQuotes} disabled={createPending}
-                onChange={(e) => setStrictQuotes(e.target.checked)} />
-              <span>严格引用：只根据我提供的资料作答，每个结论都要逐字引用原文并注明出处；审阅员会按这条要求检查（需要至少一份资料）</span>
-            </label>}
-            {!!status?.context_profiles?.length && <label style={muted}>输入上下文容量
-              <select aria-label="输入上下文容量" style={field} value={selectedContextId} disabled={createPending} onChange={(e) => setContextProfile(e.target.value)}>
-                {status.context_profiles.map((profile) => <option key={profile.profile_id} value={profile.profile_id}>{profile.max_total_tokens ? `${profile.max_total_tokens / 1024}K 总窗口` : `${profile.max_input_tokens / 1024}K tokens`}</option>)}
-              </select>
-              <span>{selectedContext?.max_total_tokens
-                ? `输入与输出共享 ${selectedContext.max_total_tokens / 1024}K 总窗口；输入最多 ${selectedContext.max_input_tokens / 1024}K，已预留输出与安全余量。总预算按实际调用消耗。`
-                : "容量包含本轮材料与历史；单次输出另计，上限 32K。总预算按实际调用消耗。"}</span>
-            </label>}
-            <div style={{ display: "flex", gap: tokens.space.sm }}>
-              <input aria-label="Token 上限" inputMode="numeric" placeholder={defaultTokenCap ? `Token 上限（留空=${defaultTokenCap}）` : "Token 上限（可选）"} style={{ ...field, minHeight: 0, height: tokens.controlHeight }} value={maxTokens} onChange={(e) => setMaxTokens(e.target.value)} />
-              <input aria-label="尝试次数上限" inputMode="numeric" placeholder={status?.mission_budget_defaults ? `尝试次数上限（留空=${status.mission_budget_defaults.max_attempts}）` : "尝试次数上限（可选）"} style={{ ...field, minHeight: 0, height: tokens.controlHeight }} value={maxAttempts} onChange={(e) => setMaxAttempts(e.target.value)} />
-            </div>
-            {!validCaps && <div role="alert" style={{ color: dark.danger }}>Token 上限和尝试次数上限要填正整数，或者留空用默认值。</div>}
-            </div>
+              <summary style={{ cursor: "pointer", color: dark.textMuted }}>
+                高级设置（可选，一般不用改）
+              </summary>
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: tokens.space.sm,
+                  marginTop: tokens.space.sm,
+                }}
+              >
+                {canAttachSources && (
+                  <label
+                    style={{ display: "flex", alignItems: "flex-start", gap: tokens.space.xs }}
+                  >
+                    <input
+                      aria-label="严格引用模式"
+                      type="checkbox"
+                      checked={strictQuotes}
+                      disabled={createPending}
+                      onChange={(e) => setStrictQuotes(e.target.checked)}
+                    />
+                    <span>
+                      严格引用：只根据我提供的资料作答，每个结论都要逐字引用原文并注明出处；审阅员会按这条要求检查（需要至少一份资料）
+                    </span>
+                  </label>
+                )}
+                {!!status?.context_profiles?.length && (
+                  <label style={muted}>
+                    输入上下文容量
+                    <select
+                      aria-label="输入上下文容量"
+                      style={field}
+                      value={selectedContextId}
+                      disabled={createPending}
+                      onChange={(e) => setContextProfile(e.target.value)}
+                    >
+                      {status.context_profiles.map((profile) => (
+                        <option key={profile.profile_id} value={profile.profile_id}>
+                          {profile.max_total_tokens
+                            ? `${profile.max_total_tokens / 1024}K 总窗口`
+                            : `${profile.max_input_tokens / 1024}K tokens`}
+                        </option>
+                      ))}
+                    </select>
+                    <span>
+                      {selectedContext?.max_total_tokens
+                        ? `输入与输出共享 ${selectedContext.max_total_tokens / 1024}K 总窗口；输入最多 ${selectedContext.max_input_tokens / 1024}K，已预留输出与安全余量。总预算按实际调用消耗。`
+                        : "容量包含本轮材料与历史；单次输出另计，上限 32K。总预算按实际调用消耗。"}
+                    </span>
+                  </label>
+                )}
+                <div style={{ display: "flex", gap: tokens.space.sm }}>
+                  <input
+                    aria-label="Token 上限"
+                    inputMode="numeric"
+                    placeholder={
+                      defaultTokenCap
+                        ? `Token 上限（留空=${defaultTokenCap}）`
+                        : "Token 上限（可选）"
+                    }
+                    style={{ ...field, minHeight: 0, height: tokens.controlHeight }}
+                    value={maxTokens}
+                    onChange={(e) => setMaxTokens(e.target.value)}
+                  />
+                  <input
+                    aria-label="尝试次数上限"
+                    inputMode="numeric"
+                    placeholder={
+                      status?.mission_budget_defaults
+                        ? `尝试次数上限（留空=${status.mission_budget_defaults.max_attempts}）`
+                        : "尝试次数上限（可选）"
+                    }
+                    style={{ ...field, minHeight: 0, height: tokens.controlHeight }}
+                    value={maxAttempts}
+                    onChange={(e) => setMaxAttempts(e.target.value)}
+                  />
+                </div>
+                {!validCaps && (
+                  <div role="alert" style={{ color: dark.danger }}>
+                    Token 上限和尝试次数上限要填正整数，或者留空用默认值。
+                  </div>
+                )}
+              </div>
             </details>
             <button type="button" style={button} disabled={!submittable} onClick={submit}>
               提交任务
             </button>
-            {submitBlocker && <div role="status" data-testid="submit-blocker" style={muted}>还不能提交：{submitBlocker}</div>}
-            {!submitBlocker && missingMaterialHint && <div role="status" data-testid="material-hint" style={{ color: dark.warning }}>{missingMaterialHint}</div>}
+            {submitBlocker && (
+              <div role="status" data-testid="submit-blocker" style={muted}>
+                还不能提交：{submitBlocker}
+              </div>
+            )}
+            {!submitBlocker && missingMaterialHint && (
+              <div role="status" data-testid="material-hint" style={{ color: dark.warning }}>
+                {missingMaterialHint}
+              </div>
+            )}
             {createPending && <div role="status">正在创建任务…</div>}
           </div>
         ) : null}
@@ -1075,7 +1474,9 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
         {!creating && selectedId && detail ? (
           <>
             <div style={box}>
-              <div style={{ fontSize: tokens.text.lg.size, fontWeight: tokens.weight.semibold }}>{text(mission.goal)}</div>
+              <div style={{ fontSize: tokens.text.lg.size, fontWeight: tokens.weight.semibold }}>
+                {text(mission.goal)}
+              </div>
               <div
                 data-testid="mission-state"
                 data-status={text(mission.status)}
@@ -1083,25 +1484,35 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
                 style={{ color: dark.textMuted }}
               >
                 {`状态：${stateLabel(mission.ui_state, mission.status)}`}
-                {mission.stop_reason ? ` · 停止原因：${STOP_REASON_LABEL[text(mission.stop_reason).toLowerCase()] ?? text(mission.stop_reason)}` : ""}
+                {mission.stop_reason
+                  ? ` · 停止原因：${STOP_REASON_LABEL[text(mission.stop_reason).toLowerCase()] ?? text(mission.stop_reason)}`
+                  : ""}
                 {` · 策略版本：${text(record(detail.mission_policy).version_id) || "—"}`}
               </div>
               <div style={muted}>
-                Token 已结算 {text(record(detail.usage).settled_tokens) || "未知"} · 当前预留 {text(record(detail.usage).reserved_tokens) || "未知"}{Number(record(detail.usage).overrun_calls) > 0 ? ` · 超出上限的调用 ${text(record(detail.usage).overrun_calls)} 次（超出总上限 ${text(record(detail.usage).overrun_tokens) || "0"}，已照实入账）` : ""}
+                Token 已结算 {text(record(detail.usage).settled_tokens) || "未知"} · 当前预留{" "}
+                {text(record(detail.usage).reserved_tokens) || "未知"}
+                {Number(record(detail.usage).overrun_calls) > 0
+                  ? ` · 超出上限的调用 ${text(record(detail.usage).overrun_calls)} 次（超出总上限 ${text(record(detail.usage).overrun_tokens) || "0"}，已照实入账）`
+                  : ""}
               </div>
               <div style={muted} data-testid="mission-budget">
                 {`预算：Token 上限 ${text(record(mission.budget).max_tokens) || "—"} · 尝试次数上限 ${text(record(mission.budget).max_attempts) || "—"}`}
               </div>
-              {!!record(detail.runtime_context).max_input_tokens && <div style={muted} data-testid="mission-context">
-                {record(detail.runtime_context).max_total_tokens
-                  ? `本任务总上下文 ${Number(record(detail.runtime_context).max_total_tokens) / 1024}K，输入最多 ${Number(record(detail.runtime_context).max_input_tokens) / 1024}K tokens`
-                  : `本任务输入上下文 ${Number(record(detail.runtime_context).max_input_tokens) / 1024}K tokens`}
-              </div>}
+              {!!record(detail.runtime_context).max_input_tokens && (
+                <div style={muted} data-testid="mission-context">
+                  {record(detail.runtime_context).max_total_tokens
+                    ? `本任务总上下文 ${Number(record(detail.runtime_context).max_total_tokens) / 1024}K，输入最多 ${Number(record(detail.runtime_context).max_input_tokens) / 1024}K tokens`
+                    : `本任务输入上下文 ${Number(record(detail.runtime_context).max_input_tokens) / 1024}K tokens`}
+                </div>
+              )}
               <BudgetByDuty rows={list(detail.budget_by_duty)} />
               <StepsNoLongerCounting rows={list(detail.steps_no_longer_counting)} />
               {list(detail.unrefined_goals).length ? (
                 <div style={muted} data-testid="mission-unrefined-goals">
-                  {`还没细化：${list(detail.unrefined_goals).map((goal) => text(record(goal).label)).join("；")}（规划器还没给它们定做法）`}
+                  {`还没细化：${list(detail.unrefined_goals)
+                    .map((goal) => text(record(goal).label))
+                    .join("；")}（规划器还没给它们定做法）`}
                 </div>
               ) : null}
               {waiting.length ? (
@@ -1109,40 +1520,80 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
                   {waiting.map((item, index) => (
                     <div key={`${index}-${text(record(item).request_id)}`}>
                       {waitLine(item)}
-                      {text(record(item).kind) === "reconciliation" && record(item).needs_human === true ? (
-                        <ResolveOutcomeBox actionKey={text(record(item).action_key)}
-                          failed={text(record(item).state) === "FAILED"} send={send} />
+                      {text(record(item).kind) === "reconciliation" &&
+                      record(item).needs_human === true ? (
+                        <ResolveOutcomeBox
+                          actionKey={text(record(item).action_key)}
+                          failed={text(record(item).state) === "FAILED"}
+                          send={send}
+                        />
                       ) : null}
                     </div>
                   ))}
                 </div>
               ) : null}
-              {!TERMINAL.has(text(mission.status)) && <PlanChangePanel key={selectedId + ":plan-change"} missionId={selectedId} channel={channel} />}
-              {!TERMINAL.has(text(mission.status)) && <button
-                type="button"
-                style={{ ...button, marginTop: tokens.space.sm }}
-                onClick={async () => {
-                  // 2026-09-25 UI 全量点击：取消不可撤销，以前一点就取消。
-                  if (await ask({ title: "取消这个任务？", message: "取消后任务停止，不能恢复。已生成的产物会保留。", confirm_label: "取消任务" }))
-                    send("mission_cancel", { mission_id: selectedId });
-                }}
-              >
-                取消任务
-              </button>}
+              {!TERMINAL.has(text(mission.status)) && (
+                <PlanChangePanel
+                  key={selectedId + ":plan-change"}
+                  missionId={selectedId}
+                  channel={channel}
+                />
+              )}
+              {!TERMINAL.has(text(mission.status)) && (
+                <button
+                  type="button"
+                  style={{ ...button, marginTop: tokens.space.sm }}
+                  onClick={async () => {
+                    // 2026-09-25 UI 全量点击：取消不可撤销，以前一点就取消。
+                    if (
+                      await ask({
+                        title: "取消这个任务？",
+                        message: "取消后任务停止，不能恢复。已生成的产物会保留。",
+                        confirm_label: "取消任务",
+                      })
+                    )
+                      send("mission_cancel", { mission_id: selectedId });
+                  }}
+                >
+                  取消任务
+                </button>
+              )}
             </div>
 
             {(() => {
               const step = nextStep(detail, pendingApprovals.length);
               return (
-                <div data-testid="mission-next-step" role="status" style={{ ...box, borderColor: step.target ? tokens.color.accent.border : tokens.color.surface.hairline, display: "flex", flexWrap: "wrap", alignItems: "center", gap: tokens.space.sm }}>
+                <div
+                  data-testid="mission-next-step"
+                  role="status"
+                  style={{
+                    ...box,
+                    borderColor: step.target
+                      ? tokens.color.accent.border
+                      : tokens.color.surface.hairline,
+                    display: "flex",
+                    flexWrap: "wrap",
+                    alignItems: "center",
+                    gap: tokens.space.sm,
+                  }}
+                >
                   <span style={{ flex: "1 1 240px", minWidth: 0 }}>{step.text}</span>
-                  {step.target && <button type="button" style={button} onClick={() => jumpTo(step.target!)}>{step.action}</button>}
+                  {step.target && (
+                    <button type="button" style={button} onClick={() => jumpTo(step.target!)}>
+                      {step.action}
+                    </button>
+                  )}
                   {/* 授权就在提示条里一键完成（2026-09-25 真机点击：跳转后还要再找按钮） */}
-                  {list(detail.planning_authorization_requests).length > 0 && !nextStepBlocksAuthorization(detail) &&
-                    <div style={{ flexBasis: "100%" }}>
-                      <PlanningAuthorization requests={list(detail.planning_authorization_requests)} channel={channel}
-                        onChanged={refreshPlanningQuestions} />
-                    </div>}
+                  {list(detail.planning_authorization_requests).length > 0 &&
+                    !nextStepBlocksAuthorization(detail) && (
+                      <div style={{ flexBasis: "100%" }}>
+                        <PlanningAuthorization
+                          requests={list(detail.planning_authorization_requests)}
+                          channel={channel}
+                          onChanged={refreshPlanningQuestions}
+                        />
+                      </div>
+                    )}
                 </div>
               );
             })()}
@@ -1151,23 +1602,69 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
               const taskId = text(item.task_id);
               const basis = bases[taskId] ?? "";
               return (
-                <div key={taskId} role="alert" style={{ ...box, borderColor: tokens.color.warning.bg }}>
+                <div
+                  key={taskId}
+                  role="alert"
+                  style={{ ...box, borderColor: tokens.color.warning.bg }}
+                >
                   回合结果未知（进程在模型调用中途退出）：{taskId}
-                  <textarea aria-label="接管依据" style={field} value={basis} onChange={(e) => setBases({ ...bases, [taskId]: e.target.value })} />
+                  <textarea
+                    aria-label="接管依据"
+                    style={field}
+                    value={basis}
+                    onChange={(e) => setBases({ ...bases, [taskId]: e.target.value })}
+                  />
                   <div style={{ display: "flex", gap: tokens.space.sm }}>
-                    <button type="button" style={button} disabled={!basis.trim()} onClick={() => send("mission_takeover", { task_id: taskId, action: "retry_with_note", basis })}>接管：重试</button>
-                    <button type="button" style={button} disabled={!basis.trim()} onClick={() => send("mission_takeover", { task_id: taskId, action: "stop", basis })}>接管：停止</button>
+                    <button
+                      type="button"
+                      style={button}
+                      disabled={!basis.trim()}
+                      onClick={() =>
+                        send("mission_takeover", {
+                          task_id: taskId,
+                          action: "retry_with_note",
+                          basis,
+                        })
+                      }
+                    >
+                      接管：重试
+                    </button>
+                    <button
+                      type="button"
+                      style={button}
+                      disabled={!basis.trim()}
+                      onClick={() =>
+                        send("mission_takeover", { task_id: taskId, action: "stop", basis })
+                      }
+                    >
+                      接管：停止
+                    </button>
                   </div>
                 </div>
               );
             })}
 
-            <div id="mission-step-requirements"><OperationWorkspace value={detail.operation_workspace} channel={channel}
-              onChanged={refreshPlanningQuestions} /></div>
-            {nextStepBlocksAuthorization(detail) && <PlanningAuthorization requests={list(detail.planning_authorization_requests)} channel={channel}
-              onChanged={refreshPlanningQuestions} />}
-            <div id="mission-step-questions"><PlanningQuestions questions={list(detail.planning_questions)} channel={channel}
-              onAnswered={refreshPlanningQuestions} /></div>
+            <div id="mission-step-requirements">
+              <OperationWorkspace
+                value={detail.operation_workspace}
+                channel={channel}
+                onChanged={refreshPlanningQuestions}
+              />
+            </div>
+            {nextStepBlocksAuthorization(detail) && (
+              <PlanningAuthorization
+                requests={list(detail.planning_authorization_requests)}
+                channel={channel}
+                onChanged={refreshPlanningQuestions}
+              />
+            )}
+            <div id="mission-step-questions">
+              <PlanningQuestions
+                questions={list(detail.planning_questions)}
+                channel={channel}
+                onAnswered={refreshPlanningQuestions}
+              />
+            </div>
             <div id="mission-step-approvals" />
             {pendingApprovals.map((approval) => {
               const requestId = text(approval.request_id);
@@ -1175,20 +1672,72 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
               const kind = text(approval.kind);
               const action = record(approval.action);
               return (
-                <div key={requestId} style={{ ...box, minWidth: 0, overflowWrap: "anywhere", borderColor: tokens.color.accent.border }} data-testid={`approval-${requestId}`}>
-                  {kind === "action" ? <ActionApprovalSummary summary={approval.summary} action={action} /> : (
+                <div
+                  key={requestId}
+                  style={{
+                    ...box,
+                    minWidth: 0,
+                    overflowWrap: "anywhere",
+                    borderColor: tokens.color.accent.border,
+                  }}
+                  data-testid={`approval-${requestId}`}
+                >
+                  {kind === "action" ? (
+                    <ActionApprovalSummary summary={approval.summary} action={action} />
+                  ) : (
                     <div style={heading}>
-                      {WAIT_LABEL[kind] ?? `未知审批类型（${kind || "未提供"}）`}：<ModelText value={approval.summary} />
+                      {WAIT_LABEL[kind] ?? `未知审批类型（${kind || "未提供"}）`}：
+                      <ModelText value={approval.summary} />
                     </div>
                   )}
                   {kind === "action" ? <ActionOutcome action={action} /> : null}
-                  {kind === "source_change" ? <pre style={{ minWidth: 0, whiteSpace: "pre-wrap", overflowWrap: "anywhere", wordBreak: "break-word" }}>{JSON.stringify(record(approval.source_change), null, 2)}</pre> : null}
+                  {kind === "source_change" ? (
+                    <pre
+                      style={{
+                        minWidth: 0,
+                        whiteSpace: "pre-wrap",
+                        overflowWrap: "anywhere",
+                        wordBreak: "break-word",
+                      }}
+                    >
+                      {JSON.stringify(record(approval.source_change), null, 2)}
+                    </pre>
+                  ) : null}
                   {kind === "action" || kind === "source_change" ? (
                     <>
-                      <textarea aria-label="拒绝理由" style={field} value={reason} onChange={(e) => setReasons({ ...reasons, [requestId]: e.target.value })} />
+                      <textarea
+                        aria-label="拒绝理由"
+                        style={field}
+                        value={reason}
+                        onChange={(e) => setReasons({ ...reasons, [requestId]: e.target.value })}
+                      />
                       <div style={{ display: "flex", gap: tokens.space.sm }}>
-                        <button type="button" style={button} onClick={() => send("mission_approval_decide", { approval_id: requestId, decision: "approve" })}>批准</button>
-                        <button type="button" style={button} disabled={!reason.trim()} onClick={() => send("mission_approval_decide", { approval_id: requestId, decision: "reject", reason })}>拒绝</button>
+                        <button
+                          type="button"
+                          style={button}
+                          onClick={() =>
+                            send("mission_approval_decide", {
+                              approval_id: requestId,
+                              decision: "approve",
+                            })
+                          }
+                        >
+                          批准
+                        </button>
+                        <button
+                          type="button"
+                          style={button}
+                          disabled={!reason.trim()}
+                          onClick={() =>
+                            send("mission_approval_decide", {
+                              approval_id: requestId,
+                              decision: "reject",
+                              reason,
+                            })
+                          }
+                        >
+                          拒绝
+                        </button>
                       </div>
                     </>
                   ) : kind === "review" ? (
@@ -1209,7 +1758,9 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
                             const note = reason.trim();
                             submitReviewDecision(requestId, "review_pass", note);
                           }}
-                        >复核通过</button>
+                        >
+                          复核通过
+                        </button>
                         <button
                           type="button"
                           style={button}
@@ -1217,19 +1768,40 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
                           onClick={() => {
                             submitReviewDecision(requestId, "review_fail", reason.trim());
                           }}
-                        >复核不通过</button>
+                        >
+                          复核不通过
+                        </button>
                       </div>
                     </>
                   ) : kind === "arbitration" ? (
                     <>
-                      <textarea aria-label="仲裁依据" style={field} value={reason} onChange={(e) => setReasons({ ...reasons, [requestId]: e.target.value })} />
+                      <textarea
+                        aria-label="仲裁依据"
+                        style={field}
+                        value={reason}
+                        onChange={(e) => setReasons({ ...reasons, [requestId]: e.target.value })}
+                      />
                       <div style={{ display: "flex", gap: tokens.space.sm, flexWrap: "wrap" }}>
-                        {(Array.isArray(approval.options) ? approval.options : []).filter((option) =>
-                          option === "met" || option === "unmet").map((option) => (
-                          <button key={text(option)} type="button" style={button} disabled={!reason.trim()} onClick={() => send("mission_approval_decide", { approval_id: requestId, decision: "arbitrate", ruling: text(option), basis: reason })}>
-                            裁决：{text(option)}
-                          </button>
-                        ))}
+                        {(Array.isArray(approval.options) ? approval.options : [])
+                          .filter((option) => option === "met" || option === "unmet")
+                          .map((option) => (
+                            <button
+                              key={text(option)}
+                              type="button"
+                              style={button}
+                              disabled={!reason.trim()}
+                              onClick={() =>
+                                send("mission_approval_decide", {
+                                  approval_id: requestId,
+                                  decision: "arbitrate",
+                                  ruling: text(option),
+                                  basis: reason,
+                                })
+                              }
+                            >
+                              裁决：{text(option)}
+                            </button>
+                          ))}
                       </div>
                     </>
                   ) : null}
@@ -1243,31 +1815,85 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
             })}
 
             {/* 2026-09-27：默认看「任务过程」（模型每一步做了什么）；结构图（步骤之间的先后关系）按需打开 */}
-            <div role="tablist" aria-label="任务视图" style={{ display: "flex", gap: tokens.space.xs }}>
-              {([["graph", "执行图"], ["story", "任务过程"]] as const).map(([key, label]) => (
-                <button key={key} type="button" role="tab" aria-selected={graphTab === key} onClick={() => setGraphTab(key)}
-                  style={{ ...button, borderColor: graphTab === key ? tokens.color.accent.border : tokens.color.surface.hairline,
-                    fontWeight: graphTab === key ? tokens.weight.semibold : undefined }}>{label}</button>
+            <div
+              role="tablist"
+              aria-label="任务视图"
+              style={{ display: "flex", gap: tokens.space.xs }}
+            >
+              {(
+                [
+                  ["graph", "执行图"],
+                  ["story", "任务过程"],
+                ] as const
+              ).map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  role="tab"
+                  aria-selected={graphTab === key}
+                  onClick={() => setGraphTab(key)}
+                  style={{
+                    ...button,
+                    borderColor:
+                      graphTab === key ? tokens.color.accent.border : tokens.color.surface.hairline,
+                    fontWeight: graphTab === key ? tokens.weight.semibold : undefined,
+                  }}
+                >
+                  {label}
+                </button>
               ))}
             </div>
             {graphTab === "story" ? (
-              <MissionStory key={selectedId + ":story"} missionId={selectedId} channel={channel} missionStatus={text(mission.status)}
-                onStalled={onStalled} />
+              <MissionStory
+                key={selectedId + ":story"}
+                missionId={selectedId}
+                channel={channel}
+                missionStatus={text(mission.status)}
+                onStalled={onStalled}
+              />
             ) : (
               <Suspense fallback={<div style={muted}>正在加载执行图…</div>}>
-                <LiveGraph key={selectedId + ":live-graph"} missionId={selectedId} channel={channel} detail={detail}
-                  onLoadMoreEvents={() => fetchEvents(selectedId, true)} onStalled={onStalled} />
+                <LiveGraph
+                  key={selectedId + ":live-graph"}
+                  missionId={selectedId}
+                  channel={channel}
+                  detail={detail}
+                  onLoadMoreEvents={() => fetchEvents(selectedId, true)}
+                  onStalled={onStalled}
+                />
               </Suspense>
             )}
 
-            {list(detail.sources).length > 0 && <MissionSources key={selectedId + ":sources"} missionId={selectedId} sources={list(detail.sources)} channel={channel} onChanged={() => refreshSelected(selectedId)} />}
+            {list(detail.sources).length > 0 && (
+              <MissionSources
+                key={selectedId + ":sources"}
+                missionId={selectedId}
+                sources={list(detail.sources)}
+                channel={channel}
+                onChanged={() => refreshSelected(selectedId)}
+              />
+            )}
 
             <details data-testid="mission-diagnostics-group">
-            <summary style={{ cursor: "pointer", color: dark.textMuted }}>诊断信息（保证状态等，排查问题时用）</summary>
+              <summary style={{ cursor: "pointer", color: dark.textMuted }}>
+                诊断信息（保证状态等，排查问题时用）
+              </summary>
 
-            {status?.assurance_available === true && <MissionAssurance key={selectedId + ":assurance"} missionId={selectedId} channel={channel} />}
+              {status?.assurance_available === true && (
+                <MissionAssurance
+                  key={selectedId + ":assurance"}
+                  missionId={selectedId}
+                  channel={channel}
+                />
+              )}
 
-            {status?.diagnostics_available === true && <MissionDiagnostics key={selectedId + ":diagnostics"} missionId={selectedId} channel={channel} />}
+              {status?.diagnostics_available === true && (
+                <MissionDiagnostics
+                  key={selectedId + ":diagnostics"}
+                  missionId={selectedId}
+                  channel={channel}
+                />
+              )}
             </details>
 
             <div style={box}>
@@ -1275,10 +1901,18 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
               {list(detail.tasks).map((task) => {
                 const taskId = text(task.id);
                 const blockedIds = new Set(list(detail.blocked).map((item) => text(item.task_id)));
-                const canTakeOver = !TERMINAL.has(text(mission.status)) && !TASK_ENDED.has(text(task.status)) && !blockedIds.has(taskId);
+                const canTakeOver =
+                  !TERMINAL.has(text(mission.status)) &&
+                  !TASK_ENDED.has(text(task.status)) &&
+                  !blockedIds.has(taskId);
                 return (
-                  <div key={taskId} data-testid={`task-${taskId}`} style={{ marginTop: tokens.space.sm }}>
-                    <ModelText value={task.goal} /> · {TASK_STATUS_LABEL[text(task.status)] ?? text(task.status)}
+                  <div
+                    key={taskId}
+                    data-testid={`task-${taskId}`}
+                    style={{ marginTop: tokens.space.sm }}
+                  >
+                    <ModelText value={task.goal} /> ·{" "}
+                    {TASK_STATUS_LABEL[text(task.status)] ?? text(task.status)}
                     {canTakeOver ? <TakeoverBox taskId={taskId} send={send} /> : null}
                   </div>
                 );
@@ -1292,25 +1926,49 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
                 const rejection = failed ? record(result.final_rejection) : {};
                 const reason = text(rejection.reason);
                 return (
-                  <div key={text(result.result_id) || attemptId} style={{ marginTop: tokens.space.sm }}>
-                    {(verdict || verificationState) && <div
-                      data-testid={`result-final-${text(result.result_id) || attemptId}`}
-                      data-verdict={verdict}
-                      data-verification-state={verificationState}
-                      style={{ color: failed ? tokens.color.danger.fg : dark.textMuted }}
-                    >
-                      <strong>{failed ? "结果最终未接受" : "结果判定"}（{verdict || "尚未判定"} / {verificationState || "未知"}）</strong>
-                      {reason && <div>拒绝原因：{REJECTION_LABEL[reason] ?? reason}（{reason}）</div>}
-                      {list(rejection.source_issues).map((issue, index) => <div key={index} style={{ overflowWrap: "anywhere" }}>
-                        {text(issue.path) || "来源"} · {REJECTION_LABEL[text(issue.reason)] ?? text(issue.reason)}（{text(issue.reason) || text(issue.code)}）
-                        {issue.version ? ` · 版本：${text(issue.version)}` : ""}
-                      </div>)}
-                    </div>}
-                    <div>结果摘要：<ModelText value={result.summary} /></div>
+                  <div
+                    key={text(result.result_id) || attemptId}
+                    style={{ marginTop: tokens.space.sm }}
+                  >
+                    {(verdict || verificationState) && (
+                      <div
+                        data-testid={`result-final-${text(result.result_id) || attemptId}`}
+                        data-verdict={verdict}
+                        data-verification-state={verificationState}
+                        style={{ color: failed ? tokens.color.danger.fg : dark.textMuted }}
+                      >
+                        <strong>
+                          {failed ? "结果最终未接受" : "结果判定"}（{verdict || "尚未判定"} /{" "}
+                          {verificationState || "未知"}）
+                        </strong>
+                        {reason && (
+                          <div>
+                            拒绝原因：{REJECTION_LABEL[reason] ?? reason}（{reason}）
+                          </div>
+                        )}
+                        {list(rejection.source_issues).map((issue, index) => (
+                          <div key={index} style={{ overflowWrap: "anywhere" }}>
+                            {text(issue.path) || "来源"} ·{" "}
+                            {REJECTION_LABEL[text(issue.reason)] ?? text(issue.reason)}（
+                            {text(issue.reason) || text(issue.code)}）
+                            {issue.version ? ` · 版本：${text(issue.version)}` : ""}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <div>
+                      结果摘要：
+                      <ModelText value={result.summary} />
+                    </div>
                     <div style={{ display: "flex", gap: tokens.space.xs, flexWrap: "wrap" }}>
                       {layers.map((layer) => {
                         const layerStatus = text(layer.status);
-                        const color = layerStatus === "PASS" ? tokens.color.success.fg : layerStatus === "FAIL" || layerStatus === "ERROR" ? tokens.color.danger.fg : dark.textMuted;
+                        const color =
+                          layerStatus === "PASS"
+                            ? tokens.color.success.fg
+                            : layerStatus === "FAIL" || layerStatus === "ERROR"
+                              ? tokens.color.danger.fg
+                              : dark.textMuted;
                         return (
                           <span
                             key={text(layer.layer)}
@@ -1342,10 +2000,23 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
             {artifacts.length ? (
               <div id="mission-step-artifacts" style={box}>
                 <div style={heading}>产物</div>
-                {internals.length > 0 && <button type="button" style={{ ...button, height: "auto", padding: `2px ${tokens.space.sm}px`, marginTop: tokens.space.xs, color: dark.textMuted }}
-                  onClick={() => setShowInternal((v) => !v)}>
-                  {showInternal ? "收起系统检查记录" : `显示系统检查记录（${internals.length} 个，排查问题时看）`}
-                </button>}
+                {internals.length > 0 && (
+                  <button
+                    type="button"
+                    style={{
+                      ...button,
+                      height: "auto",
+                      padding: `2px ${tokens.space.sm}px`,
+                      marginTop: tokens.space.xs,
+                      color: dark.textMuted,
+                    }}
+                    onClick={() => setShowInternal((v) => !v)}
+                  >
+                    {showInternal
+                      ? "收起系统检查记录"
+                      : `显示系统检查记录（${internals.length} 个，排查问题时看）`}
+                  </button>
+                )}
                 {[...deliverables, ...internals].map((item, index) => {
                   const artifactId = text(item.id);
                   const folded = index >= deliverables.length;
@@ -1356,17 +2027,42 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
                       data-testid={`artifact-${artifactId}`}
                       data-internal={folded ? "true" : undefined}
                       hidden={folded && !showInternal}
-                      style={{ display: folded && !showInternal ? "none" : "flex", alignItems: "center", gap: tokens.space.sm, marginTop: tokens.space.sm, minWidth: 0 }}
+                      style={{
+                        display: folded && !showInternal ? "none" : "flex",
+                        alignItems: "center",
+                        gap: tokens.space.sm,
+                        marginTop: tokens.space.sm,
+                        minWidth: 0,
+                      }}
                     >
-                      <span style={{ flex: 1, minWidth: 0, overflowWrap: "anywhere", wordBreak: "break-word" }}>
+                      <span
+                        style={{
+                          flex: 1,
+                          minWidth: 0,
+                          overflowWrap: "anywhere",
+                          wordBreak: "break-word",
+                        }}
+                      >
                         {`${text(item.path)} · ${formatBytes(item.size_bytes)} · 验证：${LAYER_LABEL[verification] ?? (verification || "—")} · ${shortHash(item.content_hash)}`}
                       </span>
-                      <button type="button" style={button} onClick={() => {
-                        setArtifact(null);
-                        const requestId = newKey();
-                        artifactRequest.current = { requestId, missionId: selectedId, artifactId };
-                        channel?.send({ type: "mission_artifact_read", request_id: requestId, payload: { artifact_id: artifactId } });
-                      }}>
+                      <button
+                        type="button"
+                        style={button}
+                        onClick={() => {
+                          setArtifact(null);
+                          const requestId = newKey();
+                          artifactRequest.current = {
+                            requestId,
+                            missionId: selectedId,
+                            artifactId,
+                          };
+                          channel?.send({
+                            type: "mission_artifact_read",
+                            request_id: requestId,
+                            payload: { artifact_id: artifactId },
+                          });
+                        }}
+                      >
                         查看产物
                       </button>
                     </div>
@@ -1375,18 +2071,34 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
               </div>
             ) : null}
 
-            {artifact ? <div style={{ minWidth: 0 }}><ArtifactPanel artifact={artifact}
-              verified={[...deliverables, ...internals].some((item) => text(item.id) === text(artifact.artifact_id)
-                && text(item.verification_status).toUpperCase() === "VERIFIED")} /></div> : null}
+            {artifact ? (
+              <div style={{ minWidth: 0 }}>
+                <ArtifactPanel
+                  artifact={artifact}
+                  verified={[...deliverables, ...internals].some(
+                    (item) =>
+                      text(item.id) === text(artifact.artifact_id) &&
+                      text(item.verification_status).toUpperCase() === "VERIFIED",
+                  )}
+                />
+              </div>
+            ) : null}
 
             <div style={box}>
               <div style={heading}>评论</div>
-              <textarea aria-label="评论" style={{ ...field, marginTop: tokens.space.sm }} value={comment} onChange={(e) => setComment(e.target.value)} />
+              <textarea
+                aria-label="评论"
+                style={{ ...field, marginTop: tokens.space.sm }}
+                value={comment}
+                onChange={(e) => setComment(e.target.value)}
+              />
               <button
                 type="button"
                 style={{ ...button, marginTop: tokens.space.sm }}
                 disabled={!comment.trim()}
-                onClick={() => send("mission_comment", { target_id: selectedId, text: comment.trim() })}
+                onClick={() =>
+                  send("mission_comment", { target_id: selectedId, text: comment.trim() })
+                }
               >
                 发表评论
               </button>
@@ -1394,11 +2106,19 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
 
             <div style={box}>
               <div style={heading}>原始事件记录</div>
-              <div style={muted}>系统内部记录，排查问题时看；想了解模型做了什么，看上面的「任务过程」。</div>
+              <div style={muted}>
+                系统内部记录，排查问题时看；想了解模型做了什么，看上面的「任务过程」。
+              </div>
               {events.length > TIMELINE_SIZE ? (
                 <div style={muted}>
-                  {allEventsShown ? `共 ${events.length} 条` : `共 ${events.length} 条，显示最近 ${TIMELINE_SIZE} 条`}
-                  <button type="button" style={{ ...button, marginLeft: tokens.space.sm }} onClick={() => setAllEventsShown((v) => !v)}>
+                  {allEventsShown
+                    ? `共 ${events.length} 条`
+                    : `共 ${events.length} 条，显示最近 ${TIMELINE_SIZE} 条`}
+                  <button
+                    type="button"
+                    style={{ ...button, marginLeft: tokens.space.sm }}
+                    onClick={() => setAllEventsShown((v) => !v)}
+                  >
                     {allEventsShown ? "只看最近" : "显示全部"}
                   </button>
                 </div>

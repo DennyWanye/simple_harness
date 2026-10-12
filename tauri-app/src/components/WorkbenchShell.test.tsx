@@ -31,10 +31,7 @@ afterEach(cleanup);
 // 2026-09-09 改版：令牌以 CSS 变量下发（`var(--sh-*, 兜底)`），jsdom 原样
 // 保留字符串；断言直接比对令牌值，测试内仍零硬编码色值。
 
-import {
-  WorkbenchShell,
-  type WorkbenchView,
-} from "./WorkbenchShell";
+import { WorkbenchShell, type WorkbenchView } from "./WorkbenchShell";
 import { SIDEBAR_WIDTH } from "./Sidebar";
 import { dark } from "../theme/components";
 
@@ -73,8 +70,7 @@ describe("WorkbenchShell 视图切换（WB-3）", () => {
     fireEvent.click(screen.getByTestId("nav-skills"));
     expect(screen.getByTestId("view-skills")).toBeTruthy();
     // D3：chat 常挂载 — 切走后仍在 DOM，仅容器 display:none。
-    const chatWrap = screen.getByTestId("view-chat")
-      .parentElement as HTMLElement;
+    const chatWrap = screen.getByTestId("view-chat").parentElement as HTMLElement;
     expect(chatWrap.style.display).toBe("none");
 
     fireEvent.click(screen.getByTestId("nav-artifacts"));
@@ -86,8 +82,7 @@ describe("WorkbenchShell 视图切换（WB-3）", () => {
     expect(screen.queryByTestId("view-artifacts")).toBeNull();
 
     fireEvent.click(screen.getByTestId("nav-chat"));
-    const chatWrapBack = screen.getByTestId("view-chat")
-      .parentElement as HTMLElement;
+    const chatWrapBack = screen.getByTestId("view-chat").parentElement as HTMLElement;
     expect(chatWrapBack.style.display).not.toBe("none");
     expect(screen.queryByTestId("view-settings")).toBeNull();
   });
@@ -215,17 +210,13 @@ describe("Sidebar T13 — 「更多」入口与连接徽章聚合（WB-3）", ()
   it("连接徽章：双通道都连上 + routeKind=local → 本地", () => {
     vi.mocked(controlWS.state).mockReturnValue("connected");
     renderWithMore({ routeKind: "local" });
-    expect(screen.getByTestId("sidebar-conn-badge").textContent).toContain(
-      "本地",
-    );
+    expect(screen.getByTestId("sidebar-conn-badge").textContent).toContain("本地");
   });
 
   it("连接徽章聚合取最差态：ControlChannel 已连但 controlWS 断开 → 未连接", () => {
     vi.mocked(controlWS.state).mockReturnValue("disconnected");
     renderWithMore({ connectionState: "connected", routeKind: "cloud" });
-    expect(screen.getByTestId("sidebar-conn-badge").textContent).toContain(
-      "未连接",
-    );
+    expect(screen.getByTestId("sidebar-conn-badge").textContent).toContain("未连接");
   });
 });
 

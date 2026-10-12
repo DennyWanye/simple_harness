@@ -15,10 +15,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useSessionsStore } from "../stores/sessionsStore";
-import type {
-  PermissionRequest,
-  PermissionResponse,
-} from "../types/skillPlatform";
+import type { PermissionRequest, PermissionResponse } from "../types/skillPlatform";
 
 type Decision = "allow" | "allow_session" | "deny";
 
@@ -40,9 +37,7 @@ type PermissionChannel = {
 };
 
 function permissionIdentity(
-  payload: Partial<
-    Pick<PermissionRequest["payload"], "decision_id" | "request_id">
-  >,
+  payload: Partial<Pick<PermissionRequest["payload"], "decision_id" | "request_id">>,
 ): string {
   return String(payload.decision_id || payload.request_id || "").trim();
 }
@@ -52,9 +47,7 @@ function permissionCallId(payload: PermissionRequest["payload"]): string {
 }
 
 export function usePermissionRequests(channel: PermissionChannel | null) {
-  const [current, setCurrent] = useState<
-    PermissionRequest["payload"] | null
-  >(null);
+  const [current, setCurrent] = useState<PermissionRequest["payload"] | null>(null);
   const currentRef = useRef<PermissionRequest["payload"] | null>(null);
   const queueRef = useRef<PermissionRequest["payload"][]>([]);
   const resolvedRef = useRef<Set<string>>(new Set());
@@ -93,9 +86,8 @@ export function usePermissionRequests(channel: PermissionChannel | null) {
           inflight: true,
         });
         if (
-          useSessionsStore.getState().sessions[sessionId]?.run_projections?.[
-            runId
-          ]?.status === "running"
+          useSessionsStore.getState().sessions[sessionId]?.run_projections?.[runId]?.status ===
+          "running"
         ) {
           useSessionsStore.getState().upsert(sessionId, {
             status: "running",
@@ -136,8 +128,7 @@ export function usePermissionRequests(channel: PermissionChannel | null) {
       const identity = permissionIdentity(payload);
       if (!identity || resolvedRef.current.has(identity)) return;
       if (
-        (currentRef.current &&
-          permissionIdentity(currentRef.current) === identity) ||
+        (currentRef.current && permissionIdentity(currentRef.current) === identity) ||
         queueRef.current.some((item) => permissionIdentity(item) === identity)
       ) {
         return;
@@ -150,8 +141,7 @@ export function usePermissionRequests(channel: PermissionChannel | null) {
         resolvingIdentity &&
         resolvingIdentity === permissionIdentity(active) &&
         String(active.run_id || "").trim() !== "" &&
-        String(active.run_id || "").trim() ===
-          String(payload.run_id || "").trim()
+        String(active.run_id || "").trim() === String(payload.run_id || "").trim()
       ) {
         // A Run cannot durably open its next permission decision until the
         // previous one was accepted.  The next same-Run request is therefore
@@ -182,8 +172,7 @@ export function usePermissionRequests(channel: PermissionChannel | null) {
     // can otherwise be dropped forever. Re-query on every successful
     // connection; decision identity de-duplication safely merges live replay.
     const subscribeState = channel.onStateChange ?? channel.on_state_change;
-    const channelState =
-      typeof channel.state === "function" ? channel.state() : channel.state;
+    const channelState = typeof channel.state === "function" ? channel.state() : channel.state;
     if (!subscribeState || channelState === "connected") {
       requestPending();
     }
@@ -198,15 +187,14 @@ export function usePermissionRequests(channel: PermissionChannel | null) {
         return;
       }
       if (msg.type === "permissions_pending_list_response") {
-        const pending = (
-          msg as unknown as {
-            payload?: { pending?: Array<Partial<PermissionRequest["payload"]>> };
-          }
-        ).payload?.pending ?? [];
+        const pending =
+          (
+            msg as unknown as {
+              payload?: { pending?: Array<Partial<PermissionRequest["payload"]>> };
+            }
+          ).payload?.pending ?? [];
         const snapshotIdentities = new Set(
-          pending
-            .map((item) => permissionIdentity(item))
-            .filter(Boolean),
+          pending.map((item) => permissionIdentity(item)).filter(Boolean),
         );
         // A reconnect snapshot is authoritative for the current backend
         // generation.  Drop cards that belonged to the dead process; durable
@@ -217,10 +205,7 @@ export function usePermissionRequests(channel: PermissionChannel | null) {
           snapshotIdentities.has(permissionIdentity(item)),
         );
         const active = currentRef.current;
-        if (
-          active &&
-          !snapshotIdentities.has(permissionIdentity(active))
-        ) {
+        if (active && !snapshotIdentities.has(permissionIdentity(active))) {
           currentRef.current = null;
           setCurrent(null);
           resolvingIdentityRef.current = null;
@@ -251,12 +236,8 @@ export function usePermissionRequests(channel: PermissionChannel | null) {
         msg.type === "chat_v2_error" ||
         msg.type === "workflow_final"
       ) {
-        const payload = (
-          msg as { payload?: { run_id?: string; root_run_id?: string } }
-        ).payload;
-        const runId = String(
-          payload?.run_id || payload?.root_run_id || "",
-        ).trim();
+        const payload = (msg as { payload?: { run_id?: string; root_run_id?: string } }).payload;
+        const runId = String(payload?.run_id || payload?.root_run_id || "").trim();
         if (runId) dismissRun(runId);
         return;
       }
@@ -272,9 +253,7 @@ export function usePermissionRequests(channel: PermissionChannel | null) {
           }
         ).payload;
         if (!payload) return;
-        const identity = String(
-          payload.decision_id || payload.request_id || "",
-        ).trim();
+        const identity = String(payload.decision_id || payload.request_id || "").trim();
         if (
           !identity ||
           !currentRef.current ||
@@ -333,10 +312,7 @@ export function usePermissionRequests(channel: PermissionChannel | null) {
         const runId = String(payload?.run_id || "").trim();
         if (!runId) return;
         if (payload?.cancelled === false) {
-          if (
-            currentRef.current &&
-            String(currentRef.current.run_id || "").trim() === runId
-          ) {
+          if (currentRef.current && String(currentRef.current.run_id || "").trim() === runId) {
             setResolving(false);
             setResolveError("停止任务失败，请重试");
           }
@@ -361,13 +337,9 @@ export function usePermissionRequests(channel: PermissionChannel | null) {
           decision,
           session_id: current.session_id,
           ...(current.run_id ? { run_id: current.run_id } : {}),
-          ...(current.decision_id
-            ? { decision_id: current.decision_id }
-            : {}),
+          ...(current.decision_id ? { decision_id: current.decision_id } : {}),
           ...(current.nonce ? { nonce: current.nonce } : {}),
-          ...(current.version !== undefined
-            ? { version: current.version }
-            : {}),
+          ...(current.version !== undefined ? { version: current.version } : {}),
         },
       };
       const sent = channel.send(
@@ -378,7 +350,7 @@ export function usePermissionRequests(channel: PermissionChannel | null) {
       setResolving(true);
       setResolveError(null);
     },
-    [current, channel, resolving]
+    [current, channel, resolving],
   );
 
   const stopCurrentRun = useCallback(() => {

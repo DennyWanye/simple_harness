@@ -3,10 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import {
-  buildSetModelMessage,
-  buildSetProviderMessage,
-} from "./sessionModelMessages";
+import { buildSetModelMessage, buildSetProviderMessage } from "./sessionModelMessages";
 
 describe("session model messages", () => {
   it("sets or clears a provider for an ordinary session", () => {

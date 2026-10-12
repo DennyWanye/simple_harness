@@ -81,7 +81,10 @@ export function displayApiKey(_p: Pick<Provider, "api_key">): string {
 }
 
 /** Build the ws message frontend sends to reorder providers. */
-export function buildReorderMessage(ordered_ids: string[], providers?: Provider[]): {
+export function buildReorderMessage(
+  ordered_ids: string[],
+  providers?: Provider[],
+): {
   type: "settings_providers_reorder";
   payload: Record<string, unknown>;
 } {
@@ -126,7 +129,10 @@ export function buildToggleEnabledMessage(
 }
 
 /** Build the ws message frontend sends to remove a provider. */
-export function buildRemoveMessage(id: string, provider?: Provider): {
+export function buildRemoveMessage(
+  id: string,
+  provider?: Provider,
+): {
   type: "settings_providers_remove";
   payload: Record<string, unknown>;
 } {
@@ -208,17 +214,12 @@ export const useProvidersStore = create<ProvidersStore>(() => ({
  * Unknown types are ignored so adding new server-side events later
  * doesn't accidentally clobber the store.
  */
-export function dispatchProviderEvent(msg: {
-  type: string;
-  payload?: any;
-}): void {
+export function dispatchProviderEvent(msg: { type: string; payload?: any }): void {
   switch (msg.type) {
     case "settings_providers_list_response":
     case "providers_changed":
     case "settings_providers_reordered": {
-      const list: Provider[] = Array.isArray(msg.payload?.providers)
-        ? msg.payload.providers
-        : [];
+      const list: Provider[] = Array.isArray(msg.payload?.providers) ? msg.payload.providers : [];
       useProvidersStore.setState({ providers: list, error: null });
       break;
     }
@@ -289,8 +290,10 @@ function SortableRow({
   onDelete,
   onEdit,
 }: SortableRowProps) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: provider.id, disabled: false });
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: provider.id,
+    disabled: false,
+  });
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
@@ -343,11 +346,25 @@ function SortableRow({
         </span>
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-            <span style={{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{provider.name}</span>
+            <span
+              style={{
+                fontWeight: 600,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {provider.name}
+            </span>
           </div>
           <div style={{ color: dark.textMuted, fontSize: 11, overflowWrap: "anywhere" }}>
-            {provider.default_model || provider.model || (provider.models && provider.models[0]) || "(no model)"}
-            {provider.models && provider.models.length > 1 ? ` (+${provider.models.length - 1})` : ""}
+            {provider.default_model ||
+              provider.model ||
+              (provider.models && provider.models[0]) ||
+              "(no model)"}
+            {provider.models && provider.models.length > 1
+              ? ` (+${provider.models.length - 1})`
+              : ""}
           </div>
           <div style={{ color: dark.textFaint, fontSize: 11, overflowWrap: "anywhere" }}>
             {provider.base_url}
@@ -406,10 +423,7 @@ function SortableRow({
   );
 }
 
-export function SettingsProviders({
-  getChannel,
-  lastMessage,
-}: SettingsProvidersProps) {
+export function SettingsProviders({ getChannel, lastMessage }: SettingsProvidersProps) {
   const [providers, setProviders] = useState<Provider[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
@@ -490,7 +504,6 @@ export function SettingsProviders({
     };
   }, [getChannel, observeSaveResult]);
 
-
   // Listen for inbound provider events on the shared lastMessage prop.
   useEffect(() => {
     if (!lastMessage) return;
@@ -500,9 +513,7 @@ export function SettingsProviders({
       case "settings_providers_list_response":
       case "providers_changed":
       case "settings_providers_reordered": {
-        const list: Provider[] = Array.isArray(msg.payload?.providers)
-          ? msg.payload.providers
-          : [];
+        const list: Provider[] = Array.isArray(msg.payload?.providers) ? msg.payload.providers : [];
         setProviders(list);
         setError(null);
         break;
@@ -517,10 +528,7 @@ export function SettingsProviders({
   }, [lastMessage, observeSaveResult]);
 
   // 2026-08-09: relay 虚拟项已移除 — 列表只来自 backend registry。
-  const ordered = useMemo(
-    () => sortProvidersForDisplay(providers),
-    [providers],
-  );
+  const ordered = useMemo(() => sortProvidersForDisplay(providers), [providers]);
   const ordered_ids = useMemo(() => ordered.map((p) => p.id), [ordered]);
 
   const send = useCallback(
@@ -595,7 +603,6 @@ export function SettingsProviders({
     setDeleteTarget(null);
   }, [deleteTarget, send]);
 
-
   const handleSaveDraft = useCallback(
     (draft: ProviderDraft, editing: Provider | null) => {
       const models = draft.models.map((m) => m.trim()).filter(Boolean);
@@ -617,32 +624,36 @@ export function SettingsProviders({
         if (typeof draft.enabled === "boolean") {
           patch.enabled = draft.enabled;
         }
-        if (!send({
-          type: "settings_providers_update",
-          payload: {
-            id: editing.id,
-            patch,
-            expected_incarnation_id: editing.incarnation_id,
-            expected_config_revision: editing.config_revision,
-          },
-        })) {
+        if (
+          !send({
+            type: "settings_providers_update",
+            payload: {
+              id: editing.id,
+              patch,
+              expected_incarnation_id: editing.incarnation_id,
+              expected_config_revision: editing.config_revision,
+            },
+          })
+        ) {
           pendingSaveIdRef.current = null;
           setSaving(false);
           return;
         }
       } else {
-        if (!send({
-          type: "settings_providers_add",
-          payload: {
-            id: draft.id,
-            name: draft.name,
-            base_url: draft.base_url,
-            models,
-            default_model,
-            api_key: draft.api_key,
-            enabled: true,
-          },
-        })) {
+        if (
+          !send({
+            type: "settings_providers_add",
+            payload: {
+              id: draft.id,
+              name: draft.name,
+              base_url: draft.base_url,
+              models,
+              default_model,
+              api_key: draft.api_key,
+              enabled: true,
+            },
+          })
+        ) {
           pendingSaveIdRef.current = null;
           setSaving(false);
           return;
@@ -742,11 +753,7 @@ export function SettingsProviders({
       {ordered.length === 0 ? (
         <div style={emptyStyle}>请添加你的第一个 LLM provider</div>
       ) : (
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragEnd={handleDragEnd}
-        >
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
           <SortableContext items={ordered_ids} strategy={verticalListSortingStrategy}>
             <ul style={listStyle} data-testid="provider-list">
               {ordered.map((p) => (

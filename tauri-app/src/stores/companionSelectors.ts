@@ -11,8 +11,6 @@ import { useSessionsStore } from "./sessionsStore";
  * new snapshot on every read and loops under React 19/useSyncExternalStore.
  */
 export function useCompanionProvisionalValues(): string[] {
-  const streams = useSessionsStore((state) =>
-    state.companion_provisional_streams
-  );
+  const streams = useSessionsStore((state) => state.companion_provisional_streams);
   return useMemo(() => Object.values(streams), [streams]);
 }

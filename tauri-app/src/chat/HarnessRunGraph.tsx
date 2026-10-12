@@ -24,14 +24,7 @@ interface Props {
 }
 
 const COMPLETE = new Set(["completed", "completed_with_recovery", "succeeded", "settled", "ready"]);
-const ACTIVE = new Set([
-  "running",
-  "claimed",
-  "active",
-  "prepared",
-  "admitted",
-  "starting",
-]);
+const ACTIVE = new Set(["running", "claimed", "active", "prepared", "admitted", "starting"]);
 const WAITING = new Set(["waiting", "pending", "created"]);
 const FAILED = new Set(["failed", "unknown", "cancelled", "rejected"]);
 
@@ -52,15 +45,17 @@ function nodeMark(status: string, index: number): string {
 }
 
 function statusText(status: string): string {
-  return {
-    completed: "已完成",
-    completed_with_recovery: "修复后完成",
-    running: "进行中",
-    waiting: "等待中",
-    failed: "失败",
-    cancelled: "已取消",
-    unknown: "信息不完整",
-  }[status] ?? status;
+  return (
+    {
+      completed: "已完成",
+      completed_with_recovery: "修复后完成",
+      running: "进行中",
+      waiting: "等待中",
+      failed: "失败",
+      cancelled: "已取消",
+      unknown: "信息不完整",
+    }[status] ?? status
+  );
 }
 
 export function HarnessRunGraph({
@@ -78,14 +73,9 @@ export function HarnessRunGraph({
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !currentNodeId) return;
-    const current = canvas.querySelector<HTMLElement>(
-      ".harness-run-graph__row.is-current",
-    );
+    const current = canvas.querySelector<HTMLElement>(".harness-run-graph__row.is-current");
     if (!current) return;
-    canvas.scrollTop = Math.max(
-      0,
-      current.offsetTop + current.offsetHeight - canvas.clientHeight,
-    );
+    canvas.scrollTop = Math.max(0, current.offsetTop + current.offsetHeight - canvas.clientHeight);
   }, [currentNodeId, nodes.length]);
 
   return (
@@ -95,9 +85,7 @@ export function HarnessRunGraph({
           <strong>运行图</strong>
           <span>沿着箭头看 Agent 现在走到哪里</span>
         </div>
-        <span>
-          {nodes.length === 0 ? "尚未开始" : `${currentIndex + 1}/${nodes.length}`}
-        </span>
+        <span>{nodes.length === 0 ? "尚未开始" : `${currentIndex + 1}/${nodes.length}`}</span>
       </header>
 
       <div className="harness-run-graph__now" aria-live="polite">

@@ -8,13 +8,23 @@ import React, { useCallback, useContext, useEffect, useRef, useState } from "rea
 
 import { tokens } from "../theme/tokens";
 import { dark } from "../theme/components";
-import { asList as list, asRecord as record, asText as text, newRequestKey } from "../stores/missionsStore";
+import {
+  asList as list,
+  asRecord as record,
+  asText as text,
+  newRequestKey,
+} from "../stores/missionsStore";
 import { MissionsChannelContext } from "./chatMission";
 import { PROTOCOL_ERROR, STALE_NOTE } from "../ws/orchestrationContracts";
 
 type Settled = { operation: string; target: string; applied: boolean };
 type Notice = {
-  notice_id: string; mission_id: string; status: string; status_zh: string; goal: string; stop_reason: string;
+  notice_id: string;
+  mission_id: string;
+  status: string;
+  status_zh: string;
+  goal: string;
+  stop_reason: string;
   /** 停下时还有几个对外操作结果不明（系统会继续核对）。 */
   unresolved_actions: number;
   /** 这条通知说的是停下后某个对外操作的核对结果。 */
@@ -42,7 +52,11 @@ const button: React.CSSProperties = {
   cursor: "pointer",
   flexShrink: 0,
 };
-const oneLine: React.CSSProperties = { whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" };
+const oneLine: React.CSSProperties = {
+  whiteSpace: "nowrap",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+};
 const muted: React.CSSProperties = { color: dark.textMuted, fontSize: tokens.text.xs.size };
 /** 只摆最新几条；旧库里攒下的一批通知由人点一次"全部已收到"清掉。 */
 const SHOWN = 3;
@@ -61,8 +75,11 @@ function asNotice(value: unknown): Notice | null {
     stop_reason: text(row.stop_reason),
     unresolved_actions: Number(row.unresolved_actions) || 0,
     action_settled: row.action_settled
-      ? { operation: text(record(row.action_settled).operation), target: text(record(row.action_settled).target),
-        applied: record(row.action_settled).applied === true }
+      ? {
+          operation: text(record(row.action_settled).operation),
+          target: text(record(row.action_settled).target),
+          applied: record(row.action_settled).applied === true,
+        }
       : null,
   };
 }
@@ -82,7 +99,8 @@ export function ChatMissionNotices(): React.JSX.Element | null {
     if (!channel || listRequest.current) return;
     const requestId = newRequestKey();
     listRequest.current = requestId;
-    if (!channel.send({ type: "mission_notices", request_id: requestId, payload: {} })) listRequest.current = null;
+    if (!channel.send({ type: "mission_notices", request_id: requestId, payload: {} }))
+      listRequest.current = null;
   }, [channel]);
 
   useEffect(() => {
@@ -99,7 +117,11 @@ export function ChatMissionNotices(): React.JSX.Element | null {
         listRequest.current = null;
         if (payload.ok === true) {
           shown.current = true;
-          setNotices(list(payload.data).map(asNotice).filter((item): item is Notice => item !== null));
+          setNotices(
+            list(payload.data)
+              .map(asNotice)
+              .filter((item): item is Notice => item !== null),
+          );
           setListError("");
         } else if (payload.error_code === PROTOCOL_ERROR) {
           setListError(text(payload.error) + (shown.current ? STALE_NOTE : ""));
@@ -112,7 +134,9 @@ export function ChatMissionNotices(): React.JSX.Element | null {
         acks.current.delete(text(payload.request_id));
         setBusy((state) => ({ ...state, [noticeId]: false }));
         if (payload.ok === true) {
-          setNotices((items) => (noticeId === ALL ? [] : items.filter((item) => item.notice_id !== noticeId)));
+          setNotices((items) =>
+            noticeId === ALL ? [] : items.filter((item) => item.notice_id !== noticeId),
+          );
           setError("");
         } else {
           setError(text(payload.error) || "没有记上，请重试");
@@ -127,7 +151,10 @@ export function ChatMissionNotices(): React.JSX.Element | null {
       refresh();
     });
     refresh();
-    return () => { off(); offState?.(); };
+    return () => {
+      off();
+      offState?.();
+    };
   }, [channel, refresh]);
 
   const acknowledge = (noticeId: string) => {
@@ -145,37 +172,72 @@ export function ChatMissionNotices(): React.JSX.Element | null {
 
   if (!notices.length && !error && !listError) return null;
   return (
-    <div aria-label="后台任务通知" style={{ display: "grid", gap: tokens.space.xs, margin: `${tokens.space.xs}px 0` }}>
+    <div
+      aria-label="后台任务通知"
+      style={{ display: "grid", gap: tokens.space.xs, margin: `${tokens.space.xs}px 0` }}
+    >
       {notices.slice(-SHOWN).map((notice) => (
         <div key={notice.notice_id} style={box} data-testid={`chat-notice-${notice.notice_id}`}>
           <div style={{ flex: 1, minWidth: 0 }}>
             {/* 目标原文可能很长：只摆一行，悬停看全文。 */}
             {notice.action_settled ? (
               <>
-                <div style={oneLine} title={notice.goal || notice.mission_id}>后台任务的对外操作有结果了：{notice.goal || notice.mission_id}</div>
-                <div style={muted}>{`${notice.action_settled.operation} ${notice.action_settled.target} 核对结果：${notice.action_settled.applied ? "已生效" : "未生效"}`}</div>
+                <div style={oneLine} title={notice.goal || notice.mission_id}>
+                  后台任务的对外操作有结果了：{notice.goal || notice.mission_id}
+                </div>
+                <div
+                  style={muted}
+                >{`${notice.action_settled.operation} ${notice.action_settled.target} 核对结果：${notice.action_settled.applied ? "已生效" : "未生效"}`}</div>
               </>
             ) : (
               <>
-                <div style={oneLine} title={notice.goal || notice.mission_id}>后台任务{notice.status_zh}：{notice.goal || notice.mission_id}</div>
-                {notice.status === "FAILED" && notice.stop_reason ? <div style={muted}>停止原因：{notice.stop_reason}</div> : null}
-                {notice.unresolved_actions > 0 ? <div style={muted}>{`还有 ${notice.unresolved_actions} 个对外操作结果不明，系统会继续核对`}</div> : null}
+                <div style={oneLine} title={notice.goal || notice.mission_id}>
+                  后台任务{notice.status_zh}：{notice.goal || notice.mission_id}
+                </div>
+                {notice.status === "FAILED" && notice.stop_reason ? (
+                  <div style={muted}>停止原因：{notice.stop_reason}</div>
+                ) : null}
+                {notice.unresolved_actions > 0 ? (
+                  <div
+                    style={muted}
+                  >{`还有 ${notice.unresolved_actions} 个对外操作结果不明，系统会继续核对`}</div>
+                ) : null}
               </>
             )}
           </div>
-          <button type="button" style={button} disabled={busy[notice.notice_id] === true}
-            onClick={() => acknowledge(notice.notice_id)}>已收到</button>
+          <button
+            type="button"
+            style={button}
+            disabled={busy[notice.notice_id] === true}
+            onClick={() => acknowledge(notice.notice_id)}
+          >
+            已收到
+          </button>
         </div>
       ))}
       {notices.length > SHOWN ? (
         <div style={{ display: "flex", alignItems: "center", gap: tokens.space.sm }}>
           <span style={muted}>还有 {notices.length - SHOWN} 条较早的通知</span>
-          <button type="button" style={button} disabled={busy[ALL] === true}
-            onClick={() => acknowledge(ALL)}>全部已收到</button>
+          <button
+            type="button"
+            style={button}
+            disabled={busy[ALL] === true}
+            onClick={() => acknowledge(ALL)}
+          >
+            全部已收到
+          </button>
         </div>
       ) : null}
-      {listError ? <div role="alert" style={{ color: tokens.color.danger.fg }}>{listError}</div> : null}
-      {error ? <div role="alert" style={{ color: tokens.color.danger.fg }}>{error}</div> : null}
+      {listError ? (
+        <div role="alert" style={{ color: tokens.color.danger.fg }}>
+          {listError}
+        </div>
+      ) : null}
+      {error ? (
+        <div role="alert" style={{ color: tokens.color.danger.fg }}>
+          {error}
+        </div>
+      ) : null}
     </div>
   );
 }

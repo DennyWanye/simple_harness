@@ -5,7 +5,9 @@ import { PRIMARY_TURN_TEXT_TOO_LARGE, turnTextRejection } from "./turnText";
 
 export interface PrimaryPort extends PrimaryRequestPort {
   state(): "connected" | "connecting" | "disconnected";
-  on_state_change(listener: (state: "connected" | "connecting" | "disconnected") => void): () => void;
+  on_state_change(
+    listener: (state: "connected" | "connecting" | "disconnected") => void,
+  ): () => void;
 }
 export interface PrimaryRun {
   run_ref: string;
@@ -46,7 +48,19 @@ export interface PrimarySnapshot {
   viewEpoch: number;
   draftEpoch: number;
 }
-const empty = (): PrimarySnapshot => ({ ready: false, verifiedOwnerKey: null, primaryRef: null, loading: false, state: null, messages: [], nextCursor: null, error: "", notice: "正在恢复主对话身份…", viewEpoch: 0, draftEpoch: 0 });
+const empty = (): PrimarySnapshot => ({
+  ready: false,
+  verifiedOwnerKey: null,
+  primaryRef: null,
+  loading: false,
+  state: null,
+  messages: [],
+  nextCursor: null,
+  error: "",
+  notice: "正在恢复主对话身份…",
+  viewEpoch: 0,
+  draftEpoch: 0,
+});
 
 /**
  * 一次会话里可展开的历史上限。UAT 2026-09-09：「查看更早消息」原来是**替换**
@@ -75,25 +89,38 @@ export class PrimaryController {
   // 主对话照常可用，但这条降级必须一直可见，不能被下一次成功读取抹掉。
   private degradedCode = "";
   private port: PrimaryPort;
-  constructor(port: PrimaryPort) { this.port = port; }
+  constructor(port: PrimaryPort) {
+    this.port = port;
+  }
   private readNotice() {
     return this.degradedCode ? `历史补读未完成（${this.degradedCode}）；可稍后刷新状态。` : "";
   }
   getSnapshot = () => this.snapshot;
-  subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
+  subscribe = (listener: () => void) => {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  };
   private update(patch: Partial<PrimarySnapshot>) {
-    this.snapshot = { ...this.snapshot, ...patch,
-      verifiedOwnerKey: (patch.ready ?? this.snapshot.ready) ? this.owner || null : null };
+    this.snapshot = {
+      ...this.snapshot,
+      ...patch,
+      verifiedOwnerKey: (patch.ready ?? this.snapshot.ready) ? this.owner || null : null,
+    };
     this.listeners.forEach((listener) => listener());
   }
   start = (port: PrimaryPort = this.port) => {
     this.port = port;
     this.client = new PrimaryRequests(this.port);
-    this.disposers = [this.port.on_message(this.onMessage), this.port.on_state_change((state) => {
-      if (state !== "connected") this.invalidate(false, "连接已断开；等待身份恢复后补读。");
-      // Never reuse a cached ready flag on a new connection. Fresh identity
-      // status/profile_bound is emitted after the existing signed bind.
-    })];
+    this.disposers = [
+      this.port.on_message(this.onMessage),
+      this.port.on_state_change((state) => {
+        if (state !== "connected") this.invalidate(false, "连接已断开；等待身份恢复后补读。");
+        // Never reuse a cached ready flag on a new connection. Fresh identity
+        // status/profile_bound is emitted after the existing signed bind.
+      }),
+    ];
     return () => {
       this.disposers.forEach((off) => off());
       this.disposers = [];
@@ -111,9 +138,22 @@ export class PrimaryController {
     this.reading = false;
     this.refreshAgain = false;
     this.followups = 0;
-    if (forgetOwner) { this.owner = ""; this.pendingDelivery = null; }
-    this.update({ ready: readsOnly && this.snapshot.ready, primaryRef: readsOnly ? this.snapshot.primaryRef : null,
-      loading: false, state: null, messages: [], nextCursor: null, error: "", notice, viewEpoch: this.snapshot.viewEpoch + 1, draftEpoch: this.snapshot.draftEpoch + (forgetOwner ? 1 : 0) });
+    if (forgetOwner) {
+      this.owner = "";
+      this.pendingDelivery = null;
+    }
+    this.update({
+      ready: readsOnly && this.snapshot.ready,
+      primaryRef: readsOnly ? this.snapshot.primaryRef : null,
+      loading: false,
+      state: null,
+      messages: [],
+      nextCursor: null,
+      error: "",
+      notice,
+      viewEpoch: this.snapshot.viewEpoch + 1,
+      draftEpoch: this.snapshot.draftEpoch + (forgetOwner ? 1 : 0),
+    });
   }
   refreshLatest = () => {
     this.followups = 0;
@@ -128,7 +168,12 @@ export class PrimaryController {
     if (!primary_ref || !this.client || !this.snapshot.ready) throw new Error("主对话未就绪");
     let result: Record<string, unknown>;
     try {
-      result = await this.client.request("primary.messages.detail", { primary_ref, message_ref, offset, limit: 4096 });
+      result = await this.client.request("primary.messages.detail", {
+        primary_ref,
+        message_ref,
+        offset,
+        limit: 4096,
+      });
     } catch (error) {
       if (epoch === this.epoch) {
         const ready = this.snapshot.ready;
@@ -138,39 +183,68 @@ export class PrimaryController {
       throw error;
     }
     if (epoch !== this.epoch) throw new Error("内容已失效");
-    if (result.message_ref !== message_ref || result.offset !== offset || typeof result.text !== "string" ||
-        Array.from(result.text).length > 4096 || !Number.isSafeInteger(result.total_chars) ||
-        (result.next_offset !== null && (!Number.isSafeInteger(result.next_offset) || Number(result.next_offset) !== offset + Array.from(result.text).length || Number(result.next_offset) <= offset)) ||
-        Number(result.total_chars) < offset + Array.from(result.text).length ||
-        (result.next_offset === null && Number(result.total_chars) !== offset + Array.from(result.text).length)) {
+    if (
+      result.message_ref !== message_ref ||
+      result.offset !== offset ||
+      typeof result.text !== "string" ||
+      Array.from(result.text).length > 4096 ||
+      !Number.isSafeInteger(result.total_chars) ||
+      (result.next_offset !== null &&
+        (!Number.isSafeInteger(result.next_offset) ||
+          Number(result.next_offset) !== offset + Array.from(result.text).length ||
+          Number(result.next_offset) <= offset)) ||
+      Number(result.total_chars) < offset + Array.from(result.text).length ||
+      (result.next_offset === null &&
+        Number(result.total_chars) !== offset + Array.from(result.text).length)
+    ) {
       throw new Error("消息详情格式无效");
     }
-    return { text: result.text, next_offset: result.next_offset as number | null, total_chars: result.total_chars as number };
+    return {
+      text: result.text,
+      next_offset: result.next_offset as number | null,
+      total_chars: result.total_chars as number,
+    };
   };
   private onMessage = (raw: unknown) => {
-    const message = record(raw), payload = record(message.payload);
-    if (message.type === "companion_identity_unready" || message.type === "companion_control_rechallenge" || message.type === "companion_profile_unbound" ||
-        (message.type === "companion_identity_status" && (payload.ready === false || payload.status === "unready"))) {
+    const message = record(raw),
+      payload = record(message.payload);
+    if (
+      message.type === "companion_identity_unready" ||
+      message.type === "companion_control_rechallenge" ||
+      message.type === "companion_profile_unbound" ||
+      (message.type === "companion_identity_status" &&
+        (payload.ready === false || payload.status === "unready"))
+    ) {
       this.invalidate(false, "身份不可用；旧消息已清理，未决发送等待重新绑定确认。");
       return;
     }
-    if (message.type === "companion_identity_status" && payload.profile_id && this.owner &&
-        this.owner !== `${String(payload.profile_id)}:${String(payload.profile_generation ?? "")}`) {
+    if (
+      message.type === "companion_identity_status" &&
+      payload.profile_id &&
+      this.owner &&
+      this.owner !== `${String(payload.profile_id)}:${String(payload.profile_generation ?? "")}`
+    ) {
       this.invalidate(false, "身份已变化，等待当前连接重新绑定。");
       return;
     }
     if (message.type === "companion_profile_bound") {
       const owner = `${String(payload.profile_id ?? "")}:${String(payload.profile_generation ?? "")}`;
-      if (!payload.profile_id || !payload.profile_generation || this.port.state() !== "connected") return;
+      if (!payload.profile_id || !payload.profile_generation || this.port.state() !== "connected")
+        return;
       if (this.owner !== owner) this.invalidate(true, "正在读取主对话…");
       this.owner = owner;
       // 事件 AK：后端在超时/依赖缺失时仍会下发就绪帧，并带一个稳定码。
       // 主对话照常可用，但要把「历史补读未完成」明说出来，而不是让用户
       // 面对一份可能不完整的历史却毫无提示。
-      this.degradedCode = typeof payload.projection_degraded_code === "string"
-        ? String(payload.projection_degraded_code) : "";
+      this.degradedCode =
+        typeof payload.projection_degraded_code === "string"
+          ? String(payload.projection_degraded_code)
+          : "";
       if (!this.snapshot.ready) {
-        this.update({ ready: true, notice: this.degradedCode ? this.readNotice() : "正在读取主对话…" });
+        this.update({
+          ready: true,
+          notice: this.degradedCode ? this.readNotice() : "正在读取主对话…",
+        });
         void this.refresh();
       } else if (this.degradedCode) {
         this.update({ notice: this.readNotice() });
@@ -180,25 +254,40 @@ export class PrimaryController {
     // 事件 AK：签名 bind 被拒时前端此前完全无声，UI 停在「等待主对话就绪」。
     // App 侧仍按既有退避重试，这里只负责把稳定码显示出来。
     if (message.type === "companion_control_error" && !this.snapshot.ready) {
-      const code = typeof payload.code === "string" && payload.code ? payload.code : "companion_control_error";
+      const code =
+        typeof payload.code === "string" && payload.code ? payload.code : "companion_control_error";
       this.update({ error: `主对话身份绑定被拒绝（${code}）；正在重试。` });
       return;
     }
-    if (["companion_projection_retracted", "human_memory_privacy_changed", "human_memory_invalidated", "human_memory_changed"].includes(String(message.type))) {
+    if (
+      [
+        "companion_projection_retracted",
+        "human_memory_privacy_changed",
+        "human_memory_invalidated",
+        "human_memory_changed",
+      ].includes(String(message.type))
+    ) {
       const ready = this.snapshot.ready;
       this.invalidate(false, "内容已失效，正在重新读取…", true);
       this.update({ ready });
       if (ready) this.scheduleRefresh(100);
       return;
     }
-    if (["permission_response_applied", "chat_v2_final", "chat_v2_error", "tool_result"].includes(String(message.type))) {
+    if (
+      ["permission_response_applied", "chat_v2_final", "chat_v2_error", "tool_result"].includes(
+        String(message.type),
+      )
+    ) {
       this.followups = 0;
       this.scheduleRefresh(100);
     }
   };
   private scheduleRefresh(delay = 2_000) {
     if (!this.snapshot.ready || this.timer) return;
-    this.timer = setTimeout(() => { this.timer = null; void this.refresh(); }, delay);
+    this.timer = setTimeout(() => {
+      this.timer = null;
+      void this.refresh();
+    }, delay);
   }
   /** 显式展开更早一页；新读到的旧消息拼在已显示历史之前，绝不替换掉当前页。 */
   loadOlder = () => {
@@ -206,10 +295,16 @@ export class PrimaryController {
     if (!cursor) return Promise.resolve();
     return this.refresh(cursor, "prepend");
   };
-  refresh = async (cursor: string | null = null, mode: "replace" | "prepend" = "replace"): Promise<void> => {
+  refresh = async (
+    cursor: string | null = null,
+    mode: "replace" | "prepend" = "replace",
+  ): Promise<void> => {
     const client = this.client;
     if (!client || !this.snapshot.ready) return;
-    if (this.reading) { this.refreshAgain = true; return; }
+    if (this.reading) {
+      this.refreshAgain = true;
+      return;
+    }
     this.reading = true;
     const epoch = this.epoch;
     this.update({ loading: true, error: "" });
@@ -217,32 +312,59 @@ export class PrimaryController {
       if (!this.snapshot.state) await client.request("primary.open", {});
       const state = parseState(await client.request("primary.state", {}));
       if (epoch !== this.epoch) return;
-      const page = await client.request("primary.messages.page", { primary_ref: state.primary_ref, limit: 20, ...(cursor ? { cursor } : {}) });
+      const page = await client.request("primary.messages.page", {
+        primary_ref: state.primary_ref,
+        limit: 20,
+        ...(cursor ? { cursor } : {}),
+      });
       if (epoch !== this.epoch) return;
       if (page.primary_ref !== state.primary_ref) throw new Error("主对话历史归属不匹配");
       if (page.revision !== state.revision) throw new Error("历史读取期间状态已变化，请刷新。");
       const older = parseMessages(page);
       const seen = new Set(older.map((message) => message.message_ref));
-      const messages = mode === "prepend"
-        ? [...older, ...this.snapshot.messages.filter((message) => !seen.has(message.message_ref))]
-        : older;
+      const messages =
+        mode === "prepend"
+          ? [
+              ...older,
+              ...this.snapshot.messages.filter((message) => !seen.has(message.message_ref)),
+            ]
+          : older;
       const serverCursor = typeof page.next_cursor === "string" ? page.next_cursor : null;
       const capped = messages.length >= PRIMARY_HISTORY_MAX_MESSAGES;
-      this.update({ state, primaryRef: state.primary_ref, messages,
+      this.update({
+        state,
+        primaryRef: state.primary_ref,
+        messages,
         nextCursor: capped ? null : serverCursor,
-        notice: capped && serverCursor ? "本次已展开到历史上限；刷新状态后可从最新一页重新展开。" : this.readNotice(),
-        error: "", viewEpoch: mode === "prepend" ? this.snapshot.viewEpoch : this.snapshot.viewEpoch + 1 });
+        notice:
+          capped && serverCursor
+            ? "本次已展开到历史上限；刷新状态后可从最新一页重新展开。"
+            : this.readNotice(),
+        error: "",
+        viewEpoch: mode === "prepend" ? this.snapshot.viewEpoch : this.snapshot.viewEpoch + 1,
+      });
       if (state.current_run || state.queued_count) {
-        if (this.followups < 12) { ++this.followups; this.scheduleRefresh(); }
-        else this.update({ notice: "自动补读已暂停；运行可能仍在继续，可手动刷新状态。" });
+        if (this.followups < 12) {
+          ++this.followups;
+          this.scheduleRefresh();
+        } else this.update({ notice: "自动补读已暂停；运行可能仍在继续，可手动刷新状态。" });
       }
     } catch (error) {
-      if (epoch === this.epoch) this.update({ state: null, messages: [], nextCursor: null, error: error instanceof Error ? error.message : "读取主对话失败" });
+      if (epoch === this.epoch)
+        this.update({
+          state: null,
+          messages: [],
+          nextCursor: null,
+          error: error instanceof Error ? error.message : "读取主对话失败",
+        });
     } finally {
       if (epoch === this.epoch) {
         this.reading = false;
         this.update({ loading: false });
-        if (this.refreshAgain) { this.refreshAgain = false; this.scheduleRefresh(100); }
+        if (this.refreshAgain) {
+          this.refreshAgain = false;
+          this.scheduleRefresh(100);
+        }
       }
     }
   };
@@ -252,20 +374,38 @@ export class PrimaryController {
     // user reads the bound instead of watching the message vanish.
     const oversize = turnTextRejection(text);
     if (oversize) throw new PrimaryRequestError(oversize);
-    if (!this.client || !this.snapshot.ready || !this.snapshot.state) throw new Error("主对话尚未就绪；草稿已保留。");
+    if (!this.client || !this.snapshot.ready || !this.snapshot.state)
+      throw new Error("主对话尚未就绪；草稿已保留。");
     if (this.submitting) throw new Error("正在等待上一条入队确认。");
-    if (this.pendingDelivery && this.pendingDelivery.text !== text) throw new Error("上一条发送结果未知，请先以原文重试确认；不会自动提交不同消息。");
-    const delivery = this.pendingDelivery ?? { text, delivery_key: crypto.randomUUID(), uncertain: false };
+    if (this.pendingDelivery && this.pendingDelivery.text !== text)
+      throw new Error("上一条发送结果未知，请先以原文重试确认；不会自动提交不同消息。");
+    const delivery = this.pendingDelivery ?? {
+      text,
+      delivery_key: crypto.randomUUID(),
+      uncertain: false,
+    };
     this.pendingDelivery = delivery;
     this.submitting = true;
     const lease = this.lease;
     try {
-      const ack = await this.client.request("queue.enqueue", { text: delivery.text, delivery_key: delivery.delivery_key });
-      if (lease !== this.lease) throw new PrimaryRequestError("连接或隐私状态已变化；入队结果需重新确认。", true);
-      if (ack.delivery_key !== delivery.delivery_key || typeof ack.turn_ref !== "string" || !ack.turn_ref || typeof ack.receipt_ref !== "string" || !ack.receipt_ref ||
-          !Number.isSafeInteger(ack.enqueue_sequence) || Number(ack.enqueue_sequence) < 1 ||
-          !(ack.scope_ref === null || typeof ack.scope_ref === "string") ||
-          typeof ack.content_sha256 !== "string" || !/^[a-f0-9]{64}$/.test(ack.content_sha256)) {
+      const ack = await this.client.request("queue.enqueue", {
+        text: delivery.text,
+        delivery_key: delivery.delivery_key,
+      });
+      if (lease !== this.lease)
+        throw new PrimaryRequestError("连接或隐私状态已变化；入队结果需重新确认。", true);
+      if (
+        ack.delivery_key !== delivery.delivery_key ||
+        typeof ack.turn_ref !== "string" ||
+        !ack.turn_ref ||
+        typeof ack.receipt_ref !== "string" ||
+        !ack.receipt_ref ||
+        !Number.isSafeInteger(ack.enqueue_sequence) ||
+        Number(ack.enqueue_sequence) < 1 ||
+        !(ack.scope_ref === null || typeof ack.scope_ref === "string") ||
+        typeof ack.content_sha256 !== "string" ||
+        !/^[a-f0-9]{64}$/.test(ack.content_sha256)
+      ) {
         throw new PrimaryRequestError("入队回执不完整，草稿保留。", true);
       }
       this.pendingDelivery = null;
@@ -282,26 +422,49 @@ export class PrimaryController {
       // Should the two bounds ever drift, the Host's stable oversize code still
       // reaches the user as the same readable sentence, never as a bare code.
       if (error instanceof PrimaryRequestError && error.message === PRIMARY_TURN_TEXT_TOO_LARGE) {
-        throw new PrimaryRequestError(turnTextRejection(delivery.text) || "消息过长，未发送；请拆分后分条发送。", error.uncertain);
+        throw new PrimaryRequestError(
+          turnTextRejection(delivery.text) || "消息过长，未发送；请拆分后分条发送。",
+          error.uncertain,
+        );
       }
       throw error;
-    } finally { this.submitting = false; }
+    } finally {
+      this.submitting = false;
+    }
   };
-  control = async (control: "pause" | "stop" | "cancel", run = this.snapshot.state?.current_run): Promise<void> => {
+  control = async (
+    control: "pause" | "stop" | "cancel",
+    run = this.snapshot.state?.current_run,
+  ): Promise<void> => {
     if (!run || !this.client || !this.snapshot.ready || this.controlling) return;
     this.controlling = true;
     this.update({ notice: "", error: "" });
     const lease = this.lease;
     try {
-      const receipt = await this.client.request("queue.control", { control, expected_run_ref: run.run_ref, expected_generation: run.generation });
+      const receipt = await this.client.request("queue.control", {
+        control,
+        expected_run_ref: run.run_ref,
+        expected_generation: run.generation,
+      });
       if (lease !== this.lease) return;
-      if (receipt.run_ref !== run.run_ref || receipt.generation !== run.generation ||
-          typeof receipt.receipt_ref !== "string" || !receipt.receipt_ref || typeof receipt.state !== "string") {
+      if (
+        receipt.run_ref !== run.run_ref ||
+        receipt.generation !== run.generation ||
+        typeof receipt.receipt_ref !== "string" ||
+        !receipt.receipt_ref ||
+        typeof receipt.state !== "string"
+      ) {
         throw new Error("控制回执目标不匹配或不完整；结果未确认，请刷新。");
       }
       const outcome = receipt.outcome;
       if (outcome === "signalled" || outcome === "already_requested") {
-        this.update({ notice: outcome === "signalled" ? "控制请求已受理，等待运行状态确认。" : "该控制已提交，等待运行状态确认。", error: "" });
+        this.update({
+          notice:
+            outcome === "signalled"
+              ? "控制请求已受理，等待运行状态确认。"
+              : "该控制已提交，等待运行状态确认。",
+          error: "",
+        });
       } else if (outcome === "already_terminal") {
         this.update({ notice: "目标任务已结束；本次未发送控制。", error: "" });
       } else if (outcome === "superseded" || outcome === "stale" || outcome === "rejected") {
@@ -312,15 +475,28 @@ export class PrimaryController {
       }
       void this.refresh();
     } catch (error) {
-      if (lease === this.lease) this.update({ error: error instanceof Error ? error.message : "控制请求失败" });
-    } finally { this.controlling = false; }
+      if (lease === this.lease)
+        this.update({ error: error instanceof Error ? error.message : "控制请求失败" });
+    } finally {
+      this.controlling = false;
+    }
   };
 }
 function parseState(raw: Record<string, unknown>): PrimaryState {
   const run = record(raw.current_run);
-  if (typeof raw.primary_ref !== "string" || !raw.primary_ref || typeof raw.queued_count_truncated !== "boolean" || !Number.isSafeInteger(raw.queued_count) || Number(raw.queued_count) < 0 ||
-      (typeof raw.revision !== "string" && typeof raw.revision !== "number") ||
-      (raw.current_run !== null && (typeof run.run_ref !== "string" || !run.run_ref || !Number.isSafeInteger(run.generation) || typeof run.state !== "string"))) {
+  if (
+    typeof raw.primary_ref !== "string" ||
+    !raw.primary_ref ||
+    typeof raw.queued_count_truncated !== "boolean" ||
+    !Number.isSafeInteger(raw.queued_count) ||
+    Number(raw.queued_count) < 0 ||
+    (typeof raw.revision !== "string" && typeof raw.revision !== "number") ||
+    (raw.current_run !== null &&
+      (typeof run.run_ref !== "string" ||
+        !run.run_ref ||
+        !Number.isSafeInteger(run.generation) ||
+        typeof run.state !== "string"))
+  ) {
     throw new Error("主对话状态格式无效");
   }
   return raw as unknown as PrimaryState;
@@ -330,12 +506,24 @@ function parseMessages(page: Record<string, unknown>): PrimaryMessage[] {
   const ids = new Set<string>();
   return page.items.map((value) => {
     const m = record(value);
-    if (typeof m.message_ref !== "string" || !m.message_ref || ids.has(m.message_ref) ||
-        !["user", "assistant", "tool", "artifact", "reminder"].includes(String(m.role)) || typeof m.text !== "string" || Array.from(m.text).length > 1024 || typeof m.has_more !== "boolean" || !Number.isSafeInteger(m.total_chars)) {
+    if (
+      typeof m.message_ref !== "string" ||
+      !m.message_ref ||
+      ids.has(m.message_ref) ||
+      !["user", "assistant", "tool", "artifact", "reminder"].includes(String(m.role)) ||
+      typeof m.text !== "string" ||
+      Array.from(m.text).length > 1024 ||
+      typeof m.has_more !== "boolean" ||
+      !Number.isSafeInteger(m.total_chars)
+    ) {
       throw new Error("主对话消息格式无效");
     }
-    if ((m.role === "reminder" && (typeof m.notice_id !== "string" || !/^[0-9a-f]{64}$/.test(m.notice_id))) ||
-        (m.role !== "reminder" && m.notice_id !== undefined)) throw new Error("提醒来源格式无效");
+    if (
+      (m.role === "reminder" &&
+        (typeof m.notice_id !== "string" || !/^[0-9a-f]{64}$/.test(m.notice_id))) ||
+      (m.role !== "reminder" && m.notice_id !== undefined)
+    )
+      throw new Error("提醒来源格式无效");
     ids.add(m.message_ref);
     return m as unknown as PrimaryMessage;
   });

@@ -256,8 +256,18 @@ export const color = {
     border: v("accentBorder"),
   },
   // 状态色 —— 只用于状态
-  success: { bg: v("success"), soft: v("accentSoft"), fg: v("success"), border: v("hairlineStrong") },
-  warning: { bg: v("warning"), soft: v("accentSoft"), fg: v("warning"), border: v("hairlineStrong") },
+  success: {
+    bg: v("success"),
+    soft: v("accentSoft"),
+    fg: v("success"),
+    border: v("hairlineStrong"),
+  },
+  warning: {
+    bg: v("warning"),
+    soft: v("accentSoft"),
+    fg: v("warning"),
+    border: v("hairlineStrong"),
+  },
   danger: { bg: v("danger"), soft: v("accentSoft"), fg: v("danger"), border: v("hairlineStrong") },
   info: { bg: v("info"), soft: v("accentSoft"), fg: v("info"), border: v("hairlineStrong") },
 

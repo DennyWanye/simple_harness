@@ -29,11 +29,7 @@ function summary(overrides: Partial<Message> = {}): Message {
   };
 }
 
-function stage(
-  seq: number,
-  stageId: string,
-  overrides: Partial<Message> = {},
-): Message {
+function stage(seq: number, stageId: string, overrides: Partial<Message> = {}): Message {
   return {
     id: `workflow-stage:event-${seq}`,
     role: "workflow_stage",
@@ -61,20 +57,38 @@ function v5Projection(
   overrides: Partial<WorkflowV5ProgressProjection> = {},
 ): WorkflowV5ProgressProjection {
   return {
-    action: "evaluate_gaps", result: "completed", discarded: 2,
-    remaining_gap: 1, next_step: "research_gap",
+    action: "evaluate_gaps",
+    result: "completed",
+    discarded: 2,
+    remaining_gap: 1,
+    next_step: "research_gap",
     dimension_counts: {
-      total: 5, core_total: 3, covered: 3, partially_covered: 1,
-      uncovered: 1, not_applicable: 0, core_covered: 2,
-      core_partially_covered: 1, core_uncovered: 0,
+      total: 5,
+      core_total: 3,
+      covered: 3,
+      partially_covered: 1,
+      uncovered: 1,
+      not_applicable: 0,
+      core_covered: 2,
+      core_partially_covered: 1,
+      core_uncovered: 0,
     },
     dimension_status_changes: { improved: 1, regressed: 0, unchanged: 4 },
     source_counts: { valid: 8, first_party: 3 },
     active_gap: { status: "running", work_kind: "query", dimension_ordinal: 2 },
-    elapsed_seconds: 92, soft_checkpoint: "reached", lease_reason: "lease_renewed_measurable_gain",
-    quality_score: 87, hard_failures: [], predicted_delivery: "partial",
-    token_budget_ratio: 42, control_action: "generate_now", control_status: "open",
-    parent_operation: "none", failed_dimensions: [], rejection_reasons: [], ...overrides,
+    elapsed_seconds: 92,
+    soft_checkpoint: "reached",
+    lease_reason: "lease_renewed_measurable_gain",
+    quality_score: 87,
+    hard_failures: [],
+    predicted_delivery: "partial",
+    token_budget_ratio: 42,
+    control_action: "generate_now",
+    control_status: "open",
+    parent_operation: "none",
+    failed_dimensions: [],
+    rejection_reasons: [],
+    ...overrides,
   };
 }
 
@@ -103,16 +117,18 @@ describe("WorkflowProgressGroup", () => {
       startedAt: 1_000,
       endedAt: 61_000,
       projectionComplete: true,
-      steps: [{
-        id: "validation",
-        index: 0,
-        title: "验证与修复",
-        status: "completed_with_recovery",
-        current: false,
-        messages: [],
-        tools: [],
-        substeps: [],
-      }],
+      steps: [
+        {
+          id: "validation",
+          index: 0,
+          title: "验证与修复",
+          status: "completed_with_recovery",
+          current: false,
+          messages: [],
+          tools: [],
+          substeps: [],
+        },
+      ],
     };
     render(
       <WorkflowProgressGroup
@@ -161,9 +177,7 @@ describe("WorkflowProgressGroup", () => {
       />,
     );
 
-    const progress = screen.getByTestId(
-      "workflow-progress-run-cancelled-after-restart",
-    );
+    const progress = screen.getByTestId("workflow-progress-run-cancelled-after-restart");
     expect(progress.getAttribute("data-status")).toBe("cancelled");
     expect(progress.textContent).toContain("已取消");
     expect(progress.textContent).toContain("67%");
@@ -183,9 +197,7 @@ describe("WorkflowProgressGroup", () => {
       />,
     );
 
-    expect(
-      screen.getByTestId("capability-operation-operation-workflow"),
-    ).toBeTruthy();
+    expect(screen.getByTestId("capability-operation-operation-workflow")).toBeTruthy();
     expect(screen.getByText("Auto 已授权（审计记录）")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "取消" }));
     expect(onAction).toHaveBeenCalledWith(
@@ -204,10 +216,38 @@ describe("WorkflowProgressGroup", () => {
           workflow_stage: "子代理调研与补救",
           workflow_total: 6,
           workflow_v7_children: [
-            { child_id: "dr-0", question: "运行时架构是什么？", status: "valid", attempt: 1, max_attempts: 2, n_sources: 2 },
-            { child_id: "dr-1", question: "核心组件有哪些？", status: "valid", attempt: 1, max_attempts: 2, n_sources: 1 },
-            { child_id: "dr-2", question: "适用场景是什么？", status: "insufficient", attempt: 2, max_attempts: 2, n_sources: 0 },
-            { child_id: "dr-3", question: "常见陷阱有哪些？", status: "running", attempt: 1, max_attempts: 2, n_sources: 0 },
+            {
+              child_id: "dr-0",
+              question: "运行时架构是什么？",
+              status: "valid",
+              attempt: 1,
+              max_attempts: 2,
+              n_sources: 2,
+            },
+            {
+              child_id: "dr-1",
+              question: "核心组件有哪些？",
+              status: "valid",
+              attempt: 1,
+              max_attempts: 2,
+              n_sources: 1,
+            },
+            {
+              child_id: "dr-2",
+              question: "适用场景是什么？",
+              status: "insufficient",
+              attempt: 2,
+              max_attempts: 2,
+              n_sources: 0,
+            },
+            {
+              child_id: "dr-3",
+              question: "常见陷阱有哪些？",
+              status: "running",
+              attempt: 1,
+              max_attempts: 2,
+              n_sources: 0,
+            },
           ],
         })}
         stages={[]}
@@ -256,8 +296,10 @@ describe("WorkflowProgressGroup", () => {
       <WorkflowProgressGroup
         runId="run-v5"
         summary={summary({
-          workflow_run_id: "run-v5", workflow_version: "v5",
-          workflow_v5: v5Projection(), workflow_capability: "deep_research_progress_v5",
+          workflow_run_id: "run-v5",
+          workflow_version: "v5",
+          workflow_v5: v5Projection(),
+          workflow_capability: "deep_research_progress_v5",
         })}
         stages={[]}
         onWorkflowRetry={onAction}
@@ -323,11 +365,13 @@ describe("WorkflowProgressGroup", () => {
           workflow_version: "v5",
           workflow_v5: v5Projection({
             predicted_delivery: "insufficient_evidence",
-            failed_dimensions: [{
-              dimension_ordinal: 1,
-              status: "uncovered",
-              reason_codes: ["first_party_requirement_unsatisfied", "evidence_gap"],
-            }],
+            failed_dimensions: [
+              {
+                dimension_ordinal: 1,
+                status: "uncovered",
+                reason_codes: ["first_party_requirement_unsatisfied", "evidence_gap"],
+              },
+            ],
             rejection_reasons: [
               { reason_code: "dimension_relevance_below_threshold", count: 6 },
               { reason_code: "body_too_short", count: 2 },
@@ -349,11 +393,19 @@ describe("WorkflowProgressGroup", () => {
     render(
       <WorkflowProgressGroup
         runId="run-v5-stage"
-        summary={summary({ workflow_run_id: "run-v5-stage", workflow_version: "v5", workflow_v5: v5Projection({ control_action: "none" }) })}
-        stages={[stage(3, "gap_evaluate", {
-          workflow_version: "v5", workflow_v5: v5Projection({ control_action: "none" }),
-          workflow_error: undefined, workflow_diagnostic_codes: undefined,
-        })]}
+        summary={summary({
+          workflow_run_id: "run-v5-stage",
+          workflow_version: "v5",
+          workflow_v5: v5Projection({ control_action: "none" }),
+        })}
+        stages={[
+          stage(3, "gap_evaluate", {
+            workflow_version: "v5",
+            workflow_v5: v5Projection({ control_action: "none" }),
+            workflow_error: undefined,
+            workflow_diagnostic_codes: undefined,
+          }),
+        ]}
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: "gap_evaluate，完成，查看详情" }));
@@ -368,10 +420,7 @@ describe("WorkflowProgressGroup", () => {
       <WorkflowProgressGroup
         runId="run-group"
         summary={summary()}
-        stages={[
-          stage(2, "search"),
-          stage(3, "fetch", { workflow_degraded: true }),
-        ]}
+        stages={[stage(2, "search"), stage(3, "fetch", { workflow_degraded: true })]}
       />,
     );
 
@@ -393,14 +442,16 @@ describe("WorkflowProgressGroup", () => {
       <WorkflowProgressGroup
         runId="run-group"
         summary={summary()}
-        stages={[stage(2, "search", {
-          workflow_metrics: {
-            providers: 3,
-            candidates: 18,
-            prompt: "do-not-render",
-          },
-          workflow_next_stage: "direct",
-        })]}
+        stages={[
+          stage(2, "search", {
+            workflow_metrics: {
+              providers: 3,
+              candidates: 18,
+              prompt: "do-not-render",
+            },
+            workflow_next_stage: "direct",
+          }),
+        ]}
       />,
     );
     const toggle = screen.getByRole("button", { name: "查看阶段 (1)" });
@@ -451,12 +502,14 @@ describe("WorkflowProgressGroup", () => {
       <WorkflowProgressGroup
         runId="run-group"
         summary={summary({ workflow_stage_id: "cite", workflow_seq: 8 })}
-        stages={[stage(8, "cite", {
-          workflow_degraded: true,
-          workflow_action: "核验论断与引用",
-          workflow_result: "发布 9 条，丢弃 3 条，支持率 75%",
-          workflow_diagnostic_codes: ["claim_pruned", "provider_degraded"],
-        })]}
+        stages={[
+          stage(8, "cite", {
+            workflow_degraded: true,
+            workflow_action: "核验论断与引用",
+            workflow_result: "发布 9 条，丢弃 3 条，支持率 75%",
+            workflow_diagnostic_codes: ["claim_pruned", "provider_degraded"],
+          }),
+        ]}
       />,
     );
     expect(screen.getAllByText("发布 9 条，丢弃 3 条，支持率 75%").length).toBeGreaterThan(0);
@@ -466,28 +519,47 @@ describe("WorkflowProgressGroup", () => {
 
   it("localizes every production v3 branch and publish-gate reason in the compact row", () => {
     const diagnosticCodes = [
-      "deadline_exhausted", "search_port_unavailable", "provider_failure",
-      "direct_failure", "fetch_failure", "blob_unavailable", "low_quality_source",
-      "low_quality_content", "search_degraded", "support_rate_below_threshold",
-      "published_factual_below_threshold", "citation_count_below_threshold",
-      "domain_count_below_threshold", "body_bytes_below_threshold",
+      "deadline_exhausted",
+      "search_port_unavailable",
+      "provider_failure",
+      "direct_failure",
+      "fetch_failure",
+      "blob_unavailable",
+      "low_quality_source",
+      "low_quality_content",
+      "search_degraded",
+      "support_rate_below_threshold",
+      "published_factual_below_threshold",
+      "citation_count_below_threshold",
+      "domain_count_below_threshold",
+      "body_bytes_below_threshold",
     ];
     const expectedReasons = [
-      "本阶段已达到时间上限", "搜索服务暂不可用", "搜索来源调用失败",
-      "一手来源查询失败", "来源正文抓取失败", "已抓取正文暂不可读取",
-      "低质量来源已过滤", "低质量正文已过滤", "搜索能力已降级",
-      "论断证据支持率未达发布标准", "可发布事实论断数量未达标准",
-      "有效引用数量未达标准", "独立来源域名数量未达标准",
+      "本阶段已达到时间上限",
+      "搜索服务暂不可用",
+      "搜索来源调用失败",
+      "一手来源查询失败",
+      "来源正文抓取失败",
+      "已抓取正文暂不可读取",
+      "低质量来源已过滤",
+      "低质量正文已过滤",
+      "搜索能力已降级",
+      "论断证据支持率未达发布标准",
+      "可发布事实论断数量未达标准",
+      "有效引用数量未达标准",
+      "独立来源域名数量未达标准",
       "报告正文长度未达发布标准",
     ];
     render(
       <WorkflowProgressGroup
         runId="run-group"
         summary={summary({ workflow_stage_id: "cite", workflow_seq: 8 })}
-        stages={[stage(8, "cite", {
-          workflow_degraded: true,
-          workflow_diagnostic_codes: diagnosticCodes,
-        })]}
+        stages={[
+          stage(8, "cite", {
+            workflow_degraded: true,
+            workflow_diagnostic_codes: diagnosticCodes,
+          }),
+        ]}
       />,
     );
 
@@ -502,10 +574,7 @@ describe("WorkflowProgressGroup", () => {
         stages={[
           stage(2, "gap"),
           stage(3, "gap"),
-          ...Array.from({ length: 14 }, (_, index) => stage(
-            index + 10,
-            `stage-${index}`,
-          )),
+          ...Array.from({ length: 14 }, (_, index) => stage(index + 10, `stage-${index}`)),
         ]}
       />,
     );
@@ -579,11 +648,13 @@ describe("WorkflowProgressGroup", () => {
   it("keeps the same retry key when a slow response becomes ambiguous", () => {
     vi.useFakeTimers();
     const pending = new Promise<{ run_id: string }>(() => undefined);
-    const onWorkflowRetry = vi.fn<(
-      runId: string,
-      actionId: "generate_now" | "continue_research" | "retry_from_start" | "cancel_settle",
-      retryKey: string,
-    ) => Promise<{ run_id: string; accepted?: boolean }>>(() => pending);
+    const onWorkflowRetry = vi.fn<
+      (
+        runId: string,
+        actionId: "generate_now" | "continue_research" | "retry_from_start" | "cancel_settle",
+        retryKey: string,
+      ) => Promise<{ run_id: string; accepted?: boolean }>
+    >(() => pending);
     render(
       <WorkflowProgressGroup
         runId="failed-v4-retry"
@@ -604,7 +675,9 @@ describe("WorkflowProgressGroup", () => {
     fireEvent.click(retryButton!);
     expect(onWorkflowRetry).toHaveBeenCalledTimes(1);
     const firstKey = onWorkflowRetry.mock.calls[0][2];
-    expect(firstKey).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    expect(firstKey).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
 
     act(() => vi.advanceTimersByTime(15_000));
     fireEvent.click(retryButton!);

@@ -111,10 +111,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   );
   // 双源聚合取最差态（T8/T13 口径）：ControlChannel prop + controlWS hook。
   const chatWsState = useControlWsState();
-  const aggregated = worstConnectionState(
-    connectionState ?? "disconnected",
-    chatWsState,
-  );
+  const aggregated = worstConnectionState(connectionState ?? "disconnected", chatWsState);
   const connColor = getConnColor(aggregated, routeKind);
   return (
     <nav
@@ -310,11 +307,7 @@ const NavButton: React.FC<{
       flexShrink: 0,
     }}
   >
-    <Icon
-      name={icon}
-      size={16}
-      style={{ color: active ? dark.accent : "currentColor" }}
-    />
+    <Icon name={icon} size={16} style={{ color: active ? dark.accent : "currentColor" }} />
     {label}
     {badge ? (
       <span

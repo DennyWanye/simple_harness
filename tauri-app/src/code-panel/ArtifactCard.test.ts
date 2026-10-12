@@ -38,9 +38,7 @@ describe("extractArtifactsFromResult — envelope 解析", () => {
     const r = JSON.stringify({
       ok: true,
       result: "{}",
-      artifacts: [
-        { kind: "file", path: "C:\\out\\x.pptx", title: "x.pptx" },
-      ],
+      artifacts: [{ kind: "file", path: "C:\\out\\x.pptx", title: "x.pptx" }],
     });
     const got = extractArtifactsFromResult(r);
     expect(got).toHaveLength(1);
@@ -53,9 +51,7 @@ describe("extractArtifactsFromResult — envelope 解析", () => {
     const inner = JSON.stringify({
       ok: true,
       dry_run: true,
-      artifacts: [
-        { kind: "text", title: "preview", preview: "## md" },
-      ],
+      artifacts: [{ kind: "text", title: "preview", preview: "## md" }],
     });
     const envelope = JSON.stringify({ ok: true, result: inner, error: null });
     const got = extractArtifactsFromResult(envelope);

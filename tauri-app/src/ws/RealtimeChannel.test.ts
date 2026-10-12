@@ -69,9 +69,7 @@ describe("RealtimeChannel", () => {
     expect(MockWebSocket.instances).toHaveLength(0);
     channel.start("Fixture instructions.");
     expect(MockWebSocket.instances).toHaveLength(1);
-    expect(MockWebSocket.instances[0].url).toBe(
-      `ws://127.0.0.1:8100${REALTIME_PATH}`,
-    );
+    expect(MockWebSocket.instances[0].url).toBe(`ws://127.0.0.1:8100${REALTIME_PATH}`);
   });
 
   it("sends auth first, then hello and one call.start", () => {
@@ -80,11 +78,7 @@ describe("RealtimeChannel", () => {
     const socket = MockWebSocket.instances[0];
     socket.open();
     const sent = socket.sent.map((value) => JSON.parse(value as string));
-    expect(sent.map((value) => value.type)).toEqual([
-      "local.auth",
-      "local.hello",
-      "call.start",
-    ]);
+    expect(sent.map((value) => value.type)).toEqual(["local.auth", "local.hello", "call.start"]);
     expect(sent[0]).toEqual({
       type: "local.auth",
       version: REALTIME_PROTOCOL_VERSION,
@@ -119,9 +113,7 @@ describe("RealtimeChannel", () => {
         output_audio: { codec: "pcm_s16le", sample_rate: 24_000, channels: 1 },
       }),
     );
-    socket.receive(
-      JSON.stringify({ type: "call.state", generation: 1, state: "active" }),
-    );
+    socket.receive(JSON.stringify({ type: "call.state", generation: 1, state: "active" }));
     channel.sendAudio(new Uint8Array([1, 0, 2, 0]).buffer);
     const input = socket.sent.at(-1) as ArrayBuffer;
     const inputView = new DataView(input);

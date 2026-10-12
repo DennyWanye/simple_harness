@@ -26,12 +26,7 @@ describe("control-command-canonical-v1 shared vectors", () => {
       const body = parseCanonicalJson(item.raw_body_json);
       expect(bytesToHex(encodeControlBody(body))).toBe(item.tlv_hex);
       expect(
-        await canonicalRequestHash(
-          item.command_kind,
-          item.request_seq,
-          item.binding_epoch,
-          body,
-        ),
+        await canonicalRequestHash(item.command_kind, item.request_seq, item.binding_epoch, body),
       ).toBe(item.request_hash);
       if (item.equivalent_raw_body_json) {
         expect(
@@ -49,9 +44,11 @@ describe("control-command-canonical-v1 shared vectors", () => {
       expect(() => parseCanonicalU64(item, "fixture")).toThrow();
     }
     for (const encoded of vectors.reject_utf8_hex) {
-      expect(() => new TextDecoder("utf-8", { fatal: true }).decode(
-        Uint8Array.from(encoded.match(/../g), (pair: string) => Number.parseInt(pair, 16)),
-      )).toThrow();
+      expect(() =>
+        new TextDecoder("utf-8", { fatal: true }).decode(
+          Uint8Array.from(encoded.match(/../g), (pair: string) => Number.parseInt(pair, 16)),
+        ),
+      ).toThrow();
     }
   });
 

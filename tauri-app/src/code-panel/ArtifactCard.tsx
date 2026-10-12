@@ -211,12 +211,13 @@ function FileArtifactCard({ artifact, toolName }: { artifact: ToolArtifact; tool
   const path = artifact.path || "";
   const [currentAction, setCurrentAction] = useState<CurrentAction | null>(null);
   const actions = useMemo<ArtifactAction[]>(
-    () => artifact.actions ?? [
-      { id: "open", label: "打开" },
-      { id: "show_in_folder", label: "在文件夹中显示" },
-      { id: "copy_path", label: "复制路径" },
-      { id: "save_as", label: "另存为" },
-    ],
+    () =>
+      artifact.actions ?? [
+        { id: "open", label: "打开" },
+        { id: "show_in_folder", label: "在文件夹中显示" },
+        { id: "copy_path", label: "复制路径" },
+        { id: "save_as", label: "另存为" },
+      ],
     [artifact.actions],
   );
   const handle = useCallback(
@@ -300,7 +301,8 @@ function UrlArtifactCard({ artifact, toolName }: { artifact: ToolArtifact; toolN
   return (
     <div style={cardStyle} data-testid="artifact-card-url">
       <div style={titleStyle}>
-        🔗 <a href={url} target="_blank" rel="noopener noreferrer" style={{ color: "#7dd3fc" }}>
+        🔗{" "}
+        <a href={url} target="_blank" rel="noopener noreferrer" style={{ color: "#7dd3fc" }}>
           {artifact.title || url}
         </a>
       </div>
@@ -404,9 +406,7 @@ function ImageArtifactCard({ artifact, toolName }: { artifact: ToolArtifact; too
   const pending = currentAction?.status === "pending";
   return (
     <div style={cardStyle} data-testid="artifact-card-image">
-      <div style={titleStyle}>
-        🖼️ {artifact.title}
-      </div>
+      <div style={titleStyle}>🖼️ {artifact.title}</div>
       <div style={metaStyle}>
         {artifact.mime ?? "image"} · {humanSize(artifact.size_bytes)}
       </div>
@@ -481,13 +481,7 @@ function TableArtifactCard({ artifact }: { artifact: ToolArtifact; toolName: str
 
 // ─── Dispatcher ──────────────────────────────────────────────
 
-export function ArtifactCard({
-  artifact,
-  toolName,
-}: {
-  artifact: ToolArtifact;
-  toolName: string;
-}) {
+export function ArtifactCard({ artifact, toolName }: { artifact: ToolArtifact; toolName: string }) {
   switch (artifact.kind) {
     case "file":
       return <FileArtifactCard artifact={artifact} toolName={toolName} />;

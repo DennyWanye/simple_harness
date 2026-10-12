@@ -117,9 +117,8 @@ function boundedText(value: unknown): { text?: string; truncated: boolean } {
 }
 
 function settleTimelineStatus(status: string, aggregateStatus: string): string {
-  if (![
-    "pending", "prepared", "accepted", "running", "waiting", "unknown",
-  ].includes(status)) return status;
+  if (!["pending", "prepared", "accepted", "running", "waiting", "unknown"].includes(status))
+    return status;
   if (["running", "waiting", "unknown"].includes(aggregateStatus)) return status;
   if (aggregateStatus === "cancelled") return "cancelled";
   if (aggregateStatus === "failed") return "failed";
@@ -131,8 +130,12 @@ function fromPublicActivity(
   aggregateStatus: string,
 ): ActivityTimelineItem {
   const text = boundedText(item.safe_text);
-  const inputText = boundedText(typeof item.public_input === "string" ? item.public_input : undefined);
-  const resultText = boundedText(typeof item.public_result === "string" ? item.public_result : undefined);
+  const inputText = boundedText(
+    typeof item.public_input === "string" ? item.public_input : undefined,
+  );
+  const resultText = boundedText(
+    typeof item.public_result === "string" ? item.public_result : undefined,
+  );
   return {
     id: item.stable_id,
     kind: item.kind,
@@ -148,7 +151,8 @@ function fromPublicActivity(
     detailRef: item.detail_ref ?? undefined,
     durationMs: item.duration_ms ?? undefined,
     createdAt: item.created_at ?? undefined,
-    truncated: item.truncated === true || text.truncated || inputText.truncated || resultText.truncated,
+    truncated:
+      item.truncated === true || text.truncated || inputText.truncated || resultText.truncated,
     contextVisibility: "exclude",
   };
 }
@@ -165,20 +169,24 @@ export function buildActivityTimeline(value: unknown): ActivityTimelineItem[] {
   const explicit = (snapshot.activity_items ?? []).map((item) => {
     const timelineItem = fromPublicActivity(item, aggregateStatus);
     const tool = toolsByStableId.get(item.stable_id);
-    return tool ? {
-      ...timelineItem,
-      title: tool.public_name || timelineItem.title,
-      status: settleTimelineStatus(tool.status, aggregateStatus),
-      action: tool.action_label || timelineItem.action,
-      target: tool.safe_target_label ?? timelineItem.target,
-      input: tool.public_input ?? timelineItem.input,
-      result: tool.public_result ?? timelineItem.result,
-      detailRef: tool.detail_ref ?? timelineItem.detailRef,
-      durationMs: tool.duration_ms ?? timelineItem.durationMs,
-      truncated: tool.truncated === true || timelineItem.truncated,
-    } : timelineItem;
+    return tool
+      ? {
+          ...timelineItem,
+          title: tool.public_name || timelineItem.title,
+          status: settleTimelineStatus(tool.status, aggregateStatus),
+          action: tool.action_label || timelineItem.action,
+          target: tool.safe_target_label ?? timelineItem.target,
+          input: tool.public_input ?? timelineItem.input,
+          result: tool.public_result ?? timelineItem.result,
+          detailRef: tool.detail_ref ?? timelineItem.detailRef,
+          durationMs: tool.duration_ms ?? timelineItem.durationMs,
+          truncated: tool.truncated === true || timelineItem.truncated,
+        }
+      : timelineItem;
   });
-  const phaseIndex = new Map(snapshot.semantic_phases.map((phase, index) => [phase.phase_id, index]));
+  const phaseIndex = new Map(
+    snapshot.semantic_phases.map((phase, index) => [phase.phase_id, index]),
+  );
   const fallback: ActivityTimelineItem[] = [];
   if (explicit.length === 0) {
     for (const phase of snapshot.semantic_phases) {
@@ -202,35 +210,45 @@ export function buildActivityTimeline(value: unknown): ActivityTimelineItem[] {
       }
     }
     for (const tool of snapshot.tool_public_views) {
-      fallback.push(fromPublicActivity({
-        stable_id: tool.stable_id,
-        kind: "tool",
-        title: tool.public_name,
-        status: tool.status,
-        phase_id: tool.phase_id,
-        action_code: tool.action_label,
-        tool_name: tool.public_name,
-        safe_target_label: tool.safe_target_label,
-        detail_ref: tool.detail_ref,
-        public_input: tool.public_input,
-        public_result: tool.public_result,
-        duration_ms: tool.duration_ms,
-        created_at: tool.created_at,
-        truncated: tool.truncated,
-        context_visibility: "exclude",
-      }, aggregateStatus));
+      fallback.push(
+        fromPublicActivity(
+          {
+            stable_id: tool.stable_id,
+            kind: "tool",
+            title: tool.public_name,
+            status: tool.status,
+            phase_id: tool.phase_id,
+            action_code: tool.action_label,
+            tool_name: tool.public_name,
+            safe_target_label: tool.safe_target_label,
+            detail_ref: tool.detail_ref,
+            public_input: tool.public_input,
+            public_result: tool.public_result,
+            duration_ms: tool.duration_ms,
+            created_at: tool.created_at,
+            truncated: tool.truncated,
+            context_visibility: "exclude",
+          },
+          aggregateStatus,
+        ),
+      );
     }
     for (const message of snapshot.public_messages) {
-      fallback.push(fromPublicActivity({
-        stable_id: message.stable_id,
-        kind: "narration",
-        title: "更新进度",
-        status: aggregateStatus,
-        phase_id: message.phase_id,
-        safe_text: message.text,
-        created_at: message.created_at,
-        context_visibility: "exclude",
-      }, aggregateStatus));
+      fallback.push(
+        fromPublicActivity(
+          {
+            stable_id: message.stable_id,
+            kind: "narration",
+            title: "更新进度",
+            status: aggregateStatus,
+            phase_id: message.phase_id,
+            safe_text: message.text,
+            created_at: message.created_at,
+            context_visibility: "exclude",
+          },
+          aggregateStatus,
+        ),
+      );
     }
   }
   const terminalStatuses = new Set(["completed", "completed_with_recovery", "failed", "cancelled"]);
@@ -254,19 +272,21 @@ export function buildActivityTimeline(value: unknown): ActivityTimelineItem[] {
   return [...deduped.values()].sort((left, right) => {
     const leftTime = left.createdAt ?? Number.POSITIVE_INFINITY;
     const rightTime = right.createdAt ?? Number.POSITIVE_INFINITY;
-    return leftTime - rightTime
-      || (phaseIndex.get(left.phaseId ?? "") ?? Number.MAX_SAFE_INTEGER)
-        - (phaseIndex.get(right.phaseId ?? "") ?? Number.MAX_SAFE_INTEGER)
-      || left.id.localeCompare(right.id);
+    return (
+      leftTime - rightTime ||
+      (phaseIndex.get(left.phaseId ?? "") ?? Number.MAX_SAFE_INTEGER) -
+        (phaseIndex.get(right.phaseId ?? "") ?? Number.MAX_SAFE_INTEGER) ||
+      left.id.localeCompare(right.id)
+    );
   });
 }
 
-export function buildAgentPublicOutputs(
-  value: unknown,
-): AgentPublicOutput[] {
+export function buildAgentPublicOutputs(value: unknown): AgentPublicOutput[] {
   const snapshot = normalizePublicRunSnapshot(value);
   if (!snapshot) return [];
-  return [...new Map(snapshot.public_messages.map((message) => [message.stable_id, message])).values()]
+  return [
+    ...new Map(snapshot.public_messages.map((message) => [message.stable_id, message])).values(),
+  ]
     .map((message) => ({
       id: message.stable_id,
       text: message.text,
@@ -279,9 +299,7 @@ export function buildAgentPublicOutputs(
  * The right-hand activity UI is a view of the same semantic phases as the
  * inspector graph. It does not rebuild phases or terminal status from facts.
  */
-export function buildWorkflowTaskTraces(
-  value: unknown,
-): WorkflowTaskTrace[] {
+export function buildWorkflowTaskTraces(value: unknown): WorkflowTaskTrace[] {
   const snapshot = normalizePublicRunSnapshot(value);
   if (!snapshot) return [];
   if (snapshot.semantic_phases.length === 0 && snapshot.tool_public_views.length === 0) {
@@ -332,9 +350,10 @@ export function buildWorkflowTaskTraces(
     bucket.push(message.text);
     messagesByPhase.set(phaseId, bucket);
   }
-  const currentPhase = snapshot.semantic_phases.find((phase) =>
-    ["running", "waiting", "failed", "cancelled"].includes(phase.status),
-  ) ?? snapshot.semantic_phases.at(-1);
+  const currentPhase =
+    snapshot.semantic_phases.find((phase) =>
+      ["running", "waiting", "failed", "cancelled"].includes(phase.status),
+    ) ?? snapshot.semantic_phases.at(-1);
   const steps: WorkflowTaskStep[] = snapshot.semantic_phases.map((phase, index) => ({
     id: phase.phase_id,
     index,
@@ -342,19 +361,19 @@ export function buildWorkflowTaskTraces(
     status: settleOpenStepStatus(phase.status),
     current: aggregateActive && phase.phase_id === currentPhase?.phase_id,
     messages: messagesByPhase.get(phase.phase_id) ?? [],
-    tools: (toolsByPhase.get(phase.phase_id) ?? []).sort((left, right) =>
-      left.ts - right.ts || left.id.localeCompare(right.id),
+    tools: (toolsByPhase.get(phase.phase_id) ?? []).sort(
+      (left, right) => left.ts - right.ts || left.id.localeCompare(right.id),
     ),
-    substeps: [...new Map(
-      phase.workflow_steps.map((step) => [step.workflow_step_id, step]),
-    ).values()].map((step, stepIndex) => ({
+    substeps: [
+      ...new Map(phase.workflow_steps.map((step) => [step.workflow_step_id, step])).values(),
+    ].map((step, stepIndex) => ({
       id: step.workflow_step_id,
       label: step.label ?? `步骤 ${(step.step_index ?? stepIndex) + 1}`,
       status: settleOpenStepStatus(step.status ?? "unknown"),
-      current: aggregateActive && (
-        ["running", "waiting"].includes(step.status ?? "") ||
-        (phase.current_step != null && step.step_index === phase.current_step)
-      ),
+      current:
+        aggregateActive &&
+        (["running", "waiting"].includes(step.status ?? "") ||
+          (phase.current_step != null && step.step_index === phase.current_step)),
       index: step.step_index ?? stepIndex,
       total: step.step_total ?? phase.total_steps ?? undefined,
     })),
@@ -375,22 +394,26 @@ export function buildWorkflowTaskTraces(
     ...snapshot.public_messages.map((message) => message.created_at * 1000),
     ...snapshot.tool_public_views.map((tool) => (tool.created_at ?? 0) * 1000),
   ].filter((timestamp) => Number.isFinite(timestamp) && timestamp > 0);
-  return [{
-    runId: snapshot.root_run_id,
-    status: snapshot.aggregate_outcome.status,
-    steps,
-    startedAt: typeof snapshot.aggregate_outcome.started_at === "number"
-      ? snapshot.aggregate_outcome.started_at * 1000
-      : activityTimestamps.length > 0
-      ? Math.min(...activityTimestamps)
-      : Date.now(),
-    endedAt: typeof snapshot.aggregate_outcome.ended_at === "number"
-      ? snapshot.aggregate_outcome.ended_at * 1000
-      : snapshot.projection_complete && activityTimestamps.length > 0
-      ? Math.max(...activityTimestamps)
-      : undefined,
-    projectionComplete: snapshot.projection_complete,
-  }];
+  return [
+    {
+      runId: snapshot.root_run_id,
+      status: snapshot.aggregate_outcome.status,
+      steps,
+      startedAt:
+        typeof snapshot.aggregate_outcome.started_at === "number"
+          ? snapshot.aggregate_outcome.started_at * 1000
+          : activityTimestamps.length > 0
+            ? Math.min(...activityTimestamps)
+            : Date.now(),
+      endedAt:
+        typeof snapshot.aggregate_outcome.ended_at === "number"
+          ? snapshot.aggregate_outcome.ended_at * 1000
+          : snapshot.projection_complete && activityTimestamps.length > 0
+            ? Math.max(...activityTimestamps)
+            : undefined,
+      projectionComplete: snapshot.projection_complete,
+    },
+  ];
 }
 
 export function buildAgentActivityTrace(

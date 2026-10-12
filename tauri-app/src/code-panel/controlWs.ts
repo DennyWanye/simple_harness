@@ -64,30 +64,22 @@ function companionEventFrom(value: unknown): CompanionEvent | null {
     outer.payload &&
     typeof outer.payload === "object" &&
     !Array.isArray(outer.payload)
-      ? outer.payload as Record<string, any>
+      ? (outer.payload as Record<string, any>)
       : outer;
   const notificationSource =
-    raw.notification && typeof raw.notification === "object"
-      ? raw.notification
-      : raw;
+    raw.notification && typeof raw.notification === "object" ? raw.notification : raw;
   const event: CompanionEvent = {
     event_id: String(raw.event_id || raw.projection_event_id || ""),
     profile_id: String(raw.profile_id || ""),
     profile_generation: Number(raw.profile_generation || 0),
     session_id: String(raw.session_id || ""),
     seq: Number(raw.seq ?? 0),
-    route_version:
-      raw.route_version === undefined ? undefined : Number(raw.route_version),
+    route_version: raw.route_version === undefined ? undefined : Number(raw.route_version),
     redaction_version:
-      raw.redaction_version === undefined
-        ? undefined
-        : Number(raw.redaction_version),
-    importance:
-      raw.importance === "important" ? "important" : "normal",
-    occurred_at:
-      typeof raw.occurred_at === "string" ? raw.occurred_at : undefined,
-    received_at:
-      typeof raw.received_at === "number" ? raw.received_at : Date.now(),
+      raw.redaction_version === undefined ? undefined : Number(raw.redaction_version),
+    importance: raw.importance === "important" ? "important" : "normal",
+    occurred_at: typeof raw.occurred_at === "string" ? raw.occurred_at : undefined,
+    received_at: typeof raw.received_at === "number" ? raw.received_at : Date.now(),
     notification: {
       notification_id: String(notificationSource.notification_id || ""),
       kind: String(notificationSource.kind || "growth_notice"),
@@ -98,10 +90,7 @@ function companionEventFrom(value: unknown): CompanionEvent | null {
         ? notificationSource.available_actions.map(String)
         : [],
     },
-    decision:
-      raw.decision && typeof raw.decision === "object"
-        ? raw.decision
-        : undefined,
+    decision: raw.decision && typeof raw.decision === "object" ? raw.decision : undefined,
     tombstone: raw.tombstone === true,
   };
   if (
@@ -129,7 +118,7 @@ function persistedWorkflowFileArtifact(workflowEvent: unknown): Record<string, u
   const nestedPayload = payloadRecord.payload;
   const nestedPayloadRecord =
     nestedPayload && typeof nestedPayload === "object" && !Array.isArray(nestedPayload)
-      ? nestedPayload as Record<string, unknown>
+      ? (nestedPayload as Record<string, unknown>)
       : null;
 
   // Older workflow rows wrapped the intent payload once more than newer rows.
@@ -173,26 +162,19 @@ function persistedToolOutcome(text: unknown): {
   if (!parsed) return { ok: true };
 
   const durableMeta = parsed._deskpet_tool_outcome_v1;
-  const meta = durableMeta && typeof durableMeta === "object" && !Array.isArray(durableMeta)
-    ? durableMeta as Record<string, unknown>
-    : null;
+  const meta =
+    durableMeta && typeof durableMeta === "object" && !Array.isArray(durableMeta)
+      ? (durableMeta as Record<string, unknown>)
+      : null;
   const outcomeValue = parsed.outcome;
-  const outcome = typeof outcomeValue === "string"
-    ? outcomeValue.trim().toLowerCase()
-    : "";
+  const outcome = typeof outcomeValue === "string" ? outcomeValue.trim().toLowerCase() : "";
   const explicitOk = typeof parsed.ok === "boolean" ? parsed.ok : undefined;
-  const status = typeof parsed.status === "string"
-    ? parsed.status.trim().toLowerCase()
-    : "";
+  const status = typeof parsed.status === "string" ? parsed.status.trim().toLowerCase() : "";
   const successfulOutcomes = ["succeeded"];
   const failedOutcomes = ["partial", "rejected", "failed", "unknown"];
   const successfulStatuses = ["succeeded", "completed", "ok"];
-  const failedStatuses = [
-    "partial", "rejected", "failed", "unknown", "cancelled", "denied",
-  ];
-  const legacyOutcome = typeof meta?.outcome === "string"
-    ? meta.outcome.trim().toLowerCase()
-    : "";
+  const failedStatuses = ["partial", "rejected", "failed", "unknown", "cancelled", "denied"];
+  const legacyOutcome = typeof meta?.outcome === "string" ? meta.outcome.trim().toLowerCase() : "";
   const knownOutcome = successfulOutcomes.includes(outcome)
     ? true
     : failedOutcomes.includes(outcome)
@@ -209,14 +191,15 @@ function persistedToolOutcome(text: unknown): {
       ? false
       : undefined;
   const ok = knownOutcome ?? explicitOk ?? knownStatus ?? legacyKnownOutcome ?? false;
-  const structuredError = parsed.error ?? (
-    parsed.error_code || parsed.public_message
+  const structuredError =
+    parsed.error ??
+    (parsed.error_code || parsed.public_message
       ? {
           code: parsed.error_code,
           message: parsed.public_message,
         }
-      : undefined
-  ) ?? meta?.error;
+      : undefined) ??
+    meta?.error;
   return {
     ok,
     error: ok ? undefined : publicToolErrorText(structuredError),
@@ -256,14 +239,9 @@ G.__deskpet_panel_listeners__ = listeners;
 export interface ControlWS {
   send(msg: { type: string; payload?: Record<string, unknown> }): boolean;
   send_command(msg: WorkflowCommand): boolean;
-  send_companion_action(
-    commandKind: string,
-    body: CanonicalJson,
-  ): Promise<boolean>;
+  send_companion_action(commandKind: string, body: CanonicalJson): Promise<boolean>;
   on_message(fn: Listener): () => void;
-  on_state_change(
-    fn: (state: "disconnected" | "connecting" | "connected") => void,
-  ): () => void;
+  on_state_change(fn: (state: "disconnected" | "connecting" | "connected") => void): () => void;
   state(): "disconnected" | "connecting" | "connected";
 }
 
@@ -281,10 +259,8 @@ interface CompanionActionChallenge {
   bindingEpoch: string;
 }
 
-let companionChallenge: CompanionActionChallenge | null =
-  G.__deskpet_companion_challenge__ ?? null;
-let latestCompanionIdentityStatus: any | null =
-  G.__deskpet_companion_identity_status__ ?? null;
+let companionChallenge: CompanionActionChallenge | null = G.__deskpet_companion_challenge__ ?? null;
+let latestCompanionIdentityStatus: any | null = G.__deskpet_companion_identity_status__ ?? null;
 let companionActionInFlight = false;
 
 let current_state: ControlWS["state"] extends () => infer R ? R : never = "disconnected";
@@ -294,7 +270,11 @@ function set_control_state(next: typeof current_state) {
   if (current_state === next) return;
   current_state = next;
   state_listeners.forEach((listener) => {
-    try { listener(next); } catch (error) { console.warn(error); }
+    try {
+      listener(next);
+    } catch (error) {
+      console.warn(error);
+    }
   });
 }
 
@@ -326,8 +306,10 @@ async function open_socket() {
   let secret = "";
   try {
     // Dev browser preview (`?secret=`, same hatch as App.tsx): no Tauri IPC bridge.
-    const devSecret = import.meta.env.DEV ? new URLSearchParams(window.location.search).get("secret") : null;
-    secret = devSecret || await invoke<string>("get_shared_secret");
+    const devSecret = import.meta.env.DEV
+      ? new URLSearchParams(window.location.search).get("secret")
+      : null;
+    secret = devSecret || (await invoke<string>("get_shared_secret"));
   } catch (e) {
     console.warn("[session-control] get_shared_secret failed:", e);
     set_control_state("disconnected");
@@ -400,21 +382,27 @@ async function open_socket() {
     const known_sids = new Set<string>(sid ? [sid] : []);
     for (const k of Object.keys(store.sessions)) known_sids.add(k);
     for (const target of known_sids) {
-      ws?.send(JSON.stringify({
-        type: "session_messages_load",
-        payload: { session_id: target, limit: 200 },
-      }));
-      ws?.send(JSON.stringify({
-        type: "task_projections_list",
-        payload: { session_id: target },
-      }));
+      ws?.send(
+        JSON.stringify({
+          type: "session_messages_load",
+          payload: { session_id: target, limit: 200 },
+        }),
+      );
+      ws?.send(
+        JSON.stringify({
+          type: "task_projections_list",
+          payload: { session_id: target },
+        }),
+      );
       // 2026-05-31 restore — pull cached context-usage so ring gauge
       // hydrates immediately on (re)connect instead of waiting for the
       // next LLM turn.
-      ws?.send(JSON.stringify({
-        type: "context_usage_request",
-        payload: { session_id: target },
-      }));
+      ws?.send(
+        JSON.stringify({
+          type: "context_usage_request",
+          payload: { session_id: target },
+        }),
+      );
     }
   };
   ws.onmessage = (ev) => {
@@ -450,10 +438,7 @@ async function open_socket() {
       companionChallenge = null;
       companionActionInFlight = false;
       G.__deskpet_companion_challenge__ = null;
-    } else if (
-      parsed?.type === "companion_control_command_settled" &&
-      companionChallenge
-    ) {
+    } else if (parsed?.type === "companion_control_command_settled" && companionChallenge) {
       const payload = parsed.payload ?? {};
       companionChallenge = {
         ...companionChallenge,
@@ -463,9 +448,7 @@ async function open_socket() {
             BigInt(companionChallenge.requestSeq) + 1n,
         ),
         bindingEpoch: String(
-          payload.binding_epoch ??
-            payload.bindingEpoch ??
-            companionChallenge.bindingEpoch,
+          payload.binding_epoch ?? payload.bindingEpoch ?? companionChallenge.bindingEpoch,
         ),
       };
       companionActionInFlight = false;
@@ -473,7 +456,11 @@ async function open_socket() {
     }
     dispatch(parsed);
     listeners.forEach((fn) => {
-      try { fn(parsed); } catch (e) { console.warn(e); }
+      try {
+        fn(parsed);
+      } catch (e) {
+        console.warn(e);
+      }
     });
   };
   ws.onclose = () => {
@@ -490,10 +477,7 @@ async function open_socket() {
 
 function schedule_reconnect() {
   if (reconnect_timer != null) return;
-  const delay = Math.min(
-    RECONNECT_MAX_MS,
-    RECONNECT_BASE_MS * Math.pow(2, reconnect_attempt),
-  );
+  const delay = Math.min(RECONNECT_MAX_MS, RECONNECT_BASE_MS * Math.pow(2, reconnect_attempt));
   reconnect_attempt++;
   // P5-S2 Phase 5: globalThis.setTimeout works in both browser + node (vitest);
   // window.setTimeout would crash in the node test env when ws.ts is imported.
@@ -539,15 +523,11 @@ export function format_slash_result(result: any): string {
     case "prefs_list": {
       const entries = r.entries || [];
       if (!entries.length) return "偏好记忆为空（暂无意图/计划记录）";
-      const lines = entries.map(
-        (e: any) => `  ${e.kind}/${e.label}: ${e.text}`,
-      );
+      const lines = entries.map((e: any) => `  ${e.kind}/${e.label}: ${e.text}`);
       return [`偏好记忆（共 ${r.count ?? entries.length} 条）:`, ...lines].join("\n");
     }
     case "prefs_cleared":
-      return `已清除 ${r.removed ?? 0} 条偏好记忆${
-        r.kind ? `（kind=${r.kind}）` : ""
-      }`;
+      return `已清除 ${r.removed ?? 0} 条偏好记忆${r.kind ? `（kind=${r.kind}）` : ""}`;
     case "error":
       return `命令出错: ${r.message || "unknown"}${r.hint ? `\n提示: ${r.hint}` : ""}`;
     default:
@@ -560,10 +540,7 @@ export function format_slash_result(result: any): string {
  * Route a backend WS message into the zustand store. Most events
  * carry `payload.session_id`; otherwise use the currently active session.
  */
-function selectNewestInflightRunAfterTerminal(
-  sid: string,
-  terminalRunId: string,
-): void {
+function selectNewestInflightRunAfterTerminal(sid: string, terminalRunId: string): void {
   const state = useSessionsStore.getState();
   const session = state.sessions[sid];
   if (!session || session.selected_run_id !== terminalRunId) return;
@@ -590,10 +567,7 @@ function bindDeferredMessagesToRun(
   if (!session) return;
   let changed = false;
   const messages = session.messages.map((message) => {
-    if (
-      !message.deferred_send ||
-      message.deferred_parent_request_id !== parentRequestId
-    ) {
+    if (!message.deferred_send || message.deferred_parent_request_id !== parentRequestId) {
       return message;
     }
     changed = true;
@@ -647,16 +621,10 @@ function flushDeferredMessages(
   useSessionsStore.getState().set_messages(
     sid,
     latest.messages.map((message) => {
-      if (
-        message.role !== "user" ||
-        message.run_id !== runId ||
-        message.deferred_send !== true
-      ) {
+      if (message.role !== "user" || message.run_id !== runId || message.deferred_send !== true) {
         return message;
       }
-      const didFail = Boolean(
-        message.request_id && failed.has(message.request_id),
-      );
+      const didFail = Boolean(message.request_id && failed.has(message.request_id));
       return {
         ...message,
         deferred_send: false,
@@ -668,17 +636,12 @@ function flushDeferredMessages(
 }
 
 function dispatch(msg: any) {
-  if (
-    msg?.type === "companion_identity_status" ||
-    msg?.type === "companion_identity_unready"
-  ) {
+  if (msg?.type === "companion_identity_status" || msg?.type === "companion_identity_unready") {
     latestCompanionIdentityStatus = msg;
     G.__deskpet_companion_identity_status__ = msg;
   }
   const store = useSessionsStore.getState();
-  const sid: string =
-    (msg?.payload && msg.payload.session_id) ||
-    store.active_sid;
+  const sid: string = (msg?.payload && msg.payload.session_id) || store.active_sid;
 
   switch (msg.type) {
     case "companion_profile_bound": {
@@ -695,13 +658,15 @@ function dispatch(msg: any) {
           store.ensure(inboxSessionId);
           store.set_active(inboxSessionId);
         }
-        ws?.send(JSON.stringify({
-          type: "session_messages_load",
-          payload: {
-            session_id: inboxSessionId || store.active_sid,
-            limit: 200,
-          },
-        }));
+        ws?.send(
+          JSON.stringify({
+            type: "session_messages_load",
+            payload: {
+              session_id: inboxSessionId || store.active_sid,
+              limit: 200,
+            },
+          }),
+        );
       }
       break;
     }
@@ -723,13 +688,15 @@ function dispatch(msg: any) {
           store.ensure(inboxSessionId);
           store.set_active(inboxSessionId);
         }
-        ws?.send(JSON.stringify({
-          type: "session_messages_load",
-          payload: {
-            session_id: inboxSessionId || store.active_sid,
-            limit: 200,
-          },
-        }));
+        ws?.send(
+          JSON.stringify({
+            type: "session_messages_load",
+            payload: {
+              session_id: inboxSessionId || store.active_sid,
+              limit: 200,
+            },
+          }),
+        );
       }
       break;
     }
@@ -756,11 +723,9 @@ function dispatch(msg: any) {
         profile_generation: Number(p.profile_generation || 0),
         session_id: String(p.session_id || store.active_sid),
         seq: Number(p.seq ?? 0),
-        route_version:
-          p.route_version === undefined ? undefined : Number(p.route_version),
+        route_version: p.route_version === undefined ? undefined : Number(p.route_version),
         redaction_version: Number(p.redaction_version || 0),
-        occurred_at:
-          typeof p.occurred_at === "string" ? p.occurred_at : undefined,
+        occurred_at: typeof p.occurred_at === "string" ? p.occurred_at : undefined,
         received_at: Date.now(),
       });
       break;
@@ -795,12 +760,7 @@ function dispatch(msg: any) {
         const session = useSessionsStore.getState().sessions[sid];
         const requestId = String(p.request_id || "").trim();
         const taskScopeId = String(p.task_scope_id || "");
-        bindDeferredMessagesToRun(
-          sid,
-          requestId,
-          runId,
-          taskScopeId,
-        );
+        bindDeferredMessagesToRun(sid, requestId, runId, taskScopeId);
         const refreshedSession = useSessionsStore.getState().sessions[sid];
         const selectedRunId = session?.selected_run_id;
         const selectedProjection = selectedRunId
@@ -821,26 +781,19 @@ function dispatch(msg: any) {
           selectedRunId === runId ||
           Boolean(
             selectedProjection &&
-              ["completed", "failed", "cancelled"].includes(
-                selectedProjection.status,
-              ),
+              ["completed", "failed", "cancelled"].includes(selectedProjection.status),
           );
         store.upsert_run_projection(sid, runId, {
           task_scope_id: taskScopeId,
           request_id: requestId || undefined,
           turn_id: String(p.turn_id || "") || undefined,
-          conversation_boundary_ref:
-            String(p.conversation_boundary_ref || "") || undefined,
+          conversation_boundary_ref: String(p.conversation_boundary_ref || "") || undefined,
           conversation_boundary_version:
             typeof p.conversation_boundary_version === "number"
               ? p.conversation_boundary_version
               : undefined,
-          version:
-            typeof p.projection_version === "number"
-              ? p.projection_version
-              : 0,
-          status:
-            msg.type === "chat_v2_run_reserved" ? "starting" : "running",
+          version: typeof p.projection_version === "number" ? p.projection_version : 0,
+          status: msg.type === "chat_v2_run_reserved" ? "starting" : "running",
           inflight: true,
           ui_state: shouldSelect ? "open" : "background",
         });
@@ -849,8 +802,7 @@ function dispatch(msg: any) {
         }
         if (
           requestId &&
-          useSessionsStore.getState().sessions[sid]
-            ?.pending_root_request_id === requestId
+          useSessionsStore.getState().sessions[sid]?.pending_root_request_id === requestId
         ) {
           store.upsert(sid, {
             pending_root_request_id: undefined,
@@ -875,17 +827,12 @@ function dispatch(msg: any) {
       const runId = String(p.run_id || "").trim();
       const requestId = String(p.request_id || "").trim();
       if (requestId) {
-        store.set_continuation_status(
-          sid,
-          requestId,
-          p.queued === true ? "waiting" : "bound",
-        );
+        store.set_continuation_status(sid, requestId, p.queued === true ? "waiting" : "bound");
       }
       if (runId) {
         store.upsert_run_projection(sid, runId, {
           task_scope_id: String(p.task_scope_id || ""),
-          conversation_boundary_ref:
-            String(p.conversation_boundary_ref || "") || undefined,
+          conversation_boundary_ref: String(p.conversation_boundary_ref || "") || undefined,
           conversation_boundary_version:
             typeof p.conversation_boundary_version === "number"
               ? p.conversation_boundary_version
@@ -898,11 +845,7 @@ function dispatch(msg: any) {
       const p = msg.payload || {};
       const requestId = String(p.request_id || "").trim();
       const continuationStatus = String(p.status || "").trim();
-      if (
-        requestId &&
-        (continuationStatus === "bound" ||
-          continuationStatus === "failed")
-      ) {
+      if (requestId && (continuationStatus === "bound" || continuationStatus === "failed")) {
         store.set_continuation_status(
           sid,
           requestId,
@@ -913,14 +856,11 @@ function dispatch(msg: any) {
       break;
     }
     case "task_projections_response": {
-      const projections = Array.isArray(msg.payload?.projections)
-        ? msg.payload.projections
-        : [];
+      const projections = Array.isArray(msg.payload?.projections) ? msg.payload.projections : [];
       projections.forEach((projection: any) => {
         const runId = String(projection?.run_id || "").trim();
         if (!runId) return;
-        const existing =
-          useSessionsStore.getState().sessions[sid]?.run_projections?.[runId];
+        const existing = useSessionsStore.getState().sessions[sid]?.run_projections?.[runId];
         const durableStatus = String(projection.status || "");
         const status =
           durableStatus === "waiting"
@@ -933,15 +873,14 @@ function dispatch(msg: any) {
                   ? "cancelled"
                   : durableStatus
                     ? "running"
-                    : existing?.status ?? "waiting";
+                    : (existing?.status ?? "waiting");
         const inflight =
           durableStatus === "created" ||
           durableStatus === "queued" ||
           durableStatus === "running" ||
           durableStatus === "cancel_requested";
         store.upsert_run_projection(sid, runId, {
-          projection_id:
-            String(projection.projection_id || "") || undefined,
+          projection_id: String(projection.projection_id || "") || undefined,
           task_scope_id: String(projection.task_scope_id || ""),
           version: Number(projection.version || 0),
           conversation_boundary_ref:
@@ -951,12 +890,11 @@ function dispatch(msg: any) {
               ? projection.conversation_boundary_version
               : undefined,
           ui_state:
-            projection.ui_state === "background" ||
-            projection.ui_state === "closed"
+            projection.ui_state === "background" || projection.ui_state === "closed"
               ? projection.ui_state
               : "open",
           status,
-          inflight: durableStatus ? inflight : existing?.inflight ?? false,
+          inflight: durableStatus ? inflight : (existing?.inflight ?? false),
           started_at:
             typeof projection.started_at === "number"
               ? projection.started_at * 1000
@@ -977,10 +915,7 @@ function dispatch(msg: any) {
           projection_id: String(p.projection_id || "") || undefined,
           task_scope_id: String(p.task_scope_id || ""),
           version: Number(p.version || 0),
-          ui_state:
-            p.ui_state === "background" || p.ui_state === "closed"
-              ? p.ui_state
-              : "open",
+          ui_state: p.ui_state === "background" || p.ui_state === "closed" ? p.ui_state : "open",
         });
       }
       break;
@@ -992,12 +927,9 @@ function dispatch(msg: any) {
       if (next_sid) {
         store.ensure(next_sid);
         store.upsert(next_sid, {
-          provider_id:
-            p.provider_id === undefined ? null : p.provider_id,
-          preferred_model:
-            p.preferred_model === undefined ? null : p.preferred_model,
-          model_params:
-            p.model_params === undefined ? null : p.model_params,
+          provider_id: p.provider_id === undefined ? null : p.provider_id,
+          preferred_model: p.preferred_model === undefined ? null : p.preferred_model,
+          model_params: p.model_params === undefined ? null : p.model_params,
         });
         store.set_active(next_sid);
       }
@@ -1051,12 +983,7 @@ function dispatch(msg: any) {
         // Provisional provider output never enters ordinary Message history.
         // A malformed delta without the full triple is fail-closed.
         if (runId && invocationId && streamEpoch) {
-          store.upsert_companion_provisional(
-            runId,
-            invocationId,
-            streamEpoch,
-            chunk,
-          );
+          store.upsert_companion_provisional(runId, invocationId, streamEpoch, chunk);
         }
         break;
       }
@@ -1135,16 +1062,13 @@ function dispatch(msg: any) {
       let current = store.sessions[sid];
       if (current) {
         const runId = String(p.run_id || "").trim();
-        const runProjection = runId
-          ? current.run_projections?.[runId]
-          : undefined;
-        const runIsKnownNonTerminal = runProjection !== undefined &&
+        const runProjection = runId ? current.run_projections?.[runId] : undefined;
+        const runIsKnownNonTerminal =
+          runProjection !== undefined &&
           runProjection.status !== "completed" &&
           runProjection.status !== "failed" &&
           runProjection.status !== "cancelled";
-        const lastUserIndex = current.messages.findLastIndex(
-          (message) => message.role === "user",
-        );
+        const lastUserIndex = current.messages.findLastIndex((message) => message.role === "user");
         const withoutLiveDuplicate = current.messages.filter(
           (message, index) =>
             !(
@@ -1160,23 +1084,17 @@ function dispatch(msg: any) {
           current = store.sessions[sid];
         }
       }
-      const existingIndex = current?.messages.findIndex(
-        (message) =>
-          message.role === "reasoning_summary" &&
-          message.reasoning_summary_id === summaryId,
-      ) ?? -1;
+      const existingIndex =
+        current?.messages.findIndex(
+          (message) =>
+            message.role === "reasoning_summary" && message.reasoning_summary_id === summaryId,
+        ) ?? -1;
       const summary = {
         role: "reasoning_summary" as const,
         text,
         reasoning_summary_id: summaryId,
-        reasoning_phase:
-          p.phase === "observation" || p.phase === "status"
-            ? p.phase
-            : "planning",
-        reasoning_status:
-          p.status === "failed" || p.status === "completed"
-            ? p.status
-            : "running",
+        reasoning_phase: p.phase === "observation" || p.phase === "status" ? p.phase : "planning",
+        reasoning_status: p.status === "failed" || p.status === "completed" ? p.status : "running",
         run_id: String(p.run_id || "") || undefined,
         task_scope_id: String(p.task_scope_id || "") || undefined,
       };
@@ -1210,15 +1128,13 @@ function dispatch(msg: any) {
         let cleaned = cur.messages.filter(
           (m) =>
             !(
-              (m.role === ("assistant_delta" as any) ||
-                m.role === ("reasoning_delta" as any)) &&
+              (m.role === ("assistant_delta" as any) || m.role === ("reasoning_delta" as any)) &&
               (!runId || m.run_id === runId)
             ),
         );
         if (text) {
           const lastUserIdx = cleaned.findLastIndex(
-            (m) =>
-              m.role === "user" && (!runId || m.run_id === runId),
+            (m) => m.role === "user" && (!runId || m.run_id === runId),
           );
           const hasSameTurnPreview = cleaned.some(
             (m, idx) =>
@@ -1262,7 +1178,7 @@ function dispatch(msg: any) {
         const session = store.sessions[sid];
         if (session) {
           const hasOtherInflightRuns = Object.values(session.run_projections || {}).some(
-            (proj) => proj.run_id !== runId && proj.inflight && proj.ui_state !== "closed"
+            (proj) => proj.run_id !== runId && proj.inflight && proj.ui_state !== "closed",
           );
           if (!hasOtherInflightRuns) {
             store.upsert(sid, {
@@ -1290,9 +1206,7 @@ function dispatch(msg: any) {
       const nested = body.payload || {};
       const text = String(nested.text || body.text || "").trim();
       const currentBefore = store.sessions[sid];
-      const projectionRunId = String(
-        event.root_run_id || event.task_root_run_id || "",
-      ).trim();
+      const projectionRunId = String(event.root_run_id || event.task_root_run_id || "").trim();
       const finishesTaskProjection =
         eventType === "workflow.final" &&
         !!projectionRunId &&
@@ -1371,11 +1285,7 @@ function dispatch(msg: any) {
         store.set_messages(
           sid,
           current.messages.filter(
-            (message) =>
-              !(
-                message.provisional === true &&
-                (!runId || message.run_id === runId)
-              ),
+            (message) => !(message.provisional === true && (!runId || message.run_id === runId)),
           ),
         );
       }
@@ -1431,15 +1341,13 @@ function dispatch(msg: any) {
       if (!runId) {
         const latest = useSessionsStore.getState().sessions[sid];
         const stuck = latest?.messages.some(
-          (message) =>
-            message.deferred_send || message.continuation_status === "waiting",
+          (message) => message.deferred_send || message.continuation_status === "waiting",
         );
         if (latest && stuck) {
           store.set_messages(
             sid,
             latest.messages.map((message) =>
-              message.deferred_send ||
-              message.continuation_status === "waiting"
+              message.deferred_send || message.continuation_status === "waiting"
                 ? {
                     ...message,
                     deferred_send: false,
@@ -1499,18 +1407,19 @@ function dispatch(msg: any) {
       const outlineId = typeof p.outline_id === "string" ? p.outline_id : "";
       if (outlineId) {
         const targetSession = typeof p.session_id === "string" && p.session_id ? p.session_id : sid;
-        const decisionStatus = typeof p.decision_status === "string" ? p.decision_status : undefined;
+        const decisionStatus =
+          typeof p.decision_status === "string" ? p.decision_status : undefined;
         const targets = new Set<string>([targetSession]);
         for (const [sessionId, session] of Object.entries(store.sessions)) {
           if (
-            session.messages.some(
-              (m) => m.role === "ppt_outline" && m.outline_id === outlineId,
-            )
+            session.messages.some((m) => m.role === "ppt_outline" && m.outline_id === outlineId)
           ) {
             targets.add(sessionId);
           }
         }
-        targets.forEach((targetSid) => store.resolve_ppt_outline(targetSid, outlineId, decisionStatus));
+        targets.forEach((targetSid) =>
+          store.resolve_ppt_outline(targetSid, outlineId, decisionStatus),
+        );
       }
       break;
     }
@@ -1539,9 +1448,7 @@ function dispatch(msg: any) {
       const state = String(p.state || "").toLowerCase();
       const version = Number(p.run_version || 0);
       const terminal = ["completed", "failed", "cancelled"].includes(state);
-      const current = runId
-        ? store.sessions[sid]?.run_projections?.[runId]
-        : undefined;
+      const current = runId ? store.sessions[sid]?.run_projections?.[runId] : undefined;
       if (runId && terminal && version >= (current?.version ?? 0)) {
         store.upsert_run_projection(sid, runId, {
           version,
@@ -1635,12 +1542,9 @@ function dispatch(msg: any) {
         // WI-OC-2：每条进度事件附带调度器累计快照（peak/total_queued/
         // total_rejected）。旧后端不推这些 key → setMetrics 忽略 → 缺省 0 降级。
         sub.setMetrics({
-          peak_concurrent:
-            typeof p.peak_concurrent === "number" ? p.peak_concurrent : undefined,
-          total_queued:
-            typeof p.total_queued === "number" ? p.total_queued : undefined,
-          total_rejected:
-            typeof p.total_rejected === "number" ? p.total_rejected : undefined,
+          peak_concurrent: typeof p.peak_concurrent === "number" ? p.peak_concurrent : undefined,
+          total_queued: typeof p.total_queued === "number" ? p.total_queued : undefined,
+          total_rejected: typeof p.total_rejected === "number" ? p.total_rejected : undefined,
         });
       }
       break;
@@ -1673,32 +1577,24 @@ function dispatch(msg: any) {
     }
     case "tool_result": {
       const p = msg.payload || {};
-      const workflowEventId = typeof p.workflow_event_id === "string"
-        ? p.workflow_event_id
-        : "";
-      const messageId = workflowEventId
-        ? `workflow-artifact:${workflowEventId}`
-        : undefined;
-      if (
-        messageId &&
-        store.sessions[sid]?.messages.some((message) => message.id === messageId)
-      ) {
+      const workflowEventId = typeof p.workflow_event_id === "string" ? p.workflow_event_id : "";
+      const messageId = workflowEventId ? `workflow-artifact:${workflowEventId}` : undefined;
+      if (messageId && store.sessions[sid]?.messages.some((message) => message.id === messageId)) {
         break;
       }
       const baseResultRaw =
-        Array.isArray(p.artifacts) && p.artifacts.length > 0
-          ? JSON.stringify(p)
-          : p.result;
-      const liveError = publicToolErrorText(p.error) ?? (
-        p.ok === false && typeof p.status === "string" ? p.status : undefined
-      );
-      const resultRaw = p.ok === false && liveError
-        ? JSON.stringify({
-            status: typeof p.status === "string" ? p.status : "failed",
-            error: p.error ?? liveError,
-            result: baseResultRaw,
-          })
-        : baseResultRaw;
+        Array.isArray(p.artifacts) && p.artifacts.length > 0 ? JSON.stringify(p) : p.result;
+      const liveError =
+        publicToolErrorText(p.error) ??
+        (p.ok === false && typeof p.status === "string" ? p.status : undefined);
+      const resultRaw =
+        p.ok === false && liveError
+          ? JSON.stringify({
+              status: typeof p.status === "string" ? p.status : "failed",
+              error: p.error ?? liveError,
+              result: baseResultRaw,
+            })
+          : baseResultRaw;
       store.push_message(sid, {
         id: messageId,
         role: "tool_result",
@@ -1798,8 +1694,7 @@ function dispatch(msg: any) {
             id: base_id,
             role: "reasoning_summary",
             text: m.text || "",
-            reasoning_summary_id:
-              m.workflow_event_id || m.projection_event_id || base_id,
+            reasoning_summary_id: m.workflow_event_id || m.projection_event_id || base_id,
             reasoning_phase: "status",
             reasoning_status: "completed",
             run_id: m.run_id || undefined,
@@ -1888,7 +1783,11 @@ function dispatch(msg: any) {
           tool_calls.forEach((tc: any, idx: number) => {
             let args: any = tc?.function?.arguments;
             if (typeof args === "string") {
-              try { args = JSON.parse(args); } catch { /* keep raw */ }
+              try {
+                args = JSON.parse(args);
+              } catch {
+                /* keep raw */
+              }
             }
             restored.push({
               id: `${base_id}-tc${idx}`,
@@ -1926,9 +1825,7 @@ function dispatch(msg: any) {
           plan_rationale: _plan.rationale,
           plan_steps: _plan.steps,
           plan_target_directory: _plan.target_directory,
-          plan_action_categories: Array.isArray(
-            _plan.action_categories,
-          )
+          plan_action_categories: Array.isArray(_plan.action_categories)
             ? _plan.action_categories.map(String)
             : [],
           plan_auto_confirmed: !!_plan.auto_confirmed,
@@ -1948,8 +1845,7 @@ function dispatch(msg: any) {
           inflight: false,
         });
         waitingForPermission =
-          useSessionsStore.getState().sessions[sid]?.run_projections?.[runId]
-            ?.status === "waiting";
+          useSessionsStore.getState().sessions[sid]?.run_projections?.[runId]?.status === "waiting";
       }
       // Code panel doesn't host the popup (the pet window does), but
       // we mark the session so the tile shows a "🔒 waiting" pill.
@@ -2044,9 +1940,7 @@ function dispatch(msg: any) {
       // Settings-side mutation broadcast refreshes the registry snapshot.
       // Session bindings are durable tombstones and must not be silently
       // rewritten when a provider disappears.
-      const incoming = Array.isArray(msg.payload?.providers)
-        ? msg.payload.providers
-        : [];
+      const incoming = Array.isArray(msg.payload?.providers) ? msg.payload.providers : [];
       useProvidersStore.getState().set_providers(incoming);
       // Mirror into Phase 4 settings store so SettingsProviders re-renders.
       dispatchProviderEvent(msg);
@@ -2061,9 +1955,7 @@ function dispatch(msg: any) {
       // Initial provider list (frontend asks on panel mount). Same shape as
       // the broadcast — populate the store without binding reconciliation
       // (no UI state to reconcile yet on first load).
-      const incoming = Array.isArray(msg.payload?.providers)
-        ? msg.payload.providers
-        : [];
+      const incoming = Array.isArray(msg.payload?.providers) ? msg.payload.providers : [];
       useProvidersStore.getState().set_providers(incoming);
       // Mirror into Phase 4 settings store.
       dispatchProviderEvent(msg);
@@ -2092,12 +1984,9 @@ function dispatch(msg: any) {
       store.ensure(target);
       store.upsert(target, {
         provider_id: p.provider_id === undefined ? null : p.provider_id,
-        preferred_model:
-          p.preferred_model === undefined ? null : p.preferred_model,
+        preferred_model: p.preferred_model === undefined ? null : p.preferred_model,
         // Backend's set_provider path preserves + echoes model_params.
-        ...(p.model_params !== undefined
-          ? { model_params: p.model_params }
-          : {}),
+        ...(p.model_params !== undefined ? { model_params: p.model_params } : {}),
         provider_incarnation_id: p.provider_incarnation_id ?? null,
         provider_config_revision: p.provider_config_revision ?? null,
         binding_epoch: Number(p.binding_epoch ?? 0),
@@ -2134,13 +2023,10 @@ function dispatch(msg: any) {
       store.ensure(target);
       store.upsert(target, {
         provider_id: p.provider_id === undefined ? null : p.provider_id,
-        preferred_model:
-          p.preferred_model === undefined ? null : p.preferred_model,
+        preferred_model: p.preferred_model === undefined ? null : p.preferred_model,
         // code-session-model-params S2: dict ⇒ active params; null ⇒
         // binding cleared. undefined (legacy backend) ⇒ leave untouched.
-        ...(p.model_params !== undefined
-          ? { model_params: p.model_params }
-          : {}),
+        ...(p.model_params !== undefined ? { model_params: p.model_params } : {}),
         provider_incarnation_id: p.provider_incarnation_id ?? null,
         provider_config_revision: p.provider_config_revision ?? null,
         binding_epoch: Number(p.binding_epoch ?? 0),
@@ -2165,9 +2051,7 @@ export const controlWS: ControlWS = {
       const payload = { ...(msg.payload ?? {}) };
       const sid = String(payload.session_id || useSessionsStore.getState().active_sid);
       const session = useSessionsStore.getState().sessions[sid];
-      const runId = String(
-        payload.root_run_id || payload.run_id || session?.active_run_id || "",
-      );
+      const runId = String(payload.root_run_id || payload.run_id || session?.active_run_id || "");
       const version = session?.run_projections?.[runId]?.version ?? 0;
       outbound = {
         ...msg,
@@ -2175,8 +2059,7 @@ export const controlWS: ControlWS = {
           ...payload,
           root_run_id: runId,
           expected_run_version: payload.expected_run_version ?? version,
-          cancel_command_id:
-            payload.cancel_command_id ?? `cancel:${runId}:v${version}`,
+          cancel_command_id: payload.cancel_command_id ?? `cancel:${runId}:v${version}`,
           reason: payload.reason ?? "user_interrupt",
         },
       };
@@ -2248,10 +2131,12 @@ export const controlWS: ControlWS = {
       return false;
     }
     try {
-      ws.send(JSON.stringify({
-        type: commandKind,
-        payload: { body, credential },
-      }));
+      ws.send(
+        JSON.stringify({
+          type: commandKind,
+          payload: { body, credential },
+        }),
+      );
       return true;
     } catch (error) {
       companionActionInFlight = false;
@@ -2335,14 +2220,17 @@ function startSessionHealthCheck() {
 
       if (isStuck) {
         console.warn(
-          `[HealthCheck] Session ${session.base_session_id} requests authoritative Run status after ${stuckDuration}ms`
+          `[HealthCheck] Session ${session.base_session_id} requests authoritative Run status after ${stuckDuration}ms`,
         );
 
         const runId = String(session.active_run_id || "").trim();
         if (current_state === "connected" && runId) {
-          if ([...pendingRunStatusQueries.values()].some(
-            (pending) => pending.sid === session.base_session_id && pending.runId === runId,
-          )) return;
+          if (
+            [...pendingRunStatusQueries.values()].some(
+              (pending) => pending.sid === session.base_session_id && pending.runId === runId,
+            )
+          )
+            return;
           const projection = session.run_projections?.[runId];
           const queryId = `run-status:${runId}:${Date.now()}`;
           controlWS.send({

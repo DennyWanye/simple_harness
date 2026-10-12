@@ -12,7 +12,10 @@ export function formatUpdaterError(err: unknown): string {
   const lower = raw.toLowerCase();
 
   // 2026-09-25：发布清单里没有本机平台（如 darwin-aarch64）的安装包。
-  if (lower.includes("fallback platforms") || (lower.includes("platform") && lower.includes("response"))) {
+  if (
+    lower.includes("fallback platforms") ||
+    (lower.includes("platform") && lower.includes("response"))
+  ) {
     return "更新服务器上暂时没有适合这台电脑（当前系统与芯片）的安装包，请稍后再试。";
   }
 
@@ -38,11 +41,7 @@ export function formatUpdaterError(err: unknown): string {
     return "网络连接失败，无法检查更新。请检查网络后重试。";
   }
 
-  if (
-    lower.includes("signature") ||
-    lower.includes("verify") ||
-    lower.includes("pubkey")
-  ) {
+  if (lower.includes("signature") || lower.includes("verify") || lower.includes("pubkey")) {
     return "更新包签名校验失败，已为安全起见中止安装。请联系开发者。";
   }
 

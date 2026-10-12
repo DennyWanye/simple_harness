@@ -14,10 +14,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import type { ControlChannel } from "../ws/ControlChannel";
-import type {
-  IncomingMessage,
-  ModelProvisionStatusResponse,
-} from "../types/messages";
+import type { IncomingMessage, ModelProvisionStatusResponse } from "../types/messages";
 
 type Props = {
   getChannel: () => ControlChannel | null;

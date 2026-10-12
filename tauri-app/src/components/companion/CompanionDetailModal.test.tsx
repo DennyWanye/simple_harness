@@ -1,14 +1,7 @@
 // SPDX-FileCopyrightText: 2026 DennyWanye
 // SPDX-License-Identifier: BUSL-1.1
 
-import {
-  act,
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type {
@@ -38,7 +31,8 @@ afterEach(cleanup);
 
 describe("CompanionDetailModal", () => {
   it("uses only the owner-free paginated detail protocol", async () => {
-    const query = vi.fn()
+    const query = vi
+      .fn()
       .mockResolvedValueOnce({
         type: "companion_detail_response",
         request_id: "request-1",
@@ -61,9 +55,7 @@ describe("CompanionDetailModal", () => {
           next_cursor: null,
         },
       });
-    render(
-      <CompanionDetailModal event={event} query={query} onClose={vi.fn()} />,
-    );
+    render(<CompanionDetailModal event={event} query={query} onClose={vi.fn()} />);
 
     await screen.findByText("已完成");
     expect(query).toHaveBeenNthCalledWith(1, {
@@ -88,7 +80,8 @@ describe("CompanionDetailModal", () => {
   });
 
   it("fails closed on detail_changed and restarts from page one", async () => {
-    const query = vi.fn()
+    const query = vi
+      .fn()
       .mockResolvedValueOnce({
         type: "companion_detail_error",
         request_id: "request-1",
@@ -105,9 +98,7 @@ describe("CompanionDetailModal", () => {
           next_cursor: null,
         },
       });
-    render(
-      <CompanionDetailModal event={event} query={query} onClose={vi.fn()} />,
-    );
+    render(<CompanionDetailModal event={event} query={query} onClose={vi.fn()} />);
 
     expect((await screen.findByRole("alert")).textContent).toContain("发生变化");
     fireEvent.click(screen.getByRole("button", { name: "从第一页重新加载" }));
@@ -119,15 +110,14 @@ describe("CompanionDetailModal", () => {
     type DetailResult = CompanionDetailResponse | CompanionDetailErrorResponse;
     let resolveOverview!: (value: DetailResult) => void;
     let resolveEvidence!: (value: DetailResult) => void;
-    const query = vi.fn((request: { section: string }) =>
-      new Promise<DetailResult>((resolve) => {
-        if (request.section === "overview") resolveOverview = resolve;
-        else resolveEvidence = resolve;
-      })
+    const query = vi.fn(
+      (request: { section: string }) =>
+        new Promise<DetailResult>((resolve) => {
+          if (request.section === "overview") resolveOverview = resolve;
+          else resolveEvidence = resolve;
+        }),
     );
-    render(
-      <CompanionDetailModal event={event} query={query} onClose={vi.fn()} />,
-    );
+    render(<CompanionDetailModal event={event} query={query} onClose={vi.fn()} />);
     await waitFor(() => expect(query).toHaveBeenCalledTimes(1));
     fireEvent.click(screen.getByRole("button", { name: "证据" }));
     await waitFor(() => expect(query).toHaveBeenCalledTimes(2));

@@ -95,7 +95,9 @@ describe("PPTOutlineCard", () => {
       type: "ppt_outline_decision",
       payload: { outline_id: "outline-1", action: "accept", session_id: "default" },
     });
-    expect((screen.getByRole("button", { name: /确认生成/ }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: /确认生成/ }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
     const msg = useSessionsStore.getState().sessions.default.messages[0];
     expect(msg.ppt_outline_awaiting).toBe(true);
   });
@@ -254,18 +256,12 @@ describe("PPTOutlineCard", () => {
     const store = useSessionsStore.getState();
 
     store.resolve_ppt_outline("default", "outline-1");
-    store.resolve_ppt_outline(
-      "default",
-      "outline-1",
-      "已提交修改，正在生成新版大纲",
-    );
+    store.resolve_ppt_outline("default", "outline-1", "已提交修改，正在生成新版大纲");
 
     const msg = useSessionsStore
       .getState()
       .sessions.default.messages.find((item) => item.outline_id === "outline-1");
     expect(msg?.ppt_outline_awaiting).toBe(false);
-    expect(msg?.ppt_outline_decision_status).toBe(
-      "已提交修改，正在生成新版大纲",
-    );
+    expect(msg?.ppt_outline_decision_status).toBe("已提交修改，正在生成新版大纲");
   });
 });

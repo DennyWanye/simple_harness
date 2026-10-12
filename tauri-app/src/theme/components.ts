@@ -44,7 +44,7 @@ type ButtonSize = "sm" | "md";
 export function buttonStyle(
   variant: ButtonVariant = "secondary",
   size: ButtonSize = "md",
-  disabled = false
+  disabled = false,
 ): CSSProperties {
   const height = size === "sm" ? 28 : controlHeight;
   const padX = size === "sm" ? 10 : 14;
@@ -367,7 +367,7 @@ type DarkBtnVariant = "primary" | "success" | "danger" | "neutral" | "ghost";
 /** 面板内的动作按钮 —— 只有一个主按钮用实心强调色，其余幽灵。 */
 export function darkButton(
   variant: DarkBtnVariant = "neutral",
-  size: "sm" | "md" = "sm"
+  size: "sm" | "md" = "sm",
 ): CSSProperties {
   const height = size === "sm" ? 28 : controlHeight;
   const padX = size === "sm" ? 10 : 14;
@@ -392,16 +392,41 @@ export function darkButton(
   };
   switch (variant) {
     case "primary":
-      return { ...base, background: dark.accent, color: dark.onAccent, fontWeight: weight.semibold };
+      return {
+        ...base,
+        background: dark.accent,
+        color: dark.onAccent,
+        fontWeight: weight.semibold,
+      };
     case "success":
-      return { ...base, background: "transparent", color: dark.success, borderColor: dark.borderStrong };
+      return {
+        ...base,
+        background: "transparent",
+        color: dark.success,
+        borderColor: dark.borderStrong,
+      };
     case "danger":
-      return { ...base, background: "transparent", color: dark.danger, borderColor: dark.borderStrong };
+      return {
+        ...base,
+        background: "transparent",
+        color: dark.danger,
+        borderColor: dark.borderStrong,
+      };
     case "ghost":
-      return { ...base, background: "transparent", color: dark.textMuted, borderColor: "transparent" };
+      return {
+        ...base,
+        background: "transparent",
+        color: dark.textMuted,
+        borderColor: "transparent",
+      };
     case "neutral":
     default:
-      return { ...base, background: "transparent", color: dark.text, borderColor: dark.borderStrong };
+      return {
+        ...base,
+        background: "transparent",
+        color: dark.text,
+        borderColor: dark.borderStrong,
+      };
   }
 }
 

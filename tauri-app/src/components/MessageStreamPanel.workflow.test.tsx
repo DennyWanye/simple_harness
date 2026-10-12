@@ -1,11 +1,4 @@
-import {
-  act,
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const invokeMock = vi.hoisted(() => vi.fn(async () => ""));
@@ -132,17 +125,19 @@ function cancelledHarnessSnapshot(workflowRunId: string): HarnessInspectorSnapsh
     },
     continuation: null,
     goal: null,
-    lineage: [{
-      run_id: workflowRunId,
-      parent_run_id: "root-ui",
-      driver_kind: "workflow",
-      profile_key: "workflow.durable_task",
-      status: "cancelled",
-      version: 2,
-      created_at: 1,
-      updated_at: 2,
-      ended_at: 2,
-    }],
+    lineage: [
+      {
+        run_id: workflowRunId,
+        parent_run_id: "root-ui",
+        driver_kind: "workflow",
+        profile_key: "workflow.durable_task",
+        status: "cancelled",
+        version: 2,
+        created_at: 1,
+        updated_at: 2,
+        ended_at: 2,
+      },
+    ],
     provider_invocations: [],
     action_batches: [],
     tool_calls: [],
@@ -188,45 +183,52 @@ function publicSnapshot(): PublicRunSnapshotV3 {
         evidence_refs: [],
         tool_refs: [],
         child_refs: [],
-        workflow_steps: [{
-          workflow_step_id: "verify-1",
-          label: "检查项目文件",
-          status: "running",
-          step_index: 0,
-          step_total: 2,
-        }, {
-          workflow_step_id: "verify-2",
-          label: "启动 Godot",
-          status: "unknown",
-          step_index: 1,
-          step_total: 2,
-        }],
+        workflow_steps: [
+          {
+            workflow_step_id: "verify-1",
+            label: "检查项目文件",
+            status: "running",
+            step_index: 0,
+            step_total: 2,
+          },
+          {
+            workflow_step_id: "verify-2",
+            label: "启动 Godot",
+            status: "unknown",
+            step_index: 1,
+            step_total: 2,
+          },
+        ],
         items: [],
         order_key: [4, 0, 0, "verify"],
       },
     ],
-    tool_public_views: [{
-      tool_ref: "detail-file-write",
-      stable_id: "stable-file-write",
-      phase_id: "prepare",
-      public_name: "file_write",
-      action_label: "写入文件",
-      safe_target_label: "project.godot",
-      status: "completed",
-      public_input: { path: "project.godot" },
-      public_result: { bytes_written: 13 },
-      details_available: true,
-      result_available: true,
-      truncated: false,
-      created_at: 1.7,
-    }],
-    public_messages: [{
-      message_id: "message-1",
-      stable_id: "message-1",
-      phase_id: "prepare",
-      text: "现在创建 Godot 项目配置。",
-      created_at: 1.5,
-    }],
+    tool_public_views: [
+      {
+        tool_ref: "detail-file-write",
+        stable_id: "stable-file-write",
+        phase_id: "prepare",
+        public_name: "file_write",
+        action_label: "写入文件",
+        safe_target_label: "project.godot",
+        status: "completed",
+        public_input: { path: "project.godot" },
+        public_result: { bytes_written: 13 },
+        details_available: true,
+        result_available: true,
+        truncated: false,
+        created_at: 1.7,
+      },
+    ],
+    public_messages: [
+      {
+        message_id: "message-1",
+        stable_id: "message-1",
+        phase_id: "prepare",
+        text: "现在创建 Godot 项目配置。",
+        created_at: 1.5,
+      },
+    ],
     totals: { workflow_facts: 3, content_facts: 1, provider_details: 0, tool_details: 1 },
     projection_complete: false,
     diagnostics: [],
@@ -264,15 +266,14 @@ describe("WorkflowProgressRow (AC-23)", () => {
     const rendered = view(progress("running"));
     rendered.rerender(panel([progress("waiting")]));
     expect(screen.getAllByTestId("workflow-progress-run-ui")).toHaveLength(1);
-    expect(screen.getByTestId("workflow-progress-run-ui").getAttribute("data-status")).toBe("waiting");
+    expect(screen.getByTestId("workflow-progress-run-ui").getAttribute("data-status")).toBe(
+      "waiting",
+    );
   });
 
   it("settles a stale running summary from the terminal Session Run projection", () => {
-    render(panel(
-      [progress("running")],
-      undefined,
-      undefined,
-      {
+    render(
+      panel([progress("running")], undefined, undefined, {
         "run-ui": {
           run_id: "run-ui",
           task_scope_id: "scope-ui",
@@ -283,8 +284,8 @@ describe("WorkflowProgressRow (AC-23)", () => {
           started_at: 1,
           last_activity: 1,
         },
-      },
-    ));
+      }),
+    );
 
     const card = screen.getByTestId("workflow-progress-run-ui");
     expect(card.getAttribute("data-status")).toBe("cancelled");
@@ -297,11 +298,8 @@ describe("WorkflowProgressRow (AC-23)", () => {
     const child = progress("running");
     child.message.workflow_run_id = "child-ui";
     child.message.run_id = "root-ui";
-    render(panel(
-      [child],
-      undefined,
-      undefined,
-      {
+    render(
+      panel([child], undefined, undefined, {
         "root-ui": {
           run_id: "root-ui",
           task_scope_id: "scope-ui",
@@ -312,8 +310,8 @@ describe("WorkflowProgressRow (AC-23)", () => {
           started_at: 1,
           last_activity: 2,
         },
-      },
-    ));
+      }),
+    );
 
     const card = screen.getByTestId("workflow-progress-child-ui");
     expect(card.getAttribute("data-status")).toBe("cancelled");
@@ -325,11 +323,8 @@ describe("WorkflowProgressRow (AC-23)", () => {
     const child = progress("failed");
     child.message.workflow_run_id = "child-ui";
     child.message.run_id = "root-ui";
-    render(panel(
-      [child],
-      undefined,
-      undefined,
-      {
+    render(
+      panel([child], undefined, undefined, {
         "root-ui": {
           run_id: "root-ui",
           task_scope_id: "scope-root-ui",
@@ -340,8 +335,8 @@ describe("WorkflowProgressRow (AC-23)", () => {
           started_at: 1,
           last_activity: 3,
         },
-      },
-    ));
+      }),
+    );
 
     const card = screen.getByTestId("workflow-progress-child-ui");
     expect(card.getAttribute("data-status")).toBe("failed");
@@ -371,25 +366,23 @@ describe("WorkflowProgressRow (AC-23)", () => {
   });
 
   it("does not let a legacy raw child Run overwrite workflow card authority", () => {
-    render(panel(
-      [progress("running")],
-      undefined,
-      cancelledHarnessSnapshot("run-ui"),
-    ));
+    render(panel([progress("running")], undefined, cancelledHarnessSnapshot("run-ui")));
 
     const card = screen.getByTestId("workflow-progress-run-ui");
     expect(card.getAttribute("data-status")).toBe("running");
   });
 
   it("projects summary and sorted children as one group row and removes duplicates", () => {
-    render(panel([
-      stageMessage("run-ui", 5, "fetch"),
-      { role: "assistant", text: "ordinary", ts: 2500 },
-      progress("running"),
-      stageMessage("run-ui", 2, "search"),
-      stageMessage("run-ui", 2, "search", "duplicate-event-id"),
-      stageMessage("run-ui", 6, "fetch", "run-ui-event-5"),
-    ]));
+    render(
+      panel([
+        stageMessage("run-ui", 5, "fetch"),
+        { role: "assistant", text: "ordinary", ts: 2500 },
+        progress("running"),
+        stageMessage("run-ui", 2, "search"),
+        stageMessage("run-ui", 2, "search", "duplicate-event-id"),
+        stageMessage("run-ui", 6, "fetch", "run-ui-event-5"),
+      ]),
+    );
 
     expect(screen.getAllByTestId("workflow-progress-run-ui")).toHaveLength(1);
     const toggle = screen.getByRole("button", { name: "查看阶段 (2)" });
@@ -415,15 +408,15 @@ describe("WorkflowProgressRow (AC-23)", () => {
       workflow_name: "正式深度调研",
       workflow_seq: 3,
     };
-    rendered.rerender(panel([
-      child,
-      { role: "workflow_progress", message: upgraded, ts: upgraded.ts },
-    ]));
+    rendered.rerender(
+      panel([child, { role: "workflow_progress", message: upgraded, ts: upgraded.ts }]),
+    );
 
     expect(screen.getAllByTestId("workflow-progress-fallback-run")).toHaveLength(1);
     expect(screen.getByText("正式深度调研")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "收起阶段" }).getAttribute("aria-expanded"))
-      .toBe("true");
+    expect(screen.getByRole("button", { name: "收起阶段" }).getAttribute("aria-expanded")).toBe(
+      "true",
+    );
   });
 
   it("keeps concurrent runs in independent groups", () => {
@@ -438,19 +431,19 @@ describe("WorkflowProgressRow (AC-23)", () => {
   });
 
   it("does not force-scroll when a user is reading above", () => {
-    const rendered = render(panel([
-      { role: "assistant", text: "older", ts: 1000 },
-    ]));
+    const rendered = render(panel([{ role: "assistant", text: "older", ts: 1000 }]));
     const list = screen.getByTestId("msgstream-list");
     Object.defineProperty(list, "scrollHeight", { configurable: true, value: 1000 });
     Object.defineProperty(list, "clientHeight", { configurable: true, value: 200 });
     list.scrollTop = 100;
     fireEvent.scroll(list);
 
-    rendered.rerender(panel([
-      { role: "assistant", text: "older", ts: 1000 },
-      stageMessage("late-run", 2, "search"),
-    ]));
+    rendered.rerender(
+      panel([
+        { role: "assistant", text: "older", ts: 1000 },
+        stageMessage("late-run", 2, "search"),
+      ]),
+    );
     expect(list.scrollTop).toBe(100);
   });
 
@@ -459,11 +452,13 @@ describe("WorkflowProgressRow (AC-23)", () => {
     failed.message.workflow_version = "v4";
     failed.message.workflow_retry_action_id = "retry_from_start";
     failed.message.workflow_error = "coverage too low";
-    const onWorkflowRetry = vi.fn<(
-      runId: string,
-      actionId: "generate_now" | "continue_research" | "retry_from_start" | "cancel_settle",
-      retryKey: string,
-    ) => Promise<{ run_id: string; accepted?: boolean }>>(async () => ({ run_id: "new-run" }));
+    const onWorkflowRetry = vi.fn<
+      (
+        runId: string,
+        actionId: "generate_now" | "continue_research" | "retry_from_start" | "cancel_settle",
+        retryKey: string,
+      ) => Promise<{ run_id: string; accepted?: boolean }>
+    >(async () => ({ run_id: "new-run" }));
     render(panel([failed], onWorkflowRetry));
 
     const retryButton = screen.getByRole("alert").querySelector("button");
@@ -500,20 +495,23 @@ describe("WorkflowProgressRow (AC-23)", () => {
 });
 
 describe("ThinkingProcessGroup (AC-9)", () => {
-  const thinkingMessages = (): ChatStreamMessage[] => [{
-    role: "progress",
-    runId: "run-thinking",
-    text: "我会先检查项目结构，再选择需要修改的文件。",
-    ts: 2_000,
-    status: "running",
-  }, {
-    role: "tool",
-    runId: "run-thinking",
-    text: "调用 file_read",
-    ts: 3_000,
-    toolName: "file_read",
-    toolArgs: { path: "src/App.tsx" },
-  }];
+  const thinkingMessages = (): ChatStreamMessage[] => [
+    {
+      role: "progress",
+      runId: "run-thinking",
+      text: "我会先检查项目结构，再选择需要修改的文件。",
+      ts: 2_000,
+      status: "running",
+    },
+    {
+      role: "tool",
+      runId: "run-thinking",
+      text: "调用 file_read",
+      ts: 3_000,
+      toolName: "file_read",
+      toolArgs: { path: "src/App.tsx" },
+    },
+  ];
 
   const projection = (
     status: TaskRunProjectionState["status"],
@@ -537,7 +535,9 @@ describe("ThinkingProcessGroup (AC-9)", () => {
 
     const group = screen.getByTestId("thinking-process-run-thinking");
     expect(group.getAttribute("data-status")).toBe("running");
-    expect(screen.getByRole("button", { name: /思考中/ }).getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByRole("button", { name: /思考中/ }).getAttribute("aria-expanded")).toBe(
+      "true",
+    );
     expect(screen.getByText("我会先检查项目结构，再选择需要修改的文件。")).toBeTruthy();
     expect(screen.getByRole("button", { name: /file_read/ })).toBeTruthy();
   });
@@ -546,9 +546,9 @@ describe("ThinkingProcessGroup (AC-9)", () => {
     "defaults %s Run thinking to expanded",
     (status) => {
       render(panel(thinkingMessages(), undefined, undefined, projection(status)));
-      expect(
-        screen.getByRole("button", { name: /思考中/ }).getAttribute("aria-expanded"),
-      ).toBe("true");
+      expect(screen.getByRole("button", { name: /思考中/ }).getAttribute("aria-expanded")).toBe(
+        "true",
+      );
     },
   );
 
@@ -556,27 +556,19 @@ describe("ThinkingProcessGroup (AC-9)", () => {
     "defaults historical %s Run thinking to collapsed",
     (status) => {
       render(panel(thinkingMessages(), undefined, undefined, projection(status)));
-      expect(
-        screen.getByRole("button", { name: /耗时/ }).getAttribute("aria-expanded"),
-      ).toBe("false");
+      expect(screen.getByRole("button", { name: /耗时/ }).getAttribute("aria-expanded")).toBe(
+        "false",
+      );
     },
   );
 
   it("auto-collapses on terminal transition, reports elapsed time, and permits manual toggle", () => {
-    const rendered = render(panel(
-      thinkingMessages(),
-      undefined,
-      undefined,
-      projection("running"),
-    ));
-    expect(screen.getByRole("button", { name: /思考中/ }).getAttribute("aria-expanded")).toBe("true");
+    const rendered = render(panel(thinkingMessages(), undefined, undefined, projection("running")));
+    expect(screen.getByRole("button", { name: /思考中/ }).getAttribute("aria-expanded")).toBe(
+      "true",
+    );
 
-    rendered.rerender(panel(
-      thinkingMessages(),
-      undefined,
-      undefined,
-      projection("completed"),
-    ));
+    rendered.rerender(panel(thinkingMessages(), undefined, undefined, projection("completed")));
     const header = screen.getByRole("button", { name: /耗时 1 分 1 秒/ });
     expect(header.getAttribute("aria-expanded")).toBe("false");
     expect(screen.queryByText("我会先检查项目结构，再选择需要修改的文件。")).toBeNull();
@@ -589,12 +581,7 @@ describe("ThinkingProcessGroup (AC-9)", () => {
   });
 
   it("keeps historical terminal Runs collapsed and degrades missing duration to 已完成", () => {
-    render(panel(
-      thinkingMessages(),
-      undefined,
-      undefined,
-      projection("failed", 1_000, 1_000),
-    ));
+    render(panel(thinkingMessages(), undefined, undefined, projection("failed", 1_000, 1_000)));
 
     const header = screen.getByRole("button", { name: "已完成" });
     expect(header.getAttribute("aria-expanded")).toBe("false");
@@ -602,37 +589,39 @@ describe("ThinkingProcessGroup (AC-9)", () => {
   });
 
   it("keeps a tool-only SDK Run elapsed time stable after history hydration without a projection", () => {
-    render(panel([
-      {
-        role: "user",
-        runId: "run-history-tool-only",
-        text: "读取测试文件",
-        ts: 1_000,
-      },
-      {
-        role: "tool",
-        runId: "run-history-tool-only",
-        text: "调用 file_read",
-        ts: 6_000,
-        toolName: "file_read",
-        toolArgs: { path: "README.md" },
-      },
-      {
-        role: "tool",
-        runId: "run-history-tool-only",
-        text: "file_read 完成",
-        ts: 11_000,
-        toolName: "file_read",
-        toolOk: true,
-        toolResultRaw: "done",
-      },
-      {
-        role: "assistant",
-        runId: "run-history-tool-only",
-        text: "读取完成。",
-        ts: 20_000,
-      },
-    ]));
+    render(
+      panel([
+        {
+          role: "user",
+          runId: "run-history-tool-only",
+          text: "读取测试文件",
+          ts: 1_000,
+        },
+        {
+          role: "tool",
+          runId: "run-history-tool-only",
+          text: "调用 file_read",
+          ts: 6_000,
+          toolName: "file_read",
+          toolArgs: { path: "README.md" },
+        },
+        {
+          role: "tool",
+          runId: "run-history-tool-only",
+          text: "file_read 完成",
+          ts: 11_000,
+          toolName: "file_read",
+          toolOk: true,
+          toolResultRaw: "done",
+        },
+        {
+          role: "assistant",
+          runId: "run-history-tool-only",
+          text: "读取完成。",
+          ts: 20_000,
+        },
+      ]),
+    );
 
     const header = screen.getByRole("button", { name: "耗时 19 秒" });
     expect(header.getAttribute("aria-expanded")).toBe("false");
@@ -640,12 +629,7 @@ describe("ThinkingProcessGroup (AC-9)", () => {
   });
 
   it("never renders NaN or a negative duration when terminal timestamps are reversed", () => {
-    render(panel(
-      thinkingMessages(),
-      undefined,
-      undefined,
-      projection("cancelled", 62_000, 1_000),
-    ));
+    render(panel(thinkingMessages(), undefined, undefined, projection("cancelled", 62_000, 1_000)));
 
     const header = screen.getByRole("button", { name: "已完成" });
     expect(header.textContent).not.toMatch(/NaN|-/);
@@ -670,28 +654,39 @@ describe("ThinkingProcessGroup (AC-9)", () => {
     const durable = useSessionsStore.getState().sessions[sid].run_projections;
     render(panel(thinkingMessages(), undefined, undefined, durable));
 
-    expect(screen.getByTestId("thinking-process-run-thinking").getAttribute("data-status"))
-      .toBe("completed");
-    expect(screen.getByRole("button", { name: /耗时 1 分 1 秒/ }).getAttribute("aria-expanded"))
-      .toBe("false");
+    expect(screen.getByTestId("thinking-process-run-thinking").getAttribute("data-status")).toBe(
+      "completed",
+    );
+    expect(
+      screen.getByRole("button", { name: /耗时 1 分 1 秒/ }).getAttribute("aria-expanded"),
+    ).toBe("false");
   });
 
   it("bounds an expanded long public narration with an internal scroll container", () => {
     const long = "公开工作叙述。".repeat(2_000);
-    render(panel([{
-      role: "progress",
-      runId: "run-long",
-      text: long,
-      ts: Date.now(),
-      status: "running",
-    }], undefined, undefined, {
-      "run-long": {
-        ...projection("running")["run-thinking"],
-        run_id: "run-long",
-        started_at: Date.now(),
-        last_activity: Date.now(),
-      },
-    }));
+    render(
+      panel(
+        [
+          {
+            role: "progress",
+            runId: "run-long",
+            text: long,
+            ts: Date.now(),
+            status: "running",
+          },
+        ],
+        undefined,
+        undefined,
+        {
+          "run-long": {
+            ...projection("running")["run-thinking"],
+            run_id: "run-long",
+            started_at: Date.now(),
+            last_activity: Date.now(),
+          },
+        },
+      ),
+    );
 
     const body = screen.getByTestId("thinking-process-body-run-long");
     expect(body.style.maxHeight).toBe("360px");
@@ -700,12 +695,19 @@ describe("ThinkingProcessGroup (AC-9)", () => {
 
   it("deduplicates repeated Run events but leaves legacy messages without runId flat", () => {
     const messages = thinkingMessages();
-    render(panel([
-      messages[0],
-      { ...messages[0] },
-      messages[1],
-      { role: "progress", text: "旧版公开进度", ts: 4_000, status: "completed" },
-    ], undefined, undefined, projection("running")));
+    render(
+      panel(
+        [
+          messages[0],
+          { ...messages[0] },
+          messages[1],
+          { role: "progress", text: "旧版公开进度", ts: 4_000, status: "completed" },
+        ],
+        undefined,
+        undefined,
+        projection("running"),
+      ),
+    );
 
     expect(screen.getAllByTestId("thinking-process-run-thinking")).toHaveLength(1);
     expect(screen.getAllByText("我会先检查项目结构，再选择需要修改的文件。")).toHaveLength(1);
@@ -713,38 +715,49 @@ describe("ThinkingProcessGroup (AC-9)", () => {
   });
 
   it("groups a tool-only Run as observable thinking without inventing narration", () => {
-    const rendered = render(panel([{
-      role: "tool",
-      runId: "run-tool-only",
-      text: "调用 file_read",
-      ts: 2_000,
-      toolName: "file_read",
-      toolArgs: { path: "README.md" },
-    }, {
-      role: "tool",
-      runId: "run-tool-only",
-      text: "file_read 完成",
-      ts: 3_000,
-      toolName: "file_read",
-      toolOk: true,
-      toolResultRaw: "done",
-    }, {
-      role: "assistant",
-      runId: "run-tool-only",
-      text: "最终回复仍然正常显示。",
-      ts: 4_000,
-    }], undefined, undefined, {
-      "run-tool-only": {
-        run_id: "run-tool-only",
-        task_scope_id: "scope-tool-only",
-        version: 2,
-        status: "completed",
-        inflight: false,
-        ui_state: "open",
-        started_at: 1_000,
-        last_activity: 5_000,
-      },
-    }));
+    const rendered = render(
+      panel(
+        [
+          {
+            role: "tool",
+            runId: "run-tool-only",
+            text: "调用 file_read",
+            ts: 2_000,
+            toolName: "file_read",
+            toolArgs: { path: "README.md" },
+          },
+          {
+            role: "tool",
+            runId: "run-tool-only",
+            text: "file_read 完成",
+            ts: 3_000,
+            toolName: "file_read",
+            toolOk: true,
+            toolResultRaw: "done",
+          },
+          {
+            role: "assistant",
+            runId: "run-tool-only",
+            text: "最终回复仍然正常显示。",
+            ts: 4_000,
+          },
+        ],
+        undefined,
+        undefined,
+        {
+          "run-tool-only": {
+            run_id: "run-tool-only",
+            task_scope_id: "scope-tool-only",
+            version: 2,
+            status: "completed",
+            inflight: false,
+            ui_state: "open",
+            started_at: 1_000,
+            last_activity: 5_000,
+          },
+        },
+      ),
+    );
 
     const group = screen.getByTestId("thinking-process-run-tool-only");
     expect(group.getAttribute("data-status")).toBe("completed");
@@ -766,36 +779,41 @@ describe("ThinkingProcessGroup (AC-9)", () => {
       toolName: "file_read",
       toolArgs: { path: "README.md" },
     };
-    const rendered = render(panel([runningTool], undefined, undefined, {
-      "run-tool-running": {
-        run_id: "run-tool-running",
-        task_scope_id: "scope-tool-running",
-        version: 1,
-        status: "running",
-        inflight: true,
-        ui_state: "open",
-        started_at: 1_000,
-        last_activity: 2_000,
-      },
-    }));
+    const rendered = render(
+      panel([runningTool], undefined, undefined, {
+        "run-tool-running": {
+          run_id: "run-tool-running",
+          task_scope_id: "scope-tool-running",
+          version: 1,
+          status: "running",
+          inflight: true,
+          ui_state: "open",
+          started_at: 1_000,
+          last_activity: 2_000,
+        },
+      }),
+    );
 
     expect(screen.getByTestId("thinking-process-run-tool-running")).toBeTruthy();
-    expect(screen.getByRole("button", { name: /思考中/ }).getAttribute("aria-expanded"))
-      .toBe("true");
+    expect(screen.getByRole("button", { name: /思考中/ }).getAttribute("aria-expanded")).toBe(
+      "true",
+    );
     expect(rendered.container.querySelectorAll('[data-role="tool"]')).toHaveLength(1);
 
-    rendered.rerender(panel([], undefined, undefined, {
-      "run-tool-running": {
-        run_id: "run-tool-running",
-        task_scope_id: "scope-tool-running",
-        version: 1,
-        status: "running",
-        inflight: true,
-        ui_state: "open",
-        started_at: 1_000,
-        last_activity: 2_000,
-      },
-    }));
+    rendered.rerender(
+      panel([], undefined, undefined, {
+        "run-tool-running": {
+          run_id: "run-tool-running",
+          task_scope_id: "scope-tool-running",
+          version: 1,
+          status: "running",
+          inflight: true,
+          ui_state: "open",
+          started_at: 1_000,
+          last_activity: 2_000,
+        },
+      }),
+    );
     expect(screen.queryByTestId("thinking-process-run-tool-running")).toBeNull();
   });
 
@@ -806,53 +824,67 @@ describe("ThinkingProcessGroup (AC-9)", () => {
       type: "session_messages_response",
       payload: {
         session_id: sid,
-        messages: [{
-          id: "persisted-summary",
-          role: "assistant",
-          text: "恢复后的公开工作叙述。",
-          projection_kind: "workflow_progress",
-          workflow_event_id: "reasoning-summary:run-hydrated:1:status",
-          run_id: "run-hydrated",
-          task_scope_id: "scope-hydrated",
-          ts: 2_000,
-        }],
+        messages: [
+          {
+            id: "persisted-summary",
+            role: "assistant",
+            text: "恢复后的公开工作叙述。",
+            projection_kind: "workflow_progress",
+            workflow_event_id: "reasoning-summary:run-hydrated:1:status",
+            run_id: "run-hydrated",
+            task_scope_id: "scope-hydrated",
+            ts: 2_000,
+          },
+        ],
       },
     });
     __test_dispatch({
       type: "task_projections_response",
       payload: {
         session_id: sid,
-        projections: [{
-          projection_id: "projection-hydrated",
-          run_id: "run-hydrated",
-          task_scope_id: "scope-hydrated",
-          ui_state: "open",
-          version: 4,
-          status: "completed",
-          started_at: 1,
-          updated_at: 3,
-          ended_at: 3,
-        }],
+        projections: [
+          {
+            projection_id: "projection-hydrated",
+            run_id: "run-hydrated",
+            task_scope_id: "scope-hydrated",
+            ui_state: "open",
+            version: 4,
+            status: "completed",
+            started_at: 1,
+            updated_at: 3,
+            ended_at: 3,
+          },
+        ],
       },
     });
 
     const hydrated = useSessionsStore.getState().sessions[sid];
-    const summary = hydrated.messages.find((message) =>
-      message.role === "reasoning_summary");
+    const summary = hydrated.messages.find((message) => message.role === "reasoning_summary");
     expect(summary).toMatchObject({ run_id: "run-hydrated" });
-    render(panel([{
-      role: "progress",
-      runId: summary?.run_id,
-      text: summary?.text ?? "",
-      ts: summary?.ts ?? 0,
-      phase: summary?.reasoning_phase,
-      status: summary?.reasoning_status,
-    }], undefined, undefined, hydrated.run_projections));
+    render(
+      panel(
+        [
+          {
+            role: "progress",
+            runId: summary?.run_id,
+            text: summary?.text ?? "",
+            ts: summary?.ts ?? 0,
+            phase: summary?.reasoning_phase,
+            status: summary?.reasoning_status,
+          },
+        ],
+        undefined,
+        undefined,
+        hydrated.run_projections,
+      ),
+    );
 
-    expect(screen.getByTestId("thinking-process-run-hydrated").getAttribute("data-status"))
-      .toBe("completed");
-    expect(screen.getByRole("button", { name: /耗时 2 秒/ }).getAttribute("aria-expanded"))
-      .toBe("false");
+    expect(screen.getByTestId("thinking-process-run-hydrated").getAttribute("data-status")).toBe(
+      "completed",
+    );
+    expect(screen.getByRole("button", { name: /耗时 2 秒/ }).getAttribute("aria-expanded")).toBe(
+      "false",
+    );
   });
 });
 
@@ -913,20 +945,22 @@ describe("PublicProgressRow", () => {
   });
 
   it("hides old host-generated tool summaries while keeping the tool UI", () => {
-    render(panel([
-      {
-        role: "progress",
-        text: "准备使用 memory_search 处理当前步骤。",
-        ts: 1000,
-        phase: "planning",
-        status: "completed",
-      },
-      {
-        role: "tool",
-        text: '🔧 调用 memory_search {"query":"DeskPet"}',
-        ts: 1001,
-      },
-    ]));
+    render(
+      panel([
+        {
+          role: "progress",
+          text: "准备使用 memory_search 处理当前步骤。",
+          ts: 1000,
+          phase: "planning",
+          status: "completed",
+        },
+        {
+          role: "tool",
+          text: '🔧 调用 memory_search {"query":"DeskPet"}',
+          ts: 1001,
+        },
+      ]),
+    );
 
     expect(screen.queryByText("准备使用 memory_search 处理当前步骤。")).toBeNull();
     expect(screen.getByText(/调用 memory_search/)).toBeTruthy();
@@ -976,10 +1010,7 @@ describe("PublicProgressRow", () => {
     });
     expect(screen.queryByLabelText("项目文件夹名")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "使用此文件夹" }));
-    expect(onConfirm).toHaveBeenCalledWith(
-      "D:\\Games",
-      "apocalypse-demo",
-    );
+    expect(onConfirm).toHaveBeenCalledWith("D:\\Games", "apocalypse-demo");
     expect(screen.getByText("Agent 已收到位置，正在继续现有项目。")).toBeTruthy();
   });
 
@@ -1020,9 +1051,7 @@ describe("PublicProgressRow", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "选择文件夹" }));
     await waitFor(() => {
-      expect(
-        screen.getByText(/将创建到：\/Users\/denny\/projects\/harness-demo/),
-      ).toBeTruthy();
+      expect(screen.getByText(/将创建到：\/Users\/denny\/projects\/harness-demo/)).toBeTruthy();
     });
     expect(screen.queryByText(/projects\\harness-demo/)).toBeNull();
   });
@@ -1063,9 +1092,7 @@ describe("PublicProgressRow", () => {
       />,
     );
 
-    expect(
-      screen.getByText(/将使用：F:\\projects\\jurassic-park-escape/),
-    ).toBeTruthy();
+    expect(screen.getByText(/将使用：F:\\projects\\jurassic-park-escape/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "使用此文件夹" }));
     expect(onConfirm).toHaveBeenCalledWith(
       "F:\\projects\\jurassic-park-escape",

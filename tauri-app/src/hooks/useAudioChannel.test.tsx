@@ -15,9 +15,7 @@ describe("useAudioChannel disabled mode", () => {
     const websocket = vi.fn();
     vi.stubGlobal("WebSocket", websocket);
 
-    const { result } = renderHook(() =>
-      useAudioChannel(8100, "secret", false),
-    );
+    const { result } = renderHook(() => useAudioChannel(8100, "secret", false));
 
     expect(websocket).not.toHaveBeenCalled();
     expect(result.current.state).toBe("disconnected");

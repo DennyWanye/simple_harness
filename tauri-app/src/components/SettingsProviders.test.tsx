@@ -61,10 +61,7 @@ const sample_providers: Provider[] = [
 
 describe("SettingsProviders — render helpers", () => {
   it("test_renders_provider_list — sorts providers by priority for display", () => {
-    const ordered = sortProvidersForDisplay([
-      sample_providers[1],
-      sample_providers[0],
-    ]);
+    const ordered = sortProvidersForDisplay([sample_providers[1], sample_providers[0]]);
     expect(ordered.map((p) => p.id)).toEqual(["relay", "ollama"]);
     expect(ordered).toHaveLength(2);
   });

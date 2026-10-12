@@ -24,13 +24,20 @@ function live(event_id: string, stream_epoch: string, live_seq: number): RunEven
 
 describe("run event ordering domains", () => {
   it("keeps hydrated durable progress independent from live token ordering", () => {
-    let durableState = reduceDurableRunEvent(EMPTY_DURABLE_RUN_STATE, durable("accepted", 1, "accepted"));
+    let durableState = reduceDurableRunEvent(
+      EMPTY_DURABLE_RUN_STATE,
+      durable("accepted", 1, "accepted"),
+    );
     let liveState = reduceLiveStreamEvent(EMPTY_LIVE_RUN_STATE, live("a-1", "epoch-a", 1));
     liveState = reduceLiveStreamEvent(liveState, live("a-2", "epoch-a", 2));
     durableState = reduceDurableRunEvent(durableState, durable("progress", 2));
     durableState = reduceDurableRunEvent(durableState, durable("final", 3, "final"));
 
-    expect(durableState.events.map((event) => event.event_id)).toEqual(["accepted", "progress", "final"]);
+    expect(durableState.events.map((event) => event.event_id)).toEqual([
+      "accepted",
+      "progress",
+      "final",
+    ]);
     expect(liveState.events.map((event) => event.event_id)).toEqual(["a-1", "a-2"]);
   });
 

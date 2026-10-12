@@ -122,10 +122,7 @@ const ArtifactRow: React.FC<{ entry: ArtifactListEntry }> = ({ entry }) => {
   const pending = current?.status === "pending";
 
   return (
-    <li
-      data-testid="artifact-item"
-      style={{ ...cardStyle, listStyle: "none" }}
-    >
+    <li data-testid="artifact-item" style={{ ...cardStyle, listStyle: "none" }}>
       <div
         data-testid="artifact-name"
         style={{

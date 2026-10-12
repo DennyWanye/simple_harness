@@ -51,33 +51,19 @@ describe("companion identity bridge", () => {
   });
 
   it("retries only transient trusted-auth convergence failures", async () => {
-    const { isTransientIdentityBindError } = await import(
-      "./companionIdentityBridge"
-    );
+    const { isTransientIdentityBindError } = await import("./companionIdentityBridge");
     expect(isTransientIdentityBindError("auth_snapshot_mismatch")).toBe(true);
     // relay 专属的两个瞬时码随 relay 一并移除，后端不再产出——不应再被当作可重试。
-    expect(
-      isTransientIdentityBindError("trusted_relay_identity_unavailable"),
-    ).toBe(false);
-    expect(
-      isTransientIdentityBindError("trusted_relay_access_token_missing"),
-    ).toBe(false);
+    expect(isTransientIdentityBindError("trusted_relay_identity_unavailable")).toBe(false);
+    expect(isTransientIdentityBindError("trusted_relay_access_token_missing")).toBe(false);
     expect(isTransientIdentityBindError("invalid_signature")).toBe(false);
     expect(isTransientIdentityBindError(undefined)).toBe(false);
   });
 
   it("backs trusted identity retries off to the relay cooldown scale", async () => {
-    const { identityBindRetryDelayMs } = await import(
-      "./companionIdentityBridge"
-    );
+    const { identityBindRetryDelayMs } = await import("./companionIdentityBridge");
     expect([0, 1, 2, 3, 4, 5, 20].map(identityBindRetryDelayMs)).toEqual([
-      1_000,
-      2_000,
-      4_000,
-      8_000,
-      16_000,
-      30_000,
-      30_000,
+      1_000, 2_000, 4_000, 8_000, 16_000, 30_000, 30_000,
     ]);
   });
 });

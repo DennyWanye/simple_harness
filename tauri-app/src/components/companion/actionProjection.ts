@@ -16,8 +16,10 @@ export function shouldRefreshCompanionProjection(message: unknown): boolean {
     type?: unknown;
     payload?: { code?: unknown };
   };
-  return source.type === "companion_control_rechallenge" &&
-    source.payload?.code === "companion_detail_changed";
+  return (
+    source.type === "companion_control_rechallenge" &&
+    source.payload?.code === "companion_detail_changed"
+  );
 }
 
 export function resolveCompanionDetailSelection(
@@ -25,14 +27,8 @@ export function resolveCompanionDetailSelection(
   currentEvents: CompanionEvent[],
 ): CompanionEvent | null {
   if (!selected) return null;
-  const current = currentEvents.find(
-    (event) => event.event_id === selected.event_id,
-  );
-  if (
-    !current ||
-    current.tombstone === true ||
-    !current.notification.detail_ref
-  ) {
+  const current = currentEvents.find((event) => event.event_id === selected.event_id);
+  if (!current || current.tombstone === true || !current.notification.detail_ref) {
     return null;
   }
   return current;
@@ -92,9 +88,10 @@ export function companionActionCommand(
         decision_version: decision.decision_version,
         expires_at: decision.expires_at,
         allow: allow === true,
-        activation_risk_ack: allow === true && decision.candidate_code_digest
-          ? "persistent_local_code_no_os_sandbox"
-          : "none",
+        activation_risk_ack:
+          allow === true && decision.candidate_code_digest
+            ? "persistent_local_code_no_os_sandbox"
+            : "none",
       },
     };
   }

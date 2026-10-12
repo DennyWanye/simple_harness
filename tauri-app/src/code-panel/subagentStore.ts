@@ -62,12 +62,9 @@ export const useSubagentStore = create<SubagentState>((set) => ({
     set((s) => {
       // 只覆盖事件实际携带的数值字段（旧后端不推 → 不动旧值，保持 0 缺省）。
       const next: SubagentMetrics = { ...s.metrics };
-      if (typeof m.peak_concurrent === "number")
-        next.peak_concurrent = m.peak_concurrent;
-      if (typeof m.total_queued === "number")
-        next.total_queued = m.total_queued;
-      if (typeof m.total_rejected === "number")
-        next.total_rejected = m.total_rejected;
+      if (typeof m.peak_concurrent === "number") next.peak_concurrent = m.peak_concurrent;
+      if (typeof m.total_queued === "number") next.total_queued = m.total_queued;
+      if (typeof m.total_rejected === "number") next.total_rejected = m.total_rejected;
       return { metrics: next };
     }),
   upsert: (p) =>

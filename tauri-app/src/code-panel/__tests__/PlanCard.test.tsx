@@ -26,9 +26,9 @@ describe("PlanCard", () => {
       />,
     );
 
-    expect(
-      screen.getByTestId("plan-authorization-state").textContent,
-    ).toContain("Manual · 等待一次授权");
+    expect(screen.getByTestId("plan-authorization-state").textContent).toContain(
+      "Manual · 等待一次授权",
+    );
     expect(screen.getByTestId("plan-target-directory").textContent).toContain(
       "F:/workspace/project",
     );
@@ -49,9 +49,7 @@ describe("PlanCard", () => {
       />,
     );
 
-    expect(
-      screen.getByTestId("plan-authorization-state").textContent,
-    ).toContain("Auto · 自动执行");
+    expect(screen.getByTestId("plan-authorization-state").textContent).toContain("Auto · 自动执行");
     expect(screen.queryByTestId("plan-confirm-bar")).toBeNull();
   });
 });

@@ -11,7 +11,5 @@
  * 8100 — identical to the previous hard-coded behaviour.
  */
 export const BACKEND_PORT: number =
-  Number(
-    (import.meta as ImportMeta & { env?: Record<string, string> }).env
-      ?.VITE_BACKEND_PORT,
-  ) || 8100;
+  Number((import.meta as ImportMeta & { env?: Record<string, string> }).env?.VITE_BACKEND_PORT) ||
+  8100;

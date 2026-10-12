@@ -37,22 +37,14 @@ describe("T4-1/T4-2/T4-5 · stepsForEdition", () => {
   it("edition 形参不再分支 —— 任何值都返回完整三步", () => {
     for (const e of ["relay", "null", "whatever", undefined]) {
       const steps = stepsForEdition(e);
-      expect(steps.map((s) => s.id)).toEqual([
-        "welcome",
-        "connectModel",
-        "ready",
-      ]);
+      expect(steps.map((s) => s.id)).toEqual(["welcome", "connectModel", "ready"]);
     }
   });
 
   it("manual edition → 3 steps incl. connectModel (regression)", () => {
     const steps = stepsForEdition("manual");
     expect(steps).toHaveLength(3);
-    expect(steps.map((s) => s.id)).toEqual([
-      "welcome",
-      "connectModel",
-      "ready",
-    ]);
+    expect(steps.map((s) => s.id)).toEqual(["welcome", "connectModel", "ready"]);
   });
 
   it("undefined edition defaults to the 3-step manual list", () => {

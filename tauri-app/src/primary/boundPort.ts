@@ -14,10 +14,16 @@ export function boundPrimaryPort(channel: ControlChannel): PrimaryPort {
       let active = true;
       queueMicrotask(() => {
         // Read at delivery time so a disconnect/unbind cannot replay an old lease.
-        const bound = channel.state === "connected" ? channel.getLatestMessage("companion_profile_bound") : null;
+        const bound =
+          channel.state === "connected"
+            ? channel.getLatestMessage("companion_profile_bound")
+            : null;
         if (active && bound) listener(bound);
       });
-      return () => { active = false; off(); };
+      return () => {
+        active = false;
+        off();
+      };
     },
   };
 }

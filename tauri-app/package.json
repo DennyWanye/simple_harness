@@ -13,7 +13,9 @@
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "format": "npx --yes prettier@3.3.3 --write \"src/**/*.{ts,tsx}\"",
+    "format:check": "npx --yes prettier@3.3.3 --check \"src/**/*.{ts,tsx}\""
   },
   "dependencies": {
     "@chenglou/pretext": "^0.0.6",

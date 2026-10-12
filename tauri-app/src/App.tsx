@@ -158,7 +158,7 @@ function App() {
         setBootError("Backend returned an empty SHARED_SECRET");
         setBootState("failed");
       } catch (e) {
-        const msg = typeof e === "string" ? e : (e as Error)?.message ?? String(e);
+        const msg = typeof e === "string" ? e : ((e as Error)?.message ?? String(e));
         console.warn("[bootstrap] start_backend failed:", msg);
         // A dev hot-reload or a duplicate WebView bootstrap can race with an
         // already-running child. If Rust has published a secret, that child
@@ -261,7 +261,7 @@ function App() {
       setSecret(nextSecret);
       void refreshSecret();
     } catch (e) {
-      const msg = typeof e === "string" ? e : (e as Error)?.message ?? String(e);
+      const msg = typeof e === "string" ? e : ((e as Error)?.message ?? String(e));
       setRuntimeBackendError(msg);
     }
   }, [refreshSecret]);
@@ -297,34 +297,36 @@ function App() {
   // S12: react to supervisor events — on crash, clear the secret so any
   // active WebSockets see a reconnect cue; on restarted, poll for the
   // new secret and let the WS hooks re-handshake.
-  const handleBackendLifecycle = useCallback((kind: Lifecycle) => {
-    if (kind === "crashed") {
-      setSecret("");
-    } else if (kind === "restarted") {
-      setRuntimeBackendError(null);
-      void refreshSecret();
-    } else if (kind === "dead") {
-      console.warn("[backend] supervisor gave up — manual restart required");
-      setSecret("");
-      // Runtime recovery stays inside the workbench. ChatView remains visible
-      // with its disconnected status/retry and Sidebar keeps the worst-state
-      // badge instead of being hidden behind the initial-boot overlay.
-      (async () => {
-        const core = await import("@tauri-apps/api/core").catch(() => null);
-        let msg =
-          "Backend supervisor gave up after repeated crashes. 请打开日志目录排查。";
-        if (core) {
-          try {
-            const cached = await core.invoke<string | null>("get_startup_error");
-            if (cached) msg = cached;
-          } catch {
-            /* ignore */
+  const handleBackendLifecycle = useCallback(
+    (kind: Lifecycle) => {
+      if (kind === "crashed") {
+        setSecret("");
+      } else if (kind === "restarted") {
+        setRuntimeBackendError(null);
+        void refreshSecret();
+      } else if (kind === "dead") {
+        console.warn("[backend] supervisor gave up — manual restart required");
+        setSecret("");
+        // Runtime recovery stays inside the workbench. ChatView remains visible
+        // with its disconnected status/retry and Sidebar keeps the worst-state
+        // badge instead of being hidden behind the initial-boot overlay.
+        (async () => {
+          const core = await import("@tauri-apps/api/core").catch(() => null);
+          let msg = "Backend supervisor gave up after repeated crashes. 请打开日志目录排查。";
+          if (core) {
+            try {
+              const cached = await core.invoke<string | null>("get_startup_error");
+              if (cached) msg = cached;
+            } catch {
+              /* ignore */
+            }
           }
-        }
-        setRuntimeBackendError(msg);
-      })();
-    }
-  }, [refreshSecret]);
+          setRuntimeBackendError(msg);
+        })();
+      }
+    },
+    [refreshSecret],
+  );
   useBackendLifecycle(handleBackendLifecycle);
 
   // Autostart toggle (enable run-on-login via plugin-autostart).
@@ -368,8 +370,11 @@ function App() {
   // 独家负责，不需要前端冗余写盘。
 
   // Control channel (text chat + interrupt)
-  const { state, lastMessage, getChannel: getControlChannel } =
-    useControlChannel(BACKEND_PORT, secret);
+  const {
+    state,
+    lastMessage,
+    getChannel: getControlChannel,
+  } = useControlChannel(BACKEND_PORT, secret);
 
   // The main Tauri window is the only renderer allowed to bind the current
   // human identity. The shared secret opens the socket; the first privileged
@@ -388,11 +393,7 @@ function App() {
     let disposed = false;
 
     const scheduleTransientBindRetry = () => {
-      if (
-        disposed ||
-        bindRetryTimer !== null ||
-        bindRetryAttempts >= 10
-      ) {
+      if (disposed || bindRetryTimer !== null || bindRetryAttempts >= 10) {
         return;
       }
       const delayMs = identityBindRetryDelayMs(bindRetryAttempts);
@@ -439,26 +440,12 @@ function App() {
       };
       const payload = message.payload ?? {};
       if (message.type === "companion_control_challenge") {
-        const connectionId = String(
-          payload.connection_id ?? payload.connectionId ?? "",
-        );
-        const controlEpoch = String(
-          payload.control_epoch ?? payload.controlEpoch ?? "",
-        );
+        const connectionId = String(payload.connection_id ?? payload.connectionId ?? "");
+        const controlEpoch = String(payload.control_epoch ?? payload.controlEpoch ?? "");
         const rawChallenge = String(payload.challenge ?? "");
-        const requestSeq = String(
-          payload.request_seq ?? payload.requestSeq ?? "",
-        );
-        const bindingEpoch = String(
-          payload.binding_epoch ?? payload.bindingEpoch ?? "",
-        );
-        if (
-          connectionId &&
-          controlEpoch &&
-          rawChallenge &&
-          requestSeq &&
-          bindingEpoch
-        ) {
+        const requestSeq = String(payload.request_seq ?? payload.requestSeq ?? "");
+        const bindingEpoch = String(payload.binding_epoch ?? payload.bindingEpoch ?? "");
+        if (connectionId && controlEpoch && rawChallenge && requestSeq && bindingEpoch) {
           challenge = {
             connectionId,
             controlEpoch,
@@ -478,14 +465,10 @@ function App() {
         challenge = {
           ...challenge,
           requestSeq: String(
-            payload.next_request_seq ??
-              payload.nextRequestSeq ??
-              BigInt(challenge.requestSeq) + 1n,
+            payload.next_request_seq ?? payload.nextRequestSeq ?? BigInt(challenge.requestSeq) + 1n,
           ),
           bindingEpoch: String(
-            payload.binding_epoch ??
-              payload.bindingEpoch ??
-              challenge.bindingEpoch,
+            payload.binding_epoch ?? payload.bindingEpoch ?? challenge.bindingEpoch,
           ),
         };
         bindInFlight = false;
@@ -518,9 +501,7 @@ function App() {
       }
     };
     const offMessage = channel.onMessage(handleIdentityMessage);
-    const pendingIdentityChallenge = channel.getLatestMessage(
-      "companion_control_challenge",
-    );
+    const pendingIdentityChallenge = channel.getLatestMessage("companion_control_challenge");
     if (pendingIdentityChallenge) {
       handleIdentityMessage(pendingIdentityChallenge);
     }
@@ -616,8 +597,7 @@ function App() {
   // The permission popup has one owner: ChatView.  App keeps the shared
   // channel for settings/skills and the distinct external-wait surfaces,
   // but must not subscribe to permission_request a second time.
-  const permissionChannel =
-    state === "connected" ? getControlChannel() : null;
+  const permissionChannel = state === "connected" ? getControlChannel() : null;
   const { current: externalWaitCurrent, complete: completeExternalWait } =
     useExternalWaitRequests(permissionChannel);
   const { current: clarificationCurrent, resolve: resolveClarification } =
@@ -695,28 +675,19 @@ function App() {
             selectedRunId === runId ||
             Boolean(
               selectedProjection &&
-                ["completed", "failed", "cancelled"].includes(
-                  selectedProjection.status,
-                ),
+                ["completed", "failed", "cancelled"].includes(selectedProjection.status),
             );
           useSessionsStore.getState().upsert_run_projection(sid, runId, {
             task_scope_id: String(p.task_scope_id || ""),
             request_id: requestId || undefined,
             turn_id: String(p.turn_id || "") || undefined,
-            conversation_boundary_ref:
-              String(p.conversation_boundary_ref || "") || undefined,
+            conversation_boundary_ref: String(p.conversation_boundary_ref || "") || undefined,
             conversation_boundary_version:
               typeof p.conversation_boundary_version === "number"
                 ? p.conversation_boundary_version
                 : undefined,
-            version:
-              typeof p.projection_version === "number"
-                ? p.projection_version
-                : 0,
-            status:
-              (lastMessage as any).type === "chat_v2_run_reserved"
-                ? "starting"
-                : "running",
+            version: typeof p.projection_version === "number" ? p.projection_version : 0,
+            status: (lastMessage as any).type === "chat_v2_run_reserved" ? "starting" : "running",
             inflight: true,
             ui_state: shouldSelect ? "open" : "background",
           });
@@ -729,35 +700,23 @@ function App() {
       case "chat_v2_final": {
         if (!isActivePayload) break;
         const finalPayload = (lastMessage as any).payload || {};
-        const finalSid = String(
-          finalPayload.session_id || activeSidRef.current,
-        );
+        const finalSid = String(finalPayload.session_id || activeSidRef.current);
         const finalRunId = String(finalPayload.run_id || "").trim();
         if (finalRunId) {
-          useSessionsStore
-            .getState()
-            .upsert_run_projection(finalSid, finalRunId, {
-              task_scope_id: String(finalPayload.task_scope_id || ""),
-              status: "completed",
-              inflight: false,
-            });
+          useSessionsStore.getState().upsert_run_projection(finalSid, finalRunId, {
+            task_scope_id: String(finalPayload.task_scope_id || ""),
+            status: "completed",
+            inflight: false,
+          });
         }
         break;
       }
       case "session_messages_error": {
         const p: any = (lastMessage as any).payload || {};
-        if (
-          p.session_id &&
-          String(p.session_id) !== activeSidRef.current
-        ) break;
+        if (p.session_id && String(p.session_id) !== activeSidRef.current) break;
         // Keep the last known view instead of replacing it with stale or
         // empty data. The user can retry once the projection gate recovers.
-        setPetError(
-          String(
-            p.error ||
-              "会话记录暂时无法确认是最新状态，请稍后重试。",
-          ),
-        );
+        setPetError(String(p.error || "会话记录暂时无法确认是最新状态，请稍后重试。"));
         break;
       }
       case "chat_v2_error": {
@@ -766,13 +725,11 @@ function App() {
         const errorSid = String(p.session_id || activeSidRef.current);
         const errorRunId = String(p.run_id || "").trim();
         if (errorRunId) {
-          useSessionsStore
-            .getState()
-            .upsert_run_projection(errorSid, errorRunId, {
-              task_scope_id: String(p.task_scope_id || ""),
-              status: "failed",
-              inflight: false,
-            });
+          useSessionsStore.getState().upsert_run_projection(errorSid, errorRunId, {
+            task_scope_id: String(p.task_scope_id || ""),
+            status: "failed",
+            inflight: false,
+          });
         }
         // P4-S22 fix: render whatever the backend sent — `error`
         // (catch-all path), `detail` (AgentLoop ErrorEvent), or `reason`.
@@ -824,7 +781,6 @@ function App() {
   // handleBubbleClickBackground（原消息面板打开命令的最后前端调用点，随 WB-2 移除）
   // 随桌宠删除；supervisor_alert 的 store 缓存链路保留（见上方 switch）。
 
-
   return (
     <div
       style={{
@@ -837,108 +793,101 @@ function App() {
         overflow: "hidden",
       }}
     >
-
       {/* T6 — 工作台壳：Sidebar 240px + 内容区。view state 在 App 层
           （D2），视图 props 走显式合同（见 WorkbenchShell 文件头）。
           petError 横幅插槽由 banner prop 承接（T4 搬迁落位）。 */}
       <MissionsChannelContext.Provider value={permissionChannel}>
-      <WorkbenchShell
-        view={view}
-        onViewChange={setView}
-        connectionState={state}
-        banner={
-          runtimeBackendError ? (
-            <RuntimeBackendBanner
-              message={runtimeBackendError}
-              onRetry={() => void handleRuntimeBackendRetry()}
-              onOpenLogDir={() => void handleBootOpenLog()}
-              onDismiss={() => setRuntimeBackendError(null)}
-            />
-          ) : petError ? (
-            // T4 搬迁：原桌宠列顶部错误条 → WorkbenchShell 顶部横幅插槽
-            // （bannerStyle("error")，主题单源；用户手动 ✕ 关闭不自动消失）。
-            <div
-              role="alert"
-              style={{
-                ...bannerStyle("error"),
-                display: "flex",
-                alignItems: "flex-start",
-                gap: 6,
-                borderRadius: 0,
-                maxHeight: 60,
-                overflowY: "auto",
-              }}
-            >
-              <span style={{ flexShrink: 0 }}>⚠</span>
-              <span
-                data-bp-selectable=""
+        <WorkbenchShell
+          view={view}
+          onViewChange={setView}
+          connectionState={state}
+          banner={
+            runtimeBackendError ? (
+              <RuntimeBackendBanner
+                message={runtimeBackendError}
+                onRetry={() => void handleRuntimeBackendRetry()}
+                onOpenLogDir={() => void handleBootOpenLog()}
+                onDismiss={() => setRuntimeBackendError(null)}
+              />
+            ) : petError ? (
+              // T4 搬迁：原桌宠列顶部错误条 → WorkbenchShell 顶部横幅插槽
+              // （bannerStyle("error")，主题单源；用户手动 ✕ 关闭不自动消失）。
+              <div
+                role="alert"
                 style={{
-                  flex: 1,
-                  wordBreak: "break-word",
-                  whiteSpace: "pre-wrap",
+                  ...bannerStyle("error"),
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: 6,
+                  borderRadius: 0,
+                  maxHeight: 60,
+                  overflowY: "auto",
                 }}
               >
-                {petError}
-              </span>
-              <button
-                type="button"
-                onClick={() => setPetError(null)}
-                title="关闭"
-                aria-label="关闭错误提示"
-                style={{
-                  flexShrink: 0,
-                  background: "transparent",
-                  border: "none",
-                  color: "inherit",
-                  cursor: "pointer",
-                  fontSize: 13,
-                  lineHeight: 1,
-                  padding: "0 2px",
-                }}
-              >
-                ✕
-              </button>
-            </div>
-          ) : undefined
-        }
-        chatProps={{ activeSid, secret, onSwitchSid: switchActiveSid }}
-        primaryChannel={getControlChannel()}
-        routeKind={routeKind}
-        moreActions={{
-          onTrace: () => setTraceOpen(true),
-          onFeedback: () => setFeedbackOpen(true),
-        }}
-        skillsProps={{
-          channel: permissionChannel,
-          sessionId: activeSid || null,
-        }}
-        missionsProps={{ channel: permissionChannel }}
-        settingsProps={{
-          getChannel: getControlChannel,
-          lastMessage,
-          secret,
-          onConfigChanged: () => setRouteKind(null),
-          autostart: {
-            ready: autostart.ready,
-            enabled: autostart.enabled,
-            toggle: autostart.toggle,
-          },
-        }}
-      />
+                <span style={{ flexShrink: 0 }}>⚠</span>
+                <span
+                  data-bp-selectable=""
+                  style={{
+                    flex: 1,
+                    wordBreak: "break-word",
+                    whiteSpace: "pre-wrap",
+                  }}
+                >
+                  {petError}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setPetError(null)}
+                  title="关闭"
+                  aria-label="关闭错误提示"
+                  style={{
+                    flexShrink: 0,
+                    background: "transparent",
+                    border: "none",
+                    color: "inherit",
+                    cursor: "pointer",
+                    fontSize: 13,
+                    lineHeight: 1,
+                    padding: "0 2px",
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
+            ) : undefined
+          }
+          chatProps={{ activeSid, secret, onSwitchSid: switchActiveSid }}
+          primaryChannel={getControlChannel()}
+          routeKind={routeKind}
+          moreActions={{
+            onTrace: () => setTraceOpen(true),
+            onFeedback: () => setFeedbackOpen(true),
+          }}
+          skillsProps={{
+            channel: permissionChannel,
+            sessionId: activeSid || null,
+          }}
+          missionsProps={{ channel: permissionChannel }}
+          settingsProps={{
+            getChannel: getControlChannel,
+            lastMessage,
+            secret,
+            onConfigChanged: () => setRouteKind(null),
+            autostart: {
+              ready: autostart.ready,
+              enabled: autostart.enabled,
+              toggle: autostart.toggle,
+            },
+          }}
+        />
       </MissionsChannelContext.Provider>
 
-      <ExternalWaitDialog
-        request={externalWaitCurrent}
-        onComplete={completeExternalWait}
-      />
+      <ExternalWaitDialog request={externalWaitCurrent} onComplete={completeExternalWait} />
       <ProtectedPathCard queue={protectedPathQueue} onDecide={decideProtectedPath} />
       {/* WI-TG-2 — 审批聚合视图。BC：默认 enabled={false} → 不渲染，
           现有单弹窗路径不受影响。要开聚合 UX 把 prop 翻成 true。 */}
       <ApprovalCenterPanel channel={permissionChannel} enabled={false} />
-      <ClarificationDialog
-        current={clarificationCurrent}
-        onResolve={resolveClarification}
-      />
+      <ClarificationDialog current={clarificationCurrent} onResolve={resolveClarification} />
 
       {/* T4：PetDebugOverlay / PetSupervisorBubble / PetCelebrationBubble /
           PetDNDBadge / DialogBar / UserBubble 桌宠覆盖层全部删除
@@ -948,7 +897,6 @@ function App() {
           页面化为 SkillsView（T10 实装；互跳本地化在视图内部）。 */}
 
       {/* Text input and the single Realtime call control live in ChatView. */}
-
 
       {/* T13：Toolbar 退役（入口迁移矩阵）——记忆/Trace/反馈/账户入口
           移侧栏「更多」折叠组；设置/能力中心入口=侧栏导航项（T6 起）；

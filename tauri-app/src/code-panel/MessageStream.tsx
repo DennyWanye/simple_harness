@@ -42,10 +42,7 @@ export function MessageStream({ messages }: Props) {
   const empty = messages.length === 0;
 
   // Stable id for virtuoso; falls back to index if id missing.
-  const item_key = useMemo(
-    () => (idx: number) => messages[idx]?.id ?? String(idx),
-    [messages],
-  );
+  const item_key = useMemo(() => (idx: number) => messages[idx]?.id ?? String(idx), [messages]);
 
   if (empty) {
     return (

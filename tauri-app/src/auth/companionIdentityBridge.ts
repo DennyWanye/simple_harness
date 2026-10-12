@@ -22,15 +22,10 @@ export interface CompanionIdentityBind {
   credential: WindowControlCredential;
 }
 
-const TRANSIENT_IDENTITY_BIND_ERRORS = new Set([
-  "auth_snapshot_mismatch",
-]);
+const TRANSIENT_IDENTITY_BIND_ERRORS = new Set(["auth_snapshot_mismatch"]);
 
 export function isTransientIdentityBindError(code: unknown): boolean {
-  return (
-    typeof code === "string" &&
-    TRANSIENT_IDENTITY_BIND_ERRORS.has(code)
-  );
+  return typeof code === "string" && TRANSIENT_IDENTITY_BIND_ERRORS.has(code);
 }
 
 export function identityBindRetryDelayMs(attempt: number): number {

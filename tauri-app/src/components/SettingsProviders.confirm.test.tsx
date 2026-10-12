@@ -41,27 +41,30 @@ describe("SettingsProviders delete confirmation", () => {
     render(
       <SettingsProviders
         getChannel={() => channel as unknown as ControlChannel}
-        lastMessage={{
-          type: "providers_changed",
-          payload: { providers: [provider] },
-        } as unknown as IncomingMessage}
+        lastMessage={
+          {
+            type: "providers_changed",
+            payload: { providers: [provider] },
+          } as unknown as IncomingMessage
+        }
       />,
     );
 
     fireEvent.click(await screen.findByTestId("provider-delete-btn-delete-fixture"));
     const dialog = screen.getByRole("dialog", { name: "删除 Provider" });
     expect(dialog.textContent).toContain("Delete Fixture");
-    expect(channel.sent.some((message) => message.type === "settings_providers_remove")).toBe(false);
+    expect(channel.sent.some((message) => message.type === "settings_providers_remove")).toBe(
+      false,
+    );
 
     fireEvent.click(within(dialog).getByRole("button", { name: "取消" }));
     expect(screen.queryByRole("dialog", { name: "删除 Provider" })).toBeNull();
 
     fireEvent.click(screen.getByTestId("provider-delete-btn-delete-fixture"));
     fireEvent.click(
-      within(screen.getByRole("dialog", { name: "删除 Provider" })).getByRole(
-        "button",
-        { name: "删除" },
-      ),
+      within(screen.getByRole("dialog", { name: "删除 Provider" })).getByRole("button", {
+        name: "删除",
+      }),
     );
     await waitFor(() =>
       expect(
@@ -111,10 +114,12 @@ describe("SettingsProviders delete confirmation", () => {
     render(
       <SettingsProviders
         getChannel={() => channel as unknown as ControlChannel}
-        lastMessage={{
-          type: "providers_changed",
-          payload: { providers: [provider] },
-        } as unknown as IncomingMessage}
+        lastMessage={
+          {
+            type: "providers_changed",
+            payload: { providers: [provider] },
+          } as unknown as IncomingMessage
+        }
       />,
     );
 
@@ -150,21 +155,20 @@ describe("SettingsProviders delete confirmation", () => {
     fireEvent.click(within(dialog).getByTestId("provider-save-button"));
     expect(screen.getByRole("dialog", { name: "编辑 provider" })).not.toBeNull();
     expect(
-      (within(dialog).getByRole("button", { name: "保存中…" }) as HTMLButtonElement)
-        .disabled,
+      (within(dialog).getByRole("button", { name: "保存中…" }) as HTMLButtonElement).disabled,
     ).toBe(true);
 
     view.rerender(
       <SettingsProviders
         getChannel={() => channel as unknown as ControlChannel}
-        lastMessage={{
-          type: "settings_providers_updated",
-          payload: { provider },
-        } as unknown as IncomingMessage}
+        lastMessage={
+          {
+            type: "settings_providers_updated",
+            payload: { provider },
+          } as unknown as IncomingMessage
+        }
       />,
     );
-    await waitFor(() =>
-      expect(screen.queryByRole("dialog", { name: "编辑 provider" })).toBeNull(),
-    );
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "编辑 provider" })).toBeNull());
   });
 });

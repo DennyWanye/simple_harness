@@ -89,11 +89,7 @@ export function encodeControlBody(value: CanonicalJson): Uint8Array {
     return concat(Uint8Array.of(4), u32(bytes.length), bytes);
   }
   if (Array.isArray(value)) {
-    return concat(
-      Uint8Array.of(5),
-      u32(value.length),
-      ...value.map(encodeControlBody),
-    );
+    return concat(Uint8Array.of(5), u32(value.length), ...value.map(encodeControlBody));
   }
   if (typeof value === "object") {
     const entries = Object.entries(value).map(([key, item]) => ({
@@ -112,10 +108,7 @@ export function encodeControlBody(value: CanonicalJson): Uint8Array {
     return concat(
       Uint8Array.of(6),
       u32(entries.length),
-      ...entries.flatMap(({ key, item }) => [
-        encodeControlBody(key),
-        encodeControlBody(item),
-      ]),
+      ...entries.flatMap(({ key, item }) => [encodeControlBody(key), encodeControlBody(item)]),
     );
   }
   throw new CanonicalCommandError("unsupported_body_type");

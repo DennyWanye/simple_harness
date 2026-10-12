@@ -38,16 +38,42 @@ export function RunList({ runs, selectedRunId, onSelect }: Props) {
             borderColor: selectedRunId === run.run_id ? "rgba(56,189,248,0.32)" : "transparent",
           }}
         >
-          <span style={{ width: 8, height: 8, borderRadius: "50%", background: statusColor[run.status] ?? "#94a3b8" }} />
+          <span
+            style={{
+              width: 8,
+              height: 8,
+              borderRadius: "50%",
+              background: statusColor[run.status] ?? "#94a3b8",
+            }}
+          />
           <span style={{ minWidth: 0, flex: 1, textAlign: "left" }}>
-            <strong style={{ display: "block", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            <strong
+              style={{
+                display: "block",
+                fontSize: 12,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
               {run.workflow_name}
             </strong>
-            <span style={{ display: "block", fontSize: 10, color: "#94a3b8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            <span
+              style={{
+                display: "block",
+                fontSize: 10,
+                color: "#94a3b8",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
               {run.run_id.slice(0, 12)} · v{run.workflow_version}
             </span>
           </span>
-          <span style={{ fontSize: 10, color: statusColor[run.status] ?? "#94a3b8" }}>{run.status}</span>
+          <span style={{ fontSize: 10, color: statusColor[run.status] ?? "#94a3b8" }}>
+            {run.status}
+          </span>
         </button>
       ))}
     </div>
@@ -67,4 +93,9 @@ const rowStyle: React.CSSProperties = {
   cursor: "pointer",
   background: "transparent",
 };
-const emptyStyle: React.CSSProperties = { padding: 20, textAlign: "center", color: "#64748b", fontSize: 12 };
+const emptyStyle: React.CSSProperties = {
+  padding: 20,
+  textAlign: "center",
+  color: "#64748b",
+  fontSize: 12,
+};

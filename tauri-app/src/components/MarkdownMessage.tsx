@@ -55,21 +55,13 @@ export function MarkdownMessage({ children }: { children: string }) {
         code: ({ inline, className, children }: any) => {
           const match = /language-(\w+)/.exec(className || "");
           if (!inline && match) {
-            return (
-              <CodeBlock language={match[1]}>
-                {String(children).replace(/\n$/, "")}
-              </CodeBlock>
-            );
+            return <CodeBlock language={match[1]}>{String(children).replace(/\n$/, "")}</CodeBlock>;
           }
           return <InlineCode>{children}</InlineCode>;
         },
         p: ({ children }: any) => <p style={{ margin: "4px 0" }}>{children}</p>,
-        ul: ({ children }: any) => (
-          <ul style={{ margin: "6px 0", paddingLeft: 22 }}>{children}</ul>
-        ),
-        ol: ({ children }: any) => (
-          <ol style={{ margin: "6px 0", paddingLeft: 22 }}>{children}</ol>
-        ),
+        ul: ({ children }: any) => <ul style={{ margin: "6px 0", paddingLeft: 22 }}>{children}</ul>,
+        ol: ({ children }: any) => <ol style={{ margin: "6px 0", paddingLeft: 22 }}>{children}</ol>,
         // GFM 表格：深色主题描边 + 横向滚动（宽表不撑爆气泡）。
         table: ({ children }: any) => (
           <div style={{ overflowX: "auto", margin: "8px 0" }}>
@@ -130,12 +122,7 @@ export function MarkdownMessage({ children }: { children: string }) {
             );
           }
           return (
-            <a
-              href={url}
-              target="_blank"
-              rel="noreferrer noopener"
-              style={{ color: "#67e8f9" }}
-            >
+            <a href={url} target="_blank" rel="noreferrer noopener" style={{ color: "#67e8f9" }}>
               {children}
             </a>
           );

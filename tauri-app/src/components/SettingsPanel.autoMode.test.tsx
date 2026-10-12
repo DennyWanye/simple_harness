@@ -11,11 +11,7 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import {
-  AutoModeToggle,
-  buildAutoModeSetMessage,
-  readAutoModePolicy,
-} from "./SettingsPanel";
+import { AutoModeToggle, buildAutoModeSetMessage, readAutoModePolicy } from "./SettingsPanel";
 import type { ControlMessage, IncomingMessage } from "../types/messages";
 import type { ControlChannel, ConnectionState } from "../ws/ControlChannel";
 
@@ -51,10 +47,7 @@ class FakeControlChannel {
   }
 }
 
-function policyResponse(
-  mode: "auto" | "manual",
-  generation: number,
-): IncomingMessage {
+function policyResponse(mode: "auto" | "manual", generation: number): IncomingMessage {
   return {
     type: "permission_auto_mode_response",
     payload: {
@@ -68,9 +61,7 @@ function policyResponse(
 }
 
 function renderToggle(channel: FakeControlChannel) {
-  render(
-    <AutoModeToggle getChannel={() => channel as unknown as ControlChannel} />,
-  );
+  render(<AutoModeToggle getChannel={() => channel as unknown as ControlChannel} />);
   return screen.getByTestId("permission-auto-mode") as HTMLInputElement;
 }
 
@@ -89,12 +80,8 @@ describe("AutoModeToggle（MM-D4）", () => {
 
     expect(box.disabled).toBe(true);
     expect(box.checked).toBe(false);
-    expect(
-      screen.getByTestId("permission-auto-mode-status").textContent,
-    ).toBe("正在读取授权策略…");
-    expect(channel.sent.map((m) => m.type)).toEqual([
-      "permission_auto_mode_get",
-    ]);
+    expect(screen.getByTestId("permission-auto-mode-status").textContent).toBe("正在读取授权策略…");
+    expect(channel.sent.map((m) => m.type)).toEqual(["permission_auto_mode_get"]);
   });
 
   it("后端 auto → 勾选；后端 manual → 不勾选（渲染代次与来源）", () => {
@@ -104,15 +91,15 @@ describe("AutoModeToggle（MM-D4）", () => {
     act(() => channel.emit(policyResponse("auto", 0)));
     expect(box.checked).toBe(true);
     expect(box.disabled).toBe(false);
-    expect(
-      screen.getByTestId("permission-auto-mode-status").textContent,
-    ).toBe("当前：自动（策略代次 0 · factory_default）");
+    expect(screen.getByTestId("permission-auto-mode-status").textContent).toBe(
+      "当前：自动（策略代次 0 · factory_default）",
+    );
 
     act(() => channel.emit(policyResponse("manual", 1)));
     expect(box.checked).toBe(false);
-    expect(
-      screen.getByTestId("permission-auto-mode-status").textContent,
-    ).toBe("当前：手动（策略代次 1 · user_explicit）");
+    expect(screen.getByTestId("permission-auto-mode-status").textContent).toBe(
+      "当前：手动（策略代次 1 · user_explicit）",
+    );
   });
 
   it("localStorage 缓存与后端相反时，以后端为准（缓存不再作为初始值）", () => {
@@ -137,20 +124,16 @@ describe("AutoModeToggle（MM-D4）", () => {
 
     fireEvent.click(box); // auto → 用户要 manual
     const written = channel.sent.at(-1)!;
-    expect(written).toEqual(
-      buildAutoModeSetMessage(false, String(written.request_id)),
-    );
+    expect(written).toEqual(buildAutoModeSetMessage(false, String(written.request_id)));
     expect(written.payload).toEqual({ enabled: false });
-    expect(
-      screen.getByTestId("permission-auto-mode-status").textContent,
-    ).toBe("保存中…");
+    expect(screen.getByTestId("permission-auto-mode-status").textContent).toBe("保存中…");
 
     // 写入后重新渲染的是落盘状态 + 代次，而不是乐观值。
     act(() => channel.emit(policyResponse("manual", 1)));
     expect(box.checked).toBe(false);
-    expect(
-      screen.getByTestId("permission-auto-mode-status").textContent,
-    ).toBe("当前：手动（策略代次 1 · user_explicit）");
+    expect(screen.getByTestId("permission-auto-mode-status").textContent).toBe(
+      "当前：手动（策略代次 1 · user_explicit）",
+    );
 
     fireEvent.click(box); // manual → 用户要 auto
     expect(channel.sent.at(-1)!.payload).toEqual({ enabled: true });
@@ -178,10 +161,7 @@ describe("AutoModeToggle（MM-D4）", () => {
 
   it("重挂载时先用通道缓存的最新快照渲染", () => {
     const channel = new FakeControlChannel();
-    channel.latest.set(
-      "permission_auto_mode_response",
-      policyResponse("manual", 4),
-    );
+    channel.latest.set("permission_auto_mode_response", policyResponse("manual", 4));
     const box = renderToggle(channel);
 
     expect(box.disabled).toBe(false);

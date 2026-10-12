@@ -77,9 +77,10 @@ export function ContextRing({
   const r = (size - RING_STROKE) / 2;
   const circ = 2 * Math.PI * r;
   const dash = (pct / 100) * circ;
-  const sweetPct = measured && snapshot && snapshot.effective_ceiling
-    ? Math.max(0, Math.min(100, (snapshot.recall_sweet / snapshot.effective_ceiling) * 100))
-    : 0;
+  const sweetPct =
+    measured && snapshot && snapshot.effective_ceiling
+      ? Math.max(0, Math.min(100, (snapshot.recall_sweet / snapshot.effective_ceiling) * 100))
+      : 0;
   // Tick position on the ring (in arc length, rotated -90° so 0% sits at 12).
   const tickAngle = (sweetPct / 100) * 2 * Math.PI - Math.PI / 2;
   const tickX = cx + r * Math.cos(tickAngle);
@@ -97,7 +98,8 @@ export function ContextRing({
       `${fmtTokens(snapshot.prompt_tokens)} / ${fmtTokens(snapshot.effective_ceiling)} (${pct.toFixed(1)}%)`,
       snapshot.cached_tokens > 0 ? `cache: ${fmtTokens(snapshot.cached_tokens)}` : null,
       snapshot.prompt_tokens >= snapshot.compact_at && snapshot.compact_at > 0
-        ? `⚠ 已超过 compact 阈值 (${fmtTokens(snapshot.compact_at)})` : null,
+        ? `⚠ 已超过 compact 阈值 (${fmtTokens(snapshot.compact_at)})`
+        : null,
     ].filter(Boolean);
     return parts.join(" · ");
   }, [displayState, measured, snapshot, pct]);
@@ -127,14 +129,18 @@ export function ContextRing({
     >
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden>
         <circle
-          cx={cx} cy={cy} r={r}
+          cx={cx}
+          cy={cy}
+          r={r}
           fill="none"
           stroke="#374151"
           strokeOpacity={0.35}
           strokeWidth={RING_STROKE}
         />
         <circle
-          cx={cx} cy={cy} r={r}
+          cx={cx}
+          cy={cy}
+          r={r}
           fill="none"
           stroke={color}
           strokeWidth={RING_STROKE}
@@ -143,9 +149,7 @@ export function ContextRing({
           strokeLinecap="round"
           style={{ transition: "stroke-dasharray 360ms ease-out, stroke 240ms ease" }}
         />
-        {sweetPct > 0 && sweetPct < 100 && (
-          <circle cx={tickX} cy={tickY} r={1.2} fill="#fbbf24" />
-        )}
+        {sweetPct > 0 && sweetPct < 100 && <circle cx={tickX} cy={tickY} r={1.2} fill="#fbbf24" />}
       </svg>
       {showLabel && (
         <span style={{ fontSize: 10.5, color: "#94a3b8", lineHeight: 1, whiteSpace: "nowrap" }}>

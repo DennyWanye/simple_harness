@@ -4,15 +4,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { ControlChannel } from "../ws/ControlChannel";
-import type {
-  ClarificationRequest,
-  ClarificationResponse,
-} from "../types/skillPlatform";
+import type { ClarificationRequest, ClarificationResponse } from "../types/skillPlatform";
 
 export function useClarificationRequests(channel: ControlChannel | null) {
-  const [current, setCurrent] = useState<
-    ClarificationRequest["payload"] | null
-  >(null);
+  const [current, setCurrent] = useState<ClarificationRequest["payload"] | null>(null);
   const queueRef = useRef<ClarificationRequest["payload"][]>([]);
 
   const showNext = useCallback(() => {
@@ -50,7 +45,7 @@ export function useClarificationRequests(channel: ControlChannel | null) {
       channel.send(reply as unknown as { type: string; payload?: Record<string, unknown> });
       showNext();
     },
-    [current, channel, showNext]
+    [current, channel, showNext],
   );
 
   return { current, resolve } as const;

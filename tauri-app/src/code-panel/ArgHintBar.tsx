@@ -51,11 +51,7 @@ export function ArgHintBar({
       {argSchema.map((arg, i) => {
         const filled = i < currentArgIndex;
         const current = i === currentArgIndex;
-        const color = current
-          ? "#60a5fa"
-          : filled
-            ? "#475569"
-            : "#94a3b8";
+        const color = current ? "#60a5fa" : filled ? "#475569" : "#94a3b8";
         const decoration = filled ? "line-through" : "none";
         return (
           <span
@@ -70,9 +66,7 @@ export function ArgHintBar({
           >
             {arg.required ? `<${arg.name}>` : `[${arg.name}]`}
             {arg.description && current && (
-              <span style={{ opacity: 0.6, marginLeft: 4, fontSize: 10 }}>
-                — {arg.description}
-              </span>
+              <span style={{ opacity: 0.6, marginLeft: 4, fontSize: 10 }}>— {arg.description}</span>
             )}
           </span>
         );

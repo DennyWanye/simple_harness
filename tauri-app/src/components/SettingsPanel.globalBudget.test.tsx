@@ -12,13 +12,28 @@ class FakeControlChannel {
   state: ConnectionState = "connected";
   sent: ControlMessage[] = [];
   private listeners = new Set<(message: IncomingMessage) => void>();
-  send(message: ControlMessage) { this.sent.push(message); return true; }
-  onMessage(listener: (message: IncomingMessage) => void) { this.listeners.add(listener); return () => this.listeners.delete(listener); }
-  onStateChange() { return () => undefined; }
-  emit(message: IncomingMessage) { for (const listener of this.listeners) listener(message); }
+  send(message: ControlMessage) {
+    this.sent.push(message);
+    return true;
+  }
+  onMessage(listener: (message: IncomingMessage) => void) {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+  onStateChange() {
+    return () => undefined;
+  }
+  emit(message: IncomingMessage) {
+    for (const listener of this.listeners) listener(message);
+  }
 }
 
-const status = (pool: Record<string, unknown>) => ({ available: true, state: "available", reason: null, global_budget: pool });
+const status = (pool: Record<string, unknown>) => ({
+  available: true,
+  state: "available",
+  reason: null,
+  global_budget: pool,
+});
 
 describe("GlobalBudgetSection", () => {
   afterEach(cleanup);
@@ -42,8 +57,24 @@ describe("GlobalBudgetSection", () => {
     await waitFor(() => expect(channel.sent).toHaveLength(1));
     expect(channel.sent[0].type).toBe("orchestration_status");
     const id = String(channel.sent[0].request_id);
-    act(() => { channel.emit({ type: "orchestration_status_response", request_id: id, payload: { ok: true, request_id: id,
-      data: status({ month: "2026-10", max_tokens: 2_000_000_000, opened: false, used_tokens: 0, reserved_tokens: 0, remaining_tokens: 2_000_000_000 }) } } as unknown as IncomingMessage); });
+    act(() => {
+      channel.emit({
+        type: "orchestration_status_response",
+        request_id: id,
+        payload: {
+          ok: true,
+          request_id: id,
+          data: status({
+            month: "2026-10",
+            max_tokens: 2_000_000_000,
+            opened: false,
+            used_tokens: 0,
+            reserved_tokens: 0,
+            remaining_tokens: 2_000_000_000,
+          }),
+        },
+      } as unknown as IncomingMessage);
+    });
     const text = screen.getByTestId("global-budget-status").textContent ?? "";
     expect(text).toContain("2026 年 10 月：上限 20 亿");
     expect(text).toContain("本月还没有任务用过");
@@ -59,8 +90,24 @@ describe("GlobalBudgetSection", () => {
     render(<GlobalBudgetSection getChannel={() => channel as unknown as ControlChannel} />);
     await waitFor(() => expect(channel.sent).toHaveLength(1));
     const id = String(channel.sent[0].request_id);
-    act(() => { channel.emit({ type: "orchestration_status_response", request_id: id, payload: { ok: true, request_id: id,
-      data: status({ month: "2026-11", max_tokens: 2_000_000_000, opened: true, used_tokens: 1_310_000, reserved_tokens: 3_000_000, remaining_tokens: 1_995_690_000 }) } } as unknown as IncomingMessage); });
+    act(() => {
+      channel.emit({
+        type: "orchestration_status_response",
+        request_id: id,
+        payload: {
+          ok: true,
+          request_id: id,
+          data: status({
+            month: "2026-11",
+            max_tokens: 2_000_000_000,
+            opened: true,
+            used_tokens: 1_310_000,
+            reserved_tokens: 3_000_000,
+            remaining_tokens: 1_995_690_000,
+          }),
+        },
+      } as unknown as IncomingMessage);
+    });
     const text = screen.getByTestId("global-budget-status").textContent ?? "";
     expect(text).toContain("2026 年 11 月");
     expect(text).toContain("已用 131 万");

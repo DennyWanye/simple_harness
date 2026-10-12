@@ -223,10 +223,7 @@ export class RealtimeChannel {
     try {
       if (payload instanceof ArrayBuffer) {
         const frame = decodeOutputPcm(payload);
-        if (
-          frame.generation !== this.generation ||
-          frame.sequence !== this.outputSequence + 1
-        ) {
+        if (frame.generation !== this.generation || frame.sequence !== this.outputSequence + 1) {
           throw new Error("pcm_sequence_invalid");
         }
         this.outputSequence = frame.sequence;
@@ -243,11 +240,7 @@ export class RealtimeChannel {
         throw new Error("realtime_message_invalid");
       }
       const message = JSON.parse(payload) as RealtimeServerMessage;
-      if (
-        !message ||
-        typeof message.type !== "string" ||
-        message.generation !== this.generation
-      ) {
+      if (!message || typeof message.type !== "string" || message.generation !== this.generation) {
         throw new Error("realtime_message_invalid");
       }
       if (message.type === "call.ready") {

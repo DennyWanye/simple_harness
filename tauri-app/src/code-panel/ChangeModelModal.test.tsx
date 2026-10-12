@@ -43,13 +43,7 @@ describe("ChangeModelModal model filtering", () => {
   afterEach(() => cleanup());
 
   it("refreshes the authoritative model catalog whenever the picker opens", () => {
-    render(
-      <ChangeModelModal
-        session_id="session-1"
-        current_model={null}
-        onClose={vi.fn()}
-      />,
-    );
+    render(<ChangeModelModal session_id="session-1" current_model={null} onClose={vi.fn()} />);
 
     expect(controlWS.send).toHaveBeenCalledWith({ type: "models_list" });
   });
@@ -69,18 +63,11 @@ describe("ChangeModelModal model filtering", () => {
       "gpt-5.6-sol",
     );
 
-    render(
-      <ChangeModelModal
-        session_id="session-1"
-        current_model={null}
-        onClose={vi.fn()}
-      />,
-    );
+    render(<ChangeModelModal session_id="session-1" current_model={null} onClose={vi.fn()} />);
 
-    expect(
-      (screen.getByRole("combobox", { name: "上下文窗口" }) as HTMLSelectElement)
-        .value,
-    ).toBe("256000");
+    expect((screen.getByRole("combobox", { name: "上下文窗口" }) as HTMLSelectElement).value).toBe(
+      "256000",
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "保存" }));
     expect(controlWS.send).toHaveBeenCalledWith({
@@ -94,13 +81,7 @@ describe("ChangeModelModal model filtering", () => {
   });
 
   it("filters the dropdown immediately by model id or display label", () => {
-    render(
-      <ChangeModelModal
-        session_id="session-1"
-        current_model={null}
-        onClose={vi.fn()}
-      />,
-    );
+    render(<ChangeModelModal session_id="session-1" current_model={null} onClose={vi.fn()} />);
 
     const filter = screen.getByRole("searchbox", { name: "筛选模型" });
     const select = screen.getByRole("combobox", { name: "模型" });
@@ -128,22 +109,18 @@ describe("ChangeModelModal model filtering", () => {
   });
 
   it("shows an explicit empty state when no model matches", () => {
-    render(
-      <ChangeModelModal
-        session_id="session-1"
-        current_model={null}
-        onClose={vi.fn()}
-      />,
-    );
+    render(<ChangeModelModal session_id="session-1" current_model={null} onClose={vi.fn()} />);
 
     fireEvent.change(screen.getByRole("searchbox", { name: "筛选模型" }), {
       target: { value: "does-not-exist" },
     });
 
     expect(
-      (screen.getByRole("option", {
-        name: "没有匹配的模型",
-      }) as HTMLOptionElement).disabled,
+      (
+        screen.getByRole("option", {
+          name: "没有匹配的模型",
+        }) as HTMLOptionElement
+      ).disabled,
     ).toBe(true);
   });
 });

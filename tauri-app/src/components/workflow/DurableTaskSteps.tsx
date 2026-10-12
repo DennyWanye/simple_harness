@@ -40,25 +40,29 @@ function CompactTool({ tool }: { tool: WorkflowTaskTool }) {
   const [resultExpanded, setResultExpanded] = useState(false);
   const detailId = `task-tool-${tool.id.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
   const resultId = `${detailId}-result`;
-  const status = tool.status === "cancelled"
-    ? "已取消"
-    : tool.status === "rejected"
-    ? "已拒绝"
-    : tool.ok === false
-    ? "失败"
-    : tool.ok === true
-    ? "完成"
-    : "执行中";
+  const status =
+    tool.status === "cancelled"
+      ? "已取消"
+      : tool.status === "rejected"
+        ? "已拒绝"
+        : tool.ok === false
+          ? "失败"
+          : tool.ok === true
+            ? "完成"
+            : "执行中";
   const color = ["cancelled", "rejected"].includes(tool.status)
     ? "#94a3b8"
     : tool.ok === false
-    ? "#f87171"
-    : tool.ok === true
-    ? "#34d399"
-    : "#38bdf8";
-  const duration = typeof tool.durationMs === "number"
-    ? tool.durationMs < 1000 ? `${Math.round(tool.durationMs)}ms` : `${(tool.durationMs / 1000).toFixed(1)}s`
-    : null;
+      ? "#f87171"
+      : tool.ok === true
+        ? "#34d399"
+        : "#38bdf8";
+  const duration =
+    typeof tool.durationMs === "number"
+      ? tool.durationMs < 1000
+        ? `${Math.round(tool.durationMs)}ms`
+        : `${(tool.durationMs / 1000).toFixed(1)}s`
+      : null;
 
   return (
     <div data-testid={`compact-tool-${tool.id}`} style={toolRowStyle}>
@@ -67,12 +71,14 @@ function CompactTool({ tool }: { tool: WorkflowTaskTool }) {
           {["cancelled", "rejected"].includes(tool.status)
             ? "–"
             : tool.ok === false
-            ? "×"
-            : tool.ok === true
-            ? "✓"
-            : "●"}
+              ? "×"
+              : tool.ok === true
+                ? "✓"
+                : "●"}
         </span>
-        <span title={toolSummary(tool)} style={toolNameStyle}>{toolSummary(tool)}</span>
+        <span title={toolSummary(tool)} style={toolNameStyle}>
+          {toolSummary(tool)}
+        </span>
         {duration ? <span style={metaStyle}>{duration}</span> : null}
         <span style={{ color, fontSize: 10 }}>{status}</span>
         <button
@@ -81,11 +87,14 @@ function CompactTool({ tool }: { tool: WorkflowTaskTool }) {
           aria-controls={detailId}
           aria-label={`${inputExpanded ? "收起" : "查看"}${toolSummary(tool)}输入`}
           onClick={() => {
-            if (!inputExpanded && tool.args === undefined) requestHarnessPublicToolDetails(tool.detailRef);
+            if (!inputExpanded && tool.args === undefined)
+              requestHarnessPublicToolDetails(tool.detailRef);
             setInputExpanded((value) => !value);
           }}
           style={toolMiniButtonStyle}
-        >输入 {inputExpanded ? "▴" : "▾"}</button>
+        >
+          输入 {inputExpanded ? "▴" : "▾"}
+        </button>
         {tool.resultAvailable ? (
           <button
             type="button"
@@ -93,27 +102,34 @@ function CompactTool({ tool }: { tool: WorkflowTaskTool }) {
             aria-controls={resultId}
             aria-label={`${resultExpanded ? "收起" : "查看"}${toolSummary(tool)}结果`}
             onClick={() => {
-              if (!resultExpanded && tool.result === undefined) requestHarnessPublicToolDetails(tool.detailRef);
+              if (!resultExpanded && tool.result === undefined)
+                requestHarnessPublicToolDetails(tool.detailRef);
               setResultExpanded((value) => !value);
             }}
             style={toolMiniButtonStyle}
-          >结果 {resultExpanded ? "▴" : "▾"}</button>
+          >
+            结果 {resultExpanded ? "▴" : "▾"}
+          </button>
         ) : null}
       </div>
       {inputExpanded ? (
         <div id={detailId} style={toolDetailStyle}>
           <strong>输入</strong>
-          {tool.args !== undefined
-            ? <pre style={preStyle}>{compactValue(tool.args)}</pre>
-            : <span>{tool.unavailableReason ?? "正在读取可公开的工具输入…"}</span>}
+          {tool.args !== undefined ? (
+            <pre style={preStyle}>{compactValue(tool.args)}</pre>
+          ) : (
+            <span>{tool.unavailableReason ?? "正在读取可公开的工具输入…"}</span>
+          )}
         </div>
       ) : null}
       {resultExpanded ? (
         <div id={resultId} style={toolDetailStyle}>
           <strong>结果</strong>
-          {tool.result !== undefined
-            ? <pre style={preStyle}>{compactValue(tool.result)}</pre>
-            : <span>{tool.unavailableReason ?? "正在读取可公开的工具结果…"}</span>}
+          {tool.result !== undefined ? (
+            <pre style={preStyle}>{compactValue(tool.result)}</pre>
+          ) : (
+            <span>{tool.unavailableReason ?? "正在读取可公开的工具结果…"}</span>
+          )}
           {tool.truncated ? <small>内容较长，已安全截断</small> : null}
         </div>
       ) : null}
@@ -125,7 +141,8 @@ export function DurableTaskSteps({ trace }: { trace: WorkflowTaskTrace }) {
   const [stepOverrides, setStepOverrides] = useState<Record<string, boolean>>({});
 
   const completed = trace.steps.filter((step) =>
-    ["completed", "completed_with_recovery", "succeeded"].includes(step.status)).length;
+    ["completed", "completed_with_recovery", "succeeded"].includes(step.status),
+  ).length;
   const current = trace.steps.find((step) => step.current);
 
   return (
@@ -135,9 +152,15 @@ export function DurableTaskSteps({ trace }: { trace: WorkflowTaskTrace }) {
       style={containerStyle}
     >
       <div style={overviewStyle}>
-        <span>{completed}/{trace.steps.length} 步</span>
+        <span>
+          {completed}/{trace.steps.length} 步
+        </span>
         <span title={current?.title}>
-          {current ? `当前：${current.title}` : trace.projectionComplete ? "步骤记录" : "正在加载步骤记录"}
+          {current
+            ? `当前：${current.title}`
+            : trace.projectionComplete
+              ? "步骤记录"
+              : "正在加载步骤记录"}
         </span>
       </div>
       <div style={stepsStyle}>
@@ -152,10 +175,12 @@ export function DurableTaskSteps({ trace }: { trace: WorkflowTaskTrace }) {
                 aria-expanded={expanded}
                 aria-controls={detailsId}
                 aria-label={`第 ${step.index + 1} 步，${step.title}，${tone.label}`}
-                onClick={() => setStepOverrides((current) => ({
-                  ...current,
-                  [step.id]: !(current[step.id] ?? step.current),
-                }))}
+                onClick={() =>
+                  setStepOverrides((current) => ({
+                    ...current,
+                    [step.id]: !(current[step.id] ?? step.current),
+                  }))
+                }
                 style={stepButtonStyle}
               >
                 <span aria-hidden="true" style={{ ...stepIconStyle, color: tone.color }}>
@@ -168,29 +193,45 @@ export function DurableTaskSteps({ trace }: { trace: WorkflowTaskTrace }) {
                   <span style={metaStyle}>{step.tools.length} 个工具</span>
                 ) : null}
                 <span style={{ ...metaStyle, color: tone.color }}>{tone.label}</span>
-                <span aria-hidden="true" style={chevronStyle}>{expanded ? "▴" : "▾"}</span>
+                <span aria-hidden="true" style={chevronStyle}>
+                  {expanded ? "▴" : "▾"}
+                </span>
               </button>
               {expanded ? (
                 <div id={detailsId} style={stepDetailStyle}>
                   {step.messages.map((message, index) => (
-                    <p key={`${step.id}:message:${index}`} style={messageStyle}>{message}</p>
+                    <p key={`${step.id}:message:${index}`} style={messageStyle}>
+                      {message}
+                    </p>
                   ))}
                   {step.substeps.length > 0 ? (
                     <div style={substepsStyle} aria-label={`${step.title}的工作流步骤`}>
                       {step.substeps.map((substep) => {
-                        const substepTone = STEP_TONE[substep.current ? "running" : substep.status] ?? STEP_TONE.pending;
+                        const substepTone =
+                          STEP_TONE[substep.current ? "running" : substep.status] ??
+                          STEP_TONE.pending;
                         return (
-                          <div key={substep.id} style={substepStyle} aria-current={substep.current ? "step" : undefined}>
+                          <div
+                            key={substep.id}
+                            style={substepStyle}
+                            aria-current={substep.current ? "step" : undefined}
+                          >
                             <span style={{ color: substepTone.color }}>{substepTone.icon}</span>
-                            <span>{substep.index + 1}. {substep.label}</span>
+                            <span>
+                              {substep.index + 1}. {substep.label}
+                            </span>
                             <small style={{ color: substepTone.color }}>{substepTone.label}</small>
                           </div>
                         );
                       })}
                     </div>
                   ) : null}
-                  {step.tools.map((tool) => <CompactTool key={tool.id} tool={tool} />)}
-                  {step.messages.length === 0 && step.tools.length === 0 && step.substeps.length === 0 ? (
+                  {step.tools.map((tool) => (
+                    <CompactTool key={tool.id} tool={tool} />
+                  ))}
+                  {step.messages.length === 0 &&
+                  step.tools.length === 0 &&
+                  step.substeps.length === 0 ? (
                     <span style={emptyStyle}>这一步还没有执行记录。</span>
                   ) : null}
                 </div>

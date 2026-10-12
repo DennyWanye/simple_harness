@@ -3,9 +3,7 @@ export type WorkflowFinalAssistant = {
   text: string;
 };
 
-export function workflowFinalAssistant(
-  message: unknown,
-): WorkflowFinalAssistant | null {
+export function workflowFinalAssistant(message: unknown): WorkflowFinalAssistant | null {
   if (!message || typeof message !== "object") return null;
   const envelope = message as Record<string, unknown>;
   if (envelope.type !== "workflow_event") return null;
@@ -17,9 +15,8 @@ export function workflowFinalAssistant(
   if (!outer || typeof outer !== "object") return null;
   const outerRecord = outer as Record<string, unknown>;
   const nested = outerRecord.payload;
-  const nestedRecord = nested && typeof nested === "object"
-    ? nested as Record<string, unknown>
-    : {};
+  const nestedRecord =
+    nested && typeof nested === "object" ? (nested as Record<string, unknown>) : {};
   const text = String(nestedRecord.text || outerRecord.text || "").trim();
   if (!text) return null;
   return {

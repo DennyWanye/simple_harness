@@ -54,13 +54,11 @@ describe("Companion projection reducer", () => {
       profile_generation: 3,
     });
     expect(useSessionsStore.getState().reduce_companion_event(event())).toBe(true);
+    expect(useSessionsStore.getState().sessions.default.companion_events).toHaveLength(1);
     expect(
-      useSessionsStore.getState().sessions.default.companion_events,
-    ).toHaveLength(1);
-    expect(
-      useSessionsStore.getState().reduce_companion_event(
-        event({ profile_generation: 2, event_id: "old-event" }),
-      ),
+      useSessionsStore
+        .getState()
+        .reduce_companion_event(event({ profile_generation: 2, event_id: "old-event" })),
     ).toBe(false);
   });
 
@@ -73,9 +71,7 @@ describe("Companion projection reducer", () => {
     expect(useSessionsStore.getState().reduce_companion_event(event())).toBe(true);
     expect(useSessionsStore.getState().reduce_companion_event(event())).toBe(true);
     expect(
-      useSessionsStore.getState().reduce_companion_event(
-        event({ seq: 2, route_version: 0 }),
-      ),
+      useSessionsStore.getState().reduce_companion_event(event({ seq: 2, route_version: 0 })),
     ).toBe(false);
     expect(
       useSessionsStore.getState().reduce_companion_event(
@@ -90,8 +86,7 @@ describe("Companion projection reducer", () => {
       ),
     ).toBe(true);
     expect(
-      (useSessionsStore.getState().sessions.default.companion_events ?? [])[0]
-        .notification.summary,
+      (useSessionsStore.getState().sessions.default.companion_events ?? [])[0].notification.summary,
     ).toBe("新的单调投影");
   });
 
@@ -102,29 +97,34 @@ describe("Companion projection reducer", () => {
       profile_generation: 3,
     });
     expect(useSessionsStore.getState().reduce_companion_event(event())).toBe(true);
-    useSessionsStore.getState().set_companion_detail_cache(
-      "notice-1",
-      { overview: ["stale"] },
-    );
+    useSessionsStore.getState().set_companion_detail_cache("notice-1", { overview: ["stale"] });
 
-    expect(useSessionsStore.getState().reduce_companion_event(event({
-      received_at: Date.now(),
-      notification: {
-        ...event().notification,
-        detail_version: "v2",
-      },
-    }))).toBe(true);
+    expect(
+      useSessionsStore.getState().reduce_companion_event(
+        event({
+          received_at: Date.now(),
+          notification: {
+            ...event().notification,
+            detail_version: "v2",
+          },
+        }),
+      ),
+    ).toBe(true);
     let session = useSessionsStore.getState().sessions.default;
     expect(session.companion_events?.[0].notification.detail_version).toBe("v2");
     expect(session.companion_detail_cache).toEqual({});
 
-    expect(useSessionsStore.getState().reduce_companion_event(event({
-      notification: {
-        ...event().notification,
-        detail_version: "v3",
-        summary: "same-sequence content rewrite must fail",
-      },
-    }))).toBe(false);
+    expect(
+      useSessionsStore.getState().reduce_companion_event(
+        event({
+          notification: {
+            ...event().notification,
+            detail_version: "v3",
+            summary: "same-sequence content rewrite must fail",
+          },
+        }),
+      ),
+    ).toBe(false);
     session = useSessionsStore.getState().sessions.default;
     expect(session.companion_events?.[0].notification.detail_version).toBe("v2");
   });
@@ -139,15 +139,17 @@ describe("Companion projection reducer", () => {
     store.reduce_companion_event(event());
     store.set_companion_detail_cache("notice-1", { secret: "must disappear" });
 
-    expect(useSessionsStore.getState().retract_companion_projection({
-      event_id: "event-1",
-      notification_id: "notice-1",
-      profile_id: "profile-a",
-      profile_generation: 3,
-      session_id: "default",
-      seq: 1,
-      redaction_version: 1,
-    })).toBe(true);
+    expect(
+      useSessionsStore.getState().retract_companion_projection({
+        event_id: "event-1",
+        notification_id: "notice-1",
+        profile_id: "profile-a",
+        profile_generation: 3,
+        session_id: "default",
+        seq: 1,
+        redaction_version: 1,
+      }),
+    ).toBe(true);
 
     const session = useSessionsStore.getState().sessions.default;
     expect((session.companion_events ?? [])[0]).toMatchObject({
@@ -172,31 +174,37 @@ describe("Companion projection reducer", () => {
     store = useSessionsStore.getState();
     store.reduce_companion_event(event());
     store.ensure("main-next");
-    expect(useSessionsStore.getState().reduce_companion_event(event({
-      session_id: "main-next",
-      seq: 2,
-      route_version: 2,
-      notification: {
-        ...event().notification,
-        summary: "已迁移",
-      },
-    }))).toBe(true);
+    expect(
+      useSessionsStore.getState().reduce_companion_event(
+        event({
+          session_id: "main-next",
+          seq: 2,
+          route_version: 2,
+          notification: {
+            ...event().notification,
+            summary: "已迁移",
+          },
+        }),
+      ),
+    ).toBe(true);
 
     let state = useSessionsStore.getState();
     expect(state.sessions.default.companion_events ?? []).toEqual([]);
     expect(state.sessions["main-next"].companion_events).toHaveLength(1);
 
     state.ensure("main-latest");
-    expect(useSessionsStore.getState().retract_companion_projection({
-      event_id: "event-1",
-      notification_id: "notice-1",
-      profile_id: "profile-a",
-      profile_generation: 3,
-      session_id: "main-latest",
-      seq: 2,
-      route_version: 3,
-      redaction_version: 1,
-    })).toBe(true);
+    expect(
+      useSessionsStore.getState().retract_companion_projection({
+        event_id: "event-1",
+        notification_id: "notice-1",
+        profile_id: "profile-a",
+        profile_generation: 3,
+        session_id: "main-latest",
+        seq: 2,
+        route_version: 3,
+        redaction_version: 1,
+      }),
+    ).toBe(true);
 
     state = useSessionsStore.getState();
     expect(state.sessions["main-next"].companion_events ?? []).toEqual([]);
@@ -228,41 +236,26 @@ describe("Companion projection reducer", () => {
     });
 
     const session = useSessionsStore.getState().sessions.default;
-    expect(session.messages.map((message) => message.text)).toContain(
-      "普通聊天必须保留",
-    );
+    expect(session.messages.map((message) => message.text)).toContain("普通聊天必须保留");
     expect(session.companion_events).toEqual([]);
   });
 
   it("keeps provisional streams outside Message history and clears them exactly", () => {
     const store = useSessionsStore.getState();
     store.upsert_companion_provisional("run-1", "inv-1", "epoch-1", "半");
-    useSessionsStore.getState().upsert_companion_provisional(
-      "run-1",
-      "inv-1",
-      "epoch-1",
-      "截",
-    );
-    useSessionsStore.getState().upsert_companion_provisional(
-      "run-1",
-      "inv-2",
-      "epoch-1",
-      "保留",
-    );
+    useSessionsStore.getState().upsert_companion_provisional("run-1", "inv-1", "epoch-1", "截");
+    useSessionsStore.getState().upsert_companion_provisional("run-1", "inv-2", "epoch-1", "保留");
 
     expect(useSessionsStore.getState().sessions.default.messages).toEqual([]);
-    expect(Object.values(
-      useSessionsStore.getState().companion_provisional_streams,
-    )).toEqual(["半截", "保留"]);
+    expect(Object.values(useSessionsStore.getState().companion_provisional_streams)).toEqual([
+      "半截",
+      "保留",
+    ]);
 
-    useSessionsStore.getState().clear_companion_provisional(
-      "run-1",
-      "inv-1",
-      "epoch-1",
-    );
-    expect(Object.values(
-      useSessionsStore.getState().companion_provisional_streams,
-    )).toEqual(["保留"]);
+    useSessionsStore.getState().clear_companion_provisional("run-1", "inv-1", "epoch-1");
+    expect(Object.values(useSessionsStore.getState().companion_provisional_streams)).toEqual([
+      "保留",
+    ]);
     useSessionsStore.getState().clear_companion_provisional();
     expect(useSessionsStore.getState().companion_provisional_streams).toEqual({});
   });

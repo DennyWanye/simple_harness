@@ -15,9 +15,7 @@ import { splitThinkBlocks } from "./MessageBubble";
 
 describe("splitThinkBlocks", () => {
   it("returns single normal segment for plain text", () => {
-    expect(splitThinkBlocks("hello world")).toEqual([
-      { kind: "normal", text: "hello world" },
-    ]);
+    expect(splitThinkBlocks("hello world")).toEqual([{ kind: "normal", text: "hello world" }]);
   });
 
   it("returns empty array for empty string", () => {
@@ -57,9 +55,7 @@ describe("splitThinkBlocks", () => {
   });
 
   it("handles multiple think blocks", () => {
-    const out = splitThinkBlocks(
-      "<think>one</think>between<think>two</think>after",
-    );
+    const out = splitThinkBlocks("<think>one</think>between<think>two</think>after");
     expect(out).toEqual([
       { kind: "think", text: "one", closed: true },
       { kind: "normal", text: "between" },

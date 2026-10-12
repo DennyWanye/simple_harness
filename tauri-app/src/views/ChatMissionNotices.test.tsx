@@ -14,18 +14,47 @@ function fakeChannel() {
   return {
     sent,
     channel: {
-      send: (message: unknown) => { sent.push(message as Sent); return true; },
-      onMessage: (handler: (m: unknown) => void) => { handlers.add(handler); return () => handlers.delete(handler); },
-      onStateChange: (handler: (s: string) => void) => { stateHandlers.add(handler); return () => stateHandlers.delete(handler); },
+      send: (message: unknown) => {
+        sent.push(message as Sent);
+        return true;
+      },
+      onMessage: (handler: (m: unknown) => void) => {
+        handlers.add(handler);
+        return () => handlers.delete(handler);
+      },
+      onStateChange: (handler: (s: string) => void) => {
+        stateHandlers.add(handler);
+        return () => stateHandlers.delete(handler);
+      },
     },
-    push: (message: unknown) => act(() => { handlers.forEach((h) => h(message)); }),
-    connection: (state: string) => act(() => { stateHandlers.forEach((h) => h(state)); }),
+    push: (message: unknown) =>
+      act(() => {
+        handlers.forEach((h) => h(message));
+      }),
+    connection: (state: string) =>
+      act(() => {
+        stateHandlers.forEach((h) => h(state));
+      }),
   };
 }
 
 const NOTICES = [
-  { notice_id: "ev-1", mission_id: "m-1", status: "COMPLETED", status_zh: "已完成", goal: "写 NOTES.md", stop_reason: null },
-  { notice_id: "ev-2", mission_id: "m-2", status: "FAILED", status_zh: "未完成", goal: "发布 README.md", stop_reason: "planning_failed" },
+  {
+    notice_id: "ev-1",
+    mission_id: "m-1",
+    status: "COMPLETED",
+    status_zh: "已完成",
+    goal: "写 NOTES.md",
+    stop_reason: null,
+  },
+  {
+    notice_id: "ev-2",
+    mission_id: "m-2",
+    status: "FAILED",
+    status_zh: "未完成",
+    goal: "发布 README.md",
+    stop_reason: "planning_failed",
+  },
 ];
 
 describe("主对话里的后台任务结束通知", () => {
@@ -38,7 +67,10 @@ describe("主对话里的后台任务结束通知", () => {
       </MissionsChannelContext.Provider>,
     );
     const first = fake.sent.find((m) => m.type === "mission_notices")!;
-    fake.push({ type: "mission_notices_response", payload: { ok: true, request_id: first.request_id, data: NOTICES } });
+    fake.push({
+      type: "mission_notices_response",
+      payload: { ok: true, request_id: first.request_id, data: NOTICES },
+    });
     expect(screen.getByText("后台任务已完成：写 NOTES.md")).toBeTruthy();
     expect(screen.getByText("停止原因：planning_failed")).toBeTruthy();
     const goal = screen.getByText("后台任务已完成：写 NOTES.md");
@@ -49,7 +81,10 @@ describe("主对话里的后台任务结束通知", () => {
     fireEvent.click(screen.getAllByRole("button", { name: "已收到" })[0]);
     const ack = fake.sent.find((m) => m.type === "mission_notice_ack")!;
     expect(ack.payload).toEqual({ notice_id: "ev-1" });
-    fake.push({ type: "mission_notice_ack_response", payload: { ok: true, request_id: ack.request_id, data: {} } });
+    fake.push({
+      type: "mission_notice_ack_response",
+      payload: { ok: true, request_id: ack.request_id, data: {} },
+    });
     expect(screen.queryByText("后台任务已完成：写 NOTES.md")).toBeNull();
     expect(screen.getByText("后台任务未完成：发布 README.md")).toBeTruthy();
 
@@ -65,11 +100,32 @@ describe("主对话里的后台任务结束通知", () => {
       </MissionsChannelContext.Provider>,
     );
     const first = fake.sent.find((m) => m.type === "mission_notices")!;
-    fake.push({ type: "mission_notices_response", payload: { ok: true, request_id: first.request_id, data: [
-      { notice_id: "ev-3", mission_id: "m-3", status: "CANCELLED", status_zh: "已取消", goal: "写周报并发布", unresolved_actions: 1 },
-      { notice_id: "ev-4", mission_id: "m-3", status: "CANCELLED", status_zh: "已取消", goal: "写周报并发布", unresolved_actions: 1,
-        action_settled: { operation: "publish", target: "reports/weekly.md", applied: false } },
-    ] } });
+    fake.push({
+      type: "mission_notices_response",
+      payload: {
+        ok: true,
+        request_id: first.request_id,
+        data: [
+          {
+            notice_id: "ev-3",
+            mission_id: "m-3",
+            status: "CANCELLED",
+            status_zh: "已取消",
+            goal: "写周报并发布",
+            unresolved_actions: 1,
+          },
+          {
+            notice_id: "ev-4",
+            mission_id: "m-3",
+            status: "CANCELLED",
+            status_zh: "已取消",
+            goal: "写周报并发布",
+            unresolved_actions: 1,
+            action_settled: { operation: "publish", target: "reports/weekly.md", applied: false },
+          },
+        ],
+      },
+    });
     expect(screen.getByText("后台任务已取消：写周报并发布")).toBeTruthy();
     expect(screen.getByText("还有 1 个对外操作结果不明，系统会继续核对")).toBeTruthy();
     expect(screen.getByText("后台任务的对外操作有结果了：写周报并发布")).toBeTruthy();
@@ -85,10 +141,16 @@ describe("主对话里的后台任务结束通知", () => {
       </MissionsChannelContext.Provider>,
     );
     const first = fake.sent.find((m) => m.type === "mission_notices")!;
-    fake.push({ type: "mission_notices_response", payload: { ok: true, request_id: first.request_id, data: NOTICES.slice(0, 1) } });
+    fake.push({
+      type: "mission_notices_response",
+      payload: { ok: true, request_id: first.request_id, data: NOTICES.slice(0, 1) },
+    });
     fireEvent.click(screen.getByRole("button", { name: "已收到" }));
     const ack = fake.sent.find((m) => m.type === "mission_notice_ack")!;
-    fake.push({ type: "mission_notice_ack_response", payload: { ok: false, request_id: ack.request_id, error: "没有这条通知" } });
+    fake.push({
+      type: "mission_notice_ack_response",
+      payload: { ok: false, request_id: ack.request_id, error: "没有这条通知" },
+    });
     expect(screen.getByText("后台任务已完成：写 NOTES.md")).toBeTruthy();
     expect(screen.getByRole("alert").textContent).toBe("没有这条通知");
   });
@@ -100,16 +162,26 @@ describe("主对话里的后台任务结束通知", () => {
         <ChatMissionNotices />
       </MissionsChannelContext.Provider>,
     );
-    const many = Array.from({ length: 5 }, (_, i) => ({ ...NOTICES[0], notice_id: `ev-${i}`, goal: `任务 ${i}` }));
+    const many = Array.from({ length: 5 }, (_, i) => ({
+      ...NOTICES[0],
+      notice_id: `ev-${i}`,
+      goal: `任务 ${i}`,
+    }));
     const first = fake.sent.find((m) => m.type === "mission_notices")!;
-    fake.push({ type: "mission_notices_response", payload: { ok: true, request_id: first.request_id, data: many } });
+    fake.push({
+      type: "mission_notices_response",
+      payload: { ok: true, request_id: first.request_id, data: many },
+    });
     expect(screen.queryByText("后台任务已完成：任务 0")).toBeNull();
     expect(screen.getByText("后台任务已完成：任务 4")).toBeTruthy();
     expect(screen.getByText("还有 2 条较早的通知")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "全部已收到" }));
     const ack = fake.sent.find((m) => m.type === "mission_notice_ack")!;
     expect(ack.payload).toEqual({ all: true });
-    fake.push({ type: "mission_notice_ack_response", payload: { ok: true, request_id: ack.request_id, data: { acked: 5 } } });
+    fake.push({
+      type: "mission_notice_ack_response",
+      payload: { ok: true, request_id: ack.request_id, data: { acked: 5 } },
+    });
     expect(screen.queryByText("后台任务已完成：任务 4")).toBeNull();
   });
 
@@ -129,7 +201,10 @@ describe("主对话里的后台任务结束通知", () => {
     expect(pulls.length).toBe(2);
     expect(pulls[1].request_id).not.toBe(pulls[0].request_id);
     // 重连后的应答按新请求号接收
-    fake.push({ type: "mission_notices_response", payload: { ok: true, request_id: pulls[1].request_id, data: NOTICES.slice(0, 1) } });
+    fake.push({
+      type: "mission_notices_response",
+      payload: { ok: true, request_id: pulls[1].request_id, data: NOTICES.slice(0, 1) },
+    });
     expect(screen.getByText("后台任务已完成：写 NOTES.md")).toBeTruthy();
   });
 
@@ -141,16 +216,26 @@ describe("主对话里的后台任务结束通知", () => {
       </MissionsChannelContext.Provider>,
     );
     const first = fake.sent.find((m) => m.type === "mission_notices")!;
-    fake.push({ type: "mission_notices_response", payload: { ok: true, request_id: first.request_id, data: NOTICES } });
+    fake.push({
+      type: "mission_notices_response",
+      payload: { ok: true, request_id: first.request_id, data: NOTICES },
+    });
     fake.push({ type: "mission_changed", payload: { mission_id: "m-1" } });
     const again = fake.sent.filter((m) => m.type === "mission_notices").at(-1)!;
-    fake.push(guardIncoming({ type: "mission_notices_response", payload: { ok: true, request_id: again.request_id,
-      data: { notices: NOTICES } } }));
+    fake.push(
+      guardIncoming({
+        type: "mission_notices_response",
+        payload: { ok: true, request_id: again.request_id, data: { notices: NOTICES } },
+      }),
+    );
     expect(screen.getByText("后台任务已完成：写 NOTES.md")).toBeTruthy();
     expect(screen.getByRole("alert").textContent).toBe(PROTOCOL_ERROR_TEXT + STALE_NOTE);
     fake.push({ type: "mission_changed", payload: { mission_id: "m-1" } });
     const third = fake.sent.filter((m) => m.type === "mission_notices").at(-1)!;
-    fake.push({ type: "mission_notices_response", payload: { ok: true, request_id: third.request_id, data: NOTICES } });
+    fake.push({
+      type: "mission_notices_response",
+      payload: { ok: true, request_id: third.request_id, data: NOTICES },
+    });
     expect(screen.queryByRole("alert")).toBeNull();
   });
 });

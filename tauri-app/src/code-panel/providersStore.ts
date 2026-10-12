@@ -56,9 +56,7 @@ export function effective_provider_model(
   const provider = provider_id
     ? enabled.find((candidate) => candidate.id === provider_id)
     : enabled[0];
-  return String(
-    provider?.default_model || provider?.model || provider?.models?.[0] || "",
-  ).trim();
+  return String(provider?.default_model || provider?.model || provider?.models?.[0] || "").trim();
 }
 
 // --------------------------------------------------------------------
