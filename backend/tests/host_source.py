@@ -33,3 +33,16 @@ def host_source_tree() -> ast.Module:
     for path in _host_files():
         body.extend(ast.parse(path.read_text(encoding="utf-8"), filename=str(path)).body)
     return ast.Module(body=body, type_ignores=[])
+
+
+def host_function_source(name: str) -> str:
+    """返回 main.py 或 host/*.py 里顶层函数 ``name`` 的源码。
+
+    取代"按两个函数头之间截取文本"的写法：函数分到不同文件后，那种截法会截不到。
+    """
+    for path in _host_files():
+        text = path.read_text(encoding="utf-8")
+        for node in ast.parse(text).body:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == name:
+                return ast.get_source_segment(text, node) or ""
+    raise LookupError(f"main 与 host 模块里都没有函数 {name}")

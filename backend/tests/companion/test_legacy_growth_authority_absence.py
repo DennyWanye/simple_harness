@@ -3,6 +3,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from tests.host_source import host_function_source, host_source_text
+
 BACKEND = Path(__file__).resolve().parents[2]
 
 PRODUCTION_AUTHORITY_FILES = (
@@ -172,35 +174,20 @@ def test_legacy_codify_config_is_compatibility_only() -> None:
 
 
 def test_completed_cutover_reconciles_process_local_reminder_registry() -> None:
-    source = _source(BACKEND / "main.py")
-    complete = source[
-        source.index("async def _complete_growth_authority_cutover()") : source.index(
-            "async def _initialize_companion_projection_services()"
-        )
-    ]
+    complete = host_function_source("_complete_growth_authority_cutover")
     assert "GrowthAuthorityPhase.COMPANION" in complete
     assert "companion_reminder_registry_reconciler" in complete
     assert "reconciler()" in complete
 
 
 def test_completed_cutover_restores_reminder_specs_before_harness_recovery() -> None:
-    source = _source(BACKEND / "main.py")
-    initialize = source[
-        source.index("async def _initialize_growth_authority()") : source.index(
-            "async def _complete_growth_authority_cutover()"
-        )
-    ]
+    initialize = host_function_source("_initialize_growth_authority")
     assert 'router.current.phase.value == "companion"' in initialize
     assert "restore_durable_companion_reminder_tools(" in initialize
 
 
 def test_cutover_plan_uses_real_capability_owner_snapshot_without_publish() -> None:
-    source = _source(BACKEND / "main.py")
-    authority = source[
-        source.index("async def _initialize_growth_authority()") : source.index(
-            "async def _complete_growth_authority_cutover()"
-        )
-    ]
+    authority = host_function_source("_initialize_growth_authority")
 
     assert "read_capability_owner_cutover_snapshot(" in authority
     assert "old_binding_generation=capability_snapshot.binding_generation" in authority
@@ -212,7 +199,7 @@ def test_cutover_plan_uses_real_capability_owner_snapshot_without_publish() -> N
 
 
 def test_profile_bind_provisions_owner_inbox_before_identity_broadcast() -> None:
-    source = _source(BACKEND / "main.py")
+    source = host_source_text()
     control = source[source.index('if msg_type == "companion_profile_bind":') :]
     # The first bind branch only records the human-memory control binding;
     # the identity freeze / inbox projection branch is the next one.

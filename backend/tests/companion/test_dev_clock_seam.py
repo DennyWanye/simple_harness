@@ -9,17 +9,11 @@ from deskpet.companion.clock import (
     select_companion_clock,
 )
 
-from tests.host_source import host_source_text
+from tests.host_source import host_function_source
 
 
 def test_production_store_and_scheduler_share_selected_clock() -> None:
-    source = host_source_text()
-    start = source.index("async def _initialize_growth_authority()")
-    end = source.index(
-        "\n\nasync def _initialize_companion_projection_services",
-        start,
-    )
-    composition = source[start:end]
+    composition = host_function_source("_initialize_growth_authority")
     selected = composition.index("companion_clock = select_companion_clock(")
     store = composition.index("store = CompanionStore(")
     assert selected < store
