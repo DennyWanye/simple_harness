@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
+
 from agent.context_messages import ProviderAttemptOptions, context_attempt_scope
 from deskpet.context_os_e2e_hooks import (
     ContextOSE2EHooks,
@@ -22,6 +21,7 @@ from deskpet.tools.capabilities import (
 )
 from deskpet.tools.registry import ToolRegistry
 from deskpet.tools.tool_search import register_capability_bridge_tools
+from tests.host_source import host_source_text
 
 
 def _clear(monkeypatch):
@@ -210,7 +210,7 @@ def test_catalog_unavailable_invalidates_spec_and_advances_revision(deferred):
 
 
 def test_main_wires_hook_without_changing_defaults():
-    source = (Path(__file__).resolve().parents[1] / "main.py").read_text(encoding="utf-8")
+    source = host_source_text()
     assert "ContextOSE2EHooks.from_env()" in source
     assert "set_context_os_e2e_hooks(_context_os_e2e_hooks)" in source
     assert '"ctx-fallback"' in source

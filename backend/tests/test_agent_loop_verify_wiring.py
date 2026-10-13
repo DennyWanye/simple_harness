@@ -135,9 +135,9 @@ def test_receipt_store_load_session_provides_ledger():
 
 def test_main_py_wiring_present():
     """**最终接电证据**: main.py 应有 set_receipt_store_provider 调用。"""
-    main_py = (__import__("pathlib").Path(__file__).parent.parent / "main.py").read_text(
-        encoding="utf-8"
-    )
+    from tests.host_source import host_source_text
+
+    main_py = host_source_text()
     # WI-T2.2 wiring
     assert "set_receipt_store_provider" in main_py
     # WI-T1.1 wiring
