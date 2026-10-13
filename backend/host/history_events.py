@@ -1,0 +1,281 @@
+"""历史事件与伴侣收件箱：工作流与伴侣历史事件附加、伴侣收件箱路由绑定与投影结算"""
+
+from __future__ import annotations
+
+import asyncio
+import uuid
+
+from host.runtime import logger, service_context
+from host.state import host_state
+
+
+async def _attach_workflow_history_events(
+    *,
+    rows: list[dict[str, Any]],
+    messages: list[dict[str, Any]],
+    session_id: str,
+    session_db: Any,
+    workflow_service: Any,
+) -> None:
+    """Attach fenced durable envelopes to SessionDB history messages in place."""
+
+    event_ids = list(
+        dict.fromkeys(
+            str(row.get("workflow_event_id") or "").strip()
+            for row in rows
+            if str(row.get("workflow_event_id") or "").strip()
+        )
+    )
+    if not event_ids or workflow_service is None:
+        return
+    delivery_state = await session_db.get_session_delivery_state(session_id)
+    if delivery_state.get("deleted_at") is not None:
+        return
+
+    # New production rows live only in execution_events.  Hydrate those first
+    # and use the legacy workflow service solely as a compatibility fallback
+    # for old SessionDB references that predate Kernel activation.
+    from deskpet.execution.contracts import EventNotFound
+    from deskpet.workflows.harness_delivery import workflow_event_envelope
+
+    events_by_id: dict[str, dict[str, Any]] = {}
+    missing_event_ids: list[str] = []
+    execution_uow = getattr(workflow_service, "execution_uow", None)
+    for event_id in event_ids:
+        if execution_uow is None:
+            missing_event_ids.append(event_id)
+            continue
+        try:
+            canonical_event = await execution_uow.get_event(event_id)
+        except EventNotFound:
+            missing_event_ids.append(event_id)
+            continue
+        if canonical_event.session_id != session_id:
+            continue
+        envelope = workflow_event_envelope(canonical_event)
+        if envelope.get("event_type") == "workflow.decision":
+            payload = envelope.get("payload")
+            decision_id = str((payload or {}).get("decision_id") or "")
+            if decision_id:
+                decision = await execution_uow.get_decision_projection(
+                    decision_id,
+                    expected_run_id=canonical_event.run_id,
+                    expected_session_id=session_id,
+                )
+                if isinstance(payload, dict):
+                    payload["status"] = decision.status.value
+                    payload["version"] = decision.decision_version
+        events_by_id[event_id] = envelope
+
+    # The service deliberately caps one hydration request at 100 ids.  Chat
+    # sessions can legitimately contain more than that, especially now that a
+    # DeepResearch run publishes one durable event per visible stage.  Hydrate
+    # in bounded batches instead of rejecting the entire session history.
+    hydrated_events: list[dict[str, Any]] = []
+    for offset in range(0, len(missing_event_ids), 100):
+        hydrated_page = await workflow_service.hydrate_session_history_event_ids(
+            session_id,
+            missing_event_ids[offset : offset + 100],
+            current_session_epoch=int(delivery_state.get("epoch", 0)),
+            session_deleted=False,
+        )
+        hydrated_events.extend(hydrated_page.get("events", []))
+    events_by_id.update({str(event.get("event_id") or ""): event for event in hydrated_events})
+    human_store = getattr(workflow_service, "human_store", None)
+    for event in events_by_id.values():
+        if event.get("event_type") != "workflow.decision" or human_store is None:
+            continue
+        payload = event.get("payload")
+        decision_id = str((payload or {}).get("decision_id") or "")
+        if not decision_id:
+            continue
+        decision = await human_store.get_decision(decision_id)
+        if decision is not None and isinstance(payload, dict):
+            run = await workflow_service.run_store.get_run(decision.run_id)
+            payload["status"] = (
+                decision.status.value
+                if run is not None and str(run.get("status") or "") == "waiting"
+                else str((run or {}).get("status") or "unavailable")
+            )
+    for message in messages:
+        event = events_by_id.get(str(message.get("id") or ""))
+        if event is not None:
+            message["workflow_event"] = event
+
+
+async def _attach_companion_history_events(
+    *,
+    rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Apply the current CompanionStore owner overlay before exposing history."""
+
+    if host_state.companion_notification_service is None:
+        return []
+    try:
+        frozen = host_state.companion_identity_gate.freeze()
+    except Exception:
+        return []
+    try:
+        if not host_state.companion_notification_service.history_ready(frozen):
+            await host_state.companion_notification_service.bind_and_drain(frozen)
+        return await host_state.companion_notification_service.visibility.project_history(
+            frozen, rows
+        )
+    except Exception as exc:  # noqa: BLE001
+        # Companion is fail-closed, while the caller still returns ordinary
+        # conversation/workflow messages from SessionDB.
+        logger.warning(
+            "companion_history_overlay_closed",
+            error=type(exc).__name__,
+        )
+        return []
+
+
+async def _bind_companion_inbox_route(
+    session_id: str,
+    frozen_identity: Any,
+    *,
+    create_if_absent: bool,
+) -> bool:
+    """Bind a new empty task session and make it the current profile inbox."""
+
+    session_db = service_context.get("session_db")
+    if session_db is None:
+        return False
+    from deskpet.companion.companion_message_projection import (
+        TrustedCompanionOwner,
+    )
+
+    trusted_owner = TrustedCompanionOwner(
+        profile_id=frozen_identity.owner.profile_id,
+        profile_generation=frozen_identity.owner.profile_generation,
+        binding_epoch=frozen_identity.binding_epoch,
+    )
+    try:
+        if create_if_absent:
+            await session_db.ensure_session(session_id)
+            await session_db.bind_session_owner_if_absent(session_id, trusted_owner)
+        await session_db.set_companion_default_route(
+            trusted_owner.profile_id,
+            trusted_owner.profile_generation,
+            trusted_owner.binding_epoch,
+            session_id,
+        )
+    except RuntimeError as exc:
+        if str(exc) in {
+            "companion_session_missing",
+            "companion_legacy_session_cannot_be_claimed",
+            "companion_route_target_fence_mismatch",
+        }:
+            return False
+        raise
+    if host_state.companion_notification_service is not None:
+        await host_state.companion_notification_service.bind_and_drain(frozen_identity)
+    return True
+
+
+# 2026-09-09 事件 AK：同 userdata 重启后 UI 停在「等待主对话就绪」。
+# 前端唯一的就绪输入是 `companion_profile_bound`
+# （`tauri-app/src/primary/controller.ts:148-158`），而这一帧是在
+# `companion_profile_bind` 处理链**跑完之后**才发的。链上的
+# `_ensure_companion_inbox_route` + `bind_and_drain` 是两个无界 await：
+# 重启时 Host 短时索引重放正以高占空比霸占 SDK 写道（见
+# `deskpet/memory/short_index_worker.py` 事件 AK 注释），它们可以卡任意久，
+# 于是耐久绑定已经是 ready（`profile_bindings.status='ready'`，实测
+# 05:53:37.612Z），UI 却永远收不到就绪帧，也没有任何日志或报错。
+#
+# 就绪信号不能依赖闭合历史投影：身份门已经 bind，绑定行已经 ready，
+# 投影抽干只是补历史。给它一个明确的预算，超时就走既有的失败分支
+# （稳定码 + 日志），**照常发就绪帧**，让 UI 立刻可用；未抽干的通知
+# 由 `CompanionNotificationService.wake_repair` 继续追平。
+COMPANION_BIND_PROJECTION_TIMEOUT_SECONDS = 10.0
+COMPANION_BIND_PROJECTION_TIMEOUT_CODE = "companion_projection_bind_drain_timeout"
+
+
+async def _settle_companion_bind_projection(
+    frozen_identity: Any,
+    *,
+    ensure_route: Any,
+    notification_service: Any,
+    timeout_seconds: float = COMPANION_BIND_PROJECTION_TIMEOUT_SECONDS,
+) -> tuple[str | None, str | None]:
+    """Bounded post-bind projection settle; returns ``(session_id, failure_code)``.
+
+    Never raises: readiness is already durable once the coordinator marked the
+    binding ready, so a slow or missing projection dependency must degrade to a
+    stable code, not to an unbounded wait on the identity socket.
+    """
+
+    try:
+        async with asyncio.timeout(float(timeout_seconds)):
+            session_id = await ensure_route(frozen_identity)
+            if notification_service is not None:
+                await notification_service.bind_and_drain(frozen_identity)
+            return str(session_id), None
+    except TimeoutError:
+        logger.warning(
+            "companion_projection_bind_drain_failed",
+            error="TimeoutError",
+            code=COMPANION_BIND_PROJECTION_TIMEOUT_CODE,
+            timeout_seconds=float(timeout_seconds),
+        )
+        return None, COMPANION_BIND_PROJECTION_TIMEOUT_CODE
+    except Exception as exc:  # noqa: BLE001 - stable public failure projection
+        code = str(getattr(exc, "code", None) or type(exc).__name__)
+        logger.warning(
+            "companion_projection_bind_drain_failed",
+            error=type(exc).__name__,
+            code=code,
+        )
+        return None, code
+
+
+async def _ensure_companion_inbox_route(
+    frozen_identity: Any,
+) -> str:
+    """Return one owner-fenced inbox without claiming legacy history."""
+
+    session_db = service_context.get("session_db")
+    if session_db is None:
+        raise RuntimeError("companion_session_store_unavailable")
+    owner = frozen_identity.owner
+    route = await session_db.get_companion_projection_route(
+        owner.profile_id,
+        owner.profile_generation,
+        frozen_identity.binding_epoch,
+    )
+    if route is not None:
+        session_id = str(route.get("target_session_id") or "")
+        if session_id and await _bind_companion_inbox_route(
+            session_id,
+            frozen_identity,
+            create_if_absent=False,
+        ):
+            return session_id
+    for _attempt in range(3):
+        session_id = str(uuid.uuid4())
+        if await _bind_companion_inbox_route(
+            session_id,
+            frozen_identity,
+            create_if_absent=True,
+        ):
+            return session_id
+    raise RuntimeError("companion_inbox_route_unavailable")
+
+
+def _is_companion_history_session_id(
+    session_id: str,
+) -> bool:
+    """Return whether a session id should be shown in the message panel list."""
+    sid = (session_id or "").strip()
+    # 2026-08-09：原先这里为保留会话 `default` 开了一条白名单。保留会话已移除，
+    # 会话 id 一律是 uuid（或存量 `task-` 前缀），不再需要该特例。
+    # Legacy task ids remain visible so old history can still be renamed,
+    # copied, or deleted. Newly generated task sessions are opaque UUIDs.
+    if sid.startswith("task-"):
+        return True
+    try:
+        uuid.UUID(sid)
+        return True
+    except (TypeError, ValueError, AttributeError):
+        return False

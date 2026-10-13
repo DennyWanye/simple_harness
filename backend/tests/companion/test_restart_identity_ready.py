@@ -19,6 +19,7 @@ import asyncio
 
 import main
 import pytest
+from host import history_events
 
 from tests.host_source import host_source_text
 
@@ -40,7 +41,7 @@ async def test_success_returns_session_id_and_no_failure_code():
             drained.append(identity)
             return True
 
-    session_id, code = await main._settle_companion_bind_projection(
+    session_id, code = await history_events._settle_companion_bind_projection(
         _Identity(), ensure_route=ensure_route, notification_service=Service()
     )
     assert session_id == "inbox-session" and code is None
@@ -56,7 +57,7 @@ async def test_stalled_projection_degrades_to_stable_code_instead_of_hanging():
         pytest.fail("unbounded route resolution must not be awaited to completion")
 
     session_id, code = await asyncio.wait_for(
-        main._settle_companion_bind_projection(
+        history_events._settle_companion_bind_projection(
             _Identity(),
             ensure_route=ensure_route,
             notification_service=None,
@@ -65,7 +66,7 @@ async def test_stalled_projection_degrades_to_stable_code_instead_of_hanging():
         timeout=5,
     )
     assert session_id is None
-    assert code == main.COMPANION_BIND_PROJECTION_TIMEOUT_CODE
+    assert code == history_events.COMPANION_BIND_PROJECTION_TIMEOUT_CODE
 
 
 @pytest.mark.asyncio
@@ -79,14 +80,14 @@ async def test_stalled_history_drain_still_reports_a_code():
         async def bind_and_drain(self, identity):
             await asyncio.sleep(30)
 
-    session_id, code = await main._settle_companion_bind_projection(
+    session_id, code = await history_events._settle_companion_bind_projection(
         _Identity(),
         ensure_route=ensure_route,
         notification_service=Service(),
         timeout_seconds=0.05,
     )
     assert session_id is None
-    assert code == main.COMPANION_BIND_PROJECTION_TIMEOUT_CODE
+    assert code == history_events.COMPANION_BIND_PROJECTION_TIMEOUT_CODE
 
 
 @pytest.mark.asyncio
@@ -97,7 +98,7 @@ async def test_dependency_error_projects_its_stable_code():
     async def ensure_route(identity):
         raise Missing("companion_session_store_unavailable")
 
-    session_id, code = await main._settle_companion_bind_projection(
+    session_id, code = await history_events._settle_companion_bind_projection(
         _Identity(), ensure_route=ensure_route, notification_service=None
     )
     assert session_id is None and code == "companion_session_store_unavailable"
