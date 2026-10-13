@@ -58,6 +58,7 @@ from deskpet.agent.turn_preparer import (
     ProductTurnPreparer,
 )
 from fastapi import (
+    APIRouter,
     FastAPI,
     WebSocket,
     WebSocketDisconnect,
@@ -3192,6 +3193,9 @@ from host.control_connection import (
 # isort: split
 
 
+control_router = APIRouter()
+
+
 async def _cc_ping(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
     """控制消息：ping。"""
     ws = conn.ws
@@ -3713,7 +3717,7 @@ async def _dispatch_control_message(conn: _ControlConnection, raw: dict, msg_typ
     await _cc_unknown(conn, raw, msg_type)
 
 
-@app.websocket("/ws/control")
+@control_router.websocket("/ws/control")
 async def control_channel(ws: WebSocket):
     await ws.accept()
     if not _validate_secret(ws):
@@ -3901,6 +3905,7 @@ async def control_channel(ws: WebSocket):
         logger.info("control channel disconnected", session_id=session_id)
 
 
+app.include_router(control_router)
 app.include_router(voice_router)
 
 
