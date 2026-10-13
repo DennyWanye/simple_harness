@@ -32,9 +32,9 @@ from deskpet.execution.termination_budget import (
     external_deadline_floor_seconds,
     resolve_max_wall_seconds,
 )
+from tests.host_source import host_source_text, host_source_tree
 
 HOST_ROOT = Path(__file__).resolve().parents[3]
-MAIN_PY = HOST_ROOT / "backend/main.py"
 CONFIG_TOML = HOST_ROOT / "config.toml"
 BATCH_SCRIPT = HOST_ROOT / "scripts/run_corpus_batch.py"
 
@@ -72,7 +72,7 @@ def test_provider_transport_timeout_mirror_does_not_drift():
 
 
 def test_foreground_active_budget_mirror_does_not_drift():
-    source = MAIN_PY.read_text(encoding="utf-8")
+    source = host_source_text()
     match = re.search(r'get\("chat_turn_timeout_minutes",\s*(\d+)\)', source)
     assert match is not None, "chat_turn_timeout_minutes default disappeared from main.py"
     assert float(match.group(1)) * 60.0 == FOREGROUND_ACTIVE_BUDGET_DEFAULT_SECONDS
@@ -108,7 +108,7 @@ def test_shipped_config_declares_the_wall_budget_explicitly():
 
 def test_main_passes_an_explicit_wall_budget_to_termination_limits():
     """The regression itself: a TerminationLimits(...) with no max_wall_seconds."""
-    tree = ast.parse(MAIN_PY.read_text(encoding="utf-8"))
+    tree = host_source_tree()
     calls = [
         node
         for node in ast.walk(tree)

@@ -46,3 +46,8 @@ def host_function_source(name: str) -> str:
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == name:
                 return ast.get_source_segment(text, node) or ""
     raise LookupError(f"main 与 host 模块里都没有函数 {name}")
+
+
+def host_source_files() -> list[Path]:
+    """返回 main.py 与 host/*.py 的路径；供"扫描生产代码"的测试把 host 包一并纳入。"""
+    return _host_files()

@@ -21,6 +21,7 @@ from deskpet.sdk_adapters.context_authority import ContextRouteLedgerStore
 from deskpet.sdk_adapters.context_route import ROUTES, ContextRouteToolService
 from simple_harness.contracts import RunId
 from simple_harness.execution.context_authority import ContextRouteReceipt
+from tests.host_source import host_source_text
 
 RUN = "run-route-1"
 
@@ -612,10 +613,9 @@ def test_task_scope_search_description_tells_the_model_to_skip_the_search() -> N
 
     import re
 
-    source = Path(__file__).resolve().parents[2] / "main.py"
     block = re.search(
         r'name="task_scope_search",\s*\n\s*description=\((.*?)\n\s*\),',
-        source.read_text(encoding="utf-8"),
+        host_source_text(),
         re.S,
     )
     assert block is not None
@@ -858,10 +858,9 @@ def test_context_route_description_names_the_named_task_rule() -> None:
 
     import re
 
-    source = Path(__file__).resolve().parents[2] / "main.py"
     route_block = re.search(
         r'name="context_route",\s*\n\s*description=\((.*?)\n\s*\),',
-        source.read_text(encoding="utf-8"),
+        host_source_text(),
         re.S,
     )
     assert route_block is not None
@@ -870,7 +869,7 @@ def test_context_route_description_names_the_named_task_rule() -> None:
 
     search_block = re.search(
         r'name="task_scope_search",\s*\n\s*description=\((.*?)\n\s*\),',
-        source.read_text(encoding="utf-8"),
+        host_source_text(),
         re.S,
     )
     assert search_block is not None

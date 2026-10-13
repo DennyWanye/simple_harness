@@ -19,6 +19,7 @@ while IFS='|' read -r MOD DESC NAMES; do
   for want in "导入 .*失败 0" "打桩缺失：0" "相关测试：.*失败 0" "启动快照：一致" "禁区比对：通过" "棘轮检查：通过" "格式：通过" "未定义名字：无" "控制通道快照：一致"; do
     if ! echo "$FIN" | grep -qE "$want"; then echo "   不通过：$want"; ok=0; fi
   done
+  if grep -q "警告：源文件不再导入这些 host 模块" "$LOG"; then echo "   不通过：主入口不再导入某个 host 模块，需人工确认导入期副作用"; ok=0; fi
   if [ $ok -ne 1 ]; then echo "停在 $MOD，日志 $LOG"; exit 1; fi
   git add -A backend/main.py backend/host backend/tests >/dev/null
   git commit -q -m "阶段 2.25：$DESC 搬到 host/$MOD.py"

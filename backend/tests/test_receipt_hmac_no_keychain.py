@@ -14,6 +14,7 @@ from __future__ import annotations
 import ast
 import sys
 from pathlib import Path
+from tests.host_source import host_source_files
 
 
 _BACKEND = Path(__file__).resolve().parents[1]
@@ -46,9 +47,9 @@ def _receipt(receipt_id: str, *, key: bytes | None = None):
 
 
 def _production_sources() -> list[Path]:
-    """生产代码面：deskpet/ 与 main.py，排除测试与字节码。"""
+    """生产代码面：deskpet/、main.py 与 host 包，排除测试与字节码。"""
     files = [p for p in (_BACKEND / "deskpet").rglob("*.py")]
-    files.append(_BACKEND / "main.py")
+    files.extend(host_source_files())
     return [p for p in files if p.is_file()]
 
 

@@ -3,12 +3,12 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from tests.host_source import host_function_source, host_source_text
+from tests.host_source import host_function_source, host_source_files, host_source_text
 
 BACKEND = Path(__file__).resolve().parents[2]
 
 PRODUCTION_AUTHORITY_FILES = (
-    BACKEND / "main.py",
+    *host_source_files(),
     BACKEND / "pipeline" / "voice_pipeline.py",
     BACKEND / "deskpet" / "agent" / "run_presenter.py",
     BACKEND / "agent" / "agent_loop.py",

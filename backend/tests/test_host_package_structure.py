@@ -35,3 +35,28 @@ def test_voice_runtime_receives_the_shared_permission_gate() -> None:
     from host import tools_bootstrap, voice_bootstrap
 
     assert voice_bootstrap.permission_gate_v2 is tools_bootstrap.permission_gate_v2
+
+
+def test_importing_main_writes_nothing_to_stdout() -> None:
+    """后端标准输出交给外壳读共享密钥；导入主入口不许往标准输出写任何东西。
+
+    2026-10-13：搬家时删掉了主入口对日志配置模块的导入，日志配置晚于第一条日志，
+    导入期日志全部写到了标准输出。
+    """
+    import os
+    import subprocess
+    import sys
+
+    backend = HOST.parent
+    env = dict(os.environ)
+    env["PYTHONPATH"] = os.pathsep.join(x for x in (str(backend), env.get("PYTHONPATH", "")) if x)
+    child = subprocess.run(
+        [sys.executable, "-c", "import main"],
+        cwd=backend,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=300,
+    )
+    assert child.returncode == 0, child.stderr[-2000:]
+    assert child.stdout == ""

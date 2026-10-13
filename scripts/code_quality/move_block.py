@@ -226,7 +226,23 @@ def main() -> int:
     if dst_path.exists():
         raise SystemExit(f"目标文件已存在：{dst_path}")
     dst_path.write_text(dst_text, encoding="utf-8")
-    src_path.write_text(remove_import_names(new_src, set(removable)), encoding="utf-8")
+    final_src = remove_import_names(new_src, set(removable))
+
+    def _host_modules(text: str) -> set[str]:
+        mods: set[str] = set()
+        for node in ast.walk(ast.parse(text)):
+            if isinstance(node, ast.ImportFrom) and node.module and node.module.startswith("host."):
+                mods.add(node.module)
+            elif isinstance(node, ast.Import):
+                mods |= {al.name for al in node.names if al.name.startswith("host.")}
+        return mods
+
+    # 删导入后整个不再被导入的 host 模块：它们常有导入期副作用（日志配置、服务登记），
+    # 顺序会变（2026-10-13：日志配置模块被删后导入期日志写到了标准输出）
+    lost = sorted(_host_modules(src) - _host_modules(final_src) - {module})
+    if lost:
+        print("警告：源文件不再导入这些 host 模块（可能有导入期副作用）：", ", ".join(lost))
+    src_path.write_text(final_src, encoding="utf-8")
     return 0
 
 

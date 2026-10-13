@@ -7,6 +7,10 @@ import secrets
 
 import paths as _paths
 import structlog
+
+# 日志配置必须先于本模块的第一条日志（崩溃上报安装、配置加载）：
+# 后端标准输出要交给外壳读共享密钥，未配置时 structlog 默认写标准输出（2026-10-13 修复）。
+import host.logging_setup  # noqa: F401  # isort: skip
 from config import load_config, resolve_config_path
 from context import ServiceContext
 from observability.crash_reports import install_crash_reporter

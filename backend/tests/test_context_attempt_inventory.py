@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from tests.host_source import host_source_files
 
 BACKEND = Path(__file__).resolve().parents[1]
 CALL = re.compile(
@@ -19,7 +20,7 @@ def test_runtime_provider_calls_are_owned_by_scope_or_bottom_seam() -> None:
         "router/hybrid_router.py",
     }
     uncovered: list[str] = []
-    paths = [BACKEND / "main.py"]
+    paths = list(host_source_files())
     for root in ("agent", "deskpet", "llm", "pipeline", "providers"):
         paths.extend((BACKEND / root).rglob("*.py"))
     for path in paths:
