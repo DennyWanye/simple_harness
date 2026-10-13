@@ -22,6 +22,7 @@ from deskpet.orchestration.publish_settings import (
     validate_publish_dir,
     write_publish_dir,
 )
+from host import control_settings
 
 from tests.host_source import host_source_text
 
@@ -99,7 +100,7 @@ def test_the_control_channel_handles_both_verbs_before_the_orchestration_prefix(
         return None
 
     for verb in ("orchestration_publish_dir_get", "orchestration_publish_dir_set"):
-        assert route_for(verb) is main._cc_orchestration_publish_dir_get
+        assert route_for(verb) is control_settings._cc_orchestration_publish_dir_get
     assert route_for("orchestration_status") is main._cc_orchestration_routes
     source = host_source_text()
     assert "restart=_restart_orchestration" in source
