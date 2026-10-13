@@ -161,9 +161,13 @@ async def test_missing_provider_key_becomes_stable_local_error() -> None:
 
 
 def test_backend_route_uses_sdk_authority_path_and_keeps_legacy_disabled() -> None:
+    import main
+
     source = host_source_text()
-    assert '@app.websocket("/ws/realtime-voice")' in source
-    assert '@app.websocket("/ws/audio")' in source
+    # 两条语音 WebSocket 路径在应用上注册（路由已从主入口拆到 host 模块的 APIRouter）
+    paths = {getattr(route, "path", "") for route in main.app.routes}
+    assert "/ws/realtime-voice" in paths
+    assert "/ws/audio" in paths
     assert "if not _voice_runtime.enabled:" in source
     assert "Qwen" not in source[source.index("class _StarletteRealtimeSocket") :]
 

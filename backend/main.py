@@ -58,6 +58,7 @@ from deskpet.agent.turn_preparer import (
     ProductTurnPreparer,
 )
 from fastapi import (
+    APIRouter,
     FastAPI,
     WebSocket,
     WebSocketDisconnect,
@@ -7143,6 +7144,9 @@ async def control_channel(ws: WebSocket):
         logger.info("control channel disconnected", session_id=session_id)
 
 
+voice_router = APIRouter()
+
+
 class _StarletteRealtimeSocket:
     """Minimal adapter from Starlette frames to the SDK socket protocol."""
 
@@ -7178,7 +7182,7 @@ class _StarletteRealtimeSocket:
         await self._websocket.close(code=code, reason=reason)
 
 
-@app.websocket("/ws/realtime-voice")
+@voice_router.websocket("/ws/realtime-voice")
 async def realtime_voice_channel(ws: WebSocket):
     await ws.accept()
     service = host_state.realtime_voice_service
@@ -7203,7 +7207,7 @@ async def realtime_voice_channel(ws: WebSocket):
         logger.warning("realtime_voice_local_failed", stable_code="internal")
 
 
-@app.websocket("/ws/audio")
+@voice_router.websocket("/ws/audio")
 async def audio_channel(ws: WebSocket):
     await ws.accept()
     if not _validate_secret(ws):
@@ -7297,6 +7301,9 @@ async def audio_channel(ws: WebSocket):
     finally:
         if _voice_transports.get(session_id) is pipeline:
             _voice_transports.pop(session_id, None)
+
+
+app.include_router(voice_router)
 
 
 def main():
