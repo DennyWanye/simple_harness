@@ -36,7 +36,12 @@ from xml.etree import ElementTree as ET
 
 import httpx
 
+from deskpet.retrieval import runtime
+from deskpet.retrieval.contracts import FetchRequest
+from deskpet.retrieval.fetch_extract import FetchExtractError, FetchExtractService
+
 from ._config import WebToolsConfig, load_web_config
+from .scrapling_tools import _scrapling_get_html
 
 # Re-export ``WebToolsConfig`` so tests can build disposable config
 # instances via ``web_tools.WebToolsConfig(...)`` without having to
@@ -205,8 +210,6 @@ def _scrapling_fetch_html(url: str, timeout: float) -> dict[str, Any] | None:
     Scrapling or making real network calls.
     """
     try:
-        from .scrapling_tools import _scrapling_get_html
-
         fetched = _scrapling_get_html(url, timeout=timeout)
     except Exception as exc:  # noqa: BLE001
         logger.debug("scrapling fetch layer unavailable for %s: %s", url, exc)
@@ -246,19 +249,15 @@ _SCHEMA_FETCH: dict[str, Any] = {
 
 
 def _fetch_service():
-    from deskpet.retrieval.runtime import get_default_gateway
 
-    service = get_default_gateway().fetch_service
+    service = runtime.get_default_gateway().fetch_service
     if service is None:
-        from deskpet.retrieval.fetch_extract import FetchExtractService
-
         service = FetchExtractService()
-        get_default_gateway().fetch_service = service
+        runtime.get_default_gateway().fetch_service = service
     return service
 
 
 async def _fetch_raw_async(url: str, timeout: float) -> dict[str, Any]:
-    from deskpet.retrieval.contracts import FetchRequest
 
     return await _fetch_service().fetch_raw(
         FetchRequest(
@@ -273,7 +272,6 @@ async def _fetch_raw_async(url: str, timeout: float) -> dict[str, Any]:
 
 def _fetch_one(url: str, timeout: float) -> dict[str, Any]:
     """Legacy sync facade. Production consumers use ``_fetch_raw_async``."""
-    from deskpet.retrieval.fetch_extract import FetchExtractError
 
     try:
         asyncio.get_running_loop()
@@ -295,7 +293,6 @@ async def _handle_web_fetch(args: dict[str, Any], task_id: str) -> str:
     timeout = float(args.get("timeout", 10) or 10)
     if timeout <= 0:
         return _err("timeout must be positive", retriable=False)
-    from deskpet.retrieval.fetch_extract import FetchExtractError
 
     try:
         result = await _fetch_raw_async(url, timeout)
@@ -377,8 +374,6 @@ async def _handle_web_extract_article(args: dict[str, Any], task_id: str) -> str
         return _err("url_or_html is required", retriable=False)
 
     if _looks_like_url(inp):
-        from deskpet.retrieval.fetch_extract import FetchExtractError
-
         try:
             fetched = await _fetch_raw_async(inp, timeout=10.0)
         except FetchExtractError as exc:

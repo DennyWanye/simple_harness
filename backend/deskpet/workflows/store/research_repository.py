@@ -20,6 +20,30 @@ from typing import Any
 
 import aiosqlite
 
+from ..definitions.deep_research_v6_contracts import ResearchSpecV1, RouteDecisionV1
+from ..definitions.deep_research_v6_delivery import TerminalDeliveryManifestV1
+from ..definitions.deep_research_v6_evidence import (
+    GENESIS_EVIDENCE_HEAD,
+    AdmittedResearchFactV1,
+    AnswerAssessmentV1,
+    EvidenceFactBatchV1,
+    RegisteredInferenceV1,
+    derive_assessment_input_hash,
+)
+from ..definitions.deep_research_v6_evidence_contracts import (
+    CandidateProducerOutcomeV1,
+    EvidenceCandidateBundleV1,
+    EvidenceRepairRequestV1,
+    InferenceProposalBundleV1,
+    ResearchLLMEffectOutcomeV1,
+)
+from ..definitions.deep_research_v6_integrity import ClaimBatchV1
+from ..definitions.deep_research_v6_retrieval_contracts import (
+    OfficialSearchResultV1,
+    PageAttemptOutcomeV1,
+    PageExtractionResultV1,
+    SourceLocatorV1,
+)
 from ..errors import WorkflowContractError
 from .schema import initialize_workflow_db
 
@@ -1625,33 +1649,6 @@ class ResearchWorkflowRepository:
                 "v6 snapshot places a registered ref in the wrong class",
             )
 
-        from ..definitions.deep_research_v6_contracts import (
-            ResearchSpecV1,
-            RouteDecisionV1,
-        )
-        from ..definitions.deep_research_v6_evidence import (
-            GENESIS_EVIDENCE_HEAD,
-            AdmittedResearchFactV1,
-            AnswerAssessmentV1,
-            EvidenceFactBatchV1,
-            RegisteredInferenceV1,
-            derive_assessment_input_hash,
-        )
-        from ..definitions.deep_research_v6_evidence_contracts import (
-            CandidateProducerOutcomeV1,
-            EvidenceCandidateBundleV1,
-            EvidenceRepairRequestV1,
-            InferenceProposalBundleV1,
-            ResearchLLMEffectOutcomeV1,
-        )
-        from ..definitions.deep_research_v6_integrity import ClaimBatchV1
-        from ..definitions.deep_research_v6_retrieval_contracts import (
-            OfficialSearchResultV1,
-            PageAttemptOutcomeV1,
-            PageExtractionResultV1,
-            SourceLocatorV1,
-        )
-
         async def read_json(ref: object, field: str) -> dict[str, Any]:
             _, item = await self._read_registered_json_v6(db, ref, field=field)
             return item
@@ -1923,7 +1920,6 @@ class ResearchWorkflowRepository:
             manifest_digest, manifest = await self._read_registered_json_v6(
                 db, terminal_manifest_ref, field="terminal_manifest_ref"
             )
-            from ..definitions.deep_research_v6_delivery import TerminalDeliveryManifestV1
 
             try:
                 decoded_manifest = TerminalDeliveryManifestV1.from_json(manifest)
@@ -2315,7 +2311,6 @@ class ResearchWorkflowRepository:
             manifest_digest, manifest = await self._read_registered_json_v6(
                 db, terminal_payload["manifest_ref"], field="terminal_manifest_ref"
             )
-            from ..definitions.deep_research_v6_delivery import TerminalDeliveryManifestV1
 
             try:
                 decoded_manifest = TerminalDeliveryManifestV1.from_json(manifest)

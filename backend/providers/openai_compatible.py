@@ -11,6 +11,8 @@ import re as _re
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING
 
+from deskpet.context_os_e2e_hooks import trusted_provider_headers
+
 if TYPE_CHECKING:
     from deskpet.execution.contracts import ProviderLaunchSnapshot
 
@@ -298,7 +300,6 @@ class OpenAICompatibleProvider:
         # from llm_runtime.json ``extra_headers`` (host-matched) or the ctor.
         headers.update(extra_headers_for(self.base_url))
         headers.update(self.extra_headers)
-        from deskpet.context_os_e2e_hooks import trusted_provider_headers
 
         headers.update(trusted_provider_headers(self.base_url))
         # P5-S2 F1 (2026-05-12) — the relay integration guide root cause for

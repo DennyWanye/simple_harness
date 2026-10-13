@@ -52,6 +52,7 @@ import structlog
 
 from deskpet.capabilities.contracts import fingerprint_json
 from deskpet.capabilities.runtime_prepare import PreparedRuntimeInstanceSpec
+from deskpet.sdk_adapters.context_preparation import normalize_trusted_local_page_url
 from deskpet.tools.build_identity import ExecutionBuildIdentity, canonical_hash
 
 try:  # pragma: no cover — SDK may be absent in minimal test envs
@@ -160,9 +161,6 @@ def _prepare_server_config(entry: Mapping[str, Any]) -> dict[str, Any]:
     raw = os.environ.get("DESKPET_LOCAL_PAGE_URL", "").strip()
     if not raw:
         return config
-    from deskpet.sdk_adapters.context_preparation import (
-        normalize_trusted_local_page_url,
-    )
 
     try:
         parsed = urlsplit(normalize_trusted_local_page_url(raw))

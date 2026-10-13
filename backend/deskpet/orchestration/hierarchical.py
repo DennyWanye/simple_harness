@@ -25,12 +25,12 @@ from agent_orchestrator.planning.htn.observers.workspace import (
 )
 from agent_orchestrator.planning.htn.registry import ObjectSchema, SchemaField, TaskTypeSpec
 from agent_orchestrator.planning.htn.world import build_planning_world, capability_records
+from agent_orchestrator.storage import htn_store
 
 
 def planning_world(loop: Any, mission: Any) -> Any:
-    from agent_orchestrator.storage.htn_store import HtnStore
 
-    htn = HtnStore(loop.store)
+    htn = htn_store.HtnStore(loop.store)
     # 桌面的三样只读观察（文件在不在、文件内容哈希、资料是否当前版本）：实现在 SDK 一份，这里注册
 
     world = build_planning_world(

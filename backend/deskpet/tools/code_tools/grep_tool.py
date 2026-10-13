@@ -47,6 +47,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+from deskpet.permissions.protected_paths import is_credential
+
 from ..capabilities import ToolExecutionContext
 from ..context_adapter import legacy_execution_context
 from ._search_scope import (
@@ -85,7 +87,6 @@ def _iter_files(root: Path, file_glob: str | None) -> tuple[list[Path], int]:
             escaped += 1
             continue
         # 2026-09-26：读取已放开到任务根之外，遍历时跳过凭证类文件（未经授权）
-        from deskpet.permissions.protected_paths import is_credential
 
         if is_credential(p):
             continue
@@ -158,7 +159,6 @@ def grep_tool(
     if kind == "file":
         # 单文件目标：这个文件**就是**搜索集，根即它自身，越根无从谈起。
         root = target
-        from deskpet.permissions.protected_paths import is_credential
 
         files = (
             [target]

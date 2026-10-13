@@ -13,6 +13,7 @@ from agent.snapshot import build_snapshot as _build_snap_func
 from agent.supervisor import SupervisorAgent as _SupAgent
 from agent.supervisor import build_supervisor_hook as _build_sup_hook
 from agent.watchdog import WatchdogLoop as _WatchdogLoop
+from llm import model_info
 from providers.openai_compatible import OpenAICompatibleProvider
 
 from host.connections import _control_connections
@@ -441,14 +442,12 @@ async def _startup_auto_resume_and_model_context(_heal_cfg: Any) -> None:
     # 看到当前默认模型解析出的有效窗口 + 来源链。每次 chat 会话另会按
     # session 的实际 model + project_root 再 resolve（resolve() 自带日志）。
     try:
-        from llm.model_info import resolve as _resolve_mi
-
         _startup_v2 = bool(
             ((config.raw.get("context") or {}).get("manager") or {}).get("v2_enabled", True)
         )
         if _startup_v2:
             # resolve() 自身落 model_context_resolved INFO 日志。
-            _resolve_mi(config.llm.local.model, project_root=None)
+            model_info.resolve(config.llm.local.model, project_root=None)
         else:
             logger.info(
                 "model_context_resolved model=%s window=legacy source=v1_rollback",

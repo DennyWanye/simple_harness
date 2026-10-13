@@ -23,6 +23,8 @@ import re
 from io import BytesIO
 from typing import Any
 
+from . import image_tools
+
 log = logging.getLogger(__name__)
 _DEFAULT_VISUAL_REVIEW_MODEL = "gpt-5.5"
 
@@ -125,9 +127,7 @@ def vision_chat(
     visual review 与模板选图共用此原语,避免重复 relay 接线。
     """
     try:
-        from .image_tools import _resolve_endpoint, _trust_env_proxy  # type: ignore
-
-        base_url, api_key = _resolve_endpoint()
+        base_url, api_key = image_tools._resolve_endpoint()
         if not base_url or not api_key:
             log.info("vision_chat skipped: no endpoint/key")
             return ""
@@ -154,7 +154,7 @@ def vision_chat(
         }
         with httpx.Client(
             timeout=httpx.Timeout(connect=10.0, read=timeout, write=30.0, pool=30.0),
-            trust_env=_trust_env_proxy(),
+            trust_env=image_tools._trust_env_proxy(),
         ) as cli:
             resp = cli.post(f"{base_url}/chat/completions", json=payload, headers=headers)
         if resp.status_code != 200:

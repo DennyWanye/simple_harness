@@ -31,6 +31,8 @@ from deskpet.companion.build_admission import (
     CapabilityBuildPublishPolicy,
     GrowthCandidateBuildPermitV1,
 )
+from deskpet.companion.candidate_receipts import CandidateDraftReceiptBuildOutput
+from deskpet.harness.contracts import HostExtensionRefV1
 
 from .contracts import (
     CatalogStamp,
@@ -1017,9 +1019,6 @@ class CapabilityBuilderHost:
         # the governed candidate receipt sink; the frozen launch policy still
         # routes tool-only output to Manager and Skill/Workflow output only to
         # this terminal-UoW sink.
-        from deskpet.companion.candidate_receipts import (
-            CandidateDraftReceiptBuildOutput,
-        )
 
         self.candidate_output_port: CapabilityBuildOutputPort = CandidateDraftReceiptBuildOutput(
             created_at=lambda: datetime.now(UTC).isoformat()
@@ -2027,7 +2026,6 @@ class CandidateBuilderTerminalCommitExtension:
 
     @property
     def descriptor(self) -> Any:
-        from deskpet.harness.contracts import HostExtensionRefV1
 
         admission = self.launch.candidate_admission
         if admission is None:  # pragma: no cover - host factory guards this

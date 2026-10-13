@@ -19,6 +19,7 @@ from typing import Any
 
 from deskpet.agent.assembler.bundle import ContextFragment, Slice
 from deskpet.agent.assembler.components.base import Component, ComponentContext
+from deskpet.agent.tokens import count_text_tokens
 
 _DEFAULT_PERSONA_TEMPLATE = (
     "你是 DeskPet，一只陪伴用户工作的桌面宠物 AI。\n"
@@ -174,7 +175,6 @@ def _resolve_persona(config: dict[str, Any]) -> str:
 def _approx_tokens(text: str) -> int:
     if not text:
         return 0
-    from deskpet.agent.tokens import count_text_tokens
 
     return count_text_tokens(text)
 

@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from deskpet import context_os_e2e_hooks
 from deskpet.agent.assembler.bundle import ContextFragment, Slice
 from deskpet.agent.assembler.components.base import Component, ComponentContext
 from deskpet.agent.tokens import count_text_tokens
@@ -48,9 +49,7 @@ class ProjectRulesComponent:
 
     async def provide(self, ctx: ComponentContext) -> Slice:
         try:
-            from deskpet.context_os_e2e_hooks import consume_context_os_e2e_fault
-
-            if consume_context_os_e2e_fault("project_rules_io_error"):
+            if context_os_e2e_hooks.consume_context_os_e2e_fault("project_rules_io_error"):
                 return self._empty("read_failed:FixtureProjectRulesIOError")
         except RuntimeError as exc:
             return self._empty(str(exc))

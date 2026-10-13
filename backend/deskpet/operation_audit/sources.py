@@ -7,6 +7,9 @@ import json
 import sqlite3
 from pathlib import Path
 
+import aiosqlite
+
+from deskpet.execution.terminal_identity import read_primary_terminal_identity_tx
 from deskpet.operation_audit.store import (
     RULE_VERSION,
     AuditStore,
@@ -170,12 +173,7 @@ class TerminalSources:
 
     async def verify_terminal_page(self, job: dict, page: dict) -> bool:
         """Bind public SDK proof to the verified raw identity in Host evidence."""
-        import aiosqlite
         import simple_harness as sdk
-
-        from deskpet.execution.terminal_identity import (
-            read_primary_terminal_identity_tx,
-        )
 
         proof_type = getattr(sdk, "RunTerminalAuditEvidenceV1", None)
         raw_proof = page.get("metadata", {}).get("terminal_evidence")

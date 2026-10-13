@@ -19,8 +19,13 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from agent.write_scope import write_scope_check as _ws_check
+
+from deskpet.tools import file_tools as _ft
+
 from ..capabilities import ToolExecutionContext
 from ..context_adapter import legacy_execution_context
+from ._scope_paths import normalize_model_path
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +37,7 @@ def _notify_workspace(*, session_id: str, path: str, content: str | None) -> Non
     保存的主 loop ref + run_coroutine_threadsafe 派回主 loop。
     """
     try:
-        from deskpet.tools import file_tools as _ft  # type: ignore
+        pass
     except Exception:
         return
     store = getattr(_ft, "_workspace_store", None)
@@ -97,12 +102,9 @@ def write_file(
     _scope_root = context.write_scope_root
     # ``~`` 必须在越界校验**之前**展开：否则 ``~/x`` 会被 write_scope_check
     # 当成相对路径判成"在 scope_root 内"，而实际落到 $HOME/x——那是越界通道。
-    from ._scope_paths import normalize_model_path
 
     path = normalize_model_path(path, _scope_root)
     if isinstance(path, str) and path and _scope_root:
-        from agent.write_scope import write_scope_check as _ws_check
-
         _violation = _ws_check(path, scope_root=_scope_root)
         if _violation is not None:
             return _err(_violation, _violation, path=path)

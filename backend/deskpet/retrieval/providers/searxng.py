@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import httpx
 
+from deskpet.tools.search_provider import _parse_searxng_json
+
 from ..contracts import PublicErrorCode, SearchBudget, SearchRequest
 from .base import ProviderFailure, candidates_from_rows, raise_for_search_status
 
@@ -17,7 +19,6 @@ class SearXNGProvider:
         return bool(self.url)
 
     async def search(self, request: SearchRequest, budget: SearchBudget, client: httpx.AsyncClient):
-        from deskpet.tools.search_provider import _parse_searxng_json
 
         try:
             response = await client.get(self.url, params={"q": request.query, "format": "json"})

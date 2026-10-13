@@ -57,6 +57,8 @@ import secrets
 from collections import OrderedDict
 from pathlib import Path
 
+from paths import user_cache_dir
+
 logger = logging.getLogger(__name__)
 
 
@@ -102,7 +104,6 @@ def _spill_dir() -> Path | None:
     try:
         if _os.environ.get("PYTEST_CURRENT_TEST"):
             return None
-        from paths import user_cache_dir  # type: ignore[import-not-found]
 
         d = Path(user_cache_dir()) / "tool_refs"
         d.mkdir(parents=True, exist_ok=True)

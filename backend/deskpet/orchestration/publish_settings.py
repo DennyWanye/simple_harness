@@ -19,6 +19,7 @@ from collections.abc import Awaitable, Callable, Iterable
 from pathlib import Path
 from typing import Any
 
+import tomlkit
 from agent_orchestrator.runtime.actions import publication_overlaps_storage
 from agent_orchestrator.runtime.connectors_publish import FilePublishConnector
 
@@ -59,8 +60,6 @@ def validate_publish_dir(raw: Any, *, protected: Iterable[Path]) -> str:
 
 def write_publish_dir(config_path: Path, value: str) -> None:
     """Write ``[orchestration] publish_dir`` in place, keeping every other line."""
-
-    import tomlkit
 
     text = config_path.read_text(encoding="utf-8") if config_path.exists() else ""
     doc = tomlkit.parse(text) if text.strip() else tomlkit.document()

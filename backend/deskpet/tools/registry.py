@@ -63,14 +63,29 @@ from datetime import timezone as _tz
 from pathlib import Path
 from typing import Any, Optional
 
+from paths import output_dir
+
 from deskpet.execution.contracts import OutcomeStatus, fingerprint_json, thaw_json
 from deskpet.execution.dispatch import (
     FunctionPreparedToolDispatch,
     PreparedToolDispatch,
     PreparedToolDispatchIdentity,
 )
+from deskpet.tools import _legacy_registry_proxy, receipt_store
+from deskpet.tools.artifact import (
+    extract_artifacts_from_result,
+    maybe_add_artifacts,
+    sha256_file_async,
+)
 from deskpet.types.task_grants import ResourceSelector
-from deskpet.workflows.effects import NormalizedToolOutcome, PreparedToolCall, ToolOutcomeState
+from deskpet.workflows.effects import (
+    NormalizedToolOutcome,
+    PreparedTarget,
+    PreparedToolCall,
+    StagedFileLifecycle,
+    TargetMode,
+    ToolOutcomeState,
+)
 
 from .build_identity import (
     EffectClass,
@@ -582,8 +597,6 @@ def _target_path_for_call(
         "ppt_pro": "PPT",
     }
     try:
-        from paths import output_dir
-
         generated_root = output_dir(kind_by_tool[name])
     except Exception:
         generated_root = Path.cwd() / "outputs"
@@ -600,7 +613,6 @@ def _default_prepared_targets(
     stable_call_id: str,
     workspace: str | os.PathLike[str] | None = None,
 ) -> tuple[Any, ...]:
-    from deskpet.workflows.effects import PreparedTarget, TargetMode
 
     if name not in _PREPARED_FILE_TARGET_TOOLS:
         return ()
@@ -715,7 +727,6 @@ def _default_builtin_resource_resolver(
 
 def _staged_lifecycle_method(method: str) -> LifecycleFn:
     def invoke(*args: Any, **kwargs: Any) -> Any:
-        from deskpet.workflows.effects import StagedFileLifecycle
 
         return getattr(StagedFileLifecycle(), method)(*args, **kwargs)
 
@@ -2634,8 +2645,6 @@ class ToolRegistry:
                     getattr(getattr(cfg, "last_mile", None), "artifact_envelope", False)
                 )
                 if envelope_on:
-                    from deskpet.tools.artifact import maybe_add_artifacts
-
                     envelope = maybe_add_artifacts(
                         envelope=envelope,
                         tool_name=name,
@@ -2655,8 +2664,6 @@ class ToolRegistry:
             try:
                 store = self._receipt_store_provider()
                 if store is not None:
-                    from deskpet.tools.receipt_store import emit_receipt
-
                     self._session_iteration[session_id] = (
                         self._session_iteration.get(session_id, 0) + 1
                     )
@@ -2683,8 +2690,6 @@ class ToolRegistry:
                     _artifact_shas: list[str] | None = None
                     _env_arts = envelope.get("artifacts")
                     if not (isinstance(_env_arts, list) and _env_arts) and envelope_ok:
-                        from deskpet.tools.artifact import extract_artifacts_from_result
-
                         _env_arts = [
                             artifact.to_dict()
                             for artifact in extract_artifacts_from_result(
@@ -2693,8 +2698,6 @@ class ToolRegistry:
                             )
                         ]
                     if isinstance(_env_arts, list) and _env_arts:
-                        from deskpet.tools.artifact import sha256_file_async
-
                         _shas: list[str] = []
                         _workspace = merged_params.get("_project_root") or merged_params.get(
                             "_write_scope_root"
@@ -2719,7 +2722,7 @@ class ToolRegistry:
                             except (OSError, ValueError):
                                 continue
                         _artifact_shas = _shas or None
-                    emit_receipt(
+                    receipt_store.emit_receipt(
                         store,
                         tool_name=name,
                         args=receipt_args,
@@ -3061,7 +3064,6 @@ class ToolRegistry:
             return raw
         try:
             result_text = raw if isinstance(raw, str) else json.dumps(raw, ensure_ascii=False)
-            from deskpet.tools.artifact import maybe_add_artifacts
 
             envelope = maybe_add_artifacts(
                 envelope={"ok": True, "result": result_text, "error": None},
@@ -3265,8 +3267,6 @@ class ToolRegistry:
         status = self._outcome_status(spec, prepared, outcome)
         self._prepared_execution_metadata[effect_id] = {"outcome_status": status.value}
         try:
-            from deskpet.tools.artifact import extract_artifacts_from_result, sha256_file_async
-
             encoded = json.dumps(outcome.to_dict()["value"], ensure_ascii=False, default=str)
             artifacts = extract_artifacts_from_result(
                 tool_name=prepared.tool_name, result_json=encoded
@@ -3295,10 +3295,8 @@ class ToolRegistry:
             if store is None:
                 return
 
-            from deskpet.tools.receipt_store import emit_receipt
-
             accepted = status is OutcomeStatus.ACCEPTED
-            receipt = emit_receipt(
+            receipt = receipt_store.emit_receipt(
                 store,
                 tool_name=prepared.tool_name,
                 args={
@@ -3944,8 +3942,6 @@ class _LegacyProductToolRegistry(ToolRegistry):
             return
         self._product_catalog_loading = True
         try:
-            from deskpet.tools import _legacy_registry_proxy
-
             target = _legacy_registry_proxy._target()
             if target is not self:
                 raise RuntimeError("legacy Tool catalog assembled into foreign registry")
@@ -4018,7 +4014,5 @@ def __getattr__(name: str) -> Any:
 
     if name.startswith("__"):
         raise AttributeError(name)
-
-    from deskpet.tools import _legacy_registry_proxy
 
     return getattr(_legacy_registry_proxy, name)

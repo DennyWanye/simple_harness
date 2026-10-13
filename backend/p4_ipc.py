@@ -30,7 +30,12 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
+import paths as _paths
 import structlog
+import tomlkit
+from deskpet.context_os_e2e_hooks import ContextOSE2EHooks
+from llm import model_info
+from llm.model_info import BUILTIN
 
 logger = structlog.get_logger(__name__)
 
@@ -271,7 +276,6 @@ _MODEL_CTX_OVERRIDABLE = (
 
 def _builtin_table_payload() -> dict[str, Any]:
     """把 model_info.BUILTIN 摊平成 JSON 友好 dict（去掉 model/source）。"""
-    from llm.model_info import BUILTIN
 
     out: dict[str, Any] = {}
     for name, info in BUILTIN.items():
@@ -288,13 +292,12 @@ async def _handle_model_context_get(ws: Any, payload: dict[str, Any]) -> None:
     payload: ``{model?: str, project_root?: str}``。缺 model → ``_default``
     （resolve 内部已兜底）。project_root 给定 → 走项目层（code mode）。
     """
-    from llm.model_info import resolve
 
     model = str(payload.get("model") or "_default")
     proot_raw = payload.get("project_root")
     project_root = Path(proot_raw) if proot_raw else None
     try:
-        info = resolve(model, project_root=project_root)
+        info = model_info.resolve(model, project_root=project_root)
     except Exception as exc:  # noqa: BLE001 — 解析必须健壮
         logger.warning(
             "p4_ipc.model_context_get_failed",
@@ -419,8 +422,6 @@ async def _handle_model_context_set(ws: Any, payload: dict[str, Any]) -> None:
                 return
             target = Path(proot_raw) / ".deskpet" / "context.toml"
         else:
-            import paths as _paths
-
             target = _paths.user_data_dir() / "model_overrides.toml"
         _merge_model_override(target, model, fields)
     except OSError as exc:
@@ -482,8 +483,6 @@ def _provider_model_ids(service_context: Any) -> list[str]:
     # used by the product hooks so the settings UI can select a model added
     # after boot without changing production registry semantics.
     try:
-        from deskpet.context_os_e2e_hooks import ContextOSE2EHooks
-
         hooks = ContextOSE2EHooks.from_env()
         if hooks is not None and hooks.provider_url:
             with _urlrequest.urlopen(
@@ -501,7 +500,6 @@ def _provider_model_ids(service_context: Any) -> list[str]:
 
 
 def _context_compaction_config_path() -> Path:
-    import paths as _paths
 
     return _paths.user_data_dir() / "config.toml"
 
@@ -522,7 +520,6 @@ def _read_context_compaction_model() -> str:
 
 def _write_context_compaction_model(model: str) -> None:
     """Round-trip the unified user config without discarding other sections."""
-    import tomlkit
 
     path = _context_compaction_config_path()
     try:

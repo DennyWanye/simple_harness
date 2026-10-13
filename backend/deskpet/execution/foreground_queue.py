@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING
 
 import aiosqlite
 
+from deskpet.memory import trusted_disclosure
 from deskpet.memory.analysis_lineage import analysis_lineage_payload
 from deskpet.memory.current_input_source import build_input_use, validate_input_use
 from deskpet.memory.human_memory_program import HumanMemoryProgramStore
@@ -438,13 +439,12 @@ class ForegroundQueueStore:
                     "SELECT * FROM foreground_turns WHERE subject=? AND idempotency_key=?",
                     (subject, idempotency_key),
                 )
-                from deskpet.memory.trusted_disclosure import current_record_tx, enqueue_binding_tx
 
                 existing_request = (
                     None if existing is None else json.loads(str(existing["turn_json"]))
                 )
                 if existing_request is not None and "disclosure_binding" in existing_request:
-                    current = await current_record_tx(db, subject)
+                    current = await trusted_disclosure.current_record_tx(db, subject)
                     selected_ref = disclosure_binding_ref or (
                         None if current is None else current["binding_ref"]
                     )
@@ -455,7 +455,7 @@ class ForegroundQueueStore:
                 input_use = None
                 if input_declaration is not None:
                     require_authenticated_host_snapshot(input_auth)
-                    current = await current_record_tx(db, subject)
+                    current = await trusted_disclosure.current_record_tx(db, subject)
                     if (
                         current is None
                         or disclosure_binding_ref != current["binding_ref"]
@@ -493,7 +493,7 @@ class ForegroundQueueStore:
                             raise ForegroundQueueError("foreground_turn_idempotency_conflict")
                         input_use = original
                     request["input_use"] = input_use
-                token = await enqueue_binding_tx(
+                token = await trusted_disclosure.enqueue_binding_tx(
                     db,
                     subject=subject,
                     requested_ref=disclosure_binding_ref,

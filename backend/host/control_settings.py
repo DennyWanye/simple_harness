@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import paths
 from deskpet.orchestration import publish_settings as _publish_settings
 from deskpet.orchestration.wiring import read_section as _read_orch_section
 from provider_test_connection import handle_provider_test_connection
@@ -50,7 +51,6 @@ async def _cc_orchestration_publish_dir_get(
 ) -> None:
     """控制消息：orchestration_publish_dir_get、orchestration_publish_dir_set。"""
     ws = conn.ws
-    from paths import user_data_dir as _publish_user_data_dir
 
     _rid = raw.get("request_id")
     _body = raw.get("payload") if isinstance(raw.get("payload"), dict) else {}
@@ -60,7 +60,7 @@ async def _cc_orchestration_publish_dir_get(
             await _publish_settings.set_publish_dir(
                 _body.get("path"),
                 config_path=Path(_CONFIG_PATH),
-                protected=[_publish_user_data_dir()],
+                protected=[paths.user_data_dir()],
                 restart=_restart_orchestration,
             )
         _configured = str(_read_orch_section(_CONFIG_PATH).get("publish_dir") or "")

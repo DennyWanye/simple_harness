@@ -9,6 +9,9 @@ import json
 import logging
 from typing import Any
 
+from deskpet.retrieval import runtime
+from deskpet.retrieval.contracts import SearchRequest
+
 log = logging.getLogger(__name__)
 
 
@@ -16,9 +19,6 @@ async def web_search(args: dict[str, Any], task_id: str = "") -> str:
     query = args.get("query")
     if not query or not isinstance(query, str):
         return json.dumps({"error": "query (string) is required"})
-
-    from deskpet.retrieval.contracts import SearchRequest
-    from deskpet.retrieval.runtime import get_default_gateway
 
     try:
         max_results = max(1, min(int(args.get("max_results", 5)), 10))
@@ -33,7 +33,7 @@ async def web_search(args: dict[str, Any], task_id: str = "") -> str:
     }
     if task_id:
         request_kwargs["request_id"] = task_id
-    response = await get_default_gateway().search(SearchRequest(**request_kwargs))
+    response = await runtime.get_default_gateway().search(SearchRequest(**request_kwargs))
     payload = response.to_dict()
     if not payload["results"]:
         payload["error"] = "all configured search providers failed or returned empty"
@@ -50,7 +50,6 @@ def build_web_search_handler(search_gateway):
         query = args.get("query")
         if not query or not isinstance(query, str):
             return json.dumps({"error": "query (string) is required"})
-        from deskpet.retrieval.contracts import SearchRequest
 
         try:
             max_results = max(1, min(int(args.get("max_results", 5)), 10))

@@ -42,6 +42,8 @@ import time
 import unicodedata
 from pathlib import Path
 
+from paths import output_dir
+
 # ---------------------------------------------------------------------------
 # Authorization set
 # ---------------------------------------------------------------------------
@@ -179,8 +181,6 @@ def _default_output_path(prefix: str, suffix: str, kind: str) -> Path:
     OutPut dir can't be created (read-only profile)."""
     if kind:
         try:
-            from paths import output_dir  # type: ignore[import-not-found]
-
             ts = int(time.time())
             uniq = _short_hash(_next_seed_uniq(), 4)
             return output_dir(kind) / f"{prefix}-{ts}-{uniq}{suffix}"

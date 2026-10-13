@@ -37,7 +37,7 @@ from .package_limits import (
     CapabilityPackageValidator,
     ValidatedCapabilityPackageRefV1,
 )
-from .skill_source import CanonicalSkillBatch
+from .skill_source import CanonicalSkillBatch, CanonicalSkillPack, ResolvedSkillSourceEvidence
 from .source import CapabilitySourceResolver, PackSourceRequest, StagedPack
 from .store import (
     CapabilityOperationRecord,
@@ -926,7 +926,6 @@ class CapabilityPackManager:
                 raise CapabilityManagerError("batch_provided_tools_invalid", member.normalized_name)
             selected_ref = str(member.member.get("selected_subdirectory") or member.normalized_name)
             selected.append(selected_ref)
-            from .skill_source import CanonicalSkillPack
 
             packs.append(
                 CanonicalSkillPack(
@@ -939,7 +938,6 @@ class CapabilityPackManager:
                     validated_ref,
                 )
             )
-        from .skill_source import ResolvedSkillSourceEvidence
 
         source = dict(intent.source)
         evidence = ResolvedSkillSourceEvidence.issue(

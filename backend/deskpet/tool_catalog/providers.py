@@ -24,6 +24,14 @@ from deskpet.sdk_adapters.tools import (
     active_product_tool_call_id,
 )
 from deskpet.tools.capabilities import ToolExecutionContext
+from deskpet.tools.code_tools.spawn_subagents_tool import (
+    build_sdk_await_subagents_tool,
+    product_delegation_tool_catalog,
+)
+from deskpet.tools.code_tools.todo_write_tool import build_todo_write_tool
+from deskpet.tools.code_tools.web_search_tool import build_web_search_handler
+from deskpet.tools.context_page_in_tools import build_context_page_in_handler
+from deskpet.tools.tool_search import register_capability_bridge_tools
 
 from .manifest import MANIFEST_SHA256, load_tool_manifest, migrate_tool_schemas
 
@@ -303,14 +311,6 @@ def adapt_model_arguments(name: str, arguments: Mapping[str, JsonValue]) -> dict
 
 
 def _dynamic_handlers(deps: ToolCatalogDependencies) -> dict[str, tuple[Callable[..., Any], str]]:
-    from deskpet.tools.code_tools.spawn_subagents_tool import (
-        build_sdk_await_subagents_tool,
-        product_delegation_tool_catalog,
-    )
-    from deskpet.tools.code_tools.todo_write_tool import build_todo_write_tool
-    from deskpet.tools.code_tools.web_search_tool import build_web_search_handler
-    from deskpet.tools.context_page_in_tools import build_context_page_in_handler
-    from deskpet.tools.tool_search import register_capability_bridge_tools
 
     delegation_provider = deps.delegation_service_provider or (lambda: None)
     delegates = product_delegation_tool_catalog(delegation_provider)

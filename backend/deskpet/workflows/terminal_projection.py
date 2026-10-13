@@ -15,6 +15,7 @@ from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 
 from .contracts import JsonValue, WorkflowContext, validate_json_value
+from .definitions.deep_research_v6_delivery import build_terminal_commit_request
 from .errors import InvalidStatePatch
 from .progress import (
     DEEP_RESEARCH_DIAGNOSTIC_CODES,
@@ -384,7 +385,6 @@ def build_default_async_terminal_commit_registry() -> AsyncTerminalCommitProject
         return await project_v6_terminal_commit(request, context)
 
     def _request_v6(**values: object) -> Mapping[str, JsonValue]:
-        from .definitions.deep_research_v6_delivery import build_terminal_commit_request
 
         return build_terminal_commit_request(**values).to_json()  # type: ignore[arg-type]
 

@@ -27,6 +27,23 @@ from typing import (
     Union,
 )
 
+from deskpet import context_os_e2e_hooks
+from deskpet.agent.compression_model_resolver import CompressionModelCandidate
+from deskpet.agent.context_segment_store import CoverageCommitProof
+from deskpet.agent.context_snapshot_store import SnapshotConflictError, await_snapshot_commit_ack
+from deskpet.agent.context_usage import context_usage_sample_id
+from deskpet.agent.reflection import _REFLECTION_INSTRUCTION, parse_reflection
+from deskpet.agent.tokens import count_messages_tokens as _cmt
+
+from agent.context_report import (
+    build_prepared_attempt_report,
+    estimate_selected_attempt_budget,
+    finish_current_attempt,
+)
+from agent.session_activity import args_hash
+from agent.token_budget import BudgetCheck as _BudgetCheck
+from agent.tool_use_shim import _raw_to_response
+
 if TYPE_CHECKING:
     from deskpet.execution.contracts import ProviderLaunchSnapshot
 
@@ -503,7 +520,6 @@ async def _suppress_repeated_tool_batch(
 ) -> bool:
     if loop.activity_store is None:
         return False
-    from agent.session_activity import args_hash
 
     activity = await loop.activity_store.get(session_id)
     signatures = {} if activity is None else dict(activity.tool_signature_window)
@@ -1467,10 +1483,6 @@ class AgentLoop(ToolContextPersistenceMixin):
     ) -> ProviderAttemptOptions | None:
         if self.context_attempt_store is None:
             return None
-        from agent.context_report import (
-            build_prepared_attempt_report,
-            estimate_selected_attempt_budget,
-        )
 
         provider_id, model_id, adapter_id, adapter_version = self._provider_attempt_identity(
             provider, fallback_model
@@ -1596,7 +1608,6 @@ class AgentLoop(ToolContextPersistenceMixin):
         )
         if options is None:
             return await invoke()
-        from agent.context_report import finish_current_attempt
 
         with context_attempt_scope(options):
             try:
@@ -1658,7 +1669,6 @@ class AgentLoop(ToolContextPersistenceMixin):
             async for item in iterator():
                 yield item
             return
-        from agent.context_report import finish_current_attempt
 
         final_usage: Any = None
         with context_attempt_scope(options):
@@ -1925,8 +1935,6 @@ class AgentLoop(ToolContextPersistenceMixin):
         # merely because its window was discovered late.
         _chain_budget_rescue_pending = False
         if context_metadata_enabled and chain_mode and provider_chain:
-            from agent.context_report import estimate_selected_attempt_budget
-
             initial_budget = getattr(prepared_context, "request_budget", None)
             reserve = int(
                 getattr(initial_budget, "generation_reserve", 0)
@@ -2392,10 +2400,6 @@ class AgentLoop(ToolContextPersistenceMixin):
             _budget_block_pending = _chain_budget_rescue_pending
             _chain_budget_rescue_pending = False
             try:
-                from agent.token_budget import (
-                    BudgetCheck as _BudgetCheck,
-                )
-
                 # Use the FIRST provider's model as the context-window
                 # reference (chain mode). In single-provider mode fall
                 # back to default_model.
@@ -2514,8 +2518,6 @@ class AgentLoop(ToolContextPersistenceMixin):
                 # 1746 真 token 仍不压)。直接数 working_messages 调用前可得、不受
                 # allocator 截断、不延迟,是最可靠的触发信号(复用统一计数,优化 #1+#3)。
                 try:
-                    from deskpet.agent.tokens import count_messages_tokens as _cmt
-
                     _wm_tokens = _cmt(working_messages)
                     if _wm_tokens > _ctoken_est:
                         _ctoken_est = _wm_tokens
@@ -2569,11 +2571,10 @@ class AgentLoop(ToolContextPersistenceMixin):
                                 provider_chain,
                                 requested_model=_requested_compression_model,
                             )
-                            from deskpet.context_os_e2e_hooks import (
-                                consume_context_os_e2e_fault as _consume_ctx_fault,
-                            )
 
-                            if _consume_ctx_fault("compactor_model_error"):
+                            if context_os_e2e_hooks.consume_context_os_e2e_fault(
+                                "compactor_model_error"
+                            ):
                                 raise RuntimeError("compactor_model_error")
                             await self._execute_coverage_compaction_jobs(
                                 cycle_id=_compaction_cycle_id,
@@ -2636,11 +2637,9 @@ class AgentLoop(ToolContextPersistenceMixin):
                             else None
                         )
                         if not context_metadata_enabled:
-                            from deskpet.context_os_e2e_hooks import (
-                                consume_context_os_e2e_fault as _consume_ctx_fault,
-                            )
-
-                            if _consume_ctx_fault("compactor_model_error"):
+                            if context_os_e2e_hooks.consume_context_os_e2e_fault(
+                                "compactor_model_error"
+                            ):
                                 raise RuntimeError("compactor_model_error")
                         _cresult = await _active_compressor.compress(
                             working_messages, **_compress_kwargs
@@ -2747,9 +2746,6 @@ class AgentLoop(ToolContextPersistenceMixin):
                                     ),
                                     occurred_at=time.time(),
                                 )
-                                from deskpet.agent.context_usage import (
-                                    context_usage_sample_id,
-                                )
 
                                 self._context_usage_basis_sample_id = context_usage_sample_id(
                                     session_id,
@@ -2815,8 +2811,6 @@ class AgentLoop(ToolContextPersistenceMixin):
                 # WI-2.1: append reflection instruction at tier2/tier3 only
                 # (zero overhead on normal tier1 path; flag off = BC).
                 if self.structured_reflection and iteration >= _SELFCHECK_TIER2_AT:
-                    from deskpet.agent.reflection import _REFLECTION_INSTRUCTION
-
                     msg = msg + _REFLECTION_INSTRUCTION
                 _append_loop_control(
                     working_messages,
@@ -2900,7 +2894,6 @@ class AgentLoop(ToolContextPersistenceMixin):
                     # provider. On success, accept the response and
                     # break. If every provider fails, emit
                     # ErrorEvent(reason="all_providers_failed").
-                    from agent.tool_use_shim import _raw_to_response
 
                     response = None  # type: ignore[assignment]
                     last_exc: Exception | None = None
@@ -3191,7 +3184,6 @@ class AgentLoop(ToolContextPersistenceMixin):
                     else:
                         # Convert to ChatResponse to share the rest of the
                         # iteration code with the non-streaming path.
-                        from agent.tool_use_shim import _raw_to_response
 
                         response = _raw_to_response(final_dict)
                 else:
@@ -3857,8 +3849,6 @@ class AgentLoop(ToolContextPersistenceMixin):
                         _stagnant = False
                         if verify_nudges_used >= 2 and self.structured_reflection:
                             try:
-                                from deskpet.agent.reflection import parse_reflection
-
                                 _refl = parse_reflection(response.content or "")
                                 _cur_replan = str(_refl.task_replanning) if _refl else ""
                                 if (
@@ -4045,8 +4035,6 @@ class AgentLoop(ToolContextPersistenceMixin):
                             # WI-2.1: append reflection instruction when flag on.
                             # Flag off (default) → rebound string unchanged (BC).
                             if self.structured_reflection:
-                                from deskpet.agent.reflection import _REFLECTION_INSTRUCTION
-
                                 rebound = rebound + _REFLECTION_INSTRUCTION
                             _verify_anchor = _latest_context_anchor(
                                 working_messages,
@@ -4655,9 +4643,6 @@ class AgentLoop(ToolContextPersistenceMixin):
             providers = getattr(self.llm, "providers", ()) or ()
             if isinstance(providers, dict):
                 providers = tuple(providers.values())
-        from deskpet.agent.compression_model_resolver import (
-            CompressionModelCandidate,
-        )
 
         candidates = tuple(
             CompressionModelCandidate(
@@ -4708,9 +4693,8 @@ class AgentLoop(ToolContextPersistenceMixin):
 
         if self.context_projector is None or self.context_snapshot_store is None:
             return None
-        from deskpet.context_os_e2e_hooks import consume_context_os_e2e_fault
 
-        if consume_context_os_e2e_fault("snapshot_cas_timeout"):
+        if context_os_e2e_hooks.consume_context_os_e2e_fault("snapshot_cas_timeout"):
             raise TimeoutError("snapshot_cas_timeout")
         last_user = next(
             (
@@ -4746,9 +4730,6 @@ class AgentLoop(ToolContextPersistenceMixin):
         tool_summary = self._prepared_toolset_summary(current_tool_set)
 
         async def _write(projection: Any, expected: int) -> Any:
-            from deskpet.agent.context_snapshot_store import (
-                await_snapshot_commit_ack,
-            )
 
             task = asyncio.create_task(
                 self.context_snapshot_store.flush_once(
@@ -4763,10 +4744,6 @@ class AgentLoop(ToolContextPersistenceMixin):
         try:
             receipt = await _write(snapshot, expected_revision)
         except Exception as exc:
-            from deskpet.agent.context_snapshot_store import (
-                SnapshotConflictError,
-            )
-
             if not isinstance(exc, SnapshotConflictError):
                 raise
             # One bounded re-read/re-project retry.  No authority is mutated;
@@ -4800,7 +4777,6 @@ class AgentLoop(ToolContextPersistenceMixin):
             raise RuntimeError("coverage_compaction_owner_unavailable")
         candidate = resolution.candidates[0]
         committed_ranges: set[tuple[int, int, str]] = set()
-        from deskpet.agent.context_segment_store import CoverageCommitProof
 
         for job in jobs:
             source_range = (

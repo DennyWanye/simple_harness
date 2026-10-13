@@ -23,6 +23,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import aiosqlite
 from simple_harness import (
     MandatoryContextActionRequired,
     MandatoryContextFeedbackV1,
@@ -45,6 +46,7 @@ from simple_harness.tools.runtime_catalog import ToolEffectClass
 
 from deskpet.execution.primary_context_pages import PrimaryContextPageUnavailable
 from deskpet.memory.primary_tool_causality import PrimaryToolCausalityUnavailable
+from deskpet.sdk_adapters import context_partitions
 from deskpet.sdk_adapters.causal_groups import plan_recent_causal_groups
 from deskpet.sdk_adapters.context_partitions import text_tokens
 
@@ -422,7 +424,6 @@ class ContextRouteLedgerStore:
             raise ContextRouteLedgerError("sdk_context_route_ledger_schema_missing")
 
     async def _connect(self):
-        import aiosqlite
 
         db = aiosqlite.connect(self._db_path)
         connecting = asyncio.ensure_future(db)
@@ -1161,20 +1162,10 @@ def _plan_turn_messages(
     twice per failing turn.
     """
 
-    from deskpet.sdk_adapters.context_partitions import (
-        PARTITION_CAPS,
-        ContextBudgetExceeded,
-        budget_window,
-        calibration_for_model,
-        effective_input_budget,
-        tool_schema_tokens,
-        trim_causal_groups,
-        turn_token_estimator,
-        window_tokens_for,
+    calibration = context_partitions.calibration_for_model(model_id)
+    estimator = context_partitions.turn_token_estimator(
+        calibration, provider_turn_ordinal=provider_turn_ordinal
     )
-
-    calibration = calibration_for_model(model_id)
-    estimator = turn_token_estimator(calibration, provider_turn_ordinal=provider_turn_ordinal)
     ratio = calibration.ratio(provider_turn_ordinal)
 
     split = 0
@@ -1200,7 +1191,7 @@ def _plan_turn_messages(
     # not in a payload the Host writes itself and can measure.  Uncalibrated
     # models and models without a schema ratio still get ``ratio``.
     schema_tokens = calibration.apply_tool_schema(
-        tool_schema_tokens(tools), provider_turn_ordinal=provider_turn_ordinal
+        context_partitions.tool_schema_tokens(tools), provider_turn_ordinal=provider_turn_ordinal
     )
     if not tail:
         return tuple(protected), {
@@ -1212,8 +1203,8 @@ def _plan_turn_messages(
             "open_group_items_dropped": 0,
         }
 
-    window = window_tokens_for(window_tokens, model_id)
-    tier = budget_window(window)
+    window = context_partitions.window_tokens_for(window_tokens, model_id)
+    tier = context_partitions.budget_window(window)
 
     history = [
         {
@@ -1238,16 +1229,16 @@ def _plan_turn_messages(
             else {}
         ),
     )
-    protected_caps = PARTITION_CAPS[tier]["protected"]
+    protected_caps = context_partitions.PARTITION_CAPS[tier]["protected"]
     protected_bytes = sum(len(_message_text(m).encode("utf-8")) for m in protected)
     if len(protected) > int(protected_caps["items_max"]) or protected_bytes > int(
         protected_caps["bytes_max"]
     ):
-        raise ContextBudgetExceeded("sdk_context_protected_partition_over_cap")
+        raise context_partitions.ContextBudgetExceeded("sdk_context_protected_partition_over_cap")
     # The tool schemas ship in the same request and cannot be trimmed, so they
     # are protected mass exactly like the system prefix (Incident N F-E4).
     protected_tokens = schema_tokens + sum(estimator(_message_text(m)) for m in protected)
-    kept_groups, budget_trimmed = trim_causal_groups(
+    kept_groups, budget_trimmed = context_partitions.trim_causal_groups(
         plan.groups,
         window_tokens=window,
         protected_tokens=protected_tokens,
@@ -1258,7 +1249,7 @@ def _plan_turn_messages(
     # Frozen pass rule: after every allowed trim the estimate must fit the
     # effective budget — shipping an oversized payload (underestimate) is
     # forbidden, so the turn fails closed instead.
-    effective = effective_input_budget(window)
+    effective = context_partitions.effective_input_budget(window)
 
     # Incident Z: how many leading items of a group survive.  Only the open
     # group is ever partially kept, and only on the wrap-up path.
@@ -1322,7 +1313,7 @@ def _plan_turn_messages(
             open_tokens,
             allow_full_group_trim,
         )
-        raise ContextBudgetExceeded(
+        raise context_partitions.ContextBudgetExceeded(
             planned=total,
             effective=effective,
             protected=protected_tokens,

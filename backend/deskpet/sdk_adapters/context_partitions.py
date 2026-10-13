@@ -19,6 +19,7 @@ import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 
+from llm import model_info
 from simple_harness import thaw_json
 
 from deskpet.sdk_adapters.causal_groups import CausalGroup
@@ -284,9 +285,7 @@ def calibration_for_model(model_id: object) -> ProviderTokenCalibration:
     if "/" in name:
         name = name.split("/", 1)[1]
     try:
-        from llm.model_info import resolve
-
-        info = resolve(name)
+        info = model_info.resolve(name)
         return ProviderTokenCalibration(
             base_ratio=float(getattr(info, "input_estimate_ratio", 1.0) or 1.0),
             per_turn_ratio=float(getattr(info, "input_estimate_ratio_per_turn", 0.0) or 0.0),
@@ -319,11 +318,9 @@ def window_tokens_for(window_tokens: object, model_id: object = None) -> int:
     if not name:
         return floor
     try:
-        from llm.model_info import BUILTIN, resolve
-
-        if name not in BUILTIN:
+        if name not in model_info.BUILTIN:
             return floor
-        return max(int(resolve(name).context_window), floor)
+        return max(int(model_info.resolve(name).context_window), floor)
     except Exception:  # noqa: BLE001 — metadata must never break budgeting
         return floor
 

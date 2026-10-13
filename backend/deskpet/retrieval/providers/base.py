@@ -8,6 +8,7 @@ from typing import Protocol
 import httpx
 
 from ..contracts import PublicErrorCode, RetrievalCandidate, SearchBudget, SearchRequest
+from ..ranking import canonicalize_url, stable_candidate_id
 
 
 @dataclass(slots=True)
@@ -62,8 +63,6 @@ def raise_for_search_status(response: httpx.Response) -> None:
 
 
 def candidates_from_rows(provider: str, rows: list[dict[str, str]]) -> list[RetrievalCandidate]:
-
-    from ..ranking import canonicalize_url, stable_candidate_id
 
     searched_at = datetime.now(UTC).isoformat()
     out: list[RetrievalCandidate] = []

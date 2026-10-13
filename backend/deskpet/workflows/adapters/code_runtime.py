@@ -17,11 +17,14 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
+from agent.context_messages import provider_purpose_scope
 from llm.types import ChatResponse
 
+from deskpet.agent.tokens import count_messages_tokens
 from deskpet.execution.dispatch import dispatch_with_run_fence
 from deskpet.execution.provider_invocations import coordinate_provider_call
 from deskpet.tools.capabilities import (
+    PreparedToolCapability,
     canonical_deferred_capability_id,
     canonical_hash,
 )
@@ -341,8 +344,6 @@ class ProposalPort:
     ]:
         messages = [copy.deepcopy(dict(message)) for message in state.messages]
         try:
-            from deskpet.agent.tokens import count_messages_tokens
-
             token_estimate = int(count_messages_tokens(messages))
         except Exception:  # noqa: BLE001
             token_estimate = max(0, int(state.token_estimate))
@@ -390,8 +391,6 @@ class ProposalPort:
             copy.deepcopy(dict(message)) for message in getattr(result, "messages", messages)
         ]
         try:
-            from deskpet.agent.tokens import count_messages_tokens
-
             compacted_tokens = int(count_messages_tokens(compacted))
         except Exception:  # noqa: BLE001
             compacted_tokens = max(
@@ -490,7 +489,6 @@ class ProposalPort:
         )
         if not self.context_os_v1:
             return prepared
-        from deskpet.tools.capabilities import PreparedToolCapability
 
         for batch in self._activation_batches(state.messages):
             base_revisions = {int(control.get("base_scope_revision", -1)) for control, _ in batch}
@@ -664,7 +662,6 @@ class ProposalPort:
             if effective_prepared is not None
             else {}
         )
-        from agent.context_messages import provider_purpose_scope
 
         with provider_purpose_scope(
             "workflow",

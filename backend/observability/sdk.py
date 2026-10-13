@@ -17,6 +17,8 @@ from contextvars import ContextVar, Token
 from pathlib import Path
 from typing import Any
 
+from simple_harness.observability import CorrelationContext
+
 SDK_EVENTS_FILENAME = "sdk-observability-events.jsonl"
 SDK_RING_FILENAME = "sdk-observability-ring.json"
 SDK_SNAPSHOT_FILENAME = "sdk-observability-snapshot.json"
@@ -37,7 +39,6 @@ class HostCorrelationPolicy:
 
     @staticmethod
     def _context(*, run_id: str, session_id: str | None, request_id: str | None):
-        from simple_harness.observability import CorrelationContext
 
         return CorrelationContext.from_authority_ids(
             run_id=run_id,

@@ -28,6 +28,7 @@ from deskpet.tools.capabilities import (
 from deskpet.tools.prepared_snapshot import (
     dump_context_os_snapshot,
     dump_prepared_tool_set,
+    load_context_os_snapshot,
 )
 
 from .contracts import (
@@ -165,7 +166,6 @@ class SqliteCapabilityRefreshSnapshotRepository:
     async def load_context_os(
         self, snapshot_ref: str
     ) -> tuple[PreparedToolSet, ToolEligibilityContext]:
-        from deskpet.tools.prepared_snapshot import load_context_os_snapshot
 
         payload = await self._load(
             snapshot_ref=snapshot_ref,

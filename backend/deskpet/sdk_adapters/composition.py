@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, TypeAlias
 
+import aiosqlite
 from simple_harness import (
     ROOT_PROFILE_KEY,
     EffectId,
@@ -892,7 +893,6 @@ class ProductSdkRuntimeStack:
         come from the same verified public provider records, projected by the
         transcript ordinal of the assistant item. Read-only; no new grant.
         """
-        import aiosqlite
 
         self.require_ready()
         if self._uow is None:

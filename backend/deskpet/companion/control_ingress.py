@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
+from .contracts import CandidateMode, MutationAction, MutationRequest
 from .control_command_canonical import (
     CanonicalCommandError,
     parse_canonical_json,
@@ -25,6 +26,7 @@ from .identity import (
     load_or_create_local_identity,
 )
 from .identity_gate import IdentityReadyGate
+from .store import canonical_hash
 
 logger = logging.getLogger(__name__)
 
@@ -123,7 +125,6 @@ def _require_future_expiry(value: Any) -> str:
 
 
 def _canonical_id(kind: str, owner: Any, body: Mapping[str, Any]) -> str:
-    from .store import canonical_hash
 
     return canonical_hash(
         {
@@ -322,8 +323,6 @@ class CompanionActivationDecisionService:
         frozen_identity: Any,
         **body: Any,
     ) -> Mapping[str, Any]:
-        from .contracts import CandidateMode, MutationAction, MutationRequest
-        from .store import canonical_hash
 
         _require_exact_fields(
             body,
@@ -643,8 +642,6 @@ class CompanionRollbackDecisionService(_NotificationMutationService):
         frozen_identity: Any,
         **body: Any,
     ) -> Mapping[str, Any]:
-        from .contracts import CandidateMode, MutationAction, MutationRequest
-        from .store import canonical_hash
 
         notification = await self._notification(frozen_identity, body, action="rollback")
         source_refs = tuple(str(item) for item in notification.get("source_refs") or ())

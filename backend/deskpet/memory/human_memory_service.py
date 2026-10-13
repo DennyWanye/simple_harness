@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
+import aiosqlite
 from simple_harness import (
     DeliveryRecipient,
     DisclosureContext,
@@ -44,12 +45,17 @@ from simple_harness import (
     TaskScopeMutationPlan,
 )
 
+from deskpet.execution import admission_rejection
 from deskpet.execution.foreground_queue import ForegroundQueueStore
 from deskpet.memory.human_memory_program import HumanMemoryProgramStore
+from deskpet.memory.primary_decisions import PrimaryDecisions
+from deskpet.memory.primary_read_model import PrimaryReadError, PrimaryReadModel
+from deskpet.memory.primary_workspace_bindings import PrimaryWorkspaceBindings
 from deskpet.memory.schema import (
     StartupCompositionMode,
     StartupEpochDecision,
 )
+from deskpet.memory.trusted_disclosure import TrustedDisclosureStore
 from deskpet.memory.writer_fence import assert_human_memory_ingress_open
 from deskpet.task_scope.projections import TaskScopeProjectionStore
 from deskpet.task_scope.protocol import (
@@ -265,7 +271,6 @@ class ExactControlRunRequest:
     idempotency_key: str
 
     def __post_init__(self) -> None:
-        from deskpet.memory.primary_read_model import PrimaryReadError
 
         try:
             identifier(self.expected_run_ref, "expected_run_ref", 512)
@@ -514,7 +519,6 @@ class HumanMemoryHostService:
         self._recovery = recovery
         self._scheduler_wake = scheduler_wake
         self._display_invalidation = display_invalidation
-        from deskpet.memory.primary_read_model import PrimaryReadModel
 
         self._primary_read = PrimaryReadModel(
             self._db_path,
@@ -522,7 +526,6 @@ class HumanMemoryHostService:
             settled_run_reader=settled_run_reader,
             run_binding_reader=run_binding_reader,
         )
-        from deskpet.memory.primary_decisions import PrimaryDecisions
 
         self._primary_decisions = PrimaryDecisions(
             self._db_path,
@@ -585,7 +588,6 @@ class HumanMemoryHostService:
         )
 
     def _primary_workspace_bindings(self):
-        from deskpet.memory.primary_workspace_bindings import PrimaryWorkspaceBindings
 
         return PrimaryWorkspaceBindings(
             self._db_path,
@@ -1029,14 +1031,12 @@ class HumanMemoryHostService:
         }
 
     async def configure_disclosure(self, *, request_id, expected_ref, selection):
-        from deskpet.memory.trusted_disclosure import TrustedDisclosureStore
 
         return await TrustedDisclosureStore(self._db_path).configure(
             auth=self._auth, request_id=request_id, expected_ref=expected_ref, selection=selection
         )
 
     async def current_disclosure_configuration(self):
-        from deskpet.memory.trusted_disclosure import TrustedDisclosureStore
 
         return await TrustedDisclosureStore(self._db_path).current(auth=self._auth)
 
@@ -1841,15 +1841,12 @@ class HumanMemoryHostService:
                 "ORDER BY t.enqueue_sequence,t.turn_id",
                 (self._auth.subject,),
             ).fetchall()
-        import aiosqlite
-
-        from deskpet.execution.admission_rejection import read_admission_rejection_tx
 
         rejections = {}
         async with aiosqlite.connect(self._db_path) as db:
             db.row_factory = aiosqlite.Row
             for row in rows:
-                rejection = await read_admission_rejection_tx(
+                rejection = await admission_rejection.read_admission_rejection_tx(
                     db, turn_id=row["turn_id"], subject=self._auth.subject
                 )
                 if rejection is not None:

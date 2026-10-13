@@ -35,6 +35,7 @@ from pathlib import Path
 from typing import Any
 
 import structlog
+from agent.context_messages import provider_purpose_scope
 
 from deskpet.agent.assembler.bundle import TASK_TYPES
 from deskpet.agent.lexicon import (
@@ -351,8 +352,6 @@ class TaskClassifier:
             {"role": "user", "content": user_message},
         ]
         try:
-            from agent.context_messages import provider_purpose_scope
-
             with provider_purpose_scope("classifier"):
                 response = await asyncio.wait_for(
                     self._llm.chat_with_fallback(

@@ -35,6 +35,7 @@ from deskpet.execution.ports import (
     CurrentExecutionScopeLeasePort,
 )
 from deskpet.execution.uow_ports import ToolExecutionUnitOfWork
+from deskpet.harness.skill_scope import skill_tool_intersection_from_snapshot
 from deskpet.tools.capabilities import ToolExecutionContext
 from deskpet.tools.registry import ToolRegistry
 from deskpet.workflows.effects import NormalizedToolOutcome, PreparedToolCall
@@ -290,9 +291,6 @@ class EffectBatchExecutor:
         request_payload = sanitized.get("payload") if isinstance(sanitized, Mapping) else None
         if not isinstance(request_payload, Mapping):
             raise ValueError("RunStart request payload cannot rebuild Skill ToolRefs")
-        from deskpet.harness.skill_scope import (
-            skill_tool_intersection_from_snapshot,
-        )
 
         activated_scopes: tuple[Mapping[str, Any], ...] = ()
         selection = (

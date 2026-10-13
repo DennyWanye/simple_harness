@@ -32,6 +32,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+from agent_orchestrator.storage import htn_store
 from simple_harness.agents.arp import catalogue as cat
 from simple_harness.agents.arp.errors import ArpError
 from simple_harness.agents.arp.pins import Pin
@@ -172,7 +173,6 @@ def _goal(revision: Any) -> tuple[str, list[str]]:
 
 
 async def evaluate(service: Any, request: Mapping[str, Any]) -> dict[str, Any]:
-    from agent_orchestrator.storage.htn_store import HtnStore
 
     command_id = request.get("command_id")
     if not isinstance(command_id, str) or not command_id.strip():
@@ -241,7 +241,7 @@ async def evaluate(service: Any, request: Mapping[str, Any]) -> dict[str, Any]:
         # evaluation's official acceptance.  Linking now, before anything runs, lets the
         # Worker use the Skill in TRIAL from its first call.
         root = ROOT_TASK_PREFIX + mission_id
-        if HtnStore(service._orchestrator.store).latest_task_semantics(root) is None:
+        if htn_store.HtnStore(service._orchestrator.store).latest_task_semantics(root) is None:
             raise SkillCatalogueRefused("internal", "评估任务没有根步骤（不是分层任务）")
         lifecycle.record_evaluation_dispatch(
             evaluation,

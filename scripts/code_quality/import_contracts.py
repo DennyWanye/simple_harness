@@ -87,7 +87,10 @@ def matches(name: str, prefixes: tuple[str, ...]) -> str | None:
 
 
 def first_forbidden(graph: dict[str, set[str]], starts, prefixes: tuple[str, ...]) -> str | None:
-    """从 starts 出发沿顶层依赖能走到的第一个被禁模块。"""
+    """从 starts（连同其上层包）出发沿顶层依赖能走到的第一个被禁模块。"""
+    from import_graph import with_ancestors
+
+    starts = with_ancestors(starts)
     seen = set(starts)
     todo = list(starts)
     while todo:

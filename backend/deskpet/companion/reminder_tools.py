@@ -14,6 +14,7 @@ from deskpet.tools.build_identity import (
     validate_core_registry_handler_set,
 )
 from deskpet.tools.capabilities import ToolExecutionContext
+from deskpet.tools.registry import ToolRegistry
 from deskpet.types.task_grants import ResourceSelector
 
 from .reminders import ReminderRunAuthority, ReminderServicePort
@@ -316,8 +317,6 @@ def build_companion_reminder_specs(
     authority_selector: ReminderAuthoritySelectorPort,
 ) -> tuple[Any, ...]:
     """Build the exact V2 replacement set without mutating production."""
-
-    from deskpet.tools.registry import ToolRegistry
 
     staging = ToolRegistry()
     register_companion_reminder_tools(staging, service, authority_selector)

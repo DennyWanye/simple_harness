@@ -37,6 +37,7 @@ from llm.errors import (
     LLMTimeoutError,
 )
 from llm.keys import get_api_key, mask_key
+from llm.provider_registry import EmptyApiKeyError
 from llm.relay_errors import classify_relay_error
 from llm.types import ChatChunk, ChatResponse, ChatUsage, ToolCall
 
@@ -80,8 +81,6 @@ class OpenAIAdapter(BaseLLMAdapter):
     def _ensure_api_key_usable(self) -> None:
         if (self._api_key or "").strip().lower() in _PLACEHOLDER_KEYS:
             if not self._is_local_base_url():
-                from llm.provider_registry import EmptyApiKeyError
-
                 raise EmptyApiKeyError(getattr(self, "_provider_id", "local"))
 
     def _get_client(self) -> Any:

@@ -27,6 +27,9 @@ import os
 import re
 from pathlib import Path
 
+import paths as _paths
+from deskpet.permissions.protected_paths import guard
+
 # spec 原文文案（test 对此精确断言，勿改）。
 _VIOLATION_MSG = "当前任务写盘限定在 workspace；需要写其他项目时请先选择对应工作区"
 
@@ -55,8 +58,6 @@ def resolve_workspace_root(configured: str = "") -> Path:
     # DESKPET_USER_DATA_DIR 覆盖 + portable 模式），保持与 main.py
     # 启动时 mkdir 的那个 workspace 同一个目录。
     try:
-        import paths as _paths
-
         return (_paths.user_data_dir() / "workspace").resolve()
     except Exception:  # noqa: BLE001 — 退化到 env / cwd，绝不抛
         base = os.environ.get("DESKPET_USER_DATA_DIR") or os.getcwd()
@@ -103,7 +104,6 @@ def write_scope_check(
     if not path or not isinstance(path, str):
         # 没有 path 的调用交给工具自身的 path-required 校验，这里不插手。
         return None
-    from deskpet.permissions.protected_paths import guard
 
     base = Path(scope_root) if scope_root else None
     return guard(

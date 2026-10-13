@@ -50,10 +50,14 @@ from agent.context_messages import (
     ContextMessageMeta,
     ProviderAttemptOptions,
     context_attempt_scope,
+    provider_purpose_scope,
     tag_message,
 )
 
 from deskpet.execution.provider_workloads import ProviderWorkloadContext, invoke_explicit
+
+from .tokens import count_messages_tokens as _cmt
+from .tokens import count_text_tokens
 
 logger = structlog.get_logger(__name__)
 
@@ -241,7 +245,6 @@ class ContextCompressor:
         resolved_model: str | None = None,
         workload_context: ProviderWorkloadContext | None = None,
     ) -> Any:
-        from agent.context_messages import provider_purpose_scope
 
         if resolved_provider is None:
             if self._llm is None:
@@ -376,8 +379,6 @@ class ContextCompressor:
         )
         if n_micro > 0:
             try:
-                from .tokens import count_messages_tokens as _cmt
-
                 if _cmt(work) < self.trigger_tokens():
                     logger.info(
                         "context_microcompact_only",
@@ -1057,7 +1058,6 @@ def _approx_tokens(text: str) -> int:
     与 budget/assembler 同口径,消除旧 ``len//4`` 不一致,优化 #1+#3)。"""
     if not text:
         return 0
-    from .tokens import count_text_tokens
 
     return count_text_tokens(text)
 

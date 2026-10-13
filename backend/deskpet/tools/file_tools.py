@@ -40,6 +40,8 @@ from typing import Any
 
 import platformdirs
 
+from deskpet.permissions.protected_paths import guard
+
 from .capabilities import ToolExecutionContext
 from .context_adapter import bind_context_handler, legacy_execution_context
 
@@ -199,7 +201,6 @@ def _resolve_for_tool(
     except RuntimeError:
         return None, None
     candidate = p.resolve() if p.is_absolute() else (root / p).resolve()
-    from deskpet.permissions.protected_paths import guard
 
     violation = guard(candidate, "read" if op == "read" else "write", extra_allowed=[root])
     if violation is not None:

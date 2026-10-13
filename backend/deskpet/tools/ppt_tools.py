@@ -65,9 +65,15 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Literal, Optional
 
-from deskpet.tools import ppt_outline_store
+import paths
+from paths import output_dir
+
+from deskpet.tools import ppt_outline_store, research_tools
 from deskpet.tools.image_tools import generate_images, probe_image_reachable
 
+from . import image_tools, ppt_visual_review
+from . import ppt_render as _mod
+from . import ppt_template_picker as _tpl
 from .capabilities import ToolExecutionContext
 from .context_adapter import (
     bind_context_handler,
@@ -204,8 +210,6 @@ ppt_render = None  # type: ignore[assignment]
 def _get_ppt_renderer():
     global ppt_render
     if ppt_render is None:
-        from . import ppt_render as _mod  # noqa: PLW0603
-
         ppt_render = _mod
     return ppt_render
 
@@ -416,8 +420,6 @@ FULL_PAGE_LAYOUT_SPECS: dict[str, FullPageLayoutSpec] = {
 def _resolve_ppt_image_model() -> str:
     """Resolve the concrete image model used by durable PPT effects."""
     try:
-        from . import image_tools
-
         return str(image_tools._image_model())  # type: ignore[attr-defined]
     except Exception:  # noqa: BLE001
         return "doubao-seedream-4.0"
@@ -703,20 +705,15 @@ def _is_config_or_auth_error(e: Exception) -> bool:
 
 async def _research_topic_for_ppt(topic: str, *, depth: str, timeout_s: float):
     """为 PPT Pro 跑 DeepResearch；软失败返回 None，认证/配置错误上抛。"""
-    from deskpet.tools.research_tools import (  # type: ignore[import-not-found]
-        _DEPTH_PRESETS,
-        _resolve_default_llm_call,
-        deepresearch,
-    )
 
     chosen_depth = (depth or "standard").strip().lower()
-    d_subq, d_urls, d_pass, d_rounds = _DEPTH_PRESETS.get(
-        chosen_depth, _DEPTH_PRESETS.get("standard", (5, 4, 12, 1))
+    d_subq, d_urls, d_pass, d_rounds = research_tools._DEPTH_PRESETS.get(
+        chosen_depth, research_tools._DEPTH_PRESETS.get("standard", (5, 4, 12, 1))
     )
 
     async def _run():
-        llm_call = await _resolve_default_llm_call()
-        return await deepresearch(
+        llm_call = await research_tools._resolve_default_llm_call()
+        return await research_tools.deepresearch(
             topic,
             llm_call=llm_call,
             max_sub_questions=d_subq,
@@ -742,17 +739,12 @@ async def _research_topic_for_ppt(topic: str, *, depth: str, timeout_s: float):
 def _save_and_index_research(topic: str, report: Any):
     """Best-effort 落盘调研报告并更新 DeepResearch 索引；失败只记录日志。"""
     try:
-        from deskpet.tools.research_tools import (  # type: ignore[import-not-found]
-            _save_report,
-            _update_deepresearch_index,
-        )
-
-        saved = _save_report(topic, report)
+        saved = research_tools._save_report(topic, report)
         if not saved:
             return None
 
         async def _update() -> None:
-            await _update_deepresearch_index(saved, topic, report)
+            await research_tools._update_deepresearch_index(saved, topic, report)
 
         try:
             loop = asyncio.get_running_loop()
@@ -3754,9 +3746,7 @@ def _disk_preflight(*, image_mode: bool, pages: int) -> str | None:
     C: hit 0 bytes). Never raises — on any uncertainty it returns None so a
     space check can never itself block a valid render."""
     try:
-        from paths import user_data_dir  # type: ignore[import-not-found]
-
-        base = user_data_dir()
+        base = paths.user_data_dir()
     except Exception:  # noqa: BLE001
         return None
     free = _drive_free_bytes(base)
@@ -3897,8 +3887,6 @@ def _resolve_template_path(template: str | None) -> str | None:
     :func:`_resolve_template_for_render`(它有 topic 上下文)。
     """
     try:
-        from . import ppt_template_picker as _tpl
-
         raw = str(template or "").strip()
         if not raw:
             return None
@@ -3937,8 +3925,6 @@ def _resolve_template_for_render(template: str | None, *, topic: str = "") -> st
     大类名 → 预览图视觉选一套;否则按路径/stem 解析。从不抛异常。
     """
     try:
-        from . import ppt_template_picker as _tpl
-
         raw = str(template or "").strip()
         if not raw:
             return None
@@ -5562,7 +5548,6 @@ def _visual_review_loop(
         render_fn = getattr(renderer, "render_pptx_to_pngs_safe", None)
         if not callable(render_fn):
             return
-        from .ppt_visual_review import review_slides
 
         rounds_meta: list[dict[str, Any]] = []
         for rnd in range(1, max_rounds + 1):
@@ -5578,7 +5563,7 @@ def _visual_review_loop(
                 }
                 for so in slides
             ]
-            reviews = review_slides(pngs, meta)
+            reviews = ppt_visual_review.review_slides(pngs, meta)
             if not reviews:
                 break
             n_bad = sum(1 for r in reviews if not r.get("ok", True))
@@ -5669,7 +5654,6 @@ def _visual_review_loop_template(
         render_fn = getattr(renderer, "render_pptx_to_pngs_safe", None)
         if not callable(render_fn):
             return
-        from .ppt_visual_review import review_slides
 
         banned_pages: dict[int, set[int]] = {}
         rounds_meta: list[dict[str, Any]] = []
@@ -5686,7 +5670,7 @@ def _visual_review_loop_template(
                 }
                 for so in slides
             ]
-            reviews = review_slides(pngs, meta, mode="template")
+            reviews = ppt_visual_review.review_slides(pngs, meta, mode="template")
             if not reviews:
                 break
             n_bad = sum(1 for r in reviews if not r.get("ok", True))
@@ -5736,8 +5720,6 @@ def _resolve_output_path(p: str | None) -> Path:
     # 默认落 <user_data>/OutPut/PPT/(用户好找,系统 temp 没人翻得到);
     # paths 不可用(独立脚本等)再回退 temp。
     try:
-        from paths import output_dir  # type: ignore[import-not-found]
-
         return output_dir("PPT") / fname
     except Exception:  # noqa: BLE001
         return Path(tempfile.gettempdir()) / fname
@@ -5833,8 +5815,6 @@ def _build_template_description() -> str:
     选该类里最贴主题的一套设计。也支持直传一个 .pptx 绝对路径。
     """
     try:
-        from . import ppt_template_picker as _tpl
-
         cats = _tpl.list_categories()
     except Exception:  # noqa: BLE001
         cats = []

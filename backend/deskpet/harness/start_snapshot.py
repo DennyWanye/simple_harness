@@ -7,6 +7,7 @@ import json
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from deskpet.capabilities.refresh import context_os_snapshot_ref
 from deskpet.execution.contracts import (
     DeliveryPolicy,
     DeliverySpec,
@@ -17,6 +18,7 @@ from deskpet.execution.contracts import (
     fingerprint_json,
 )
 from deskpet.security.redaction import TraceRedactor
+from deskpet.tools.prepared_snapshot import load_context_os_snapshot
 
 from .contracts import (
     HostContext,
@@ -80,9 +82,6 @@ def _trusted_context_os(
         return None
     if not prepared.prepared_tool_ref or prepared.prepared_tool_hash != prepared.prepared_tool_ref:
         return None
-
-    from deskpet.capabilities.refresh import context_os_snapshot_ref
-    from deskpet.tools.prepared_snapshot import load_context_os_snapshot
 
     tool_set, eligibility = load_context_os_snapshot(raw)
     if context_os_snapshot_ref(tool_set, eligibility) != prepared.prepared_tool_ref:

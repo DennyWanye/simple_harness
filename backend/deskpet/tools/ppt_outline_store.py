@@ -22,6 +22,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import paths as _paths
+
 log = logging.getLogger(__name__)
 
 # PPT Outline history table schema
@@ -339,8 +341,6 @@ def _default_state_db_path() -> Path:
         log.debug("ppt outline default state db config lookup failed: %s", exc)
 
     try:
-        import paths as _paths  # type: ignore[import-not-found]
-
         return _paths.user_data_dir() / "data" / "state.db"
     except Exception:
         return Path("data") / "state.db"

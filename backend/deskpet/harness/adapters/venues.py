@@ -24,6 +24,12 @@ from deskpet.agent.turn_preparer import (
     ProductTurnPreparer,
     TurnInput,
 )
+from deskpet.capabilities.contracts import CapabilityScope
+from deskpet.capabilities.refresh import context_os_snapshot_ref, exposure_intent_ref
+from deskpet.companion.turn_authority import (
+    CompanionCatalogLeaseCaptureV1,
+    FinalizedCompanionTurnV1,
+)
 from deskpet.execution.contracts import (
     ActorContext,
     AdmissionSpec,
@@ -45,6 +51,12 @@ from deskpet.harness.adapters.product_turn_open import (
 from deskpet.harness.contracts import HostExtensionRefV1, PreparedRunContextV1
 from deskpet.harness.kernel import HostContext, RunKernel, RunRequest, root_run_identity
 from deskpet.harness.ports import DecisionSignal, UserContinuationSignal
+from deskpet.security.tool_public_projection import (
+    ToolPresentationSnapshotExtension,
+    compile_tool_presentation_policy,
+)
+from deskpet.tools.capabilities import ToolExposureIntent
+from deskpet.tools.prepared_snapshot import dump_context_os_snapshot
 
 
 def _enrich_companion_selection_exact_tools(
@@ -537,14 +549,6 @@ class ProductVenueRunAdapter:
         if (companion_state is None) != (companion_finalizer is None):
             raise RuntimeError("companion turn authority state/finalizer must be paired")
         if prepared.prepared_context is not None:
-            from deskpet.capabilities.contracts import CapabilityScope
-            from deskpet.capabilities.refresh import (
-                context_os_snapshot_ref,
-                exposure_intent_ref,
-            )
-            from deskpet.tools.capabilities import ToolExposureIntent
-            from deskpet.tools.prepared_snapshot import dump_context_os_snapshot
-
             prepared_tool_set = prepared.prepared_context.tool_set
             context_os = dump_context_os_snapshot(prepared_tool_set, prepared.eligibility)
             context_ref = context_os_snapshot_ref(prepared_tool_set, prepared.eligibility)
@@ -615,11 +619,6 @@ class ProductVenueRunAdapter:
                 raise RuntimeError("prepared ToolSet exact capture is unavailable")
             lease_descriptor = prepared_catalog_lease.descriptor
             if companion_state is not None:
-                from deskpet.companion.turn_authority import (
-                    CompanionCatalogLeaseCaptureV1,
-                    FinalizedCompanionTurnV1,
-                )
-
                 capture = CompanionCatalogLeaseCaptureV1(
                     run_catalog_content_stamp=(prepared_catalog_lease.run_catalog_content_stamp),
                     process_catalog_stamp=(prepared_catalog_lease.process_catalog_stamp),
@@ -668,10 +667,6 @@ class ProductVenueRunAdapter:
                     *prepared_tool_set.direct,
                     *prepared_tool_set.activated,
                 )
-            )
-            from deskpet.security.tool_public_projection import (
-                ToolPresentationSnapshotExtension,
-                compile_tool_presentation_policy,
             )
 
             presentation_policies = tuple(

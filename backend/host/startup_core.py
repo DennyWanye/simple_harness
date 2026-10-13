@@ -7,6 +7,7 @@ import os
 import signal as _signal
 from pathlib import Path
 
+import paths
 import paths as _paths
 from config import resolve_cloud_api_key as _resolve_cloud_api_key
 from deskpet.memory.display_invalidation import MemoryDisplayInvalidation
@@ -244,12 +245,11 @@ async def _startup_desktop_and_realtime_voice(startup_epoch: Any) -> None:
         # Agent 编排服务（plans/2026-09-11-orchestrator-host-integration，用户 Phase3
         # P3.1）：在 SDK stack 之后启动；失败只让它不可用并记入 startup_errors，
         # 绝不让启动失败。
-        from paths import user_data_dir as _orchestration_user_data_dir
 
         await activate_orchestration(
             service_context,
             config_path=_CONFIG_PATH,
-            user_data=_orchestration_user_data_dir(),
+            user_data=paths.user_data_dir(),
             broadcast_targets=lambda: list(_control_connections.values()),
             record_startup_error=startup_errors.record,
         )

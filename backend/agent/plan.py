@@ -29,6 +29,8 @@ import logging
 import re
 from dataclasses import dataclass
 
+from agent.context_messages import provider_purpose_scope
+
 log = logging.getLogger(__name__)
 
 
@@ -249,8 +251,6 @@ async def _maybe_extract_general_plan(
         },
     ]
     try:
-        from agent.context_messages import provider_purpose_scope
-
         # P5-S1 D fix: bumped 800 → 2048. thinking-mode models
         # (deepseek-v4-pro etc.) commonly use 800-1500 tokens just
         # for <think>...</think> chain-of-thought before producing the

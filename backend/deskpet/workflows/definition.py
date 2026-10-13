@@ -43,6 +43,7 @@ from .errors import (
     WorkflowErrorCode,
     WorkflowNodeError,
 )
+from .native import InMemoryNativeCheckpointStore, NativeWorkflowExecutable
 
 logger = logging.getLogger(__name__)
 
@@ -921,10 +922,7 @@ class CompiledWorkflow:
 
     def bind(self, *, checkpointer: object | None = None) -> WorkflowExecutable:
         if checkpointer is None:
-            from .native import InMemoryNativeCheckpointStore
-
             checkpointer = InMemoryNativeCheckpointStore()
-        from .native import NativeWorkflowExecutable
 
         graph = NativeWorkflowExecutable(self, checkpointer)  # type: ignore[arg-type]
         return WorkflowExecutable(graph=graph, manifest=self.manifest)

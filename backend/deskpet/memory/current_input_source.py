@@ -10,8 +10,12 @@ import hashlib
 import json
 from base64 import b64decode, urlsafe_b64encode
 
+import aiosqlite
+
+from deskpet.memory.primary_visibility import read_evidence_pair
+from deskpet.memory.trusted_disclosure import binding_token, current_record_tx
 from deskpet.memory.writer_fence import require_authenticated_host_snapshot
-from deskpet.task_scope.protocol import canonical_hash, digest
+from deskpet.task_scope.protocol import canonical_hash, digest, identifier
 
 COMMON_POLICY_TEXT = (
     "本人用途按已授权范围使用合格记忆。向同事、群聊、公开受众、招聘方、供应商、合作方等非本人受众提供工作/公共材料时，"
@@ -92,7 +96,6 @@ def _selection(config):
 
 def build_input_use(*, auth, envelope, receipt, primary_ref, delivery_key, config, declared):
     """Called INSIDE the fenced atomic enqueue TX; auth DTO alone cannot issue."""
-    from deskpet.memory.trusted_disclosure import binding_token
 
     lease = require_authenticated_host_snapshot(auth)
     if auth.subject != envelope.subject or config["subject"] != auth.subject:
@@ -118,7 +121,6 @@ def build_input_use(*, auth, envelope, receipt, primary_ref, delivery_key, confi
 
 def validate_input_use(value, *, envelope, receipt, primary_ref, delivery_key, config):
     """Validate an already persisted fact. This does not authenticate caller DTOs."""
-    from deskpet.memory.trusted_disclosure import binding_token
 
     if (
         type(value) is not dict
@@ -166,8 +168,6 @@ def validate_input_use(value, *, envelope, receipt, primary_ref, delivery_key, c
 
 async def read_input_use_tx(db, *, turn, config):
     """Read actual Host S1 + original turn/config in the caller's one snapshot."""
-
-    from deskpet.memory.primary_visibility import read_evidence_pair
 
     body = json.loads(turn["turn_json"])
     if (
@@ -222,10 +222,7 @@ async def read_current_input_source(*, db_path, subject, turn_id):
     reader explicitly requires the current head to match the admitted token.
     """
 
-    import aiosqlite
-
     from deskpet.memory.history_source_authority import history_namespace_tx
-    from deskpet.memory.trusted_disclosure import binding_token, current_record_tx
 
     async with aiosqlite.connect(f"file:{db_path}?mode=ro", uri=True) as db:
         db.row_factory = aiosqlite.Row
@@ -255,8 +252,6 @@ async def read_current_input_source(*, db_path, subject, turn_id):
 
 def input_context_ref(source_ref, token, request_id):
     """Versioned request correlation for new input turns only, never a grant."""
-
-    from deskpet.task_scope.protocol import identifier
 
     identifier(request_id, "request_id", 512)
     encoded = urlsafe_b64encode(request_id.encode()).decode().rstrip("=")

@@ -20,6 +20,8 @@ from typing import Any
 
 import aiosqlite
 
+from deskpet.memory.schema_v2_migrator import ensure_memory_v2_columns
+
 log = logging.getLogger(__name__)
 
 
@@ -600,10 +602,6 @@ async def ensure_memory_v2_tables(db_path: str | Path) -> None:
         # Stage 2 D1：补齐老库可能缺的列。ALTER 失败不抛，
         # main.py 据 alter_failures() 关 flag。
         try:
-            from deskpet.memory.schema_v2_migrator import (
-                ensure_memory_v2_columns,
-            )
-
             await ensure_memory_v2_columns(db_path)
         except Exception as exc:  # noqa: BLE001
             log.warning(

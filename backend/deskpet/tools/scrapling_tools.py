@@ -17,6 +17,10 @@ import re
 import time
 from typing import Any
 
+from deskpet.retrieval import runtime
+from deskpet.retrieval.contracts import FetchRequest
+from deskpet.retrieval.fetch_extract import FetchExtractError
+from deskpet.retrieval.transports.scrapling import ScraplingTransport
 
 log = logging.getLogger(__name__)
 
@@ -44,7 +48,6 @@ def _browser_headers() -> dict[str, str]:
 
 def _scrapling_get_html(url: str, *, timeout: float) -> dict[str, Any]:
     """Legacy compatibility facade over the raw Scrapling transport."""
-    from deskpet.retrieval.transports.scrapling import ScraplingTransport
 
     return ScraplingTransport().fetch(url, timeout=timeout)
 
@@ -107,11 +110,8 @@ async def _handle_scrapling_fetch(args: dict[str, Any], task_id: str) -> str:
     max_chars = int(
         args.get("max_chars", _MAX_SCRAPLING_CONTENT_CHARS) or _MAX_SCRAPLING_CONTENT_CHARS
     )
-    from deskpet.retrieval.contracts import FetchRequest
-    from deskpet.retrieval.fetch_extract import FetchExtractError
-    from deskpet.retrieval.runtime import get_default_gateway
 
-    service = get_default_gateway().fetch_service
+    service = runtime.get_default_gateway().fetch_service
     try:
         fetched = await service.fetch_raw(
             FetchRequest(
@@ -164,10 +164,8 @@ _GOLD_PRICE_SCHEMA: dict[str, Any] = {
 
 async def _handle_gold_price_lookup(args: dict[str, Any], task_id: str) -> str:
     timeout = float(args.get("timeout", 20) or 20)
-    from deskpet.retrieval.contracts import FetchRequest
-    from deskpet.retrieval.runtime import get_default_gateway
 
-    service = get_default_gateway().fetch_service
+    service = runtime.get_default_gateway().fetch_service
     try:
         xau_page = await service.fetch_raw(
             FetchRequest(_INVESTING_XAU_USD, timeout=timeout, extract=False, include_html=True)

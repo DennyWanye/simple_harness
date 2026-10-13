@@ -29,8 +29,13 @@ import os
 from pathlib import Path
 from typing import Any
 
+from agent.write_scope import write_scope_check as _ws_check
+
+from deskpet.tools import file_tools as _ft
+
 from ..capabilities import ToolExecutionContext
 from ..context_adapter import legacy_execution_context
+from ._scope_paths import normalize_model_path
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +80,7 @@ def _notify_workspace(*, session_id: str, path: str, content: str | None) -> Non
     无 store / 无 loop / store error → 静默跳过。
     """
     try:
-        from deskpet.tools import file_tools as _ft  # type: ignore
+        pass
     except Exception:
         return
     store = getattr(_ft, "_workspace_store", None)
@@ -115,7 +120,6 @@ def read_file(
             '例如 {"path": "README.md"}。可选 offset / limit 控制读取行范围。',
         )
     # 相对路径按**本 Run 绑定的工作区根**解析、``~`` 展开；理由见 _scope_paths。
-    from ._scope_paths import normalize_model_path
 
     _scope_root = context.write_scope_root
     path = normalize_model_path(path, _scope_root)
@@ -124,7 +128,6 @@ def read_file(
     # 侧同一个根、同一个判据的包含性校验：越界即拒，不读盘。
     # scope_root 为 None（未启用作用域）时保持既有 Strangler-Fig 回退：不拦。
     # 2026-09-26：工作区外也可读；只有受保护的核心文件（凭证、密钥）要用户授权。
-    from agent.write_scope import write_scope_check as _ws_check
 
     _violation = _ws_check(path, scope_root=_scope_root, op="read")
     if _violation is not None:

@@ -23,6 +23,8 @@ from typing import Any
 
 import agent_orchestrator
 import simple_harness
+from agent_orchestrator.api import facade
+from agent_orchestrator.governance import domains
 from agent_orchestrator.storage.schema import SCHEMA_VERSION
 
 from deskpet.sdk_adapters.sdk_candidate import (
@@ -156,11 +158,9 @@ def distributions() -> dict[str, Any]:
 
 def _domain_features() -> dict[str, Any]:
     """Report the installed SDK's domain profiles and source commands."""
-    from agent_orchestrator.api.facade import MissionControlV1
-    from agent_orchestrator.governance.domains import CODE_DOMAIN, DOMAINS
 
     return {
-        "default": CODE_DOMAIN,
+        "default": domains.CODE_DOMAIN,
         "items": [
             {
                 "id": domain.id,
@@ -168,14 +168,16 @@ def _domain_features() -> dict[str, Any]:
                 "allowed_input_kinds": list(domain.allowed_input_kinds),
                 "source_roots": list(domain.source_roots),
             }
-            for domain in DOMAINS.values()
+            for domain in domains.DOMAINS.values()
         ],
         "source_commands": [
             verb
             for verb in ("register", "supersede", "revoke")
-            if callable(getattr(MissionControlV1, f"{verb}_source", None))
+            if callable(getattr(facade.MissionControlV1, f"{verb}_source", None))
         ],
-        "atomic_source_create": callable(getattr(MissionControlV1, "create_with_sources", None)),
+        "atomic_source_create": callable(
+            getattr(facade.MissionControlV1, "create_with_sources", None)
+        ),
     }
 
 

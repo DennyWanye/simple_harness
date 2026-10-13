@@ -34,6 +34,8 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any
 
+from . import ppt_visual_review
+
 log = logging.getLogger(__name__)
 
 _PREVIEW_DIRNAME = "预览图"
@@ -341,8 +343,6 @@ def pick_template_by_preview(
         if not sheets:
             return rnd.choice([p for p, _ in chosen])
 
-        from .ppt_visual_review import vision_chat
-
         content: list[dict[str, Any]] = [
             {
                 "type": "text",
@@ -365,7 +365,7 @@ def pick_template_by_preview(
         if len(content) <= 1:  # 没拼出任何图
             return rnd.choice([p for p, _ in chosen])
 
-        text = vision_chat(content, timeout=90.0, max_tokens=120)
+        text = ppt_visual_review.vision_chat(content, timeout=90.0, max_tokens=120)
         pid = _parse_pick_id(text, set(id_to_pptx.keys()))
         if pid is not None:
             picked = id_to_pptx[pid]

@@ -35,6 +35,8 @@ from typing import Any
 
 import structlog
 
+from agent.context_messages import provider_purpose_scope
+
 logger = structlog.get_logger(__name__)
 
 
@@ -276,8 +278,6 @@ async def _llm_fallback(
         {"role": "user", "content": text},
     ]
     try:
-        from agent.context_messages import provider_purpose_scope
-
         with provider_purpose_scope("capability_gate"):
             resp = await asyncio.wait_for(
                 llm_registry.chat_with_fallback(

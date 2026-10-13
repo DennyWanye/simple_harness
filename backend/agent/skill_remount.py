@@ -12,14 +12,14 @@ import logging
 from collections.abc import Mapping
 from typing import Any
 
+from deskpet.capabilities.contracts import fingerprint_json
+from deskpet.companion.skills import PreparedSkillInvocationScopeV1
+
 logger = logging.getLogger("deskpet.agent.loop")
 
 
 def frozen_skill_scope(value: Any) -> Any:
     """Rebuild and verify one exact immutable Skill scope."""
-
-    from deskpet.capabilities.contracts import fingerprint_json
-    from deskpet.companion.skills import PreparedSkillInvocationScopeV1
 
     if isinstance(value, PreparedSkillInvocationScopeV1):
         scope = value

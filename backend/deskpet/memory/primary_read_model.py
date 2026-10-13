@@ -19,6 +19,9 @@ from pathlib import Path
 
 import aiosqlite
 
+from deskpet.execution import admission_rejection
+from deskpet.execution.preparation_rejection import read_preparation_rejection_tx
+from deskpet.execution.terminal_identity import read_primary_terminal_identity_tx
 from deskpet.memory.primary_visibility import (
     PrimaryHistoryPolicy,
     PrimaryVisibilityError,
@@ -351,9 +354,9 @@ class PrimaryReadModel:
             )
         ]
         if turn["turn_state"] != "SETTLED":
-            from deskpet.execution.admission_rejection import read_admission_rejection_tx
-
-            await read_admission_rejection_tx(db, turn_id=turn["turn_id"], subject=self.subject)
+            await admission_rejection.read_admission_rejection_tx(
+                db, turn_id=turn["turn_id"], subject=self.subject
+            )
             return messages
         rows = await _rows(
             db,
@@ -369,8 +372,6 @@ class PrimaryReadModel:
             (turn["host_run_id"], turn["turn_id"], self.subject, primary),
         )
         if len(rows) != 1:
-            from deskpet.execution.preparation_rejection import read_preparation_rejection_tx
-
             rejection = await read_preparation_rejection_tx(
                 db,
                 host_run_id=turn["host_run_id"],
@@ -433,9 +434,6 @@ class PrimaryReadModel:
                 or body.get("turn_id") != turn["turn_id"]
             ):
                 raise PrimaryReadError("primary_terminal_corrupt")
-        from deskpet.execution.terminal_identity import (
-            read_primary_terminal_identity_tx,
-        )
 
         try:
             identity = await read_primary_terminal_identity_tx(

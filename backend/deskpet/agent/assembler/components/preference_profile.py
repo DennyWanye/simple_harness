@@ -30,6 +30,7 @@ from typing import Any
 
 from deskpet.agent.assembler.bundle import Slice
 from deskpet.agent.assembler.components.base import Component, ComponentContext
+from deskpet.agent.tokens import count_text_tokens
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +59,6 @@ _PREFERENCE_VALUE_SEMANTICS = {
 def _approx_tokens(text: str) -> int:
     if not text:
         return 0
-    from deskpet.agent.tokens import count_text_tokens
 
     return count_text_tokens(text)
 

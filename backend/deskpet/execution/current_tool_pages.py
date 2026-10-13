@@ -25,6 +25,7 @@ from deskpet.execution.primary_context_pages import (
     _sha,
 )
 from deskpet.memory.primary_tool_causality import PrimaryToolCausalityUnavailable
+from deskpet.sdk_adapters import context_partitions
 from deskpet.sdk_adapters.causal_groups import DEFAULT_LARGE_RESULT_BYTES
 from deskpet.sdk_adapters.composition import project_primary_transcript
 from deskpet.sdk_adapters.context_authority import _resolve_model_id, _resolve_window_tokens
@@ -1135,18 +1136,13 @@ def control_result_allowance(metadata, *, provider_turn_ordinal=0):
     the drain *starts*, not where it ends; the only real ceiling is
     ``_plan_turn_messages``'s fail-closed check.
     """
-    from deskpet.sdk_adapters.context_partitions import (
-        calibration_for_model,
-        effective_input_budget,
-        window_tokens_for,
-    )
 
     mapping = metadata if isinstance(metadata, Mapping) else {}
     model_id = _resolve_model_id(mapping)
-    window = window_tokens_for(_resolve_window_tokens(mapping), model_id)
-    ratio = calibration_for_model(model_id).ratio(provider_turn_ordinal)
+    window = context_partitions.window_tokens_for(_resolve_window_tokens(mapping), model_id)
+    ratio = context_partitions.calibration_for_model(model_id).ratio(provider_turn_ordinal)
     scale = max(1, round(CONTROL_RESULT_BUDGET_DIVISOR * ratio * 1000))
-    return effective_input_budget(window) * 1000 // scale
+    return context_partitions.effective_input_budget(window) * 1000 // scale
 
 
 def current_tool_allowance(metadata, *, provider_turn_ordinal=0):
@@ -1158,22 +1154,17 @@ def current_tool_allowance(metadata, *, provider_turn_ordinal=0):
     so the two stay in proportion — otherwise a calibrated model could pass this
     bound and still fail the budget, i.e. fail closed where paging had room left.
     """
-    from deskpet.sdk_adapters.context_partitions import (
-        calibration_for_model,
-        effective_input_budget,
-        window_tokens_for,
-    )
 
     mapping = metadata if isinstance(metadata, Mapping) else {}
     model_id = _resolve_model_id(mapping)
     # Same window resolution as _plan_turn_messages, so the two bounds cannot
     # disagree about which tier this Run is in.
-    window = window_tokens_for(_resolve_window_tokens(mapping), model_id)
-    ratio = calibration_for_model(model_id).ratio(provider_turn_ordinal)
+    window = context_partitions.window_tokens_for(_resolve_window_tokens(mapping), model_id)
+    ratio = context_partitions.calibration_for_model(model_id).ratio(provider_turn_ordinal)
     # Integer arithmetic end to end: a float divide could shift the bound by a
     # token purely from representation.
     scale = max(1, round(CURRENT_TOOL_BUDGET_DIVISOR * ratio * 1000))
-    return effective_input_budget(window) * 1000 // scale
+    return context_partitions.effective_input_budget(window) * 1000 // scale
 
 
 class CurrentToolProjector:

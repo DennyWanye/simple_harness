@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import urlparse
 
+import httpx
 from simple_harness.providers import OpenAICompatibleProvider, Secret
 
 from deskpet.provider_extra_headers import install_httpx_extra_headers_hook
@@ -98,8 +99,6 @@ def build_provider(
     thinking: str | None = None,
 ) -> tuple[Any, Any]:
     """``(provider, http_client)`` — the caller closes the client on shutdown."""
-
-    import httpx
 
     client = install_httpx_extra_headers_hook(httpx.AsyncClient())
     provider = provider_on_client(

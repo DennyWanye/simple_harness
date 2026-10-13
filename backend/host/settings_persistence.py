@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import paths
 from deskpet.orchestration.wiring import activate_orchestration, deactivate_orchestration
 from observability.startup import registry as startup_errors
 
@@ -11,13 +12,12 @@ from host.runtime import _CONFIG_PATH, config, logger, service_context
 
 async def _restart_orchestration() -> None:
     """Stop and start the orchestration service with the current config (Settings changes)."""
-    from paths import user_data_dir as _orchestration_user_data_dir
 
     await deactivate_orchestration(service_context)
     await activate_orchestration(
         service_context,
         config_path=_CONFIG_PATH,
-        user_data=_orchestration_user_data_dir(),
+        user_data=paths.user_data_dir(),
         broadcast_targets=lambda: list(_control_connections.values()),
         record_startup_error=startup_errors.record,
     )

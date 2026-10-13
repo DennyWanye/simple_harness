@@ -26,6 +26,7 @@ import time
 import traceback
 from pathlib import Path
 
+import paths
 import structlog
 
 logger = structlog.get_logger()
@@ -54,9 +55,8 @@ def install_crash_reporter(directory: Path | None = None) -> None:
     """
     if directory is None and getattr(sys, "frozen", False):
         # 冻结包：程序目录可能只读（macOS .app 在程序包里），崩溃报告写进用户数据目录
-        from paths import user_data_dir
 
-        directory = user_data_dir() / "crash_reports"
+        directory = paths.user_data_dir() / "crash_reports"
     directory = directory or _DEFAULT_DIR
     previous_hook = sys.excepthook
 

@@ -53,6 +53,7 @@ from typing import Any
 from llm.model_info import ModelContextInfo
 from llm.model_info import resolve as resolve_model_info
 
+from agent.context_messages import provider_purpose_scope
 from agent.history_compactor import compact_messages, should_compact
 from agent.token_budget import BudgetCheckResult, check_budget
 from agent.tool_result_truncator import (
@@ -403,7 +404,6 @@ class ContextManager:
             return list(messages)
 
         async def _summarize(text: str) -> str:
-            from agent.context_messages import provider_purpose_scope
 
             with provider_purpose_scope("context_manager"):
                 r = await llm_for_summarize.chat_with_tools(

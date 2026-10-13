@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from llm import model_catalog
 from llm.model_catalog import build_catalog as _bc
 from llm.provider_registry import ProviderMutationConflict
 
@@ -40,9 +41,7 @@ async def _cc_models_list(conn: _ControlConnection, raw: dict, msg_type: str) ->
                 _cfg_models = list(getattr(_entry0, "models", []) or [])
                 _api_key = _reg.resolve_api_key(_pid0)
                 try:
-                    from llm.model_catalog import fetch_models as _fm
-
-                    _live = await _fm(_base_url, _api_key, timeout=8.0)
+                    _live = await model_catalog.fetch_models(_base_url, _api_key, timeout=8.0)
                 except Exception:
                     _live = []
                 if _live:
@@ -89,9 +88,7 @@ async def _cc_models_list(conn: _ControlConnection, raw: dict, msg_type: str) ->
         # 不是中转站目录，且 key 通常是占位 "ollama"。
         if _ll_base and "localhost" not in _ll_base and "127.0.0.1" not in _ll_base:
             try:
-                from llm.model_catalog import fetch_models as _fm2
-
-                _live_ll = await _fm2(_ll_base, _ll_key, timeout=8.0)
+                _live_ll = await model_catalog.fetch_models(_ll_base, _ll_key, timeout=8.0)
             except Exception:
                 _live_ll = []
             if _live_ll:

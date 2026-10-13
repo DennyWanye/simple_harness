@@ -13,7 +13,12 @@ from dataclasses import dataclass
 import simple_harness as h
 
 from deskpet.execution.primary_history import terminal_observation_tx
-from deskpet.memory.primary_visibility import _dependencies, read_evidence_pair
+from deskpet.memory import primary_message_v2, primary_message_v3
+from deskpet.memory.primary_visibility import (
+    PrimaryVisibilityError,
+    _dependencies,
+    read_evidence_pair,
+)
 from deskpet.task_scope.protocol import canonical_hash
 
 
@@ -140,8 +145,6 @@ async def _prepare_message_tx(
     if payload["terminal_state"] != "COMPLETED":
         return PrimaryMessageProduction((), "conversation_group_not_complete")
     if payload.get("message_source_contract") in {"primary-message-v2", "primary-message-v3"}:
-        from deskpet.memory import primary_message_v2, primary_message_v3
-
         producer = (
             primary_message_v3
             if payload["message_source_contract"] == primary_message_v3.CONTRACT
@@ -233,8 +236,6 @@ async def verify_new_primary_message_evidence_tx(
         "primary-message-v2",
         "primary-message-v3",
     }:
-        from deskpet.memory import primary_message_v2, primary_message_v3
-
         producer = (
             primary_message_v3
             if terminal_envelope.sanitized_payload["message_source_contract"]
@@ -274,7 +275,6 @@ async def verify_primary_message_evidence_tx(
     Caller has already checked the completed transcript shape and original
     terminal/USER facts. A present but altered child is corruption, not absence.
     """
-    from deskpet.memory.primary_visibility import PrimaryVisibilityError
 
     expected, expected_receipt = assistant_message_pair(
         terminal_envelope, terminal_receipt, user, host_run_id=host_run_id

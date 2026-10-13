@@ -28,6 +28,7 @@ from dataclasses import dataclass, field
 import structlog
 
 from deskpet.agent.assembler.bundle import Slice
+from deskpet.agent.tokens import count_text_tokens
 
 logger = structlog.get_logger(__name__)
 
@@ -166,7 +167,6 @@ _TRIM_MARKER = "\n[…trimmed by budget]"
 
 def _count_tokens(text: str) -> int:
     """统一 token 计数(与 compressor/token_budget 同口径,CJK-aware,优化 #1+#3)。"""
-    from deskpet.agent.tokens import count_text_tokens
 
     return count_text_tokens(text)
 

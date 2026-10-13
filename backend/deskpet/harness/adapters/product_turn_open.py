@@ -13,6 +13,7 @@ from deskpet.agent.turn_preparer import (
     RoutedTurnIntent,
     TurnInput,
 )
+from deskpet.capabilities.builder import CapabilityBuildError
 from deskpet.execution.contracts import RunRef
 from deskpet.execution.run_block_signals import (
     PreflightBlocked,
@@ -223,8 +224,6 @@ class ProductTurnPreparationService:
                 provider=provider,
             )
         except Exception as exc:
-            from deskpet.capabilities.builder import CapabilityBuildError
-
             if not isinstance(exc, CapabilityBuildError):
                 raise
             raise PreflightBlocked(

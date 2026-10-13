@@ -37,6 +37,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
+import paths
+
+from deskpet.tools.office_paths import is_system_path
+
 logger = logging.getLogger(__name__)
 
 Op = Literal["read", "write"]
@@ -158,8 +162,6 @@ def _home() -> Path:
 def _self_roots() -> list[Path]:
     roots: list[Path] = []
     try:
-        import paths  # type: ignore[import-not-found]
-
         backend = Path(paths.__file__).resolve().parent
         roots.append(backend.parent)  # the Host repository / install tree
         install = paths._install_dir()
@@ -193,8 +195,6 @@ def allowed_roots(extra: Iterable[str | os.PathLike[str]] = ()) -> list[Path]:
     except Exception:  # noqa: BLE001
         pass
     try:
-        import paths  # type: ignore[import-not-found]
-
         roots.append(paths.output_dir())
     except Exception:  # noqa: BLE001
         pass
@@ -218,8 +218,6 @@ def protected_reason(path: Path, op: Op) -> str | None:
     if any(_under(path, root) for root in _self_roots()):
         return "self"
     try:
-        from deskpet.tools.office_paths import is_system_path
-
         if is_system_path(path):  # Windows system roots (harmless elsewhere)
             return "system"
     except Exception:  # noqa: BLE001

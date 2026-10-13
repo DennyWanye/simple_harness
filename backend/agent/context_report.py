@@ -20,6 +20,10 @@ from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass, field, replace
 from typing import Any
 
+from deskpet.agent.context_budget import RequestBudget
+from deskpet.agent.tokens import count_messages_tokens
+from llm import model_info
+
 from agent.context_messages import (
     ProviderAttemptOptions,
     context_attempt_scope,
@@ -57,17 +61,12 @@ def estimate_selected_attempt_budget(
 ) -> Any:
     """Re-budget against the selected provider/model window."""
 
-    from deskpet.agent.context_budget import RequestBudget
-    from deskpet.agent.tokens import count_messages_tokens
-
     resolved_model = str(getattr(provider, "model", "") or model_id or "")
     context_window = int(getattr(provider, "context_window", 0) or 0)
     effective_pct = float(getattr(provider, "effective_pct", 0.0) or 0.0)
     if context_window <= 0 or effective_pct <= 0:
         try:
-            from llm.model_info import resolve
-
-            info = resolve(resolved_model)
+            info = model_info.resolve(resolved_model)
             context_window = context_window or int(info.context_window)
             effective_pct = effective_pct or float(info.effective_pct)
         except Exception:

@@ -41,6 +41,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+import paths
+
 log = logging.getLogger(__name__)
 
 
@@ -386,9 +388,7 @@ def get_default_sink() -> MetricsSink:
     if _default_sink is not None:
         return _default_sink
     try:
-        from paths import user_data_dir  # type: ignore
-
-        base = user_data_dir()
+        base = paths.user_data_dir()
     except Exception:  # noqa: BLE001
         base = Path(tempfile.gettempdir()) / "deskpet"
     _default_sink = MetricsSink(Path(base) / "metrics.jsonl")

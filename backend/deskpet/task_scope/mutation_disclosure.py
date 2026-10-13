@@ -27,7 +27,9 @@ from deskpet.execution.primary_dependencies import (
     parse_dependencies,
     read_run_dependencies,
 )
+from deskpet.memory.human_memory_program import HumanMemoryProgramStore
 from deskpet.memory.primary_visibility import read_evidence_pair
+from deskpet.sdk_adapters.task_scope_mutation import _validate_shape, derive_plan_id
 from deskpet.task_scope.protocol import canonical_hash, canonical_json
 
 RESULT_POLICY = "host-closure-result-source/v1"
@@ -63,7 +65,6 @@ def _arguments(plan):
 
 
 def _matches(arguments, plan):
-    from deskpet.sdk_adapters.task_scope_mutation import _validate_shape
 
     # The production handler strips only this declared presentation sidecar;
     # all actual mutation fields and every other unexpected key stay strict.
@@ -82,7 +83,6 @@ async def record_closure_result_tx(db, *, db_path, attempt_id, plan_id, response
     selection. Old decisions/replays never call this writer for backfill.
     """
     from deskpet.execution.closure_request_guard import input_id
-    from deskpet.memory.human_memory_program import HumanMemoryProgramStore
     from deskpet.sdk_adapters.post_turn_invoker import _response_hash
 
     found = await _rows(
@@ -166,7 +166,6 @@ async def record_closure_result_tx(db, *, db_path, attempt_id, plan_id, response
 async def _producer(db, *, stack, decision, plan, receipt, subject, primary_ref):
     from deskpet.execution.semantic_closure import _closure_arguments
     from deskpet.sdk_adapters.post_turn_invoker import _response_hash
-    from deskpet.sdk_adapters.task_scope_mutation import derive_plan_id
 
     if receipt.attempt_id is not None:
         rows = await _rows(

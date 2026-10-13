@@ -21,6 +21,13 @@ from dataclasses import dataclass
 from typing import Any, Literal
 from urllib.parse import urlsplit, urlunsplit
 
+from deskpet.capabilities.contracts import canonical_project_identity_scope_key
+from deskpet.capabilities.skill_install import (
+    AuthorizedSkillInstallReceipt,
+    GlobalSkillInstallAuthority,
+    SkillInstallProjectAuthority,
+)
+
 
 class ProjectSkillInstallUIError(RuntimeError):
     def __init__(self, code: str, message: str, *, retryable: bool = False) -> None:
@@ -163,11 +170,6 @@ class ProjectSkillInstallUIAdapter:
                 "skill_install_authority_invalid",
                 "Exactly one Project or global Skill owner is required.",
             )
-        from deskpet.capabilities.contracts import canonical_project_identity_scope_key
-        from deskpet.capabilities.skill_install import (
-            GlobalSkillInstallAuthority,
-            SkillInstallProjectAuthority,
-        )
 
         principal = str(principal_id or "").strip()
         if not principal:
@@ -433,7 +435,6 @@ class _BoundSettingsSkillInstallAuthorizer:
         decision_version: int,
         decision: str,
     ) -> Any:
-        from deskpet.capabilities.skill_install import AuthorizedSkillInstallReceipt
 
         intent = await self._store.get_skill_install_intent(str(intent_id))
         now = float(self._clock())

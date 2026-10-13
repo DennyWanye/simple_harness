@@ -29,6 +29,9 @@ from deskpet.memory.human_memory_service import (
     ReadTaskScopeViewRequest,
     SearchTaskScopesRequest,
 )
+from deskpet.memory.primary_read_model import PrimaryReadError
+from deskpet.memory.primary_workspace_bindings import IDENTITY_FIELDS
+from deskpet.memory.writer_fence import human_memory_request_boundary
 
 HUMAN_MEMORY_COMMAND = "human_memory_request"
 # 2026-09-10：认知记忆审计（``primary.audit.*``）与认知记忆读写
@@ -109,8 +112,6 @@ async def handle_human_memory_command(
             "primary.bindings.status",
             "primary.bindings.decide",
         }:
-            from deskpet.memory.writer_fence import human_memory_request_boundary
-
             # Production /ws/control already supplies the verified connection scope.
             # A reconnect during a slow read must not disclose through the old lease.
             async with human_memory_request_boundary():
@@ -139,7 +140,6 @@ async def send_human_memory_response(
     A saved delivery is replayable, but never authority to disclose after expiry,
     close or rebinding. Transport failure propagates; it is not a rejected read.
     """
-    from deskpet.memory.writer_fence import human_memory_request_boundary
 
     payload = response.get("payload", {})
     operation = payload.get("operation")
@@ -182,8 +182,6 @@ async def _dispatch(  # type: ignore[no-untyped-def]
         "primary.messages.page",
         "primary.messages.detail",
     }:
-        from deskpet.memory.primary_read_model import PrimaryReadError
-
         allowed, required = {
             "primary.state": (set(), set()),
             "primary.messages.page": (
@@ -207,9 +205,6 @@ async def _dispatch(  # type: ignore[no-untyped-def]
         "primary.bindings.status",
         "primary.bindings.decide",
     }:
-        from deskpet.memory.primary_read_model import PrimaryReadError
-        from deskpet.memory.primary_workspace_bindings import IDENTITY_FIELDS
-
         fields = (
             {"primary_ref", "cursor"}
             if operation == "primary.bindings.pending"
@@ -226,8 +221,6 @@ async def _dispatch(  # type: ignore[no-untyped-def]
             return await service.read_primary_binding(**request)
         return await service.respond_primary_binding(**request)
     if operation in {"primary.decisions.list", "primary.decisions.respond"}:
-        from deskpet.memory.primary_read_model import PrimaryReadError
-
         fields = {"primary_ref", "expected_run_ref", "expected_generation"}
         if operation == "primary.decisions.respond":
             fields |= {"decision_id", "nonce", "version", "decision"}
@@ -374,8 +367,6 @@ async def _dispatch(  # type: ignore[no-untyped-def]
         )
     if operation == "queue.control":
         if {"expected_run_ref", "expected_generation"} & set(request):
-            from deskpet.memory.primary_read_model import PrimaryReadError
-
             required = {"expected_run_ref", "expected_generation", "control"}
             if not required <= set(request) or not set(request) <= required | {"reason"}:
                 raise PrimaryReadError("primary_exact_control_invalid")

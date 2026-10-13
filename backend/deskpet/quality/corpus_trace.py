@@ -6,6 +6,9 @@ from collections.abc import Mapping
 from dataclasses import fields, is_dataclass
 from enum import Enum
 
+from simple_harness.contracts import thaw_json
+from simple_harness.execution.audit import audit_hash, audit_reference
+
 
 def wire(value):
     if value is None or isinstance(value, (str, int, float, bool)):
@@ -52,8 +55,6 @@ def _provider_wire(invocation):
 
 
 def _read_providers(uow, run_id, retained):
-    from simple_harness.contracts import thaw_json
-    from simple_harness.execution.audit import audit_hash
 
     providers = {}
     after = 0
@@ -98,7 +99,6 @@ def _read_providers(uow, run_id, retained):
 def read_public_trace(uow, run_id):
     """Independent observations: no terminal is not permission to erase attempts."""
     from simple_harness import RunId
-    from simple_harness.execution.audit import audit_reference
 
     result = dict(
         sdk_run_id=run_id,

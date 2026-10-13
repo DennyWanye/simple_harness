@@ -14,8 +14,9 @@ from collections.abc import Awaitable, Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
-from ...tools import research_scoring
+from ...tools import research_scoring, research_sources, search_provider
 from ...tools import research_tools as legacy
+from ...tools.agent_reach_port import agent_reach_port
 from ..contracts import NodeExecutionIdentity
 from .deep_research_v5_contracts import ResearchLLMResult
 
@@ -392,8 +393,6 @@ def _stage_ms(start: float) -> int:
 
 
 def _initialize_agent_reach_route(state: ResearchCoreState, config: ResearchCoreConfig) -> None:
-    from ...tools import research_sources
-    from ...tools.agent_reach_port import agent_reach_port
 
     planned: list[str] = []
     planned_urls: list[str] = []
@@ -724,7 +723,6 @@ async def direct_stage(
 ) -> ResearchCoreState:
     if not config.direct_sources or ports.search.direct_call is None:
         return state
-    from ...tools import research_sources
 
     start = time.perf_counter()
     specs: list[tuple[str, str]] = []
@@ -1090,7 +1088,6 @@ def _coverage(state: ResearchCoreState) -> dict[str, Any]:
 
 
 async def _default_direct_call(query: str, source: str) -> DirectOutcome:
-    from ...tools import research_sources
 
     backend = None
     if source == "agent_reach":
@@ -1125,8 +1122,6 @@ async def _default_direct_call(query: str, source: str) -> DirectOutcome:
 
 def _legacy_search_reset() -> None:
     try:
-        from ...tools import search_provider
-
         search_provider.reset_search_runtime_state()
         search_provider.reset_search_cdp_budget()
     except Exception:  # noqa: BLE001
@@ -1135,8 +1130,6 @@ def _legacy_search_reset() -> None:
 
 def _legacy_search_observation() -> Mapping[str, Any]:
     try:
-        from ...tools import search_provider
-
         return {
             "engines_hit": search_provider.get_last_engines_hit(),
             "errors": search_provider.get_last_search_errors(),

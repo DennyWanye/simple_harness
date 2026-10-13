@@ -39,6 +39,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
+import paths as _paths
+
 __all__ = [
     "extra_headers_for",
     "install_httpx_extra_headers_hook",
@@ -54,7 +56,6 @@ def _runtime_path() -> Path:
     override = os.environ.get("DESKPET_LLM_RUNTIME_PATH")
     if override:
         return Path(override)
-    import paths as _paths
 
     return _paths.user_data_dir() / "llm_runtime.json"
 

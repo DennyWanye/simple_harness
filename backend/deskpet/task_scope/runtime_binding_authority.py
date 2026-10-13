@@ -32,6 +32,7 @@ from simple_harness import (
 )
 
 from deskpet.execution.foreground_queue import ForegroundQueueStore
+from deskpet.sdk_adapters.tools import active_product_foreground_origin
 from deskpet.task_scope.workspace_bindings import (
     CurrentRunBindingAuthority,
     ManualWorkspaceChallengeAuthorityCheck,
@@ -390,7 +391,6 @@ class WorkspaceBindingRuntimeAuthority:
         expected_filesystem_identity_hash: str | None = None,
     ) -> Mapping[str, object]:
         configured = self._store.configured_root()
-        from deskpet.sdk_adapters.tools import active_product_foreground_origin
 
         origin = active_product_foreground_origin()
         current = await self._foreground.current_snapshot(self._subject)

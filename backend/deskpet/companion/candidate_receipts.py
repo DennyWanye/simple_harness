@@ -21,6 +21,7 @@ from .build_admission import (
     CandidateDraftReceiptV1,
     GrowthBuildAdmissionError,
 )
+from .candidate_composition import CandidateDraftMaterialV1
 
 CANDIDATE_DRAFT_RECEIPT_SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS execution_candidate_draft_receipts (
@@ -287,7 +288,6 @@ class SqliteCandidateDraftMaterialQuery:
         self._uri = path.as_uri() + "?mode=ro"
 
     def read_exact(self, receipt: CandidateDraftReceiptV1) -> Any:
-        from .candidate_composition import CandidateDraftMaterialV1
 
         if not isinstance(receipt, CandidateDraftReceiptV1):
             raise GrowthBuildAdmissionError("candidate_draft_receipt_required")

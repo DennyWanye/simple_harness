@@ -50,10 +50,20 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional, Protocol
 
 import httpx
+from agent.context_messages import provider_purpose_scope
+from paths import deepresearch_dir
 
-from . import research_scoring
+from deskpet.retrieval import runtime
+from deskpet.retrieval.contracts import FetchRequest, SearchRequest
+from deskpet.retrieval.fetch_extract import FetchExtractError, FetchExtractService
+from deskpet.retrieval.providers.base import candidates_from_rows
+
+from . import research_cdp_edge as _ce
+from . import research_scoring, search_provider
 from .capabilities import ToolExecutionContext
 from .context_adapter import bind_context_handler, legacy_execution_context
+from .office_paths import title_slug
+from .scrapling_tools import _scrapling_get_html
 
 if TYPE_CHECKING:
     from ..workflows.definitions.deep_research_v5_contracts import ResearchLLMResult
@@ -478,8 +488,6 @@ async def _js_render_dispatch(url: str) -> str | None:
     timeout = _js_render_timeout()
     try:
         if engine == "cdp-edge":
-            from . import research_cdp_edge as _ce
-
             return await _ce.cdp_edge_render(url, timeout=timeout)
         if engine == "crawl4ai":
             from . import research_crawl4ai as _c4  # dev 档,懒 import
@@ -977,7 +985,6 @@ async def default_search(
     Chinese queries now hit the 中文区 instead of the old hardcoded
     us-en). No API key. Failure → empty list.
     """
-    from . import search_provider
 
     return await search_provider.search_async(
         query, max_results=max_results, timeout=_DEFAULT_TIMEOUT, client=client
@@ -996,10 +1003,8 @@ async def gateway_search_response(
     workflows can consume this response without touching legacy process-global
     ``_last_*`` observations.
     """
-    from deskpet.retrieval.contracts import SearchRequest
-    from deskpet.retrieval.runtime import get_default_gateway
 
-    return await get_default_gateway().search(
+    return await runtime.get_default_gateway().search(
         SearchRequest(
             query=query,
             max_results=max_results,
@@ -1011,7 +1016,6 @@ async def gateway_search_response(
 
 def direct_items_to_candidates(items: list[dict[str, Any]], *, source: str):
     """Normalize authoritative/direct-source rows into retrieval contracts."""
-    from deskpet.retrieval.providers.base import candidates_from_rows
 
     candidates = candidates_from_rows(
         source,
@@ -1158,8 +1162,6 @@ def _scrapling_fetch_html(url: str, timeout: float = _DEFAULT_TIMEOUT) -> dict[s
     monkeypatch this layer without pulling in browser-like fetchers.
     """
     try:
-        from .scrapling_tools import _scrapling_get_html
-
         fetched = _scrapling_get_html(url, timeout=timeout)
     except Exception as exc:  # noqa: BLE001
         log.debug("scrapling extract fetch unavailable for %s: %s", url, exc)
@@ -1181,11 +1183,8 @@ async def default_extract(
     fetch_port: object | None = None,
 ) -> dict[str, Any]:
     """Thin DeepResearch adapter over the shared FetchExtractService."""
-    from deskpet.retrieval.contracts import FetchRequest
-    from deskpet.retrieval.fetch_extract import FetchExtractError, FetchExtractService
-    from deskpet.retrieval.runtime import get_default_gateway
 
-    service = get_default_gateway().fetch_service
+    service = runtime.get_default_gateway().fetch_service
     owns_service = False
     if client is not None:
 
@@ -2583,8 +2582,6 @@ def _save_report(topic: str, report: ResearchReport) -> Path | None:
     """Write the report markdown to ``DeepResearch/`` with a
     metadata header. Returns the path, or None if the dir is unavailable."""
     try:
-        from paths import deepresearch_dir  # type: ignore[import-not-found]
-
         base = deepresearch_dir()
     except Exception:  # noqa: BLE001
         return None
@@ -2598,8 +2595,6 @@ def _save_report(topic: str, report: ResearchReport) -> Path | None:
     body = header + (report.report_md or "")
     ts = int(time.time())
     try:
-        from .office_paths import title_slug  # reuse FS-safe slug
-
         slug = title_slug(topic, max_grapheme=40)
     except Exception:  # noqa: BLE001
         slug = "report"
@@ -2612,9 +2607,6 @@ def save_workflow_report(
     *, topic: str, report_md: str, report_hash: str, run_id: str
 ) -> dict[str, object]:
     """Persist one idempotent durable-workflow Markdown artifact."""
-    from paths import deepresearch_dir  # type: ignore[import-not-found]
-
-    from .office_paths import title_slug
 
     base = deepresearch_dir()
     base.mkdir(parents=True, exist_ok=True)
@@ -2746,7 +2738,6 @@ async def _resolve_default_llm_call() -> _LLMCall:
     )
 
     async def _call(prompt: str) -> str:
-        from agent.context_messages import provider_purpose_scope
 
         with provider_purpose_scope("research"):
             result = await provider.chat_with_tools(
@@ -2799,7 +2790,6 @@ async def _resolve_default_llm_call_v2() -> _LLMCallV2:
             or max_output_tokens < 1
         ):
             raise ValueError("max_output_tokens must be a positive integer")
-        from agent.context_messages import provider_purpose_scope
 
         with provider_purpose_scope("research"):
             result = await provider.chat_with_tools_at_most_once(

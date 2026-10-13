@@ -17,6 +17,8 @@ from enum import Enum
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from deskpet import playwright_bundle
+
 
 class ReadOnlyAction(str, Enum):
     GOTO = "goto"
@@ -116,9 +118,8 @@ def _origin(url: str) -> tuple[str, str, int | None]:
 
 def resolve_browser_executable(root: str | Path, *, contract=None) -> Path:
     """Resolve one complete headless-shell from an injected registry root."""
-    from deskpet.playwright_bundle import get_platform_contract
 
-    contract = contract or get_platform_contract()
+    contract = contract or playwright_bundle.get_platform_contract()
     base = Path(root).resolve()
     matches = sorted(base.glob(f"chromium_headless_shell-*/{contract.executable_relative}"))
     complete = [path for path in matches if (path.parents[1] / "INSTALLATION_COMPLETE").is_file()]

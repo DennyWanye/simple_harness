@@ -20,14 +20,19 @@ from typing import Any, Literal
 import structlog
 from agent.nudge_queue import format_hints_for_injection
 from agent.plan import maybe_extract_general_plan, plan_to_system_message
+from agent.write_scope import resolve_workspace_root
 
-from deskpet.agent.attachment_budget import append_user_attachment_blocks
+from deskpet.agent.attachment_budget import append_user_attachment_blocks, collect_attachment_budget
+from deskpet.companion.turn_authority import (
+    CompanionTurnPreparationRequestV1,
+    PreparedCompanionTurnV1,
+)
 from deskpet.execution.provider_workloads import workload_context
 from deskpet.execution.run_block_signals import (
     PreflightBlocked,
     RootBlockReasonV1,
 )
-from deskpet.tools.capabilities import ToolExposureIntent
+from deskpet.tools.capabilities import ToolEligibilityContext, ToolExposureIntent
 
 logger = structlog.get_logger(__name__)
 Venue = Literal["text", "voice", "background"]
@@ -274,7 +279,6 @@ class ProductTurnPreparer:
         companion = raw.get("companion", {}) if isinstance(raw, Mapping) else {}
         if not bool(companion.get("write_scope_enforced", True)):
             return None
-        from agent.write_scope import resolve_workspace_root
 
         return str(resolve_workspace_root(configured=str(companion.get("workspace_root", ""))))
 
@@ -573,9 +577,6 @@ class ProductTurnPreparer:
                 )
             from llm.model_info import resolve as resolve_model_info
 
-            from deskpet.agent.attachment_budget import collect_attachment_budget
-            from deskpet.tools.capabilities import ToolEligibilityContext
-
             eligibility = ToolEligibilityContext(
                 session_id=turn.session_id,
                 request_id=str(turn.request_id or ""),
@@ -679,11 +680,6 @@ class ProductTurnPreparer:
         run_prepared_context = None
         companion_authority_state = None
         if self._companion_turn_authority is not None:
-            from deskpet.companion.turn_authority import (
-                CompanionTurnPreparationRequestV1,
-                PreparedCompanionTurnV1,
-            )
-
             auto_scopes: list[dict[str, Any]] = []
             auto_scope_ids: list[str] = []
             if bundle is not None and bundle.decisions is not None:

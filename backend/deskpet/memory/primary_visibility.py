@@ -24,6 +24,7 @@ from simple_harness import (
 )
 
 from deskpet.task_scope.protocol import (
+    TaskScopeProtocolError,
     canonical_hash,
     canonical_json,
     digest,
@@ -52,8 +53,6 @@ def _stable_message_types() -> tuple[type, ...]:
     2026-09-10：记忆 SDK 的稳定错误类（``MemoryLimitError`` 等）随其一并移除，
     白名单只剩 Host 自己的稳定错误类型。
     """
-
-    from deskpet.task_scope.protocol import TaskScopeProtocolError
 
     return (TaskScopeProtocolError,)
 

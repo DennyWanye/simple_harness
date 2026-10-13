@@ -12,6 +12,8 @@ from simple_harness.contracts.messages import Message, MessageRole
 from simple_harness.execution.audit import audit_hash, audit_reference
 from simple_harness.execution.provider_invocations import provider_response_from_json
 
+from deskpet.memory.primary_message_v2 import effectless_denial
+
 
 class PrimaryToolCausalityUnavailable(ValueError):
     pass
@@ -124,7 +126,6 @@ def read_tool_causality(uow, run_id, *, current_text, transcript, project, effec
         _require(ordinal not in providers, "provider_turn_duplicate")
         providers[ordinal] = op
     _require(sorted(providers) == list(range(1, len(providers) + 1)), "provider_turn_gap")
-    from deskpet.memory.primary_message_v2 import effectless_denial
 
     messages = [Message(MessageRole.USER, current_text)]
     sources, used, denied, assistant_calls = [], set(), set(), []

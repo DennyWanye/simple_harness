@@ -21,6 +21,7 @@ from .risk import (
     StaticRiskPreflight,
     StaticRiskPreflightResultV1,
 )
+from .risk_facts import ImmutableCandidateRiskFactsBuilder
 from .store import canonical_hash
 
 
@@ -322,8 +323,6 @@ class ImmutableEvaluationGate:
         facts_builder=None,
     ) -> None:
         if facts_builder is None:
-            from .risk_facts import ImmutableCandidateRiskFactsBuilder
-
             facts_builder = ImmutableCandidateRiskFactsBuilder()
         self._issuer = issuer
         self._facts_builder = facts_builder

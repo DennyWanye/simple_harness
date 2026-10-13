@@ -20,6 +20,7 @@ from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 import httpx
+from agent.write_scope import write_scope_check as _ws_check
 
 from ..capabilities import ToolExecutionContext
 from ..context_adapter import legacy_execution_context
@@ -149,7 +150,6 @@ async def download_file(
     context = legacy_execution_context(args, task_id, execution_context)
     scope = context.write_scope_root or context.workspace
     # 2026-09-26：下载目标可以在工作区外；只有受保护的核心文件要用户授权。
-    from agent.write_scope import write_scope_check as _ws_check
 
     _violation = _ws_check(str(destination), scope_root=scope)
     if _violation is not None:

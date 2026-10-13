@@ -39,6 +39,8 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from agent.supervisor import SupervisorAction
+
 if TYPE_CHECKING:  # pragma: no cover — import only for typing
     from agent.session_activity import SessionActivityStore
     from agent.supervisor import SupervisorAgent
@@ -137,7 +139,6 @@ class DeterministicResumePolicy:
     """Stands in for ``SupervisorAgent.diagnose`` without a model call."""
 
     async def diagnose(self, sid: str, snapshot: dict[str, Any]) -> Any:
-        from agent.supervisor import SupervisorAction
 
         reason = str((snapshot or {}).get("reason") or "").strip()
         hint = _DETERMINISTIC_HINTS.get(reason)

@@ -8,7 +8,12 @@ import inspect
 import json
 from typing import Any, Protocol
 
+from deskpet.execution.contracts import TERMINAL_RUN_STATUSES, AuthorizationError, RunRef
+
 from ..capabilities import ToolExecutionContext
+from .agent_parallel_tool import _SCHEMA as parallel
+from .agent_tool import _SCHEMA as agent
+from .spawn_team_tool import _SCHEMA as team
 
 _MAX = 8
 _KIND_ENUM = ["general", "research", "code", "fileops", "doc", "web"]
@@ -86,9 +91,6 @@ def product_delegation_tool_catalog(
     delegation_service_provider=None,
 ) -> dict[str, tuple[Any, dict[str, Any]]]:
     """Keep public schemas in the tool layer; the Host delegation service runs them."""
-    from .agent_parallel_tool import _SCHEMA as parallel
-    from .agent_tool import _SCHEMA as agent
-    from .spawn_team_tool import _SCHEMA as team
 
     def handler_for(name: str):
         async def delegate(args, _operation_key="", *, execution_context=None) -> str:
@@ -131,10 +133,6 @@ def build_await_subagents_tool(workflow_service_provider):
         if workflow_service is None:
             raise RuntimeError("workflow service is unavailable")
         uow = workflow_service.execution_uow
-        from deskpet.execution.contracts import (
-            TERMINAL_RUN_STATUSES,
-            RunRef,
-        )
         from deskpet.harness.drivers.react_boundary import ReactCommandBoundary
 
         continuation = await uow.load_continuation(execution_context.run_id)
@@ -277,7 +275,6 @@ def build_subagent_batch_delegate(
 ):
     """Translate a public spawn batch into one deterministic detached ChildRun."""
 
-    from deskpet.execution.contracts import AuthorizationError
     from deskpet.harness.ports import AttachmentPolicy, DelegateRun, JoinPolicy
 
     context = request.run_context

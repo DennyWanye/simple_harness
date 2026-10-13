@@ -47,6 +47,8 @@ from typing import Any
 
 import structlog
 
+from deskpet.skills.parser import parse_skill_md
+
 from .safety import SafetyError, validate_manifest
 
 logger = structlog.get_logger(__name__)
@@ -500,8 +502,6 @@ class SkillInstaller:
         skill = root / "SKILL.md"
         if skill.exists():
             try:
-                from deskpet.skills.parser import parse_skill_md
-
                 meta = parse_skill_md(skill)
                 return {
                     "name": meta.name,

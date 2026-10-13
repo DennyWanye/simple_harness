@@ -141,6 +141,7 @@ import threading
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
+from llm import model_info
 from simple_harness.providers.errors import ProviderRequestRejectedError
 
 from deskpet.sdk_adapters.context_partitions import (
@@ -738,11 +739,9 @@ def resolve_window_tokens(model_id: object) -> int | None:
     if not name:
         return None
     try:
-        from llm.model_info import BUILTIN, resolve
-
-        if name not in BUILTIN:
+        if name not in model_info.BUILTIN:
             return None
-        return int(resolve(name).context_window)
+        return int(model_info.resolve(name).context_window)
     except Exception:  # noqa: BLE001 — 元数据永远不该打断发送路径
         return None
 

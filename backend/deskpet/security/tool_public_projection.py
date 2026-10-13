@@ -9,6 +9,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
 from typing import Any
 
+from deskpet.harness.contracts import HostExtensionRefV1
 from deskpet.security.redaction import TraceRedactor
 from deskpet.security.sensitive_text import redact_sensitive_text
 
@@ -232,7 +233,6 @@ class ToolPresentationSnapshotExtension:
 
     @property
     def descriptor(self) -> Any:
-        from deskpet.harness.contracts import HostExtensionRefV1
 
         digest = _hash(tuple(policy.to_dict() for policy in self.policies))
         return HostExtensionRefV1(

@@ -29,6 +29,7 @@ from deskpet.execution.provider_workloads import (
 
 from .contracts import (
     CompanionConflictError,
+    CompanionOwnerError,
     GrowthDependency,
     GrowthEvent,
     JsonValue,
@@ -662,8 +663,6 @@ class PreferenceResolver:
                 (owner.profile_id, owner.profile_generation),
             ).fetchone()
             if owner_row is None or owner_row["status"] != "active":
-                from .contracts import CompanionOwnerError
-
                 raise CompanionOwnerError(
                     f"companion_owner_stale:{owner.profile_id}:{owner.profile_generation}"
                 )

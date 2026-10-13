@@ -28,6 +28,12 @@ from typing import Any, Literal, TypeAlias
 
 import aiosqlite
 
+from deskpet.memory.primary_authority import (
+    PrimaryAuthorityImmutableError,
+    assert_not_primary_authority,
+    assert_not_primary_authority_tx,
+)
+
 CATALOG_SCHEMA_VERSION = 1
 DEFAULT_PAGE_SIZE = 50
 MAX_PAGE_SIZE = 100
@@ -1383,11 +1389,6 @@ class SessionCreationService:
             raise ProjectSessionError("invalid_request")
         if project_id is None and execution_kind == "explicit":
             raise ProjectSessionError("invalid_request")
-        from deskpet.memory.primary_authority import (
-            PrimaryAuthorityImmutableError,
-            assert_not_primary_authority,
-            assert_not_primary_authority_tx,
-        )
 
         try:
             await assert_not_primary_authority(self._bindings._db_path, source_session_id)
@@ -1756,11 +1757,6 @@ class SessionCreationService:
         sid, now = str(session_id or "").strip(), time.time()
         if not sid:
             raise ProjectSessionError("session_not_found")
-        from deskpet.memory.primary_authority import (
-            PrimaryAuthorityImmutableError,
-            assert_not_primary_authority,
-            assert_not_primary_authority_tx,
-        )
 
         try:
             await assert_not_primary_authority(self._bindings._db_path, sid)

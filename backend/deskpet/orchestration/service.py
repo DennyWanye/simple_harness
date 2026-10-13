@@ -31,7 +31,9 @@ from pathlib import Path
 from typing import Any
 
 import agent_orchestrator
+import paths
 import simple_harness
+from agent_orchestrator.api import facade, policies
 from agent_orchestrator.api.facade import FacadeError
 from agent_orchestrator.contracts import Budget
 from agent_orchestrator.deployment.assembly import RootNames, UserMissionDeployment
@@ -43,14 +45,17 @@ from agent_orchestrator.deployment.native_pools import (
 )
 from agent_orchestrator.governance.policies import SKILL_TOOL_NAMES, DeploymentPolicy
 from agent_orchestrator.observability.secrets import find_secrets
+from agent_orchestrator.orchestrator import event_handler, planning_selection
 from agent_orchestrator.orchestrator.commit_service import GLOBAL_ACCOUNT_PREFIX, global_account_id
 from agent_orchestrator.orchestrator.event_handler import ACTION_SETTLED_AFTER_STOP
 from agent_orchestrator.orchestrator.taskgraph_deployment import InstalledHtnWiringAcceptance
+from agent_orchestrator.runtime import sandbox
 from agent_orchestrator.runtime.assembly import OrchestratorConfig
 from agent_orchestrator.runtime.connectors_publish import FilePublishConnector
 from agent_orchestrator.runtime.deepseek_meter import deepseek_meter_binding
 from agent_orchestrator.runtime.planning_operations import SourceUnavailable
 from agent_orchestrator.runtime.sandbox import SandboxUnavailable, SeatbeltExecutor
+from agent_orchestrator.storage import planning_decision_store, planning_human_store
 from simple_harness.agents.arp.assurance_acceptance import evaluation_mission_key
 from simple_harness.agents.arp.errors import ArpError
 from simple_harness.agents.arp.pins import Pin
@@ -372,9 +377,6 @@ class OrchestrationService:
         self._lock.release()
 
     async def _open(self) -> None:
-        from agent_orchestrator.api.facade import MissionControlV1
-        from agent_orchestrator.api.policies import PolicyApi
-        from agent_orchestrator.orchestrator.event_handler import Orchestrator
 
         provider = self._provider
         enabled_connectors: tuple[str, ...] = ()
@@ -450,7 +452,7 @@ class OrchestrationService:
             if self._native is not None:
                 self._native.bind_orchestrator(orchestrator)
 
-        self._orchestrator = Orchestrator(
+        self._orchestrator = event_handler.Orchestrator(
             self._config,
             provider,
             owner=self.owner,
@@ -460,7 +462,7 @@ class OrchestrationService:
             **self._runtime_options,
         )
         await self._orchestrator.__aenter__()
-        control = MissionControlV1(
+        control = facade.MissionControlV1(
             self._orchestrator, tenant_id=self.tenant_id, principal=self._principal
         )
         self._quarantine = self._root_quarantine(control)
@@ -475,7 +477,7 @@ class OrchestrationService:
         self._control = control
         self._user_missions.bind(self._orchestrator, self._control)
         self._diagnostics_available = self._detect_diagnostics()
-        self._policy = PolicyApi(self._orchestrator.commit, self._principal)
+        self._policy = policies.PolicyApi(self._orchestrator.commit, self._principal)
 
     @staticmethod
     def _root_quarantine(control: Any) -> dict[str, Any] | None:
@@ -546,8 +548,6 @@ class OrchestrationService:
         the P3.2 journal as a deliberate deviation).
         """
 
-        from agent_orchestrator.runtime.sandbox import probe_sandbox as run_probe
-
         self._executor = None
         if getattr(sys, "frozen", False):
             # This executable starts the backend; it does not interpret -I/-c.
@@ -558,7 +558,7 @@ class OrchestrationService:
         except SandboxUnavailable as error:
             return {"ok": False, "reason": str(error)[:300]}
         try:
-            report = await run_probe(executor)
+            report = await sandbox.probe_sandbox(executor)
         except Exception as error:  # noqa: BLE001 - a probe that cannot run is not a pass
             logger.warning("sandbox probe failed to run: %s", error)
             return {"ok": False, "reason": f"{type(error).__name__}: {error}"[:300]}
@@ -727,9 +727,7 @@ class OrchestrationService:
             meter_factory = deepseek_meter_binding
         models_dir = None
         try:
-            from paths import user_models_dir
-
-            models_dir = Path(user_models_dir())
+            models_dir = Path(paths.user_models_dir())
         except Exception:  # noqa: BLE001 - no model directory means lexical-only, reported
             models_dir = None
         return build_native_pools(
@@ -939,9 +937,6 @@ class OrchestrationService:
         return issued
 
     async def _rebuild(self) -> None:
-        from agent_orchestrator.api.facade import MissionControlV1
-        from agent_orchestrator.api.policies import PolicyApi
-        from agent_orchestrator.orchestrator.event_handler import Orchestrator
 
         old, self._orchestrator = self._orchestrator, None
         self._control = None
@@ -973,7 +968,7 @@ class OrchestrationService:
             if self._native is not None:
                 self._native.bind_orchestrator(orchestrator)
 
-        candidate = Orchestrator(
+        candidate = event_handler.Orchestrator(
             self._config,
             self._effective_provider,
             owner=self.owner,
@@ -984,10 +979,10 @@ class OrchestrationService:
         )
         try:
             await candidate.__aenter__()
-            control = MissionControlV1(
+            control = facade.MissionControlV1(
                 candidate, tenant_id=self.tenant_id, principal=self._principal
             )
-            policy = PolicyApi(candidate.commit, self._principal)
+            policy = policies.PolicyApi(candidate.commit, self._principal)
         except BaseException as error:
             try:
                 await candidate.__aexit__(type(error), error, error.__traceback__)
@@ -1723,19 +1718,15 @@ class OrchestrationService:
         while the detail said "等你处理")."""
 
         try:
-            from agent_orchestrator.orchestrator.planning_selection import awaits_authority
-            from agent_orchestrator.storage.planning_decision_store import PlanningDecisionStore
-            from agent_orchestrator.storage.planning_human_store import PlanningHumanStore
-
             store = self._orchestrator.store
-            planning = PlanningDecisionStore(store)
+            planning = planning_decision_store.PlanningDecisionStore(store)
             waits = {
                 intent.mission_id
                 for intent in store.list_intents("PENDING", "CLAIMED", "AGENT_CREATED")
-                if awaits_authority(store, intent)
+                if planning_selection.awaits_authority(store, intent)
                 and planning.get_planning_request_for_intent(intent.intent_id) is not None
             }
-            humans = PlanningHumanStore(store)
+            humans = planning_human_store.PlanningHumanStore(store)
             for mission_id in {m.id for m in store.list_missions()} - waits:
                 for row in humans.list(mission_id):
                     request = row.get("request") or {}

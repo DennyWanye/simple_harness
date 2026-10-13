@@ -36,6 +36,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+import paths
 
 from .capabilities import ToolExecutionContext
 from .context_adapter import (
@@ -149,9 +150,7 @@ def _resolve_endpoint() -> tuple[str, str | None]:
             log.debug("image endpoint resolver failed: %s", exc)
 
     try:
-        from paths import user_data_dir  # type: ignore[import-not-found]
-
-        rt = user_data_dir() / "llm_runtime.json"
+        rt = paths.user_data_dir() / "llm_runtime.json"
         if rt.exists():
             data = json.loads(rt.read_text(encoding="utf-8"))
             base_url = str(data.get("base_url") or "")
@@ -345,9 +344,8 @@ def _classify_image_error(
 
 
 def _workspace_dir() -> Path:
-    from paths import user_data_dir  # type: ignore[import-not-found]
 
-    ws = user_data_dir() / "workspace"
+    ws = paths.user_data_dir() / "workspace"
     ws.mkdir(parents=True, exist_ok=True)
     return ws
 

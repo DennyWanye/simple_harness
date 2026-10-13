@@ -35,6 +35,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import aiosqlite
 from simple_harness.execution.context_authority import ContextRouteReceipt
 from simple_harness.runtime.task_scope_protocol import TaskScopeRoute
 
@@ -173,8 +174,6 @@ async def read_current_turn_text(db_path: Any, sdk_run_id: str) -> str:
     Returns "" when the Run has no live claim (a settled or foreign Run), which
     only costs the probe one lexical surface.
     """
-
-    import aiosqlite
 
     async with aiosqlite.connect(f"file:{db_path}?mode=ro", uri=True) as db:
         db.row_factory = aiosqlite.Row

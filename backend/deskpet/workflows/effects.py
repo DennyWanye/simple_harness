@@ -23,6 +23,8 @@ from typing import Any
 
 import aiosqlite
 
+from deskpet.types.task_grants import ResourceSelector
+
 from .contracts import EffectKind, EffectPolicy, JsonValue, canonical_json, validate_json_value
 from .deadlines import DeadlineLeaseV1, DurableDeadlineV1, resume_deadline
 from .store import RunFence, StaleRunFence, initialize_workflow_db
@@ -304,7 +306,6 @@ class PreparedToolCall:
         targets = tuple(self.prepared_targets)
         if len({item.reservation_key for item in targets}) != len(targets):
             raise ValueError("prepared call contains duplicate targets")
-        from deskpet.types.task_grants import ResourceSelector
 
         selectors = tuple(self.resource_selectors)
         if not all(isinstance(item, ResourceSelector) for item in selectors):
@@ -415,7 +416,6 @@ class PreparedToolCall:
         data.setdefault("runtime_provenance_ref", "")
         data.setdefault("catalog_snapshot_ref", "")
         data.setdefault("retry_of_effect_id", "")
-        from deskpet.types.task_grants import ResourceSelector
 
         data["resource_selectors"] = tuple(
             ResourceSelector.from_dict(item) for item in data.get("resource_selectors", ())

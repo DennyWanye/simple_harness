@@ -78,7 +78,18 @@ def resolve(node: ast.Import | ast.ImportFrom, importer: str, importer_path: Pat
             if cand in INDEX:
                 targets.add(cand)
     targets.discard(importer)
-    return targets
+    # 导入方自己的上层包在它之前就已加载，"沿途经过"不算新依赖；直接从上层包取名字才算
+    direct = set(bases) if isinstance(node, ast.ImportFrom) and any(s not in INDEX for s in subs) else set()
+    return {t for t in targets if not importer.startswith(t + ".") or t in direct}
+
+
+def with_ancestors(mods) -> set[str]:
+    """模块连同它们的上层包（导入模块时上层包先被加载）。"""
+    out = set()
+    for m in mods:
+        parts = m.split(".")
+        out |= {".".join(parts[:i]) for i in range(1, len(parts) + 1)} & INDEX.keys()
+    return out
 
 
 def top_level_imports(path: Path):

@@ -9,6 +9,8 @@ from dataclasses import replace
 
 import httpx
 
+from deskpet.tools.search_provider import region_for_query
+
 from .budget import (
     DimensionBatchBudgetAllocator,
     QueryBudgetLease,
@@ -22,6 +24,7 @@ from .contracts import (
     DimensionBatchResponse,
     DimensionSearchRequest,
     DimensionSearchResult,
+    FetchRequest,
     ProviderAttempt,
     PublicErrorCode,
     RetrievalCandidate,
@@ -1427,7 +1430,6 @@ class SearchGateway:
             )
 
     async def _hydrate(self, ranked, request, budget):
-        from .contracts import FetchRequest
 
         hydrated: list[RetrievalCandidate] = []
         for index, item in enumerate(ranked):
@@ -1452,7 +1454,6 @@ class SearchGateway:
 
     @staticmethod
     def _region(query: str) -> str:
-        from deskpet.tools.search_provider import region_for_query
 
         return region_for_query(query)
 

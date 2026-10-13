@@ -29,6 +29,8 @@ import logging
 from collections.abc import Iterable
 from typing import Any, Optional
 
+from deskpet.companion.skills import PreparedSkillInvocationScopeV1
+
 log = logging.getLogger(__name__)
 
 
@@ -42,7 +44,6 @@ class FrozenSkillCommandCatalog:
     """
 
     def __init__(self, records: Iterable[Any]) -> None:
-        from deskpet.companion.skills import PreparedSkillInvocationScopeV1
 
         self._skills: dict[str, dict[str, Any]] = {}
         self._scopes: dict[str, PreparedSkillInvocationScopeV1] = {}

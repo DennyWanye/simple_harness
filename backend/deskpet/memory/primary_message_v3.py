@@ -18,6 +18,7 @@ import json
 
 from deskpet.execution.evidence_ingress import _HostExecutionEvidence
 from deskpet.memory import primary_message_v2 as v2
+from deskpet.memory.primary_visibility import read_evidence_pair
 from deskpet.task_scope.protocol import canonical_hash, validate_execution_evidence
 
 CONTRACT = "primary-message-v3"
@@ -300,7 +301,6 @@ def pairs(terminal, terminal_receipt, user, *, host_run_id):
 
 
 async def verify(db, *, primary_ref, host_run_id, terminal, terminal_receipt, user):
-    from deskpet.memory.primary_visibility import read_evidence_pair
 
     await verify_scope_sources_tx(db, terminal)
     expected = pairs(terminal, terminal_receipt, user, host_run_id=host_run_id)

@@ -15,6 +15,7 @@ from typing import Any, Protocol
 import aiosqlite
 
 from .contracts import TERMINAL_RUN_STATUSES
+from .store.research_repository import ResearchWorkflowRepository
 
 DELIVERY_STAGE = "delivered_terminal_events"
 TOMBSTONE_STAGE = "evaluation_tombstones"
@@ -575,7 +576,6 @@ class WorkflowRetentionManager:
                         encoding="utf-8"
                     )
                 )
-                from .store.research_repository import ResearchWorkflowRepository
 
                 ResearchWorkflowRepository._validate_v6_snapshot(
                     snapshot_value, parent_run_id=str(head["parent_run_id"])

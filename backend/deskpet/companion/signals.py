@@ -31,6 +31,7 @@ from deskpet.execution.contracts import (
     fingerprint_json,
     thaw_json,
 )
+from deskpet.harness.projector import DeliveryDiscarded
 
 from .contracts import (
     CompanionOwnerError,
@@ -563,7 +564,6 @@ class GrowthTerminalDeliverySink:
             self._store.record_growth_event(signal.to_growth_event())
         except CompanionOwnerError:
             # Projector maps this stable code to a tombstone/discard receipt.
-            from deskpet.harness.projector import DeliveryDiscarded
 
             raise DeliveryDiscarded("owner_deleted") from None
 

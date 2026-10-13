@@ -9,6 +9,8 @@ import urllib.request
 from dataclasses import dataclass
 from urllib.parse import urlencode, urlparse
 
+from agent.context_messages import current_provider_attempt_options, normalize_provider_purpose
+
 
 def _loopback(url: str) -> bool:
     try:
@@ -119,7 +121,6 @@ def trusted_provider_headers(base_url):
         != base_url.removesuffix("/v1").rstrip("/")
     ):
         return {}
-    from agent.context_messages import current_provider_attempt_options, normalize_provider_purpose
 
     o = current_provider_attempt_options()
     if o is None:

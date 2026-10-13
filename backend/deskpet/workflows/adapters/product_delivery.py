@@ -30,6 +30,7 @@ from ...tools.artifact import (
 from ...tools.receipt import ToolReceipt, make_receipt
 from ...tools.receipt_store import ReceiptStore
 from ..contracts import canonical_json
+from ..delivery import DeliveryAttemptResultV1
 from ..store.run_store import WorkflowRunStore
 
 DeliveryHandler = Callable[[Mapping[str, Any], Mapping[str, Any]], Awaitable[dict[str, Any]]]
@@ -347,7 +348,6 @@ class ProductDeliveryAdapter:
         result = await self.deliver_artifact(event, delivery)
         if delivery.get("manifest_ref") is None:
             return result
-        from ..delivery import DeliveryAttemptResultV1
 
         if result.get("discarded") is True:
             return DeliveryAttemptResultV1.discarded_fenced("session_epoch_mismatch")
@@ -362,7 +362,6 @@ class ProductDeliveryAdapter:
         result = await self.deliver_receipt(event, delivery)
         if delivery.get("manifest_ref") is None:
             return result
-        from ..delivery import DeliveryAttemptResultV1
 
         return DeliveryAttemptResultV1.delivered("receipt_persisted")
 

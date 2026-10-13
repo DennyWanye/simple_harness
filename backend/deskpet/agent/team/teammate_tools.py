@@ -35,6 +35,7 @@ from typing import Any
 
 from deskpet.agent.task_kinds import _FORBIDDEN_IN_KIND
 from deskpet.agent.team.team_store import TeamStore
+from deskpet.tools.task_graph_tools import build_goal_task_tools
 
 log = logging.getLogger(__name__)
 
@@ -295,8 +296,6 @@ def build_teammate_tools(
     ]
 
     if task_graph_store is not None and goal_id is not None:
-        from deskpet.tools.task_graph_tools import build_goal_task_tools
-
         extra = build_goal_task_tools(
             task_graph_store=task_graph_store,
             goal_id=goal_id,

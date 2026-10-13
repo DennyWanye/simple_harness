@@ -13,8 +13,15 @@ from contextvars import ContextVar
 import aiosqlite
 from simple_harness import thaw_json
 
-from deskpet.execution.primary_dependencies import dependencies, parse_dependencies
+from deskpet.execution.primary_dependencies import (
+    dependencies,
+    parse_dependencies,
+    read_run_dependencies,
+)
+from deskpet.memory.trusted_disclosure import resolve_current_disclosure
+from deskpet.task_scope.mutation_disclosure import mutation_fields
 from deskpet.task_scope.protocol import canonical_hash, canonical_json
+from deskpet.task_scope.search import TaskScopeSearchStore
 
 _active_sources = ContextVar("scope_disclosure_sources", default=())
 
@@ -31,7 +38,6 @@ async def _render_scope_disclosure(
     selected pins a previously retained set at verification; becoming newly
     visible cannot silently inject another field into a frozen SDK request.
     """
-    from deskpet.task_scope.search import TaskScopeSearchStore
 
     opened = await TaskScopeSearchStore(db_path).open_exact(
         subject=subject,
@@ -102,7 +108,6 @@ async def _render_scope_disclosure(
                 continue  # preserved legacy producer, not a new fabricated proof
             proof = parse_dependencies(raw)
             # Rebuild the exact consumed prefix, excluding this producer itself.
-            from deskpet.execution.primary_dependencies import read_run_dependencies
 
             found = await read_run_dependencies(
                 db=db, stack=stack, sdk_run_id=route["run_id"], before_effect_id=route["effect_id"]
@@ -136,7 +141,6 @@ async def _render_scope_disclosure(
                         "producer_receipt_hash": canonical_hash(route),
                         "dependencies": proof,
                     }
-        from deskpet.task_scope.mutation_disclosure import mutation_fields
 
         fields.update(
             await mutation_fields(
@@ -251,7 +255,6 @@ class ScopeDisclosureReader:
         self.db_path, self.stack_getter, self.policy_factory = db_path, stack_getter, policy_factory
 
     async def producer_dependencies(self, run_id):
-        from deskpet.execution.primary_dependencies import read_run_dependencies
 
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
@@ -261,7 +264,6 @@ class ScopeDisclosureReader:
         return found[1]
 
     async def read(self, run_id, package, effect_id):
-        from deskpet.memory.trusted_disclosure import resolve_current_disclosure
 
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row

@@ -7,7 +7,9 @@ from contextlib import contextmanager
 from deskpet.companion.control_ingress import CompanionControlIngress
 from deskpet.companion.identity_gate import FrozenOwnerIdentity
 from deskpet.memory.human_memory_service import HumanMemoryHostServiceError
+from deskpet.memory.writer_fence import authenticated_memory_request
 from deskpet.sdk_adapters.context_route import local_owner_auth
+from deskpet.task_scope.protocol import canonical_hash
 
 
 class HumanMemoryControlBinding:
@@ -33,7 +35,6 @@ class HumanMemoryControlBinding:
 
     @contextmanager
     def request_scope(self, ingress, challenge):
-        from deskpet.memory.writer_fence import authenticated_memory_request
 
         self._verify(ingress, challenge)
         with authenticated_memory_request(_ConnectionRequestFence(self, ingress, challenge)):
@@ -94,7 +95,6 @@ class _ConnectionRequestFence:
 
     def audit_lease_ref(self):
         """Opaque binding of this exact verified owner/connection generation."""
-        from deskpet.task_scope.protocol import canonical_hash
 
         self.verify()
         identity = self._ingress.identity_gate.freeze()

@@ -14,6 +14,7 @@ from typing import Any, Protocol
 
 from deskpet.execution.contracts import fingerprint_json
 from deskpet.harness.contracts import HostExtensionRefV1
+from deskpet.skills.loader import SkillPackSnapshotResolver
 from deskpet.tools.capabilities import PreparedToolSet
 from deskpet.tools.prepared_snapshot import (
     dump_prepared_tool_set,
@@ -1127,7 +1128,6 @@ class FirstPartyFrozenSkillResolver:
     """
 
     def __init__(self, *, store: Any, inventory: Sequence[Any]) -> None:
-        from deskpet.skills.loader import SkillPackSnapshotResolver
 
         self._store = store
         # Kept for constructor compatibility; selection authority is the Run

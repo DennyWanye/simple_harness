@@ -16,6 +16,8 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+from agent.write_scope import write_scope_check as _ws_check
+
 from ..capabilities import ToolExecutionContext
 from ..context_adapter import legacy_execution_context
 
@@ -100,7 +102,6 @@ def move_file(
     context = legacy_execution_context(args, task_id, execution_context)
     scope = context.write_scope_root or context.workspace
     # 2026-09-26：不再限定工作区；只有受保护的核心文件要用户授权（移动会删除源文件）。
-    from agent.write_scope import write_scope_check as _ws_check
 
     for _target in (source, destination):
         _violation = _ws_check(str(_target), scope_root=scope)

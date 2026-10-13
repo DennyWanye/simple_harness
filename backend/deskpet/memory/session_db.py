@@ -38,6 +38,7 @@ from pathlib import Path
 from typing import Any
 
 import aiosqlite
+from memory.base import ConversationTurn, SessionSummary, StoredTurn
 
 from deskpet.agent.context_usage import (
     ContextUsageSampleConflict,
@@ -61,7 +62,17 @@ from deskpet.companion.companion_message_projection import (
 from deskpet.companion.companion_message_projection import (
     canonical_json as companion_canonical_json,
 )
-from deskpet.memory.memory_v2_schema import SESSION_TITLES_DDL
+from deskpet.memory.human_memory_program import HumanMemoryProgramStore
+from deskpet.memory.memory_v2_schema import (
+    SESSION_TITLES_DDL,
+    ensure_goal_tasks_table,
+    ensure_memory_v2_tables,
+    ensure_session_goals_table,
+)
+from deskpet.memory.primary_authority import (
+    assert_not_primary_authority,
+    assert_not_primary_authority_tx,
+)
 from deskpet.memory.schema import initialize_state_db
 from deskpet.sdk_adapters.context_authority import (
     SnapshotContractConflict,
@@ -374,7 +385,6 @@ class SessionDB:
     # ------------------------------------------------------------------
 
     def _human_memory_program_store(self):
-        from deskpet.memory.human_memory_program import HumanMemoryProgramStore
 
         return HumanMemoryProgramStore(self._db_path)
 
@@ -1346,7 +1356,6 @@ class SessionDB:
     async def create_session(self, metadata: dict[str, Any] | None = None) -> str:
         """新建会话，返回 UUID 字符串。"""
         session_id = str(uuid.uuid4())
-        from deskpet.memory.primary_authority import assert_not_primary_authority
 
         await assert_not_primary_authority(self._db_path, session_id)
         if not self._initialized:
@@ -1371,10 +1380,6 @@ class SessionDB:
         sid = (session_id or "").strip()
         if not sid:
             raise ValueError("session_id must be non-empty")
-        from deskpet.memory.primary_authority import (
-            assert_not_primary_authority,
-            assert_not_primary_authority_tx,
-        )
 
         await assert_not_primary_authority(self._db_path, sid)
         if not self._initialized:
@@ -4083,7 +4088,6 @@ class SessionDB:
 
     async def get_recent(self, session_id: str, limit: int = 10) -> list[ConversationTurn]:
         """Implement ``MemoryStore.get_recent`` via ``get_messages``."""
-        from memory.base import ConversationTurn
 
         rows = await self.get_recent_messages(session_id, limit=limit)
         return [
@@ -4101,10 +4105,6 @@ class SessionDB:
 
     async def clear(self, session_id: str) -> None:
         """Implement ``MemoryStore.clear`` for one session."""
-        from deskpet.memory.primary_authority import (
-            assert_not_primary_authority,
-            assert_not_primary_authority_tx,
-        )
 
         await assert_not_primary_authority(self._db_path, session_id)
         if not self._initialized:
@@ -4166,7 +4166,6 @@ class SessionDB:
         limit: int | None = None,
     ) -> list[StoredTurn]:
         """List messages for one session, or all sessions, as StoredTurn."""
-        from memory.base import StoredTurn
 
         if not self._initialized:
             await self.initialize()
@@ -4231,7 +4230,6 @@ class SessionDB:
 
     async def list_sessions(self) -> list[SessionSummary]:
         """List all sessions that have messages, newest first."""
-        from memory.base import SessionSummary
 
         if not self._initialized:
             await self.initialize()
@@ -4307,10 +4305,6 @@ class SessionDB:
         sid = (session_id or "").strip()
         if not sid:
             return ""
-        from deskpet.memory.primary_authority import (
-            assert_not_primary_authority,
-            assert_not_primary_authority_tx,
-        )
 
         await assert_not_primary_authority(self._db_path, sid)
         if not self._initialized:
@@ -4933,7 +4927,6 @@ class SessionDB:
         if not self._initialized:
             await self.initialize()
         # 自带建表（幂等）— 全新 DB 上保证 session_plans 存在。
-        from deskpet.memory.memory_v2_schema import ensure_memory_v2_tables
 
         await ensure_memory_v2_tables(self._db_path)
 
@@ -4979,7 +4972,6 @@ class SessionDB:
         """读 awaiting plan；无行返 None。steps 已 json.loads，awaiting 已 bool。"""
         if not self._initialized:
             await self.initialize()
-        from deskpet.memory.memory_v2_schema import ensure_memory_v2_tables
 
         await ensure_memory_v2_tables(self._db_path)
 
@@ -5032,7 +5024,6 @@ class SessionDB:
         """清 awaiting 标记（UPDATE awaiting=0）。幂等，可重复调（无行也安全）。"""
         if not self._initialized:
             await self.initialize()
-        from deskpet.memory.memory_v2_schema import ensure_memory_v2_tables
 
         await ensure_memory_v2_tables(self._db_path)
 
@@ -5070,7 +5061,6 @@ class SessionDB:
         """
         if not self._initialized:
             await self.initialize()
-        from deskpet.memory.memory_v2_schema import ensure_session_goals_table
 
         await ensure_session_goals_table(self._db_path)
 
@@ -5117,7 +5107,6 @@ class SessionDB:
             raise ValueError("invalid Goal terminal status")
         if not self._initialized:
             await self.initialize()
-        from deskpet.memory.memory_v2_schema import ensure_session_goals_table
 
         await ensure_session_goals_table(self._db_path)
 
@@ -5145,7 +5134,6 @@ class SessionDB:
         """读某 session 的 active 目标，updated_at 倒序（最新在前）。"""
         if not self._initialized:
             await self.initialize()
-        from deskpet.memory.memory_v2_schema import ensure_session_goals_table
 
         await ensure_session_goals_table(self._db_path)
 
@@ -5172,7 +5160,6 @@ class SessionDB:
         """启动恢复用：全库所有 active 目标。"""
         if not self._initialized:
             await self.initialize()
-        from deskpet.memory.memory_v2_schema import ensure_session_goals_table
 
         await ensure_session_goals_table(self._db_path)
 
@@ -5227,7 +5214,6 @@ class SessionDB:
         """Insert a new goal_task row. depends_on stored as JSON."""
         if not self._initialized:
             await self.initialize()
-        from deskpet.memory.memory_v2_schema import ensure_goal_tasks_table
 
         await ensure_goal_tasks_table(self._db_path)
 
@@ -5263,7 +5249,6 @@ class SessionDB:
         """Read a single goal_task by task_id; None if not found."""
         if not self._initialized:
             await self.initialize()
-        from deskpet.memory.memory_v2_schema import ensure_goal_tasks_table
 
         await ensure_goal_tasks_table(self._db_path)
 
@@ -5289,7 +5274,6 @@ class SessionDB:
         """List all tasks for a goal, ordered by created_at ASC."""
         if not self._initialized:
             await self.initialize()
-        from deskpet.memory.memory_v2_schema import ensure_goal_tasks_table
 
         await ensure_goal_tasks_table(self._db_path)
 
@@ -5323,7 +5307,6 @@ class SessionDB:
         """Partial update: only non-None kwargs are SET."""
         if not self._initialized:
             await self.initialize()
-        from deskpet.memory.memory_v2_schema import ensure_goal_tasks_table
 
         await ensure_goal_tasks_table(self._db_path)
 
@@ -5419,7 +5402,6 @@ class SessionDB:
         """
         if not self._initialized:
             await self.initialize()
-        from deskpet.memory.memory_v2_schema import ensure_goal_tasks_table
 
         await ensure_goal_tasks_table(self._db_path)
 

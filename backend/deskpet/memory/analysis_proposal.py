@@ -37,6 +37,7 @@ from datetime import datetime
 from typing import Any
 
 from simple_harness.contracts import canonical_json
+from simple_harness.providers import ProviderToolSpec
 
 PROMPT_VERSION = "host-analysis-prompt/v3"
 RESULT_SCHEMA_VERSION = "memory-analysis-proposal/v3"
@@ -704,7 +705,6 @@ def proposal_from_response(response: Any) -> Mapping[str, Any] | None:
 
 
 def proposal_tool_spec() -> Any:
-    from simple_harness.providers import ProviderToolSpec
 
     return ProviderToolSpec(PROPOSAL_TOOL_NAME, PROPOSAL_TOOL_DESCRIPTION, PROPOSAL_TOOL_SCHEMA)
 

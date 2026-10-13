@@ -13,9 +13,13 @@ from urllib.parse import urljoin, urlsplit
 
 import httpx
 
+from deskpet.playwright_bundle import resolve_browser_bundle
+from deskpet.tools import research_cdp_edge
+
 from .cache import AsyncTTLCache
 from .content_quality import looks_like_app_shell, quality_flags
 from .contracts import EvidenceDocument, FetchRequest
+from .playwright_renderer import FetchRenderBudget, PlaywrightRendererPool, PlaywrightRenderError
 from .ranking import canonicalize_url, stable_candidate_id
 from .transports import ScraplingTransport
 
@@ -123,10 +127,6 @@ class FetchExtractService:
         sg = config.search_gateway
         playwright_renderer = None
         if bool(getattr(sg, "playwright_renderer_enabled", True)):
-            from deskpet.playwright_bundle import resolve_browser_bundle
-
-            from .playwright_renderer import PlaywrightRendererPool
-
             playwright_renderer = PlaywrightRendererPool(
                 browser_root_resolver=lambda: resolve_browser_bundle().owner,
                 maximum_concurrency=max(1, min(2, int(sg.max_concurrency))),
@@ -153,7 +153,6 @@ class FetchExtractService:
             return await self._fetch_uncached(request, url)
 
     async def _fetch_uncached(self, request: FetchRequest, url: str) -> EvidenceDocument:
-        from .playwright_renderer import FetchRenderBudget, PlaywrightRenderError
 
         render_budget = request.render_budget or FetchRenderBudget()
         raw: dict | None = None
@@ -343,9 +342,7 @@ class FetchExtractService:
         ):
             render_call = self.render_call
             if render_call is None:
-                from deskpet.tools.research_cdp_edge import cdp_edge_render
-
-                render_call = cdp_edge_render
+                render_call = research_cdp_edge.cdp_edge_render
             edge_started = time.perf_counter()
             try:
                 try:

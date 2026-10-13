@@ -40,6 +40,9 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
+from deskpet.agent.tokens import count_messages_tokens
+from llm.model_info import BUILTIN
+
 # Threshold defaults — same as Claude's own internal heuristic:
 #   WARN at 80% so user/UI can react ahead of failure
 #   BLOCK at 95% to leave room for the assistant's response itself
@@ -156,7 +159,6 @@ def estimate_tokens(messages: list[dict[str, Any]]) -> int:
     """
     if not messages:
         return 0
-    from deskpet.agent.tokens import count_messages_tokens
 
     return count_messages_tokens(messages)
 
@@ -188,8 +190,6 @@ def get_context_window(model_name: str) -> int:
 
     # 1. per-model map (authoritative for models it knows)
     try:
-        from llm.model_info import BUILTIN
-
         info = BUILTIN.get(normalized)
         if info is not None:
             return info.context_window

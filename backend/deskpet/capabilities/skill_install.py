@@ -33,6 +33,7 @@ from .contracts import (
     canonical_project_identity_scope_key,
     fingerprint_json,
 )
+from .manifest import load_and_validate_pack
 from .skill_source import (
     BoundedGitHubSkillSource,
     CapabilitySourceError,
@@ -279,7 +280,6 @@ class ManagerGlobalSkillRuntimeVerifier:
         manager_receipt: Mapping[str, JsonValue],
         members: Sequence[CapabilitySkillInstallMember],
     ) -> Mapping[str, JsonValue]:
-        from .manifest import load_and_validate_pack
 
         if intent.install_scope != "user":
             raise ProjectSkillInstallError(

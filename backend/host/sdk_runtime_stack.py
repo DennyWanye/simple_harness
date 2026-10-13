@@ -11,6 +11,7 @@ from collections.abc import Mapping
 from dataclasses import replace as dataclass_replace
 from pathlib import Path
 
+import httpx
 import paths as _paths
 from deskpet.capabilities.skill_install import (
     AuthorizedPreflightReceiptResolver,
@@ -208,8 +209,6 @@ async def _build_product_sdk_runtime_stack(
     provider_registry = service_context.get("provider_registry")
     if provider_registry is None:
         raise RuntimeError("SDK Runtime requires provider_registry")
-
-    import httpx
 
     # Grok Build lane (2026-09-16): SDK provider builds its own headers, so
     # endpoint-specific ones (llm_runtime.json extra_headers) ride a hook.

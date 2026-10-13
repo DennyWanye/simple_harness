@@ -138,6 +138,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Protocol
 
+import aiosqlite
 from agent.write_scope import resolve_workspace_root
 from simple_harness import CallId, RunId
 from simple_harness.tools import ToolContext, ToolResult
@@ -948,8 +949,6 @@ async def workspace_read_audit_rows(
     db_path: Any,
 ) -> list[tuple[str | None, str, str]]:
     """Durable read-gate receipts ``(sdk_run_id, reason_code, payload_hash)``."""
-
-    import aiosqlite
 
     async with aiosqlite.connect(f"file:{Path(db_path)}?mode=ro", uri=True) as db:
         cursor = await db.execute(

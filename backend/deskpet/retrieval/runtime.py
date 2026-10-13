@@ -4,6 +4,16 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from .providers import (
+    BaiduProvider,
+    BingCDPProvider,
+    BingHTTPProvider,
+    DuckDuckGoProvider,
+    GoogleCDPProvider,
+    SearXNGProvider,
+)
+from .search_gateway import SearchGateway
+
 if TYPE_CHECKING:
     from config import AppConfig
 
@@ -13,15 +23,6 @@ _default_gateway: SearchGateway | None = None
 
 
 def build_search_gateway(config: AppConfig) -> SearchGateway:
-    from .providers import (
-        BaiduProvider,
-        BingCDPProvider,
-        BingHTTPProvider,
-        DuckDuckGoProvider,
-        GoogleCDPProvider,
-        SearXNGProvider,
-    )
-    from .search_gateway import SearchGateway
 
     cfg = config.search_gateway
     providers = [BaiduProvider(), DuckDuckGoProvider(), GoogleCDPProvider(), BingCDPProvider()]

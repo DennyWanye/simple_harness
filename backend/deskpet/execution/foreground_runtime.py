@@ -42,6 +42,7 @@ from simple_harness import (
 )
 from simple_harness.execution.audit import RunAuditUnavailable
 
+from deskpet.execution.admission_rejection import reject_stale_candidate
 from deskpet.execution.foreground_queue import (
     ClaimedExecution,
     ContextLineage,
@@ -53,6 +54,8 @@ from deskpet.execution.foreground_queue import (
     PreparationCandidate,
     RunState,
 )
+from deskpet.execution.preparation_rejection import PreparationDisclosureRejected
+from deskpet.execution.primary_dependencies import parse_dependencies, read_run_dependencies
 from deskpet.memory.primary_tool_causality import PrimaryToolCausalityUnavailable
 from deskpet.memory.primary_visibility import cause_fields
 from deskpet.memory.trusted_disclosure import TrustedDisclosureError
@@ -131,8 +134,6 @@ class FrozenContextAuthority:
                 self, "scope_disclosure", freeze_json(thaw_json(self.scope_disclosure))
             )
         if self.visibility_dependencies is not None:
-            from deskpet.execution.primary_dependencies import parse_dependencies
-
             object.__setattr__(
                 self,
                 "visibility_dependencies",
@@ -771,7 +772,6 @@ class ForegroundRuntimeExecutionAuthority:
                     "host_disclosure_legacy_policy_changed",
                 }:
                     raise
-                from deskpet.execution.admission_rejection import reject_stale_candidate
 
                 await reject_stale_candidate(self._store, candidate)
                 self._notify_state_changed()
@@ -1040,7 +1040,6 @@ class ForegroundRuntimeExecutionAuthority:
             sdk_run_id=sdk_run_id,
         )
         _check_identity(tools)
-        from deskpet.execution.preparation_rejection import PreparationDisclosureRejected
 
         try:
             context = await self._context.prepare(
@@ -1895,7 +1894,6 @@ class SqliteSdkTerminalObserver:
                 raise ForegroundRuntimeError("foreground_terminal_run_binding_missing")
             text = json.loads(turn[0])["payload"]["text"]
             messages = read_messages(sdk_run_id, current_text=text)
-            from deskpet.execution.primary_dependencies import read_run_dependencies
 
             proof = None
             if callable(getattr(self._runtime_stack, "read_primary_dependency_facts", None)):

@@ -5,6 +5,12 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
+from deskpet.agent.context_snapshot_store import (
+    SnapshotCommitCancelled,
+    SnapshotConflictError,
+    await_snapshot_commit_ack,
+)
+
 
 class ToolContextPersistenceMixin:
     """Keep snapshot CAS mechanics out of the provider completion loop."""
@@ -66,11 +72,6 @@ class ToolContextPersistenceMixin:
             "policy_fingerprint": current_tool_set.policy_fingerprint,
             "schema_fingerprint": current_tool_set.schema_fingerprint,
         }
-        from deskpet.agent.context_snapshot_store import (
-            SnapshotCommitCancelled,
-            SnapshotConflictError,
-            await_snapshot_commit_ack,
-        )
 
         async with scope_store.lock_for(current_tool_set.scope_id):
             current_record = scope_store.get(
@@ -164,11 +165,6 @@ class ToolContextPersistenceMixin:
                 "wire_tokens": int(getattr(tool_payload, "wire_tokens", 0) or 0),
                 "adapter_state": "prepared",
             }
-        )
-        from deskpet.agent.context_snapshot_store import (
-            SnapshotCommitCancelled,
-            SnapshotConflictError,
-            await_snapshot_commit_ack,
         )
 
         write_task = asyncio.create_task(

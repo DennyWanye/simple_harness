@@ -22,6 +22,22 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from deskpet.capabilities.package_limits import ValidatedCapabilityPackageRefV1
+
+from .build_admission import (
+    CandidateDraftReceiptExpectationV1,
+    CandidateDraftReceiptV1,
+    ExplicitGrowthBuildAdmissionV1,
+    GrowthCandidateBuildPermitV1,
+)
+from .candidate_build_coordinator import CandidateBuildLaunchStateV1, CandidateBuildStatus
+from .candidate_composition import (
+    CandidateCompositionCommitResultV1,
+    CandidateCompositionCommitV1,
+    CandidateCompositionError,
+    CandidateCompositionFactsV1,
+    ExactCandidateBundleV1,
+)
 from .contracts import (
     CandidateAttempt,
     CandidateMode,
@@ -42,6 +58,14 @@ from .contracts import (
     MutationRequest,
     OwnerRef,
     RunGrowthSnapshot,
+)
+from .growth import (
+    CandidateBindingFenceV1,
+    GrowthEvidenceV1,
+    GrowthProposalDecision,
+    GrowthTargetIdentityV1,
+    StructuredGrowthProposalV1,
+    evidence_set_hash,
 )
 from .schema import configure_connection, initialize_schema
 
@@ -1000,8 +1024,6 @@ class CompanionStore:
         owned by the requested profile generation and rejects partial sets.
         """
 
-        from .growth import GrowthEvidenceV1
-
         requested = tuple(sorted({str(item).strip() for item in event_ids}))
         if not requested or any(not item for item in requested):
             raise ValueError("growth_evidence_ids_required")
@@ -1284,8 +1306,6 @@ class CompanionStore:
     def admit_explicit_build(self, admission: Any) -> Mapping[str, Any]:
         """Atomically persist trusted explicit evidence, proposal and build."""
 
-        from .build_admission import ExplicitGrowthBuildAdmissionV1
-
         if not isinstance(admission, ExplicitGrowthBuildAdmissionV1):
             raise TypeError("explicit_growth_build_admission_required")
         owner = admission.owner
@@ -1542,12 +1562,6 @@ class CompanionStore:
         hashes, owner fences, reservation rows, and child launch identities.
         Non-candidate outcomes never create a build.
         """
-
-        from .growth import (
-            GrowthProposalDecision,
-            StructuredGrowthProposalV1,
-            evidence_set_hash,
-        )
 
         allowed = {"candidate", "abstain", "insufficient", "stale", "noop"}
         if decision not in allowed:
@@ -1936,8 +1950,6 @@ class CompanionStore:
 
     @staticmethod
     def _candidate_build_state(row: sqlite3.Row) -> Any:
-        from .build_admission import CandidateDraftReceiptExpectationV1
-        from .candidate_build_coordinator import CandidateBuildLaunchStateV1
 
         expectation = None
         if row["draft_receipt_expectation_json"] is not None:
@@ -2034,9 +2046,6 @@ class CompanionStore:
         lease_seconds: float = 300.0,
     ) -> Any:
         """Claim/recover one build and issue its host-only exact permit."""
-
-        from .build_admission import GrowthCandidateBuildPermitV1
-        from .candidate_build_coordinator import CandidateBuildStatus
 
         claim_owner = str(claim_owner).strip()
         if not claim_owner or claim_epoch < 1 or lease_seconds <= 0 or lease_seconds > 900:
@@ -2478,8 +2487,6 @@ class CompanionStore:
 
     @staticmethod
     def _candidate_composition_from_db(db: sqlite3.Connection, build_id: str) -> Any:
-        from .candidate_composition import CandidateCompositionFactsV1
-        from .growth import CandidateBindingFenceV1, GrowthTargetIdentityV1
 
         rows = db.execute(
             "SELECT * FROM candidate_builds WHERE build_id=?",
@@ -2591,16 +2598,6 @@ class CompanionStore:
     def commit_candidate_build(self, commit: Any) -> Any:
         """CAS current facts and atomically freeze package, attempt and build."""
 
-        from deskpet.capabilities.package_limits import (
-            ValidatedCapabilityPackageRefV1,
-        )
-
-        from .candidate_composition import (
-            CandidateCompositionCommitResultV1,
-            CandidateCompositionCommitV1,
-            CandidateCompositionError,
-        )
-
         if not isinstance(commit, CandidateCompositionCommitV1):
             raise CandidateCompositionError("candidate_commit_type_invalid")
         if not isinstance(commit.validated_package_ref, ValidatedCapabilityPackageRefV1):
@@ -2679,12 +2676,6 @@ class CompanionStore:
         provenance link, build identity and receipt hash is checked under the
         exact owner generation before any bytes leave the Store boundary.
         """
-
-        from .build_admission import CandidateDraftReceiptV1
-        from .candidate_composition import (
-            CandidateCompositionError,
-            ExactCandidateBundleV1,
-        )
 
         with self.read() as db:
             self._require_owner(db, owner)
