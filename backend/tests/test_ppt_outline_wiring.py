@@ -5,7 +5,9 @@ from types import SimpleNamespace
 
 import pytest
 from deskpet.tools import ppt_tools
-from host import connections, ppt_outline
+from host import connections, control_messages, ppt_outline
+
+from tests.host_patch import patch_host_global
 
 
 def _use_control_connections(monkeypatch, mapping) -> None:
@@ -88,12 +90,11 @@ async def test_workflow_outline_card_resumes_generic_decision_without_blocking(m
     async def notify(sid, text):
         notices.append((sid, text))
 
-    monkeypatch.setattr(main, "_ppt_notify_chat_bubble", notify)
-    monkeypatch.setattr(ppt_outline, "_ppt_notify_chat_bubble", notify)
+    patch_host_global(monkeypatch, "_ppt_notify_chat_bubble", notify)
     ws = _FakeWebSocket()
     _use_control_connections(monkeypatch, {"panel": ws})
 
-    handled = await main._handle_control_ws_message(
+    handled = await control_messages._handle_control_ws_message(
         {"type": "ppt_outline_decision", "payload": {"outline_id": oid, "action": "accept"}},
         session_id="sid-1",
         ws=ws,
@@ -126,7 +127,6 @@ async def test_workflow_outline_card_resumes_generic_decision_without_blocking(m
 
 @pytest.mark.asyncio
 async def test_workflow_outline_card_uses_kernel_decision_fence(monkeypatch):
-    import main
 
     signalled = []
 
@@ -142,10 +142,9 @@ async def test_workflow_outline_card_uses_kernel_decision_fence(monkeypatch):
     async def notify(sid, text):
         notices.append((sid, text))
 
-    monkeypatch.setattr(main, "_signal_product_harness_decision", signal)
-    monkeypatch.setattr(main, "_resolve_workflow_ppt_outline", legacy)
-    monkeypatch.setattr(main, "_ppt_notify_chat_bubble", notify)
-    monkeypatch.setattr(ppt_outline, "_ppt_notify_chat_bubble", notify)
+    patch_host_global(monkeypatch, "_signal_product_harness_decision", signal)
+    patch_host_global(monkeypatch, "_resolve_workflow_ppt_outline", legacy)
+    patch_host_global(monkeypatch, "_ppt_notify_chat_bubble", notify)
     _use_control_connections(monkeypatch, {})
 
     payload = {
@@ -157,7 +156,7 @@ async def test_workflow_outline_card_uses_kernel_decision_fence(monkeypatch):
         "nonce": "nonce-1",
         "version": 4,
     }
-    handled = await main._handle_control_ws_message(
+    handled = await control_messages._handle_control_ws_message(
         {"type": "ppt_outline_decision", "payload": payload},
         session_id="sid-1",
         ws=_FakeWebSocket(),
@@ -176,15 +175,14 @@ async def test_workflow_outline_card_uses_kernel_decision_fence(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_workflow_outline_rejected_fence_does_not_drop_control_socket(monkeypatch):
-    import main
 
     async def reject(*_args, **_kwargs):
         raise RuntimeError("actor does not own the run session")
 
-    monkeypatch.setattr(main, "_signal_product_harness_decision", reject)
+    patch_host_global(monkeypatch, "_signal_product_harness_decision", reject)
     _use_control_connections(monkeypatch, {})
 
-    handled = await main._handle_control_ws_message(
+    handled = await control_messages._handle_control_ws_message(
         {
             "type": "ppt_outline_decision",
             "payload": {
@@ -258,11 +256,10 @@ async def test_workflow_outline_decision_uses_action_specific_notice(
     async def notify(sid, text):
         notices.append((sid, text))
 
-    monkeypatch.setattr(main, "_ppt_notify_chat_bubble", notify)
-    monkeypatch.setattr(ppt_outline, "_ppt_notify_chat_bubble", notify)
+    patch_host_global(monkeypatch, "_ppt_notify_chat_bubble", notify)
     _use_control_connections(monkeypatch, {})
 
-    handled = await main._handle_control_ws_message(
+    handled = await control_messages._handle_control_ws_message(
         {
             "type": "ppt_outline_decision",
             "payload": {"outline_id": oid, "action": action, "feedback": feedback},
@@ -278,7 +275,6 @@ async def test_workflow_outline_decision_uses_action_specific_notice(
 
 @pytest.mark.asyncio
 async def test_workflow_outline_modify_rejects_empty_feedback_without_resolving(monkeypatch):
-    import main
 
     started = []
     notices = []
@@ -290,11 +286,10 @@ async def test_workflow_outline_modify_rejects_empty_feedback_without_resolving(
     async def notify(sid, text):
         notices.append((sid, text))
 
-    monkeypatch.setattr(main, "_resolve_workflow_ppt_outline", start)
-    monkeypatch.setattr(main, "_ppt_notify_chat_bubble", notify)
-    monkeypatch.setattr(ppt_outline, "_ppt_notify_chat_bubble", notify)
+    patch_host_global(monkeypatch, "_resolve_workflow_ppt_outline", start)
+    patch_host_global(monkeypatch, "_ppt_notify_chat_bubble", notify)
 
-    assert await main._handle_control_ws_message(
+    assert await control_messages._handle_control_ws_message(
         {
             "type": "ppt_outline_decision",
             "payload": {
@@ -396,7 +391,6 @@ async def test_ppt_notify_chat_bubble_persists_before_sending(monkeypatch):
 
 
 def test_ppt_outline_startup_expire_is_called(monkeypatch):
-    import main
 
     calls = []
     monkeypatch.setattr(
@@ -408,7 +402,6 @@ def test_ppt_outline_startup_expire_is_called(monkeypatch):
 
 
 def test_ppt_pro_startup_wires_only_durable_workflow(monkeypatch):
-    import main
 
     seen = {}
     monkeypatch.setattr(ppt_tools, "set_ppt_pro_services", lambda **kwargs: seen.update(kwargs))
