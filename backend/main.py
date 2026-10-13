@@ -61,7 +61,7 @@ from deskpet.agent.run_presenter import (
 from deskpet.agent.turn_preparer import (
     ProductTurnPreparer,
 )
-from fastapi import FastAPI, Request, Response, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, FastAPI, Request, Response, WebSocket, WebSocketDisconnect
 from host.state import host_state
 from observability.metrics import render as render_metrics
 from observability.startup import registry as startup_errors  # P3-S2
@@ -6008,6 +6008,9 @@ from host.auth import (
 # isort: split
 
 
+cloud_config_router = APIRouter()
+
+
 class CloudConfigRequest(BaseModel):
     base_url: str
     model: str
@@ -6118,7 +6121,7 @@ def _provider_display_name(base_url: str, fallback: str) -> str:
         return fallback
 
 
-@app.post("/config/cloud")
+@cloud_config_router.post("/config/cloud")
 async def update_cloud_config(body: CloudConfigRequest, request: Request):
     """P4-S20-LLM-Unified: hot-swap the unified LLM provider.
 
@@ -6283,6 +6286,9 @@ async def update_cloud_config(body: CloudConfigRequest, request: Request):
     }
 
 
+commands_router = APIRouter()
+
+
 async def _current_slash_skill_catalog():
     """Freeze the current user-global Skill command view atomically.
 
@@ -6325,7 +6331,7 @@ async def _current_slash_skill_catalog():
     return CompositeSkillCommandCatalog(first_party, global_catalog)
 
 
-@app.get("/api/skills/list")
+@commands_router.get("/api/skills/list")
 async def api_skills_list(session_id: str = ""):
     """WI-A4 v1 — InputBar 拉 skill 列表给 / autocomplete.
 
@@ -6370,7 +6376,7 @@ async def api_skills_list(session_id: str = ""):
     }
 
 
-@app.get("/api/commands/help")
+@commands_router.get("/api/commands/help")
 async def api_commands_help(session_id: str = ""):
     """WI-T2-B5 v2 — InputBar autocomplete 拉所有可用 slash command 列表.
 
@@ -6469,7 +6475,7 @@ async def api_commands_help(session_id: str = ""):
     return {"feature_enabled": True, "commands": commands}
 
 
-@app.get("/api/commands/{name}/schema")
+@commands_router.get("/api/commands/{name}/schema")
 async def api_command_schema(name: str, session_id: str = ""):
     """WI-T2-B5 v2 — 单命令 arg schema 详情（autocomplete arg-hint 用）.
 
@@ -6540,7 +6546,10 @@ async def api_command_schema(name: str, session_id: str = ""):
     return Response(status_code=404, content=f"unknown command: {name_lower}")
 
 
-@app.get("/health")
+health_router = APIRouter()
+
+
+@health_router.get("/health")
 async def health():
     # P3-S2: surface startup failures (esp. CUDA unavailable / model dir
     # missing) so the Rust supervisor and future frontend banner can
@@ -6571,7 +6580,7 @@ async def health():
     }
 
 
-@app.post("/metrics/event")
+@health_router.post("/metrics/event")
 async def post_metrics_event(request: Request):
     """WI-T1.7 last-mile: 前端 ArtifactCard 按钮点击 → 此端点 → metrics.jsonl。
 
@@ -6606,7 +6615,7 @@ async def post_metrics_event(request: Request):
     return Response(status_code=204)
 
 
-@app.get("/metrics")
+@health_router.get("/metrics")
 async def metrics(request: Request):
     """Prometheus scrape endpoint (P2-1-S6).
 
@@ -6626,6 +6635,11 @@ async def metrics(request: Request):
             )
     body, content_type = render_metrics()
     return Response(content=body, media_type=content_type)
+
+
+app.include_router(cloud_config_router)
+app.include_router(commands_router)
+app.include_router(health_router)
 
 
 # --- S14 memory management dispatch -----------------------------------------
