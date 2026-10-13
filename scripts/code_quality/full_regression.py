@@ -86,10 +86,19 @@ def junit_failures(xml_path: Path) -> tuple[dict, list[str]]:
 
 def run_host(out: Path, stall: int) -> dict:
     xml = out / "host.xml"
+    env = dict(os.environ)
+    plugin: list[str] = []
+    venv_backend = (BACKEND / ".venv").resolve().parent
+    if venv_backend != BACKEND.resolve():  # 工作树借用主检出的虚拟环境：改写已安装 SDK 的来源路径
+        env["CQ_ORIGIN_REBASE"] = f"{venv_backend}/vendor|{BACKEND.resolve()}/vendor"
+        env["PYTHONPATH"] = os.pathsep.join(
+            x for x in (str(Path(__file__).resolve().parent), env.get("PYTHONPATH", "")) if x
+        )
+        plugin = ["-p", "origin_rebase_plugin"]
     status = run_watched(
         [str(BACKEND / ".venv/bin/python"), "-m", "pytest", "-q", "-p", "no:cacheprovider",
-         f"--junitxml={xml}"],
-        BACKEND, out / "host.log", stall,
+         *plugin, f"--junitxml={xml}"],
+        BACKEND, out / "host.log", stall, env=env,
     )
     counts, failed = junit_failures(xml)
     return {"status": status, **counts, "failed": failed}
