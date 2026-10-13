@@ -7,7 +7,9 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from deskpet.tools import ppt_tools
 from deskpet.workflows.adapters.ppt_runtime import PptRuntime
+from host import ppt_outline
 
 
 @pytest.mark.asyncio
@@ -188,9 +190,9 @@ async def test_startup_registers_runtime_but_disables_legacy_tool_starter(monkey
         lambda: asyncio.sleep(0, result=lambda _prompt: "ok"),
     )
     services = {}
-    monkeypatch.setattr(main.ppt_tools, "set_ppt_pro_services", lambda **kw: services.update(kw))
+    monkeypatch.setattr(ppt_tools, "set_ppt_pro_services", lambda **kw: services.update(kw))
 
-    main._configure_ppt_production()
+    ppt_outline._configure_ppt_production()
     assert captured["registered_adapter"][0][:2] == ("ppt_pro", "v1")
     assert services == {"workflow_starter": None}
 
@@ -234,7 +236,7 @@ async def test_ppt_context_uses_frozen_run_provider_plan(monkeypatch) -> None:
     )
     provider = object()
     monkeypatch.setattr(
-        main,
+        ppt_outline,
         "_build_agent_provider_chain",
         lambda *, entries, registry: captured.update(entries=entries) or [provider],
     )
@@ -243,14 +245,14 @@ async def test_ppt_context_uses_frozen_run_provider_plan(monkeypatch) -> None:
         return f"local:{prompt}"
 
     monkeypatch.setattr(
-        main,
+        ppt_outline,
         "_make_str_llm_call",
         lambda selected, **kwargs: (
             captured.update(selected=selected, call_kwargs=kwargs) or expected_call
         ),
     )
 
-    main._configure_ppt_workflow_adapter(service.launcher)
+    ppt_outline._configure_ppt_workflow_adapter(service.launcher)
     context_factory = captured["adapter"][1]["context_factory"]
     context = await context_factory(
         {"run_id": "ppt-child", "request_id": "request", "turn_id": "turn"},
@@ -294,9 +296,9 @@ def test_startup_flags_do_not_disable_durable_workflow(
         "workflows",
         SimpleNamespace(enabled=enabled, ppt_pro=ppt_pro),
     )
-    monkeypatch.setattr(main.ppt_tools, "set_ppt_pro_services", lambda **kw: services.update(kw))
+    monkeypatch.setattr(ppt_tools, "set_ppt_pro_services", lambda **kw: services.update(kw))
 
-    main._configure_ppt_production(recover=False)
+    ppt_outline._configure_ppt_production(recover=False)
 
     assert services["workflow_starter"] is None
     assert set(services) == {"workflow_starter"}

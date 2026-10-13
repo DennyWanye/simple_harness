@@ -143,14 +143,14 @@ def capture_ephemeral_provider(monkeypatch):
     monkeypatch.setattr(main, "cloud_llm", None, raising=False)
 
     recorded: list = []
-    orig = main._make_str_llm_call
+    orig = llm_calls._make_str_llm_call
 
     def _spy(provider, *, max_tokens: int = 512):
         if max_tokens == 256:
             recorded.append(provider)
         return orig(provider, max_tokens=max_tokens)
 
-    monkeypatch.setattr(main, "_make_str_llm_call", _spy)
+    monkeypatch.setattr(llm_calls, "_make_str_llm_call", _spy)
     return base, recorded
 
 

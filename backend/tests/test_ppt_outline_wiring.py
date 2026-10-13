@@ -4,7 +4,8 @@ import asyncio
 from types import SimpleNamespace
 
 import pytest
-from host import connections
+from deskpet.tools import ppt_tools
+from host import connections, ppt_outline
 
 
 def _use_control_connections(monkeypatch, mapping) -> None:
@@ -88,6 +89,7 @@ async def test_workflow_outline_card_resumes_generic_decision_without_blocking(m
         notices.append((sid, text))
 
     monkeypatch.setattr(main, "_ppt_notify_chat_bubble", notify)
+    monkeypatch.setattr(ppt_outline, "_ppt_notify_chat_bubble", notify)
     ws = _FakeWebSocket()
     _use_control_connections(monkeypatch, {"panel": ws})
 
@@ -116,7 +118,7 @@ async def test_workflow_outline_card_resumes_generic_decision_without_blocking(m
             "payload": {
                 "outline_id": oid,
                 "session_id": "sid-1",
-                "decision_status": main._ppt_outline_decision_notice("accept"),
+                "decision_status": ppt_outline._ppt_outline_decision_notice("accept"),
             },
         }
     ]
@@ -143,6 +145,7 @@ async def test_workflow_outline_card_uses_kernel_decision_fence(monkeypatch):
     monkeypatch.setattr(main, "_signal_product_harness_decision", signal)
     monkeypatch.setattr(main, "_resolve_workflow_ppt_outline", legacy)
     monkeypatch.setattr(main, "_ppt_notify_chat_bubble", notify)
+    monkeypatch.setattr(ppt_outline, "_ppt_notify_chat_bubble", notify)
     _use_control_connections(monkeypatch, {})
 
     payload = {
@@ -168,7 +171,7 @@ async def test_workflow_outline_card_uses_kernel_decision_fence(monkeypatch):
             {"action": "accept", "feedback": "", "reuse_id": None},
         )
     ]
-    assert notices == [("sid-owner", main._ppt_outline_decision_notice("accept"))]
+    assert notices == [("sid-owner", ppt_outline._ppt_outline_decision_notice("accept"))]
 
 
 @pytest.mark.asyncio
@@ -256,6 +259,7 @@ async def test_workflow_outline_decision_uses_action_specific_notice(
         notices.append((sid, text))
 
     monkeypatch.setattr(main, "_ppt_notify_chat_bubble", notify)
+    monkeypatch.setattr(ppt_outline, "_ppt_notify_chat_bubble", notify)
     _use_control_connections(monkeypatch, {})
 
     handled = await main._handle_control_ws_message(
@@ -288,6 +292,7 @@ async def test_workflow_outline_modify_rejects_empty_feedback_without_resolving(
 
     monkeypatch.setattr(main, "_resolve_workflow_ppt_outline", start)
     monkeypatch.setattr(main, "_ppt_notify_chat_bubble", notify)
+    monkeypatch.setattr(ppt_outline, "_ppt_notify_chat_bubble", notify)
 
     assert await main._handle_control_ws_message(
         {
@@ -321,11 +326,11 @@ async def test_workflow_outline_notify_projects_session_card_idempotently(monkey
         "get",
         lambda name: _SDB() if name == "session_db" else None,
     )
-    monkeypatch.setattr(main, "list_history", lambda sid, limit=20: [])
+    monkeypatch.setattr(ppt_outline, "list_history", lambda sid, limit=20: [])
     ws = _FakeWebSocket()
     _use_control_connections(monkeypatch, {"panel": ws})
 
-    await main._ppt_workflow_outline_notify(
+    await ppt_outline._ppt_workflow_outline_notify(
         {
             "outline_id": "workflow:run-1:0",
             "session_id": "sid-1",
@@ -375,7 +380,7 @@ async def test_ppt_notify_chat_bubble_persists_before_sending(monkeypatch):
 
     monkeypatch.setattr(main.service_context, "get", fake_get)
 
-    await main._ppt_notify_chat_bubble("sid-1", "PPT 没做成：LLM HTTP 401 Unauthorized")
+    await ppt_outline._ppt_notify_chat_bubble("sid-1", "PPT 没做成：LLM HTTP 401 Unauthorized")
 
     assert rows == [
         {
@@ -394,9 +399,11 @@ def test_ppt_outline_startup_expire_is_called(monkeypatch):
     import main
 
     calls = []
-    monkeypatch.setattr(main, "expire_dangling_proposed", lambda: calls.append("expire") or 2)
+    monkeypatch.setattr(
+        ppt_outline, "expire_dangling_proposed", lambda: calls.append("expire") or 2
+    )
 
-    assert main._expire_ppt_outline_dangling_for_startup() == 2
+    assert ppt_outline._expire_ppt_outline_dangling_for_startup() == 2
     assert calls == ["expire"]
 
 
@@ -404,11 +411,9 @@ def test_ppt_pro_startup_wires_only_durable_workflow(monkeypatch):
     import main
 
     seen = {}
-    monkeypatch.setattr(
-        main.ppt_tools, "set_ppt_pro_services", lambda **kwargs: seen.update(kwargs)
-    )
+    monkeypatch.setattr(ppt_tools, "set_ppt_pro_services", lambda **kwargs: seen.update(kwargs))
 
-    main._configure_ppt_production()
+    ppt_outline._configure_ppt_production()
 
     assert set(seen) == {"workflow_starter"}
     assert seen["workflow_starter"] is None
