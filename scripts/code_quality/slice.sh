@@ -16,7 +16,7 @@ if [ -z "${VERIFY_ONLY:-}" ]; then
   out=$($P scripts/code_quality/group_ranges.py $M "$SEEDS")
   echo "$out"
   R=$(echo "$out" | grep "^范围：" | sed 's/范围：//')
-  NAMES=$(echo "$out" | grep "^闭包：" | sed 's/闭包：//; s/, /,/g')
+  NAMES=$(echo "$out" | grep "^闭包：" | sed 's/闭包：//; s/ //g')
   $P scripts/code_quality/move_block.py $M "$TARGET" "$R" --doc "$DOC" 2>&1 | grep -v "^警告" || true
   [ -f "$TARGET" ] || { echo "搬家未执行"; exit 1; }
 else
