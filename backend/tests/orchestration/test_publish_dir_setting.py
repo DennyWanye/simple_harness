@@ -22,7 +22,7 @@ from deskpet.orchestration.publish_settings import (
     validate_publish_dir,
     write_publish_dir,
 )
-from host import control_settings
+from host import control_channel, control_settings
 
 from tests.host_source import host_source_text
 
@@ -94,13 +94,13 @@ def test_the_control_channel_handles_both_verbs_before_the_orchestration_prefix(
 
     # 按控制通道的有序路由表实际走一遍：两个动词先于编排前缀转发被接住
     def route_for(msg_type):
-        for matcher, handler in main._CONTROL_ROUTES:
+        for matcher, handler in control_channel._CONTROL_ROUTES:
             if (msg_type in matcher) if isinstance(matcher, frozenset) else matcher(msg_type):
                 return handler
         return None
 
     for verb in ("orchestration_publish_dir_get", "orchestration_publish_dir_set"):
         assert route_for(verb) is control_settings._cc_orchestration_publish_dir_get
-    assert route_for("orchestration_status") is main._cc_orchestration_routes
+    assert route_for("orchestration_status") is control_channel._cc_orchestration_routes
     source = host_source_text()
     assert "restart=_restart_orchestration" in source

@@ -92,6 +92,8 @@ from starlette.websockets import WebSocketDisconnect
 import main
 
 TYPES = json.loads(sys.argv[1])
+# 按路径从应用路由表取控制通道端点，不依赖它定义在哪个模块
+CONTROL_ENDPOINT = next(r.endpoint for r in main.app.routes if getattr(r, "path", "") == "/ws/control")
 
 class FakeWS:
     def __init__(self, frames):
@@ -135,7 +137,7 @@ async def one(msg_type):
         json.dumps({"type": "ping"}),
     ])
     try:
-        await asyncio.wait_for(main.control_channel(ws), timeout=30)
+        await asyncio.wait_for(CONTROL_ENDPOINT(ws), timeout=30)
     except asyncio.TimeoutError:
         return {"timeout": True, "frames": [shape(f) for f in ws.sent]}
     except Exception as exc:

@@ -20,6 +20,7 @@ from pathlib import Path
 import pytest
 from agent_orchestrator.deployment.native_pools import catalogue_owner_profile_id
 from deskpet.orchestration.handlers import handle
+from host import control_channel
 
 from .test_native_plane_host import _service
 
@@ -155,7 +156,7 @@ def test_only_the_listed_skill_verbs_are_open_on_the_control_channel():
 
     # 按控制通道的有序路由表实际走一遍（2026-10-13 分发链改成路由表）
     def route_for(msg_type):
-        for matcher, handler in main._CONTROL_ROUTES:
+        for matcher, handler in control_channel._CONTROL_ROUTES:
             if (msg_type in matcher) if isinstance(matcher, frozenset) else matcher(msg_type):
                 return handler
         return None
@@ -165,6 +166,6 @@ def test_only_the_listed_skill_verbs_are_open_on_the_control_channel():
         "agent_skill_evaluation_mission",
         "agent_skill_evaluation_dispatch",
     ):
-        assert route_for(verb) is main._cc_orchestration_routes
+        assert route_for(verb) is control_channel._cc_orchestration_routes
     assert route_for("agent_runtime_request") is None
     assert route_for("agent_session") is None
