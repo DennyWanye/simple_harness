@@ -9,6 +9,7 @@ from deskpet.agent.run_presenter import (
     RunPresentationContext,
     _present_compacted,
 )
+from host import context_usage
 
 
 class _WS:
@@ -47,8 +48,8 @@ async def test_binding_commit_pushes_binding_only_context_authority() -> None:
             }
 
     ws = _WS()
-    main._session_context_state.pop("session-binding-only", None)
-    payload = await main._send_context_usage_authority(ws, _SessionDB(), "session-binding-only")
+    context_usage._session_context_state.pop("session-binding-only", None)
+    payload = await context_usage._send_context_usage_authority(ws, _SessionDB(), "session-binding-only")
 
     assert payload["model"] == "kimi-k3"
     assert payload["source"] == "binding_only"
@@ -91,16 +92,16 @@ async def test_projection_broadcasts_strictly_newer_usage_once(monkeypatch) -> N
         assert origin is None
         frames.append(frame)
 
-    monkeypatch.setattr(main, "_broadcast_default_chat_peers", broadcast)
-    main._session_context_state.pop("session-live", None)
+    monkeypatch.setattr(context_usage, "_broadcast_default_chat_peers", broadcast)
+    context_usage._session_context_state.pop("session-live", None)
 
-    assert await main._broadcast_context_usage_snapshot(DB(), "session-live") is True
-    assert await main._broadcast_context_usage_snapshot(DB(), "session-live") is False
+    assert await context_usage._broadcast_context_usage_snapshot(DB(), "session-live") is True
+    assert await context_usage._broadcast_context_usage_snapshot(DB(), "session-live") is False
     assert frames == [{"type": "context_usage", "payload": state}]
 
     state["sample_id"] = "conflicting-sample"
     with pytest.raises(RuntimeError, match="equal_version_conflict"):
-        await main._broadcast_context_usage_snapshot(DB(), "session-live")
+        await context_usage._broadcast_context_usage_snapshot(DB(), "session-live")
 
 
 @pytest.mark.asyncio
@@ -213,11 +214,11 @@ async def test_provider_producer_persists_frozen_identity_and_sends_authority():
     ws = _WS()
     previous_attempts = main.service_context.get("context_attempt_store")
     previous_db = main.service_context.get("session_db")
-    main._session_context_state.pop("session-7", None)
+    context_usage._session_context_state.pop("session-7", None)
     try:
         main.service_context.register("context_attempt_store", _AttemptStore())
         main.service_context.register("session_db", db)
-        await main._emit_context_usage(
+        await context_usage._emit_context_usage(
             ws,
             "session-7",
             provider_chain=[],
@@ -246,13 +247,13 @@ def test_context_cache_rejects_late_older_version():
     import main
 
     sid = "cache-version-session"
-    main._session_context_state.pop(sid, None)
+    context_usage._session_context_state.pop(sid, None)
     newer = {"session_id": sid, "version": 8, "source": "measured"}
     older = {"session_id": sid, "version": 7, "source": "binding_only"}
 
-    assert main._cache_context_usage_state(newer) == newer
-    assert main._cache_context_usage_state(older) == newer
-    assert main._session_context_state[sid] == newer
+    assert context_usage._cache_context_usage_state(newer) == newer
+    assert context_usage._cache_context_usage_state(older) == newer
+    assert context_usage._session_context_state[sid] == newer
 
 
 def test_run_context_usage_identity_comes_from_frozen_host_snapshot():
@@ -323,10 +324,10 @@ async def test_context_usage_request_reader_uses_only_durable_authority():
             }
 
     previous_db = main.service_context.get("session_db")
-    main._session_context_state.pop("cold-session", None)
+    context_usage._session_context_state.pop("cold-session", None)
     try:
         main.service_context.register("session_db", _SessionDB())
-        state = await main._read_context_usage_authority("cold-session")
+        state = await context_usage._read_context_usage_authority("cold-session")
     finally:
         main.service_context.register("session_db", previous_db)
 

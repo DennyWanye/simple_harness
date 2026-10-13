@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+from host import context_usage
 
 
 class _FakeWs:
@@ -14,7 +15,7 @@ class _FakeWs:
 def test_public_section_drops_sensitive_or_private_preview() -> None:
     import main
 
-    section = main._public_context_section(
+    section = context_usage._public_context_section(
         {
             "kind": "system",
             "label": "System",
@@ -48,10 +49,10 @@ async def test_usage_hydration_joins_snapshot_metadata_on_its_own_version_axis()
             }
 
     previous_db = main.service_context.get("session_db")
-    main._session_context_state.pop("session-joined", None)
+    context_usage._session_context_state.pop("session-joined", None)
     try:
         main.service_context.register("session_db", _SessionDB())
-        result = await main._read_context_usage_authority("session-joined")
+        result = await context_usage._read_context_usage_authority("session-joined")
     finally:
         main.service_context.register("session_db", previous_db)
 
@@ -124,7 +125,7 @@ async def test_breakdown_reads_only_durable_public_snapshot_and_usage(monkeypatc
     try:
         main.service_context.register("session_db", _SessionDB())
         main.service_context.register("facts_store", object())
-        result = await main._read_context_breakdown_authority("session-a")
+        result = await context_usage._read_context_breakdown_authority("session-a")
     finally:
         main.service_context.register("session_db", previous_db)
         main.service_context.register("facts_store", previous_facts)
@@ -177,7 +178,7 @@ async def test_breakdown_without_snapshot_is_explicitly_unavailable_not_zero():
     previous_db = main.service_context.get("session_db")
     try:
         main.service_context.register("session_db", _SessionDB())
-        result = await main._read_context_breakdown_authority("session-empty")
+        result = await context_usage._read_context_breakdown_authority("session-empty")
     finally:
         main.service_context.register("session_db", previous_db)
 
@@ -213,8 +214,8 @@ async def test_breakdown_handler_fails_closed_without_exact_session_and_correlat
         reader_calls.append(session_id)
         return {"session_id": session_id}
 
-    monkeypatch.setattr(main, "_read_context_breakdown_authority", _reader)
-    accepted = await main._handle_context_breakdown_request(
+    monkeypatch.setattr(context_usage, "_read_context_breakdown_authority", _reader)
+    accepted = await context_usage._handle_context_breakdown_request(
         ws, payload, owner_session_id="session-a"
     )
     assert accepted is False
@@ -238,8 +239,8 @@ async def test_breakdown_handler_echoes_correlation_and_current_identities(monke
             "usage_version": 8,
         }
 
-    monkeypatch.setattr(main, "_read_context_breakdown_authority", _reader)
-    accepted = await main._handle_context_breakdown_request(
+    monkeypatch.setattr(context_usage, "_read_context_breakdown_authority", _reader)
+    accepted = await context_usage._handle_context_breakdown_request(
         ws,
         {"session_id": "session-a", "request_id": "request-current"},
         owner_session_id="session-a",

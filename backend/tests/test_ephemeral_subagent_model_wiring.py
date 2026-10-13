@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from unittest.mock import MagicMock
 
 import pytest
+from host import llm_calls
 from host.state import host_state
 from providers.openai_compatible import OpenAICompatibleProvider
 

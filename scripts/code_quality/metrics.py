@@ -7,6 +7,7 @@
     python3 scripts/code_quality/metrics.py check [--slow] [--baseline FILE] [--new-since REF]
         棘轮：任何指标比基线高就失败。--new-since 时，REF 之后新建的文件
         必须没有超 150 行的函数、没有复杂度超 15 的函数（新代码硬规则）。
+        从旧文件原样搬来的函数（九成以上的行出自本次删掉的行）不算新代码，由全局棘轮管。
     python3 scripts/code_quality/metrics.py lower [--slow] [--baseline FILE]
         把基线下调到当前值（只降不升）。
     python3 scripts/code_quality/metrics.py rebase --keys K1,K2 --reason "原因"
@@ -293,11 +294,25 @@ def summary(m: dict) -> None:
         print(f"{k:34s} {n if n is not None else v}")
 
 
+def _moved_lines(ref: str) -> set[str]:
+    """本次相对 ref 删掉的行（去掉首尾空白）。新文件里的函数若几乎都出自这些行，就是搬家而不是新写。"""
+    diff = subprocess.run(["git", "diff", "-U0", ref, "--", "backend", "sdk/simple-harness-sdk/src"],
+                          cwd=REPO, capture_output=True, text=True).stdout
+    return {ln[1:].strip() for ln in diff.splitlines()
+            if ln.startswith("-") and not ln.startswith("---") and ln[1:].strip()}
+
+
+def _is_moved(src_lines: list[str], node: ast.AST, removed: set[str]) -> bool:
+    body = [ln.strip() for ln in src_lines[node.lineno - 1:node.end_lineno] if ln.strip()]
+    return bool(body) and sum(1 for ln in body if ln in removed) >= 0.9 * len(body)
+
+
 def new_file_violations(ref: str) -> list[str]:
     added = subprocess.run(["git", "diff", "--name-only", "--diff-filter=A", ref], cwd=REPO,
                            capture_output=True, text=True).stdout.splitlines()
     added += subprocess.run(["git", "ls-files", "--others", "--exclude-standard"], cwd=REPO,
                             capture_output=True, text=True).stdout.splitlines()
+    removed = _moved_lines(ref)
     bad: list[str] = []
     py = [f for f in added if f.endswith(".py") and (f.startswith("backend/") or f.startswith("sdk/"))
           and "/tests/" not in f and not Path(f).name.startswith("test_")]
@@ -305,15 +320,22 @@ def new_file_violations(ref: str) -> list[str]:
         p = REPO / f
         if not p.exists():
             continue
-        for node in ast.walk(ast.parse(p.read_text(encoding="utf-8"))):
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                n = node.end_lineno - node.lineno + 1
-                if n > 150:
-                    bad.append(f"新文件函数超 150 行：{f}:{node.name}:{n}")
-    if py:
+        text = p.read_text(encoding="utf-8")
+        lines = text.splitlines()
+        tree = ast.parse(text)
+        funcs = {(n.name, n.lineno): n for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+        for (name, _), node in funcs.items():
+            n = node.end_lineno - node.lineno + 1
+            if n > 150 and not _is_moved(lines, node, removed):
+                bad.append(f"新文件函数超 150 行：{f}:{name}:{n}")
         res = subprocess.run([str(RUFF), "check", "--config", str(RUFF_CONFIG), "--select", "C901",
-                              "--output-format", "concise", *py], cwd=REPO, capture_output=True, text=True)
-        bad += [f"新文件复杂度超 15：{line}" for line in res.stdout.splitlines() if "C901" in line]
+                              "--output-format", "json", f], cwd=REPO, capture_output=True, text=True)
+        for item in json.loads(res.stdout or "[]"):
+            row = item["location"]["row"]
+            node = next((nd for (nm, ln), nd in funcs.items() if ln == row), None)
+            if node is not None and _is_moved(lines, node, removed):
+                continue
+            bad.append(f"新文件复杂度超 15：{f}:{row} {item['message']}")
     return bad
 
 
