@@ -24,6 +24,8 @@ from fastapi.testclient import TestClient
 from providers.openai_compatible import OpenAICompatibleProvider
 from router.hybrid_router import HybridRouter
 
+from tests.host_patch import patch_host_global
+
 pytestmark = pytest.mark.skip(
     reason="P4-S20-LLM-Unified: legacy HybridRouter chat path removed; "
     "see commit log + new test_unified_chat_e2e.py (TODO).",
@@ -145,7 +147,7 @@ def app_with_router(monkeypatch):
     prior_secret = main_mod.SHARED_SECRET
     importlib.reload(main_mod)
     main_mod.SHARED_SECRET = prior_secret
-    monkeypatch.setattr(main_mod, "DEV_MODE", True)
+    patch_host_global(monkeypatch, "DEV_MODE", True)
     client = TestClient(main_mod.app)
 
     def set_router(r: HybridRouter) -> None:

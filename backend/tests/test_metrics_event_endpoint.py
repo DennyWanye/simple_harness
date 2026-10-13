@@ -10,6 +10,8 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
+from tests.host_patch import patch_host_global
+
 
 @pytest.fixture
 def client(monkeypatch, tmp_path):
@@ -19,7 +21,7 @@ def client(monkeypatch, tmp_path):
     monkeypatch.setenv("DESKPET_USER_DATA_DIR", str(tmp_path))
     import main as _main
 
-    monkeypatch.setattr(_main, "DEV_MODE", True, raising=False)
+    patch_host_global(monkeypatch, "DEV_MODE", True)
     # 重置 metric_sink 单例（让 record 走干净路径）
     import observability.metrics_sink as ms
 

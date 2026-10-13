@@ -12,6 +12,8 @@ from host.runtime import SHARED_SECRET
 from httpx import ASGITransport, AsyncClient
 from main import app
 
+from tests.host_patch import patch_host_global
+
 
 # Autouse: snapshot llm_runtime.json before each test, restore after.
 # Without this, /config/cloud writes pollute %APPDATA%/deskpet/llm_runtime.json
@@ -47,7 +49,7 @@ async def test_update_cloud_config_rejects_bad_secret():
 
 @pytest.mark.asyncio
 async def test_update_cloud_config_dev_mode_bypasses_auth(monkeypatch):
-    monkeypatch.setattr(main_module, "DEV_MODE", True)
+    patch_host_global(monkeypatch, "DEV_MODE", True)
     # Provide an api_key so we don't hit the "no api_key configured" 400.
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         resp = await client.post(

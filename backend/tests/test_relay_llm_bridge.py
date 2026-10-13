@@ -24,6 +24,8 @@ from host.state import host_state
 from httpx import ASGITransport, AsyncClient
 from main import app
 
+from tests.host_patch import patch_host_global
+
 
 @pytest.fixture(autouse=True)
 def _snapshot_runtime_config(tmp_path, monkeypatch):
@@ -45,7 +47,7 @@ def _snapshot_runtime_config(tmp_path, monkeypatch):
 @pytest.fixture(autouse=True)
 def _dev_mode(monkeypatch):
     """Bypass the shared-secret gate for these unit tests."""
-    monkeypatch.setattr(main_module, "DEV_MODE", True)
+    patch_host_global(monkeypatch, "DEV_MODE", True)
 
 
 async def _post(client, body: dict):
