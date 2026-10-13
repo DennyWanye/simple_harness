@@ -6334,14 +6334,16 @@ def _ensure_task_scope_update_service():  # type: ignore[no-untyped-def]
     return host_state.task_scope_update_service
 
 
-# Product/UI projections expose the Host canonical root id, while RunClient
-# cancellation is keyed by the SDK's deterministic internal id. Keep the
-# active bridge explicit and bounded to the lifetime of _execute_sdk_run.
-_sdk_run_ids_by_root: dict[str, str] = {}
-_sdk_cancel_requested_run_ids: set[str] = set()
-_sdk_retained_presentations: dict[str, tuple[Any, Any, Any, Any]] = {}
-_sdk_recovery_watch_tasks: dict[str, asyncio.Task] = {}
-_sdk_unavailable_tool_authority_runs: set[str] = set()
+# isort: split
+from host.sdk_registry import (
+    _sdk_cancel_requested_run_ids,
+    _sdk_recovery_watch_tasks,
+    _sdk_retained_presentations,
+    _sdk_run_ids_by_root,
+    _sdk_unavailable_tool_authority_runs,
+)
+
+# isort: split
 
 
 class _RecoveredSdkWebSocket:
