@@ -18,6 +18,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from fastapi.testclient import TestClient
 
+from tests.host_patch import patch_host_global
+
 
 @pytest.fixture
 def client_flag_on(monkeypatch):
@@ -154,8 +156,8 @@ def test_help_uses_current_global_skill_command_catalog(monkeypatch):
         }
     ]
     current_catalog = AsyncMock(return_value=catalog)
-    monkeypatch.setattr(
-        main_module,
+    patch_host_global(
+        monkeypatch,
         "_current_slash_skill_catalog",
         current_catalog,
     )
