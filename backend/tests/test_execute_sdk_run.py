@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, Mock, create_autospec
 
 import pytest
 from deskpet.sdk_adapters.desktop_runtime import _delivery_adapters
+from host import sdk_recovery
 from host.state import host_state
 
 
@@ -1070,9 +1071,9 @@ async def test_open_authorization_replay_restores_durable_run_route(monkeypatch)
     websocket = SimpleNamespace(send_json=AsyncMock())
     main._sdk_run_ids_by_root.clear()
     monkeypatch.setattr(host_state, "sdk_ingress", ingress)
-    monkeypatch.setattr(main, "_broadcast_default_chat_peers", AsyncMock())
+    monkeypatch.setattr(sdk_recovery, "_broadcast_default_chat_peers", AsyncMock())
 
-    projected = await main._project_open_sdk_authorizations(
+    projected = await sdk_recovery._project_open_sdk_authorizations(
         websocket,
         session_id="session-replayed-authorization",
         rehydrated=True,
@@ -1126,17 +1127,17 @@ def test_restore_sdk_delivery_route_requires_and_preserves_identity(monkeypatch)
         }
     }
     monkeypatch.setattr(
-        main,
+        sdk_recovery,
         "service_context",
         SimpleNamespace(get=lambda _name: None),
     )
     monkeypatch.setattr(
-        main,
+        sdk_recovery,
         "config",
         SimpleNamespace(tools=SimpleNamespace(last_mile=None)),
     )
 
-    assert main._restore_sdk_delivery_route(record, start, SimpleNamespace()) is True
+    assert sdk_recovery._restore_sdk_delivery_route(record, start, SimpleNamespace()) is True
     delivery, _presenter, _state, context = main._sdk_retained_presentations[sdk_run_id]
     assert delivery._session_id == "session-recovered"
     assert context.run_id == "root-recovered"
@@ -1155,7 +1156,7 @@ def test_restore_sdk_delivery_route_requires_and_preserves_identity(monkeypatch)
         }
     }
     assert (
-        main._restore_sdk_delivery_route(
+        sdk_recovery._restore_sdk_delivery_route(
             SimpleNamespace(run_id="sdk-invalid"),
             missing_scope,
             SimpleNamespace(),
@@ -1176,7 +1177,7 @@ def test_unmigratable_v1_recovery_isolated_without_partial_authority():
     main._sdk_retained_presentations[sdk_run_id] = (object(),) * 4
     main._sdk_run_ids_by_root[root_run_id] = sdk_run_id
 
-    main._isolate_unrestorable_sdk_tool_authority(
+    sdk_recovery._isolate_unrestorable_sdk_tool_authority(
         sdk_run_id=sdk_run_id,
         metadata={"root_run_id": root_run_id},
         provider_binding_resolver=provider,
@@ -1227,7 +1228,7 @@ async def test_recovered_completed_run_projects_final_and_cleans_route(monkeypat
     main._sdk_run_ids_by_root[root_run_id] = sdk_run_id
     _delivery_adapters[sdk_run_id] = delivery
 
-    await main._watch_retained_sdk_run(sdk_run_id)
+    await sdk_recovery._watch_retained_sdk_run(sdk_run_id)
 
     event = presenter.present.await_args.args[0]
     assert event.content == "durable recovered answer"
@@ -1260,10 +1261,10 @@ async def test_resumed_waiting_run_projects_next_authorization(monkeypatch):
         ),
     )
     projection = AsyncMock(return_value=1)
-    monkeypatch.setattr(main, "_project_open_sdk_authorizations", projection)
+    monkeypatch.setattr(sdk_recovery, "_project_open_sdk_authorizations", projection)
     main._sdk_retained_presentations[sdk_run_id] = retained
 
-    await main._watch_retained_sdk_run(
+    await sdk_recovery._watch_retained_sdk_run(
         sdk_run_id,
         authorization_ws=websocket,
     )
@@ -1276,23 +1277,22 @@ async def test_resumed_waiting_run_projects_next_authorization(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_recovered_route_projects_final_into_durable_session_history(monkeypatch):
-    import main
 
     sdk_run_id = "sdk-recovered-durable"
     root_run_id = "root-recovered-durable"
     session_db = SimpleNamespace(append_message=AsyncMock(return_value=41))
     monkeypatch.setattr(
-        main,
+        sdk_recovery,
         "service_context",
         SimpleNamespace(get=lambda _name: None),
     )
     monkeypatch.setattr(
-        main,
+        sdk_recovery,
         "config",
         SimpleNamespace(tools=SimpleNamespace(last_mile=None)),
     )
-    monkeypatch.setattr(main, "_broadcast_default_chat_peers", AsyncMock())
-    assert main._restore_sdk_delivery_route(
+    monkeypatch.setattr(sdk_recovery, "_broadcast_default_chat_peers", AsyncMock())
+    assert sdk_recovery._restore_sdk_delivery_route(
         SimpleNamespace(run_id=sdk_run_id),
         {
             "input": {
@@ -1340,7 +1340,7 @@ async def test_recovered_route_projects_final_into_durable_session_history(monke
     lifecycle = _BindingLifecycle()
     monkeypatch.setattr(host_state, "sdk_provider_binding_resolver", lifecycle)
 
-    await main._watch_retained_sdk_run(sdk_run_id)
+    await sdk_recovery._watch_retained_sdk_run(sdk_run_id)
 
     persisted = session_db.append_message.await_args.kwargs
     assert persisted["session_id"] == "session-recovered-durable"

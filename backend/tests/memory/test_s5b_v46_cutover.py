@@ -34,6 +34,7 @@ from deskpet.memory.schema import (
     initialize_human_memory_program_state_db,
     inspect_startup_epoch,
 )
+from host import sdk_recovery
 
 CONTEXT_ROUTE_TABLES = (
     "context_route_marker",
@@ -567,7 +568,7 @@ def test_old_checkpoint_before_project_effect_policy_is_isolated(monkeypatch) ->
     resolver = SimpleNamespace(mark_terminal=lambda *a, **k: None)
     saved = set(main._sdk_unavailable_tool_authority_runs)
     try:
-        main._isolate_unrestorable_sdk_tool_authority(
+        sdk_recovery._isolate_unrestorable_sdk_tool_authority(
             sdk_run_id=run.value,
             metadata={"root_run_id": "root"},
             provider_binding_resolver=resolver,

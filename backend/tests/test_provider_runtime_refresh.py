@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock
 
 import main
 import pytest
+from host import sdk_recovery
 from host.state import host_state
 
 
@@ -135,7 +136,7 @@ def test_sdk_tool_authority_is_reachable_for_fresh_waiting_terminal_and_recovery
     build = inspect.getsource(main._build_product_sdk_runtime_stack)
     foreground = inspect.getsource(main._run_product_harness_chat)
     execute = inspect.getsource(main._execute_sdk_run)
-    watcher = inspect.getsource(main._watch_retained_sdk_run)
+    watcher = inspect.getsource(sdk_recovery._watch_retained_sdk_run)
 
     assert "tool_authorities.restore_waiting_run" in build
     assert "except SdkToolAuthorityMigrationUnavailable" in build

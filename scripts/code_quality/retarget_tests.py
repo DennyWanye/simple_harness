@@ -18,6 +18,15 @@ import re
 import sys
 from pathlib import Path
 
+REPO = Path(__file__).resolve().parents[2]
+
+
+def _main_reads() -> set[str]:
+    """main.py 除导入语句以外引用到的全局名字。"""
+    tree = ast.parse((REPO / "backend/main.py").read_text(encoding="utf-8"))
+    body = [st for st in tree.body if not isinstance(st, (ast.Import, ast.ImportFrom))]
+    return {n.id for n in ast.walk(ast.Module(body=body, type_ignores=[])) if isinstance(n, ast.Name)}
+
 
 def main() -> int:
     ap = argparse.ArgumentParser()
@@ -28,6 +37,11 @@ def main() -> int:
     a = ap.parse_args()
     names = {n for n in a.names.split(",") if n}
     patch_also = {n for n in a.patch_also.split(",") if n}
+    # 主入口自己还在调用的名字：打桩要打在主入口上，读取方在那里。
+    main_reads = _main_reads()
+    kept = sorted((names | patch_also) & main_reads)
+    if kept:
+        print("主入口仍在用，打桩位置不改：", ", ".join(kept))
     for f in a.files:
         p = Path(f)
         s = p.read_text(encoding="utf-8")
@@ -38,7 +52,7 @@ def main() -> int:
         for al in aliases:
             for nm in names:
                 s = re.sub(rf"\b{al}\.{re.escape(nm)}\b", f"{a.module}.{nm}", s)
-            for nm in names | patch_also:
+            for nm in (names | patch_also) - main_reads:
                 s = re.sub(rf"((?:setattr|patch\.object)\(\s*){al}(\s*,\s*[\"']{re.escape(nm)}[\"'])",
                            rf"\g<1>{a.module}\g<2>", s)
         if s != before and not re.search(rf"^from host import .*\b{a.module}\b", s, re.M):
