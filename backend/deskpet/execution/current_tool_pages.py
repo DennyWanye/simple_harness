@@ -7,6 +7,14 @@ from collections.abc import Mapping
 from types import MappingProxyType
 
 import aiosqlite
+from simple_harness import EffectId, RunId, thaw_json
+from simple_harness.contracts.messages import Message
+from simple_harness.execution.audit import audit_hash, audit_reference
+from simple_harness.execution.provider_invocations import (
+    provider_request_fingerprint,
+    provider_request_from_json,
+    provider_response_from_json,
+)
 
 from deskpet.execution.primary_context_pages import (
     EXCERPT_BYTES,
@@ -18,6 +26,9 @@ from deskpet.execution.primary_context_pages import (
 )
 from deskpet.memory.primary_tool_causality import PrimaryToolCausalityUnavailable
 from deskpet.sdk_adapters.causal_groups import DEFAULT_LARGE_RESULT_BYTES
+from deskpet.sdk_adapters.composition import project_primary_transcript
+from deskpet.sdk_adapters.context_authority import _resolve_model_id, _resolve_window_tokens
+from deskpet.sdk_adapters.context_partitions import text_tokens
 from deskpet.task_scope.protocol import canonical_hash, canonical_json, redact_credential_shapes
 
 PREFIX = "primary-effect-page:v1:"
@@ -233,13 +244,6 @@ def _require(condition, code):
 
 def read_effect_facts(uow, run_id, effect_id):
     """Public bounded audit/records establish the actual parent, not an ID recipe."""
-    from simple_harness import EffectId, RunId, thaw_json
-    from simple_harness.execution.audit import audit_hash, audit_reference
-    from simple_harness.execution.provider_invocations import (
-        provider_request_fingerprint,
-        provider_request_from_json,
-        provider_response_from_json,
-    )
 
     effect = uow.read_effect(EffectId(effect_id))
     _require(effect is not None and effect.run_id.value == run_id, "effect_missing")
@@ -346,8 +350,6 @@ def source_content(facts, *, min_bytes=DEFAULT_LARGE_RESULT_BYTES):
     ``verify_request`` re-derives whatever the request actually retained, so
     both pass ``min_bytes=0``.
     """
-    from simple_harness import thaw_json
-    from simple_harness.execution.audit import audit_hash
 
     effect, head, parent, _ = facts
     _require(
@@ -683,7 +685,6 @@ def control_stub_content(facts, *, min_bytes=0):
     from public audit/effect facts, so an auditor holding ``(run_id, effect_id)``
     re-derives the identical notice.
     """
-    from simple_harness import thaw_json
 
     effect, head, _parent, _ = facts
     _require(
@@ -846,7 +847,6 @@ async def _admitted_next_offset(*, db, stack, sdk_run_id, digest, content, befor
     只走拒绝路径，且回溯上限是 ``MAX_SCANNED_PAGE_EFFECTS``；任何一个效果读不出
     权威事实就跳过。提示读不出来时退回 0（"从头翻"），永远不把整次调用变成别的错。
     """
-    from simple_harness import thaw_json
 
     rows = await (
         await db.execute(
@@ -1093,7 +1093,6 @@ def _settled_tool_tokens(messages):
     Only the current Run's results are physically ``role=tool`` here: settled
     history arrives as quoted ``role=user`` groups (``project_history_group``).
     """
-    from deskpet.sdk_adapters.context_partitions import text_tokens
 
     return sum(
         text_tokens(m.content)
@@ -1110,7 +1109,6 @@ def _control_tool_tokens(messages):
     control mass, and an honest bound must show when the un-elidable part alone
     already fills it (at which point the loop simply runs out of candidates).
     """
-    from deskpet.sdk_adapters.context_partitions import text_tokens
 
     return sum(
         text_tokens(m.content)
@@ -1137,7 +1135,6 @@ def control_result_allowance(metadata, *, provider_turn_ordinal=0):
     the drain *starts*, not where it ends; the only real ceiling is
     ``_plan_turn_messages``'s fail-closed check.
     """
-    from deskpet.sdk_adapters.context_authority import _resolve_model_id, _resolve_window_tokens
     from deskpet.sdk_adapters.context_partitions import (
         calibration_for_model,
         effective_input_budget,
@@ -1161,7 +1158,6 @@ def current_tool_allowance(metadata, *, provider_turn_ordinal=0):
     so the two stay in proportion — otherwise a calibrated model could pass this
     bound and still fail the budget, i.e. fail closed where paging had room left.
     """
-    from deskpet.sdk_adapters.context_authority import _resolve_model_id, _resolve_window_tokens
     from deskpet.sdk_adapters.context_partitions import (
         calibration_for_model,
         effective_input_budget,
@@ -1301,10 +1297,6 @@ class CurrentToolProjector:
         control_over_bound=False,
         control_allowance=0,
     ):
-        from simple_harness.contracts.messages import Message
-
-        from deskpet.sdk_adapters.composition import project_primary_transcript
-        from deskpet.sdk_adapters.context_partitions import text_tokens
 
         _require(
             len(rows) == 1 and metadata.get("root_run_id") == rows[0]["host_run_id"],

@@ -27,6 +27,8 @@ if sys.version_info < (3, 12):
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from guard import CODEC_PINNED, FORBIDDEN_PY  # noqa: E402
+from import_contracts import contracts as import_contracts  # noqa: E402
+from import_contracts import first_forbidden, matches  # noqa: E402
 from import_graph import INDEX, build_graph, module_name, reachable, resolve  # noqa: E402
 from inner_imports import BACKEND, REPO, SDK_SRC, STDLIB, classify, tree_files  # noqa: E402
 
@@ -219,7 +221,23 @@ def is_forbidden(rel_repo: str) -> bool:
 
 # ---------- 主流程 ----------
 
-def analyse_file(path: Path, me: str, graph, patched: set[str], kinds: set[str]):
+def isolation_broken(st, kind: str, me: str, path: Path, graph, contracts) -> str | None:
+    """上提后，哪个入口会在加载时拉进被禁模块；不会则返回 None。"""
+    if kind == "internal":
+        targets = resolve(st, me, path)
+    else:
+        targets = {(st.module if isinstance(st, ast.ImportFrom) else a.name) for a in st.names}
+    for c in contracts:
+        if not (me in c.entries or any(reachable(graph, e, me) for e in c.entries)):
+            continue
+        hit = first_forbidden(graph, targets, c.forbidden) if kind == "internal" else \
+            next((t for t in targets if matches(t, c.forbidden)), None)
+        if hit:
+            return f"{c.test} 不许加载 {hit}"
+    return None
+
+
+def analyse_file(path: Path, me: str, graph, patched: set[str], kinds: set[str], contracts=()):
     src = path.read_text(encoding="utf-8")
     src_lines = src.splitlines()
     tree = ast.parse(src)
@@ -291,6 +309,10 @@ def analyse_file(path: Path, me: str, graph, patched: set[str], kinds: set[str])
             missing = missing_target(st, me, path)
             if missing:
                 return st, "keep", f"目标不存在：{missing}", funcs
+        # 导入隔离：测试钉住某入口加载时不得拉进某些模块，上提不能让入口经本模块走到它们
+        broken = isolation_broken(st, kind, me, path, graph, contracts)
+        if broken:
+            return st, "keep", f"会破坏导入隔离（{broken}）", funcs
         # 循环
         if kind == "internal":
             targets = resolve(st, me, path)
@@ -377,6 +399,7 @@ def main() -> int:
              if any(p.resolve() == w or w in p.resolve().parents for w in wanted)]
     graph = build_graph()
     patched = patched_targets()
+    contracts = import_contracts(a.tree)
     stats: Counter = Counter()
     changed: list[Path] = []
     for path in files:
@@ -390,7 +413,7 @@ def main() -> int:
         if LAZY_DECLARED.search(path.read_text(encoding="utf-8")):
             stats["keep:文件声明按需导入"] += 1
             continue
-        src, tree, decisions = analyse_file(path, me, graph, patched, kinds)
+        src, tree, decisions = analyse_file(path, me, graph, patched, kinds, contracts)
         for st, verdict, reason, _f in decisions:
             stats[f"{verdict}:{reason}"] += 1
             if a.verbose:

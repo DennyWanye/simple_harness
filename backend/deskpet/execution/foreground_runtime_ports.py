@@ -9,6 +9,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+from llm.model_catalog import model_context_window
 from simple_harness import ContextRouteReceipt
 
 from deskpet.execution.foreground_queue import (
@@ -216,7 +217,6 @@ class ProductForegroundProviderPort:
         sdk_run_id: str,
     ) -> FrozenProviderAuthority:
         del execution_session_id, request_id
-        from llm.model_catalog import model_context_window
 
         chain = self._registry.get_chain()
         if not chain or not isinstance(chain[0], Mapping):

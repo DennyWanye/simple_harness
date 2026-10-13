@@ -24,6 +24,7 @@ import stat
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+from agent_orchestrator.runtime.sandbox import SandboxSpec
 from simple_harness.agents.arp.pins import Pin
 from simple_harness.agents.arp.ports import ScriptRun, ScriptRunReceipt
 from simple_harness.agents.arp.strict import digest
@@ -95,7 +96,6 @@ class SandboxScriptRunner:
 
 
 def _spec(**limits: Any) -> Any:
-    from agent_orchestrator.runtime.sandbox import SandboxSpec
 
     return SandboxSpec(**limits)
 

@@ -19,8 +19,10 @@ from pathlib import Path
 from typing import Any, Literal, Protocol
 
 from simple_harness import CallId, JsonValue, thaw_json
+from simple_harness.execution.effects import EffectState
 from simple_harness.tools import (
     FunctionTool,
+    MalformedToolArgumentsError,
     ToolCall,
     ToolCallState,
     ToolContext,
@@ -31,7 +33,12 @@ from simple_harness.tools import (
 )
 from simple_harness.tools.executor import EffectExecution, EffectExecutor
 
-from deskpet.sdk_adapters.effect_gate import EffectGateRejected
+from deskpet.execution.evidence_ingress import ToolInvocationFact
+from deskpet.execution.primary_effect_index import record_effect
+from deskpet.permissions import protected_paths
+from deskpet.permissions.protected_paths import dispatch_clearance
+from deskpet.sdk_adapters.context_partitions import tool_schema_tokens
+from deskpet.sdk_adapters.effect_gate import EffectGateRejected, classify_objective_event
 from deskpet.security.sensitive_text import redact_sensitive_text
 
 logger = logging.getLogger(__name__)
@@ -347,8 +354,6 @@ class ProductToolsAdapter(ToolRegistry):
         才对模型可见。
         """
 
-        from simple_harness.tools import MalformedToolArgumentsError
-
         try:
             return super().validate(call)
         except MalformedToolArgumentsError as exc:
@@ -502,8 +507,6 @@ class ProductToolsAdapter(ToolRegistry):
         try:
             origin = _foreground_invocation_origin.get()
             if origin is not None:
-                from deskpet.execution.primary_effect_index import record_effect
-
                 await record_effect(origin, context, call.name)
             delivery_adapter = None
             try:
@@ -662,8 +665,6 @@ class ProductEffectExecutor(EffectExecutor):
         execution: EffectExecution,
         scope: tuple[str, str],
     ) -> None:
-        from deskpet.execution.evidence_ingress import ToolInvocationFact
-        from deskpet.sdk_adapters.effect_gate import classify_objective_event
 
         record = execution.effect
         if record is None or not record.terminal:
@@ -710,8 +711,6 @@ class ProductEffectExecutor(EffectExecutor):
         call = kwargs.get("call")
         cleared: list[Any] = []
         if isinstance(call, ToolCall) and self._is_first_occurrence(kwargs):
-            from deskpet.permissions import protected_paths
-
             session_id, base = self._registry.run_session_and_root(context.run_id)
             refusal, cleared = await protected_paths.check_call(
                 session_id,
@@ -735,7 +734,6 @@ class ProductEffectExecutor(EffectExecutor):
                         call.call_id, "protected_path_requires_user", refusal
                     ),
                 )
-        from deskpet.permissions.protected_paths import dispatch_clearance
 
         with dispatch_clearance(cleared):
             return await self._execute_gated(**kwargs)
@@ -884,8 +882,6 @@ class ProductEffectExecutor(EffectExecutor):
         2 review F-3) means no physical action happened yet and the SDK will
         re-authorize and dispatch on replay, so the gate must re-verify it.
         """
-
-        from simple_harness.execution.effects import EffectState
 
         effect_id = kwargs.get("effect_id")
         read_effect = getattr(self._uow, "read_effect", None)
@@ -1450,7 +1446,6 @@ def filter_sdk_catalog_for_workspace(
         selected["specs"] = list(selected_specs)
         selected["tool_names"] = [str(item.get("name")) for item in selected_specs]
         selected["tool_count"] = len(selected_specs)
-        from deskpet.sdk_adapters.context_partitions import tool_schema_tokens
 
         selected["schema_token_count"] = tool_schema_tokens(selected_specs)
         schema_fingerprints = catalog.get("schema_fingerprints")

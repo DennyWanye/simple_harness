@@ -25,8 +25,22 @@ import aiosqlite
 from simple_harness import (
     ContextRouteOrigin,
     ContextRouteReceipt,
+    DeliveryRecipient,
+    DisclosureContext,
+    DisclosureGeneration,
+    DisclosurePurpose,
+    DisclosureReasonCode,
+    DisclosureSource,
+    DisclosureTrust,
+    EvidenceRef,
+    ExecutionEvidence,
+    ExecutionEvidenceKind,
+    IntendedAudience,
     TaskScopeRoute,
+    freeze_json,
+    thaw_json,
 )
+from simple_harness.execution.audit import RunAuditUnavailable
 
 from deskpet.execution.foreground_queue import (
     ClaimedExecution,
@@ -39,6 +53,9 @@ from deskpet.execution.foreground_queue import (
     PreparationCandidate,
     RunState,
 )
+from deskpet.memory.primary_tool_causality import PrimaryToolCausalityUnavailable
+from deskpet.memory.primary_visibility import cause_fields
+from deskpet.memory.trusted_disclosure import TrustedDisclosureError
 from deskpet.sdk_adapters.ingress import SdkRuntimeIngress
 from deskpet.task_scope.protocol import canonical_hash, redact_credential_shapes
 
@@ -110,14 +127,10 @@ class FrozenContextAuthority:
 
     def __post_init__(self):
         if self.scope_disclosure is not None:
-            from simple_harness import freeze_json, thaw_json
-
             object.__setattr__(
                 self, "scope_disclosure", freeze_json(thaw_json(self.scope_disclosure))
             )
         if self.visibility_dependencies is not None:
-            from simple_harness import freeze_json
-
             from deskpet.execution.primary_dependencies import parse_dependencies
 
             object.__setattr__(
@@ -630,8 +643,6 @@ class ForegroundRuntimeExecutionAuthority:
         链，只带类型与稳定消息，不带任何 envelope/payload 字节。
         """
 
-        from deskpet.memory.primary_visibility import cause_fields
-
         carried = getattr(exc, "cause_type", None)
         if carried:
             return {
@@ -751,7 +762,6 @@ class ForegroundRuntimeExecutionAuthority:
                 return False
             if candidate.subject != self._subject:
                 raise ForegroundRuntimeError("foreground_runtime_candidate_subject_drift")
-            from deskpet.memory.trusted_disclosure import TrustedDisclosureError
 
             try:
                 lineage = await self._context.draft_lineage(candidate)
@@ -1119,7 +1129,6 @@ class ForegroundRuntimeExecutionAuthority:
         tool_names = tools.catalog.get("tool_names")
         if not isinstance(tool_names, (list, tuple)):
             raise ForegroundRuntimeError("foreground_runtime_tool_catalog_invalid")
-        from simple_harness import thaw_json
 
         start_payload = {
             "input": {"text": context.current_text},
@@ -1830,7 +1839,6 @@ class SqliteSdkTerminalObserver:
         read_terminal = getattr(self._runtime_stack, "read_run_terminal_evidence", None)
         if not callable(read_terminal):
             raise ForegroundRuntimeError("foreground_sdk_terminal_evidence_reader_unavailable")
-        from simple_harness.execution.audit import RunAuditUnavailable
 
         try:
             sdk_evidence = read_terminal(sdk_run_id)
@@ -1912,8 +1920,6 @@ class SqliteSdkTerminalObserver:
                         coordinator, sdk_run_id
                     )
                     if proof is not None:
-                        from simple_harness import thaw_json
-
                         proof = thaw_json(proof)
                         bindings = {
                             item["evidence_id"]: item["envelope_hash"] for item in proof["evidence"]
@@ -1946,8 +1952,6 @@ class SqliteSdkTerminalObserver:
             if terminal is RunState.COMPLETED and any(
                 message.get("role") == "tool" for message in messages
             ):
-                from deskpet.memory.primary_tool_causality import PrimaryToolCausalityUnavailable
-
                 try:
                     if callable(read_tool_causality):
                         tool_sources, assistant_tool_calls = await read_tool_causality(
@@ -2051,19 +2055,6 @@ class SqliteSdkTerminalObserver:
                 else None
             )
             await evidence_ingress.drain_reservations(sdk_run_id, fact_reader=fact_reader)
-            from simple_harness import (
-                DeliveryRecipient,
-                DisclosureContext,
-                DisclosureGeneration,
-                DisclosurePurpose,
-                DisclosureReasonCode,
-                DisclosureSource,
-                DisclosureTrust,
-                EvidenceRef,
-                ExecutionEvidence,
-                ExecutionEvidenceKind,
-                IntendedAudience,
-            )
 
             disclosure = DisclosureContext(
                 sdk_run_id,

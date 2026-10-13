@@ -18,6 +18,9 @@ from dataclasses import dataclass, replace
 from typing import Any, Protocol
 
 import httpx
+from llm.model_info import resolve_reasoning_mode
+from llm.provider_capabilities import declared_reasoning_capability, reasoning_wire_fields
+from simple_harness import ProviderContextUseAttemptV1
 from simple_harness.contracts import ContractValidationError
 from simple_harness.contracts.json import thaw_json, validate_json_value
 from simple_harness.contracts.messages import Message, MessageRole
@@ -39,6 +42,7 @@ from simple_harness.providers import (
     Secret,
 )
 
+from deskpet.execution.evidence_ingress import ProviderInvocationFact
 from deskpet.sdk_adapters.tool_call_arguments import (
     EMPTY_TOOL_CALL_ARGUMENTS_JSON,
     ToolCallArgumentsMemo,
@@ -1093,8 +1097,6 @@ def _reasoning_params(
     ):
         return model_params
     try:
-        from llm.model_info import resolve_reasoning_mode
-
         mode = resolve_reasoning_mode(model)
     except Exception:  # noqa: BLE001 — 元数据永远不该打断 provider 构造
         return model_params
@@ -1169,10 +1171,6 @@ class ProductProviderAdapter:
         )
         endpoint_identity = provider_endpoint_identity(entry, base_url=base_url)
         pricing_key = f"{provider_id}:{frozen_model}:{self.price_snapshot.fingerprint}"
-        from llm.provider_capabilities import (
-            declared_reasoning_capability,
-            reasoning_wire_fields,
-        )
 
         self.reasoning_capability = declared_reasoning_capability(frozen_model)
         self.reasoning_wire = reasoning_wire_fields(
@@ -1602,8 +1600,6 @@ class ProductProviderInvocationCoordinator(ProviderInvocationCoordinator):
             execution_lease=execution_lease,
         )
         if self._typed_terminal is not None:
-            from simple_harness import ProviderContextUseAttemptV1
-
             attempt = ProviderContextUseAttemptV1.from_json(checkpoint["context_use_attempt"])
             await self._typed_terminal.record_terminal(run_id, request, attempt)
 
@@ -1627,8 +1623,6 @@ def provider_invocation_fact(
     error_code: str | None = None,
 ):
     """Public-only Harness fact for one settled Provider invocation."""
-
-    from deskpet.execution.evidence_ingress import ProviderInvocationFact
 
     usage = None
     if response is not None and response.usage is not None:

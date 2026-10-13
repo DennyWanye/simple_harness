@@ -30,23 +30,62 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-from agent_orchestrator.deployment.native_pools import CONTEXT_INPUT_LIMITS, NATIVE_OUTPUT_TOKENS
+import agent_orchestrator
+import simple_harness
+from agent_orchestrator.api.facade import FacadeError
+from agent_orchestrator.contracts import Budget
+from agent_orchestrator.deployment.assembly import RootNames, UserMissionDeployment
+from agent_orchestrator.deployment.native_pools import (
+    CONTEXT_INPUT_LIMITS,
+    NATIVE_OUTPUT_TOKENS,
+    is_native_profile,
+    native_profile_id,
+)
+from agent_orchestrator.governance.policies import SKILL_TOOL_NAMES, DeploymentPolicy
+from agent_orchestrator.observability.secrets import find_secrets
+from agent_orchestrator.orchestrator.commit_service import GLOBAL_ACCOUNT_PREFIX, global_account_id
 from agent_orchestrator.orchestrator.event_handler import ACTION_SETTLED_AFTER_STOP
+from agent_orchestrator.orchestrator.taskgraph_deployment import InstalledHtnWiringAcceptance
+from agent_orchestrator.runtime.assembly import OrchestratorConfig
+from agent_orchestrator.runtime.connectors_publish import FilePublishConnector
+from agent_orchestrator.runtime.deepseek_meter import deepseek_meter_binding
+from agent_orchestrator.runtime.planning_operations import SourceUnavailable
+from agent_orchestrator.runtime.sandbox import SandboxUnavailable, SeatbeltExecutor
+from simple_harness.agents.arp.assurance_acceptance import evaluation_mission_key
+from simple_harness.agents.arp.errors import ArpError
+from simple_harness.agents.arp.pins import Pin
+from simple_harness.agents.arp.shared_catalogue import SKILL_READ_VERBS, SKILL_WRITE_VERBS
+from simple_harness.api.runtime_plane import RuntimePlaneService
 
+from .diagnostics import taskgraph_history
+from .hierarchical import ROOT_DUTY_PREFIX, ROOT_TASK_PREFIX, ROOT_TYPE, planning_world
 from .lock import InstanceLock
 from .manifest import MANIFEST_SCHEMA, build_manifest, distributions, write_manifest
+from .native_plane import build_native_pools
+from .notices import MissionNotices, NoticeNotFound
 from .projection import (
     project_approval,
     project_detail,
     project_events,
     ui_state,
 )
-from .provider import NO_MODEL, ProviderSnapshot, ProviderUnavailable
+from .provider import NO_MODEL, ProviderSnapshot, ProviderUnavailable, provider_on_client
 from .runtime_profile import (
+    DEEPSEEK_COUNTER_MODELS,
     ONLY_DEEPSEEK_REASON,
+    THINKING_EFFORT,
     source_runtime_options,
 )
 from .settings import OrchestrationSettings
+from .skill_catalogue import (
+    SkillCatalogueRefused,
+    admit,
+    evaluate,
+    install_file,
+    lifecycle,
+    overview,
+)
+from .skill_catalogue import request as skill_request
 from .storage_usage import StorageUsage
 
 logger = logging.getLogger(__name__)
@@ -220,7 +259,6 @@ class OrchestrationService:
         # H01：SDK 恢复协议的只读诊断（state / failed_step / 八步结果）；降级时服务进 degraded_recovery
         self._recovery: dict[str, Any] | None = None
         # HTN 补齐阶段 B 第 1 条：任务结束通知的唯一 Host 记录（主对话卡片、主 Agent 上下文都读它）
-        from .notices import MissionNotices
 
         self._notices = MissionNotices(self.root)
         # 2026-09-25 UI 全量点击：自动模式下每轮"授权本轮规划"都要人点，不点任务就一直卡着。
@@ -228,10 +266,8 @@ class OrchestrationService:
         self._permission_mode_reader = permission_mode_reader
         # 用户任务的部署（安装、建任务、每轮职责）在 SDK 里只有一份（HTN 补齐阶段 A′）；Host 交出
         # 桌面规划世界、认证身份、通知去处与构建指纹，并告诉它"现在是不是自动模式"。
-        from agent_orchestrator.deployment.assembly import RootNames, UserMissionDeployment
 
         from .assurance import host_fingerprint
-        from .hierarchical import ROOT_DUTY_PREFIX, ROOT_TASK_PREFIX, ROOT_TYPE, planning_world
 
         def notify(payload: Mapping[str, Any]) -> None:
             # At-least-once local status transport: the notice is kept (de-duplicated by
@@ -324,10 +360,6 @@ class OrchestrationService:
     def _taskgraph_acceptance_status() -> str:
         """``VALIDATED`` / ``NOT_RUN`` from the installed SDK's package-owned manifest; a manifest
         that does not verify reads as ``UNVERIFIED`` (refused the same way)."""
-        from agent_orchestrator.orchestrator.taskgraph_deployment import (
-            InstalledHtnWiringAcceptance,
-        )
-        from agent_orchestrator.runtime.planning_operations import SourceUnavailable
 
         try:
             return InstalledHtnWiringAcceptance().acceptance_status()
@@ -342,10 +374,7 @@ class OrchestrationService:
     async def _open(self) -> None:
         from agent_orchestrator.api.facade import MissionControlV1
         from agent_orchestrator.api.policies import PolicyApi
-        from agent_orchestrator.contracts import Budget
-        from agent_orchestrator.governance.policies import DeploymentPolicy
         from agent_orchestrator.orchestrator.event_handler import Orchestrator
-        from agent_orchestrator.runtime.assembly import OrchestratorConfig
 
         provider = self._provider
         enabled_connectors: tuple[str, ...] = ()
@@ -486,8 +515,6 @@ class OrchestrationService:
         even carry a publish criterion.
         """
 
-        from agent_orchestrator.runtime.connectors_publish import FilePublishConnector
-
         configured = (self.settings.publish_dir or "").strip()
         if not configured:
             self._publish = {"enabled": False, "reason": "未授权发布目录"}
@@ -519,10 +546,6 @@ class OrchestrationService:
         the P3.2 journal as a deliberate deviation).
         """
 
-        from agent_orchestrator.runtime.sandbox import (
-            SandboxUnavailable,
-            SeatbeltExecutor,
-        )
         from agent_orchestrator.runtime.sandbox import probe_sandbox as run_probe
 
         self._executor = None
@@ -692,19 +715,15 @@ class OrchestrationService:
     # ------------------------------------------------------------ native plane (RP-E3)
     def _native_skill_tools(self) -> tuple[str, ...]:
         """The Skill tools this deployment's native pools serve."""
-        from agent_orchestrator.governance.policies import SKILL_TOOL_NAMES
 
         return tuple(SKILL_TOOL_NAMES)
 
     def _build_native(self) -> Any:
         """The Host's native-plane composition (the only execution plane since 2026-09-30)."""
-        from .native_plane import build_native_pools
 
         if self._native_test_counter is not None:
             meter_factory = self._native_test_counter.meter_factory
         else:
-            from agent_orchestrator.runtime.deepseek_meter import deepseek_meter_binding
-
             meter_factory = deepseek_meter_binding
         models_dir = None
         try:
@@ -725,7 +744,6 @@ class OrchestrationService:
         )
 
     def _native_profile_ids(self) -> list[str]:
-        from agent_orchestrator.deployment.native_pools import is_native_profile
 
         return [key for key in self._runtime_options.get("profiles", {}) if is_native_profile(key)]
 
@@ -751,13 +769,11 @@ class OrchestrationService:
         if profile_id is not None and not isinstance(profile_id, str):
             raise OrchestrationRequestError("invalid_request", "profile_id 必须是字符串")
         self._refuse_secrets(body)
-        from simple_harness.agents.arp.shared_catalogue import SKILL_READ_VERBS, SKILL_WRITE_VERBS
 
         if body.get("verb") in SKILL_READ_VERBS | SKILL_WRITE_VERBS:
             # NEXT-TG-1.0 §11: Skills have one authority for every pool; no per-pool install
             return await self.skill_request(body)
         pool = self._native_pool(profile_id)
-        from simple_harness.api.runtime_plane import RuntimePlaneService
 
         response = await RuntimePlaneService(pool.runtime).handle(
             body, caller=self._native.control_caller(body)
@@ -768,9 +784,6 @@ class OrchestrationService:
     # ---- the shared Skill catalogue (NEXT-TG-1.0 §11; logic in skill_catalogue.py / the SDK) ----
 
     async def _skill_call(self, call: Any) -> dict[str, Any]:
-        from simple_harness.agents.arp.errors import ArpError
-
-        from .skill_catalogue import SkillCatalogueRefused
 
         self._require()
         try:
@@ -782,41 +795,35 @@ class OrchestrationService:
             raise OrchestrationRequestError("refused", f"{error.code}: {error}") from error
 
     async def skill_catalogue(self, request: Mapping[str, Any]) -> dict[str, Any]:
-        from .skill_catalogue import overview
 
         del request
         return await self._skill_call(lambda: overview(self))
 
     async def skill_install_file(self, request: Mapping[str, Any]) -> dict[str, Any]:
-        from .skill_catalogue import install_file
 
         if not isinstance(request, Mapping):
             raise OrchestrationRequestError("invalid_request", "请求必须是一个对象")
         return await self._skill_call(lambda: install_file(self, request))
 
     async def skill_lifecycle(self, request: Mapping[str, Any]) -> dict[str, Any]:
-        from .skill_catalogue import lifecycle
 
         if not isinstance(request, Mapping):
             raise OrchestrationRequestError("invalid_request", "请求必须是一个对象")
         return await self._skill_call(lambda: lifecycle(self, request))
 
     async def skill_evaluate(self, request: Mapping[str, Any]) -> dict[str, Any]:
-        from .skill_catalogue import evaluate
 
         if not isinstance(request, Mapping):
             raise OrchestrationRequestError("invalid_request", "请求必须是一个对象")
         return await self._skill_call(lambda: evaluate(self, request))
 
     async def skill_admit(self, request: Mapping[str, Any]) -> dict[str, Any]:
-        from .skill_catalogue import admit
 
         if not isinstance(request, Mapping):
             raise OrchestrationRequestError("invalid_request", "请求必须是一个对象")
         return await self._skill_call(lambda: admit(self, request))
 
     async def skill_request(self, request: Mapping[str, Any]) -> dict[str, Any]:
-        from .skill_catalogue import request as skill_request
 
         if not isinstance(request, Mapping):
             raise OrchestrationRequestError("invalid_request", "请求必须是一个对象")
@@ -827,7 +834,6 @@ class OrchestrationService:
 
     @staticmethod
     def _evaluation_pin(request: Mapping[str, Any]) -> Any:
-        from simple_harness.agents.arp.pins import Pin
 
         try:
             pin = Pin.from_json(dict(request.get("evaluation_ref") or {}))
@@ -845,7 +851,6 @@ class OrchestrationService:
         """Create (idempotently) the original Assurance Mission of one Skill evaluation: its
         idempotency key is the evaluation's own key, which is what later ties an acceptance
         certificate back to the evaluation."""
-        from simple_harness.agents.arp.assurance_acceptance import evaluation_mission_key
 
         if not isinstance(request, Mapping):
             raise OrchestrationRequestError("invalid_request", "请求必须是一个对象")
@@ -860,7 +865,6 @@ class OrchestrationService:
         """Record which Mission and which task an evaluation was dispatched to (once).  The
         Mission must be this tenant's and must be the evaluation's original Mission; the
         task must belong to it.  The record never marks the evaluation as passed."""
-        from simple_harness.agents.arp.assurance_acceptance import evaluation_mission_key
 
         if not isinstance(request, Mapping):
             raise OrchestrationRequestError("invalid_request", "请求必须是一个对象")
@@ -1068,7 +1072,6 @@ class OrchestrationService:
     # ------------------------------------------------------------ status
     def _context_profiles(self) -> list[dict[str, Any]]:
         profiles = self._runtime_options.get("profiles", {})
-        from agent_orchestrator.deployment.native_pools import native_profile_id
 
         rows = []
         for tokens in CONTEXT_INPUT_LIMITS:
@@ -1092,8 +1095,6 @@ class OrchestrationService:
         model and client as the shared provider, with thinking enabled (reasoning replayed).
         None unless this deployment talks to a DeepSeek model through a real client."""
 
-        from .runtime_profile import DEEPSEEK_COUNTER_MODELS
-
         snapshot, client = self._snapshot, self._http_client
         if (
             snapshot is None
@@ -1103,9 +1104,6 @@ class OrchestrationService:
             return None
         cached = getattr(self, "_thinking_provider_instance", None)
         if cached is None:
-            from .provider import provider_on_client
-            from .runtime_profile import THINKING_EFFORT
-
             cached = provider_on_client(
                 client,
                 snapshot,
@@ -1117,7 +1115,6 @@ class OrchestrationService:
         return cached
 
     def _context_default(self) -> str | None:
-        from agent_orchestrator.deployment.native_pools import native_profile_id
 
         available = {p["profile_id"] for p in self._context_profiles()}
         # The thinking setting picks the pool of a *new* Mission only; an existing Mission keeps
@@ -1135,10 +1132,6 @@ class OrchestrationService:
         """第 2 批 H11 / 车道 P：本月全局总账（所有任务按建立月份合计）的月份、上限、已用、预留中、
         剩余，设置页据此写说明。当月总账在当月第一个任务建立时才打开；没打开时用量为 0。读不到
         账本（服务没起来）也报月份与配置的月配额。月份与账户都由 SDK 算（``global_account_id``）。"""
-        from agent_orchestrator.orchestrator.commit_service import (
-            GLOBAL_ACCOUNT_PREFIX,
-            global_account_id,
-        )
 
         running = self._orchestrator is not None and self._state in ("available", "degraded")
         now = self._orchestrator.store.now if running else time.time()
@@ -1177,8 +1170,6 @@ class OrchestrationService:
         )
 
     def status(self) -> dict[str, Any]:
-        import agent_orchestrator
-        import simple_harness
 
         active = 0
         if self._orchestrator is not None and self._state in (
@@ -1284,7 +1275,6 @@ class OrchestrationService:
     def _deploy(self, method: str, body: Mapping[str, Any]) -> dict[str, Any]:
         """Create through the SDK's one user-Mission deployment (root and TaskGraph binding in
         the same transaction), translating facade refusals like ``_call``."""
-        from agent_orchestrator.api.facade import FacadeError
 
         control = self._require()
         try:
@@ -1295,7 +1285,6 @@ class OrchestrationService:
             ) from error
 
     def _call(self, method: str, *args: Any, **kwargs: Any) -> Any:
-        from agent_orchestrator.api.facade import FacadeError
 
         control = self._require()
         try:
@@ -1312,8 +1301,6 @@ class OrchestrationService:
     def _refuse_secrets(self, *values: Any) -> None:
         """Every string a person sends in (review P1-3): generic key patterns *and* the
         provider's own key, whatever its shape."""
-
-        from agent_orchestrator.observability.secrets import find_secrets
 
         for text in _strings(values):
             if find_secrets(text, extra=self._secret_values()):
@@ -1647,8 +1634,6 @@ class OrchestrationService:
             return {"acked": acked}
         notice_id = body.get("notice_id")
         if not isinstance(notice_id, str) or not notice_id:
-            from .notices import NoticeNotFound
-
             raise NoticeNotFound("notice_id is required")
         row = self._notices.ack(notice_id)
         self.wake()
@@ -1880,7 +1865,6 @@ class OrchestrationService:
         if not export:
             return report
         # 导出时才核对执行图历史（要在临时副本上重建，比只看诊断贵）；读视图之外做。
-        from .diagnostics import taskgraph_history
 
         try:
             reads = self._orchestrator.taskgraph_read_api(

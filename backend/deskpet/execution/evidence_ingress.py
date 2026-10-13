@@ -39,7 +39,10 @@ from typing import Any, Protocol
 
 import aiosqlite
 
+from deskpet.memory.human_memory_program import HumanMemoryProgramConflict, HumanMemoryProgramStore
+from deskpet.memory.human_memory_service import build_host_typed_evidence
 from deskpet.memory.writer_fence import assert_human_memory_ingress_open_tx
+from deskpet.task_scope.projection_sources import append_projection_source_tx
 from deskpet.task_scope.protocol import (
     TaskScopeProtocolError,
     canonical_hash,
@@ -670,9 +673,6 @@ class ExecutionEvidenceIngress:
                     source_sequence=source_sequence,
                     now=now,
                 )
-                from deskpet.task_scope.projection_sources import (
-                    append_projection_source_tx,
-                )
 
                 await append_projection_source_tx(db, task_scope_id, now=now)
                 await db.commit()
@@ -733,9 +733,6 @@ class ExecutionEvidenceIngress:
                     refs=refs,
                     source_sequence=None,
                     now=now,
-                )
-                from deskpet.task_scope.projection_sources import (
-                    append_projection_source_tx,
                 )
 
                 await append_projection_source_tx(db, task_scope_id, now=now)
@@ -812,7 +809,6 @@ class ExecutionEvidenceIngress:
             source_sequence=None,
             now=occurred_at,
         )
-        from deskpet.task_scope.projection_sources import append_projection_source_tx
 
         await append_projection_source_tx(db, binding.task_scope_id, now=occurred_at)
         return self._receipt(row, watermark)
@@ -828,11 +824,6 @@ class ExecutionEvidenceIngress:
 
         if not isinstance(fact, (ToolInvocationFact, ProviderInvocationFact)):
             raise TypeError("commit_fact requires ToolInvocationFact or ProviderInvocationFact")
-        from deskpet.memory.human_memory_program import (
-            HumanMemoryProgramConflict,
-            HumanMemoryProgramStore,
-        )
-        from deskpet.memory.human_memory_service import build_host_typed_evidence
 
         program = HumanMemoryProgramStore(self._db_path)
         objective = getattr(fact, "objective", None)
@@ -913,9 +904,6 @@ class ExecutionEvidenceIngress:
                     refs=refs,
                     source_sequence=None,
                     now=now,
-                )
-                from deskpet.task_scope.projection_sources import (
-                    append_projection_source_tx,
                 )
 
                 await append_projection_source_tx(db, task_scope_id, now=now)
@@ -1239,9 +1227,6 @@ class ExecutionEvidenceIngress:
                     source_sequence=None,
                     now=now,
                     reservation_status="abandoned",
-                )
-                from deskpet.task_scope.projection_sources import (
-                    append_projection_source_tx,
                 )
 
                 await append_projection_source_tx(db, reservation.task_scope_id, now=now)

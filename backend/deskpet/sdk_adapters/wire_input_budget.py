@@ -143,6 +143,13 @@ from dataclasses import dataclass
 
 from simple_harness.providers.errors import ProviderRequestRejectedError
 
+from deskpet.sdk_adapters.context_partitions import (
+    effective_input_budget,
+    text_tokens,
+    tool_schema_tokens,
+    window_tokens_for,
+)
+
 _LOG = logging.getLogger(__name__)
 
 #: 一个进程内最多记住多少条 Run 的观测。Run 结束时没有可靠的统一钩子
@@ -503,7 +510,6 @@ def default_observed_input_carry_ledger() -> ObservedInputCarryLedger:
 
 
 def _text_tokens(value: object) -> int:
-    from deskpet.sdk_adapters.context_partitions import text_tokens
 
     return text_tokens(value)
 
@@ -610,8 +616,6 @@ def wire_request_tokens(
 ) -> int:
     """整条物理请求的 wire token 量:messages(含补回的 tool_calls)+ tools。"""
 
-    from deskpet.sdk_adapters.context_partitions import tool_schema_tokens
-
     messages = payload.get("messages") if isinstance(payload, Mapping) else ()
     total = wire_message_tokens(messages or ())
     return total + tool_schema_tokens(tool_specs or ())
@@ -688,10 +692,6 @@ def _drop_reasoning(message: object) -> int:
 
 
 def effective_budget_for_window(window_tokens: object) -> int:
-    from deskpet.sdk_adapters.context_partitions import (
-        effective_input_budget,
-        window_tokens_for,
-    )
 
     return effective_input_budget(window_tokens_for(window_tokens, None))
 

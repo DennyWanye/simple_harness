@@ -7,6 +7,11 @@ crash between SDK settlement and the next Provider request.
 
 from __future__ import annotations
 
+from deskpet.execution.foreground_queue import (
+    _EFFECT_BOUNDARY_ALLOWED_STATES,
+    EffectBoundary,
+    _clock_value,
+)
 from deskpet.memory.writer_fence import assert_human_memory_ingress_open_tx
 from deskpet.task_scope.protocol import canonical_hash, canonical_json, identifier
 
@@ -15,11 +20,6 @@ async def record_effect(binding, context, tool_name):
     if context.effect_id is None or context.run_id.value != binding.sdk_run_id:
         raise ValueError("primary_effect_index_identity_mismatch")
     store = binding.store
-    from deskpet.execution.foreground_queue import (
-        _EFFECT_BOUNDARY_ALLOWED_STATES,
-        EffectBoundary,
-        _clock_value,
-    )
 
     body = dict(
         host_run_id=binding.host_run_id,

@@ -23,7 +23,30 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from simple_harness import freeze_json, thaw_json
+from simple_harness import (
+    MandatoryContextActionRequired,
+    MandatoryContextFeedbackV1,
+    MandatoryContextRejectionV1,
+    RequestId,
+    freeze_json,
+    thaw_json,
+)
+from simple_harness.contracts.messages import Message, MessageRole
+from simple_harness.contracts.messages import Message as _Message
+from simple_harness.execution.context_authority import (
+    ContextRouteReceipt,
+    ContextRouteState,
+    RunContextSnapshot,
+)
+from simple_harness.execution.provider_invocations import provider_request_fingerprint
+from simple_harness.providers import ProviderRequest
+from simple_harness.runtime.task_scope_protocol import TaskScopeRoute
+from simple_harness.tools.runtime_catalog import ToolEffectClass
+
+from deskpet.execution.primary_context_pages import PrimaryContextPageUnavailable
+from deskpet.memory.primary_tool_causality import PrimaryToolCausalityUnavailable
+from deskpet.sdk_adapters.causal_groups import plan_recent_causal_groups
+from deskpet.sdk_adapters.context_partitions import text_tokens
 
 _LOG = logging.getLogger(__name__)
 
@@ -643,8 +666,6 @@ class ContextRouteLedgerStore:
         caller's snapshot instead of a private connection.
         """
 
-        from simple_harness.execution.context_authority import ContextRouteReceipt
-
         own = db is None
         if own:
             db = await self._connect()
@@ -960,7 +981,6 @@ class ContextRouteLedgerStore:
 
 
 def _context_text_tokens(text: str) -> int:
-    from deskpet.sdk_adapters.context_partitions import text_tokens
 
     return text_tokens(text)
 
@@ -1012,8 +1032,6 @@ def _resolve_model_id(metadata: Mapping[str, Any]) -> str | None:
 
 def _pending_occurrence_message(pending: tuple[Any, ...], *, overdue_keys=frozenset()) -> Any:
     """Bounded, Host-authored summary of eligible pending occurrences."""
-
-    from simple_harness.contracts.messages import Message, MessageRole
 
     entries = [
         {
@@ -1074,8 +1092,6 @@ def context_budget_wrap_up_message() -> Any:
     message, canonical JSON body) and byte-identical on every Run, so the
     persisted request fingerprint stays reproducible on replay.
     """
-
-    from simple_harness.contracts.messages import Message, MessageRole
 
     return Message(
         role=MessageRole.SYSTEM,
@@ -1145,7 +1161,6 @@ def _plan_turn_messages(
     twice per failing turn.
     """
 
-    from deskpet.sdk_adapters.causal_groups import plan_recent_causal_groups
     from deskpet.sdk_adapters.context_partitions import (
         PARTITION_CAPS,
         ContextBudgetExceeded,
@@ -1334,7 +1349,6 @@ def _plan_turn_messages(
                 # raw payload stays durable behind the exact ref.  Rebuild the
                 # Message explicitly: frozen metadata does not survive
                 # dataclasses.replace validation.
-                from simple_harness.contracts.messages import Message as _Message
 
                 raw_metadata = getattr(message, "metadata", {})
                 metadata = dict(thaw_json(raw_metadata)) if raw_metadata else {}
@@ -1485,9 +1499,6 @@ def _visible_provider_specs(
     binding set holds ≥2 roots — the same shrink applies under ROUTED_TASK.
     """
 
-    from simple_harness.execution.context_authority import ContextRouteState
-    from simple_harness.tools.runtime_catalog import ToolEffectClass
-
     specs = tuple(exposure.provider_specs(run_id))
     if ContextRouteState(route_state) is ContextRouteState.ROUTED_TASK and not hide_project_effects:
         return specs
@@ -1583,8 +1594,6 @@ class ProductRunContextAuthority:
     async def _hide_project_effects(self, request: Any) -> bool:
         """True when the ROUTED_TASK receipt's exact binding set holds ≥2 roots."""
 
-        from simple_harness.execution.context_authority import ContextRouteState
-
         receipt = getattr(request, "route_receipt", None)
         if (
             self._binding_store is None
@@ -1605,18 +1614,6 @@ class ProductRunContextAuthority:
         return len(tuple(getattr(exact, "root_identity_hashes", ()))) >= 2
 
     async def prepare_snapshot(self, request: Any) -> Any:
-        from simple_harness import RequestId
-        from simple_harness.execution.context_authority import (
-            ContextRouteState,
-            RunContextSnapshot,
-        )
-        from simple_harness.execution.provider_invocations import (
-            provider_request_fingerprint,
-        )
-        from simple_harness.providers import ProviderRequest
-
-        from deskpet.execution.primary_context_pages import PrimaryContextPageUnavailable
-        from deskpet.memory.primary_tool_causality import PrimaryToolCausalityUnavailable
 
         ports = self._ports_resolver()
         context = ports.context.load(request.run_id)
@@ -1660,8 +1657,6 @@ class ProductRunContextAuthority:
         feedback = getattr(request, "mandatory_context_feedback", None)
         feedback_message = None
         if feedback is not None:
-            from simple_harness import MandatoryContextFeedbackV1
-
             if type(feedback) is not MandatoryContextFeedbackV1:
                 raise SnapshotContractConflict("sdk_mandatory_context_feedback_invalid")
             feedback_message = feedback.message()
@@ -1896,9 +1891,6 @@ class ProductRuntimeDecisionSink:
             request_fingerprint=request_fingerprint,
         )
 
-        from simple_harness.execution.context_authority import ContextRouteReceipt
-        from simple_harness.runtime.task_scope_protocol import TaskScopeRoute
-
         marker = f"no-recall:{run_id.value}:{provider_turn_ordinal}"
         receipt = ContextRouteReceipt(
             receipt_id=str(uuid.uuid5(uuid.NAMESPACE_URL, f"simple-harness:{marker}")),
@@ -1926,11 +1918,6 @@ class ProductRuntimeDecisionSink:
             presented = await self._ledger.presented_occurrence_keys()
             pending = await self._reconcile(presented)
             if pending:
-                from simple_harness import (
-                    MandatoryContextActionRequired,
-                    MandatoryContextRejectionV1,
-                )
-
                 raise MandatoryContextActionRequired(
                     MandatoryContextRejectionV1(
                         run_id.value, provider_turn_ordinal, request_fingerprint

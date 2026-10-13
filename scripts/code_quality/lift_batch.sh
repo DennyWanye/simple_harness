@@ -17,6 +17,7 @@ python3 scripts/code_quality/control_snapshot.py >> "$LOG" 2>&1; check "控制�
 python3 scripts/code_quality/guard.py --ref HEAD >> "$LOG" 2>&1; check "禁区比对：通过"
 python3 scripts/code_quality/metrics.py check --new-since HEAD >> "$LOG" 2>&1; check "棘轮检查：通过"
 python3 scripts/code_quality/startup_profile.py >> "$LOG" 2>&1; check "启动耗时检查：通过"
+python3 scripts/code_quality/import_contracts.py >> "$LOG" 2>&1; check "导入隔离约定：全部满足"
 grep -E "^启动耗时|^启动完成后多加载|^多加载了" "$LOG" | tail -3
 LIST=$(mktemp)
 python3 scripts/code_quality/tests_for_changes.py --tree "$TREE" > "$LIST"

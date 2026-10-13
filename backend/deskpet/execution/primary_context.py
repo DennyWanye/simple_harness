@@ -9,6 +9,8 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import aiosqlite
+from simple_harness.contracts.messages import Message, MessageRole
+from simple_harness.runtime import ConversationTurnInput
 
 from deskpet.execution.foreground_queue import ContextLineage
 from deskpet.execution.foreground_runtime import FrozenContextAuthority
@@ -17,8 +19,11 @@ from deskpet.execution.preparation_rejection import (
     PreparationDisclosureRejected,
     PreparationRejection,
 )
+from deskpet.execution.primary_context_pages import project_history_group
 from deskpet.execution.primary_dependencies import dependencies
 from deskpet.execution.primary_history import PrimaryHistoryStore
+from deskpet.memory.current_input_source import COMMON_POLICY_TEXT
+from deskpet.memory.primary_visibility import read_evidence_pair
 from deskpet.memory.trusted_disclosure import resolve_current_disclosure
 from deskpet.sdk_adapters.context_authority import PreparedSdkContextSnapshotV1
 from deskpet.sdk_adapters.context_partitions import (
@@ -30,6 +35,7 @@ from deskpet.sdk_adapters.context_partitions import (
     tool_schema_tokens,
     turn_token_estimator,
 )
+from deskpet.task_scope.disclosure import render_scope_disclosure
 from deskpet.task_scope.protocol import canonical_hash, canonical_json
 
 # 2026-09-10：``REMINDER_CAPABILITY`` 那段 PERSONA 文字是在告诉模型
@@ -148,7 +154,6 @@ class PrimaryForegroundContextPort(TaskScopeForegroundContextPort):
     async def _source(self, candidate):
         if candidate.subject != self._subject:
             raise RuntimeError("foreground_primary_subject_mismatch")
-        from deskpet.memory.primary_visibility import read_evidence_pair
 
         async with aiosqlite.connect(self._history_path) as db:
             db.row_factory = aiosqlite.Row
@@ -244,7 +249,6 @@ class PrimaryForegroundContextPort(TaskScopeForegroundContextPort):
             raise RuntimeError("foreground_context_lineage_changed_after_claim")
         # Never reuse a partial/failed causal chain as a completed dialogue.
         complete = [g for g in groups if g["terminal_state"] == "COMPLETED" and g["messages"]]
-        from deskpet.execution.primary_context_pages import project_history_group
 
         def project(group):
             return project_history_group(group, run_id=sdk_run_id)
@@ -260,8 +264,6 @@ class PrimaryForegroundContextPort(TaskScopeForegroundContextPort):
         )
         persona = PERSONA + self._trusted_clock_text() + self._notice_text()
         if ":input-v1:" in input_context.authority_ref:
-            from deskpet.memory.current_input_source import COMMON_POLICY_TEXT
-
             persona += "\n" + COMMON_POLICY_TEXT
         protected = [{"role": "system", "content": persona}, current]
         # Incident N: one estimator for the whole request. The catalog's own
@@ -404,8 +406,6 @@ class PrimaryForegroundContextPort(TaskScopeForegroundContextPort):
         tools,
     ):
 
-        from deskpet.task_scope.disclosure import render_scope_disclosure
-
         candidate = claimed.candidate
         opened = await self._open(
             candidate.task_scope_id, source_id=expected_context.context_snapshot_id
@@ -490,8 +490,6 @@ class ForegroundConversationEntrypoint:
     async def __call__(
         self, *, session_id, sdk_run_id, text, context_snapshot_id, provider_messages=()
     ):
-        from simple_harness.contracts.messages import Message, MessageRole
-        from simple_harness.runtime import ConversationTurnInput
 
         if self._sessions is None or self._identity is None or self._sources is None:
             raise RuntimeError("foreground_conversation_dependencies_unavailable")

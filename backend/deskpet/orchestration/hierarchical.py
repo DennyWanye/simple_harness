@@ -10,27 +10,28 @@ from __future__ import annotations
 
 from typing import Any
 
+from agent_orchestrator.contracts.htn import (
+    GoalSignature,
+    PortCardinality,
+    PortOrdering,
+    PortSpec,
+    SideEffectKind,
+    TaskForm,
+)
+from agent_orchestrator.contracts.semantic_base import VersionedRef, content_hash_of
+from agent_orchestrator.planning.htn.observers.workspace import (
+    workspace_observers,
+    workspace_predicates,
+)
+from agent_orchestrator.planning.htn.registry import ObjectSchema, SchemaField, TaskTypeSpec
+from agent_orchestrator.planning.htn.world import build_planning_world, capability_records
+
 
 def planning_world(loop: Any, mission: Any) -> Any:
-    from agent_orchestrator.contracts.htn import (
-        GoalSignature,
-        PortCardinality,
-        PortOrdering,
-        PortSpec,
-        SideEffectKind,
-        TaskForm,
-    )
-    from agent_orchestrator.contracts.semantic_base import VersionedRef, content_hash_of
-    from agent_orchestrator.planning.htn.registry import ObjectSchema, SchemaField, TaskTypeSpec
-    from agent_orchestrator.planning.htn.world import build_planning_world, capability_records
     from agent_orchestrator.storage.htn_store import HtnStore
 
     htn = HtnStore(loop.store)
     # 桌面的三样只读观察（文件在不在、文件内容哈希、资料是否当前版本）：实现在 SDK 一份，这里注册
-    from agent_orchestrator.planning.htn.observers.workspace import (
-        workspace_observers,
-        workspace_predicates,
-    )
 
     world = build_planning_world(
         mission.id,

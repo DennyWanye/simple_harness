@@ -11,6 +11,11 @@ from collections.abc import Sequence
 from typing import Any
 
 import structlog
+from agent.agent_loop import AssistantMessageEvent, ToolCallEvent, ToolResultEvent
+from llm.types import ToolCall
+from simple_harness import thaw_json
+
+from deskpet.execution.contracts import LiveCursor, RunEvent, RunEventCandidate
 
 logger = structlog.get_logger(__name__)
 
@@ -209,8 +214,6 @@ class ProductDeliveryAdapter:
 
         if narration:
             try:
-                from agent.agent_loop import AssistantMessageEvent
-
                 await self._presenter.present(
                     AssistantMessageEvent(
                         content=narration,
@@ -230,10 +233,6 @@ class ProductDeliveryAdapter:
                 )
 
         try:
-            from agent.agent_loop import ToolCallEvent
-            from llm.types import ToolCall
-            from simple_harness import thaw_json
-
             await self._presenter.present(
                 ToolCallEvent(
                     tool_call=ToolCall(
@@ -259,9 +258,6 @@ class ProductDeliveryAdapter:
 
         iteration = self._tool_iterations.pop(call.call_id.value, 0)
         try:
-            from agent.agent_loop import ToolResultEvent
-            from simple_harness import thaw_json
-
             envelope = {
                 "outcome": result.outcome.value,
                 "value": thaw_json(result.value),
@@ -308,7 +304,6 @@ class ProductDeliveryAdapter:
             ValueError: If payload structure is invalid
         """
         # Import here to avoid circular dependencies
-        from deskpet.execution.contracts import LiveCursor, RunEvent, RunEventCandidate
 
         try:
             # Reconstruct nested candidate object

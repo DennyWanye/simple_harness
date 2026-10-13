@@ -34,6 +34,18 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import Any
 
+from simple_harness import Message, MessageRole, RunId, freeze_json, thaw_json
+from simple_harness.execution.contracts.children import (
+    AttachmentPolicy,
+    ProfileLaunchTicket,
+    child_launch_fingerprint,
+)
+from simple_harness.execution.recovery import ResolutionOutcome
+from simple_harness.runtime.child_runs import ChildLaunchRequest, ProfileLaunchTicketRef
+from simple_harness.runtime.start_snapshot import StartSnapshot
+from simple_harness.tools import ToolResult
+from simple_harness.tools.reconciliation import ReconciliationObservation, ReconciliationState
+
 logger = logging.getLogger(__name__)
 
 DELEGATED_CHILD_RUN_KIND = "delegated_child"
@@ -227,7 +239,6 @@ def _state(record: Any) -> str:
 
 
 def last_assistant_text(context_port: Any, run_id: str) -> str | None:
-    from simple_harness import RunId
 
     if context_port is None:
         return None
@@ -391,13 +402,6 @@ class ProductDelegationService:
           *failed* result that tells the model to call again (a new call, new children).
         """
 
-        from simple_harness import thaw_json
-        from simple_harness.tools import ToolResult
-        from simple_harness.tools.reconciliation import (
-            ReconciliationObservation,
-            ReconciliationState,
-        )
-
         name = str(getattr(effect, "tool_name", "") or "")
         if name not in DELEGATION_TOOL_NAMES:
             return None
@@ -494,9 +498,6 @@ class ProductDelegationService:
         without this a parent restarted mid-``agent`` would wait forever.  Only
         COMPLETED observations are recorded (see ``observe``).
         """
-
-        from simple_harness.execution.recovery import ResolutionOutcome
-        from simple_harness.tools.reconciliation import ReconciliationState
 
         try:
             uow = self._uow_getter()
@@ -604,14 +605,6 @@ class ProductDelegationService:
     # ---- internals ----------------------------------------------------------------
 
     async def _launch(self, parent_run_id: str, call_id: str, task: DelegatedTask) -> _Child:
-        from simple_harness import Message, MessageRole, freeze_json
-        from simple_harness.execution.contracts.children import (
-            AttachmentPolicy,
-            ProfileLaunchTicket,
-            child_launch_fingerprint,
-        )
-        from simple_harness.runtime.child_runs import ChildLaunchRequest, ProfileLaunchTicketRef
-        from simple_harness.runtime.start_snapshot import StartSnapshot
 
         child_run_id = delegated_child_run_id(parent_run_id, call_id, task.index)
         uow = self._uow_getter()
@@ -910,8 +903,6 @@ class ProductDelegationService:
 
     async def _cancel(self, run_id: str) -> None:
         try:
-            from simple_harness import RunId
-
             runtime = self._runtime_getter()
             uow = self._uow_getter()
             record = uow.read_run(run_id) if uow is not None else None

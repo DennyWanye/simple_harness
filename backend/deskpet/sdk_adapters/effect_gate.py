@@ -90,6 +90,7 @@ from simple_harness.tools import ToolContext, ToolResult
 from simple_harness.tools.runtime_catalog import ToolEffectClass
 
 from deskpet.execution.evidence_ingress import ObjectiveEventSpec
+from deskpet.task_scope.protocol import redact_credential_shapes
 from deskpet.task_scope.store import CanonicalTaskScopeStore, TaskScopeNotFound, _uuid
 from deskpet.task_scope.workspace_bindings import WorkspaceBindingError
 from deskpet.types.task_work_context import PrimaryRunWorkContext
@@ -612,8 +613,6 @@ def _targets(arguments: Mapping[str, Any]) -> tuple[list[str], bool]:
     by the stable placeholder and ``redacted`` is reported to the caller.
     """
 
-    from deskpet.task_scope.protocol import redact_credential_shapes
-
     targets: list[str] = []
     redacted = False
     raw: list[str] = []
@@ -632,7 +631,6 @@ def _targets(arguments: Mapping[str, Any]) -> tuple[list[str], bool]:
 
 
 def _public_error_code(result: ToolResult) -> tuple[str | None, bool]:
-    from deskpet.task_scope.protocol import redact_credential_shapes
 
     code = result.error_code
     if code is None:

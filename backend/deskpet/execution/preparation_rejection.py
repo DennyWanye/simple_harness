@@ -5,6 +5,9 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
+from deskpet.execution.foreground_queue import ForegroundQueueError, _clock_value
+from deskpet.memory.primary_visibility import read_evidence_pair
+from deskpet.memory.writer_fence import assert_human_memory_ingress_open_tx
 from deskpet.task_scope.protocol import (
     canonical_hash,
     canonical_json,
@@ -121,8 +124,6 @@ async def _verify_source_binding_tx(db, rejection, primary_ref):
     不会再产生新的拒绝记录，本函数只服务于旧 userdata 里的历史行。
     """
 
-    from deskpet.memory.primary_visibility import read_evidence_pair
-
     envelope, _receipt = await read_evidence_pair(
         db=db,
         subject=rejection.subject,
@@ -224,8 +225,6 @@ async def read_preparation_rejection_tx(db, *, host_run_id, subject, primary_ref
 
 
 async def settle_preparation_rejection(store, *, rejection, owner_id, generation):
-    from deskpet.execution.foreground_queue import ForegroundQueueError, _clock_value
-    from deskpet.memory.writer_fence import assert_human_memory_ingress_open_tx
 
     if type(rejection) is not PreparationRejection:
         raise TypeError("preparation rejection must use the Host typed receipt")

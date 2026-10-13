@@ -13,6 +13,8 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
+from deskpet.sdk_adapters.context_partitions import text_tokens
+
 from .context_authority import PreparedSdkContextSnapshotV1
 
 _ALLOWED_HISTORY_PROJECTIONS = {
@@ -121,7 +123,6 @@ async def _resolve(value: object) -> object:
 
 
 def _text_tokens(value: object) -> int:
-    from deskpet.sdk_adapters.context_partitions import text_tokens
 
     return text_tokens(value)
 

@@ -19,7 +19,10 @@ import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 
+from simple_harness import thaw_json
+
 from deskpet.sdk_adapters.causal_groups import CausalGroup
+from deskpet.task_scope.protocol import canonical_json
 
 GENERATION_RESERVE: dict[int, int] = {4096: 1024, 8192: 2048, 32768: 4096}
 
@@ -335,10 +338,6 @@ def tool_schema_tokens(specs: object) -> int:
     entirely and used ``repr`` rather than the JSON actually sent, under-counting
     the evidence's tool payload by ~35%.
     """
-
-    from simple_harness import thaw_json
-
-    from deskpet.task_scope.protocol import canonical_json
 
     total = 0
     for spec in specs or ():

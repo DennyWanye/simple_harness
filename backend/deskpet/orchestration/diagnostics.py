@@ -17,10 +17,11 @@ from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Any
 
-from agent_orchestrator.contracts.models import sha256_hex
+from agent_orchestrator.contracts.models import ContractError, sha256_hex
 from agent_orchestrator.observability.business_replay import verify_mission
 from agent_orchestrator.observability.metrics import deployment_outcomes, metrics
 from agent_orchestrator.observability.secrets import redact_text
+from agent_orchestrator.observability.taskgraph_replay import replay_taskgraph
 from agent_orchestrator.observability.traces import attribution, failure_timeline
 
 MAX_SUPPORT_BYTES = 2 * 1024 * 1024
@@ -562,9 +563,6 @@ def taskgraph_history(store: Any, reads: Any, mission_id: str, scratch: Path) ->
     重建出来的库里有任务原文，用完即删。另附历史版本清单（只读，标"历史，不可执行"）和相邻版本的
     结构差异（对象种类、标识、前后哈希；没有正文）。不调模型，不重放外部动作。
     """
-
-    from agent_orchestrator.contracts.models import ContractError
-    from agent_orchestrator.observability.taskgraph_replay import replay_taskgraph
 
     rows = store.connection.execute(
         "SELECT revision,source_kind,manifest_hash,parent_revision FROM taskgraph_revision_records "

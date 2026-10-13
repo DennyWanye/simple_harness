@@ -11,6 +11,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
+from deskpet.execution import contracts
 from deskpet.execution.dispatch import (
     DispatchIdentity,
     DispatchNotStarted,
@@ -18,6 +19,8 @@ from deskpet.execution.dispatch import (
     DispatchStartedAck,
     DispatchStartUnknown,
     create_dispatch_operation,
+    provisional_stream_envelope,
+    provisional_stream_retract,
 )
 from deskpet.security import TraceRedactor, redact_sensitive_text
 
@@ -743,7 +746,6 @@ class ProviderInvocationCoordinator:
         dispatch: PreparedProviderDispatch,
         lease: ProviderFenceLease,
     ) -> Any:
-        from deskpet.execution import contracts
 
         record_type = getattr(contracts, "ProviderInvocationRecord", None)
         values = {
@@ -788,7 +790,6 @@ class ProviderInvocationCoordinator:
         dispatch: ClaimedProviderDispatch,
         payload: Any,
     ) -> Any:
-        from deskpet.execution import contracts
 
         outcome_type = getattr(contracts, "ProviderInvocationOutcome", None)
         payload_json = _canonical_bytes(payload).decode("utf-8")
@@ -1090,11 +1091,6 @@ async def coordinate_provider_stream(
         async for item in iterator():
             yield item
         return
-    from deskpet.execution.dispatch import (
-        DispatchStartedAck,
-        provisional_stream_envelope,
-        provisional_stream_retract,
-    )
 
     queue: asyncio.Queue[Any] = asyncio.Queue()
     done = object()

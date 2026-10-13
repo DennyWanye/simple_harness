@@ -30,6 +30,8 @@ from simple_harness.tools import (
 )
 
 from deskpet.capabilities.contracts import fingerprint_json
+from deskpet.capabilities.manifest import load_and_validate_pack
+from deskpet.companion.skills import FirstPartySkillPack, ManagedSkillDiscoveryProjection
 
 _RUN_VERIFICATION_EVIDENCE_ISSUER = object()
 
@@ -413,12 +415,6 @@ class ProductCapabilityCatalogSourceAdapter:
         adds only exact Project bindings captured by the existing Run-catalog
         owner, so another Project or a projectless Run observes no records.
         """
-
-        from deskpet.capabilities.manifest import load_and_validate_pack
-        from deskpet.companion.skills import (
-            FirstPartySkillPack,
-            ManagedSkillDiscoveryProjection,
-        )
 
         entries = lease.project_pack_entries(
             owner_key=owner_key,

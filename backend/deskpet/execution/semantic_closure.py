@@ -58,7 +58,27 @@ from types import SimpleNamespace
 from typing import Any
 
 import aiosqlite
+from simple_harness import DisclosureContext, EvidenceRef, RequestId, thaw_json
+from simple_harness.contracts.messages import Message, MessageRole
+from simple_harness.providers import ProviderRequest, ProviderToolSpec
+from simple_harness.runtime.task_scope_protocol import (
+    TaskScopeMutationOutcome,
+    TaskScopeMutationPlan,
+)
 
+from deskpet.execution.evidence_ingress import MATERIAL_TOMBSTONE_STATUSES, ExecutionEvidenceIngress
+from deskpet.memory.human_memory_program import HumanMemoryProgramStore
+from deskpet.memory.human_memory_service import build_host_typed_evidence
+from deskpet.memory.writer_fence import assert_human_memory_ingress_open_tx
+from deskpet.sdk_adapters.task_scope_mutation import (
+    TASK_SCOPE_UPDATE_DESCRIPTION,
+    TASK_SCOPE_UPDATE_SCHEMA,
+    ClosureRejected,
+    _disclosure,
+)
+from deskpet.sdk_adapters.tool_authority import PROJECT_EFFECT_TOOL_NAMES
+from deskpet.task_scope.mutation_disclosure import record_closure_result_tx
+from deskpet.task_scope.projection_sources import append_projection_source_tx
 from deskpet.task_scope.protocol import canonical_hash, canonical_json
 from deskpet.task_scope.store import CanonicalTaskScopeStore, TaskScopeConflict
 
@@ -147,16 +167,12 @@ def is_material_event(event_kind: str, payload: Mapping[str, object] | None) -> 
     if event_kind in MATERIAL_HOST_EVENT_KINDS:
         return True
     if event_kind == "harness.tool_invocation":
-        from deskpet.sdk_adapters.tool_authority import PROJECT_EFFECT_TOOL_NAMES
-
         public = payload.get("public_payload") if isinstance(payload, Mapping) else None
         if not isinstance(public, Mapping):
             return False
         tool_name = public.get("tool_name")
         status = public.get("status")
         if status is not None:
-            from deskpet.execution.evidence_ingress import MATERIAL_TOMBSTONE_STATUSES
-
             # Task 2 review F-2 / Task 6: an unknown-outcome or Host-rejected
             # PROJECT_EFFECT tombstone is dirt (the file may be written); an
             # SDK-denied (``rejected``) effect never dispatched → trivial.
@@ -307,7 +323,6 @@ async def write_closure_receipt_tx(
             float(now),
         ),
     )
-    from deskpet.task_scope.projection_sources import append_projection_source_tx
 
     # STATUS projection must show `semantic_closure_pending`; bump the source.
     await append_projection_source_tx(db, task_scope_id, now=float(now))
@@ -339,7 +354,6 @@ async def write_closure_receipt(
     clock: Callable[[], float] = time.time,
     extension: Callable[[aiosqlite.Connection], Any] | None = None,
 ) -> ClosureReceipt:
-    from deskpet.memory.writer_fence import assert_human_memory_ingress_open_tx
 
     store = CanonicalTaskScopeStore(db_path)
     async with store._connection() as db:
@@ -574,10 +588,6 @@ async def closure_instruction_for_run(db_path: str | Path, sdk_run_id: str) -> A
     is always exposed).  ``None`` for unbound Runs and clean scopes.
     """
 
-    from simple_harness.contracts.messages import Message, MessageRole
-
-    from deskpet.execution.evidence_ingress import ExecutionEvidenceIngress
-
     store = CanonicalTaskScopeStore(db_path)
     ingress = ExecutionEvidenceIngress(db_path)
     async with store._connection() as db:
@@ -660,7 +670,6 @@ class ClosureFallback:
         generation: int,
         terminal_state: Any,
     ) -> ClosureSettlement:
-        from deskpet.execution.evidence_ingress import ExecutionEvidenceIngress
 
         ingress = ExecutionEvidenceIngress(self._db_path)
         state_value = str(getattr(terminal_state, "value", terminal_state)).upper()
@@ -730,14 +739,6 @@ class ClosureFallback:
         observation_body = {**observation, "staged_final_answer": answer}
 
         def build_request(row: Any) -> Any:
-            from simple_harness import RequestId
-            from simple_harness.contracts.messages import Message, MessageRole
-            from simple_harness.providers import ProviderRequest, ProviderToolSpec
-
-            from deskpet.sdk_adapters.task_scope_mutation import (
-                TASK_SCOPE_UPDATE_DESCRIPTION,
-                TASK_SCOPE_UPDATE_SCHEMA,
-            )
 
             return ProviderRequest(
                 RequestId(f"post-turn-closure-{request_hash[:24]}-{row.attempt_ordinal}"),
@@ -836,8 +837,6 @@ class ClosureFallback:
                 db, attempt_id, response=response, plan_id=plan_id
             )
             if self._request_authority is not None:
-                from deskpet.task_scope.mutation_disclosure import record_closure_result_tx
-
                 await record_closure_result_tx(
                     db,
                     db_path=self._db_path,
@@ -851,7 +850,6 @@ class ClosureFallback:
             return await pending(
                 "closure_model_declined", attempt_id=attempt_id, extension=settle_success
             )
-        from deskpet.sdk_adapters.task_scope_mutation import ClosureRejected
 
         try:
             applied = await self._service.apply_closure(
@@ -886,8 +884,6 @@ class ClosureFallback:
         provider_calls: int,
     ) -> ClosureSettlement:
         """``succeeded`` attempt without a receipt: derive from the durable decision, else pending."""
-
-        from deskpet.memory.writer_fence import assert_human_memory_ingress_open_tx
 
         async with self._store._connection() as db:
             await db.execute("BEGIN IMMEDIATE")
@@ -949,8 +945,6 @@ class ClosureFallback:
 def _closure_arguments(response: Any) -> dict[str, Any] | None:
     """Exactly one ``task_scope_update`` tool call → its arguments, else ``None``."""
 
-    from simple_harness import thaw_json
-
     calls = [
         call
         for call in tuple(getattr(response, "tool_calls", ()) or ())
@@ -978,17 +972,6 @@ async def force_close_pending(
     Called when the scope is completed / checkpointed / resumed by the Host
     while a closure is still pending.  Returns ``None`` when nothing is pending.
     """
-
-    from simple_harness import DisclosureContext, EvidenceRef
-    from simple_harness.runtime.task_scope_protocol import (
-        TaskScopeMutationOutcome,
-        TaskScopeMutationPlan,
-    )
-
-    from deskpet.memory.human_memory_program import HumanMemoryProgramStore
-    from deskpet.memory.human_memory_service import build_host_typed_evidence
-    from deskpet.memory.writer_fence import assert_human_memory_ingress_open_tx
-    from deskpet.sdk_adapters.task_scope_mutation import _disclosure
 
     store = CanonicalTaskScopeStore(db_path)
     pending = await pending_receipts(store, task_scope_id)

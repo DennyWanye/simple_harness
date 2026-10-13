@@ -20,6 +20,10 @@ from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import urlparse
 
+from simple_harness.providers import OpenAICompatibleProvider, Secret
+
+from deskpet.provider_extra_headers import install_httpx_extra_headers_hook
+
 DEEPSEEK_OFFICIAL_HOSTS = frozenset({"api.deepseek.com"})
 MODEL_ALIASES = {"deepseek-v4-flash": "deepseek-flash"}
 NO_MODEL = "未配置模型"
@@ -96,9 +100,6 @@ def build_provider(
     """``(provider, http_client)`` — the caller closes the client on shutdown."""
 
     import httpx
-    from simple_harness.providers import OpenAICompatibleProvider, Secret
-
-    from deskpet.provider_extra_headers import install_httpx_extra_headers_hook
 
     client = install_httpx_extra_headers_hook(httpx.AsyncClient())
     provider = provider_on_client(
@@ -117,8 +118,6 @@ def provider_on_client(
     reasoning_effort: str | None = None,
 ) -> Any:
     """An adapter on an existing client (the thinking-mode pools share the Host's client)."""
-
-    from simple_harness.providers import OpenAICompatibleProvider, Secret
 
     options: dict[str, Any] = {"allow_private_http": True} if allow_private_http else {}
     # SDKs that implement complete SSE assembly can keep long model calls alive.

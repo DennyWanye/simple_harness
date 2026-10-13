@@ -8,6 +8,8 @@ import uuid
 from collections.abc import Mapping
 from typing import Any
 
+from agent_orchestrator.storage.store import StoreError
+
 from .service import OrchestrationRequestError
 
 logger = logging.getLogger(__name__)
@@ -160,7 +162,6 @@ def operate_taskgraph(service: Any, verb: str, request: Mapping[str, Any]) -> di
     service._refuse_secrets(request["reason"])
     mission_id = request["mission_id"]
     service._require()._mission(mission_id)
-    from agent_orchestrator.storage.store import StoreError
 
     command_id = f"ui-click-{verb}-{uuid.uuid4().hex}"
     try:

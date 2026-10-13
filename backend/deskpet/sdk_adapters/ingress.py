@@ -21,6 +21,7 @@ from simple_harness import (
 )
 from simple_harness.contracts import ExecutionSessionId, RequestId
 from simple_harness.runtime import RunStart
+from simple_harness.tools import AuthorizationDecision
 
 from .composition import ProductSdkRuntimeStack, SdkRuntimeNotReady, SdkRuntimeReady
 
@@ -283,7 +284,6 @@ class SdkRuntimeIngress:
         if not self._accepting:
             raise SdkRuntimeNotReady("SDK Runtime ingress is not accepting signals")
         ready = self._stack.require_ready()
-        from simple_harness.tools import AuthorizationDecision
 
         normalized = str(decision).strip().lower()
         if normalized == "allow_session":

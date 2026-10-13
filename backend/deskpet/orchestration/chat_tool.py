@@ -19,6 +19,8 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from typing import Any
 
+from .service import RECOVERY_ISOLATED_NOTE, OrchestrationRequestError
+
 MISSION_START_TOOL_NAME = "mission_start"
 MAX_CRITERIA = 12
 MAX_TEXT = 4000
@@ -164,7 +166,6 @@ def start_mission(
             "任务编排当前不可用：" + str(status.get("reason") or "原因未知"),
             retryable=True,
         )
-    from .service import OrchestrationRequestError
 
     try:
         receipt = (
@@ -259,7 +260,6 @@ def mission_status(
         raise MissionStartRefused(
             "orchestration_unavailable", "任务编排服务没有启动", retryable=True
         )
-    from .service import OrchestrationRequestError
 
     try:
         detail = service.mission_detail(mission_id.strip())
@@ -332,7 +332,6 @@ def _isolation(value: Any) -> dict[str, Any] | None:
     """服务给的 ``recovery_isolated``（``{"tables": [...]}`` 或 None）→ 主对话回执：加上同一句话。"""
     if not isinstance(value, Mapping):
         return None
-    from .service import RECOVERY_ISOLATED_NOTE
 
     return {"tables": list(value.get("tables") or ()), "note": RECOVERY_ISOLATED_NOTE}
 
@@ -419,7 +418,6 @@ def amend_mission(
         raise MissionStartRefused(
             "orchestration_unavailable", "任务编排服务没有启动", retryable=True
         )
-    from .service import OrchestrationRequestError
 
     try:
         detail = service.mission_detail(mission_id.strip())
@@ -494,7 +492,6 @@ def mission_list(service_getter: Callable[[], Any], arguments: Mapping[str, Any]
         raise MissionStartRefused(
             "orchestration_unavailable", "任务编排服务没有启动", retryable=True
         )
-    from .service import OrchestrationRequestError
 
     try:
         rows = service.list_missions(limit=limit)
@@ -569,7 +566,6 @@ def update_mission_source(
         raise MissionStartRefused(
             "orchestration_unavailable", "任务编排服务没有启动", retryable=True
         )
-    from .service import OrchestrationRequestError
 
     try:
         detail = service.mission_detail(mission_id.strip())
@@ -667,7 +663,6 @@ def method_library(
         raise MissionStartRefused(
             "orchestration_unavailable", "任务编排服务没有启动", retryable=True
         )
-    from .service import OrchestrationRequestError
 
     try:
         if action == "list":

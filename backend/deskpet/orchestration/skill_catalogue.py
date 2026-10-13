@@ -32,6 +32,12 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+from simple_harness.agents.arp import catalogue as cat
+from simple_harness.agents.arp.errors import ArpError
+from simple_harness.agents.arp.pins import Pin
+from simple_harness.agents.arp.shared_catalogue import SKILL_READ_VERBS, SKILL_WRITE_VERBS
+from simple_harness.agents.arp.skills import inspect_bundle
+
 MAX_BUNDLE_BYTES = 32 * 1024 * 1024
 ACTIONS = ("SUSPEND", "RESUME", "RETIRE")
 
@@ -62,8 +68,6 @@ def _owner(service: Any) -> tuple[Any, Any]:
 
 
 def _revision(runtime: Any, pin: Any) -> tuple[Any, Any]:
-    from simple_harness.agents.arp import catalogue as cat
-    from simple_harness.agents.arp.errors import ArpError
 
     service = runtime.arp.catalogue
     try:
@@ -85,8 +89,6 @@ def _certificate(service: Any, mission_id: str, task_id: str) -> Any:
     acceptance pin the SDK verifies (None while the evaluation has not passed): the
     adopted root resolution of a content-only evaluation Mission (2026-09-29: such a
     Mission writes no acceptance row for its root task), else the task's acceptance."""
-
-    from simple_harness.agents.arp.pins import Pin
 
     with service._orchestrator.store.read_view() as connection:
         rows = (
@@ -113,7 +115,6 @@ def _certificate(service: Any, mission_id: str, task_id: str) -> Any:
 
 def _evaluation(service: Any, runtime: Any, revision: Any) -> dict[str, Any] | None:
     """The revision's latest evaluation as the page shows it."""
-    from simple_harness.agents.arp.pins import Pin
 
     lifecycle = runtime.arp.lifecycle
     binding = lifecycle.binding_for(revision)
@@ -138,7 +139,6 @@ def _evaluation(service: Any, runtime: Any, revision: Any) -> dict[str, Any] | N
 
 
 def overview(service: Any) -> dict[str, Any]:
-    from simple_harness.agents.arp.errors import ArpError
 
     view = _shared(service).overview()
     _, runtime = _owner(service)
@@ -173,8 +173,6 @@ def _goal(revision: Any) -> tuple[str, list[str]]:
 
 async def evaluate(service: Any, request: Mapping[str, Any]) -> dict[str, Any]:
     from agent_orchestrator.storage.htn_store import HtnStore
-    from simple_harness.agents.arp.errors import ArpError
-    from simple_harness.agents.arp.pins import Pin
 
     command_id = request.get("command_id")
     if not isinstance(command_id, str) or not command_id.strip():
@@ -260,8 +258,6 @@ async def evaluate(service: Any, request: Mapping[str, Any]) -> dict[str, Any]:
 
 
 async def admit(service: Any, request: Mapping[str, Any]) -> dict[str, Any]:
-    from simple_harness.agents.arp.errors import ArpError
-    from simple_harness.agents.arp.pins import Pin
 
     command_id = request.get("command_id")
     if not isinstance(command_id, str) or not command_id.strip():
@@ -304,7 +300,6 @@ async def admit(service: Any, request: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _pin(raw: Any) -> Any:
-    from simple_harness.agents.arp.pins import Pin
 
     try:
         return Pin.from_json(dict(raw))
@@ -325,9 +320,6 @@ async def install_file(service: Any, request: Mapping[str, Any]) -> dict[str, An
     if size > MAX_BUNDLE_BYTES:
         raise SkillCatalogueRefused("invalid_request", "技能包超过 32MB")
     data = path.read_bytes()
-    from simple_harness.agents.arp.errors import ArpError
-    from simple_harness.agents.arp.pins import Pin
-    from simple_harness.agents.arp.skills import inspect_bundle
 
     shared = _shared(service)
     try:
@@ -373,7 +365,6 @@ async def lifecycle(service: Any, request: Mapping[str, Any]) -> dict[str, Any]:
 
 
 async def request(service: Any, body: Mapping[str, Any]) -> dict[str, Any]:
-    from simple_harness.agents.arp.shared_catalogue import SKILL_READ_VERBS, SKILL_WRITE_VERBS
 
     verb = body.get("verb") if isinstance(body, Mapping) else None
     if verb not in SKILL_READ_VERBS | SKILL_WRITE_VERBS:

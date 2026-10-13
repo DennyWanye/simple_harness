@@ -17,6 +17,7 @@ from deskpet.execution.contracts import (
     canonical_json,
     stable_event_id,
 )
+from deskpet.harness.contracts import HostExtensionRefV1
 
 
 class RootBlockReasonV1(str, Enum):
@@ -137,7 +138,6 @@ class RunBlockReporter:
 
     @property
     def descriptor(self) -> Any:
-        from deskpet.harness.contracts import HostExtensionRefV1
 
         return HostExtensionRefV1(
             kind=self.receipt_kind,

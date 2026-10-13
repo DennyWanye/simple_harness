@@ -19,6 +19,13 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Protocol, TypeVar
 
+from agent.context_messages import (
+    ProviderAttemptOptions,
+    context_attempt_scope,
+    provider_purpose_scope,
+)
+from llm.resolution import resolve_session_provider_route
+
 log = logging.getLogger(__name__)
 
 
@@ -385,7 +392,6 @@ class SessionProviderWorkloadTargetResolver:
             raise RuntimeError(
                 f"provider workload router cannot execute:{context.workload_class.value}"
             )
-        from llm.resolution import resolve_session_provider_route
 
         route = await resolve_session_provider_route(
             str(context.session_id),
@@ -1057,11 +1063,6 @@ class ProviderWorkloadRouter:
                         injection_bound_root_id = fault.bound_root_id
                         injection_bound_correlation_id = fault.bound_correlation_id
                         raise fault.to_exception()
-                from agent.context_messages import (
-                    ProviderAttemptOptions,
-                    context_attempt_scope,
-                    provider_purpose_scope,
-                )
 
                 options = ProviderAttemptOptions(
                     purpose=workload_context.purpose,

@@ -11,11 +11,21 @@ import json
 from collections.abc import Mapping
 
 import aiosqlite
+from simple_harness import thaw_json
 
+from deskpet.execution.primary_dependencies import (
+    dependencies,
+    parse_dependencies,
+    read_run_dependencies,
+)
 from deskpet.execution.primary_history import transcript_matches
 from deskpet.execution.primary_tool_calls import GROUP_KEY as TOOL_CALLS_KEY
 from deskpet.execution.primary_tool_calls import read_assistant_tool_calls_tx
+from deskpet.execution.terminal_identity import read_primary_terminal_identity_tx
+from deskpet.memory.primary_visibility import read_evidence_pair
+from deskpet.memory.trusted_disclosure import resolve_current_disclosure
 from deskpet.sdk_adapters.causal_groups import DEFAULT_LARGE_RESULT_BYTES
+from deskpet.sdk_adapters.tools import active_product_tool_context
 from deskpet.task_scope.protocol import canonical_hash, canonical_json
 
 PREFIX = "primary-tool-page:v1:"
@@ -208,8 +218,6 @@ def project_history_group(group, *, run_id):
 
 
 async def _source_group(db, stack, run, evidence_id, envelope_hash):
-    from deskpet.execution.terminal_identity import read_primary_terminal_identity_tx
-    from deskpet.memory.primary_visibility import read_evidence_pair
 
     envelope, _ = await read_evidence_pair(
         db=db,
@@ -270,7 +278,6 @@ async def admitted_page(*, db, stack, run, sdk_run_id, start, arguments, page_by
     ``page_bytes`` 只在重放旧 Run 时被显式传成 ``LEGACY_PAGE_BYTES``；活路径
     永远用当前页大小。准入与校验完全不看它。
     """
-    from deskpet.execution.primary_dependencies import parse_dependencies
 
     if (
         not isinstance(arguments, Mapping)
@@ -412,11 +419,6 @@ class PrimaryContextPageReader:
         self.path, self.stack_getter, self.policy_factory = db_path, stack_getter, policy_factory
 
     async def __call__(self, arguments):
-        from simple_harness import thaw_json
-
-        from deskpet.execution.primary_dependencies import dependencies
-        from deskpet.memory.trusted_disclosure import resolve_current_disclosure
-        from deskpet.sdk_adapters.tools import active_product_tool_context
 
         context = active_product_tool_context()
         if context is None or context.effect_id is None:
@@ -459,7 +461,6 @@ class PrimaryContextPageReader:
                     page_effect=effect,
                     arguments=arguments,
                 )
-                from deskpet.execution.primary_dependencies import read_run_dependencies
 
                 # Includes the target's output dependencies, not merely the
                 # prefix before the target. The page must follow that source.

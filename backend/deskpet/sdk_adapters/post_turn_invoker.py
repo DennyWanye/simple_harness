@@ -40,9 +40,23 @@ from pathlib import Path
 from typing import Any, Protocol
 
 import aiosqlite
+from simple_harness import thaw_json
+from simple_harness.execution.provider_invocations import (
+    provider_response_from_json,
+    provider_response_json,
+)
+from simple_harness.providers import CancelToken
+from simple_harness.providers.errors import (
+    ProviderCancelledError,
+    ProviderError,
+    ProviderTimeoutError,
+    ProviderTransportError,
+)
 
+from deskpet.execution.closure_request_guard import ClosurePhysicalRequestRejected
 from deskpet.execution.foreground_queue import EffectBoundary, ForegroundQueueStore
 from deskpet.memory.analysis_lineage import binding_model_config_hash
+from deskpet.memory.writer_fence import assert_human_memory_ingress_open_tx
 from deskpet.task_scope.protocol import canonical_json
 
 PURPOSES: frozenset[str] = frozenset({"closure", "analysis"})
@@ -602,13 +616,6 @@ class RunBoundInvoker:
                 provider_calls=0,
             )
         self._fault("attempt-handed-off")
-        from simple_harness.providers import CancelToken
-        from simple_harness.providers.errors import (
-            ProviderCancelledError,
-            ProviderError,
-            ProviderTimeoutError,
-            ProviderTransportError,
-        )
 
         try:
             coroutine = adapter.invoke(request, cancel=CancelToken())
@@ -666,8 +673,6 @@ class RunBoundInvoker:
                 provider_calls=1,
             )
         except ProviderError as exc:
-            from deskpet.execution.closure_request_guard import ClosurePhysicalRequestRejected
-
             if purpose == "closure" and isinstance(exc, ClosurePhysicalRequestRejected):
                 reason = "closure_request_disclosure_rejected"
                 await self._settle_failed(attempt_id, unknown_class="not_sent", reason=reason)
@@ -762,7 +767,6 @@ class _Transaction:
         self._db: aiosqlite.Connection | None = None
 
     async def __aenter__(self) -> aiosqlite.Connection:
-        from deskpet.memory.writer_fence import assert_human_memory_ingress_open_tx
 
         db = await aiosqlite.connect(self._db_path)
         db.row_factory = aiosqlite.Row
@@ -791,8 +795,6 @@ DURABLE_RESULT_SCHEMA = "post-turn-durable-result/v1"
 def durable_result_json(*, response: Any, envelope_json: Mapping[str, Any] | None) -> str:
     """``result_envelope_json`` payload: the public Provider response (+ the delivery envelope)."""
 
-    from simple_harness.execution.provider_invocations import provider_response_json
-
     return canonical_json(
         {
             "schema_version": DURABLE_RESULT_SCHEMA,
@@ -818,9 +820,6 @@ def durable_response(raw: object) -> Any | None:
     response = payload.get("response")
     if not isinstance(response, Mapping):
         return None
-    from simple_harness.execution.provider_invocations import (
-        provider_response_from_json,
-    )
 
     try:
         return provider_response_from_json(response)
@@ -856,7 +855,6 @@ def _response_hash(response: Any) -> str:
 
 
 def _thaw(value: Any) -> Any:
-    from simple_harness import thaw_json
 
     return thaw_json(value)
 

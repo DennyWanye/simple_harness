@@ -138,13 +138,17 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Protocol
 
+from agent.write_scope import resolve_workspace_root
 from simple_harness import CallId, RunId
 from simple_harness.tools import ToolContext, ToolResult
 
+from deskpet.memory.human_memory_service import AppendBindingRequest
+from deskpet.sdk_adapters.context_route import local_owner_auth
 from deskpet.sdk_adapters.task_scope_mutation import write_pre_admission_audit_tx
 from deskpet.sdk_adapters.tool_authority import PROJECT_READ_TOOL_NAMES
 from deskpet.task_scope.store import TaskScopeConflict
 from deskpet.task_scope.workspace_bindings import WorkspaceBindingError
+from deskpet.tools.capabilities import canonical_hash
 from deskpet.types.task_work_context import PrimaryRunWorkContext
 
 logger = logging.getLogger(__name__)
@@ -547,8 +551,6 @@ class WorkspaceReadGate:
         self._service_factory_getter = service_factory_getter
         self._binding_append_getter = binding_append_getter
         if auth_factory is None:
-            from deskpet.sdk_adapters.context_route import local_owner_auth
-
             auth_factory = local_owner_auth
         self._auth_factory = auth_factory
         # ``(run_id, call_id) -> verified root`` handed from ``verify`` to the
@@ -701,8 +703,6 @@ class WorkspaceReadGate:
             if violation is not None:
                 projected = bound.primary_root
         else:
-            from agent.write_scope import resolve_workspace_root
-
             code = None
             projected = str(resolve_workspace_root())
         await self._audit(
@@ -772,7 +772,6 @@ class WorkspaceReadGate:
         # same effect id.  A read-triggered proposal reuses both, so the same
         # 『项目目录授权』 card appears with no new query and no new schema.
         idempotency_key = f"context-route:{context.run_id.value}:{effect_id}"
-        from deskpet.memory.human_memory_service import AppendBindingRequest
 
         service = factory.bind(self._auth_factory(), binding_append=binding_append)
         try:
@@ -910,8 +909,6 @@ class WorkspaceReadGate:
         the binding proposal this decision produced.  No path, no pattern, no
         file content ever reaches the audit trail.
         """
-
-        from deskpet.tools.capabilities import canonical_hash
 
         suffix = (
             ""

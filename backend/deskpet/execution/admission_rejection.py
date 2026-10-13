@@ -2,6 +2,7 @@
 
 import json
 
+from deskpet.execution.foreground_queue import ForegroundQueueError, _clock_value
 from deskpet.memory.trusted_disclosure import binding_token, bound_record_tx, current_record_tx
 from deskpet.memory.writer_fence import assert_human_memory_ingress_open_tx
 from deskpet.task_scope.protocol import canonical_hash, canonical_json, digest
@@ -96,7 +97,6 @@ async def read_admission_rejection_tx(db, *, turn_id, subject):
 
 async def reject_stale_candidate(store, candidate):
     """Re-prove staleness under writer lock; never settle on exception text alone."""
-    from deskpet.execution.foreground_queue import ForegroundQueueError, _clock_value
 
     async with store._connection() as db:
         await db.execute("BEGIN IMMEDIATE")

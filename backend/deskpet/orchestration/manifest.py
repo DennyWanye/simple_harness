@@ -21,6 +21,16 @@ from importlib import metadata
 from pathlib import Path
 from typing import Any
 
+import agent_orchestrator
+import simple_harness
+from agent_orchestrator.storage.schema import SCHEMA_VERSION
+
+from deskpet.sdk_adapters.sdk_candidate import (
+    SDK_VERSION,
+    SDK_WHEEL_SHA256,
+    runtime_identity_report,
+)
+
 MANIFEST_NAME = "deployment-manifest.json"
 MANIFEST_SCHEMA = "deployment-manifest-v1"
 
@@ -110,14 +120,6 @@ def _execution_schema(root: Path) -> int | None:
 
 
 def distributions() -> dict[str, Any]:
-    import agent_orchestrator
-    import simple_harness
-
-    from deskpet.sdk_adapters.sdk_candidate import (
-        SDK_VERSION,
-        SDK_WHEEL_SHA256,
-        runtime_identity_report,
-    )
 
     try:
         installed = metadata.version("simple-harness-sdk")
@@ -186,7 +188,6 @@ def build_manifest(
     sandbox: Mapping[str, Any] | None = None,
     publish: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    from agent_orchestrator.storage.schema import SCHEMA_VERSION
 
     return {
         "schema": MANIFEST_SCHEMA,

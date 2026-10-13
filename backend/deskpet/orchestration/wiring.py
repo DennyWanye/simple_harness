@@ -19,6 +19,10 @@ from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
 from typing import Any
 
+from agent_orchestrator.governance.permissions import Principal
+
+from deskpet.companion.identity import load_or_create_local_identity
+
 from .paths import orchestration_root
 from .provider import (
     NO_MODEL,
@@ -27,6 +31,7 @@ from .provider import (
     snapshot_from_registry,
 )
 from .pump import MissionChangePump
+from .runtime_profile import deepseek_thinking
 from .service import OrchestrationService
 from .settings import load_settings, response_model_aliases
 
@@ -48,9 +53,6 @@ def read_section(config_path: str | Path) -> Mapping[str, Any]:
 
 
 def _principal(user_data: Path) -> Any:
-    from agent_orchestrator.governance.permissions import Principal
-
-    from deskpet.companion.identity import load_or_create_local_identity
 
     identity = load_or_create_local_identity(user_data)
     return Principal(f"local-user:{identity.profile_id}", "本机用户")
@@ -89,7 +91,6 @@ async def activate_orchestration(
             aliases = response_model_aliases(settings)
             if aliases:
                 snapshot = dataclasses.replace(snapshot, response_model_aliases=aliases)
-            from .runtime_profile import deepseek_thinking
 
             thinking = deepseek_thinking(snapshot, settings)
             provider, client = build_provider(snapshot, thinking=thinking)

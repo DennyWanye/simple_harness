@@ -19,6 +19,9 @@ from collections.abc import Awaitable, Callable, Iterable
 from pathlib import Path
 from typing import Any
 
+from agent_orchestrator.runtime.actions import publication_overlaps_storage
+from agent_orchestrator.runtime.connectors_publish import FilePublishConnector
+
 MAX_PATH = 1024
 
 
@@ -42,8 +45,6 @@ def validate_publish_dir(raw: Any, *, protected: Iterable[Path]) -> str:
         raise PublishDirRefused("not_found", "这个目录不存在，请先创建")
     if not root.is_dir():
         raise PublishDirRefused("not_directory", "这不是一个目录")
-    from agent_orchestrator.runtime.actions import publication_overlaps_storage
-    from agent_orchestrator.runtime.connectors_publish import FilePublishConnector
 
     if publication_overlaps_storage(root, [Path(p) for p in protected]):
         raise PublishDirRefused(

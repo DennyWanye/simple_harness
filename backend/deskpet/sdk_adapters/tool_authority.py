@@ -42,7 +42,9 @@ from deskpet.permissions.runtime import (
     PreparedAuthorizationRuntime,
 )
 from deskpet.product_state.authorization_saga import AuthorizationSagaIdentity
+from deskpet.sdk_adapters.effect_gate import project_tool_execution_context
 from deskpet.sdk_adapters.run_route_state import ROUTED_TASK_STATE
+from deskpet.tool_catalog.manifest import load_tool_manifest
 from deskpet.tools.build_identity import EffectClass
 from deskpet.tools.capabilities import (
     PreparedToolCapability,
@@ -304,8 +306,6 @@ def _manifest_effect_index() -> Mapping[str, tuple[str, bool]]:
 
     global _MANIFEST_EFFECT_INDEX
     if _MANIFEST_EFFECT_INDEX is None:
-        from deskpet.tool_catalog.manifest import load_tool_manifest
-
         index: dict[str, tuple[str, bool]] = {}
         for item in load_tool_manifest().tools:
             name = str(item.get("name") or "")
@@ -418,8 +418,6 @@ class SdkRunToolAuthorityV1:
             binding_epoch=self.task_work_context.binding_version,
             capability_snapshot_ref=self.catalog_fingerprint,
         )
-
-        from deskpet.sdk_adapters.effect_gate import project_tool_execution_context
 
         return project_tool_execution_context(context)
 

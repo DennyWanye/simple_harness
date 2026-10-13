@@ -14,16 +14,36 @@ from typing import Any, TypeAlias
 
 from simple_harness import (
     ROOT_PROFILE_KEY,
+    EffectId,
+    RequestId,
     RunId,
     Runtime,
     RuntimeDriver,
     RuntimePorts,
     RuntimeProfile,
     build_runtime,
+    migrate_execution_to_v9,
+    migrate_execution_to_v10,
+    thaw_json,
+)
+from simple_harness.execution.audit import audit_hash
+from simple_harness.execution.provider_invocations import (
+    TERMINAL_PROVIDER_INVOCATION_STATES,
+    provider_invocation_id,
+    provider_request_fingerprint,
+    provider_request_from_json,
+    provider_response_from_json,
 )
 from simple_harness.execution.sqlite import Database, SqliteExecutionUnitOfWork
 from simple_harness.execution.uow import RunState
-from simple_harness.runtime import StartSnapshot
+from simple_harness.runtime import SqliteContextPort, StartSnapshot
+
+from deskpet.memory.primary_tool_causality import (
+    PrimaryToolCausalityUnavailable,
+    read_tool_causality,
+)
+from deskpet.quality.corpus_trace import read_public_trace
+from deskpet.task_scope.protocol import canonical_hash, canonical_json, redact_credential_shapes
 
 from .runtime_paths import (
     ProductRuntimePathsAdapter,
@@ -350,7 +370,6 @@ class ProductSdkRuntimeStack:
                 verify_runtime_identity(self._candidate_identity)
                 # Official schema9 migration before any execution handle opens.
                 # The retained same-directory backup is never overwritten.
-                from simple_harness import migrate_execution_to_v9, migrate_execution_to_v10
 
                 execution_path = self._paths.execution_database
                 if execution_path.exists():
@@ -602,13 +621,6 @@ class ProductSdkRuntimeStack:
         record that is not terminal, returns ``None`` and is tombstoned.
         """
 
-        from simple_harness import EffectId, RequestId, RunId, thaw_json
-        from simple_harness.execution.provider_invocations import (
-            TERMINAL_PROVIDER_INVOCATION_STATES,
-            provider_invocation_id,
-            provider_response_from_json,
-        )
-
         from deskpet.execution.evidence_ingress import (
             ProviderInvocationFact,
             ToolInvocationFact,
@@ -682,9 +694,6 @@ class ProductSdkRuntimeStack:
         adapter from) and the last assistant message of the Run context.
         """
 
-        from simple_harness import RunId
-        from simple_harness.runtime import SqliteContextPort
-
         from deskpet.execution.semantic_closure import ClosureRunFacts
 
         self.require_ready()
@@ -712,12 +721,6 @@ class ProductSdkRuntimeStack:
 
     def verify_current_input_provider_request(self, run_id, request):
         """Compare physical request with the public durable SDK reservation."""
-        from simple_harness import RequestId, thaw_json
-        from simple_harness.execution.provider_invocations import (
-            provider_invocation_id,
-            provider_request_fingerprint,
-            provider_request_from_json,
-        )
 
         self.require_ready()
         if self._uow is None:
@@ -742,7 +745,6 @@ class ProductSdkRuntimeStack:
 
     def read_provider_context_use(self, run_id: str, request_id: str):
         """Actual Harness handoff witness via the public RunClient."""
-        from simple_harness import RequestId
 
         return self.require_ready().client.read_provider_context_use(
             RunId(run_id), RequestId(request_id)
@@ -754,9 +756,6 @@ class ProductSdkRuntimeStack:
         ToolContext.request_id is the admitted Run request, not the physical
         Provider request. This bounded public scan fails on incomplete coverage.
         """
-        from simple_harness import EffectId, RequestId, thaw_json
-        from simple_harness.execution.audit import audit_hash
-        from simple_harness.execution.provider_invocations import provider_response_from_json
 
         self.require_ready()
         if self._uow is None or context.effect_id is None:
@@ -825,7 +824,6 @@ class ProductSdkRuntimeStack:
 
     def read_primary_dependency_facts(self, run_id: str, effect_ids=()):
         """Public start and effect facts, never SDK-private history SQL."""
-        from simple_harness import EffectId, thaw_json
 
         self.require_ready()
         if self._uow is None:
@@ -850,7 +848,6 @@ class ProductSdkRuntimeStack:
         Evaluation-only read surface. It neither authorizes a request nor derives
         model type choices from Host defaults. The caller owns stack lifetime.
         """
-        from deskpet.quality.corpus_trace import read_public_trace
 
         self.require_ready()
         if self._uow is None:
@@ -864,7 +861,6 @@ class ProductSdkRuntimeStack:
         layout. The admitted current user message anchors the turn suffix. Missing
         or changed anchors fail closed rather than inventing history.
         """
-        from simple_harness.runtime import SqliteContextPort
 
         self.require_ready()
         if self._uow is None:
@@ -897,12 +893,6 @@ class ProductSdkRuntimeStack:
         transcript ordinal of the assistant item. Read-only; no new grant.
         """
         import aiosqlite
-
-        from deskpet.memory.primary_tool_causality import (
-            PrimaryToolCausalityUnavailable,
-            read_tool_causality,
-        )
-        from deskpet.task_scope.protocol import canonical_hash, canonical_json
 
         self.require_ready()
         if self._uow is None:
@@ -1216,7 +1206,6 @@ __all__ = (
 
 def project_primary_transcript(messages, *, current_text):
     """Whitelist public SDK Context messages; no provider/private block promotion."""
-    from deskpet.task_scope.protocol import redact_credential_shapes
 
     def text_content(message):
         if isinstance(message.content, str):

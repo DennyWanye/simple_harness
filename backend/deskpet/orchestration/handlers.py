@@ -15,6 +15,11 @@ import logging
 from collections.abc import Awaitable, Callable, Mapping
 from typing import Any
 
+from .assurance import AssuranceRequestError
+from .projection import CONTRACT_VERBS, ERROR_WIRES, ProtocolError, project_error, project_reply
+from .service import OrchestrationRequestError
+from .taskgraph import TaskGraphRequestError
+
 logger = logging.getLogger(__name__)
 
 MESSAGE_TYPES = (
@@ -153,7 +158,6 @@ async def handle(
     action = _ACTIONS.get(msg_type)
     if action is None:
         return _error(msg_type, request_id, "invalid_request", f"unknown message {msg_type!r}")
-    from .projection import CONTRACT_VERBS, ERROR_WIRES, ProtocolError, project_error, project_reply
 
     try:
         try:
@@ -165,9 +169,6 @@ async def handle(
                 data = project_reply(msg_type, data)
             return _ok(msg_type, request_id, data)
         except Exception as error:
-            from .assurance import AssuranceRequestError
-            from .taskgraph import TaskGraphRequestError
-
             if isinstance(error, (TaskGraphRequestError, AssuranceRequestError)):
                 # 错误回执同样经投影；不合合同就整条按协议错回，不挂原回执
                 key, contract = ERROR_WIRES[
@@ -212,8 +213,6 @@ def _operation_submit(service: Any, body: Mapping[str, Any]) -> Any:
 
 def _operation_status(service: Any, body: Mapping[str, Any]) -> Any:
     if set(body) != {"intent_id"} or not _text(body, "intent_id"):
-        from .service import OrchestrationRequestError
-
         raise OrchestrationRequestError("invalid_request", "需要 intent_id")
     return service.operation_intent_status(_text(body, "intent_id"))
 
@@ -308,8 +307,6 @@ def _root_diagnostic(service: Any, body: Mapping[str, Any]) -> Any:
     # 非披露诊断不接任何字段（保证动词的 request_id 留在正文里，见 handle）：没有任务号可带，
     # 也没有可按名字查的东西
     if set(body) - {"request_id"}:
-        from .service import OrchestrationRequestError
-
         raise OrchestrationRequestError("invalid_request", "根诊断不接受任何字段")
     return service.assurance_root_diagnostic()
 

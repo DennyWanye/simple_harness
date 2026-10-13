@@ -17,6 +17,12 @@ import logging
 from collections.abc import Mapping
 from typing import Any
 
+from agent_orchestrator.api.assurance import AssuranceReadError
+from agent_orchestrator.api.facade import FacadeError
+
+from deskpet.sdk_adapters.sdk_candidate import SDK_VERSION, SDK_WHEEL_SHA256
+
+from .manifest import _host_commit, _host_dirty
 from .service import OrchestrationRequestError
 
 logger = logging.getLogger(__name__)
@@ -39,9 +45,6 @@ def host_fingerprint() -> str:
     Host processes whose code or wheel differ never share a fingerprint even
     when their version strings match (plan §13.2).
     """
-    from deskpet.sdk_adapters.sdk_candidate import SDK_VERSION, SDK_WHEEL_SHA256
-
-    from .manifest import _host_commit, _host_dirty
 
     body = {
         "schema": "host-assurance-fingerprint-v1",
@@ -62,7 +65,6 @@ def _invalid(message: str = "Assurance 请求的字段或版本无效") -> None:
 def quarantined_read(request: Mapping[str, Any]) -> AssuranceRequestError:
     """隔离只读分支（原计划 §10.1 / §10.3，第 2 批 A40）：根隔离时三个读动词一律答 SDK 的
     ``ROOT_QUARANTINED``（host-error-v1），不看对象存不存在、不披露任何正文。"""
-    from agent_orchestrator.api.assurance import AssuranceReadError
 
     request_id = request.get("request_id") if isinstance(request, Mapping) else None
     error = AssuranceReadError(
@@ -91,7 +93,6 @@ def read_assurance(service: Any, verb: str, request: Mapping[str, Any]) -> dict[
         raise OrchestrationRequestError(
             "assurance_unavailable", "当前 SDK 尚未安装 Assurance 读取接口"
         )
-    from agent_orchestrator.api.facade import FacadeError
 
     try:
         return reader(dict(request))

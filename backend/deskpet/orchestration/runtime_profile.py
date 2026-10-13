@@ -19,7 +19,15 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+from agent_orchestrator.deployment.native_pools import pool_options
+from agent_orchestrator.runtime.deepseek_meter import (
+    CertifiedDeepSeekCounter,
+    RelayDeepSeekCounter,
+    RelayToolMargin,
+)
+
 from .provider import DEEPSEEK_OFFICIAL_HOSTS, ProviderSnapshot
+from .settings import compatible_hosts
 
 TOKENIZER_PATH_ENV = "DESKPET_ORCH_TOKENIZER_PATH"
 
@@ -52,8 +60,6 @@ def relay_tool_margin(host: str, state_dir: Path | None) -> Any:
     """The learned tool-preamble margin of one relay host, shared by every pool and counter
     of this process and persisted under ``state_dir`` (it only ever grows)."""
 
-    from agent_orchestrator.runtime.deepseek_meter import RelayToolMargin
-
     key = host.lower()
     margin = _RELAY_MARGINS.get(key)
     if margin is None:
@@ -84,14 +90,12 @@ def deepseek_counter_for(
 
     if snapshot is None or snapshot.requested_model not in DEEPSEEK_COUNTER_MODELS:
         return None
-    from .settings import compatible_hosts
 
     host = urlparse(snapshot.base_url).hostname
     if host not in DEEPSEEK_OFFICIAL_HOSTS and (host or "").lower() not in compatible_hosts(
         settings
     ):
         return None
-    from agent_orchestrator.runtime.deepseek_meter import CertifiedDeepSeekCounter
 
     path = tokenizer_path()
     if path is None:
@@ -101,7 +105,6 @@ def deepseek_counter_for(
         return CertifiedDeepSeekCounter(
             path, model=snapshot.requested_model, thinking=thinking, reasoning_effort=effort
         )
-    from agent_orchestrator.runtime.deepseek_meter import RelayDeepSeekCounter
 
     return RelayDeepSeekCounter(
         path,
@@ -148,8 +151,6 @@ def source_runtime_options(
     trusted test composition's ``native_test_counter`` (tests and fixture scenarios).
     Any other model gets no pool at all; the service reports ``ONLY_DEEPSEEK_REASON``.
     """
-
-    from agent_orchestrator.deployment.native_pools import pool_options
 
     state_dir = getattr(config, "evidence_root", None)
     counter = deepseek_counter_for(snapshot, settings, state_dir=state_dir)

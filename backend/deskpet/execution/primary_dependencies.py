@@ -18,10 +18,17 @@ from simple_harness import (
     DisclosureSource,
     DisclosureTrust,
     IntendedAudience,
+    thaw_json,
 )
+from simple_harness.execution.context_authority import ContextRouteReceipt
 from simple_harness.providers import ProviderRequestRejectedError
+from simple_harness.runtime.task_scope_protocol import TaskScopeRoute
 
-from deskpet.task_scope.protocol import canonical_json, digest, identifier
+from deskpet.memory.current_input_source import CurrentInputSourceError
+from deskpet.memory.current_input_visibility import claim_stamp, same_physical_claim
+from deskpet.memory.trusted_disclosure import resolve_current_disclosure
+from deskpet.task_scope.protocol import canonical_hash, canonical_json, digest, identifier
+from deskpet.tools.context_page_in_tools import PRIMARY_PAGE_PUBLIC_MESSAGE
 
 _REASON_CODE = re.compile(r"[a-z][a-z0-9_]{0,63}\Z")
 
@@ -60,7 +67,6 @@ _GENERIC_REJECTION_REASON = "primary_dependencies_rejected"
 
 def rejection_reason(exc):
     """Stable, payload-free reason for the redacted rejection; never a cause dump."""
-    from deskpet.memory.current_input_source import CurrentInputSourceError
 
     if isinstance(exc, CurrentInputSourceError):
         # ``code`` is always ``"host_current_input_" + <literal>`` built in code.
@@ -200,7 +206,6 @@ async def read_run_dependencies(
         # The producer need not itself be context_route (e.g. a successful
         # task_scope_update). Use the real append-only primary effect order,
         # never the position of an unrelated subset of route receipts.
-        from deskpet.task_scope.protocol import canonical_hash
 
         cursor = await db.execute(
             "SELECT * FROM primary_effect_identities WHERE sdk_run_id=? AND effect_id=?",
@@ -312,10 +317,6 @@ async def read_run_dependencies(
         recall.extend(scope_proof["recall"])
         short.extend(scope_proof.get("short_horizon", ()))
         drafts.extend(scope_proof.get("procedure_drafts", ()))
-
-    from simple_harness import thaw_json
-    from simple_harness.execution.context_authority import ContextRouteReceipt
-    from simple_harness.runtime.task_scope_protocol import TaskScopeRoute
 
     for raw, origin, ordinal in decisions:
         if origin == "context_tool":
@@ -435,8 +436,6 @@ async def read_run_dependencies(
     if len(searches) > 256:
         raise ValueError("scope_disclosure_limit")
     for row in searches:
-        from deskpet.task_scope.protocol import canonical_hash
-
         identity = dict(
             host_run_id=run["host_run_id"],
             sdk_run_id=sdk_run_id,
@@ -496,7 +495,6 @@ async def read_run_dependencies(
                 # 事件 AF：公共消息现在是「固定前缀 + 可执行的下一步」。前缀逐字
                 # 不变，所以升级前只有前缀本身的记录照样通过；改成前缀判定只是
                 # 允许同一条拒绝多讲一句该拿什么 offset。
-                from deskpet.tools.context_page_in_tools import PRIMARY_PAGE_PUBLIC_MESSAGE
 
                 if not str(fact.result.public_message or "").startswith(
                     PRIMARY_PAGE_PUBLIC_MESSAGE
@@ -671,8 +669,6 @@ def append_typed_fragment_dependencies(
     if item["item_id"] != fragment["ref"]:
         raise ValueError("primary_dependencies_item_mismatch")
     if fragment.get("lane") == "short_horizon_typed":
-        from deskpet.task_scope.protocol import canonical_hash
-
         payload = fragment.get("payload")
         if (
             not isinstance(payload, Mapping)
@@ -697,7 +693,6 @@ async def check_runtime_dependencies(
     *, db_path, stack, sdk_run_id, request, policy_factory, typed_use_authority=None
 ):
     """Guard strictly before delegate invocation; typed definite failure only here."""
-    from deskpet.memory.trusted_disclosure import resolve_current_disclosure
 
     try:
         async with aiosqlite.connect(db_path) as db:
@@ -733,8 +728,6 @@ async def check_runtime_dependencies(
             )
             original_input_claim = None
             if ":input-v1:" in disclosure.authority_ref:
-                from deskpet.memory.current_input_visibility import claim_stamp
-
                 # ``CLAIMED`` is the admitted hand-off state for this very
                 # request (the ``SDK_START`` boundary), not a pre-claim read.
                 original_input_claim = await claim_stamp(db_path, run["host_run_id"], sdk_run_id)
@@ -758,8 +751,6 @@ async def check_runtime_dependencies(
         if current != disclosure:
             raise ValueError("primary_disclosure_changed_during_check")
         if original_input_claim is not None:
-            from deskpet.memory.current_input_visibility import same_physical_claim
-
             # G1->G2 still rejects rather than substitutes; the sole tolerated
             # movement is the Host recording the start of THIS hand-off.
             if not same_physical_claim(

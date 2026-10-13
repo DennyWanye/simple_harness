@@ -21,7 +21,19 @@ from simple_harness import (
 from simple_harness.execution.provider_invocations import provider_request_json
 from simple_harness.providers import ProviderRequestRejectedError
 
+from deskpet.execution.evidence_ingress import ExecutionEvidenceIngress
+from deskpet.execution.foreground_queue import _EFFECT_BOUNDARY_ALLOWED_STATES, EffectBoundary
 from deskpet.execution.primary_dependencies import dependencies, read_run_dependencies
+from deskpet.execution.semantic_closure import (
+    _MAX_ANSWER_BYTES,
+    _scope_observation_tx,
+    closure_plan_id,
+    closure_request_hash,
+    dirty_state_tx,
+    evidence_set_key,
+    message_hash,
+)
+from deskpet.memory.human_memory_program import HumanMemoryProgramStore
 from deskpet.memory.primary_visibility import read_evidence_pair
 from deskpet.memory.trusted_disclosure import (
     binding_token,
@@ -29,7 +41,10 @@ from deskpet.memory.trusted_disclosure import (
     resolve_current_disclosure,
 )
 from deskpet.sdk_adapters.run_bindings import SdkRunBindingV1
+from deskpet.task_scope.disclosure import render_scope_disclosure
+from deskpet.task_scope.projections import ProjectionIntegrityError
 from deskpet.task_scope.protocol import canonical_hash
+from deskpet.task_scope.search import TaskScopeSearchError, TaskScopeSearchStore
 
 POLICY = "host-closure-attempt-input/v1"
 SAFE_PENDING_REASONS = frozenset(
@@ -86,11 +101,6 @@ class ClosureRequestAuthority:
 
     async def host_snapshot_tx(self, db, identity):
         """Only Host reads; usable inside the existing reservation write TX."""
-        from deskpet.execution.foreground_queue import (
-            _EFFECT_BOUNDARY_ALLOWED_STATES,
-            EffectBoundary,
-        )
-        from deskpet.execution.semantic_closure import _scope_observation_tx, dirty_state_tx
 
         found = await rows(
             db,
@@ -117,7 +127,6 @@ class ClosureRequestAuthority:
             raise ClosureSourceIncomplete("closure_run_not_current")
         # Heartbeat renewal is allowed; owner/generation/state remain frozen.
         row.pop("lease_expires_at")
-        from deskpet.execution.evidence_ingress import ExecutionEvidenceIngress
 
         scope = await ExecutionEvidenceIngress(self.path).resolve_run_scope_tx(
             db, identity["sdk_run_id"]
@@ -223,9 +232,6 @@ class ClosureRequestAuthority:
         binding_record,
         materialize,
     ):
-        from deskpet.execution.semantic_closure import _MAX_ANSWER_BYTES
-        from deskpet.task_scope.disclosure import render_scope_disclosure
-        from deskpet.task_scope.search import TaskScopeSearchStore
 
         binding = SdkRunBindingV1.from_record(binding_record)
         if binding.run_id != sdk_run_id:
@@ -380,8 +386,6 @@ class ClosureRequestAuthority:
                     )
                 )
         # Only existing authoritative field projection can explain scope prose.
-        from deskpet.task_scope.projections import ProjectionIntegrityError
-        from deskpet.task_scope.search import TaskScopeSearchError
 
         try:
             # Initial preparation may materialize the existing deterministic
@@ -460,7 +464,6 @@ class ClosureRequestAuthority:
 
     async def bind_attempt(self, prepared, row, request, *, db):
         """Same reservation TX; no public SDK/Memory awaits or own commit."""
-        from deskpet.memory.human_memory_program import HumanMemoryProgramStore
 
         if await self.host_snapshot_tx(db, prepared["identity"]) != prepared["host"]:
             raise ClosureSourceIncomplete("closure_reservation_changed")
@@ -540,12 +543,6 @@ class ClosurePhysicalRequestGuard:
         self.authority, self.binding = authority, binding
 
     async def _carrier(self, actual):
-        from deskpet.execution.semantic_closure import (
-            closure_plan_id,
-            closure_request_hash,
-            evidence_set_key,
-            message_hash,
-        )
 
         a = self.authority
         async with a.reader() as db:

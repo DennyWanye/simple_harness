@@ -20,6 +20,18 @@ import json
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
+from agent_orchestrator.assurance.contracts import ContractViolation, validate
+from agent_orchestrator.contracts.models import ContractError
+from agent_orchestrator.graph.notification_contracts import TaskGraphErrorV1
+from agent_orchestrator.graph.structural_diff import TaskGraphDiffV1
+from agent_orchestrator.graph.view_contracts import (
+    TaskGraphConvergenceViewV2,
+    TaskGraphExecutionDetailV1,
+    TaskGraphExecutionViewV1,
+    TaskGraphExplanationV1,
+    TaskGraphViewV1,
+)
+
 MISSION_FIELDS = (
     "id",
     "goal",
@@ -615,15 +627,6 @@ class ProtocolError(Exception):
 
 
 def _taskgraph_codec(contract: str) -> Any:
-    from agent_orchestrator.graph.notification_contracts import TaskGraphErrorV1
-    from agent_orchestrator.graph.structural_diff import TaskGraphDiffV1
-    from agent_orchestrator.graph.view_contracts import (
-        TaskGraphConvergenceViewV2,
-        TaskGraphExecutionDetailV1,
-        TaskGraphExecutionViewV1,
-        TaskGraphExplanationV1,
-        TaskGraphViewV1,
-    )
 
     return {
         "taskgraph-execution-view-v1": TaskGraphExecutionViewV1,
@@ -638,15 +641,12 @@ def _taskgraph_codec(contract: str) -> Any:
 
 def _through_contract(verb: str, contract: str, body: Any) -> dict[str, Any]:
     if contract.startswith("host-"):
-        from agent_orchestrator.assurance.contracts import ContractViolation, validate
-
         try:
             validate(contract, body)
             # 合同已逐字段核过（additionalProperties: false），这里只断开与 SDK 对象的引用
             return json.loads(json.dumps(body, ensure_ascii=False))
         except (ContractViolation, TypeError, ValueError) as error:
             raise ProtocolError(verb, contract, str(error)) from error
-    from agent_orchestrator.contracts.models import ContractError
 
     try:
         return _taskgraph_codec(contract).from_json(body).to_json()

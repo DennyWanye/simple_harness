@@ -24,8 +24,15 @@ from typing import TYPE_CHECKING
 
 import aiosqlite
 
+from deskpet.memory.analysis_lineage import analysis_lineage_payload
+from deskpet.memory.current_input_source import build_input_use, validate_input_use
+from deskpet.memory.human_memory_program import HumanMemoryProgramStore
 from deskpet.memory.recovery_work_items import is_human_memory_work_item_parked_tx
-from deskpet.memory.writer_fence import assert_human_memory_ingress_open_tx, human_memory_connection
+from deskpet.memory.writer_fence import (
+    assert_human_memory_ingress_open_tx,
+    human_memory_connection,
+    require_authenticated_host_snapshot,
+)
 from deskpet.task_scope.protocol import (
     canonical_hash,
     canonical_json,
@@ -447,12 +454,6 @@ class ForegroundQueueStore:
                     raise ForegroundQueueError("foreground_turn_idempotency_conflict")
                 input_use = None
                 if input_declaration is not None:
-                    from deskpet.memory.current_input_source import (
-                        build_input_use,
-                        validate_input_use,
-                    )
-                    from deskpet.memory.writer_fence import require_authenticated_host_snapshot
-
                     require_authenticated_host_snapshot(input_auth)
                     current = await current_record_tx(db, subject)
                     if (
@@ -517,8 +518,6 @@ class ForegroundQueueStore:
                     ):
                         raise ForegroundQueueError("foreground_turn_idempotency_conflict")
                     if admitted_evidence_pair is not None:
-                        from deskpet.memory.human_memory_program import HumanMemoryProgramStore
-
                         # Even a replay must validate the complete supplied pair;
                         # an existing turn cannot launder a forged S1 receipt.
                         await HumanMemoryProgramStore(self._db_path).append_evidence_tx(
@@ -531,8 +530,6 @@ class ForegroundQueueStore:
                     await db.commit()
                     return self._enqueue_receipt(existing)
                 if admitted_evidence_pair is not None:
-                    from deskpet.memory.human_memory_program import HumanMemoryProgramStore
-
                     # Only a real insertion in THIS transaction can establish
                     # atomic source order. Already admitted evidence stays legacy.
                     prior_source = await self._fetchone(
@@ -2441,8 +2438,6 @@ class ForegroundQueueStore:
         ``run_binding is None`` requires ``dead_letter_reason`` (Task 6): the row is
         written as ``dead_letter`` right away with a ``binding_missing`` lineage.
         """
-
-        from deskpet.memory.analysis_lineage import analysis_lineage_payload
 
         turn = await self._fetchone(
             db,

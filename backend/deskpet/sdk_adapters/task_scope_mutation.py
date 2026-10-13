@@ -48,7 +48,25 @@ from pathlib import Path
 from typing import Any
 
 import aiosqlite
+from simple_harness import (
+    DeliveryRecipient,
+    DisclosureContext,
+    DisclosureGeneration,
+    DisclosurePurpose,
+    DisclosureReasonCode,
+    DisclosureSource,
+    DisclosureTrust,
+    EvidenceRef,
+    IntendedAudience,
+)
+from simple_harness.runtime.task_scope_protocol import (
+    TaskScopeMutationOperation,
+    TaskScopeMutationOutcome,
+    TaskScopeMutationPlan,
+)
+from simple_harness.tools import ToolResult
 
+from deskpet.execution.evidence_ingress import ExecutionEvidenceIngress
 from deskpet.task_scope.protocol import (
     TaskScopeProtocolError,
     canonical_hash,
@@ -298,7 +316,6 @@ class TaskScopeUpdateService:
     # -- Tool path ---------------------------------------------------------
 
     async def handle_task_scope_update(self, arguments: Mapping[str, Any]) -> Any:
-        from simple_harness.tools import ToolResult
 
         context = self._tool_context_getter()
         if context is None:
@@ -374,8 +391,6 @@ class TaskScopeUpdateService:
     async def _admission_scope(self, run_id: str) -> TaskScopeUpdateService._Scope:
         """Admission scope of the Run; standalone route → ``task_scope_update_scope_unbound``."""
 
-        from deskpet.execution.evidence_ingress import ExecutionEvidenceIngress
-
         route = None
         if self._route_ledger is not None:
             route = await self._route_ledger.latest_route_decision_for_run(run_id)
@@ -444,13 +459,6 @@ class TaskScopeUpdateService:
         Raises :class:`ClosureRejected` for every stable rejection (the Tool
         path turns it into ``ToolResult``; the fallback records it as pending).
         """
-
-        from simple_harness import DisclosureContext, EvidenceRef
-        from simple_harness.runtime.task_scope_protocol import (
-            TaskScopeMutationOperation,
-            TaskScopeMutationOutcome,
-            TaskScopeMutationPlan,
-        )
 
         from deskpet.execution.semantic_closure import (
             dirty_state_tx,
@@ -842,15 +850,6 @@ def _refs_outside_scope_disclosure(admissible: _AdmissibleRefs) -> dict[str, Any
 
 
 def _disclosure(cls: Any, run_id: str, subject: str) -> Any:
-    from simple_harness import (
-        DeliveryRecipient,
-        DisclosureGeneration,
-        DisclosurePurpose,
-        DisclosureReasonCode,
-        DisclosureSource,
-        DisclosureTrust,
-        IntendedAudience,
-    )
 
     return cls(
         run_id=run_id,

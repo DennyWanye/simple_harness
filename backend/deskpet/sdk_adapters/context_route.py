@@ -38,6 +38,15 @@ from typing import Any
 from simple_harness.execution.context_authority import ContextRouteReceipt
 from simple_harness.runtime.task_scope_protocol import TaskScopeRoute
 
+from deskpet.memory.current_input_visibility import LIVE_CLAIM_PLACEHOLDERS, LIVE_CLAIM_STATES
+from deskpet.memory.human_memory_service import (
+    AppendBindingRequest,
+    AuthenticatedHostSnapshot,
+    CreateTaskScopeRequest,
+    DecideManualBindingRequest,
+    OpenTaskScopeRequest,
+    SearchTaskScopesRequest,
+)
 from deskpet.sdk_adapters.context_authority import (
     ContextRouteLedgerStore,
     canonical_sha256,
@@ -47,6 +56,7 @@ from deskpet.sdk_adapters.context_authority import (
 # ``refs_outside_scope`` disclosure — the model must read the same key whether
 # it learns the id from the accepted route or from a rejection.
 from deskpet.sdk_adapters.task_scope_mutation import CURRENT_TURN_EVIDENCE_REF_KEY
+from deskpet.sdk_adapters.workspace_continuation import resolve_workspace_continuation
 
 ROUTES = (
     "direct_standalone",
@@ -166,11 +176,6 @@ async def read_current_turn_text(db_path: Any, sdk_run_id: str) -> str:
 
     import aiosqlite
 
-    from deskpet.memory.current_input_visibility import (
-        LIVE_CLAIM_PLACEHOLDERS,
-        LIVE_CLAIM_STATES,
-    )
-
     async with aiosqlite.connect(f"file:{db_path}?mode=ro", uri=True) as db:
         db.row_factory = aiosqlite.Row
         rows = await (
@@ -268,8 +273,6 @@ def _conflict_digest(notice: Mapping[str, Any]) -> dict[str, Any]:
 
 def local_owner_auth() -> Any:
     """The single authenticated local owner (main.py control-channel template)."""
-
-    from deskpet.memory.human_memory_service import AuthenticatedHostSnapshot
 
     return AuthenticatedHostSnapshot(
         subject="deskpet-local-owner-v1",
@@ -836,7 +839,6 @@ class ContextRouteToolService:
                 "the candidate's source_hash exactly (64 lowercase hex).",
             )
         service = self._bind_service()
-        from deskpet.memory.human_memory_service import OpenTaskScopeRequest
 
         opened = await service.open_task_scope(
             OpenTaskScopeRequest(
@@ -916,11 +918,6 @@ class ContextRouteToolService:
                 contested=contested,
             )
         service = self._bind_service(binding_append=self._binding_append_getter())
-        from deskpet.memory.human_memory_service import (
-            AppendBindingRequest,
-            CreateTaskScopeRequest,
-            DecideManualBindingRequest,
-        )
 
         continuation = None
         if proposal.get("reuse_workspace_of") is not None:
@@ -936,7 +933,6 @@ class ContextRouteToolService:
                     contested=contested,
                     message=_WORKSPACE_REUSE_NEW_RUN,
                 )
-            from deskpet.sdk_adapters.workspace_continuation import resolve_workspace_continuation
 
             continuation = await resolve_workspace_continuation(
                 service=service,
@@ -1059,7 +1055,6 @@ class ContextRouteToolService:
             run_id, _, effect_id, _ = self._identity()
         except _CompositionUnavailable as exc:
             return _error(exc.code)
-        from deskpet.memory.human_memory_service import SearchTaskScopesRequest
 
         raw_max = arguments.get("max_candidates")
         try:
@@ -1075,7 +1070,6 @@ class ContextRouteToolService:
         except Exception as exc:  # noqa: BLE001 - stable fail-closed surface
             code = str(getattr(exc, "code", "") or "task_scope_search_failed")
             return _error(code)
-        from deskpet.memory.human_memory_service import OpenTaskScopeRequest
 
         if self._scope_disclosure_reader is None:
             return _error("scope_disclosure_reader_missing")

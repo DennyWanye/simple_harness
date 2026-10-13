@@ -30,7 +30,23 @@ from simple_harness import (
     SanitizedEvidenceReceipt,
 )
 
+from deskpet.execution.foreground_queue import ForegroundQueueStore
+from deskpet.execution.primary_tool_calls import (
+    GROUP_KEY,
+    read_assistant_tool_calls_tx,
+    write_assistant_tool_calls_tx,
+)
+from deskpet.execution.terminal_identity import read_primary_terminal_identity_tx
 from deskpet.memory.human_memory_program import HumanMemoryProgramStore
+from deskpet.memory.primary_message_v2 import representable
+from deskpet.memory.primary_message_v3 import CONTRACT, read_scope_sources_tx
+from deskpet.memory.primary_visibility import (
+    SOURCE_UNADMISSIBLE,
+    PrimaryVisibilityError,
+    assert_source_admissible,
+    inline_evidence_limit,
+    read_evidence_pair,
+)
 from deskpet.memory.writer_fence import assert_human_memory_ingress_open_tx
 from deskpet.task_scope.protocol import (
     canonical_hash,
@@ -116,8 +132,6 @@ def bound_terminal_payload(payload: dict):
     terminal transaction.
     """
 
-    from deskpet.memory.primary_visibility import inline_evidence_limit
-
     limit = inline_evidence_limit()
     messages = payload.get("messages")
     if limit is None or not isinstance(messages, list):
@@ -196,12 +210,6 @@ def _warn_if_unadmissible(sdk_run_id: str, envelope, receipt) -> None:
     Identifiers, a stable reason and byte counts only — never transcript
     content.
     """
-
-    from deskpet.memory.primary_visibility import (
-        SOURCE_UNADMISSIBLE,
-        PrimaryVisibilityError,
-        assert_source_admissible,
-    )
 
     try:
         assert_source_admissible(envelope, receipt)
@@ -326,7 +334,6 @@ async def record_terminal_observation(
     occurrence_sources=None,
     assistant_tool_calls=None,
 ):
-    from deskpet.execution.foreground_queue import ForegroundQueueStore
 
     queue = ForegroundQueueStore(db_path)
     async with aiosqlite.connect(db_path) as db:
@@ -392,7 +399,6 @@ async def record_terminal_observation(
         }
         if occurrence_sources is not None:
             payload["prospective_source_dependencies"] = occurrence_sources
-        from deskpet.memory.primary_message_v2 import representable
 
         if terminal.value == "COMPLETED" and representable(messages, tool_causal_sources):
             payload.update(
@@ -401,8 +407,6 @@ async def record_terminal_observation(
             )
             cursor = await db.execute("PRAGMA user_version")
             if (await cursor.fetchone())[0] in (53, 54, 55):
-                from deskpet.memory.primary_message_v3 import CONTRACT, read_scope_sources_tx
-
                 scopes = await read_scope_sources_tx(
                     db, subject=subject, sdk_run_id=sdk_run_id, facts=tool_causal_sources
                 )
@@ -448,8 +452,6 @@ async def record_terminal_observation(
         # the existing-observation branch never backfills (old archives render
         # without arguments, exactly as before).
         if assistant_tool_calls and terminal.value == "COMPLETED":
-            from deskpet.execution.primary_tool_calls import write_assistant_tool_calls_tx
-
             await write_assistant_tool_calls_tx(
                 db,
                 host_run_id=host_run_id,
@@ -503,8 +505,6 @@ class PrimaryHistoryStore:
             await cursor.close()
             result = []
             for run in reversed(rows):
-                from deskpet.execution.terminal_identity import read_primary_terminal_identity_tx
-
                 identity = await read_primary_terminal_identity_tx(
                     db,
                     subject=subject,
@@ -586,10 +586,6 @@ class PrimaryHistoryStore:
                 # F-K1: join the Host side record of assistant tool calls. The
                 # key is present only when rows exist, so a group without tool
                 # calls (and every pre-v55 archive) keeps its exact prior shape.
-                from deskpet.execution.primary_tool_calls import (
-                    GROUP_KEY,
-                    read_assistant_tool_calls_tx,
-                )
 
                 calls = await read_assistant_tool_calls_tx(
                     db,
@@ -621,7 +617,6 @@ class PrimaryHistoryStore:
                 evidence_ids=roots,
                 disclosure_context=disclosure_context,
             )
-            from deskpet.memory.primary_visibility import read_evidence_pair
 
             filtered = []
             by_turn = {r["turn_id"]: r for r in rows}
