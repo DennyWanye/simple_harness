@@ -8,9 +8,8 @@ from unittest.mock import AsyncMock
 
 import main
 import pytest
-from host import sdk_recovery, sdk_services
+from host import sdk_activation, sdk_recovery, sdk_runtime_stack, sdk_services
 from host.state import host_state
-from host import sdk_runtime_stack
 
 
 class _ProductionProviderRegistry:
@@ -106,10 +105,10 @@ def test_skill_install_verifier_binds_only_after_sdk_runtime_is_ready():
     import inspect
 
     capability_bootstrap = inspect.getsource(main._initialize_capability_runtime)
-    sdk_activation = inspect.getsource(main._activate_product_sdk_runtime)
+    activation_source = inspect.getsource(sdk_activation._activate_product_sdk_runtime)
 
     assert "skill_install_runtime_verifier.bind(" not in capability_bootstrap
-    assert "skill_install_runtime_verifier.bind(skill_install_verification)" in sdk_activation
+    assert "skill_install_runtime_verifier.bind(skill_install_verification)" in activation_source
 
 
 # 2026-09-10 removed with the Memory SDK: test_real_product_sdk_production_composition_starts

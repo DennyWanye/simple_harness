@@ -64,6 +64,10 @@ def main() -> int:
         if s != before:
             p.write_text(s, encoding="utf-8")
             print(f"改写 {f}")
+            # 测试里若有与模块同名的局部变量，会遮住刚导入的模块（2026-10-13 教训）
+            for node in ast.walk(ast.parse(s)):
+                if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store) and node.id == a.module:
+                    print(f"  警告 {f}:{node.lineno} 局部变量与模块同名：{a.module}")
     return 0
 
 
