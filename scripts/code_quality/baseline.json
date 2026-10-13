@@ -37,7 +37,6 @@
   "backend/deskpet/workflows/effects.py:3090",
   "backend/deskpet/workflows/store/checkpointer.py:3216",
   "backend/deskpet/workflows/store/execution_uow.py:14448",
-  "backend/main.py:17311",
   "sdk/simple-harness-sdk/src/agent_orchestrator/contracts/htn.py:3465",
   "sdk/simple-harness-sdk/src/agent_orchestrator/orchestrator/commit_service.py:4074",
   "sdk/simple-harness-sdk/src/agent_orchestrator/orchestrator/event_handler.py:12940",
@@ -158,7 +157,7 @@
   "sdk/simple-harness-sdk/src/simple_harness/workflows/durable_task/nodes.py:tool_execution_handler:320"
  ],
  "funcs_over_150": 361,
- "inner_imports": 3826,
+ "inner_imports": 3818,
  "except_broad": 1837,
  "except_broad_silent": 316,
  "backend_imports_sdk_internal": 0,
@@ -263,13 +262,13 @@
  ],
  "print_calls": 626,
  "sys_path_hacks": 26,
- "global_stmts": 81,
- "codename_comment_lines": 424,
+ "global_stmts": 55,
+ "codename_comment_lines": 407,
  "py_lines": 652286,
- "main_py_lines": 17311,
+ "main_py_lines": 289,
  "ts_explicit_any": 62,
  "ts_inline_styles": 850,
- "ruff_backend_total": 2806,
+ "ruff_backend_total": 2659,
  "ruff_backend_by_rule": {
   "E501": 3993,
   "UP045": 590,
@@ -351,8 +350,8 @@
   "SIM211": 1,
   "C413": 1
  },
- "complexity_over_15_backend": 259,
- "complexity_over_25_backend": 68,
+ "complexity_over_15_backend": 254,
+ "complexity_over_25_backend": 66,
  "ruff_sdk_total": 1092,
  "ruff_sdk_by_rule": {
   "E501": 3426,
@@ -487,5 +486,5 @@
    "reason": "阶段 2.27：2654 行的生命周期拆成 14 个步骤函数；其中监督装配是单条 292 行的 if，整体搬出后为 298 行（>150），再拆要动其内部结构，归长函数阶段。原 1 个超长函数变为 2 个（1434、298），净改善。"
   }
  ],
- "legacy_lines": 2130
+ "legacy_lines": 2127
 }
