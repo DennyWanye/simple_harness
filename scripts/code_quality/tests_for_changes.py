@@ -40,6 +40,9 @@ def main() -> int:
     if not mods:
         return 0
     pats = [re.compile(rf"(?<![\w.]){re.escape(m)}(?![\w])") for m in mods]
+    # host 包与主入口经 main 被大量测试间接使用：改到它们时，引用 main 或 host 的测试都算相关
+    if any(m == "main" or m.startswith("host.") for m in mods):
+        pats.append(re.compile(r"^\s*(import main\b|from main import|from host[ .]|import host\b)|import main as", re.M))
     out = []
     for t in sorted((root / "tests").rglob("test_*.py")):
         text = t.read_text(encoding="utf-8", errors="replace")

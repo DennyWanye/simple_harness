@@ -114,7 +114,11 @@ async def test_actual_main_factory_starts_and_terminal_wakes_lane(tmp_path):
         if isinstance(n, ast.AsyncFunctionDef) and n.name == "_activate_terminal_operation_audit"
     )
     services = {}
+    from host import human_memory_ports
+
+    # 以函数所在模块的真实全局为底（模块级导入照常可用），再替换要隔离的依赖
     namespace = {
+        **vars(human_memory_ports),
         "service_context": SimpleNamespace(get=services.get, register=services.__setitem__),
         "_state_db_path": tmp_path / "state.db",
         "host_state": SimpleNamespace(sdk_runtime_stack=None),

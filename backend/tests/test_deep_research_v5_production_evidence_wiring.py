@@ -400,7 +400,8 @@ def test_main_v5_search_uses_one_dimension_batch_and_gap_fetch_admission() -> No
 
     assert "gateway.search_dimension_batch(" in factory
     assert "DimensionSearchRequest(" in factory
-    assert "from deskpet.retrieval.query_terms import extract_query_terms" in factory
+    # 导入已上提到模块顶部（2026-10-13 阶段 3），工厂里照常使用
+    assert "from deskpet.retrieval.query_terms import extract_query_terms" in source
     assert "semantic_terms = extract_query_terms(semantic_context)" in factory
     assert "min_results_per_core=1" in factory
     assert "gateway.search(SearchRequest(" not in factory
