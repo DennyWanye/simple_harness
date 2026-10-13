@@ -18,10 +18,7 @@ Implementation notes:
 
 from __future__ import annotations
 
-import ctypes
 import sys
-import tkinter
-from ctypes import wintypes
 
 from tools.base import Tool, ToolSpec
 
@@ -44,6 +41,8 @@ class ReadClipboardTool:
 
 def _read_clipboard_windows() -> str:
     """Pull CF_UNICODETEXT from the Win32 clipboard via ctypes."""
+    import ctypes
+    from ctypes import wintypes
 
     CF_UNICODETEXT = 13
     user32 = ctypes.WinDLL("user32")
@@ -80,6 +79,7 @@ def _read_clipboard_windows() -> str:
 
 def _read_clipboard_tk() -> str:
     """Fallback via tkinter's hidden-root clipboard — stdlib, no extra deps."""
+    import tkinter
 
     root = tkinter.Tk()
     root.withdraw()

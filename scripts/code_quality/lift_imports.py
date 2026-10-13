@@ -33,8 +33,14 @@ from inner_imports import BACKEND, REPO, SDK_SRC, STDLIB, classify, tree_files  
 LIGHT_THIRD_PARTY = {"httpx", "aiosqlite", "tomlkit", "tomli", "websockets", "yaml", "pydantic",
                      "structlog", "fastapi", "starlette", "anyio", "jsonschema"}
 PLATFORM_TEST = re.compile(r"sys\.platform|os\.name|platform\.|IS_WINDOWS|IS_MAC|_is_windows|win32|darwin")
+# 可选或重型的标准库：有的 Python 环境没装（tkinter），或会拉起图形库，按需加载
+OPTIONAL_STDLIB = {"tkinter", "_tkinter", "turtle", "turtledemo", "idlelib", "ensurepip", "venv"}
 PLATFORM_STDLIB = {"resource", "fcntl", "termios", "tty", "pty", "pwd", "grp", "crypt", "msvcrt",
                    "winreg", "_winapi", "winsound", "posix", "nt", "syslog", "curses", "readline"}
+# 文件里明说"不在模块加载时导入"的，整个文件不动
+LAZY_DECLARED = re.compile(r"never import\b[^\n]*\bat module load|not import[^\n]*at module (load|import)|"
+                           r"import[^\n]*lazily|lazy import|延迟导入|按需导入|不在模块加载时导入")
+LAZY_LINE = re.compile(r"#.*(lazy|lazily|PLC0415|延迟|按需|懒加载|启动耗时)", re.I)
 TEST_ROOTS = [BACKEND / "tests", REPO / "sdk/simple-harness-sdk/tests"]
 RUFF = REPO.parent / "simple_harness/sdk/simple-harness-sdk/.venv/bin/ruff"
 
@@ -170,6 +176,43 @@ def global_declared(tree: ast.Module) -> set[str]:
     return {nm for n in ast.walk(tree) if isinstance(n, ast.Global) for nm in n.names}
 
 
+_TOP_NAMES: dict[str, set[str]] = {}
+
+
+def _top_names(mod: str) -> set[str]:
+    if mod not in _TOP_NAMES:
+        try:
+            tree = ast.parse(INDEX[mod].read_text(encoding="utf-8"))
+        except (KeyError, SyntaxError):
+            _TOP_NAMES[mod] = set()
+        else:
+            _TOP_NAMES[mod] = set(module_bindings(tree))
+    return _TOP_NAMES[mod]
+
+
+def missing_target(st: ast.Import | ast.ImportFrom, me: str, path: Path) -> str:
+    """内部导入的目标模块或名字不存在时返回其描述，否则返回空串。"""
+    if isinstance(st, ast.Import):
+        for a in st.names:
+            if a.name not in INDEX:
+                return a.name
+        return ""
+    if st.level:
+        pkg = me if path.name == "__init__.py" else me.rpartition(".")[0]
+        for _ in range(st.level - 1):
+            pkg = pkg.rpartition(".")[0]
+        base = f"{pkg}.{st.module}" if st.module else pkg
+    else:
+        base = st.module or ""
+    if base not in INDEX:
+        return base
+    names = _top_names(base)
+    for a in st.names:
+        if a.name not in names and f"{base}.{a.name}" not in INDEX and "__getattr__" not in names:
+            return f"{base}.{a.name}"
+    return ""
+
+
 def is_forbidden(rel_repo: str) -> bool:
     return bool(FORBIDDEN_PY.search(rel_repo)) or rel_repo in CODEC_PINNED
 
@@ -178,6 +221,7 @@ def is_forbidden(rel_repo: str) -> bool:
 
 def analyse_file(path: Path, me: str, graph, patched: set[str], kinds: set[str]):
     src = path.read_text(encoding="utf-8")
+    src_lines = src.splitlines()
     tree = ast.parse(src)
     mod_binds = module_bindings(tree)
     globals_ = global_declared(tree)
@@ -195,6 +239,9 @@ def analyse_file(path: Path, me: str, graph, patched: set[str], kinds: set[str])
         kind = classify(st, ancestors)
         if kind not in kinds:
             return st, "keep", kind, funcs
+        line = src_lines[st.lineno - 1] if st.lineno - 1 < len(src_lines) else ""
+        if LAZY_LINE.search(line):
+            return st, "keep", "本行注释声明按需导入", funcs
         if isinstance(st, ast.ImportFrom) and any(a.name == "*" for a in st.names):
             return st, "keep", "星号导入", funcs
         inner = ancestors[ancestors.index(funcs[0]):]
@@ -205,6 +252,8 @@ def analyse_file(path: Path, me: str, graph, patched: set[str], kinds: set[str])
             root = (st.module if isinstance(st, ast.ImportFrom) else st.names[0].name).split(".")[0]
             if root in PLATFORM_STDLIB:
                 return st, "keep", "平台专用标准库", funcs
+            if root in OPTIONAL_STDLIB:
+                return st, "keep", "可选或重型标准库", funcs
         if conds and kind == "third_party":
             return st, "keep", "第三方条件导入", funcs
         if kind == "third_party":
@@ -237,6 +286,11 @@ def analyse_file(path: Path, me: str, graph, patched: set[str], kinds: set[str])
             prev = lifted_names.get(nm)
             if prev is not None and prev != key:
                 return st, "keep", f"名字 {nm} 被不同导入共用", funcs
+        # 目标必须存在：函数内导入不存在的模块或名字，说明那条路径已是死代码，上提会让整个模块导入失败
+        if kind == "internal":
+            missing = missing_target(st, me, path)
+            if missing:
+                return st, "keep", f"目标不存在：{missing}", funcs
         # 循环
         if kind == "internal":
             targets = resolve(st, me, path)
@@ -332,6 +386,9 @@ def main() -> int:
         try:
             me = module_name(path)
         except KeyError:
+            continue
+        if LAZY_DECLARED.search(path.read_text(encoding="utf-8")):
+            stats["keep:文件声明按需导入"] += 1
             continue
         src, tree, decisions = analyse_file(path, me, graph, patched, kinds)
         for st, verdict, reason, _f in decisions:
