@@ -7,6 +7,9 @@ from pathlib import Path
 
 import paths as _paths
 from config import resolve_cloud_api_key as _resolve_cloud_api_key
+from deskpet.session.project_binding import (
+    SessionCreationService as _SessionCreationService,
+)
 from llm.provider_registry import LLMProviderRegistry, _migrate_legacy_provider_config
 from observability.startup import registry as startup_errors
 
@@ -32,7 +35,6 @@ from host.stores_bootstrap import (
     _freeze_current_session_owner,
     _project_binding_service,
     _session_db,
-    _SessionCreationService,
     _state_db_path,
 )
 from host.window_control import _WINDOW_CONTROL_BOOTSTRAP

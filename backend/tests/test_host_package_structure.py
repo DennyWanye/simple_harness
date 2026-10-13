@@ -60,3 +60,36 @@ def test_importing_main_writes_nothing_to_stdout() -> None:
     )
     assert child.returncode == 0, child.stderr[-2000:]
     assert child.stdout == ""
+
+
+def test_main_still_imports_when_the_state_db_cannot_open() -> None:
+    """状态库打不开时应用降级启动（会话库为空），主入口仍要能导入。
+
+    2026-10-13：拆主入口后，启动步骤在导入期按名字导入一个只在会话库可用时才定义的名字，
+    状态库失败时整个主入口导入失败，后端在握手前就退出。
+    """
+    import os
+    import subprocess
+    import sys
+
+    backend = HOST.parent
+    env = dict(os.environ)
+    env["PYTHONPATH"] = os.pathsep.join(x for x in (str(backend), env.get("PYTHONPATH", "")) if x)
+    code = (
+        "import deskpet.memory.session_db as m\n"
+        "def _boom(*a, **k):\n"
+        "    raise RuntimeError('state db unavailable')\n"
+        "m.SessionDB = _boom\n"
+        "import main\n"
+        "from host.stores_bootstrap import _session_db\n"
+        "assert _session_db is None\n"
+    )
+    child = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=backend,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=300,
+    )
+    assert child.returncode == 0, child.stderr[-2000:]

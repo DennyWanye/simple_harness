@@ -325,7 +325,7 @@ async def _startup_curation_image_and_mcp() -> None:
                         "command": sys.executable,
                         "args": [
                             str(
-                                Path(__file__).resolve().parents[1]
+                                Path(__file__).resolve().parents[2]
                                 / "scripts"
                                 / "e2e"
                                 / "context_os_mcp_fixture.py"

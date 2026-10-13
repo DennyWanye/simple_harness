@@ -63,7 +63,7 @@ print(f"    本次 smoke 前 verify_* 行数: {verify_before}")
 
 # 4. 真调 build_agent —— mock 掉非 verifier 依赖，但 verify_gate / metrics_sink 走真
 print("\n[4] 调真 main.build_agent(...) 工厂")
-from main import build_agent
+from host.agent_factory import build_agent
 
 mock_rs = MagicMock(name="ReceiptStore")
 mock_rs.load_session.return_value = []

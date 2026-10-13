@@ -117,6 +117,9 @@ def test_build_agent_passes_verify_gate_when_flag_on(
     assert agent.receipt_store is not None
     assert agent.max_verify_nudges == 2
     assert agent.verify_gate.mode == "shadow"
+    # 默认相对路径按 backend/ 解析，必须真的读到规则（2026-10-13：拆主入口后曾解析到
+    # backend/host/verify/ 而读不到，规则静默为空，核验闸门什么都识别不了）
+    assert agent.verify_gate.extractor.patterns, "默认核验规则文件没有读到"
 
 
 def test_build_agent_verify_gate_none_when_flag_off(

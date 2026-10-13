@@ -102,7 +102,7 @@ def build_agent(
             patterns_path = _Path(verifier_cfg.claim_patterns_file)
             if not patterns_path.is_absolute():
                 # Resolve relative to backend/ (where the default yaml lives)
-                patterns_path = _Path(__file__).parent / patterns_path
+                patterns_path = _Path(__file__).parent.parent / patterns_path
             patterns = load_claim_patterns(patterns_path)
             # The verifier is part of this Root, so its model authority is the
             # same frozen Session/Root route as every other auxiliary call.
@@ -231,7 +231,7 @@ def build_agent(
                 else "verify/claim_patterns.yaml"
             )
             if not _pf.is_absolute():
-                _pf = _Path(__file__).parent / _pf
+                _pf = _Path(__file__).parent.parent / _pf
             _patterns = load_claim_patterns(_pf)
             _sub = make_ephemeral_verifier(_make_session_aware_llm_call(max_tokens=256))
             return VerifyGate(
