@@ -4,7 +4,7 @@
 """shipped-bug fix — [tools.verifier].ephemeral_subagent_model 真正生效.
 
 Bug（2026-06-22 R2 对抗审查发现）：自我纠错闭环在 verify-gate 失败/停滞时
-升级到 ephemeral 子代理重新校验，但 main.build_agent 注入 ephemeral verifier
+升级到 ephemeral 子代理重新校验，但 agent_factory.build_agent 注入 ephemeral verifier
 时直接用 ``local_llm or cloud_llm``，**从未读 config.ephemeral_subagent_model**。
 结果：用户/默认配的 ephemeral 专用模型完全不生效，永远复用主 LLM。
 
@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from unittest.mock import MagicMock
 
 import pytest
-from host import llm_calls
+from host import agent_factory, llm_calls
 from host.state import host_state
 from providers.openai_compatible import OpenAICompatibleProvider
 
