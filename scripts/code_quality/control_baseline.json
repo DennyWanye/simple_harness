@@ -1,0 +1,1511 @@
+{
+ "__debug_dump_session_activity": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "__debug_dump_response",
+    [
+     "session_activity",
+     "watchdog"
+    ]
+   ]
+  ]
+ },
+ "__debug_force_error_pending": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ]
+  ]
+ },
+ "__debug_inject_supervisor_alert": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "supervisor_alert",
+    []
+   ],
+   [
+    "__debug_inject_ack",
+    [
+     "ok"
+    ],
+    [
+     "ok",
+     true
+    ]
+   ]
+  ]
+ },
+ "budget_status": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "budget_status",
+    [
+     "daily_budget_cny",
+     "percent_used",
+     "remaining_cny",
+     "spent_today_cny",
+     "tz"
+    ]
+   ]
+  ]
+ },
+ "capability_activate": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "capability_action_response",
+    [
+     "action",
+     "error",
+     "error_code",
+     "ok"
+    ],
+    [
+     "ok",
+     false
+    ],
+    [
+     "error_code",
+     "model_driven_action_required"
+    ]
+   ]
+  ]
+ },
+ "capability_install": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "capability_action_response",
+    [
+     "action",
+     "error",
+     "error_code",
+     "ok"
+    ],
+    [
+     "ok",
+     false
+    ],
+    [
+     "error_code",
+     "skill_source_url_required"
+    ]
+   ]
+  ]
+ },
+ "capability_list": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "capability_list_response",
+    [
+     "capabilities"
+    ]
+   ]
+  ]
+ },
+ "capability_operation_cancel": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "capability_action_response",
+    [
+     "action",
+     "error",
+     "error_code",
+     "ok"
+    ],
+    [
+     "ok",
+     false
+    ],
+    [
+     "error_code",
+     "missing_operation_id"
+    ]
+   ]
+  ]
+ },
+ "capability_operation_retry": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "capability_action_response",
+    [
+     "action",
+     "error",
+     "error_code",
+     "ok"
+    ],
+    [
+     "ok",
+     false
+    ],
+    [
+     "error_code",
+     "missing_operation_id"
+    ]
+   ]
+  ]
+ },
+ "capability_operations_list": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "capability_operations_response",
+    [
+     "operations"
+    ]
+   ]
+  ]
+ },
+ "capability_repair": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "capability_action_response",
+    [
+     "action",
+     "error",
+     "error_code",
+     "ok"
+    ],
+    [
+     "ok",
+     false
+    ],
+    [
+     "error_code",
+     "model_driven_action_required"
+    ]
+   ]
+  ]
+ },
+ "capability_rollback": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "capability_action_response",
+    [
+     "action",
+     "error",
+     "error_code",
+     "ok"
+    ],
+    [
+     "ok",
+     false
+    ],
+    [
+     "error_code",
+     "missing_operation_id"
+    ]
+   ]
+  ]
+ },
+ "capability_uninstall": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "capability_action_response",
+    [
+     "action",
+     "error",
+     "error_code",
+     "ok"
+    ],
+    [
+     "ok",
+     false
+    ],
+    [
+     "error_code",
+     "missing_capability_id"
+    ]
+   ]
+  ]
+ },
+ "chat_turn_timeout_get": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "chat_turn_timeout_response",
+    [
+     "minutes"
+    ]
+   ]
+  ]
+ },
+ "chat_turn_timeout_set": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "chat_turn_timeout_response",
+    [
+     "minutes"
+    ]
+   ]
+  ]
+ },
+ "chat_v2_interrupt": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "chat_v2_interrupted",
+    [
+     "allowed_actions",
+     "cancel_command_id",
+     "cancelled",
+     "retryable",
+     "run_id",
+     "run_version",
+     "sdk_run_id",
+     "session_id",
+     "stale_expected_version",
+     "state",
+     "terminal_event_ref",
+     "waiting_reason"
+    ]
+   ]
+  ]
+ },
+ "clarification_response": {
+  "exception": "ValueError",
+  "frames": [
+   [
+    "startup_status"
+   ]
+  ]
+ },
+ "companion_detail_get": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "companion_detail_error",
+    [
+     "code"
+    ],
+    [
+     "code",
+     "unavailable"
+    ]
+   ]
+  ]
+ },
+ "companion_forget": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "error",
+    [
+     "message"
+    ]
+   ]
+  ]
+ },
+ "companion_growth_action_decision": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "error",
+    [
+     "message"
+    ]
+   ]
+  ]
+ },
+ "companion_growth_activation_decision": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "error",
+    [
+     "message"
+    ]
+   ]
+  ]
+ },
+ "companion_growth_evaluation_decision": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "error",
+    [
+     "message"
+    ]
+   ]
+  ]
+ },
+ "companion_profile_bind": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "error",
+    [
+     "message"
+    ]
+   ]
+  ]
+ },
+ "companion_profile_unbind": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "error",
+    [
+     "message"
+    ]
+   ]
+  ]
+ },
+ "companion_rollback": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "error",
+    [
+     "message"
+    ]
+   ]
+  ]
+ },
+ "context_breakdown_request": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "error",
+    [
+     "code",
+     "message"
+    ],
+    [
+     "code",
+     "context_breakdown_request_invalid"
+    ]
+   ]
+  ]
+ },
+ "context_usage_request": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "context_usage",
+    [
+     "availability",
+     "based_on_sample_id",
+     "binding_epoch",
+     "cached_tokens",
+     "compact_at",
+     "completion_tokens",
+     "context_window",
+     "effective_ceiling",
+     "has_measurement",
+     "legacy_incomplete",
+     "model",
+     "model_id",
+     "prompt_tokens",
+     "provider_id",
+     "recall_sweet",
+     "sample_id",
+     "schema_version",
+     "session_id",
+     "snapshot_id",
+     "snapshot_version",
+     "source",
+     "updated_at",
+     "version"
+    ]
+   ]
+  ]
+ },
+ "external_wait_response": {
+  "exception": "ValueError",
+  "frames": [
+   [
+    "startup_status"
+   ]
+  ]
+ },
+ "harness_inspector_cancel": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "harness_inspector_cancelled"
+   ]
+  ]
+ },
+ "harness_inspector_details_request": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "harness_inspector_error"
+   ]
+  ]
+ },
+ "harness_inspector_snapshot": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "harness_inspector_error",
+    [
+     "code",
+     "detail",
+     "run_id",
+     "session_id"
+    ],
+    [
+     "code",
+     "ValueError"
+    ]
+   ]
+  ]
+ },
+ "harness_inspector_snapshot_request": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "harness_inspector_error"
+   ]
+  ]
+ },
+ "human_memory_request": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "human_memory_response",
+    [
+     "error",
+     "ok"
+    ],
+    [
+     "ok",
+     false
+    ]
+   ]
+  ]
+ },
+ "interrupt": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "interrupt_ack"
+   ]
+  ]
+ },
+ "memory_archive_list": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "memory_archive_list_response",
+    [
+     "error",
+     "ok"
+    ],
+    [
+     "ok",
+     false
+    ]
+   ]
+  ]
+ },
+ "memory_clear": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "memory_clear_ack",
+    [
+     "scope",
+     "session_id"
+    ]
+   ]
+  ]
+ },
+ "memory_delete": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "error",
+    [
+     "message"
+    ]
+   ]
+  ]
+ },
+ "memory_export": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "memory_export_response",
+    [
+     "exported_at",
+     "sessions",
+     "turns"
+    ]
+   ]
+  ]
+ },
+ "memory_list": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "memory_list_response",
+    [
+     "scope",
+     "session_id",
+     "turns"
+    ]
+   ]
+  ]
+ },
+ "memory_summarize_now": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "memory_summarize_response",
+    [
+     "error",
+     "ok"
+    ],
+    [
+     "ok",
+     false
+    ]
+   ]
+  ]
+ },
+ "memory_thumbs_up": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "memory_thumbs_up_response",
+    [
+     "ok",
+     "reason"
+    ],
+    [
+     "reason",
+     "state_db_unavailable"
+    ],
+    [
+     "ok",
+     false
+    ]
+   ]
+  ]
+ },
+ "mission_list": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "mission_list_response",
+    [
+     "error",
+     "error_code",
+     "ok",
+     "request_id"
+    ],
+    [
+     "ok",
+     false
+    ],
+    [
+     "error_code",
+     "orchestration_unavailable"
+    ]
+   ]
+  ]
+ },
+ "orchestration_publish_dir_get": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "orchestration_publish_dir_get_response",
+    [
+     "data",
+     "ok",
+     "request_id"
+    ],
+    [
+     "ok",
+     true
+    ]
+   ]
+  ]
+ },
+ "orchestration_publish_dir_set": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "orchestration_publish_dir_set_response",
+    [
+     "data",
+     "ok",
+     "request_id"
+    ],
+    [
+     "ok",
+     true
+    ]
+   ]
+  ]
+ },
+ "permission_auto_mode_get": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "permission_auto_mode_response",
+    [
+     "authoritative",
+     "enabled",
+     "generation",
+     "mode",
+     "provenance"
+    ]
+   ]
+  ]
+ },
+ "permission_auto_mode_set": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "permission_auto_mode_response",
+    [
+     "authoritative",
+     "enabled",
+     "generation",
+     "mode",
+     "provenance"
+    ]
+   ]
+  ]
+ },
+ "permission_response": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "permission_response_applied",
+    [
+     "decision_id",
+     "error",
+     "ok",
+     "request_id"
+    ],
+    [
+     "ok",
+     false
+    ]
+   ]
+  ]
+ },
+ "plugin_disable": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "plugin_disable_response",
+    [
+     "name",
+     "ok"
+    ],
+    [
+     "ok",
+     true
+    ]
+   ]
+  ]
+ },
+ "plugin_enable": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "plugin_enable_response",
+    [
+     "error",
+     "name",
+     "ok"
+    ],
+    [
+     "ok",
+     false
+    ]
+   ]
+  ]
+ },
+ "plugin_list": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "plugin_list_response",
+    [
+     "plugins"
+    ]
+   ]
+  ]
+ },
+ "project_catalog_page": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "project_catalog_page_response",
+    [
+     "catalog_revision",
+     "items",
+     "next_cursor",
+     "ok",
+     "pinned",
+     "schema_version"
+    ],
+    [
+     "ok",
+     true
+    ]
+   ]
+  ]
+ },
+ "project_directory_response": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "project_directory_error",
+    [
+     "code",
+     "decision_id",
+     "error"
+    ],
+    [
+     "code",
+     "project_directory_required"
+    ]
+   ]
+  ]
+ },
+ "project_inspect": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "project_inspect_response",
+    [
+     "error",
+     "ok"
+    ],
+    [
+     "ok",
+     false
+    ]
+   ]
+  ]
+ },
+ "project_preview_register": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "project_preview_register_response",
+    [
+     "error",
+     "ok"
+    ],
+    [
+     "ok",
+     false
+    ]
+   ]
+  ]
+ },
+ "project_register": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "project_register_response",
+    [
+     "error",
+     "ok"
+    ],
+    [
+     "ok",
+     false
+    ]
+   ]
+  ]
+ },
+ "project_relocate": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "project_relocate_response",
+    [
+     "error",
+     "ok"
+    ],
+    [
+     "ok",
+     false
+    ]
+   ]
+  ]
+ },
+ "project_sessions_page": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "project_sessions_page_response",
+    [
+     "error",
+     "ok"
+    ],
+    [
+     "ok",
+     false
+    ]
+   ]
+  ]
+ },
+ "protected_path_decision": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "protected_path_decision_applied",
+    [
+     "decision",
+     "found",
+     "request_id"
+    ]
+   ]
+  ]
+ },
+ "session_create": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "session_create_response",
+    [
+     "error",
+     "ok"
+    ],
+    [
+     "ok",
+     false
+    ]
+   ]
+  ]
+ },
+ "session_delete": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "session_deleted",
+    [
+     "ok",
+     "session_id"
+    ],
+    [
+     "ok",
+     false
+    ]
+   ]
+  ]
+ },
+ "session_health_check": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "session_run_status_ack",
+    [
+     "allowed_actions",
+     "query_id",
+     "retryable",
+     "root_run_id",
+     "run_version",
+     "sdk_run_id",
+     "session_id",
+     "state",
+     "terminal_event_ref",
+     "waiting_reason"
+    ]
+   ]
+  ]
+ },
+ "session_messages_load": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "session_messages_response",
+    [
+     "companion_events",
+     "messages",
+     "session_id"
+    ]
+   ]
+  ]
+ },
+ "session_provider_get": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "settings_providers_error",
+    [
+     "detail",
+     "reason"
+    ],
+    [
+     "reason",
+     "missing_field"
+    ]
+   ]
+  ]
+ },
+ "session_rename": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "session_renamed",
+    [
+     "ok",
+     "session_id",
+     "title"
+    ],
+    [
+     "ok",
+     false
+    ]
+   ]
+  ]
+ },
+ "session_run_status_query": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "session_run_status_ack",
+    [
+     "allowed_actions",
+     "query_id",
+     "retryable",
+     "root_run_id",
+     "run_version",
+     "sdk_run_id",
+     "session_id",
+     "state",
+     "terminal_event_ref",
+     "waiting_reason"
+    ]
+   ]
+  ]
+ },
+ "session_set_model": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "settings_providers_error",
+    [
+     "detail",
+     "reason"
+    ],
+    [
+     "reason",
+     "missing_field"
+    ]
+   ]
+  ]
+ },
+ "session_set_provider": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "settings_providers_error",
+    [
+     "detail",
+     "reason"
+    ],
+    [
+     "reason",
+     "missing_field"
+    ]
+   ]
+  ]
+ },
+ "sessions_list": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "sessions_list_error",
+    [
+     "code",
+     "error"
+    ],
+    [
+     "code",
+     "protocol_replaced"
+    ]
+   ]
+  ]
+ },
+ "settings_providers_add": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "settings_providers_error",
+    [
+     "detail",
+     "reason"
+    ],
+    [
+     "reason",
+     "invalid_id"
+    ]
+   ]
+  ]
+ },
+ "settings_providers_list_request": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "settings_providers_list_response",
+    [
+     "providers"
+    ]
+   ]
+  ]
+ },
+ "settings_providers_remove": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "settings_providers_error",
+    [
+     "detail",
+     "reason"
+    ],
+    [
+     "reason",
+     "missing_field"
+    ]
+   ]
+  ]
+ },
+ "settings_providers_reorder": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "settings_providers_error",
+    [
+     "detail",
+     "reason"
+    ],
+    [
+     "reason",
+     "incomplete_order"
+    ]
+   ]
+  ]
+ },
+ "settings_providers_update": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "settings_providers_error",
+    [
+     "detail",
+     "reason"
+    ],
+    [
+     "reason",
+     "missing_field"
+    ]
+   ]
+  ]
+ },
+ "skill_install_confirm": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "skill_install_confirm_response",
+    [
+     "error",
+     "error_code",
+     "message",
+     "ok"
+    ],
+    [
+     "ok",
+     false
+    ],
+    [
+     "error_code",
+     "skill_install_decision_invalid"
+    ]
+   ]
+  ]
+ },
+ "skill_install_status": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "skill_install_status_response",
+    [
+     "error",
+     "error_code",
+     "message",
+     "ok"
+    ],
+    [
+     "ok",
+     false
+    ],
+    [
+     "error_code",
+     "skill_install_status_unavailable"
+    ]
+   ]
+  ]
+ },
+ "skill_list_installed": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "skill_list_installed_response",
+    [
+     "skills"
+    ]
+   ]
+  ]
+ },
+ "skill_uninstall": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "skill_uninstall_response",
+    [
+     "error",
+     "name",
+     "ok"
+    ],
+    [
+     "ok",
+     false
+    ]
+   ]
+  ]
+ },
+ "supervisor_toggle": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "supervisor_toggle_ack",
+    [
+     "enabled",
+     "persisted"
+    ]
+   ]
+  ]
+ },
+ "supervisor_user_choice": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ]
+  ]
+ },
+ "task_projection_update": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "task_projection_error",
+    [
+     "code",
+     "detail",
+     "run_id",
+     "session_id"
+    ],
+    [
+     "code",
+     "ValueError"
+    ]
+   ]
+  ]
+ },
+ "task_projections_list": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "task_projections_response",
+    [
+     "projections",
+     "session_id"
+    ]
+   ]
+  ]
+ },
+ "taskgraph.execution_detail": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "taskgraph.execution_detail_response",
+    [
+     "error",
+     "error_code",
+     "ok",
+     "request_id"
+    ],
+    [
+     "ok",
+     false
+    ],
+    [
+     "error_code",
+     "orchestration_unavailable"
+    ]
+   ]
+  ]
+ },
+ "unknown_type_for_snapshot": {
+  "closed": null,
+  "frames": [
+   [
+    "startup_status"
+   ],
+   [
+    "error",
+    [
+     "message"
+    ]
+   ]
+  ]
+ }
+}
