@@ -56,7 +56,6 @@ from host.runtime import (
     SHARED_SECRET,
     config,
     logger,
-    service_context,
 )
 
 # isort: split
@@ -233,9 +232,6 @@ app.add_middleware(
 )
 
 # isort: split
-from host.connections import (
-    _control_connections,
-)
 
 # isort: split
 
@@ -246,9 +242,6 @@ from host.connections import (
 
 
 # isort: split
-from host.chat_delivery import (
-    _broadcast_control,
-)
 
 # isort: split
 
@@ -318,9 +311,6 @@ from host.chat_delivery import (
 
 
 # isort: split
-from host.sdk_registry import (
-    _sdk_unavailable_tool_authority_runs,
-)
 
 # isort: split
 

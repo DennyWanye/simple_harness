@@ -34,7 +34,7 @@ from deskpet.memory.schema import (
     initialize_human_memory_program_state_db,
     inspect_startup_epoch,
 )
-from host import sdk_recovery
+from host import sdk_recovery, sdk_registry
 
 CONTEXT_ROUTE_TABLES = (
     "context_route_marker",
@@ -500,7 +500,6 @@ async def test_startup_opens_pre_repair_v46_userdata(tmp_path: Path, monkeypatch
 
 
 def test_old_checkpoint_before_project_effect_policy_is_isolated(monkeypatch) -> None:
-    import main
     from deskpet.sdk_adapters import tool_authority as ta
     from deskpet.sdk_adapters.context_authority import canonical_sha256
     from simple_harness import RunId
@@ -566,7 +565,7 @@ def test_old_checkpoint_before_project_effect_policy_is_isolated(monkeypatch) ->
     assert stale.value.code == "catalog_state_fingerprint_stale"
     # Host 隔离：标记终态、登记不可用 Run，不伪造 authority。
     resolver = SimpleNamespace(mark_terminal=lambda *a, **k: None)
-    saved = set(main._sdk_unavailable_tool_authority_runs)
+    saved = set(sdk_registry._sdk_unavailable_tool_authority_runs)
     try:
         sdk_recovery._isolate_unrestorable_sdk_tool_authority(
             sdk_run_id=run.value,
@@ -575,9 +574,9 @@ def test_old_checkpoint_before_project_effect_policy_is_isolated(monkeypatch) ->
             tool_authorities=current,
             error=stale.value,
         )
-        assert run.value in main._sdk_unavailable_tool_authority_runs
+        assert run.value in sdk_registry._sdk_unavailable_tool_authority_runs
         with pytest.raises(KeyError):
             current.resolve(run)
     finally:
-        main._sdk_unavailable_tool_authority_runs.clear()
-        main._sdk_unavailable_tool_authority_runs.update(saved)
+        sdk_registry._sdk_unavailable_tool_authority_runs.clear()
+        sdk_registry._sdk_unavailable_tool_authority_runs.update(saved)

@@ -33,6 +33,7 @@ from deskpet.execution.foreground_runtime import (
 from deskpet.sdk_adapters.ingress import IngressStartReceipt
 from deskpet.task_scope.protocol import canonical_hash, canonical_json
 from host import human_memory_ports
+from host import runtime as host_runtime
 from host.state import host_state
 from simple_harness import ContextRouteOrigin
 from tests.host_patch import patch_host_global
@@ -670,12 +671,14 @@ async def test_human_lifespan_registers_one_real_runtime_and_legacy_does_not(
     )
     monkeypatch.setattr(host_state, "sdk_runtime_tool_inventory", ())
     monkeypatch.setattr(host_state, "sdk_tool_authority_registry", object())
-    monkeypatch.setattr(main.service_context, "capability_store", object())
+    monkeypatch.setattr(host_runtime.service_context, "capability_store", object())
     epoch = type("Epoch", (), {"composition_mode": StartupCompositionMode.HUMAN})()
 
     await human_memory_ports._activate_human_memory_host_ports(epoch)
-    scheduler = main.service_context.get("human_memory_foreground_scheduler_wake")
-    runtime = main.service_context.get("human_memory_foreground_runtime_execution_authority")
+    scheduler = host_runtime.service_context.get("human_memory_foreground_scheduler_wake")
+    runtime = host_runtime.service_context.get(
+        "human_memory_foreground_runtime_execution_authority"
+    )
     assert scheduler is runtime
     assert isinstance(runtime, ForegroundRuntimeExecutionAuthority)
     assert runtime.subject == "deskpet-local-owner-v1"
@@ -683,8 +686,11 @@ async def test_human_lifespan_registers_one_real_runtime_and_legacy_does_not(
 
     legacy = type("Epoch", (), {"composition_mode": StartupCompositionMode.LEGACY})()
     await human_memory_ports._activate_human_memory_host_ports(legacy)
-    assert main.service_context.get("human_memory_foreground_scheduler_wake") is None
-    assert main.service_context.get("human_memory_foreground_runtime_execution_authority") is None
+    assert host_runtime.service_context.get("human_memory_foreground_scheduler_wake") is None
+    assert (
+        host_runtime.service_context.get("human_memory_foreground_runtime_execution_authority")
+        is None
+    )
 
 
 def _signal_envelope(

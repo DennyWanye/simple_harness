@@ -5,8 +5,8 @@
 
 from __future__ import annotations
 
-import main as main_module
 import pytest
+from host import runtime as host_runtime
 from host.llm_providers import LLM_RUNTIME_PATH
 from host.runtime import SHARED_SECRET
 from httpx import ASGITransport, AsyncClient
@@ -140,7 +140,7 @@ async def test_update_cloud_config_promotes_validated_provider_for_runtime(monke
             self.reordered = list(provider_ids)
 
     registry = FakeRegistry()
-    monkeypatch.setattr(main_module.service_context, "provider_registry", registry)
+    monkeypatch.setattr(host_runtime.service_context, "provider_registry", registry)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         resp = await client.post(
             "/config/cloud",

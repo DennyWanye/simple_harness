@@ -10,6 +10,7 @@ import pytest
 from deskpet.tools import ppt_tools
 from deskpet.workflows.adapters.ppt_runtime import PptRuntime
 from host import ppt_outline
+from host import runtime as host_runtime
 
 
 @pytest.mark.asyncio
@@ -175,7 +176,7 @@ async def test_startup_registers_runtime_but_disables_legacy_tool_starter(monkey
 
     service = SimpleNamespace(launcher=launcher, session_lock=lambda _sid: _NoopLock())
     monkeypatch.setattr(
-        main.service_context,
+        host_runtime.service_context,
         "get",
         lambda name: service if name == "workflow_service" else None,
     )
@@ -199,7 +200,6 @@ async def test_startup_registers_runtime_but_disables_legacy_tool_starter(monkey
 
 @pytest.mark.asyncio
 async def test_ppt_context_uses_frozen_run_provider_plan(monkeypatch) -> None:
-    import main
 
     captured = {}
     entry = SimpleNamespace(id="local-ollama", enabled=False)
@@ -224,7 +224,7 @@ async def test_ppt_context_uses_frozen_run_provider_plan(monkeypatch) -> None:
     service = SimpleNamespace(launcher=Launcher(), execution_uow=ExecutionUow())
     registry = Registry()
     monkeypatch.setattr(
-        main.service_context,
+        host_runtime.service_context,
         "get",
         lambda name: (
             service
@@ -287,7 +287,7 @@ def test_startup_flags_do_not_disable_durable_workflow(
             return None
 
     monkeypatch.setattr(
-        main.service_context,
+        host_runtime.service_context,
         "get",
         lambda name: SimpleNamespace(launcher=Launcher()) if name == "workflow_service" else None,
     )

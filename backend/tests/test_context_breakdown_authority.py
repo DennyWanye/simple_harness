@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 from host import context_usage
+from host import runtime as host_runtime
 
 
 class _FakeWs:
@@ -13,7 +14,6 @@ class _FakeWs:
 
 
 def test_public_section_drops_sensitive_or_private_preview() -> None:
-    import main
 
     section = context_usage._public_context_section(
         {
@@ -29,7 +29,6 @@ def test_public_section_drops_sensitive_or_private_preview() -> None:
 
 @pytest.mark.asyncio
 async def test_usage_hydration_joins_snapshot_metadata_on_its_own_version_axis():
-    import main
 
     class _SessionDB:
         async def get_context_usage_state(self, session_id: str):
@@ -48,13 +47,13 @@ async def test_usage_hydration_joins_snapshot_metadata_on_its_own_version_axis()
                 "snapshot_fingerprint": "sha256:snapshot-3",
             }
 
-    previous_db = main.service_context.get("session_db")
+    previous_db = host_runtime.service_context.get("session_db")
     context_usage._session_context_state.pop("session-joined", None)
     try:
-        main.service_context.register("session_db", _SessionDB())
+        host_runtime.service_context.register("session_db", _SessionDB())
         result = await context_usage._read_context_usage_authority("session-joined")
     finally:
-        main.service_context.register("session_db", previous_db)
+        host_runtime.service_context.register("session_db", previous_db)
 
     assert result["version"] == 9
     assert result["snapshot_version"] == 3
@@ -63,7 +62,6 @@ async def test_usage_hydration_joins_snapshot_metadata_on_its_own_version_axis()
 
 @pytest.mark.asyncio
 async def test_breakdown_reads_only_durable_public_snapshot_and_usage(monkeypatch):
-    import main
 
     calls: list[tuple[str, str]] = []
 
@@ -120,15 +118,15 @@ async def test_breakdown_reads_only_durable_public_snapshot_and_usage(monkeypatc
         async def list_context_usage_history(self, *_args, **_kwargs):
             raise AssertionError("dynamic history probe must be unreachable")
 
-    previous_db = main.service_context.get("session_db")
-    previous_facts = main.service_context.get("facts_store")
+    previous_db = host_runtime.service_context.get("session_db")
+    previous_facts = host_runtime.service_context.get("facts_store")
     try:
-        main.service_context.register("session_db", _SessionDB())
-        main.service_context.register("facts_store", object())
+        host_runtime.service_context.register("session_db", _SessionDB())
+        host_runtime.service_context.register("facts_store", object())
         result = await context_usage._read_context_breakdown_authority("session-a")
     finally:
-        main.service_context.register("session_db", previous_db)
-        main.service_context.register("facts_store", previous_facts)
+        host_runtime.service_context.register("session_db", previous_db)
+        host_runtime.service_context.register("facts_store", previous_facts)
 
     assert calls == [("snapshot", "session-a"), ("usage", "session-a")]
     assert result["snapshot_id"] == "snapshot-7"
@@ -154,7 +152,6 @@ async def test_breakdown_reads_only_durable_public_snapshot_and_usage(monkeypatc
 
 @pytest.mark.asyncio
 async def test_breakdown_without_snapshot_is_explicitly_unavailable_not_zero():
-    import main
 
     class _SessionDB:
         async def get_latest_sdk_context_public_snapshot(self, _session_id: str):
@@ -175,12 +172,12 @@ async def test_breakdown_without_snapshot_is_explicitly_unavailable_not_zero():
                 "has_measurement": False,
             }
 
-    previous_db = main.service_context.get("session_db")
+    previous_db = host_runtime.service_context.get("session_db")
     try:
-        main.service_context.register("session_db", _SessionDB())
+        host_runtime.service_context.register("session_db", _SessionDB())
         result = await context_usage._read_context_breakdown_authority("session-empty")
     finally:
-        main.service_context.register("session_db", previous_db)
+        host_runtime.service_context.register("session_db", previous_db)
 
     assert result["availability"] == "unavailable"
     assert result["context_state"] == "binding_only"
@@ -205,7 +202,6 @@ async def test_breakdown_handler_fails_closed_without_exact_session_and_correlat
     monkeypatch,
     payload,
 ):
-    import main
 
     ws = _FakeWs()
     reader_calls: list[str] = []
@@ -226,7 +222,6 @@ async def test_breakdown_handler_fails_closed_without_exact_session_and_correlat
 
 @pytest.mark.asyncio
 async def test_breakdown_handler_echoes_correlation_and_current_identities(monkeypatch):
-    import main
 
     ws = _FakeWs()
 

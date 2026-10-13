@@ -41,9 +41,10 @@ import pytest
 import pytest_asyncio
 from deskpet.memory.session_db import SessionDB
 from fastapi.testclient import TestClient
+from host.runtime import SHARED_SECRET, service_context
 from llm import provider_registry as pr_mod
 from llm.provider_registry import LLMProviderRegistry
-from main import SHARED_SECRET, _control_connections, app, service_context
+from main import app
 
 # ---------- helpers --------------------------------------------------------
 

@@ -1,9 +1,10 @@
 from __future__ import annotations
+
 from host import context_usage
+from host import runtime as host_runtime
 
 
 def test_context_usage_prefers_latest_successful_context_os_attempt() -> None:
-    import main
 
     class _Provider:
         model = "legacy-configured-model"
@@ -31,14 +32,14 @@ def test_context_usage_prefers_latest_successful_context_os_attempt() -> None:
                 }
             ]
 
-    previous = main.service_context.get("context_attempt_store")
+    previous = host_runtime.service_context.get("context_attempt_store")
     try:
-        main.service_context.register("context_attempt_store", _AttemptStore())
+        host_runtime.service_context.register("context_attempt_store", _AttemptStore())
         event = context_usage._snapshot_context_usage_event(
             "actual-session", provider_chain=[_Provider()]
         )
     finally:
-        main.service_context.register("context_attempt_store", previous)
+        host_runtime.service_context.register("context_attempt_store", previous)
 
     assert event is not None
     payload = event["payload"]
@@ -52,7 +53,6 @@ def test_context_usage_prefers_latest_successful_context_os_attempt() -> None:
 
 
 def test_context_usage_works_without_legacy_provider_last_usage() -> None:
-    import main
 
     class _AttemptStore:
         def public_for_session(self, session_id: str):  # noqa: ANN001
@@ -71,14 +71,14 @@ def test_context_usage_works_without_legacy_provider_last_usage() -> None:
                 }
             ]
 
-    previous = main.service_context.get("context_attempt_store")
+    previous = host_runtime.service_context.get("context_attempt_store")
     try:
-        main.service_context.register("context_attempt_store", _AttemptStore())
+        host_runtime.service_context.register("context_attempt_store", _AttemptStore())
         event = context_usage._snapshot_context_usage_event(
             "attempt-only-session", provider_chain=[], fallback_provider=None
         )
     finally:
-        main.service_context.register("context_attempt_store", previous)
+        host_runtime.service_context.register("context_attempt_store", previous)
 
     assert event is not None
     assert event["payload"]["model"] == "ctx-primary"

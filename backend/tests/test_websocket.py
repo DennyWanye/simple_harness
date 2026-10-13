@@ -3,7 +3,8 @@
 
 import pytest
 from fastapi.testclient import TestClient
-from main import SHARED_SECRET, app
+from host.runtime import SHARED_SECRET
+from main import app
 from starlette.websockets import WebSocketDisconnect
 
 

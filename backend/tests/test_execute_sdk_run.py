@@ -9,7 +9,14 @@ from unittest.mock import AsyncMock, Mock, create_autospec
 
 import pytest
 from deskpet.sdk_adapters.desktop_runtime import _delivery_adapters
-from host import capability_runtime, harness_runs, sdk_execution, sdk_recovery, sdk_registry
+from host import (
+    capability_runtime,
+    harness_runs,
+    runtime,
+    sdk_execution,
+    sdk_recovery,
+    sdk_registry,
+)
 from host.state import host_state
 
 from tests.host_patch import patch_host_global
@@ -478,21 +485,20 @@ async def test_sdk_preparation_freezes_explicit_skill_and_isolates_plain_turn():
 
 
 def test_sdk_skill_resolver_registration_does_not_depend_on_legacy_assembler():
-    import main
 
     class Resolver:
         manager_backed = True
 
     resolver = Resolver()
-    previous_assembler = main.service_context.get("context_assembler")
-    previous_resolver = main.service_context.get("frozen_skill_instruction_resolver")
+    previous_assembler = runtime.service_context.get("context_assembler")
+    previous_resolver = runtime.service_context.get("frozen_skill_instruction_resolver")
     try:
-        main.service_context.register("context_assembler", None)
+        runtime.service_context.register("context_assembler", None)
         capability_runtime._bind_frozen_skill_snapshot_resolver(resolver)
-        assert main.service_context.get("frozen_skill_instruction_resolver") is resolver
+        assert runtime.service_context.get("frozen_skill_instruction_resolver") is resolver
     finally:
-        main.service_context.register("context_assembler", previous_assembler)
-        main.service_context.register("frozen_skill_instruction_resolver", previous_resolver)
+        runtime.service_context.register("context_assembler", previous_assembler)
+        runtime.service_context.register("frozen_skill_instruction_resolver", previous_resolver)
 
 
 @pytest.mark.asyncio
@@ -1393,7 +1399,6 @@ async def test_execute_sdk_run_cleans_pre_registered_delivery_when_start_fails(m
 
 @pytest.mark.asyncio
 async def test_cancel_product_run_translates_canonical_root_to_sdk_id(monkeypatch):
-    import main
 
     client = SimpleNamespace(
         cancel=AsyncMock(return_value=SimpleNamespace(state=SimpleNamespace(value="cancelled")))
@@ -1599,7 +1604,6 @@ async def test_waiting_permission_uses_authorization_api_and_resumes(monkeypatch
 
 @pytest.mark.asyncio
 async def test_waiting_continuation_uses_sync_sdk_signal_and_resumes(monkeypatch):
-    import main
     from deskpet.sdk_adapters.ingress import SdkRuntimeIngress
     from simple_harness import RunClient
 
@@ -1687,7 +1691,6 @@ async def test_waiting_continuation_uses_sync_sdk_signal_and_resumes(monkeypatch
 
 @pytest.mark.asyncio
 async def test_cancel_product_run_missing_identity_is_idempotent(monkeypatch):
-    import main
 
     client = SimpleNamespace(cancel=AsyncMock(side_effect=KeyError("stale-root")))
     ingress = SimpleNamespace(

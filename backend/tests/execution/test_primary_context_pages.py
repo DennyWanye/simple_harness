@@ -23,6 +23,7 @@ from deskpet.execution.primary_context_pages import (
 from deskpet.memory.human_memory_service import QueueTurnRequest
 from deskpet.sdk_adapters.run_bindings import SdkRunBindingV1
 from deskpet.tools.context_page_in_tools import ContextPageInStore
+from host import runtime as host_runtime
 from host import sdk_services
 from host.state import host_state
 from simple_harness import CallId, thaw_json
@@ -120,7 +121,6 @@ def summary_from(request, *, content_hash):
 # 2026-09-10 删记忆 SDK：去掉两个 forget 档。
 @pytest.mark.parametrize("mode", ["allow"])
 async def test_actual_history_page_and_physical_guard(tmp_path, monkeypatch, mode):
-    import main
     from deskpet.execution.primary_dependencies import read_run_dependencies
 
     state, _, service, configured, authority = await fixture(tmp_path)
@@ -223,9 +223,9 @@ async def test_actual_history_page_and_physical_guard(tmp_path, monkeypatch, mod
         sdk_services, "_primary_history_policy", lambda _: holder.runtime.history_policy
     )
     monkeypatch.setattr(sdk_services, "_sdk_price_snapshot", lambda *_: (1, 1, "price-v1"))
-    get_service = main.service_context.get
+    get_service = host_runtime.service_context.get
     monkeypatch.setattr(
-        main.service_context,
+        host_runtime.service_context,
         "get",
         lambda key, *a, **kw: (
             None if key == "sdk_typed_context_use_authority" else get_service(key, *a, **kw)

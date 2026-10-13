@@ -5,7 +5,8 @@ from types import SimpleNamespace
 
 import pytest
 from deskpet.tools import ppt_tools
-from host import connections, control_messages, ppt_outline
+from host import chat_delivery, connections, control_messages, ppt_outline
+from host import runtime as host_runtime
 
 from tests.host_patch import patch_host_global
 
@@ -36,20 +37,20 @@ class _FakeWebSocket:
 
 @pytest.mark.asyncio
 async def test_broadcast_control_is_best_effort(monkeypatch):
-    import main
 
     ok = _FakeWebSocket()
     bad = _FakeWebSocket(fail=True)
     _use_control_connections(monkeypatch, {"ok": ok, "bad": bad})
 
-    await main._broadcast_control({"type": "ppt_outline_proposed", "payload": {"outline_id": "o1"}})
+    await chat_delivery._broadcast_control(
+        {"type": "ppt_outline_proposed", "payload": {"outline_id": "o1"}}
+    )
 
     assert ok.sent == [{"type": "ppt_outline_proposed", "payload": {"outline_id": "o1"}}]
 
 
 @pytest.mark.asyncio
 async def test_workflow_outline_card_resumes_generic_decision_without_blocking(monkeypatch):
-    import main
 
     oid = "workflow:run-1:0"
     decision = SimpleNamespace(
@@ -81,7 +82,7 @@ async def test_workflow_outline_card_resumes_generic_decision_without_blocking(m
 
     service = _Service()
     monkeypatch.setattr(
-        main.service_context,
+        host_runtime.service_context,
         "get",
         lambda name: service if name == "workflow_service" else None,
     )
@@ -219,7 +220,6 @@ async def test_workflow_outline_rejected_fence_does_not_drop_control_socket(monk
 async def test_workflow_outline_decision_uses_action_specific_notice(
     monkeypatch, action, feedback, expected
 ):
-    import main
 
     oid = "workflow:run-action:0"
     decision = SimpleNamespace(
@@ -247,7 +247,7 @@ async def test_workflow_outline_decision_uses_action_specific_notice(
             return None
 
     monkeypatch.setattr(
-        main.service_context,
+        host_runtime.service_context,
         "get",
         lambda name: _Service() if name == "workflow_service" else None,
     )
@@ -307,7 +307,6 @@ async def test_workflow_outline_modify_rejects_empty_feedback_without_resolving(
 
 @pytest.mark.asyncio
 async def test_workflow_outline_notify_projects_session_card_idempotently(monkeypatch):
-    import main
 
     rows = []
 
@@ -317,7 +316,7 @@ async def test_workflow_outline_notify_projects_session_card_idempotently(monkey
             return 1
 
     monkeypatch.setattr(
-        main.service_context,
+        host_runtime.service_context,
         "get",
         lambda name: _SDB() if name == "session_db" else None,
     )
@@ -343,7 +342,6 @@ async def test_workflow_outline_notify_projects_session_card_idempotently(monkey
 
 @pytest.mark.asyncio
 async def test_ppt_notify_chat_bubble_persists_before_sending(monkeypatch):
-    import main
 
     default_ws = _FakeWebSocket()
     panel_ws = _FakeWebSocket()
@@ -373,7 +371,7 @@ async def test_ppt_notify_chat_bubble_persists_before_sending(monkeypatch):
             return _VW()
         return None
 
-    monkeypatch.setattr(main.service_context, "get", fake_get)
+    monkeypatch.setattr(host_runtime.service_context, "get", fake_get)
 
     await ppt_outline._ppt_notify_chat_bubble("sid-1", "PPT 没做成：LLM HTTP 401 Unauthorized")
 

@@ -17,29 +17,29 @@
 
 from __future__ import annotations
 
-import main
 import pytest
 from deskpet.capabilities.store import (
     CapabilityStore,
     initialize_capability_database,
 )
 from host import capability_runtime
+from host import runtime as host_runtime
 
 from tests.host_source import host_source_text
 
 
 @pytest.fixture()
 def restore_capability_store():
-    previous = main.service_context.get("capability_store")
+    previous = host_runtime.service_context.get("capability_store")
     yield
-    main.service_context.register("capability_store", previous)
+    host_runtime.service_context.register("capability_store", previous)
 
 
 @pytest.mark.asyncio
 async def test_snapshot_reads_workflow_db_authority(tmp_path, restore_capability_store) -> None:
     path = await initialize_capability_database(tmp_path / "workflow.db")
     store = CapabilityStore(path)
-    main.service_context.register("capability_store", store)
+    host_runtime.service_context.register("capability_store", store)
 
     snapshot = await capability_runtime._authorization_policy_snapshot()
     assert snapshot == {
@@ -59,7 +59,7 @@ async def test_snapshot_reflects_persisted_state_after_write(
 ) -> None:
     path = await initialize_capability_database(tmp_path / "workflow.db")
     store = CapabilityStore(path)
-    main.service_context.register("capability_store", store)
+    host_runtime.service_context.register("capability_store", store)
 
     initial = await store.get_policy_state()
     await store.compare_and_set_policy_mode("manual", expected_generation=initial.generation)
@@ -76,7 +76,7 @@ async def test_snapshot_reflects_persisted_state_after_write(
 async def test_snapshot_without_store_is_marked_non_authoritative(
     restore_capability_store,
 ) -> None:
-    main.service_context.register("capability_store", None)
+    host_runtime.service_context.register("capability_store", None)
     snapshot = await capability_runtime._authorization_policy_snapshot()
     assert snapshot["authoritative"] is False
     assert snapshot["provenance"] == "unavailable"

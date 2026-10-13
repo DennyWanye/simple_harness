@@ -34,6 +34,7 @@ from deskpet.execution.current_tool_pages import (
 from deskpet.execution.current_tool_pages import (
     PREFIX as CURRENT_PREFIX,
 )
+from host import runtime as host_runtime
 from host import sdk_services
 from host.state import host_state
 from tests.host_patch import patch_host_global
@@ -50,7 +51,6 @@ async def test_actual_current_effect_page_and_physical_guard(
     write_chunks=None,
     expected_budget_stop=False,
 ):
-    import main
     from deskpet.execution.primary_dependencies import read_run_dependencies
 
     state, _, service, configured, authority = await fixture(tmp_path)
@@ -200,9 +200,9 @@ async def test_actual_current_effect_page_and_physical_guard(
         sdk_services, "_primary_history_policy", lambda _: holder.runtime.history_policy
     )
     monkeypatch.setattr(sdk_services, "_sdk_price_snapshot", lambda *_: (1, 1, "price-v1"))
-    get_service = main.service_context.get
+    get_service = host_runtime.service_context.get
     monkeypatch.setattr(
-        main.service_context,
+        host_runtime.service_context,
         "get",
         lambda key, *a, **kw: (
             None if key == "sdk_typed_context_use_authority" else get_service(key, *a, **kw)
@@ -410,7 +410,6 @@ async def test_same_run_settled_results_get_a_per_result_ceiling_and_page_back_e
     ``context_page_in`` still returns their exact bytes, a *failed* settled
     result never fails the Run, and the newest provider turn keeps its bodies.
     """
-    import main
     from deskpet.execution.current_tool_pages import current_tool_allowance
     from deskpet.sdk_adapters.context_partitions import effective_input_budget, text_tokens
 
@@ -529,9 +528,9 @@ async def test_same_run_settled_results_get_a_per_result_ceiling_and_page_back_e
         sdk_services, "_primary_history_policy", lambda _: holder.runtime.history_policy
     )
     monkeypatch.setattr(sdk_services, "_sdk_price_snapshot", lambda *_: (1, 1, "price-v1"))
-    get_service = main.service_context.get
+    get_service = host_runtime.service_context.get
     monkeypatch.setattr(
-        main.service_context,
+        host_runtime.service_context,
         "get",
         lambda key, *a, **kw: (
             None if key == "sdk_typed_context_use_authority" else get_service(key, *a, **kw)

@@ -46,28 +46,35 @@ def main() -> int:
         p = Path(f)
         s = p.read_text(encoding="utf-8")
         before = s
+        # 测试里有与模块同名的局部变量时，模块用别名 host_<模块>，免得被遮住（2026-10-13 教训）
+        shadowed = any(
+            isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store) and node.id == a.module
+            for node in ast.walk(ast.parse(s))
+        )
+        ref = f"host_{a.module}" if shadowed else a.module
+        import_line = f"from host import {a.module} as {ref}\n" if shadowed else f"from host import {a.module}\n"
         aliases = set(re.findall(r"^\s*import main as (\w+)", s, re.M))
         if re.search(r"^\s*import main\b(?! as)", s, re.M):
             aliases.add("main")
         for al in aliases:
             for nm in names:
-                s = re.sub(rf"\b{al}\.{re.escape(nm)}\b", f"{a.module}.{nm}", s)
+                s = re.sub(rf"\b{al}\.{re.escape(nm)}\b", f"{ref}.{nm}", s)
             for nm in (names | patch_also) - main_reads:
                 s = re.sub(rf"((?:setattr|patch\.object)\(\s*){al}(\s*,\s*[\"']{re.escape(nm)}[\"'])",
-                           rf"\g<1>{a.module}\g<2>", s)
-        if s != before and not re.search(rf"^from host import .*\b{a.module}\b", s, re.M):
+                           rf"\g<1>{ref}\g<2>", s)
+        if s != before and import_line.strip() not in s and not (
+            not shadowed and re.search(rf"^from host import .*\b{a.module}\b", s, re.M)
+        ):
             tree = ast.parse(s)
             last = max((n.end_lineno for n in tree.body if isinstance(n, (ast.Import, ast.ImportFrom))), default=0)
             lines = s.splitlines(keepends=True)
-            lines.insert(last, f"from host import {a.module}\n")
+            lines.insert(last, import_line)
             s = "".join(lines)
         if s != before:
             p.write_text(s, encoding="utf-8")
             print(f"改写 {f}")
-            # 测试里若有与模块同名的局部变量，会遮住刚导入的模块（2026-10-13 教训）
-            for node in ast.walk(ast.parse(s)):
-                if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store) and node.id == a.module:
-                    print(f"  警告 {f}:{node.lineno} 局部变量与模块同名：{a.module}")
+            if shadowed:
+                print(f"  {f} 里有与模块同名的局部变量，改用别名 {ref}")
     return 0
 
 

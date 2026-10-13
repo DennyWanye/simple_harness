@@ -17,6 +17,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
+from host import runtime as host_runtime
 
 from tests.host_patch import patch_host_global
 
@@ -60,7 +61,7 @@ def client_flag_on(monkeypatch):
         },
     ]
     monkeypatch.setattr(
-        main_module.service_context,
+        host_runtime.service_context,
         "get",
         lambda key: mock_loader if key == "skill_loader" else None,
     )

@@ -10,6 +10,7 @@ from deskpet.agent.run_presenter import (
     _present_compacted,
 )
 from host import context_usage, harness_chat, sdk_execution
+from host import runtime as host_runtime
 
 from tests.host_patch import patch_host_global
 
@@ -110,7 +111,6 @@ async def test_projection_broadcasts_strictly_newer_usage_once(monkeypatch) -> N
 async def test_chat_launcher_emits_terminal_error_when_failure_precedes_run_open(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import main
 
     delivered: list[tuple[dict[str, Any], str, str]] = []
 
@@ -158,7 +158,6 @@ async def test_chat_launcher_emits_terminal_error_when_failure_precedes_run_open
 
 @pytest.mark.asyncio
 async def test_provider_producer_persists_frozen_identity_and_sends_authority():
-    import main
 
     class _AttemptStore:
         def public_for_session(self, session_id: str):  # noqa: ANN001
@@ -214,12 +213,12 @@ async def test_provider_producer_persists_frozen_identity_and_sends_authority():
 
     db = _SessionDB()
     ws = _WS()
-    previous_attempts = main.service_context.get("context_attempt_store")
-    previous_db = main.service_context.get("session_db")
+    previous_attempts = host_runtime.service_context.get("context_attempt_store")
+    previous_db = host_runtime.service_context.get("session_db")
     context_usage._session_context_state.pop("session-7", None)
     try:
-        main.service_context.register("context_attempt_store", _AttemptStore())
-        main.service_context.register("session_db", db)
+        host_runtime.service_context.register("context_attempt_store", _AttemptStore())
+        host_runtime.service_context.register("session_db", db)
         await context_usage._emit_context_usage(
             ws,
             "session-7",
@@ -231,8 +230,8 @@ async def test_provider_producer_persists_frozen_identity_and_sends_authority():
             frozen_model_id="kimi-k3",
         )
     finally:
-        main.service_context.register("context_attempt_store", previous_attempts)
-        main.service_context.register("session_db", previous_db)
+        host_runtime.service_context.register("context_attempt_store", previous_attempts)
+        host_runtime.service_context.register("session_db", previous_db)
 
     assert db.sample is not None
     assert db.binding_read is False
@@ -304,7 +303,6 @@ async def test_run_context_usage_basis_freezes_exact_measured_sample():
 
 @pytest.mark.asyncio
 async def test_context_usage_request_reader_uses_only_durable_authority():
-    import main
 
     class _SessionDB:
         async def get_context_usage_state(self, session_id: str):
@@ -321,13 +319,13 @@ async def test_context_usage_request_reader_uses_only_durable_authority():
                 "has_measurement": False,
             }
 
-    previous_db = main.service_context.get("session_db")
+    previous_db = host_runtime.service_context.get("session_db")
     context_usage._session_context_state.pop("cold-session", None)
     try:
-        main.service_context.register("session_db", _SessionDB())
+        host_runtime.service_context.register("session_db", _SessionDB())
         state = await context_usage._read_context_usage_authority("cold-session")
     finally:
-        main.service_context.register("session_db", previous_db)
+        host_runtime.service_context.register("session_db", previous_db)
 
     assert state["source"] == "binding_only"
     assert state["model"] == "kimi-k3"

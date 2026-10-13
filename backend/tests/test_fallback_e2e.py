@@ -21,6 +21,7 @@ import httpx
 import pytest
 from agent.providers.simple_llm import SimpleLLMAgent
 from fastapi.testclient import TestClient
+from host import runtime as host_runtime
 from providers.openai_compatible import OpenAICompatibleProvider
 from router.hybrid_router import HybridRouter
 
@@ -153,10 +154,10 @@ def app_with_router(monkeypatch):
     def set_router(r: HybridRouter) -> None:
         # ServiceContext is a dataclass with setattr-based register(); reusing
         # register() here also preserves the validation of the service name.
-        main_mod.service_context.register("llm_engine", r)
-        main_mod.service_context.register(
+        host_runtime.service_context.register("llm_engine", r)
+        host_runtime.service_context.register(
             "agent_engine",
-            SimpleLLMAgent(r, memory=main_mod.service_context.memory_store),
+            SimpleLLMAgent(r, memory=host_runtime.service_context.memory_store),
         )
 
     return client, set_router
