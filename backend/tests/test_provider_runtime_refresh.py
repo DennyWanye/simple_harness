@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock
 
 import main
 import pytest
-from host import sdk_activation, sdk_recovery, sdk_runtime_stack, sdk_services
+from host import sdk_activation, sdk_execution, sdk_recovery, sdk_runtime_stack, sdk_services
 from host.state import host_state
 
 
@@ -135,7 +135,7 @@ def test_sdk_tool_authority_is_reachable_for_fresh_waiting_terminal_and_recovery
 
     build = inspect.getsource(sdk_runtime_stack._build_product_sdk_runtime_stack)
     foreground = inspect.getsource(main._run_product_harness_chat)
-    execute = inspect.getsource(main._execute_sdk_run)
+    execute = inspect.getsource(sdk_execution._execute_sdk_run)
     watcher = inspect.getsource(sdk_recovery._watch_retained_sdk_run)
 
     assert "tool_authorities.restore_waiting_run" in build
@@ -157,7 +157,7 @@ def test_foreground_sdk_path_has_no_global_refresh_lock_or_legacy_authority():
     import inspect
 
     foreground = inspect.getsource(main._run_product_harness_chat)
-    execute = inspect.getsource(main._execute_sdk_run)
+    execute = inspect.getsource(sdk_execution._execute_sdk_run)
 
     assert "_sdk_runtime_run_lock" not in foreground
     assert "_refresh_product_sdk_runtime_after_provider_change" not in foreground
@@ -204,12 +204,12 @@ def test_per_run_binding_resolver_retains_waiting_and_releases_terminal(monkeypa
     assert resolver.registry.resolve("run-a").lease_state == "waiting"
     monkeypatch.setattr(host_state, "sdk_provider_binding_resolver", resolver)
     with pytest.raises(main.ProviderMutationConflict):
-        main._assert_sdk_provider_mutation_allowed(("provider-a",))
+        sdk_execution._assert_sdk_provider_mutation_allowed(("provider-a",))
     resolver.mark_terminal("run-b", "completed")
     with pytest.raises(KeyError):
         resolver.resolve("run-b")
     resolver.mark_terminal("run-a", "cancelled")
-    main._assert_sdk_provider_mutation_allowed(("provider-a",))
+    sdk_execution._assert_sdk_provider_mutation_allowed(("provider-a",))
 
 
 @pytest.mark.asyncio
@@ -230,7 +230,7 @@ async def test_provider_authority_uses_session_params_and_epoch_cas():
         )
     )
 
-    authority = await main._freeze_sdk_provider_authority(session_db, "session-1", host)
+    authority = await sdk_execution._freeze_sdk_provider_authority(session_db, "session-1", host)
 
     assert authority["model_params"]["thinking"] is True
     assert authority["model_params"]["effort"] == "max"
@@ -238,7 +238,7 @@ async def test_provider_authority_uses_session_params_and_epoch_cas():
 
     session_db.get_session_provider_binding_authority.return_value["binding_epoch"] = 8
     with pytest.raises(RuntimeError, match="changed_during_start"):
-        await main._freeze_sdk_provider_authority(session_db, "session-1", host)
+        await sdk_execution._freeze_sdk_provider_authority(session_db, "session-1", host)
 
 
 def test_foreground_no_longer_owns_manual_memory_prepare() -> None:

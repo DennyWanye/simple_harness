@@ -9,7 +9,9 @@ from deskpet.agent.run_presenter import (
     RunPresentationContext,
     _present_compacted,
 )
-from host import context_usage
+from host import context_usage, sdk_execution
+
+from tests.host_patch import patch_host_global
 
 
 class _WS:
@@ -22,7 +24,6 @@ class _WS:
 
 @pytest.mark.asyncio
 async def test_binding_commit_pushes_binding_only_context_authority() -> None:
-    import main
 
     class _SessionDB:
         async def get_context_usage_state(self, session_id: str):
@@ -61,7 +62,6 @@ async def test_binding_commit_pushes_binding_only_context_authority() -> None:
 
 @pytest.mark.asyncio
 async def test_projection_broadcasts_strictly_newer_usage_once(monkeypatch) -> None:
-    import main
 
     state = {
         "schema_version": 2,
@@ -127,7 +127,7 @@ async def test_chat_launcher_emits_terminal_error_when_failure_precedes_run_open
         delivered.append((frame, session_id, request_id))
 
     monkeypatch.setattr(main, "_run_product_harness_chat_with_timeout", fail_before_open)
-    monkeypatch.setattr(main, "_send_chat_error", capture_error)
+    patch_host_global(monkeypatch, "_send_chat_error", capture_error)
 
     task = main._launch_product_harness_chat(
         _WS(),
@@ -246,7 +246,6 @@ async def test_provider_producer_persists_frozen_identity_and_sends_authority():
 
 
 def test_context_cache_rejects_late_older_version():
-    import main
 
     sid = "cache-version-session"
     context_usage._session_context_state.pop(sid, None)
@@ -259,13 +258,12 @@ def test_context_cache_rejects_late_older_version():
 
 
 def test_run_context_usage_identity_comes_from_frozen_host_snapshot():
-    import main
 
     class _Host:
         provider_plan = ("kimi",)
         provider_bindings = (("kimi", "kimi-k3", "inc-1", 7, 11),)
 
-    assert main._snapshot_context_usage_binding_for_run(_Host()) == {
+    assert sdk_execution._snapshot_context_usage_binding_for_run(_Host()) == {
         "provider_id": "kimi",
         "preferred_model": "kimi-k3",
         "provider_incarnation_id": "inc-1",
@@ -275,7 +273,6 @@ def test_run_context_usage_identity_comes_from_frozen_host_snapshot():
 
 
 def test_run_context_usage_identity_rejects_untyped_or_legacy_bindings():
-    import main
 
     class _LegacyPlanMapping:
         provider_plan = {"bindings": [{"provider_id": "wrong", "model_id": "wrong"}]}
@@ -284,13 +281,12 @@ def test_run_context_usage_identity_rejects_untyped_or_legacy_bindings():
         provider_plan = ("kimi",)
         provider_bindings = (("kimi", "kimi-k3"),)
 
-    assert main._snapshot_context_usage_binding_for_run(_LegacyPlanMapping()) == {}
-    assert main._snapshot_context_usage_binding_for_run(_LegacyPair()) == {}
+    assert sdk_execution._snapshot_context_usage_binding_for_run(_LegacyPlanMapping()) == {}
+    assert sdk_execution._snapshot_context_usage_binding_for_run(_LegacyPair()) == {}
 
 
 @pytest.mark.asyncio
 async def test_run_context_usage_basis_freezes_exact_measured_sample():
-    import main
 
     class _SessionDB:
         async def get_context_usage_state(self, session_id: str):
@@ -301,7 +297,7 @@ async def test_run_context_usage_basis_freezes_exact_measured_sample():
             }
 
     assert (
-        await main._snapshot_context_usage_basis_for_run(_SessionDB(), "session-exact")
+        await sdk_execution._snapshot_context_usage_basis_for_run(_SessionDB(), "session-exact")
         == "sample-before"
     )
 

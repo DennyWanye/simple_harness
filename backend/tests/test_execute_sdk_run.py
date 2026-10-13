@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, Mock, create_autospec
 
 import pytest
 from deskpet.sdk_adapters.desktop_runtime import _delivery_adapters
-from host import sdk_recovery
+from host import sdk_execution, sdk_recovery
 from host.state import host_state
 
 from tests.host_patch import patch_host_global
@@ -871,7 +871,7 @@ async def test_execute_sdk_run_registers_delivery_before_start_first_turn(monkey
     )
     monkeypatch.setattr(host_state, "sdk_ingress", FirstTurnInsideStartIngress())
     monkeypatch.setattr(host_state, "sdk_context_port", None)
-    monkeypatch.setattr(main, "_broadcast_default_chat_peers", AsyncMock())
+    patch_host_global(monkeypatch, "_broadcast_default_chat_peers", AsyncMock())
     lifecycle = _BindingLifecycle()
     monkeypatch.setattr(host_state, "sdk_provider_binding_resolver", lifecycle)
     from deskpet.sdk_adapters.tool_authority import (
@@ -914,7 +914,7 @@ async def test_execute_sdk_run_registers_delivery_before_start_first_turn(monkey
     )
     monkeypatch.setattr(host_state, "sdk_tool_authority_registry", tool_authority)
 
-    await main._execute_sdk_run(
+    await sdk_execution._execute_sdk_run(
         session_id=session_id,
         request_id=request_id,
         turn_id=turn_id,
@@ -998,9 +998,9 @@ async def test_execute_sdk_run_waiting_retains_delivery_and_identity(monkeypatch
     session_id_value = session_id
     monkeypatch.setattr(host_state, "sdk_ingress", WaitingIngress())
     monkeypatch.setattr(host_state, "sdk_provider_binding_resolver", lifecycle)
-    monkeypatch.setattr(main, "_broadcast_default_chat_peers", AsyncMock())
+    patch_host_global(monkeypatch, "_broadcast_default_chat_peers", AsyncMock())
 
-    await main._execute_sdk_run(
+    await sdk_execution._execute_sdk_run(
         session_id=session_id,
         request_id=request_id,
         turn_id=turn_id,
@@ -1383,7 +1383,7 @@ async def test_execute_sdk_run_cleans_pre_registered_delivery_when_start_fails(m
     monkeypatch.setattr(host_state, "sdk_provider_binding_resolver", lifecycle)
 
     with pytest.raises(RuntimeError, match="start failed"):
-        await main._execute_sdk_run(
+        await sdk_execution._execute_sdk_run(
             session_id="race-session",
             request_id="race-request",
             turn_id=9,
@@ -1667,7 +1667,7 @@ async def test_waiting_continuation_uses_sync_sdk_signal_and_resumes(monkeypatch
     )
     watcher = Mock()
     monkeypatch.setattr(main, "_ensure_sdk_recovery_watcher", watcher)
-    monkeypatch.setattr(main, "_broadcast_default_chat_peers", AsyncMock())
+    patch_host_global(monkeypatch, "_broadcast_default_chat_peers", AsyncMock())
     websocket = SimpleNamespace(send_json=AsyncMock())
     main._sdk_run_ids_by_root["canonical-continuation"] = "sdk-continuation"
 
@@ -1766,12 +1766,12 @@ async def test_execute_sdk_run_does_not_project_user_cancel_as_failure(monkeypat
     send_error = AsyncMock()
     monkeypatch.setattr(host_state, "sdk_ingress", CancelledDuringWaitIngress())
     monkeypatch.setattr(host_state, "sdk_context_port", None)
-    monkeypatch.setattr(main, "_send_chat_error", send_error)
-    monkeypatch.setattr(main, "_broadcast_default_chat_peers", AsyncMock())
+    patch_host_global(monkeypatch, "_send_chat_error", send_error)
+    patch_host_global(monkeypatch, "_broadcast_default_chat_peers", AsyncMock())
     lifecycle = _BindingLifecycle()
     monkeypatch.setattr(host_state, "sdk_provider_binding_resolver", lifecycle)
 
-    await main._execute_sdk_run(
+    await sdk_execution._execute_sdk_run(
         session_id=session_id,
         request_id=request_id,
         turn_id=turn_id,

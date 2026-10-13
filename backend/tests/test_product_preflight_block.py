@@ -3,8 +3,9 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
-from host import chat_delivery
 from host.state import host_state
+
+from tests.host_patch import patch_host_global
 
 
 @pytest.mark.asyncio
@@ -36,9 +37,7 @@ async def test_product_preflight_block_projects_public_error_without_client_exte
 
     monkeypatch.setattr(host_state, "sdk_ingress", SimpleNamespace())
     monkeypatch.setattr(host_state, "sdk_runtime_stack", _Stack())
-    monkeypatch.setattr(main, "_broadcast_default_chat_peers", broadcast)
-    # 发送错误的函数在 host.chat_delivery 里，它调用的是本模块的广播
-    monkeypatch.setattr(chat_delivery, "_broadcast_default_chat_peers", broadcast)
+    patch_host_global(monkeypatch, "_broadcast_default_chat_peers", broadcast)
     websocket = _WebSocket()
 
     await main._commit_product_preflight_block(
