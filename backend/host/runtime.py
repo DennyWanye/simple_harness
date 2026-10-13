@@ -15,7 +15,9 @@ from observability.crash_reports import install_crash_reporter
 # failures later in this file still land in crash_reports/.
 install_crash_reporter()
 
-logger = structlog.get_logger()
+# 记录器名固定为 "main"：主入口拆进 host 包之前日志里一直是这个名字；
+# 不带名字时取第一次打日志的模块，拆分后会变成别的模块名（2026-10-13）。
+logger = structlog.get_logger("main")
 
 # P3-S7: ensure user data / cache / models directories exist before any
 # subsystem tries to write into them. Also seeds <user_data>/config.toml
