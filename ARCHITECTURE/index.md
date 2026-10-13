@@ -1,3 +1,5 @@
+最后更新：2026-10-13 CST（代码质量整治阶段 2）。宿主入口已拆成 `backend/main.py`（只做组装）+ `backend/host/` 包，结构与"原主入口函数现在在哪"见 [HOST_ENTRY.md](HOST_ENTRY.md)。本索引里 `main.py:<行号>` 形式的引用已失效。
+
 最后更新：2026-10-05 CST（Assurance 原计划对照与补改，SDK `opt.162`）。保证通道是唯一通道：`assurance_profile` 开关、不走保证通道的旧审阅路径、受管恢复都已删除（10-03），下面较早条目里提到它们的地方是当时的状态。本次：收尾也等资料变更问完；"完成"只有一个写方；发布之后用户改要求不重发、由结果审阅员按新要求重审原来那次发布。详见 [ASSURANCE.md](ASSURANCE.md) 顶部。
 
 最后更新：2026-09-26 CST（真机点击反馈修复 + 复杂编排跑通）。SDK 钉 `0.13.0.dev20260925+opt.32`，Host 钉版提交 `5faa739f`。当日内容：保温杯 5 步任务真机跑通（每步只写、只审自己的文件）；重启后遗留名额释放；拆出的每一步只带自己负责的文件要求；未知用量在收尾时按上限计入（任务不再卡在清算中）、拆分过粗打回一次、新建任务参考资料区常驻；纯内容完成要求在 auto 模式下自动确认；权限改造（默认放行 + 核心文件会话内申请，见 [AGENT_HARNESS.md](AGENT_HARNESS.md)）；编排实时执行图与可读步骤、全站文字可选（见 [UI.md](UI.md)）；编排内核 10 处可靠性修复，7 步复杂任务第八趟跑到完成（见 [AGENT_ORCHESTRATION.md](AGENT_ORCHESTRATION.md)、[ASSURANCE.md](ASSURANCE.md)）；单步额度 300 万、规划回复丢弃多余字段两项用户决定。总览见 [PROJECT_STATUS.md](PROJECT_STATUS.md)。

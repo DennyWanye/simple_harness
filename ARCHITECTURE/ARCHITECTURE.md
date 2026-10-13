@@ -2,6 +2,9 @@
 
 # simple_harness Long-Running Agent Architecture Baseline
 
+> 2026-10-13：宿主入口已拆成 `backend/main.py` + `backend/host/` 包，见 [HOST_ENTRY.md](HOST_ENTRY.md)；下文 `main.py` 及其行号指拆分前位置，按该文档索引查新位置。
+
+
 ## 当前状态与版本（2026-09-09 22:05）
 
 本节是本文件唯一的「今日状态」入口，随交付刷新；下方各 `## …（生产事实）` 章节按交付时间保留，各自描述当时状态，不回改、不删除。

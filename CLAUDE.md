@@ -85,7 +85,9 @@ Key architecture documents:
 
 ```
 backend/
-├── main.py                    # FastAPI app + WebSocket routes
+├── main.py                    # App assembly only: lifespan step order, FastAPI app, router registration
+├── host/                      # Host entry split by responsibility (startup/shutdown steps, control channel
+│                              # routing table + handlers, SDK runtime wiring, HTTP routes); see ARCHITECTURE/HOST_ENTRY.md
 ├── config.py                  # Configuration management
 ├── agent/                     # Legacy P3 agent code
 ├── deskpet/                   # P4+ new architecture
