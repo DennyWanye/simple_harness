@@ -561,7 +561,7 @@ def test_config_has_no_dead_compaction_flag():
 def test_build_agent_passes_compressor_none_when_flag_off():
     """build_agent with compaction_enabled=False → agent.compressor is None (BC)."""
     from config import AppConfig
-    from main import build_agent
+    from host.agent_factory import build_agent
 
     cfg = AppConfig()
     # WI-6 后默认 True → 本测显式关掉以验证 flag-off 的 BC 路径(compressor=None)。

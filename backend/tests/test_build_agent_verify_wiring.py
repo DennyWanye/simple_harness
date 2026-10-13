@@ -3,13 +3,13 @@
 
 """WI-T2.1 v3 — build_agent 工厂 wiring 测试.
 
-验证 main.build_agent(...) 工厂真正把 VerifyGate / ReceiptStore /
+验证 host.agent_factory.build_agent(...) 工厂真正把 VerifyGate / ReceiptStore /
 max_verify_nudges 接到 _AgentLoop 实例上。**这是 last-mile P0-1 修复的硬证据**
 （last-mile 写了 AgentLoop kwargs + verify_gate 类，但 main.py 构造调用漏传）。
 
 测试策略（详 plans/2026-05-24-tool-layer-optimization-v3/01-TDD.md §A1.3）：
 不走 `import main; reload` 路径（monolithic main.py 99% 翻车 — v1 评审 P1-1）。
-直接 `from main import build_agent` + mock cfg/registry 调用工厂 + assertion。
+直接 `from host.agent_factory import build_agent` + mock cfg/registry 调用工厂 + assertion。
 
 四组场景：
   1. flag ON (mode=shadow) → verify_gate is not None + receipt_store wired
@@ -101,7 +101,7 @@ def test_build_agent_passes_verify_gate_when_flag_on(
     mock_receipt_store_getter,
 ):
     """**核心接电证据**: mode=shadow → agent.verify_gate is not None."""
-    from main import build_agent
+    from host.agent_factory import build_agent
 
     agent = build_agent(
         cfg_flag_on,
@@ -124,7 +124,7 @@ def test_build_agent_verify_gate_none_when_flag_off(
     mock_receipt_store_getter_none,
 ):
     """mode=off (default) → agent.verify_gate is None (BC)."""
-    from main import build_agent
+    from host.agent_factory import build_agent
 
     agent = build_agent(
         cfg_flag_off,
@@ -142,7 +142,7 @@ def test_build_agent_can_disable_verify_gate_for_zero_tool_structured_runs(
     mock_receipt_store_getter,
 ):
     """Host-validated zero-tool JSON runs must not enter either verifier."""
-    from main import build_agent
+    from host.agent_factory import build_agent
 
     cfg_flag_on.features = MagicMock()
     cfg_flag_on.features.problem_pipeline.enabled = True
@@ -172,7 +172,7 @@ def test_build_agent_handles_missing_patterns_file(
     load_claim_patterns 内部已 logger.warning，本测试只验证 build_agent 不抛 +
     返回的 agent 仍可用（verify_gate 退化 None 等价于 mode=off）。
     """
-    from main import build_agent
+    from host.agent_factory import build_agent
 
     # 注意：load_claim_patterns 文件缺失返 [] 但 VerifyGate 仍构造成功
     # （patterns=[] + mode=shadow → check() 时无 claim 提取，永远 pass）。
@@ -196,7 +196,7 @@ def test_build_agent_passes_all_optional_kwargs(
     mock_receipt_store_getter,
 ):
     """★v3 round2 P0-6: 工厂签名 4 个 ★v3 参数全部传给 _AgentLoop ctor."""
-    from main import build_agent
+    from host.agent_factory import build_agent
 
     mock_probe = MagicMock(name="completion_probe")
     agent = build_agent(
@@ -222,7 +222,7 @@ def test_build_agent_has_no_legacy_tool_path_recorder_parameter():
     """Task 13: the removed recorder cannot be re-enabled through the factory."""
     import inspect
 
-    from main import build_agent
+    from host.agent_factory import build_agent
 
     assert "tool_path_recorder" not in inspect.signature(build_agent).parameters
 
@@ -235,7 +235,7 @@ def test_build_agent_receipt_store_getter_failure_disables_gate(
 
     防止 ledger 完全不可用时 strict gate 把所有 end_turn 锁死。
     """
-    from main import build_agent
+    from host.agent_factory import build_agent
 
     def _bad_getter():
         raise RuntimeError("disk full")
@@ -256,7 +256,7 @@ def test_build_agent_strict_mode_wires_gate(
     mock_receipt_store_getter,
 ):
     """strict mode 也能正确接电（不只 shadow）."""
-    from main import build_agent
+    from host.agent_factory import build_agent
 
     cfg_flag_on.tools.verifier.verify_gate_mode = "strict"
     agent = build_agent(
@@ -275,7 +275,7 @@ def test_build_agent_uses_cfg_max_verify_nudges(
     mock_receipt_store_getter,
 ):
     """cfg.tools.verifier.max_verify_nudges 透传到 AgentLoop."""
-    from main import build_agent
+    from host.agent_factory import build_agent
 
     cfg_flag_on.tools.verifier.max_verify_nudges = 5
     agent = build_agent(

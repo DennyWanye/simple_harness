@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+from host import provider_chain
 from llm.resolution import ProviderRoutingReadiness, SessionProviderUnavailable
 
 from tests.host_patch import patch_host_global
@@ -21,7 +22,7 @@ async def test_product_provider_resolution_cannot_fall_back_before_readiness(mon
             SessionProviderUnavailable,
             match="provider_routing_initializing",
         ):
-            await main._resolve_agent_provider_chain(
+            await provider_chain._resolve_agent_provider_chain(
                 "session-before-ready",
                 session_db=object(),
             )
@@ -46,7 +47,7 @@ async def test_product_provider_resolution_cannot_use_legacy_fallback_after_fail
         main.service_context.register("provider_registry", None)
         main.service_context.register("provider_routing_readiness", readiness)
         with pytest.raises(SessionProviderUnavailable):
-            await main._resolve_agent_provider_chain(
+            await provider_chain._resolve_agent_provider_chain(
                 "session-after-failure",
                 session_db=object(),
             )

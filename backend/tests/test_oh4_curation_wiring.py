@@ -139,7 +139,7 @@ class _CfgStub:
 
 
 def _build(**kwargs):
-    from main import build_agent
+    from host.agent_factory import build_agent
 
     base = dict(
         llm_registry=MagicMock(name="llm_registry"),
@@ -175,7 +175,7 @@ def test_build_agent_passes_curation_every_n():
     """cfg.memory.v2.curation_nudge_every_n_turns 透传到 _curation_every（频率门控）。"""
     cfg = _CfgStub()
     cfg.memory.v2.curation_nudge_every_n_turns = 2
-    from main import build_agent
+    from host.agent_factory import build_agent
 
     agent = build_agent(
         cfg,

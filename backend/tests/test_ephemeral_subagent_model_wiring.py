@@ -156,7 +156,7 @@ def capture_ephemeral_provider(monkeypatch):
 
 
 def _build(cfg):
-    from main import build_agent
+    from host.agent_factory import build_agent
 
     rs = MagicMock(name="ReceiptStore")
     rs.load_session.return_value = []
