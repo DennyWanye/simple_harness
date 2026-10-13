@@ -22,9 +22,11 @@ from dataclasses import dataclass, field
 from unittest.mock import MagicMock
 
 import pytest
-from host import agent_factory, llm_calls
+from host import llm_calls
 from host.state import host_state
 from providers.openai_compatible import OpenAICompatibleProvider
+
+from tests.host_patch import patch_host_global
 
 
 def _base_provider(model: str = "gpt-5.5") -> OpenAICompatibleProvider:
@@ -137,11 +139,10 @@ class _CfgStub:
 def capture_ephemeral_provider(monkeypatch):
     """Patch main.local_llm to a known base + record providers passed to
     _make_str_llm_call with max_tokens==256 (the ephemeral verifier call)."""
-    import main
 
     base = _base_provider("BASE-MODEL-gpt-5.5")
     monkeypatch.setattr(host_state, "local_llm", base, raising=False)
-    monkeypatch.setattr(main, "cloud_llm", None, raising=False)
+    patch_host_global(monkeypatch, "cloud_llm", None)
 
     recorded: list = []
     orig = llm_calls._make_str_llm_call
