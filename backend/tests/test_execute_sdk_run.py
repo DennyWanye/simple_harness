@@ -568,7 +568,7 @@ def test_sdk_price_snapshot_never_marks_unknown_model_free():
 
 def test_public_narration_prompt_matches_optional_tolerant_tool_schema():
     from deskpet.sdk_adapters.tools import ProductToolRegistration, _sdk_tool
-    from main import _SDK_PUBLIC_WORK_NARRATION_PROMPT
+    from host.sdk_context import _SDK_PUBLIC_WORK_NARRATION_PROMPT
 
     registration = ProductToolRegistration(
         name="read_file",
