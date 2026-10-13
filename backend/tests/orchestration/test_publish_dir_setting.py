@@ -89,10 +89,17 @@ def test_set_restarts_once_and_a_refusal_changes_nothing(tmp_path):
 
 
 def test_the_control_channel_handles_both_verbs_before_the_orchestration_prefix():
+    import main
+
+    # 按控制通道的有序路由表实际走一遍：两个动词先于编排前缀转发被接住
+    def route_for(msg_type):
+        for matcher, handler in main._CONTROL_ROUTES:
+            if (msg_type in matcher) if isinstance(matcher, frozenset) else matcher(msg_type):
+                return handler
+        return None
+
+    for verb in ("orchestration_publish_dir_get", "orchestration_publish_dir_set"):
+        assert route_for(verb) is main._cc_orchestration_publish_dir_get
+    assert route_for("orchestration_status") is main._cc_orchestration_routes
     source = host_source_text()
-    verbs = source.index(
-        'msg_type in ("orchestration_publish_dir_get", "orchestration_publish_dir_set")'
-    )
-    prefix = source.index('msg_type.startswith(("mission_", "orchestration_", "taskgraph."))')
-    assert verbs < prefix
     assert "restart=_restart_orchestration" in source

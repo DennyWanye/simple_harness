@@ -41,7 +41,9 @@ import uvicorn
 # isort: split
 
 # isort: split
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import p4_ipc  # P4-S11 MemoryPanel + ContextTrace IPC handlers
 from config import (
@@ -3223,6 +3225,3155 @@ from host.memory_messages import (
 # isort: split
 
 
+@dataclass
+class _ControlConnection:
+    """一条控制连接的状态：分发时交给各消息处理函数。"""
+
+    ws: WebSocket
+    session_id: str
+    requested_scope: str
+    companion_challenge: Any
+    human_memory_control_binding: Any
+
+
+async def _cc_ping(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
+    """控制消息：ping。"""
+    ws = conn.ws
+    await ws.send_json({"type": "pong"})
+
+
+async def _cc_memory_summarize_now(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
+    """控制消息：memory_summarize_now。"""
+    ws = conn.ws
+    payload = raw.get("payload", {}) or {}
+    if _summarizer_state_db_path is None or host_state.local_llm is None:
+        await ws.send_json(
+            {
+                "type": "memory_summarize_response",
+                "payload": {
+                    "ok": False,
+                    "error": "summarizer not initialized (state_db or local_llm missing)",
+                },
+            }
+        )
+        return
+
+
+async def _cc_memory_thumbs_up(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
+    """控制消息：memory_thumbs_up。"""
+    ws = conn.ws
+    payload = raw.get("payload", {}) or {}
+    if not config.memory.v2.feedback_loop:
+        await ws.send_json(
+            {
+                "type": "memory_thumbs_up_response",
+                "payload": {"ok": False, "reason": "feedback_loop_disabled"},
+            }
+        )
+        return
+    if _summarizer_state_db_path is None:
+        await ws.send_json(
+            {
+                "type": "memory_thumbs_up_response",
+                "payload": {"ok": False, "reason": "state_db_unavailable"},
+            }
+        )
+        return
+
+
+async def _cc_memory_archive_list(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
+    """控制消息：memory_archive_list。"""
+    ws = conn.ws
+    payload = raw.get("payload", {}) or {}
+    if _summarizer_state_db_path is None:
+        await ws.send_json(
+            {
+                "type": "memory_archive_list_response",
+                "payload": {"ok": False, "error": "state_db not initialized"},
+            }
+        )
+        return
+    _limit = int(payload.get("limit", 100))
+    _filter_sid = payload.get("session_id")
+    try:
+        import aiosqlite
+
+        rows = []
+        async with aiosqlite.connect(_summarizer_state_db_path) as _db:
+            if _filter_sid:
+                cur = await _db.execute(
+                    "SELECT id, session_id, role, content, created_at, "
+                    "archived_at, archived_into_id "
+                    "FROM messages_archive WHERE session_id = ? "
+                    "ORDER BY archived_at DESC, created_at DESC LIMIT ?",
+                    (_filter_sid, _limit),
+                )
+            else:
+                cur = await _db.execute(
+                    "SELECT id, session_id, role, content, created_at, "
+                    "archived_at, archived_into_id "
+                    "FROM messages_archive "
+                    "ORDER BY archived_at DESC, created_at DESC LIMIT ?",
+                    (_limit,),
+                )
+            async for r in cur:
+                rows.append(
+                    {
+                        "id": r[0],
+                        "session_id": r[1],
+                        "role": r[2],
+                        "content": r[3],
+                        "created_at": r[4],
+                        "archived_at": r[5],
+                        "archived_into_id": r[6],
+                    }
+                )
+            await cur.close()
+        await ws.send_json(
+            {
+                "type": "memory_archive_list_response",
+                "payload": {"ok": True, "rows": rows, "count": len(rows)},
+            }
+        )
+    except Exception as exc:  # noqa: BLE001
+        await ws.send_json(
+            {
+                "type": "memory_archive_list_response",
+                "payload": {"ok": False, "error": str(exc)},
+            }
+        )
+
+
+async def _cc_session_run_status_query(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
+    """控制消息：session_run_status_query、session_health_check。"""
+    ws = conn.ws
+    session_id = conn.session_id
+    payload = raw.get("payload", {}) or {}
+    target_sid = str(payload.get("session_id") or session_id)
+    root_run_id = str(payload.get("root_run_id") or payload.get("run_id") or "").strip()
+    projection = _authoritative_sdk_run_projection(
+        root_run_id, str(payload.get("sdk_run_id") or "")
+    )
+    await ws.send_json(
+        {
+            "type": "session_run_status_ack",
+            "payload": {
+                "query_id": str(payload.get("query_id") or ""),
+                "session_id": target_sid,
+                "root_run_id": root_run_id,
+                **projection,
+            },
+        }
+    )
+
+
+async def _cc_permission_response(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
+    """控制消息：permission_response。"""
+    ws = conn.ws
+    session_id = conn.session_id
+    payload = raw.get("payload", {}) or {}
+    target_sid = str(payload.get("session_id") or session_id)
+    decision_id = payload.get("decision_id") or payload.get("request_id")
+    try:
+        receipt = await _signal_product_harness_decision(
+            target_sid,
+            payload,
+            {"decision": str(payload.get("decision") or "deny")},
+            authorization=True,
+            projection_ws=ws,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "permission_response_rejected",
+            decision_id=decision_id,
+            error_type=type(exc).__name__,
+            error=str(exc),
+        )
+        await ws.send_json(
+            {
+                "type": "permission_response_applied",
+                "payload": {
+                    "ok": False,
+                    "request_id": payload.get("request_id"),
+                    "decision_id": decision_id,
+                    "error": {
+                        "code": getattr(exc, "code", type(exc).__name__),
+                        "message": str(exc),
+                    },
+                },
+            }
+        )
+        return
+    logger.info(
+        "permission_response_applied",
+        decision_id=decision_id,
+        duplicate=receipt.duplicate,
+    )
+    await ws.send_json(
+        {
+            "type": "permission_response_applied",
+            "payload": {
+                "ok": True,
+                "request_id": payload.get("request_id"),
+                "decision_id": decision_id,
+                "duplicate": receipt.duplicate,
+            },
+        }
+    )
+
+
+async def _cc_protected_path_decision(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
+    """控制消息：protected_path_decision。"""
+    ws = conn.ws
+    from deskpet.permissions import protected_paths as _protected_paths
+
+    payload = raw.get("payload", {}) or {}
+    decision = str(payload.get("decision") or "")
+    if decision not in {"allow_once", "allow_session", "deny"}:
+        decision = "deny"
+    applied = _protected_paths.decide(str(payload.get("request_id") or ""), decision)
+    await ws.send_json(
+        {
+            "type": "protected_path_decision_applied",
+            "payload": {
+                "request_id": payload.get("request_id"),
+                "decision": decision,
+                "found": applied is not None,
+            },
+        }
+    )
+
+
+async def _cc_external_wait_response(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
+    """控制消息：external_wait_response。"""
+    session_id = conn.session_id
+    payload = raw.get("payload", {}) or {}
+    target_sid = str(payload.get("session_id") or session_id)
+    receipt = await _signal_product_harness_decision(
+        target_sid,
+        payload,
+        {
+            "decision": "complete",
+            "completed": True,
+        },
+    )
+    logger.info(
+        "external_wait_response_applied",
+        decision_id=(payload.get("decision_id") or payload.get("request_id")),
+        wait_ref=payload.get("wait_ref"),
+        duplicate=receipt.duplicate,
+    )
+
+
+async def _cc_project_directory_response(
+    conn: _ControlConnection, raw: dict, msg_type: str
+) -> None:
+    """控制消息：project_directory_response。"""
+    ws = conn.ws
+    session_id = conn.session_id
+    payload = raw.get("payload", {}) or {}
+    target_sid = str(payload.get("session_id") or session_id)
+    try:
+        project_root = _resolve_selected_project_directory(
+            payload.get("parent_directory"),
+            payload.get("folder_name"),
+            allow_existing=(payload.get("directory_mode") == "use_existing"),
+        )
+    except ValueError as exc:
+        await ws.send_json(
+            {
+                "type": "project_directory_error",
+                "payload": {
+                    "decision_id": (payload.get("decision_id") or payload.get("request_id")),
+                    "code": str(exc),
+                    "error": ("这个位置不能安全创建项目，请重新选择空目录或修改文件夹名。"),
+                },
+            }
+        )
+        return
+    try:
+        receipt = await _signal_product_harness_decision(
+            target_sid,
+            payload,
+            {
+                "decision": "complete",
+                "completed": True,
+                "project_root": project_root,
+                "parent_directory": str(payload.get("parent_directory") or ""),
+                "folder_name": str(payload.get("folder_name") or ""),
+                "directory_mode": str(payload.get("directory_mode") or "create_new"),
+            },
+        )
+    except Exception as exc:  # execution contracts are user-retryable
+        from deskpet.execution.contracts import ExecutionError
+
+        if not isinstance(exc, ExecutionError):
+            raise
+        logger.warning(
+            "project_directory_response_rejected",
+            session_id=target_sid,
+            decision_id=(payload.get("decision_id") or payload.get("request_id")),
+            code=exc.code,
+            error=str(exc),
+        )
+        await ws.send_json(
+            {
+                "type": "project_directory_error",
+                "payload": {
+                    "decision_id": (payload.get("decision_id") or payload.get("request_id")),
+                    "code": exc.code,
+                    "error": (
+                        "项目位置未能应用，请重新选择；若任务状态已经变化，请停止当前任务后重试。"
+                    ),
+                },
+            }
+        )
+        return
+    logger.info(
+        "project_directory_response_applied",
+        decision_id=(payload.get("decision_id") or payload.get("request_id")),
+        project_root=project_root,
+        duplicate=receipt.duplicate,
+    )
+
+
+async def _cc_clarification_response(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
+    """控制消息：clarification_response。"""
+    session_id = conn.session_id
+    payload = raw.get("payload", {}) or {}
+    target_sid = str(payload.get("session_id") or session_id)
+    receipt = await _signal_product_harness_decision(
+        target_sid,
+        payload,
+        {"answer": str(payload.get("answer") or "")},
+    )
+    logger.info(
+        "clarification_response_applied",
+        decision_id=payload.get("decision_id") or payload.get("request_id"),
+        duplicate=receipt.duplicate,
+    )
+
+
+async def _cc_permission_auto_mode_set(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
+    """控制消息：permission_auto_mode_set。"""
+    ws = conn.ws
+    payload = raw.get("payload", {}) or {}
+    requested = bool(payload.get("enabled", False))
+    await _set_authorization_auto_mode(requested)
+    snapshot = await _authorization_policy_snapshot()
+    logger.info(
+        "permission_auto_mode_set",
+        requested=requested,
+        mode=snapshot["mode"],
+        generation=snapshot["generation"],
+        provenance=snapshot["provenance"],
+    )
+    await ws.send_json(
+        {
+            "type": "permission_auto_mode_response",
+            "request_id": raw.get("request_id"),
+            "payload": snapshot,
+        }
+    )
+
+
+async def _cc_orchestration_publish_dir_get(
+    conn: _ControlConnection, raw: dict, msg_type: str
+) -> None:
+    """控制消息：orchestration_publish_dir_get、orchestration_publish_dir_set。"""
+    ws = conn.ws
+    from deskpet.orchestration import publish_settings as _publish_settings
+    from deskpet.orchestration.wiring import read_section as _read_orch_section
+    from paths import user_data_dir as _publish_user_data_dir
+
+    _rid = raw.get("request_id")
+    _body = raw.get("payload") if isinstance(raw.get("payload"), dict) else {}
+    _reply: dict = {"request_id": _rid, "ok": True}
+    try:
+        if msg_type == "orchestration_publish_dir_set":
+            await _publish_settings.set_publish_dir(
+                _body.get("path"),
+                config_path=Path(_CONFIG_PATH),
+                protected=[_publish_user_data_dir()],
+                restart=_restart_orchestration,
+            )
+        _configured = str(_read_orch_section(_CONFIG_PATH).get("publish_dir") or "")
+        _reply["data"] = _publish_settings.current(
+            service_context.get("orchestration"), _configured
+        )
+    except _publish_settings.PublishDirRefused as _refused:
+        _reply.update(ok=False, error_code=_refused.code, error=str(_refused))
+    except Exception as _exc:  # noqa: BLE001
+        logger.warning("orchestration_publish_dir_failed err=%s", _exc)
+        _reply.update(ok=False, error_code="internal", error="发布目录设置失败，请查看日志")
+    await ws.send_json({"type": msg_type + "_response", "payload": _reply})
+
+
+async def _cc_orchestration_routes(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
+    """控制消息：编排服务转发（mission_、orchestration_、taskgraph. 前缀）。"""
+    ws = conn.ws
+    from deskpet.orchestration.handlers import handle as _orchestration_handle
+
+    # a payload that is not an object is answered with invalid_request inside
+    # handle(), never raised into this shared loop (review P2-6)
+    await ws.send_json(
+        await _orchestration_handle(
+            service_context.get("orchestration"),
+            msg_type,
+            raw.get("payload"),
+            request_id=raw.get("request_id"),
+        )
+    )
+
+
+async def _cc_permission_auto_mode_get(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
+    """控制消息：permission_auto_mode_get。"""
+    ws = conn.ws
+    await ws.send_json(
+        {
+            "type": "permission_auto_mode_response",
+            "request_id": raw.get("request_id"),
+            "payload": await _authorization_policy_snapshot(),
+        }
+    )
+
+
+async def _cc_capability_list(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
+    """控制消息：capability_list。"""
+    ws = conn.ws
+    center = service_context.get("capability_center")
+    if center is None:
+        await ws.send_json(
+            {
+                "type": "capability_list_response",
+                "payload": {
+                    "capabilities": [],
+                    "error": "capability center is unavailable",
+                },
+            }
+        )
+        return
+    try:
+        payload = raw.get("payload", {}) or {}
+        target_session_id = str(payload.get("session_id") or "").strip()
+        capability_scope = None
+        capability_owner_key = None
+        if target_session_id:
+            project_bindings = service_context.get("project_binding_service")
+            if project_bindings is None:
+                raise RuntimeError("Project binding service is unavailable")
+            workspace = await project_bindings.resolve_session(target_session_id)
+            if workspace.kind == "project":
+                from deskpet.capabilities.contracts import (
+                    CapabilityScope,
+                )
+
+                capability_owner_key = "sdk-runtime"
+                capability_scope = CapabilityScope.for_run(
+                    f"capability-center:{target_session_id}",
+                    project_id=workspace.project_id,
+                    project_revision=workspace.project_revision,
+                    project_identity=workspace.project_identity,
+                    user_key=capability_owner_key,
+                )
+            elif workspace.kind == "missing":
+                raise RuntimeError(workspace.error_code)
+        capabilities = await center.list_capabilities(
+            capability_scope,
+            owner_key=capability_owner_key,
+        )
+        await ws.send_json(
+            {
+                "type": "capability_list_response",
+                "payload": {"capabilities": capabilities},
+            }
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("capability_center_list_failed", error=str(exc))
+        await ws.send_json(
+            {
+                "type": "capability_list_response",
+                "payload": {
+                    "capabilities": [],
+                    "error": str(exc),
+                },
+            }
+        )
+
+
+async def _cc_capability_operations_list(
+    conn: _ControlConnection, raw: dict, msg_type: str
+) -> None:
+    """控制消息：capability_operations_list。"""
+    ws = conn.ws
+    center = service_context.get("capability_center")
+    if center is None:
+        await ws.send_json(
+            {
+                "type": "capability_operations_response",
+                "payload": {
+                    "operations": [],
+                    "error": "capability center is unavailable",
+                },
+            }
+        )
+        return
+    payload = raw.get("payload", {}) or {}
+    try:
+        limit = max(1, min(int(payload.get("limit", 100)), 500))
+    except (TypeError, ValueError):
+        limit = 100
+    try:
+        operations = await center.list_operations(limit=limit)
+        await ws.send_json(
+            {
+                "type": "capability_operations_response",
+                "payload": {"operations": operations},
+            }
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("capability_center_operations_failed", error=str(exc))
+        await ws.send_json(
+            {
+                "type": "capability_operations_response",
+                "payload": {
+                    "operations": [],
+                    "error": str(exc),
+                },
+            }
+        )
+
+
+async def _cc_capability_install(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
+    """控制消息：capability_install、capability_activate、capability_repair、capability_uninstall、capability_rollback、capability_operation_cancel、capability_operation_retry。"""
+    ws = conn.ws
+    center = service_context.get("capability_center")
+    payload = raw.get("payload", {}) or {}
+    action = msg_type.removeprefix("capability_").removeprefix("operation_")
+    if center is None:
+        await ws.send_json(
+            {
+                "type": "capability_action_response",
+                "payload": {
+                    "ok": False,
+                    "action": action,
+                    "error_code": "capability_center_unavailable",
+                    "error": "capability center is unavailable",
+                },
+            }
+        )
+        return
+    try:
+        if msg_type == "capability_install":
+            (
+                _si_adapter,
+                _si_project,
+                _si_principal,
+            ) = await _settings_skill_install_adapter(ws)
+            _si_result = await _si_adapter.stage(
+                url=str(payload.get("source_url") or payload.get("url") or ""),
+                owner=_si_project,  # the Settings adapter yields the global owner
+                principal_id=_si_principal,
+            )
+            await ws.send_json(
+                {
+                    "type": "capability_action_response",
+                    "payload": {
+                        "ok": True,
+                        "action": action,
+                        "status": "awaiting_confirmation",
+                        "install": _si_result,
+                    },
+                }
+            )
+            return
+        if msg_type in {
+            "capability_activate",
+            "capability_repair",
+        }:
+            from deskpet.capabilities.ui_service import (
+                CapabilityCenterError,
+            )
+
+            raise CapabilityCenterError(
+                "model_driven_action_required",
+                "Install, activation, and repair require the main "
+                "agent to resolve a trusted source or failure receipt.",
+            )
+        if msg_type == "capability_uninstall":
+            operation = await center.request_uninstall(
+                capability_id=str(payload.get("capability_id") or ""),
+                source_operation_id=(
+                    str(payload["operation_id"]) if payload.get("operation_id") else None
+                ),
+            )
+        elif msg_type == "capability_rollback":
+            operation = await center.request_rollback(
+                operation_id=str(payload.get("operation_id") or ""),
+                capability_id=(
+                    str(payload["capability_id"]) if payload.get("capability_id") else None
+                ),
+            )
+        elif msg_type == "capability_operation_retry":
+            operation = await center.request_retry(
+                operation_id=str(payload.get("operation_id") or "")
+            )
+        else:
+            operation = await center.request_cancel(
+                operation_id=str(payload.get("operation_id") or "")
+            )
+        await ws.send_json(
+            {
+                "type": "capability_action_response",
+                "payload": {
+                    "ok": True,
+                    "action": action,
+                    "operation_id": operation.operation_id,
+                    "status": operation.status,
+                    "phase": operation.phase,
+                },
+            }
+        )
+    except Exception as exc:  # noqa: BLE001
+        error_code = str(getattr(exc, "code", "capability_action_failed"))
+        logger.warning(
+            "capability_center_action_failed",
+            action=action,
+            error_code=error_code,
+            error=str(exc),
+        )
+        await ws.send_json(
+            {
+                "type": "capability_action_response",
+                "payload": {
+                    "ok": False,
+                    "action": action,
+                    "error_code": error_code,
+                    "error": str(exc),
+                },
+            }
+        )
+
+
+async def _cc_chat_turn_timeout_set(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
+    """控制消息：chat_turn_timeout_set。"""
+    ws = conn.ws
+    payload = raw.get("payload", {}) or {}
+    try:
+        _mins = int(round(float(payload.get("minutes", 15))))
+    except Exception:  # noqa: BLE001
+        _mins = 15
+    _mins = max(1, min(60, _mins))
+    _ov = _load_llm_runtime_overrides()
+    _ov["chat_turn_timeout_minutes"] = _mins
+    _save_llm_runtime_overrides(_ov)
+    logger.info("chat_turn_timeout_set minutes=%d", _mins)
+    await ws.send_json(
+        {
+            "type": "chat_turn_timeout_response",
+            "request_id": raw.get("request_id"),
+            "payload": {"minutes": _mins},
+        }
+    )
+
+
+async def _cc_chat_turn_timeout_get(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
+    """控制消息：chat_turn_timeout_get。"""
+    ws = conn.ws
+    try:
+        _cur = int(round(float(_load_llm_runtime_overrides().get("chat_turn_timeout_minutes", 15))))
+    except Exception:  # noqa: BLE001
+        _cur = 15
+    await ws.send_json(
+        {
+            "type": "chat_turn_timeout_response",
+            "request_id": raw.get("request_id"),
+            "payload": {"minutes": max(1, min(60, _cur))},
+        }
+    )
+
+
+async def _cc_plugin_list(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
+    """控制消息：plugin_list。"""
+    ws = conn.ws
+    if plugin_manager is None:
+        await ws.send_json(
+            {
+                "type": "plugin_list_response",
+                "payload": {"plugins": [], "error": "plugin manager not initialized"},
+            }
+        )
+        return
+    await ws.send_json(
+        {
+            "type": "plugin_list_response",
+            "payload": {"plugins": plugin_manager.list_plugins()},
+        }
+    )
+
+
+async def _cc_plugin_enable(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
+    """控制消息：plugin_enable。"""
+    ws = conn.ws
+    payload = raw.get("payload", {}) or {}
+    name = payload.get("name", "")
+    if plugin_manager is None or not plugin_manager.enable(name):
+        await ws.send_json(
+            {
+                "type": "plugin_enable_response",
+                "payload": {"ok": False, "name": name, "error": "unknown plugin"},
+            }
+        )
+        return
+    # Best-effort SkillLoader hot-reload so the plugin's skills appear.
+    try:
+        loader = service_context.get("skill_loader")
+        if loader is not None and hasattr(loader, "reload"):
+            loader.reload()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("skill_loader_reload_failed", error=str(exc))
+    await ws.send_json(
+        {
+            "type": "plugin_enable_response",
+            "payload": {"ok": True, "name": name},
+        }
+    )
+
+
+async def _cc_plugin_disable(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
+    """控制消息：plugin_disable。"""
+    ws = conn.ws
+    payload = raw.get("payload", {}) or {}
+    name = payload.get("name", "")
+    if plugin_manager is None:
+        await ws.send_json(
+            {
+                "type": "plugin_disable_response",
+                "payload": {
+                    "ok": False,
+                    "name": name,
+                    "error": "plugin manager not initialized",
+                },
+            }
+        )
+        return
+    plugin_manager.disable(name)
+    try:
+        loader = service_context.get("skill_loader")
+        if loader is not None and hasattr(loader, "reload"):
+            loader.reload()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("skill_loader_reload_failed", error=str(exc))
+    await ws.send_json(
+        {
+            "type": "plugin_disable_response",
+            "payload": {"ok": True, "name": name},
+        }
+    )
+
+
+async def _cc_skill_marketplace_list(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
+    """控制消息：skill_marketplace_list。"""
+    ws = conn.ws
+    if skill_registry_client is None:
+        await ws.send_json(
+            {
+                "type": "skill_marketplace_list_response",
+                "payload": {"skills": [], "error": "marketplace not initialized"},
+            }
+        )
+        return
+    _data = await skill_registry_client.fetch()
+    await ws.send_json(
+        {
+            "type": "skill_marketplace_list_response",
+            "payload": _data,
+        }
+    )
+
+
+async def _cc_skill_list_installed(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
+    """控制消息：skill_list_installed。"""
+    ws = conn.ws
+    _capability_platform = service_context.get("capability_platform")
+    _global_service = service_context.get("project_skill_install_service")
+    if _capability_platform is None or _global_service is None:
+        await ws.send_json(
+            {
+                "type": "skill_list_installed_response",
+                "payload": {"skills": [], "error": "global Skill catalog unavailable"},
+            }
+        )
+        return
+    _installed = []
+    from deskpet.capabilities.contracts import CapabilityScope
+    from deskpet.capabilities.manifest import load_and_validate_pack
+
+    _global_scope_key = str(_global_service.global_owner_key)
+    _catalog_snapshot = await _capability_platform.hub.snapshot(
+        CapabilityScope(user_key=_global_scope_key)
+    )
+    for _descriptor in _catalog_snapshot.descriptors:
+        # 2026-09-25 UI 全量点击：内置 Skill 以前不算"已安装"，列表为空，
+        # 与能力中心"操作"页的 17 个已装 Skill 对不上。内置的也列出，标 builtin。
+        _binding = next(
+            (
+                item
+                for item in _descriptor.visible_bindings
+                if item.active
+                and (
+                    (item.scope == "user" and item.scope_key == _global_scope_key)
+                    or item.scope == "builtin"
+                )
+            ),
+            None,
+        )
+        if _binding is None:
+            continue
+        _record = await _capability_platform.store.get_version(
+            _descriptor.version.capability_id,
+            _descriptor.version.version,
+            _descriptor.version.manifest_hash,
+        )
+        if _record is None:
+            continue
+        _manifest = load_and_validate_pack(_record.install_path).manifest
+        for _skill in _manifest.skills:
+            _installed.append(
+                {
+                    "name": _skill.id,
+                    "description": _manifest.name,
+                    "version": _manifest.version,
+                    "scope": "builtin" if _binding.scope == "builtin" else "global",
+                    "capability_id": _descriptor.version.capability_id,
+                    "catalog_generation": _catalog_snapshot.stamp.catalog_generation,
+                    "allowed_tools": list(_skill.allowed_tools),
+                }
+            )
+    await ws.send_json(
+        {
+            "type": "skill_list_installed_response",
+            "payload": {"skills": _installed},
+        }
+    )
+
+
+async def _cc_skill_install_from_url(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
+    """控制消息：skill_install_from_url。"""
+    ws = conn.ws
+    payload = raw.get("payload", {}) or {}
+    try:
+        _si_adapter, _si_owner, _si_principal = await _settings_skill_install_adapter(ws)
+        _si_result = await _si_adapter.stage(
+            url=str(payload.get("url") or ""),
+            owner=_si_owner,
+            principal_id=_si_principal,
+        )
+        await ws.send_json(
+            {
+                "type": "skill_install_pending",
+                "request_id": raw.get("request_id"),
+                "payload": {"ok": True, **_si_result},
+            }
+        )
+    except Exception as exc:  # noqa: BLE001
+        await ws.send_json(
+            {
+                "type": "skill_install_pending",
+                "request_id": raw.get("request_id"),
+                "payload": _skill_install_error_payload(exc),
+            }
+        )
+
+
+async def _cc_skill_install_confirm(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
+    """控制消息：skill_install_confirm。"""
+    ws = conn.ws
+    payload = raw.get("payload", {}) or {}
+    try:
+        _si_adapter, _si_project, _si_principal = await _settings_skill_install_adapter(ws)
+        _si_decision = str(payload.get("decision") or "").strip()
+        if _si_decision not in {"approve", "deny"}:
+            raise ValueError("skill_install_decision_invalid")
+        _si_result = await _si_adapter.settle(
+            intent_id=str(payload.get("intent_id") or payload.get("staging_id") or ""),
+            digest=str(payload.get("digest") or ""),
+            decision_nonce=str(payload.get("decision_nonce") or ""),
+            decision_version=int(payload.get("decision_version") or 0),
+            decision=_si_decision,
+        )
+        await ws.send_json(
+            {
+                "type": "skill_install_confirm_response",
+                "request_id": raw.get("request_id"),
+                "payload": {"ok": True, **_si_result},
+            }
+        )
+    except Exception as exc:  # noqa: BLE001
+        await ws.send_json(
+            {
+                "type": "skill_install_confirm_response",
+                "request_id": raw.get("request_id"),
+                "payload": _skill_install_error_payload(exc),
+            }
+        )
+
+
+async def _cc_skill_install_status(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
+    """控制消息：skill_install_status。"""
+    ws = conn.ws
+    payload = raw.get("payload", {}) or {}
+    try:
+        _si_adapter, _si_project, _si_principal = await _settings_skill_install_adapter(ws)
+        _si_result = await _si_adapter.status(
+            intent_id=str(payload.get("intent_id") or ""),
+            project=_si_project,
+        )
+        await ws.send_json(
+            {
+                "type": "skill_install_status_response",
+                "request_id": raw.get("request_id"),
+                "payload": {"ok": True, **_si_result},
+            }
+        )
+    except Exception as exc:  # noqa: BLE001
+        await ws.send_json(
+            {
+                "type": "skill_install_status_response",
+                "request_id": raw.get("request_id"),
+                "payload": _skill_install_error_payload(exc),
+            }
+        )
+
+
+async def _cc_skill_uninstall(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
+    """控制消息：skill_uninstall。"""
+    ws = conn.ws
+    payload = raw.get("payload", {}) or {}
+    name = str(payload.get("name") or "")
+    capability_id = str(payload.get("capability_id") or name)
+    center = service_context.get("capability_center")
+    _global_service = service_context.get("project_skill_install_service")
+    if center is None or _global_service is None:
+        await ws.send_json(
+            {
+                "type": "skill_uninstall_response",
+                "payload": {
+                    "ok": False,
+                    "name": name,
+                    "error": "capability center is unavailable",
+                },
+            }
+        )
+        return
+    try:
+        from deskpet.capabilities.contracts import CapabilityScope
+
+        operation = await center.request_uninstall(
+            capability_id=capability_id,
+            scope=CapabilityScope(user_key=str(_global_service.global_owner_key)),
+        )
+        for _ in range(60):
+            if operation.status in {"succeeded", "failed", "cancelled", "unknown"}:
+                break
+            await asyncio.sleep(0.5)
+            operation = await center.store.get_operation(operation.operation_id) or operation
+        ok = operation.status == "succeeded"
+        await ws.send_json(
+            {
+                "type": "skill_uninstall_response",
+                "payload": {
+                    "ok": ok,
+                    "name": name,
+                    "status": operation.status,
+                    **({} if ok else {"error": f"卸载未完成（{operation.status}）"}),
+                },
+            }
+        )
+    except Exception as exc:  # noqa: BLE001
+        await ws.send_json(
+            {
+                "type": "skill_uninstall_response",
+                "payload": {
+                    "ok": False,
+                    "name": name,
+                    "error": f"{getattr(exc, 'code', type(exc).__name__)}: {exc}",
+                },
+            }
+        )
+
+
+async def _cc_context_usage_request(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
+    """控制消息：context_usage_request。"""
+    ws = conn.ws
+    session_id = conn.session_id
+    payload = raw.get("payload", {}) or {}
+    target_sid = payload.get("session_id") or session_id
+    try:
+        authoritative = await _read_context_usage_authority(target_sid)
+        await ws.send_json({"type": "context_usage", "payload": authoritative})
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("context_usage_request_failed err=%s", exc)
+
+
+async def _cc_context_breakdown_request(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
+    """控制消息：context_breakdown_request。"""
+    ws = conn.ws
+    session_id = conn.session_id
+    payload = raw.get("payload", {}) or {}
+    try:
+        await _handle_context_breakdown_request(
+            ws,
+            payload,
+            owner_session_id=_resolve_chat_source_session(session_id, None),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("context_breakdown_send_failed err=%s", exc)
+
+
+async def _cc_human_memory_request(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
+    """控制消息：human_memory_request。"""
+    ws = conn.ws
+    companion_challenge = conn.companion_challenge
+    human_memory_control_binding = conn.human_memory_control_binding
+    from deskpet.memory.human_memory_api import (
+        handle_human_memory_command,
+        send_human_memory_response,
+    )
+
+    try:
+        _hm_auth = human_memory_control_binding.authenticate(
+            host_state.companion_control_ingress, companion_challenge
+        )
+    except Exception as exc:
+        await ws.send_json(
+            {
+                "type": "human_memory_response",
+                "request_id": str(raw.get("request_id") or ""),
+                "payload": {
+                    "ok": False,
+                    "error": {"code": getattr(exc, "code", "human_memory_connection_unbound")},
+                },
+            }
+        )
+        return
+
+    with human_memory_control_binding.request_scope(
+        host_state.companion_control_ingress, companion_challenge
+    ):
+        _hm_response = await handle_human_memory_command(
+            raw,
+            factory=service_context.get("human_memory_host_service_factory"),
+            auth=_hm_auth,
+            binding_append=service_context.get("human_memory_binding_append_authority"),
+            recovery=service_context.get("human_memory_recovery_lifecycle"),
+            scheduler_wake=service_context.get("human_memory_foreground_scheduler_wake"),
+        )
+        if _hm_response is not None:
+            await send_human_memory_response(
+                _hm_response,
+                factory=service_context.get("human_memory_host_service_factory"),
+                auth=_hm_auth,
+                send=ws.send_json,
+            )
+
+
+async def _cc_project_preview_register(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
+    """控制消息：project_preview_register、project_register、session_create、project_catalog_page、project_sessions_page、project_inspect、project_relocate。"""
+    ws = conn.ws
+    from deskpet.session.project_protocol import (
+        handle_project_session_command as _handle_project_session_command,
+    )
+
+    _project_response = await _handle_project_session_command(
+        raw,
+        bindings=service_context.get("project_binding_service"),
+        creation=service_context.get("session_creation_service"),
+    )
+    if _project_response is not None:
+        await ws.send_json(_project_response)
+
+
+async def _cc_sessions_list(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
+    """控制消息：sessions_list。"""
+    ws = conn.ws
+    await ws.send_json(
+        {
+            "type": "sessions_list_error",
+            "request_id": raw.get("request_id"),
+            "payload": {
+                "code": "protocol_replaced",
+                "error": "use project_catalog_page and project_sessions_page",
+            },
+        }
+    )
+
+
+async def _cc_session_delete(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
+    """控制消息：session_delete。"""
+    from deskpet.memory.primary_authority import assert_not_primary_authority
+
+    ws = conn.ws
+    _sd_payload = raw.get("payload", {}) or {}
+    _sd_sid = _sd_payload.get("session_id") or ""
+    _sd_sdb = service_context.get("session_db")
+    _sd_ok = False
+    _sd_code = None
+    if _sd_sdb is not None and _sd_sid:
+        try:
+            from deskpet.memory.primary_authority import (
+                assert_not_primary_authority,
+            )
+
+            await assert_not_primary_authority(_sd_sdb._db_path, _sd_sid)
+            _sd_workflows = service_context.get("workflow_service")
+            _sd_creation = service_context.get("session_creation_service")
+            if _sd_workflows is not None:
+                async with _sd_workflows.session_lock(_sd_sid):
+                    if _sd_creation is not None:
+                        await _sd_creation.mark_deleted(_sd_sid)
+                    else:
+                        await _sd_sdb.clear(_sd_sid)
+                    await _sd_workflows.cancel_runs_for_session(
+                        _sd_sid,
+                        reason="session_deleted",
+                    )
+            else:
+                if _sd_creation is not None:
+                    await _sd_creation.mark_deleted(_sd_sid)
+                else:
+                    await _sd_sdb.clear(_sd_sid)
+            _sd_attempts = service_context.get("context_attempt_store")
+            if _sd_attempts is not None:
+                _sd_attempts.purge_session(_sd_sid)
+            _sd_ok = True
+            logger.info("session_deleted sid=%s", _sd_sid)
+        except Exception as _sd_exc:  # noqa: BLE001
+            _sd_code = getattr(_sd_exc, "code", None)
+            logger.warning(
+                "session_delete_failed",
+                error=str(_sd_exc),
+                session_id=_sd_sid,
+            )
+    await ws.send_json(
+        {
+            "type": "session_deleted",
+            "payload": {
+                "session_id": _sd_sid,
+                "ok": _sd_ok,
+                **({"code": _sd_code} if _sd_code else {}),
+            },
+        }
+    )
+
+
+async def _cc_session_rename(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
+    """控制消息：session_rename。"""
+    from deskpet.memory.primary_authority import assert_not_primary_authority
+
+    ws = conn.ws
+    _sr_payload = raw.get("payload", {}) or {}
+    _sr_sid = _sr_payload.get("session_id") or ""
+    _sr_title = _sr_payload.get("title") or ""
+    _sr_sdb = service_context.get("session_db")
+    _sr_ok = False
+    _sr_stored = ""
+    _sr_code = None
+    if _sr_sdb is not None and _sr_sid:
+        try:
+            from deskpet.memory.primary_authority import (
+                assert_not_primary_authority,
+            )
+
+            await assert_not_primary_authority(_sr_sdb._db_path, _sr_sid)
+            _sr_stored = await _sr_sdb.set_session_title(_sr_sid, _sr_title)
+            _sr_ok = True
+            logger.info("session_renamed sid=%s title_len=%d", _sr_sid, len(_sr_stored))
+        except Exception as _sr_exc:  # noqa: BLE001
+            _sr_code = getattr(_sr_exc, "code", None)
+            logger.warning(
+                "session_rename_failed",
+                error=str(_sr_exc),
+                session_id=_sr_sid,
+            )
+    await ws.send_json(
+        {
+            "type": "session_renamed",
+            "payload": {
+                "session_id": _sr_sid,
+                "title": _sr_stored,
+                "ok": _sr_ok,
+                **({"code": _sr_code} if _sr_code else {}),
+            },
+        }
+    )
+
+
+async def _cc_session_messages_load(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
+    """控制消息：session_messages_load。"""
+    from deskpet.memory.primary_authority import assert_not_primary_authority
+
+    ws = conn.ws
+    session_id = conn.session_id
+    payload = raw.get("payload", {}) or {}
+    target_sid = payload.get("session_id") or session_id
+    limit = int(payload.get("limit") or 200)
+    _sml_sdb = service_context.get("session_db")
+    if _sml_sdb is not None:
+        try:
+            from deskpet.memory.primary_authority import (
+                assert_not_primary_authority,
+            )
+
+            await assert_not_primary_authority(_sml_sdb._db_path, str(target_sid))
+        except Exception as _sml_exc:  # noqa: BLE001
+            _sml_code = getattr(_sml_exc, "code", None)
+            if _sml_code:
+                await ws.send_json(
+                    {
+                        "type": "session_messages_error",
+                        "payload": {
+                            "ok": False,
+                            "session_id": target_sid,
+                            "code": _sml_code,
+                        },
+                    }
+                )
+                return
+            raise
+    # Loading a transcript is also the product shell's explicit
+    # declaration of which conversation this transport currently
+    # presents.  Rebind the peer group before the consistency
+    # gate: a recovered terminal may be committed while the
+    # websocket is reconnecting, and its live notification must
+    # route back to this selected history session rather than the
+    # transport's startup/default topic.
+    _remap_chat_peer_group(session_id, str(target_sid))
+    sdb = service_context.get("session_db")
+    msgs: list = []
+    _companion_history_events: list[dict[str, Any]] = []
+    if sdb is not None:
+        try:
+            _history_gate = service_context.get("session_terminal_projection_gate")
+            if _history_gate is not None:
+                await _history_gate.ensure_current(target_sid)
+            try:
+                _history_identity = host_state.companion_identity_gate.freeze()
+                await _bind_companion_inbox_route(
+                    target_sid,
+                    _history_identity,
+                    create_if_absent=False,
+                )
+            except Exception as _history_route_exc:  # noqa: BLE001
+                logger.debug(
+                    "companion_history_route_unchanged sid=%s err=%s",
+                    target_sid,
+                    type(_history_route_exc).__name__,
+                )
+            rows = await sdb.get_messages(target_sid, limit=limit)
+            # P6 bugfix 2026-05-14: 历史还原 — 之前过滤了
+            # role not in (user,assistant) 和 empty content,
+            # 导致 tool_call (role='assistant' content=''
+            # tool_calls=[...]) 和 tool_result (role='tool')
+            # 全部被丢，UI 重启后只剩 user 气泡。现在全部
+            # 返回，前端 ws.ts 决定怎么渲染。
+            msgs = []
+            _history_tool_names: dict[str, str] = {}
+            for _history_row in rows:
+                _history_calls = _history_row.get("tool_calls")
+                if not _history_calls:
+                    continue
+                try:
+                    _history_calls = (
+                        json.loads(_history_calls)
+                        if isinstance(_history_calls, str)
+                        else _history_calls
+                    )
+                    if isinstance(_history_calls, list):
+                        for _history_call in _history_calls:
+                            if not isinstance(_history_call, dict):
+                                continue
+                            _history_function = _history_call.get("function")
+                            if isinstance(_history_function, dict):
+                                _history_tool_names[str(_history_call.get("id") or "")] = str(
+                                    _history_function.get("name") or ""
+                                )
+                except Exception:
+                    continue
+            for r in rows:
+                if str(r.get("projection_kind") or "") == "companion_event":
+                    # Companion rows are hydrated through the
+                    # owner-fenced visibility overlay below, never
+                    # as ordinary assistant text.
+                    continue
+                _row_role = r.get("role") or ""
+                if _row_role not in ("user", "assistant", "tool"):
+                    continue  # 仍跳过 system 等
+                _entry: dict[str, Any] = {
+                    "id": str(r.get("workflow_event_id") or r.get("id") or ""),
+                    "role": _row_role,
+                    "text": r.get("content") or "",
+                    "ts": float(r.get("created_at") or 0) * 1000,
+                    "projection_kind": str(r.get("projection_kind") or ""),
+                    "workflow_event_id": str(r.get("workflow_event_id") or ""),
+                }
+                if r.get("root_run_id"):
+                    _entry["run_id"] = str(r["root_run_id"])
+                if r.get("task_scope_id"):
+                    _entry["task_scope_id"] = str(r["task_scope_id"])
+                # tool_calls JSON (assistant 行调工具时)
+                _tcs_raw = r.get("tool_calls")
+                if _tcs_raw:
+                    try:
+                        import json as _load_json
+
+                        _entry["tool_calls"] = project_public_tool_calls(
+                            _load_json.loads(_tcs_raw) if isinstance(_tcs_raw, str) else _tcs_raw
+                        )
+                    except Exception:
+                        pass
+                # tool_call_id (tool 行的回指)
+                _tcid = r.get("tool_call_id")
+                if _tcid:
+                    _entry["tool_call_id"] = _tcid
+                    if _row_role == "tool":
+                        _public_history_result = project_public_tool_result(
+                            _history_tool_names.get(str(_tcid), ""),
+                            r.get("content") or "",
+                        )
+                        _entry["text"] = (
+                            json.dumps(_public_history_result, ensure_ascii=False)
+                            if not isinstance(_public_history_result, str)
+                            else _public_history_result
+                        )
+                msgs.append(_entry)
+
+            _workflow_history = service_context.get("workflow_service")
+            await _attach_workflow_history_events(
+                rows=rows,
+                messages=msgs,
+                session_id=target_sid,
+                session_db=sdb,
+                workflow_service=_workflow_history,
+            )
+            _companion_history_events = await _attach_companion_history_events(rows=rows)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "session_messages_consistency_failed",
+                error=str(exc),
+                session_id=target_sid,
+            )
+            await ws.send_json(
+                {
+                    "type": "session_messages_error",
+                    "payload": {
+                        "session_id": target_sid,
+                        "code": "product_view_not_current",
+                        "error": ("会话记录暂时无法确认是最新状态，请稍后重试。"),
+                    },
+                }
+            )
+            return
+    # FEAT-A4: 带回 awaiting plan（不塞进被白名单 3659 过滤的 messages
+    # 流，单独挂 payload.plan）。前端 rehydration 据此重建 plan card +
+    # [执行]/[取消] 栏。只在 awaiting 时附；否则字段缺省 → 旧行为不变。
+    _plan_payload: dict[str, Any] | None = None
+    if sdb is not None:
+        try:
+            _sp = await sdb.get_session_plan(target_sid)
+            if _sp is not None and _sp.get("awaiting"):
+                _plan_payload = {
+                    "rationale": _sp.get("rationale") or "",
+                    "steps": _sp.get("steps") or [],
+                    "target_directory": _sp.get("target_directory"),
+                    "action_categories": _sp.get("action_categories") or [],
+                    "auto_confirmed": bool(_sp.get("auto_confirmed")),
+                    "awaiting": True,
+                }
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(
+                "session_plan_load_failed sid=%s err=%s",
+                target_sid,
+                exc,
+            )
+    _msgs_payload: dict[str, Any] = {
+        "session_id": target_sid,
+        "messages": msgs,
+    }
+    _msgs_payload["companion_events"] = _companion_history_events
+    if _plan_payload is not None:
+        _msgs_payload["plan"] = _plan_payload
+    await ws.send_json(
+        {
+            "type": "session_messages_response",
+            "payload": _msgs_payload,
+        }
+    )
+
+
+async def _cc_slash_command(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
+    """控制消息：slash_command。"""
+    ws = conn.ws
+    session_id = conn.session_id
+    payload = raw.get("payload", {}) or {}
+    cmd_name = (payload.get("command") or "").lstrip("/")
+    cmd_args = payload.get("args") or ""
+    target_sid = payload.get("session_id") or session_id
+    _slash_enabled = bool(
+        getattr(
+            getattr(config, "features", None),
+            "slash_commands",
+            False,
+        )
+    )
+    if not _slash_enabled:
+        await ws.send_json(
+            {
+                "type": "slash_command_result",
+                "payload": {
+                    "command": cmd_name,
+                    "session_id": target_sid,
+                    "result": {
+                        "type": "error",
+                        "message": "slash_commands feature disabled "
+                        "(set [features] slash_commands = true)",
+                    },
+                },
+            }
+        )
+    else:
+        try:
+            from deskpet.commands import dispatch_slash_command
+
+            _slash_skill_loader = await _current_slash_skill_catalog()
+            _slash_skill_catalog = _slash_skill_loader
+            _slash_goal_store = service_context.get("session_goal_store")
+            _slash_pref_mem = service_context.get("preference_memory")
+            _slash_result = await dispatch_slash_command(
+                cmd_name,
+                cmd_args,
+                target_sid,
+                skill_loader=_slash_skill_loader,
+                skill_catalog=_slash_skill_catalog,
+                session_goal_store=_slash_goal_store,
+                session_pref_memory=_slash_pref_mem,
+            )
+        except Exception as _slash_exc:  # noqa: BLE001
+            logger.warning(
+                "slash_command dispatch failed: %s",
+                _slash_exc,
+            )
+            _slash_result = {
+                "type": "error",
+                "message": f"dispatch error: {_slash_exc}",
+            }
+        if _slash_result.get("type") == ("instruction_activation_request"):
+            _slash_text = str(_slash_result.get("user_text") or "").strip()
+            if not _slash_text:
+                raise RuntimeError("slash instruction activation is empty")
+            from deskpet.companion.skills import (
+                PreparedSkillInvocationScopeV1,
+            )
+
+            _slash_scope = PreparedSkillInvocationScopeV1.from_dict(
+                _slash_result.get("prepared_skill_scope") or {}
+            )
+            _slash_arguments = tuple(str(item) for item in (_slash_result.get("arguments") or ()))
+            _launch_product_harness_chat(
+                ws,
+                _slash_text,
+                target_sid,
+                client_request_id=(
+                    str(payload.get("request_id") or raw.get("request_id") or "").strip() or None
+                ),
+                client_turn_id=(str(payload.get("turn_id") or "").strip() or None),
+                prepared_skill_scope=_slash_scope,
+                skill_arguments=_slash_arguments,
+            )
+            _slash_result = {
+                "type": "accepted",
+                "route": "product_harness",
+                "skill_name": cmd_name,
+                "prepared_skill_scope": _slash_result.get("prepared_skill_scope"),
+            }
+        await ws.send_json(
+            {
+                "type": "slash_command_result",
+                "payload": {
+                    "command": cmd_name,
+                    "session_id": target_sid,
+                    "result": _slash_result,
+                },
+            }
+        )
+
+
+async def _cc_chat_v2_interrupt(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
+    """控制消息：chat_v2_interrupt。"""
+    ws = conn.ws
+    session_id = conn.session_id
+    payload = raw.get("payload", {}) or {}
+    target_sid = payload.get("session_id") or session_id
+    target_run_id = str(payload.get("root_run_id") or payload.get("run_id") or "").strip()
+    before = _authoritative_sdk_run_projection(target_run_id, str(payload.get("sdk_run_id") or ""))
+    expected_version = payload.get("expected_run_version")
+    stale = expected_version is not None and int(expected_version) != int(before["run_version"])
+    terminal_before = before["state"] in {"completed", "failed", "cancelled"}
+    cancelled = False
+    if not stale and not terminal_before:
+        cancelled = await _cancel_product_harness_run(
+            target_sid,
+            target_run_id,
+            reason=str(payload.get("reason") or "user_interrupt"),
+        )
+    after = _authoritative_sdk_run_projection(target_run_id, str(before.get("sdk_run_id") or ""))
+    _interrupt_evt = {
+        "type": "chat_v2_interrupted",
+        "payload": {
+            "cancel_command_id": str(payload.get("cancel_command_id") or ""),
+            "session_id": target_sid,
+            "run_id": target_run_id,
+            "cancelled": cancelled,
+            "stale_expected_version": stale,
+            **after,
+        },
+    }
+    await ws.send_json(_interrupt_evt)
+    await _broadcast_default_chat_peers(ws, _interrupt_evt)
+
+
+async def _cc_plan_confirm(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
+    """控制消息：plan_confirm。"""
+    session_id = conn.session_id
+    payload = raw.get("payload", {}) or {}
+    _csid = payload.get("session_id") or session_id
+    _decision = payload.get("decision") or "go"
+    if host_state.sdk_ingress is not None and host_state.sdk_ingress.accepting:
+        _run_id = str(payload.get("run_id") or "").strip()
+        _decision_id = str(payload.get("decision_id") or "").strip()
+        _nonce = str(payload.get("nonce") or "").strip()
+        _version = payload.get("version")
+        if not _run_id or not _decision_id or not _nonce or _version is None:
+            raise ValueError("plan confirmation requires the durable decision fence")
+        _receipt = await _signal_product_harness_decision(
+            _csid,
+            payload,
+            {"decision": _decision},
+        )
+        logger.info(
+            "harness_plan_decision sid=%s run_id=%s accepted=%s duplicate=%s",
+            _csid,
+            _run_id,
+            _receipt.accepted,
+            _receipt.duplicate,
+        )
+        _sdb_pc = service_context.get("session_db")
+        if _sdb_pc is not None:
+            await _sdb_pc.clear_session_plan_awaiting(_csid)
+        return
+
+
+async def _cc_models_list(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
+    """控制消息：models_list。"""
+    ws = conn.ws
+    _reg = service_context.get("provider_registry")
+    _model_ids: list[str] = []
+    _source = "none"
+    _base_url = ""
+    # 生效的 provider 默认模型：preferred_model 留空(跟随 provider 默认)
+    # 时,UI 据此显示「当前真正用的模型」而非「默认模型」占位词。
+    _default_model = ""
+    if _reg is not None:
+        try:
+            _chain = _reg.get_chain()
+        except Exception:
+            _chain = []
+        if _chain:
+            _first = _chain[0]
+            _pid0 = _first.get("id") if isinstance(_first, dict) else None
+            _entry0 = _reg.get_entry(_pid0) if _pid0 else None
+            if _entry0 is not None:
+                _base_url = str(getattr(_entry0, "base_url", "") or "")
+                # ProviderEntry.model = default_model or models[0]。
+                _default_model = str(getattr(_entry0, "model", "") or "")
+                _cfg_models = list(getattr(_entry0, "models", []) or [])
+                _api_key = _reg.resolve_api_key(_pid0)
+                try:
+                    from llm.model_catalog import fetch_models as _fm
+
+                    _live = await _fm(_base_url, _api_key, timeout=8.0)
+                except Exception:
+                    _live = []
+                if _live:
+                    _model_ids = _live
+                    _source = "live"
+                    # A successful live catalog is also the
+                    # durable fallback for the next restart or a
+                    # later /models outage. Persist only if the
+                    # Provider still has the exact identity and
+                    # endpoint used for this fetch; the registry
+                    # method is idempotent and does not invalidate
+                    # Session bindings for a cache-only refresh.
+                    try:
+                        await _reg.cache_discovered_models(
+                            _pid0,
+                            _live,
+                            expected_incarnation_id=str(
+                                getattr(_entry0, "incarnation_id", "") or ""
+                            ),
+                            expected_config_revision=int(
+                                getattr(_entry0, "config_revision", 0) or 0
+                            ),
+                            expected_base_url=_base_url,
+                        )
+                    except Exception as _cache_exc:  # noqa: BLE001
+                        logger.warning(
+                            "provider_catalog_cache_refresh_failed provider=%s error=%s",
+                            _pid0,
+                            str(_cache_exc)[:200],
+                        )
+                elif _cfg_models:
+                    _model_ids = _cfg_models
+                    _source = "config"
+    # Fallback: provider_registry chain 为空时（典型场景：用户登录
+    # 中转站后，relay provider 只是前端"虚拟项"、不走 settings_providers_add
+    # 注册进 backend registry，见 SettingsProviders.tsx），用当前
+    # local_llm（登录后经 update_cloud_config 已切到中转站 base_url+key）
+    # 拉中转站 /models。这样登录中转站即可在当前会话换模型，无需手动
+    # 再"添加 Provider"。
+    if not _model_ids and host_state.local_llm is not None:
+        _ll_base = str(getattr(host_state.local_llm, "base_url", "") or "")
+        _ll_key = getattr(host_state.local_llm, "api_key", None)
+        # 跳过本地 ollama（localhost）—— 它的 /models 是本地小模型，
+        # 不是中转站目录，且 key 通常是占位 "ollama"。
+        if _ll_base and "localhost" not in _ll_base and "127.0.0.1" not in _ll_base:
+            try:
+                from llm.model_catalog import fetch_models as _fm2
+
+                _live_ll = await _fm2(_ll_base, _ll_key, timeout=8.0)
+            except Exception:
+                _live_ll = []
+            if _live_ll:
+                _model_ids = _live_ll
+                _source = "live-local_llm"
+                _base_url = _ll_base
+    # registry chain 为空时,生效默认模型取 local_llm 的运行时 model
+    # (onboarding 登录中转站后已写 gpt-5.5)。
+    if not _default_model and host_state.local_llm is not None:
+        _default_model = str(getattr(host_state.local_llm, "model", "") or "")
+    from llm.model_catalog import build_catalog as _bc
+
+    await ws.send_json(
+        {
+            "type": "models_list_response",
+            "payload": {
+                "models": _bc(_model_ids),
+                "source": _source,
+                "base_url": _base_url,
+                "default_model": _default_model,
+            },
+        }
+    )
+
+
+async def _cc_session_provider_get(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
+    """控制消息：session_provider_get。"""
+    ws = conn.ws
+    payload = raw.get("payload", {}) or {}
+    target_sid = str(payload.get("session_id") or "").strip()
+    session_db = service_context.get("session_db")
+    readiness = service_context.get("provider_routing_readiness")
+    if not target_sid or session_db is None:
+        await ws.send_json(
+            {
+                "type": "settings_providers_error",
+                "payload": {
+                    "reason": "missing_field",
+                    "detail": "session_id required + session_db must be initialized",
+                },
+            }
+        )
+        return
+    try:
+        readiness.require_ready()
+    except Exception:
+        await ws.send_json(
+            {
+                "type": "settings_providers_error",
+                "payload": {
+                    "reason": "provider_routing_initializing",
+                    "detail": "provider routing is not ready",
+                },
+            }
+        )
+        return
+    binding = await session_db.get_session_provider_binding_authority(target_sid)
+    await ws.send_json(
+        {
+            "type": "session_provider_binding",
+            "payload": {
+                "session_id": target_sid,
+                "provider_id": binding.get("provider_id"),
+                "preferred_model": binding.get("preferred_model"),
+                "model_params": binding.get("model_params"),
+                "provider_incarnation_id": binding.get("provider_incarnation_id"),
+                "provider_config_revision": binding.get("provider_config_revision"),
+                "binding_epoch": binding.get("binding_epoch", 0),
+            },
+        }
+    )
+
+
+async def _cc_session_set_provider(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
+    """控制消息：session_set_provider、session_set_model。"""
+    ws = conn.ws
+    payload = raw.get("payload", {}) or {}
+    target_sid = str(payload.get("session_id") or "").strip()
+    session_db = service_context.get("session_db")
+    registry = service_context.get("provider_registry")
+    readiness = service_context.get("provider_routing_readiness")
+    if not target_sid or session_db is None or registry is None:
+        await ws.send_json(
+            {
+                "type": "settings_providers_error",
+                "payload": {
+                    "reason": "missing_field",
+                    "detail": "session_id required + session_db must be initialized",
+                },
+            }
+        )
+        return
+    if "expected_binding_epoch" not in payload:
+        await ws.send_json(
+            {
+                "type": "settings_providers_error",
+                "payload": {
+                    "reason": "provider_binding_conflict",
+                    "detail": "expected_binding_epoch is required",
+                    "session_id": target_sid,
+                },
+            }
+        )
+        return
+    try:
+        readiness.require_ready()
+    except Exception:
+        await ws.send_json(
+            {
+                "type": "settings_providers_error",
+                "payload": {
+                    "reason": "provider_routing_initializing",
+                    "detail": "provider routing is not ready",
+                },
+            }
+        )
+        return
+    current = await session_db.get_session_provider_binding_authority(target_sid)
+    if msg_type == "session_set_provider":
+        new_provider_id = payload.get("provider_id")
+        new_model = current.get("preferred_model")
+        new_params = current.get("model_params")
+        response_type = "session_provider_set"
+    else:
+        new_provider_id = current.get("provider_id")
+        new_model = payload.get("model")
+        raw_params = payload.get("params")
+        new_params = raw_params if isinstance(raw_params, dict) else None
+        response_type = "session_model_set"
+    try:
+        if new_provider_id and (
+            "expected_provider_incarnation_id" not in payload
+            or "expected_provider_config_revision" not in payload
+        ):
+            raise ValueError("provider identity expectation is required")
+        binding = await registry.set_session_binding(
+            session_db,
+            session_id=target_sid,
+            provider_id=new_provider_id,
+            preferred_model=new_model,
+            model_params=new_params,
+            expected_binding_epoch=int(payload["expected_binding_epoch"]),
+            expected_incarnation_id=payload.get("expected_provider_incarnation_id"),
+            expected_config_revision=(
+                int(payload["expected_provider_config_revision"])
+                if payload.get("expected_provider_config_revision") is not None
+                else None
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001
+        authoritative = await session_db.get_session_provider_binding_authority(target_sid)
+        await ws.send_json(
+            {
+                "type": "settings_providers_error",
+                "payload": {
+                    "reason": (
+                        "provider_binding_conflict"
+                        if str(exc) == "provider_binding_conflict" or isinstance(exc, ValueError)
+                        else "internal_error"
+                    ),
+                    "detail": str(exc),
+                    "session_id": target_sid,
+                },
+            }
+        )
+        await ws.send_json(
+            {
+                "type": "session_provider_binding",
+                "payload": {"session_id": target_sid, **authoritative},
+            }
+        )
+    else:
+        await ws.send_json(
+            {
+                "type": response_type,
+                "payload": {
+                    "session_id": target_sid,
+                    **binding,
+                },
+            }
+        )
+        # The provider/model binding and Context Usage authority
+        # advance in the same durable transaction.  Push the
+        # freshly committed binding-only snapshot immediately so
+        # a new Session does not keep rendering its pre-binding
+        # "no model yet" cache until the first LLM call.
+        try:
+            await _send_context_usage_authority(ws, session_db, target_sid)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(
+                "context_usage_binding_push_failed sid=%s err=%s",
+                target_sid,
+                exc,
+            )
+
+
+async def _cc_settings_providers_list_request(
+    conn: _ControlConnection, raw: dict, msg_type: str
+) -> None:
+    """控制消息：settings_providers_list_request、settings_providers_add、settings_providers_update、settings_providers_remove、settings_providers_reorder。"""
+    ws = conn.ws
+    _payload = raw.get("payload", {}) or {}
+    _reg = service_context.get("provider_registry")
+    if _reg is None:
+        await ws.send_json(
+            {
+                "type": "settings_providers_error",
+                "payload": {
+                    "reason": "registry_unavailable",
+                    "detail": "provider_registry not initialized",
+                },
+            }
+        )
+        return
+
+    async def _broadcast_providers_changed() -> None:
+        """Fan out the new provider list to every open control
+        ws. Mirrors the pattern used by `_todo_broadcaster` /
+        supervisor alert broadcaster."""
+        snapshot = {
+            "type": "providers_changed",
+            "payload": {"providers": _reg.list_providers()},
+        }
+        if not _control_connections:
+            return
+        for _sid_key, _ws_obj in list(_control_connections.items()):
+            try:
+                await _ws_obj.send_json(snapshot)
+            except Exception as _bex:  # noqa: BLE001
+                logger.debug(
+                    "providers_changed_broadcast_failed sid=%s err=%s",
+                    _sid_key,
+                    _bex,
+                )
+
+    if msg_type == "settings_providers_list_request":
+        await ws.send_json(
+            {
+                "type": "settings_providers_list_response",
+                "payload": {"providers": _reg.list_providers()},
+            }
+        )
+
+    elif msg_type == "settings_providers_add":
+        try:
+            entry = await _reg.add_provider(_payload)
+        except ValueError as exc:
+            # Classify error: duplicate vs missing_field vs
+            # invalid_id. The registry raises a single
+            # ValueError for all of these; we sniff the text.
+            _msg = str(exc)
+            if "already exists" in _msg:
+                _reason = "duplicate_id"
+            elif "missing required fields" in _msg or "api_key is required" in _msg:
+                _reason = "missing_field"
+            elif "invalid provider id" in _msg:
+                _reason = "invalid_id"
+            else:
+                _reason = "invalid_payload"
+            await ws.send_json(
+                {
+                    "type": "settings_providers_error",
+                    "payload": {"reason": _reason, "detail": _msg},
+                }
+            )
+        except Exception as exc:  # noqa: BLE001
+            await ws.send_json(
+                {
+                    "type": "settings_providers_error",
+                    "payload": {"reason": "internal_error", "detail": str(exc)},
+                }
+            )
+        else:
+            await ws.send_json(
+                {
+                    "type": "settings_providers_added",
+                    "payload": {"provider": entry.to_public_dict()},
+                }
+            )
+            await _broadcast_providers_changed()
+
+    elif msg_type == "settings_providers_update":
+        _pid = _payload.get("id")
+        _patch = _payload.get("patch", {}) or {}
+        if (
+            not _pid
+            or "expected_incarnation_id" not in _payload
+            or "expected_config_revision" not in _payload
+        ):
+            await ws.send_json(
+                {
+                    "type": "settings_providers_error",
+                    "payload": {
+                        "reason": "missing_field",
+                        "detail": "id and expected provider identity are required",
+                    },
+                }
+            )
+            return
+        try:
+            _assert_sdk_provider_mutation_allowed((_pid,))
+            entry = await _reg.update_provider(
+                _pid,
+                expected_incarnation_id=_payload.get("expected_incarnation_id"),
+                expected_config_revision=int(_payload["expected_config_revision"]),
+                **_patch,
+            )
+        except KeyError:
+            await ws.send_json(
+                {
+                    "type": "settings_providers_error",
+                    "payload": {
+                        "reason": "not_found",
+                        "detail": f"provider {_pid!r} not found",
+                    },
+                }
+            )
+        except ProviderMutationConflict as exc:
+            await ws.send_json(
+                {
+                    "type": "settings_providers_error",
+                    "payload": {
+                        "reason": "provider_binding_conflict",
+                        "detail": str(exc),
+                    },
+                }
+            )
+        except ValueError as exc:
+            await ws.send_json(
+                {
+                    "type": "settings_providers_error",
+                    "payload": {"reason": "invalid_payload", "detail": str(exc)},
+                }
+            )
+        except Exception as exc:  # noqa: BLE001
+            await ws.send_json(
+                {
+                    "type": "settings_providers_error",
+                    "payload": {"reason": "internal_error", "detail": str(exc)},
+                }
+            )
+        else:
+            await ws.send_json(
+                {
+                    "type": "settings_providers_updated",
+                    "payload": {"provider": entry.to_public_dict()},
+                }
+            )
+            _refresh_research_live_llm()
+            await _broadcast_providers_changed()
+
+    elif msg_type == "settings_providers_remove":
+        _pid = _payload.get("id")
+        if (
+            not _pid
+            or "expected_incarnation_id" not in _payload
+            or "expected_config_revision" not in _payload
+        ):
+            await ws.send_json(
+                {
+                    "type": "settings_providers_error",
+                    "payload": {
+                        "reason": "missing_field",
+                        "detail": "id and expected provider identity are required",
+                    },
+                }
+            )
+            return
+        try:
+            _assert_sdk_provider_mutation_allowed((_pid,))
+            await _reg.remove_provider(
+                _pid,
+                expected_incarnation_id=_payload.get("expected_incarnation_id"),
+                expected_config_revision=int(_payload["expected_config_revision"]),
+            )
+        except KeyError:
+            await ws.send_json(
+                {
+                    "type": "settings_providers_error",
+                    "payload": {
+                        "reason": "not_found",
+                        "detail": f"provider {_pid!r} not found",
+                    },
+                }
+            )
+        except ProviderMutationConflict as exc:
+            await ws.send_json(
+                {
+                    "type": "settings_providers_error",
+                    "payload": {
+                        "reason": "provider_binding_conflict",
+                        "detail": str(exc),
+                    },
+                }
+            )
+        except Exception as exc:  # noqa: BLE001
+            await ws.send_json(
+                {
+                    "type": "settings_providers_error",
+                    "payload": {"reason": "internal_error", "detail": str(exc)},
+                }
+            )
+        else:
+            await ws.send_json(
+                {
+                    "type": "settings_providers_removed",
+                    "payload": {"id": _pid},
+                }
+            )
+            await _broadcast_providers_changed()
+
+    elif msg_type == "settings_providers_reorder":
+        _ordered = _payload.get("ordered_ids") or []
+        _expected_raw = _payload.get("expected_versions")
+        try:
+            _assert_sdk_provider_mutation_allowed(_ordered)
+            if not isinstance(_expected_raw, dict):
+                raise ValueError("expected_versions is required")
+            _expected_versions = {
+                str(pid): (
+                    str(value["incarnation_id"]),
+                    int(value["config_revision"]),
+                )
+                for pid, value in _expected_raw.items()
+                if isinstance(value, dict)
+            }
+            await _reg.reorder(list(_ordered), expected_versions=_expected_versions)
+        except ProviderMutationConflict as exc:
+            await ws.send_json(
+                {
+                    "type": "settings_providers_error",
+                    "payload": {
+                        "reason": "provider_binding_conflict",
+                        "detail": str(exc),
+                    },
+                }
+            )
+        except ValueError as exc:
+            _msg = str(exc)
+            # Compute the missing-id detail for nicer UX.
+            _have = {p["id"] for p in _reg.list_providers()}
+            _missing = sorted(_have - set(_ordered))
+            _detail = f"missing: {', '.join(_missing)}" if _missing else _msg
+            await ws.send_json(
+                {
+                    "type": "settings_providers_error",
+                    "payload": {"reason": "incomplete_order", "detail": _detail},
+                }
+            )
+        except Exception as exc:  # noqa: BLE001
+            await ws.send_json(
+                {
+                    "type": "settings_providers_error",
+                    "payload": {"reason": "internal_error", "detail": str(exc)},
+                }
+            )
+        else:
+            await ws.send_json(
+                {
+                    "type": "settings_providers_reordered",
+                    "payload": {"providers": _reg.list_providers()},
+                }
+            )
+            await _broadcast_providers_changed()
+
+
+async def _cc_settings_providers_probe_models(
+    conn: _ControlConnection, raw: dict, msg_type: str
+) -> None:
+    """控制消息：settings_providers_probe_models。"""
+    ws = conn.ws
+    _payload = raw.get("payload", {}) or {}
+    _reg = service_context.get("provider_registry")
+    if _reg is None:
+        await ws.send_json(
+            {
+                "type": "settings_providers_probe_models_response",
+                "payload": {
+                    "ok": False,
+                    "models": [],
+                    "detail": "provider_registry not initialized",
+                },
+            }
+        )
+        return
+    _base_url = str(_payload.get("base_url") or "").rstrip("/")
+    _api_key = str(_payload.get("api_key") or "")
+    _provider_id = str(_payload.get("provider_id") or "").strip()
+    if not _base_url:
+        await ws.send_json(
+            {
+                "type": "settings_providers_probe_models_response",
+                "payload": {
+                    "ok": False,
+                    "models": [],
+                    "detail": "base_url required",
+                },
+            }
+        )
+        return
+    if not _api_key and _provider_id:
+        _entry = _reg.get_entry(_provider_id)
+        if _entry is None:
+            await ws.send_json(
+                {
+                    "type": "settings_providers_probe_models_response",
+                    "payload": {
+                        "ok": False,
+                        "models": [],
+                        "detail": "provider not found",
+                    },
+                }
+            )
+            return
+        if str(_entry.base_url).rstrip("/") != _base_url:
+            await ws.send_json(
+                {
+                    "type": "settings_providers_probe_models_response",
+                    "payload": {
+                        "ok": False,
+                        "models": [],
+                        "detail": "base_url differs from saved provider; enter its API key to probe",
+                    },
+                }
+            )
+            return
+        _api_key = str(_reg.resolve_api_key(_provider_id) or "")
+        if not _api_key:
+            await ws.send_json(
+                {
+                    "type": "settings_providers_probe_models_response",
+                    "payload": {
+                        "ok": False,
+                        "models": [],
+                        "detail": "saved provider API key is unavailable",
+                    },
+                }
+            )
+            return
+    try:
+        import httpx as _httpx
+
+        _models_url = f"{_base_url}/models"
+        _headers = {"Accept": "application/json"}
+        if _api_key and _api_key.lower() != "ollama":
+            _headers["Authorization"] = f"Bearer {_api_key}"
+        async with _httpx.AsyncClient(timeout=15.0) as _hc:
+            _resp = await _hc.get(_models_url, headers=_headers)
+        if _resp.status_code != 200:
+            await ws.send_json(
+                {
+                    "type": "settings_providers_probe_models_response",
+                    "payload": {
+                        "ok": False,
+                        "models": [],
+                        "detail": f"HTTP {_resp.status_code}: {_resp.text[:200]}",
+                    },
+                }
+            )
+        else:
+            _body = _resp.json()
+            # OpenAI-format: {"data": [{"id": "..."}, ...]}
+            # Ollama-format: {"models": [{"name": "..."}, ...]}
+            # tolerate either.
+            _items = _body.get("data") if isinstance(_body, dict) else None
+            if not isinstance(_items, list):
+                _items = _body.get("models") if isinstance(_body, dict) else None
+            if not isinstance(_items, list):
+                _items = []
+            _names: list[str] = []
+            for _it in _items:
+                if isinstance(_it, dict):
+                    _n = _it.get("id") or _it.get("name") or _it.get("model")
+                    if _n:
+                        _names.append(str(_n))
+                elif isinstance(_it, str):
+                    _names.append(_it)
+            await ws.send_json(
+                {
+                    "type": "settings_providers_probe_models_response",
+                    "payload": {
+                        "ok": True,
+                        "models": _names,
+                    },
+                }
+            )
+    except Exception as _probe_exc:  # noqa: BLE001
+        await ws.send_json(
+            {
+                "type": "settings_providers_probe_models_response",
+                "payload": {
+                    "ok": False,
+                    "models": [],
+                    "detail": str(_probe_exc)[:300],
+                },
+            }
+        )
+
+
+async def _cc_chat(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
+    """控制消息：chat、chat_v2。"""
+    ws = conn.ws
+    session_id = conn.session_id
+    _payload = raw.get("payload", {}) or {}
+    text = _payload.get("text", "")
+    from deskpet.agent.attachment_budget import (
+        normalize_user_attachment_blocks as _normalize_attachment_blocks,
+    )
+
+    _attachment_blocks = _normalize_attachment_blocks(_payload.get("attachments"))
+    _msg_sid = _resolve_chat_source_session(
+        session_id,
+        _payload.get("session_id"),
+    )
+    _base_msg_sid = _msg_sid
+    from deskpet.session.task_scope import (
+        source_session_for_created_conversation as _creation_source_sid,
+    )
+
+    _source_session_id = _creation_source_sid(
+        _payload.get("session_id"),
+        _base_msg_sid,
+    )
+    _scope_decision = _resolve_chat_task_scope(
+        base_sid=_msg_sid,
+        text=text,
+        payload=_payload,
+    )
+    _msg_sid = _scope_decision.effective_sid
+    text = _scope_decision.stripped_text
+    _memory_policy_override = (
+        {"l2_page_in": "always"}
+        if getattr(
+            _scope_decision,
+            "force_l2_page_in",
+            None,
+        )
+        == "always"
+        else None
+    )
+    if _sdk_desktop_test_enabled():
+        if (text or "").strip():
+            _launch_product_harness_chat(
+                ws,
+                text,
+                _msg_sid,
+                None,
+                False,
+                _attachment_blocks,
+                str(_payload.get("request_id") or raw.get("request_id") or "") or None,
+                str(_payload.get("turn_id") or raw.get("turn_id") or "") or None,
+            )
+        return
+    if _scope_decision.created:
+        _legacy_creation = service_context.get("session_creation_service")
+        _legacy_request_id = str(
+            _payload.get("request_id") or raw.get("request_id") or uuid.uuid4()
+        )
+        try:
+            _legacy_created = await _legacy_creation.create_conversation_session(
+                request_id=f"legacy-new-session:{_legacy_request_id}",
+                project_id=None,
+                source_session_id=_source_session_id,
+            )
+            _msg_sid = str(_legacy_created["session"]["session_id"])
+        except Exception as _legacy_create_exc:  # noqa: BLE001
+            await ws.send_json(
+                {
+                    "type": "chat_v2_error",
+                    "payload": {
+                        "error": "新会话创建失败，请重试。",
+                        "code": str(getattr(_legacy_create_exc, "code", "session_create_failed")),
+                        "retryable": True,
+                        # Empty-state failures have no Session owner.
+                        # Keep this empty so App's global error banner
+                        # does not filter it as an inactive pseudo sid.
+                        "session_id": _source_session_id or "",
+                        "request_id": _legacy_request_id,
+                    },
+                }
+            )
+            return
+    _identity_gate = service_context.get("companion_identity_gate")
+    try:
+        if _identity_gate is None:
+            raise RuntimeError("companion_identity_not_ready")
+        # Freeze now, before a background Run is created. Later
+        # owner-aware boundaries consume this immutable snapshot;
+        # account switches never rewrite an in-flight Turn.
+        _frozen_companion_owner = _identity_gate.freeze()
+        _companion_route_bound = await _bind_companion_inbox_route(
+            _msg_sid,
+            _frozen_companion_owner,
+            create_if_absent=True,
+        )
+    except Exception as _identity_exc:  # noqa: BLE001
+        # request_id 必须回传：这一轮在 Run 被预约之前就夭折了，
+        # 前端的 pending_root_request_id 只能靠它认领并清除。少了
+        # 它，该会话此后每条消息都会被判成 "等待 root run" 而永远
+        # 不发出去 —— 会话被静默卡死（r4 S18 实测 default 会话）。
+        # 这个 try 覆盖的不只是身份门：_bind_companion_inbox_route
+        # 的属主围栏错误（owner_tombstoned / rebind_forbidden 等）
+        # 也会落到这里。原实现一律报 companion_identity_not_ready，
+        # 把"会话属主坏了"说成"身份没就绪"，排查时会被带偏很远
+        # （r5 真机实测：default 被墓碑化后一直显示身份未就绪）。
+        # 真实原因放进 detail，code 仍保持稳定供前端分支。
+        _identity_detail = str(
+            getattr(_identity_exc, "code", "") or _identity_exc or type(_identity_exc).__name__
+        )
+        await ws.send_json(
+            {
+                "type": "chat_v2_error",
+                "payload": {
+                    "error": "companion_identity_not_ready",
+                    "code": "companion_identity_not_ready",
+                    "detail": _identity_detail,
+                    "retryable": True,
+                    "session_id": _msg_sid,
+                    "request_id": str(_payload.get("request_id") or raw.get("request_id") or "")
+                    or None,
+                    "turn_id": str(_payload.get("turn_id") or raw.get("turn_id") or "") or None,
+                },
+            }
+        )
+        logger.info(
+            "companion_chat_blocked_identity_not_ready",
+            session_id=_msg_sid,
+            error=type(_identity_exc).__name__,
+            # 只记异常类名会把所有属主围栏错误压成 'RuntimeError'，
+            # 日志里看不出到底是身份没就绪还是会话属主坏了。
+            detail=_identity_detail,
+        )
+        return
+    if not _companion_route_bound:
+        _route_error = (
+            "新会话创建失败，请重试。"
+            if _scope_decision.created
+            else "当前选择的是只读历史会话，请重新发送。"
+        )
+        _route_code = (
+            "companion_session_create_failed"
+            if _scope_decision.created
+            else "companion_session_read_only"
+        )
+        # 同上：Run 预约前夭折的一轮必须带 request_id 回去，
+        # 否则前端 pending_root_request_id 永远挂着。
+        await ws.send_json(
+            {
+                "type": "chat_v2_error",
+                "payload": {
+                    "error": _route_error,
+                    "code": _route_code,
+                    "retryable": bool(_scope_decision.created),
+                    "session_id": _msg_sid,
+                    "request_id": str(_payload.get("request_id") or raw.get("request_id") or "")
+                    or None,
+                    "turn_id": str(_payload.get("turn_id") or raw.get("turn_id") or "") or None,
+                },
+            }
+        )
+        logger.info(
+            "companion_chat_blocked_read_only_session",
+            session_id=_msg_sid,
+        )
+        return
+    if _scope_decision.created:
+        try:
+            # 2026-08-09：这里原先直接引用局部名 `session_db`——它只在
+            # `session_provider_get/set` 两个分支里被赋值，而 Python 的
+            # 函数作用域让它在整个 control_channel 里都是局部名。以前不炸
+            # 是因为 ChatView 挂载必发 session_provider_get 把它绑上；
+            # 取消保留会话后空态 activeSid="" ⇒ hydration 直接 return ⇒
+            # 该消息永不发出 ⇒ 空态直发新建会话时 UnboundLocalError
+            # （真机实测）。改为每次从 service_context 取，不依赖执行顺序。
+            _inherit_sdb = service_context.get("session_db")
+            if _inherit_sdb is None:
+                raise RuntimeError("session_db_unavailable")
+            _inherited_model_binding = await _inherit_sdb.get_session_provider_binding(_msg_sid)
+        except Exception as _model_inherit_exc:  # noqa: BLE001
+            await ws.send_json(
+                {
+                    "type": "chat_v2_error",
+                    "payload": {
+                        "error": "新会话模型配置继承失败，请重试。",
+                        "code": "session_model_inherit_failed",
+                        "retryable": True,
+                        "session_id": _base_msg_sid,
+                    },
+                }
+            )
+            logger.exception(
+                "session_model_inherit_failed",
+                source_session_id=_base_msg_sid,
+                target_session_id=_msg_sid,
+                error=type(_model_inherit_exc).__name__,
+                detail=str(_model_inherit_exc)[:240],
+            )
+            return
+        # The control socket keeps a stable transport id while
+        # the visible conversation switches to this fresh,
+        # owner-fenced UUID session.
+        _remap_chat_peer_group(session_id, _msg_sid)
+        _switch_payload = {
+            "old_sid": _base_msg_sid,
+            "new_sid": _msg_sid,
+            "reason": _scope_decision.reason,
+            "provider_id": _inherited_model_binding.get("provider_id"),
+            "preferred_model": _inherited_model_binding.get("preferred_model"),
+            "model_params": _inherited_model_binding.get("model_params"),
+        }
+        for _evt_type in (
+            "session_switched",
+            "task_session_started",
+        ):
+            _switch_evt = {
+                "type": _evt_type,
+                "payload": dict(_switch_payload),
+            }
+            try:
+                await ws.send_json(_switch_evt)
+            except Exception:
+                pass
+            await _broadcast_default_chat_peers(ws, _switch_evt)
+        await _send_new_session_origin_user_echo(ws, _msg_sid, text)
+    # Clicking an empty "new topic" still creates and switches
+    # session above, but must not launch an empty AgentLoop turn.
+    if not (text or "").strip():
+        return
+    if deskpet_tool_registry_v2 is None or permission_gate_v2 is None:
+        await ws.send_json(
+            {
+                "type": "chat_v2_error",
+                "payload": {
+                    "error": "v2 stack not initialized",
+                    "session_id": _msg_sid,
+                },
+            }
+        )
+        return
+    # 方案 B（2026-08-20）：continuation 退化为 fresh run。SDK 0.1.4
+    # 的 ReAct driver 是单轮语义，多轮对话 = 每条用户消息一个 fresh run、
+    # 历史由 SDK context 组装。旧的 projection/boundary + signal 契约是
+    # 8/17 迁移遗留的半成品（写投影的 create_task_context 已失联、signal
+    # 签名未随 SDK 0.1.3 变更），继续走它只会报 identity mismatch。因此
+    # 忽略 target_root_run_id/task_scope_id，直接落入下方 fresh run 分支。
+
+    # P5-S2 Phase 4: a fresh user-initiated chat message means
+    # the user has implicitly granted a new auto-resume budget.
+    # Reset the attempts counter so subsequent failures may
+    # auto-resume up to ``max_attempts`` times again. Skipped
+    # for synthetic re-entry texts (`<<supervisor_followup>>`,
+    # `<<auto_resume>>`) so they consume the existing budget.
+    if not (text or "").startswith("<<"):
+        _sa_for_reset = service_context.get("session_activity")
+        if _sa_for_reset is not None:
+            try:
+                await _sa_for_reset.reset_auto_resume_attempts(_msg_sid)
+            except Exception as _ex:  # noqa: BLE001
+                logger.debug("auto_resume_reset_failed sid=%s err=%s", _msg_sid, _ex)
+
+    _chat_task = _launch_product_harness_chat(
+        ws,
+        text,
+        _msg_sid,
+        _memory_policy_override,
+        bool(_scope_decision.created),
+        _attachment_blocks,
+        str(_payload.get("request_id") or raw.get("request_id") or "") or None,
+        str(_payload.get("turn_id") or raw.get("turn_id") or "") or None,
+    )
+
+    def _make_followup_cb(target_sid: str, target_ws):
+        def _cb(_t):
+            async def _maybe_followup():
+                try:
+                    _nq_check = service_context.get("nudge_queue")
+                    if _nq_check is None or not await _nq_check.peek(target_sid):
+                        return
+                    new_task = _launch_product_harness_chat(
+                        target_ws, "<<supervisor_followup>>", target_sid
+                    )
+                    new_task.add_done_callback(_make_followup_cb(target_sid, target_ws))
+                    logger.info(
+                        "supervisor_followup_scheduled sid=%s",
+                        target_sid,
+                    )
+                except Exception as _exc:  # noqa: BLE001
+                    logger.debug(
+                        "supervisor_followup_failed sid=%s error=%s",
+                        target_sid,
+                        _exc,
+                    )
+
+            try:
+                asyncio.create_task(_maybe_followup())
+            except RuntimeError:
+                # No running loop (shutdown); silently skip.
+                pass
+
+        return _cb
+
+    _chat_task.add_done_callback(_make_followup_cb(_msg_sid, ws))
+
+
+async def _cc_interrupt(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
+    """控制消息：interrupt。"""
+    ws = conn.ws
+    session_id = conn.session_id
+    payload = raw.get("payload", {}) or {}
+    voice_transport = _voice_transports.get(session_id)
+    if voice_transport is not None:
+        voice_transport.interrupt()
+    await _cancel_product_harness_run(
+        session_id,
+        str(payload.get("run_id") or "").strip(),
+        reason="voice_interrupt",
+    )
+    await ws.send_json({"type": "interrupt_ack"})
+
+
+async def _cc_budget_status(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
+    """控制消息：budget_status。"""
+    ws = conn.ws
+    try:
+        status = await billing_ledger.status()
+        await ws.send_json({"type": "budget_status", "payload": status})
+    except Exception as exc:
+        logger.warning("budget_status_failed", error=str(exc))
+        await ws.send_json(
+            {
+                "type": "error",
+                "payload": {"message": f"budget_status failed: {exc}"},
+            }
+        )
+
+
+async def _cc_memory_list(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
+    """控制消息：memory_list、memory_delete、memory_clear、memory_export。"""
+    ws = conn.ws
+    session_id = conn.session_id
+    await _handle_memory_message(ws, session_id, msg_type, raw.get("payload", {}) or {})
+
+
+async def _cc_p4_ipc(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
+    """控制消息：P4 进程间消息。"""
+    ws = conn.ws
+    session_id = conn.session_id
+    await p4_ipc.handle(
+        ws,
+        session_id,
+        msg_type,
+        raw.get("payload", {}) or {},
+        service_context,
+    )
+
+
+async def _cc_workflow_routes(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
+    """控制消息：工作流消息（workflow_ 前缀）。"""
+    ws = conn.ws
+    session_id = conn.session_id
+    from deskpet.workflows.ipc import start_workflow_ipc_dispatch
+
+    workflow_service = service_context.get("workflow_service")
+    if workflow_service is None:
+        await ws.send_json(
+            {
+                "type": "workflow_ipc_error",
+                "request_type": msg_type,
+                "request_id": raw.get("request_id"),
+                "ok": False,
+                "error": {
+                    "code": "workflow_service_unavailable",
+                    "message": "Durable workflow service is unavailable",
+                    "retryable": True,
+                },
+            }
+        )
+    else:
+        if await _try_resolve_execution_workflow_decision(
+            ws,
+            session_id=session_id,
+            raw=raw,
+            workflow_service=workflow_service,
+        ):
+            return
+        start_workflow_ipc_dispatch(
+            workflow_service,
+            raw,
+            ws.send_json,
+            _workflow_ipc_background_tasks,
+        )
+
+
+async def _cc_provider_test_connection(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
+    """控制消息：provider_test_connection。"""
+    ws = conn.ws
+    from provider_test_connection import handle_provider_test_connection
+
+    await handle_provider_test_connection(ws, raw.get("payload", {}) or {})
+
+
+async def _cc_supervisor_user_choice(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
+    """控制消息：supervisor_user_choice。"""
+    ws = conn.ws
+    session_id = conn.session_id
+    _payload = raw.get("payload", {}) or {}
+    _target_sid = _payload.get("session_id") or session_id
+    _alert_id = str(_payload.get("alert_id") or "")
+    _btn_idx = int(_payload.get("button_index") or 0)
+    _btn_text = str(_payload.get("button_text") or "")
+    logger.info(
+        "supervisor_user_choice sid=%s alert=%s button_idx=%d text=%s",
+        _target_sid,
+        _alert_id,
+        _btn_idx,
+        _btn_text,
+    )
+    _sdb_for_choice = service_context.get("session_db")
+    if _sdb_for_choice is not None:
+        try:
+            await _sdb_for_choice.append_supervisor_hint(
+                session_id=_target_sid,
+                alert_id=_alert_id,
+                hint_text=_btn_text,
+                action="user_choice",
+                severity="green",
+                user_button=_btn_text,
+            )
+        except Exception as _exc:
+            logger.debug("supervisor_user_choice_audit_failed error=%s", _exc)
+
+    # Heuristic intent matching by button text. We accept
+    # both Chinese and English labels since the LLM picks
+    # them dynamically. Stop/cancel takes priority over
+    # continue if both keywords appear.
+    _btn_lower = _btn_text.lower().strip()
+    _is_stop = any(k in _btn_text for k in ("中断", "停止", "取消", "终止")) or any(
+        k in _btn_lower for k in ("cancel", "stop", "abort", "interrupt")
+    )
+    _is_continue = any(k in _btn_text for k in ("继续", "重试", "再试", "让它", "再等")) or any(
+        k in _btn_lower for k in ("continue", "retry", "let", "wait")
+    )
+
+    if _is_stop:
+        # Cancel any in-flight task + clear the nudge queue
+        await _cancel_product_harness_run(
+            _target_sid,
+            str(_payload.get("run_id") or "").strip(),
+            reason="supervisor_user_choice",
+        )
+        _nq_for_stop = service_context.get("nudge_queue")
+        if _nq_for_stop is not None:
+            try:
+                await _nq_for_stop.clear(_target_sid)
+            except Exception:
+                pass
+    elif _is_continue:
+        try:
+            _launch_product_harness_chat(ws, "<<supervisor_followup>>", _target_sid)
+            logger.info(
+                "supervisor_user_choice_followup_scheduled sid=%s",
+                _target_sid,
+            )
+        except Exception as _ex_fu:
+            logger.warning(
+                "supervisor_user_choice_followup_failed sid=%s error=%s",
+                _target_sid,
+                _ex_fu,
+            )
+
+
+async def _cc_supervisor_toggle(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
+    """控制消息：supervisor_toggle。"""
+    ws = conn.ws
+    _payload = raw.get("payload", {}) or {}
+    _enabled = bool(_payload.get("enabled", True))
+    _persisted = _persist_supervisor_enabled(_enabled)
+    _wd_inst = service_context.get("watchdog")
+    if _enabled:
+        if _wd_inst is None or not _wd_inst.is_running():
+            logger.info("supervisor_toggle_enable_requested (restart_recommended)")
+        else:
+            _wd_inst.enable()
+            logger.info("supervisor_toggle_enabled")
+    else:
+        if _wd_inst is not None:
+            _wd_inst.disable()
+        _nq_inst = service_context.get("nudge_queue")
+        if _nq_inst is not None:
+            try:
+                await _nq_inst.clear()
+            except Exception:
+                pass
+        logger.info("supervisor_toggle_disabled")
+    await ws.send_json(
+        {
+            "type": "supervisor_toggle_ack",
+            "payload": {"enabled": _enabled, "persisted": _persisted},
+        }
+    )
+
+
+async def _cc_debug_force_error_pending(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
+    """控制消息：__debug_force_error_pending。"""
+    ws = conn.ws
+    _payload = raw.get("payload", {}) or {}
+    target_sid = _payload.get("session_id") or ""
+    _sa = service_context.get("session_activity")
+    if _sa is not None and target_sid:
+        await _sa.bump(target_sid, event_type="error", snippet="forced for E2E test")
+        await _sa.mark_error_pending(target_sid)
+        # Also reset watchdog dedup so next scan fires
+        _wd = service_context.get("watchdog")
+        if _wd is not None:
+            _wd.reset_dedup(target_sid)
+        await ws.send_json(
+            {
+                "type": "__debug_force_error_pending_ack",
+                "payload": {"sid": target_sid, "ok": True},
+            }
+        )
+
+
+async def _cc_debug_dump_session_activity(
+    conn: _ControlConnection, raw: dict, msg_type: str
+) -> None:
+    """控制消息：__debug_dump_session_activity。"""
+    ws = conn.ws
+    _sa = service_context.get("session_activity")
+    _wd = service_context.get("watchdog")
+    if _sa is not None:
+        _all = await _sa.snapshot_all()
+    else:
+        _all = {}
+    _wd_state = {
+        "running": _wd.is_running() if _wd else False,
+        "last_scans": dict(_wd._last_scan_ts) if _wd else {},
+    }
+    await ws.send_json(
+        {
+            "type": "__debug_dump_response",
+            "payload": {"session_activity": _all, "watchdog": _wd_state},
+        }
+    )
+
+
+async def _cc_debug_inject_supervisor_alert(
+    conn: _ControlConnection, raw: dict, msg_type: str
+) -> None:
+    """控制消息：__debug_inject_supervisor_alert。"""
+    ws = conn.ws
+    _payload = raw.get("payload", {}) or {}
+    # Fan out to every control WS, identical path to the
+    # real supervisor's broadcast.
+    msg = {"type": "supervisor_alert", "payload": _payload}
+    for _sid_key, _ws_obj in list(_control_connections.items()):
+        try:
+            await _ws_obj.send_json(msg)
+        except Exception as _bex:
+            logger.debug(
+                "debug_supervisor_alert_send_failed sid=%s error=%s",
+                _sid_key,
+                _bex,
+            )
+    logger.info(
+        "__debug_inject_supervisor_alert dispatched payload=%s",
+        _payload,
+    )
+    await ws.send_json(
+        {
+            "type": "__debug_inject_ack",
+            "payload": {"ok": True},
+        }
+    )
+
+
+async def _cc_unknown(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
+    """控制消息：未知类型。"""
+    ws = conn.ws
+    await ws.send_json(
+        {
+            "type": "error",
+            "payload": {"message": f"unknown type: {msg_type}"},
+        }
+    )
+
+
+# 有序路由表：与原 if/elif 分发链顺序一致。每项是消息类型集合或判断函数。
+_CONTROL_ROUTES: list[tuple[Any, Any]] = [
+    (frozenset(["ping"]), _cc_ping),
+    (frozenset(["memory_summarize_now"]), _cc_memory_summarize_now),
+    (frozenset(["memory_thumbs_up"]), _cc_memory_thumbs_up),
+    (frozenset(["memory_archive_list"]), _cc_memory_archive_list),
+    (frozenset(["session_health_check", "session_run_status_query"]), _cc_session_run_status_query),
+    (frozenset(["permission_response"]), _cc_permission_response),
+    (frozenset(["protected_path_decision"]), _cc_protected_path_decision),
+    (frozenset(["external_wait_response"]), _cc_external_wait_response),
+    (frozenset(["project_directory_response"]), _cc_project_directory_response),
+    (frozenset(["clarification_response"]), _cc_clarification_response),
+    (frozenset(["permission_auto_mode_set"]), _cc_permission_auto_mode_set),
+    (
+        frozenset(["orchestration_publish_dir_get", "orchestration_publish_dir_set"]),
+        _cc_orchestration_publish_dir_get,
+    ),
+    (
+        lambda msg_type: (
+            msg_type.startswith(("mission_", "orchestration_", "taskgraph."))
+            or msg_type
+            in (
+                "agent_skill_request",
+                "agent_skill_evaluation_mission",
+                "agent_skill_evaluation_dispatch",
+            )
+        ),
+        _cc_orchestration_routes,
+    ),
+    (frozenset(["permission_auto_mode_get"]), _cc_permission_auto_mode_get),
+    (frozenset(["capability_list"]), _cc_capability_list),
+    (frozenset(["capability_operations_list"]), _cc_capability_operations_list),
+    (
+        frozenset(
+            [
+                "capability_activate",
+                "capability_install",
+                "capability_operation_cancel",
+                "capability_operation_retry",
+                "capability_repair",
+                "capability_rollback",
+                "capability_uninstall",
+            ]
+        ),
+        _cc_capability_install,
+    ),
+    (frozenset(["chat_turn_timeout_set"]), _cc_chat_turn_timeout_set),
+    (frozenset(["chat_turn_timeout_get"]), _cc_chat_turn_timeout_get),
+    (frozenset(["plugin_list"]), _cc_plugin_list),
+    (frozenset(["plugin_enable"]), _cc_plugin_enable),
+    (frozenset(["plugin_disable"]), _cc_plugin_disable),
+    (frozenset(["skill_marketplace_list"]), _cc_skill_marketplace_list),
+    (frozenset(["skill_list_installed"]), _cc_skill_list_installed),
+    (frozenset(["skill_install_from_url"]), _cc_skill_install_from_url),
+    (frozenset(["skill_install_confirm"]), _cc_skill_install_confirm),
+    (frozenset(["skill_install_status"]), _cc_skill_install_status),
+    (frozenset(["skill_uninstall"]), _cc_skill_uninstall),
+    (frozenset(["context_usage_request"]), _cc_context_usage_request),
+    (frozenset(["context_breakdown_request"]), _cc_context_breakdown_request),
+    (frozenset(["human_memory_request"]), _cc_human_memory_request),
+    (
+        frozenset(
+            [
+                "project_catalog_page",
+                "project_inspect",
+                "project_preview_register",
+                "project_register",
+                "project_relocate",
+                "project_sessions_page",
+                "session_create",
+            ]
+        ),
+        _cc_project_preview_register,
+    ),
+    (frozenset(["sessions_list"]), _cc_sessions_list),
+    (frozenset(["session_delete"]), _cc_session_delete),
+    (frozenset(["session_rename"]), _cc_session_rename),
+    (frozenset(["session_messages_load"]), _cc_session_messages_load),
+    (frozenset(["slash_command"]), _cc_slash_command),
+    (frozenset(["chat_v2_interrupt"]), _cc_chat_v2_interrupt),
+    (frozenset(["plan_confirm"]), _cc_plan_confirm),
+    (frozenset(["models_list"]), _cc_models_list),
+    (frozenset(["session_provider_get"]), _cc_session_provider_get),
+    (frozenset(["session_set_model", "session_set_provider"]), _cc_session_set_provider),
+    (
+        frozenset(
+            [
+                "settings_providers_add",
+                "settings_providers_list_request",
+                "settings_providers_remove",
+                "settings_providers_reorder",
+                "settings_providers_update",
+            ]
+        ),
+        _cc_settings_providers_list_request,
+    ),
+    (frozenset(["settings_providers_probe_models"]), _cc_settings_providers_probe_models),
+    (frozenset(["chat", "chat_v2"]), _cc_chat),
+    (frozenset(["interrupt"]), _cc_interrupt),
+    (frozenset(["budget_status"]), _cc_budget_status),
+    (frozenset(["memory_clear", "memory_delete", "memory_export", "memory_list"]), _cc_memory_list),
+    (lambda msg_type: msg_type in p4_ipc.P4_IPC_MESSAGE_TYPES, _cc_p4_ipc),
+    (lambda msg_type: msg_type.startswith("workflow_"), _cc_workflow_routes),
+    (frozenset(["provider_test_connection"]), _cc_provider_test_connection),
+    (frozenset(["supervisor_user_choice"]), _cc_supervisor_user_choice),
+    (frozenset(["supervisor_toggle"]), _cc_supervisor_toggle),
+    (frozenset(["__debug_force_error_pending"]), _cc_debug_force_error_pending),
+    (frozenset(["__debug_dump_session_activity"]), _cc_debug_dump_session_activity),
+    (frozenset(["__debug_inject_supervisor_alert"]), _cc_debug_inject_supervisor_alert),
+]
+
+
+async def _handle_privileged_companion_frame(
+    conn: _ControlConnection, wire_text: str, msg_type: str
+) -> Any:
+    """伴侣特权控制帧：严格解析、执行、推进挑战；返回之后要用的挑战（推进后的或重新发出的）。"""
+    from deskpet.companion.control_ingress import CompanionControlIngressError
+
+    ws = conn.ws
+    companion_challenge = conn.companion_challenge
+    human_memory_control_binding = conn.human_memory_control_binding
+    try:
+        strict_raw = host_state.companion_control_ingress.parse_privileged_frame(wire_text)
+        if strict_raw is None:
+            raise CompanionControlIngressError("privileged_control_parse_failed")
+        if companion_challenge is None:
+            raise CompanionControlIngressError("companion_control_challenge_missing")
+        response = await host_state.companion_control_ingress.execute(
+            strict_raw,
+            challenge=companion_challenge,
+        )
+        if msg_type == "companion_profile_bind":
+            human_memory_control_binding.bound(
+                host_state.companion_control_ingress, companion_challenge
+            )
+        elif msg_type == "companion_profile_unbind":
+            human_memory_control_binding.clear()
+        if msg_type in {
+            "companion_growth_evaluation_decision",
+            "companion_growth_activation_decision",
+            "companion_growth_action_decision",
+            "companion_rollback",
+            "companion_forget",
+        }:
+            await _dispatch_companion_action_command(msg_type, strict_raw)
+        if msg_type == "companion_profile_bind":
+            # 事件 AK：这一段必须有界。就绪帧在其后无条件下发，
+            # 失败只降级成稳定码，不再让 UI 无限期停在
+            # 「等待主对话就绪」。
+            try:
+                _bound_identity = host_state.companion_identity_gate.freeze()
+            except Exception as _freeze_exc:  # noqa: BLE001
+                logger.warning(
+                    "companion_projection_bind_drain_failed",
+                    error=type(_freeze_exc).__name__,
+                    code=str(getattr(_freeze_exc, "code", None) or type(_freeze_exc).__name__),
+                )
+            else:
+                (
+                    _inbox_session_id,
+                    _projection_code,
+                ) = await _settle_companion_bind_projection(
+                    _bound_identity,
+                    ensure_route=_ensure_companion_inbox_route,
+                    notification_service=(host_state.companion_notification_service),
+                )
+                _bind_payload = dict(response.get("payload", {}))
+                if _inbox_session_id is not None:
+                    _bind_payload["session_id"] = _inbox_session_id
+                if _projection_code is not None:
+                    # 稳定码随就绪帧一起到前端，UI 可读地说明
+                    # 「历史补读未完成」，而不是静默。
+                    _bind_payload["projection_degraded_code"] = _projection_code
+                response = {**response, "payload": _bind_payload}
+            # Harness startup can discover recoverable Runs before
+            # the main window finishes its signed identity bind.
+            # That attempt correctly fails closed; wake the
+            # event-driven reconciler now that the same process
+            # identity gate is ready so waiting work cannot remain
+            # stranded until an unrelated durable event arrives.
+            if _trigger_harness_recovery_after_identity_bind():
+                # 2026-08-05 fork 前既有 bug 修复：此处原引用局部变量
+                # `payload`，但它在本 try 块更下方才赋值——recovery
+                # 触发时即 UnboundLocalError，bind 被拒且前端无限
+                # 重试（真机测试实锤）。改读 response 的 payload。
+                _resp_payload = response.get("payload", {}) if isinstance(response, Mapping) else {}
+                logger.info(
+                    "harness_recovery_triggered_identity_ready",
+                    profile_id=_resp_payload.get("profile_id"),
+                    profile_generation=_resp_payload.get("profile_generation"),
+                )
+        elif msg_type == "companion_profile_unbind":
+            if host_state.companion_notification_service is not None:
+                host_state.companion_notification_service.close_history()
+        await ws.send_json(response)
+        payload = response.get("payload", {})
+        companion_challenge = companion_challenge.advance(
+            request_seq=int(payload.get("next_request_seq") or payload["nextRequestSeq"]),
+            binding_epoch=int(payload.get("binding_epoch") or payload["bindingEpoch"]),
+        )
+        if msg_type in {
+            "companion_profile_bind",
+            "companion_profile_unbind",
+        }:
+            identity_status = {
+                "type": "companion_identity_status",
+                "payload": {
+                    "ready": (msg_type == "companion_profile_bind"),
+                    "status": ("ready" if msg_type == "companion_profile_bind" else "unready"),
+                    "binding_epoch": str(companion_challenge.binding_epoch),
+                    **(
+                        {
+                            "profile_id": payload.get("profile_id"),
+                            "profile_generation": payload.get("profile_generation"),
+                            "session_id": payload.get("session_id"),
+                        }
+                        if msg_type == "companion_profile_bind"
+                        else {}
+                    ),
+                },
+            }
+            for status_ws in list(_control_connections.values()):
+                try:
+                    await status_ws.send_json(identity_status)
+                except Exception:
+                    pass
+    except Exception as _e:  # noqa: BLE001
+        code = getattr(_e, "code", str(_e))
+        rechallenge = bool(getattr(_e, "rechallenge", True))
+        logger.warning(
+            "companion_control_rejected",
+            command_kind=msg_type,
+            code=code,
+            rechallenge=rechallenge,
+            connection_id=(
+                companion_challenge.connection_id if companion_challenge is not None else None
+            ),
+        )
+        await ws.send_json(
+            {
+                "type": (
+                    "companion_control_rechallenge" if rechallenge else "companion_control_error"
+                ),
+                "payload": {
+                    "code": code,
+                    "retryable": True,
+                },
+            }
+        )
+        # A rejected mutation never mutates the old active lease.
+        # Rechallenge via a fresh bounded challenged row so stale
+        # seq/epoch clients can recover without backend restart.
+        if rechallenge:
+            try:
+                companion_challenge = host_state.companion_control_ingress.open_challenge(
+                    requested_window_label=ws.query_params.get("requested_window_label", ""),
+                    requested_scope=ws.query_params.get("requested_scope", ""),
+                )
+                await ws.send_json(
+                    {
+                        "type": "companion_control_challenge",
+                        "payload": (companion_challenge.public_payload()),
+                    }
+                )
+            except Exception as challenge_error:  # noqa: BLE001
+                logger.warning(
+                    "companion_rechallenge_failed",
+                    error=type(challenge_error).__name__,
+                )
+    return companion_challenge
+
+
+async def _cc_companion_detail_get(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
+    """控制消息：companion_detail_get。"""
+    ws = conn.ws
+    requested_scope = conn.requested_scope
+    companion_challenge = conn.companion_challenge
+    _detail_request_id = str(raw.get("request_id") or "")
+    try:
+        from deskpet.companion.detail_query import (
+            CompanionDetailQueryError,
+        )
+
+        if (
+            host_state.companion_detail_query is None
+            or companion_challenge is None
+            or requested_scope != "companion_action"
+        ):
+            raise CompanionDetailQueryError("unavailable")
+        _detail_identity = host_state.companion_identity_gate.freeze()
+        if int(companion_challenge.binding_epoch) != int(_detail_identity.binding_epoch):
+            raise CompanionDetailQueryError("cursor_invalid")
+        _detail_payload = raw.get("payload")
+        if not isinstance(_detail_payload, dict):
+            raise CompanionDetailQueryError("unavailable")
+        _detail_response = await host_state.companion_detail_query.query(
+            frozen_identity=_detail_identity,
+            control_epoch=int(companion_challenge.binding_epoch),
+            request=_detail_payload,
+        )
+        await ws.send_json(
+            {
+                "type": "companion_detail_response",
+                "request_id": _detail_request_id,
+                "payload": _detail_response,
+            }
+        )
+    except Exception as _detail_exc:  # noqa: BLE001
+        _detail_code = getattr(_detail_exc, "code", "unavailable")
+        if _detail_code not in {
+            "unavailable",
+            "detail_changed",
+            "cursor_invalid",
+        }:
+            _detail_code = "unavailable"
+        await ws.send_json(
+            {
+                "type": "companion_detail_error",
+                "request_id": _detail_request_id,
+                "payload": {
+                    "code": _detail_code,
+                    **({"message": str(_detail_exc)} if str(_detail_exc) != _detail_code else {}),
+                },
+            }
+        )
+
+
+async def _dispatch_control_message(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
+    """按路由表把一条控制消息交给处理函数；都不匹配时回"未知类型"。"""
+    for matcher, handler in _CONTROL_ROUTES:
+        if (msg_type in matcher) if isinstance(matcher, frozenset) else matcher(msg_type):
+            await handler(conn, raw, msg_type)
+            return
+    await _cc_unknown(conn, raw, msg_type)
+
+
 @app.websocket("/ws/control")
 async def control_channel(ws: WebSocket):
     await ws.accept()
@@ -3370,6 +6521,13 @@ async def control_channel(ws: WebSocket):
                 )
                 continue
             msg_type = raw.get("type", "")
+            conn = _ControlConnection(
+                ws=ws,
+                session_id=session_id,
+                requested_scope=requested_scope,
+                companion_challenge=companion_challenge,
+                human_memory_control_binding=human_memory_control_binding,
+            )
 
             if host_state.companion_control_ingress is not None:
                 from deskpet.companion.control_ingress import (
@@ -3380,3048 +6538,19 @@ async def control_channel(ws: WebSocket):
             if host_state.companion_control_ingress is not None and is_privileged_control_kind(
                 msg_type
             ):
-                try:
-                    strict_raw = host_state.companion_control_ingress.parse_privileged_frame(
-                        wire_text
-                    )
-                    if strict_raw is None:
-                        raise CompanionControlIngressError("privileged_control_parse_failed")
-                    if companion_challenge is None:
-                        raise CompanionControlIngressError("companion_control_challenge_missing")
-                    response = await host_state.companion_control_ingress.execute(
-                        strict_raw,
-                        challenge=companion_challenge,
-                    )
-                    if msg_type == "companion_profile_bind":
-                        human_memory_control_binding.bound(
-                            host_state.companion_control_ingress, companion_challenge
-                        )
-                    elif msg_type == "companion_profile_unbind":
-                        human_memory_control_binding.clear()
-                    if msg_type in {
-                        "companion_growth_evaluation_decision",
-                        "companion_growth_activation_decision",
-                        "companion_growth_action_decision",
-                        "companion_rollback",
-                        "companion_forget",
-                    }:
-                        await _dispatch_companion_action_command(msg_type, strict_raw)
-                    if msg_type == "companion_profile_bind":
-                        # 事件 AK：这一段必须有界。就绪帧在其后无条件下发，
-                        # 失败只降级成稳定码，不再让 UI 无限期停在
-                        # 「等待主对话就绪」。
-                        try:
-                            _bound_identity = host_state.companion_identity_gate.freeze()
-                        except Exception as _freeze_exc:  # noqa: BLE001
-                            logger.warning(
-                                "companion_projection_bind_drain_failed",
-                                error=type(_freeze_exc).__name__,
-                                code=str(
-                                    getattr(_freeze_exc, "code", None) or type(_freeze_exc).__name__
-                                ),
-                            )
-                        else:
-                            (
-                                _inbox_session_id,
-                                _projection_code,
-                            ) = await _settle_companion_bind_projection(
-                                _bound_identity,
-                                ensure_route=_ensure_companion_inbox_route,
-                                notification_service=(host_state.companion_notification_service),
-                            )
-                            _bind_payload = dict(response.get("payload", {}))
-                            if _inbox_session_id is not None:
-                                _bind_payload["session_id"] = _inbox_session_id
-                            if _projection_code is not None:
-                                # 稳定码随就绪帧一起到前端，UI 可读地说明
-                                # 「历史补读未完成」，而不是静默。
-                                _bind_payload["projection_degraded_code"] = _projection_code
-                            response = {**response, "payload": _bind_payload}
-                        # Harness startup can discover recoverable Runs before
-                        # the main window finishes its signed identity bind.
-                        # That attempt correctly fails closed; wake the
-                        # event-driven reconciler now that the same process
-                        # identity gate is ready so waiting work cannot remain
-                        # stranded until an unrelated durable event arrives.
-                        if _trigger_harness_recovery_after_identity_bind():
-                            # 2026-08-05 fork 前既有 bug 修复：此处原引用局部变量
-                            # `payload`，但它在本 try 块更下方才赋值——recovery
-                            # 触发时即 UnboundLocalError，bind 被拒且前端无限
-                            # 重试（真机测试实锤）。改读 response 的 payload。
-                            _resp_payload = (
-                                response.get("payload", {}) if isinstance(response, Mapping) else {}
-                            )
-                            logger.info(
-                                "harness_recovery_triggered_identity_ready",
-                                profile_id=_resp_payload.get("profile_id"),
-                                profile_generation=_resp_payload.get("profile_generation"),
-                            )
-                    elif msg_type == "companion_profile_unbind":
-                        if host_state.companion_notification_service is not None:
-                            host_state.companion_notification_service.close_history()
-                    await ws.send_json(response)
-                    payload = response.get("payload", {})
-                    companion_challenge = companion_challenge.advance(
-                        request_seq=int(
-                            payload.get("next_request_seq") or payload["nextRequestSeq"]
-                        ),
-                        binding_epoch=int(payload.get("binding_epoch") or payload["bindingEpoch"]),
-                    )
-                    if msg_type in {
-                        "companion_profile_bind",
-                        "companion_profile_unbind",
-                    }:
-                        identity_status = {
-                            "type": "companion_identity_status",
-                            "payload": {
-                                "ready": (msg_type == "companion_profile_bind"),
-                                "status": (
-                                    "ready" if msg_type == "companion_profile_bind" else "unready"
-                                ),
-                                "binding_epoch": str(companion_challenge.binding_epoch),
-                                **(
-                                    {
-                                        "profile_id": payload.get("profile_id"),
-                                        "profile_generation": payload.get("profile_generation"),
-                                        "session_id": payload.get("session_id"),
-                                    }
-                                    if msg_type == "companion_profile_bind"
-                                    else {}
-                                ),
-                            },
-                        }
-                        for status_ws in list(_control_connections.values()):
-                            try:
-                                await status_ws.send_json(identity_status)
-                            except Exception:
-                                pass
-                except Exception as _e:  # noqa: BLE001
-                    code = getattr(_e, "code", str(_e))
-                    rechallenge = bool(getattr(_e, "rechallenge", True))
-                    logger.warning(
-                        "companion_control_rejected",
-                        command_kind=msg_type,
-                        code=code,
-                        rechallenge=rechallenge,
-                        connection_id=(
-                            companion_challenge.connection_id
-                            if companion_challenge is not None
-                            else None
-                        ),
-                    )
-                    await ws.send_json(
-                        {
-                            "type": (
-                                "companion_control_rechallenge"
-                                if rechallenge
-                                else "companion_control_error"
-                            ),
-                            "payload": {
-                                "code": code,
-                                "retryable": True,
-                            },
-                        }
-                    )
-                    # A rejected mutation never mutates the old active lease.
-                    # Rechallenge via a fresh bounded challenged row so stale
-                    # seq/epoch clients can recover without backend restart.
-                    if rechallenge:
-                        try:
-                            companion_challenge = (
-                                host_state.companion_control_ingress.open_challenge(
-                                    requested_window_label=ws.query_params.get(
-                                        "requested_window_label", ""
-                                    ),
-                                    requested_scope=ws.query_params.get("requested_scope", ""),
-                                )
-                            )
-                            await ws.send_json(
-                                {
-                                    "type": "companion_control_challenge",
-                                    "payload": (companion_challenge.public_payload()),
-                                }
-                            )
-                        except Exception as challenge_error:  # noqa: BLE001
-                            logger.warning(
-                                "companion_rechallenge_failed",
-                                error=type(challenge_error).__name__,
-                            )
+                companion_challenge = await _handle_privileged_companion_frame(
+                    conn, wire_text, msg_type
+                )
                 continue
 
             if msg_type == "companion_detail_get":
-                _detail_request_id = str(raw.get("request_id") or "")
-                try:
-                    from deskpet.companion.detail_query import (
-                        CompanionDetailQueryError,
-                    )
-
-                    if (
-                        host_state.companion_detail_query is None
-                        or companion_challenge is None
-                        or requested_scope != "companion_action"
-                    ):
-                        raise CompanionDetailQueryError("unavailable")
-                    _detail_identity = host_state.companion_identity_gate.freeze()
-                    if int(companion_challenge.binding_epoch) != int(
-                        _detail_identity.binding_epoch
-                    ):
-                        raise CompanionDetailQueryError("cursor_invalid")
-                    _detail_payload = raw.get("payload")
-                    if not isinstance(_detail_payload, dict):
-                        raise CompanionDetailQueryError("unavailable")
-                    _detail_response = await host_state.companion_detail_query.query(
-                        frozen_identity=_detail_identity,
-                        control_epoch=int(companion_challenge.binding_epoch),
-                        request=_detail_payload,
-                    )
-                    await ws.send_json(
-                        {
-                            "type": "companion_detail_response",
-                            "request_id": _detail_request_id,
-                            "payload": _detail_response,
-                        }
-                    )
-                except Exception as _detail_exc:  # noqa: BLE001
-                    _detail_code = getattr(_detail_exc, "code", "unavailable")
-                    if _detail_code not in {
-                        "unavailable",
-                        "detail_changed",
-                        "cursor_invalid",
-                    }:
-                        _detail_code = "unavailable"
-                    await ws.send_json(
-                        {
-                            "type": "companion_detail_error",
-                            "request_id": _detail_request_id,
-                            "payload": {
-                                "code": _detail_code,
-                                **(
-                                    {"message": str(_detail_exc)}
-                                    if str(_detail_exc) != _detail_code
-                                    else {}
-                                ),
-                            },
-                        }
-                    )
+                await _cc_companion_detail_get(conn, raw, msg_type)
                 continue
 
             if await _handle_control_ws_message(raw, session_id=session_id, ws=ws):
                 continue
 
-            if msg_type == "ping":
-                await ws.send_json({"type": "pong"})
-
-            elif msg_type == "memory_summarize_now":
-                # P4-S20-D: 手动触发 — 用户可在 SettingsPanel / MemoryPanel
-                # 点 "立即总结老对话" 按钮。参数支持 age_days / min_messages
-                # / max_per_run override。
-                payload = raw.get("payload", {}) or {}
-                if _summarizer_state_db_path is None or host_state.local_llm is None:
-                    await ws.send_json(
-                        {
-                            "type": "memory_summarize_response",
-                            "payload": {
-                                "ok": False,
-                                "error": "summarizer not initialized (state_db or local_llm missing)",
-                            },
-                        }
-                    )
-                    continue
-                # 旧记忆 summarizer 已移除；state_db 恒为 None，上面的 guard 已 continue。
-
-            elif msg_type == "memory_thumbs_up":
-                # 记忆系统升级 WI-M1.1：评估反馈回路。前端历史/消息面板
-                # 点 👍/👎 → 这里把一行落进 memory_user_feedback，供 eval
-                # CLI 离线分析「召回质量差的 query」。
-                # payload: { msg_id:int, query:str, helpful:bool }
-                # flag feedback_loop 关 → 不落库、不建 v2 表（Strangler-Fig：
-                # MR-0 要求 flag 全关时 state.db 无任何 v2 表）。
-                payload = raw.get("payload", {}) or {}
-                if not config.memory.v2.feedback_loop:
-                    await ws.send_json(
-                        {
-                            "type": "memory_thumbs_up_response",
-                            "payload": {"ok": False, "reason": "feedback_loop_disabled"},
-                        }
-                    )
-                    continue
-                if _summarizer_state_db_path is None:
-                    await ws.send_json(
-                        {
-                            "type": "memory_thumbs_up_response",
-                            "payload": {"ok": False, "reason": "state_db_unavailable"},
-                        }
-                    )
-                    continue
-                # 旧记忆 feedback store 已移除；state_db 恒为 None，上面的 guard 已 continue。
-
-            elif msg_type == "memory_archive_list":
-                # P4-S20-D: 列出 archive 内容供用户查看 / 决定是否恢复或彻底删
-                # 参数：limit (default 100), session_id (optional filter)
-                payload = raw.get("payload", {}) or {}
-                if _summarizer_state_db_path is None:
-                    await ws.send_json(
-                        {
-                            "type": "memory_archive_list_response",
-                            "payload": {"ok": False, "error": "state_db not initialized"},
-                        }
-                    )
-                    continue
-                _limit = int(payload.get("limit", 100))
-                _filter_sid = payload.get("session_id")
-                try:
-                    import aiosqlite
-
-                    rows = []
-                    async with aiosqlite.connect(_summarizer_state_db_path) as _db:
-                        if _filter_sid:
-                            cur = await _db.execute(
-                                "SELECT id, session_id, role, content, created_at, "
-                                "archived_at, archived_into_id "
-                                "FROM messages_archive WHERE session_id = ? "
-                                "ORDER BY archived_at DESC, created_at DESC LIMIT ?",
-                                (_filter_sid, _limit),
-                            )
-                        else:
-                            cur = await _db.execute(
-                                "SELECT id, session_id, role, content, created_at, "
-                                "archived_at, archived_into_id "
-                                "FROM messages_archive "
-                                "ORDER BY archived_at DESC, created_at DESC LIMIT ?",
-                                (_limit,),
-                            )
-                        async for r in cur:
-                            rows.append(
-                                {
-                                    "id": r[0],
-                                    "session_id": r[1],
-                                    "role": r[2],
-                                    "content": r[3],
-                                    "created_at": r[4],
-                                    "archived_at": r[5],
-                                    "archived_into_id": r[6],
-                                }
-                            )
-                        await cur.close()
-                    await ws.send_json(
-                        {
-                            "type": "memory_archive_list_response",
-                            "payload": {"ok": True, "rows": rows, "count": len(rows)},
-                        }
-                    )
-                except Exception as exc:  # noqa: BLE001
-                    await ws.send_json(
-                        {
-                            "type": "memory_archive_list_response",
-                            "payload": {"ok": False, "error": str(exc)},
-                        }
-                    )
-
-            elif msg_type in {"session_run_status_query", "session_health_check"}:
-                payload = raw.get("payload", {}) or {}
-                target_sid = str(payload.get("session_id") or session_id)
-                root_run_id = str(payload.get("root_run_id") or payload.get("run_id") or "").strip()
-                projection = _authoritative_sdk_run_projection(
-                    root_run_id, str(payload.get("sdk_run_id") or "")
-                )
-                await ws.send_json(
-                    {
-                        "type": "session_run_status_ack",
-                        "payload": {
-                            "query_id": str(payload.get("query_id") or ""),
-                            "session_id": target_sid,
-                            "root_run_id": root_run_id,
-                            **projection,
-                        },
-                    }
-                )
-
-            elif msg_type == "permission_response":
-                payload = raw.get("payload", {}) or {}
-                target_sid = str(payload.get("session_id") or session_id)
-                decision_id = payload.get("decision_id") or payload.get("request_id")
-                try:
-                    receipt = await _signal_product_harness_decision(
-                        target_sid,
-                        payload,
-                        {"decision": str(payload.get("decision") or "deny")},
-                        authorization=True,
-                        projection_ws=ws,
-                    )
-                except Exception as exc:  # noqa: BLE001
-                    logger.warning(
-                        "permission_response_rejected",
-                        decision_id=decision_id,
-                        error_type=type(exc).__name__,
-                        error=str(exc),
-                    )
-                    await ws.send_json(
-                        {
-                            "type": "permission_response_applied",
-                            "payload": {
-                                "ok": False,
-                                "request_id": payload.get("request_id"),
-                                "decision_id": decision_id,
-                                "error": {
-                                    "code": getattr(exc, "code", type(exc).__name__),
-                                    "message": str(exc),
-                                },
-                            },
-                        }
-                    )
-                    continue
-                logger.info(
-                    "permission_response_applied",
-                    decision_id=decision_id,
-                    duplicate=receipt.duplicate,
-                )
-                await ws.send_json(
-                    {
-                        "type": "permission_response_applied",
-                        "payload": {
-                            "ok": True,
-                            "request_id": payload.get("request_id"),
-                            "decision_id": decision_id,
-                            "duplicate": receipt.duplicate,
-                        },
-                    }
-                )
-
-            elif msg_type == "protected_path_decision":
-                # 2026-09-26：用户在会话卡片上对受保护核心文件的决定。
-                # 运行从未等待这张卡片；这里只记授权，模型重试时放行。
-                from deskpet.permissions import protected_paths as _protected_paths
-
-                payload = raw.get("payload", {}) or {}
-                decision = str(payload.get("decision") or "")
-                if decision not in {"allow_once", "allow_session", "deny"}:
-                    decision = "deny"
-                applied = _protected_paths.decide(str(payload.get("request_id") or ""), decision)
-                await ws.send_json(
-                    {
-                        "type": "protected_path_decision_applied",
-                        "payload": {
-                            "request_id": payload.get("request_id"),
-                            "decision": decision,
-                            "found": applied is not None,
-                        },
-                    }
-                )
-
-            elif msg_type == "external_wait_response":
-                payload = raw.get("payload", {}) or {}
-                target_sid = str(payload.get("session_id") or session_id)
-                receipt = await _signal_product_harness_decision(
-                    target_sid,
-                    payload,
-                    {
-                        "decision": "complete",
-                        "completed": True,
-                    },
-                )
-                logger.info(
-                    "external_wait_response_applied",
-                    decision_id=(payload.get("decision_id") or payload.get("request_id")),
-                    wait_ref=payload.get("wait_ref"),
-                    duplicate=receipt.duplicate,
-                )
-
-            elif msg_type == "project_directory_response":
-                payload = raw.get("payload", {}) or {}
-                target_sid = str(payload.get("session_id") or session_id)
-                try:
-                    project_root = _resolve_selected_project_directory(
-                        payload.get("parent_directory"),
-                        payload.get("folder_name"),
-                        allow_existing=(payload.get("directory_mode") == "use_existing"),
-                    )
-                except ValueError as exc:
-                    await ws.send_json(
-                        {
-                            "type": "project_directory_error",
-                            "payload": {
-                                "decision_id": (
-                                    payload.get("decision_id") or payload.get("request_id")
-                                ),
-                                "code": str(exc),
-                                "error": (
-                                    "这个位置不能安全创建项目，请重新选择空目录或修改文件夹名。"
-                                ),
-                            },
-                        }
-                    )
-                    continue
-                try:
-                    receipt = await _signal_product_harness_decision(
-                        target_sid,
-                        payload,
-                        {
-                            "decision": "complete",
-                            "completed": True,
-                            "project_root": project_root,
-                            "parent_directory": str(payload.get("parent_directory") or ""),
-                            "folder_name": str(payload.get("folder_name") or ""),
-                            "directory_mode": str(payload.get("directory_mode") or "create_new"),
-                        },
-                    )
-                except Exception as exc:  # execution contracts are user-retryable
-                    from deskpet.execution.contracts import ExecutionError
-
-                    if not isinstance(exc, ExecutionError):
-                        raise
-                    logger.warning(
-                        "project_directory_response_rejected",
-                        session_id=target_sid,
-                        decision_id=(payload.get("decision_id") or payload.get("request_id")),
-                        code=exc.code,
-                        error=str(exc),
-                    )
-                    await ws.send_json(
-                        {
-                            "type": "project_directory_error",
-                            "payload": {
-                                "decision_id": (
-                                    payload.get("decision_id") or payload.get("request_id")
-                                ),
-                                "code": exc.code,
-                                "error": (
-                                    "项目位置未能应用，请重新选择；若任务状态已经变化，"
-                                    "请停止当前任务后重试。"
-                                ),
-                            },
-                        }
-                    )
-                    continue
-                logger.info(
-                    "project_directory_response_applied",
-                    decision_id=(payload.get("decision_id") or payload.get("request_id")),
-                    project_root=project_root,
-                    duplicate=receipt.duplicate,
-                )
-
-            elif msg_type == "clarification_response":
-                payload = raw.get("payload", {}) or {}
-                target_sid = str(payload.get("session_id") or session_id)
-                receipt = await _signal_product_harness_decision(
-                    target_sid,
-                    payload,
-                    {"answer": str(payload.get("answer") or "")},
-                )
-                logger.info(
-                    "clarification_response_applied",
-                    decision_id=payload.get("decision_id") or payload.get("request_id"),
-                    duplicate=receipt.duplicate,
-                )
-
-            elif msg_type == "permission_auto_mode_set":
-                # P4-S21 #13 / P4-S25: the settings panel sends the target
-                # mode explicitly ({enabled: bool}); the CapabilityStore CAS
-                # persists it in workflow.db and bumps the generation.
-                # MM-D4: never echo the request back — re-read the persisted
-                # state so the panel renders the mode+generation that landed.
-                payload = raw.get("payload", {}) or {}
-                requested = bool(payload.get("enabled", False))
-                await _set_authorization_auto_mode(requested)
-                snapshot = await _authorization_policy_snapshot()
-                logger.info(
-                    "permission_auto_mode_set",
-                    requested=requested,
-                    mode=snapshot["mode"],
-                    generation=snapshot["generation"],
-                    provenance=snapshot["provenance"],
-                )
-                await ws.send_json(
-                    {
-                        "type": "permission_auto_mode_response",
-                        "request_id": raw.get("request_id"),
-                        "payload": snapshot,
-                    }
-                )
-
-            elif msg_type in ("orchestration_publish_dir_get", "orchestration_publish_dir_set"):
-                # NEXT-TG-1.0 §9：设置页的发布目录入口。校验后写回 config.toml，并重启编排服务
-                # （连接器只在启动时按这个值装配）；空路径 = 撤销授权。
-                from deskpet.orchestration import publish_settings as _publish_settings
-                from deskpet.orchestration.wiring import read_section as _read_orch_section
-                from paths import user_data_dir as _publish_user_data_dir
-
-                _rid = raw.get("request_id")
-                _body = raw.get("payload") if isinstance(raw.get("payload"), dict) else {}
-                _reply: dict = {"request_id": _rid, "ok": True}
-                try:
-                    if msg_type == "orchestration_publish_dir_set":
-                        await _publish_settings.set_publish_dir(
-                            _body.get("path"),
-                            config_path=Path(_CONFIG_PATH),
-                            protected=[_publish_user_data_dir()],
-                            restart=_restart_orchestration,
-                        )
-                    _configured = str(_read_orch_section(_CONFIG_PATH).get("publish_dir") or "")
-                    _reply["data"] = _publish_settings.current(
-                        service_context.get("orchestration"), _configured
-                    )
-                except _publish_settings.PublishDirRefused as _refused:
-                    _reply.update(ok=False, error_code=_refused.code, error=str(_refused))
-                except Exception as _exc:  # noqa: BLE001
-                    logger.warning("orchestration_publish_dir_failed err=%s", _exc)
-                    _reply.update(
-                        ok=False, error_code="internal", error="发布目录设置失败，请查看日志"
-                    )
-                await ws.send_json({"type": msg_type + "_response", "payload": _reply})
-
-            elif msg_type.startswith(("mission_", "orchestration_", "taskgraph.")) or msg_type in (
-                "agent_skill_request",
-                "agent_skill_evaluation_mission",
-                "agent_skill_evaluation_dispatch",
-            ):
-                # Agent 编排视图的控制通道协议（plan §3.4）：纯分发，不会把异常抛进 socket 循环
-                # ``taskgraph.*`` 是任务页执行图面板的四个读接口（handlers.py 已注册），
-                # 2026-09-25 之前没放行，面板只会读取超时。``agent_*`` 只放行上面明确列出的
-                # 三个技能目录动词（NEXT-TG-1.0 §11：各档位已统一到一个技能目录权威）；
-                # 会话销毁等其它 ``agent_*`` 仍不放行。
-                from deskpet.orchestration.handlers import handle as _orchestration_handle
-
-                # a payload that is not an object is answered with invalid_request inside
-                # handle(), never raised into this shared loop (review P2-6)
-                await ws.send_json(
-                    await _orchestration_handle(
-                        service_context.get("orchestration"),
-                        msg_type,
-                        raw.get("payload"),
-                        request_id=raw.get("request_id"),
-                    )
-                )
-
-            elif msg_type == "permission_auto_mode_get":
-                await ws.send_json(
-                    {
-                        "type": "permission_auto_mode_response",
-                        "request_id": raw.get("request_id"),
-                        "payload": await _authorization_policy_snapshot(),
-                    }
-                )
-
-            elif msg_type == "capability_list":
-                center = service_context.get("capability_center")
-                if center is None:
-                    await ws.send_json(
-                        {
-                            "type": "capability_list_response",
-                            "payload": {
-                                "capabilities": [],
-                                "error": "capability center is unavailable",
-                            },
-                        }
-                    )
-                    continue
-                try:
-                    payload = raw.get("payload", {}) or {}
-                    target_session_id = str(payload.get("session_id") or "").strip()
-                    capability_scope = None
-                    capability_owner_key = None
-                    if target_session_id:
-                        project_bindings = service_context.get("project_binding_service")
-                        if project_bindings is None:
-                            raise RuntimeError("Project binding service is unavailable")
-                        workspace = await project_bindings.resolve_session(target_session_id)
-                        if workspace.kind == "project":
-                            from deskpet.capabilities.contracts import (
-                                CapabilityScope,
-                            )
-
-                            capability_owner_key = "sdk-runtime"
-                            capability_scope = CapabilityScope.for_run(
-                                f"capability-center:{target_session_id}",
-                                project_id=workspace.project_id,
-                                project_revision=workspace.project_revision,
-                                project_identity=workspace.project_identity,
-                                user_key=capability_owner_key,
-                            )
-                        elif workspace.kind == "missing":
-                            raise RuntimeError(workspace.error_code)
-                    capabilities = await center.list_capabilities(
-                        capability_scope,
-                        owner_key=capability_owner_key,
-                    )
-                    await ws.send_json(
-                        {
-                            "type": "capability_list_response",
-                            "payload": {"capabilities": capabilities},
-                        }
-                    )
-                except Exception as exc:  # noqa: BLE001
-                    logger.warning("capability_center_list_failed", error=str(exc))
-                    await ws.send_json(
-                        {
-                            "type": "capability_list_response",
-                            "payload": {
-                                "capabilities": [],
-                                "error": str(exc),
-                            },
-                        }
-                    )
-
-            elif msg_type == "capability_operations_list":
-                center = service_context.get("capability_center")
-                if center is None:
-                    await ws.send_json(
-                        {
-                            "type": "capability_operations_response",
-                            "payload": {
-                                "operations": [],
-                                "error": "capability center is unavailable",
-                            },
-                        }
-                    )
-                    continue
-                payload = raw.get("payload", {}) or {}
-                try:
-                    limit = max(1, min(int(payload.get("limit", 100)), 500))
-                except (TypeError, ValueError):
-                    limit = 100
-                try:
-                    operations = await center.list_operations(limit=limit)
-                    await ws.send_json(
-                        {
-                            "type": "capability_operations_response",
-                            "payload": {"operations": operations},
-                        }
-                    )
-                except Exception as exc:  # noqa: BLE001
-                    logger.warning("capability_center_operations_failed", error=str(exc))
-                    await ws.send_json(
-                        {
-                            "type": "capability_operations_response",
-                            "payload": {
-                                "operations": [],
-                                "error": str(exc),
-                            },
-                        }
-                    )
-
-            elif msg_type in {
-                "capability_install",
-                "capability_activate",
-                "capability_repair",
-                "capability_uninstall",
-                "capability_rollback",
-                "capability_operation_cancel",
-                "capability_operation_retry",
-            }:
-                center = service_context.get("capability_center")
-                payload = raw.get("payload", {}) or {}
-                action = msg_type.removeprefix("capability_").removeprefix("operation_")
-                if center is None:
-                    await ws.send_json(
-                        {
-                            "type": "capability_action_response",
-                            "payload": {
-                                "ok": False,
-                                "action": action,
-                                "error_code": "capability_center_unavailable",
-                                "error": "capability center is unavailable",
-                            },
-                        }
-                    )
-                    continue
-                try:
-                    if msg_type == "capability_install":
-                        (
-                            _si_adapter,
-                            _si_project,
-                            _si_principal,
-                        ) = await _settings_skill_install_adapter(ws)
-                        _si_result = await _si_adapter.stage(
-                            url=str(payload.get("source_url") or payload.get("url") or ""),
-                            owner=_si_project,  # the Settings adapter yields the global owner
-                            principal_id=_si_principal,
-                        )
-                        await ws.send_json(
-                            {
-                                "type": "capability_action_response",
-                                "payload": {
-                                    "ok": True,
-                                    "action": action,
-                                    "status": "awaiting_confirmation",
-                                    "install": _si_result,
-                                },
-                            }
-                        )
-                        continue
-                    if msg_type in {
-                        "capability_activate",
-                        "capability_repair",
-                    }:
-                        from deskpet.capabilities.ui_service import (
-                            CapabilityCenterError,
-                        )
-
-                        raise CapabilityCenterError(
-                            "model_driven_action_required",
-                            "Install, activation, and repair require the main "
-                            "agent to resolve a trusted source or failure receipt.",
-                        )
-                    if msg_type == "capability_uninstall":
-                        operation = await center.request_uninstall(
-                            capability_id=str(payload.get("capability_id") or ""),
-                            source_operation_id=(
-                                str(payload["operation_id"])
-                                if payload.get("operation_id")
-                                else None
-                            ),
-                        )
-                    elif msg_type == "capability_rollback":
-                        operation = await center.request_rollback(
-                            operation_id=str(payload.get("operation_id") or ""),
-                            capability_id=(
-                                str(payload["capability_id"])
-                                if payload.get("capability_id")
-                                else None
-                            ),
-                        )
-                    elif msg_type == "capability_operation_retry":
-                        operation = await center.request_retry(
-                            operation_id=str(payload.get("operation_id") or "")
-                        )
-                    else:
-                        operation = await center.request_cancel(
-                            operation_id=str(payload.get("operation_id") or "")
-                        )
-                    await ws.send_json(
-                        {
-                            "type": "capability_action_response",
-                            "payload": {
-                                "ok": True,
-                                "action": action,
-                                "operation_id": operation.operation_id,
-                                "status": operation.status,
-                                "phase": operation.phase,
-                            },
-                        }
-                    )
-                except Exception as exc:  # noqa: BLE001
-                    error_code = str(getattr(exc, "code", "capability_action_failed"))
-                    logger.warning(
-                        "capability_center_action_failed",
-                        action=action,
-                        error_code=error_code,
-                        error=str(exc),
-                    )
-                    await ws.send_json(
-                        {
-                            "type": "capability_action_response",
-                            "payload": {
-                                "ok": False,
-                                "action": action,
-                                "error_code": error_code,
-                                "error": str(exc),
-                            },
-                        }
-                    )
-
-            elif msg_type == "chat_turn_timeout_set":
-                # 设置面板写「对话超时(分钟)」。持久化到 llm_runtime.json,夹 1~60 分钟。
-                payload = raw.get("payload", {}) or {}
-                try:
-                    _mins = int(round(float(payload.get("minutes", 15))))
-                except Exception:  # noqa: BLE001
-                    _mins = 15
-                _mins = max(1, min(60, _mins))
-                _ov = _load_llm_runtime_overrides()
-                _ov["chat_turn_timeout_minutes"] = _mins
-                _save_llm_runtime_overrides(_ov)
-                logger.info("chat_turn_timeout_set minutes=%d", _mins)
-                await ws.send_json(
-                    {
-                        "type": "chat_turn_timeout_response",
-                        "request_id": raw.get("request_id"),
-                        "payload": {"minutes": _mins},
-                    }
-                )
-
-            elif msg_type == "chat_turn_timeout_get":
-                # 设置面板读当前值(展示)。默认 15。
-                try:
-                    _cur = int(
-                        round(
-                            float(
-                                _load_llm_runtime_overrides().get("chat_turn_timeout_minutes", 15)
-                            )
-                        )
-                    )
-                except Exception:  # noqa: BLE001
-                    _cur = 15
-                await ws.send_json(
-                    {
-                        "type": "chat_turn_timeout_response",
-                        "request_id": raw.get("request_id"),
-                        "payload": {"minutes": max(1, min(60, _cur))},
-                    }
-                )
-
-            elif msg_type == "plugin_list":
-                # P4-S20 Stage D — list all discovered plugins with enabled status.
-                if plugin_manager is None:
-                    await ws.send_json(
-                        {
-                            "type": "plugin_list_response",
-                            "payload": {"plugins": [], "error": "plugin manager not initialized"},
-                        }
-                    )
-                    continue
-                await ws.send_json(
-                    {
-                        "type": "plugin_list_response",
-                        "payload": {"plugins": plugin_manager.list_plugins()},
-                    }
-                )
-
-            elif msg_type == "plugin_enable":
-                payload = raw.get("payload", {}) or {}
-                name = payload.get("name", "")
-                if plugin_manager is None or not plugin_manager.enable(name):
-                    await ws.send_json(
-                        {
-                            "type": "plugin_enable_response",
-                            "payload": {"ok": False, "name": name, "error": "unknown plugin"},
-                        }
-                    )
-                    continue
-                # Best-effort SkillLoader hot-reload so the plugin's skills appear.
-                try:
-                    loader = service_context.get("skill_loader")
-                    if loader is not None and hasattr(loader, "reload"):
-                        loader.reload()
-                except Exception as exc:  # noqa: BLE001
-                    logger.warning("skill_loader_reload_failed", error=str(exc))
-                await ws.send_json(
-                    {
-                        "type": "plugin_enable_response",
-                        "payload": {"ok": True, "name": name},
-                    }
-                )
-
-            elif msg_type == "plugin_disable":
-                payload = raw.get("payload", {}) or {}
-                name = payload.get("name", "")
-                if plugin_manager is None:
-                    await ws.send_json(
-                        {
-                            "type": "plugin_disable_response",
-                            "payload": {
-                                "ok": False,
-                                "name": name,
-                                "error": "plugin manager not initialized",
-                            },
-                        }
-                    )
-                    continue
-                plugin_manager.disable(name)
-                try:
-                    loader = service_context.get("skill_loader")
-                    if loader is not None and hasattr(loader, "reload"):
-                        loader.reload()
-                except Exception as exc:  # noqa: BLE001
-                    logger.warning("skill_loader_reload_failed", error=str(exc))
-                await ws.send_json(
-                    {
-                        "type": "plugin_disable_response",
-                        "payload": {"ok": True, "name": name},
-                    }
-                )
-
-            elif msg_type == "skill_marketplace_list":
-                # P4-S20 Stage C — fetch + cache the official registry.
-                if skill_registry_client is None:
-                    await ws.send_json(
-                        {
-                            "type": "skill_marketplace_list_response",
-                            "payload": {"skills": [], "error": "marketplace not initialized"},
-                        }
-                    )
-                    continue
-                _data = await skill_registry_client.fetch()
-                await ws.send_json(
-                    {
-                        "type": "skill_marketplace_list_response",
-                        "payload": _data,
-                    }
-                )
-
-            elif msg_type == "skill_list_installed":
-                # Managed user-global catalog is the only installed-Skill
-                # authority.  The legacy userdata/skills directory is not a
-                # success or visibility source.
-                _capability_platform = service_context.get("capability_platform")
-                _global_service = service_context.get("project_skill_install_service")
-                if _capability_platform is None or _global_service is None:
-                    await ws.send_json(
-                        {
-                            "type": "skill_list_installed_response",
-                            "payload": {"skills": [], "error": "global Skill catalog unavailable"},
-                        }
-                    )
-                    continue
-                _installed = []
-                from deskpet.capabilities.contracts import CapabilityScope
-                from deskpet.capabilities.manifest import load_and_validate_pack
-
-                _global_scope_key = str(_global_service.global_owner_key)
-                _catalog_snapshot = await _capability_platform.hub.snapshot(
-                    CapabilityScope(user_key=_global_scope_key)
-                )
-                for _descriptor in _catalog_snapshot.descriptors:
-                    # 2026-09-25 UI 全量点击：内置 Skill 以前不算"已安装"，列表为空，
-                    # 与能力中心"操作"页的 17 个已装 Skill 对不上。内置的也列出，标 builtin。
-                    _binding = next(
-                        (
-                            item
-                            for item in _descriptor.visible_bindings
-                            if item.active
-                            and (
-                                (item.scope == "user" and item.scope_key == _global_scope_key)
-                                or item.scope == "builtin"
-                            )
-                        ),
-                        None,
-                    )
-                    if _binding is None:
-                        continue
-                    _record = await _capability_platform.store.get_version(
-                        _descriptor.version.capability_id,
-                        _descriptor.version.version,
-                        _descriptor.version.manifest_hash,
-                    )
-                    if _record is None:
-                        continue
-                    _manifest = load_and_validate_pack(_record.install_path).manifest
-                    for _skill in _manifest.skills:
-                        _installed.append(
-                            {
-                                "name": _skill.id,
-                                "description": _manifest.name,
-                                "version": _manifest.version,
-                                "scope": "builtin" if _binding.scope == "builtin" else "global",
-                                "capability_id": _descriptor.version.capability_id,
-                                "catalog_generation": _catalog_snapshot.stamp.catalog_generation,
-                                "allowed_tools": list(_skill.allowed_tools),
-                            }
-                        )
-                await ws.send_json(
-                    {
-                        "type": "skill_list_installed_response",
-                        "payload": {"skills": _installed},
-                    }
-                )
-
-            elif msg_type == "skill_install_from_url":
-                # Managed user-global install only. The legacy marketplace
-                # installer remains a diagnostic inventory, never the runtime
-                # authority for URL installs.
-                payload = raw.get("payload", {}) or {}
-                try:
-                    _si_adapter, _si_owner, _si_principal = await _settings_skill_install_adapter(
-                        ws
-                    )
-                    _si_result = await _si_adapter.stage(
-                        url=str(payload.get("url") or ""),
-                        owner=_si_owner,
-                        principal_id=_si_principal,
-                    )
-                    await ws.send_json(
-                        {
-                            "type": "skill_install_pending",
-                            "request_id": raw.get("request_id"),
-                            "payload": {"ok": True, **_si_result},
-                        }
-                    )
-                except Exception as exc:  # noqa: BLE001
-                    await ws.send_json(
-                        {
-                            "type": "skill_install_pending",
-                            "request_id": raw.get("request_id"),
-                            "payload": _skill_install_error_payload(exc),
-                        }
-                    )
-
-            elif msg_type == "skill_install_confirm":
-                payload = raw.get("payload", {}) or {}
-                try:
-                    _si_adapter, _si_project, _si_principal = await _settings_skill_install_adapter(
-                        ws
-                    )
-                    _si_decision = str(payload.get("decision") or "").strip()
-                    if _si_decision not in {"approve", "deny"}:
-                        raise ValueError("skill_install_decision_invalid")
-                    _si_result = await _si_adapter.settle(
-                        intent_id=str(payload.get("intent_id") or payload.get("staging_id") or ""),
-                        digest=str(payload.get("digest") or ""),
-                        decision_nonce=str(payload.get("decision_nonce") or ""),
-                        decision_version=int(payload.get("decision_version") or 0),
-                        decision=_si_decision,
-                    )
-                    await ws.send_json(
-                        {
-                            "type": "skill_install_confirm_response",
-                            "request_id": raw.get("request_id"),
-                            "payload": {"ok": True, **_si_result},
-                        }
-                    )
-                except Exception as exc:  # noqa: BLE001
-                    await ws.send_json(
-                        {
-                            "type": "skill_install_confirm_response",
-                            "request_id": raw.get("request_id"),
-                            "payload": _skill_install_error_payload(exc),
-                        }
-                    )
-
-            elif msg_type == "skill_install_status":
-                payload = raw.get("payload", {}) or {}
-                try:
-                    _si_adapter, _si_project, _si_principal = await _settings_skill_install_adapter(
-                        ws
-                    )
-                    _si_result = await _si_adapter.status(
-                        intent_id=str(payload.get("intent_id") or ""),
-                        project=_si_project,
-                    )
-                    await ws.send_json(
-                        {
-                            "type": "skill_install_status_response",
-                            "request_id": raw.get("request_id"),
-                            "payload": {"ok": True, **_si_result},
-                        }
-                    )
-                except Exception as exc:  # noqa: BLE001
-                    await ws.send_json(
-                        {
-                            "type": "skill_install_status_response",
-                            "request_id": raw.get("request_id"),
-                            "payload": _skill_install_error_payload(exc),
-                        }
-                    )
-
-            elif msg_type == "skill_uninstall":
-                # 2026-09-25 UI 全量点击：以前走旧安装器（旧 userdata/skills 目录），
-                # 受管安装的 Skill 提示"已卸载"却仍在列表里。卸载与安装同一权威：
-                # 能力中心的受管卸载（用户全局作用域），等操作结束再回复。
-                payload = raw.get("payload", {}) or {}
-                name = str(payload.get("name") or "")
-                capability_id = str(payload.get("capability_id") or name)
-                center = service_context.get("capability_center")
-                _global_service = service_context.get("project_skill_install_service")
-                if center is None or _global_service is None:
-                    await ws.send_json(
-                        {
-                            "type": "skill_uninstall_response",
-                            "payload": {
-                                "ok": False,
-                                "name": name,
-                                "error": "capability center is unavailable",
-                            },
-                        }
-                    )
-                    continue
-                try:
-                    from deskpet.capabilities.contracts import CapabilityScope
-
-                    operation = await center.request_uninstall(
-                        capability_id=capability_id,
-                        scope=CapabilityScope(user_key=str(_global_service.global_owner_key)),
-                    )
-                    for _ in range(60):
-                        if operation.status in {"succeeded", "failed", "cancelled", "unknown"}:
-                            break
-                        await asyncio.sleep(0.5)
-                        operation = (
-                            await center.store.get_operation(operation.operation_id) or operation
-                        )
-                    ok = operation.status == "succeeded"
-                    await ws.send_json(
-                        {
-                            "type": "skill_uninstall_response",
-                            "payload": {
-                                "ok": ok,
-                                "name": name,
-                                "status": operation.status,
-                                **({} if ok else {"error": f"卸载未完成（{operation.status}）"}),
-                            },
-                        }
-                    )
-                except Exception as exc:  # noqa: BLE001
-                    await ws.send_json(
-                        {
-                            "type": "skill_uninstall_response",
-                            "payload": {
-                                "ok": False,
-                                "name": name,
-                                "error": f"{getattr(exc, 'code', type(exc).__name__)}: {exc}",
-                            },
-                        }
-                    )
-
-            elif msg_type == "context_usage_request":
-                payload = raw.get("payload", {}) or {}
-                target_sid = payload.get("session_id") or session_id
-                try:
-                    authoritative = await _read_context_usage_authority(target_sid)
-                    await ws.send_json({"type": "context_usage", "payload": authoritative})
-                except Exception as exc:  # noqa: BLE001
-                    logger.debug("context_usage_request_failed err=%s", exc)
-
-            elif msg_type == "context_breakdown_request":
-                payload = raw.get("payload", {}) or {}
-                try:
-                    await _handle_context_breakdown_request(
-                        ws,
-                        payload,
-                        owner_session_id=_resolve_chat_source_session(session_id, None),
-                    )
-                except Exception as exc:  # noqa: BLE001
-                    logger.debug("context_breakdown_send_failed err=%s", exc)
-
-            elif msg_type == "human_memory_request":
-                from deskpet.memory.human_memory_api import (
-                    handle_human_memory_command,
-                    send_human_memory_response,
-                )
-
-                try:
-                    _hm_auth = human_memory_control_binding.authenticate(
-                        host_state.companion_control_ingress, companion_challenge
-                    )
-                except Exception as exc:
-                    await ws.send_json(
-                        {
-                            "type": "human_memory_response",
-                            "request_id": str(raw.get("request_id") or ""),
-                            "payload": {
-                                "ok": False,
-                                "error": {
-                                    "code": getattr(exc, "code", "human_memory_connection_unbound")
-                                },
-                            },
-                        }
-                    )
-                    continue
-
-                with human_memory_control_binding.request_scope(
-                    host_state.companion_control_ingress, companion_challenge
-                ):
-                    _hm_response = await handle_human_memory_command(
-                        raw,
-                        factory=service_context.get("human_memory_host_service_factory"),
-                        auth=_hm_auth,
-                        binding_append=service_context.get("human_memory_binding_append_authority"),
-                        recovery=service_context.get("human_memory_recovery_lifecycle"),
-                        scheduler_wake=service_context.get(
-                            "human_memory_foreground_scheduler_wake"
-                        ),
-                    )
-                    if _hm_response is not None:
-                        await send_human_memory_response(
-                            _hm_response,
-                            factory=service_context.get("human_memory_host_service_factory"),
-                            auth=_hm_auth,
-                            send=ws.send_json,
-                        )
-
-            elif msg_type in {
-                "project_preview_register",
-                "project_register",
-                "session_create",
-                "project_catalog_page",
-                "project_sessions_page",
-                "project_inspect",
-                "project_relocate",
-            }:
-                from deskpet.session.project_protocol import (
-                    handle_project_session_command as _handle_project_session_command,
-                )
-
-                _project_response = await _handle_project_session_command(
-                    raw,
-                    bindings=service_context.get("project_binding_service"),
-                    creation=service_context.get("session_creation_service"),
-                )
-                if _project_response is not None:
-                    await ws.send_json(_project_response)
-
-            elif msg_type == "sessions_list":
-                # The bounded Project catalog and per-scope Session pages are
-                # the sole read model.  Returning a second flat projection
-                # would let clients regroup paths and recreate split authority.
-                await ws.send_json(
-                    {
-                        "type": "sessions_list_error",
-                        "request_id": raw.get("request_id"),
-                        "payload": {
-                            "code": "protocol_replaced",
-                            "error": "use project_catalog_page and project_sessions_page",
-                        },
-                    }
-                )
-
-            elif msg_type == "session_delete":
-                # 删除一个会话的全部消息（消息面板下拉里每项的 X）。
-                _sd_payload = raw.get("payload", {}) or {}
-                _sd_sid = _sd_payload.get("session_id") or ""
-                _sd_sdb = service_context.get("session_db")
-                _sd_ok = False
-                _sd_code = None
-                if _sd_sdb is not None and _sd_sid:
-                    try:
-                        from deskpet.memory.primary_authority import (
-                            assert_not_primary_authority,
-                        )
-
-                        await assert_not_primary_authority(_sd_sdb._db_path, _sd_sid)
-                        _sd_workflows = service_context.get("workflow_service")
-                        _sd_creation = service_context.get("session_creation_service")
-                        if _sd_workflows is not None:
-                            async with _sd_workflows.session_lock(_sd_sid):
-                                if _sd_creation is not None:
-                                    await _sd_creation.mark_deleted(_sd_sid)
-                                else:
-                                    await _sd_sdb.clear(_sd_sid)
-                                await _sd_workflows.cancel_runs_for_session(
-                                    _sd_sid,
-                                    reason="session_deleted",
-                                )
-                        else:
-                            if _sd_creation is not None:
-                                await _sd_creation.mark_deleted(_sd_sid)
-                            else:
-                                await _sd_sdb.clear(_sd_sid)
-                        _sd_attempts = service_context.get("context_attempt_store")
-                        if _sd_attempts is not None:
-                            _sd_attempts.purge_session(_sd_sid)
-                        _sd_ok = True
-                        logger.info("session_deleted sid=%s", _sd_sid)
-                    except Exception as _sd_exc:  # noqa: BLE001
-                        _sd_code = getattr(_sd_exc, "code", None)
-                        logger.warning(
-                            "session_delete_failed",
-                            error=str(_sd_exc),
-                            session_id=_sd_sid,
-                        )
-                await ws.send_json(
-                    {
-                        "type": "session_deleted",
-                        "payload": {
-                            "session_id": _sd_sid,
-                            "ok": _sd_ok,
-                            **({"code": _sd_code} if _sd_code else {}),
-                        },
-                    }
-                )
-
-            elif msg_type == "session_rename":
-                # 消息面板「重命名话题」：写自定义标题（空=还原自动预览）。
-                _sr_payload = raw.get("payload", {}) or {}
-                _sr_sid = _sr_payload.get("session_id") or ""
-                _sr_title = _sr_payload.get("title") or ""
-                _sr_sdb = service_context.get("session_db")
-                _sr_ok = False
-                _sr_stored = ""
-                _sr_code = None
-                if _sr_sdb is not None and _sr_sid:
-                    try:
-                        from deskpet.memory.primary_authority import (
-                            assert_not_primary_authority,
-                        )
-
-                        await assert_not_primary_authority(_sr_sdb._db_path, _sr_sid)
-                        _sr_stored = await _sr_sdb.set_session_title(_sr_sid, _sr_title)
-                        _sr_ok = True
-                        logger.info("session_renamed sid=%s title_len=%d", _sr_sid, len(_sr_stored))
-                    except Exception as _sr_exc:  # noqa: BLE001
-                        _sr_code = getattr(_sr_exc, "code", None)
-                        logger.warning(
-                            "session_rename_failed",
-                            error=str(_sr_exc),
-                            session_id=_sr_sid,
-                        )
-                await ws.send_json(
-                    {
-                        "type": "session_renamed",
-                        "payload": {
-                            "session_id": _sr_sid,
-                            "title": _sr_stored,
-                            "ok": _sr_ok,
-                            **({"code": _sr_code} if _sr_code else {}),
-                        },
-                    }
-                )
-
-            elif msg_type == "session_messages_load":
-                # P4-S23: panel reload (F5) needs to rehydrate chat
-                # history from SessionDB. Returns messages for the
-                # given session_id (default: ws session_id).
-                # Capped at 200 msgs/session to keep payload sane —
-                # users can scroll older messages via a future
-                # paginated load if needed.
-                payload = raw.get("payload", {}) or {}
-                target_sid = payload.get("session_id") or session_id
-                limit = int(payload.get("limit") or 200)
-                _sml_sdb = service_context.get("session_db")
-                if _sml_sdb is not None:
-                    try:
-                        from deskpet.memory.primary_authority import (
-                            assert_not_primary_authority,
-                        )
-
-                        await assert_not_primary_authority(_sml_sdb._db_path, str(target_sid))
-                    except Exception as _sml_exc:  # noqa: BLE001
-                        _sml_code = getattr(_sml_exc, "code", None)
-                        if _sml_code:
-                            await ws.send_json(
-                                {
-                                    "type": "session_messages_error",
-                                    "payload": {
-                                        "ok": False,
-                                        "session_id": target_sid,
-                                        "code": _sml_code,
-                                    },
-                                }
-                            )
-                            continue
-                        raise
-                # Loading a transcript is also the product shell's explicit
-                # declaration of which conversation this transport currently
-                # presents.  Rebind the peer group before the consistency
-                # gate: a recovered terminal may be committed while the
-                # websocket is reconnecting, and its live notification must
-                # route back to this selected history session rather than the
-                # transport's startup/default topic.
-                _remap_chat_peer_group(session_id, str(target_sid))
-                sdb = service_context.get("session_db")
-                msgs: list = []
-                _companion_history_events: list[dict[str, Any]] = []
-                if sdb is not None:
-                    try:
-                        _history_gate = service_context.get("session_terminal_projection_gate")
-                        if _history_gate is not None:
-                            await _history_gate.ensure_current(target_sid)
-                        try:
-                            _history_identity = host_state.companion_identity_gate.freeze()
-                            await _bind_companion_inbox_route(
-                                target_sid,
-                                _history_identity,
-                                create_if_absent=False,
-                            )
-                        except Exception as _history_route_exc:  # noqa: BLE001
-                            logger.debug(
-                                "companion_history_route_unchanged sid=%s err=%s",
-                                target_sid,
-                                type(_history_route_exc).__name__,
-                            )
-                        rows = await sdb.get_messages(target_sid, limit=limit)
-                        # P6 bugfix 2026-05-14: 历史还原 — 之前过滤了
-                        # role not in (user,assistant) 和 empty content,
-                        # 导致 tool_call (role='assistant' content=''
-                        # tool_calls=[...]) 和 tool_result (role='tool')
-                        # 全部被丢，UI 重启后只剩 user 气泡。现在全部
-                        # 返回，前端 ws.ts 决定怎么渲染。
-                        msgs = []
-                        _history_tool_names: dict[str, str] = {}
-                        for _history_row in rows:
-                            _history_calls = _history_row.get("tool_calls")
-                            if not _history_calls:
-                                continue
-                            try:
-                                _history_calls = (
-                                    json.loads(_history_calls)
-                                    if isinstance(_history_calls, str)
-                                    else _history_calls
-                                )
-                                if isinstance(_history_calls, list):
-                                    for _history_call in _history_calls:
-                                        if not isinstance(_history_call, dict):
-                                            continue
-                                        _history_function = _history_call.get("function")
-                                        if isinstance(_history_function, dict):
-                                            _history_tool_names[
-                                                str(_history_call.get("id") or "")
-                                            ] = str(_history_function.get("name") or "")
-                            except Exception:
-                                continue
-                        for r in rows:
-                            if str(r.get("projection_kind") or "") == "companion_event":
-                                # Companion rows are hydrated through the
-                                # owner-fenced visibility overlay below, never
-                                # as ordinary assistant text.
-                                continue
-                            _row_role = r.get("role") or ""
-                            if _row_role not in ("user", "assistant", "tool"):
-                                continue  # 仍跳过 system 等
-                            _entry: dict[str, Any] = {
-                                "id": str(r.get("workflow_event_id") or r.get("id") or ""),
-                                "role": _row_role,
-                                "text": r.get("content") or "",
-                                "ts": float(r.get("created_at") or 0) * 1000,
-                                "projection_kind": str(r.get("projection_kind") or ""),
-                                "workflow_event_id": str(r.get("workflow_event_id") or ""),
-                            }
-                            if r.get("root_run_id"):
-                                _entry["run_id"] = str(r["root_run_id"])
-                            if r.get("task_scope_id"):
-                                _entry["task_scope_id"] = str(r["task_scope_id"])
-                            # tool_calls JSON (assistant 行调工具时)
-                            _tcs_raw = r.get("tool_calls")
-                            if _tcs_raw:
-                                try:
-                                    import json as _load_json
-
-                                    _entry["tool_calls"] = project_public_tool_calls(
-                                        _load_json.loads(_tcs_raw)
-                                        if isinstance(_tcs_raw, str)
-                                        else _tcs_raw
-                                    )
-                                except Exception:
-                                    pass
-                            # tool_call_id (tool 行的回指)
-                            _tcid = r.get("tool_call_id")
-                            if _tcid:
-                                _entry["tool_call_id"] = _tcid
-                                if _row_role == "tool":
-                                    _public_history_result = project_public_tool_result(
-                                        _history_tool_names.get(str(_tcid), ""),
-                                        r.get("content") or "",
-                                    )
-                                    _entry["text"] = (
-                                        json.dumps(_public_history_result, ensure_ascii=False)
-                                        if not isinstance(_public_history_result, str)
-                                        else _public_history_result
-                                    )
-                            msgs.append(_entry)
-
-                        _workflow_history = service_context.get("workflow_service")
-                        await _attach_workflow_history_events(
-                            rows=rows,
-                            messages=msgs,
-                            session_id=target_sid,
-                            session_db=sdb,
-                            workflow_service=_workflow_history,
-                        )
-                        _companion_history_events = await _attach_companion_history_events(
-                            rows=rows
-                        )
-                    except Exception as exc:  # noqa: BLE001
-                        logger.warning(
-                            "session_messages_consistency_failed",
-                            error=str(exc),
-                            session_id=target_sid,
-                        )
-                        await ws.send_json(
-                            {
-                                "type": "session_messages_error",
-                                "payload": {
-                                    "session_id": target_sid,
-                                    "code": "product_view_not_current",
-                                    "error": ("会话记录暂时无法确认是最新状态，请稍后重试。"),
-                                },
-                            }
-                        )
-                        continue
-                # FEAT-A4: 带回 awaiting plan（不塞进被白名单 3659 过滤的 messages
-                # 流，单独挂 payload.plan）。前端 rehydration 据此重建 plan card +
-                # [执行]/[取消] 栏。只在 awaiting 时附；否则字段缺省 → 旧行为不变。
-                _plan_payload: dict[str, Any] | None = None
-                if sdb is not None:
-                    try:
-                        _sp = await sdb.get_session_plan(target_sid)
-                        if _sp is not None and _sp.get("awaiting"):
-                            _plan_payload = {
-                                "rationale": _sp.get("rationale") or "",
-                                "steps": _sp.get("steps") or [],
-                                "target_directory": _sp.get("target_directory"),
-                                "action_categories": _sp.get("action_categories") or [],
-                                "auto_confirmed": bool(_sp.get("auto_confirmed")),
-                                "awaiting": True,
-                            }
-                    except Exception as exc:  # noqa: BLE001
-                        logger.debug(
-                            "session_plan_load_failed sid=%s err=%s",
-                            target_sid,
-                            exc,
-                        )
-                _msgs_payload: dict[str, Any] = {
-                    "session_id": target_sid,
-                    "messages": msgs,
-                }
-                _msgs_payload["companion_events"] = _companion_history_events
-                if _plan_payload is not None:
-                    _msgs_payload["plan"] = _plan_payload
-                await ws.send_json(
-                    {
-                        "type": "session_messages_response",
-                        "payload": _msgs_payload,
-                    }
-                )
-
-            elif msg_type == "slash_command":
-                # WI-A1 v1 — /command 解析（plans/2026-05-25-companion-code-
-                # skill-upgrade）。InputBar 解析 `/<cmd> [args]` → 发本 WS
-                # 消息；后端直接路由到 SkillLoader / goal_store / builtins，
-                # 不走 AgentLoop。feature flag `[features] slash_commands`
-                # 默认 OFF；OFF 时返 disabled 错。
-                payload = raw.get("payload", {}) or {}
-                cmd_name = (payload.get("command") or "").lstrip("/")
-                cmd_args = payload.get("args") or ""
-                target_sid = payload.get("session_id") or session_id
-                _slash_enabled = bool(
-                    getattr(
-                        getattr(config, "features", None),
-                        "slash_commands",
-                        False,
-                    )
-                )
-                if not _slash_enabled:
-                    await ws.send_json(
-                        {
-                            "type": "slash_command_result",
-                            "payload": {
-                                "command": cmd_name,
-                                "session_id": target_sid,
-                                "result": {
-                                    "type": "error",
-                                    "message": "slash_commands feature disabled "
-                                    "(set [features] slash_commands = true)",
-                                },
-                            },
-                        }
-                    )
-                else:
-                    try:
-                        from deskpet.commands import dispatch_slash_command
-
-                        _slash_skill_loader = await _current_slash_skill_catalog()
-                        _slash_skill_catalog = _slash_skill_loader
-                        _slash_goal_store = service_context.get("session_goal_store")
-                        _slash_pref_mem = service_context.get("preference_memory")
-                        _slash_result = await dispatch_slash_command(
-                            cmd_name,
-                            cmd_args,
-                            target_sid,
-                            skill_loader=_slash_skill_loader,
-                            skill_catalog=_slash_skill_catalog,
-                            session_goal_store=_slash_goal_store,
-                            session_pref_memory=_slash_pref_mem,
-                        )
-                    except Exception as _slash_exc:  # noqa: BLE001
-                        logger.warning(
-                            "slash_command dispatch failed: %s",
-                            _slash_exc,
-                        )
-                        _slash_result = {
-                            "type": "error",
-                            "message": f"dispatch error: {_slash_exc}",
-                        }
-                    if _slash_result.get("type") == ("instruction_activation_request"):
-                        _slash_text = str(_slash_result.get("user_text") or "").strip()
-                        if not _slash_text:
-                            raise RuntimeError("slash instruction activation is empty")
-                        from deskpet.companion.skills import (
-                            PreparedSkillInvocationScopeV1,
-                        )
-
-                        _slash_scope = PreparedSkillInvocationScopeV1.from_dict(
-                            _slash_result.get("prepared_skill_scope") or {}
-                        )
-                        _slash_arguments = tuple(
-                            str(item) for item in (_slash_result.get("arguments") or ())
-                        )
-                        _launch_product_harness_chat(
-                            ws,
-                            _slash_text,
-                            target_sid,
-                            client_request_id=(
-                                str(
-                                    payload.get("request_id") or raw.get("request_id") or ""
-                                ).strip()
-                                or None
-                            ),
-                            client_turn_id=(str(payload.get("turn_id") or "").strip() or None),
-                            prepared_skill_scope=_slash_scope,
-                            skill_arguments=_slash_arguments,
-                        )
-                        _slash_result = {
-                            "type": "accepted",
-                            "route": "product_harness",
-                            "skill_name": cmd_name,
-                            "prepared_skill_scope": _slash_result.get("prepared_skill_scope"),
-                        }
-                    await ws.send_json(
-                        {
-                            "type": "slash_command_result",
-                            "payload": {
-                                "command": cmd_name,
-                                "session_id": target_sid,
-                                "result": _slash_result,
-                            },
-                        }
-                    )
-
-            elif msg_type == "chat_v2_interrupt":
-                payload = raw.get("payload", {}) or {}
-                target_sid = payload.get("session_id") or session_id
-                target_run_id = str(
-                    payload.get("root_run_id") or payload.get("run_id") or ""
-                ).strip()
-                before = _authoritative_sdk_run_projection(
-                    target_run_id, str(payload.get("sdk_run_id") or "")
-                )
-                expected_version = payload.get("expected_run_version")
-                stale = expected_version is not None and int(expected_version) != int(
-                    before["run_version"]
-                )
-                terminal_before = before["state"] in {"completed", "failed", "cancelled"}
-                cancelled = False
-                if not stale and not terminal_before:
-                    cancelled = await _cancel_product_harness_run(
-                        target_sid,
-                        target_run_id,
-                        reason=str(payload.get("reason") or "user_interrupt"),
-                    )
-                after = _authoritative_sdk_run_projection(
-                    target_run_id, str(before.get("sdk_run_id") or "")
-                )
-                _interrupt_evt = {
-                    "type": "chat_v2_interrupted",
-                    "payload": {
-                        "cancel_command_id": str(payload.get("cancel_command_id") or ""),
-                        "session_id": target_sid,
-                        "run_id": target_run_id,
-                        "cancelled": cancelled,
-                        "stale_expected_version": stale,
-                        **after,
-                    },
-                }
-                await ws.send_json(_interrupt_evt)
-                await _broadcast_default_chat_peers(ws, _interrupt_evt)
-
-            elif msg_type == "plan_confirm":
-                # superpowers 决策2 — plan-confirm 硬门的用户裁决。
-                # 前端 PlanCard 的 [执行]/[取消] 按钮发来 {session_id, decision}。
-                # R6 只接受完整 durable decision fence。
-                payload = raw.get("payload", {}) or {}
-                _csid = payload.get("session_id") or session_id
-                _decision = payload.get("decision") or "go"
-                if host_state.sdk_ingress is not None and host_state.sdk_ingress.accepting:
-                    _run_id = str(payload.get("run_id") or "").strip()
-                    _decision_id = str(payload.get("decision_id") or "").strip()
-                    _nonce = str(payload.get("nonce") or "").strip()
-                    _version = payload.get("version")
-                    if not _run_id or not _decision_id or not _nonce or _version is None:
-                        raise ValueError("plan confirmation requires the durable decision fence")
-                    _receipt = await _signal_product_harness_decision(
-                        _csid,
-                        payload,
-                        {"decision": _decision},
-                    )
-                    logger.info(
-                        "harness_plan_decision sid=%s run_id=%s accepted=%s duplicate=%s",
-                        _csid,
-                        _run_id,
-                        _receipt.accepted,
-                        _receipt.duplicate,
-                    )
-                    _sdb_pc = service_context.get("session_db")
-                    if _sdb_pc is not None:
-                        await _sdb_pc.clear_session_plan_awaiting(_csid)
-                    continue
-            elif msg_type == "models_list":
-                # The session model picker is data-driven. Pull the
-                # relay's live catalog (中转站 GET /models); fall
-                # back to the registry endpoint's configured `models`
-                # array if the live fetch fails. Each model carries a
-                # per-family capability map so the picker only shows the
-                # params that model actually supports (gpt-5.x exposes
-                # reasoning_effort; claude opus/sonnet exposes thinking;
-                # they differ).
-                _reg = service_context.get("provider_registry")
-                _model_ids: list[str] = []
-                _source = "none"
-                _base_url = ""
-                # 生效的 provider 默认模型：preferred_model 留空(跟随 provider 默认)
-                # 时,UI 据此显示「当前真正用的模型」而非「默认模型」占位词。
-                _default_model = ""
-                if _reg is not None:
-                    try:
-                        _chain = _reg.get_chain()
-                    except Exception:
-                        _chain = []
-                    if _chain:
-                        _first = _chain[0]
-                        _pid0 = _first.get("id") if isinstance(_first, dict) else None
-                        _entry0 = _reg.get_entry(_pid0) if _pid0 else None
-                        if _entry0 is not None:
-                            _base_url = str(getattr(_entry0, "base_url", "") or "")
-                            # ProviderEntry.model = default_model or models[0]。
-                            _default_model = str(getattr(_entry0, "model", "") or "")
-                            _cfg_models = list(getattr(_entry0, "models", []) or [])
-                            _api_key = _reg.resolve_api_key(_pid0)
-                            try:
-                                from llm.model_catalog import fetch_models as _fm
-
-                                _live = await _fm(_base_url, _api_key, timeout=8.0)
-                            except Exception:
-                                _live = []
-                            if _live:
-                                _model_ids = _live
-                                _source = "live"
-                                # A successful live catalog is also the
-                                # durable fallback for the next restart or a
-                                # later /models outage. Persist only if the
-                                # Provider still has the exact identity and
-                                # endpoint used for this fetch; the registry
-                                # method is idempotent and does not invalidate
-                                # Session bindings for a cache-only refresh.
-                                try:
-                                    await _reg.cache_discovered_models(
-                                        _pid0,
-                                        _live,
-                                        expected_incarnation_id=str(
-                                            getattr(_entry0, "incarnation_id", "") or ""
-                                        ),
-                                        expected_config_revision=int(
-                                            getattr(_entry0, "config_revision", 0) or 0
-                                        ),
-                                        expected_base_url=_base_url,
-                                    )
-                                except Exception as _cache_exc:  # noqa: BLE001
-                                    logger.warning(
-                                        "provider_catalog_cache_refresh_failed "
-                                        "provider=%s error=%s",
-                                        _pid0,
-                                        str(_cache_exc)[:200],
-                                    )
-                            elif _cfg_models:
-                                _model_ids = _cfg_models
-                                _source = "config"
-                # Fallback: provider_registry chain 为空时（典型场景：用户登录
-                # 中转站后，relay provider 只是前端"虚拟项"、不走 settings_providers_add
-                # 注册进 backend registry，见 SettingsProviders.tsx），用当前
-                # local_llm（登录后经 update_cloud_config 已切到中转站 base_url+key）
-                # 拉中转站 /models。这样登录中转站即可在当前会话换模型，无需手动
-                # 再"添加 Provider"。
-                if not _model_ids and host_state.local_llm is not None:
-                    _ll_base = str(getattr(host_state.local_llm, "base_url", "") or "")
-                    _ll_key = getattr(host_state.local_llm, "api_key", None)
-                    # 跳过本地 ollama（localhost）—— 它的 /models 是本地小模型，
-                    # 不是中转站目录，且 key 通常是占位 "ollama"。
-                    if _ll_base and "localhost" not in _ll_base and "127.0.0.1" not in _ll_base:
-                        try:
-                            from llm.model_catalog import fetch_models as _fm2
-
-                            _live_ll = await _fm2(_ll_base, _ll_key, timeout=8.0)
-                        except Exception:
-                            _live_ll = []
-                        if _live_ll:
-                            _model_ids = _live_ll
-                            _source = "live-local_llm"
-                            _base_url = _ll_base
-                # registry chain 为空时,生效默认模型取 local_llm 的运行时 model
-                # (onboarding 登录中转站后已写 gpt-5.5)。
-                if not _default_model and host_state.local_llm is not None:
-                    _default_model = str(getattr(host_state.local_llm, "model", "") or "")
-                from llm.model_catalog import build_catalog as _bc
-
-                await ws.send_json(
-                    {
-                        "type": "models_list_response",
-                        "payload": {
-                            "models": _bc(_model_ids),
-                            "source": _source,
-                            "base_url": _base_url,
-                            "default_model": _default_model,
-                        },
-                    }
-                )
-
-            elif msg_type == "session_provider_get":
-                payload = raw.get("payload", {}) or {}
-                target_sid = str(payload.get("session_id") or "").strip()
-                session_db = service_context.get("session_db")
-                readiness = service_context.get("provider_routing_readiness")
-                if not target_sid or session_db is None:
-                    await ws.send_json(
-                        {
-                            "type": "settings_providers_error",
-                            "payload": {
-                                "reason": "missing_field",
-                                "detail": "session_id required + session_db must be initialized",
-                            },
-                        }
-                    )
-                    continue
-                try:
-                    readiness.require_ready()
-                except Exception:
-                    await ws.send_json(
-                        {
-                            "type": "settings_providers_error",
-                            "payload": {
-                                "reason": "provider_routing_initializing",
-                                "detail": "provider routing is not ready",
-                            },
-                        }
-                    )
-                    continue
-                binding = await session_db.get_session_provider_binding_authority(target_sid)
-                await ws.send_json(
-                    {
-                        "type": "session_provider_binding",
-                        "payload": {
-                            "session_id": target_sid,
-                            "provider_id": binding.get("provider_id"),
-                            "preferred_model": binding.get("preferred_model"),
-                            "model_params": binding.get("model_params"),
-                            "provider_incarnation_id": binding.get("provider_incarnation_id"),
-                            "provider_config_revision": binding.get("provider_config_revision"),
-                            "binding_epoch": binding.get("binding_epoch", 0),
-                        },
-                    }
-                )
-
-            elif msg_type in ("session_set_provider", "session_set_model"):
-                payload = raw.get("payload", {}) or {}
-                target_sid = str(payload.get("session_id") or "").strip()
-                session_db = service_context.get("session_db")
-                registry = service_context.get("provider_registry")
-                readiness = service_context.get("provider_routing_readiness")
-                if not target_sid or session_db is None or registry is None:
-                    await ws.send_json(
-                        {
-                            "type": "settings_providers_error",
-                            "payload": {
-                                "reason": "missing_field",
-                                "detail": "session_id required + session_db must be initialized",
-                            },
-                        }
-                    )
-                    continue
-                if "expected_binding_epoch" not in payload:
-                    await ws.send_json(
-                        {
-                            "type": "settings_providers_error",
-                            "payload": {
-                                "reason": "provider_binding_conflict",
-                                "detail": "expected_binding_epoch is required",
-                                "session_id": target_sid,
-                            },
-                        }
-                    )
-                    continue
-                try:
-                    readiness.require_ready()
-                except Exception:
-                    await ws.send_json(
-                        {
-                            "type": "settings_providers_error",
-                            "payload": {
-                                "reason": "provider_routing_initializing",
-                                "detail": "provider routing is not ready",
-                            },
-                        }
-                    )
-                    continue
-                current = await session_db.get_session_provider_binding_authority(target_sid)
-                if msg_type == "session_set_provider":
-                    new_provider_id = payload.get("provider_id")
-                    new_model = current.get("preferred_model")
-                    new_params = current.get("model_params")
-                    response_type = "session_provider_set"
-                else:
-                    new_provider_id = current.get("provider_id")
-                    new_model = payload.get("model")
-                    raw_params = payload.get("params")
-                    new_params = raw_params if isinstance(raw_params, dict) else None
-                    response_type = "session_model_set"
-                try:
-                    if new_provider_id and (
-                        "expected_provider_incarnation_id" not in payload
-                        or "expected_provider_config_revision" not in payload
-                    ):
-                        raise ValueError("provider identity expectation is required")
-                    binding = await registry.set_session_binding(
-                        session_db,
-                        session_id=target_sid,
-                        provider_id=new_provider_id,
-                        preferred_model=new_model,
-                        model_params=new_params,
-                        expected_binding_epoch=int(payload["expected_binding_epoch"]),
-                        expected_incarnation_id=payload.get("expected_provider_incarnation_id"),
-                        expected_config_revision=(
-                            int(payload["expected_provider_config_revision"])
-                            if payload.get("expected_provider_config_revision") is not None
-                            else None
-                        ),
-                    )
-                except Exception as exc:  # noqa: BLE001
-                    authoritative = await session_db.get_session_provider_binding_authority(
-                        target_sid
-                    )
-                    await ws.send_json(
-                        {
-                            "type": "settings_providers_error",
-                            "payload": {
-                                "reason": (
-                                    "provider_binding_conflict"
-                                    if str(exc) == "provider_binding_conflict"
-                                    or isinstance(exc, ValueError)
-                                    else "internal_error"
-                                ),
-                                "detail": str(exc),
-                                "session_id": target_sid,
-                            },
-                        }
-                    )
-                    await ws.send_json(
-                        {
-                            "type": "session_provider_binding",
-                            "payload": {"session_id": target_sid, **authoritative},
-                        }
-                    )
-                else:
-                    await ws.send_json(
-                        {
-                            "type": response_type,
-                            "payload": {
-                                "session_id": target_sid,
-                                **binding,
-                            },
-                        }
-                    )
-                    # The provider/model binding and Context Usage authority
-                    # advance in the same durable transaction.  Push the
-                    # freshly committed binding-only snapshot immediately so
-                    # a new Session does not keep rendering its pre-binding
-                    # "no model yet" cache until the first LLM call.
-                    try:
-                        await _send_context_usage_authority(ws, session_db, target_sid)
-                    except Exception as exc:  # noqa: BLE001
-                        logger.debug(
-                            "context_usage_binding_push_failed sid=%s err=%s",
-                            target_sid,
-                            exc,
-                        )
-
-            # 2026-06-13: 此处原有一个简版 "model_context_set" 分支(只认
-            # {model, context_window}) —— 它在 elif 链里抢在 p4_ipc(6456)
-            # 之前,把 ModelContextCard 的完整协议请求({scope, model,
-            # fields})劫持并报错,坏了设置卡的保存两天。已删,统一走
-            # p4_ipc 完整版(fields 白名单含 context_window/compact_at_pct,
-            # scope global/project 深合并 TOML)。ChangeModelModal 的档位
-            # 选择也已改发完整协议。
-
-            elif msg_type in (
-                "settings_providers_list_request",
-                "settings_providers_add",
-                "settings_providers_update",
-                "settings_providers_remove",
-                "settings_providers_reorder",
-            ):
-                # P5-S2 multi-provider-management Phase 2:
-                # CRUD + reorder against LLMProviderRegistry. Mutations
-                # broadcast a `providers_changed` event to ALL control
-                # connections so multi-window UIs (pet panel + code panel)
-                # stay in sync without polling.
-                #
-                # Spec: openspec/changes/multi-provider-management/specs/
-                #       frontend-ipc-surface/spec.md
-                _payload = raw.get("payload", {}) or {}
-                _reg = service_context.get("provider_registry")
-                if _reg is None:
-                    await ws.send_json(
-                        {
-                            "type": "settings_providers_error",
-                            "payload": {
-                                "reason": "registry_unavailable",
-                                "detail": "provider_registry not initialized",
-                            },
-                        }
-                    )
-                    continue
-
-                async def _broadcast_providers_changed() -> None:
-                    """Fan out the new provider list to every open control
-                    ws. Mirrors the pattern used by `_todo_broadcaster` /
-                    supervisor alert broadcaster."""
-                    snapshot = {
-                        "type": "providers_changed",
-                        "payload": {"providers": _reg.list_providers()},
-                    }
-                    if not _control_connections:
-                        return
-                    for _sid_key, _ws_obj in list(_control_connections.items()):
-                        try:
-                            await _ws_obj.send_json(snapshot)
-                        except Exception as _bex:  # noqa: BLE001
-                            logger.debug(
-                                "providers_changed_broadcast_failed sid=%s err=%s",
-                                _sid_key,
-                                _bex,
-                            )
-
-                if msg_type == "settings_providers_list_request":
-                    await ws.send_json(
-                        {
-                            "type": "settings_providers_list_response",
-                            "payload": {"providers": _reg.list_providers()},
-                        }
-                    )
-
-                elif msg_type == "settings_providers_add":
-                    try:
-                        entry = await _reg.add_provider(_payload)
-                    except ValueError as exc:
-                        # Classify error: duplicate vs missing_field vs
-                        # invalid_id. The registry raises a single
-                        # ValueError for all of these; we sniff the text.
-                        _msg = str(exc)
-                        if "already exists" in _msg:
-                            _reason = "duplicate_id"
-                        elif "missing required fields" in _msg or "api_key is required" in _msg:
-                            _reason = "missing_field"
-                        elif "invalid provider id" in _msg:
-                            _reason = "invalid_id"
-                        else:
-                            _reason = "invalid_payload"
-                        await ws.send_json(
-                            {
-                                "type": "settings_providers_error",
-                                "payload": {"reason": _reason, "detail": _msg},
-                            }
-                        )
-                    except Exception as exc:  # noqa: BLE001
-                        await ws.send_json(
-                            {
-                                "type": "settings_providers_error",
-                                "payload": {"reason": "internal_error", "detail": str(exc)},
-                            }
-                        )
-                    else:
-                        await ws.send_json(
-                            {
-                                "type": "settings_providers_added",
-                                "payload": {"provider": entry.to_public_dict()},
-                            }
-                        )
-                        await _broadcast_providers_changed()
-
-                elif msg_type == "settings_providers_update":
-                    _pid = _payload.get("id")
-                    _patch = _payload.get("patch", {}) or {}
-                    if (
-                        not _pid
-                        or "expected_incarnation_id" not in _payload
-                        or "expected_config_revision" not in _payload
-                    ):
-                        await ws.send_json(
-                            {
-                                "type": "settings_providers_error",
-                                "payload": {
-                                    "reason": "missing_field",
-                                    "detail": "id and expected provider identity are required",
-                                },
-                            }
-                        )
-                        continue
-                    try:
-                        _assert_sdk_provider_mutation_allowed((_pid,))
-                        entry = await _reg.update_provider(
-                            _pid,
-                            expected_incarnation_id=_payload.get("expected_incarnation_id"),
-                            expected_config_revision=int(_payload["expected_config_revision"]),
-                            **_patch,
-                        )
-                    except KeyError:
-                        await ws.send_json(
-                            {
-                                "type": "settings_providers_error",
-                                "payload": {
-                                    "reason": "not_found",
-                                    "detail": f"provider {_pid!r} not found",
-                                },
-                            }
-                        )
-                    except ProviderMutationConflict as exc:
-                        await ws.send_json(
-                            {
-                                "type": "settings_providers_error",
-                                "payload": {
-                                    "reason": "provider_binding_conflict",
-                                    "detail": str(exc),
-                                },
-                            }
-                        )
-                    except ValueError as exc:
-                        await ws.send_json(
-                            {
-                                "type": "settings_providers_error",
-                                "payload": {"reason": "invalid_payload", "detail": str(exc)},
-                            }
-                        )
-                    except Exception as exc:  # noqa: BLE001
-                        await ws.send_json(
-                            {
-                                "type": "settings_providers_error",
-                                "payload": {"reason": "internal_error", "detail": str(exc)},
-                            }
-                        )
-                    else:
-                        await ws.send_json(
-                            {
-                                "type": "settings_providers_updated",
-                                "payload": {"provider": entry.to_public_dict()},
-                            }
-                        )
-                        _refresh_research_live_llm()
-                        await _broadcast_providers_changed()
-
-                elif msg_type == "settings_providers_remove":
-                    _pid = _payload.get("id")
-                    if (
-                        not _pid
-                        or "expected_incarnation_id" not in _payload
-                        or "expected_config_revision" not in _payload
-                    ):
-                        await ws.send_json(
-                            {
-                                "type": "settings_providers_error",
-                                "payload": {
-                                    "reason": "missing_field",
-                                    "detail": "id and expected provider identity are required",
-                                },
-                            }
-                        )
-                        continue
-                    try:
-                        _assert_sdk_provider_mutation_allowed((_pid,))
-                        await _reg.remove_provider(
-                            _pid,
-                            expected_incarnation_id=_payload.get("expected_incarnation_id"),
-                            expected_config_revision=int(_payload["expected_config_revision"]),
-                        )
-                    except KeyError:
-                        await ws.send_json(
-                            {
-                                "type": "settings_providers_error",
-                                "payload": {
-                                    "reason": "not_found",
-                                    "detail": f"provider {_pid!r} not found",
-                                },
-                            }
-                        )
-                    except ProviderMutationConflict as exc:
-                        await ws.send_json(
-                            {
-                                "type": "settings_providers_error",
-                                "payload": {
-                                    "reason": "provider_binding_conflict",
-                                    "detail": str(exc),
-                                },
-                            }
-                        )
-                    except Exception as exc:  # noqa: BLE001
-                        await ws.send_json(
-                            {
-                                "type": "settings_providers_error",
-                                "payload": {"reason": "internal_error", "detail": str(exc)},
-                            }
-                        )
-                    else:
-                        await ws.send_json(
-                            {
-                                "type": "settings_providers_removed",
-                                "payload": {"id": _pid},
-                            }
-                        )
-                        await _broadcast_providers_changed()
-
-                elif msg_type == "settings_providers_reorder":
-                    _ordered = _payload.get("ordered_ids") or []
-                    _expected_raw = _payload.get("expected_versions")
-                    try:
-                        _assert_sdk_provider_mutation_allowed(_ordered)
-                        if not isinstance(_expected_raw, dict):
-                            raise ValueError("expected_versions is required")
-                        _expected_versions = {
-                            str(pid): (
-                                str(value["incarnation_id"]),
-                                int(value["config_revision"]),
-                            )
-                            for pid, value in _expected_raw.items()
-                            if isinstance(value, dict)
-                        }
-                        await _reg.reorder(list(_ordered), expected_versions=_expected_versions)
-                    except ProviderMutationConflict as exc:
-                        await ws.send_json(
-                            {
-                                "type": "settings_providers_error",
-                                "payload": {
-                                    "reason": "provider_binding_conflict",
-                                    "detail": str(exc),
-                                },
-                            }
-                        )
-                    except ValueError as exc:
-                        _msg = str(exc)
-                        # Compute the missing-id detail for nicer UX.
-                        _have = {p["id"] for p in _reg.list_providers()}
-                        _missing = sorted(_have - set(_ordered))
-                        _detail = f"missing: {', '.join(_missing)}" if _missing else _msg
-                        await ws.send_json(
-                            {
-                                "type": "settings_providers_error",
-                                "payload": {"reason": "incomplete_order", "detail": _detail},
-                            }
-                        )
-                    except Exception as exc:  # noqa: BLE001
-                        await ws.send_json(
-                            {
-                                "type": "settings_providers_error",
-                                "payload": {"reason": "internal_error", "detail": str(exc)},
-                            }
-                        )
-                    else:
-                        await ws.send_json(
-                            {
-                                "type": "settings_providers_reordered",
-                                "payload": {"providers": _reg.list_providers()},
-                            }
-                        )
-                        await _broadcast_providers_changed()
-
-            elif msg_type == "settings_providers_probe_models":
-                # P5-S2 v2: GET <base_url>/models for an OpenAI-compat endpoint
-                # to discover available models. Used by AddProviderModal "🔍
-                # auto-fetch" so users don't have to type model names by hand.
-                # Reply: { ok, models: [string], detail? }
-                _payload = raw.get("payload", {}) or {}
-                _reg = service_context.get("provider_registry")
-                if _reg is None:
-                    await ws.send_json(
-                        {
-                            "type": "settings_providers_probe_models_response",
-                            "payload": {
-                                "ok": False,
-                                "models": [],
-                                "detail": "provider_registry not initialized",
-                            },
-                        }
-                    )
-                    continue
-                _base_url = str(_payload.get("base_url") or "").rstrip("/")
-                _api_key = str(_payload.get("api_key") or "")
-                _provider_id = str(_payload.get("provider_id") or "").strip()
-                if not _base_url:
-                    await ws.send_json(
-                        {
-                            "type": "settings_providers_probe_models_response",
-                            "payload": {
-                                "ok": False,
-                                "models": [],
-                                "detail": "base_url required",
-                            },
-                        }
-                    )
-                    continue
-                if not _api_key and _provider_id:
-                    _entry = _reg.get_entry(_provider_id)
-                    if _entry is None:
-                        await ws.send_json(
-                            {
-                                "type": "settings_providers_probe_models_response",
-                                "payload": {
-                                    "ok": False,
-                                    "models": [],
-                                    "detail": "provider not found",
-                                },
-                            }
-                        )
-                        continue
-                    if str(_entry.base_url).rstrip("/") != _base_url:
-                        await ws.send_json(
-                            {
-                                "type": "settings_providers_probe_models_response",
-                                "payload": {
-                                    "ok": False,
-                                    "models": [],
-                                    "detail": "base_url differs from saved provider; enter its API key to probe",
-                                },
-                            }
-                        )
-                        continue
-                    _api_key = str(_reg.resolve_api_key(_provider_id) or "")
-                    if not _api_key:
-                        await ws.send_json(
-                            {
-                                "type": "settings_providers_probe_models_response",
-                                "payload": {
-                                    "ok": False,
-                                    "models": [],
-                                    "detail": "saved provider API key is unavailable",
-                                },
-                            }
-                        )
-                        continue
-                try:
-                    import httpx as _httpx
-
-                    _models_url = f"{_base_url}/models"
-                    _headers = {"Accept": "application/json"}
-                    if _api_key and _api_key.lower() != "ollama":
-                        _headers["Authorization"] = f"Bearer {_api_key}"
-                    async with _httpx.AsyncClient(timeout=15.0) as _hc:
-                        _resp = await _hc.get(_models_url, headers=_headers)
-                    if _resp.status_code != 200:
-                        await ws.send_json(
-                            {
-                                "type": "settings_providers_probe_models_response",
-                                "payload": {
-                                    "ok": False,
-                                    "models": [],
-                                    "detail": f"HTTP {_resp.status_code}: {_resp.text[:200]}",
-                                },
-                            }
-                        )
-                    else:
-                        _body = _resp.json()
-                        # OpenAI-format: {"data": [{"id": "..."}, ...]}
-                        # Ollama-format: {"models": [{"name": "..."}, ...]}
-                        # tolerate either.
-                        _items = _body.get("data") if isinstance(_body, dict) else None
-                        if not isinstance(_items, list):
-                            _items = _body.get("models") if isinstance(_body, dict) else None
-                        if not isinstance(_items, list):
-                            _items = []
-                        _names: list[str] = []
-                        for _it in _items:
-                            if isinstance(_it, dict):
-                                _n = _it.get("id") or _it.get("name") or _it.get("model")
-                                if _n:
-                                    _names.append(str(_n))
-                            elif isinstance(_it, str):
-                                _names.append(_it)
-                        await ws.send_json(
-                            {
-                                "type": "settings_providers_probe_models_response",
-                                "payload": {
-                                    "ok": True,
-                                    "models": _names,
-                                },
-                            }
-                        )
-                except Exception as _probe_exc:  # noqa: BLE001
-                    await ws.send_json(
-                        {
-                            "type": "settings_providers_probe_models_response",
-                            "payload": {
-                                "ok": False,
-                                "models": [],
-                                "detail": str(_probe_exc)[:300],
-                            },
-                        }
-                    )
-
-            elif msg_type in ("chat", "chat_v2"):
-                # P4-S20-LLM-Unified: 单一对话路径。
-                # 永远走 AgentLoop tool_use loop（即原 chat_v2 路径），
-                # 同时保留 ContextAssembler 长期记忆召回 + BillingLedger
-                # 计费（继承自原 chat 路径）。
-                #
-                # CRITICAL: run in a background task so the WS recv
-                # loop keeps draining permission_response messages —
-                # gate's responder Future never gets set otherwise.
-                #
-                # `chat_v2` 类型保留作为别名，前端无感升级。
-                # Payload may carry an explicit task `session_id`; honor it
-                # and otherwise fall back to the WS-level main session.
-                _payload = raw.get("payload", {}) or {}
-                text = _payload.get("text", "")
-                from deskpet.agent.attachment_budget import (
-                    normalize_user_attachment_blocks as _normalize_attachment_blocks,
-                )
-
-                _attachment_blocks = _normalize_attachment_blocks(_payload.get("attachments"))
-                _msg_sid = _resolve_chat_source_session(
-                    session_id,
-                    _payload.get("session_id"),
-                )
-                _base_msg_sid = _msg_sid
-                from deskpet.session.task_scope import (
-                    source_session_for_created_conversation as _creation_source_sid,
-                )
-
-                _source_session_id = _creation_source_sid(
-                    _payload.get("session_id"),
-                    _base_msg_sid,
-                )
-                _scope_decision = _resolve_chat_task_scope(
-                    base_sid=_msg_sid,
-                    text=text,
-                    payload=_payload,
-                )
-                _msg_sid = _scope_decision.effective_sid
-                text = _scope_decision.stripped_text
-                _memory_policy_override = (
-                    {"l2_page_in": "always"}
-                    if getattr(
-                        _scope_decision,
-                        "force_l2_page_in",
-                        None,
-                    )
-                    == "always"
-                    else None
-                )
-                if _sdk_desktop_test_enabled():
-                    if (text or "").strip():
-                        _launch_product_harness_chat(
-                            ws,
-                            text,
-                            _msg_sid,
-                            None,
-                            False,
-                            _attachment_blocks,
-                            str(_payload.get("request_id") or raw.get("request_id") or "") or None,
-                            str(_payload.get("turn_id") or raw.get("turn_id") or "") or None,
-                        )
-                    continue
-                if _scope_decision.created:
-                    _legacy_creation = service_context.get("session_creation_service")
-                    _legacy_request_id = str(
-                        _payload.get("request_id") or raw.get("request_id") or uuid.uuid4()
-                    )
-                    try:
-                        _legacy_created = await _legacy_creation.create_conversation_session(
-                            request_id=f"legacy-new-session:{_legacy_request_id}",
-                            project_id=None,
-                            source_session_id=_source_session_id,
-                        )
-                        _msg_sid = str(_legacy_created["session"]["session_id"])
-                    except Exception as _legacy_create_exc:  # noqa: BLE001
-                        await ws.send_json(
-                            {
-                                "type": "chat_v2_error",
-                                "payload": {
-                                    "error": "新会话创建失败，请重试。",
-                                    "code": str(
-                                        getattr(_legacy_create_exc, "code", "session_create_failed")
-                                    ),
-                                    "retryable": True,
-                                    # Empty-state failures have no Session owner.
-                                    # Keep this empty so App's global error banner
-                                    # does not filter it as an inactive pseudo sid.
-                                    "session_id": _source_session_id or "",
-                                    "request_id": _legacy_request_id,
-                                },
-                            }
-                        )
-                        continue
-                _identity_gate = service_context.get("companion_identity_gate")
-                try:
-                    if _identity_gate is None:
-                        raise RuntimeError("companion_identity_not_ready")
-                    # Freeze now, before a background Run is created. Later
-                    # owner-aware boundaries consume this immutable snapshot;
-                    # account switches never rewrite an in-flight Turn.
-                    _frozen_companion_owner = _identity_gate.freeze()
-                    _companion_route_bound = await _bind_companion_inbox_route(
-                        _msg_sid,
-                        _frozen_companion_owner,
-                        create_if_absent=True,
-                    )
-                except Exception as _identity_exc:  # noqa: BLE001
-                    # request_id 必须回传：这一轮在 Run 被预约之前就夭折了，
-                    # 前端的 pending_root_request_id 只能靠它认领并清除。少了
-                    # 它，该会话此后每条消息都会被判成 "等待 root run" 而永远
-                    # 不发出去 —— 会话被静默卡死（r4 S18 实测 default 会话）。
-                    # 这个 try 覆盖的不只是身份门：_bind_companion_inbox_route
-                    # 的属主围栏错误（owner_tombstoned / rebind_forbidden 等）
-                    # 也会落到这里。原实现一律报 companion_identity_not_ready，
-                    # 把"会话属主坏了"说成"身份没就绪"，排查时会被带偏很远
-                    # （r5 真机实测：default 被墓碑化后一直显示身份未就绪）。
-                    # 真实原因放进 detail，code 仍保持稳定供前端分支。
-                    _identity_detail = str(
-                        getattr(_identity_exc, "code", "")
-                        or _identity_exc
-                        or type(_identity_exc).__name__
-                    )
-                    await ws.send_json(
-                        {
-                            "type": "chat_v2_error",
-                            "payload": {
-                                "error": "companion_identity_not_ready",
-                                "code": "companion_identity_not_ready",
-                                "detail": _identity_detail,
-                                "retryable": True,
-                                "session_id": _msg_sid,
-                                "request_id": str(
-                                    _payload.get("request_id") or raw.get("request_id") or ""
-                                )
-                                or None,
-                                "turn_id": str(_payload.get("turn_id") or raw.get("turn_id") or "")
-                                or None,
-                            },
-                        }
-                    )
-                    logger.info(
-                        "companion_chat_blocked_identity_not_ready",
-                        session_id=_msg_sid,
-                        error=type(_identity_exc).__name__,
-                        # 只记异常类名会把所有属主围栏错误压成 'RuntimeError'，
-                        # 日志里看不出到底是身份没就绪还是会话属主坏了。
-                        detail=_identity_detail,
-                    )
-                    continue
-                if not _companion_route_bound:
-                    _route_error = (
-                        "新会话创建失败，请重试。"
-                        if _scope_decision.created
-                        else "当前选择的是只读历史会话，请重新发送。"
-                    )
-                    _route_code = (
-                        "companion_session_create_failed"
-                        if _scope_decision.created
-                        else "companion_session_read_only"
-                    )
-                    # 同上：Run 预约前夭折的一轮必须带 request_id 回去，
-                    # 否则前端 pending_root_request_id 永远挂着。
-                    await ws.send_json(
-                        {
-                            "type": "chat_v2_error",
-                            "payload": {
-                                "error": _route_error,
-                                "code": _route_code,
-                                "retryable": bool(_scope_decision.created),
-                                "session_id": _msg_sid,
-                                "request_id": str(
-                                    _payload.get("request_id") or raw.get("request_id") or ""
-                                )
-                                or None,
-                                "turn_id": str(_payload.get("turn_id") or raw.get("turn_id") or "")
-                                or None,
-                            },
-                        }
-                    )
-                    logger.info(
-                        "companion_chat_blocked_read_only_session",
-                        session_id=_msg_sid,
-                    )
-                    continue
-                if _scope_decision.created:
-                    try:
-                        # 2026-08-09：这里原先直接引用局部名 `session_db`——它只在
-                        # `session_provider_get/set` 两个分支里被赋值，而 Python 的
-                        # 函数作用域让它在整个 control_channel 里都是局部名。以前不炸
-                        # 是因为 ChatView 挂载必发 session_provider_get 把它绑上；
-                        # 取消保留会话后空态 activeSid="" ⇒ hydration 直接 return ⇒
-                        # 该消息永不发出 ⇒ 空态直发新建会话时 UnboundLocalError
-                        # （真机实测）。改为每次从 service_context 取，不依赖执行顺序。
-                        _inherit_sdb = service_context.get("session_db")
-                        if _inherit_sdb is None:
-                            raise RuntimeError("session_db_unavailable")
-                        _inherited_model_binding = await _inherit_sdb.get_session_provider_binding(
-                            _msg_sid
-                        )
-                    except Exception as _model_inherit_exc:  # noqa: BLE001
-                        await ws.send_json(
-                            {
-                                "type": "chat_v2_error",
-                                "payload": {
-                                    "error": "新会话模型配置继承失败，请重试。",
-                                    "code": "session_model_inherit_failed",
-                                    "retryable": True,
-                                    "session_id": _base_msg_sid,
-                                },
-                            }
-                        )
-                        logger.exception(
-                            "session_model_inherit_failed",
-                            source_session_id=_base_msg_sid,
-                            target_session_id=_msg_sid,
-                            error=type(_model_inherit_exc).__name__,
-                            detail=str(_model_inherit_exc)[:240],
-                        )
-                        continue
-                    # The control socket keeps a stable transport id while
-                    # the visible conversation switches to this fresh,
-                    # owner-fenced UUID session.
-                    _remap_chat_peer_group(session_id, _msg_sid)
-                    _switch_payload = {
-                        "old_sid": _base_msg_sid,
-                        "new_sid": _msg_sid,
-                        "reason": _scope_decision.reason,
-                        "provider_id": _inherited_model_binding.get("provider_id"),
-                        "preferred_model": _inherited_model_binding.get("preferred_model"),
-                        "model_params": _inherited_model_binding.get("model_params"),
-                    }
-                    for _evt_type in (
-                        "session_switched",
-                        "task_session_started",
-                    ):
-                        _switch_evt = {
-                            "type": _evt_type,
-                            "payload": dict(_switch_payload),
-                        }
-                        try:
-                            await ws.send_json(_switch_evt)
-                        except Exception:
-                            pass
-                        await _broadcast_default_chat_peers(ws, _switch_evt)
-                    await _send_new_session_origin_user_echo(ws, _msg_sid, text)
-                # Clicking an empty "new topic" still creates and switches
-                # session above, but must not launch an empty AgentLoop turn.
-                if not (text or "").strip():
-                    continue
-                if deskpet_tool_registry_v2 is None or permission_gate_v2 is None:
-                    await ws.send_json(
-                        {
-                            "type": "chat_v2_error",
-                            "payload": {
-                                "error": "v2 stack not initialized",
-                                "session_id": _msg_sid,
-                            },
-                        }
-                    )
-                    continue
-                # 方案 B（2026-08-20）：continuation 退化为 fresh run。SDK 0.1.4
-                # 的 ReAct driver 是单轮语义，多轮对话 = 每条用户消息一个 fresh run、
-                # 历史由 SDK context 组装。旧的 projection/boundary + signal 契约是
-                # 8/17 迁移遗留的半成品（写投影的 create_task_context 已失联、signal
-                # 签名未随 SDK 0.1.3 变更），继续走它只会报 identity mismatch。因此
-                # 忽略 target_root_run_id/task_scope_id，直接落入下方 fresh run 分支。
-
-                # P5-S2 Phase 4: a fresh user-initiated chat message means
-                # the user has implicitly granted a new auto-resume budget.
-                # Reset the attempts counter so subsequent failures may
-                # auto-resume up to ``max_attempts`` times again. Skipped
-                # for synthetic re-entry texts (`<<supervisor_followup>>`,
-                # `<<auto_resume>>`) so they consume the existing budget.
-                if not (text or "").startswith("<<"):
-                    _sa_for_reset = service_context.get("session_activity")
-                    if _sa_for_reset is not None:
-                        try:
-                            await _sa_for_reset.reset_auto_resume_attempts(_msg_sid)
-                        except Exception as _ex:  # noqa: BLE001
-                            logger.debug("auto_resume_reset_failed sid=%s err=%s", _msg_sid, _ex)
-
-                _chat_task = _launch_product_harness_chat(
-                    ws,
-                    text,
-                    _msg_sid,
-                    _memory_policy_override,
-                    bool(_scope_decision.created),
-                    _attachment_blocks,
-                    str(_payload.get("request_id") or raw.get("request_id") or "") or None,
-                    str(_payload.get("turn_id") or raw.get("turn_id") or "") or None,
-                )
-
-                def _make_followup_cb(target_sid: str, target_ws):
-                    def _cb(_t):
-                        async def _maybe_followup():
-                            try:
-                                _nq_check = service_context.get("nudge_queue")
-                                if _nq_check is None or not await _nq_check.peek(target_sid):
-                                    return
-                                new_task = _launch_product_harness_chat(
-                                    target_ws, "<<supervisor_followup>>", target_sid
-                                )
-                                new_task.add_done_callback(_make_followup_cb(target_sid, target_ws))
-                                logger.info(
-                                    "supervisor_followup_scheduled sid=%s",
-                                    target_sid,
-                                )
-                            except Exception as _exc:  # noqa: BLE001
-                                logger.debug(
-                                    "supervisor_followup_failed sid=%s error=%s",
-                                    target_sid,
-                                    _exc,
-                                )
-
-                        try:
-                            asyncio.create_task(_maybe_followup())
-                        except RuntimeError:
-                            # No running loop (shutdown); silently skip.
-                            pass
-
-                    return _cb
-
-                _chat_task.add_done_callback(_make_followup_cb(_msg_sid, ws))
-
-            elif msg_type == "interrupt":
-                payload = raw.get("payload", {}) or {}
-                voice_transport = _voice_transports.get(session_id)
-                if voice_transport is not None:
-                    voice_transport.interrupt()
-                await _cancel_product_harness_run(
-                    session_id,
-                    str(payload.get("run_id") or "").strip(),
-                    reason="voice_interrupt",
-                )
-                await ws.send_json({"type": "interrupt_ack"})
-
-            elif msg_type == "budget_status":
-                # P2-1-S8: SettingsPanel "今日使用" pulls from here.
-                try:
-                    status = await billing_ledger.status()
-                    await ws.send_json({"type": "budget_status", "payload": status})
-                except Exception as exc:
-                    logger.warning("budget_status_failed", error=str(exc))
-                    await ws.send_json(
-                        {
-                            "type": "error",
-                            "payload": {"message": f"budget_status failed: {exc}"},
-                        }
-                    )
-
-            elif msg_type in ("memory_list", "memory_delete", "memory_clear", "memory_export"):
-                # S14 (V5 §6 threat 5): user-facing controls over persisted
-                # conversation history. All four go through the same memory
-                # store the agent reads from, so redaction-on-write still holds.
-                await _handle_memory_message(ws, session_id, msg_type, raw.get("payload", {}) or {})
-
-            elif msg_type in p4_ipc.P4_IPC_MESSAGE_TYPES:
-                # P4-S11 (§16.8): MemoryPanel + ContextTrace IPC surface.
-                # Gracefully degrades when P4 services aren't registered
-                # (pre-S12 wire-in) — UI shows empty state instead of error.
-                await p4_ipc.handle(
-                    ws,
-                    session_id,
-                    msg_type,
-                    raw.get("payload", {}) or {},
-                    service_context,
-                )
-
-            elif msg_type.startswith("workflow_"):
-                # Durable Graph/Trace/Replay/Eval IPC. The service is built
-                # during lifespan startup; keeping the dispatcher here avoids
-                # coupling the workflow core to FastAPI/WebSocket types.
-                from deskpet.workflows.ipc import start_workflow_ipc_dispatch
-
-                workflow_service = service_context.get("workflow_service")
-                if workflow_service is None:
-                    await ws.send_json(
-                        {
-                            "type": "workflow_ipc_error",
-                            "request_type": msg_type,
-                            "request_id": raw.get("request_id"),
-                            "ok": False,
-                            "error": {
-                                "code": "workflow_service_unavailable",
-                                "message": "Durable workflow service is unavailable",
-                                "retryable": True,
-                            },
-                        }
-                    )
-                else:
-                    if await _try_resolve_execution_workflow_decision(
-                        ws,
-                        session_id=session_id,
-                        raw=raw,
-                        workflow_service=workflow_service,
-                    ):
-                        continue
-                    start_workflow_ipc_dispatch(
-                        workflow_service,
-                        raw,
-                        ws.send_json,
-                        _workflow_ipc_background_tasks,
-                    )
-
-            elif msg_type == "provider_test_connection":
-                # P2-1-S3: SettingsPanel「测试连接」button. The candidate
-                # credentials travel through the already-authenticated control
-                # channel; nothing is persisted here — the UI saves via the
-                # Tauri `set_cloud_api_key` command only on success.
-                from provider_test_connection import handle_provider_test_connection
-
-                await handle_provider_test_connection(ws, raw.get("payload", {}) or {})
-
-            elif msg_type == "supervisor_user_choice":
-                # P5-S2/S3: user clicked a button on the supervisor bubble.
-                # P5-S1 D fix: also act on the choice — "Continue/重试/let it"
-                # triggers a follow-up that consumes the queued hint;
-                # "Cancel/中断/stop" cancels in-flight + clears queue.
-                _payload = raw.get("payload", {}) or {}
-                _target_sid = _payload.get("session_id") or session_id
-                _alert_id = str(_payload.get("alert_id") or "")
-                _btn_idx = int(_payload.get("button_index") or 0)
-                _btn_text = str(_payload.get("button_text") or "")
-                logger.info(
-                    "supervisor_user_choice sid=%s alert=%s button_idx=%d text=%s",
-                    _target_sid,
-                    _alert_id,
-                    _btn_idx,
-                    _btn_text,
-                )
-                _sdb_for_choice = service_context.get("session_db")
-                if _sdb_for_choice is not None:
-                    try:
-                        await _sdb_for_choice.append_supervisor_hint(
-                            session_id=_target_sid,
-                            alert_id=_alert_id,
-                            hint_text=_btn_text,
-                            action="user_choice",
-                            severity="green",
-                            user_button=_btn_text,
-                        )
-                    except Exception as _exc:
-                        logger.debug("supervisor_user_choice_audit_failed error=%s", _exc)
-
-                # Heuristic intent matching by button text. We accept
-                # both Chinese and English labels since the LLM picks
-                # them dynamically. Stop/cancel takes priority over
-                # continue if both keywords appear.
-                _btn_lower = _btn_text.lower().strip()
-                _is_stop = any(k in _btn_text for k in ("中断", "停止", "取消", "终止")) or any(
-                    k in _btn_lower for k in ("cancel", "stop", "abort", "interrupt")
-                )
-                _is_continue = any(
-                    k in _btn_text for k in ("继续", "重试", "再试", "让它", "再等")
-                ) or any(k in _btn_lower for k in ("continue", "retry", "let", "wait"))
-
-                if _is_stop:
-                    # Cancel any in-flight task + clear the nudge queue
-                    await _cancel_product_harness_run(
-                        _target_sid,
-                        str(_payload.get("run_id") or "").strip(),
-                        reason="supervisor_user_choice",
-                    )
-                    _nq_for_stop = service_context.get("nudge_queue")
-                    if _nq_for_stop is not None:
-                        try:
-                            await _nq_for_stop.clear(_target_sid)
-                        except Exception:
-                            pass
-                elif _is_continue:
-                    try:
-                        _launch_product_harness_chat(ws, "<<supervisor_followup>>", _target_sid)
-                        logger.info(
-                            "supervisor_user_choice_followup_scheduled sid=%s",
-                            _target_sid,
-                        )
-                    except Exception as _ex_fu:
-                        logger.warning(
-                            "supervisor_user_choice_followup_failed sid=%s error=%s",
-                            _target_sid,
-                            _ex_fu,
-                        )
-
-            elif msg_type == "supervisor_toggle":
-                # P5-S2: enable / disable the supervisor at runtime.
-                # When disabling: cancel watchdog, clear queues, drop activity.
-                # When enabling: rebuild watchdog if not present (best-effort —
-                # full restart is recommended for reliability).
-                _payload = raw.get("payload", {}) or {}
-                _enabled = bool(_payload.get("enabled", True))
-                _persisted = _persist_supervisor_enabled(_enabled)
-                _wd_inst = service_context.get("watchdog")
-                if _enabled:
-                    if _wd_inst is None or not _wd_inst.is_running():
-                        logger.info("supervisor_toggle_enable_requested (restart_recommended)")
-                    else:
-                        _wd_inst.enable()
-                        logger.info("supervisor_toggle_enabled")
-                else:
-                    if _wd_inst is not None:
-                        _wd_inst.disable()
-                    _nq_inst = service_context.get("nudge_queue")
-                    if _nq_inst is not None:
-                        try:
-                            await _nq_inst.clear()
-                        except Exception:
-                            pass
-                    logger.info("supervisor_toggle_disabled")
-                await ws.send_json(
-                    {
-                        "type": "supervisor_toggle_ack",
-                        "payload": {"enabled": _enabled, "persisted": _persisted},
-                    }
-                )
-
-            elif msg_type == "__debug_force_error_pending":
-                # P5-S1 D — force a session into error_pending so the
-                # next watchdog tick triggers supervisor. Used to test
-                # fallback alert when supervisor LLM also fails.
-                _payload = raw.get("payload", {}) or {}
-                target_sid = _payload.get("session_id") or ""
-                _sa = service_context.get("session_activity")
-                if _sa is not None and target_sid:
-                    await _sa.bump(target_sid, event_type="error", snippet="forced for E2E test")
-                    await _sa.mark_error_pending(target_sid)
-                    # Also reset watchdog dedup so next scan fires
-                    _wd = service_context.get("watchdog")
-                    if _wd is not None:
-                        _wd.reset_dedup(target_sid)
-                    await ws.send_json(
-                        {
-                            "type": "__debug_force_error_pending_ack",
-                            "payload": {"sid": target_sid, "ok": True},
-                        }
-                    )
-
-            elif msg_type == "__debug_dump_session_activity":
-                # P5-S1 D — dump current session_activity store so we
-                # can verify error_pending got set + watchdog ran.
-                _sa = service_context.get("session_activity")
-                _wd = service_context.get("watchdog")
-                if _sa is not None:
-                    _all = await _sa.snapshot_all()
-                else:
-                    _all = {}
-                _wd_state = {
-                    "running": _wd.is_running() if _wd else False,
-                    "last_scans": dict(_wd._last_scan_ts) if _wd else {},
-                }
-                await ws.send_json(
-                    {
-                        "type": "__debug_dump_response",
-                        "payload": {"session_activity": _all, "watchdog": _wd_state},
-                    }
-                )
-
-            elif msg_type == "__debug_inject_supervisor_alert":
-                # P5-S1 D — Debug IPC for visual / E2E testing. Already
-                # protected by SHARED_SECRET (the ws connection itself
-                # requires it), so we don't double-gate on DEV_MODE.
-                # Single-user desktop-pet threat model: anyone with the
-                # secret already has full backend access.
-                _payload = raw.get("payload", {}) or {}
-                # Fan out to every control WS, identical path to the
-                # real supervisor's broadcast.
-                msg = {"type": "supervisor_alert", "payload": _payload}
-                for _sid_key, _ws_obj in list(_control_connections.items()):
-                    try:
-                        await _ws_obj.send_json(msg)
-                    except Exception as _bex:
-                        logger.debug(
-                            "debug_supervisor_alert_send_failed sid=%s error=%s",
-                            _sid_key,
-                            _bex,
-                        )
-                logger.info(
-                    "__debug_inject_supervisor_alert dispatched payload=%s",
-                    _payload,
-                )
-                await ws.send_json(
-                    {
-                        "type": "__debug_inject_ack",
-                        "payload": {"ok": True},
-                    }
-                )
-
-            else:
-                await ws.send_json(
-                    {
-                        "type": "error",
-                        "payload": {"message": f"unknown type: {msg_type}"},
-                    }
-                )
+            await _dispatch_control_message(conn, raw, msg_type)
 
     except WebSocketDisconnect:
         _cancel_harness_inspector_tasks(ws)

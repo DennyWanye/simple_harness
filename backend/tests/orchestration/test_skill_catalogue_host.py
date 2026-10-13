@@ -21,8 +21,6 @@ import pytest
 from agent_orchestrator.deployment.native_pools import catalogue_owner_profile_id
 from deskpet.orchestration.handlers import handle
 
-from tests.host_source import host_source_text
-
 from .test_native_plane_host import _service
 
 
@@ -153,16 +151,20 @@ def skill_namespace(service) -> str:  # type: ignore[no-untyped-def]
 
 
 def test_only_the_listed_skill_verbs_are_open_on_the_control_channel():
-    source = host_source_text()
-    branch = source[
-        source.index(
-            'elif msg_type.startswith(("mission_", "orchestration_", "taskgraph.")) or msg_type in ('
-        ) :
-    ]
-    head = branch[: branch.index("):")]
-    # 去掉空白再比：格式化会把元组拆成一行一个（2026-10-12 代码质量整治阶段 1）
-    assert (
-        '"agent_skill_request","agent_skill_evaluation_mission","agent_skill_evaluation_dispatch"'
-        in "".join(head.split())
-    )
-    assert "agent_runtime_request" not in head and "agent_session" not in head
+    import main
+
+    # 按控制通道的有序路由表实际走一遍（2026-10-13 分发链改成路由表）
+    def route_for(msg_type):
+        for matcher, handler in main._CONTROL_ROUTES:
+            if (msg_type in matcher) if isinstance(matcher, frozenset) else matcher(msg_type):
+                return handler
+        return None
+
+    for verb in (
+        "agent_skill_request",
+        "agent_skill_evaluation_mission",
+        "agent_skill_evaluation_dispatch",
+    ):
+        assert route_for(verb) is main._cc_orchestration_routes
+    assert route_for("agent_runtime_request") is None
+    assert route_for("agent_session") is None

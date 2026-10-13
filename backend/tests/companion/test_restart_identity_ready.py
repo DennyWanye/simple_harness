@@ -17,11 +17,10 @@
 
 import asyncio
 
-import main
 import pytest
 from host import history_events
 
-from tests.host_source import host_source_text
+from tests.host_source import host_function_source
 
 
 class _Identity:
@@ -111,12 +110,8 @@ def test_bind_handler_sends_readiness_after_the_bounded_settle():
     的长处理函数里，靠源码顺序把「有界收尾 → 无条件发就绪帧」钉住。
     """
 
-    source = host_source_text()
-    handler = source[
-        source.index(
-            'if msg_type == "companion_profile_bind":\n                        # 事件 AK'
-        ) :
-    ]
+    source = host_function_source("_handle_privileged_companion_frame")
+    handler = source[source.index("# 事件 AK") :]
     settle = handler.index("_settle_companion_bind_projection(")
     ready = handler.index("await ws.send_json(response)")
     assert settle < ready, "就绪帧必须在有界收尾之后无条件下发"
