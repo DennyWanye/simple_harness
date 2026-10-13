@@ -30,7 +30,7 @@ from .migration import apply_ddl, partition_ddl
 from .pins import Pin
 from .ports import RootIdentity
 from .rules import validate_vector
-from .strict import digest
+from .strict import canonical, digest
 
 PARTITION_FILE = "index.sqlite3"
 PARTITION_SCHEMA_VERSION = 2
@@ -422,7 +422,6 @@ def unpack_vector(blob: bytes, dim: int) -> tuple[float, ...]:
 
 
 def _json(value: Any) -> str:
-    from .strict import canonical
 
     return canonical(value).decode("utf-8")
 

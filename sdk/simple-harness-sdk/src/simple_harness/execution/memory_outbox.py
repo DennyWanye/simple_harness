@@ -26,6 +26,7 @@ from simple_harness.runtime.agent_memory import (
 )
 
 from .sqlite.database import Database
+from .sqlite.memory_port_audit import begin, require_actual_claim
 from .sqlite.memory_port_audit import record as record_memory_audit
 from .uow import UnitOfWorkConflict
 
@@ -238,8 +239,6 @@ class MemoryOutboxRepository:
         _positive_time(now, "now", allow_zero=True)
         _positive_time(backoff_seconds, "backoff_seconds", allow_zero=True)
         with self.database.transaction() as connection:
-            from .sqlite.memory_port_audit import require_actual_claim
-
             require_actual_claim(connection, claim)
             changed = connection.execute(
                 "UPDATE memory_outbox SET state='retry_wait',claim_owner=NULL,"
@@ -305,8 +304,6 @@ class MemoryOutboxRepository:
             raise ValueError("memory outbox settlement state is invalid")
         _positive_time(now, "now", allow_zero=True)
         with self.database.transaction() as connection:
-            from .sqlite.memory_port_audit import require_actual_claim
-
             actual = _record(require_actual_claim(connection, claim))
             if receipt is not None:
                 MemoryDispatcher._validate_receipt(actual, receipt)
@@ -379,7 +376,6 @@ class MemoryDispatcher:
         if claim is None:
             return False
         self.repository._emit(claim, claim.claimed_from_state or "unknown")
-        from .sqlite.memory_port_audit import begin
 
         with self.repository.database.transaction() as connection:
             begin(connection, claim, self.clock())

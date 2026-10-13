@@ -15,7 +15,10 @@ from __future__ import annotations
 import sqlite3
 
 from simple_harness.execution.base_agent import AgentDelegationRecord
+from simple_harness.execution.command_ingress import RunApiMode, _bind_namespace
 from simple_harness.execution.uow import UnitOfWorkConflict
+
+from ..context_use_requirements import bind
 
 BASE_AGENT_NAMESPACE = "base-agent/v1"
 BASE_AGENT_PROJECTION_KEY_ID = "base-agent-v1"
@@ -77,10 +80,6 @@ def reserve_delegation(
     The per-turn quota is decided inside this transaction (closure review F7), so two
     concurrent calls of one batch cannot both pass the check.
     """
-
-    from simple_harness.execution.command_ingress import RunApiMode, _bind_namespace
-
-    from ..context_use_requirements import bind
 
     existing = read_delegation(connection, delegation_id)
     if existing is not None:

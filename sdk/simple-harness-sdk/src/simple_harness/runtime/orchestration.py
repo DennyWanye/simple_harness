@@ -33,6 +33,7 @@ from simple_harness.tools.schema import (
     validate_argument_resource_bounds,
     validate_tool_schema,
 )
+from simple_harness.workflow.execution_ports import WorkflowRecoveryReceiptKind
 from simple_harness.workflow.lease import WorkflowLease
 
 from .profiles import ProfileDescriptor
@@ -1197,9 +1198,6 @@ class RuntimeStartAdmission:
     retry_wake: WorkflowRetryWake | None = None
 
     def __post_init__(self) -> None:
-        from simple_harness.workflow.execution_ports import (
-            WorkflowRecoveryReceiptKind,
-        )
 
         if not isinstance(self.receipt, RuntimeStartReceipt):
             raise TypeError("receipt must be a RuntimeStartReceipt")

@@ -21,6 +21,7 @@ from simple_harness.agents.background_health import BackgroundHealth, Background
 from simple_harness.contracts import (
     ExecutionSessionId,
     JsonValue,
+    Message,
     MessageRole,
     RequestId,
     RunId,
@@ -75,6 +76,7 @@ from .contracts import (
 from .execution import AGENT_TURN_CANCELLED, build_agent_execution_driver
 from .ports import AgentRuntimePorts
 from .tool_registry import BaseAgentToolRegistry
+from .tools.delegate import AgentDelegateTool, AgentDelegationReconciliation
 from .wire import AgentProviderWire, continuation_capability_of, replays_reasoning
 
 ROOT_PROFILE_KEY = "agent.general"
@@ -321,8 +323,6 @@ def start_input_for(
     max_output_tokens: int,
 ) -> dict[str, JsonValue]:
     """``start.input`` carrying the Agent binding next to the capability snapshot."""
-
-    from simple_harness.contracts import Message
 
     messages: list[JsonValue] = []
     if config.instructions.strip():
@@ -795,8 +795,6 @@ def build_agent_runtime(
     ``agent.delegate`` is registered before the tool registry seals and late-bound
     to the ``AgentRuntime`` right after the kernel exists (fixed order, closure risk 3).
     """
-
-    from .tools.delegate import AgentDelegateTool, AgentDelegationReconciliation
 
     delegate = AgentDelegateTool(clock=ports.clock)
     # The native plane brings its own history tools; a bare runtime has none (the old

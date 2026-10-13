@@ -13,6 +13,7 @@ from simple_harness.execution.context_use import (
 from simple_harness.execution.provider_invocations import provider_invocation_id
 
 from .context_use_requirements import DDL as REQUIREMENT_DDL
+from .context_use_requirements import require
 
 DDL = (
     REQUIREMENT_DDL
@@ -80,7 +81,6 @@ def read_attempt(connection, invocation_id, ordinal):
 
 
 def require_live(uow, connection, attempt, lease, now, *, retry=False, phase="provider_reserved"):
-    from .context_use_requirements import require
 
     require(connection, attempt.run_id, attempt.authority_scope_ref)
     uow._require_runtime_lease(connection, lease, now=now)

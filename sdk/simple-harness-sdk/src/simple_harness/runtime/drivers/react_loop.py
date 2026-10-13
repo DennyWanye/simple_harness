@@ -34,6 +34,7 @@ from simple_harness.execution.context_authority import (
     RunContextAuthorityRequest,
     TaskExecutionEnvelopeRequest,
 )
+from simple_harness.execution.context_use import ProviderContextUseAttemptV1, use_hash
 from simple_harness.execution.effects import EffectRecord
 from simple_harness.execution.fences import RunFenceLease
 from simple_harness.execution.provider_invocations import (
@@ -463,8 +464,6 @@ class ReActLoop:
                         ).hexdigest()
                     context_use_attempt = None
                     if protected:
-                        from simple_harness.execution.context_use import ProviderContextUseAttemptV1
-
                         if snapshot.schema_version != 2 or snapshot.recall_intents is None:
                             raise ValueError("context_use_snapshot_attestation_missing")
                         attempt = ProviderContextUseAttemptV1(
@@ -527,8 +526,6 @@ class ReActLoop:
                     _verify_context_authority_receipt(state, value.run_id, request)
                 context_use_kwargs = {}
                 if protected:
-                    from simple_harness.execution.context_use import ProviderContextUseAttemptV1
-
                     context_use_kwargs["context_use"] = ProviderContextUseAttemptV1.from_json(
                         state.context_use_attempt
                     )
@@ -1055,8 +1052,6 @@ def _verify_context_authority_receipt(
     ):
         raise RuntimeError("frozen Host Context authority receipt differs")
     if state.source_schema_version == 7 or state.context_use_authority_scope is not None:
-        from simple_harness.execution.context_use import ProviderContextUseAttemptV1, use_hash
-
         attempt = ProviderContextUseAttemptV1.from_json(state.context_use_attempt)
         attempt.validate_provider_request(run_id, request)
         if (

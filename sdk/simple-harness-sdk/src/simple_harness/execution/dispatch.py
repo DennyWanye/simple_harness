@@ -55,6 +55,7 @@ from .budget import (
     FrozenPriceEstimator,
     budget_policy_fingerprint,
 )
+from .context_use import ProviderContextUseAttemptV1, ProviderContextUseGrantV1, _text
 from .provider_admission import ProviderAdmissionPort
 from .provider_invocations import (
     ProviderInvocationRecord,
@@ -66,6 +67,7 @@ from .provider_invocations import (
     provider_response_json,
 )
 from .recovery import ResolutionOutcome
+from .runtime_audit import runtime_operation
 
 logger = logging.getLogger(__name__)
 
@@ -317,8 +319,6 @@ class ProviderInvocationCoordinator:
         self._clock = clock
         self._context_use_authority = context_use_authority
         if context_use_authority is not None:
-            from .context_use import _text
-
             _text(context_use_authority.authority_scope_ref)
             if not callable(getattr(context_use_authority, "authorize_recall_context_use", None)):
                 raise TypeError("context_use_authority_invalid")
@@ -382,7 +382,6 @@ class ProviderInvocationCoordinator:
         execution_lease: ExecutionLease,
         context_use=None,
     ) -> ProviderInvocationRecord:
-        from .runtime_audit import runtime_operation
 
         with runtime_operation(
             self._uow,
@@ -437,8 +436,6 @@ class ProviderInvocationCoordinator:
         )
         extra = {}
         if self._context_use_authority is not None or context_use is not None:
-            from .context_use import ProviderContextUseAttemptV1
-
             if (
                 self._context_use_authority is None
                 or type(context_use) is not ProviderContextUseAttemptV1
@@ -483,7 +480,6 @@ class ProviderInvocationCoordinator:
         )
 
     async def _authorize_context_use(self, attempt, lease, *, retry=False):
-        from .context_use import ProviderContextUseGrantV1
 
         if attempt.authority_scope_ref != self.context_use_authority_scope:
             raise ProviderInvocationConflictError("context_use_authority_scope_differs")
@@ -553,7 +549,6 @@ class ProviderInvocationCoordinator:
             raise ProviderInvocationConflictError(
                 "Provider invocation requires the canonical Run lease."
             )
-        from .runtime_audit import runtime_operation
 
         with runtime_operation(
             self._uow,

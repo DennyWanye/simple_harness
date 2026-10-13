@@ -32,6 +32,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from simple_harness.api.runtime_plane import RuntimePlaneService
+
 from . import catalogue as cat
 from .errors import ArpError
 from .pins import Pin
@@ -168,8 +170,6 @@ class SharedSkillCatalogue:
 
     async def handle(self, request: Mapping[str, Any], *, caller: TrustedCaller) -> dict[str, Any]:
         """A Skill ``HostRequest`` on the owner; a successful write is mirrored at once."""
-
-        from simple_harness.api.runtime_plane import RuntimePlaneService
 
         verb = request.get("verb") if isinstance(request, Mapping) else None
         if verb not in SKILL_WRITE_VERBS | SKILL_READ_VERBS:

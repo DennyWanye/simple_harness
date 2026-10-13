@@ -24,7 +24,14 @@ from simple_harness.contracts import (
     freeze_json,
     thaw_json,
 )
-from simple_harness.execution.audit import RunAuditUnavailable, RunOperationAuditSnapshotV1
+from simple_harness.contracts.messages import Message, MessageRole
+from simple_harness.execution.audit import (
+    RunAuditUnavailable,
+    RunOperationAuditSnapshotV1,
+    audit_error_code,
+    audit_hash,
+    audit_label_syntax,
+)
 from simple_harness.execution.base_agent import (
     AgentBindingRecord,
     AgentContextSelectionRecord,
@@ -69,6 +76,7 @@ from simple_harness.execution.effects import (
     EffectRecord,
     EffectState,
     TaskExecutionEnvelope,
+    effect_request_hash,
 )
 from simple_harness.execution.fences import RunFenceLease
 from simple_harness.execution.provider_invocations import (
@@ -84,6 +92,7 @@ from simple_harness.execution.recovery import (
     WaitBlockerSpec,
     recovery_identity,
 )
+from simple_harness.execution.runtime_audit import RUNTIME_BOUNDARIES
 from simple_harness.execution.uow import (
     RUNTIME_LEASE_NAMESPACE,
     AdmissionRecord,
@@ -114,8 +123,60 @@ from simple_harness.runtime.commands import (
     ContinueCommandIntent,
     StartCommandIntent,
 )
+from simple_harness.runtime.orchestration import (
+    RuntimeStartActivation,
+    RuntimeStartAdmission,
+    RuntimeStartDispatchClaim,
+    RuntimeStartDispatchRecord,
+    RuntimeStartDispatchState,
+    RuntimeStartDisposition,
+    RuntimeStartReceipt,
+    StartInputSchema,
+    VerifiedWorkflowCatalogAuthority,
+    VerifiedWorkflowGraphUnavailable,
+    WorkflowCatalogAuthority,
+    WorkflowCatalogProfileBinding,
+    WorkflowLaunchRequest,
+    WorkflowLaunchTicket,
+    WorkflowSpawnContinuationClaim,
+    WorkflowSpawnContinuationReady,
+    WorkflowSpawnIssueAuthority,
+    WorkflowSpawnOrigin,
+    WorkflowSpawnReadyActivation,
+    WorkflowSpawnReadyActivationState,
+    _create_verified_workflow_launch_ticket,
+    _create_workflow_spawn_ready_activation,
+)
+from simple_harness.runtime.start_snapshot import StartSnapshot
+from simple_harness.runtime.workflow_spawn import (
+    ChildStartDispatchRef,
+    WorkflowChildWaitBinding,
+    WorkflowSpawnChildControlKind,
+    _create_workflow_spawn_admission_outcome,
+    _create_workflow_spawn_child_control,
+    _create_workflow_spawn_result,
+    _create_workflow_spawn_tool_outcome,
+)
+from simple_harness.workflow.execution_ports import (
+    PrecreatedStartAction,
+    WorkflowRecoveryReceiptKind,
+    WorkflowRetryWake,
+    WorkflowTerminalOutcome,
+)
+from simple_harness.workflow.native import (
+    NativeWorkflowExecutable,
+    TerminalProjectionPrepareReceipt,
+)
 
+from . import context_use
+from .audit_witness import record_claim_witness, record_event_witness
+from .base_agent import batches, control, delegations, history, turns
+from .command_audit import record_command_event
+from .context_use import prepare, read_grant, require_handoff, verify_terminal, view
+from .context_use_requirements import bind, require, validate_recovery
+from .delivery_audit import handoff, settle_attempt
 from .delivery_audit import record_version as _delivery_audit_version
+from .memory_port_audit import record as record_memory_audit
 
 if TYPE_CHECKING:
     from simple_harness.execution.memory_outbox import CommittedTurnSpec
@@ -375,7 +436,6 @@ class _SqliteWorkflowTransaction:
                     now,
                 ),
             )
-            from .audit_witness import record_event_witness
 
             record_event_witness(self.connection, event_id)
             outcome = cast(
@@ -408,7 +468,6 @@ class _SqliteWorkflowTransaction:
                     now,
                 ),
             )
-            from .audit_witness import record_event_witness
 
             record_event_witness(self.connection, event_id)
             outcome = {"event_id": event_id, "durable_seq": sequence}
@@ -556,8 +615,6 @@ def _insert_committed_turn(
             now,
         ),
     )
-
-    from .memory_port_audit import record as record_memory_audit
 
     record_memory_audit(connection, intent.intent_id, operation="created", now=now)
 
@@ -879,7 +936,6 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
         self._context_use_configured = True
 
     def validate_context_use_recovery(self):
-        from .context_use_requirements import validate_recovery
 
         with self.database.transaction(read_only=True) as connection:
             validate_recovery(connection, self._context_use_scope)
@@ -970,7 +1026,6 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
             return read_page(reader, command_id=command_id, cursor=cursor)
 
     def _audit_operation_head(self, connection, kind, identity, now):
-        from simple_harness.execution.audit import audit_hash
 
         from .audit import head_fact
 
@@ -1012,8 +1067,6 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
         parent_operation_id=None,
         child_operation_ids=None,
     ):
-        from simple_harness.execution.audit import audit_hash
-        from simple_harness.execution.runtime_audit import RUNTIME_BOUNDARIES
 
         if name not in RUNTIME_BOUNDARIES or state not in {
             "started",
@@ -1063,8 +1116,6 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
         error_code=None,
         registered_tool_name=None,
     ):
-        from simple_harness.execution.audit import audit_error_code, audit_hash, audit_label_syntax
-        from simple_harness.execution.effects import effect_request_hash
 
         if state not in {
             "requested",
@@ -1195,7 +1246,6 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
         now: float,
         max_agents: int | None = None,
     ) -> AgentBindingRecord:
-        from .base_agent import turns
 
         with self.database.transaction() as connection:
             return turns.insert_binding(
@@ -1212,12 +1262,10 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
             )
 
     def read_agent_binding(self, agent_id: str) -> AgentBindingRecord | None:
-        from .base_agent import turns
 
         return turns.read_binding(self.database.connection, _required(agent_id, "agent_id"))
 
     def read_agent_binding_for_run(self, run_id: str) -> AgentBindingRecord | None:
-        from .base_agent import turns
 
         return turns.read_binding_by_run(self.database.connection, _required(run_id, "run_id"))
 
@@ -1236,8 +1284,6 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
         max_pending_inputs: int | None = None,
     ) -> AgentTurnRecord:
         """One short transaction: queued turn row + its ``base_agent_input`` continuation."""
-
-        from .base_agent import turns
 
         def enqueue(connection: sqlite3.Connection, **kwargs: object) -> None:
             self._enqueue_continuation_on_connection(
@@ -1265,24 +1311,19 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
             )
 
     def read_agent_turn(self, turn_id: str) -> AgentTurnRecord | None:
-        from .base_agent import turns
 
         return turns.read_turn(self.database.connection, _required(turn_id, "turn_id"))
 
     def read_agent_turn_by_input(self, agent_id: str, input_id: str) -> AgentTurnRecord | None:
-        from .base_agent import turns
 
         return turns.read_turn_by_input(self.database.connection, agent_id, input_id)
 
     def list_agent_turns(self, agent_id: str) -> tuple[AgentTurnRecord, ...]:
-        from .base_agent import turns
 
         return turns.list_turns(self.database.connection, _required(agent_id, "agent_id"))
 
     def read_pending_agent_turn(self, run_id: str) -> AgentTurnRecord | None:
         """The ``result_pending`` turn of the Agent bound to ``run_id``, if any."""
-
-        from .base_agent import turns
 
         binding = turns.read_binding_by_run(self.database.connection, _required(run_id, "run_id"))
         if binding is None:
@@ -1290,7 +1331,6 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
         return turns.read_pending_turn(self.database.connection, binding.agent_id)
 
     def read_open_agent_turn(self, run_id: str) -> AgentTurnRecord | None:
-        from .base_agent import turns
 
         binding = turns.read_binding_by_run(self.database.connection, _required(run_id, "run_id"))
         if binding is None:
@@ -1307,7 +1347,6 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
         return row is not None
 
     def list_runs_with_open_agent_turns(self) -> tuple[str, ...]:
-        from .base_agent import turns
 
         if not self._base_agent_tables_present():
             return ()
@@ -1315,7 +1354,6 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
         return turns.list_runs_with_open_turns(self.database.connection)
 
     def read_agent_turn_result(self, turn_id: str) -> AgentTurnResultRecord | None:
-        from .base_agent import turns
 
         return turns.read_result(self.database.connection, _required(turn_id, "turn_id"))
 
@@ -1333,8 +1371,6 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
         max_per_turn: int | None = None,
     ) -> AgentDelegationRecord:
         """Pre-fence the child identity and record the delegation (closure E1/E2)."""
-
-        from .base_agent import delegations
 
         with self.database.transaction() as connection:
             return delegations.reserve_delegation(
@@ -1360,8 +1396,6 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
         an already closing/closed Agent gets a receipt that reports the current state
         and does not bump the generation again.
         """
-
-        from .base_agent import control
 
         with self.database.transaction() as connection:
             existing = control.read_control_command(connection, _required(command_id, "command_id"))
@@ -1417,8 +1451,6 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
         outcome path.  A turn that already settled gets an ``already_settled`` receipt.
         """
 
-        from .base_agent import control, turns
-
         with self.database.transaction() as connection:
             existing = control.read_control_command(connection, _required(command_id, "command_id"))
             if existing is not None:
@@ -1457,7 +1489,6 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
             return stored
 
     def read_agent_turn_cancel(self, turn_id: str) -> AgentControlCommandRecord | None:
-        from .base_agent import control
 
         return control.read_pending_cancel_for_turn(
             self.database.connection, _required(turn_id, "turn_id")
@@ -1465,8 +1496,6 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
 
     def mark_agent_closed(self, *, agent_id: str, now: float) -> AgentBindingRecord:
         """``closing -> closed`` only when no turn is still open; returns the binding."""
-
-        from .base_agent import control, turns
 
         with self.database.transaction() as connection:
             if turns.read_open_turn(connection, _required(agent_id, "agent_id")) is not None:
@@ -1476,7 +1505,6 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
             )
 
     def read_agent_control_command(self, command_id: str) -> AgentControlCommandRecord | None:
-        from .base_agent import control
 
         return control.read_control_command(
             self.database.connection, _required(command_id, "command_id")
@@ -1493,7 +1521,6 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
         config_hashes: Sequence[str],
         now: float,
     ) -> tuple[AgentCreationBatchRecord, bool]:
-        from .base_agent import batches
 
         with self.database.transaction() as connection:
             return batches.reserve_batch(
@@ -1510,7 +1537,6 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
     def commit_agent_batch(
         self, *, batch_id: str, receipt: Mapping[str, JsonValue], now: float
     ) -> AgentCreationBatchRecord:
-        from .base_agent import batches
 
         with self.database.transaction() as connection:
             return batches.commit_batch(
@@ -1521,7 +1547,6 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
             )
 
     def read_agent_batch(self, owner_scope: str, batch_key: str) -> AgentCreationBatchRecord | None:
-        from .base_agent import batches
 
         return batches.read_batch(
             self.database.connection,
@@ -1530,7 +1555,6 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
         )
 
     def count_agent_bindings(self, owner_scope: str) -> int:
-        from .base_agent import batches
 
         return batches.count_bindings(
             self.database.connection, _required(owner_scope, "owner_scope")
@@ -1549,7 +1573,6 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
         execution_lease: ExecutionLease,
         now: float,
     ) -> tuple[tuple[AgentJournalRecord, ...], bool, int]:
-        from .base_agent import history
 
         now = _time(now)
         with self.database.transaction() as connection:
@@ -1568,7 +1591,6 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
     def read_agent_journal(
         self, agent_id: str, *, from_seq: int = 1, to_seq: int | None = None
     ) -> tuple[AgentJournalRecord, ...]:
-        from .base_agent import history
 
         return history.read_records(
             self.database.connection,
@@ -1578,7 +1600,6 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
         )
 
     def latest_agent_journal_record(self, agent_id: str, *, kind: str) -> AgentJournalRecord | None:
-        from .base_agent import history
 
         return history.latest_record(
             self.database.connection, _required(agent_id, "agent_id"), kind=kind
@@ -1587,7 +1608,6 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
     def read_agent_journal_group_head(
         self, agent_id: str, *, protocol_group_id: str, before_seq: int
     ) -> tuple[AgentJournalRecord, ...]:
-        from .base_agent import history
 
         return history.read_group_head(
             self.database.connection,
@@ -1597,12 +1617,10 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
         )
 
     def agent_journal_highwater(self, agent_id: str) -> int:
-        from .base_agent import history
 
         return history.highwater(self.database.connection, _required(agent_id, "agent_id"))
 
     def record_agent_context_selection(self, **kwargs: object) -> AgentContextSelectionRecord:
-        from .base_agent import history
 
         with self.database.transaction() as connection:
             return history.record_selection(connection, **kwargs)  # type: ignore[arg-type]
@@ -1616,7 +1634,6 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
         request_tokens: int,
         now: float,
     ) -> AgentContextSelectionRecord:
-        from .base_agent import history
 
         with self.database.transaction() as connection:
             return history.bind_selection_request(
@@ -1629,48 +1646,41 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
             )
 
     def latest_agent_context_selection(self, agent_id: str) -> AgentContextSelectionRecord | None:
-        from .base_agent import history
 
         return history.latest_selection(self.database.connection, _required(agent_id, "agent_id"))
 
     def read_agent_context_selection_by_request(
         self, provider_request_id: str
     ) -> AgentContextSelectionRecord | None:
-        from .base_agent import history
 
         return history.read_selection_by_request(
             self.database.connection, _required(provider_request_id, "provider_request_id")
         )
 
     def upsert_agent_summary(self, **kwargs: object) -> AgentSummaryRecord:
-        from .base_agent import history
 
         with self.database.transaction() as connection:
             return history.upsert_summary(connection, **kwargs)  # type: ignore[arg-type]
 
     def list_agent_summaries(self, agent_id: str) -> tuple[AgentSummaryRecord, ...]:
-        from .base_agent import history
 
         return history.list_summaries(self.database.connection, _required(agent_id, "agent_id"))
 
     # ---- Slice 4: derived indexes (FTS, vectors, index jobs) ----------------------
 
     def read_agent_delegation(self, delegation_id: str) -> AgentDelegationRecord | None:
-        from .base_agent import delegations
 
         return delegations.read_delegation(
             self.database.connection, _required(delegation_id, "delegation_id")
         )
 
     def count_agent_delegations(self, parent_turn_id: str) -> int:
-        from .base_agent import delegations
 
         return delegations.count_for_turn(self.database.connection, parent_turn_id)
 
     def set_agent_delegation_state(
         self, *, delegation_id: str, state: str, now: float
     ) -> AgentDelegationRecord:
-        from .base_agent import delegations
 
         with self.database.transaction() as connection:
             return delegations.set_state(
@@ -1686,7 +1696,6 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
         now: float,
         tool_call_ordinal_from: int | None = None,
     ) -> AgentTurnRecord:
-        from .base_agent import turns
 
         now = _time(now)
         with self.database.transaction() as connection:
@@ -1723,8 +1732,6 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
         fault: FaultHook | None = None,
     ) -> AgentTurnRecord:
         """RESULT_PENDING: freeze the result under the Run lease in its own short transaction."""
-
-        from .base_agent import turns
 
         now = _time(now)
         with self.database.transaction() as connection:
@@ -1765,8 +1772,6 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
         continuation (progress receipt + ``acked``) when a claim is supplied, and
         commits the Run as WAITING (never terminal).  Replays return the stored row.
         """
-
-        from .base_agent import turns
 
         if continuation_claim is not None and receipt_id is None:
             raise ValueError("acking a continuation requires receipt_id")
@@ -1984,7 +1989,6 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
         ).rowcount
         if changed != 1:
             raise UnitOfWorkConflict("command apply stale-result fence failed")
-        from .command_audit import record_command_event
 
         record_command_event(connection, claim.receipt.command_id, "applied", now=now, claim=claim)
 
@@ -3252,7 +3256,6 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
     ) -> WorkflowCheckpoint:
         """Append the public child completion once the Provider Tool batch is closed."""
 
-        from simple_harness.contracts.messages import Message, MessageRole
         from simple_harness.runtime.context import _append_context_in_transaction
 
         run_id = _required(run_id, "run_id")
@@ -3724,7 +3727,6 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
         return result
 
     def record_delivery_handoff(self, delivery_id, *, expected_version, now, fault=None):
-        from .delivery_audit import handoff
 
         with self.database.transaction() as connection:
             handoff(connection, delivery_id, expected_version=expected_version, now=_time(now))
@@ -3816,7 +3818,6 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
             ).rowcount
             if changed != 1:
                 raise DeliveryConflictError("delivery settlement CAS failed")
-            from .delivery_audit import settle_attempt
 
             settle_attempt(
                 connection,
@@ -3902,7 +3903,6 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
             "VALUES (?,?,?,?)",
             (run_id, snapshot_json, snapshot_hash, now),
         )
-        from .context_use_requirements import bind
 
         bind(connection, run_id, self._context_use_scope, "run_start", run_id, snapshot_hash)
         _fault(fault, "root_start.snapshot.after_write")
@@ -3957,8 +3957,6 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
         snapshot_hash = hashlib.sha256(snapshot_json.encode("utf-8")).hexdigest()
         existing = self._run_by_request(execution_session_id, request_id)
         if existing is not None:
-            from .context_use_requirements import require
-
             require(self.database.connection, existing.run_id, self._context_use_scope)
             self._verify_existing_start(
                 existing,
@@ -4485,7 +4483,6 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
                 ).rowcount
                 if changed != 1:
                     raise UnitOfWorkConflict("continuation claim CAS failed")
-                from .audit_witness import record_claim_witness
 
                 record_claim_witness(connection, "continuations", claimed_id, now=now)
                 _fault(fault, "continuation_claim.continuation.after_write")
@@ -5342,7 +5339,6 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
                 """,
                 (child_run_id, snapshot_json, snapshot_hash, now),
             )
-            from .context_use_requirements import bind
 
             bind(
                 connection,
@@ -5791,7 +5787,6 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
             ).rowcount
             if changed != 1:
                 raise UnitOfWorkConflict("child signal claim CAS failed")
-            from .audit_witness import record_claim_witness
 
             record_claim_witness(connection, "child_signals", str(row["signal_id"]), now=now)
             _fault(fault, "child_signal_claim.signal.after_write")
@@ -7079,7 +7074,6 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
         execution_lease: ExecutionLease,
         context_use_grant=None,
     ) -> ProviderInvocationRecord:
-        from . import context_use
 
         existing = self._provider_invocation_by_logical_call(record.run_id, record.request_id.value)
         if existing is not None:
@@ -7097,7 +7091,6 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
                 existing = _provider_invocation_record(existing_row)
                 self._verify_existing_context_use(existing, context_use_grant)
                 return existing
-            from .context_use_requirements import require
 
             require(connection, record.run_id.value, self._context_use_scope)
             if context_use_grant is None and self._context_use_scope is not None:
@@ -7182,7 +7175,6 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
         return stored
 
     def _verify_existing_context_use(self, record, grant):
-        from . import context_use
 
         original = context_use.read_attempt(self.database.connection, record.invocation_id, 1)
         if original is None:
@@ -7198,22 +7190,18 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
             raise UnitOfWorkConflict("context_use_claim_binding_differs")
 
     def prepare_provider_context_use(self, attempt, *, execution_lease, now, retry=False):
-        from .context_use import prepare
 
         return prepare(self, attempt, execution_lease, now, retry=retry)
 
     def read_provider_context_use_grant(self, invocation_id, handoff_ordinal):
-        from .context_use import read_grant
 
         return read_grant(self.database.connection, invocation_id, handoff_ordinal)
 
     def read_provider_context_use(self, run_id, request_id):
-        from .context_use import view
 
         return view(self, run_id, request_id)
 
     def verify_provider_context_use_terminal(self, run_id, request_id, checkpoint, lease, now):
-        from .context_use import verify_terminal
 
         return verify_terminal(self, run_id, request_id, checkpoint, lease, now)
 
@@ -7249,7 +7237,6 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
             ).fetchone()
             if invocation_run is None or str(invocation_run["run_id"]) != execution_lease.run_id:
                 raise UnitOfWorkConflict("provider handoff lease belongs to another Run")
-            from .context_use import require_handoff
 
             current = self.read_provider_invocation(invocation_id)
             require_handoff(self, connection, current, execution_lease, handed_off_at)
@@ -7549,7 +7536,6 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
             self._require_runtime_lease(connection, execution_lease, now=now)
             if execution_lease.run_id != record.run_id.value:
                 raise UnitOfWorkConflict("Provider retry lease belongs to another Run")
-            from . import context_use
 
             protected = context_use.read_attempt(connection, record.invocation_id, 1)
             if protected is not None:
@@ -8015,7 +8001,6 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
             """,
             (event_id, run_id, sequence, kind, canonical_json(payload), now),
         )
-        from .audit_witness import record_event_witness
 
         record_event_witness(connection, event_id)
 
@@ -8438,11 +8423,6 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
         ttl_seconds: float,
         fault: FaultHook | None = None,
     ) -> PrecreatedStartDispatch:
-        from simple_harness.runtime.start_snapshot import StartSnapshot
-        from simple_harness.workflow.execution_ports import (
-            PrecreatedStartAction,
-            PrecreatedStartDispatch,
-        )
 
         if ttl_seconds <= 0:
             raise ValueError("ttl_seconds must be positive")
@@ -8630,11 +8610,6 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
         ttl_seconds: float,
         fault: FaultHook | None = None,
     ) -> PrecreatedStartDispatch:
-        from simple_harness.workflow.execution_ports import (
-            PrecreatedStartAction,
-            PrecreatedStartDispatch,
-            WorkflowRecoveryReceiptKind,
-        )
 
         del ttl_seconds
         tx = self._assert_open_workflow_transaction(transaction)
@@ -9334,7 +9309,6 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
         signal_id = None if policy is AttachmentPolicy.DETACHED else f"{identity}:signal"
         event_id = f"{identity}:event"
         receipt_id = f"{identity}:receipt"
-        from simple_harness.workflow.native import NativeWorkflowExecutable
 
         terminal_state_value: Mapping[str, object] = (
             output if isinstance(output, Mapping) else {"values": {}}
@@ -11613,9 +11587,6 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
         fault: FaultHook | None = None,
     ) -> WorkflowCatalogAuthority:
         tx = self._assert_open_workflow_transaction(transaction)
-        from simple_harness.runtime.orchestration import (
-            VerifiedWorkflowCatalogAuthority,
-        )
 
         if (
             type(authority) is not VerifiedWorkflowCatalogAuthority
@@ -11712,8 +11683,6 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
         now: float,
         require_effect_fence: bool = True,
     ) -> str:
-        from simple_harness.execution.effects import EffectState
-        from simple_harness.runtime.orchestration import WorkflowSpawnIssueAuthority
 
         if not isinstance(authority, WorkflowSpawnIssueAuthority):
             raise TypeError("issue_authority must be a WorkflowSpawnIssueAuthority")
@@ -12266,9 +12235,6 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
     def read_spawn_ready_blocker(
         self, ready: WorkflowSpawnContinuationReady
     ) -> WaitBlockerRecord | None:
-        from simple_harness.runtime.orchestration import (
-            WorkflowSpawnContinuationReady,
-        )
 
         if not isinstance(ready, WorkflowSpawnContinuationReady):
             raise TypeError("ready must be a WorkflowSpawnContinuationReady")
@@ -12311,10 +12277,6 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
         ttl_seconds: float,
         fault: FaultHook | None = None,
     ) -> WorkflowSpawnReadyActivation:
-        from simple_harness.runtime.orchestration import (
-            WorkflowSpawnReadyActivationState,
-            _create_workflow_spawn_ready_activation,
-        )
 
         tx = self._assert_open_workflow_transaction(transaction)
         owner_id = _required(owner_id, "owner_id")
@@ -12614,10 +12576,6 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
         ttl_seconds: float,
         fault: FaultHook | None = None,
     ) -> WorkflowSpawnReadyActivation:
-        from simple_harness.runtime.orchestration import (
-            WorkflowSpawnReadyActivation,
-            WorkflowSpawnReadyActivationState,
-        )
 
         tx = self._assert_open_workflow_transaction(transaction)
         if not isinstance(prior, WorkflowSpawnReadyActivation):
@@ -13754,10 +13712,6 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
             ):
                 raise UnitOfWorkConflict("workflow spawn graph-unavailable evidence differs")
         elif evidence_kind == "workflow_parent_terminal_before_spawn":
-            from simple_harness.workflow.execution_ports import (
-                WorkflowTerminalOutcome,
-            )
-
             terminal = self._read_workflow_terminal_outcome(
                 tx.connection, str(completion["parent_run_id"])
             )
@@ -13786,12 +13740,6 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
         transaction: WorkflowTransaction,
         spawn_operation_id: str,
     ) -> WorkflowSpawnAdmissionOutcome | None:
-        from simple_harness.runtime.workflow_spawn import (
-            ChildStartDispatchRef,
-            WorkflowChildWaitBinding,
-            _create_workflow_spawn_admission_outcome,
-            _create_workflow_spawn_result,
-        )
 
         tx = self._assert_open_workflow_transaction(transaction)
         result = await self.read_spawn_continuation_outcome(transaction, spawn_operation_id)
@@ -13880,17 +13828,7 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
         now: float,
         fault: FaultHook | None = None,
     ) -> WorkflowSpawnToolOutcome:
-        from simple_harness.contracts.messages import Message, MessageRole
         from simple_harness.runtime.context import _append_context_in_transaction
-        from simple_harness.runtime.orchestration import RuntimeStartDisposition
-        from simple_harness.runtime.workflow_spawn import (
-            ChildStartDispatchRef,
-            WorkflowChildWaitBinding,
-            WorkflowSpawnChildControlKind,
-            _create_workflow_spawn_child_control,
-            _create_workflow_spawn_result,
-            _create_workflow_spawn_tool_outcome,
-        )
 
         tx = self._assert_open_workflow_transaction(transaction)
         if (
@@ -14628,9 +14566,6 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
         now: float,
         fault: FaultHook | None = None,
     ) -> ToolResult:
-        from simple_harness.runtime.orchestration import (
-            VerifiedWorkflowGraphUnavailable,
-        )
 
         tx = self._assert_open_workflow_transaction(transaction)
         existing = await self.read_spawn_continuation_outcome(
@@ -14901,11 +14836,6 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
         now: float,
         fault: FaultHook | None = None,
     ) -> ToolResult:
-        from simple_harness.runtime.orchestration import (
-            WorkflowSpawnContinuationClaim,
-            WorkflowSpawnContinuationReady,
-        )
-        from simple_harness.workflow.execution_ports import WorkflowTerminalOutcome
 
         tx = self._assert_open_workflow_transaction(transaction)
         if not isinstance(
@@ -15373,12 +15303,6 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
         now: float,
         fault: FaultHook | None = None,
     ) -> RuntimeStartAdmission:
-        from simple_harness.runtime.orchestration import (
-            RuntimeStartActivation,
-            RuntimeStartAdmission,
-            RuntimeStartDispatchClaim,
-            RuntimeStartDisposition,
-        )
 
         tx = self._assert_open_workflow_transaction(transaction)
         ticket_row = tx.connection.execute(
@@ -15639,7 +15563,6 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
         run_version: int,
         resume_row: sqlite3.Row | None,
     ):
-        from simple_harness.workflow.execution_ports import WorkflowRetryWake
 
         if resume_row is None or str(resume_row["phase"]) != "retry_wait":
             return None
@@ -15751,7 +15674,6 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
 
     @staticmethod
     def _read_workflow_terminal_outcome(connection: sqlite3.Connection, run_id: str):
-        from simple_harness.workflow.execution_ports import WorkflowTerminalOutcome
 
         row = connection.execute(
             "SELECT * FROM workflow_terminal_receipts WHERE run_id=?", (run_id,)
@@ -15780,7 +15702,6 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
     def _verify_workflow_terminal_unchecked(
         connection: sqlite3.Connection, outcome: object
     ) -> bool:
-        from simple_harness.workflow.execution_ports import WorkflowTerminalOutcome
 
         if not isinstance(outcome, WorkflowTerminalOutcome):
             return False
@@ -16169,15 +16090,6 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
         now: float,
         fault: FaultHook | None,
     ) -> RuntimeStartAdmission:
-        from simple_harness.runtime.orchestration import (
-            RuntimeStartActivation,
-            RuntimeStartAdmission,
-            RuntimeStartDisposition,
-        )
-        from simple_harness.workflow.execution_ports import (
-            WorkflowRecoveryReceiptKind,
-            WorkflowRecoveryWork,
-        )
 
         run_id = str(receipt_row["run_id"])
         receipt = _runtime_start_receipt(receipt_row)
@@ -16531,7 +16443,6 @@ def _workflow_catalog_profiles_json(authority: WorkflowCatalogAuthority) -> str:
 
 
 def _workflow_catalog_profile_json(item: object) -> dict[str, JsonValue]:
-    from simple_harness.runtime.orchestration import WorkflowCatalogProfileBinding
 
     if not isinstance(item, WorkflowCatalogProfileBinding):
         raise TypeError("workflow catalog profile binding must be typed")
@@ -16565,10 +16476,6 @@ def _validate_workflow_page_limit(limit: int) -> None:
 
 
 def _workflow_catalog_authority(row: sqlite3.Row) -> WorkflowCatalogAuthority:
-    from simple_harness.runtime.orchestration import (
-        WorkflowCatalogAuthority,
-        WorkflowCatalogProfileBinding,
-    )
 
     raw_profiles = json.loads(str(row["canonical_profiles"]))
     if not isinstance(raw_profiles, list):
@@ -16626,7 +16533,6 @@ def _workflow_catalog_authority(row: sqlite3.Row) -> WorkflowCatalogAuthority:
 
 
 def _start_input_schema_from_json(value: object):  # type: ignore[no-untyped-def]
-    from simple_harness.runtime.orchestration import StartInputSchema
 
     raw = _json_object(value, "start_input_schema")
     return StartInputSchema(
@@ -16675,10 +16581,6 @@ def _workflow_launch_request_json(
 
 
 def _workflow_launch_request_from_json(value: object) -> WorkflowLaunchRequest:
-    from simple_harness.runtime.orchestration import (
-        WorkflowLaunchRequest,
-        WorkflowSpawnOrigin,
-    )
 
     raw = _json_object(value, "workflow launch request")
     expected_fields = {
@@ -16766,7 +16668,6 @@ def _workflow_launch_request_from_json(value: object) -> WorkflowLaunchRequest:
 
 
 def _workflow_launch_ticket(row: sqlite3.Row) -> WorkflowLaunchTicket:
-    from simple_harness.runtime.orchestration import WorkflowLaunchTicket
 
     return WorkflowLaunchTicket(
         ticket_receipt_id=str(row["ticket_receipt_id"]),
@@ -16780,7 +16681,6 @@ def _workflow_launch_ticket(row: sqlite3.Row) -> WorkflowLaunchTicket:
 def _workflow_spawn_continuation_claim(
     row: sqlite3.Row,
 ) -> WorkflowSpawnContinuationClaim:
-    from simple_harness.runtime.orchestration import WorkflowSpawnContinuationClaim
 
     return WorkflowSpawnContinuationClaim(
         spawn_operation_id=str(row["operation_id"]),
@@ -16801,7 +16701,6 @@ def _workflow_spawn_continuation_claim(
 def _workflow_spawn_continuation_ready(
     row: sqlite3.Row,
 ) -> WorkflowSpawnContinuationReady:
-    from simple_harness.runtime.orchestration import WorkflowSpawnContinuationReady
 
     return WorkflowSpawnContinuationReady(
         ready_receipt_id=str(row["ready_receipt_id"]),
@@ -16910,10 +16809,6 @@ def _workflow_spawn_ready_activation(
     connection: sqlite3.Connection,
     row: sqlite3.Row,
 ) -> WorkflowSpawnReadyActivation:
-    from simple_harness.runtime.orchestration import (
-        WorkflowSpawnReadyActivationState,
-        _create_workflow_spawn_ready_activation,
-    )
 
     canonical_hash = _workflow_spawn_activation_hash(
         activation_receipt_id=str(row["activation_receipt_id"]),
@@ -17032,9 +16927,6 @@ def _workflow_spawn_ready_activation(
 def _verified_workflow_launch_ticket(
     row: sqlite3.Row,
 ) -> VerifiedWorkflowLaunchTicket:
-    from simple_harness.runtime.orchestration import (
-        _create_verified_workflow_launch_ticket,
-    )
 
     fields = (
         "ticket_receipt_id",
@@ -17290,7 +17182,6 @@ def _verified_workflow_launch_ticket(
 
 
 def _runtime_start_receipt(row: sqlite3.Row) -> RuntimeStartReceipt:
-    from simple_harness.runtime.orchestration import RuntimeStartReceipt
 
     return RuntimeStartReceipt(
         ticket_receipt_id=str(row["ticket_receipt_id"]),
@@ -17307,7 +17198,6 @@ def _runtime_start_receipt(row: sqlite3.Row) -> RuntimeStartReceipt:
 def _runtime_start_dispatch_claim(
     row: sqlite3.Row,
 ) -> RuntimeStartDispatchClaim:
-    from simple_harness.runtime.orchestration import RuntimeStartDispatchClaim
 
     return RuntimeStartDispatchClaim(
         claim_id=str(row["claim_id"]),
@@ -17321,10 +17211,6 @@ def _runtime_start_dispatch_claim(
 def _runtime_start_dispatch_record(
     row: sqlite3.Row,
 ) -> RuntimeStartDispatchRecord:
-    from simple_harness.runtime.orchestration import (
-        RuntimeStartDispatchRecord,
-        RuntimeStartDispatchState,
-    )
 
     return RuntimeStartDispatchRecord(
         claim_id=str(row["claim_id"]),
@@ -17339,7 +17225,6 @@ def _runtime_start_dispatch_record(
 
 
 def _runtime_start_activation(runtime: sqlite3.Row, fence: sqlite3.Row) -> RuntimeStartActivation:
-    from simple_harness.runtime.orchestration import RuntimeStartActivation
 
     run_id = str(runtime["run_id"])
     return RuntimeStartActivation(
@@ -17392,7 +17277,6 @@ def _validate_runtime_start_binding(
     request: StartAdmissionRequest,
     snapshot: StartSnapshot,
 ) -> None:
-    from simple_harness.runtime.start_snapshot import StartSnapshot
 
     if not verified._is_sdk_verified():
         raise UnitOfWorkConflict("workflow launch ticket verification was forged")
@@ -17916,7 +17800,6 @@ def _wait_activation_receipt(row: sqlite3.Row) -> WaitActivationReceipt:
 
 
 def _terminal_projection_prepare(row: sqlite3.Row):  # type: ignore[no-untyped-def]
-    from simple_harness.workflow.native import TerminalProjectionPrepareReceipt
 
     return TerminalProjectionPrepareReceipt(
         operation_id=str(row["operation_id"]),

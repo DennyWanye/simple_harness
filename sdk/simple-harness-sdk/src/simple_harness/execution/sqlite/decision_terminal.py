@@ -16,6 +16,8 @@ from simple_harness.execution.effects import effect_request_hash
 from simple_harness.execution.uow import UnitOfWorkConflict
 from simple_harness.tools.authorization import sdk_authorization_receipt
 
+from .audit import terminal_evidence
+
 _TERMINALS = ("run.completed", "run.failed", "run.cancelled")
 _ORIGIN = "authorization_expiry_recovery_v1"
 
@@ -378,7 +380,6 @@ def recover(uow, connection, witness, *, now, fault=None):
             )
             if fault:
                 fault(kind + ".after_write")
-    from .audit import terminal_evidence
 
     run = connection.execute("SELECT * FROM runs WHERE run_id=?", (run_id,)).fetchone()
     return terminal_evidence(connection, run)

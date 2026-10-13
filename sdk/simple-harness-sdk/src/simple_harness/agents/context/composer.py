@@ -18,9 +18,10 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import cast
 
-from simple_harness.contracts import FrozenJsonValue, canonical_json
+from simple_harness.contracts import FrozenJsonValue, canonical_json, thaw_json
 from simple_harness.contracts.messages import Message, MessageRole
 from simple_harness.execution.base_agent import AgentJournalRecord
+from simple_harness.runtime.context import _message
 
 from .protocol_groups import ContextUnit
 
@@ -89,8 +90,6 @@ def structural_summary(
 
 
 def _message_of(record: AgentJournalRecord) -> Message:
-    from simple_harness.contracts import thaw_json
-    from simple_harness.runtime.context import _message
 
     message = _message(thaw_json(record.message_json))
     if record.kind == "assistant":

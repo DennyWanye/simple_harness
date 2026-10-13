@@ -11,6 +11,8 @@ validation evidence, and completion signaling.
 from __future__ import annotations
 
 import hashlib
+import json
+import math
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import InitVar, dataclass
@@ -66,8 +68,6 @@ def _digest(value: object, name: str) -> str:
 def _json_mapping(value: Mapping[str, Any], name: str) -> Mapping[str, JsonValue]:
     """Validate and freeze a JSON mapping."""
     try:
-        import json
-
         payload = json.loads(canonical_json(dict(value)))
     except (TypeError, ValueError) as exc:
         raise CapabilityBuildError(
@@ -128,8 +128,6 @@ class CapabilityBuildSearchEvidence:
                 "invalid_builder_payload",
                 "hit_count must be non-negative",
             )
-
-        import math
 
         if self.best_executable_score is not None and not math.isfinite(
             float(self.best_executable_score)
@@ -804,7 +802,6 @@ class CapabilityBuildCompletion:
     @classmethod
     def from_value(cls, value: object) -> CapabilityBuildCompletion:
         """Parse completion from child terminal value (JSON string or object)."""
-        import json
 
         payload: object = value
         if isinstance(payload, str):

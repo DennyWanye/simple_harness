@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import math
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Protocol, runtime_checkable
@@ -46,12 +47,9 @@ class AuthorizationRequest:
             raise ValueError("expires_at must be finite and non-negative")
         metadata = dict(self.metadata)
         frozen = freeze_json(metadata)
-        if not isinstance(frozen, dict):
-            # freeze_json currently preserves Mapping, but keep this boundary explicit.
-            from collections.abc import Mapping
-
-            if not isinstance(frozen, Mapping):
-                raise TypeError("authorization metadata must be an object")
+        # freeze_json currently preserves Mapping, but keep this boundary explicit.
+        if not isinstance(frozen, dict) and not isinstance(frozen, Mapping):
+            raise TypeError("authorization metadata must be an object")
         object.__setattr__(self, "metadata", frozen)
 
 

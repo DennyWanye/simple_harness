@@ -32,6 +32,7 @@ from . import catalogue as cat
 from . import store
 from .codec import canonical, check, validate
 from .errors import ArpError
+from .mission_sources import owner_contract_for, read_record
 from .pins import Pin
 from .ports import ScriptRun, ScriptRunReceipt
 from .rules import effective_permissions
@@ -89,7 +90,6 @@ class SkillUseService:
             return None
         if self.session_mission is not None:
             return self.session_mission(session)
-        from .mission_sources import read_record
 
         record = read_record(self.uow.database.connection, session.session_id)
         mission = None if record is None else dict(record.get("sources") or {}).get("mission_id")
@@ -171,7 +171,6 @@ class SkillUseService:
         ), tool_snapshot
 
     def _owner_contract(self, session: store.SessionRow) -> Pin:
-        from .mission_sources import owner_contract_for
 
         return owner_contract_for(self.uow.database.connection, session)
 

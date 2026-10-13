@@ -4,6 +4,7 @@ import json
 
 from simple_harness.contracts import canonical_json
 from simple_harness.execution.audit import RunAuditUnavailable, RunOperationAuditV1, audit_hash
+from simple_harness.execution.delivery import DeliveryConflictError
 
 KIND = "audit.delivery.v1"
 
@@ -68,7 +69,6 @@ def record_version(connection, identity, *, now, operation):
 
 
 def handoff(connection, identity, *, expected_version, now):
-    from simple_harness.execution.delivery import DeliveryConflictError
 
     row = _row(connection, identity)
     if row["state"] != "claimed" or row["version"] != expected_version:

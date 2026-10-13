@@ -29,6 +29,7 @@ from typing import Any
 from simple_harness.contracts import RunId
 from simple_harness.contracts.messages import Message, MessageRole
 from simple_harness.execution.base_agent import AgentJournalRecord
+from simple_harness.execution.provider_invocations import provider_request_fingerprint
 from simple_harness.providers import ProviderRequest
 from simple_harness.providers.errors import ProviderRequestRejectedError
 from simple_harness.runtime.context import ContextSnapshot
@@ -752,7 +753,6 @@ class ArpContextPort(JournalContextPort):
             replay_reasoning=self.replay_reasoning,
         )
         wire = replace(request, messages=restored)
-        from simple_harness.execution.provider_invocations import provider_request_fingerprint
 
         if provider_request_fingerprint(wire) != frozen.planned_request_hash:
             raise ArpError(

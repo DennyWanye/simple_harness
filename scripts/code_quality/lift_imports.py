@@ -522,15 +522,30 @@ def analyse_file(path: Path, me: str, graph, patched: set[str], kinds: set[str],
     return src, tree, decisions, plans
 
 
-def rewrite(path: Path, src: str, tree: ast.Module, decisions, plans) -> int:
+def _abs_key(st: ast.Import | ast.ImportFrom, alias: ast.alias, me: str, path: Path) -> str:
+    base = absolute_base(st, me, path) if isinstance(st, ast.ImportFrom) else ""
+    return f"{base}:{alias.name}:{alias.asname}"
+
+
+def rewrite(path: Path, me: str, src: str, tree: ast.Module, decisions, plans) -> int:
     lift = [d for d in decisions if d[1] in ("lift", "attr")]
     if not lift:
         return 0
     lines = src.splitlines(keepends=True)
     existing_top = {ast.unparse(st) for st in tree.body if isinstance(st, (ast.Import, ast.ImportFrom))}
+    # 模块顶层（不含 TYPE_CHECKING 块）已有的同一导入：函数内重复导入的名字不再新加
+    top_keys = {_abs_key(st, a, me, path) for st in tree.body if isinstance(st, (ast.Import, ast.ImportFrom))
+                for a in st.names}
     new_imports: list[str] = []
     for st, verdict, *_ in lift:
-        text = plans[id(st)][0] if verdict == "attr" else ast.unparse(st)
+        if verdict == "attr":
+            text = plans[id(st)][0]
+        else:
+            names = [a for a in st.names if _abs_key(st, a, me, path) not in top_keys]
+            if not names:
+                continue
+            node = ast.ImportFrom(st.module, names, st.level) if isinstance(st, ast.ImportFrom) else ast.Import(names)
+            text = ast.unparse(node)
         if text not in existing_top and text not in new_imports:
             new_imports.append(text)
     # 模块属性方案：名字改成"模块.名字"（列号是 UTF-8 字节偏移，从后往前改）
@@ -618,14 +633,15 @@ def main() -> int:
             stats[f"{verdict}:{reason}"] += 1
             if a.verbose:
                 print(f"{verdict} {path.relative_to(base)}:{st.lineno} {reason} {ast.unparse(st)}")
-        if not a.dry_run and rewrite(path, src, tree, decisions, plans):
+        if not a.dry_run and rewrite(path, me, src, tree, decisions, plans):
             changed.append(path)
     for k, v in sorted(stats.items(), key=lambda kv: -kv[1]):
         print(f"{v:5d} {k}")
     if changed:
         rels = [str(p) for p in changed]
+        # I001 排序；SIM102：去掉导入后外层 if 只剩一个内层 if，合并成一个（安全修复，不改行为）
         subprocess.run([str(RUFF), "check", "--config", str(REPO / "scripts/code_quality/ruff.toml"),
-                        "--select", "I001", "--fix", "-q", *rels], check=False)
+                        "--select", "I001,SIM102", "--fix", "-q", *rels], check=False)
         subprocess.run([str(RUFF), "format", "--config", str(REPO / "scripts/code_quality/ruff.toml"),
                         "-q", *rels], check=False)
         print(f"改写文件 {len(changed)} 个")

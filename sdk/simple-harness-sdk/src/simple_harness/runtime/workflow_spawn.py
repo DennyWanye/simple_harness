@@ -24,6 +24,7 @@ from .orchestration import (
     WorkflowSpawnOrigin,
     WorkflowSpawnReadyActivation,
     WorkflowSpawnSelection,
+    workflow_spawn_operation_id,
 )
 from .start_snapshot import RunStart
 
@@ -301,7 +302,6 @@ def _create_workflow_spawn_invocation(
     catalog_selection: WorkflowCatalogSelectionSnapshot,
     issue_authority: WorkflowSpawnIssueAuthority,
 ) -> WorkflowSpawnInvocation:
-    from .orchestration import workflow_spawn_operation_id
 
     if spawn_operation_id != workflow_spawn_operation_id(origin):
         raise ValueError("workflow spawn operation identity differs")

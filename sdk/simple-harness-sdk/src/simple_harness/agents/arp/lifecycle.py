@@ -29,6 +29,7 @@ from .codec import check
 from .errors import ArpError
 from .pins import Pin
 from .ports import PendingAssuranceAcceptance, TrustedCaller
+from .shared_catalogue import managed_elsewhere
 from .strict import digest, plain
 
 TRIAL_TTL_MS = 24 * 3600 * 1000
@@ -56,8 +57,6 @@ class SkillLifecycleService:
 
     def _owner_only(self) -> None:
         if self.managed_by is not None:
-            from .shared_catalogue import managed_elsewhere
-
             raise managed_elsewhere()
 
     def __post_init__(self) -> None:

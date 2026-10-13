@@ -10,6 +10,7 @@ from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from simple_harness.agents.wire import continuation_capability_of
 from simple_harness.execution.budget import BudgetPolicy, FrozenPriceEstimator
 from simple_harness.execution.context_authority import RunContextAuthorityPort, ToolCatalogSnapshot
 from simple_harness.execution.context_staging import ContextStagingRepository
@@ -33,7 +34,9 @@ from simple_harness.tools import (
     AuthorizationResult,
     EffectExecutor,
     FunctionTool,
+    ToolCall,
     ToolRegistry,
+    ToolSpec,
 )
 from simple_harness.tools.reconciliation import (
     ReconciliationObservation,
@@ -233,7 +236,6 @@ class _ConsumerProviderAdapter:
     @property
     def continuation_capability(self):
         """The consumer provider's declared continuation (thinking mode), else the default."""
-        from simple_harness.agents.wire import continuation_capability_of
 
         return continuation_capability_of(self._port)
 
@@ -262,7 +264,6 @@ class _ConsumerToolExecutorAdapter:
 
     def build_registry(self) -> ToolRegistry:
         """Build tool registry with placeholder specs."""
-        from simple_harness.tools import ToolSpec
 
         tools = []
 
@@ -285,7 +286,6 @@ class _ConsumerToolExecutorAdapter:
             # Create handler closure
             def make_handler(tool_name: str):
                 async def handler(arguments: dict, context):  # type: ignore[no-untyped-def]
-                    from simple_harness.tools import ToolCall
 
                     call = ToolCall(context.call_id, tool_name, arguments)
                     tool_ctx = {

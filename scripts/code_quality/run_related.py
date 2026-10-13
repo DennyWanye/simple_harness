@@ -9,6 +9,7 @@
 """
 from __future__ import annotations
 
+import json
 import os
 import sys
 import tempfile
@@ -53,10 +54,16 @@ def main() -> int:
             bad += failed
             if status not in ("exit=0", "exit=5", "STALL") and not failed:
                 bad.append(f"{f}::<{status}>  " + log.read_text()[-600:].replace("\n", " | "))
+    # 全量回归里已经失败的用例（CQ_KNOWN 指向那次的 summary.json）单列为"已知失败"，不算本批新失败
+    known: set[str] = set()
+    if os.environ.get("CQ_KNOWN"):
+        summary = json.loads(Path(os.environ["CQ_KNOWN"]).read_text(encoding="utf-8"))
+        known = set(summary.get("host" if tree == "backend" else "sdk", {}).get("failed", []))
     for b in bad:
-        print("失败", b)
-    print(f"相关测试：{len(files)} 个文件，失败 {len(bad)}")
-    return 1 if bad else 0
+        print("已知失败（全量回归已有）" if b in known else "失败", b)
+    new = [b for b in bad if b not in known]
+    print(f"相关测试：{len(files)} 个文件，失败 {len(new)}" + (f"（另有已知失败 {len(bad) - len(new)}）" if len(new) < len(bad) else ""))
+    return 1 if new else 0
 
 
 if __name__ == "__main__":

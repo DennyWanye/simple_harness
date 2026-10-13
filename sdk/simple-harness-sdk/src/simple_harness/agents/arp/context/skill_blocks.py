@@ -23,6 +23,7 @@ from .. import catalogue as cat
 from .. import store
 from ..errors import ArpError
 from ..pins import Pin
+from ..strict import digest
 
 _SKILL_TAG = re.compile(r"<(/?)skill_instructions", re.IGNORECASE)
 
@@ -162,7 +163,6 @@ def replay_skill_blocks(
 
 
 def _receipt_hash(body: Mapping[str, Any]) -> str:
-    from ..strict import digest
 
     return digest(body)
 

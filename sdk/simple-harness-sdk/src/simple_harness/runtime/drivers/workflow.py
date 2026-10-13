@@ -14,6 +14,7 @@ from simple_harness.execution.uow import RunState
 from simple_harness.providers import CancelToken
 from simple_harness.workflow.contracts import WorkflowContext, WorkflowRunStatus
 from simple_harness.workflow.execution_ports import PrecreatedStartAction
+from simple_harness.workflow.runner import WorkflowRunner
 
 if TYPE_CHECKING:
     from simple_harness.workflow.runner import WorkflowRunner
@@ -53,7 +54,6 @@ class WorkflowRuntimeDriver:
         raise TypeError("WorkflowRuntimeDriver cannot be subclassed")
 
     def __init__(self, runner: WorkflowRunner, *, _token: object) -> None:
-        from simple_harness.workflow.runner import WorkflowRunner
 
         if _token is not _FACTORY_TOKEN:
             raise TypeError("WorkflowRuntimeDriver must be built by the SDK factory")

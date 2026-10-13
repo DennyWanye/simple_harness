@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
@@ -371,7 +372,6 @@ class EvidenceSpanRef:
 
 
 def _canonical_text_digest(value: str) -> str:
-    import hashlib
 
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
@@ -1907,7 +1907,6 @@ def _verify_evidence_span_authority(
         _thaw_object(envelope.sanitized_payload), proposed_observation.json_pointer
     )
     observed_json = thaw_json(cast(FrozenJsonValue, observed_value))
-    import hashlib
 
     observed_hash = hashlib.sha256(canonical_json(observed_json).encode("utf-8")).hexdigest()
     if observed_hash != proposed_observation.value_hash:

@@ -10,6 +10,7 @@ from simple_harness.execution.audit import (
     audit_error_code,
     audit_hash,
 )
+from simple_harness.execution.uow import UnitOfWorkConflict
 
 KIND = "audit.memory_outbox.v1"
 
@@ -81,7 +82,6 @@ def record(connection, identity, *, operation, now, claim=None, receipt=None):
 
 
 def require_actual_claim(connection, claim):
-    from simple_harness.execution.uow import UnitOfWorkConflict
 
     row = _row(connection, claim.intent_id)
     immutable = (
@@ -102,7 +102,6 @@ def require_actual_claim(connection, claim):
 
 
 def begin(connection, claim, now):
-    from simple_harness.execution.uow import UnitOfWorkConflict
 
     row = require_actual_claim(connection, claim)
     if (

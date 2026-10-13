@@ -2,20 +2,35 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import replace
 
+from simple_harness.contracts import RunId, thaw_json
 from simple_harness.execution.audit import (
     RunAuditUnavailable,
     RunAuditUsageV1,
     RunOperationAuditSnapshotV1,
     RunOperationAuditV1,
     RunTerminalAuditEvidenceV1,
+    RunTerminalRecordV1,
     audit_error_code,
     audit_hash,
     audit_label_syntax,
     audit_reference,
 )
+from simple_harness.execution.effects import effect_request_hash
+from simple_harness.execution.provider_invocations import provider_response_from_json
+from simple_harness.execution.runtime_audit import RUNTIME_BOUNDARIES
+from simple_harness.runtime.drivers.react_loop import _internal_effect_identity
+
+from .audit_core import core_operation, core_rows
+from .audit_coverage import recording_coverage
+from .audit_witness import CLAIM_SOURCES
+from .command_audit import command_event_operation
+from .delivery_audit import operations as delivery_operations
+from .memory_port_audit import operations as memory_operations
+from .stage_audit import run_operations as stage_operations
 
 
 def read_snapshot(connection, run_id, limit, *, operation_sink=None):
@@ -131,19 +146,15 @@ def read_snapshot(connection, run_id, limit, *, operation_sink=None):
                     **details,
                 )
             )
-    from .stage_audit import run_operations as stage_operations
 
     for operation in bounded_rows(stage_operations(connection, run_id)):
         operations.append(operation)
-    from .memory_port_audit import operations as memory_operations
 
     for operation in bounded_rows(memory_operations(connection, run_id)):
         operations.append(operation)
-    from .delivery_audit import operations as delivery_operations
 
     for operation in bounded_rows(delivery_operations(connection, run_id)):
         operations.append(operation)
-    from simple_harness.execution.runtime_audit import RUNTIME_BOUNDARIES
 
     runtime_rows = connection.execute(
         "SELECT * FROM run_events WHERE run_id=? AND kind='audit.runtime.v2' "
@@ -189,8 +200,6 @@ def read_snapshot(connection, run_id, limit, *, operation_sink=None):
     )
     for row in bounded_rows(events):
         if row["kind"] == "audit.claim.v2":
-            from .audit_witness import CLAIM_SOURCES
-
             value = json.loads(row["payload_json"])
             if (
                 row["event_id"] != "audit-claim:" + audit_hash(value)
@@ -274,8 +283,6 @@ def read_snapshot(connection, run_id, limit, *, operation_sink=None):
                     else None,
                 )
             )
-    from .audit_core import core_operation, core_rows
-    from .command_audit import command_event_operation
 
     for row in bounded_rows(
         connection.execute(
@@ -287,7 +294,6 @@ def read_snapshot(connection, run_id, limit, *, operation_sink=None):
 
     for table, keys, kind, body in bounded_rows(core_rows(connection, run_id, limit=query_limit)):
         operations.append(core_operation(table, keys, kind, body))
-    from .audit_coverage import recording_coverage
 
     gaps, recording_version = recording_coverage(connection, run_id)
     terminal = terminal_evidence(connection, run)
@@ -330,7 +336,6 @@ def read_snapshot(connection, run_id, limit, *, operation_sink=None):
 
 
 def read_terminal_record(connection, run_id):
-    from simple_harness.execution.audit import RunTerminalRecordV1
 
     run = connection.execute("SELECT * FROM runs WHERE run_id=?", (run_id,)).fetchone()
     if run is None or run["state"] not in {"completed", "failed", "cancelled"}:
@@ -356,7 +361,6 @@ def read_terminal_record(connection, run_id):
 
 
 def terminal_evidence(connection, run):
-    import hashlib
 
     # Child terminal receipts remain their own canonical audit domain; this field
     # is the exact root run.* terminal used by ordinary Host terminal comparisons.
@@ -466,7 +470,6 @@ def _details(row, kind, connection=None):
 
 def _proposals(row):
     """Actual public response calls, including rejected batches with no effect."""
-    from simple_harness.execution.provider_invocations import provider_response_from_json
 
     raw = json.loads(row["response_json"])
     response = provider_response_from_json(raw)
@@ -496,10 +499,6 @@ def _proposals(row):
 
 def _effect_provider_link(connection, effect):
     """Verify the existing ReAct v1 identity, actual response and call bytes."""
-    from simple_harness.contracts import RunId, thaw_json
-    from simple_harness.execution.effects import effect_request_hash
-    from simple_harness.execution.provider_invocations import provider_response_from_json
-    from simple_harness.runtime.drivers.react_loop import _internal_effect_identity
 
     if not effect.get("turn_ordinal"):
         return None, None  # standalone effect: no invented Provider parent

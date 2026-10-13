@@ -6,7 +6,9 @@ from functools import lru_cache
 
 from simple_harness.execution.audit import RunAuditUnavailable, audit_hash
 
-from .stage_audit_schema import STAGE_DDL, STAGE_OBJECTS
+from .command_audit import record_command_event
+from .schema import fresh_descriptor
+from .stage_audit_schema import STAGE_DDL, STAGE_OBJECTS, seed_observed_legacy
 
 AUDIT_SCHEMA_VERSION = 1
 DDL = (
@@ -99,8 +101,6 @@ def _expected_objects(version):
     connection = sqlite3.connect(":memory:")
     try:
         if version == 2:
-            from .schema import fresh_descriptor
-
             connection.executescript(fresh_descriptor().sql)
         for statement in V1_DDL if version == 1 else DDL:
             connection.execute(statement)
@@ -136,10 +136,8 @@ def ensure_audit_schema_on(connection):
         connection.execute(
             "INSERT INTO sdk_audit_schema VALUES (?,?)", (AUDIT_SCHEMA_VERSION, CHECKSUM)
         )
-    from .stage_audit_schema import seed_observed_legacy
 
     seed_observed_legacy(connection)
-    from .command_audit import record_command_event
 
     for row in connection.execute(
         "SELECT command_id FROM conversation_commands c WHERE NOT EXISTS "

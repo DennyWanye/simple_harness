@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from simple_harness.agents.config import AgentConfig, config_hash
+from simple_harness.agents.contracts import AgentNotFound
 from simple_harness.contracts import ExecutionSessionId, RequestId, RunId
 from simple_harness.execution.base_agent import AgentBindingRecord
 from simple_harness.execution.sqlite.base_agent import turns as base_agent_turns
@@ -267,8 +268,6 @@ class NativeCreationService:
         uow = self._runtime.uow
         existing = uow.read_agent_binding(agent_id)
         if existing is not None and existing.owner_scope != owner_scope:
-            from simple_harness.agents.contracts import AgentNotFound
-
             raise AgentNotFound(agent_id)
         if existing is not None and existing.config_hash != config_hash(config):
             raise ValueError("creation_key reused with a different configuration")

@@ -22,6 +22,7 @@ the query has a real embedding).  No mutable whole-library BM25 is used.
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 import secrets
 import sqlite3
@@ -1294,7 +1295,6 @@ def _dump(value: Any) -> str:
 
 
 def _load(text: str) -> Any:
-    import json
 
     return json.loads(text)
 

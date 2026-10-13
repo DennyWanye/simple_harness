@@ -18,7 +18,7 @@ from typing import Any, Protocol
 from simple_harness.providers import CancelToken, ProviderRequest
 from simple_harness.providers.errors import ProviderRequestRejectedError
 
-from .provider_invocations import ProviderInvocationRecord
+from .provider_invocations import ProviderInvocationRecord, provider_request_fingerprint
 
 ProviderHandoffFence = Callable[[str, str], AbstractContextManager[None]]
 
@@ -151,7 +151,6 @@ class LocalProviderAdmission:
         uow: Any,
         execution_lease: object,
     ) -> ProviderAdmissionTicket:
-        from .provider_invocations import provider_request_fingerprint
 
         binding = uow.read_agent_binding_for_run(record.run_id.value)
         turn = uow.read_open_agent_turn(record.run_id.value)

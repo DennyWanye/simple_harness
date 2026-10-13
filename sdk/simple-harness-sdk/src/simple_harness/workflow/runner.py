@@ -28,14 +28,19 @@ from simple_harness.runtime.orchestration import (
     VerifiedWorkflowCatalogAuthority,
     VerifiedWorkflowGraphUnavailable,
     VerifiedWorkflowLaunchTicket,
+    WorkflowCatalogAuthority,
     WorkflowCatalogProfileBinding,
     WorkflowProfileRegistration,
     WorkflowSpawnReadyActivation,
+    _create_verified_workflow_catalog_authority,
+    _create_verified_workflow_graph_unavailable,
+    workflow_catalog_hash,
 )
 from simple_harness.runtime.profiles import ProfileDescriptor
 from simple_harness.runtime.start_snapshot import RunStart, StartSnapshot
 from simple_harness.tools.schema import validate_arguments
 
+from .checkpoint import PendingInterrupt, WorkflowCheckpoint
 from .contracts import WorkflowContext, WorkflowHostServices, WorkflowRunStatus
 from .definition import (
     CompiledWorkflow,
@@ -63,7 +68,12 @@ from .execution_ports import (
     WorkflowRecoveryWork,
     WorkflowTransaction,
 )
-from .recovery import RecoveryRecord, WorkflowRecoveryPort
+from .recovery import (
+    RecoveryRecord,
+    WorkflowRecoveryPort,
+    quarantine_checkpoint,
+    repair_head_projection,
+)
 from .trace import WorkflowTraceEvent, WorkflowTracePort
 
 if TYPE_CHECKING:
@@ -561,11 +571,6 @@ class WorkflowRunner:
         generation: int,
         registrations: tuple[WorkflowProfileRegistration, ...],
     ) -> VerifiedWorkflowCatalogAuthority:
-        from simple_harness.runtime.orchestration import (
-            WorkflowCatalogAuthority,
-            _create_verified_workflow_catalog_authority,
-            workflow_catalog_hash,
-        )
 
         if isinstance(generation, bool) or generation < 1:
             raise ValueError("catalog generation must be positive")
@@ -609,9 +614,6 @@ class WorkflowRunner:
         ticket: VerifiedWorkflowLaunchTicket,
         activation: WorkflowSpawnReadyActivation,
     ) -> VerifiedWorkflowGraphUnavailable:
-        from simple_harness.runtime.orchestration import (
-            _create_verified_workflow_graph_unavailable,
-        )
 
         if type(ticket) is not VerifiedWorkflowLaunchTicket or not ticket._is_sdk_verified():
             raise TypeError("graph proof requires an SDK-verified ticket")
@@ -1621,8 +1623,6 @@ class WorkflowRunner:
         self, run_id: str, context: WorkflowContext | None = None, **_: object
     ) -> WorkflowRunResult:
         """Recover workflow via classify/repair/quarantine pipeline."""
-        from .checkpoint import PendingInterrupt, WorkflowCheckpoint
-        from .recovery import quarantine_checkpoint, repair_head_projection
 
         # Read recovery snapshot to get candidate and checkpoint state
         if not hasattr(self.execution_ports, "recovery"):

@@ -22,10 +22,13 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from simple_harness.execution.sqlite.audit_witness import record_event_witness
+
 from . import PROTOCOL
 from .codec import check
 from .errors import ArpError
 from .pins import Pin
+from .profile import check_policy
 from .strict import canonical, digest, parse_strict
 
 Json = Mapping[str, Any]
@@ -598,7 +601,6 @@ def put_policy_object_locked(
     require_transaction(connection)
     approval_ref.require_kind("authority")
     source_receipt_ref.require_kind("receipt")
-    from .profile import check_policy
 
     value = check_policy(body)
     content_hash = digest(value)
@@ -785,7 +787,6 @@ def append_runtime_event_locked(
         " VALUES (?, ?, ?, ?, ?, ?)",
         (event_id, run_id, sequence, "arp.runtime_event.v1", _json_column(payload), now),
     )
-    from simple_harness.execution.sqlite.audit_witness import record_event_witness
 
     record_event_witness(connection, event_id)
     connection.execute(
@@ -1717,7 +1718,6 @@ def append_original_receipt_locked(
         "INSERT INTO run_events(event_id, run_id, durable_seq, kind, payload_json, created_at) VALUES (?, ?, ?, ?, ?, ?)",
         (event_id, run_id, sequence, f"arp.{kind}.v1", _json_column(payload), now),
     )
-    from simple_harness.execution.sqlite.audit_witness import record_event_witness
 
     record_event_witness(connection, event_id)
     return Pin("receipt", f"{kind}:{receipt_key}", 0, body_hash)

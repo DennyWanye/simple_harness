@@ -9,6 +9,7 @@ Runtime assembly (``build_agent_runtime``) is resolved lazily on attribute acces
 
 from __future__ import annotations
 
+from importlib import import_module
 from typing import Any
 
 from .codec import agent_id_for_run, run_id_for_agent
@@ -47,7 +48,6 @@ def __getattr__(name: str) -> Any:
     module = _LAZY_EXPORTS.get(name)
     if module is None:
         raise AttributeError(f"module 'simple_harness.agents' has no attribute {name!r}")
-    from importlib import import_module
 
     return getattr(import_module(module, __name__), name)
 

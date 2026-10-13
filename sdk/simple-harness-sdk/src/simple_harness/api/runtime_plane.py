@@ -17,6 +17,7 @@ tenant or a path.
 
 from __future__ import annotations
 
+import hashlib
 import inspect
 from collections.abc import Mapping
 from typing import Any
@@ -28,6 +29,7 @@ from simple_harness.agents.arp.errors import ArpError
 from simple_harness.agents.arp.errors import entry as error_entry
 from simple_harness.agents.arp.pins import Pin
 from simple_harness.agents.arp.ports import TrustedCaller
+from simple_harness.agents.arp.profile import check_policy
 from simple_harness.agents.arp.strict import canonical, digest, parse_strict, plain
 
 INLINE_PAYLOAD_MAX = 256 * 1024
@@ -452,7 +454,6 @@ class RuntimePlaneService:
 
         caller = self._caller(caller)
         value = check("ContextPolicySubmit", plain(payload))
-        from simple_harness.agents.arp.profile import check_policy
 
         body = check_policy(value["policy"])
         policy_id = str(body["policy_id"])
@@ -1106,7 +1107,6 @@ _SKILL_STEP_TARGET = {
 
 
 def digest_bytes(data: bytes) -> str:
-    import hashlib
 
     return hashlib.sha256(data).hexdigest()
 

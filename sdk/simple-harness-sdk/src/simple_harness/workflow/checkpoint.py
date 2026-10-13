@@ -11,7 +11,7 @@ import json
 import math
 import sqlite3
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from types import MappingProxyType
 from typing import Protocol, cast
 
@@ -20,7 +20,8 @@ from simple_harness.execution.fences import RunFenceLease
 from simple_harness.execution.sqlite.database import Database
 from simple_harness.execution.uow import ExecutionLease
 
-from .contracts import WorkflowRunStatus
+from .contracts import StatePatch, WorkflowRunStatus
+from .errors import WorkflowNodeError
 from .execution_ports import (
     CheckpointExecutionAdapter,
     ResumeCommitBinding,
@@ -31,6 +32,15 @@ from .execution_ports import (
     WorkflowTransaction,
 )
 from .lease import WorkflowLease
+from .native import (
+    NativeCommitResult,
+    NativeExecution,
+    NativeSnapshotEnvelope,
+    NativeTask,
+    NativeWorkflowExecutable,
+    TerminalProjectionDescriptor,
+    TerminalProjectionPrepareReceipt,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -370,7 +380,6 @@ class SqliteNativeCheckpointStore:
 
     @staticmethod
     def _snapshot_from_row(row: sqlite3.Row):  # type: ignore[no-untyped-def]
-        from .native import NativeSnapshotEnvelope, NativeTask
 
         raw = _strict_object(json.loads(str(row["checkpoint_json"])), "checkpoint")
         frontier_raw = raw.get("frontier", [])
@@ -491,10 +500,6 @@ class SqliteNativeCheckpointStore:
         checkpoint_ns: str,
         checkpoint_id: str | None = None,
     ):  # type: ignore[no-untyped-def]
-        from dataclasses import replace
-
-        from .contracts import StatePatch
-        from .native import NativeExecution
 
         row = self._database.connection.execute(
             "SELECT * FROM workflow_checkpoints WHERE run_id=? AND namespace=? "
@@ -541,8 +546,6 @@ class SqliteNativeCheckpointStore:
             elif kind in {"failure", "engine_failure"}:
                 durable_failure = payload
         if durable_failure is not None:
-            from .errors import WorkflowNodeError
-
             raise WorkflowNodeError(
                 code=cast(str, durable_failure["error_code"]),
                 message_ref=cast(str, durable_failure["message_ref"]),
@@ -929,7 +932,6 @@ class SqliteNativeCheckpointStore:
 
     @staticmethod
     def _projection_receipt(row):  # type: ignore[no-untyped-def]
-        from .native import TerminalProjectionPrepareReceipt
 
         return TerminalProjectionPrepareReceipt(
             operation_id=str(row["operation_id"]),
@@ -1066,7 +1068,6 @@ class SqliteNativeCheckpointStore:
         terminal_projection_prepare_id,
         configurable,
     ):  # type: ignore[no-untyped-def]
-        from .native import NativeCommitResult, NativeSnapshotEnvelope
 
         run_id = cast(str, configurable["run_id"])
         namespace = cast(str, configurable.get("checkpoint_ns", ""))
@@ -1139,11 +1140,6 @@ class SqliteNativeCheckpointStore:
                 raise WorkflowOperationConflict("frozen workflow time authority changed")
             prepare_row: sqlite3.Row | None = None
             if terminal_projection_prepare_id is not None:
-                from .native import (
-                    NativeWorkflowExecutable,
-                    TerminalProjectionDescriptor,
-                )
-
                 prepare_row = connection.execute(
                     "SELECT * FROM terminal_projection_prepares WHERE operation_id=?",
                     (terminal_projection_prepare_id,),

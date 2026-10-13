@@ -24,6 +24,7 @@ from simple_harness.execution.audit import (
 )
 
 from .audit import _opaque_operation, read_snapshot, terminal_evidence
+from .stage_audit import run_stage_cut
 
 FORMAT = 2
 NORMALIZER = "core-terminal-stage-intervals-registered-labels-opaque-refs-v11"
@@ -148,7 +149,6 @@ def open_pages(database, run_id=None, *, page_size=256, command_id=None, stage_i
             )
             try:
                 from .command_audit import command_cut, command_incarnation, read_command_snapshot
-                from .stage_audit import run_stage_cut
 
                 if query_kind == "stage":
                     from .stage_audit import (
@@ -304,7 +304,6 @@ def read_page(database, run_id=None, *, cursor, command_id=None, stage_id=None):
             # cut. Filesystem identity is only a location, never an incarnation.
             with database.transaction(read_only=True) as source:
                 from .command_audit import command_cut, command_incarnation
-                from .stage_audit import run_stage_cut
 
                 if query_kind == "stage":
                     from .stage_audit import stage_cut as command_cut

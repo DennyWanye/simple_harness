@@ -33,6 +33,7 @@ from .base import (
     ProviderUsage,
     Secret,
 )
+from .chat_stream import ChatStream
 from .deepseek_strict import (
     DEEPSEEK_STRICT_ADAPTER_KEY,
     DEEPSEEK_STRICT_TOOL_SCHEMA_MODE,
@@ -425,7 +426,6 @@ class OpenAICompatibleProvider:
         self._raise_for_status(response.status_code)
 
     async def _stream_once(self, request: ProviderRequest) -> ProviderResponse:
-        from .chat_stream import ChatStream
 
         accumulator = ChatStream()
         async with self._client.stream(

@@ -8,7 +8,7 @@ import re
 from dataclasses import asdict, dataclass
 from typing import Protocol
 
-from simple_harness.contracts import RunId, canonical_json
+from simple_harness.contracts import RunId, canonical_json, freeze_json, thaw_json
 
 
 def audit_hash(value: object) -> str:
@@ -249,7 +249,6 @@ class RunTerminalAuditEvidenceV1:
     event_sequence: int
 
     def __post_init__(self):
-        import math
 
         _integer(self.event_sequence)
         if self.event_sequence < 1:
@@ -467,12 +466,10 @@ class RunOperationAuditPageV1:
     metadata: object
 
     def __post_init__(self):
-        from simple_harness.contracts import freeze_json
 
         object.__setattr__(self, "metadata", freeze_json(self.metadata))
 
     def to_json(self):
-        from simple_harness.contracts import thaw_json
 
         return dict(
             schema_version=1,
@@ -504,12 +501,10 @@ class CommandOperationAuditPageV1:
     metadata: object
 
     def __post_init__(self):
-        from simple_harness.contracts import freeze_json
 
         object.__setattr__(self, "metadata", freeze_json(self.metadata))
 
     def to_json(self):
-        from simple_harness.contracts import thaw_json
 
         return dict(
             schema_version=1,
@@ -550,12 +545,10 @@ class ContextStageOperationAuditPageV1:
     metadata: object
 
     def __post_init__(self):
-        from simple_harness.contracts import freeze_json
 
         object.__setattr__(self, "metadata", freeze_json(self.metadata))
 
     def to_json(self):
-        from simple_harness.contracts import thaw_json
 
         return dict(
             schema_version=1,

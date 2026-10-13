@@ -2,7 +2,16 @@
 
 import json
 
+from simple_harness.contracts import RunId, thaw_json
 from simple_harness.execution.audit import RunAuditUnavailable, audit_hash
+from simple_harness.execution.provider_invocations import provider_response_from_json
+from simple_harness.runtime.drivers.react_loop import _internal_effect_identity
+
+from .audit_witness import CLAIM_SOURCES
+from .command_audit import command_coverage
+from .delivery_audit import coverage as delivery_coverage
+from .memory_port_audit import coverage as memory_coverage
+from .stage_audit import run_coverage as stage_coverage
 
 
 def recording_coverage(connection, run_id):
@@ -150,13 +159,11 @@ def recording_coverage(connection, run_id):
         gaps.add("runtime_activation_interval_unverified")
     if activation_events and not supported_epochs:
         gaps.add("driver_or_uow_recording_unverified")
-    from .command_audit import command_coverage
 
     for command in connection.execute(
         "SELECT * FROM conversation_commands WHERE run_id=?", (run_id,)
     ):
         gaps.update(command_coverage(connection, command))
-    from .audit_witness import CLAIM_SOURCES
 
     for table, (key, owner, _) in CLAIM_SOURCES.items():
         for row in connection.execute(f"SELECT * FROM {table} WHERE {owner}=?", (run_id,)):
@@ -217,13 +224,10 @@ def recording_coverage(connection, run_id):
                 )
             if any(item not in inputs for item in expected):
                 gaps.add("operation_boundary_receipt_unverified")
-    from .delivery_audit import coverage as delivery_coverage
 
     gaps.update(delivery_coverage(connection, run_id))
-    from .memory_port_audit import coverage as memory_coverage
 
     gaps.update(memory_coverage(connection, run_id))
-    from .stage_audit import run_coverage as stage_coverage
 
     gaps.update(stage_coverage(connection, run_id))
     return tuple(sorted(gaps)), (2 if birth else None)
@@ -231,9 +235,6 @@ def recording_coverage(connection, run_id):
 
 def _response_coverage(run_id, row, inputs):
     """Every actual proposal has a disposition even when no effect was created."""
-    from simple_harness.contracts import RunId, thaw_json
-    from simple_harness.execution.provider_invocations import provider_response_from_json
-    from simple_harness.runtime.drivers.react_loop import _internal_effect_identity
 
     raw = json.loads(row["response_json"])
     response = provider_response_from_json(raw)

@@ -20,6 +20,7 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, cast
 
 from simple_harness.contracts import freeze_json
+from simple_harness.runtime.orchestration import WorkflowProfileRegistration
 
 from .contracts import (
     ChannelSpec,
@@ -52,6 +53,7 @@ from .errors import (
     WorkflowErrorCode,
     WorkflowNodeError,
 )
+from .native import NativeWorkflowExecutable
 
 if TYPE_CHECKING:
     from simple_harness.runtime.orchestration import WorkflowProfileRegistration
@@ -274,7 +276,6 @@ class WorkflowDefinitionRegistration:
     transaction_owner: object
 
     def __post_init__(self) -> None:
-        from simple_harness.runtime.orchestration import WorkflowProfileRegistration
 
         if not isinstance(self.profile, WorkflowProfileRegistration):
             raise TypeError("profile must be a WorkflowProfileRegistration")
@@ -1091,7 +1092,6 @@ class CompiledWorkflow:
         progress_port: WorkflowProgressPort | None = None,
         observer_port: WorkflowObserverPort | None = None,
     ) -> WorkflowExecutable:
-        from .native import NativeWorkflowExecutable
 
         graph = NativeWorkflowExecutable(
             self,

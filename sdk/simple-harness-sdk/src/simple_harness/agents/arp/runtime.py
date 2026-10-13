@@ -38,6 +38,7 @@ from .bootstrap import (
 from .catalogue import CapabilityResolver, CatalogueScope, CatalogueService, ToolExposureService
 from .context.composer import ArpContextPort, ArpProviderWire
 from .context.recall import ContextRecallCoordinator
+from .context.skill_blocks import skill_blocks_for
 from .creation import NativeCreationService
 from .errors import ArpError
 from .indexing import SessionIndexCoordinator
@@ -409,7 +410,6 @@ def build_arp_runtime(
         bind = getattr(arp.acceptance, "bind_lifecycle", None)
         if callable(bind):
             bind(state.lifecycle)
-        from .context.skill_blocks import skill_blocks_for
 
         def skill_capacity() -> int:
             limits = state.meter.binding.model_limits

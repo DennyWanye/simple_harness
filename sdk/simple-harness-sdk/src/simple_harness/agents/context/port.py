@@ -28,6 +28,7 @@ from typing import cast
 from simple_harness.contracts import JsonValue, RunId, canonical_json, thaw_json
 from simple_harness.contracts.messages import Message
 from simple_harness.execution.base_agent import AgentJournalRecord
+from simple_harness.execution.provider_invocations import provider_request_fingerprint
 from simple_harness.execution.sqlite.uow import SqliteExecutionUnitOfWork
 from simple_harness.execution.uow import ExecutionLease
 from simple_harness.providers import ProviderRequest, ProviderToolSpec
@@ -460,8 +461,6 @@ class RequestGuard:
         budget = self._policy.input_budget()
         selection = self._uow.latest_agent_context_selection(run_id)
         if selection is not None and selection.provider_request_id is None:
-            from simple_harness.execution.provider_invocations import provider_request_fingerprint
-
             self._uow.bind_agent_context_selection_request(
                 selection_id=selection.selection_id,
                 provider_request_id=request.request_id.value,

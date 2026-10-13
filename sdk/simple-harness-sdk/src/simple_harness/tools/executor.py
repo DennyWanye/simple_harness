@@ -47,11 +47,13 @@ from .authorization import (
     sdk_authorization_receipt,
 )
 from .contracts import ToolCall, ToolContext, ToolResult
+from .errors import UnknownToolError
 from .reconciliation import (
     ReconciliationState,
     ToolReconciliationPort,
 )
 from .registry import ToolRegistry
+from .sidecar import ToolResource, resource_digest
 
 logger = logging.getLogger(__name__)
 
@@ -205,7 +207,6 @@ class EffectExecutor:
             tool.spec.sidecar is None or tool.spec.sidecar.digest != sidecar_digest
         ):
             raise ValueError("authorization Tool sidecar authority changed")
-        from .sidecar import ToolResource, resource_digest
 
         resources_raw = request.get("resources", [])
         if not isinstance(resources_raw, (list, tuple)):
@@ -253,7 +254,6 @@ class EffectExecutor:
         # Keep the original full intent validation below, without requiring a
         # fresh write lease or restamping legacy effects with new audit facts.
         terminal_replay = existing is not None and existing.terminal
-        from .errors import UnknownToolError
 
         try:
             registered_tool_name = self._registry.get(call.name).spec.name

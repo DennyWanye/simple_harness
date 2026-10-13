@@ -28,7 +28,11 @@ from simple_harness.contracts import (
     canonical_json,
     thaw_json,
 )
-from simple_harness.execution.audit import RunOperationAuditSnapshotV1
+from simple_harness.execution.audit import (
+    RunAuditUnavailable,
+    RunOperationAuditSnapshotV1,
+    audit_hash,
+)
 from simple_harness.execution.command_ingress import CommandClaim
 from simple_harness.execution.context_authority import (
     ContextRouteReceipt,
@@ -49,6 +53,14 @@ from simple_harness.execution.dispatch import ProviderInvocationCoordinator
 from simple_harness.execution.fences import RunFenceLease, RunFencePort
 from simple_harness.execution.memory_outbox import CommittedTurnSpec, MemoryDispatcher
 from simple_harness.execution.recovery import WaitBlockerSpec
+from simple_harness.execution.runtime_audit import runtime_operation
+from simple_harness.execution.sqlite import SqliteExecutionUnitOfWork
+from simple_harness.execution.sqlite.stage_audit import (
+    begin_prepare,
+    begin_release,
+    finish,
+    settle_release,
+)
 from simple_harness.execution.uow import (
     RUNTIME_LEASE_NAMESPACE,
     ContinuationRecord,
@@ -70,6 +82,7 @@ from simple_harness.tools.executor import EffectExecutor, ToolAuthorizationPendi
 from simple_harness.tools.reconciliation import ToolReconciliationPort
 from simple_harness.tools.sidecar import resource_digest
 from simple_harness.workflow.errors import WorkflowDependencyUnavailable
+from simple_harness.workflow.runner import WorkflowRunner
 
 from .admission import AdmissionPort, AllowAllAdmission
 from .agent_memory import (
@@ -117,7 +130,14 @@ from .orchestration import (
     RuntimeStartDispatchClaim,
     RuntimeStartDisposition,
     WorkflowLaunchTicketPort,
+    WorkflowSpawnOrigin,
     WorkflowSpawnReadyActivation,
+    WorkflowSpawnSelection,
+    workflow_catalog_selection_from_authority,
+    workflow_catalog_selection_from_json,
+    workflow_spawn_child_request_id,
+    workflow_spawn_child_run_id,
+    workflow_spawn_operation_id,
 )
 from .start_snapshot import (
     HostControlRunStartV1,
@@ -126,6 +146,16 @@ from .start_snapshot import (
     bind_start_snapshot,
 )
 from .terminal import TerminalCoordinator, ToolCatalogStale
+from .workflow_spawn import (
+    WorkflowSpawnBatchAction,
+    WorkflowSpawnChildControlKind,
+    WorkflowSpawnToolContext,
+    _create_workflow_spawn_child_control,
+    _create_workflow_spawn_failed,
+    _create_workflow_spawn_invocation,
+    _create_workflow_spawn_tool_outcome,
+    workflow_spawn_completion_receipt_id,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -407,7 +437,6 @@ class _CanonicalWorkflowSpawnRuntimeCoordinator:
         self._clock = clock
 
     async def catalog_snapshot(self):  # type: ignore[no-untyped-def]
-        from .orchestration import workflow_catalog_selection_from_authority
 
         async def operation(transaction):  # type: ignore[no-untyped-def]
             authority = await self._uow.read_catalog(transaction)
@@ -421,14 +450,6 @@ class _CanonicalWorkflowSpawnRuntimeCoordinator:
         async def operation(
             transaction: WorkflowTransaction,
         ) -> WorkflowSpawnCoordinatorOutcome:
-            from .workflow_spawn import (
-                WorkflowSpawnBatchAction,
-                WorkflowSpawnChildControlKind,
-                _create_workflow_spawn_child_control,
-                _create_workflow_spawn_failed,
-                _create_workflow_spawn_tool_outcome,
-                workflow_spawn_completion_receipt_id,
-            )
 
             issued = await self._uow.read_issued(
                 transaction, activation.ready_receipt.spawn_operation_id
@@ -890,7 +911,6 @@ class RunClient:
     async def read_run_operation_audit(
         self, run_id: RunId, *, limit: int = 256
     ) -> RunOperationAuditSnapshotV1:
-        from simple_harness.execution.audit import RunAuditUnavailable
 
         reader = getattr(self._runtime._uow, "read_run_operation_audit", None)
         if reader is None:
@@ -898,7 +918,6 @@ class RunClient:
         return await asyncio.to_thread(reader, run_id, limit=limit)
 
     async def open_run_operation_audit(self, run_id: RunId, *, page_size: int = 256):
-        from simple_harness.execution.audit import RunAuditUnavailable
 
         reader = getattr(self._runtime._uow, "open_run_operation_audit", None)
         if reader is None:
@@ -906,7 +925,6 @@ class RunClient:
         return await asyncio.to_thread(reader, run_id, page_size=page_size)
 
     async def read_run_operation_audit_page(self, run_id: RunId, *, cursor: str):
-        from simple_harness.execution.audit import RunAuditUnavailable
 
         reader = getattr(self._runtime._uow, "read_run_operation_audit_page", None)
         if reader is None:
@@ -919,7 +937,6 @@ class RunClient:
         return self._runtime._uow.get_command_snapshot(command_id)
 
     async def open_context_stage_operation_audit(self, stage_id: str, *, page_size: int = 256):
-        from simple_harness.execution.audit import RunAuditUnavailable
 
         reader = getattr(self._runtime._uow, "open_context_stage_operation_audit", None)
         if reader is None:
@@ -927,7 +944,6 @@ class RunClient:
         return await asyncio.to_thread(reader, stage_id, page_size=page_size)
 
     async def read_context_stage_operation_audit_page(self, stage_id: str, *, cursor: str):
-        from simple_harness.execution.audit import RunAuditUnavailable
 
         reader = getattr(self._runtime._uow, "read_context_stage_operation_audit_page", None)
         if reader is None:
@@ -935,7 +951,6 @@ class RunClient:
         return await asyncio.to_thread(reader, stage_id, cursor=cursor)
 
     async def open_command_operation_audit(self, command_id: str, *, page_size: int = 256):
-        from simple_harness.execution.audit import RunAuditUnavailable
 
         reader = getattr(self._runtime._uow, "open_command_operation_audit", None)
         if reader is None:
@@ -943,7 +958,6 @@ class RunClient:
         return await asyncio.to_thread(reader, command_id, page_size=page_size)
 
     async def read_command_operation_audit_page(self, command_id: str, *, cursor: str):
-        from simple_harness.execution.audit import RunAuditUnavailable
 
         reader = getattr(self._runtime._uow, "read_command_operation_audit_page", None)
         if reader is None:
@@ -1184,8 +1198,6 @@ class RunClient:
             current_message=value.message,
             bounds=ConversationContextBounds(),
         )
-        from simple_harness.execution.audit import audit_hash
-        from simple_harness.execution.sqlite.stage_audit import begin_prepare, finish
 
         with repository.database.transaction() as connection:
             stage_call = begin_prepare(
@@ -1468,19 +1480,6 @@ class RunClient:
         return await coordinator.catalog_snapshot()
 
     def bind_workflow_spawn(self, context, selection):  # type: ignore[no-untyped-def]
-        from .orchestration import (
-            WorkflowSpawnOrigin,
-            WorkflowSpawnSelection,
-            workflow_catalog_selection_from_json,
-            workflow_spawn_child_request_id,
-            workflow_spawn_child_run_id,
-            workflow_spawn_operation_id,
-        )
-        from .start_snapshot import StartSnapshot
-        from .workflow_spawn import (
-            WorkflowSpawnToolContext,
-            _create_workflow_spawn_invocation,
-        )
 
         if not isinstance(context, WorkflowSpawnToolContext):
             raise TypeError("workflow spawn binder requires its typed Tool context")
@@ -1570,8 +1569,6 @@ class Runtime:
         workflow_driver: RuntimeDriver | None = None
         workflow_spawn: WorkflowSpawnRuntimeCoordinator | None = None
         if workflow_runner is not None:
-            from simple_harness.workflow.runner import WorkflowRunner
-
             from .drivers.workflow import (
                 WorkflowRuntimeDriver,
                 build_workflow_runtime_driver,
@@ -2582,7 +2579,6 @@ class Runtime:
             "ORDER BY retry_at,release_id LIMIT ?",
             (now, limit),
         ).fetchall()
-        from simple_harness.execution.sqlite.stage_audit import begin_release, settle_release
 
         for row in rows:
             with staging.database.transaction() as connection:
@@ -3028,8 +3024,6 @@ class Runtime:
             return
         continuation_claim: ContinuationRecord | None = None
         try:
-            from simple_harness.execution.runtime_audit import runtime_operation
-
             with runtime_operation(
                 self._uow,
                 "runtime.preflight",
@@ -3135,8 +3129,6 @@ class Runtime:
                         # re-activates the Run through ``_wake_continuation``.
                         await self._abandon_run_authority(run_id)
                     return
-            from simple_harness.execution.runtime_audit import runtime_operation
-            from simple_harness.execution.sqlite import SqliteExecutionUnitOfWork
             from simple_harness.runtime.drivers.react import ReActDriver
             from simple_harness.runtime.drivers.start_mode import StartModeDriverRouter
             from simple_harness.runtime.drivers.workflow import WorkflowRuntimeDriver
@@ -3876,7 +3868,6 @@ class Runtime:
     async def _accept_workflow_spawn_control(
         self, parent_run_id: str, outcome: WorkflowSpawnToolOutcome
     ) -> None:
-        from .workflow_spawn import WorkflowSpawnChildControlKind
 
         child_control = outcome.child_control
         admission = child_control.admission

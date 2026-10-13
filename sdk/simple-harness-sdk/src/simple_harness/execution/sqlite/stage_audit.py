@@ -2,7 +2,7 @@
 
 import json
 import uuid
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 
 from simple_harness.contracts import canonical_json
 from simple_harness.execution.audit import (
@@ -12,6 +12,7 @@ from simple_harness.execution.audit import (
     audit_reference,
 )
 from simple_harness.execution.uow import UnitOfWorkConflict
+from simple_harness.runtime.agent_memory import MemoryReleaseRequest
 
 
 @dataclass(frozen=True)
@@ -456,9 +457,6 @@ def run_stage_cut(connection, run_id, saved=None):
 
 
 def begin_release(connection, release_id, *, now):
-    from dataclasses import asdict
-
-    from simple_harness.runtime.agent_memory import MemoryReleaseRequest
 
     row = connection.execute(
         "SELECT * FROM memory_recall_releases WHERE release_id=?", (release_id,)
@@ -505,9 +503,6 @@ def begin_release(connection, release_id, *, now):
 
 
 def settle_release(connection, release_id, call, *, now, returned):
-    from dataclasses import asdict
-
-    from simple_harness.runtime.agent_memory import MemoryReleaseRequest
 
     origin = connection.execute(
         "SELECT * FROM sdk_stage_audit_events WHERE event_seq=?", (call.event_sequence,)

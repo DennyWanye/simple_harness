@@ -24,6 +24,8 @@ from simple_harness.providers import ProviderToolSpec
 from simple_harness.runtime.task_scope_protocol import TaskScopeRoute
 from simple_harness.tools.runtime_catalog import ToolExecutionPolicy
 
+from .context_action import MandatoryContextFeedbackV1
+from .context_use import RecallContextUseIntentV1, use_hash
 from .effects import TaskExecutionEnvelope
 
 
@@ -280,16 +282,13 @@ class RunContextAuthorityRequest:
     mandatory_context_feedback: object | None = None
 
     def __post_init__(self) -> None:
-        if self.mandatory_context_feedback is not None:
-            from .context_action import MandatoryContextFeedbackV1
-
-            if (
-                type(self.mandatory_context_feedback) is not MandatoryContextFeedbackV1
-                or self.mandatory_context_feedback.rejection.run_id != self.run_id.value
-                or self.mandatory_context_feedback.rejection.provider_turn_ordinal
-                >= self.provider_turn_ordinal
-            ):
-                raise ValueError("mandatory_context_feedback_lineage_differs")
+        if self.mandatory_context_feedback is not None and (
+            type(self.mandatory_context_feedback) is not MandatoryContextFeedbackV1
+            or self.mandatory_context_feedback.rejection.run_id != self.run_id.value
+            or self.mandatory_context_feedback.rejection.provider_turn_ordinal
+            >= self.provider_turn_ordinal
+        ):
+            raise ValueError("mandatory_context_feedback_lineage_differs")
         if not isinstance(self.run_id, RunId):
             raise TypeError("run_id must use RunId")
         for value, name in (
@@ -341,8 +340,6 @@ class RunContextSnapshot:
             if self.recall_subject is not None or self.recall_intents is not None:
                 raise ValueError("legacy_snapshot_cannot_attest_recall")
         else:
-            from .context_use import RecallContextUseIntentV1
-
             _required(self.recall_subject, "recall_subject")
             if (
                 type(self.recall_intents) is not tuple
@@ -428,8 +425,6 @@ class RunContextSnapshot:
             "expected_request_fingerprint": self.expected_request_fingerprint,
         }
         if self.schema_version == 2:
-            from .context_use import use_hash
-
             result["recall_subject"] = self.recall_subject
             result["recall_intents_hash"] = use_hash(
                 "simple-harness/context-recall-intents/v1",

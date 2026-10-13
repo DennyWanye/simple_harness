@@ -5,15 +5,18 @@
 
 from __future__ import annotations
 
+import hashlib
 import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from enum import StrEnum
 from typing import cast
 
-from simple_harness.contracts import HarnessError, JsonValue
+from simple_harness.contracts import HarnessError, JsonValue, canonical_json
 from simple_harness.execution.budget import BudgetSnapshot
 from simple_harness.execution.context_action import MandatoryContextFeedbackV1
+from simple_harness.execution.context_authority import ContextRouteReceipt
+from simple_harness.execution.context_use import ProviderContextUseAttemptV1
 
 _TERMINATION_V1_FIELDS = frozenset(
     {
@@ -293,8 +296,6 @@ class TerminationState:
             ):
                 raise ValueError("mandatory_context_repair_checkpoint_differs")
         if self.context_use_attempt is not None:
-            from simple_harness.execution.context_use import ProviderContextUseAttemptV1
-
             attempt = ProviderContextUseAttemptV1.from_json(self.context_use_attempt)
             if (
                 attempt.turn_id != self.active_turn_id
@@ -331,19 +332,12 @@ class TerminationState:
                 "Context authority receipt",
             ),
         ):
-            if digest is not None:
-                import hashlib
-
-                from simple_harness.contracts import canonical_json
-
-                if (
-                    len(digest) != 64
-                    or hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest() != digest
-                ):
-                    raise ValueError(f"{name} hash is invalid")
+            if digest is not None and (
+                len(digest) != 64
+                or hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest() != digest
+            ):
+                raise ValueError(f"{name} hash is invalid")
         if self.route_receipt is not None:
-            from simple_harness.execution.context_authority import ContextRouteReceipt
-
             if not isinstance(self.route_receipt, Mapping):
                 raise TypeError("route receipt must be an object")
             receipt = ContextRouteReceipt.from_json(self.route_receipt)

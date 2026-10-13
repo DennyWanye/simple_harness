@@ -42,6 +42,7 @@ from simple_harness.execution.dispatch import (
     ProviderInvocationUnknownError,
     provider_binding_fingerprint,
 )
+from simple_harness.execution.sqlite.base_agent import turns as turn_helpers
 from simple_harness.execution.uow import RunState, UnitOfWorkConflict
 from simple_harness.providers.base import ProviderContinuationCapability
 from simple_harness.runtime.context import ContextSnapshot
@@ -687,7 +688,6 @@ class AgentExecutionDriver:
         delegations = self._delegations
 
         def factory(response, state):  # type: ignore[no-untyped-def]
-            from simple_harness.execution.sqlite.base_agent import turns as turn_helpers
 
             outcome = committed_outcome(
                 agent_id=agent_id,

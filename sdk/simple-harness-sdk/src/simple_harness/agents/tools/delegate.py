@@ -57,6 +57,10 @@ from simple_harness.tools.runtime_catalog import (
     ToolTaskScopeRequirement,
 )
 
+from ..arp.errors import ArpError
+from ..arp.pins import Pin
+from ..arp.ports import TrustedCaller
+from ..arp.strict import digest
 from ..config import AgentConfig, config_hash
 from ..contracts import AgentTurnResult
 
@@ -356,10 +360,6 @@ class AgentDelegateTool:
         if arp is not None:
             # Native plane: the delegate is one more caller of NativeCreationService
             # (durable intent → deferred child launch → binding + Session in one txn).
-            from ..arp.errors import ArpError
-            from ..arp.pins import Pin
-            from ..arp.ports import TrustedCaller
-            from ..arp.strict import digest
 
             caller = TrustedCaller(
                 principal_ref=Pin(

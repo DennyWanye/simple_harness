@@ -17,6 +17,8 @@ from simple_harness.runtime.memory_protocol import (
     RecallItemBindingV1,
 )
 
+from .provider_invocations import provider_request_fingerprint, provider_request_json
+
 
 def use_hash(domain, payload):
     return hashlib.sha256(
@@ -276,7 +278,6 @@ class ProviderContextUseAttemptV1:
         )
 
     def validate_provider_request(self, run_id, request):
-        from .provider_invocations import provider_request_fingerprint, provider_request_json
 
         if (
             self.run_id != run_id.value
