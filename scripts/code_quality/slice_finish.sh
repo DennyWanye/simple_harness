@@ -19,6 +19,7 @@ fi
 TESTS=$(grep -rlE "^\s*(import main|from host)" backend/tests | tr '\n' ' ')
 # shellcheck disable=SC2086
 python3 scripts/code_quality/hidden_patches.py "$MOD" $TESTS
+python3 scripts/code_quality/main_assignments.py | tail -5
 python3 scripts/code_quality/prune_host_imports.py
 CHANGED_TESTS=$(git diff --name-only -- backend/tests | tr '\n' ' ')
 # shellcheck disable=SC2086
