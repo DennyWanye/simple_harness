@@ -13,7 +13,7 @@ _sql_latest_task_snapshot / _sql_build_reinject_msg），既供闭包复用也�
 
 from __future__ import annotations
 
-from main import (
+from host.summary_quality import (
     _sql_build_reinject_msg,
     _sql_latest_task_snapshot,
     _sql_user_is_confused,
