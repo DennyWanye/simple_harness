@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import time
 from collections.abc import Callable, Mapping
@@ -154,8 +155,6 @@ async def provider_workload_audit_retention_loop(
     interval_s: float = 21600.0,
 ) -> None:
     """Non-blocking maintenance loop: startup+10m, then every six hours."""
-
-    import asyncio
 
     await asyncio.sleep(initial_delay_s)
     while True:

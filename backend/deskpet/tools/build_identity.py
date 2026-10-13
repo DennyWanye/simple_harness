@@ -18,7 +18,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from enum import Enum
 from functools import lru_cache
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 
@@ -296,8 +296,6 @@ def authority_accepts_handler(authority: CoreHandlerAuthority, handler: object) 
 
 def PurePath(value: str) -> Path:
     """Convert a manifest POSIX path without interpreting host separators."""
-
-    from pathlib import PurePosixPath
 
     return Path(*PurePosixPath(value).parts)
 

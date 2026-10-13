@@ -10,6 +10,8 @@ availability depends on the host machine, so callers decide when to use it.
 from __future__ import annotations
 
 import os
+import subprocess
+import sys
 from pathlib import Path
 
 try:  # pragma: no cover - host-dependent import probe
@@ -67,7 +69,6 @@ def com_render_available() -> bool:
 
 def _kill_wps() -> None:
     """杀残留 WPS 进程(COM 在某页 hang 后超时杀进程,释放下次渲染)。"""
-    import subprocess
 
     for name in ("wpp.exe", "wps.exe", "wpscloudsvr.exe", "et.exe"):
         try:
@@ -93,8 +94,6 @@ def render_pptx_to_pngs_safe(
     不阻塞调用方。返回 out_dir 里实际产出的 png(超时也返回已完成的部分)。
     从不抛异常。
     """
-    import subprocess
-    import sys
 
     try:
         if not com_render_available():

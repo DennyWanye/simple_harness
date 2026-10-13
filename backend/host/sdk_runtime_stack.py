@@ -8,6 +8,7 @@ import inspect
 import json
 import time
 from collections.abc import Mapping
+from dataclasses import replace as dataclass_replace
 from pathlib import Path
 
 import paths as _paths
@@ -388,7 +389,6 @@ async def _build_product_sdk_runtime_stack(
             )
 
     catalog = build_explicit_product_tool_catalog(dependencies)
-    from dataclasses import replace as dataclass_replace
 
     from deskpet.sdk_adapters.tools import ProductToolRegistration
 

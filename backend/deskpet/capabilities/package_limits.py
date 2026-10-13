@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ctypes
 import hashlib
 import io
 import json
@@ -179,7 +180,6 @@ class WindowsPackagePathPolicyV1:
 
     @staticmethod
     def _win32_ordinal_equal(left: str, right: str) -> bool:
-        import ctypes
 
         result = ctypes.windll.kernel32.CompareStringOrdinal(
             left, len(left), right, len(right), True

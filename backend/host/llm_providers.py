@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json as _json
 import os
 from zoneinfo import ZoneInfo
 
@@ -28,8 +29,6 @@ def _load_llm_runtime_overrides() -> dict:
     if not LLM_RUNTIME_PATH.exists():
         return {}
     try:
-        import json as _json
-
         return _json.loads(LLM_RUNTIME_PATH.read_text(encoding="utf-8"))
     except Exception as exc:  # noqa: BLE001
         logger.warning("llm_runtime_overrides_load_failed: %s", exc)
@@ -38,7 +37,6 @@ def _load_llm_runtime_overrides() -> dict:
 
 def _save_llm_runtime_overrides(data: dict) -> None:
     """Write llm_runtime.json — best-effort, never raise."""
-    import json as _json
 
     try:
         LLM_RUNTIME_PATH.parent.mkdir(parents=True, exist_ok=True)

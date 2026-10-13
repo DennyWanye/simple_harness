@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path as _Path
+
 import numpy as np
 import structlog
 from faster_whisper import WhisperModel
@@ -62,8 +64,6 @@ class FasterWhisperASR:
         # ``self.model_name`` (so the user gets to choose: download into
         # local_dir OR let faster-whisper pull from HuggingFace).
         if self.local_dir:
-            from pathlib import Path as _Path
-
             local_dir_p = _Path(self.local_dir)
             if not local_dir_p.exists():
                 logger.warning(

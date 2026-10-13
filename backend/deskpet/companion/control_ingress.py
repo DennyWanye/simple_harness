@@ -873,8 +873,6 @@ class CompanionControlIngress:
     def parse_privileged_frame(raw: str | bytes) -> Mapping[str, Any] | None:
         """Strictly reparse any frame that asks for a privileged mutation."""
 
-        import json
-
         try:
             probe = json.loads(raw)
         except (json.JSONDecodeError, UnicodeDecodeError, TypeError):

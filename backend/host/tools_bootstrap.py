@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path as _Path
+from pathlib import Path as _PathRS
 
 import paths as _paths
 from tools.clipboard import read_clipboard_tool
@@ -124,8 +125,6 @@ try:
             return None
         if _receipt_store_box[0] is None:
             try:
-                from pathlib import Path as _PathRS
-
                 from deskpet.tools.receipt_store import ReceiptStore
 
                 # WI-T2.2 v3 P0 修：取消 min(retention, 7) 截断（last-mile

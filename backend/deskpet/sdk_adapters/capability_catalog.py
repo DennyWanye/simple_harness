@@ -17,6 +17,7 @@ import hashlib
 import json
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import InitVar, dataclass
+from pathlib import Path
 from typing import Any, Literal, cast
 
 from simple_harness import FrozenJsonValue, freeze_json, thaw_json
@@ -412,8 +413,6 @@ class ProductCapabilityCatalogSourceAdapter:
         adds only exact Project bindings captured by the existing Run-catalog
         owner, so another Project or a projectless Run observes no records.
         """
-
-        from pathlib import Path
 
         from deskpet.capabilities.manifest import load_and_validate_pack
         from deskpet.companion.skills import (

@@ -62,7 +62,6 @@ def raise_for_search_status(response: httpx.Response) -> None:
 
 
 def candidates_from_rows(provider: str, rows: list[dict[str, str]]) -> list[RetrievalCandidate]:
-    from datetime import datetime, timezone
 
     from ..ranking import canonicalize_url, stable_candidate_id
 

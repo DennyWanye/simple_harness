@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy as _copy_e2e_mcp
 import os
 import sys
 from pathlib import Path
@@ -312,8 +313,6 @@ async def _startup_curation_image_and_mcp() -> None:
             _context_os_e2e_boot_hooks is not None
             and os.environ.get("DESKPET_CONTEXT_OS_E2E_FIXTURE_CATALOG", "1").strip() != "0"
         ):
-            import copy as _copy_e2e_mcp
-
             _mcp_app_config = _copy_e2e_mcp.deepcopy(config.raw)
             _mcp_app_config["mcp"] = {
                 "enabled": True,

@@ -60,6 +60,7 @@ Conventions mirrored from the existing tool layer
 
 from __future__ import annotations
 
+import asyncio
 import importlib.util
 import json
 import logging
@@ -368,7 +369,6 @@ def _run_browser_job(
     process never pays the import / chromium cost) and drives an Agent,
     writing the terminal state into the job store. All failures are
     captured into ``status:"error"`` — this thread never raises out."""
-    import asyncio
 
     _set_job(job_id, status="running", started_at=time.time())
     try:

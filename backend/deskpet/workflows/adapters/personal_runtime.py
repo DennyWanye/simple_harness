@@ -7,7 +7,7 @@ import hashlib
 import inspect
 import json
 from collections.abc import Awaitable, Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Protocol
 
 from deskpet.companion.personal_workflow import (
@@ -270,7 +270,6 @@ class JournaledPersonalWorkflowEffects:
         execution_context = self._execution_context
         if execution_context is None:
             raise PersonalWorkflowRuntimeError("personal_tool_execution_context_unavailable")
-        from dataclasses import replace
 
         execution_context = replace(
             execution_context,

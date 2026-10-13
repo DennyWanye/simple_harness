@@ -52,12 +52,15 @@ import logging
 import math
 import os
 import re
+import shutil
 import struct
 import tempfile
 import time
+from collections import OrderedDict
 from collections.abc import Iterable, Sequence
 from dataclasses import asdict, dataclass, field
 from functools import lru_cache
+from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Literal, Optional
@@ -3629,7 +3632,6 @@ def _autofill_image_prompts(slides: list[SlideOutline]) -> None:
         # 按版式选生成尺寸(最佳实践: 生成贴近槽位比例的图,cover 裁切损失
         # 最小)。split 侧栏≈方 → 1024x1024;其余(全幅/上图/封面)→ 横版
         # 1536x1024。prompt 追加版式负空间指令 + 禁字后缀。同尺寸分一组批量。
-        from collections import OrderedDict
 
         groups: OrderedDict[str, list[tuple[int, str]]] = OrderedDict()
         for idx, prompt in pending:
@@ -3731,7 +3733,6 @@ def _drive_free_bytes(path: Path) -> int | None:
     """Free bytes on the volume containing ``path``, walking up to the first
     existing parent (the dir may not exist yet on a fresh install). Returns
     None if it can't be determined. Never raises."""
-    import shutil
 
     p = path
     for _ in range(8):
@@ -4586,7 +4587,6 @@ def _is_english_semantic_label(text: str) -> bool:
     THREE/FOUR 也是英文单词,但它们是「位置编号」装饰、配在正文上方读起来
     自然,豁免保留。纯数字/符号天然不命中。
     """
-    import re
 
     t = text.strip()
     if not t:
@@ -4678,8 +4678,6 @@ def _swap_design_picture(slide, image_path: str) -> bool:
         # 阅读器对 ext/content-type 不一致挑剔。
         new_bytes = src.read_bytes()
         try:
-            from io import BytesIO
-
             from PIL import Image  # type: ignore
 
             with Image.open(src) as im:

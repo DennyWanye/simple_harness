@@ -31,6 +31,7 @@ import logging
 import random
 import sqlite3
 import time
+import time as _time
 import uuid
 from collections.abc import Awaitable, Callable
 from pathlib import Path
@@ -5608,7 +5609,6 @@ class SessionDB:
         """Insert one supervisor_hints row. Returns the new row id."""
         if not self._initialized:
             await self.initialize()
-        import time as _time
 
         ts_val = int(ts if ts is not None else _time.time())
 

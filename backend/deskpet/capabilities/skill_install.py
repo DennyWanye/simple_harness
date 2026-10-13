@@ -11,6 +11,7 @@ import time
 import zipfile
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from io import BytesIO
 from pathlib import Path
 from typing import Any, Literal, Protocol
 
@@ -1427,7 +1428,6 @@ class GlobalSkillInstallService:
 
     @staticmethod
     def _manifest(archive: bytes) -> Mapping[str, Any]:
-        from io import BytesIO
 
         with zipfile.ZipFile(BytesIO(archive)) as package:
             value = json.loads(package.read("deskpet-pack.json"))

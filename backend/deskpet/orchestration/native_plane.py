@@ -10,6 +10,7 @@ Host 只提供本机资源：BGE-M3 向量模型（没装就只按词检索，�
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import logging
 from collections.abc import Callable, Sequence
 from pathlib import Path
@@ -128,8 +129,6 @@ def embedding_port(models_dir: Path | None) -> tuple[BgeM3EmbeddingPort | None, 
         if not (model_dir / name).is_file():
             return None, f"BGE-M3 INT8 模型不完整：缺 {model_dir / name}"
     try:
-        import importlib.util
-
         for module in ("onnxruntime", "tokenizers", "numpy"):
             if importlib.util.find_spec(module) is None:
                 return None, f"{module} 未安装"

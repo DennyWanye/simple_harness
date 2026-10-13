@@ -54,6 +54,7 @@ import uuid
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import aiosqlite
@@ -757,7 +758,6 @@ class ClosureFallback:
             )
 
         async def prepare_attempt(row):
-            from types import SimpleNamespace
 
             prepared = await self._request_authority.prepare(
                 host_run_id=host_run_id,

@@ -659,8 +659,6 @@ class ExecutionTx:
     ) -> None:
         """Freeze exact candidate bytes beside their receipt in this UoW."""
 
-        import hashlib
-
         receipt_id = str(receipt_id).strip()
         hashes = tuple(
             str(value).strip()

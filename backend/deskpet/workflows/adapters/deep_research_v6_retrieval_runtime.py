@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import time
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -82,7 +83,6 @@ class DurableV6DeadlinePort:
         self.journal = journal
         self.resolve_effect_context = resolve_effect_context
         self.wall_clock = wall_clock or (lambda: datetime.now(UTC))
-        import time
 
         self.monotonic_ns = monotonic_ns or time.monotonic_ns
 

@@ -29,6 +29,7 @@ paths don't need to pre-mkdir.
 
 from __future__ import annotations
 
+import asyncio as _asyncio
 import json
 import logging
 import os
@@ -105,8 +106,6 @@ def set_workspace_store(store: Any | None) -> None:
     global _workspace_store, _workspace_loop
     _workspace_store = store
     try:
-        import asyncio as _asyncio
-
         _workspace_loop = _asyncio.get_running_loop()
     except RuntimeError:
         _workspace_loop = None
@@ -122,8 +121,6 @@ def rebind_loop() -> bool:
     """
     global _workspace_loop
     try:
-        import asyncio as _asyncio
-
         _workspace_loop = _asyncio.get_running_loop()
         return True
     except RuntimeError:

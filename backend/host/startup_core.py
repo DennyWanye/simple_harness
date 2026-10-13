@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import faulthandler as _faulthandler
 import os
+import signal as _signal
 from pathlib import Path
 
 import paths as _paths
@@ -44,9 +46,6 @@ async def _startup_core_services() -> tuple[Any, Any]:
     """启动：受保护路径通知、提供方路由就绪状态、人类记忆启动纪元与宿主服务工厂登记。"""
     # 2026-09-26 诊断：`kill -USR1 <pid>` 把所有线程的调用栈打到 stderr（排查 CPU 占满/卡住）
     try:
-        import faulthandler as _faulthandler
-        import signal as _signal
-
         _faulthandler.register(_signal.SIGUSR1, all_threads=True)
     except Exception:  # noqa: BLE001 - diagnostics only (not on Windows)
         pass

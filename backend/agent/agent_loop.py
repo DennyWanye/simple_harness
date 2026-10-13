@@ -11,7 +11,9 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import difflib as _difflib
 import json
+import json as _json
 import logging
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
@@ -692,7 +694,6 @@ def _classify_tool_result(result_str: str) -> type[Exception]:
     failure / unknown shape (conservative — never break a turn over
     something we can't read).
     """
-    import json as _json
 
     try:
         payload = _json.loads(result_str) if isinstance(result_str, str) else result_str
@@ -727,7 +728,6 @@ def _extract_break_detail(result_str: str, tool_name: str) -> str:
     (Phase 0 sensor feedback) over the raw ``error`` so the message we
     surface is actionable.
     """
-    import json as _json
 
     try:
         payload = _json.loads(result_str) if isinstance(result_str, str) else result_str
@@ -777,7 +777,6 @@ def _deepresearch_result_is_complete(result_str: str) -> bool:
     plus citations or a saved artifact should force the next turn to stop
     using tools; failed/empty reports may still need follow-up search.
     """
-    import json as _json
 
     try:
         payload = _json.loads(result_str) if isinstance(result_str, str) else result_str
@@ -3858,8 +3857,6 @@ class AgentLoop(ToolContextPersistenceMixin):
                         _stagnant = False
                         if verify_nudges_used >= 2 and self.structured_reflection:
                             try:
-                                import difflib as _difflib
-
                                 from deskpet.agent.reflection import parse_reflection
 
                                 _refl = parse_reflection(response.content or "")

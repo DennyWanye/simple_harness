@@ -23,6 +23,8 @@ LLM 只挑一个**大类**,引擎把该类预览图拼成网格(contact sheet),�
 
 from __future__ import annotations
 
+import base64
+import json
 import logging
 import os
 import random
@@ -250,8 +252,6 @@ def _build_contact_sheets(
 def _b64_of(path: Path, *, max_w: int = 1024) -> str | None:
     """图 → 缩到 max_w → JPEG base64。失败 None。"""
     try:
-        import base64
-
         from PIL import Image  # type: ignore
 
         with Image.open(path) as im:
@@ -270,8 +270,6 @@ def _parse_pick_id(text: str, valid_ids: set[int]) -> int | None:
     if not text:
         return None
     try:
-        import json
-
         m = re.search(r"\{[^{}]*\}", text, re.DOTALL)
         if m:
             obj = json.loads(m.group(0))

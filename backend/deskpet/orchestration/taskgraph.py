@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import logging
+import uuid
 from collections.abc import Mapping
 from typing import Any
 
@@ -139,7 +140,6 @@ def operate_taskgraph(service: Any, verb: str, request: Mapping[str, Any]) -> di
     只从控制通道进来——那是人的点击；主 Agent 的工具里没有这两个动词。本机用户身份就是启用
     执行图的那个人；每次点击生成自己的命令号，同一次点击重放不会做两遍。
     """
-    import uuid
 
     fields = {
         "abandon_convergence": ("mission_id", "job_id", "expected_version", "reason"),

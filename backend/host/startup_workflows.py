@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import hashlib as _hashlib
 import json
 import re
 from pathlib import Path
@@ -504,7 +505,6 @@ async def _startup_workflow_services() -> Any:
             )
 
         async def _deep_v5_context_factory(row, start_payload) -> WorkflowContext:
-            import hashlib as _hashlib
 
             from deskpet.retrieval.contracts import (
                 DimensionSearchRequest,
@@ -878,7 +878,6 @@ async def _startup_workflow_services() -> Any:
             )
 
         async def _deep_v6_context_factory(row, start_payload) -> WorkflowContext:
-            import hashlib as _hashlib
 
             from deskpet.retrieval.runtime import get_default_gateway
             from deskpet.workflows.adapters.deep_research_v6_bootstrap import (

@@ -23,6 +23,7 @@ Top-N default 10 (spec §2 says 8-12).
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from typing import Any
@@ -208,8 +209,6 @@ class PreferenceProfileComponent:
             for item in resolution.items:
                 value = item.value
                 if not isinstance(value, str):
-                    import json
-
                     value = json.dumps(
                         value,
                         ensure_ascii=False,

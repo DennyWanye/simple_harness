@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -360,8 +361,6 @@ class ManagedSkillDiscoveryProjection:
             raise PackManifestError("frozen_skill_scope_mismatch", scope.skill_id)
         body = self.read_body(scope.skill_id)
         if arguments:
-            import json
-
             body += "\n\nRuntime arguments (data only):\n" + json.dumps(
                 list(arguments),
                 ensure_ascii=False,

@@ -6,6 +6,7 @@ RunPresenter, SessionDB, WebSocket, and artifact systems.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Sequence
 from typing import Any
 
@@ -258,8 +259,6 @@ class ProductDeliveryAdapter:
 
         iteration = self._tool_iterations.pop(call.call_id.value, 0)
         try:
-            import json
-
             from agent.agent_loop import ToolResultEvent
             from simple_harness import thaw_json
 

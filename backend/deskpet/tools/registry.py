@@ -43,9 +43,13 @@ Design notes
 from __future__ import annotations
 
 import asyncio
+import asyncio as _asyncio
+import concurrent.futures as _cf
 import contextvars
 import copy
 import hashlib
+import inspect as _inspect
+import inspect as _inspect2
 import json
 import logging
 import os
@@ -53,7 +57,9 @@ import threading
 import time
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
-from datetime import UTC
+from datetime import UTC, datetime, timezone
+from datetime import datetime as _dt
+from datetime import timezone as _tz
 from pathlib import Path
 from typing import Any, Optional
 
@@ -990,13 +996,11 @@ def _run_coro_sync(coro: Any) -> Any:
     路走 V2 ``execute_tool``）→ 丢进独立线程各自起 loop 跑，避免
     "loop already running"。
     """
-    import asyncio as _asyncio
 
     try:
         _asyncio.get_running_loop()
     except RuntimeError:
         return _asyncio.run(coro)
-    import concurrent.futures as _cf
 
     with _cf.ThreadPoolExecutor(max_workers=1) as _ex:
         return _ex.submit(lambda: _asyncio.run(coro)).result()
@@ -2248,7 +2252,6 @@ class ToolRegistry:
             # （遗留 fallback + 测试 + smoke 脚本）需把 coroutine 跑到底。
             # 生产 code-mode 走 V2 registry.execute_tool（原生 async 分流），
             # 不经此处。
-            import inspect as _inspect2
 
             if _inspect2.iscoroutine(result):
                 result = _run_coro_sync(result)
@@ -2548,14 +2551,9 @@ class ToolRegistry:
         # WI-T2.3 v3 P0 修：dispatch 真实开始时间。原 emit_receipt 处用了两次
         # datetime.now() → duration_ms 永远 ~0μs（last-mile round2 P0-3）。
         # 这里捕真 started_at，emit_receipt 时用它对账 ended_at。
-        from datetime import datetime as _dt
-        from datetime import timezone as _tz
 
         _started_at = _dt.now(UTC)
         try:
-            import asyncio as _asyncio
-            import inspect as _inspect
-
             # WI-T5.1 v3 default_timeout_seconds：cfg 兜底 ToolSpec 未配 timeout
             # 时的默认值。ToolSpec.timeout_seconds 默认 60.0，cfg 60.0 → 与
             # 现状字节级一致；用户在 [tools] default_timeout_seconds=30 时
@@ -3296,7 +3294,6 @@ class ToolRegistry:
             store = self._receipt_store_provider()
             if store is None:
                 return
-            from datetime import datetime, timezone
 
             from deskpet.tools.receipt_store import emit_receipt
 
@@ -3366,7 +3363,6 @@ class ToolRegistry:
                 "tool_handler_error", f"{type(exc).__name__}: {exc}"
             )
         self._prepared_execution_outcomes[effect_id] = outcome
-        from datetime import datetime, timezone
 
         await self._record_prepared_receipt(
             spec,
@@ -3519,8 +3515,6 @@ class ToolRegistry:
         Omitting it preserves the legacy workflow adapter until cutover.
         """
 
-        import inspect as _inspect
-
         if not isinstance(prepared, PreparedToolCall):
             raise TypeError("execute_prepared accepts PreparedToolCall only")
 
@@ -3637,8 +3631,6 @@ class ToolRegistry:
         raw: Any = None
         late_pending = False
         try:
-            from datetime import datetime, timezone
-
             started_at = datetime.now(UTC)
 
             async def invoke() -> Any:

@@ -36,6 +36,7 @@ import asyncio
 import contextvars
 import copy
 import hashlib
+import ipaddress
 import json
 import logging
 import os
@@ -44,7 +45,7 @@ import sys
 import time
 import urllib.parse
 from collections.abc import Awaitable, Callable, Iterable
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional, Protocol
 
@@ -105,7 +106,6 @@ def _is_loopback_url(base_url: str) -> bool:
     用 hostname 解析 + ipaddress.is_loopback,避免裸字符串匹配漏 ::1/127.0.0.2/
     大小写,也不误伤含 'localhost' 子串的远端域名。main.py 据此决定是否注入 rerank
     桥(本地 ollama 通常没有 gpt-4.1-mini)。"""
-    import ipaddress
 
     try:
         host = (urllib.parse.urlparse(base_url).hostname or "").strip().lower()
@@ -1027,7 +1027,6 @@ def direct_items_to_candidates(items: list[dict[str, Any]], *, source: str):
             for item in items
         ],
     )
-    from dataclasses import replace
 
     return [replace(item, source_kind="direct") for item in candidates]
 

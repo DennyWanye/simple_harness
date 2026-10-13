@@ -7,6 +7,7 @@ product modules — use this facade exclusively.
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -412,7 +413,6 @@ class SdkRuntimeIngress:
     @staticmethod
     def _compute_run_id(session_id: str, request_id: str, turn_id: str) -> RunId:
         """Compute deterministic RunId for replay idempotency."""
-        import hashlib
 
         identity = hashlib.sha256(f"{session_id}\0{request_id}\0{turn_id}".encode()).hexdigest()
         return RunId(f"product-sdk-{identity}")

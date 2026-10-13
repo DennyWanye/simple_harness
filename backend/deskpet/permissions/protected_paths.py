@@ -27,6 +27,7 @@ import contextvars
 import logging
 import os
 import re
+import shlex
 import sys
 import tempfile
 import threading
@@ -256,8 +257,6 @@ def op_for_tool(tool_name: str) -> Op:
 def shell_tokens(command: str) -> list[str]:
     """Every word of a shell command that could name a file (for reads such as
     ``cat ~/.ssh/id_rsa`` or ``cp ~/.ssh/id_rsa /tmp/k``)."""
-
-    import shlex
 
     try:
         words = shlex.split(command, posix=os.name != "nt")

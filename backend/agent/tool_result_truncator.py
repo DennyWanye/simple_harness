@@ -52,6 +52,7 @@ Design choices
 from __future__ import annotations
 
 import logging
+import os as _os
 import secrets
 from collections import OrderedDict
 from pathlib import Path
@@ -99,8 +100,6 @@ def _spill_dir() -> Path | None:
     落盘专项测试 monkeypatch 本函数注入 tmp 目录。
     """
     try:
-        import os as _os
-
         if _os.environ.get("PYTEST_CURRENT_TEST"):
             return None
         from paths import user_cache_dir  # type: ignore[import-not-found]
@@ -117,7 +116,6 @@ _SPILL_MAX_FILES = 400  # 目录文件数上限,超出按 mtime 清最老
 
 def _env_int(name: str, default: int) -> int:
     """安全读取正整数 env 覆盖;缺失/非法/<=0 → default。"""
-    import os as _os
 
     raw = _os.environ.get(name)
     if not raw:

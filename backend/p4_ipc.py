@@ -23,7 +23,9 @@ as ``{"type": "error", "payload": {"message": "..."}}``.
 
 from __future__ import annotations
 
+import json as _json
 import tomllib
+import urllib.request as _urlrequest
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -480,9 +482,6 @@ def _provider_model_ids(service_context: Any) -> list[str]:
     # used by the product hooks so the settings UI can select a model added
     # after boot without changing production registry semantics.
     try:
-        import json as _json
-        import urllib.request as _urlrequest
-
         from deskpet.context_os_e2e_hooks import ContextOSE2EHooks
 
         hooks = ContextOSE2EHooks.from_env()

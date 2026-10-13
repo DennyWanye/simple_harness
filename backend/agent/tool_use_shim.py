@@ -25,6 +25,7 @@ Production wiring:
 
 from __future__ import annotations
 
+import asyncio as _aio
 from collections.abc import AsyncIterator, Sequence
 from typing import TYPE_CHECKING, Any
 
@@ -100,7 +101,6 @@ class OpenAICompatibleAgentLLM:
         **kwargs: Any,
     ) -> AsyncIterator[dict]:
         """Stream one provider, retrying only before the first event."""
-        import asyncio as _aio
 
         max_tokens = int(kwargs.get("max_tokens", 2048))
         temperature = kwargs.get("temperature")

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import logging as _log
 import uuid
+from pathlib import Path as _Path
 
 import paths as _paths
 
@@ -90,8 +92,6 @@ def build_agent(
             and verifier_cfg is not None
             and verifier_cfg.verify_gate_mode != "off"
         ):
-            from pathlib import Path as _Path
-
             from deskpet.agent.verify_gate import (
                 RegexExtractor,
                 VerifyGate,
@@ -182,8 +182,6 @@ def build_agent(
                 conservative_on_error=True,
             )
         except Exception as exc:  # noqa: BLE001 — safe-fail
-            import logging as _log
-
             _log.getLogger(__name__).warning(
                 "external_evaluator construction failed: %s — skipping", exc
             )
@@ -215,8 +213,6 @@ def build_agent(
     def _build_pipeline_verify_gate(_scm: str):
         """为 SelfCheckGate 自建 strict 对账门（抽自上方 :979 构造逻辑；不绑 verifier_cfg.mode）。"""
         try:
-            from pathlib import Path as _Path
-
             from deskpet.agent.verify_gate import (
                 RegexExtractor,
                 VerifyGate,

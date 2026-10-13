@@ -18,12 +18,16 @@ from __future__ import annotations
 
 import json
 
+from deskpet.tools import registry as legacy_registry
 from deskpet.tools.tool_search import _handle_tool_search
 
 
 def _dispatch_legacy(args: dict) -> str:
     """Exercise the legacy search handler independent of main's ON bridge."""
 
+    # 旧静态工具注册表是懒加载的：首次访问才登记各工具（含本搜索工具）。
+    # 显式访问一次，不依赖别的测试先触发（2026-10-13：单独跑本文件会失败）。
+    legacy_registry.all_specs()
     return _handle_tool_search(args, "legacy-tool-search-test")
 
 

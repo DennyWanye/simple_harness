@@ -15,8 +15,12 @@ import hashlib
 import json
 import logging
 import re
+import sqlite3
+import time as _time
+import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from simple_harness import freeze_json, thaw_json
@@ -352,8 +356,6 @@ class ContextRouteLedgerStore:
     """Append-only v45 context/route ledger on the Host human-memory state.db."""
 
     def __init__(self, db_path: Any, *, clock: Any = None, evidence_ingress: Any = None) -> None:
-        import time as _time
-        from pathlib import Path
 
         self._db_path = Path(db_path)
         self._clock = clock or _time.time
@@ -384,8 +386,6 @@ class ContextRouteLedgerStore:
 
     def user_version(self) -> int:
         """Read-only schema version of the backing database (0 when absent)."""
-
-        import sqlite3
 
         if not self._db_path.exists():
             return 0
@@ -1895,7 +1895,6 @@ class ProductRuntimeDecisionSink:
             provider_turn_ordinal=provider_turn_ordinal,
             request_fingerprint=request_fingerprint,
         )
-        import uuid
 
         from simple_harness.execution.context_authority import ContextRouteReceipt
         from simple_harness.runtime.task_scope_protocol import TaskScopeRoute

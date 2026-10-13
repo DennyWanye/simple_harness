@@ -11,6 +11,7 @@ import json
 import os
 import threading
 import time
+from ctypes import wintypes
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -113,7 +114,6 @@ class WindowsWindowBackend:
     def __init__(self) -> None:
         if os.name != "nt":
             raise OSError("window control is available only on Windows")
-        from ctypes import wintypes
 
         self._wintypes = wintypes
         self._user32 = ctypes.windll.user32

@@ -11,6 +11,7 @@ import inspect
 import json
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -799,7 +800,6 @@ class GrowthProductionPipeline:
         if self._clock is not None:
             value = self._clock.now_utc()
             return value.isoformat()
-        from datetime import UTC, datetime
 
         return datetime.now(UTC).isoformat()
 

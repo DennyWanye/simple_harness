@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sqlite3
 import time
 import uuid
 from collections.abc import Mapping
@@ -27,7 +28,6 @@ from host.stores_bootstrap import _state_db_path
 
 async def _activate_terminal_operation_audit():
     """Default-on audit of actual foreground terminals; no Provider work here."""
-    import sqlite3
 
     from deskpet.operation_audit.composition import compose_terminal_audit
 

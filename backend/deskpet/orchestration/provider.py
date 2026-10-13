@@ -15,6 +15,7 @@ only inside the SDK ``Secret``; it is never in a repr, a log line, a payload or 
 
 from __future__ import annotations
 
+import inspect
 from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import urlparse
@@ -116,8 +117,6 @@ def provider_on_client(
     reasoning_effort: str | None = None,
 ) -> Any:
     """An adapter on an existing client (the thinking-mode pools share the Host's client)."""
-
-    import inspect
 
     from simple_harness.providers import OpenAICompatibleProvider, Secret
 

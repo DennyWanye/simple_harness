@@ -14,6 +14,7 @@ P5-S2 Phase 0: error responses now include ``ok: false`` + ``hint``
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 from urllib.parse import urlparse
 
@@ -45,7 +46,6 @@ def _strip_html(html: str) -> str:
     except Exception:
         pass
     # Fallback: drop tags
-    import re
 
     text = re.sub(r"<script.*?</script>", "", html, flags=re.S | re.I)
     text = re.sub(r"<style.*?</style>", "", text, flags=re.S | re.I)

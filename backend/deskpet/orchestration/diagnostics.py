@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import tempfile
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Any
@@ -561,7 +562,6 @@ def taskgraph_history(store: Any, reads: Any, mission_id: str, scratch: Path) ->
     重建出来的库里有任务原文，用完即删。另附历史版本清单（只读，标"历史，不可执行"）和相邻版本的
     结构差异（对象种类、标识、前后哈希；没有正文）。不调模型，不重放外部动作。
     """
-    import tempfile
 
     from agent_orchestrator.contracts.models import ContractError
     from agent_orchestrator.observability.taskgraph_replay import replay_taskgraph

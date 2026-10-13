@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import re
 import secrets
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Request, Response
 from providers.openai_compatible import OpenAICompatibleProvider
@@ -128,7 +129,6 @@ async def _seed_registry_from_runtime_overrides(registry) -> None:
 
 def _provider_display_name(base_url: str, fallback: str) -> str:
     """从 base_url 取主机名做 provider 显示名，取不到就回退到 id。"""
-    from urllib.parse import urlsplit
 
     try:
         return urlsplit(base_url).hostname or fallback

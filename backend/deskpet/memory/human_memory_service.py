@@ -15,7 +15,9 @@ import base64
 import hashlib
 import json
 import logging
+import os
 import sqlite3
+import stat as stat_module
 import uuid
 from collections.abc import Awaitable, Mapping
 from dataclasses import dataclass
@@ -1210,8 +1212,6 @@ class HumanMemoryHostService:
         Nothing here grants a path: it only reports what the append-only
         binding tables and the filesystem currently say.
         """
-        import os
-        import stat as stat_module
 
         with sqlite3.connect(f"file:{self._db_path.resolve()}?mode=ro", uri=True) as db:
             db.row_factory = sqlite3.Row

@@ -32,7 +32,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from typing import Any
 
@@ -439,8 +439,6 @@ def compile_operation(
         if action not in {"create", "revise_semantic"}:
             raise AnalysisProposalRejected("analysis_action_invalid")
         if action == "revise_semantic":
-            from dataclasses import replace
-
             from simple_harness import EvidenceSupportKind, ExistingMemoryTarget
 
             if memory_type != "semantic" or item.envelope.source_kind.value != "user_message":

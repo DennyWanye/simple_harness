@@ -26,6 +26,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
@@ -263,7 +264,6 @@ class SessionGoalStore:
         and ``done`` are reset to 0/False even when overwriting an
         existing entry (new goal = fresh counter).
         """
-        import uuid
 
         now = time.time()
         goal = SessionGoal(

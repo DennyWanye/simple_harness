@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import time
+from dataclasses import replace
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -402,7 +403,6 @@ class PrimaryForegroundContextPort(TaskScopeForegroundContextPort):
         provider,
         tools,
     ):
-        from dataclasses import replace
 
         from deskpet.task_scope.disclosure import render_scope_disclosure
 

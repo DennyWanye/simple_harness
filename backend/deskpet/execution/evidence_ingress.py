@@ -27,6 +27,7 @@ TaskScope archive:
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 import sqlite3
@@ -319,7 +320,6 @@ class _HostExecutionEvidence:
         self.evidence_hash = canonical_hash(raw)
 
     def to_json(self) -> dict[str, Any]:
-        import json
 
         return json.loads(json.dumps(self._raw))
 

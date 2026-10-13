@@ -24,8 +24,10 @@ from __future__ import annotations
 import base64
 import json
 import logging
+import logging as _logging
 import os
 import ssl
+import subprocess
 import sys
 import time
 from collections.abc import Callable
@@ -356,7 +358,6 @@ def _open_file(path: Path) -> bool:
         if sys.platform == "win32":
             os.startfile(str(path))  # noqa: S606 — desktop pet, intended
             return True
-        import subprocess
 
         opener = "open" if sys.platform == "darwin" else "xdg-open"
         subprocess.Popen([opener, str(path)])  # noqa: S603
@@ -387,7 +388,6 @@ def _generate_png(prompt: str, size: str, model: str) -> tuple[bytes | None, str
         # 2026-06-11 中转站日志发现过一次不带 Authorization 头的裸 401
         # （疑似某次配置丢了 key）。本地无鉴权 endpoint 是合法场景，所以
         # 不硬失败，但落警告日志便于下次定位 key 解析链路哪环断了。
-        import logging as _logging
 
         _logging.getLogger(__name__).warning(
             "generate_image: api_key 未解析到，发送不带 Authorization 的"
@@ -710,7 +710,6 @@ def _handle_generate_image(
         # “在画了”，但 job 从未入队、永不出图（静默失败，用户实测到的
         # bug）。最佳实践 = 优雅降级：回退同步路径，慢但用户必拿到图；
         # 同时落日志以便定位 worker 不可用的根因。
-        import logging as _logging
 
         _logging.getLogger(__name__).warning(
             "generate_image: worker.submit status=%r (not queued) "

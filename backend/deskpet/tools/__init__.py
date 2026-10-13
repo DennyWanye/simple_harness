@@ -14,6 +14,7 @@ older product-only call sites can be migrated independently. Merely importing
 
 from __future__ import annotations
 
+import importlib
 from threading import RLock
 from typing import Any
 
@@ -51,7 +52,6 @@ class _LazyRegistryProxy:
         self._lock = RLock()
 
     def _target(self) -> Any:
-        import importlib
 
         with self._lock:
             if self._resolved is not None:

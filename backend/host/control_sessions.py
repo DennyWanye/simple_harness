@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import json as _load_json
 from typing import Any
 
 from deskpet.tools.public_projection import project_public_tool_calls, project_public_tool_result
@@ -296,8 +297,6 @@ async def _cc_session_messages_load(conn: _ControlConnection, raw: dict, msg_typ
                 _tcs_raw = r.get("tool_calls")
                 if _tcs_raw:
                     try:
-                        import json as _load_json
-
                         _entry["tool_calls"] = project_public_tool_calls(
                             _load_json.loads(_tcs_raw) if isinstance(_tcs_raw, str) else _tcs_raw
                         )

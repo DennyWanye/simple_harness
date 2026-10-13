@@ -7,6 +7,8 @@ inside the existing atomic turn, not in another permission ledger.
 from __future__ import annotations
 
 import hashlib
+import json
+from base64 import b64decode, urlsafe_b64encode
 
 from deskpet.memory.writer_fence import require_authenticated_host_snapshot
 from deskpet.task_scope.protocol import canonical_hash, digest
@@ -164,7 +166,6 @@ def validate_input_use(value, *, envelope, receipt, primary_ref, delivery_key, c
 
 async def read_input_use_tx(db, *, turn, config):
     """Read actual Host S1 + original turn/config in the caller's one snapshot."""
-    import json
 
     from deskpet.memory.primary_visibility import read_evidence_pair
 
@@ -220,7 +221,6 @@ async def read_current_input_source(*, db_path, subject, turn_id):
     Old history-source resolution uses the original configuration instead; this
     reader explicitly requires the current head to match the admitted token.
     """
-    import json
 
     import aiosqlite
 
@@ -255,7 +255,6 @@ async def read_current_input_source(*, db_path, subject, turn_id):
 
 def input_context_ref(source_ref, token, request_id):
     """Versioned request correlation for new input turns only, never a grant."""
-    from base64 import urlsafe_b64encode
 
     from deskpet.task_scope.protocol import identifier
 
@@ -271,7 +270,6 @@ def input_context_ref(source_ref, token, request_id):
 
 
 def input_context_request_id(context):
-    from base64 import b64decode, urlsafe_b64encode
 
     try:
         _, encoded = context.authority_ref.rsplit(":input-v1:", 1)

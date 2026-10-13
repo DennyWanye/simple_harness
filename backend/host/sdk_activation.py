@@ -6,6 +6,7 @@ import os
 import time
 import uuid
 from collections.abc import Mapping
+from dataclasses import replace
 
 from deskpet.agent.turn_preparer import PRODUCT_ROUTE_OWNED_TOOL_NAMES
 from deskpet.sdk_adapters.sdk_candidate import SDK_VERSION
@@ -367,7 +368,6 @@ async def _activate_companion_runtime_adapter_and_open_ingress() -> None:
     from deskpet.companion.run_adapter import BackgroundRunAdapter
 
     async def _background_host(owner, claim):
-        from dataclasses import replace
 
         from deskpet.execution.contracts import fingerprint_json
 

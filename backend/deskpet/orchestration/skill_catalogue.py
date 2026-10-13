@@ -27,6 +27,7 @@ evaluation Mission, found in the ledger and verified by the SDK's acceptance rea
 from __future__ import annotations
 
 import hashlib
+import json
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -84,7 +85,6 @@ def _certificate(service: Any, mission_id: str, task_id: str) -> Any:
     acceptance pin the SDK verifies (None while the evaluation has not passed): the
     adopted root resolution of a content-only evaluation Mission (2026-09-29: such a
     Mission writes no acceptance row for its root task), else the task's acceptance."""
-    import json
 
     from simple_harness.agents.arp.pins import Pin
 

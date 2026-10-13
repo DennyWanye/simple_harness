@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -38,7 +39,6 @@ from deskpet.task_scope.workspace_bindings import WorkspaceBindingAuthorityStore
 
 
 def _turn_text(candidate: PreparationCandidate) -> str:
-    import json
 
     try:
         raw = json.loads(candidate.candidate_json)

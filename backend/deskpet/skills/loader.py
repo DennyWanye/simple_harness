@@ -38,6 +38,7 @@ from __future__ import annotations
 import hashlib
 import json
 import posixpath
+import re
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -175,7 +176,6 @@ def _substitute_args(body: str, args: list[str]) -> str:
         out = out.replace(f"${{args[{i}]}}", str(val))
     # Clear any remaining unfilled slots so the rendered message never
     # shows ``${args[3]}`` to the model.
-    import re
 
     out = re.sub(r"\$\{args\[\d+\]\}", "", out)
     return out

@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
+import uuid
 from collections.abc import Mapping
 
 import aiosqlite
@@ -310,7 +312,6 @@ async def read_run_dependencies(
         recall.extend(scope_proof["recall"])
         short.extend(scope_proof.get("short_horizon", ()))
         drafts.extend(scope_proof.get("procedure_drafts", ()))
-    import uuid
 
     from simple_harness import thaw_json
     from simple_harness.execution.context_authority import ContextRouteReceipt
@@ -390,8 +391,6 @@ async def read_run_dependencies(
             raise ValueError("primary_dependencies_recall_refs_mismatch")
         for fragment in fragments:
             if fragment.get("lane") == "short_horizon":
-                import hashlib
-
                 binding = dependencies(short_horizon=[fragment.get("history_binding")])[
                     "short_horizon"
                 ][0]

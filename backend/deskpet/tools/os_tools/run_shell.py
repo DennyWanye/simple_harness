@@ -41,6 +41,7 @@ import json
 import logging
 import os
 import re
+import re as _re
 import shlex
 import shutil
 import signal
@@ -666,7 +667,6 @@ def run_shell(
         _hit_port = None
         for _p in _DESKPET_RESERVED_PORTS:
             # match `:5173` `port 5173` `5173 ` etc. but not `15173`
-            import re as _re
 
             if _re.search(rf"(?<!\d){_p}(?!\d)", command):
                 _hit_port = _p

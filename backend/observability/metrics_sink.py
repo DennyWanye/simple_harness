@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import json
 import logging
+import tempfile
 import time
 from pathlib import Path
 from typing import Any
@@ -389,8 +390,6 @@ def get_default_sink() -> MetricsSink:
 
         base = user_data_dir()
     except Exception:  # noqa: BLE001
-        import tempfile
-
         base = Path(tempfile.gettempdir()) / "deskpet"
     _default_sink = MetricsSink(Path(base) / "metrics.jsonl")
     return _default_sink

@@ -8,6 +8,7 @@ Platform receipt.  CapabilityStore remains the only active-binding authority.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Literal, Protocol
@@ -497,7 +498,6 @@ def _optional(row: Mapping[str, Any], key: str) -> str | None:
 
 
 def _decode_json(value: str) -> Mapping[str, object]:
-    import json
 
     decoded = json.loads(value)
     if not isinstance(decoded, dict):

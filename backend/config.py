@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import logging
 import os
@@ -1118,8 +1119,6 @@ def _merge_missing_feature_flags(user_target: Path, bundle_source: Path) -> bool
     Returns True iff the file was modified.
     """
     try:
-        import copy
-
         import tomlkit
     except Exception as e:  # pragma: no cover - import guard
         logger.warning("feature_flag_merge_skipped (no tomlkit): %s", e)
@@ -1297,8 +1296,6 @@ def _recover_orphaned_endpoints(canonical_path: Path) -> bool:
     never raises.
     """
     try:
-        import copy
-
         import tomlkit
     except Exception as e:  # pragma: no cover - import guard
         logger.warning("endpoints_recover_failed: %s", e)

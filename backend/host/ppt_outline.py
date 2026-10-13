@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import concurrent.futures as _cf
+from dataclasses import replace
 
 from deskpet.tools import ppt_tools
 from deskpet.tools.ppt_outline_store import expire_dangling_proposed, list_history
@@ -138,7 +139,6 @@ _PPT_PRO_RENDER_EXECUTOR = _cf.ThreadPoolExecutor(
 
 
 def _configure_ppt_workflow_adapter(launcher):
-    from dataclasses import replace
 
     from deskpet.workflows.adapters.ppt_runtime import PptRuntime
     from deskpet.workflows.contracts import WorkflowContext

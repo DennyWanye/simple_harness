@@ -3,7 +3,11 @@
 
 from __future__ import annotations
 
+import asyncio
+import asyncio as _asyncio
 import json
+import json as _json
+import re as _re
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING
 
@@ -737,7 +741,6 @@ class OpenAICompatibleProvider:
         # here (HTTPStatusError raised by raise_for_status doesn't get
         # caught in this loop) so reasoning_content 400s still flow to
         # the strip-and-retry handler below.
-        import asyncio as _asyncio
 
         async def _send(_msgs: list[dict]) -> dict:
             _wire_msgs = _msgs
@@ -1084,7 +1087,6 @@ class OpenAICompatibleProvider:
         content trickle in as it generates instead of staring at a
         blank screen until the whole response lands.
         """
-        import asyncio as _asyncio
 
         launch_headers, launch_retry_mode = self._launch_request_parts(
             launch_operation_id,
@@ -1418,8 +1420,6 @@ class OpenAICompatibleProvider:
         event resets the deadline.
         """
 
-        import asyncio
-
         stream = self._stream_one_attempt(
             payload,
             transport_retries=transport_retries,
@@ -1455,7 +1455,6 @@ class OpenAICompatibleProvider:
         # network await/write.  Re-entry is an internal transport retry, not a
         # new logical provider attempt.
         mark_current_attempt_sent()
-        import json as _json
 
         # Accumulators for assembling the final event.
         full_content = ""
@@ -1866,7 +1865,6 @@ class OpenAICompatibleProvider:
                     #   Crucially, leaves legal escapes (\\, \", \n, \t,
                     #   \uXXXX, …) intact because the regex's negated
                     #   class excludes the legal followers.
-                    import re as _re
 
                     _invalid_esc = _re.compile(r'\\([^"\\/bfnrtu])')
                     if _invalid_esc.search(args_buf):

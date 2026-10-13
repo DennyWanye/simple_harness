@@ -19,6 +19,8 @@ PRD §5 健康区间 metric：
 
 from __future__ import annotations
 
+import hashlib
+import hmac as _hmac
 import json
 import logging
 import os
@@ -120,8 +122,6 @@ def load_or_create_hmac_key(secrets_dir: Path) -> tuple[bytes, str]:
 
 def sanity_echo(key: bytes) -> bool:
     """启动期 sanity HMAC echo — 验证 key 可用（PRD D11）。"""
-    import hashlib
-    import hmac as _hmac
 
     expected = _hmac.new(key, b"ping", hashlib.sha256).hexdigest()
     return len(expected) == 64

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time as _t
+
 from providers.openai_compatible import OpenAICompatibleProvider
 
 from host.connections import _control_connections
@@ -271,8 +273,6 @@ async def _startup_supervisor() -> None:
                     # 即使 agent 自己拆了 todos，用户没主动让它做 →
                     # 我们也不该自动催 agent 干。
                     try:
-                        import time as _t
-
                         last_user_ts = (
                             await sdb_local.last_message_ts(session_id=_base_sid, role="user")
                             if hasattr(sdb_local, "last_message_ts")

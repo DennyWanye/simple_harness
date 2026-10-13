@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import json
 import logging
 import uuid
 from collections.abc import Mapping
@@ -162,8 +163,6 @@ async def read_current_turn_text(db_path: Any, sdk_run_id: str) -> str:
     Returns "" when the Run has no live claim (a settled or foreign Run), which
     only costs the probe one lexical surface.
     """
-
-    import json
 
     import aiosqlite
 

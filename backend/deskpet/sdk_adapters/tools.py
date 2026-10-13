@@ -13,7 +13,9 @@ import json
 import logging
 import re
 from collections.abc import Callable, Mapping, Sequence
+from contextlib import AsyncExitStack, nullcontext
 from dataclasses import dataclass, replace
+from pathlib import Path
 from typing import Any, Literal, Protocol
 
 from simple_harness import CallId, JsonValue, thaw_json
@@ -444,8 +446,6 @@ class ProductToolsAdapter(ToolRegistry):
         """(session id, workspace root Path | None) of a Run, for the protected-path
         checkpoint.  Unknown Runs get an empty session (grants never match)."""
 
-        from pathlib import Path
-
         resolve = getattr(self._run_authorities, "resolve", None)
         try:
             authority = resolve(run_id) if callable(resolve) else None
@@ -839,8 +839,6 @@ class ProductEffectExecutor(EffectExecutor):
         token = _validation_run_id.set(context.run_id.value)
         origin_token = _foreground_invocation_origin.set(origin)
         try:
-            from contextlib import AsyncExitStack, nullcontext
-
             binding_scope = getattr(self._effect_gate, "execution_scope", None)
             scope = (
                 binding_scope(context, kwargs["call"].name)
