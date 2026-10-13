@@ -10,6 +10,7 @@ import main
 import pytest
 from host import sdk_recovery, sdk_services
 from host.state import host_state
+from host import sdk_runtime_stack
 
 
 class _ProductionProviderRegistry:
@@ -117,7 +118,7 @@ def test_skill_install_verifier_binds_only_after_sdk_runtime_is_ready():
 def test_sdk_runtime_has_no_placeholder_capability_or_authorization_authority():
     import inspect
 
-    source = inspect.getsource(main._build_product_sdk_runtime_stack)
+    source = inspect.getsource(sdk_runtime_stack._build_product_sdk_runtime_stack)
 
     assert "_MinimalCapabilityBridge" not in source
     assert "_SdkAuthorizationPolicy" not in source
@@ -133,7 +134,7 @@ def test_sdk_runtime_has_no_placeholder_capability_or_authorization_authority():
 def test_sdk_tool_authority_is_reachable_for_fresh_waiting_terminal_and_recovery():
     import inspect
 
-    build = inspect.getsource(main._build_product_sdk_runtime_stack)
+    build = inspect.getsource(sdk_runtime_stack._build_product_sdk_runtime_stack)
     foreground = inspect.getsource(main._run_product_harness_chat)
     execute = inspect.getsource(main._execute_sdk_run)
     watcher = inspect.getsource(sdk_recovery._watch_retained_sdk_run)

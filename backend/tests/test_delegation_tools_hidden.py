@@ -20,6 +20,7 @@ from deskpet.tools.code_tools.spawn_subagents_tool import (
     product_delegation_tool_catalog,
 )
 from host import sdk_services
+from host import sdk_runtime_stack
 
 DELEGATION = {"agent", "agent_parallel", "spawn_team", "spawn_subagents", "await_subagents"}
 
@@ -77,7 +78,7 @@ def _c(text: str) -> str:
 
 
 def test_restart_recovery_and_projection_keep_delegated_children_out_of_the_chat():
-    source = _c(inspect.getsource(main._build_product_sdk_runtime_stack))
+    source = _c(inspect.getsource(sdk_runtime_stack._build_product_sdk_runtime_stack))
     factory = source.split(_c("def ports_factory(database, uow):"), 1)[1]
     # 子运行跳过界面投递路由（也就不进根映射、不挂恢复监视器），交给委派服务重新接管。
     guard = factory.index(_c("if is_delegated_child_start(start):"))

@@ -51,27 +51,22 @@ def bound_names(node: ast.stmt) -> set[str]:
 
 
 def free_loads(nodes: list[ast.stmt]) -> set[str]:
-    """块里读取、但块内没有绑定的名字（粗略：不区分函数局部，靠"块内绑定"排除）。"""
-    loads: set[str] = set()
-    local: set[str] = set()
-    for n in nodes:
-        local |= bound_names(n)
-        for x in ast.walk(n):
-            if isinstance(x, ast.Name) and isinstance(x.ctx, ast.Load):
-                loads.add(x.id)
-            if isinstance(x, ast.arg):
-                local.add(x.arg)
-            if isinstance(x, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
-                for y in ast.walk(x):
-                    if isinstance(y, ast.Name) and isinstance(y.ctx, ast.Store):
-                        local.add(y.id)
-            if isinstance(x, ast.comprehension):
-                for y in ast.walk(x.target):
-                    if isinstance(y, ast.Name):
-                        local.add(y.id)
-            if isinstance(x, ast.ExceptHandler) and x.name:
-                local.add(x.name)
-    return loads - local - BUILTINS
+    """块里按全局变量读取、但块顶层没有定义的名字。
+
+    按作用域判断（symtable）：内层函数里的同名局部变量不影响外层对全局名字的读取。
+    2026-10-13 教训：旧算法把"块里任何地方绑定过的名字"都当局部，运行栈组装里
+    外层读全局 config、内层工厂函数另有局部 config，导入被漏掉。
+    """
+    import symtable
+
+    block = ast.Module(body=list(nodes), type_ignores=[])
+    table = symtable.symtable(ast.unparse(block), "<block>", "exec")
+    top_level = {
+        sym.get_name()
+        for sym in table.get_symbols()
+        if sym.is_assigned() or sym.is_imported() or sym.is_namespace()
+    }
+    return global_refs(block) - top_level - BUILTINS
 
 
 def main() -> int:

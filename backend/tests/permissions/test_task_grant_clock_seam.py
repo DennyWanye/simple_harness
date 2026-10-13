@@ -27,6 +27,8 @@ from deskpet.tools.capabilities import ToolExecutionContext
 from deskpet.types.task_grants import ResourceSelector, TaskGrant
 from deskpet.workflows.effects import PreparedToolCall
 
+from tests.host_source import host_source_tree
+
 TASK_GRANT_TTL_SECONDS = 8 * 60 * 60
 DAY = 86400.0
 POLICY_GENERATION = 4
@@ -129,16 +131,13 @@ def _activate(database: ProductStateDatabase, grant: TaskGrant, *, now: float):
 # --------------------------------------------------------------------------
 
 
-def _main_source() -> str:
-    import main
-
-    return Path(inspect.getfile(main)).read_text(encoding="utf-8")
+def _main_tree() -> ast.Module:
+    return host_source_tree()
 
 
-def _call_keywords(source: str, func_name: str, callee: str) -> list[list[str]]:
+def _call_keywords(tree: ast.Module, func_name: str, callee: str) -> list[list[str]]:
     """Keyword names of every ``callee(...)`` call inside ``func_name``."""
 
-    tree = ast.parse(source)
     found: list[list[str]] = []
     for node in ast.walk(tree):
         if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -242,23 +241,22 @@ def test_t3_clock_is_threaded_through_the_host_composition() -> None:
     """注入贯通性：clock= 一路下传到铸造侧，生产调用点保持真实墙钟。"""
 
     _assert_capability_runtime_clock_seam()
-    source = _main_source()
+    tree = _main_tree()
 
     for callee in ("PreparedAuthorizationRuntime", "AdmissionTaskGrantRuntime"):
-        calls = _call_keywords(source, "_initialize_capability_runtime", callee)
+        calls = _call_keywords(tree, "_initialize_capability_runtime", callee)
         assert calls, f"_initialize_capability_runtime 未构造 {callee}"
         for keywords in calls:
             assert "clock" in keywords, f"{callee} 未收到注入的 clock"
 
     policy_calls = _call_keywords(
-        source, "_build_product_sdk_runtime_stack", "SdkPreparedAuthorizationPolicy"
+        tree, "_build_product_sdk_runtime_stack", "SdkPreparedAuthorizationPolicy"
     )
     assert policy_calls
     for keywords in policy_calls:
         assert "clock" in keywords, "SdkPreparedAuthorizationPolicy 未收到注入的 clock"
 
     # 生产启动路径不传 clock → 默认真实墙钟，生产行为零变化。
-    tree = ast.parse(source)
     production_calls = [
         node
         for node in ast.walk(tree)

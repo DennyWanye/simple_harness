@@ -15,6 +15,7 @@ from types import SimpleNamespace
 
 import pytest
 from tests.host_source import host_source_text
+from host import sdk_runtime_stack
 
 XF = pytest.mark.xfail(strict=True, reason="S5b 实装前占位（NOT_IMPLEMENTED）")
 
@@ -1242,7 +1243,7 @@ async def test_pending_closure_belongs_to_admission_scope_and_next_run_merges(
 def test_composition_missing_piece_startup_fail_each(tmp_path: Path) -> None:
     """AC-6①：逐槽缺件 → 真构造断言 startup stable fail（不是源码 grep、不是 warning+skip）。
 
-    ① 生产装配的缺槽断言 ``main._assert_sdk_composition_slots`` 对真实 ``ServiceContext`` 逐槽置 None →
+    ① 生产装配的缺槽断言 ``sdk_runtime_stack._assert_sdk_composition_slots`` 对真实 ``ServiceContext`` 逐槽置 None →
        ``sdk_context_authority_composition_missing:<slot>``；② ``EffectGate`` 构造期逐件缺失 → TypeError；
     ③ ``ProductRunContextAuthority`` 缺 closure_reader 由 ``_build_run_context_authority`` 保证非 None；
     ④ ``_activate_product_sdk_runtime`` 把构建异常 raise（见 test_composition 的真实启动顺序用例）。"""
@@ -1253,9 +1254,9 @@ def test_composition_missing_piece_startup_fail_each(tmp_path: Path) -> None:
     from deskpet.task_scope.store import CanonicalTaskScopeStore
 
     context = ServiceContext()
-    for slot in main.SDK_COMPOSITION_SLOTS:
+    for slot in sdk_runtime_stack.SDK_COMPOSITION_SLOTS:
         context.register(slot, object())
-    main._assert_sdk_composition_slots(context)
+    sdk_runtime_stack._assert_sdk_composition_slots(context)
     # 2026-09-10：``sdk_evidence_authority`` / ``sdk_memory_analysis_executor`` /
     # ``sdk_memory_ingestion_outbox`` 三个 Host↔Memory 异步面槽位随认知记忆 SDK
     # 一并移除，不再是必备装配件。
@@ -1264,15 +1265,15 @@ def test_composition_missing_piece_startup_fail_each(tmp_path: Path) -> None:
         "sdk_task_execution_authority",
         "sdk_closure_instruction_reader",
         "sdk_provider_binding_resolver",
-    } <= set(main.SDK_COMPOSITION_SLOTS)
-    for slot in main.SDK_COMPOSITION_SLOTS:
+    } <= set(sdk_runtime_stack.SDK_COMPOSITION_SLOTS)
+    for slot in sdk_runtime_stack.SDK_COMPOSITION_SLOTS:
         probe = ServiceContext()
-        for other in main.SDK_COMPOSITION_SLOTS:
+        for other in sdk_runtime_stack.SDK_COMPOSITION_SLOTS:
             probe.register(other, None if other == slot else object())
         with pytest.raises(
             RuntimeError, match=f"sdk_context_authority_composition_missing:{slot}$"
         ):
-            main._assert_sdk_composition_slots(probe)
+            sdk_runtime_stack._assert_sdk_composition_slots(probe)
     # ② EffectGate 真构造：任一件缺失 → TypeError（stack 构建期即失败）。
     pieces = {
         "binding_store": object(),

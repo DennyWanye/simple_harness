@@ -107,12 +107,13 @@ def test_consumers_share_single_source_of_truth() -> None:
 
     import main
     from deskpet.sdk_adapters import conformance, desktop_runtime
+    from host import sdk_runtime_stack
 
     assert not hasattr(desktop_runtime, "_SDK_VERSION")
     assert not hasattr(desktop_runtime, "_SDK_WHEEL_SHA256")
     assert conformance._WHEEL == sdk_wheel_path()
     assert main.SDK_VERSION is SDK_VERSION
-    assert main.build_runtime_identity is build_runtime_identity
+    assert sdk_runtime_stack.build_runtime_identity is build_runtime_identity
 
 
 # 2026-09-10：``test_memory_candidate_wrong_wheel_hash_fails_closed``

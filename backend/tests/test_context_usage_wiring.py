@@ -49,7 +49,9 @@ async def test_binding_commit_pushes_binding_only_context_authority() -> None:
 
     ws = _WS()
     context_usage._session_context_state.pop("session-binding-only", None)
-    payload = await context_usage._send_context_usage_authority(ws, _SessionDB(), "session-binding-only")
+    payload = await context_usage._send_context_usage_authority(
+        ws, _SessionDB(), "session-binding-only"
+    )
 
     assert payload["model"] == "kimi-k3"
     assert payload["source"] == "binding_only"

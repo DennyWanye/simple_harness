@@ -39,6 +39,7 @@ from simple_harness import (
 from simple_harness.execution.sqlite import Database, SqliteExecutionUnitOfWork
 from simple_harness.execution.uow import RunState
 from tests.host_source import host_source_text
+from host import sdk_runtime_stack
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 WHEEL = sdk_wheel_path()
@@ -930,7 +931,7 @@ async def test_production_context_authority_injects_closure_instruction_when_adm
     # （Task 6：缺槽断言是数据 ``SDK_COMPOSITION_SLOTS`` + ``_assert_sdk_composition_slots`` 真构造）。
     source = host_source_text()
     assert 'service_context.register("sdk_closure_instruction_reader"' in source
-    assert "sdk_closure_instruction_reader" in main.SDK_COMPOSITION_SLOTS
+    assert "sdk_closure_instruction_reader" in sdk_runtime_stack.SDK_COMPOSITION_SLOTS
 
 
 # ---- S5b Task 6 / P0：真实启动顺序下的 stack 构建与缺件 fail-closed ----
