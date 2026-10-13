@@ -211,6 +211,11 @@ def main() -> int:
     new_tree = ast.parse(new_src)
     used_after = {x.id for x in ast.walk(new_tree) if isinstance(x, ast.Name)}
     removable = sorted(n for n in (needed & set(import_of)) if n not in used_after)
+    # 测试还经源模块取用的名字先留着，由收尾步骤把测试改到真实模块后再删（2026-10-13 教训）
+    via_tests = tests_referencing(src_path, removable)
+    if via_tests:
+        print("只被测试经源模块取用的导入（暂留）：", ", ".join(sorted(via_tests)))
+        removable = [n for n in removable if n not in via_tests]
 
     print(f"搬走 {len(moved)} 条顶层语句、{sum(e - s + 1 for s, e in spans)} 行 → {dst_path}")
     print(f"目标文件导入 {len(imp_lines)} 条；源文件新增导入 {len(still_used)} 个名字")

@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, Mock, create_autospec
 
 import pytest
 from deskpet.sdk_adapters.desktop_runtime import _delivery_adapters
-from host import sdk_execution, sdk_recovery
+from host import harness_runs, sdk_execution, sdk_recovery, sdk_registry
 from host.state import host_state
 
 from tests.host_patch import patch_host_global
@@ -497,7 +497,7 @@ def test_sdk_skill_resolver_registration_does_not_depend_on_legacy_assembler():
 
 @pytest.mark.asyncio
 async def test_sdk_bounded_history_excludes_non_conversation_projections_and_canaries():
-    from main import _bounded_sdk_history
+    from host.sdk_context import _bounded_sdk_history
 
     public_summary_canary = "PUBLIC_REASONING_SUMMARY_CANARY"
     hidden_reasoning_canary = "HIDDEN_REASONING_CANARY"
@@ -693,19 +693,18 @@ def mock_context():
 @pytest.fixture(autouse=True)
 def clear_registry():
     """Clear global delivery adapter registry."""
-    import main
 
     _delivery_adapters.clear()
-    main._sdk_run_ids_by_root.clear()
-    main._sdk_cancel_requested_run_ids.clear()
-    main._sdk_retained_presentations.clear()
-    main._sdk_recovery_watch_tasks.clear()
+    sdk_registry._sdk_run_ids_by_root.clear()
+    sdk_registry._sdk_cancel_requested_run_ids.clear()
+    sdk_registry._sdk_retained_presentations.clear()
+    sdk_registry._sdk_recovery_watch_tasks.clear()
     yield
     _delivery_adapters.clear()
-    main._sdk_run_ids_by_root.clear()
-    main._sdk_cancel_requested_run_ids.clear()
-    main._sdk_retained_presentations.clear()
-    main._sdk_recovery_watch_tasks.clear()
+    sdk_registry._sdk_run_ids_by_root.clear()
+    sdk_registry._sdk_cancel_requested_run_ids.clear()
+    sdk_registry._sdk_retained_presentations.clear()
+    sdk_registry._sdk_recovery_watch_tasks.clear()
 
 
 def _presentation_context(*, websocket, session_db, root_run_id):
@@ -779,7 +778,6 @@ class _BindingLifecycle:
 @pytest.mark.asyncio
 async def test_execute_sdk_run_registers_delivery_before_start_first_turn(monkeypatch):
     """A worker executing inside start() must already see its Run delivery."""
-    import main
     from deskpet.sdk_adapters.ingress import SdkRuntimeIngress
     from simple_harness import CallId
     from simple_harness.tools import ToolCall, ToolResult
@@ -939,12 +937,11 @@ async def test_execute_sdk_run_registers_delivery_before_start_first_turn(monkey
         for row in persisted
     )
     assert sdk_run_id not in _delivery_adapters
-    assert "canonical-root-race" not in main._sdk_run_ids_by_root
+    assert "canonical-root-race" not in sdk_registry._sdk_run_ids_by_root
 
 
 @pytest.mark.asyncio
 async def test_execute_sdk_run_waiting_retains_delivery_and_identity(monkeypatch):
-    import main
     from deskpet.sdk_adapters.ingress import SdkRuntimeIngress
 
     session_id = "waiting-session"
@@ -1015,8 +1012,8 @@ async def test_execute_sdk_run_waiting_retains_delivery_and_identity(monkeypatch
     assert lifecycle.waiting == [sdk_run_id]
     assert lifecycle.terminal == []
     assert sdk_run_id in _delivery_adapters
-    assert main._sdk_run_ids_by_root[root_run_id] == sdk_run_id
-    assert main._sdk_retained_presentations[sdk_run_id][3] is context
+    assert sdk_registry._sdk_run_ids_by_root[root_run_id] == sdk_run_id
+    assert sdk_registry._sdk_retained_presentations[sdk_run_id][3] is context
     permission_frames = [
         item.args[0]
         for item in websocket.send_json.await_args_list
@@ -1049,7 +1046,6 @@ async def test_execute_sdk_run_waiting_retains_delivery_and_identity(monkeypatch
 
 @pytest.mark.asyncio
 async def test_open_authorization_replay_restores_durable_run_route(monkeypatch):
-    import main
 
     root_run_id = "root-replayed-authorization"
     sdk_run_id = "sdk-replayed-authorization"
@@ -1072,7 +1068,7 @@ async def test_open_authorization_replay_restores_durable_run_route(monkeypatch)
     )
     ingress = SimpleNamespace(list_open_authorizations=lambda **_kwargs: (decision,))
     websocket = SimpleNamespace(send_json=AsyncMock())
-    main._sdk_run_ids_by_root.clear()
+    sdk_registry._sdk_run_ids_by_root.clear()
     monkeypatch.setattr(host_state, "sdk_ingress", ingress)
     monkeypatch.setattr(sdk_recovery, "_broadcast_default_chat_peers", AsyncMock())
 
@@ -1083,7 +1079,7 @@ async def test_open_authorization_replay_restores_durable_run_route(monkeypatch)
     )
 
     assert projected == 1
-    assert main._sdk_run_ids_by_root[root_run_id] == sdk_run_id
+    assert sdk_registry._sdk_run_ids_by_root[root_run_id] == sdk_run_id
     assert websocket.send_json.await_args.args[0]["payload"] == {
         "session_id": "session-replayed-authorization",
         "run_id": root_run_id,
@@ -1108,7 +1104,6 @@ async def test_open_authorization_replay_restores_durable_run_route(monkeypatch)
 
 
 def test_restore_sdk_delivery_route_requires_and_preserves_identity(monkeypatch):
-    import main
 
     sdk_run_id = "sdk-recovered"
     record = SimpleNamespace(run_id=sdk_run_id)
@@ -1141,13 +1136,13 @@ def test_restore_sdk_delivery_route_requires_and_preserves_identity(monkeypatch)
     )
 
     assert sdk_recovery._restore_sdk_delivery_route(record, start, SimpleNamespace()) is True
-    delivery, _presenter, _state, context = main._sdk_retained_presentations[sdk_run_id]
+    delivery, _presenter, _state, context = sdk_registry._sdk_retained_presentations[sdk_run_id]
     assert delivery._session_id == "session-recovered"
     assert context.run_id == "root-recovered"
     assert context.request_id == "request-recovered"
     assert context.task_scope_id == "scope-recovered"
     assert context.conversation_boundary_ref == "boundary-recovered"
-    assert main._sdk_run_ids_by_root["root-recovered"] == sdk_run_id
+    assert sdk_registry._sdk_run_ids_by_root["root-recovered"] == sdk_run_id
 
     missing_scope = {
         "input": {
@@ -1169,7 +1164,6 @@ def test_restore_sdk_delivery_route_requires_and_preserves_identity(monkeypatch)
 
 
 def test_unmigratable_v1_recovery_isolated_without_partial_authority():
-    import main
     from deskpet.sdk_adapters.desktop_runtime import _delivery_adapters
 
     sdk_run_id = "sdk-legacy-v1"
@@ -1177,8 +1171,8 @@ def test_unmigratable_v1_recovery_isolated_without_partial_authority():
     provider = SimpleNamespace(mark_terminal=Mock())
     tools = SimpleNamespace(mark_terminal=Mock(side_effect=KeyError(sdk_run_id)))
     _delivery_adapters[sdk_run_id] = object()
-    main._sdk_retained_presentations[sdk_run_id] = (object(),) * 4
-    main._sdk_run_ids_by_root[root_run_id] = sdk_run_id
+    sdk_registry._sdk_retained_presentations[sdk_run_id] = (object(),) * 4
+    sdk_registry._sdk_run_ids_by_root[root_run_id] = sdk_run_id
 
     sdk_recovery._isolate_unrestorable_sdk_tool_authority(
         sdk_run_id=sdk_run_id,
@@ -1191,15 +1185,14 @@ def test_unmigratable_v1_recovery_isolated_without_partial_authority():
     provider.mark_terminal.assert_called_once_with(sdk_run_id, "failed")
     tools.mark_terminal.assert_called_once_with(sdk_run_id, "failed")
     assert sdk_run_id not in _delivery_adapters
-    assert sdk_run_id not in main._sdk_retained_presentations
-    assert root_run_id not in main._sdk_run_ids_by_root
-    assert sdk_run_id in main._sdk_unavailable_tool_authority_runs
-    main._sdk_unavailable_tool_authority_runs.discard(sdk_run_id)
+    assert sdk_run_id not in sdk_registry._sdk_retained_presentations
+    assert root_run_id not in sdk_registry._sdk_run_ids_by_root
+    assert sdk_run_id in sdk_registry._sdk_unavailable_tool_authority_runs
+    sdk_registry._sdk_unavailable_tool_authority_runs.discard(sdk_run_id)
 
 
 @pytest.mark.asyncio
 async def test_recovered_completed_run_projects_final_and_cleans_route(monkeypatch):
-    import main
 
     sdk_run_id = "sdk-recovered-completed"
     root_run_id = "root-recovered-completed"
@@ -1227,8 +1220,8 @@ async def test_recovered_completed_run_projects_final_and_cleans_route(monkeypat
     monkeypatch.setattr(host_state, "sdk_ingress", ingress)
     monkeypatch.setattr(host_state, "sdk_context_port", context_port)
     monkeypatch.setattr(host_state, "sdk_provider_binding_resolver", lifecycle)
-    main._sdk_retained_presentations[sdk_run_id] = (delivery, presenter, state, context)
-    main._sdk_run_ids_by_root[root_run_id] = sdk_run_id
+    sdk_registry._sdk_retained_presentations[sdk_run_id] = (delivery, presenter, state, context)
+    sdk_registry._sdk_run_ids_by_root[root_run_id] = sdk_run_id
     _delivery_adapters[sdk_run_id] = delivery
 
     await sdk_recovery._watch_retained_sdk_run(sdk_run_id)
@@ -1237,14 +1230,13 @@ async def test_recovered_completed_run_projects_final_and_cleans_route(monkeypat
     assert event.content == "durable recovered answer"
     delivery.finish.assert_awaited_once()
     assert lifecycle.terminal == [(sdk_run_id, "completed")]
-    assert sdk_run_id not in main._sdk_retained_presentations
+    assert sdk_run_id not in sdk_registry._sdk_retained_presentations
     assert sdk_run_id not in _delivery_adapters
-    assert root_run_id not in main._sdk_run_ids_by_root
+    assert root_run_id not in sdk_registry._sdk_run_ids_by_root
 
 
 @pytest.mark.asyncio
 async def test_resumed_waiting_run_projects_next_authorization(monkeypatch):
-    import main
 
     sdk_run_id = "sdk-resumed-waiting"
     websocket = SimpleNamespace(send_json=AsyncMock())
@@ -1265,7 +1257,7 @@ async def test_resumed_waiting_run_projects_next_authorization(monkeypatch):
     )
     projection = AsyncMock(return_value=1)
     monkeypatch.setattr(sdk_recovery, "_project_open_sdk_authorizations", projection)
-    main._sdk_retained_presentations[sdk_run_id] = retained
+    sdk_registry._sdk_retained_presentations[sdk_run_id] = retained
 
     await sdk_recovery._watch_retained_sdk_run(
         sdk_run_id,
@@ -1274,8 +1266,8 @@ async def test_resumed_waiting_run_projects_next_authorization(monkeypatch):
 
     projection.assert_awaited_once_with(websocket, sdk_run_id=sdk_run_id)
     delivery.finish.assert_not_awaited()
-    assert main._sdk_retained_presentations[sdk_run_id] is retained
-    main._sdk_retained_presentations.pop(sdk_run_id, None)
+    assert sdk_registry._sdk_retained_presentations[sdk_run_id] is retained
+    sdk_registry._sdk_retained_presentations.pop(sdk_run_id, None)
 
 
 @pytest.mark.asyncio
@@ -1356,7 +1348,6 @@ async def test_recovered_route_projects_final_into_durable_session_history(monke
 
 @pytest.mark.asyncio
 async def test_execute_sdk_run_cleans_pre_registered_delivery_when_start_fails(monkeypatch):
-    import main
     from deskpet.sdk_adapters.ingress import SdkRuntimeIngress
 
     sdk_run_id = SdkRuntimeIngress._compute_run_id("race-session", "race-request", "9").value
@@ -1397,7 +1388,7 @@ async def test_execute_sdk_run_cleans_pre_registered_delivery_when_start_fails(m
 
     assert saw_registered_adapter is True
     assert sdk_run_id not in _delivery_adapters
-    assert "canonical-root-start-failure" not in main._sdk_run_ids_by_root
+    assert "canonical-root-start-failure" not in sdk_registry._sdk_run_ids_by_root
 
 
 @pytest.mark.asyncio
@@ -1414,8 +1405,8 @@ async def test_cancel_product_run_translates_canonical_root_to_sdk_id(monkeypatc
     workload_router = SimpleNamespace(cancel_root=AsyncMock())
     session_db = SimpleNamespace(clear_session_plan_awaiting=AsyncMock())
     monkeypatch.setattr(host_state, "sdk_ingress", ingress)
-    monkeypatch.setattr(
-        main,
+    patch_host_global(
+        monkeypatch,
         "service_context",
         SimpleNamespace(
             get=lambda name: {
@@ -1424,10 +1415,10 @@ async def test_cancel_product_run_translates_canonical_root_to_sdk_id(monkeypatc
             }.get(name)
         ),
     )
-    main._sdk_run_ids_by_root["canonical-root"] = "product-sdk-internal"
+    sdk_registry._sdk_run_ids_by_root["canonical-root"] = "product-sdk-internal"
 
     assert (
-        await main._cancel_product_harness_run(
+        await harness_runs._cancel_product_harness_run(
             "session-1", "canonical-root", reason="user_interrupt"
         )
         is True
@@ -1440,7 +1431,6 @@ async def test_cancel_product_run_translates_canonical_root_to_sdk_id(monkeypatc
 
 
 def test_authoritative_run_projection_uses_sdk_version_and_owned_waiting(monkeypatch):
-    import main
 
     ingress = SimpleNamespace(
         accepting=True,
@@ -1452,13 +1442,13 @@ def test_authoritative_run_projection_uses_sdk_version_and_owned_waiting(monkeyp
         ),
     )
     monkeypatch.setattr(host_state, "sdk_ingress", ingress)
-    main._sdk_run_ids_by_root["root-status"] = "sdk-status"
-    main._sdk_retained_presentations["sdk-status"] = (None, None, None, None)
+    sdk_registry._sdk_run_ids_by_root["root-status"] = "sdk-status"
+    sdk_registry._sdk_retained_presentations["sdk-status"] = (None, None, None, None)
     try:
-        projection = main._authoritative_sdk_run_projection("root-status")
+        projection = harness_runs._authoritative_sdk_run_projection("root-status")
     finally:
-        main._sdk_retained_presentations.pop("sdk-status", None)
-        main._sdk_run_ids_by_root.pop("root-status", None)
+        sdk_registry._sdk_retained_presentations.pop("sdk-status", None)
+        sdk_registry._sdk_run_ids_by_root.pop("root-status", None)
 
     ingress.query.assert_called_once_with("sdk-status")
     assert projection == {
@@ -1473,7 +1463,6 @@ def test_authoritative_run_projection_uses_sdk_version_and_owned_waiting(monkeyp
 
 
 def test_authoritative_run_projection_marks_unowned_waiting_cancel_only(monkeypatch):
-    import main
 
     monkeypatch.setattr(
         host_state,
@@ -1488,13 +1477,12 @@ def test_authoritative_run_projection_marks_unowned_waiting_cancel_only(monkeypa
             ),
         ),
     )
-    projection = main._authoritative_sdk_run_projection("sdk-unowned")
+    projection = harness_runs._authoritative_sdk_run_projection("sdk-unowned")
     assert projection["waiting_reason"] == "unowned_waiting"
     assert projection["allowed_actions"] == ["cancel"]
 
 
 def test_authoritative_run_projection_terminal_ref_is_versioned(monkeypatch):
-    import main
 
     monkeypatch.setattr(
         host_state,
@@ -1509,7 +1497,7 @@ def test_authoritative_run_projection_terminal_ref_is_versioned(monkeypatch):
             ),
         ),
     )
-    projection = main._authoritative_sdk_run_projection("sdk-completed")
+    projection = harness_runs._authoritative_sdk_run_projection("sdk-completed")
     assert projection["state"] == "completed"
     assert projection["run_version"] == 9
     assert projection["terminal_event_ref"] == "sdk-run:sdk-completed:terminal:v9"
@@ -1517,7 +1505,6 @@ def test_authoritative_run_projection_terminal_ref_is_versioned(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_waiting_plan_signal_uses_sdk_identity_and_resumes(monkeypatch, tmp_path):
-    import main
 
     # 旧审批入口按主机绑定表把关，要读一份已存在的状态库；用空库，不依赖用户数据目录。
     state_db = tmp_path / "state.db"
@@ -1535,10 +1522,10 @@ async def test_waiting_plan_signal_uses_sdk_identity_and_resumes(monkeypatch, tm
     ingress._accepting = True  # noqa: SLF001
     watcher = Mock()
     monkeypatch.setattr(host_state, "sdk_ingress", ingress)
-    monkeypatch.setattr(main, "_ensure_sdk_recovery_watcher", watcher)
-    main._sdk_run_ids_by_root["canonical-waiting"] = "sdk-waiting"
+    patch_host_global(monkeypatch, "_ensure_sdk_recovery_watcher", watcher)
+    sdk_registry._sdk_run_ids_by_root["canonical-waiting"] = "sdk-waiting"
 
-    receipt = await main._signal_product_harness_decision(
+    receipt = await harness_runs._signal_product_harness_decision(
         "session-waiting",
         {
             "run_id": "canonical-waiting",
@@ -1566,7 +1553,6 @@ async def test_waiting_plan_signal_uses_sdk_identity_and_resumes(monkeypatch, tm
 
 @pytest.mark.asyncio
 async def test_waiting_permission_uses_authorization_api_and_resumes(monkeypatch, tmp_path):
-    import main
 
     # 旧审批入口按主机绑定表把关，要读一份已存在的状态库；用空库，不依赖用户数据目录。
     state_db = tmp_path / "state.db"
@@ -1584,10 +1570,10 @@ async def test_waiting_permission_uses_authorization_api_and_resumes(monkeypatch
     ingress._accepting = True  # noqa: SLF001
     watcher = Mock()
     monkeypatch.setattr(host_state, "sdk_ingress", ingress)
-    monkeypatch.setattr(main, "_ensure_sdk_recovery_watcher", watcher)
-    main._sdk_run_ids_by_root["canonical-permission"] = "sdk-permission"
+    patch_host_global(monkeypatch, "_ensure_sdk_recovery_watcher", watcher)
+    sdk_registry._sdk_run_ids_by_root["canonical-permission"] = "sdk-permission"
 
-    await main._signal_product_harness_decision(
+    await harness_runs._signal_product_harness_decision(
         "session-permission",
         {
             "run_id": "canonical-permission",
@@ -1651,8 +1637,8 @@ async def test_waiting_continuation_uses_sync_sdk_signal_and_resumes(monkeypatch
         mark_claimed=AsyncMock(),
     )
     monkeypatch.setattr(host_state, "sdk_ingress", ingress)
-    monkeypatch.setattr(
-        main,
+    patch_host_global(
+        monkeypatch,
         "service_context",
         SimpleNamespace(
             get=lambda name: {
@@ -1666,12 +1652,12 @@ async def test_waiting_continuation_uses_sync_sdk_signal_and_resumes(monkeypatch
         ),
     )
     watcher = Mock()
-    monkeypatch.setattr(main, "_ensure_sdk_recovery_watcher", watcher)
+    patch_host_global(monkeypatch, "_ensure_sdk_recovery_watcher", watcher)
     patch_host_global(monkeypatch, "_broadcast_default_chat_peers", AsyncMock())
     websocket = SimpleNamespace(send_json=AsyncMock())
-    main._sdk_run_ids_by_root["canonical-continuation"] = "sdk-continuation"
+    sdk_registry._sdk_run_ids_by_root["canonical-continuation"] = "sdk-continuation"
 
-    await main._run_product_harness_continuation(
+    await harness_runs._run_product_harness_continuation(
         websocket,
         "continue with this detail",
         "session-continuation",
@@ -1710,8 +1696,8 @@ async def test_cancel_product_run_missing_identity_is_idempotent(monkeypatch):
     )
     workload_router = SimpleNamespace(cancel_root=AsyncMock())
     monkeypatch.setattr(host_state, "sdk_ingress", ingress)
-    monkeypatch.setattr(
-        main,
+    patch_host_global(
+        monkeypatch,
         "service_context",
         SimpleNamespace(
             get=lambda name: {
@@ -1721,16 +1707,17 @@ async def test_cancel_product_run_missing_identity_is_idempotent(monkeypatch):
     )
 
     assert (
-        await main._cancel_product_harness_run("session-1", "stale-root", reason="user_interrupt")
+        await harness_runs._cancel_product_harness_run(
+            "session-1", "stale-root", reason="user_interrupt"
+        )
         is False
     )
     workload_router.cancel_root.assert_not_awaited()
-    assert "stale-root" not in main._sdk_cancel_requested_run_ids
+    assert "stale-root" not in sdk_registry._sdk_cancel_requested_run_ids
 
 
 @pytest.mark.asyncio
 async def test_execute_sdk_run_does_not_project_user_cancel_as_failure(monkeypatch):
-    import main
     from deskpet.sdk_adapters.ingress import SdkRuntimeIngress
 
     session_id = "cancel-session"
@@ -1744,7 +1731,7 @@ async def test_execute_sdk_run_does_not_project_user_cancel_as_failure(monkeypat
 
         async def wait_idle(self, run_id):
             assert run_id == sdk_run_id
-            main._sdk_cancel_requested_run_ids.add(run_id)
+            sdk_registry._sdk_cancel_requested_run_ids.add(run_id)
 
         def query(self, run_id):
             assert run_id == sdk_run_id
@@ -1784,8 +1771,8 @@ async def test_execute_sdk_run_does_not_project_user_cancel_as_failure(monkeypat
     )
 
     send_error.assert_not_awaited()
-    assert "canonical-cancel-root" not in main._sdk_run_ids_by_root
-    assert sdk_run_id not in main._sdk_cancel_requested_run_ids
+    assert "canonical-cancel-root" not in sdk_registry._sdk_run_ids_by_root
+    assert sdk_run_id not in sdk_registry._sdk_cancel_requested_run_ids
 
 
 @pytest.mark.asyncio

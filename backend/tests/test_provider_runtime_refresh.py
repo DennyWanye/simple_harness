@@ -8,7 +8,14 @@ from unittest.mock import AsyncMock
 
 import main
 import pytest
-from host import sdk_activation, sdk_execution, sdk_recovery, sdk_runtime_stack, sdk_services
+from host import (
+    harness_runs,
+    sdk_activation,
+    sdk_execution,
+    sdk_recovery,
+    sdk_runtime_stack,
+    sdk_services,
+)
 from host.state import host_state
 
 
@@ -245,7 +252,7 @@ def test_foreground_no_longer_owns_manual_memory_prepare() -> None:
     import inspect
 
     source = inspect.getsource(main._run_product_harness_chat)
-    continuation = inspect.getsource(main._run_product_harness_continuation)
+    continuation = inspect.getsource(harness_runs._run_product_harness_continuation)
     assert "ConversationMemoryRecallQuery" not in source + continuation
     assert "prepare_consumer_conversation_context" not in source + continuation
     assert "ConversationTurnInput" in source

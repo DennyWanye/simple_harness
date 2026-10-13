@@ -45,7 +45,7 @@ python3 scripts/code_quality/startup_snapshot.py | tail -1
 python3 scripts/code_quality/guard.py --allow "$ALLOW" | tail -1
 python3 scripts/code_quality/metrics.py check --new-since HEAD | tail -2
 # 格式与未定义名字：搬家和改测试都可能留下（2026-10-13 两次教训）
-CHANGED=$(git diff --name-only HEAD -- '*.py'; git ls-files --others --exclude-standard -- backend/host)
+CHANGED=$(git diff --name-only HEAD -- 'backend/*.py'; git ls-files --others --exclude-standard -- backend/host)
 $RUFF format --config scripts/code_quality/ruff.toml --check -q $CHANGED && echo "格式：通过" || echo "格式：不通过"
 $RUFF check --isolated --select F821 -q $TARGET | grep -v '`Any`' | grep F821 && echo "未定义名字：有" || echo "未定义名字：无"
 wc -l $M "$TARGET"

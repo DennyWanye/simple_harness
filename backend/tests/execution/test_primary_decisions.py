@@ -19,7 +19,7 @@ from deskpet.product_state.database import ProductStateDatabase
 from deskpet.product_state.task_grants import DurableTaskGrantAuthority
 from deskpet.sdk_adapters.authorization import ProductAuthorizationAdapter
 from deskpet.sdk_adapters.tool_authority import SdkPreparedAuthorizationPolicy
-from host import sdk_registry
+from host import harness_runs, sdk_registry
 from host.state import host_state
 from tests.companion.test_window_control_credentials import _ingress
 from tests.execution.test_primary_create_new_runtime import CreateProvider, fixture
@@ -393,7 +393,6 @@ async def test_actual_legacy_signal_entry_cannot_bypass_primary_authentication(
     s = await setup(tmp_path)
     try:
         monkeypatch.setenv("DESKPET_USER_DATA_DIR", str(tmp_path / "unused-app-data"))
-        import main
 
         item = (await pending(s))[0]
         patch_host_global(monkeypatch, "_state_db_path", s["state"])
@@ -403,7 +402,7 @@ async def test_actual_legacy_signal_entry_cannot_bypass_primary_authentication(
             monkeypatch.delitem(sdk_registry._sdk_run_ids_by_root, key)
         fields = {**item, "run_id": s["current"].sdk_run_id}
         with pytest.raises(ValueError, match="primary_decision_requires_authenticated_control"):
-            await main._signal_product_harness_decision(
+            await harness_runs._signal_product_harness_decision(
                 item["session_id"], fields, {"decision": "allow"}, authorization=True
             )
         actual = s["runtime"]._ingress.read_authorization_decision(
