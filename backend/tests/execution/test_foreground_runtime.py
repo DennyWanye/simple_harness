@@ -34,6 +34,7 @@ from deskpet.sdk_adapters.ingress import IngressStartReceipt
 from deskpet.task_scope.protocol import canonical_hash, canonical_json
 from host.state import host_state
 from simple_harness import ContextRouteOrigin
+from tests.host_patch import patch_host_global
 
 SUBJECT = "actor-1"
 
@@ -655,7 +656,7 @@ async def test_human_lifespan_registers_one_real_runtime_and_legacy_does_not(
     import main
     from deskpet.memory.schema import StartupCompositionMode
 
-    monkeypatch.setattr(main, "_state_db_path", tmp_path / "state.db")
+    patch_host_global(monkeypatch, "_state_db_path", tmp_path / "state.db")
     monkeypatch.setattr(main._paths, "user_data_dir", lambda: tmp_path)
     monkeypatch.setattr(host_state, "sdk_ingress", _Ingress())
     monkeypatch.setattr(host_state, "sdk_runtime_stack", object())

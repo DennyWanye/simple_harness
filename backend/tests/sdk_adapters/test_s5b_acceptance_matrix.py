@@ -14,6 +14,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from tests.host_source import host_source_text
 
 XF = pytest.mark.xfail(strict=True, reason="S5b 实装前占位（NOT_IMPLEMENTED）")
 
@@ -1285,7 +1286,7 @@ def test_composition_missing_piece_startup_fail_each(tmp_path: Path) -> None:
         with pytest.raises(TypeError, match=f"sdk_effect_gate_composition_missing:{name}"):
             EffectGate(**{**pieces, name: None})
     # ③ 生产 builder 的 closure_reader 非 None（Task 3 审查 F-2 的真对象断言在 test_composition）。
-    source = Path(main.__file__).read_text(encoding="utf-8")
+    source = host_source_text()
     assert (
         "_assert_sdk_composition_slots()" in source.split("def _build_product_sdk_runtime_stack")[1]
     )

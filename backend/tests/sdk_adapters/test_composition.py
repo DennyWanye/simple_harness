@@ -27,6 +27,7 @@ from deskpet.sdk_adapters.sdk_candidate import build_candidate_identity, sdk_whe
 from deskpet.sdk_adapters.skill_install_verification import (
     skill_install_verification_authority_hash,
 )
+from host import sdk_services
 from simple_harness import (
     ROOT_PROFILE_KEY,
     DriverResult,
@@ -37,6 +38,7 @@ from simple_harness import (
 )
 from simple_harness.execution.sqlite import Database, SqliteExecutionUnitOfWork
 from simple_harness.execution.uow import RunState
+from tests.host_source import host_source_text
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 WHEEL = sdk_wheel_path()
@@ -285,7 +287,7 @@ def test_composition_does_not_import_legacy_generic_authority() -> None:
 
 
 def test_desktop_composition_uses_sdk_production_builder_with_null_memory_port() -> None:
-    source = (PROJECT_ROOT / "backend/main.py").read_text(encoding="utf-8")
+    source = host_source_text()
     assert "ProductionRuntimeConfig(" in source
     assert "build_production_runtime(config)" in source
     assert "agent_memory=agent_memory_port" in source
@@ -306,9 +308,8 @@ def test_desktop_composition_uses_sdk_production_builder_with_null_memory_port()
 
 @pytest.mark.asyncio
 async def test_sdk_07_required_authorities_are_constructor_bound_and_fail_closed() -> None:
-    import main
 
-    bindings = main._sdk_runtime_authority_bindings()
+    bindings = sdk_services._sdk_runtime_authority_bindings()
     assert set(bindings) == {
         "run_context_authority",
         "runtime_decision_sink",
@@ -328,7 +329,7 @@ def _c(text: str) -> str:
 
 
 def test_desktop_composition_shares_physical_capability_scope_store() -> None:
-    source = (PROJECT_ROOT / "backend/main.py").read_text(encoding="utf-8")
+    source = host_source_text()
     # 只对被格式化拆行、去括号的两处去空白比较；其余按原文比，避免不同位置的代码去空白后撞成同一串
     compact = _c(source)
 
@@ -833,7 +834,7 @@ async def test_prebuilt_workflow_runner_is_rejected_in_favor_of_post_db_factory(
 
 def test_s5b_effect_gate_and_root_resolver_are_constructor_wired_in_main() -> None:
     """S5b Task 1：resolver / gate / 故障备忘的接线与服务层同 commit；缺任一 → startup stable fail。"""
-    source = (PROJECT_ROOT / "backend/main.py").read_text(encoding="utf-8")
+    source = host_source_text()
 
     assert "root_resolver=BindingRootResolver(" in source
     assert "fault_sink=_ensure_run_fault_memo()" in source
@@ -848,7 +849,7 @@ def test_s5b_effect_gate_and_root_resolver_are_constructor_wired_in_main() -> No
 async def test_production_context_authority_injects_closure_instruction_when_admission_scope_dirty(
     tmp_path: Path,
 ) -> None:
-    """Task 3 审查 F-2（P1）：生产装配（``main._build_run_context_authority``）的 ``ProductRunContextAuthority``
+    """Task 3 审查 F-2（P1）：生产装配（``sdk_services._build_run_context_authority``）的 ``ProductRunContextAuthority``
     必须带真实 ``closure_reader``；fresh state.db 上上一 Run pending → 本 Run ``prepare_snapshot`` 的 protected
     分区含 ``source=semantic_closure`` 收口指令；缺 reader → 组合缺件（startup fail）。"""
 
@@ -901,7 +902,7 @@ async def test_production_context_authority_injects_closure_instruction_when_adm
             ProviderToolSpec("task_scope_update", "close", {"type": "object"}),
         )
     )
-    authority = main._build_run_context_authority(
+    authority = sdk_services._build_run_context_authority(
         state_db_path=env2.db_path,
         ports_resolver=lambda: ports,
         exposure_resolver=lambda run_id: exposure,
@@ -927,7 +928,7 @@ async def test_production_context_authority_injects_closure_instruction_when_adm
     assert [p["reason_code"] for p in body["pending_receipts"]] == ["closure_model_declined"]
     # 缺件：生产装配把 reader 登记为 service_context 槽 ``sdk_closure_instruction_reader`` 并进缺槽断言
     # （Task 6：缺槽断言是数据 ``SDK_COMPOSITION_SLOTS`` + ``_assert_sdk_composition_slots`` 真构造）。
-    source = Path(main.__file__).read_text(encoding="utf-8")
+    source = host_source_text()
     assert 'service_context.register("sdk_closure_instruction_reader"' in source
     assert "sdk_closure_instruction_reader" in main.SDK_COMPOSITION_SLOTS
 

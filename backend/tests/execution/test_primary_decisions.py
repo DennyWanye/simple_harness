@@ -24,6 +24,7 @@ from host.state import host_state
 from tests.companion.test_window_control_credentials import _ingress
 from tests.execution.test_primary_create_new_runtime import CreateProvider, fixture
 from tests.execution.test_primary_foreground_runtime import build
+from tests.host_patch import patch_host_global
 from tests.memory.test_primary_control_binding import _bind
 
 
@@ -395,7 +396,7 @@ async def test_actual_legacy_signal_entry_cannot_bypass_primary_authentication(
         import main
 
         item = (await pending(s))[0]
-        monkeypatch.setattr(main, "_state_db_path", s["state"])
+        patch_host_global(monkeypatch, "_state_db_path", s["state"])
         monkeypatch.setattr(host_state, "sdk_ingress", s["runtime"]._ingress)
         # 运行登记表是 host.sdk_registry 里的同一个字典，被多个模块按名字导入；原地清空。
         for key in list(sdk_registry._sdk_run_ids_by_root):

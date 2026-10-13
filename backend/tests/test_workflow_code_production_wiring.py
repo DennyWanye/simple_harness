@@ -36,8 +36,9 @@ from deskpet.workflows.proposal_state import (
 )
 from llm.types import ChatResponse, ChatUsage, ToolCall
 
+from tests.host_source import host_source_tree
+
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
-MAIN_PATH = BACKEND_ROOT / "main.py"
 
 
 def _proposal_state() -> ProposalStateV1:
@@ -1364,7 +1365,7 @@ def test_capability_and_session_snapshots_are_serializable_and_redacted(tmp_path
 
 
 def test_main_routes_code_through_the_single_product_harness_ingress() -> None:
-    tree = ast.parse(MAIN_PATH.read_text(encoding="utf-8"), filename=str(MAIN_PATH))
+    tree = host_source_tree()
     ingress = next(
         node
         for node in tree.body

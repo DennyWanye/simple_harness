@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 import pytest
 from deskpet.realtime_voice import (
@@ -21,6 +20,8 @@ from simple_harness_service.realtime import (
     RealtimeDiagnosticStage,
 )
 from simple_harness_service.realtime.transports import LocalAdmissionError
+
+from tests.host_source import host_source_text
 
 
 def test_realtime_voice_product_entry_is_temporarily_disabled():
@@ -160,7 +161,7 @@ async def test_missing_provider_key_becomes_stable_local_error() -> None:
 
 
 def test_backend_route_uses_sdk_authority_path_and_keeps_legacy_disabled() -> None:
-    source = (Path(__file__).resolve().parents[1] / "main.py").read_text(encoding="utf-8")
+    source = host_source_text()
     assert '@app.websocket("/ws/realtime-voice")' in source
     assert '@app.websocket("/ws/audio")' in source
     assert "if not _voice_runtime.enabled:" in source

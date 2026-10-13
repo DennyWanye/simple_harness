@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
-from pathlib import Path
 
 import pytest
 from deskpet.workflows.adapters.deep_research_v5_evidence_runtime import (
@@ -20,6 +19,8 @@ from deskpet.workflows.definitions.deep_research_v5_contracts import (
 from deskpet.workflows.definitions.deep_research_v5_evidence import _normalized_text, admit_passage
 from deskpet.workflows.definitions.deep_research_v5_policy import build_research_brief
 from deskpet.workflows.definitions.deep_research_v5_queries import build_dimension_queries
+
+from tests.host_source import host_source_text
 
 
 def _brief() -> ResearchBrief:
@@ -392,7 +393,7 @@ def test_cross_language_concepts_do_not_admit_unrelated_first_party_page() -> No
 
 
 def test_main_v5_search_uses_one_dimension_batch_and_gap_fetch_admission() -> None:
-    source = (Path(__file__).resolve().parents[1] / "main.py").read_text(encoding="utf-8")
+    source = host_source_text()
     start = source.index("async def _deep_v5_context_factory")
     end = source.index("return WorkflowContext(", start)
     factory = source[start:end]

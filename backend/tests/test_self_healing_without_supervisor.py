@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import ast
 import asyncio
-from pathlib import Path
 
 from agent.auto_resume import (
     AutoResumeOrchestrator,
@@ -21,11 +20,11 @@ from agent.auto_resume import (
 )
 from agent.session_activity import SessionActivityStore
 
-MAIN = Path(__file__).parents[1] / "main.py"
+from tests.host_source import host_source_text, host_source_tree
 
 
 def _supervisor_branch() -> ast.If:
-    tree = ast.parse(MAIN.read_text(encoding="utf-8"))
+    tree = host_source_tree()
     for node in ast.walk(tree):
         if isinstance(node, ast.If) and '_sup_cfg.get("enabled"' in ast.unparse(node.test).replace(
             "'", '"'
@@ -37,14 +36,14 @@ def _supervisor_branch() -> ast.If:
 def test_breaker_and_auto_resume_are_not_under_the_supervisor_switch():
     branch = ast.unparse(_supervisor_branch())
     assert "ToolCircuitBreaker" not in branch and "AutoResumeOrchestrator" not in branch
-    source = MAIN.read_text(encoding="utf-8")
+    source = host_source_text()
     assert "ToolCircuitBreaker" in source and "AutoResumeOrchestrator" in source
     assert 'service_context.get("supervisor") or _DetPolicy()' in source
 
 
 def test_session_activity_is_registered_regardless_of_the_supervisor_switch():
     """Auto-resume counts attempts per session in the real activity store; it must exist."""
-    source = MAIN.read_text(encoding="utf-8")
+    source = host_source_text()
     branch = ast.unparse(_supervisor_branch())
     assert 'service_context.register("session_activity"' not in branch
     registered = source.index('service_context.register("session_activity"')

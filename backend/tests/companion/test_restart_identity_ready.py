@@ -20,6 +20,8 @@ import asyncio
 import main
 import pytest
 
+from tests.host_source import host_source_text
+
 
 class _Identity:
     owner = "owner"
@@ -108,9 +110,7 @@ def test_bind_handler_sends_readiness_after_the_bounded_settle():
     的长处理函数里，靠源码顺序把「有界收尾 → 无条件发就绪帧」钉住。
     """
 
-    from pathlib import Path
-
-    source = Path(main.__file__).read_text(encoding="utf-8")
+    source = host_source_text()
     handler = source[
         source.index(
             'if msg_type == "companion_profile_bind":\n                        # 事件 AK'

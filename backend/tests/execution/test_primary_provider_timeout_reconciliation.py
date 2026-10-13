@@ -338,9 +338,8 @@ def test_provider_unknown_retry_once_policy():
 
 def test_production_wiring_no_longer_uses_noop_reconciliation():
     """T4b: main.py wires the retry-once adapter and the runtime reconciliation step."""
-    from pathlib import Path
 
-    source = Path(__file__).resolve().parents[2].joinpath("main.py").read_text(encoding="utf-8")
+    source = host_source_text()
     assert "_NoopReconciliation" not in source
     assert source.count("reconciliation=runtime_reconciliation,") == 2
     assert source.count("provider_reconciliation=provider_reconciliation,") == 2
@@ -394,6 +393,7 @@ from simple_harness.providers import (  # noqa: E402
     ProviderUsage,
 )
 from simple_harness.providers.errors import ProviderTransportError  # noqa: E402
+from tests.host_source import host_source_text
 
 
 class LedgerUnitOfWork:

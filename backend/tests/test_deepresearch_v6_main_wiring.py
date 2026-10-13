@@ -44,6 +44,8 @@ from deskpet.workflows.effects import EffectExecutionContext, EffectJournal
 from deskpet.workflows.launcher import WorkflowLauncher
 from deskpet.workflows.store import NativeCheckpointStore, RegisteredBlobStore, RunFence
 
+from tests.host_source import host_source_text
+
 
 @pytest.mark.parametrize(
     "environment,expected,reason",
@@ -120,7 +122,7 @@ def test_explicit_v5_pin_remains_supported_for_new_roots() -> None:
 
 
 def test_main_keeps_v6_and_defaults_new_roots_to_simplified_v7() -> None:
-    source = (Path(__file__).parents[1] / "main.py").read_text(encoding="utf-8")
+    source = host_source_text()
     registration = source.index('"deep_research",\n            "v6",')
     registration_end = source.index("from agent.tool_use_shim", registration)
     assert "new_runs_enabled=True" in source[registration:registration_end]
@@ -141,7 +143,7 @@ def test_main_keeps_v6_and_defaults_new_roots_to_simplified_v7() -> None:
 
 
 def test_main_websocket_delivery_returns_typed_best_effort_outcome() -> None:
-    source = (Path(__file__).parents[1] / "main.py").read_text(encoding="utf-8")
+    source = host_source_text()
     start = source.index("async def _workflow_websocket_delivery")
     end = source.index("async def _workflow_artifact_publisher", start)
     handler = source[start:end]

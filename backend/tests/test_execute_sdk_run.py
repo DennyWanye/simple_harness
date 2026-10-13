@@ -3,6 +3,7 @@
 
 """Integration tests for _execute_sdk_run function."""
 
+import sqlite3
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, create_autospec
 
@@ -10,6 +11,8 @@ import pytest
 from deskpet.sdk_adapters.desktop_runtime import _delivery_adapters
 from host import sdk_recovery
 from host.state import host_state
+
+from tests.host_patch import patch_host_global
 
 
 @pytest.mark.asyncio
@@ -1513,8 +1516,13 @@ def test_authoritative_run_projection_terminal_ref_is_versioned(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_waiting_plan_signal_uses_sdk_identity_and_resumes(monkeypatch):
+async def test_waiting_plan_signal_uses_sdk_identity_and_resumes(monkeypatch, tmp_path):
     import main
+
+    # 旧审批入口按主机绑定表把关，要读一份已存在的状态库；用空库，不依赖用户数据目录。
+    state_db = tmp_path / "state.db"
+    sqlite3.connect(state_db).close()
+    patch_host_global(monkeypatch, "_state_db_path", state_db)
     from deskpet.sdk_adapters.ingress import SdkRuntimeIngress
     from simple_harness import RunClient
 
@@ -1557,8 +1565,13 @@ async def test_waiting_plan_signal_uses_sdk_identity_and_resumes(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_waiting_permission_uses_authorization_api_and_resumes(monkeypatch):
+async def test_waiting_permission_uses_authorization_api_and_resumes(monkeypatch, tmp_path):
     import main
+
+    # 旧审批入口按主机绑定表把关，要读一份已存在的状态库；用空库，不依赖用户数据目录。
+    state_db = tmp_path / "state.db"
+    sqlite3.connect(state_db).close()
+    patch_host_global(monkeypatch, "_state_db_path", state_db)
     from deskpet.sdk_adapters.ingress import SdkRuntimeIngress
     from simple_harness import RunClient
     from simple_harness.tools import AuthorizationDecision

@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import ast
 from pathlib import Path
 
 BACKEND = Path(__file__).resolve().parents[1]
@@ -16,5 +17,19 @@ BACKEND = Path(__file__).resolve().parents[1]
 
 def host_source_text() -> str:
     """返回 main.py 与 host/*.py 的源码，按文件名顺序拼接。"""
-    files = [BACKEND / "main.py", *sorted((BACKEND / "host").glob("*.py"))]
-    return "\n".join(path.read_text(encoding="utf-8") for path in files)
+    return "\n".join(path.read_text(encoding="utf-8") for path in _host_files())
+
+
+def _host_files() -> list[Path]:
+    return [BACKEND / "main.py", *sorted((BACKEND / "host").glob("*.py"))]
+
+
+def host_source_tree() -> ast.Module:
+    """返回 main.py 与 host/*.py 的语法树，顶层语句按文件名顺序合并成一个模块。
+
+    拼接后的源码不能整体解析（每个文件开头都有 ``from __future__``），所以逐个解析后合并。
+    """
+    body: list[ast.stmt] = []
+    for path in _host_files():
+        body.extend(ast.parse(path.read_text(encoding="utf-8"), filename=str(path)).body)
+    return ast.Module(body=body, type_ignores=[])

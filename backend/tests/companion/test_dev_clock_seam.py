@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from pathlib import Path
 
 import pytest
 from deskpet.companion.clock import (
@@ -10,9 +9,11 @@ from deskpet.companion.clock import (
     select_companion_clock,
 )
 
+from tests.host_source import host_source_text
+
 
 def test_production_store_and_scheduler_share_selected_clock() -> None:
-    source = (Path(__file__).resolve().parents[2] / "main.py").read_text(encoding="utf-8")
+    source = host_source_text()
     start = source.index("async def _initialize_growth_authority()")
     end = source.index(
         "\n\nasync def _initialize_companion_projection_services",

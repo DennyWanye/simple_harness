@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime
-from pathlib import Path
 
 import pytest
 from deskpet.companion.identity_gate import FrozenOwnerIdentity, IdentityReadyGate
@@ -19,6 +18,7 @@ from tests.companion.test_runtime_scheduler import (
     MutableClock,
     wait_until,
 )
+from tests.host_source import host_source_text
 
 
 @pytest.mark.asyncio
@@ -104,7 +104,7 @@ async def test_identity_unready_and_kill_switch_do_not_start_scheduler(
 
 
 def test_main_shutdown_order_closes_active_runtime_then_execution_uow() -> None:
-    source = (Path(__file__).parents[2] / "main.py").read_text(encoding="utf-8")
+    source = host_source_text()
     runtime_close = source.index("await _companion_runtime_service.close(timeout=5.0)")
     sdk_close = source.index("await host_state.sdk_runtime_stack.close()")
     # Since ab36b6a52 the workflow service owns launcher + execution UoW

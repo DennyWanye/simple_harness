@@ -19,6 +19,7 @@ from deskpet.tools.code_tools.spawn_subagents_tool import (
     UNWIRED_DELEGATION_TOOL_NAMES,
     product_delegation_tool_catalog,
 )
+from host import sdk_services
 
 DELEGATION = {"agent", "agent_parallel", "spawn_team", "spawn_subagents", "await_subagents"}
 
@@ -37,7 +38,7 @@ def test_wired_delegation_tools_are_in_the_model_visible_catalog():
             for n in ("read_file", "agent", "mission_start", "spawn_team", "await_subagents")
         ]
     )
-    catalog = main._freeze_sdk_catalog(adapter, 1)
+    catalog = sdk_services._freeze_sdk_catalog(adapter, 1)
     assert catalog["tool_names"] == [
         "read_file",
         "agent",

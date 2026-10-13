@@ -14,15 +14,13 @@ WI-T2.3 P0-3: emit_receipt duration_ms ~0
 
 from __future__ import annotations
 
-import asyncio
 import json
 import tempfile
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
-from unittest.mock import MagicMock
 
 import pytest
+
+from tests.host_source import host_source_text
 
 # ─── WI-T2.2 retention 不截断 ────────────────────────────────────
 
@@ -44,8 +42,7 @@ def test_t2_2_main_py_does_not_truncate_retention():
 
     （注释里提到历史 bug 名是允许的；只检查真实代码行。）
     """
-    main_py_path = Path(__file__).parent.parent / "main.py"
-    lines = main_py_path.read_text(encoding="utf-8").splitlines()
+    lines = host_source_text().splitlines()
     code_only = [
         ln for ln in lines if "min(retention, 7)" in ln and not ln.lstrip().startswith("#")
     ]

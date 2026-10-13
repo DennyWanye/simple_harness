@@ -15,6 +15,8 @@ from observability.sdk import (
     HostSdkObservability,
 )
 
+from tests.host_source import host_source_text
+
 pytestmark = pytest.mark.skipif(
     importlib.util.find_spec("simple_harness.observability") is None,
     reason="run against Harness bc6ae8d source until Host revendors the final wheel",
@@ -145,7 +147,7 @@ def test_main_wires_one_host_sink_into_harness() -> None:
     （``observability_sink=`` / ``correlation=`` 是 ``MemoryManager.build_production``
     的入参）；Harness 侧三条断言原样保留。"""
 
-    main_source = (Path(__file__).parents[1] / "main.py").read_text()
+    main_source = host_source_text()
     assert 'runtime_config_kwargs["observability_sink"] = _sdk_observability.sink' in main_source
     assert "_sdk_observability.bind_ingress(" in main_source
     assert "_sdk_observability.reset_ingress(observability_token)" in main_source

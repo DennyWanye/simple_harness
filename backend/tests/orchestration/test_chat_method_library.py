@@ -17,6 +17,8 @@ from deskpet.orchestration.service import OrchestrationRequestError
 from deskpet.sdk_adapters.tool_authority import SDK_DIRECT_TOOL_KERNEL, describe_call_zh
 from deskpet.sdk_adapters.tools import HOST_COMPOSED_TOOL_NAMES, PRODUCT_TOOL_NAMES
 
+from tests.host_source import host_source_text
+
 BACKEND = Path(__file__).parents[2]
 ENTRY = {
     "entry_id": "lib-1",
@@ -99,4 +101,4 @@ def test_the_tool_is_registered_with_a_chinese_confirmation():
     )
     assert "lib-1" in text and "不再列给新任务" in text
     assert describe_call_zh("method_library", {"action": "list"}) == "查看全库做法"
-    assert "core.method_library.v1" in (BACKEND / "main.py").read_text(encoding="utf-8")
+    assert "core.method_library.v1" in host_source_text()

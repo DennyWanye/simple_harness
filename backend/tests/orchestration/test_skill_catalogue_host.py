@@ -21,9 +21,9 @@ import pytest
 from agent_orchestrator.deployment.native_pools import catalogue_owner_profile_id
 from deskpet.orchestration.handlers import handle
 
-from .test_native_plane_host import _service
+from tests.host_source import host_source_text
 
-MAIN = Path(__file__).parents[2] / "main.py"
+from .test_native_plane_host import _service
 
 
 def _bundle(path: Path, name: str) -> Path:
@@ -153,7 +153,7 @@ def skill_namespace(service) -> str:  # type: ignore[no-untyped-def]
 
 
 def test_only_the_listed_skill_verbs_are_open_on_the_control_channel():
-    source = MAIN.read_text(encoding="utf-8")
+    source = host_source_text()
     branch = source[
         source.index(
             'elif msg_type.startswith(("mission_", "orchestration_", "taskgraph.")) or msg_type in ('

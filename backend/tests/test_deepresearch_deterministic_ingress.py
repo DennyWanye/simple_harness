@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from tests.host_source import host_source_text
+
 
 def test_tool_component_has_no_domain_regex_surface_mutation() -> None:
     source = (
@@ -14,7 +16,7 @@ def test_tool_component_has_no_domain_regex_surface_mutation() -> None:
 
 
 def test_main_disables_legacy_deepresearch_starter_before_activation() -> None:
-    source = (Path(__file__).parents[1] / "main.py").read_text(encoding="utf-8")
+    source = host_source_text()
     recovery_source = (
         Path(__file__).parents[1] / "deskpet" / "workflows" / "startup_recovery.py"
     ).read_text(encoding="utf-8")

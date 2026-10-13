@@ -6,13 +6,14 @@ from __future__ import annotations
 import ast
 import builtins
 import sys
-from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
 from deskpet.voice_runtime import (
     VOICE_DISABLED_CODE,
     configure_legacy_voice_runtime,
 )
+
+from tests.host_source import host_source_tree
 
 
 class _Services:
@@ -65,8 +66,7 @@ def test_disabled_runtime_does_not_import_heavy_voice_providers(monkeypatch) -> 
 
 
 def test_main_has_no_eager_voice_provider_imports() -> None:
-    main_path = Path(__file__).parents[1] / "main.py"
-    tree = ast.parse(main_path.read_text(encoding="utf-8"))
+    tree = host_source_tree()
     imported = {
         node.module
         for node in ast.walk(tree)

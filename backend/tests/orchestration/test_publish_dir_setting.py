@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import asyncio
 import tomllib
-from pathlib import Path
 
 import pytest
 from deskpet.orchestration.publish_settings import (
@@ -24,7 +23,7 @@ from deskpet.orchestration.publish_settings import (
     write_publish_dir,
 )
 
-MAIN = Path(__file__).parents[2] / "main.py"
+from tests.host_source import host_source_text
 
 
 def test_validation_refuses_what_cannot_be_published_to(tmp_path):
@@ -90,7 +89,7 @@ def test_set_restarts_once_and_a_refusal_changes_nothing(tmp_path):
 
 
 def test_the_control_channel_handles_both_verbs_before_the_orchestration_prefix():
-    source = MAIN.read_text(encoding="utf-8")
+    source = host_source_text()
     verbs = source.index(
         'msg_type in ("orchestration_publish_dir_get", "orchestration_publish_dir_set")'
     )

@@ -26,15 +26,24 @@ def main() -> int:
     cwd = BACKEND if tree == "backend" else SDK
     py = str(cwd / ".venv/bin/python")
     env = dict(os.environ)
+    plugin: list[str] = []
     if tree == "sdk":
         env["PYTHONPATH"] = str(cwd / "src")  # 虚拟环境的可编辑安装可能指向别的检出
+    else:
+        venv_backend = (cwd / ".venv").resolve().parent
+        if venv_backend != cwd.resolve():  # 工作树借用主检出的虚拟环境
+            env["CQ_ORIGIN_REBASE"] = f"{venv_backend}/vendor|{cwd.resolve()}/vendor"
+            env["PYTHONPATH"] = os.pathsep.join(
+                p for p in (str(Path(__file__).resolve().parent), env.get("PYTHONPATH", "")) if p
+            )
+            plugin = ["-p", "origin_rebase_plugin"]
     stall = int(os.environ.get("CQ_STALL", "300"))
     bad: list[str] = []
     with tempfile.TemporaryDirectory(prefix="cq-related-") as tmp:
         for i, f in enumerate(files, 1):
             xml = Path(tmp) / f"{i}.xml"
             log = Path(tmp) / f"{i}.log"
-            status = run_watched([py, "-m", "pytest", f, "-q", "-p", "no:cacheprovider", f"--junitxml={xml}"],
+            status = run_watched([py, "-m", "pytest", f, "-q", "-p", "no:cacheprovider", *plugin, f"--junitxml={xml}"],
                                  cwd, log, stall, env=env)
             counts, failed = junit_failures(xml)
             mark = "ok" if status in ("exit=0", "exit=5") else status

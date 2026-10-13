@@ -11,15 +11,14 @@ S5b 终验实测：`max_consecutive_same_tool` 漏设 → 取 SDK 默认值 3，
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
 from simple_harness.runtime.termination import TerminationLimits
 
-_MAIN = Path(__file__).resolve().parents[1] / "main.py"
+from tests.host_source import host_source_text
 
 
 def _foreground_limits_source() -> str:
-    src = _MAIN.read_text(encoding="utf-8")
+    src = host_source_text()
     m = re.search(r"limits=TerminationLimits\((.*?)\)", src, re.S)
     assert m, "main.py 里找不到前台 driver 的 TerminationLimits"
     return m.group(1)

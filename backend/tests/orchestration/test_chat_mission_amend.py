@@ -25,6 +25,8 @@ from deskpet.orchestration.service import OrchestrationRequestError
 from deskpet.sdk_adapters.tool_authority import SDK_DIRECT_TOOL_KERNEL, describe_call_zh
 from deskpet.sdk_adapters.tools import HOST_COMPOSED_TOOL_NAMES, PRODUCT_TOOL_NAMES
 
+from tests.host_source import host_source_text
+
 BACKEND = Path(__file__).parents[2]
 REF = {"id": "req-m-1", "revision": 1, "content_hash": "a" * 64}
 
@@ -124,7 +126,7 @@ def test_status_gives_the_current_requirements_and_the_tool_is_registered():
         == "修改后台任务的要求：新增 1 条、改写 0 条、删除 0 条"
     )
     assert MISSION_AMEND_SCHEMA["additionalProperties"] is False
-    assert "core.mission_amend.v1" in (BACKEND / "main.py").read_text(encoding="utf-8")
+    assert "core.mission_amend.v1" in host_source_text()
 
 
 def test_projection_passes_budget_and_drops_charter():

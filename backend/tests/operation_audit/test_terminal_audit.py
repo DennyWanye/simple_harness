@@ -19,6 +19,7 @@ from deskpet.memory.schema import dispatch_startup_epoch
 from deskpet.operation_audit.composition import compose_terminal_audit
 from deskpet.sdk_adapters.context_route import local_owner_auth
 from tests.execution.test_primary_foreground_runtime import Provider, build
+from tests.host_source import host_source_tree
 
 pytestmark = pytest.mark.asyncio
 
@@ -106,7 +107,7 @@ async def test_actual_main_factory_starts_and_terminal_wakes_lane(tmp_path):
     # Execute the exact small production activation function, not a fake factory.
     # Importing main's unrelated global boot would start/configure other products.
     main_path = Path(__file__).parents[2] / "main.py"
-    tree = ast.parse(main_path.read_text())
+    tree = host_source_tree()
     node = next(
         n
         for n in tree.body
@@ -177,7 +178,7 @@ async def test_actual_main_factory_starts_and_terminal_wakes_lane(tmp_path):
 async def test_actual_main_storage_failure_does_not_block_foreground(tmp_path):
     node = next(
         n
-        for n in ast.parse((Path(__file__).parents[2] / "main.py").read_text()).body
+        for n in host_source_tree().body
         if isinstance(n, ast.AsyncFunctionDef) and n.name == "_activate_terminal_operation_audit"
     )
     services, warnings = {}, []

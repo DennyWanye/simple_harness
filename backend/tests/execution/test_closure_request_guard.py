@@ -17,6 +17,7 @@ from deskpet.memory.human_memory_service import QueueTurnRequest
 from deskpet.sdk_adapters.post_turn_invoker import ForegroundLeaseFence, RunBoundInvoker
 from deskpet.sdk_adapters.run_bindings import SdkRunBindingV1
 from deskpet.sdk_adapters.task_scope_mutation import TaskScopeUpdateService
+from host import sdk_services
 from simple_harness.contracts.messages import Message, MessageRole
 from simple_harness.providers import ProviderResponse, ProviderUsage
 from tests.execution.test_primary_create_new_runtime import CreateProvider, fixture
@@ -46,7 +47,6 @@ async def world(
     closure_reply=None,
     user_text="Create a new project and write its file",
 ):
-    import main
 
     state, _, service, configured, binding_authority = await fixture(tmp_path)
     await service.enqueue_turn(QueueTurnRequest(None, "closure-guard", user_text))
@@ -119,8 +119,8 @@ async def world(
 
     w.client = httpx.AsyncClient(transport=httpx.MockTransport(physical))
     registry = Registry("test-not-a-real-key")
-    monkeypatch.setattr(main, "_sdk_price_snapshot", lambda *_: (1, 1, "price-v1"))
-    resolver = main._ProductSdkProviderBindingResolver(registry, w.client)
+    monkeypatch.setattr(sdk_services, "_sdk_price_snapshot", lambda *_: (1, 1, "price-v1"))
+    resolver = sdk_services._ProductSdkProviderBindingResolver(registry, w.client)
     authority = ClosureRequestAuthority(
         state, stack_getter=lambda: stack, policy_factory=lambda _: runtime.history_policy
     )

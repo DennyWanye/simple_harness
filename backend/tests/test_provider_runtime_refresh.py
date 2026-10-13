@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock
 
 import main
 import pytest
-from host import sdk_recovery
+from host import sdk_recovery, sdk_services
 from host.state import host_state
 
 
@@ -69,7 +69,7 @@ def test_freeze_sdk_catalog_thaws_nested_frozen_tool_schema():
     )
     adapter = SimpleNamespace(specs=(tool.spec,))
 
-    frozen = main._freeze_sdk_catalog(adapter, 7)
+    frozen = sdk_services._freeze_sdk_catalog(adapter, 7)
 
     assert frozen["generation"] == 7
     assert frozen["specs"][0]["input_schema"]["properties"]["payload"]["properties"]["name"] == {
@@ -167,7 +167,7 @@ def test_foreground_sdk_path_has_no_global_refresh_lock_or_legacy_authority():
 
 
 def test_per_run_binding_resolver_retains_waiting_and_releases_terminal(monkeypatch):
-    resolver = main._ProductSdkProviderBindingResolver(object(), object())
+    resolver = sdk_services._ProductSdkProviderBindingResolver(object(), object())
     authorities = {}
 
     def build_authority(binding):

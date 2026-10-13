@@ -9,15 +9,14 @@
 from __future__ import annotations
 
 import ast
-from pathlib import Path
 
 from deskpet.orchestration import handlers
 
-MAIN = Path(__file__).parents[2] / "main.py"
+from tests.host_source import host_source_tree
 
 
 def _orchestration_dispatch_prefixes() -> tuple[str, ...]:
-    tree = ast.parse(MAIN.read_text(encoding="utf-8"))
+    tree = host_source_tree()
     found: list[tuple[str, ...]] = []
     for node in ast.walk(tree):
         if (

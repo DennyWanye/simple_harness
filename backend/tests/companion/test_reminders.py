@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 from deskpet.companion.clock import DevFrozenClock
-from deskpet.companion.contracts import CompanionConflictError, OwnerRef
+from deskpet.companion.contracts import CompanionConflictError
 from deskpet.companion.production_pipeline import GrowthProductionPipeline
 from deskpet.companion.reminder_tools import (
     REMINDER_CANCEL_SCHEMA,
@@ -31,11 +31,13 @@ from deskpet.harness.contracts import HostContext
 from deskpet.tools.capabilities import ToolExecutionContext
 from deskpet.tools.registry import ToolRegistry
 
+from tests.host_source import host_source_text
+
 NOW = datetime(2026, 7, 25, 12, 0, tzinfo=UTC)
 
 
 def test_production_runtime_claims_and_retries_delegated_reminder_drafts() -> None:
-    source = (Path(__file__).parents[2] / "main.py").read_text(encoding="utf-8")
+    source = host_source_text()
     composition = source[
         source.index("companion_runtime = CompanionRuntime(") : source.index(
             "profile_coordinator = ProfileBindingCoordinator("
@@ -181,7 +183,7 @@ def test_task13_retires_direct_legacy_registration_without_alias() -> None:
 
     assert builtin_registry.get("list_reminders") is None
 
-    main_source = (Path(__file__).resolve().parents[2] / "main.py").read_text(encoding="utf-8")
+    main_source = host_source_text()
     assert "tool_registry.register(list_reminders_tool)" not in main_source
     assert "from tools.reminder import list_reminders_tool" not in main_source
 

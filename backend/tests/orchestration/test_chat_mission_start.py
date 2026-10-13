@@ -11,15 +11,13 @@ service or a refused request is a clear tool failure, never a silent success.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 from deskpet.orchestration.chat_tool import MissionStartRefused, start_mission
 from deskpet.orchestration.service import OrchestrationRequestError
 from deskpet.sdk_adapters.tool_authority import SDK_DIRECT_TOOL_KERNEL, describe_call_zh
 from deskpet.sdk_adapters.tools import HOST_COMPOSED_TOOL_NAMES, PRODUCT_TOOL_NAMES
 
-MAIN = Path(__file__).parents[2] / "main.py"
+from tests.host_source import host_source_text
 
 
 class _Service:
@@ -107,7 +105,7 @@ def test_the_tool_is_registered_visible_and_described():
         describe_call_zh("mission_start", {"goal": "写 ZIP.md"})
         == "在任务编排里新建后台任务「写 ZIP.md」"
     )
-    assert "name=MISSION_START_TOOL_NAME" in MAIN.read_text(encoding="utf-8")
+    assert "name=MISSION_START_TOOL_NAME" in host_source_text()
 
 
 def test_mission_status_reads_progress_and_what_waits_for_the_person():
@@ -159,7 +157,7 @@ def test_mission_status_is_registered_read_only_and_described():
     assert "mission_status" in PRODUCT_TOOL_NAMES and "mission_status" in HOST_COMPOSED_TOOL_NAMES
     assert "mission_status" in SDK_DIRECT_TOOL_KERNEL
     assert describe_call_zh("mission_status", {"mission_id": "m"}) == "查看后台任务的进度"
-    assert "name=MISSION_STATUS_TOOL_NAME" in MAIN.read_text(encoding="utf-8")
+    assert "name=MISSION_STATUS_TOOL_NAME" in host_source_text()
     from deskpet.orchestration.chat_tool import MISSION_STATUS_SCHEMA
 
     assert set(MISSION_STATUS_SCHEMA["properties"]) == {"mission_id"}  # 没有任何能改状态的参数

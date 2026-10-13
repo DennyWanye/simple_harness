@@ -22,6 +22,8 @@ from typing import Any
 
 import pytest
 
+from tests.host_source import host_source_text
+
 # ───────────────────────── fixtures ─────────────────────────
 
 
@@ -829,8 +831,7 @@ def test_ws_settings_provider_messages_are_wired():
     一并删除。这条测试从"确认 relay 已接线"翻转为"确认 relay 不再存在"，
     防止后续有人把托管登录的旁路悄悄接回来。
     """
-    main_py = Path(__file__).resolve().parents[1] / "main.py"
-    text = main_py.read_text(encoding="utf-8")
+    text = host_source_text()
 
     # 手动 provider 的 CRUD 面必须仍在
     for msg in (

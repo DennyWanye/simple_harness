@@ -27,7 +27,8 @@ from pathlib import Path
 
 import pytest
 
-MAIN_PY = Path(__file__).resolve().parents[1] / "main.py"
+from tests.host_source import host_source_tree
+
 CONTEXT_PY = Path(__file__).resolve().parents[1] / "context.py"
 
 # ServiceContext 上真正的注册入口名（context.py 只有 register()，没有 set()）。
@@ -129,7 +130,7 @@ def _registration_calls(tree: ast.AST) -> list[ast.Call]:
 
 def _registered_service_names() -> tuple[set[str], list[int]]:
     """返回 (静态可解析的名字集合, 无法解析的调用行号)。"""
-    tree = ast.parse(MAIN_PY.read_text(encoding="utf-8"), filename=str(MAIN_PY))
+    tree = host_source_tree()
     bound = _loop_bound_names(tree)
     names: set[str] = set()
     unresolved: list[int] = []

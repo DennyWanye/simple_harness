@@ -21,6 +21,7 @@ from deskpet.session.project_binding import (
     resolve_registration,
 )
 from deskpet.workflows.startup_recovery import activate_and_recover_workflows
+from tests.host_source import host_source_tree
 
 
 async def _ready_db(path: Path) -> None:
@@ -755,8 +756,7 @@ async def test_startup_reconciles_deleted_sessions_before_any_workflow_recovery(
 def test_lifespan_uses_the_single_ordered_workflow_recovery_composition() -> None:
     """Lock the production wiring, not only the orchestration helper."""
 
-    main_path = Path(__file__).resolve().parents[2] / "main.py"
-    tree = ast.parse(main_path.read_text(encoding="utf-8"), filename=str(main_path))
+    tree = host_source_tree()
     lifespan = next(
         node
         for node in tree.body
