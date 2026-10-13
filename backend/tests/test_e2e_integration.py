@@ -24,13 +24,10 @@ from collections.abc import AsyncIterator
 
 import pytest
 from fastapi.testclient import TestClient
-from main import (
-    SHARED_SECRET,
-    _control_connections,
-    _voice_transports,
-    app,
-    service_context,
-)
+from host.connections import _control_connections
+from host.routes_voice import _voice_transports
+from host.runtime import SHARED_SECRET, service_context
+from main import app
 from starlette.websockets import WebSocketDisconnect
 
 # ---------------------------------------------------------------------
