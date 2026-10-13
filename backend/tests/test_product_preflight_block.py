@@ -3,6 +3,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
+from host import harness_chat
 from host.state import host_state
 
 from tests.host_patch import patch_host_global
@@ -40,7 +41,7 @@ async def test_product_preflight_block_projects_public_error_without_client_exte
     patch_host_global(monkeypatch, "_broadcast_default_chat_peers", broadcast)
     websocket = _WebSocket()
 
-    await main._commit_product_preflight_block(
+    await harness_chat._commit_product_preflight_block(
         websocket=websocket,
         text="must not execute",
         session_id="session-1",

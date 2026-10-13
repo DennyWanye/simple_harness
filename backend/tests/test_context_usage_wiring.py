@@ -9,7 +9,7 @@ from deskpet.agent.run_presenter import (
     RunPresentationContext,
     _present_compacted,
 )
-from host import context_usage, sdk_execution
+from host import context_usage, harness_chat, sdk_execution
 
 from tests.host_patch import patch_host_global
 
@@ -126,10 +126,10 @@ async def test_chat_launcher_emits_terminal_error_when_failure_precedes_run_open
     ) -> None:
         delivered.append((frame, session_id, request_id))
 
-    monkeypatch.setattr(main, "_run_product_harness_chat_with_timeout", fail_before_open)
+    monkeypatch.setattr(harness_chat, "_run_product_harness_chat_with_timeout", fail_before_open)
     patch_host_global(monkeypatch, "_send_chat_error", capture_error)
 
-    task = main._launch_product_harness_chat(
+    task = harness_chat._launch_product_harness_chat(
         _WS(),
         "hello",
         "session-pre-open",

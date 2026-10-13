@@ -194,7 +194,7 @@ def test_ingress_projects_public_safe_open_authorization_request():
 
 @pytest.mark.asyncio
 async def test_sdk_preparation_bounds_long_history_and_marks_truncation():
-    from main import _prepare_sdk_context_snapshot
+    from host.sdk_context import _prepare_sdk_context_snapshot
 
     class FakeSessionDB:
         async def get_recent_messages(self, session_id, limit):
@@ -244,7 +244,7 @@ async def test_sdk_preparation_bounds_long_history_and_marks_truncation():
 
 @pytest.mark.asyncio
 async def test_sdk_preparation_freezes_host_local_page_url(monkeypatch):
-    from main import _prepare_sdk_context_snapshot
+    from host.sdk_context import _prepare_sdk_context_snapshot
 
     monkeypatch.setenv(
         "DESKPET_LOCAL_PAGE_URL",
@@ -288,7 +288,7 @@ async def test_sdk_preparation_freezes_host_local_page_url(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_sdk_preparation_loads_rules_from_verified_execution_root(tmp_path):
-    from main import _prepare_sdk_context_snapshot
+    from host.sdk_context import _prepare_sdk_context_snapshot
 
     root = tmp_path / "workspace"
     root.mkdir()
@@ -335,7 +335,7 @@ async def test_sdk_preparation_loads_rules_from_verified_execution_root(tmp_path
 
 @pytest.mark.asyncio
 async def test_sdk_preparation_rejects_required_content_over_context_window():
-    from main import _prepare_sdk_context_snapshot
+    from host.sdk_context import _prepare_sdk_context_snapshot
 
     session_db = SimpleNamespace(get_recent_messages=AsyncMock(return_value=[]))
     with pytest.raises(RuntimeError, match="required_content_exceeds_budget"):
@@ -374,7 +374,7 @@ async def test_sdk_preparation_freezes_explicit_skill_and_isolates_plain_turn():
         ResolvedSkillInstructionV1,
     )
     from deskpet.sdk_adapters.context import ProductContextAdapter
-    from main import _prepare_sdk_context_snapshot
+    from host.sdk_context import _prepare_sdk_context_snapshot
     from simple_harness import thaw_json
 
     scope_payload = {
@@ -562,7 +562,7 @@ async def test_sdk_bounded_history_excludes_non_conversation_projections_and_can
 
 
 def test_sdk_price_snapshot_never_marks_unknown_model_free():
-    from main import _sdk_price_snapshot
+    from host.sdk_services import _sdk_price_snapshot
 
     input_price, output_price, version = _sdk_price_snapshot("custom", "unknown")
     assert input_price > 0

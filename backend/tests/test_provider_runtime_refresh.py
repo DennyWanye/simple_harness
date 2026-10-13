@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock
 import main
 import pytest
 from host import (
+    harness_chat,
     harness_runs,
     sdk_activation,
     sdk_execution,
@@ -141,7 +142,7 @@ def test_sdk_tool_authority_is_reachable_for_fresh_waiting_terminal_and_recovery
     import inspect
 
     build = inspect.getsource(sdk_runtime_stack._build_product_sdk_runtime_stack)
-    foreground = inspect.getsource(main._run_product_harness_chat)
+    foreground = inspect.getsource(harness_chat._run_product_harness_chat)
     execute = inspect.getsource(sdk_execution._execute_sdk_run)
     watcher = inspect.getsource(sdk_recovery._watch_retained_sdk_run)
 
@@ -163,7 +164,7 @@ def test_sdk_tool_authority_is_reachable_for_fresh_waiting_terminal_and_recovery
 def test_foreground_sdk_path_has_no_global_refresh_lock_or_legacy_authority():
     import inspect
 
-    foreground = inspect.getsource(main._run_product_harness_chat)
+    foreground = inspect.getsource(harness_chat._run_product_harness_chat)
     execute = inspect.getsource(sdk_execution._execute_sdk_run)
 
     assert "_sdk_runtime_run_lock" not in foreground
@@ -251,7 +252,7 @@ async def test_provider_authority_uses_session_params_and_epoch_cas():
 def test_foreground_no_longer_owns_manual_memory_prepare() -> None:
     import inspect
 
-    source = inspect.getsource(main._run_product_harness_chat)
+    source = inspect.getsource(harness_chat._run_product_harness_chat)
     continuation = inspect.getsource(harness_runs._run_product_harness_continuation)
     assert "ConversationMemoryRecallQuery" not in source + continuation
     assert "prepare_consumer_conversation_context" not in source + continuation
