@@ -157,7 +157,7 @@
   "sdk/simple-harness-sdk/src/simple_harness/workflow/checkpoint.py:commit_frontier:324",
   "sdk/simple-harness-sdk/src/simple_harness/workflows/durable_task/nodes.py:tool_execution_handler:320"
  ],
- "funcs_over_150": 360,
+ "funcs_over_150": 361,
  "inner_imports": 3826,
  "except_broad": 1837,
  "except_broad_silent": 316,
@@ -479,6 +479,12 @@
    "from": null,
    "to": 2130,
    "reason": "2026-10-13 旧版字样改按行计（原按文件计，拆文件会虚增）；基线按主分支提交 d1654f4b3 计算"
+  },
+  {
+   "key": "funcs_over_150",
+   "from": 360,
+   "to": 361,
+   "reason": "阶段 2.27：2654 行的生命周期拆成 14 个步骤函数；其中监督装配是单条 292 行的 if，整体搬出后为 298 行（>150），再拆要动其内部结构，归长函数阶段。原 1 个超长函数变为 2 个（1434、298），净改善。"
   }
  ],
  "legacy_lines": 2130

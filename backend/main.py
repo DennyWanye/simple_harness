@@ -205,9 +205,8 @@ from host.human_memory_ports import (
 # isort: split
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """Preload models on startup (best-effort — failures logged but don't block)."""
+async def _startup_core_services() -> tuple[Any, Any]:
+    """启动：受保护路径通知、提供方路由就绪状态、人类记忆启动纪元与宿主服务工厂登记。"""
     # 2026-09-26 诊断：`kill -USR1 <pid>` 把所有线程的调用栈打到 stderr（排查 CPU 占满/卡住）
     try:
         import faulthandler as _faulthandler
@@ -265,6 +264,11 @@ async def lifespan(app: FastAPI):
             else None
         ),
     )
+    return _provider_readiness, startup_epoch
+
+
+async def _startup_provider_routing(_provider_readiness: Any) -> None:
+    """启动：提供方注册表与路由装配。"""
     try:
         # SessionDB owns the migration/backup recovery path. Registry identity
         # is loaded only after v23 exists, then legacy bindings are reconciled
@@ -340,6 +344,10 @@ async def lifespan(app: FastAPI):
         _provider_readiness.mark_failed(type(_provider_start_exc).__name__)
         service_context.register("provider_registry", None)
         logger.exception("provider_routing_startup_failed: %s", _provider_start_exc)
+
+
+async def _startup_search_and_voice() -> None:
+    """启动：检索网关、模型预加载、语音引擎占位。"""
     from deskpet.retrieval.runtime import build_search_gateway, set_default_gateway
 
     _search_gateway = build_search_gateway(config)
@@ -380,6 +388,10 @@ async def lifespan(app: FastAPI):
                 # can surface "degraded" state instead of silently accepting
                 # requests that will later 500.
                 startup_errors.record(name, exc)
+
+
+async def _startup_workflow_services() -> Any:
+    """启动：会话库检查与工作流服务接线（单条 1421 行的语句整段搬家，拆分在后面的阶段）。"""
     # P4-S13: async initialisers for the P4 read-only stack. Each failure is
     # isolated — MemoryManager needing a base dir doesn't prevent SkillLoader
     # from scanning the built-in dir, etc.
@@ -1811,6 +1823,11 @@ async def lifespan(app: FastAPI):
         except Exception:
             pass
         logger.warning("workflow_service_init_failed", error=str(exc))
+    return _sdb
+
+
+async def _startup_restore_and_skill_prewarm() -> None:
+    """启动：PPT 大纲清理、目标与事实恢复、技能目录与匹配预热。"""
     _expire_ppt_outline_dangling_for_startup()
     # R-T1：goal_store 启动恢复（重启仍在的核心路径）。
     _gs_for_restore = service_context.get("session_goal_store")
@@ -1868,6 +1885,10 @@ async def lifespan(app: FastAPI):
 
         # fire-and-forget; we deliberately don't await (same as embedder warmup)
         asyncio.create_task(_skill_matcher_prewarm_bg())
+
+
+async def _startup_embedder_and_workload_audit() -> Any:
+    """启动：嵌入模型预热、提供方负载审计维护。"""
     # Preload the registered production embedder in the background. Reopening
     # an existing short generation reuses vectors and does not load the encoder.
     _emb = service_context.get("embedder")
@@ -1916,6 +1937,11 @@ async def lifespan(app: FastAPI):
         _provider_audit_retention_task.add_done_callback(
             _provider_workload_maintenance_tasks.discard
         )
+    return _vw
+
+
+async def _startup_vector_worker(_sdb: Any, _vw: Any) -> None:
+    """启动：向量工作器与消息扇出。"""
     if _vw is not None and _sdb is not None:
         try:
             await _vw.start()
@@ -2030,8 +2056,10 @@ async def lifespan(app: FastAPI):
             asyncio.create_task(_vector_backfill_bg())
         except Exception as exc:
             logger.warning("p4_vector_worker_start_failed", error=str(exc))
-    # 记忆系统 reflection 低频任务已随旧记忆系统移除（等待 simple-harness-memory-sdk）。
 
+
+async def _startup_curation_image_and_mcp() -> None:
+    """启动：整理提示、图片工作器、MCP 管理器。"""
     # WI-OH-4: 记忆 self-curation nudge — flag memory.v2.curation_nudge 开 +
     # facts store + LLM 可用 → 构造 MemoryCurator 存进 service_context，由
     # build_agent 接电到 agent_loop（每 N 回合 fire-and-forget nudge）。
@@ -2127,8 +2155,9 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         logger.warning("p4_mcp_manager_bootstrap_failed", error=str(exc))
 
-    # P4-S20-D 启动时后台总结老对话任务已随旧记忆系统移除（等待 SDK）。
 
+async def _startup_self_healing() -> Any:
+    """启动：工具熔断与会话活跃度。"""
     # NEXT-TG-1.0 §9：工具熔断与自动续跑不再挂在监工开关下（用户关了监工 Agent，
     # 但这两项是确定性的自我修复，应当照常工作）。开关在 [self_healing]，默认开；
     # 阈值等旧参数仍从 [supervisor] 读，写在 [self_healing] 的优先。
@@ -2162,11 +2191,11 @@ async def lifespan(app: FastAPI):
         from agent.session_activity import default_store as _sa_default_store
 
         service_context.register("session_activity", _sa_default_store())
+    return _heal_cfg
 
-    # P5-S1/S2: supervisor watchdog + LLM agent. Starts after the rest of
-    # startup is done so the 30s grace can run while normal startup races
-    # finish. Disabled when [supervisor].enabled = false; in that case we
-    # skip construction entirely so the asyncio.Task isn't even created.
+
+async def _startup_supervisor() -> None:
+    """启动：监督 Agent（单条 292 行的 if，拆分在后面的阶段）。"""
     try:
         _sup_cfg = (config.raw.get("supervisor") if hasattr(config, "raw") else None) or {}
         if bool(_sup_cfg.get("enabled", False)):
@@ -2464,6 +2493,9 @@ async def lifespan(app: FastAPI):
     except Exception as exc:  # noqa: BLE001
         logger.warning("p5_supervisor_watchdog_start_failed", error=str(exc))
 
+
+async def _startup_auto_resume_and_model_context(_heal_cfg: Any) -> None:
+    """启动：自动续跑编排、默认模型上下文窗口解析。"""
     # P5-S2 Phase 4: AutoResumeOrchestrator — closes the
     # supervisor → main-agent loop. When the chat handler hits
     # max_iterations / circuit_open / permanent_tool_error /
@@ -2577,6 +2609,9 @@ async def lifespan(app: FastAPI):
     except Exception as _mi_exc:  # noqa: BLE001
         logger.warning("model_context_startup_resolve_failed err=%s", _mi_exc)
 
+
+async def _startup_desktop_and_realtime_voice(startup_epoch: Any) -> None:
+    """启动：桌面测试桥、实时语音服务。"""
     if _sdk_desktop_test_enabled():
         # This local acceptance mode exists to validate the new SDK itself.
         # Do not make it depend on the legacy Workflow/Harness cutover gates.
@@ -2640,7 +2675,10 @@ async def lifespan(app: FastAPI):
             reason="temporarily_disabled_by_product",
         )
     logger.info("startup complete")
-    yield
+
+
+async def _shutdown_runtimes_and_tasks() -> None:
+    """关闭：实时语音、检索网关、前台运行时、审计、SDK 入口与恢复任务、伴侣运行时与各类后台任务。"""
     if host_state.realtime_voice_service is not None:
         try:
             await host_state.realtime_voice_service.close()
@@ -2723,6 +2761,10 @@ async def lifespan(app: FastAPI):
             return_exceptions=True,
         )
     _provider_workload_maintenance_tasks.clear()
+
+
+async def _shutdown_services() -> None:
+    """关闭：桌面测试桥、SDK 运行栈、会话库、能力平台、工作流、看门狗、MCP、向量与图片工作器、技能目录、情节后台任务。"""
     if host_state.sdk_desktop_bridge is not None:
         try:
             await host_state.sdk_desktop_bridge.close()
@@ -2860,6 +2902,30 @@ async def lifespan(app: FastAPI):
             )
 
     logger.info("shutting down")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Preload models on startup (best-effort — failures logged but don't block)."""
+    _provider_readiness, startup_epoch = await _startup_core_services()
+    await _startup_provider_routing(_provider_readiness)
+    await _startup_search_and_voice()
+    _sdb = await _startup_workflow_services()
+    await _startup_restore_and_skill_prewarm()
+    _vw = await _startup_embedder_and_workload_audit()
+    await _startup_vector_worker(_sdb, _vw)
+    await _startup_curation_image_and_mcp()
+    _heal_cfg = await _startup_self_healing()
+    # P5-S1/S2: supervisor watchdog + LLM agent. Starts after the rest of
+    # startup is done so the 30s grace can run while normal startup races
+    # finish. Disabled when [supervisor].enabled = false; in that case we
+    # skip construction entirely so the asyncio.Task isn't even created.
+    await _startup_supervisor()
+    await _startup_auto_resume_and_model_context(_heal_cfg)
+    await _startup_desktop_and_realtime_voice(startup_epoch)
+    yield
+    await _shutdown_runtimes_and_tasks()
+    await _shutdown_services()
 
 
 app = FastAPI(title="Desktop Pet Backend", version="0.2.0", lifespan=lifespan)

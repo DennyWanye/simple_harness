@@ -757,12 +757,15 @@ def test_lifespan_uses_the_single_ordered_workflow_recovery_composition() -> Non
     """Lock the production wiring, not only the orchestration helper."""
 
     tree = host_source_tree()
-    lifespan = next(
+    # 生命周期已拆成有序的启动/关闭步骤函数（2026-10-13），一起检查
+    startup = [
         node
         for node in tree.body
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == "lifespan"
-    )
-    calls = [node for node in ast.walk(lifespan) if isinstance(node, ast.Call)]
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and (node.name == "lifespan" or node.name.startswith(("_startup_", "_shutdown_")))
+    ]
+    assert any(node.name == "lifespan" for node in startup)
+    calls = [node for fn in startup for node in ast.walk(fn) if isinstance(node, ast.Call)]
 
     def call_name(call: ast.Call) -> str:
         if isinstance(call.func, ast.Name):
