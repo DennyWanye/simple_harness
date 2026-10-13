@@ -5,6 +5,7 @@ from __future__ import annotations
 from observability.vram import classify_tier
 
 from host.runtime import config, logger, service_context
+from host.tools_bootstrap import permission_gate_v2
 
 # S8 (R9): log the current hardware tier once so the dispatch decision is
 # visible in the startup banner. The tier itself doesn't force provider
@@ -23,6 +24,6 @@ from deskpet.voice_runtime import configure_legacy_voice_runtime
 _voice_runtime = configure_legacy_voice_runtime(
     config=config,
     service_context=service_context,
-    permission_gate=globals().get("permission_gate_v2"),
+    permission_gate=permission_gate_v2,
     logger=logger,
 )

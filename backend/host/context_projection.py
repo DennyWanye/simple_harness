@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from config import load_config
 
-from host.runtime import _CONFIG_PATH, config, logger
+from host.runtime import _CONFIG_PATH, config, logger, service_context
+from host.tools_bootstrap import _get_receipt_store
 
 
 # ─── WI-T2.1 v3 build_agent 工厂（接电 VerifyGate）─────────────────
@@ -59,7 +60,7 @@ def _build_context_task_projector(
         WorkflowProjectionAdapter,
     )
 
-    services = globals().get("service_context")
+    services = service_context
     task_graph = None
     workflow_service = None
     if services is not None:
@@ -77,7 +78,7 @@ def _build_context_task_projector(
             except Exception:
                 pass
     if receipt_store is None:
-        getter = globals().get("_get_receipt_store")
+        getter = _get_receipt_store
         if callable(getter):
             receipt_store = getter()
     return TaskContextProjector(

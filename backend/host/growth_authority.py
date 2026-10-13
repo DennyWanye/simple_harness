@@ -6,6 +6,7 @@ import paths as _paths
 
 from host.runtime import config, logger, service_context
 from host.state import host_state
+from host.stores_bootstrap import _state_db_path
 from host.tools_bootstrap import deskpet_tool_registry_v2
 from host.window_control import _WINDOW_CONTROL_BOOTSTRAP
 
@@ -492,10 +493,7 @@ async def _initialize_growth_authority() -> None:
         scope_key=capability_owner_scope_key,
     )
 
-    state_db_path = globals().get(
-        "_state_db_path",
-        _paths.user_data_dir() / "data" / "state.db",
-    )
+    state_db_path = _state_db_path
     legacy_snapshot = read_legacy_growth_snapshot(
         state_db_path=state_db_path,
         preference_path=_paths.user_data_dir() / "preference_memory.json",

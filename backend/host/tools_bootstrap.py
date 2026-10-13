@@ -220,6 +220,7 @@ except Exception as _v2_exc:  # noqa: BLE001 — non-fatal, log + degrade
     skill_registry_client = None
     skill_installer = None
     plugin_manager = None
+    _get_receipt_store = None
 
 service_context.register("tool_capability_scope_store", _tool_capability_scope_store)
 service_context.register("tool_capability_resolver", _tool_capability_resolver)

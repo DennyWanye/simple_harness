@@ -10,7 +10,12 @@ import paths as _paths
 
 from host.chat_delivery import _broadcast_control
 from host.runtime import config, logger, service_context
-from host.tools_bootstrap import _automode_path, deskpet_tool_registry_v2, permission_gate_v2
+from host.tools_bootstrap import (
+    _automode_path,
+    deskpet_tool_registry_v2,
+    permission_gate_v2,
+    plugin_manager,
+)
 
 
 async def _initialize_capability_runtime(*, clock=time.time) -> None:
@@ -156,7 +161,7 @@ async def _initialize_capability_runtime(*, clock=time.time) -> None:
         brokered_authority_resolver=resolve_brokered_authority,
         skill_loader=service_context.get("skill_loader"),
         mcp_manager=service_context.get("mcp_manager"),
-        plugin_manager=globals().get("plugin_manager"),
+        plugin_manager=plugin_manager,
         configured_sources=configured_sources,
         first_party_pack_roots=tuple(
             pack_dir

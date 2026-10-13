@@ -13,6 +13,7 @@ from host.context_projection import (
 )
 from host.llm_calls import _make_session_aware_llm_call
 from host.runtime import logger, service_context
+from host.stores_bootstrap import _file_memory
 
 
 def build_agent(
@@ -295,7 +296,7 @@ def build_agent(
     _compression_model_provider = None
     if bool(getattr(getattr(cfg, "features", None), "context_os_v1", False)):
         try:
-            _services = globals().get("service_context")
+            _services = service_context
             _context_snapshot_store_for_loop = _services.get("context_snapshot_store")
             _context_segment_store_for_loop = _services.get("context_segment_store")
             _compression_model_resolver_for_loop = _services.get("compression_model_resolver")
@@ -358,7 +359,7 @@ def build_agent(
         ),
         # ─── WI-4b pre-flush：压缩前把任务态落 L1(跨 session 记任务)。模块级
         # _file_memory(L1048)在 build_agent 调用时已就绪；try 失败则 None(BC)。───
-        file_memory=globals().get("_file_memory"),
+        file_memory=_file_memory,
         force_finish_via_tool_choice=_ff,
         tracer=_tracer,
         # ─── 子代理并发驱动 WI-3.3：非阻塞子代理 completion queue（回合边界 drain）。
