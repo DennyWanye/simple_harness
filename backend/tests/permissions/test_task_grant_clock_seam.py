@@ -26,6 +26,7 @@ from deskpet.product_state.task_grants import (
 from deskpet.tools.capabilities import ToolExecutionContext
 from deskpet.types.task_grants import ResourceSelector, TaskGrant
 from deskpet.workflows.effects import PreparedToolCall
+from host import capability_runtime
 
 from tests.host_source import host_source_tree
 
@@ -161,7 +162,7 @@ def _callee_name(node: ast.expr) -> str:
 def _assert_capability_runtime_clock_seam() -> None:
     import main
 
-    parameters = inspect.signature(main._initialize_capability_runtime).parameters
+    parameters = inspect.signature(capability_runtime._initialize_capability_runtime).parameters
     assert "clock" in parameters, (
         "_initialize_capability_runtime 必须暴露 clock= 形参，否则铸造侧只能用真实墙钟"
     )

@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, Mock, create_autospec
 
 import pytest
 from deskpet.sdk_adapters.desktop_runtime import _delivery_adapters
-from host import harness_runs, sdk_execution, sdk_recovery, sdk_registry
+from host import capability_runtime, harness_runs, sdk_execution, sdk_recovery, sdk_registry
 from host.state import host_state
 
 from tests.host_patch import patch_host_global
@@ -488,7 +488,7 @@ def test_sdk_skill_resolver_registration_does_not_depend_on_legacy_assembler():
     previous_resolver = main.service_context.get("frozen_skill_instruction_resolver")
     try:
         main.service_context.register("context_assembler", None)
-        main._bind_frozen_skill_snapshot_resolver(resolver)
+        capability_runtime._bind_frozen_skill_snapshot_resolver(resolver)
         assert main.service_context.get("frozen_skill_instruction_resolver") is resolver
     finally:
         main.service_context.register("context_assembler", previous_assembler)

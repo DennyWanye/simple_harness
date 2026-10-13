@@ -8,7 +8,7 @@
 `authorization_policy_state`）。`sdk-product-state.db` 里同名表是 MM-D1
 判定的 DDL 残留，任何读路径都不得读它。
 
-本测试锁住 `main._authorization_policy_snapshot()`：
+本测试锁住 `capability_runtime._authorization_policy_snapshot()`：
 1. 全新 profile → auto / generation 0 / factory_default（与面板初始渲染一致）；
 2. CAS 写入后重读 → manual / generation 1 / user_explicit（写后回读，
    不是把请求原样回显）；
@@ -23,6 +23,9 @@ from deskpet.capabilities.store import (
     CapabilityStore,
     initialize_capability_database,
 )
+from host import capability_runtime
+
+from tests.host_source import host_source_text
 
 
 @pytest.fixture()
@@ -38,7 +41,7 @@ async def test_snapshot_reads_workflow_db_authority(tmp_path, restore_capability
     store = CapabilityStore(path)
     main.service_context.register("capability_store", store)
 
-    snapshot = await main._authorization_policy_snapshot()
+    snapshot = await capability_runtime._authorization_policy_snapshot()
     assert snapshot == {
         "enabled": True,
         "mode": "auto",
@@ -47,7 +50,7 @@ async def test_snapshot_reads_workflow_db_authority(tmp_path, restore_capability
         "authoritative": True,
     }
     # 旧的布尔读路径必须与快照同源。
-    assert await main._authorization_auto_mode() is True
+    assert await capability_runtime._authorization_auto_mode() is True
 
 
 @pytest.mark.asyncio
@@ -61,7 +64,7 @@ async def test_snapshot_reflects_persisted_state_after_write(
     initial = await store.get_policy_state()
     await store.compare_and_set_policy_mode("manual", expected_generation=initial.generation)
 
-    snapshot = await main._authorization_policy_snapshot()
+    snapshot = await capability_runtime._authorization_policy_snapshot()
     assert snapshot["mode"] == "manual"
     assert snapshot["enabled"] is False
     assert snapshot["generation"] == initial.generation + 1
@@ -74,7 +77,7 @@ async def test_snapshot_without_store_is_marked_non_authoritative(
     restore_capability_store,
 ) -> None:
     main.service_context.register("capability_store", None)
-    snapshot = await main._authorization_policy_snapshot()
+    snapshot = await capability_runtime._authorization_policy_snapshot()
     assert snapshot["authoritative"] is False
     assert snapshot["provenance"] == "unavailable"
     assert snapshot["generation"] == 0
@@ -82,8 +85,7 @@ async def test_snapshot_without_store_is_marked_non_authoritative(
 
 def test_capability_store_is_bound_to_workflow_execution_uow() -> None:
     """结构锁：注册进 service_context 的 store 建在 workflow.db 的 uow 上。"""
-    source = (main.__file__ or "").replace(".pyc", ".py")
-    text = open(source, encoding="utf-8").read()
+    text = host_source_text()
     assert "uow = workflow_service.execution_uow" in text
     assert "store = CapabilityStore(uow)" in text
     assert 'service_context.register("capability_store", store)' in text

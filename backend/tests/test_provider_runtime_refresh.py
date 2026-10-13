@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock
 import main
 import pytest
 from host import (
+    capability_runtime,
     harness_chat,
     harness_runs,
     sdk_activation,
@@ -112,7 +113,7 @@ def test_sdk_runtime_publications_are_declared_service_context_slots():
 def test_skill_install_verifier_binds_only_after_sdk_runtime_is_ready():
     import inspect
 
-    capability_bootstrap = inspect.getsource(main._initialize_capability_runtime)
+    capability_bootstrap = inspect.getsource(capability_runtime._initialize_capability_runtime)
     activation_source = inspect.getsource(sdk_activation._activate_product_sdk_runtime)
 
     assert "skill_install_runtime_verifier.bind(" not in capability_bootstrap
