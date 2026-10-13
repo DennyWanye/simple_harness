@@ -4,6 +4,20 @@ import asyncio
 from types import SimpleNamespace
 
 import pytest
+from host import connections
+
+
+def _use_control_connections(monkeypatch, mapping) -> None:
+    """原地替换共享的控制通道连接表内容，结束后自动恢复。
+
+    连接表是 host.connections 里的同一个字典，被多个模块按名字导入；
+    换掉某个模块里的名字绑定，别的模块看不见（2026-10-13 代码质量整治阶段 2）。
+    """
+    table = connections._control_connections
+    for key in list(table):
+        monkeypatch.delitem(table, key)
+    for key, value in mapping.items():
+        monkeypatch.setitem(table, key, value)
 
 
 class _FakeWebSocket:
@@ -23,7 +37,7 @@ async def test_broadcast_control_is_best_effort(monkeypatch):
 
     ok = _FakeWebSocket()
     bad = _FakeWebSocket(fail=True)
-    monkeypatch.setattr(main, "_control_connections", {"ok": ok, "bad": bad})
+    _use_control_connections(monkeypatch, {"ok": ok, "bad": bad})
 
     await main._broadcast_control({"type": "ppt_outline_proposed", "payload": {"outline_id": "o1"}})
 
@@ -75,7 +89,7 @@ async def test_workflow_outline_card_resumes_generic_decision_without_blocking(m
 
     monkeypatch.setattr(main, "_ppt_notify_chat_bubble", notify)
     ws = _FakeWebSocket()
-    monkeypatch.setattr(main, "_control_connections", {"panel": ws})
+    _use_control_connections(monkeypatch, {"panel": ws})
 
     handled = await main._handle_control_ws_message(
         {"type": "ppt_outline_decision", "payload": {"outline_id": oid, "action": "accept"}},
@@ -129,7 +143,7 @@ async def test_workflow_outline_card_uses_kernel_decision_fence(monkeypatch):
     monkeypatch.setattr(main, "_signal_product_harness_decision", signal)
     monkeypatch.setattr(main, "_resolve_workflow_ppt_outline", legacy)
     monkeypatch.setattr(main, "_ppt_notify_chat_bubble", notify)
-    monkeypatch.setattr(main, "_control_connections", {})
+    _use_control_connections(monkeypatch, {})
 
     payload = {
         "outline_id": "workflow:run-1:0",
@@ -165,7 +179,7 @@ async def test_workflow_outline_rejected_fence_does_not_drop_control_socket(monk
         raise RuntimeError("actor does not own the run session")
 
     monkeypatch.setattr(main, "_signal_product_harness_decision", reject)
-    monkeypatch.setattr(main, "_control_connections", {})
+    _use_control_connections(monkeypatch, {})
 
     handled = await main._handle_control_ws_message(
         {
@@ -242,7 +256,7 @@ async def test_workflow_outline_decision_uses_action_specific_notice(
         notices.append((sid, text))
 
     monkeypatch.setattr(main, "_ppt_notify_chat_bubble", notify)
-    monkeypatch.setattr(main, "_control_connections", {})
+    _use_control_connections(monkeypatch, {})
 
     handled = await main._handle_control_ws_message(
         {
@@ -309,7 +323,7 @@ async def test_workflow_outline_notify_projects_session_card_idempotently(monkey
     )
     monkeypatch.setattr(main, "list_history", lambda sid, limit=20: [])
     ws = _FakeWebSocket()
-    monkeypatch.setattr(main, "_control_connections", {"panel": ws})
+    _use_control_connections(monkeypatch, {"panel": ws})
 
     await main._ppt_workflow_outline_notify(
         {
@@ -333,9 +347,8 @@ async def test_ppt_notify_chat_bubble_persists_before_sending(monkeypatch):
 
     default_ws = _FakeWebSocket()
     panel_ws = _FakeWebSocket()
-    monkeypatch.setattr(
-        main,
-        "_control_connections",
+    _use_control_connections(
+        monkeypatch,
         {
             "default": default_ws,
             "message-panel-main": panel_ws,
