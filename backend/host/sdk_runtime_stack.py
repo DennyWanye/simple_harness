@@ -12,7 +12,147 @@ from dataclasses import replace as dataclass_replace
 from pathlib import Path
 
 import paths as _paths
+from deskpet.capabilities.skill_install import (
+    AuthorizedPreflightReceiptResolver,
+    ProjectSkillInstallError,
+)
+from deskpet.execution.primary_context_pages import PrimaryContextPageReader
+from deskpet.execution.termination_budget import resolve_max_wall_seconds
+from deskpet.memory.evidence_kind_schema import initialize_evidence_kind_state_db
+from deskpet.memory.identity import ValidatedLocalMemoryIdentityAuthority
+from deskpet.operation_audit.page_in_receipts import ContextPageInReceiptLedger
+from deskpet.orchestration.chat_tool import (
+    METHOD_LIBRARY_DESCRIPTION,
+    METHOD_LIBRARY_SCHEMA,
+    METHOD_LIBRARY_TOOL_NAME,
+    MISSION_AMEND_DESCRIPTION,
+    MISSION_AMEND_SCHEMA,
+    MISSION_AMEND_TOOL_NAME,
+    MISSION_LIST_DESCRIPTION,
+    MISSION_LIST_SCHEMA,
+    MISSION_LIST_TOOL_NAME,
+    MISSION_SOURCE_UPDATE_DESCRIPTION,
+    MISSION_SOURCE_UPDATE_SCHEMA,
+    MISSION_SOURCE_UPDATE_TOOL_NAME,
+    MISSION_START_DESCRIPTION,
+    MISSION_START_SCHEMA,
+    MISSION_START_TOOL_NAME,
+    MISSION_STATUS_DESCRIPTION,
+    MISSION_STATUS_SCHEMA,
+    MISSION_STATUS_TOOL_NAME,
+    MissionStartRefused,
+    amend_mission,
+    method_library,
+    mission_list,
+    mission_status,
+    start_mission,
+    update_mission_source,
+)
+from deskpet.product_state.authorization_saga import AuthorizationSagaRepository
+from deskpet.product_state.database import ProductStateDatabase
+from deskpet.product_state.task_grants import DurableTaskGrantAuthority
+from deskpet.provider_extra_headers import install_httpx_extra_headers_hook
+from deskpet.sdk_adapters.authorization import ProductAuthorizationAdapter
+from deskpet.sdk_adapters.capability_catalog import ProductCapabilityCatalogSourceAdapter
+from deskpet.sdk_adapters.composition import (
+    OwnedResourceCloser,
+    ProductionRuntimeBuild,
+    ProductSdkRuntimeStack,
+    SdkRuntimeBuildInputs,
+)
+from deskpet.sdk_adapters.context import ProductContextAdapter
+from deskpet.sdk_adapters.context_authority import (
+    ContextRouteLedgerStore,
+    ProductRuntimeDecisionSink,
+)
+from deskpet.sdk_adapters.context_authority import (
+    ContextRouteLedgerStore as _ContextRouteLedgerStore,
+)
+from deskpet.sdk_adapters.context_provider import ProductConversationContextProvider
+from deskpet.sdk_adapters.context_route import (
+    CONTEXT_ROUTE_SCHEMA,
+    TASK_SCOPE_SEARCH_SCHEMA,
+    ContextRouteToolService,
+)
+from deskpet.sdk_adapters.context_route import read_current_turn_text as _read_current_turn_text
+from deskpet.sdk_adapters.context_source import ProductContextSourceRepository
+from deskpet.sdk_adapters.delegation import (
+    ProductDelegationService,
+    is_delegated_child_start,
+    waiting_runs_blocked_on_delegation,
+)
+from deskpet.sdk_adapters.desktop_runtime import _DeliverySink
+from deskpet.sdk_adapters.effect_gate import EffectGate, project_tool_execution_context
+from deskpet.sdk_adapters.null_memory_port import NoMemoryAgentPort
+from deskpet.sdk_adapters.provider import ProductProviderInvocationCoordinator
+from deskpet.sdk_adapters.provider_projection_pump import (
+    ProviderProjectionContextV1,
+    SdkProviderProjectionPump,
+)
+from deskpet.sdk_adapters.read_gate import WorkspaceReadGate
+from deskpet.sdk_adapters.reconciliation import (
+    ProductReconciliationAdapter,
+    ProductRuntimeReconciliation,
+    waiting_runs_blocked_on_provider,
+)
+from deskpet.sdk_adapters.run_bindings import SdkRunBindingV1
+from deskpet.sdk_adapters.runtime_paths import (
+    ProductRuntimePathsAdapter,
+    durable_sdk_run_start_exists,
+)
 from deskpet.sdk_adapters.sdk_candidate import build_runtime_identity
+from deskpet.sdk_adapters.skill_install_verification import (
+    ProductRootDriverRouter,
+    SkillInstallVerificationAttemptResolver,
+)
+from deskpet.sdk_adapters.skill_resolver import SdkThenLegacyFrozenSkillResolver
+from deskpet.sdk_adapters.task_execution import BindingRootResolver, ProductTaskExecutionAuthority
+from deskpet.sdk_adapters.task_scope_mutation import (
+    TASK_SCOPE_UPDATE_DESCRIPTION,
+    TASK_SCOPE_UPDATE_SCHEMA,
+)
+from deskpet.sdk_adapters.task_scope_mutation import (
+    read_current_turn_evidence_ref as _read_current_turn_evidence_ref,
+)
+from deskpet.sdk_adapters.tool_authority import (
+    SdkPreparedAuthorizationPolicy,
+    SdkRuntimeCapabilityBridgeAdapter,
+    SdkRunToolAuthorityRegistry,
+    SdkToolAuthorityMigrationUnavailable,
+)
+from deskpet.sdk_adapters.tools import (
+    ProductEffectExecutor,
+    ProductToolRegistration,
+    active_product_tool_call_id,
+    active_product_tool_context,
+    build_product_tool_registry,
+    extend_product_registry_with_mcp,
+)
+from deskpet.sdk_adapters.workflows import build_product_workflow_registrations
+from deskpet.task_scope.disclosure import ScopeDisclosureReader
+from deskpet.task_scope.store import CanonicalTaskScopeStore as _GateScopeStore
+from deskpet.task_scope.workspace_bindings import WorkspaceBindingAuthorityStore
+from deskpet.tool_catalog import ToolCatalogDependencies, build_explicit_product_tool_catalog
+from deskpet.tools import registry as live_tool_registry
+from deskpet.tools import skill_tools as _skill_tools
+from observability.memory_probe import install_memory_probe as _install_memory_probe
+from simple_harness import RuntimeProfile
+from simple_harness.execution.budget import BudgetPolicy
+from simple_harness.execution.context_authority import DurableToolCatalogResolver
+from simple_harness.execution.context_staging import ContextStagingRepository
+from simple_harness.execution.delivery import DeliveryDispatcher
+from simple_harness.runtime import (
+    ProductionRuntimeConfig,
+    ResourceOwnership,
+    RuntimePorts,
+    SqliteContextPort,
+    StartModeDriverRouter,
+    build_production_runtime,
+)
+from simple_harness.runtime.drivers import build_react_driver
+from simple_harness.runtime.termination import TerminationLimits
+from simple_harness.tools import ToolResult
+from simple_harness.tools.reconciliation import ReconciliationObservation, ReconciliationState
 
 from host.context_usage import _broadcast_context_usage_snapshot
 from host.logging_setup import _sdk_observability
@@ -47,31 +187,6 @@ async def _build_product_sdk_runtime_stack(
     configured_workspace_root=None,
 ):
     """Build SDK Runtime Stack with product adapters (Slice C ingress)."""
-    from deskpet.sdk_adapters.authorization import ProductAuthorizationAdapter
-    from deskpet.sdk_adapters.composition import (
-        OwnedResourceCloser,
-        ProductionRuntimeBuild,
-        ProductSdkRuntimeStack,
-        SdkRuntimeBuildInputs,
-    )
-    from deskpet.sdk_adapters.context import ProductContextAdapter
-    from deskpet.sdk_adapters.provider import ProductProviderInvocationCoordinator
-    from deskpet.sdk_adapters.reconciliation import ProductReconciliationAdapter
-    from deskpet.sdk_adapters.runtime_paths import (
-        ProductRuntimePathsAdapter,
-    )
-    from deskpet.sdk_adapters.tool_authority import (
-        SdkPreparedAuthorizationPolicy,
-        SdkRuntimeCapabilityBridgeAdapter,
-        SdkRunToolAuthorityRegistry,
-        SdkToolAuthorityMigrationUnavailable,
-    )
-    from simple_harness import RuntimeProfile
-    from simple_harness.execution.budget import BudgetPolicy
-    from simple_harness.execution.delivery import DeliveryDispatcher
-    from simple_harness.runtime import RuntimePorts, SqliteContextPort
-    from simple_harness.runtime.drivers import build_react_driver
-    from simple_harness.runtime.termination import TerminationLimits
 
     # Verify required services
     session_db = service_context.get("session_db")
@@ -81,8 +196,6 @@ async def _build_product_sdk_runtime_stack(
     session_state_db_path = Path(getattr(session_db, "db_path", _state_db_path))
     memory_identity_authority = service_context.get("memory_identity_authority")
     if memory_identity_authority is None:
-        from deskpet.memory.identity import ValidatedLocalMemoryIdentityAuthority
-
         memory_identity_authority = ValidatedLocalMemoryIdentityAuthority(
             session_state_db_path,
             user_data_dir=_paths.user_data_dir(),
@@ -97,7 +210,6 @@ async def _build_product_sdk_runtime_stack(
         raise RuntimeError("SDK Runtime requires provider_registry")
 
     import httpx
-    from deskpet.provider_extra_headers import install_httpx_extra_headers_hook
 
     # Grok Build lane (2026-09-16): SDK provider builds its own headers, so
     # endpoint-specific ones (llm_runtime.json extra_headers) ride a hook.
@@ -106,12 +218,6 @@ async def _build_product_sdk_runtime_stack(
     provider_binding_resolver = _ProductSdkProviderBindingResolver(provider_registry, client)
 
     # Build tool adapter
-    from deskpet.sdk_adapters.tools import (
-        ProductEffectExecutor,
-        build_product_tool_registry,
-        extend_product_registry_with_mcp,
-    )
-    from deskpet.tool_catalog import ToolCatalogDependencies, build_explicit_product_tool_catalog
 
     # Build tool catalog dependencies
     todo_session_db = service_context.get("session_db")
@@ -124,10 +230,6 @@ async def _build_product_sdk_runtime_stack(
     if authorization_runtime is None or capability_store is None or capability_scope_store is None:
         raise RuntimeError("SDK Runtime requires prepared authorization authority")
     initial_authorization_policy = await capability_store.get_policy_state()
-    from deskpet.sdk_adapters.capability_catalog import (
-        ProductCapabilityCatalogSourceAdapter,
-    )
-    from deskpet.sdk_adapters.workflows import build_product_workflow_registrations
 
     skill_projection = service_context.get("managed_skill_discovery_projection")
     skill_metas = tuple(skill_projection.list_metas()) if skill_projection is not None else ()
@@ -155,7 +257,6 @@ async def _build_product_sdk_runtime_stack(
     # 事件 X-3：原生按站点内存探针。默认关闭 —— `build_memory_probe` 在
     # `SIMPLEHARNESS_MEMORY_PROBE` 没显式打开时返回 None，这里连监听器都不注册，
     # 也不会启动 tracemalloc / import psutil / 碰 gc.get_objects()。
-    from observability.memory_probe import install_memory_probe as _install_memory_probe
 
     _memory_probe = _install_memory_probe(
         registry=tool_authorities,
@@ -170,11 +271,6 @@ async def _build_product_sdk_runtime_stack(
         )
     project_bindings = service_context.get("project_binding_service")
     if project_bindings is not None:
-        from deskpet.sdk_adapters.runtime_paths import (
-            ProductRuntimePathsAdapter,
-            durable_sdk_run_start_exists,
-        )
-
         sdk_execution_db = ProductRuntimePathsAdapter(_paths.user_data_dir()).execution_database
 
         async def _has_durable_sdk_run_start(run_id: str) -> bool:
@@ -190,10 +286,6 @@ async def _build_product_sdk_runtime_stack(
             asyncio.create_task(project_bindings.release_run(authority.run_id))
 
         tool_authorities.add_terminal_listener(_release_project_run)
-    from deskpet.sdk_adapters.skill_resolver import (
-        SdkThenLegacyFrozenSkillResolver,
-    )
-    from deskpet.tools import skill_tools as _skill_tools
 
     _skill_tools.bind(
         skill_resolver=SdkThenLegacyFrozenSkillResolver(
@@ -205,7 +297,6 @@ async def _build_product_sdk_runtime_stack(
     deskpet_tool_registry_v2.set_dynamic_capability_admission_provider(
         tool_authorities.validate_runtime_tool_admission
     )
-    from deskpet.execution.termination_budget import resolve_max_wall_seconds
 
     # C10-13 缺陷：这里不显式给 max_wall_seconds 就静默回落 SDK 默认 900s，
     # 恰好等于语料批次的外部 SIGTERM deadline，外层先赢 → 连失败终态回执都
@@ -234,15 +325,10 @@ async def _build_product_sdk_runtime_stack(
         estimator=None,
         tool_exposure_resolver=tool_authorities.resolve_exposure,
     )
-    from deskpet.sdk_adapters.skill_install_verification import (
-        ProductRootDriverRouter,
-        SkillInstallVerificationAttemptResolver,
-    )
 
     verification_driver_factory = service_context.get("skill_install_verification_driver_factory")
     if verification_driver_factory is None:
         raise RuntimeError("Skill verification driver factory is unavailable")
-    from simple_harness.runtime import StartModeDriverRouter
 
     host_control_driver = ProductRootDriverRouter(
         react_driver=driver,
@@ -252,10 +338,6 @@ async def _build_product_sdk_runtime_stack(
     driver = StartModeDriverRouter(ordinary=driver, host_control=host_control_driver)
 
     def execution_context_getter():
-        from deskpet.sdk_adapters.tools import (
-            active_product_tool_call_id,
-            active_product_tool_context,
-        )
 
         tool_context = active_product_tool_context()
         run_id = tool_context.run_id.value
@@ -263,7 +345,6 @@ async def _build_product_sdk_runtime_stack(
         effect_id = str(getattr(effect, "value", effect) or "")
         if not effect_id:
             raise RuntimeError("SDK product Tool effect identity is unavailable")
-        from deskpet.sdk_adapters.effect_gate import project_tool_execution_context
 
         base = tool_authorities.resolve(run_id).execution_context(
             call_id=active_product_tool_call_id().value,
@@ -280,11 +361,6 @@ async def _build_product_sdk_runtime_stack(
     # NEXT-TG-1.0 §9 收口第 4 项：五个委派工具跑在真实 SDK 子运行上（DETACHED，
     # 授权 = 父目录只读子集，每个子运行一个监视器负责收尾与取消）。执行账本在
     # ports_factory 里才拿得到，这里先放一个占位。
-    from deskpet.sdk_adapters.delegation import (
-        ProductDelegationService,
-        is_delegated_child_start,
-        waiting_runs_blocked_on_delegation,
-    )
 
     delegation_uow: dict[str, Any] = {}
     delegation_service = ProductDelegationService(
@@ -316,9 +392,6 @@ async def _build_product_sdk_runtime_stack(
     # Authorization state must exist before the Skill install registration is
     # frozen, because its physical handler resolves only durable Product saga
     # receipts and never accepts a model-provided approval token.
-    from deskpet.capabilities.skill_install import AuthorizedPreflightReceiptResolver
-    from deskpet.product_state.authorization_saga import AuthorizationSagaRepository
-    from deskpet.product_state.database import ProductStateDatabase
 
     sdk_product_state_db_path = _paths.user_data_dir() / "data" / "sdk-product-state.db"
     sdk_product_state_db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -333,8 +406,6 @@ async def _build_product_sdk_runtime_stack(
     skill_install_receipts = AuthorizedPreflightReceiptResolver(capability_store, repository)
 
     async def skill_install_handler(_arguments, _context):
-        from deskpet.capabilities.skill_install import ProjectSkillInstallError
-        from simple_harness.tools import ToolResult
 
         trusted = execution_context_getter()
         authority = tool_authorities.resolve(trusted.run_id)
@@ -390,8 +461,6 @@ async def _build_product_sdk_runtime_stack(
 
     catalog = build_explicit_product_tool_catalog(dependencies)
 
-    from deskpet.sdk_adapters.tools import ProductToolRegistration
-
     projected_registrations = tuple(
         dataclass_replace(
             item,
@@ -437,26 +506,8 @@ async def _build_product_sdk_runtime_stack(
         ),
     )
     # S5a — five-route Context authority tools (host-composed like skill_install).
-    from deskpet.sdk_adapters.context_authority import (
-        ContextRouteLedgerStore as _ContextRouteLedgerStore,
-    )
-    from deskpet.sdk_adapters.context_route import (
-        CONTEXT_ROUTE_SCHEMA,
-        TASK_SCOPE_SEARCH_SCHEMA,
-        ContextRouteToolService,
-    )
-    from deskpet.sdk_adapters.context_route import (
-        read_current_turn_text as _read_current_turn_text,
-    )
-    from deskpet.sdk_adapters.task_scope_mutation import (
-        read_current_turn_evidence_ref as _read_current_turn_evidence_ref,
-    )
-    from deskpet.sdk_adapters.tools import active_product_tool_context
 
     def _context_route_binding_store():
-        from deskpet.task_scope.workspace_bindings import (
-            WorkspaceBindingAuthorityStore,
-        )
 
         return WorkspaceBindingAuthorityStore(
             _state_db_path, configured_workspace_root=configured_workspace_root
@@ -465,7 +516,6 @@ async def _build_product_sdk_runtime_stack(
     # 2026-09-10：认知记忆 SDK 移除，``HumanMemoryV7Runtime``（分析批 / 类型化召回 /
     # Procedure / Prospective 的宿主运行时）随之下线，``human_memory_v7_runtime``
     # 槽位不再注册。
-    from deskpet.execution.primary_context_pages import PrimaryContextPageReader
 
     context_page_store.primary_reader = PrimaryContextPageReader(
         _state_db_path,
@@ -473,7 +523,6 @@ async def _build_product_sdk_runtime_stack(
         policy_factory=_primary_history_policy,
     )
     # G1: durable payload-free page-in issue/consume receipts in the audit sidecar.
-    from deskpet.operation_audit.page_in_receipts import ContextPageInReceiptLedger
 
     context_page_store.receipt_ledger = ContextPageInReceiptLedger(
         _state_db_path.with_name("operation-audit.db"),
@@ -484,9 +533,6 @@ async def _build_product_sdk_runtime_stack(
     # 2026-09-08 HM-TO-A6 F-K1: v55 side record of assistant tool-call arguments.
     # v56 chains onto v55; 事件 AI 的 v57 把 context_use_recollection 收进
     # harness_evidence_reservations 的种类 CHECK。初始化链头即安装前面每一步。
-    from deskpet.memory.evidence_kind_schema import (
-        initialize_evidence_kind_state_db,
-    )
 
     await initialize_evidence_kind_state_db(_state_db_path)
     # 2026-09-10：类型化 Context-use 权威（``memory_standalone`` 路由背后的
@@ -497,8 +543,6 @@ async def _build_product_sdk_runtime_stack(
     service_context.register("sdk_typed_context_use_authority", None)
     _occurrence_coordinator = None
     service_context.register("prospective_occurrence_coordinator", None)
-
-    from deskpet.task_scope.disclosure import ScopeDisclosureReader
 
     scope_disclosure = ScopeDisclosureReader(
         _state_db_path,
@@ -609,10 +653,6 @@ async def _build_product_sdk_runtime_stack(
     )
     # S5b Task 3 — semantic closure Tool (host-composed, direct kernel, always
     # exposed; the Host handler gates scope_unbound / nothing_to_close).
-    from deskpet.sdk_adapters.task_scope_mutation import (
-        TASK_SCOPE_UPDATE_DESCRIPTION,
-        TASK_SCOPE_UPDATE_SCHEMA,
-    )
 
     _closure_tool_service = _ensure_task_scope_update_service()
 
@@ -637,16 +677,8 @@ async def _build_product_sdk_runtime_stack(
         ),
     )
     # NEXT-TG-1.0 §9：主 Agent 在聊天里发起后台任务——与任务页同一个 create_mission。
-    from deskpet.orchestration.chat_tool import (
-        MISSION_START_DESCRIPTION,
-        MISSION_START_SCHEMA,
-        MISSION_START_TOOL_NAME,
-        MissionStartRefused,
-        start_mission,
-    )
 
     async def mission_start_handler(arguments, _context):
-        from simple_harness.tools import ToolResult
 
         try:
             value = start_mission(
@@ -679,15 +711,8 @@ async def _build_product_sdk_runtime_stack(
         ),
     )
     # 2026-09-29：主 Agent 读后台任务进度（只读；确认与批准只能由人在卡片/任务页上点）。
-    from deskpet.orchestration.chat_tool import (
-        MISSION_STATUS_DESCRIPTION,
-        MISSION_STATUS_SCHEMA,
-        MISSION_STATUS_TOOL_NAME,
-        mission_status,
-    )
 
     async def mission_status_handler(arguments, _context):
-        from simple_harness.tools import ToolResult
 
         try:
             value = mission_status(lambda: service_context.get("orchestration"), arguments)
@@ -715,15 +740,8 @@ async def _build_product_sdk_runtime_stack(
         ),
     )
     # 阶段 E：主 Agent 替用户改后台任务的要求（与建任务同一条把关规矩）。
-    from deskpet.orchestration.chat_tool import (
-        MISSION_AMEND_DESCRIPTION,
-        MISSION_AMEND_SCHEMA,
-        MISSION_AMEND_TOOL_NAME,
-        amend_mission,
-    )
 
     async def mission_amend_handler(arguments, _context):
-        from simple_harness.tools import ToolResult
 
         try:
             value = amend_mission(
@@ -757,15 +775,8 @@ async def _build_product_sdk_runtime_stack(
         ),
     )
     # 2026-10-05：主 Agent 查有哪些后台任务（任务页建的它也要找得到）。
-    from deskpet.orchestration.chat_tool import (
-        MISSION_LIST_DESCRIPTION,
-        MISSION_LIST_SCHEMA,
-        MISSION_LIST_TOOL_NAME,
-        mission_list,
-    )
 
     async def mission_list_handler(arguments, _context):
-        from simple_harness.tools import ToolResult
 
         try:
             value = mission_list(lambda: service_context.get("orchestration"), arguments)
@@ -793,15 +804,8 @@ async def _build_product_sdk_runtime_stack(
         ),
     )
     # 2026-10-05：主 Agent 替用户把任务的资料换成新版本（变更仍等人批准）。
-    from deskpet.orchestration.chat_tool import (
-        MISSION_SOURCE_UPDATE_DESCRIPTION,
-        MISSION_SOURCE_UPDATE_SCHEMA,
-        MISSION_SOURCE_UPDATE_TOOL_NAME,
-        update_mission_source,
-    )
 
     async def mission_source_update_handler(arguments, _context):
-        from simple_harness.tools import ToolResult
 
         try:
             value = update_mission_source(
@@ -834,15 +838,8 @@ async def _build_product_sdk_runtime_stack(
         ),
     )
     # 阶段 C3：主 Agent 替用户查看全库做法、按用户的话退役一条。
-    from deskpet.orchestration.chat_tool import (
-        METHOD_LIBRARY_DESCRIPTION,
-        METHOD_LIBRARY_SCHEMA,
-        METHOD_LIBRARY_TOOL_NAME,
-        method_library,
-    )
 
     async def method_library_handler(arguments, _context):
-        from simple_harness.tools import ToolResult
 
         try:
             value = method_library(
@@ -875,7 +872,6 @@ async def _build_product_sdk_runtime_stack(
         ),
     )
     tools_adapter, tool_inventory = build_product_tool_registry(projected_registrations)
-    from deskpet.tools import registry as live_tool_registry
 
     tool_inventory = extend_product_registry_with_mcp(
         tools_adapter,
@@ -909,8 +905,6 @@ async def _build_product_sdk_runtime_stack(
 
     # Build authorization system
 
-    from deskpet.product_state.task_grants import DurableTaskGrantAuthority
-
     authorization_policy = SdkPreparedAuthorizationPolicy(
         authorization_runtime,
         tool_authorities,
@@ -935,10 +929,6 @@ async def _build_product_sdk_runtime_stack(
 
     # Build reconciliation adapter
     async def _delegation_observer(effect: Any, _saga: Any) -> Any:
-        from simple_harness.tools.reconciliation import (
-            ReconciliationObservation,
-            ReconciliationState,
-        )
 
         observed = await delegation_service.observe(effect)
         if observed is not None:
@@ -954,7 +944,6 @@ async def _build_product_sdk_runtime_stack(
     # presentation context), so the stack-level delivery port routes through the global
     # _DeliverySink, which dispatches to the adapter registered for each run by
     # _execute_sdk_run via _delivery_adapters.
-    from deskpet.sdk_adapters.desktop_runtime import _DeliverySink
 
     delivery_adapter = _DeliverySink()
 
@@ -963,7 +952,6 @@ async def _build_product_sdk_runtime_stack(
     # 之前这里是 Noop（永远 STILL_UNKNOWN）且无人调用 reconcile_incomplete → Run 永久
     # 停摆。现在：RuntimeReconciliationPort 在 SDK 启动与 runtime.reconcile() 时调
     # provider coordinator 的 reconcile_incomplete，provider 侧用 retry-once 策略。
-    from deskpet.sdk_adapters.reconciliation import ProductRuntimeReconciliation
 
     provider_reconciliation = _ensure_provider_reconciliation()
     runtime_reconciliation = ProductRuntimeReconciliation(
@@ -972,8 +960,6 @@ async def _build_product_sdk_runtime_stack(
     host_state.runtime_reconciliation = runtime_reconciliation
 
     projection_pump = None
-    from deskpet.sdk_adapters.context_provider import ProductConversationContextProvider
-    from deskpet.sdk_adapters.context_source import ProductContextSourceRepository
 
     # Context source/binding tables are owned by the product SessionDB migration
     # chain (023_official_memory_integration_v31.sql).  Keep them in state.db;
@@ -985,7 +971,6 @@ async def _build_product_sdk_runtime_stack(
     # 必填项。认知记忆 SDK 移除后 Host 交一个**诚实的空记忆端口**：召回返回合法
     # 空结果（不伪造 write_fence / 权威），release 无操作，record 返回合法回执但
     # 不持久化任何记忆。见 ``deskpet/sdk_adapters/null_memory_port.py``。
-    from deskpet.sdk_adapters.null_memory_port import NoMemoryAgentPort
 
     agent_memory_port = NoMemoryAgentPort()
     service_context.register("sdk_context_source_repository", context_source_repository)
@@ -999,8 +984,6 @@ async def _build_product_sdk_runtime_stack(
     # verify_task_execution_envelope over the durable v45 route receipt →
     # strict head revision → TaskScope active).  Constructed at stack build so
     # a missing piece fails startup instead of degrading to "no gate".
-    from deskpet.sdk_adapters.effect_gate import EffectGate
-    from deskpet.task_scope.store import CanonicalTaskScopeStore as _GateScopeStore
 
     if tool_authorities is None:
         raise RuntimeError("sdk_effect_gate_composition_missing:tool_authority_registry")
@@ -1018,7 +1001,6 @@ async def _build_product_sdk_runtime_stack(
     # — durable ``context_route`` task decision → verified S4 binding root →
     # path containment.  Same composition discipline as the EffectGate: a
     # missing piece fails startup instead of degrading to "no gate".
-    from deskpet.sdk_adapters.read_gate import WorkspaceReadGate
 
     # F-Z1b (2026-09-09): a read whose path is outside the task's bound roots
     # but still inside the configured workspace no longer dead-ends — the gate
@@ -1040,8 +1022,6 @@ async def _build_product_sdk_runtime_stack(
         context = SqliteContextPort(database, clock=clock)
         host_state.sdk_context_port = context
         delegation_uow["uow"] = uow
-        from deskpet.sdk_adapters.reconciliation import waiting_runs_blocked_on_provider
-        from deskpet.sdk_adapters.run_bindings import SdkRunBindingV1
 
         recoverable = (
             *uow.list_recoverable_root_runs(),
@@ -1104,9 +1084,6 @@ async def _build_product_sdk_runtime_stack(
             effect_gate=effect_gate,
             read_gate=read_gate,
             evidence_ingress=_ensure_evidence_ingress(),
-        )
-        from simple_harness.execution.context_authority import (
-            DurableToolCatalogResolver,
         )
 
         durable_catalog_resolver = DurableToolCatalogResolver(uow)
@@ -1172,10 +1149,6 @@ async def _build_product_sdk_runtime_stack(
             clock=clock,
         )
         if projection_pump is None:
-            from deskpet.sdk_adapters.provider_projection_pump import (
-                ProviderProjectionContextV1,
-                SdkProviderProjectionPump,
-            )
 
             def projection_context(receipt: Any) -> ProviderProjectionContextV1:
                 start = uow.read_start_snapshot(str(receipt.run_id))
@@ -1200,9 +1173,6 @@ async def _build_product_sdk_runtime_stack(
                 ),
             )
             projection_pump.trigger()
-        from simple_harness.execution.context_staging import (
-            ContextStagingRepository,
-        )
 
         context_staging = ContextStagingRepository(database)
         service_context.register("sdk_context_staging", context_staging)
@@ -1262,11 +1232,6 @@ async def _build_product_sdk_runtime_stack(
         return cached
 
     def production_runtime_factory(execution_path):
-        from simple_harness.runtime import (
-            ProductionRuntimeConfig,
-            ResourceOwnership,
-            build_production_runtime,
-        )
 
         production_ports.clear()
         profiles = {"agent.general": RuntimeProfile("agent.general", "react")}
@@ -1331,14 +1296,6 @@ async def _build_product_sdk_runtime_stack(
     # S5a — register the three concrete SDK 0.7 authorities.  Missing any
     # prerequisite must fail the stack build (no Noop/fake fallback); the
     # proxies in _sdk_runtime_authority_bindings stay fail-closed otherwise.
-    from deskpet.sdk_adapters.context_authority import (
-        ContextRouteLedgerStore,
-        ProductRuntimeDecisionSink,
-    )
-    from deskpet.sdk_adapters.task_execution import (
-        BindingRootResolver,
-        ProductTaskExecutionAuthority,
-    )
 
     _state_version = ContextRouteLedgerStore(_state_db_path).user_version()
     if _state_version < 35:

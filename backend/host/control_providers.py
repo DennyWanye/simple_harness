@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from llm.model_catalog import build_catalog as _bc
 from llm.provider_registry import ProviderMutationConflict
 
 from host.connections import _control_connections
@@ -101,7 +102,6 @@ async def _cc_models_list(conn: _ControlConnection, raw: dict, msg_type: str) ->
     # (onboarding 登录中转站后已写 gpt-5.5)。
     if not _default_model and host_state.local_llm is not None:
         _default_model = str(getattr(host_state.local_llm, "model", "") or "")
-    from llm.model_catalog import build_catalog as _bc
 
     await ws.send_json(
         {

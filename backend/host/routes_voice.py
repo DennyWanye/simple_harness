@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import weakref
 
+from deskpet.voice_runtime import VOICE_DISABLED_CODE, VOICE_DISABLED_MESSAGE
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from pipeline.voice_pipeline import VoicePipeline
 
 from host.auth import _validate_secret
 from host.chat_delivery import _broadcast_default_chat_peers
@@ -94,11 +96,6 @@ async def audio_channel(ws: WebSocket):
         return
 
     if not _voice_runtime.enabled:
-        from deskpet.voice_runtime import (
-            VOICE_DISABLED_CODE,
-            VOICE_DISABLED_MESSAGE,
-        )
-
         await ws.send_json(
             {
                 "type": "error",
@@ -114,8 +111,6 @@ async def audio_channel(ws: WebSocket):
 
     session_id = ws.query_params.get("session_id", "default")
     control_ws = _control_connections.get(session_id)
-
-    from pipeline.voice_pipeline import VoicePipeline
 
     # Each audio connection gets its own VAD instance (stateful)
     session_vad = _voice_runtime.create_session_vad()

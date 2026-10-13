@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from deskpet.memory.human_memory_api import handle_human_memory_command, send_human_memory_response
+
 from host.control_connection import _ControlConnection
 from host.memory_messages import _handle_memory_message
 from host.runtime import config, service_context
@@ -116,10 +118,6 @@ async def _cc_human_memory_request(conn: _ControlConnection, raw: dict, msg_type
     ws = conn.ws
     companion_challenge = conn.companion_challenge
     human_memory_control_binding = conn.human_memory_control_binding
-    from deskpet.memory.human_memory_api import (
-        handle_human_memory_command,
-        send_human_memory_response,
-    )
 
     try:
         _hm_auth = human_memory_control_binding.authenticate(

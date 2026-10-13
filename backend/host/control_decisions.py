@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from deskpet.execution.contracts import ExecutionError
+from deskpet.permissions import protected_paths as _protected_paths
+
 from host.chat_delivery import _broadcast_default_chat_peers
 from host.control_connection import _ControlConnection
 from host.harness_chat import _resolve_selected_project_directory
@@ -96,7 +99,6 @@ async def _cc_permission_response(conn: _ControlConnection, raw: dict, msg_type:
 async def _cc_protected_path_decision(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
     """控制消息：protected_path_decision。"""
     ws = conn.ws
-    from deskpet.permissions import protected_paths as _protected_paths
 
     payload = raw.get("payload", {}) or {}
     decision = str(payload.get("decision") or "")
@@ -176,8 +178,6 @@ async def _cc_project_directory_response(
             },
         )
     except Exception as exc:  # execution contracts are user-retryable
-        from deskpet.execution.contracts import ExecutionError
-
         if not isinstance(exc, ExecutionError):
             raise
         logger.warning(

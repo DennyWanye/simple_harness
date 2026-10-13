@@ -2,7 +2,17 @@
 
 from __future__ import annotations
 
+from agent.context_messages import ContextMessageMeta, tag_message
 from config import load_config
+from deskpet.agent.assembler.bundle import ContextFragment
+from deskpet.agent.context_task import (
+    GoalProjectionAdapter,
+    ReceiptProjectionAdapter,
+    TaskContextProjector,
+    TaskFact,
+    WorkflowProjectionAdapter,
+)
+from p4_ipc import _context_compaction_config_path, _read_context_compaction_model
 
 from host.runtime import _CONFIG_PATH, config, logger, service_context
 from host.tools_bootstrap import _get_receipt_store
@@ -33,10 +43,6 @@ def _live_context_compaction_model() -> str:
         # DESKPET_USER_DATA_DIR.  Read that exact source first; consulting only
         # the boot DESKPET_CONFIG path made the UI acknowledge a save that the
         # next AgentLoop compaction never observed.
-        from p4_ipc import (
-            _context_compaction_config_path,
-            _read_context_compaction_model,
-        )
 
         if _context_compaction_config_path().is_file():
             return _read_context_compaction_model()
@@ -52,13 +58,6 @@ def _build_context_task_projector(
     receipt_store=None,
 ):
     """Build the shared read-only projection owner from live authority stores."""
-
-    from deskpet.agent.context_task import (
-        GoalProjectionAdapter,
-        ReceiptProjectionAdapter,
-        TaskContextProjector,
-        WorkflowProjectionAdapter,
-    )
 
     services = service_context
     task_graph = None
@@ -106,8 +105,6 @@ async def _project_initial_context_snapshot(
 ):
     """Project active authorities plus typed evidence for a new long task."""
 
-    from deskpet.agent.context_task import TaskFact
-
     evidence = (
         (
             TaskFact(
@@ -135,8 +132,6 @@ def _attach_task_snapshot_to_request(bundle, messages, snapshot) -> None:
 
     if snapshot is None:
         return
-    from agent.context_messages import ContextMessageMeta, tag_message
-    from deskpet.agent.assembler.bundle import ContextFragment
 
     task = snapshot.to_protected_fragment()
     if not any(fragment.fragment_id == task.fragment_id for fragment in bundle.fragments):

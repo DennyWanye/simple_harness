@@ -4,6 +4,15 @@ from __future__ import annotations
 
 import time as _t
 
+from agent.auto_resume import AutoResumeOrchestrator as _AROrch
+from agent.auto_resume import DeterministicResumePolicy as _DetPolicy
+from agent.circuit_breaker import ToolCircuitBreaker as _ToolBreaker
+from agent.nudge_queue import Hint as _Hint
+from agent.session_activity import default_store as _sa_default_store
+from agent.snapshot import build_snapshot as _build_snap_func
+from agent.supervisor import SupervisorAgent as _SupAgent
+from agent.supervisor import build_supervisor_hook as _build_sup_hook
+from agent.watchdog import WatchdogLoop as _WatchdogLoop
 from providers.openai_compatible import OpenAICompatibleProvider
 
 from host.connections import _control_connections
@@ -26,8 +35,6 @@ async def _startup_self_healing() -> Any:
     }
     if bool(_heal_cfg.get("circuit_breaker_enabled", True)):
         try:
-            from agent.circuit_breaker import ToolCircuitBreaker as _ToolBreaker
-
             if deskpet_tool_registry_v2 is not None:
                 _breaker = _ToolBreaker(
                     threshold=int(_heal_cfg.get("circuit_breaker_threshold", 3)),
@@ -46,8 +53,6 @@ async def _startup_self_healing() -> Any:
     # 会话活动记录：自动续跑按会话计次（上限 max_auto_resume_attempts）、
     # 监工看门狗读会话状态都靠它；监工开关与它无关，总是注册。
     if service_context.get("session_activity") is None:
-        from agent.session_activity import default_store as _sa_default_store
-
         service_context.register("session_activity", _sa_default_store())
     return _heal_cfg
 
@@ -57,15 +62,6 @@ async def _startup_supervisor() -> None:
     try:
         _sup_cfg = (config.raw.get("supervisor") if hasattr(config, "raw") else None) or {}
         if bool(_sup_cfg.get("enabled", False)):
-            from agent.snapshot import build_snapshot as _build_snap_func
-            from agent.supervisor import (
-                SupervisorAgent as _SupAgent,
-            )
-            from agent.supervisor import (
-                build_supervisor_hook as _build_sup_hook,
-            )
-            from agent.watchdog import WatchdogLoop as _WatchdogLoop
-
             # Snapshot builder closure — pulls services lazily so each
             # tick reads fresh state.
             async def _snap_builder(sid: str):
@@ -97,7 +93,6 @@ async def _startup_supervisor() -> None:
             # Nudge push closure — wraps SupervisorAction → Hint and
             # forwards to the queue.
             async def _push_hint(sid: str, action):
-                from agent.nudge_queue import Hint as _Hint
 
                 _nq = service_context.get("nudge_queue")
                 if _nq is None:
@@ -361,8 +356,6 @@ async def _startup_auto_resume_and_model_context(_heal_cfg: Any) -> None:
     # same sid via the per-sid re-dispatcher closure populated
     # by the chat handler itself.
     try:
-        from agent.auto_resume import AutoResumeOrchestrator as _AROrch
-
         # Dispatcher closure: orchestrator passes (sid, msgs)
         # where ``msgs`` ends in a system msg with the supervisor
         # hint. Production trampoline:
@@ -422,7 +415,6 @@ async def _startup_auto_resume_and_model_context(_heal_cfg: Any) -> None:
                 return None
 
         # 监工开着就让监工模型给提示；关着用按失败原因的固定提示（不调模型）
-        from agent.auto_resume import DeterministicResumePolicy as _DetPolicy
 
         _resume_policy = service_context.get("supervisor") or _DetPolicy()
         _orch = _AROrch(

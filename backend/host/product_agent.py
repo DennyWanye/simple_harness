@@ -4,6 +4,15 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
+from agent.context_manager import ContextManager
+from agent.tool_use_shim import OpenAICompatibleAgentLLM
+from deskpet.agent.assembler.bundle import PreparedContext
+from deskpet.capabilities.refresh import context_os_snapshot_ref
+from deskpet.companion.response_quality import ModelResponseCompletenessGate
+from deskpet.execution.provider_workloads import workload_context
+from deskpet.tools.prepared_snapshot import load_context_os_snapshot
+from deskpet.tools.registry import ToolRegistry
+
 from host.agent_factory import build_agent
 from host.llm_providers import cloud_llm
 from host.provider_chain import _resolve_agent_provider_chain, _select_code_workflow_provider
@@ -26,9 +35,6 @@ def _restore_product_context_os(request):
     raw = request.request_payload.get("context_os")
     if not isinstance(raw, dict):
         raise RuntimeError("product recovery Context OS snapshot is unavailable")
-    from deskpet.agent.assembler.bundle import PreparedContext
-    from deskpet.capabilities.refresh import context_os_snapshot_ref
-    from deskpet.tools.prepared_snapshot import load_context_os_snapshot
 
     prepared_tool_set, eligibility = load_context_os_snapshot(raw)
     context = request.run_context
@@ -127,13 +133,9 @@ def _is_companion_background_request(request) -> bool:
 async def _build_product_agent_loop(request):
     """Rehydrate one AgentLoop from durable Run data and live host services."""
 
-    from agent.context_manager import ContextManager
-    from agent.tool_use_shim import OpenAICompatibleAgentLLM
-
     context = request.run_context
     if context is None:
         raise ValueError("product AgentLoop requires a trusted RunContext")
-    from deskpet.execution.provider_workloads import workload_context
 
     def _run_workload_context(callsite_id: str):
         return workload_context(
@@ -182,18 +184,12 @@ async def _build_product_agent_loop(request):
         and response_quality.get("preference_key") == "response.detail"
         and response_quality.get("preference_value") == "brief"
     ):
-        from deskpet.companion.response_quality import (
-            ModelResponseCompletenessGate,
-        )
-
         response_quality_gate = ModelResponseCompletenessGate()
     frozen_skill_resolver = service_context.get("frozen_skill_instruction_resolver")
     if frozen_skill_resolver is None and not companion_background:
         raise RuntimeError("frozen_skill_resolver_not_injected")
     run_tool_registry = deskpet_tool_registry_v2
     if companion_background:
-        from deskpet.tools.registry import ToolRegistry
-
         # A fresh empty registry makes the zero-tool contract true in the
         # model prompt as well as at execution admission.
         run_tool_registry = ToolRegistry()

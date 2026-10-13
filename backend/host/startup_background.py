@@ -9,6 +9,10 @@ import sys
 from pathlib import Path
 
 import paths as _paths
+from deskpet.execution.provider_workload_audit import provider_workload_audit_retention_loop
+from deskpet.execution.provider_workloads import workload_context as _workload_context
+from deskpet.mcp.bootstrap import create_and_start_from_config as _mcp_bootstrap
+from deskpet.model_provisioner import ModelProvisioner
 
 from host.llm_providers import _context_os_e2e_boot_hooks
 from host.ppt_outline import _expire_ppt_outline_dangling_for_startup
@@ -104,8 +108,6 @@ async def _startup_embedder_and_workload_audit() -> Any:
     # 注册到 service_context 供 p4_ipc 的 model_provision_status 探针读取；
     # start_background 幂等。失败不阻塞启动（ASR/记忆各自有降级）。
     try:
-        from deskpet.model_provisioner import ModelProvisioner
-
         _provisioner = ModelProvisioner()
         service_context.register("model_provisioner", _provisioner)
         _provisioner.start_background()
@@ -121,10 +123,6 @@ async def _startup_embedder_and_workload_audit() -> Any:
     _vw = service_context.get("vector_worker")
     _provider_workload_audit = service_context.get("provider_workload_audit")
     if _provider_workload_audit is not None:
-        from deskpet.execution.provider_workload_audit import (
-            provider_workload_audit_retention_loop,
-        )
-
         _provider_audit_retention_task = asyncio.create_task(
             provider_workload_audit_retention_loop(_provider_workload_audit),
             name="provider-workload-audit-retention",
@@ -173,10 +171,6 @@ async def _startup_vector_worker(_sdb: Any, _vw: Any) -> None:
                             message_id=mid,
                         )
                     else:
-                        from deskpet.execution.provider_workloads import (
-                            workload_context as _workload_context,
-                        )
-
                         _facts_workload_context = _workload_context(
                             "memory.fact_extract",
                             request_id=f"message:{mid}",
@@ -301,8 +295,6 @@ async def _startup_curation_image_and_mcp() -> None:
             _ws_dir.mkdir(parents=True, exist_ok=True)
         except Exception as _ws_exc:  # pragma: no cover — best-effort
             logger.warning("workspace_mkdir_failed", error=str(_ws_exc))
-
-        from deskpet.mcp.bootstrap import create_and_start_from_config as _mcp_bootstrap
 
         # P6 bugfix 2026-05-13: MCP manager 用的是 deskpet.tools.registry.ToolRegistry
         # 的 keyword API (register(name=..., toolset=..., schema=..., handler=...))，

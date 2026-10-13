@@ -10,6 +10,116 @@ import re
 from pathlib import Path
 
 import paths as _paths
+from agent.tool_use_shim import OpenAICompatibleAgentLLM as _RecoveryShim
+from deskpet.execution.fences import UnboundRunExecutionFence
+from deskpet.execution.harness_public_read_service import HarnessPublicReadService
+from deskpet.execution.provider_fault_scenario_runner import ProviderFaultScenarioRunner
+from deskpet.execution.provider_fault_script import ProviderFaultScriptV1
+from deskpet.execution.provider_invocations import ProviderInvocationCoordinator
+from deskpet.execution.provider_workload_audit import ProviderWorkloadAuditStore
+from deskpet.execution.provider_workloads import (
+    BackgroundModelPolicy,
+    ProviderWorkloadBreaker,
+    ProviderWorkloadRoutePolicy,
+    ProviderWorkloadRouter,
+    SessionProviderWorkloadTargetResolver,
+)
+from deskpet.execution.tool_completion_latch_script import ToolCompletionLatchScriptV1
+from deskpet.retrieval.contracts import DimensionSearchRequest, FetchRequest, SearchRequest
+from deskpet.retrieval.query_terms import extract_query_terms
+from deskpet.tools import registry as _runtime_tool_registry
+from deskpet.tools import research_tools as _workflow_research_tools
+from deskpet.tools.capabilities import ToolExecutionContext, canonical_hash
+from deskpet.tools.prepared_snapshot import load_context_os_snapshot
+from deskpet.tools.registry import registry as _actual_tool_registry
+from deskpet.workflows.adapters.code_runtime import (
+    DurableToolRuntimeState as _RecoveryDurableToolRuntimeState,
+)
+from deskpet.workflows.adapters.code_runtime import ProposalPort as _RecoveryProposalPort
+from deskpet.workflows.adapters.code_runtime import ToolDispatchPort as _RecoveryToolDispatchPort
+from deskpet.workflows.adapters.deep_research_v5_evidence_runtime import (
+    candidate_from_document,
+    candidate_from_json,
+    evaluate_runtime_evidence,
+    select_dimension_fair_rows,
+)
+from deskpet.workflows.adapters.deep_research_v6_bootstrap import build_deep_research_v6_context
+from deskpet.workflows.adapters.personal_runtime import build_personal_runtime_adapter
+from deskpet.workflows.adapters.product_delivery import (
+    ProductDeliveryAdapter,
+    resolve_workflow_content_text,
+    workflow_message_projection,
+)
+from deskpet.workflows.adapters.research_runtime import (
+    BoundResearchEffectContext,
+    DurableResearchCallEffectAdapter,
+    DurableResearchLLMStagePort,
+    DurableResearchReadEffectAdapter,
+    DurableResearchReadStagePort,
+    DurableResearchSnapshotPort,
+    DurableV5ControlPort,
+    MonotonicResearchClock,
+    WorkflowControlSignalHub,
+)
+from deskpet.workflows.bootstrap import build_workflow_service
+from deskpet.workflows.contracts import WorkflowContext, canonical_json
+from deskpet.workflows.definitions.deep_research_v5_contracts import ResearchBrief
+from deskpet.workflows.definitions.research_core import (
+    FetchPort,
+    ResearchArtifactPort,
+    ResearchLLMPortV2,
+    ResearchSearchPort,
+    ResearchSearchResults,
+    legacy_ports,
+)
+from deskpet.workflows.definitions.v1 import (
+    code_complex_initial_state as _code_recovery_initial_state,
+)
+from deskpet.workflows.definitions.v1 import deep_research_initial_state
+from deskpet.workflows.definitions.v1 import (
+    durable_task_initial_state as _durable_task_initial_state,
+)
+from deskpet.workflows.definitions.v2 import (
+    deep_research_initial_state as deep_research_v2_initial_state,
+)
+from deskpet.workflows.definitions.v3 import (
+    deep_research_initial_state as deep_research_v3_initial_state,
+)
+from deskpet.workflows.definitions.v4 import (
+    deep_research_initial_state as deep_research_v4_initial_state,
+)
+from deskpet.workflows.definitions.v5 import (
+    deep_research_initial_state as deep_research_v5_initial_state,
+)
+from deskpet.workflows.definitions.v6 import (
+    build_continuation_start_payload as build_deep_research_v6_continuation_payload,
+)
+from deskpet.workflows.definitions.v6 import (
+    decode_continuation_snapshot as decode_deep_research_v6_continuation_snapshot,
+)
+from deskpet.workflows.definitions.v6 import (
+    deep_research_initial_state as deep_research_v6_initial_state,
+)
+from deskpet.workflows.definitions.v7 import (
+    deep_research_initial_state as deep_research_v7_initial_state,
+)
+from deskpet.workflows.delivery import DeliveryAttemptResultV1, broadcast_websocket_best_effort
+from deskpet.workflows.effects import EffectExecutionContext, EffectJournal
+from deskpet.workflows.effects import EffectJournal as _PersonalEffectJournal
+from deskpet.workflows.launcher import WorkflowLauncher
+from deskpet.workflows.native import NativeExecutionPolicy
+from deskpet.workflows.output_contract import TaskOutputContractPort as _TaskOutputContractPort
+from deskpet.workflows.output_contract import TaskOutputContractV1 as _TaskOutputContractV1
+from deskpet.workflows.progress import validated_v2_stage_text
+from deskpet.workflows.retention import RetentionPolicy
+from deskpet.workflows.runtime_adapters import (
+    DEEP_RESEARCH_EXTENSION,
+    DeepResearchContinuationAdapter,
+    DeepResearchRuntimeExtension,
+)
+from deskpet.workflows.startup_recovery import activate_and_recover_workflows
+from deskpet.workflows.store import RegisteredBlobStore, RunFence, WorkflowRunStore
+from deskpet.workflows.terminal_projection import TERMINAL_COMMIT_CAPABILITY
 from providers.openai_compatible import OpenAICompatibleProvider
 
 from host.connections import _control_connections
@@ -43,10 +153,6 @@ async def _startup_workflow_services() -> Any:
         except Exception as exc:
             logger.warning("p4_session_db_init_failed", error=str(exc))
     try:
-        from deskpet.workflows.bootstrap import build_workflow_service
-        from deskpet.workflows.retention import RetentionPolicy
-        from deskpet.workflows.store import RegisteredBlobStore
-
         _workflow_delivery_blobs = RegisteredBlobStore(
             _paths.user_data_dir() / "workflows" / "blobs",
             _paths.user_data_dir() / "data" / "workflow.db",
@@ -74,7 +180,6 @@ async def _startup_workflow_services() -> Any:
             return expected_epoch
 
         async def _workflow_session_delivery(event, delivery):
-            from deskpet.workflows.delivery import DeliveryAttemptResultV1
 
             target_sid = str(delivery.get("target_id") or "default")
             expected_epoch = await _workflow_delivery_epoch(event, delivery)
@@ -84,10 +189,6 @@ async def _startup_workflow_services() -> Any:
             nested = payload.get("payload")
             nested = dict(nested) if isinstance(nested, dict) else {}
             text = ""
-            from deskpet.workflows.adapters.product_delivery import (
-                resolve_workflow_content_text,
-                workflow_message_projection,
-            )
 
             content_payload = nested if nested.get("content_ref") else payload
             resolved = await resolve_workflow_content_text(
@@ -98,8 +199,6 @@ async def _startup_workflow_services() -> Any:
             if event.get("event_type") == "workflow.progress":
                 v2_payload = payload if payload.get("schema_version") == 2 else nested
                 if v2_payload.get("schema_version") == 2:
-                    from deskpet.workflows.progress import validated_v2_stage_text
-
                     text = validated_v2_stage_text(v2_payload).strip()
             if not text:
                 text = str(nested.get("text") or payload.get("text") or "").strip()
@@ -131,13 +230,9 @@ async def _startup_workflow_services() -> Any:
             return DeliveryAttemptResultV1.retryable_failure("session_db_unavailable")
 
         async def _workflow_websocket_delivery(event, delivery):
-            from deskpet.workflows.delivery import DeliveryAttemptResultV1
 
             if await _workflow_delivery_epoch(event, delivery) is None:
                 return DeliveryAttemptResultV1.discarded_fenced("session_epoch_mismatch")
-            from deskpet.workflows.adapters.product_delivery import (
-                resolve_workflow_content_text,
-            )
 
             outbound_event = dict(event)
             outbound_payload = dict(event.get("payload") or {})
@@ -167,7 +262,6 @@ async def _startup_workflow_services() -> Any:
                     "session_id": str(delivery.get("target_id") or "default"),
                 },
             }
-            from deskpet.workflows.delivery import broadcast_websocket_best_effort
 
             return await broadcast_websocket_best_effort(
                 envelope, list(_control_connections.values())
@@ -185,9 +279,6 @@ async def _startup_workflow_services() -> Any:
 
         product_handlers = {}
         if _sdb is not None:
-            from deskpet.workflows.adapters.product_delivery import ProductDeliveryAdapter
-            from deskpet.workflows.store import WorkflowRunStore
-
             product_delivery = ProductDeliveryAdapter(
                 session_db=_sdb,
                 receipt_store=_get_receipt_store(),
@@ -214,57 +305,12 @@ async def _startup_workflow_services() -> Any:
             ),
             activate=False,
         )
-        from deskpet.tools import research_tools as _workflow_research_tools
-        from deskpet.workflows.contracts import WorkflowContext
-        from deskpet.workflows.definitions.research_core import (
-            FetchPort,
-            ResearchArtifactPort,
-            ResearchSearchPort,
-            ResearchSearchResults,
-            legacy_ports,
-        )
-        from deskpet.workflows.definitions.v1 import deep_research_initial_state
-        from deskpet.workflows.definitions.v2 import (
-            deep_research_initial_state as deep_research_v2_initial_state,
-        )
-        from deskpet.workflows.definitions.v3 import (
-            deep_research_initial_state as deep_research_v3_initial_state,
-        )
-        from deskpet.workflows.definitions.v4 import (
-            deep_research_initial_state as deep_research_v4_initial_state,
-        )
-        from deskpet.workflows.definitions.v5 import (
-            deep_research_initial_state as deep_research_v5_initial_state,
-        )
-        from deskpet.workflows.definitions.v6 import (
-            build_continuation_start_payload as build_deep_research_v6_continuation_payload,
-        )
-        from deskpet.workflows.definitions.v6 import (
-            decode_continuation_snapshot as decode_deep_research_v6_continuation_snapshot,
-        )
-        from deskpet.workflows.definitions.v6 import (
-            deep_research_initial_state as deep_research_v6_initial_state,
-        )
-        from deskpet.workflows.definitions.v7 import (
-            deep_research_initial_state as deep_research_v7_initial_state,
-        )
-        from deskpet.workflows.launcher import WorkflowLauncher
-        from deskpet.workflows.native import NativeExecutionPolicy
-        from deskpet.workflows.runtime_adapters import (
-            DEEP_RESEARCH_EXTENSION,
-            DeepResearchContinuationAdapter,
-            DeepResearchRuntimeExtension,
-        )
-        from deskpet.workflows.terminal_projection import TERMINAL_COMMIT_CAPABILITY
 
         _workflow_launcher = WorkflowLauncher(_workflow_service)
         _workflow_service.launcher = _workflow_launcher
         # Runtime adapters must all be registered before the production
         # registry is sealed and any durable recovery is allowed to run.
         service_context.register("workflow_service", _workflow_service)
-        from deskpet.execution.harness_public_read_service import (
-            HarnessPublicReadService,
-        )
 
         _harness_public_read_service = HarnessPublicReadService(
             workflow_db_path=_paths.user_data_dir() / "data" / "workflow.db",
@@ -272,18 +318,9 @@ async def _startup_workflow_services() -> Any:
             cursor_secret=hashlib.sha256(f"harness-inspector-v3:{SHARED_SECRET}".encode()).digest(),
         )
         service_context.register("harness_public_read_service", _harness_public_read_service)
-        from deskpet.execution.fences import UnboundRunExecutionFence
-        from deskpet.execution.provider_fault_script import ProviderFaultScriptV1
-        from deskpet.execution.provider_invocations import (
-            ProviderInvocationCoordinator,
-        )
 
         _execution_fence = UnboundRunExecutionFence()
         _provider_fault_script = ProviderFaultScriptV1.from_environment()
-        from deskpet.execution.tool_completion_latch_script import (
-            ToolCompletionLatchScriptV1,
-        )
-        from deskpet.tools import registry as _runtime_tool_registry
 
         _runtime_tool_registry.set_tool_completion_latch(
             ToolCompletionLatchScriptV1.from_environment()
@@ -297,16 +334,6 @@ async def _startup_workflow_services() -> Any:
         service_context.register(
             "provider_invocation_coordinator",
             _provider_invocation_coordinator,
-        )
-        from deskpet.execution.provider_workload_audit import (
-            ProviderWorkloadAuditStore,
-        )
-        from deskpet.execution.provider_workloads import (
-            BackgroundModelPolicy,
-            ProviderWorkloadBreaker,
-            ProviderWorkloadRoutePolicy,
-            ProviderWorkloadRouter,
-            SessionProviderWorkloadTargetResolver,
         )
 
         _provider_registry_for_workloads = service_context.get("provider_registry")
@@ -351,10 +378,6 @@ async def _startup_workflow_services() -> Any:
         service_context.register("provider_workload_audit", _provider_workload_audit)
         service_context.register("provider_workload_router", _provider_workload_router)
         if _provider_fault_script is not None:
-            from deskpet.execution.provider_fault_scenario_runner import (
-                ProviderFaultScenarioRunner,
-            )
-
             _provider_fault_scenario_runner = ProviderFaultScenarioRunner(
                 _provider_fault_script,
                 _provider_workload_router,
@@ -383,7 +406,6 @@ async def _startup_workflow_services() -> Any:
             )
 
         async def _deep_v2_context_factory(row, start_payload) -> WorkflowContext:
-            from deskpet.retrieval.contracts import FetchRequest, SearchRequest
             from deskpet.retrieval.runtime import get_default_gateway
 
             llm_call = await _workflow_research_tools._resolve_default_llm_call()
@@ -506,35 +528,7 @@ async def _startup_workflow_services() -> Any:
 
         async def _deep_v5_context_factory(row, start_payload) -> WorkflowContext:
 
-            from deskpet.retrieval.contracts import (
-                DimensionSearchRequest,
-                FetchRequest,
-                SearchRequest,
-            )
-            from deskpet.retrieval.query_terms import extract_query_terms
             from deskpet.retrieval.runtime import get_default_gateway
-            from deskpet.workflows.adapters.deep_research_v5_evidence_runtime import (
-                candidate_from_document,
-                candidate_from_json,
-                evaluate_runtime_evidence,
-                select_dimension_fair_rows,
-            )
-            from deskpet.workflows.adapters.research_runtime import (
-                BoundResearchEffectContext,
-                DurableResearchCallEffectAdapter,
-                DurableResearchLLMStagePort,
-                DurableResearchReadEffectAdapter,
-                DurableResearchReadStagePort,
-                DurableResearchSnapshotPort,
-                DurableV5ControlPort,
-                MonotonicResearchClock,
-                WorkflowControlSignalHub,
-            )
-            from deskpet.workflows.contracts import canonical_json
-            from deskpet.workflows.definitions.deep_research_v5_contracts import ResearchBrief
-            from deskpet.workflows.definitions.research_core import ResearchLLMPortV2
-            from deskpet.workflows.effects import EffectExecutionContext, EffectJournal
-            from deskpet.workflows.store import RunFence
 
             run_id = str(row.get("run_id") or "")
             session_id = str(row.get("session_id") or "")
@@ -880,15 +874,6 @@ async def _startup_workflow_services() -> Any:
         async def _deep_v6_context_factory(row, start_payload) -> WorkflowContext:
 
             from deskpet.retrieval.runtime import get_default_gateway
-            from deskpet.workflows.adapters.deep_research_v6_bootstrap import (
-                build_deep_research_v6_context,
-            )
-            from deskpet.workflows.adapters.research_runtime import (
-                BoundResearchEffectContext,
-                WorkflowControlSignalHub,
-            )
-            from deskpet.workflows.effects import EffectExecutionContext, EffectJournal
-            from deskpet.workflows.store import RunFence
 
             run_id = str(row.get("run_id") or "")
             db_path = _workflow_service.run_store.path
@@ -1130,29 +1115,6 @@ async def _startup_workflow_services() -> Any:
             context_factory=_deep_v7_context_factory,
         )
 
-        from agent.tool_use_shim import OpenAICompatibleAgentLLM as _RecoveryShim
-        from deskpet.workflows.adapters.code_runtime import (
-            DurableToolRuntimeState as _RecoveryDurableToolRuntimeState,
-        )
-        from deskpet.workflows.adapters.code_runtime import (
-            ProposalPort as _RecoveryProposalPort,
-        )
-        from deskpet.workflows.adapters.code_runtime import (
-            ToolDispatchPort as _RecoveryToolDispatchPort,
-        )
-        from deskpet.workflows.definitions.v1 import (
-            code_complex_initial_state as _code_recovery_initial_state,
-        )
-        from deskpet.workflows.definitions.v1 import (
-            durable_task_initial_state as _durable_task_initial_state,
-        )
-        from deskpet.workflows.output_contract import (
-            TaskOutputContractPort as _TaskOutputContractPort,
-        )
-        from deskpet.workflows.output_contract import (
-            TaskOutputContractV1 as _TaskOutputContractV1,
-        )
-
         def _code_recovery_state_factory(**values):
             return _code_recovery_initial_state(
                 request=str(values["request"]),
@@ -1231,8 +1193,6 @@ async def _startup_workflow_services() -> Any:
             if context_os_enabled:
                 if not isinstance(raw_context_os, dict):
                     raise RuntimeError("code recovery Context OS snapshot is unavailable")
-                from deskpet.tools.capabilities import ToolExecutionContext
-                from deskpet.tools.prepared_snapshot import load_context_os_snapshot
 
                 prepared_tool_set, eligibility = load_context_os_snapshot(raw_context_os)
                 request_id = str(start_payload.get("request_id") or row.get("request_id") or "")
@@ -1276,7 +1236,6 @@ async def _startup_workflow_services() -> Any:
                             is None
                         ):
                             raise
-                from deskpet.tools.capabilities import canonical_hash
 
                 scope_hash = canonical_hash(
                     {
@@ -1394,11 +1353,6 @@ async def _startup_workflow_services() -> Any:
             context_factory=_code_recovery_context_factory,
         )
         # Import the actual ToolRegistry instance for personal_runtime_adapter
-        from deskpet.tools.registry import registry as _actual_tool_registry
-        from deskpet.workflows.adapters.personal_runtime import (
-            build_personal_runtime_adapter,
-        )
-        from deskpet.workflows.effects import EffectJournal as _PersonalEffectJournal
 
         _workflow_service.runtime_adapters.register(
             build_personal_runtime_adapter(
@@ -1418,7 +1372,6 @@ async def _startup_workflow_services() -> Any:
             logger.info("ppt_pro_services_wired")
         except Exception as exc:  # noqa: BLE001
             logger.warning("ppt_pro_services_wire_failed", error=str(exc))
-        from deskpet.workflows.startup_recovery import activate_and_recover_workflows
 
         _workflow_recovery = await activate_and_recover_workflows(
             project_bindings=_project_binding_service,
@@ -1450,8 +1403,6 @@ async def _startup_workflow_services() -> Any:
         service_context.register("run_execution_fence_acquirer", None)
         service_context.register("provider_invocation_coordinator", None)
         try:
-            from deskpet.tools import research_tools as _workflow_research_tools
-
             _workflow_research_tools.set_deepresearch_workflow_starter(None)
         except Exception:
             pass

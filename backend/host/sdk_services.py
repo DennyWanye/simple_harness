@@ -4,6 +4,32 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from deskpet.execution.current_tool_pages import CurrentToolProjector
+from deskpet.execution.evidence_ingress import ExecutionEvidenceIngress
+from deskpet.execution.foreground_runtime import ForegroundEffectAdmissionGate
+from deskpet.execution.primary_dependencies import check_runtime_dependencies
+from deskpet.execution.semantic_closure import closure_instruction_for_run
+from deskpet.memory.primary_visibility import PrimaryHistoryPolicy
+from deskpet.sdk_adapters.context_authority import (
+    ContextRouteLedgerStore,
+    ProductRunContextAuthority,
+    canonical_sha256,
+)
+from deskpet.sdk_adapters.context_partitions import tool_schema_tokens
+from deskpet.sdk_adapters.provider import ProductProviderAdapter
+from deskpet.sdk_adapters.reconciliation import ProductProviderRetryOnceReconciliation
+from deskpet.sdk_adapters.run_bindings import SdkRunBindingRegistry, SdkRunBindingV1
+from deskpet.sdk_adapters.run_faults import RunFaultMemo
+from deskpet.sdk_adapters.run_route_state import RunRouteStateMemo
+from deskpet.sdk_adapters.task_scope_mutation import TaskScopeUpdateService
+from deskpet.sdk_adapters.tools import active_product_tool_context
+from deskpet.task_scope.workspace_bindings import WorkspaceBindingAuthorityStore
+from deskpet.tools.code_tools.spawn_subagents_tool import UNWIRED_DELEGATION_TOOL_NAMES
+from llm.pricing import get_price
+from simple_harness import thaw_json
+from simple_harness.execution import ProviderBinding
+from simple_harness.execution.budget import BudgetPolicy, FrozenPriceEstimator
+
 from host.runtime import logger, service_context
 from host.state import host_state
 from host.stores_bootstrap import _state_db_path
@@ -11,54 +37,36 @@ from host.stores_bootstrap import _state_db_path
 
 def _ensure_provider_reconciliation():
     if host_state.provider_reconciliation is None:
-        from deskpet.sdk_adapters.reconciliation import (
-            ProductProviderRetryOnceReconciliation,
-        )
-
         host_state.provider_reconciliation = ProductProviderRetryOnceReconciliation()
     return host_state.provider_reconciliation
 
 
 def _ensure_foreground_effect_gate():  # type: ignore[no-untyped-def]
     if host_state.foreground_effect_gate is None:
-        from deskpet.execution.foreground_runtime import (
-            ForegroundEffectAdmissionGate,
-        )
-
         host_state.foreground_effect_gate = ForegroundEffectAdmissionGate()
     return host_state.foreground_effect_gate
 
 
 def _ensure_run_fault_memo():  # type: ignore[no-untyped-def]
     if host_state.run_fault_memo is None:
-        from deskpet.sdk_adapters.run_faults import RunFaultMemo
-
         host_state.run_fault_memo = RunFaultMemo()
     return host_state.run_fault_memo
 
 
 def _ensure_run_route_state_memo():  # type: ignore[no-untyped-def]
     if host_state.run_route_state_memo is None:
-        from deskpet.sdk_adapters.run_route_state import RunRouteStateMemo
-
         host_state.run_route_state_memo = RunRouteStateMemo()
     return host_state.run_route_state_memo
 
 
 def _ensure_evidence_ingress():  # type: ignore[no-untyped-def]
     if host_state.evidence_ingress is None:
-        from deskpet.execution.evidence_ingress import ExecutionEvidenceIngress
-
         host_state.evidence_ingress = ExecutionEvidenceIngress(_state_db_path)
     return host_state.evidence_ingress
 
 
 def _ensure_task_scope_update_service():  # type: ignore[no-untyped-def]
     if host_state.task_scope_update_service is None:
-        from deskpet.sdk_adapters.context_authority import ContextRouteLedgerStore
-        from deskpet.sdk_adapters.task_scope_mutation import TaskScopeUpdateService
-        from deskpet.sdk_adapters.tools import active_product_tool_context
-
         host_state.task_scope_update_service = TaskScopeUpdateService(
             _state_db_path,
             tool_context_getter=active_product_tool_context,
@@ -76,9 +84,6 @@ def _sdk_price_snapshot(provider_id: str, model_id: str) -> tuple[int, int, str]
     pessimistic entry for unknown models, so a missing table row remains
     bounded without becoming free.
     """
-
-    from deskpet.sdk_adapters.context_authority import canonical_sha256
-    from llm.pricing import get_price
 
     price = get_price(provider_id, model_id)
     payload = {
@@ -103,11 +108,6 @@ def _freeze_sdk_catalog(
     visibility_registry: Any | None = None,
 ) -> dict[str, Any]:
     """Return the exact immutable Tool catalog used by Provider and executor."""
-
-    from deskpet.sdk_adapters.context_authority import canonical_sha256
-    from deskpet.sdk_adapters.context_partitions import tool_schema_tokens
-    from deskpet.tools.code_tools.spawn_subagents_tool import UNWIRED_DELEGATION_TOOL_NAMES
-    from simple_harness import thaw_json
 
     specs: list[dict[str, Any]] = []
     schema_fingerprints: dict[str, str] = {}
@@ -167,8 +167,6 @@ def _primary_history_policy(subject):
     SDK 一并移除；没有记忆系统就没有抑制权威，遍历证明通过即可见。
     """
 
-    from deskpet.memory.primary_visibility import PrimaryHistoryPolicy
-
     return PrimaryHistoryPolicy(_state_db_path, subject)
 
 
@@ -176,7 +174,6 @@ class _ProductSdkProviderBindingResolver:
     """SDK resolver backed only by immutable per-Run product bindings."""
 
     def __init__(self, provider_registry: Any, client: Any) -> None:
-        from deskpet.sdk_adapters.run_bindings import SdkRunBindingRegistry
 
         self.registry = SdkRunBindingRegistry()
         self._provider_registry = provider_registry
@@ -184,10 +181,6 @@ class _ProductSdkProviderBindingResolver:
         self._authorities: dict[str, Any] = {}
 
     def build_authority(self, binding: Any, *, request_guard: Any = ...) -> Any:
-        from deskpet.sdk_adapters.provider import ProductProviderAdapter
-        from simple_harness import thaw_json
-        from simple_harness.execution import ProviderBinding
-        from simple_harness.execution.budget import BudgetPolicy, FrozenPriceEstimator
 
         entry = self._provider_registry.get_entry(binding.provider_id)
         if entry is None:
@@ -199,7 +192,6 @@ class _ProductSdkProviderBindingResolver:
             raise RuntimeError("SDK bound Provider incarnation changed")
 
         async def primary_guard(request):
-            from deskpet.execution.primary_dependencies import check_runtime_dependencies
 
             await check_runtime_dependencies(
                 db_path=_state_db_path,
@@ -234,8 +226,6 @@ class _ProductSdkProviderBindingResolver:
 
     def create_binding(self, **raw: Any) -> Any:
         """Build both sides without allowing their budget identity to drift."""
-
-        from deskpet.sdk_adapters.run_bindings import SdkRunBindingV1
 
         provisional = SdkRunBindingV1.build(
             **raw,
@@ -347,17 +337,12 @@ def _build_run_context_authority(  # type: ignore[no-untyped-def]
 ):
     """Production ``ProductRunContextAuthority`` with the real semantic-closure reader (F-2)."""
 
-    from deskpet.execution.semantic_closure import closure_instruction_for_run
-    from deskpet.sdk_adapters.context_authority import ProductRunContextAuthority
-    from deskpet.task_scope.workspace_bindings import WorkspaceBindingAuthorityStore
-
     db_path = Path(state_db_path)
 
     async def closure_reader(run_id):  # type: ignore[no-untyped-def]
         return await closure_instruction_for_run(db_path, getattr(run_id, "value", str(run_id)))
 
     service_context.register("sdk_closure_instruction_reader", closure_reader)
-    from deskpet.execution.current_tool_pages import CurrentToolProjector
 
     return ProductRunContextAuthority(
         ports_resolver=ports_resolver,

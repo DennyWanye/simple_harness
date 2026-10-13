@@ -6,6 +6,19 @@ import inspect
 import os
 from collections.abc import Mapping
 
+from deskpet.agent.assembler.bundle import AssemblyPolicy
+from deskpet.agent.assembler.components.base import ComponentContext
+from deskpet.agent.assembler.components.project_rules import ProjectRulesComponent
+from deskpet.companion.skills import PreparedSkillInvocationScopeV1, ResolvedSkillInstructionV1
+from deskpet.sdk_adapters.context_authority import PreparedSdkContextSnapshotV1
+from deskpet.sdk_adapters.context_partitions import text_tokens
+from deskpet.sdk_adapters.context_preparation import (
+    SdkContextPreparationService,
+    SdkContextSources,
+    normalize_trusted_local_page_url,
+    trusted_project_task_snapshot,
+)
+
 from host.runtime import logger
 
 # superpowers Layer 1B WI-A1 — 意图记忆纯函数（module 顶层，便于单测直接 import）。
@@ -72,10 +85,6 @@ _SDK_DEFERRED_TOOL_PROMPT = """\
 def _trusted_local_page_url_from_env() -> str | None:
     """Resolve an optional host-provided local page without exposing raw input."""
 
-    from deskpet.sdk_adapters.context_preparation import (
-        normalize_trusted_local_page_url,
-    )
-
     raw = os.environ.get("DESKPET_LOCAL_PAGE_URL", "").strip()
     if not raw:
         return None
@@ -93,7 +102,6 @@ async def _sdk_context_usage_from_projection_only(*_args: Any, **_kwargs: Any) -
 
 
 def _sdk_text_tokens(value: object) -> int:
-    from deskpet.sdk_adapters.context_partitions import text_tokens
 
     return text_tokens(value)
 
@@ -166,17 +174,6 @@ async def _prepare_sdk_context_snapshot(
 ) -> Any:
     """Prepare once; the returned messages are the sole Provider authority."""
 
-    from deskpet.companion.skills import (
-        PreparedSkillInvocationScopeV1,
-        ResolvedSkillInstructionV1,
-    )
-    from deskpet.sdk_adapters.context_authority import PreparedSdkContextSnapshotV1
-    from deskpet.sdk_adapters.context_preparation import (
-        SdkContextPreparationService,
-        SdkContextSources,
-        trusted_project_task_snapshot,
-    )
-
     skill_items: tuple[dict[str, Any], ...] = ()
     if prepared_skill_scope is not None:
         if not isinstance(prepared_skill_scope, PreparedSkillInvocationScopeV1):
@@ -210,12 +207,6 @@ async def _prepare_sdk_context_snapshot(
     )
     project_rule_instructions: tuple[str, ...] = ()
     if str(project_resolution.get("kind") or "") == "project_bound":
-        from deskpet.agent.assembler.bundle import AssemblyPolicy
-        from deskpet.agent.assembler.components.base import ComponentContext
-        from deskpet.agent.assembler.components.project_rules import (
-            ProjectRulesComponent,
-        )
-
         execution_root = str(project_resolution["effective_root"])
         rule_slice = await ProjectRulesComponent().provide(
             ComponentContext(

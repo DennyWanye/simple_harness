@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+from deskpet.capabilities.skill_install_ui import (
+    ProjectSkillInstallUIAdapter,
+    ProjectSkillInstallUIError,
+    TrustedGlobalInstallContext,
+)
 from fastapi import WebSocket
 
 from host.runtime import logger, service_context
@@ -152,11 +157,6 @@ def _skill_install_error_payload(exc: Exception) -> dict[str, Any]:
 
 
 async def _settings_skill_install_adapter(ws: WebSocket):
-    from deskpet.capabilities.skill_install_ui import (
-        ProjectSkillInstallUIAdapter,
-        ProjectSkillInstallUIError,
-        TrustedGlobalInstallContext,
-    )
 
     service = service_context.get("project_skill_install_service")
     if service is None:

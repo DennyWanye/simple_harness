@@ -9,10 +9,23 @@ from pathlib import Path
 
 import paths as _paths
 from config import resolve_cloud_api_key as _resolve_cloud_api_key
+from deskpet.memory.display_invalidation import MemoryDisplayInvalidation
+from deskpet.memory.human_memory_service import HumanMemoryHostServiceFactory
+from deskpet.memory.schema import StartupCompositionMode, dispatch_startup_epoch
+from deskpet.orchestration.wiring import activate_orchestration
+from deskpet.permissions import protected_paths as _protected_paths
+from deskpet.realtime_voice import (
+    REALTIME_VOICE_ENABLED,
+    RealtimeVoiceService,
+    allowed_realtime_origins,
+)
+from deskpet.retrieval.runtime import build_search_gateway, set_default_gateway
 from deskpet.session.project_binding import (
     SessionCreationService as _SessionCreationService,
 )
+from deskpet.tools.file_tools import rebind_loop as _rebind_ws_loop
 from llm.provider_registry import LLMProviderRegistry, _migrate_legacy_provider_config
+from llm.resolution import ProviderRoutingReadiness
 from observability.startup import registry as startup_errors
 
 from host.capability_runtime import _initialize_capability_runtime
@@ -51,20 +64,13 @@ async def _startup_core_services() -> tuple[Any, Any]:
         pass
     logger.info("preloading models...")
     # 2026-09-26 受保护核心文件：会话卡片走控制通道全局广播（不依赖面板是否可见）
-    from deskpet.permissions import protected_paths as _protected_paths
 
     _protected_paths.set_notifier(_broadcast_control)
-    from llm.resolution import ProviderRoutingReadiness
 
     _provider_readiness = ProviderRoutingReadiness()
     service_context.register("provider_routing_readiness", _provider_readiness)
     # v33 reset preflight must finish before MemoryManager, workflow,
     # companion, or SDK execution databases are opened.
-    from deskpet.memory.human_memory_service import HumanMemoryHostServiceFactory
-    from deskpet.memory.schema import (
-        StartupCompositionMode,
-        dispatch_startup_epoch,
-    )
 
     approved_fresh_lane = _state_db_path.resolve().is_relative_to(
         Path(_paths.user_data_dir()).resolve()
@@ -73,7 +79,6 @@ async def _startup_core_services() -> tuple[Any, Any]:
         _state_db_path,
         approved_fresh_lane=approved_fresh_lane,
     )
-    from deskpet.memory.display_invalidation import MemoryDisplayInvalidation
 
     memory_display_invalidation = MemoryDisplayInvalidation(_broadcast_control)
     # MM-D2（2026-09-09）：Manual 目录授权卡片也要靠这条 content-free 失效广播刷新，
@@ -182,7 +187,6 @@ async def _startup_provider_routing(_provider_readiness: Any) -> None:
 
 async def _startup_search_and_voice() -> None:
     """启动：检索网关、模型预加载、语音引擎占位。"""
-    from deskpet.retrieval.runtime import build_search_gateway, set_default_gateway
 
     _search_gateway = build_search_gateway(config)
     set_default_gateway(_search_gateway)
@@ -196,8 +200,6 @@ async def _startup_search_and_voice() -> None:
     # sync handler) 依赖 file_tools._workspace_loop 引用主 loop。set_
     # workspace_store 在 module top-level 跑时拿不到 loop —— 这里补绑。
     try:
-        from deskpet.tools.file_tools import rebind_loop as _rebind_ws_loop
-
         ok = _rebind_ws_loop()
         logger.info("p4_workspace_memory_loop_rebound", ok=ok)
     except Exception as _exc:  # noqa: BLE001
@@ -242,7 +244,6 @@ async def _startup_desktop_and_realtime_voice(startup_epoch: Any) -> None:
         # Agent 编排服务（plans/2026-09-11-orchestrator-host-integration，用户 Phase3
         # P3.1）：在 SDK stack 之后启动；失败只让它不可用并记入 startup_errors，
         # 绝不让启动失败。
-        from deskpet.orchestration.wiring import activate_orchestration
         from paths import user_data_dir as _orchestration_user_data_dir
 
         await activate_orchestration(
@@ -257,11 +258,6 @@ async def _startup_desktop_and_realtime_voice(startup_epoch: Any) -> None:
         await _initialize_companion_projection_services()
         await _activate_companion_runtime_adapter_and_open_ingress()
         _initialize_companion_action_decision_service()
-    from deskpet.realtime_voice import (
-        REALTIME_VOICE_ENABLED,
-        RealtimeVoiceService,
-        allowed_realtime_origins,
-    )
 
     try:
         _realtime_vite_port = int(os.getenv("DESKPET_VITE_PORT", "5173"))

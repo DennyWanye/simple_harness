@@ -4,6 +4,10 @@ from __future__ import annotations
 
 import asyncio
 
+from deskpet.orchestration.wiring import deactivate_orchestration
+from deskpet.retrieval.runtime import shutdown_default_gateway
+from deskpet.sdk_adapters.desktop_runtime import _delivery_adapters
+
 from host.runtime import logger, service_context
 from host.sdk_registry import (
     _sdk_recovery_watch_tasks,
@@ -37,7 +41,6 @@ async def _shutdown_runtimes_and_tasks() -> None:
             logger.warning("realtime_voice_shutdown_failed")
         finally:
             host_state.realtime_voice_service = None
-    from deskpet.retrieval.runtime import shutdown_default_gateway
 
     await shutdown_default_gateway()
     _foreground_runtime = service_context.get("human_memory_foreground_runtime_execution_authority")
@@ -126,8 +129,6 @@ async def _shutdown_services() -> None:
     # Agent 编排服务（plans/2026-09-11-orchestrator-host-integration）先于 SDK stack 关闭。
     # 这只是有序关停路径；App 真实退出是 SIGKILL，编排的正确性不依赖这里。
     try:
-        from deskpet.orchestration.wiring import deactivate_orchestration
-
         await deactivate_orchestration(service_context)
     except Exception as exc:  # noqa: BLE001
         logger.warning("orchestration_shutdown_failed", error=str(exc))
@@ -141,7 +142,6 @@ async def _shutdown_services() -> None:
         finally:
             host_state.sdk_runtime_stack = None
             host_state.sdk_ingress = None
-            from deskpet.sdk_adapters.desktop_runtime import _delivery_adapters
 
             for _sdk_run_id, _retained in tuple(_sdk_retained_presentations.items()):
                 _delivery_adapters.pop(_sdk_run_id, None)

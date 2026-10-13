@@ -5,7 +5,13 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Mapping
 
+from deskpet.memory.primary_decisions import is_primary_sdk_target
+from deskpet.sdk_adapters.causal_groups import plan_recent_causal_groups
+from deskpet.sdk_adapters.context_partitions import effective_input_budget
 from fastapi import WebSocket
+from simple_harness import RunId as SdkRunId
+from simple_harness.contracts.messages import Message, MessageRole
+from simple_harness.runtime import ConversationContinuationInput
 
 from host.chat_delivery import _broadcast_default_chat_peers, _send_chat_error
 from host.runtime import logger, service_context
@@ -34,7 +40,6 @@ async def _cancel_product_harness_run(
     # start snapshot (which carries the session identity), so cancellation is
     # already authenticated by run_id alone — no host / expected_session_id is
     # needed (the old harness signature took those, the SDK one does not).
-    from simple_harness import RunId as SdkRunId
 
     sdk_run_id = _sdk_run_ids_by_root.get(run_id, run_id)
     logger.info(
@@ -185,7 +190,6 @@ async def _signal_product_harness_decision(
     if not run_id or not decision_id or not nonce or version is None:
         raise ValueError("decision response requires run_id/decision_id/nonce/version")
     sdk_run_id = _sdk_run_ids_by_root.get(run_id, run_id)
-    from deskpet.memory.primary_decisions import is_primary_sdk_target
 
     if is_primary_sdk_target(_state_db_path, sdk_run_id):
         raise ValueError("primary_decision_requires_authenticated_control")
@@ -373,13 +377,9 @@ async def _run_product_harness_continuation(
     context_sources = service_context.get("sdk_context_source_repository")
     if context_sources is None or session_db is None:
         raise RuntimeError("SDK continuation context authority is unavailable")
-    from simple_harness.contracts.messages import Message, MessageRole
-    from simple_harness.runtime import ConversationContinuationInput
 
     current_message = Message(MessageRole.USER, text)
     continuation_value = None
-    from deskpet.sdk_adapters.causal_groups import plan_recent_causal_groups
-    from deskpet.sdk_adapters.context_partitions import effective_input_budget
 
     # S5a: the continuation lane shares the frozen 32k-tier budget and causal
     # grouping with the per-turn Context authority — no second source of truth.

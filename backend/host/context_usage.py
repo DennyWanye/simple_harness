@@ -5,6 +5,8 @@ from __future__ import annotations
 import re
 import time
 
+from deskpet.agent.tokens import count_text_tokens
+from deskpet.sdk_adapters.context_authority import canonical_sha256
 from fastapi import WebSocket
 
 from host.chat_delivery import _broadcast_default_chat_peers
@@ -97,8 +99,6 @@ async def _send_context_usage_authority(
 
 async def _broadcast_context_usage_snapshot(session_db: Any, session_id: str) -> bool:
     """Publish one strictly newer durable usage authority to matching peers."""
-
-    from deskpet.sdk_adapters.context_authority import canonical_sha256
 
     incoming = await session_db.get_context_usage_state(session_id)
     incoming = await _attach_context_snapshot_metadata(session_db, incoming)
@@ -373,7 +373,6 @@ def _approx_tokens(text: str | None) -> int:
     ``prompt_tokens``（已在 ring 里）。Returns 0 on falsy input."""
     if not text:
         return 0
-    from deskpet.agent.tokens import count_text_tokens
 
     return count_text_tokens(text)
 

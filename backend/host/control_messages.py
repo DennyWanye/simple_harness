@@ -5,6 +5,10 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
+from agent.agent_loop import PipelineEvent
+from deskpet.agent.run_presenter import CanonicalRunEventPresentationAdapter
+from deskpet.execution.contracts import OutcomeStatus, RunEvent, RunEventCandidate, thaw_json
+from deskpet.execution.run_read_model import PublicReadError
 from fastapi import WebSocket
 
 from host.chat_delivery import _broadcast_control
@@ -76,14 +80,6 @@ async def _replay_open_harness_decisions(
 
     if not hasattr(execution_uow, "list_open_decision_projections"):
         return
-    from agent.agent_loop import PipelineEvent
-    from deskpet.agent.run_presenter import CanonicalRunEventPresentationAdapter
-    from deskpet.execution.contracts import (
-        OutcomeStatus,
-        RunEvent,
-        RunEventCandidate,
-        thaw_json,
-    )
 
     adapter = CanonicalRunEventPresentationAdapter()
     for projection in await execution_uow.list_open_decision_projections(session_id):
@@ -174,8 +170,6 @@ async def _handle_control_ws_message(raw: dict, *, session_id: str, ws: WebSocke
             service = service_context.get("harness_public_read_service")
             try:
                 if schema_version != "3":
-                    from deskpet.execution.run_read_model import PublicReadError
-
                     raise PublicReadError(
                         "unsupported_schema",
                         "only Harness Inspector schema V3 is supported",

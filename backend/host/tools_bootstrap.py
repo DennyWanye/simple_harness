@@ -6,6 +6,7 @@ from pathlib import Path as _Path
 from pathlib import Path as _PathRS
 
 import paths as _paths
+from deskpet.tools.receipt_store import ReceiptStore
 from tools.clipboard import read_clipboard_tool
 from tools.get_time import get_time_tool
 from tools.registry import ToolRegistry
@@ -125,8 +126,6 @@ try:
             return None
         if _receipt_store_box[0] is None:
             try:
-                from deskpet.tools.receipt_store import ReceiptStore
-
                 # WI-T2.2 v3 P0 修：取消 min(retention, 7) 截断（last-mile
                 # round2 P0-2）。原代码把用户配的 30 天硬压成 7 天，回放窗口
                 # 残缺。按 ToolsLastMileConfig.artifact_dir_retention_days

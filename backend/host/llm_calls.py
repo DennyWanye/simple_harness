@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+from agent.context_messages import provider_purpose_scope
+from deskpet.execution.provider_workloads import SessionAwareLLMCall
+from deskpet.tools import image_tools as _image_tools
+from deskpet.tools import research_tools as _research_tools
+from deskpet.tools.research_tools import _research_llm_result_from_provider_response
 from providers.openai_compatible import OpenAICompatibleProvider
 
 from host.llm_providers import _e2e_provider_base, _resolved_api_key, _sanitize_cot_dsml
@@ -31,7 +36,6 @@ def _make_str_llm_call(
         return None
 
     async def _call(prompt: str) -> str:
-        from agent.context_messages import provider_purpose_scope
 
         # WI-4-C（2026-06-25 真测）：relay 对 `stream:True + json_schema strict` 偶发慢(9-20s,
         # 偶尔超 analysis_timeout_s) 或上游瞬时错返空 body → 预分析被 safe-fail 误降级。直连实测
@@ -113,8 +117,6 @@ def _make_session_aware_llm_call(
 ):
     """Create the explicit auxiliary protocol without capturing a provider."""
 
-    from deskpet.execution.provider_workloads import SessionAwareLLMCall
-
     return SessionAwareLLMCall(
         lambda: service_context.get("provider_workload_router"),
         max_tokens=max_tokens,
@@ -136,8 +138,6 @@ def _make_research_llm_call_v2(provider):
     ):
         if not stable_call_id:
             raise ValueError("stable_call_id is required")
-        from agent.context_messages import provider_purpose_scope
-        from deskpet.tools.research_tools import _research_llm_result_from_provider_response
 
         with provider_purpose_scope("research"):
             result = await provider.chat_with_tools_at_most_once(
@@ -277,7 +277,6 @@ def _resolve_primary_registry_provider():
 def _refresh_image_endpoint_resolver() -> None:
     """Keep image/PPT generation aligned with the active relay provider."""
     try:
-        from deskpet.tools import image_tools as _image_tools
 
         def _resolver() -> tuple[str | None, str | None] | None:
             _provider = _resolve_primary_registry_provider()
@@ -297,8 +296,6 @@ def _refresh_image_endpoint_resolver() -> None:
 def _refresh_research_live_llm(provider=None) -> None:
     """Keep deep-research/PPT background LLM aligned with chat routing."""
     try:
-        from deskpet.tools import research_tools as _research_tools
-
         _provider = provider or _resolve_primary_registry_provider() or host_state.local_llm
         _research_tools.set_live_llm_call(
             _make_str_llm_call(_provider, max_tokens=4096, purpose="research")

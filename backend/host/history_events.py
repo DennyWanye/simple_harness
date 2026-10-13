@@ -5,6 +5,10 @@ from __future__ import annotations
 import asyncio
 import uuid
 
+from deskpet.companion.companion_message_projection import TrustedCompanionOwner
+from deskpet.execution.contracts import EventNotFound
+from deskpet.workflows.harness_delivery import workflow_event_envelope
+
 from host.runtime import logger, service_context
 from host.state import host_state
 
@@ -35,8 +39,6 @@ async def _attach_workflow_history_events(
     # New production rows live only in execution_events.  Hydrate those first
     # and use the legacy workflow service solely as a compatibility fallback
     # for old SessionDB references that predate Kernel activation.
-    from deskpet.execution.contracts import EventNotFound
-    from deskpet.workflows.harness_delivery import workflow_event_envelope
 
     events_by_id: dict[str, dict[str, Any]] = {}
     missing_event_ids: list[str] = []
@@ -142,9 +144,6 @@ async def _bind_companion_inbox_route(
     session_db = service_context.get("session_db")
     if session_db is None:
         return False
-    from deskpet.companion.companion_message_projection import (
-        TrustedCompanionOwner,
-    )
 
     trusted_owner = TrustedCompanionOwner(
         profile_id=frozen_identity.owner.profile_id,

@@ -5,7 +5,17 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Mapping
 
+from agent.agent_loop import ErrorEvent, FinalEvent
+from deskpet.agent.run_presenter import (
+    CanonicalRunEventPresentationAdapter,
+    PresentationState,
+    RunPresentationContext,
+    build_product_run_presenter,
+)
+from deskpet.sdk_adapters.delivery import ProductDeliveryAdapter
+from deskpet.sdk_adapters.desktop_runtime import _delivery_adapters
 from fastapi import WebSocket
+from simple_harness import RunId as SdkRunId
 
 from host.chat_delivery import _broadcast_default_chat_peers
 from host.runtime import config, logger, service_context
@@ -114,15 +124,6 @@ async def _recovered_sdk_send_final(
 def _restore_sdk_delivery_route(record: Any, start: Mapping[str, Any], session_db: Any) -> bool:
     """Rebuild one detached presentation route before SDK startup recovery."""
 
-    from deskpet.agent.run_presenter import (
-        CanonicalRunEventPresentationAdapter,
-        PresentationState,
-        RunPresentationContext,
-        build_product_run_presenter,
-    )
-    from deskpet.sdk_adapters.delivery import ProductDeliveryAdapter
-    from deskpet.sdk_adapters.desktop_runtime import _delivery_adapters
-
     start_input = start.get("input")
     metadata = start_input.get("context_metadata") if isinstance(start_input, Mapping) else None
     if not isinstance(metadata, Mapping):
@@ -196,8 +197,6 @@ def _isolate_unrestorable_sdk_tool_authority(
 ) -> None:
     """Remove partial recovery leases for one fail-closed legacy Run."""
 
-    from deskpet.sdk_adapters.desktop_runtime import _delivery_adapters
-
     try:
         provider_binding_resolver.mark_terminal(sdk_run_id, "failed")
     except (KeyError, RuntimeError, ValueError):
@@ -225,10 +224,6 @@ async def _watch_retained_sdk_run(
     authorization_ws: WebSocket | None = None,
 ) -> None:
     """Project a resumed/recovered Run terminal through its retained route."""
-
-    from agent.agent_loop import ErrorEvent, FinalEvent
-    from deskpet.sdk_adapters.desktop_runtime import _delivery_adapters
-    from simple_harness import RunId as SdkRunId
 
     retained = _sdk_retained_presentations.get(sdk_run_id)
     if retained is None or host_state.sdk_ingress is None:

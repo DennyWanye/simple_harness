@@ -6,6 +6,12 @@ import json
 import json as _load_json
 from typing import Any
 
+from deskpet.commands import dispatch_slash_command
+from deskpet.companion.skills import PreparedSkillInvocationScopeV1
+from deskpet.memory.primary_authority import assert_not_primary_authority
+from deskpet.session.project_protocol import (
+    handle_project_session_command as _handle_project_session_command,
+)
 from deskpet.tools.public_projection import project_public_tool_calls, project_public_tool_result
 
 from host.chat_delivery import _remap_chat_peer_group, _resolve_chat_source_session
@@ -53,9 +59,6 @@ async def _cc_context_breakdown_request(conn: _ControlConnection, raw: dict, msg
 async def _cc_project_preview_register(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
     """控制消息：project_preview_register、project_register、session_create、project_catalog_page、project_sessions_page、project_inspect、project_relocate。"""
     ws = conn.ws
-    from deskpet.session.project_protocol import (
-        handle_project_session_command as _handle_project_session_command,
-    )
 
     _project_response = await _handle_project_session_command(
         raw,
@@ -83,7 +86,6 @@ async def _cc_sessions_list(conn: _ControlConnection, raw: dict, msg_type: str) 
 
 async def _cc_session_delete(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
     """控制消息：session_delete。"""
-    from deskpet.memory.primary_authority import assert_not_primary_authority
 
     ws = conn.ws
     _sd_payload = raw.get("payload", {}) or {}
@@ -93,10 +95,6 @@ async def _cc_session_delete(conn: _ControlConnection, raw: dict, msg_type: str)
     _sd_code = None
     if _sd_sdb is not None and _sd_sid:
         try:
-            from deskpet.memory.primary_authority import (
-                assert_not_primary_authority,
-            )
-
             await assert_not_primary_authority(_sd_sdb._db_path, _sd_sid)
             _sd_workflows = service_context.get("workflow_service")
             _sd_creation = service_context.get("session_creation_service")
@@ -141,7 +139,6 @@ async def _cc_session_delete(conn: _ControlConnection, raw: dict, msg_type: str)
 
 async def _cc_session_rename(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
     """控制消息：session_rename。"""
-    from deskpet.memory.primary_authority import assert_not_primary_authority
 
     ws = conn.ws
     _sr_payload = raw.get("payload", {}) or {}
@@ -153,10 +150,6 @@ async def _cc_session_rename(conn: _ControlConnection, raw: dict, msg_type: str)
     _sr_code = None
     if _sr_sdb is not None and _sr_sid:
         try:
-            from deskpet.memory.primary_authority import (
-                assert_not_primary_authority,
-            )
-
             await assert_not_primary_authority(_sr_sdb._db_path, _sr_sid)
             _sr_stored = await _sr_sdb.set_session_title(_sr_sid, _sr_title)
             _sr_ok = True
@@ -183,7 +176,6 @@ async def _cc_session_rename(conn: _ControlConnection, raw: dict, msg_type: str)
 
 async def _cc_session_messages_load(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
     """控制消息：session_messages_load。"""
-    from deskpet.memory.primary_authority import assert_not_primary_authority
 
     ws = conn.ws
     session_id = conn.session_id
@@ -193,10 +185,6 @@ async def _cc_session_messages_load(conn: _ControlConnection, raw: dict, msg_typ
     _sml_sdb = service_context.get("session_db")
     if _sml_sdb is not None:
         try:
-            from deskpet.memory.primary_authority import (
-                assert_not_primary_authority,
-            )
-
             await assert_not_primary_authority(_sml_sdb._db_path, str(target_sid))
         except Exception as _sml_exc:  # noqa: BLE001
             _sml_code = getattr(_sml_exc, "code", None)
@@ -413,8 +401,6 @@ async def _cc_slash_command(conn: _ControlConnection, raw: dict, msg_type: str) 
         )
     else:
         try:
-            from deskpet.commands import dispatch_slash_command
-
             _slash_skill_loader = await _current_slash_skill_catalog()
             _slash_skill_catalog = _slash_skill_loader
             _slash_goal_store = service_context.get("session_goal_store")
@@ -441,9 +427,6 @@ async def _cc_slash_command(conn: _ControlConnection, raw: dict, msg_type: str) 
             _slash_text = str(_slash_result.get("user_text") or "").strip()
             if not _slash_text:
                 raise RuntimeError("slash instruction activation is empty")
-            from deskpet.companion.skills import (
-                PreparedSkillInvocationScopeV1,
-            )
 
             _slash_scope = PreparedSkillInvocationScopeV1.from_dict(
                 _slash_result.get("prepared_skill_scope") or {}

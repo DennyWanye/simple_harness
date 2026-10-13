@@ -8,8 +8,27 @@ import traceback
 import uuid
 from pathlib import Path
 
+from agent.nudge_queue import Hint
+from deskpet.agent.assembler.components.persona import _resolve_persona
+from deskpet.agent.product_domain_sink import LegacyProductDomainSink
+from deskpet.agent.run_presenter import RunPresentationContext
 from deskpet.agent.turn_preparer import TurnInput
+from deskpet.capabilities.contracts import CapabilityScope
+from deskpet.execution.contracts import RunRef, root_idempotency_key
+from deskpet.execution.run_block_signals import PreflightBlocked, RootBlockReasonV1
+from deskpet.sdk_adapters.capability_catalog import ProductCapabilityCatalogSourceAdapter
+from deskpet.sdk_adapters.context_authority import DefaultDenySnapshotRedactor
+from deskpet.sdk_adapters.ingress import SdkRuntimeIngress
 from deskpet.sdk_adapters.sdk_candidate import SDK_VERSION
+from deskpet.sdk_adapters.tool_authority import (
+    SDK_DIRECT_TOOL_KERNEL,
+    SDK_EXPLICIT_DEFERRED_DISCLOSURE_POLICY,
+)
+from deskpet.sdk_adapters.tools import filter_sdk_catalog_for_workspace
+from deskpet.types.task_work_context import TaskWorkContextResolver
+from llm.resolution import SessionProviderUnavailable
+from simple_harness.contracts.messages import ContentBlock, Message, MessageRole
+from simple_harness.runtime import ConversationTurnInput
 
 from host.chat_delivery import _broadcast_default_chat_peers, _send_chat_error, _send_chat_final
 from host.llm_providers import _chat_turn_timeout_s, billing_ledger
@@ -102,8 +121,6 @@ async def _commit_product_preflight_block(
     block: Any,
 ) -> None:
     """Commit and project a typed failure without provider or Tool execution."""
-
-    from deskpet.execution.contracts import RunRef, root_idempotency_key
 
     if host_state.sdk_ingress is None or host_state.sdk_runtime_stack is None:
         raise RuntimeError("SDK Runtime is unavailable")
@@ -276,11 +293,6 @@ async def _run_product_harness_chat(
         )
         return
 
-    from deskpet.execution.run_block_signals import (
-        PreflightBlocked,
-        RootBlockReasonV1,
-    )
-
     if host_state.sdk_ingress is None or not host_state.sdk_ingress.accepting:
         raise RuntimeError("SDK Runtime ingress is closed")
     session_db = service_context.get("session_db")
@@ -290,8 +302,6 @@ async def _run_product_harness_chat(
     is_sentinel = (text or "").startswith("<<") and (text or "").endswith(">>")
     request_id = str(client_request_id or "").strip() or uuid.uuid4().hex
     turn_id = str(client_turn_id or client_request_id or "").strip() or uuid.uuid4().hex
-    from deskpet.execution.contracts import RunRef, root_idempotency_key
-    from deskpet.types.task_work_context import TaskWorkContextResolver
 
     root_ref = RunRef(
         uuid.uuid5(
@@ -406,8 +416,6 @@ async def _run_product_harness_chat(
         provider_chain = _providers
         provider_snapshot = _provider_snapshot
     except Exception as exc:
-        from llm.resolution import SessionProviderUnavailable
-
         if isinstance(exc, PreflightBlocked):
             host, _provider, _providers, _provider_snapshot = await _issue_product_harness_host(
                 session_id=session_id,
@@ -547,8 +555,6 @@ async def _run_product_harness_chat(
         active_execution_budget_seconds=_chat_turn_timeout_s(),
         context_usage_basis_sample_id=(frozen_context_usage_basis_sample_id),
     )
-    from deskpet.agent.product_domain_sink import LegacyProductDomainSink
-    from deskpet.agent.run_presenter import RunPresentationContext
 
     activity = None
     context = RunPresentationContext(
@@ -592,11 +598,6 @@ async def _run_product_harness_chat(
     workspace_admitted = False
     workspace_admission_retained = False
     try:
-        from deskpet.sdk_adapters.context_authority import (
-            DefaultDenySnapshotRedactor,
-        )
-        from deskpet.sdk_adapters.ingress import SdkRuntimeIngress
-
         if (
             host_state.sdk_provider_binding_resolver is None
             or host_state.sdk_runtime_catalog is None
@@ -616,20 +617,12 @@ async def _run_product_harness_chat(
         if sdk_run_id in _sdk_unavailable_tool_authority_runs:
             raise RuntimeError("sdk_tool_authority_unavailable")
         provider_authority = await _freeze_sdk_provider_authority(session_db, session_id, host)
-        from deskpet.sdk_adapters.tools import filter_sdk_catalog_for_workspace
 
         run_tool_catalog, run_tool_inventory = filter_sdk_catalog_for_workspace(
             host_state.sdk_runtime_catalog,
             host_state.sdk_runtime_tool_inventory,
             workspace_resolution_kind=str(workspace_resolution["kind"]),
         )
-        from deskpet.agent.assembler.components.persona import _resolve_persona
-        from simple_harness.contracts.messages import (
-            ContentBlock,
-            Message,
-            MessageRole,
-        )
-        from simple_harness.runtime import ConversationTurnInput
 
         current_content: Any = text
         if user_attachment_blocks:
@@ -675,9 +668,6 @@ async def _run_product_harness_chat(
             memory_text=text,
             context_source_snapshot_ref=source_ref,
         )
-        from deskpet.sdk_adapters.context_authority import (
-            DefaultDenySnapshotRedactor,
-        )
 
         public_snapshot = DefaultDenySnapshotRedactor().redact(prepared_snapshot)
         if session_db is not None:
@@ -697,10 +687,6 @@ async def _run_product_harness_chat(
             catalog_generation=int(run_tool_catalog["generation"]),
             catalog_fingerprint=str(run_tool_catalog["content_fingerprint"]),
         )
-        from deskpet.sdk_adapters.tool_authority import (
-            SDK_DIRECT_TOOL_KERNEL,
-            SDK_EXPLICIT_DEFERRED_DISCLOSURE_POLICY,
-        )
 
         visible_tool_names = frozenset(str(name) for name in run_tool_catalog["tool_names"])
         direct_tool_names = visible_tool_names & SDK_DIRECT_TOOL_KERNEL
@@ -712,11 +698,6 @@ async def _run_product_harness_chat(
         capability_platform = service_context.get("capability_platform")
         global_skill_service = service_context.get("project_skill_install_service")
         if capability_platform is not None and global_skill_service is not None:
-            from deskpet.capabilities.contracts import CapabilityScope
-            from deskpet.sdk_adapters.capability_catalog import (
-                ProductCapabilityCatalogSourceAdapter,
-            )
-
             global_owner_key = str(global_skill_service.global_owner_key)
             global_scope = CapabilityScope(user_key=global_owner_key)
             async with capability_platform.publish_lock:
@@ -891,9 +872,6 @@ def _launch_product_harness_chat(*args, **kwargs) -> asyncio.Task:
             task_scope_id = ""
             if request_id and turn_id:
                 try:
-                    from deskpet.execution.contracts import RunRef, root_idempotency_key
-                    from deskpet.types.task_work_context import TaskWorkContextResolver
-
                     root_ref = RunRef(
                         uuid.uuid5(
                             uuid.NAMESPACE_URL,
@@ -958,8 +936,6 @@ async def _enqueue_auto_resume_hint(sid: str, messages: list[dict]) -> None:
     if not text or queue is None:
         return
     try:
-        from agent.nudge_queue import Hint
-
         await queue.push(sid, Hint(text=text, alert_id="auto_resume", severity="yellow"))
     except Exception as exc:  # noqa: BLE001
         logger.debug("auto_resume_hint_push_failed sid=%s err=%s", sid, exc)

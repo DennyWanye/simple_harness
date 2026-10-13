@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from deskpet.capabilities.contracts import CapabilityScope
+from deskpet.commands import CompositeSkillCommandCatalog, FrozenSkillCommandCatalog
+from deskpet.sdk_adapters.capability_catalog import ProductCapabilityCatalogSourceAdapter
 from fastapi import APIRouter, Response
 
 from host.runtime import config, logger, service_context
@@ -17,11 +20,6 @@ async def _current_slash_skill_catalog():
     SDK Runs.  No Session or selected workspace participates in visibility.
     """
 
-    from deskpet.commands import (
-        CompositeSkillCommandCatalog,
-        FrozenSkillCommandCatalog,
-    )
-
     first_party = service_context.get("managed_skill_discovery_projection") or service_context.get(
         "skill_loader"
     )
@@ -29,11 +27,6 @@ async def _current_slash_skill_catalog():
     global_skill_service = service_context.get("project_skill_install_service")
     if capability_platform is None or global_skill_service is None:
         return first_party
-
-    from deskpet.capabilities.contracts import CapabilityScope
-    from deskpet.sdk_adapters.capability_catalog import (
-        ProductCapabilityCatalogSourceAdapter,
-    )
 
     owner_key = str(global_skill_service.global_owner_key)
     scope = CapabilityScope(user_key=owner_key)

@@ -8,8 +8,21 @@ import uuid
 from collections.abc import Mapping
 from dataclasses import replace
 
+from agent.write_scope import resolve_workspace_root
 from deskpet.agent.turn_preparer import PRODUCT_ROUTE_OWNED_TOOL_NAMES
+from deskpet.companion.run_adapter import BackgroundRunAdapter
+from deskpet.execution.contracts import ProviderLaunchSnapshot, fingerprint_json
+from deskpet.execution.run_block_signals import PreflightBlocked, RootBlockReasonV1
+from deskpet.harness.contracts import HostContext
+from deskpet.sdk_adapters.capability_catalog import ProductCapabilityCatalogSourceAdapter
+from deskpet.sdk_adapters.ingress import SdkRuntimeIngress
 from deskpet.sdk_adapters.sdk_candidate import SDK_VERSION
+from deskpet.sdk_adapters.skill_install_verification import (
+    SdkTerminalCapabilityReleaseReconciler,
+    SkillInstallVerificationRunService,
+)
+from deskpet.workflows.store import RuntimeActivationCommand
+from llm.resolution import SessionProviderUnavailable
 
 from host.llm_providers import cloud_llm
 from host.logging_setup import _sdk_observability
@@ -33,8 +46,6 @@ async def _issue_product_harness_host(
     project_revision: int = 0,
     project_identity: str = "",
 ):
-    from deskpet.execution.contracts import ProviderLaunchSnapshot, fingerprint_json
-    from deskpet.harness.contracts import HostContext
 
     session_db = service_context.get("session_db")
     try:
@@ -43,8 +54,6 @@ async def _issue_product_harness_host(
             session_db=session_db,
         )
     except Exception as exc:
-        from llm.resolution import SessionProviderUnavailable
-
         if not allow_provider_unavailable or not isinstance(exc, SessionProviderUnavailable):
             raise
         providers = []
@@ -61,8 +70,6 @@ async def _issue_product_harness_host(
         )
     )
     if provider is None and not allow_provider_unavailable:
-        from llm.resolution import SessionProviderUnavailable
-
         raise SessionProviderUnavailable("global_provider_chain_empty")
     provider_id = str(
         getattr(provider, "provider_id", "")
@@ -108,12 +115,6 @@ async def _issue_product_harness_host(
         and not projectless
         and bool(companion.get("write_scope_enforced", True))
     ):
-        from agent.write_scope import resolve_workspace_root
-        from deskpet.execution.run_block_signals import (
-            PreflightBlocked,
-            RootBlockReasonV1,
-        )
-
         try:
             write_scope_root = str(
                 resolve_workspace_root(configured=str(companion.get("workspace_root", "")))
@@ -178,9 +179,6 @@ async def _activate_product_sdk_runtime(
     configured_workspace_root=None,
 ) -> None:
     """Activate SDK Runtime Stack and ingress (Slice C production)."""
-
-    from deskpet.sdk_adapters.ingress import SdkRuntimeIngress
-    from deskpet.workflows.store import RuntimeActivationCommand
 
     workflow_service = service_context.get("workflow_service")
     if workflow_service is None:
@@ -273,13 +271,6 @@ async def _activate_product_sdk_runtime(
     # runtime so the root driver could be frozen without a cyclic constructor;
     # the live verification service now joins that driver to the same execution
     # database/Manager owner used by install intent, publish, and attestation.
-    from deskpet.sdk_adapters.capability_catalog import (
-        ProductCapabilityCatalogSourceAdapter,
-    )
-    from deskpet.sdk_adapters.skill_install_verification import (
-        SdkTerminalCapabilityReleaseReconciler,
-        SkillInstallVerificationRunService,
-    )
 
     capability_store = service_context.get("capability_store")
     capability_platform = service_context.get("capability_platform")
@@ -365,11 +356,7 @@ async def _activate_companion_runtime_adapter_and_open_ingress() -> None:
     if runtime is None or store is None or growth_pipeline is None:
         raise RuntimeError("Companion runtime composition is unavailable")
 
-    from deskpet.companion.run_adapter import BackgroundRunAdapter
-
     async def _background_host(owner, claim):
-
-        from deskpet.execution.contracts import fingerprint_json
 
         session_id = f"companion:{owner.profile_id}:{owner.profile_generation}:{claim.item_id}"
         # Use SDK ingress to create host

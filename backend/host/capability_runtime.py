@@ -7,6 +7,43 @@ import os
 import time
 
 import paths as _paths
+from deskpet.capabilities.builder import CapabilityBuilderHost
+from deskpet.capabilities.configured_catalog import parse_configured_pack_sources
+from deskpet.capabilities.contracts import CapabilityScope, canonical_global_owner_key
+from deskpet.capabilities.execution_scope_authority import SqliteCurrentExecutionScopeAuthority
+from deskpet.capabilities.platform import BrokeredInvocationAuthority, CapabilityPlatform
+from deskpet.capabilities.project_skill_discovery import ProjectSkillDiscoveryService
+from deskpet.capabilities.refresh import (
+    CapabilityRefreshService,
+    CapabilityRefreshStagingService,
+    RegistryExposureToolSetRebuilder,
+    SqliteCapabilityRefreshSnapshotRepository,
+)
+from deskpet.capabilities.run_catalog import (
+    FirstPartyFrozenSkillResolver,
+    SqliteRunCatalogLeasePreparer,
+)
+from deskpet.capabilities.runtime_ledger import CapabilityStoreRuntimeSetLedger
+from deskpet.capabilities.skill_install import (
+    BindableSkillInstallRuntimeVerifier,
+    GlobalSkillInstallService,
+)
+from deskpet.capabilities.skill_install_ui import SettingsSkillInstallAuthorizerFactory
+from deskpet.capabilities.skill_source import BoundedGitHubSkillSource
+from deskpet.capabilities.store import CapabilityStore
+from deskpet.capabilities.ui_service import CapabilityCenterService
+from deskpet.companion.identity import load_or_create_local_identity
+from deskpet.companion.skills import inventory_first_party_skill_packs
+from deskpet.permissions.admission import AdmissionTaskGrantRuntime
+from deskpet.permissions.legacy_auto_mode import import_legacy_auto_mode_once
+from deskpet.permissions.runtime import PreparedAuthorizationRuntime
+from deskpet.sdk_adapters.skill_install_verification import (
+    BindableSkillInstallVerificationDriverFactory,
+)
+from deskpet.skills.loader import SkillPackSnapshotResolver
+from deskpet.tools import skill_tools as _skill_tools
+from deskpet.tools.capabilities import ToolCapabilityResolver
+from deskpet.types.task_grants import ResourceSelector, TaskGrant, selector_covers
 
 from host.chat_delivery import _broadcast_control
 from host.runtime import config, logger, service_context
@@ -33,41 +70,6 @@ async def _initialize_capability_runtime(*, clock=time.time) -> None:
     workflow_service = service_context.get("workflow_service")
     if workflow_service is None:
         raise RuntimeError("workflow execution UoW is unavailable")
-
-    from deskpet.capabilities.builder import CapabilityBuilderHost
-    from deskpet.capabilities.configured_catalog import (
-        parse_configured_pack_sources,
-    )
-    from deskpet.capabilities.contracts import CapabilityScope
-    from deskpet.capabilities.execution_scope_authority import (
-        SqliteCurrentExecutionScopeAuthority,
-    )
-    from deskpet.capabilities.platform import (
-        BrokeredInvocationAuthority,
-        CapabilityPlatform,
-    )
-    from deskpet.capabilities.refresh import (
-        CapabilityRefreshService,
-        CapabilityRefreshStagingService,
-        RegistryExposureToolSetRebuilder,
-        SqliteCapabilityRefreshSnapshotRepository,
-    )
-    from deskpet.capabilities.runtime_ledger import (
-        CapabilityStoreRuntimeSetLedger,
-    )
-    from deskpet.capabilities.store import CapabilityStore
-    from deskpet.capabilities.ui_service import CapabilityCenterService
-    from deskpet.permissions.admission import AdmissionTaskGrantRuntime
-    from deskpet.permissions.legacy_auto_mode import (
-        import_legacy_auto_mode_once,
-    )
-    from deskpet.permissions.runtime import PreparedAuthorizationRuntime
-    from deskpet.tools.capabilities import ToolCapabilityResolver
-    from deskpet.types.task_grants import (
-        ResourceSelector,
-        TaskGrant,
-        selector_covers,
-    )
 
     uow = workflow_service.execution_uow
     store = CapabilityStore(uow)
@@ -174,11 +176,6 @@ async def _initialize_capability_runtime(*, clock=time.time) -> None:
         execution_scope_authority=SqliteCurrentExecutionScopeAuthority(store),
         runtime_set_ledger=CapabilityStoreRuntimeSetLedger(store),
     )
-    from deskpet.capabilities.run_catalog import (
-        FirstPartyFrozenSkillResolver,
-        SqliteRunCatalogLeasePreparer,
-    )
-    from deskpet.companion.skills import inventory_first_party_skill_packs
 
     platform.run_catalog_lease_preparer = SqliteRunCatalogLeasePreparer(
         store=store,
@@ -196,18 +193,8 @@ async def _initialize_capability_runtime(*, clock=time.time) -> None:
         store=store,
         inventory=first_party_skill_inventory,
     )
-    from deskpet.capabilities.contracts import canonical_global_owner_key
-    from deskpet.capabilities.skill_install import (
-        BindableSkillInstallRuntimeVerifier,
-        GlobalSkillInstallService,
-    )
-    from deskpet.capabilities.skill_source import BoundedGitHubSkillSource
-    from deskpet.companion.identity import load_or_create_local_identity
 
     skill_install_runtime_verifier = BindableSkillInstallRuntimeVerifier()
-    from deskpet.sdk_adapters.skill_install_verification import (
-        BindableSkillInstallVerificationDriverFactory,
-    )
 
     skill_install_driver_factory = BindableSkillInstallVerificationDriverFactory()
     global_owner_key = canonical_global_owner_key(
@@ -223,19 +210,16 @@ async def _initialize_capability_runtime(*, clock=time.time) -> None:
         runtime_verifier=skill_install_runtime_verifier,
         global_owner_key=global_owner_key,
     )
-    from deskpet.capabilities.skill_install_ui import SettingsSkillInstallAuthorizerFactory
 
     service_context.register(
         "project_skill_install_settings_authorizer",
         SettingsSkillInstallAuthorizerFactory(store=store, global_owner_key=global_owner_key),
     )
-    from deskpet.skills.loader import SkillPackSnapshotResolver
 
     skill_pack_snapshot_resolver = SkillPackSnapshotResolver(
         version_store=store,
         selection_source=service_context.get("managed_skill_discovery_projection"),
     )
-    from deskpet.tools import skill_tools as _skill_tools
 
     _skill_tools.bind(skill_resolver=frozen_skill_resolver)
     service_context.register(
@@ -271,9 +255,6 @@ async def _initialize_capability_runtime(*, clock=time.time) -> None:
     )
     service_context.register("capability_store", store)
     service_context.register("capability_platform", platform)
-    from deskpet.capabilities.project_skill_discovery import (
-        ProjectSkillDiscoveryService,
-    )
 
     service_context.register(
         "project_skill_discovery_service",

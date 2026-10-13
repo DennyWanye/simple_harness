@@ -7,6 +7,15 @@ from dataclasses import replace
 
 from deskpet.tools import ppt_tools
 from deskpet.tools.ppt_outline_store import expire_dangling_proposed, list_history
+from deskpet.workflows.adapters.ppt_runtime import (
+    PptRuntime,
+    open_ppt_outline_decision,
+    workflow_outline_run_id,
+    workflow_run_session,
+)
+from deskpet.workflows.contracts import WorkflowContext
+from deskpet.workflows.definitions.research_core import legacy_ports
+from deskpet.workflows.definitions.v1 import ppt_pro_initial_state
 
 from host.chat_delivery import _broadcast_control
 from host.llm_calls import _make_str_llm_call
@@ -64,11 +73,6 @@ async def _resume_workflow_ppt_outline(service, decision, response: dict, sid: s
 
 
 async def _resolve_workflow_ppt_outline(oid: str, response: dict) -> str | None:
-    from deskpet.workflows.adapters.ppt_runtime import (
-        open_ppt_outline_decision,
-        workflow_outline_run_id,
-        workflow_run_session,
-    )
 
     run_id = workflow_outline_run_id(oid)
     service = service_context.get("workflow_service")
@@ -139,11 +143,6 @@ _PPT_PRO_RENDER_EXECUTOR = _cf.ThreadPoolExecutor(
 
 
 def _configure_ppt_workflow_adapter(launcher):
-
-    from deskpet.workflows.adapters.ppt_runtime import PptRuntime
-    from deskpet.workflows.contracts import WorkflowContext
-    from deskpet.workflows.definitions.research_core import legacy_ports
-    from deskpet.workflows.definitions.v1 import ppt_pro_initial_state
 
     runtime = PptRuntime(
         executor=_PPT_PRO_RENDER_EXECUTOR,

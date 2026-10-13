@@ -10,6 +10,31 @@ from collections.abc import Mapping
 from pathlib import Path
 
 import paths as _paths
+from deskpet.execution.closure_request_guard import (
+    ClosurePhysicalRequestGuard,
+    ClosureRequestAuthority,
+)
+from deskpet.execution.foreground_queue import EffectBoundary, ForegroundQueueStore
+from deskpet.execution.foreground_runtime import (
+    ForegroundRuntimeExecutionAuthority,
+    SqliteSdkTerminalObserver,
+)
+from deskpet.execution.foreground_runtime_ports import (
+    ProductForegroundProviderPort,
+    ProductForegroundToolPort,
+)
+from deskpet.execution.primary_context import (
+    ForegroundConversationEntrypoint,
+    PrimaryForegroundContextPort,
+)
+from deskpet.execution.semantic_closure import ClosureFallback
+from deskpet.memory.recovery_fence import build_recovery_lifecycle_port
+from deskpet.memory.schema import StartupCompositionMode
+from deskpet.operation_audit.composition import compose_terminal_audit
+from deskpet.sdk_adapters.context_authority import ContextRouteLedgerStore
+from deskpet.sdk_adapters.post_turn_invoker import RunBoundInvoker
+from deskpet.sdk_adapters.run_bindings import SdkRunBindingV1
+from deskpet.task_scope.runtime_binding_authority import WorkspaceBindingRuntimeAuthority
 
 from host.chat_delivery import _broadcast_control
 from host.runtime import logger, service_context
@@ -28,8 +53,6 @@ from host.stores_bootstrap import _state_db_path
 
 async def _activate_terminal_operation_audit():
     """Default-on audit of actual foreground terminals; no Provider work here."""
-
-    from deskpet.operation_audit.composition import compose_terminal_audit
 
     consumer = service_context.get("terminal_operation_audit")
     if consumer is None:
@@ -53,8 +76,6 @@ async def _activate_human_memory_host_ports(
 ) -> None:  # type: ignore[no-untyped-def]
     """Publish fresh-HUMAN authorities only after their dependencies are ready."""
 
-    from deskpet.memory.schema import StartupCompositionMode
-
     names = (
         "human_memory_binding_append_authority",
         "human_memory_recovery_lifecycle",
@@ -68,11 +89,6 @@ async def _activate_human_memory_host_ports(
     policy = service_context.get("capability_store")
     if policy is None:
         raise RuntimeError("Human Memory binding requires authorization policy")
-    from deskpet.execution.foreground_queue import ForegroundQueueStore
-    from deskpet.memory.recovery_fence import build_recovery_lifecycle_port
-    from deskpet.task_scope.runtime_binding_authority import (
-        WorkspaceBindingRuntimeAuthority,
-    )
 
     foreground = ForegroundQueueStore(_state_db_path)
     binding = WorkspaceBindingRuntimeAuthority(
@@ -111,16 +127,6 @@ async def _activate_human_memory_host_ports(
         )
         return
 
-    from deskpet.execution.foreground_runtime import (
-        ForegroundRuntimeExecutionAuthority,
-        SqliteSdkTerminalObserver,
-    )
-    from deskpet.execution.foreground_runtime_ports import (
-        ProductForegroundProviderPort,
-        ProductForegroundToolPort,
-    )
-    from deskpet.execution.primary_context import PrimaryForegroundContextPort
-
     class _AuditSink:
         def record(self, event: str, payload: Mapping[str, object]) -> None:
             logger.info(event, **dict(payload))
@@ -129,9 +135,6 @@ async def _activate_human_memory_host_ports(
     # is rebuilt from the durable Run binding through the same resolver the SDK
     # Run used (no new client); the handler is the same one behind the
     # `task_scope_update` Tool; run facts come from the SDK runtime stack.
-    from deskpet.execution.semantic_closure import ClosureFallback
-    from deskpet.sdk_adapters.post_turn_invoker import RunBoundInvoker
-    from deskpet.sdk_adapters.run_bindings import SdkRunBindingV1
 
     _closure_service = _ensure_task_scope_update_service()
     if host_state.sdk_provider_binding_resolver is None:
@@ -164,7 +167,6 @@ async def _activate_human_memory_host_ports(
             )
 
         async def revalidate(self) -> None:
-            from deskpet.execution.foreground_queue import EffectBoundary
 
             await foreground.authorize_effect(
                 host_run_id=self.host_run_id,
@@ -187,10 +189,6 @@ async def _activate_human_memory_host_ports(
 
     _runtime_owner_id = f"deskpet-foreground:{os.getpid()}:{uuid.uuid4().hex}"
     _closure_fence = _RuntimeLeaseFence(_runtime_owner_id)
-    from deskpet.execution.closure_request_guard import (
-        ClosurePhysicalRequestGuard,
-        ClosureRequestAuthority,
-    )
 
     _closure_request_authority = ClosureRequestAuthority(
         _state_db_path,
@@ -236,11 +234,7 @@ async def _activate_human_memory_host_ports(
     def _foreground_route_ledger():  # type: ignore[no-untyped-def]
         """前台首轮 HOST_INITIAL 路由回执的落账目标（与 chat 路径同一实现）。"""
 
-        from deskpet.sdk_adapters.context_authority import ContextRouteLedgerStore
-
         return ContextRouteLedgerStore(_state_db_path, evidence_ingress=_ensure_evidence_ingress())
-
-    from deskpet.execution.primary_context import ForegroundConversationEntrypoint
 
     _foreground_conversation_entrypoint = ForegroundConversationEntrypoint(
         session_store=service_context.get("session_db"),

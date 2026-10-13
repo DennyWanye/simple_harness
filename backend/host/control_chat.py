@@ -5,6 +5,13 @@ from __future__ import annotations
 import asyncio
 import uuid
 
+from deskpet.agent.attachment_budget import (
+    normalize_user_attachment_blocks as _normalize_attachment_blocks,
+)
+from deskpet.session.task_scope import (
+    source_session_for_created_conversation as _creation_source_sid,
+)
+
 from host.chat_delivery import (
     _broadcast_default_chat_peers,
     _remap_chat_peer_group,
@@ -26,9 +33,6 @@ async def _cc_chat(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
     session_id = conn.session_id
     _payload = raw.get("payload", {}) or {}
     text = _payload.get("text", "")
-    from deskpet.agent.attachment_budget import (
-        normalize_user_attachment_blocks as _normalize_attachment_blocks,
-    )
 
     _attachment_blocks = _normalize_attachment_blocks(_payload.get("attachments"))
     _msg_sid = _resolve_chat_source_session(
@@ -36,9 +40,6 @@ async def _cc_chat(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
         _payload.get("session_id"),
     )
     _base_msg_sid = _msg_sid
-    from deskpet.session.task_scope import (
-        source_session_for_created_conversation as _creation_source_sid,
-    )
 
     _source_session_id = _creation_source_sid(
         _payload.get("session_id"),

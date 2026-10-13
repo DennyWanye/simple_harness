@@ -7,6 +7,14 @@ import uuid
 from pathlib import Path as _Path
 
 import paths as _paths
+from agent.agent_loop import AgentLoop as _AgentLoop
+from agent.trace import IterationTracer
+from deskpet.agent.verify_gate import (
+    RegexExtractor,
+    VerifyGate,
+    load_claim_patterns,
+    make_ephemeral_verifier,
+)
 
 from host.context_projection import (
     _build_context_task_projector,
@@ -81,7 +89,6 @@ def build_agent(
     Returns:
         _AgentLoop 实例（带 verify_gate / receipt_store / max_verify_nudges 接电）
     """
-    from agent.agent_loop import AgentLoop as _AgentLoop
 
     # Build VerifyGate from cfg (mode != "off" only — flag OFF stays BC).
     verify_gate = None
@@ -92,13 +99,6 @@ def build_agent(
             and verifier_cfg is not None
             and verifier_cfg.verify_gate_mode != "off"
         ):
-            from deskpet.agent.verify_gate import (
-                RegexExtractor,
-                VerifyGate,
-                load_claim_patterns,
-                make_ephemeral_verifier,
-            )
-
             patterns_path = _Path(verifier_cfg.claim_patterns_file)
             if not patterns_path.is_absolute():
                 # Resolve relative to backend/ (where the default yaml lives)
@@ -195,8 +195,6 @@ def build_agent(
     _tracer = None
     if _trace_enabled:
         try:
-            from agent.trace import IterationTracer
-
             _tracer = IterationTracer(
                 trace_dir=_paths.user_data_dir() / "traces",
                 session_id="",
@@ -213,13 +211,6 @@ def build_agent(
     def _build_pipeline_verify_gate(_scm: str):
         """为 SelfCheckGate 自建 strict 对账门（抽自上方 :979 构造逻辑；不绑 verifier_cfg.mode）。"""
         try:
-            from deskpet.agent.verify_gate import (
-                RegexExtractor,
-                VerifyGate,
-                load_claim_patterns,
-                make_ephemeral_verifier,
-            )
-
             _vc = getattr(getattr(cfg, "tools", None), "verifier", None)
             _pf = _Path(
                 getattr(_vc, "claim_patterns_file", "verify/claim_patterns.yaml")

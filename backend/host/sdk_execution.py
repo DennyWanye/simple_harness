@@ -5,8 +5,22 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 import paths as _paths
+from agent.agent_loop import FinalEvent
+from deskpet.agent.run_presenter import (
+    CanonicalRunEventPresentationAdapter,
+    PresentationState,
+    build_product_run_presenter,
+)
+from deskpet.sdk_adapters.context_route import local_owner_auth
+from deskpet.sdk_adapters.delivery import ProductDeliveryAdapter
+from deskpet.sdk_adapters.desktop_runtime import DesktopSdkRuntimeBridge, _delivery_adapters
+from deskpet.sdk_adapters.ingress import SdkRuntimeIngress
+from deskpet.sdk_adapters.provider import provider_endpoint_identity
 from deskpet.sdk_adapters.sdk_candidate import SDK_VERSION
+from llm.code_params import code_params_to_request
+from llm.model_catalog import model_context_window
 from llm.provider_registry import ProviderMutationConflict
+from simple_harness import RunId as SdkRunId
 
 from host.chat_delivery import _broadcast_default_chat_peers, _send_chat_error
 from host.logging_setup import _sdk_observability
@@ -47,7 +61,6 @@ def _initialize_sdk_desktop_test_bridge() -> None:
     provider_registry = service_context.get("provider_registry")
     if provider_registry is None:
         raise RuntimeError("SDK desktop test requires the product provider registry")
-    from deskpet.sdk_adapters.desktop_runtime import DesktopSdkRuntimeBridge
 
     host_state.sdk_desktop_bridge = DesktopSdkRuntimeBridge(
         user_data_root=_paths.user_data_dir(),
@@ -78,8 +91,6 @@ def _trigger_harness_recovery_after_identity_bind() -> bool:
 def _local_owner_auth():
     """Single Host authority template for the authenticated local owner."""
 
-    from deskpet.sdk_adapters.context_route import local_owner_auth
-
     return local_owner_auth()
 
 
@@ -97,8 +108,6 @@ def _resolve_sdk_provider_binding_resolver():  # type: ignore[no-untyped-def]
 
 def _provider_endpoint_identity_for_binding(record):  # type: ignore[no-untyped-def]
     """Endpoint identity of the Run's provider entry (same recipe as ``ProductProviderAdapter``)."""
-
-    from deskpet.sdk_adapters.provider import provider_endpoint_identity
 
     registry = host_state.provider_registry
     if registry is None:
@@ -138,9 +147,6 @@ async def _freeze_sdk_provider_authority(
     session_db: Any, session_id: str, host: Any
 ) -> dict[str, Any]:
     """Project the already-resolved Host route into one immutable SDK binding."""
-
-    from llm.code_params import code_params_to_request
-    from llm.model_catalog import model_context_window
 
     frozen = _snapshot_context_usage_binding_for_run(host)
     model_id = str(frozen.get("preferred_model") or "")
@@ -229,14 +235,6 @@ async def _execute_sdk_run(
         SdkRuntimeNotReady: If SDK Runtime ingress is not ready
         Exception: Any SDK Runtime execution errors
     """
-    from deskpet.agent.run_presenter import (
-        CanonicalRunEventPresentationAdapter,
-        PresentationState,
-        build_product_run_presenter,
-    )
-    from deskpet.sdk_adapters.delivery import ProductDeliveryAdapter
-    from deskpet.sdk_adapters.desktop_runtime import _delivery_adapters
-    from deskpet.sdk_adapters.ingress import SdkRuntimeIngress
 
     # The frozen tool authority is keyed by the SDK's deterministic physical
     # Run identity, so compute it before reading any authority into RunStart.
@@ -452,9 +450,6 @@ async def _execute_sdk_run(
         # 「写 SessionDB + 推 WebSocket」既有展示链路。
         if host_state.sdk_context_port is not None:
             try:
-                from agent.agent_loop import FinalEvent
-                from simple_harness import RunId as SdkRunId
-
                 sdk_context = host_state.sdk_context_port.load(SdkRunId(sdk_run_id))
                 assistant_texts = [
                     message.content

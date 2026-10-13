@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from deskpet.orchestration import publish_settings as _publish_settings
+from deskpet.orchestration.wiring import read_section as _read_orch_section
+from provider_test_connection import handle_provider_test_connection
+
 from host.capability_runtime import _authorization_policy_snapshot, _set_authorization_auto_mode
 from host.connections import _control_connections
 from host.control_connection import _ControlConnection
@@ -46,8 +50,6 @@ async def _cc_orchestration_publish_dir_get(
 ) -> None:
     """控制消息：orchestration_publish_dir_get、orchestration_publish_dir_set。"""
     ws = conn.ws
-    from deskpet.orchestration import publish_settings as _publish_settings
-    from deskpet.orchestration.wiring import read_section as _read_orch_section
     from paths import user_data_dir as _publish_user_data_dir
 
     _rid = raw.get("request_id")
@@ -142,7 +144,6 @@ async def _cc_budget_status(conn: _ControlConnection, raw: dict, msg_type: str) 
 async def _cc_provider_test_connection(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
     """控制消息：provider_test_connection。"""
     ws = conn.ws
-    from provider_test_connection import handle_provider_test_connection
 
     await handle_provider_test_connection(ws, raw.get("payload", {}) or {})
 

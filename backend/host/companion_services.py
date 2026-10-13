@@ -5,6 +5,22 @@ from __future__ import annotations
 import inspect
 import secrets
 
+from deskpet.companion.action_decisions import (
+    CompanionActionDecisionService,
+    SqliteExecutionDecisionRecovery,
+    TrustedCompanionControlIdentity,
+)
+from deskpet.companion.activation import ActivationDecisionCoordinator
+from deskpet.companion.control_ingress import (
+    CompanionActivationDecisionService,
+    CompanionEvaluationDecisionService,
+    CompanionForgetDecisionService,
+    CompanionRollbackDecisionService,
+    UnavailableCompanionGrowthControlService,
+)
+from deskpet.companion.detail_query import CompanionDetailQueryPort
+from deskpet.companion.notifications import CompanionNotificationService
+
 from host.chat_delivery import _broadcast_control
 from host.runtime import logger, service_context
 from host.state import host_state
@@ -12,9 +28,6 @@ from host.state import host_state
 
 async def _initialize_companion_projection_services() -> None:
     """Compose Task-12 services onto the existing SessionDB/control roots."""
-
-    from deskpet.companion.detail_query import CompanionDetailQueryPort
-    from deskpet.companion.notifications import CompanionNotificationService
 
     session_db = service_context.get("session_db")
     if host_state.companion_store is None or session_db is None:
@@ -77,19 +90,6 @@ async def _initialize_companion_projection_services() -> None:
 
 def _initialize_companion_action_decision_service() -> None:
     """Bind all five trusted card actions to explicit production services."""
-
-    from deskpet.companion.action_decisions import (
-        CompanionActionDecisionService,
-        SqliteExecutionDecisionRecovery,
-    )
-    from deskpet.companion.activation import ActivationDecisionCoordinator
-    from deskpet.companion.control_ingress import (
-        CompanionActivationDecisionService,
-        CompanionEvaluationDecisionService,
-        CompanionForgetDecisionService,
-        CompanionRollbackDecisionService,
-        UnavailableCompanionGrowthControlService,
-    )
 
     workflow_service = service_context.get("workflow_service")
     uow = getattr(workflow_service, "execution_uow", None)
@@ -158,10 +158,6 @@ async def _dispatch_companion_action_command(
         raise RuntimeError("companion_action_body_invalid")
     frozen = host_state.companion_identity_gate.freeze()
     if command_kind == "companion_growth_action_decision":
-        from deskpet.companion.action_decisions import (
-            TrustedCompanionControlIdentity,
-        )
-
         if set(body) != {"decision_id", "allow"}:
             raise RuntimeError("companion_action_decision_fields_invalid")
         service = service_context.get("companion_growth_action_decision_service")

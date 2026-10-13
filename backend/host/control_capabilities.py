@@ -4,6 +4,10 @@ from __future__ import annotations
 
 import asyncio
 
+from deskpet.capabilities.contracts import CapabilityScope
+from deskpet.capabilities.manifest import load_and_validate_pack
+from deskpet.capabilities.ui_service import CapabilityCenterError
+
 from host.control_connection import _ControlConnection
 from host.memory_messages import _settings_skill_install_adapter, _skill_install_error_payload
 from host.runtime import logger, service_context
@@ -36,10 +40,6 @@ async def _cc_capability_list(conn: _ControlConnection, raw: dict, msg_type: str
                 raise RuntimeError("Project binding service is unavailable")
             workspace = await project_bindings.resolve_session(target_session_id)
             if workspace.kind == "project":
-                from deskpet.capabilities.contracts import (
-                    CapabilityScope,
-                )
-
                 capability_owner_key = "sdk-runtime"
                 capability_scope = CapabilityScope.for_run(
                     f"capability-center:{target_session_id}",
@@ -163,10 +163,6 @@ async def _cc_capability_install(conn: _ControlConnection, raw: dict, msg_type: 
             "capability_activate",
             "capability_repair",
         }:
-            from deskpet.capabilities.ui_service import (
-                CapabilityCenterError,
-            )
-
             raise CapabilityCenterError(
                 "model_driven_action_required",
                 "Install, activation, and repair require the main "
@@ -340,8 +336,6 @@ async def _cc_skill_list_installed(conn: _ControlConnection, raw: dict, msg_type
         )
         return
     _installed = []
-    from deskpet.capabilities.contracts import CapabilityScope
-    from deskpet.capabilities.manifest import load_and_validate_pack
 
     _global_scope_key = str(_global_service.global_owner_key)
     _catalog_snapshot = await _capability_platform.hub.snapshot(
@@ -501,8 +495,6 @@ async def _cc_skill_uninstall(conn: _ControlConnection, raw: dict, msg_type: str
         )
         return
     try:
-        from deskpet.capabilities.contracts import CapabilityScope
-
         operation = await center.request_uninstall(
             capability_id=capability_id,
             scope=CapabilityScope(user_key=str(_global_service.global_owner_key)),

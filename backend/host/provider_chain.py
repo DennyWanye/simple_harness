@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from llm.resolution import SessionProviderUnavailable, resolve_session_provider_chain
 from providers.openai_compatible import OpenAICompatibleProvider
 
 from host.llm_providers import _e2e_provider_base, _sanitize_cot_dsml
@@ -122,10 +123,6 @@ async def _resolve_agent_provider_chain(
         ]
     registry = service_context.get("provider_registry")
     readiness = service_context.get("provider_routing_readiness")
-    from llm.resolution import (
-        SessionProviderUnavailable,
-        resolve_session_provider_chain,
-    )
 
     if readiness is None:
         raise SessionProviderUnavailable("provider_routing_initializing")

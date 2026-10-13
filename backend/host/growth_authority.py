@@ -3,6 +3,64 @@
 from __future__ import annotations
 
 import paths as _paths
+from deskpet.companion.activation import ActivationDispatcher
+from deskpet.companion.activation_platform import (
+    CapabilityManagerStaticLifecyclePort,
+    CompanionCapabilityMutationPlatform,
+    CompanionStoreActivationDecisionProofResolver,
+    CompanionStoreLifecycleCandidateSourceResolver,
+)
+from deskpet.companion.authority import (
+    GrowthAuthorityPhase,
+    GrowthAuthorityRouter,
+    GrowthIngressKind,
+)
+from deskpet.companion.clock import select_companion_clock
+from deskpet.companion.contracts import OwnerRef
+from deskpet.companion.control_credentials import WindowControlCredentialVerifier
+from deskpet.companion.control_ingress import CompanionControlIngress, LocalAuthSnapshotProvider
+from deskpet.companion.cutover import (
+    DEFAULT_POST_MARKER_STEPS,
+    DEFAULT_PRE_MARKER_STEPS,
+    CompanionGrowthAuthorityAdapter,
+    GrowthAuthorityCutoverCoordinator,
+    GrowthCutoverPlan,
+)
+from deskpet.companion.cutover_production import (
+    ProductionGrowthCutoverStepExecutor,
+    RetiredLegacyGrowthAuthority,
+    import_legacy_growth_snapshot,
+    read_capability_owner_cutover_snapshot,
+    read_legacy_growth_snapshot,
+    require_legacy_skill_immutable_migration,
+)
+from deskpet.companion.identity import ProfileBindingCoordinator, load_or_create_local_identity
+from deskpet.companion.identity_gate import IdentityReadyGate
+from deskpet.companion.preferences import PreferencePolicy, PreferenceResolver
+from deskpet.companion.production_pipeline import (
+    FirstPartyGrowthTargetResolver,
+    GrowthProductionPipeline,
+)
+from deskpet.companion.reminder_tools import (
+    LEGACY_REMINDER_LIST_TOOL_NAME,
+    ensure_companion_reminder_tools,
+    register_legacy_reminder_tool,
+    restore_durable_companion_reminder_tools,
+)
+from deskpet.companion.reminders import (
+    ReminderRunAuthority,
+    ReminderScheduler,
+    ReminderSchedulerPolicy,
+    ReminderService,
+)
+from deskpet.companion.runtime import (
+    CompanionJobResult,
+    CompanionRuntime,
+    CompanionRuntimePolicy,
+    ForegroundActivityGate,
+)
+from deskpet.companion.signals import CompanionIngressOutboxDispatcher
+from deskpet.companion.store import CompanionStore, canonical_hash
 
 from host.runtime import config, logger, service_context
 from host.state import host_state
@@ -29,61 +87,6 @@ async def _initialize_growth_authority() -> None:
             managed_projection_available=managed_projection is not None,
         )
         return
-
-    from deskpet.companion.authority import (
-        GrowthAuthorityPhase,
-        GrowthAuthorityRouter,
-        GrowthIngressKind,
-    )
-    from deskpet.companion.clock import select_companion_clock
-    from deskpet.companion.contracts import OwnerRef
-    from deskpet.companion.control_credentials import (
-        WindowControlCredentialVerifier,
-    )
-    from deskpet.companion.control_ingress import (
-        CompanionControlIngress,
-        LocalAuthSnapshotProvider,
-    )
-    from deskpet.companion.cutover import (
-        DEFAULT_POST_MARKER_STEPS,
-        DEFAULT_PRE_MARKER_STEPS,
-        CompanionGrowthAuthorityAdapter,
-        GrowthAuthorityCutoverCoordinator,
-        GrowthCutoverPlan,
-    )
-    from deskpet.companion.cutover_production import (
-        ProductionGrowthCutoverStepExecutor,
-        RetiredLegacyGrowthAuthority,
-        import_legacy_growth_snapshot,
-        read_capability_owner_cutover_snapshot,
-        read_legacy_growth_snapshot,
-        require_legacy_skill_immutable_migration,
-    )
-    from deskpet.companion.identity import (
-        ProfileBindingCoordinator,
-        load_or_create_local_identity,
-    )
-    from deskpet.companion.identity_gate import IdentityReadyGate
-    from deskpet.companion.preferences import PreferencePolicy, PreferenceResolver
-    from deskpet.companion.reminder_tools import (
-        LEGACY_REMINDER_LIST_TOOL_NAME,
-        ensure_companion_reminder_tools,
-        register_legacy_reminder_tool,
-        restore_durable_companion_reminder_tools,
-    )
-    from deskpet.companion.reminders import (
-        ReminderRunAuthority,
-        ReminderScheduler,
-        ReminderSchedulerPolicy,
-        ReminderService,
-    )
-    from deskpet.companion.runtime import (
-        CompanionJobResult,
-        CompanionRuntime,
-        CompanionRuntimePolicy,
-        ForegroundActivityGate,
-    )
-    from deskpet.companion.store import CompanionStore, canonical_hash
 
     companion_clock = select_companion_clock(
         warning_sink=lambda reason: logger.warning(
@@ -311,17 +314,6 @@ async def _initialize_growth_authority() -> None:
     if capability_platform is None:
         raise RuntimeError("capability platform is unavailable for Companion identity binding")
     capability_platform.bind_execution_identity_gate(identity_gate)
-    from deskpet.companion.activation import ActivationDispatcher
-    from deskpet.companion.activation_platform import (
-        CapabilityManagerStaticLifecyclePort,
-        CompanionCapabilityMutationPlatform,
-        CompanionStoreActivationDecisionProofResolver,
-        CompanionStoreLifecycleCandidateSourceResolver,
-    )
-    from deskpet.companion.production_pipeline import (
-        FirstPartyGrowthTargetResolver,
-        GrowthProductionPipeline,
-    )
 
     if capability_platform.lifecycle_static_port is not None:
         raise RuntimeError("capability lifecycle static port is already bound")
@@ -392,7 +384,6 @@ async def _initialize_growth_authority() -> None:
     session_db = companion_session_db
     if session_db is None:
         raise RuntimeError("Companion ingress requires SessionDB")
-    from deskpet.companion.signals import CompanionIngressOutboxDispatcher
 
     host_state.companion_ingress_dispatcher = CompanionIngressOutboxDispatcher(
         session_db=session_db,
@@ -666,8 +657,6 @@ async def _initialize_growth_authority() -> None:
 
 async def _complete_growth_authority_cutover() -> None:
     """Complete cutover after Harness has registered the full core catalog."""
-
-    from deskpet.companion.authority import GrowthAuthorityPhase
 
     coordinator = host_state.growth_cutover_coordinator
     cutover_plan = host_state.growth_cutover_plan

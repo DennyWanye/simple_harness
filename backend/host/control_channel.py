@@ -8,6 +8,15 @@ from collections.abc import Mapping
 from typing import Any
 
 import p4_ipc
+from deskpet.companion.control_ingress import (
+    CompanionControlIngressError,
+    is_privileged_control_kind,
+)
+from deskpet.companion.detail_query import CompanionDetailQueryError
+from deskpet.memory.control_binding import HumanMemoryControlBinding
+from deskpet.memory.primary_authority import assert_not_primary_authority
+from deskpet.orchestration.handlers import handle as _orchestration_handle
+from deskpet.workflows.ipc import start_workflow_ipc_dispatch
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from observability.startup import registry as startup_errors
 
@@ -103,7 +112,6 @@ async def _cc_ping(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
 async def _cc_orchestration_routes(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
     """控制消息：编排服务转发（mission_、orchestration_、taskgraph. 前缀）。"""
     ws = conn.ws
-    from deskpet.orchestration.handlers import handle as _orchestration_handle
 
     # a payload that is not an object is answered with invalid_request inside
     # handle(), never raised into this shared loop (review P2-6)
@@ -134,7 +142,6 @@ async def _cc_workflow_routes(conn: _ControlConnection, raw: dict, msg_type: str
     """控制消息：工作流消息（workflow_ 前缀）。"""
     ws = conn.ws
     session_id = conn.session_id
-    from deskpet.workflows.ipc import start_workflow_ipc_dispatch
 
     workflow_service = service_context.get("workflow_service")
     if workflow_service is None:
@@ -294,7 +301,6 @@ async def _handle_privileged_companion_frame(
     conn: _ControlConnection, wire_text: str, msg_type: str
 ) -> Any:
     """伴侣特权控制帧：严格解析、执行、推进挑战；返回之后要用的挑战（推进后的或重新发出的）。"""
-    from deskpet.companion.control_ingress import CompanionControlIngressError
 
     ws = conn.ws
     companion_challenge = conn.companion_challenge
@@ -457,10 +463,6 @@ async def _cc_companion_detail_get(conn: _ControlConnection, raw: dict, msg_type
     companion_challenge = conn.companion_challenge
     _detail_request_id = str(raw.get("request_id") or "")
     try:
-        from deskpet.companion.detail_query import (
-            CompanionDetailQueryError,
-        )
-
         if (
             host_state.companion_detail_query is None
             or companion_challenge is None
@@ -529,10 +531,6 @@ async def control_channel(ws: WebSocket):
     _cc_sdb = service_context.get("session_db")
     if _cc_sdb is not None:
         try:
-            from deskpet.memory.primary_authority import (
-                assert_not_primary_authority,
-            )
-
             await assert_not_primary_authority(_cc_sdb._db_path, session_id)
         except Exception as _cc_exc:  # noqa: BLE001
             _cc_code = getattr(_cc_exc, "code", None)
@@ -596,7 +594,6 @@ async def control_channel(ws: WebSocket):
                 },
             }
         )
-    from deskpet.memory.control_binding import HumanMemoryControlBinding
 
     human_memory_control_binding = HumanMemoryControlBinding()
     companion_challenge = None
@@ -670,9 +667,7 @@ async def control_channel(ws: WebSocket):
             )
 
             if host_state.companion_control_ingress is not None:
-                from deskpet.companion.control_ingress import (
-                    is_privileged_control_kind,
-                )
+                pass
 
             if host_state.companion_control_ingress is not None and is_privileged_control_kind(
                 msg_type
