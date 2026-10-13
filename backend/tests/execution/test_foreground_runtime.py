@@ -32,6 +32,7 @@ from deskpet.execution.foreground_runtime import (
 )
 from deskpet.sdk_adapters.ingress import IngressStartReceipt
 from deskpet.task_scope.protocol import canonical_hash, canonical_json
+from host import human_memory_ports
 from host.state import host_state
 from simple_harness import ContextRouteOrigin
 from tests.host_patch import patch_host_global
@@ -672,7 +673,7 @@ async def test_human_lifespan_registers_one_real_runtime_and_legacy_does_not(
     monkeypatch.setattr(main.service_context, "capability_store", object())
     epoch = type("Epoch", (), {"composition_mode": StartupCompositionMode.HUMAN})()
 
-    await main._activate_human_memory_host_ports(epoch)
+    await human_memory_ports._activate_human_memory_host_ports(epoch)
     scheduler = main.service_context.get("human_memory_foreground_scheduler_wake")
     runtime = main.service_context.get("human_memory_foreground_runtime_execution_authority")
     assert scheduler is runtime
@@ -681,7 +682,7 @@ async def test_human_lifespan_registers_one_real_runtime_and_legacy_does_not(
     await runtime.close()
 
     legacy = type("Epoch", (), {"composition_mode": StartupCompositionMode.LEGACY})()
-    await main._activate_human_memory_host_ports(legacy)
+    await human_memory_ports._activate_human_memory_host_ports(legacy)
     assert main.service_context.get("human_memory_foreground_scheduler_wake") is None
     assert main.service_context.get("human_memory_foreground_runtime_execution_authority") is None
 
