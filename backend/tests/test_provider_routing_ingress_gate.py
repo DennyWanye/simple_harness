@@ -3,17 +3,18 @@ from __future__ import annotations
 import pytest
 from llm.resolution import ProviderRoutingReadiness, SessionProviderUnavailable
 
+from tests.host_patch import patch_host_global
+
 
 @pytest.mark.asyncio
-async def test_product_provider_resolution_cannot_fall_back_before_readiness():
+async def test_product_provider_resolution_cannot_fall_back_before_readiness(monkeypatch):
     import main
 
     previous_registry = main.service_context.get("provider_registry")
     previous_readiness = main.service_context.get("provider_routing_readiness")
-    previous_e2e_base = main._e2e_provider_base
     readiness = ProviderRoutingReadiness()
     try:
-        main._e2e_provider_base = ""
+        patch_host_global(monkeypatch, "_e2e_provider_base", "")
         main.service_context.register("provider_registry", None)
         main.service_context.register("provider_routing_readiness", readiness)
         with pytest.raises(
@@ -25,7 +26,6 @@ async def test_product_provider_resolution_cannot_fall_back_before_readiness():
                 session_db=object(),
             )
     finally:
-        main._e2e_provider_base = previous_e2e_base
         main.service_context.register("provider_registry", previous_registry)
         main.service_context.register(
             "provider_routing_readiness",
@@ -34,16 +34,15 @@ async def test_product_provider_resolution_cannot_fall_back_before_readiness():
 
 
 @pytest.mark.asyncio
-async def test_product_provider_resolution_cannot_use_legacy_fallback_after_failure():
+async def test_product_provider_resolution_cannot_use_legacy_fallback_after_failure(monkeypatch):
     import main
 
     previous_registry = main.service_context.get("provider_registry")
     previous_readiness = main.service_context.get("provider_routing_readiness")
-    previous_e2e_base = main._e2e_provider_base
     readiness = ProviderRoutingReadiness()
     readiness.mark_failed("registry_load_failed")
     try:
-        main._e2e_provider_base = ""
+        patch_host_global(monkeypatch, "_e2e_provider_base", "")
         main.service_context.register("provider_registry", None)
         main.service_context.register("provider_routing_readiness", readiness)
         with pytest.raises(SessionProviderUnavailable):
@@ -52,7 +51,6 @@ async def test_product_provider_resolution_cannot_use_legacy_fallback_after_fail
                 session_db=object(),
             )
     finally:
-        main._e2e_provider_base = previous_e2e_base
         main.service_context.register("provider_registry", previous_registry)
         main.service_context.register(
             "provider_routing_readiness",

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 
 import pytest
+from host import routes_cloud_config
 
 
 class _RegistryProbe:
@@ -34,7 +35,7 @@ async def test_runtime_seed_uses_process_only_provider_for_injected_key(tmp_path
     monkeypatch.setenv("DESKPET_CLOUD_API_KEY", "process-secret")
     registry = _RegistryProbe()
 
-    await main._seed_registry_from_runtime_overrides(registry)
+    await routes_cloud_config._seed_registry_from_runtime_overrides(registry)
 
     assert registry.durable == []
     assert len(registry.ephemeral) == 1

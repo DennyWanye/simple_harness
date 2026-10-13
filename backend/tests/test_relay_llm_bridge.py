@@ -149,7 +149,7 @@ async def test_t3_5_persist_key_false_idempotent():
 
 @pytest.mark.asyncio
 async def test_t3_6_request_model_accepts_persist_key():
-    from main import CloudConfigRequest
+    from host.routes_cloud_config import CloudConfigRequest
 
     req = CloudConfigRequest(base_url="https://x/v1", model="m", api_key="k", persist_key=False)
     assert req.persist_key is False
