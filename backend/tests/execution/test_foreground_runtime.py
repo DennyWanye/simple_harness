@@ -659,7 +659,9 @@ async def test_human_lifespan_registers_one_real_runtime_and_legacy_does_not(
     from deskpet.memory.schema import StartupCompositionMode
 
     patch_host_global(monkeypatch, "_state_db_path", tmp_path / "state.db")
-    monkeypatch.setattr(main._paths, "user_data_dir", lambda: tmp_path)
+    import paths as _paths
+
+    monkeypatch.setattr(_paths, "user_data_dir", lambda: tmp_path)
     monkeypatch.setattr(host_state, "sdk_ingress", _Ingress())
     monkeypatch.setattr(host_state, "sdk_runtime_stack", object())
     monkeypatch.setattr(host_state, "provider_registry", object())

@@ -105,14 +105,15 @@ def test_identity_rejects_missing_wheel(tmp_path) -> None:
 def test_consumers_share_single_source_of_truth() -> None:
     """No consumer may keep its own hardcoded copy of the wheel identity."""
 
-    import main
     from deskpet.sdk_adapters import conformance, desktop_runtime
-    from host import sdk_runtime_stack
+    from host import harness_chat, sdk_execution, sdk_runtime_stack
 
     assert not hasattr(desktop_runtime, "_SDK_VERSION")
     assert not hasattr(desktop_runtime, "_SDK_WHEEL_SHA256")
     assert conformance._WHEEL == sdk_wheel_path()
-    assert main.SDK_VERSION is SDK_VERSION
+    # 宿主里用到版本号的模块都取自同一个来源
+    assert harness_chat.SDK_VERSION is SDK_VERSION
+    assert sdk_execution.SDK_VERSION is SDK_VERSION
     assert sdk_runtime_stack.build_runtime_identity is build_runtime_identity
 
 

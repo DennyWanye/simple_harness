@@ -17,38 +17,16 @@ from deskpet.frozen_worker_dispatch import dispatch_frozen_worker_if_requested
 dispatch_frozen_worker_if_requested()
 
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
 
 # isort: split
 
-# isort: split
 
-from pathlib import Path as _Path
-
-import paths as _paths
 import uvicorn
 
 # isort: split
 
-# isort: split
-
-from config import (
-    effective_llm_model,
-    resolve_deep_research_workflow_version,
-)
-from deskpet.agent.product_domain_sink import LegacyProductDomainSink
-from deskpet.agent.run_presenter import (
-    PresentationState,
-    RunPresentationContext,
-)
-from deskpet.agent.turn_preparer import (
-    ProductTurnPreparer,
-)
 from fastapi import (
     FastAPI,
-)
-from pydantic import (
-    model_validator,
 )
 
 # isort: split
@@ -57,25 +35,6 @@ from host.runtime import (
     config,
     logger,
 )
-
-# isort: split
-
-
-# isort: split
-
-# isort: split
-
-
-# isort: split
-from deskpet.sdk_adapters.sdk_candidate import (
-    SDK_VERSION,
-)
-from llm.provider_registry import (
-    ProviderMutationConflict,
-)
-from tools.registry import ToolRegistry
-
-# isort: split
 
 # isort: split
 
@@ -93,62 +52,14 @@ from tools.registry import ToolRegistry
 
 
 # isort: split
-
-# isort: split
 # 语音装配模块在导入期登记语音引擎占位；保持原来的导入位置，登记顺序不变。
 import host.voice_bootstrap  # noqa: F401
-
-# isort: split
-
-
-# isort: split
-
-# isort: split
-
 
 # isort: split
 from host.shutdown import (
     _shutdown_runtimes_and_tasks,
     _shutdown_services,
 )
-
-# isort: split
-
-
-# isort: split
-
-# isort: split
-
-
-# isort: split
-
-# isort: split
-
-
-# isort: split
-
-# isort: split
-
-
-# isort: split
-
-# isort: split
-
-
-# isort: split
-
-# isort: split
-
-
-# isort: split
-
-# isort: split
-
-
-# isort: split
-
-# isort: split
-
 
 # isort: split
 from host.startup_core import (
@@ -159,15 +70,9 @@ from host.startup_core import (
 )
 
 # isort: split
-
-
-# isort: split
 from host.startup_workflows import (
     _startup_workflow_services,
 )
-
-# isort: split
-
 
 # isort: split
 from host.startup_background import (
@@ -176,9 +81,6 @@ from host.startup_background import (
     _startup_restore_and_skill_prewarm,
     _startup_vector_worker,
 )
-
-# isort: split
-
 
 # isort: split
 from host.startup_supervision import (
@@ -233,28 +135,9 @@ app.add_middleware(
 
 # isort: split
 
-# isort: split
-
-
-# isort: split
-
-# isort: split
-
-
-# isort: split
-
-# isort: split
-
-
-# isort: split
-
-# isort: split
-
 
 # ─── WI-1B-4 摘要质量回路 — 纯检测/构造 helper（main.py 闭包 + 单测共用）──────
 
-
-# isort: split
 
 # isort: split
 
@@ -266,16 +149,12 @@ app.add_middleware(
 
 # isort: split
 
-# isort: split
-
 
 # SDK Runtime globals (production ingress)
 # F06：单例 retry-once provider reconciliation；SDK 端口与前台运行时共用同一份
 # ``exhausted_runs``（二次未知的 run 由前台 cancel 收尾）。
 # F06：SDK 栈构建时绑定的 Host RuntimeReconciliationPort（coordinator.reconcile_incomplete）。
 
-
-# isort: split
 
 # isort: split
 
@@ -312,30 +191,11 @@ app.add_middleware(
 
 # isort: split
 
-# isort: split
-
-
-# isort: split
-
-# isort: split
-
-
-# isort: split
-
-# isort: split
-
 
 # 2026-09-10：S5b Task 4 的 Host↔Memory 异步面（HostEvidenceAuthority /
 # HostMemoryAnalysisExecutor / MemoryIngestionOutboxWorker / MemoryAnalysisLane）
 # 整条随认知记忆 SDK 移除，不再有可组装的槽位。
 
-
-# isort: split
-
-# isort: split
-
-
-# isort: split
 
 # isort: split
 
@@ -368,37 +228,9 @@ app.add_middleware(
 
 
 # isort: split
-
-# isort: split
-
-
-# isort: split
-
-# isort: split
-
-
-# isort: split
-
-# isort: split
-
-
-# isort: split
-
-# isort: split
-
-
-# isort: split
 from host.routes_voice import (
     voice_router,
 )
-
-# isort: split
-
-
-# isort: split
-
-# isort: split
-
 
 # isort: split
 from host.routes_cloud_config import (
@@ -406,15 +238,9 @@ from host.routes_cloud_config import (
 )
 
 # isort: split
-
-
-# isort: split
 from host.routes_commands import (
     commands_router,
 )
-
-# isort: split
-
 
 # isort: split
 from host.routes_health import (
@@ -436,54 +262,9 @@ app.include_router(health_router)
 
 
 # isort: split
-
-# isort: split
-
-
-# isort: split
-
-# isort: split
-
-
-# isort: split
 from host.control_channel import (
     control_router,
 )
-
-# isort: split
-
-
-# isort: split
-
-# isort: split
-
-
-# isort: split
-
-# isort: split
-
-
-# isort: split
-
-# isort: split
-
-
-# isort: split
-
-# isort: split
-
-
-# isort: split
-
-# isort: split
-
-
-# isort: split
-
-# isort: split
-
-
-# isort: split
 
 # isort: split
 
