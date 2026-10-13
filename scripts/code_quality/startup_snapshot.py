@@ -60,6 +60,17 @@ def _rec(self, name, provider):
     return _orig(self, name, provider)
 _ctx.ServiceContext.register = _rec
 import main
+import host.runtime as _hr
+
+# 关闭阶段的日志事件（生命周期用的共享记录器），只记事件名第一个词
+_events = []
+_capturing = [False]
+for _lvl in ("debug", "info", "warning", "error", "exception"):
+    def _wrap(event=None, *a, _o=getattr(_hr.logger, _lvl), _l=_lvl, **k):
+        if _capturing[0]:
+            _events.append([_l, str(event).split(" ")[0][:80]])
+        return _o(event, *a, **k)
+    setattr(_hr.logger, _lvl, _wrap)
 
 def tname(v):
     return None if v is None else type(v).__name__
@@ -78,10 +89,12 @@ async def go():
         async with asyncio.timeout(400):
             async with main.app.router.lifespan_context(main.app):
                 out["lifespan_registrations"] = list(order)
-                sc = main.service_context
+                sc = _hr.service_context
                 out["services_after_startup"] = {
                     k: tname(getattr(sc, k, None)) for k in sorted(_ctx._VALID_SERVICES)}
                 phase = "shutdown"
+                order.clear()
+                _capturing[0] = True
     except BaseException as e:
         msg = "".join(traceback.format_exception_only(type(e), e)).strip()
         msg = re.sub(r"<Task .*$", "<Task>", msg, flags=re.S)
@@ -90,6 +103,10 @@ async def go():
         if _os.environ.get("CQ_DEBUG"):
             sys.stderr.write("".join(traceback.format_exception(e)))
         out.setdefault("lifespan_registrations", list(order))
+    if phase == "shutdown":
+        _capturing[0] = False
+        out["shutdown_registrations"] = list(order)
+        out["shutdown_events"] = list(_events)
     return out
 
 res = asyncio.run(go())
