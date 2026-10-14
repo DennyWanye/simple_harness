@@ -30,12 +30,13 @@ from ..storage.assurance_work import atomic
 from ..storage.htn_store import HtnStore
 from ..storage.store import StoreError
 from .assurance_review_pins import bind_review_blob_pins
-from .commit_service import Reservation, mission_account, task_account
+from .budget_accounts import Reservation, mission_account, task_account
 from .failure_classes import REVIEW_CALL_ABANDONED
 from .operation_completion import OperationCompletionReader
 
 if TYPE_CHECKING:
-    from .commit_service import CommitService, Reservation
+    from .budget_accounts import Reservation
+    from .commit_service import CommitService
 
 ROLES = {
     "TASK_CONTENT": "critic",

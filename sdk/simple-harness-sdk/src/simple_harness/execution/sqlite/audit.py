@@ -19,10 +19,9 @@ from simple_harness.execution.audit import (
     audit_label_syntax,
     audit_reference,
 )
-from simple_harness.execution.effects import effect_request_hash
+from simple_harness.execution.effects import effect_request_hash, internal_effect_identity
 from simple_harness.execution.provider_invocations import provider_response_from_json
 from simple_harness.execution.runtime_audit import RUNTIME_BOUNDARIES
-from simple_harness.runtime.drivers.react_loop import _internal_effect_identity
 
 from .audit_core import core_operation, core_rows
 from .audit_coverage import recording_coverage
@@ -504,7 +503,7 @@ def _effect_provider_link(connection, effect):
         return None, None  # standalone effect: no invented Provider parent
     if not effect.get("raw_call_id"):
         return None, None
-    expected_call, expected_effect = _internal_effect_identity(
+    expected_call, expected_effect = internal_effect_identity(
         RunId(effect["run_id"]),
         effect["turn_ordinal"],
         effect["raw_call_id"],
@@ -525,7 +524,7 @@ def _effect_provider_link(connection, effect):
     if ordinal >= len(response.tool_calls):
         raise RunAuditUnavailable("effect_provider_call_missing")
     call = response.tool_calls[ordinal]
-    internal, identity = _internal_effect_identity(
+    internal, identity = internal_effect_identity(
         RunId(effect["run_id"]), effect["turn_ordinal"], call.call_id.value, ordinal
     )
     if (

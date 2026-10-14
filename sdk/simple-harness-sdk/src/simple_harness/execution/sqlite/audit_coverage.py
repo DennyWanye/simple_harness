@@ -4,8 +4,8 @@ import json
 
 from simple_harness.contracts import RunId, thaw_json
 from simple_harness.execution.audit import RunAuditUnavailable, audit_hash
+from simple_harness.execution.effects import internal_effect_identity
 from simple_harness.execution.provider_invocations import provider_response_from_json
-from simple_harness.runtime.drivers.react_loop import _internal_effect_identity
 
 from .audit_witness import CLAIM_SOURCES
 from .command_audit import command_coverage
@@ -275,7 +275,7 @@ def _response_coverage(run_id, row, inputs):
     if not turn_text.isdigit():
         return {"proposal_call_identity_unverified"}
     for ordinal, call in enumerate(response.tool_calls):
-        internal, effect = _internal_effect_identity(
+        internal, effect = internal_effect_identity(
             RunId(run_id), int(turn_text), call.call_id.value, ordinal
         )
         gate_hash = audit_hash({"effect": effect.value, "call": internal.value})

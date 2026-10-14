@@ -86,6 +86,7 @@ from ..storage.htn_store import HtnStore
 from ..storage.store import StoreError
 from ..verification.evidence_resolver import in_source_roots
 from .accepted_outputs import CarriedCriterion, carried_criteria_in_revision
+from .assurance_purpose_reviews import purpose_review_key
 from .completion_status import read_current_effect
 from .failure_classes import review_exhausted_by_interruption
 from .hierarchical_dispatch import (
@@ -468,7 +469,6 @@ class RootReviewCoordinator:
             was_sources = recorded.payload.get("source_versions_hash")
             if was_sources is not None and was_sources != self._source_versions_hash(mission_id):
                 reasons.append("SOURCES_MOVED")
-        from .assurance_purpose_reviews import purpose_review_key
 
         # 2026-09-29：这个包的审阅两次调用都用完、且第 2 次是被重启打断的——不是审阅员的
         # 结论。重切一个新包就是新审阅、新的 2 次机会（仍受每版切包次数上限约束）。

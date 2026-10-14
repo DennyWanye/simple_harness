@@ -12,8 +12,6 @@ from dataclasses import dataclass, replace
 from typing import Any, cast
 
 from simple_harness.contracts import (
-    CallId,
-    EffectId,
     FrozenJsonValue,
     JsonValue,
     RequestId,
@@ -35,7 +33,7 @@ from simple_harness.execution.context_authority import (
     TaskExecutionEnvelopeRequest,
 )
 from simple_harness.execution.context_use import ProviderContextUseAttemptV1, use_hash
-from simple_harness.execution.effects import EffectRecord
+from simple_harness.execution.effects import EffectRecord, internal_effect_identity
 from simple_harness.execution.fences import RunFenceLease
 from simple_harness.execution.provider_invocations import (
     provider_request_fingerprint,
@@ -164,7 +162,7 @@ class EffectBatchExecutor:
                 arguments = thaw_json(cast(FrozenJsonValue, call.arguments))
                 if not isinstance(arguments, dict):
                     raise TypeError("provider tool arguments must be an object")
-                internal_call_id, effect_id = _internal_effect_identity(
+                internal_call_id, effect_id = internal_effect_identity(
                     run_id, turn_ordinal, call.call_id.value, call_ordinal
                 )
                 policy = (
@@ -779,7 +777,7 @@ class ReActLoop:
             _cancel(cancel, tool_cancel)
             for call_ordinal in range(state.tool_result_progress, len(response.tool_calls)):
                 call = response.tool_calls[call_ordinal]
-                internal_call_id, effect_id = _internal_effect_identity(
+                internal_call_id, effect_id = internal_effect_identity(
                     value.run_id,
                     state.provider_turns_reserved_total,
                     call.call_id.value,
@@ -1078,23 +1076,6 @@ def _provider_continuation_capability(
     if not isinstance(capability, ProviderContinuationCapability):
         raise TypeError("Provider continuation capability is invalid")
     return capability
-
-
-def _internal_effect_identity(
-    run_id: RunId, turn_ordinal: int, raw_call_id: str, call_ordinal: int
-) -> tuple[CallId, EffectId]:
-    digest = hashlib.sha256(
-        canonical_json(
-            {
-                "protocol": "simple-harness-react-effect-v1",
-                "run_id": run_id.value,
-                "turn_ordinal": turn_ordinal,
-                "raw_provider_call_id": raw_call_id,
-                "call_ordinal": call_ordinal,
-            }
-        ).encode()
-    ).hexdigest()
-    return CallId(f"call-{digest}"), EffectId(f"effect-{digest}")
 
 
 def _cancel(cancel: CancelToken, tool_cancel: CancellationToken) -> None:

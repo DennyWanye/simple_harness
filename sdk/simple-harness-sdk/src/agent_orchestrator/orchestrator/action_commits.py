@@ -15,7 +15,6 @@ SUPERSEDED."""
 from __future__ import annotations
 
 import hashlib
-import json
 from collections.abc import Callable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
@@ -45,6 +44,7 @@ from ..storage import htn_store
 from ..storage.operation_intent_store import OperationIntentStore
 from ..storage.planning_admission_store import PlanningAdmissionStore
 from ..storage.store import StoreConflict
+from .budget_accounts import mission_account
 
 if TYPE_CHECKING:
     from ..contracts import Event
@@ -918,8 +918,6 @@ class ActionCommitsMixin:
         approval was bound to, reserve the budget, then write HANDED_OFF with the owner, a
         lease and the decision receipts that authorised it.  ``(action, None)`` = the caller
         may now call the connector; ``(None, reason)`` = it may not."""
-
-        from .commit_service import mission_account  # noqa: PLC0415 - import cycle
 
         with self._store.transaction():
             action = self._store.get_action(action_key)

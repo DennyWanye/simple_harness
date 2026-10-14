@@ -460,6 +460,24 @@ class EffectUnitOfWork(Protocol):
     ) -> EffectRecord: ...
 
 
+def internal_effect_identity(
+    run_id: RunId, turn_ordinal: int, raw_call_id: str, call_ordinal: int
+) -> tuple[CallId, EffectId]:
+    # The ReAct loop derives these ids; storage audit re-derives them, so they live at this layer.
+    digest = hashlib.sha256(
+        canonical_json(
+            {
+                "protocol": "simple-harness-react-effect-v1",
+                "run_id": run_id.value,
+                "turn_ordinal": turn_ordinal,
+                "raw_provider_call_id": raw_call_id,
+                "call_ordinal": call_ordinal,
+            }
+        ).encode()
+    ).hexdigest()
+    return CallId(f"call-{digest}"), EffectId(f"effect-{digest}")
+
+
 __all__ = (
     "EffectConflictError",
     "EffectRecord",
@@ -468,4 +486,5 @@ __all__ = (
     "EffectUnitOfWork",
     "TaskExecutionEnvelope",
     "effect_request_hash",
+    "internal_effect_identity",
 )

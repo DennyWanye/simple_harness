@@ -169,11 +169,14 @@ from simple_harness.workflow.native import (
 )
 
 from . import context_use
+from .audit import head_fact, read_snapshot, read_terminal_record
+from .audit_pages import open_pages, read_page
 from .audit_witness import record_claim_witness, record_event_witness
 from .base_agent import batches, control, delegations, history, turns
 from .command_audit import record_command_event
 from .context_use import prepare, read_grant, require_handoff, verify_terminal, view
 from .context_use_requirements import bind, require, validate_recovery
+from .decision_terminal import append_decision_terminal, eligible, recover
 from .delivery_audit import handoff, settle_attempt
 from .delivery_audit import record_version as _delivery_audit_version
 from .memory_port_audit import record as record_memory_audit
@@ -942,7 +945,6 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
 
     def read_run_terminal_record(self, run_id: RunId):
         """Exact public metadata for ordinary root terminal consumers."""
-        from .audit import read_terminal_record
 
         if not isinstance(run_id, RunId):
             raise TypeError("run_id must use RunId")
@@ -952,7 +954,6 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
 
     def read_expired_authorization_terminal_recovery(self, run_id: RunId):
         """Read exact eligibility from public Run identity; no Host SQL required."""
-        from .decision_terminal import eligible
 
         if not isinstance(run_id, RunId):
             raise TypeError("run_id must use RunId")
@@ -963,7 +964,6 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
 
     def recover_expired_authorization_terminal(self, witness, *, now: float, fault=None):
         """Explicit bounded repair, with all witness facts rechecked in one TX."""
-        from .decision_terminal import recover
 
         with self.database.transaction() as connection:
             proof = recover(self, connection, witness, now=now, fault=fault)
@@ -973,7 +973,6 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
     def read_run_operation_audit(
         self, run_id: RunId, *, limit: int = 256
     ) -> RunOperationAuditSnapshotV1:
-        from .audit import read_snapshot
 
         if not isinstance(run_id, RunId):
             raise TypeError("run_id must use RunId")
@@ -990,44 +989,36 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
             raise RunAuditUnavailable("audit_source_invalid") from None
 
     def open_run_operation_audit(self, run_id: RunId, *, page_size: int = 256):
-        from .audit_pages import open_pages
 
         with self.database.audit_reader() as reader:
             return open_pages(reader, run_id, page_size=page_size)
 
     def read_run_operation_audit_page(self, run_id: RunId, *, cursor: str):
-        from .audit_pages import read_page
 
         with self.database.audit_reader() as reader:
             return read_page(reader, run_id, cursor=cursor)
 
     def open_context_stage_operation_audit(self, stage_id: str, *, page_size: int = 256):
-        from .audit_pages import open_pages
 
         with self.database.audit_reader() as reader:
             return open_pages(reader, stage_id=stage_id, page_size=page_size)
 
     def read_context_stage_operation_audit_page(self, stage_id: str, *, cursor: str):
-        from .audit_pages import read_page
 
         with self.database.audit_reader() as reader:
             return read_page(reader, stage_id=stage_id, cursor=cursor)
 
     def open_command_operation_audit(self, command_id: str, *, page_size: int = 256):
-        from .audit_pages import open_pages
 
         with self.database.audit_reader() as reader:
             return open_pages(reader, command_id=command_id, page_size=page_size)
 
     def read_command_operation_audit_page(self, command_id: str, *, cursor: str):
-        from .audit_pages import read_page
 
         with self.database.audit_reader() as reader:
             return read_page(reader, command_id=command_id, cursor=cursor)
 
     def _audit_operation_head(self, connection, kind, identity, now):
-
-        from .audit import head_fact
 
         run_id, payload = head_fact(connection, kind, identity)
         event_id = "audit-head:" + audit_hash(
@@ -4228,7 +4219,6 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
                         now=now,
                     )
                     _fault(fault, "decision_resolve.event.after_write")
-                    from .decision_terminal import append_decision_terminal
 
                     append_decision_terminal(
                         self,
@@ -4290,7 +4280,6 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
                 now=now,
             )
             _fault(fault, "decision.event.after_write")
-            from .decision_terminal import append_decision_terminal
 
             append_decision_terminal(
                 self, connection, run_id=run_id, decision_id=decision_id, event_id=event_id, now=now

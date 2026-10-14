@@ -16,7 +16,6 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import json
-import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any
@@ -40,13 +39,17 @@ from ..storage.assurance_work import atomic
 from ..storage.operation_completion_store import OperationCompletionStore
 from ..storage.taskgraph_store import TaskGraphStore, require_bound
 from . import taskgraph_terminal
+from .assurance_check_policy import approve_check_policy
 from .assurance_factory import record_mission_creation, validate_creation_replay
 from .assurance_final_writer import (
     assured_closeout_pending,
     request_assured_closeout,
     request_assured_notification,
 )
+from .assurance_point_use import ATTEMPT_CONSUMER, PointUseRefused, require_point_use_locked
+from .assurance_review_transport import ensure_format_repair_invocation, ensure_review_invocation
 from .assurance_root_commits import install_native_root
+from .assurance_validity import ACCEPTANCE_CONSUMER, acceptance_id_for
 from .attempt_execution import freeze_attempt_execution
 from .completion_inputs import (
     freeze_attempt_completion_inputs,
@@ -142,6 +145,14 @@ from ..verification.conflicts import (
     mission_disputes,
 )
 from .action_commits import ActionCommitsMixin
+from .budget_accounts import (
+    GLOBAL_ACCOUNT_PREFIX,
+    Reservation,
+    global_account_id,
+    is_global_account,
+    mission_account,
+    task_account,
+)
 from .human_commits import HumanCommitsMixin
 from .obligation_commits import ObligationCommitsMixin
 from .occurrence_tasks import DEFAULT_TASK_MAX_TOKENS
@@ -285,39 +296,6 @@ class MissionSpec:
         data[SEMANTICS_KEY] = self.orchestration_semantics_version
         data["planning_protocol_version"] = self.planning_protocol_version
         return data
-
-
-@dataclass(frozen=True, slots=True)
-class Reservation:
-    tokens: int
-    tool_calls: int = 0  # step 6 (D6-8): the Attempt's tool-call cap, reserved up front
-    search_calls: int = 0  # 推后第 3 批 H08：这次尝试预留的检索次数
-
-
-def mission_account(mission_id: str) -> str:
-    return f"budget:{mission_id}"
-
-
-#: step 6 (D6-1): §18.2 "Global Budget" above every Mission.  第 2 批车道 P（2026-10-06 用户定）：
-#: 全局预算是按月配额——每个自然月一个全局总账 ``budget:global:YYYY-MM``，月初自然是一个新的空账。
-GLOBAL_ACCOUNT_PREFIX = "budget:global:"
-
-
-def global_account_id(at: float) -> str:
-    """The Global Budget account of the calendar month ``at`` falls in (this machine's local
-    time; ``at`` is a store-clock instant).  The one place that spells the account id."""
-
-    return GLOBAL_ACCOUNT_PREFIX + time.strftime("%Y-%m", time.localtime(at))
-
-
-def is_global_account(account_id: str) -> bool:
-    """Whether ``account_id`` is a (monthly) Global Budget account — the one test for it."""
-
-    return account_id.startswith(GLOBAL_ACCOUNT_PREFIX)
-
-
-def task_account(task_id: str) -> str:
-    return f"budget:{task_id}"
 
 
 class CommitService(
@@ -796,17 +774,14 @@ class CommitService(
 
     # ------------------------------------------------------------- missions
     def approve_assurance_check_policy(self, **command: Any):
-        from .assurance_check_policy import approve_check_policy
 
         return approve_check_policy(self, **command)
 
     def ensure_assurance_review_invocation(self, **command: Any):
-        from .assurance_review_transport import ensure_review_invocation
 
         return ensure_review_invocation(self, **command)
 
     def ensure_assurance_format_repair(self, *, tenant_id: str, prior_failure: Any):
-        from .assurance_review_transport import ensure_format_repair_invocation
 
         return ensure_format_repair_invocation(
             self, tenant_id=tenant_id, prior_failure=prior_failure
@@ -1559,7 +1534,6 @@ class CommitService(
         acceptance of its source step, the evidence artifacts (the ones the reviewer cited
         or the claim names; all of the result's when neither says), and the knowledge the
         step used.  Nothing is written by this — the record carries it."""
-        from .assurance_validity import acceptance_id_for
 
         envelope = stored.envelope
         cited = {
@@ -2092,11 +2066,6 @@ class CommitService(
                     )
             ordinal = len(existing) + 1
             attempt_id = ids.attempt_id(task_id, ordinal)
-            from .assurance_point_use import (
-                ATTEMPT_CONSUMER,
-                PointUseRefused,
-                require_point_use_locked,
-            )
 
             try:
                 require_point_use_locked(
@@ -3131,7 +3100,6 @@ class CommitService(
             stored = self._require_result(result_id)
             frozen = frozen_requirements_revision(self._store, stored)
             revision = frozen if requirements_revision is None else int(requirements_revision)
-            from .assurance_validity import acceptance_id_for
 
             accepted = (
                 stored.verification_state == "DONE"
@@ -3374,7 +3342,6 @@ class CommitService(
         is committed later by ``accept_review`` in this same generation. A missing
         candidate is not licensed here; ``accept_review`` refuses it.  Returns the locked
         candidate (its official review record is what claim confirmation reads), or None."""
-        from .assurance_validity import ACCEPTANCE_CONSUMER, acceptance_id_for
 
         validity = getattr(self, "_assurance_validity", None)
         if validity is None:
@@ -3415,8 +3382,6 @@ class CommitService(
         with self._store.transaction():
             stored = self._require_result(result_id)
             if stored.verification_state == "DONE" and stored.verdict == "PASS":
-                from .assurance_validity import acceptance_id_for
-
                 acceptance_id = acceptance_id_for(
                     stored.envelope.task_id,
                     result_id,

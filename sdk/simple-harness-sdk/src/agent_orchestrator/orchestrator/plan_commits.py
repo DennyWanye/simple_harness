@@ -92,6 +92,7 @@ from ..storage.store import StoreError
 from ..storage.taskgraph_store import NotBoundError, require_bound
 from ._read_set import ReadSetChannelUnknown, SemanticReadSetChecker
 from .accepted_outputs import criterion_linked_occurrences, owned_criteria
+from .budget_accounts import mission_account, task_account
 from .method_plan_reviews import REVIEW_REQUIRED, unreviewed_adopted_methods
 from .occurrence_tasks import (
     COMPOUND_TOKENS,
@@ -1066,8 +1067,6 @@ class PlanCommitsMixin:
         is the conservative failure, counting less would grant the same tokens twice.
         """
 
-        from .commit_service import task_account
-
         ceiling = int(task.budget.max_tokens or 0)
         try:
             snapshot = self._ledger.account(task_account(task.id))
@@ -1494,7 +1493,6 @@ class PlanCommitsMixin:
             if spec.form is TaskForm.COMPOUND
             and network.adopted_instance_for(spec.occurrence_id) is None
         )
-        from .commit_service import mission_account
 
         cap = int(self._task_max_tokens)
         # 2026-10-11 user decision A（parse 重跑）：固定单步额度，不再平分。原来（2026-09-25）
@@ -1558,7 +1556,6 @@ class PlanCommitsMixin:
         # second copy of the ``budget:`` prefix is a silent way to open a Task account
         # under a parent that does not exist, which ``open_account`` can only report as
         # "unknown budget account".  ``selection_commits`` reaches for them the same way.
-        from .commit_service import mission_account, task_account
 
         result = Materialisation(
             tasks=tuple(built),
@@ -1649,7 +1646,6 @@ class PlanCommitsMixin:
                 f"planning subject {task_id} is not a compound goal of this Mission"
             )
         mission = self._require_mission(mission_id)
-        from .commit_service import mission_account, task_account
 
         item = occurrence_task(
             mission,
