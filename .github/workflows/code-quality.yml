@@ -32,6 +32,8 @@ jobs:
         run: |
           (cd backend && lint-imports)
           python scripts/code_quality/backend_layers.py
+      - name: SDK public boundary (阶段 4.2)
+        run: python scripts/code_quality/sdk_boundary.py
       - name: Ratchet
         run: |
           BASE="${{ github.event.pull_request.base.sha || github.event.before }}"

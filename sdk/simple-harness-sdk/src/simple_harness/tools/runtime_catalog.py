@@ -1342,4 +1342,5 @@ __all__ = (
     "ToolRouteRequirement",
     "ToolTaskScopeRequirement",
     "WorkflowProfileRecord",
+    "MAX_SEARCH_RESULTS",
 )

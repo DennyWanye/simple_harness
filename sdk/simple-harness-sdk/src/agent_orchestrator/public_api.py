@@ -1,0 +1,56 @@
+"""Public modules of ``agent_orchestrator``: what consumers (the Simple Harness Host) may import.
+
+A consumer imports only these modules, and from each only the names in its ``__all__`` (or its
+submodules that are listed here too). ``simple_harness.execution.sqlite`` submodules, ``testing``
+and underscore modules are internal. The list is checked on the SDK side by
+``tests/test_public_api.py`` and on the Host side by ``scripts/code_quality/sdk_boundary.py``.
+"""
+
+from __future__ import annotations
+
+PUBLIC_MODULES: tuple[str, ...] = (
+    "agent_orchestrator",
+    "agent_orchestrator.api.assurance",
+    "agent_orchestrator.api.facade",
+    "agent_orchestrator.api.policies",
+    "agent_orchestrator.api.taskgraph",
+    "agent_orchestrator.assurance.contracts",
+    "agent_orchestrator.contracts",
+    "agent_orchestrator.contracts.htn",
+    "agent_orchestrator.contracts.models",
+    "agent_orchestrator.contracts.semantic_base",
+    "agent_orchestrator.deployment.assembly",
+    "agent_orchestrator.deployment.native_pools",
+    "agent_orchestrator.governance.domains",
+    "agent_orchestrator.governance.permissions",
+    "agent_orchestrator.governance.policies",
+    "agent_orchestrator.graph.notification_contracts",
+    "agent_orchestrator.graph.structural_diff",
+    "agent_orchestrator.graph.view_contracts",
+    "agent_orchestrator.observability.business_replay",
+    "agent_orchestrator.observability.metrics",
+    "agent_orchestrator.observability.secrets",
+    "agent_orchestrator.observability.taskgraph_replay",
+    "agent_orchestrator.observability.traces",
+    "agent_orchestrator.orchestrator.commit_service",
+    "agent_orchestrator.orchestrator.event_handler",
+    "agent_orchestrator.orchestrator.planning_selection",
+    "agent_orchestrator.orchestrator.taskgraph_deployment",
+    "agent_orchestrator.planning.htn.observers.workspace",
+    "agent_orchestrator.planning.htn.registry",
+    "agent_orchestrator.planning.htn.world",
+    "agent_orchestrator.runtime.actions",
+    "agent_orchestrator.runtime.assembly",
+    "agent_orchestrator.runtime.connectors_publish",
+    "agent_orchestrator.runtime.deepseek_meter",
+    "agent_orchestrator.runtime.planning_operations",
+    "agent_orchestrator.runtime.sandbox",
+    "agent_orchestrator.storage.htn_store",
+    "agent_orchestrator.storage.planning_decision_store",
+    "agent_orchestrator.storage.planning_human_store",
+    "agent_orchestrator.storage.schema",
+    "agent_orchestrator.storage.store",
+    "agent_orchestrator.storage.taskgraph_store",
+)
+
+__all__ = ("PUBLIC_MODULES",)

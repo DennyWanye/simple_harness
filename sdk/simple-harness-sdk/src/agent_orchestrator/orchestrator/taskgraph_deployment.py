@@ -155,3 +155,9 @@ class InstalledHtnWiringAcceptance:
             revision=1,
             digest=_hash(canonical_json(value).encode()),
         )
+
+
+__all__ = (
+    "InstalledHtnWiringAcceptance",
+    "MANIFEST_REL",
+)

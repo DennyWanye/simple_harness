@@ -12660,7 +12660,12 @@ def sha256_hex_text(content: str | bytes) -> str:
     ).hexdigest()
 
 
-__all__ = ("FAULT_POINTS", "InjectedCrash", "Orchestrator")
+__all__ = (
+    "FAULT_POINTS",
+    "InjectedCrash",
+    "Orchestrator",
+    "ACTION_SETTLED_AFTER_STOP",
+)
 
 
 def _turn_error_code(failure: Mapping[str, Any]) -> str | None:

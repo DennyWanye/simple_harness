@@ -575,3 +575,24 @@ class ContextStageOperationAuditPort(Protocol):
     def read_context_stage_operation_audit_page(
         self, stage_id: str, *, cursor: str
     ) -> ContextStageOperationAuditPageV1: ...
+
+
+__all__ = (
+    "CommandOperationAuditPageV1",
+    "CommandOperationAuditPort",
+    "ContextStageOperationAuditPageV1",
+    "ContextStageOperationAuditPort",
+    "RunAuditUnavailable",
+    "RunAuditUsageV1",
+    "RunOperationAuditPageV1",
+    "RunOperationAuditPort",
+    "RunOperationAuditSnapshotV1",
+    "RunOperationAuditV1",
+    "RunTerminalAuditEvidenceV1",
+    "RunTerminalRecordV1",
+    "SDK_AUDIT_ERROR_CODES",
+    "audit_error_code",
+    "audit_hash",
+    "audit_label_syntax",
+    "audit_reference",
+)
