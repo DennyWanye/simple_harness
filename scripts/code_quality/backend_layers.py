@@ -8,6 +8,8 @@ context、paths 这六个单文件模块由这里检查，层次与 backend/.imp
 下层不许引用上层（含函数内导入，不含只在类型检查时生效的导入）。只报牵涉单文件模块的违例，
 目录包之间的由 import-linter 管。
 
+另外锁住 backend/.importlinter 的例外清单（ignore_imports）：只许删、不许加（裁决：交阶段 6 解开）。
+
 用法：python3 scripts/code_quality/backend_layers.py   # 有违例退出码 1
 """
 
@@ -29,6 +31,12 @@ LAYERS = [
 ]
 LEVEL = {name: i for i, group in enumerate(LAYERS) for name in group}
 SINGLE = {"main", "p4_ipc", "provider_test_connection", "config", "context", "paths"}
+# 分层契约的登记例外（上下文报告的三处向上引用，阶段 6 拆分时解开）；只许减少
+ALLOWED_EXCEPTIONS = {
+    "llm.registry -> agent.context_report",
+    "router.hybrid_router -> agent.context_report",
+    "providers.openai_compatible -> agent.context_report",
+}
 SKIP = {"tests", "scripts", ".venv", "vendor", "__pycache__", "build", "dist", "dist-1", "userdata"}
 
 
@@ -53,8 +61,28 @@ def imports(tree: ast.Module):
         stack.extend(ast.iter_child_nodes(n))
 
 
+def contract_exceptions() -> set[str]:
+    """backend/.importlinter 里 ignore_imports 的各行。"""
+    lines = (BACKEND / ".importlinter").read_text(encoding="utf-8").splitlines()
+    out: set[str] = set()
+    inside = False
+    for line in lines:
+        if line.strip().startswith("ignore_imports"):
+            inside = True
+            continue
+        if inside:
+            if line.startswith((" ", "\t")) and line.strip() and not line.strip().startswith("#"):
+                out.add(" ".join(line.split()))
+            elif line.strip() and not line.startswith((" ", "\t")):
+                inside = False
+    return out
+
+
 def main() -> int:
-    bad = []
+    bad = [
+        f"backend/.importlinter 新增了分层例外：{e}"
+        for e in sorted(contract_exceptions() - ALLOWED_EXCEPTIONS)
+    ]
     for path in sorted(BACKEND.rglob("*.py")):
         rel = path.relative_to(BACKEND)
         if set(rel.parts) & SKIP:
