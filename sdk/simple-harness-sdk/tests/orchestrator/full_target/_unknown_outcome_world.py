@@ -19,7 +19,7 @@ import contextlib
 from collections.abc import Callable, Mapping
 from typing import Any
 
-from agent_orchestrator.orchestrator.commit_service import mission_account
+from agent_orchestrator.orchestrator.budget_accounts import mission_account
 from agent_orchestrator.testing.fixtures import UnknownAfterHandoff, role_of
 from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider
 from simple_harness.contracts import RunId, thaw_json

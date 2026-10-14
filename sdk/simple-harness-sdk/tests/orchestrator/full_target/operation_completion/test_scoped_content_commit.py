@@ -16,7 +16,8 @@ import sys
 from pathlib import Path
 
 import pytest
-from agent_orchestrator.orchestrator.commit_service import CommitRejected, Reservation
+from agent_orchestrator.orchestrator.budget_accounts import Reservation
+from agent_orchestrator.orchestrator.commit_service import CommitRejected
 from agent_orchestrator.orchestrator.scoped_content_review import read_task_content_projection
 from agent_orchestrator.storage.htn_store import HtnStore
 from agent_orchestrator.storage.operation_completion_store import OperationCompletionStore

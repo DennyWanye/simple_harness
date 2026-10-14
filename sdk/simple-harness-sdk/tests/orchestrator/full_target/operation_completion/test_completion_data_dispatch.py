@@ -27,7 +27,7 @@ from agent_orchestrator.artifacts.versioning import manifest_upstream_inputs  # 
 from agent_orchestrator.contracts.htn import TaskForm  # noqa: E402
 from agent_orchestrator.contracts.models import sha256_hex  # noqa: E402
 from agent_orchestrator.contracts.state_machines import TaskStatus  # noqa: E402
-from agent_orchestrator.orchestrator.commit_service import Reservation  # noqa: E402
+from agent_orchestrator.orchestrator.budget_accounts import Reservation
 from agent_orchestrator.storage.htn_store import HtnStore  # noqa: E402
 from agent_orchestrator.testing.fixtures import RoleScriptedProvider, package_of  # noqa: E402
 from production_fixture import (  # noqa: E402

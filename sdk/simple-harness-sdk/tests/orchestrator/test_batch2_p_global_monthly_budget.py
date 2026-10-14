@@ -29,7 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent / "full_target"))
 from _unknown_outcome_world import CONFIG, FaultyProvider, create, settle  # noqa: E402
 from agent_orchestrator.contracts import Budget  # noqa: E402
 from agent_orchestrator.governance.budgets import BudgetExhausted  # noqa: E402
-from agent_orchestrator.orchestrator.commit_service import (  # noqa: E402
+from agent_orchestrator.orchestrator.budget_accounts import (
     global_account_id,
     is_global_account,
     mission_account,

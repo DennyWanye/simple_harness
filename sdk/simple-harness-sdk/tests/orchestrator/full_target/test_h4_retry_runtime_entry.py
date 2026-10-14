@@ -17,7 +17,8 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 import pytest
-from agent_orchestrator.orchestrator.commit_service import CommitRejected, Reservation
+from agent_orchestrator.orchestrator.budget_accounts import Reservation
+from agent_orchestrator.orchestrator.commit_service import CommitRejected
 from agent_orchestrator.orchestrator.planning_repair_requests import (
     collect_triggers,
     pending_requests,

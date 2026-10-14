@@ -198,7 +198,7 @@ def seed_verified_result(
         ResultEnvelope,
         TaskStatus,
     )
-    from agent_orchestrator.orchestrator.commit_service import Reservation
+    from agent_orchestrator.orchestrator.budget_accounts import Reservation
     from agent_orchestrator.orchestrator.state_machine import next_attempt, next_task
 
     store = service.store

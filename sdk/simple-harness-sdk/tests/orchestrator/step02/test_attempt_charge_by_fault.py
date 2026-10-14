@@ -17,7 +17,7 @@ from typing import Any
 
 import pytest
 from agent_orchestrator.contracts import MissionStatus, MissionStopReason, TaskStatus
-from agent_orchestrator.orchestrator.commit_service import mission_account, task_account
+from agent_orchestrator.orchestrator.budget_accounts import mission_account, task_account
 from agent_orchestrator.orchestrator.failure_classes import (
     FORMAT,
     INFRA,
