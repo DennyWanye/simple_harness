@@ -235,6 +235,7 @@ class PrimaryReadModel:
                     try:
                         if self.run_binding_reader is None:
                             raise PrimaryReadError("primary_runtime_binding_unavailable")
+                        # 按需导入：循环依赖（primary_read_model ↔ run_bindings）
                         from deskpet.sdk_adapters.run_bindings import SdkRunBindingV1
 
                         resolved = await _resolved(self.run_binding_reader(head["sdk_run_id"]))

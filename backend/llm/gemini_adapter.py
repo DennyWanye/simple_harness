@@ -86,6 +86,7 @@ class GeminiAdapter(BaseLLMAdapter):
         if not self._api_key:
             raise LLMAuthError("GEMINI_API_KEY not set", provider=self.name)
         try:
+            # 按需导入：可选依赖
             from google import genai  # type: ignore[import-untyped]
             from google.genai import types  # type: ignore[import-untyped]
         except ImportError as exc:  # pragma: no cover
@@ -191,6 +192,7 @@ class GeminiAdapter(BaseLLMAdapter):
             tool      → Content(role='user', parts=[Part(
                              function_response=FunctionResponse(name, response))])
         """
+        # 按需导入：重型包
         from google.genai import types as gt  # type: ignore[import-untyped]
 
         contents: list[Any] = []
@@ -244,6 +246,7 @@ class GeminiAdapter(BaseLLMAdapter):
         """OpenAI tools list → [Tool(function_declarations=[...])]."""
         if not tools:
             return None
+        # 按需导入：重型包
         from google.genai import types as gt  # type: ignore[import-untyped]
 
         decls: list[Any] = []
@@ -308,6 +311,7 @@ class GeminiAdapter(BaseLLMAdapter):
         contents = self._build_contents(chat_messages)
         tool_list = self._convert_tools(tools)
 
+        # 按需导入：重型包
         from google.genai import types as gt  # type: ignore[import-untyped]
 
         cfg_kwargs: dict[str, Any] = {}

@@ -32,6 +32,7 @@ def build_search_gateway(config: AppConfig) -> SearchGateway:
         providers.append(SearXNGProvider(cfg.searxng_url))
     fetch_service = None
     try:
+        # 按需导入：可选依赖
         from .fetch_extract import FetchExtractService
 
         fetch_service = FetchExtractService.from_config(config)
@@ -48,6 +49,7 @@ def set_default_gateway(gateway: SearchGateway | None) -> None:
 def get_default_gateway() -> SearchGateway:
     global _default_gateway
     if _default_gateway is None:
+        # 按需导入：测试替身（config）
         from config import AppConfig
 
         _default_gateway = build_search_gateway(AppConfig())

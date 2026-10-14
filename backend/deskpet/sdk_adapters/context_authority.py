@@ -1411,6 +1411,7 @@ def _current_tool_page_facts(messages: tuple[Any, ...]) -> dict[str, int]:
     note beside the counter.
     """
 
+    # 按需导入：循环依赖（context_authority ↔ current_tool_pages）
     from deskpet.execution.current_tool_pages import (
         CONTROL_MARKER,
         CONTROL_TOOLS,

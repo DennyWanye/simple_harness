@@ -98,6 +98,7 @@ class WorkflowExecutionObserver:
                 ended_at=timing["ended_at"],
             )
             try:
+                # 按需导入：测试替身（observability.metrics_sink）
                 from observability.metrics_sink import record
 
                 record("deepresearch_stage_timing", detail)

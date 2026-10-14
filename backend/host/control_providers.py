@@ -628,6 +628,7 @@ async def _cc_settings_providers_probe_models(
             )
             return
     try:
+        # 按需导入：可选依赖
         import httpx as _httpx
 
         _models_url = f"{_base_url}/models"

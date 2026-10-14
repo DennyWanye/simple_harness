@@ -136,7 +136,10 @@ __all__ = [
 
 def require_human_audit_request() -> str:
     """Audit grants require a real current signed HUMAN serving lease, never fallback."""
+    # 按需导入：导入隔离
     from deskpet.memory.control_binding import _ConnectionRequestFence
+
+    # 按需导入：循环依赖（writer_fence ↔ human_memory_service）
     from deskpet.memory.human_memory_service import HumanMemoryHostServiceError
 
     scope = _request_scope()

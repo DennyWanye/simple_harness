@@ -354,6 +354,7 @@ class PrimaryWorkspaceBindings:
                 item["state"] != "allow_recorded" or decision == "allow",
                 "primary_binding_decision_conflict",
             )
+            # 按需导入：循环依赖（primary_workspace_bindings ↔ human_memory_service）
             from deskpet.memory.human_memory_service import DecideManualBindingRequest
 
             result = await self.decide(

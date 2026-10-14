@@ -152,6 +152,7 @@ def run_shell_scope(
     args: Mapping[str, Any], context: ToolExecutionContext
 ) -> tuple[ResourceSelector, ...]:
     _required_text(args, "command")
+    # 按需导入：循环依赖（resource_scopes ↔ os_tools）
     from .os_tools.run_shell import _pick_shell, resolve_run_shell_cwd
 
     shell, _leading_args = _pick_shell()
@@ -171,6 +172,7 @@ def run_shell_scope(
 def process_start_scope(
     args: Mapping[str, Any], context: ToolExecutionContext
 ) -> tuple[ResourceSelector, ...]:
+    # 按需导入：循环依赖（resource_scopes ↔ os_tools）
     from .os_tools.process_tools import _resolve_executable, _validate_argv
 
     executable = _resolve_executable(args.get("executable"))
@@ -240,6 +242,7 @@ def process_stop_scope(
 def app_launch_scope(
     args: Mapping[str, Any], context: ToolExecutionContext
 ) -> tuple[ResourceSelector, ...]:
+    # 按需导入：循环依赖（resource_scopes ↔ os_tools）
     from .os_tools.app_tools import discover_app
 
     query = args.get("app") or args.get("executable")
@@ -271,6 +274,7 @@ def desktop_create_file_scope(
     args: Mapping[str, Any], context: ToolExecutionContext
 ) -> tuple[ResourceSelector, ...]:
     del context
+    # 按需导入：循环依赖（resource_scopes ↔ os_tools）
     from .os_tools.desktop_create_file import _resolve_desktop
 
     name = _required_text(args, "name")

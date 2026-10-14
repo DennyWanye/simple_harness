@@ -38,6 +38,7 @@ def _err(error: str, hint: str, **extra: Any) -> str:
 def _strip_html(html: str) -> str:
     """Lightweight HTML→text. Tries trafilatura if available, else regex."""
     try:
+        # 按需导入：重型包
         import trafilatura  # type: ignore
 
         out = trafilatura.extract(html) or ""
@@ -76,6 +77,7 @@ def web_fetch(args: dict[str, Any], task_id: str = "") -> str:
         )
 
     try:
+        # 按需导入：可选依赖
         import httpx
     except ImportError:
         return _err(

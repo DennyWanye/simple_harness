@@ -31,6 +31,7 @@ def _discover_windows_app_paths(query: str) -> list[str]:
     if os.name != "nt":
         return []
     try:
+        # 按需导入：可选依赖
         import winreg
     except ImportError:
         return []

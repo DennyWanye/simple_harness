@@ -696,6 +696,7 @@ class SkillLoader:
     # -----------------------------------------------------------------
     def _load_single_v1(self, skill_md: Path, scope: str) -> SkillMeta | None:
         try:
+            # 按需导入：可选依赖
             from .parser import SkillParseError, parse_skill_md
         except ImportError as exc:
             logger.warning("skill.parser_missing", path=str(skill_md), error=str(exc))
@@ -891,6 +892,7 @@ class SkillLoader:
             logger.warning("skill.user_dir_mkdir_failed", error=str(exc))
             return
         try:
+            # 按需导入：重型包
             from watchdog.events import FileSystemEventHandler
             from watchdog.observers import Observer
         except Exception as exc:  # noqa: BLE001

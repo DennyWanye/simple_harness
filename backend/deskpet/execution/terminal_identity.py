@@ -36,6 +36,7 @@ class PrimaryTerminalIdentity:
 
 async def read_primary_terminal_identity_tx(db, *, subject, primary_ref, host_run_id, sdk_run_id):
     """Read in the caller's Host snapshot; None means no committed terminal."""
+    # 按需导入：循环依赖（terminal_identity ↔ primary_history）
     from deskpet.execution.primary_history import terminal_observation_tx
 
     async def one(sql, args):

@@ -1875,6 +1875,7 @@ class SqliteSdkTerminalObserver:
             or len(str(getattr(sdk_evidence, "event_hash", ""))) != 64
         ):
             raise ForegroundRuntimeError("foreground_sdk_terminal_evidence_mismatch")
+        # 按需导入：循环依赖（foreground_runtime ↔ evidence_ingress）
         from deskpet.execution.evidence_ingress import ExecutionEvidenceIngress
 
         evidence_ingress = ExecutionEvidenceIngress(self._db_path, fault_inject=self._fault_inject)
@@ -1908,6 +1909,7 @@ class SqliteSdkTerminalObserver:
                         # Unverifiable/old source stays archived; never fabricate
                         # an empty complete proof to make generated history visible.
                         proof = None
+            # 按需导入：循环依赖（foreground_runtime ↔ primary_history）
             from deskpet.execution.primary_history import record_terminal_observation
 
             occurrence_sources = None
@@ -2034,6 +2036,7 @@ class SqliteSdkTerminalObserver:
                 await authority_cursor.close()
             else:
                 authority = None
+        # 按需导入：循环依赖（foreground_runtime ↔ evidence_ingress）
         from deskpet.execution.evidence_ingress import ExecutionEvidenceIngress
 
         evidence_ingress = ExecutionEvidenceIngress(self._db_path, fault_inject=self._fault_inject)

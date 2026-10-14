@@ -2706,6 +2706,7 @@ class AgentLoop(ToolContextPersistenceMixin):
                                 _ctx_out = int(getattr(_cresult, "output_tokens", 0) or 0)
                                 _ctx_ratio = float(getattr(_cresult, "reduction_ratio", 0.0) or 0.0)
                                 try:
+                                    # 按需导入：测试替身（observability.metrics_sink）
                                     from observability.metrics_sink import (
                                         record as _ctx_metric,
                                     )
@@ -3870,6 +3871,7 @@ class AgentLoop(ToolContextPersistenceMixin):
                                         ).ratio(),
                                     )
                                     try:
+                                        # 按需导入：测试替身（observability.metrics_sink）
                                         from observability.metrics_sink import (
                                             record as _vg_metric,
                                         )
@@ -3936,6 +3938,7 @@ class AgentLoop(ToolContextPersistenceMixin):
                                     _stagnant,
                                 )
                                 try:
+                                    # 按需导入：测试替身（observability.metrics_sink）
                                     from observability.metrics_sink import (
                                         record as _vg_metric,
                                     )
@@ -4081,6 +4084,7 @@ class AgentLoop(ToolContextPersistenceMixin):
                             # 硬证据 — 用户 goal "verify_* event in metrics.jsonl"
                             # 把 fake-completion 拦截事件计数化，供监控面板看健康率）
                             try:
+                                # 按需导入：测试替身（observability.metrics_sink）
                                 from observability.metrics_sink import (
                                     record as _verify_metric,
                                 )

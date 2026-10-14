@@ -201,6 +201,7 @@ class PlaywrightRendererPool:
             processes_before = self._process_snapshot(executable)
             factory = self._playwright_factory
             if factory is None:
+                # 按需导入：重型包
                 from playwright.async_api import async_playwright
 
                 manager = async_playwright()
@@ -240,6 +241,7 @@ class PlaywrightRendererPool:
         executable: Path,
     ) -> dict[int, tuple[float, bool, bool, int]]:
         try:
+            # 按需导入：可选依赖
             import psutil
         except ImportError:
             return {}
@@ -294,6 +296,7 @@ class PlaywrightRendererPool:
         if not self._owned_processes:
             return
         try:
+            # 按需导入：可选依赖
             import psutil
         except ImportError:
             self._owned_processes.clear()

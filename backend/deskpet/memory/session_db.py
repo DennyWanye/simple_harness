@@ -340,6 +340,7 @@ class SessionDB:
         sqlite-vec 不可用时降级启动，L1+L2 继续工作。
         """
         try:
+            # 按需导入：可选依赖
             import sqlite_vec  # type: ignore
         except ImportError:
             log.warning(

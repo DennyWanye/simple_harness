@@ -34,6 +34,7 @@ def _supported_content_type(value: str) -> bool:
 
 def _metric(event: str, detail: dict) -> None:
     try:
+        # 按需导入：测试替身（observability.metrics_sink）
         from observability.metrics_sink import record
 
         record(event, detail)
@@ -763,6 +764,7 @@ class FetchExtractService:
     def _extract(html: str) -> tuple[str, str, str, str]:
         title = text = published = ""
         try:
+            # 按需导入：重型包
             import trafilatura  # type: ignore
 
             text = (
@@ -783,6 +785,7 @@ class FetchExtractService:
                 title = re.sub(r"\s+", " ", match.group(1)).strip()
         if not text:
             try:
+                # 按需导入：重型包
                 from selectolax.parser import HTMLParser  # type: ignore
 
                 tree = HTMLParser(html)

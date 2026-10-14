@@ -510,6 +510,7 @@ class ProductToolsAdapter(ToolRegistry):
                 await record_effect(origin, context, call.name)
             delivery_adapter = None
             try:
+                # 按需导入：重型包（pptx）
                 from .desktop_runtime import _delivery_adapters
 
                 delivery_adapter = _delivery_adapters.get(context.run_id.value)
@@ -1414,6 +1415,7 @@ def filter_sdk_catalog_for_workspace(
     authority reconstruction.
     """
 
+    # 按需导入：导入隔离
     from deskpet.sdk_adapters.tool_authority import (
         _PROJECTLESS_ROUTE_CAPABLE_TOOL_NAMES,
     )

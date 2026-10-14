@@ -133,6 +133,7 @@ def build_await_subagents_tool(workflow_service_provider):
         if workflow_service is None:
             raise RuntimeError("workflow service is unavailable")
         uow = workflow_service.execution_uow
+        # 按需导入：导入隔离
         from deskpet.harness.drivers.react_boundary import ReactCommandBoundary
 
         continuation = await uow.load_continuation(execution_context.run_id)
@@ -275,6 +276,7 @@ def build_subagent_batch_delegate(
 ):
     """Translate a public spawn batch into one deterministic detached ChildRun."""
 
+    # 按需导入：导入隔离
     from deskpet.harness.ports import AttachmentPolicy, DelegateRun, JoinPolicy
 
     context = request.run_context

@@ -82,7 +82,10 @@ async def record_closure_result_tx(db, *, db_path, attempt_id, plan_id, response
     Separate S1 avoids changing the invoker's evidence-set response replay
     selection. Old decisions/replays never call this writer for backfill.
     """
+    # 按需导入：循环依赖（mutation_disclosure ↔ closure_request_guard）
     from deskpet.execution.closure_request_guard import input_id
+
+    # 按需导入：循环依赖（mutation_disclosure ↔ post_turn_invoker）
     from deskpet.sdk_adapters.post_turn_invoker import _response_hash
 
     found = await _rows(
@@ -164,7 +167,10 @@ async def record_closure_result_tx(db, *, db_path, attempt_id, plan_id, response
 
 
 async def _producer(db, *, stack, decision, plan, receipt, subject, primary_ref):
+    # 按需导入：循环依赖（mutation_disclosure ↔ semantic_closure）
     from deskpet.execution.semantic_closure import _closure_arguments
+
+    # 按需导入：循环依赖（mutation_disclosure ↔ post_turn_invoker）
     from deskpet.sdk_adapters.post_turn_invoker import _response_hash
 
     if receipt.attempt_id is not None:
@@ -300,6 +306,7 @@ async def _producer(db, *, stack, decision, plan, receipt, subject, primary_ref)
 async def mutation_fields(
     *, db, stack, scope_id, state, revision, subject, policy, disclosure_context, selected
 ):
+    # 按需导入：循环依赖（mutation_disclosure ↔ semantic_closure）
     from deskpet.execution.semantic_closure import closure_receipt_for_plan_tx
 
     result = {}

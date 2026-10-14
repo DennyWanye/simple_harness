@@ -280,6 +280,7 @@ _MAX_QUOTE_BYTES = (
 def derive_span(item: AdmittedItem, exact_quote: str, *, span_id: str) -> Any:
     """Deterministic ``EvidenceSpanRef`` over ``/text``; fails closed on anything but one exact hit."""
 
+    # 按需导入：死代码待删（simple_harness.runtime.EVIDENCE_NORMALIZATION_IDENTITY_UTF8_V1）
     from simple_harness.runtime import (
         EVIDENCE_NORMALIZATION_IDENTITY_UTF8_V1,
         EvidenceActorRole,
@@ -352,6 +353,7 @@ def compile_operation(
 ) -> Any:
     """Compile CREATE or an exact source-bound semantic REVISE."""
 
+    # 按需导入：死代码待删（simple_harness.runtime.ConflictStatus）
     from simple_harness.runtime import (
         ConflictStatus,
         EpisodeLifecycleState,
@@ -440,6 +442,7 @@ def compile_operation(
         if action not in {"create", "revise_semantic"}:
             raise AnalysisProposalRejected("analysis_action_invalid")
         if action == "revise_semantic":
+            # 按需导入：测试替身（simple_harness）
             from simple_harness import EvidenceSupportKind, ExistingMemoryTarget
 
             if memory_type != "semantic" or item.envelope.source_kind.value != "user_message":
@@ -596,6 +599,7 @@ def compile_proposal(
 ) -> CompiledProposal:
     """Model proposal + Host identity → ``MemoryMutationPlan`` (or a ``no_mutation`` result)."""
 
+    # 按需导入：死代码待删（simple_harness.runtime.MemoryMutationPlan）
     from simple_harness.runtime import MemoryMutationPlan, MemoryMutationPlanOutcome
 
     if not isinstance(proposal, Mapping):
@@ -694,6 +698,7 @@ def compile_proposal(
 def proposal_from_response(response: Any) -> Mapping[str, Any] | None:
     """Exactly one ``memory_analysis_proposal`` tool call → its arguments, else ``None``."""
 
+    # 按需导入：测试替身（simple_harness）
     from simple_harness import thaw_json
 
     calls = tuple(getattr(response, "tool_calls", ()) or ())

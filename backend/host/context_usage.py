@@ -137,6 +137,7 @@ def _snapshot_context_usage_event(
     Returns ``None`` when no usage is available yet (don't emit).
     """
     try:
+        # 按需导入：测试替身（llm.model_info.resolve）
         from llm.model_info import resolve as _resolve_model
     except Exception:  # noqa: BLE001
         _resolve_model = None  # type: ignore[assignment]

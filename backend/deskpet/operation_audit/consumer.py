@@ -45,6 +45,7 @@ class PublicAuditReader:
         return client
 
     async def read(self, claim: ReadClaim, *, page_size: int) -> object:
+        # 按需导入：测试替身（simple_harness）
         from simple_harness import RunId
 
         client = self._client()
@@ -55,6 +56,7 @@ class PublicAuditReader:
 
 
 def validated_page(result: object, claim: ReadClaim, page_size: int) -> dict[str, Any]:
+    # 按需导入：测试替身（simple_harness）
     import simple_harness as sdk
 
     expected = getattr(sdk, "RunOperationAuditPageV1", None)

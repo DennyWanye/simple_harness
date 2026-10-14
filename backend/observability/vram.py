@@ -91,6 +91,7 @@ def detect_vram_gb() -> float:
     to distinguish — caller just needs "enough" vs "not enough".
     """
     try:
+        # 按需导入：重型包
         import torch  # type: ignore[import-not-found]
     except Exception:
         return 0.0

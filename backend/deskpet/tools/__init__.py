@@ -79,6 +79,7 @@ _legacy_registry_proxy = registry
 
 def __getattr__(name: str) -> Any:
     if name in {"ToolRegistry", "ToolSpec"}:
+        # 按需导入：导入隔离
         from .registry import ToolRegistry, ToolSpec
 
         return {

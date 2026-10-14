@@ -1298,6 +1298,7 @@ class HarnessPublicReadService:
         reducer = self._reducer
         if reducer is None:
             try:
+                # 按需导入：可选依赖
                 from deskpet.execution.semantic_projection import (
                     reduce_public_manifest,
                 )

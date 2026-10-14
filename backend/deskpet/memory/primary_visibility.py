@@ -383,6 +383,7 @@ class PrimaryHistoryPolicy:
                     # 记忆 SDK 移除后不再有 prospective 来源清单可对账，
                     # ``prospective_source_dependencies`` 字段（若旧记录里还有）
                     # 只是不再被检查的历史字节，不参与任何判定。
+                    # 按需导入：循环依赖（primary_visibility ↔ execution）
                     from deskpet.execution.terminal_identity import (
                         read_primary_terminal_identity_tx,
                     )

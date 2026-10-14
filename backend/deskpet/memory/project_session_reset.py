@@ -340,6 +340,7 @@ def _clear_optional_vectors_and_vacuum(path: Path) -> None:
         ).fetchone()
         if table is not None:
             try:
+                # 按需导入：重型包
                 import sqlite_vec  # type: ignore
 
                 db.enable_load_extension(True)

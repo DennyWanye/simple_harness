@@ -120,6 +120,7 @@ def build_agent(
                 patterns_path,
             )
             try:
+                # 按需导入：测试替身（observability.metrics_sink）
                 from observability.metrics_sink import record as _verify_metric
 
                 _verify_metric(

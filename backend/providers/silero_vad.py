@@ -49,6 +49,7 @@ class SileroVAD:
         # package data, so PyInstaller picks it up via
         # `collect_data_files("silero_vad")`. Model weights are the
         # same as the hub v5 release.
+        # 按需导入：重型包
         from silero_vad import load_silero_vad
 
         self._model = load_silero_vad(onnx=False).eval()

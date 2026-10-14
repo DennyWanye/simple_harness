@@ -78,6 +78,7 @@ class AgentReachPort:
 
     def doctor(self, *, names: Iterable[str] | None = None) -> dict[str, dict[str, object]]:
         try:
+            # 按需导入：重型包
             from agent_reach.channels import get_all_channels
             from agent_reach.config import Config
         except Exception:
@@ -133,6 +134,7 @@ class AgentReachPort:
 
     @staticmethod
     def _channels():
+        # 按需导入：重型包
         from agent_reach.channels import get_all_channels
 
         return get_all_channels()
@@ -166,6 +168,7 @@ class AgentReachPort:
                 message="URL must be an absolute public http(s) URL.",
             )
         try:
+            # 按需导入：重型包
             from agent_reach.channels import get_channel
         except Exception:
             return AgentReachEvidence(

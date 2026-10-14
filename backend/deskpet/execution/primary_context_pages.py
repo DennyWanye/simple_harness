@@ -449,7 +449,10 @@ class PrimaryContextPageReader:
             if len(rows) != 1:
                 raise PrimaryContextPageUnavailable("primary_page_host_run_missing")
             run = rows[0]
+            # 按需导入：循环依赖（primary_context_pages ↔ current_tool_pages）
             from deskpet.execution.current_tool_pages import PREFIX as CURRENT_PREFIX
+
+            # 按需导入：循环依赖（primary_context_pages ↔ current_tool_pages）
             from deskpet.execution.current_tool_pages import admitted_current_page
 
             if arguments["reference_id"].startswith(CURRENT_PREFIX):

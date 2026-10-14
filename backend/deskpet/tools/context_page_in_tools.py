@@ -265,7 +265,10 @@ def build_context_page_in_handler(
         runtime = execution_context_getter()
         if runtime is None:
             return _error("context_scope_missing")
+        # 按需导入：循环依赖（context_page_in_tools ↔ current_tool_pages）
         from deskpet.execution.current_tool_pages import PREFIX as CURRENT_PREFIX
+
+        # 按需导入：循环依赖（context_page_in_tools ↔ primary_context_pages）
         from deskpet.execution.primary_context_pages import PREFIX, PrimaryContextPageUnavailable
 
         reference_id = str(args.get("reference_id", "") or "").strip()

@@ -178,6 +178,7 @@ class CanonicalTaskScopeStore:
                     (task_scope_id, state_hash, created_at),
                 )
                 await self._write_projection_tx(db, task_scope_id, 1, state, created_at)
+                # 按需导入：循环依赖（store ↔ projection_sources）
                 from deskpet.task_scope.projection_sources import append_projection_source_tx
 
                 await append_projection_source_tx(db, task_scope_id, now=created_at)
@@ -242,6 +243,7 @@ class CanonicalTaskScopeStore:
                     "WHERE task_scope_id=? AND event_watermark<?",
                     (receipt.event_sequence, time.time(), task_scope_id, receipt.event_sequence),
                 )
+                # 按需导入：循环依赖（store ↔ projection_sources）
                 from deskpet.task_scope.projection_sources import append_projection_source_tx
 
                 await append_projection_source_tx(db, task_scope_id)
@@ -415,6 +417,7 @@ class CanonicalTaskScopeStore:
                 if updated.rowcount != 1:
                     raise TaskScopeConflict("mutation_base_revision_conflict")
                 await self._write_projection_tx(db, task_scope_id, committed, state, created_at)
+                # 按需导入：循环依赖（store ↔ projection_sources）
                 from deskpet.task_scope.projection_sources import append_projection_source_tx
 
                 await append_projection_source_tx(db, task_scope_id, now=created_at)
@@ -518,6 +521,7 @@ class CanonicalTaskScopeStore:
                         created_at,
                     ),
                 )
+                # 按需导入：循环依赖（store ↔ projection_sources）
                 from deskpet.task_scope.projection_sources import append_projection_source_tx
 
                 await append_projection_source_tx(db, task_scope_id, now=created_at)
@@ -619,6 +623,7 @@ class CanonicalTaskScopeStore:
                     "UPDATE task_scope_heads SET event_watermark=?,updated_at=? WHERE task_scope_id=?",
                     (last_sequence, now, task_scope_id),
                 )
+                # 按需导入：循环依赖（store ↔ projection_sources）
                 from deskpet.task_scope.projection_sources import append_projection_source_tx
 
                 source = await append_projection_source_tx(db, task_scope_id, now=now)

@@ -164,6 +164,7 @@ def _envelope_err(message: str) -> str:
 def _emit_metric(event: str, detail: dict[str, Any]) -> None:
     """Best-effort metric record — never raises."""
     try:
+        # 按需导入：测试替身（observability.metrics_sink）
         from observability.metrics_sink import record  # type: ignore[import-not-found]
 
         record(event, detail)

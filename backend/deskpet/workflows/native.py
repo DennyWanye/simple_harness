@@ -1074,6 +1074,7 @@ class NativeWorkflowExecutable:
         """Mirror safe v2 trace dimensions into the fixed local metric schema."""
 
         try:
+            # 按需导入：测试替身（observability.metrics_sink）
             from observability.metrics_sink import record
 
             branch = attributes.get("deepresearch_v2_branch")

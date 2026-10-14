@@ -112,6 +112,7 @@ def _activation_rejection(
         else "<invalid capability_id>"
     )
     if code == "tool_unavailable":
+        # 按需导入：导入隔离
         from deskpet.sdk_adapters.tool_authority import (
             unavailable_capability_next_action,
         )
@@ -137,6 +138,7 @@ def _activation_rejection(
             f"{next_action}"
         )
     else:
+        # 按需导入：导入隔离
         from deskpet.sdk_adapters.tool_authority import (
             PROJECT_EFFECT_ROUTE_NEXT_ACTION,
             PROJECT_EFFECT_ROUTE_REASON,

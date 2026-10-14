@@ -246,6 +246,7 @@ def _research_raw() -> dict[str, Any]:
     if _RESEARCH_RAW_CACHE is None:
         raw: dict[str, Any] = {}
         try:
+            # 按需导入：测试替身（config）
             import config as _cfg  # type: ignore[import-not-found]
 
             obj = getattr(_cfg, "config", None)
@@ -348,6 +349,7 @@ def _direct_client(*, trust_env: bool = False) -> httpx.AsyncClient:
 
 def _html_title(html: str, fallback: str = "") -> str:
     try:
+        # 按需导入：重型包
         from selectolax.parser import HTMLParser  # type: ignore
 
         tree = HTMLParser(html or "")
@@ -366,6 +368,7 @@ def _html_title(html: str, fallback: str = "") -> str:
 
 def _html_main_text(html: str) -> str:
     try:
+        # 按需导入：重型包
         import trafilatura  # type: ignore
 
         text = trafilatura.extract(
@@ -379,6 +382,7 @@ def _html_main_text(html: str) -> str:
     except Exception as exc:  # noqa: BLE001
         log.debug("trafilatura baike extract failed: %s", exc)
     try:
+        # 按需导入：重型包
         from selectolax.parser import HTMLParser  # type: ignore
 
         tree = HTMLParser(html or "")
@@ -393,6 +397,7 @@ def _html_main_text(html: str) -> str:
 def _baike_item(source: str, *, url: str, html: str, fallback_title: str) -> dict[str, Any] | None:
     title = fallback_title
     try:
+        # 按需导入：重型包
         import trafilatura  # type: ignore
 
         meta = trafilatura.extract_metadata(html or "")
@@ -414,6 +419,7 @@ def _first_baike_link(html: str, base_url: str, *, host: str) -> str:
         )
 
     try:
+        # 按需导入：重型包
         from selectolax.parser import HTMLParser  # type: ignore
 
         tree = HTMLParser(html or "")
@@ -595,6 +601,7 @@ def _extract_pdf_text(data: bytes, *, want_financials: bool = False) -> str:
     正文**最前**,保证不被字数上限截掉 —— 否则年报 300 页里这张表常排在第 4~8 页后,
     8 页上限正好漏掉净利润行(真机核查 BYD 报告暴露的就是这个召回缺口)。"""
     try:
+        # 按需导入：重型包
         import pypdf  # type: ignore
     except Exception:  # noqa: BLE001
         return ""
@@ -818,6 +825,7 @@ def parse_openstd(html: str, *, max_results: int) -> list[dict[str, Any]]:
     """
     out: list[dict[str, Any]] = []
     try:
+        # 按需导入：可选依赖
         from selectolax.parser import HTMLParser  # type: ignore
     except ImportError:
         return out

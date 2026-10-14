@@ -781,6 +781,7 @@ class ClosureFallback:
 
             return actual_members, observer
 
+        # 按需导入：循环依赖（semantic_closure ↔ closure_request_guard）
         from deskpet.execution.closure_request_guard import ClosureSourceIncomplete
 
         try:

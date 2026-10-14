@@ -67,6 +67,7 @@ def _is_local_base_url(base_url: str) -> bool:
 
 def _record_tool_choice_none_unsupported(provider: str, model: str) -> None:
     try:
+        # 按需导入：测试替身（observability.metrics_sink）
         from observability.metrics_sink import record
 
         record(

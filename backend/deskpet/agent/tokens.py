@@ -42,6 +42,7 @@ def _tiktoken_encoder() -> Any:
         _TIKTOKEN_ENC = None
         return None
     try:
+        # 按需导入：重型包
         import tiktoken  # type: ignore
 
         _TIKTOKEN_ENC = tiktoken.get_encoding("o200k_base")  # gpt-4o/5 系

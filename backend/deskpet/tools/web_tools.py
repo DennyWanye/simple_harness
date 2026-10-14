@@ -348,6 +348,7 @@ def _selectolax_fallback(html: str) -> dict[str, Any]:
     title: str | None = None
     text: str | None = None
     try:
+        # 按需导入：重型包
         from selectolax.parser import HTMLParser  # type: ignore
 
         parser = HTMLParser(html)
@@ -387,6 +388,7 @@ async def _handle_web_extract_article(args: dict[str, Any], task_id: str) -> str
         source_url = None
 
     try:
+        # 按需导入：重型包
         import trafilatura  # type: ignore
 
         # Prefer JSON output — newer trafilatura versions keep the
@@ -501,6 +503,7 @@ def _score_page(html: str, keywords: list[str]) -> tuple[float, str, str]:
     title = ""
     text = ""
     try:
+        # 按需导入：重型包
         from selectolax.parser import HTMLParser  # type: ignore
 
         parser = HTMLParser(html)

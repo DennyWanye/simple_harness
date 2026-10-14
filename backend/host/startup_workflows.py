@@ -406,6 +406,7 @@ async def _startup_workflow_services() -> Any:
             )
 
         async def _deep_v2_context_factory(row, start_payload) -> WorkflowContext:
+            # 按需导入：测试替身（deskpet.retrieval.runtime.get_default_gateway）
             from deskpet.retrieval.runtime import get_default_gateway
 
             llm_call = await _workflow_research_tools._resolve_default_llm_call()
@@ -528,6 +529,7 @@ async def _startup_workflow_services() -> Any:
 
         async def _deep_v5_context_factory(row, start_payload) -> WorkflowContext:
 
+            # 按需导入：测试替身（deskpet.retrieval.runtime.get_default_gateway）
             from deskpet.retrieval.runtime import get_default_gateway
 
             run_id = str(row.get("run_id") or "")
@@ -873,6 +875,7 @@ async def _startup_workflow_services() -> Any:
 
         async def _deep_v6_context_factory(row, start_payload) -> WorkflowContext:
 
+            # 按需导入：测试替身（deskpet.retrieval.runtime.get_default_gateway）
             from deskpet.retrieval.runtime import get_default_gateway
 
             run_id = str(row.get("run_id") or "")
@@ -1165,6 +1168,7 @@ async def _startup_workflow_services() -> Any:
             shim = _RecoveryShim(provider=provider)
             session_id = str(row.get("session_id") or "default")
             workflow_name = str(row.get("workflow_name") or "code_complex")
+            # 按需导入：死代码待删（deskpet.harness.adapters.legacy_execution_migration）
             from deskpet.harness.adapters.legacy_execution_migration import (
                 resolve_frozen_legacy_workspace,
             )

@@ -358,6 +358,7 @@ def __getattr__(name: str):
     """Resolve removed names only through the explicit compatibility package."""
 
     if name == "SessionTerminalReadThrough":
+        # 按需导入：循环依赖（session_terminal_delivery ↔ session_projection）
         from deskpet.compat.session_projection import SessionTerminalReadThrough
 
         return SessionTerminalReadThrough

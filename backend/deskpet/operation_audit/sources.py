@@ -173,6 +173,7 @@ class TerminalSources:
 
     async def verify_terminal_page(self, job: dict, page: dict) -> bool:
         """Bind public SDK proof to the verified raw identity in Host evidence."""
+        # 按需导入：测试替身（simple_harness）
         import simple_harness as sdk
 
         proof_type = getattr(sdk, "RunTerminalAuditEvidenceV1", None)

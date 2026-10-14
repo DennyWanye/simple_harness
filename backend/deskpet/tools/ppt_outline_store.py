@@ -302,6 +302,7 @@ def _slide_to_dict(slide: Any) -> dict[str, Any]:
 def _outline_history_enabled() -> bool:
     """读取 [ppt].pro_outline_history；读不到配置时默认启用。"""
     try:
+        # 按需导入：测试替身（config）
         from config import standalone_config_section  # type: ignore[import-not-found]
 
         raw = standalone_config_section("ppt") or {}
@@ -331,6 +332,7 @@ def _default_state_db_path() -> Path:
         return Path(override)
 
     try:
+        # 按需导入：测试替身（config）
         from config import load_config, resolve_config_path  # type: ignore[import-not-found]
 
         cfg = load_config(resolve_config_path())

@@ -51,6 +51,7 @@ def _get_engine() -> Any | None:
         if _engine_failed:
             return None
         try:
+            # 按需导入：重型包
             from rapidocr_onnxruntime import RapidOCR
 
             _engine = RapidOCR()
@@ -64,6 +65,7 @@ def _get_engine() -> Any | None:
 def ocr_engine_available() -> bool:
     """True when RapidOCR can be imported (does not construct it)."""
     try:
+        # 按需导入：重型包
         import rapidocr_onnxruntime  # noqa: F401
 
         return True

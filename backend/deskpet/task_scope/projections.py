@@ -551,6 +551,7 @@ class TaskScopeProjectionStore:
         # S5b Task 3: open semantic-closure debt is projected explicitly (STATUS)
         # so a pending closure is never presented as a consistent state.
         try:
+            # 按需导入：导入隔离
             from deskpet.execution.semantic_closure import pending_receipts_tx
 
             pending_closures = await pending_receipts_tx(db, source.task_scope_id)

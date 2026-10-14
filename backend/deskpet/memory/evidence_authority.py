@@ -61,6 +61,7 @@ class HostEvidenceAuthority:
         return admitted_item(envelope, receipt, occurred_at=committed_at)
 
     async def _read_admitted(self, evidence_id: str) -> tuple[Any, Any, float]:
+        # 按需导入：死代码待删（simple_harness.runtime.SanitizedEvidenceEnvelope）
         from simple_harness.runtime import (
             SanitizedEvidenceEnvelope,
             SanitizedEvidenceReceipt,
@@ -99,6 +100,7 @@ class HostEvidenceAuthority:
         return envelope, receipt, float(row["committed_at"])
 
     async def resolve_admitted_evidence(self, span: Any) -> Any:
+        # 按需导入：死代码待删（simple_harness.runtime.EVIDENCE_ITEM_AUTHORITY_SCHEMA_VERSION）
         from simple_harness.runtime import (
             EVIDENCE_ITEM_AUTHORITY_SCHEMA_VERSION,
             AdmittedEvidenceAuthority,

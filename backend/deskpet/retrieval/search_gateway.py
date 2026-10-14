@@ -41,6 +41,7 @@ from .routing import stable_batches
 
 def _metric(event: str, detail: dict) -> None:
     try:
+        # 按需导入：测试替身（observability.metrics_sink）
         from observability.metrics_sink import record
 
         record(event, detail)

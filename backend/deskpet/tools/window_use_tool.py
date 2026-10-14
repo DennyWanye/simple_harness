@@ -450,6 +450,7 @@ def _capture_target(
             root / "screenshots" / f"window-{window.pid}-{int(time.time() * 1000)}.png"
         )
         target.parent.mkdir(parents=True, exist_ok=True)
+        # 按需导入：重型包
         from mss.tools import to_png
 
         to_png(shot.rgb, shot.size, output=str(target))

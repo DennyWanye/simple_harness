@@ -524,6 +524,7 @@ def _envelope_indicates_success(handler_result: str) -> bool:
 
 
 def _default_effect_policy(name: str, source: str, permission_category: str) -> Any:
+    # 按需导入：测试替身（deskpet.workflows.contracts）
     from deskpet.workflows.contracts import EffectKind, EffectPolicy
 
     if name in _GRAPH_STAGED_FILE_TOOLS:
@@ -3741,6 +3742,7 @@ class ToolRegistry:
     def tool_inventory(self, names: Sequence[str] | None = None) -> list[Any]:
         """Return one versioned workflow inventory row per selected ToolSpec."""
 
+        # 按需导入：测试替身（deskpet.workflows.contracts）
         from deskpet.workflows.contracts import ToolAccess, ToolInventoryEntry
 
         selected = set(names) if names is not None else None

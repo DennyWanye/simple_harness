@@ -299,6 +299,7 @@ def _attach_model_params(entries: list[Any], model_params: Any) -> None:
     """
     base = code_params_to_request(model_params)
     try:
+        # 按需导入：可选依赖
         from llm.model_catalog import model_param_caps as _caps
     except Exception:  # noqa: BLE001 — never let an import break resolution
         _caps = None

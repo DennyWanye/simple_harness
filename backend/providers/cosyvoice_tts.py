@@ -122,6 +122,7 @@ class CosyVoice2Provider:
         # 2. Lazy import — the package is heavy (pulls torch, torchaudio,
         # matcha-tts, etc.) and we don't want to block backend boot on it.
         try:
+            # 按需导入：重型包
             from cosyvoice.cli.cosyvoice import CosyVoice2  # type: ignore[import-not-found]
         except Exception as exc:  # pragma: no cover — env-dependent
             logger.info(
@@ -188,6 +189,8 @@ class CosyVoice2Provider:
         caller should extend this to load prompt.wav from model_dir/asset.
         """
         import torch  # local — same lazy-import principle as above
+
+        # 按需导入：重型包
         import torchaudio
 
         assert self._cosy is not None

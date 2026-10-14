@@ -74,6 +74,7 @@ async def post_metrics_event(request: Request):
     if not isinstance(detail, dict):
         return Response(status_code=400, content="'detail' must be dict")
     try:
+        # 按需导入：测试替身（observability.metrics_sink）
         from observability.metrics_sink import record as _metric_record
 
         _metric_record(event, detail)

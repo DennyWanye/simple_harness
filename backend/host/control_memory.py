@@ -65,6 +65,7 @@ async def _cc_memory_archive_list(conn: _ControlConnection, raw: dict, msg_type:
     _limit = int(payload.get("limit", 100))
     _filter_sid = payload.get("session_id")
     try:
+        # 按需导入：可选依赖
         import aiosqlite
 
         rows = []

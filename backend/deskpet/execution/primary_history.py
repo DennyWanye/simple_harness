@@ -363,6 +363,7 @@ async def record_terminal_observation(
             if marker is not None:
                 if marker not in {"primary-message-v1", "primary-message-v2", "primary-message-v3"}:
                     raise RuntimeError("primary_message_contract_unknown")
+                # 按需导入：循环依赖（primary_history ↔ primary_message_evidence）
                 from deskpet.memory.primary_message_evidence import (
                     verify_new_primary_message_evidence_tx,
                 )
@@ -437,6 +438,7 @@ async def record_terminal_observation(
         )
         # New observations only: per-message S1 shares this transaction. The
         # existing-observation branch above deliberately never backfills it.
+        # 按需导入：循环依赖（primary_history ↔ primary_message_evidence）
         from deskpet.memory.primary_message_evidence import append_new_primary_message_evidence_tx
 
         await append_new_primary_message_evidence_tx(

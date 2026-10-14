@@ -575,6 +575,7 @@ class ProductTurnPreparer:
                     RootBlockReasonV1.CAPABILITY_UNAVAILABLE,
                     ("capability-context:tool-runtime-unavailable",),
                 )
+            # 按需导入：测试替身（llm.model_info.resolve）
             from llm.model_info import resolve as resolve_model_info
 
             eligibility = ToolEligibilityContext(

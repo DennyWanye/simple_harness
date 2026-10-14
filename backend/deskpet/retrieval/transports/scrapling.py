@@ -10,6 +10,7 @@ class ScraplingTransport:
 
     def fetch(self, url: str, *, timeout: float) -> dict[str, Any]:
         try:
+            # 按需导入：可选依赖
             from scrapling.fetchers import Fetcher  # type: ignore
 
             page = Fetcher.get(url, stealthy_headers=True, timeout=timeout)

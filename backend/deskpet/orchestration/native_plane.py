@@ -74,6 +74,7 @@ class BgeM3EmbeddingPort:
         return BGE_M3_DIM
 
     def _load(self) -> None:
+        # 按需导入：重型包
         import onnxruntime as ort
         from tokenizers import Tokenizer
 
@@ -102,6 +103,7 @@ class BgeM3EmbeddingPort:
                     type(error).__name__,
                 )
                 raise
+        # 按需导入：重型包
         import numpy as np
 
         vectors: list[list[float]] = []

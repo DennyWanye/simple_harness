@@ -144,6 +144,7 @@ def _research_raw() -> dict[str, Any]:
     resolve_config_path()) 直读真实 config 文件。
     """
     try:
+        # 按需导入：测试替身（config）
         import config as _cfg  # type: ignore[import-not-found]
 
         obj = getattr(_cfg, "config", None)  # 若有发布的单例优先
@@ -393,6 +394,7 @@ def _looks_like_bing_captcha(html: str, results: list[dict[str, str]]) -> bool:
     if results or not html or len(html.encode("utf-8", "ignore")) <= _CAPTCHA_HTML_MIN_BYTES:
         return False
     try:
+        # 按需导入：可选依赖
         from selectolax.parser import HTMLParser  # type: ignore
 
         if HTMLParser(html).css_first("li.b_algo") is not None:
@@ -435,6 +437,7 @@ def _parse_google_html(html: str, max_results: int) -> list[dict[str, str]]:
     out: list[dict[str, str]] = []
     seen: set[str] = set()
     try:
+        # 按需导入：可选依赖
         from selectolax.parser import HTMLParser  # type: ignore
     except ImportError:
         return out
@@ -525,6 +528,7 @@ def parse_ddg_html(html: str, *, max_results: int) -> list[dict[str, str]]:
     """
     out: list[dict[str, str]] = []
     try:
+        # 按需导入：可选依赖
         from selectolax.parser import HTMLParser  # type: ignore
     except ImportError:
         return _parse_ddg_regex(html, max_results=max_results)
@@ -573,6 +577,7 @@ def parse_bing_html(html: str, *, max_results: int) -> list[dict[str, str]]:
     ``h2 a``(标题+真链,Bing 一般直链不包装) + ``.b_caption p``(摘要)。"""
     out: list[dict[str, str]] = []
     try:
+        # 按需导入：可选依赖
         from selectolax.parser import HTMLParser  # type: ignore
     except ImportError:
         return out
@@ -598,6 +603,7 @@ def parse_baidu_html(html: str, *, max_results: int) -> list[dict[str, str]]:
     (web_fetch 跟随重定向自然解析到真链);抓不到/被反爬 → 空(降级下一引擎)。"""
     out: list[dict[str, str]] = []
     try:
+        # 按需导入：可选依赖
         from selectolax.parser import HTMLParser  # type: ignore
     except ImportError:
         return out
@@ -732,7 +738,10 @@ async def search_async(
     # async providers. Explicit engines preserve the legacy v1 adapter used by
     # older callers/tests that require a fixed HTTP/CDP sequence.
     if engines is None:
+        # 按需导入：循环依赖（search_provider ↔ retrieval）
         from deskpet.retrieval.contracts import SearchRequest
+
+        # 按需导入：循环依赖（search_provider ↔ runtime）
         from deskpet.retrieval.runtime import get_default_gateway
 
         response = await get_default_gateway().search(

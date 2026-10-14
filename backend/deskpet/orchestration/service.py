@@ -272,6 +272,7 @@ class OrchestrationService:
         # 用户任务的部署（安装、建任务、每轮职责）在 SDK 里只有一份（HTN 补齐阶段 A′）；Host 交出
         # 桌面规划世界、认证身份、通知去处与构建指纹，并告诉它"现在是不是自动模式"。
 
+        # 按需导入：循环依赖（service ↔ assurance）
         from .assurance import host_fingerprint
 
         def notify(payload: Mapping[str, Any]) -> None:
@@ -1586,6 +1587,7 @@ class OrchestrationService:
         """Notices the person has not acknowledged yet, newest last, with the Mission's
         current status (a notice names the final event; the status is read now)."""
 
+        # 按需导入：循环依赖（service ↔ chat_tool）
         from .chat_tool import _STATUS_ZH
 
         # 第 2 批 U04：每次拉列表（前端重连后会重新拉）先从已读序号续读，断线期间丢的推送补回来
@@ -1774,16 +1776,19 @@ class OrchestrationService:
             return detail
 
     def taskgraph_read(self, operation: str, request: Mapping[str, Any]) -> dict[str, Any]:
+        # 按需导入：循环依赖（service ↔ taskgraph）
         from .taskgraph import read_taskgraph
 
         return read_taskgraph(self, operation, request)
 
     def taskgraph_operate(self, verb: str, request: Mapping[str, Any]) -> dict[str, Any]:
+        # 按需导入：循环依赖（service ↔ taskgraph）
         from .taskgraph import operate_taskgraph
 
         return operate_taskgraph(self, verb, request)
 
     def assurance_read(self, verb: str, request: Mapping[str, Any]) -> dict[str, Any]:
+        # 按需导入：循环依赖（service ↔ assurance）
         from .assurance import read_assurance
 
         return read_assurance(self, verb, request)
@@ -1811,6 +1816,7 @@ class OrchestrationService:
     def _detect_diagnostics(self) -> bool:
         """Inspect the running SDK APIs, equally for verified wheels and source builds."""
         try:
+            # 按需导入：可选依赖
             from . import diagnostics
         except ImportError:
             return False
@@ -1840,6 +1846,7 @@ class OrchestrationService:
             raise OrchestrationRequestError("invalid_request", "只接受当前任务的 mission_id")
         if not self.status()["diagnostics_available"]:
             raise OrchestrationRequestError("diagnostics_unavailable", "当前运行版本未开放任务诊断")
+        # 按需导入：测试替身（deskpet.orchestration.diagnostics.build_diagnostics）
         from .diagnostics import build_diagnostics, export_support
 
         mission_id = request["mission_id"]

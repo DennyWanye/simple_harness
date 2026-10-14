@@ -131,6 +131,7 @@ def _canonical(path: str | os.PathLike[str], base: Path | None = None) -> Path:
 
 def _default_workspace() -> Path:
     try:
+        # 按需导入：循环依赖（protected_paths ↔ write_scope）
         from agent.write_scope import resolve_workspace_root
 
         return resolve_workspace_root()
@@ -189,6 +190,7 @@ def allowed_roots(extra: Iterable[str | os.PathLike[str]] = ()) -> list[Path]:
 
     roots: list[Path] = []
     try:
+        # 按需导入：循环依赖（protected_paths ↔ write_scope）
         from agent.write_scope import resolve_workspace_root
 
         roots.append(resolve_workspace_root())
@@ -294,6 +296,7 @@ def paths_in_arguments(arguments: Mapping[str, Any]) -> list[str]:
     command = arguments.get("command")
     if isinstance(command, str) and command.strip():
         try:
+            # 按需导入：循环依赖（protected_paths ↔ write_scope）
             from agent.write_scope import extract_shell_write_targets
 
             found += extract_shell_write_targets(command)

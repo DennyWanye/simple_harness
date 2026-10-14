@@ -92,6 +92,7 @@ def _ppt_config_section() -> dict[str, Any]:
     merged: dict[str, Any] = {}
     # 兼容旧测试和历史内存注入形态；真实生产配置以后面的 standalone 读取为准。
     try:
+        # 按需导入：测试替身（config）
         import config as _cfg  # type: ignore[import-not-found]
 
         raw = getattr(getattr(_cfg, "config", None), "raw", {}) or {}
@@ -101,6 +102,7 @@ def _ppt_config_section() -> dict[str, Any]:
     except Exception:  # noqa: BLE001
         pass
     try:
+        # 按需导入：测试替身（config）
         from config import standalone_config_section  # type: ignore[import-not-found]
 
         raw = standalone_config_section("ppt") or {}
@@ -1055,6 +1057,7 @@ def _set_fill_alpha(shape, alpha_pct: int) -> None:
     alpha API,直接往 srgbClr 注入 <a:alpha>。半透明深色遮罩让底图透出来
     (引用页/卡片可读又不死黑)。从不抛异常。"""
     try:
+        # 按需导入：重型包
         from pptx.oxml.ns import qn
 
         srgb = shape.fill.fore_color._xFill.find(qn("a:srgbClr"))
@@ -2269,6 +2272,7 @@ def _place_cover(slide, img: str, *, left: int, top: int, width: int, height: in
             img, Emu(left), Emu(top), width=Emu(width), height=Emu(height)
         )
         try:
+            # 按需导入：重型包
             from PIL import Image  # type: ignore
 
             with Image.open(img) as im:
@@ -3050,6 +3054,7 @@ def _crop_image_to_169(path: str) -> str:
     变形。中心裁切零变形。PIL 不可用/失败 → 返回原路径(退化为拉伸)。
     """
     try:
+        # 按需导入：重型包
         from PIL import Image  # type: ignore
 
         src = Path(path)
@@ -3075,6 +3080,7 @@ def _crop_image_to_169(path: str) -> str:
 # 每个版式对应的「负空间」构图指令(调研: prompt 主动留白给文字才不盖字)。
 def _normalize_full_page_image(path: str, *, output_path: str | None = None) -> str:
     """Create the exact 16:9 page asset committed by a full-page image effect."""
+    # 按需导入：重型包
     from PIL import Image, ImageOps  # type: ignore
 
     source = Path(path).expanduser().resolve()
@@ -3200,6 +3206,7 @@ def _font_cmap(path: str) -> frozenset[int]:
 
 
 def _full_page_font(size: int, *, bold: bool = False, text: str = ""):
+    # 按需导入：重型包
     from PIL import ImageFont  # type: ignore
 
     names = (
@@ -3293,6 +3300,7 @@ def _full_page_copy_text(slide: Mapping[str, Any]) -> str:
 
 
 def _fit_full_page_copy(slide: Mapping[str, Any], layout: str) -> dict[str, Any]:
+    # 按需导入：重型包
     from PIL import Image, ImageDraw  # type: ignore
 
     spec = FULL_PAGE_LAYOUT_SPECS.get(layout)
@@ -3463,6 +3471,7 @@ def _compose_full_page_image(
     output_path: str | None = None,
 ) -> str:
     """Flatten generated art and exact outline copy into one deterministic page image."""
+    # 按需导入：重型包
     from PIL import Image, ImageDraw  # type: ignore
 
     source = Path(path).expanduser().resolve()
@@ -3550,6 +3559,7 @@ def _compose_full_page_image(
 
 def _is_normalized_full_page_image(path: str) -> bool:
     try:
+        # 按需导入：重型包
         from PIL import Image  # type: ignore
 
         with Image.open(path) as image:
@@ -3616,6 +3626,7 @@ def _autofill_image_prompts(slides: list[SlideOutline]) -> None:
 
     try:
         try:
+            # 按需导入：测试替身（deskpet.tools.image_tools.generate_images）
             from .image_tools import generate_images
         except Exception as exc:  # noqa: BLE001
             log.warning("image prompt autofill unavailable: %s", exc)
@@ -4636,6 +4647,7 @@ def _swap_design_picture(slide, image_path: str) -> bool:
         src = Path(str(image_path))
         if not src.is_file():
             return False
+        # 按需导入：重型包
         from pptx.oxml.ns import qn
 
         # 选面积最大的 Picture(通常是主视觉位)
@@ -4664,6 +4676,7 @@ def _swap_design_picture(slide, image_path: str) -> bool:
         # 阅读器对 ext/content-type 不一致挑剔。
         new_bytes = src.read_bytes()
         try:
+            # 按需导入：重型包
             from PIL import Image  # type: ignore
 
             with Image.open(src) as im:
@@ -5324,6 +5337,7 @@ def _render_full_page_images(
     if not slides:
         return {"ok": False, "error_kind": "missing_page_image", "error": "no full-page slides"}
 
+    # 按需导入：重型包
     from PIL import Image  # type: ignore
 
     normalized_slides = [copy.deepcopy(slide).normalize() for slide in slides]
@@ -5956,6 +5970,7 @@ def _handle_ppt_create(
 def _open_image_file(path: str) -> bool:
     """复用 image_tools 的 OS 打开(桌宠场景,故意打开)。从不抛异常。"""
     try:
+        # 按需导入：测试替身（deskpet.tools.image_tools._open_file）
         from .image_tools import _open_file as _of  # type: ignore
 
         return bool(_of(Path(str(path))))

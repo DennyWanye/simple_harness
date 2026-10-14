@@ -826,6 +826,7 @@ async def _open_transport(exit_stack: AsyncExitStack, config: dict[str, Any]) ->
         return streams[0], streams[1]
 
     if transport == "sse":
+        # 按需导入：重型包
         from mcp.client.sse import sse_client  # local import — optional
 
         url = _expand_path(str(config.get("url", "")))
@@ -834,6 +835,7 @@ async def _open_transport(exit_stack: AsyncExitStack, config: dict[str, Any]) ->
         return streams[0], streams[1]
 
     if transport == "streamable_http":
+        # 按需导入：重型包
         from mcp.client.streamable_http import streamablehttp_client
 
         url = _expand_path(str(config.get("url", "")))

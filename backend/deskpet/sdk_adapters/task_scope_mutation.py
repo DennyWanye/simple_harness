@@ -460,6 +460,7 @@ class TaskScopeUpdateService:
         path turns it into ``ToolResult``; the fallback records it as pending).
         """
 
+        # 按需导入：循环依赖（task_scope_mutation ↔ semantic_closure）
         from deskpet.execution.semantic_closure import (
             dirty_state_tx,
             pending_receipts_tx,
@@ -586,6 +587,7 @@ class TaskScopeUpdateService:
         captured: dict[str, Any] = {}
 
         async def commit_hook(hook_db: aiosqlite.Connection, receipt: Any, replayed: bool) -> None:
+            # 按需导入：循环依赖（task_scope_mutation ↔ semantic_closure）
             from deskpet.execution.semantic_closure import closure_receipt_for_plan_tx
 
             # Task 3 review F-1: an idempotent replay returns the receipt written with

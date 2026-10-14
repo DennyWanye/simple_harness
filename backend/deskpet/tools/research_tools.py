@@ -309,6 +309,7 @@ def _research_raw() -> dict:
     if _RESEARCH_RAW_CACHE is None:
         raw: dict = {}
         try:
+            # 按需导入：测试替身（config）
             import config as _cfg  # type: ignore[import-not-found]
 
             obj = getattr(_cfg, "config", None)  # 若有发布的单例优先用
@@ -374,6 +375,7 @@ def _fanout_subrun_mode(outer: str) -> str:
 
 def _fanout_concurrency() -> int:
     try:
+        # 按需导入：测试替身（config）
         import config as _cfg  # type: ignore[import-not-found]
 
         obj = getattr(_cfg, "config", None)
@@ -1040,6 +1042,7 @@ def _parse_ddg_results(html: str, *, max_results: int) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     # Try selectolax first (fast); fall back to regex if missing.
     try:
+        # 按需导入：可选依赖
         from selectolax.parser import HTMLParser  # type: ignore
     except ImportError:
         return _parse_ddg_results_regex(html, max_results=max_results)
@@ -1872,6 +1875,7 @@ async def _research_subdirection(
 ) -> ResearchReport:
     """Focused v7 child: search once, fetch, filter, and synthesize once."""
 
+    # 按需导入：测试替身（deskpet.workflows.definitions.research_core）
     from ..workflows.definitions import research_core
 
     original_request = (parent_topic or request_topic).strip()
@@ -2162,6 +2166,7 @@ async def deepresearch(
     handler below; the extracted core only performs research computation.
     """
 
+    # 按需导入：测试替身（deskpet.workflows.definitions.research_core）
     from ..workflows.definitions.research_core import (
         ResearchCoreConfig,
         legacy_ports,
@@ -2662,6 +2667,7 @@ def _research_llm_result_from_provider_response(
 ) -> ResearchLLMResult:
     """Normalize OpenAI and relay token fields without inventing usage."""
 
+    # 按需导入：测试替身（deskpet.workflows.definitions.deep_research_v5_contracts）
     from ..workflows.definitions.deep_research_v5_contracts import ResearchLLMResult
 
     payload = response if isinstance(response, dict) else {}
@@ -2719,6 +2725,7 @@ async def _resolve_default_llm_call() -> _LLMCall:
         return _LIVE_LLM_CALL
 
     try:
+        # 按需导入：可选依赖
         from config import load_config, resolve_cloud_api_key  # type: ignore
         from providers.openai_compatible import (  # type: ignore
             OpenAICompatibleProvider,
@@ -2757,6 +2764,7 @@ async def _resolve_default_llm_call_v2() -> _LLMCallV2:
         return _LIVE_LLM_CALL_V2
 
     try:
+        # 按需导入：可选依赖
         from config import load_config, resolve_cloud_api_key  # type: ignore
         from providers.openai_compatible import (  # type: ignore
             OpenAICompatibleProvider,

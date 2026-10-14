@@ -80,6 +80,7 @@ class HostSdkObservability:
         self._degraded_codes: set[str] = set()
 
         try:
+            # 按需导入：可选依赖
             from simple_harness.observability import (
                 CompositeSink,
                 JsonlSink,

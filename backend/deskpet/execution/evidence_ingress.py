@@ -1187,6 +1187,7 @@ class ExecutionEvidenceIngress:
             # Task 2 review F-2: keep the Tool identity so a PROJECT_EFFECT whose
             # outcome is unknown at Run terminal stays *material* (the file may
             # already be written) instead of degrading into a trivial tombstone.
+            # 按需导入：导入隔离
             from deskpet.sdk_adapters.tool_authority import PROJECT_EFFECT_TOOL_NAMES
 
             public_payload["tool_name"] = reservation.tool_name

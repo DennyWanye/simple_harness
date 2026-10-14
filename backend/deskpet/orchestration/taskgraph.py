@@ -63,6 +63,7 @@ def read_taskgraph(service: Any, operation: str, request: Mapping[str, Any]) -> 
     # principal are never accepted from an IPC body.
     service._require()._mission(mission_id)
     try:
+        # 按需导入：可选依赖
         from agent_orchestrator.api.taskgraph import TaskGraphReadError
         from agent_orchestrator.contracts.models import ContractError
         from agent_orchestrator.graph.notification_contracts import TaskGraphErrorV1

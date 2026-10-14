@@ -501,6 +501,7 @@ class ProductSdkRuntimeStack:
             except (TypeError, ValueError, json.JSONDecodeError):
                 return _corrupt_verification(expected_run_id, "start_snapshot_corrupt")
             authority = snapshot.host_control_authority
+            # 按需导入：导入隔离
             from .skill_install_verification import (
                 SKILL_INSTALL_VERIFICATION_PURPOSE,
                 skill_install_verification_authority_hash,
@@ -622,10 +623,13 @@ class ProductSdkRuntimeStack:
         record that is not terminal, returns ``None`` and is tombstoned.
         """
 
+        # 按需导入：循环依赖（composition ↔ evidence_ingress）
         from deskpet.execution.evidence_ingress import (
             ProviderInvocationFact,
             ToolInvocationFact,
         )
+
+        # 按需导入：循环依赖（composition ↔ effect_gate）
         from deskpet.sdk_adapters.effect_gate import classify_objective_event
 
         uow = self._uow
@@ -695,6 +699,7 @@ class ProductSdkRuntimeStack:
         adapter from) and the last assistant message of the Run context.
         """
 
+        # 按需导入：导入隔离
         from deskpet.execution.semantic_closure import ClosureRunFacts
 
         self.require_ready()
@@ -816,6 +821,7 @@ class ProductSdkRuntimeStack:
 
     def read_primary_effect_page_facts(self, run_id: str, effect_id: str):
         """Exact current effect/parent through public SDK records and audit."""
+        # 按需导入：循环依赖（composition ↔ current_tool_pages）
         from deskpet.execution.current_tool_pages import read_effect_facts
 
         self.require_ready()

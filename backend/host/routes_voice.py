@@ -67,6 +67,7 @@ async def realtime_voice_channel(ws: WebSocket):
     if service is None:
         await ws.close(code=1013, reason="realtime unavailable")
         return
+    # 按需导入：重型包
     from simple_harness_service.realtime.transports import LocalAdmissionError
 
     peer_host = ws.client.host if ws.client is not None else ""

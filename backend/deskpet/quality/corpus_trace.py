@@ -98,6 +98,7 @@ def _read_providers(uow, run_id, retained):
 
 def read_public_trace(uow, run_id):
     """Independent observations: no terminal is not permission to erase attempts."""
+    # 按需导入：测试替身（simple_harness）
     from simple_harness import RunId
 
     result = dict(

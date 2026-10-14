@@ -26,6 +26,7 @@ async def _restart_orchestration() -> None:
 def _persist_supervisor_enabled(enabled: bool) -> bool:
     """Persist the runtime supervisor toggle into config.toml."""
     try:
+        # 按需导入：可选依赖
         import tomlkit
 
         path = _CONFIG_PATH

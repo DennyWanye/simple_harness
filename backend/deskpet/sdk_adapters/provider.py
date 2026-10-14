@@ -1483,6 +1483,7 @@ class ProductProviderAdapter:
             return
 
         try:
+            # 按需导入：重型包（pptx）
             from .desktop_runtime import _delivery_adapters
 
             # SDK v0.1.4 uses provider request identities like

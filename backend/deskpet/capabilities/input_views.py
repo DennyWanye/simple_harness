@@ -211,6 +211,7 @@ def _within_roots(path: Path, roots: Sequence[Path]) -> bool:
 
 def _image_metadata(path: Path) -> Mapping[str, Any]:
     try:
+        # 按需导入：可选依赖
         from PIL import ExifTags, Image, UnidentifiedImageError
     except ImportError:
         return {}

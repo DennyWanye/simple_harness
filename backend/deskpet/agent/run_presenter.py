@@ -1176,6 +1176,7 @@ def __getattr__(name: str):
     """Resolve removed names only through the explicit compatibility package."""
 
     if name == "build_legacy_run_presenter":
+        # 按需导入：循环依赖（run_presenter ↔ run_presenter）
         from deskpet.compat.run_presenter import build_legacy_run_presenter
 
         return build_legacy_run_presenter

@@ -40,8 +40,10 @@ logger = logging.getLogger(__name__)
 
 def read_section(config_path: str | Path) -> Mapping[str, Any]:
     try:
+        # 按需导入：可选依赖
         import tomllib
     except ModuleNotFoundError:  # pragma: no cover - Python < 3.11
+        # 按需导入：可选依赖
         import tomli as tomllib  # type: ignore[no-redef]
     try:
         with open(config_path, "rb") as handle:

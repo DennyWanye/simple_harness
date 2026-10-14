@@ -130,6 +130,7 @@ def _load_automation_section(*, force: bool = False) -> dict[str, Any]:
     for p in _candidate_paths():
         try:
             if p.is_file():
+                # 按需导入：重型包
                 import tomli
 
                 with p.open("rb") as f:
@@ -373,14 +374,17 @@ def _run_browser_job(
     _set_job(job_id, status="running", started_at=time.time())
     try:
         try:
+            # 按需导入：重型包
             from browser_use import Agent  # type: ignore
 
             try:
                 # browser-use >=0.1.40 ships a thin ChatOpenAI wrapper;
                 # older builds expose langchain_openai.ChatOpenAI. Try the
                 # native one first, then fall back.
+                # 按需导入：重型包
                 from browser_use.llm import ChatOpenAI  # type: ignore
             except Exception:  # noqa: BLE001
+                # 按需导入：重型包
                 from langchain_openai import ChatOpenAI  # type: ignore
         except Exception as exc:  # noqa: BLE001 — dependency / import failure
             _set_job(

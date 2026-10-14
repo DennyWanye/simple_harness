@@ -117,6 +117,8 @@ def ast_metrics() -> dict:
         "inner_imports": 0, "except_broad": 0, "except_broad_silent": 0,
         "backend_imports_sdk_internal": 0, "backend_sdk_module_paths": set(), "print_calls": 0, "sys_path_hacks": 0,
         "global_stmts": 0, "codename_comment_lines": 0, "legacy_lines": 0, "py_lines": 0,
+        # 阶段 3.5 起：留在函数里、标了"循环依赖"的导入（上限：SDK 阶段 5 末 ≤ 30，后端阶段 6 末 ≤ 20）
+        "cycle_imports_backend": 0, "cycle_imports_sdk": 0,
     }
     for tree_name, tree in PY_TREES.items():
         for path in py_files(tree):
@@ -125,6 +127,7 @@ def ast_metrics() -> dict:
             lines = src.count("\n") + 1
             m["py_lines"] += lines
             m["legacy_lines"] += len(re.findall(r"^.*(?:legacy|deprecated).*$", src, re.I | re.M))
+            m[f"cycle_imports_{tree_name}"] += len(re.findall(r"^\s*# 按需导入：循环依赖", src, re.M))
             for line in src.splitlines():
                 s = line.strip()
                 if s.startswith("#") and CODENAME.search(s):

@@ -154,6 +154,7 @@ def resolve_for_read(p: str | os.PathLike[str]) -> Path | None:
         return None
     target = _norm(p)
     # 2026-09-26：不再要求用户先用选择框授权；受保护的核心文件（凭证、密钥）除外。
+    # 按需导入：循环依赖（office_paths ↔ protected_paths）
     from deskpet.permissions.protected_paths import guard
 
     if guard(target, "read") is not None:
@@ -215,12 +216,14 @@ def resolve_for_write(
     raw = Path(p).expanduser()
     if not raw.is_absolute():
         # 相对路径按工作区解析，不落进后端进程目录（2026-09-26 挑战意见）
+        # 按需导入：循环依赖（office_paths ↔ write_scope）
         from agent.write_scope import resolve_workspace_root
 
         raw = resolve_workspace_root() / raw
     target = _norm(raw)
     # 2026-09-26 用户决定：输出位置不再限定为临时/输出/已授权目录；受保护的核心
     # 文件（凭证、本应用自身、系统目录）要用户在会话里授权。
+    # 按需导入：循环依赖（office_paths ↔ protected_paths）
     from deskpet.permissions.protected_paths import guard
 
     violation = guard(target, "write")

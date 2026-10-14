@@ -678,6 +678,7 @@ class HumanMemoryHostService:
         )
         # S5b Task 3: a checkpoint over a scope with an open pending closure
         # first force-closes it (no_mutation(closure_abandoned, host_forced)).
+        # 按需导入：导入隔离
         from deskpet.execution.semantic_closure import force_close_pending
 
         await force_close_pending(
@@ -718,6 +719,7 @@ class HumanMemoryHostService:
             # S5b Task 3 (design-freeze §7 / A3): a scope completed or resumed
             # by the Host while a closure is still pending is force-closed with
             # no_mutation(closure_abandoned, host_forced) — zero Provider calls.
+            # 按需导入：导入隔离
             from deskpet.execution.semantic_closure import force_close_pending
 
             await force_close_pending(

@@ -46,6 +46,7 @@ def tokenizer_path() -> Path | None:
         path = Path(configured)
         return path if path.is_absolute() else None
     try:
+        # 按需导入：可选依赖
         from paths import user_models_dir
     except ImportError:
         return None

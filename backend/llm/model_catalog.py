@@ -184,6 +184,7 @@ def model_context_window(model_id: str) -> int | None:
     # match, not the 32K "_default" fallback (which would be wrong for
     # most relay models).
     try:
+        # 按需导入：测试替身（llm）
         from llm import model_info as _mi
 
         if mid in _mi.BUILTIN:
@@ -241,6 +242,7 @@ def build_catalog(model_ids: list[str]) -> list[dict[str, Any]]:
         # exposes ids.  Non-context models (image/embedding/audio) remain
         # excluded.  This is not presented as Provider capability metadata.
         try:
+            # 按需导入：测试替身（llm）
             from llm import model_info as _mi
 
             _supported = (

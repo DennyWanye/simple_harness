@@ -648,6 +648,7 @@ class FencedAsyncSqliteSaver(BaseCheckpointSaver[int]):
                     ),
                 )
             if interrupts:
+                # 按需导入：循环依赖（checkpointer ↔ human）
                 from ..human import HumanDecisionStore
 
                 interrupt_id, prompt, kind, expires_at = interrupts[0]
@@ -988,6 +989,7 @@ class NativeCheckpointStore:
 
     @staticmethod
     def _snapshot_object(payload: Mapping[str, Any]) -> object:
+        # 按需导入：循环依赖（checkpointer ↔ native）
         from ..native import NativeSnapshotEnvelope, NativeTask
 
         completed = payload.get("completed_activations") or {}
@@ -1364,7 +1366,10 @@ class NativeCheckpointStore:
             raise NativeCheckpointError(
                 "run_identity_mismatch", "native checkpoint namespace changed"
             )
+        # 按需导入：测试替身（deskpet.workflows.contracts）
         from ..contracts import StatePatch
+
+        # 按需导入：循环依赖（checkpointer ↔ native）
         from ..native import NativeExecution
 
         pending_results = {
@@ -1854,6 +1859,7 @@ class NativeCheckpointStore:
         intent: Mapping[str, Any],
         now: float,
     ) -> str:
+        # 按需导入：循环依赖（checkpointer ↔ outbox）
         from ..outbox import stable_delivery_id, stable_event_id
 
         intent_id = str(intent.get("intent_id") or "").strip()
@@ -2110,6 +2116,7 @@ class NativeCheckpointStore:
             if existing is not None:
                 await db.commit()
                 if protocol_call:
+                    # 按需导入：循环依赖（checkpointer ↔ native）
                     from ..native import NativeCommitResult
 
                     return NativeCommitResult(
@@ -2362,6 +2369,7 @@ class NativeCheckpointStore:
             await db.close()
         await self._fault("frontier.after_db_commit_before_return")
         if protocol_call:
+            # 按需导入：循环依赖（checkpointer ↔ native）
             from ..native import NativeCommitResult
 
             return NativeCommitResult(
@@ -2538,6 +2546,7 @@ class NativeCheckpointStore:
         interrupt: Mapping[str, JsonValue] | None = None,
         configurable: Mapping[str, JsonValue] | None = None,
     ) -> dict[str, Any] | None:
+        # 按需导入：循环依赖（checkpointer ↔ human）
         from ..human import HumanDecisionStore
 
         protocol_call = configurable is not None

@@ -1089,6 +1089,7 @@ class CompanionStore:
         private mutation primitive to the resolver.
         """
 
+        # 按需导入：循环依赖（store ↔ preferences）
         from .preferences import apply_preference_event_db
 
         now = self._now()
@@ -10008,6 +10009,7 @@ class CompanionStore:
             # transaction with the event tombstone.  A second async writer
             # would leave a crash window where a forgotten preference still
             # influences a new Run.
+            # 按需导入：循环依赖（store ↔ preferences）
             from .preferences import recompute_preferences_after_forget_db
 
             recompute_preferences_after_forget_db(

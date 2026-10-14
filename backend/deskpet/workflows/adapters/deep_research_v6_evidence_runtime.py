@@ -615,6 +615,7 @@ class DeepResearchV6EvidenceRuntime:
             }
             logger.info("deepresearch_stage_timing", **detail)
             try:
+                # 按需导入：测试替身（observability.metrics_sink）
                 from observability.metrics_sink import record
 
                 record("deepresearch_stage_timing", detail)

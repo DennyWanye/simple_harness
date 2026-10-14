@@ -284,6 +284,7 @@ async def read_run_dependencies(
     current = {"evidence_id": run["evidence_id"], "envelope_hash": run["evidence_hash"]}
     if current not in proof["evidence"]:
         raise ValueError("primary_dependencies_current_user_missing")
+    # 按需导入：循环依赖（primary_dependencies ↔ primary_context_pages）
     from deskpet.execution.primary_context_pages import verify_history_projections
 
     await verify_history_projections(
@@ -293,6 +294,7 @@ async def read_run_dependencies(
     evidence = list(proof["evidence"])
     short = list(proof.get("short_horizon", ()))
     drafts = list(proof.get("procedure_drafts", ()))
+    # 按需导入：循环依赖（primary_dependencies ↔ disclosure）
     from deskpet.task_scope.disclosure import verify_scope_disclosure
 
     cursor = await db.execute("PRAGMA database_list")
@@ -475,9 +477,16 @@ async def read_run_dependencies(
             # claimed error code as a successful content read. (F07: the model
             # passing a typed recall item id as reference_id must not make the
             # whole Run unverifiable.)
+            # 按需导入：循环依赖（primary_dependencies ↔ current_tool_pages）
             from deskpet.execution.current_tool_pages import PREFIX as CURRENT_PAGE_PREFIX
+
+            # 按需导入：循环依赖（primary_dependencies ↔ current_tool_pages）
             from deskpet.execution.current_tool_pages import admitted_current_page
+
+            # 按需导入：循环依赖（primary_dependencies ↔ primary_context_pages）
             from deskpet.execution.primary_context_pages import PREFIX as HISTORY_PAGE_PREFIX
+
+            # 按需导入：循环依赖（primary_dependencies ↔ primary_context_pages）
             from deskpet.execution.primary_context_pages import (
                 PrimaryContextPageUnavailable,
                 admitted_page,
@@ -525,6 +534,7 @@ async def read_run_dependencies(
                 # 事件 AF：一次纯措辞升级不得把还在飞的 Run 判成重放不一致。
                 # ``rejection_code_matches`` 只认冻结的「新码 → 它取代的旧码」这
                 # 一个方向，语义没有放宽（review M1 同款理由，见 legacy_summary）。
+                # 按需导入：循环依赖（primary_dependencies ↔ current_tool_pages）
                 from deskpet.execution.current_tool_pages import rejection_code_matches
 
                 if primary_reference and not rejection_code_matches(
@@ -546,6 +556,7 @@ async def read_run_dependencies(
         # 这条重放校验分支不会再有对应的工具调用记录。
         if row["tool_name"] == "context_page_in":
             if value.get("kind") == "primary_current_tool_page_v1":
+                # 按需导入：循环依赖（primary_dependencies ↔ current_tool_pages）
                 from deskpet.execution.current_tool_pages import (
                     LEGACY_PAGE_SIZE,
                     admitted_current_page,
@@ -581,6 +592,7 @@ async def read_run_dependencies(
                 # included by this ordered reader; never assert a fake S1.
                 continue
             if value.get("kind") == "primary_tool_history_page_v1":
+                # 按需导入：循环依赖（primary_dependencies ↔ primary_context_pages）
                 from deskpet.execution.primary_context_pages import LEGACY_PAGE_BYTES, admitted_page
 
                 expected = await admitted_page(
@@ -710,6 +722,7 @@ async def check_runtime_dependencies(
             if found is None:
                 return  # trusted Host lookup: this is not a foreground primary Run
             run, proof = found
+            # 按需导入：循环依赖（primary_dependencies ↔ current_tool_pages）
             from deskpet.execution.current_tool_pages import verify_control_stubs, verify_request
 
             verify_request(stack, sdk_run_id, request.messages)

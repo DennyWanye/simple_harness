@@ -80,6 +80,7 @@ text_occluded, layout_misfit, blank. Return only a strict JSON array:
 def _b64_image(path: str, *, max_w: int = 768) -> str | None:
     """读图→缩到 max_w→JPEG base64(控 token)。失败 None。"""
     try:
+        # 按需导入：重型包
         from PIL import Image  # type: ignore
 
         with Image.open(path) as im:
@@ -98,6 +99,7 @@ def _visual_review_model() -> str:
     """Use a dedicated vision-capable model instead of the text chat model."""
 
     try:
+        # 按需导入：测试替身（config）
         from config import standalone_config_section  # type: ignore
 
         ppt_config = standalone_config_section("ppt") or {}
@@ -134,6 +136,7 @@ def vision_chat(
         if not content_parts:
             return ""
 
+        # 按需导入：可选依赖
         import httpx
 
         model = _visual_review_model()

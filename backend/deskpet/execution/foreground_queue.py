@@ -1958,6 +1958,7 @@ class ForegroundQueueStore:
         return snapshot
 
     async def settle_preparation_rejection(self, *, rejection, owner_id, generation):
+        # 按需导入：循环依赖（foreground_queue ↔ preparation_rejection）
         from deskpet.execution.preparation_rejection import settle_preparation_rejection
 
         return await settle_preparation_rejection(
@@ -2039,7 +2040,10 @@ class ForegroundQueueStore:
                 head = await self._validate_lease_tx(db, host_run_id, owner_id, generation, now)
                 await self._validate_sdk_binding_tx(db, host_run_id, sdk_run_id)
                 run = await self._run_tx(db, host_run_id)
+                # 按需导入：循环依赖（foreground_queue ↔ evidence_ingress）
                 from deskpet.execution.evidence_ingress import ExecutionEvidenceIngress
+
+                # 按需导入：循环依赖（foreground_queue ↔ primary_history）
                 from deskpet.execution.primary_history import terminal_observation_tx
 
                 effective_scope = await ExecutionEvidenceIngress(
@@ -2106,6 +2110,7 @@ class ForegroundQueueStore:
                     # event of the admission scope must be covered by a closing
                     # receipt, or this Run must have recorded a `pending` receipt.
                     # Applies to COMPLETED / FAILED / CANCELLED / STOPPED alike.
+                    # 按需导入：导入隔离
                     from deskpet.execution.semantic_closure import closure_coverage_tx
 
                     coverage = await closure_coverage_tx(
@@ -2632,6 +2637,7 @@ class ForegroundQueueStore:
         )
         if turn is None:
             return None
+        # 按需导入：循环依赖（foreground_queue ↔ admission_rejection）
         from deskpet.execution.admission_rejection import read_admission_rejection_tx
 
         while turn is not None:

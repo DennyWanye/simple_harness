@@ -191,6 +191,7 @@ def _capability_mutation_resources(
 def register_orchestration_controls(registry: Any, profiles: ProfileRegistry) -> None:
     """Register the core exclusive control surface once at composition time."""
 
+    # 按需导入：测试替身（deskpet.workflows.contracts）
     from deskpet.workflows.contracts import EffectKind, EffectPolicy
 
     if not registry.has(WORKSPACE_PREPARE):

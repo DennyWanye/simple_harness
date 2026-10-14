@@ -92,6 +92,7 @@ class OpenAIAdapter(BaseLLMAdapter):
         if not self._api_key:
             raise LLMAuthError("OPENAI_API_KEY not set", provider=self.name)
         try:
+            # 按需导入：可选依赖
             from openai import AsyncOpenAI
         except ImportError as exc:  # pragma: no cover
             raise LLMProviderError(f"openai SDK not installed: {exc}", provider=self.name) from exc

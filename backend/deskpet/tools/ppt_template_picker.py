@@ -175,6 +175,7 @@ def is_category(name: str | None) -> bool:
 # ---------------------------------------------------------------------
 def _load_font(size: int):
     """尽量取一个可读字体,失败回退 PIL 默认。"""
+    # 按需导入：重型包
     from PIL import ImageFont  # type: ignore
 
     for name in ("arial.ttf", "DejaVuSans.ttf", "msyh.ttc", "simhei.ttf"):
@@ -199,6 +200,7 @@ def _build_contact_sheets(
     """把 ``(id, preview_path)`` 拼成网格图,每格左上角标 id。返回拼好的图路径列表。
     缓存到临时目录,内容签名命中则复用。失败返回 []。从不抛异常。"""
     try:
+        # 按需导入：重型包
         from PIL import Image, ImageDraw  # type: ignore
 
         per_sheet = cols * rows
@@ -254,6 +256,7 @@ def _build_contact_sheets(
 def _b64_of(path: Path, *, max_w: int = 1024) -> str | None:
     """图 → 缩到 max_w → JPEG base64。失败 None。"""
     try:
+        # 按需导入：重型包
         from PIL import Image  # type: ignore
 
         with Image.open(path) as im:

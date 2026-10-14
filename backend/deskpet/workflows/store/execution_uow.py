@@ -7239,6 +7239,7 @@ class SqliteExecutionUnitOfWork:
         follow that one legal CAS transition in the same transaction.
         """
 
+        # 按需导入：循环依赖（execution_uow ↔ tool_public_projection）
         from deskpet.security.tool_public_projection import (
             ToolPresentationPolicyV1,
             ToolPublicProjectorV1,

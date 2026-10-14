@@ -37,6 +37,9 @@ from datetime import UTC, datetime, timezone
 from pathlib import Path
 
 BACKEND = Path(__file__).resolve().parents[1]
+# 白名单（整治计划 2.4 修订第 3.4 条）：用户日常直接运行
+# `python backend/scripts/grok_build_runtime.py …`；后端没有装进虚拟环境，
+# 只能在这里把 backend 目录加进导入路径。
 sys.path.insert(0, str(BACKEND))
 
 PROXY_BASE_URL = "https://cli-chat-proxy.grok.com/v1"

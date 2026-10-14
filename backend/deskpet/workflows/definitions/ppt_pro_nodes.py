@@ -296,6 +296,7 @@ def inspect_rendered_deck(
             )
         if not failures:
             try:
+                # 按需导入：重型包
                 from pptx import Presentation
 
                 loaded = Presentation(str(candidate))

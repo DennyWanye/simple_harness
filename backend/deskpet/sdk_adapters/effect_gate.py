@@ -106,6 +106,7 @@ def project_tool_execution_context(base, context=None):
         # verified a durable task route and its binding root for THIS call, so
         # the read runs inside that root and nothing else.  The two projections
         # are mutually exclusive (a Tool is either PROJECT_EFFECT or read-class).
+        # 按需导入：导入隔离
         from deskpet.sdk_adapters.read_gate import project_read_execution_context
 
         return project_read_execution_context(base)

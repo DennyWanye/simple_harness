@@ -222,6 +222,7 @@ async def read_current_input_source(*, db_path, subject, turn_id):
     reader explicitly requires the current head to match the admitted token.
     """
 
+    # 按需导入：死代码待删（deskpet.memory.history_source_authority）
     from deskpet.memory.history_source_authority import history_namespace_tx
 
     async with aiosqlite.connect(f"file:{db_path}?mode=ro", uri=True) as db:

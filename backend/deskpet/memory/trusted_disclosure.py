@@ -342,6 +342,7 @@ async def resolve_current_disclosure(*, db_path, subject, run_id, request_id, tu
             if current is not None and current["source_origin"] != "host_default":
                 _reject("legacy_policy_changed")
             # Existing persisted pre-v48 turns retain the original SELF lane.
+            # 按需导入：循环依赖（trusted_disclosure ↔ primary_dependencies）
             from deskpet.execution.primary_dependencies import current_disclosure
 
             return current_disclosure(run_id=run_id, subject=subject, request_id=request_id)
@@ -350,6 +351,7 @@ async def resolve_current_disclosure(*, db_path, subject, run_id, request_id, tu
             _reject("binding_stale")
         input_use = None
         if "input_use" in turn:
+            # 按需导入：循环依赖（trusted_disclosure ↔ current_input_source）
             from deskpet.memory.current_input_source import read_input_use_tx
 
             _, _, input_use = await read_input_use_tx(db, turn=row, config=current)
@@ -360,6 +362,7 @@ async def resolve_current_disclosure(*, db_path, subject, run_id, request_id, tu
             + canonical_hash({"binding": token, "request_id": request_id})
         )
         if input_use is not None:
+            # 按需导入：循环依赖（trusted_disclosure ↔ current_input_source）
             from deskpet.memory.current_input_source import input_context_ref
 
             authority_ref = input_context_ref(current["source_ref"], token, request_id)

@@ -65,6 +65,7 @@ def _check(condition, reason_code, *, ordinal=None, code=MISMATCH):
 
 async def _verify_route_control_tx(db, *, sdk_run_id, fact, public, reservation, ordinal=None):
     """Exact existing Host control producer, not a physical invocation proof."""
+    # 按需导入：循环依赖（primary_message_v3 ↔ context_authority）
     from deskpet.sdk_adapters.context_authority import canonical_sha256
 
     _check(set(public) == set(CONTROL_PUBLIC_KEYS), "route_control_public_keys", ordinal=ordinal)
