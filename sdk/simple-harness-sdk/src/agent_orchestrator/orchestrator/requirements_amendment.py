@@ -85,6 +85,7 @@ def amend_requirements(
     source: Mapping[str, Any],
     principal: Any,
 ) -> dict[str, Any]:
+    # 按需导入：测试替身（agent_orchestrator.deployment.root）
     from ..deployment.root import (
         AmendmentRefused,
         apply_changes,

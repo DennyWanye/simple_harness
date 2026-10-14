@@ -349,6 +349,7 @@ class PlanCommitsMixin:
                 raise PlanCommitRejected(
                     "TASKGRAPH_NOT_BOUND", "this Mission has no TaskGraph binding"
                 ) from None
+            # 按需导入：循环依赖（plan_commits ↔ taskgraph_plan_commit）
             from .taskgraph_plan_commit import TaskGraphPlanCommitParticipant
 
             if (

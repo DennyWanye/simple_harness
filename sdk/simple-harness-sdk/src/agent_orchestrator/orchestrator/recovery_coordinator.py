@@ -316,6 +316,7 @@ class RecoveryCoordinator:
             alive=_owner_alive,
         )
         self.recovery_id = recovery_id
+        # 按需导入：循环依赖（recovery_coordinator ↔ event_handler）
         from .event_handler import DeferredPlanning
 
         if isinstance(orch._deferred_planning, DeferredPlanning):

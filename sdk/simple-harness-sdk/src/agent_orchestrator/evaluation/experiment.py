@@ -198,6 +198,7 @@ def _exclusive(path: Path) -> Iterator[None]:
     # OS locks release on crashes; unlike lockfile creation, they need no stale-lock retry.
     with path.open("a+b") as stream:
         if sys.platform == "win32":
+            # 按需导入：平台专用
             import msvcrt
 
             stream.write(b"\0")
@@ -205,6 +206,7 @@ def _exclusive(path: Path) -> Iterator[None]:
             stream.seek(0)
             msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
         else:
+            # 按需导入：平台专用
             import fcntl
 
             fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)

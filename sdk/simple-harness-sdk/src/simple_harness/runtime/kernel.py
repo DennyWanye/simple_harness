@@ -1569,6 +1569,7 @@ class Runtime:
         workflow_driver: RuntimeDriver | None = None
         workflow_spawn: WorkflowSpawnRuntimeCoordinator | None = None
         if workflow_runner is not None:
+            # 按需导入：循环依赖（kernel ↔ workflow）
             from .drivers.workflow import (
                 WorkflowRuntimeDriver,
                 build_workflow_runtime_driver,
@@ -3129,8 +3130,13 @@ class Runtime:
                         # re-activates the Run through ``_wake_continuation``.
                         await self._abandon_run_authority(run_id)
                     return
+            # 按需导入：循环依赖（kernel ↔ react）
             from simple_harness.runtime.drivers.react import ReActDriver
+
+            # 按需导入：循环依赖（kernel ↔ drivers）
             from simple_harness.runtime.drivers.start_mode import StartModeDriverRouter
+
+            # 按需导入：循环依赖（kernel ↔ workflow）
             from simple_harness.runtime.drivers.workflow import WorkflowRuntimeDriver
 
             # Only this concrete SDK selector is transparent to recording.

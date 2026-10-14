@@ -292,6 +292,7 @@ class KnowledgeIndex:
         A reference is ``<id>@<version>``: the version the worker read is the version it
         is held to.  No version, another version, or knowledge that is no longer current
         (:func:`knowledge_standing`) are all problems."""
+        # 按需导入：循环依赖（verified_knowledge ↔ knowledge_standing）
         from .knowledge_standing import CURRENT, knowledge_standing
 
         problems: list[str] = []

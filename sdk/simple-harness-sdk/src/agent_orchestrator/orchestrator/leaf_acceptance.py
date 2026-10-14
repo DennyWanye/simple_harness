@@ -446,6 +446,7 @@ class LeafAcceptanceAssembly:
             projection=projection,
         )
         record = self._official_record(package)
+        # 按需导入：循环依赖（leaf_acceptance ↔ assurance_validity）
         from .assurance_validity import acceptance_id_for
 
         acceptance_id = acceptance_id_for(task_id, result_id, int(revision.revision))

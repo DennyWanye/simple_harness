@@ -98,9 +98,16 @@ from ..orchestrator.planning_admission_commits import PlanningCommitAdmission
 from ..planning import plan_preview
 from ..planning.decision_adapter import AdapterContext, adapt_admitted_decision, adapt_for_preview
 from ..planning.decision_admission import (
+    AdmissionContext,
     AdmittedPlanningDecision,
+    AuthorizationView,
+    BudgetView,
+    CapabilityView,
     DecisionAdmissionContext,
+    MethodInstanceView,
+    MethodView,
     NoMutationDecision,
+    OperationStateView,
     PlanShapeView,
     PreAdmittedPlanningDecision,
     _enablement_key,
@@ -3459,6 +3466,7 @@ class Orchestrator:
                 continue
             # 车道 J H03（原计划 §10.5、§24.1 第 10 条）：问过规划器、它不改、等待关系成环 → 按"死锁"停，
             # 不借"没有可派发的工作"；环的事实随停止详情写出。
+            # 按需导入：测试替身（agent_orchestrator.scheduling.wait_for.collect_wait_facts）
             from ..scheduling.wait_for import collect_wait_facts, deadlock_facts, has_deadlock
 
             wait_for = deadlock_facts(collect_wait_facts(self.store, new_mode.network(mission.id)))
@@ -5162,19 +5170,6 @@ class Orchestrator:
     ) -> Any:
         """Assemble admission from the request snapshot and the live HTN world."""
 
-        from ..orchestrator.plan_commits import PlanPrincipal
-        from ..planning.decision_admission import (
-            AdmissionContext,
-            AuthorizationView,
-            BudgetView,
-            CapabilityView,
-            MethodInstanceView,
-            MethodView,
-            OperationStateView,
-            PlanningRetryBudgetView,
-            PlanShapeView,
-        )
-
         body = intent.config.get("planning_package")
         if not isinstance(body, Mapping):
             raise ContractError("planning intent has no sealed planning package")
@@ -6532,6 +6527,7 @@ class Orchestrator:
         agent = runtime.uow.read_agent_binding(intent.agent_id)
         if agent is None:
             return False, None
+        # 按需导入：测试替身（simple_harness）
         from simple_harness import RunId
 
         in_flight = False

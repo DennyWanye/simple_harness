@@ -162,6 +162,7 @@ class CommandIngress:
                     ).fetchone()
                     is not None
                 ):
+                    # 按需导入：循环依赖（command_ingress ↔ sqlite）
                     from .sqlite.context_use_requirements import require
 
                     require(connection, run_id, self._context_use_scope)
@@ -170,6 +171,7 @@ class CommandIngress:
                     "(run_id,namespace,api_mode,intent_hash,created_at) VALUES (?,?,?,?,?)",
                     (run_id, namespace, RunApiMode.LEGACY.value, intent_hash, now),
                 )
+                # 按需导入：循环依赖（command_ingress ↔ sqlite）
                 from .sqlite.context_use_requirements import bind
 
                 bind(
@@ -181,6 +183,7 @@ class CommandIngress:
                     intent_hash,
                 )
                 return
+            # 按需导入：循环依赖（command_ingress ↔ sqlite）
             from .sqlite.context_use_requirements import require
 
             require(connection, run_id, self._context_use_scope)
@@ -438,6 +441,7 @@ class CommandIngress:
                 ):
                     raise CommandError(CommandErrorCode.INTENT_CONFLICT)
                 if intent.kind is not CommandKind.CANCEL:
+                    # 按需导入：循环依赖（command_ingress ↔ sqlite）
                     from .sqlite.context_use_requirements import require
 
                     require(connection, intent.run_id.value, self._context_use_scope)
@@ -510,6 +514,7 @@ class CommandIngress:
                 ),
             )
             if intent.kind is CommandKind.START:
+                # 按需导入：循环依赖（command_ingress ↔ sqlite）
                 from .sqlite.context_use_requirements import bind
 
                 bind(
@@ -521,6 +526,7 @@ class CommandIngress:
                     intent.intent_hash,
                 )
             elif intent.kind is CommandKind.CONTINUE:
+                # 按需导入：循环依赖（command_ingress ↔ sqlite）
                 from .sqlite.context_use_requirements import require
 
                 require(connection, intent.run_id.value, self._context_use_scope)
@@ -624,6 +630,7 @@ __all__ = ("CommandClaim", "CommandIngress")
 
 
 def _record_audit(connection, command_id, operation, now, **kwargs):
+    # 按需导入：循环依赖（command_ingress ↔ sqlite）
     from .sqlite.command_audit import record_command_event
 
     record_command_event(connection, command_id, operation, now=now, **kwargs)

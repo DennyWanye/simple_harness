@@ -927,6 +927,7 @@ class ActionCommitsMixin:
                 action, connectors=connectors, deployment=deployment, rehandoff=rehandoff
             )
             if reason is None and action.get("task_id"):
+                # 按需导入：循环依赖（action_commits ↔ taskgraph_dispatch）
                 from .taskgraph_dispatch import require_taskgraph_unfenced
 
                 try:
@@ -968,7 +969,10 @@ class ActionCommitsMixin:
                         reason = "operation_link_mismatch"
                     if reason is None:
                         # Every link is a T0 link: a broken chain cannot reserve or send.
+                        # 按需导入：循环依赖（action_commits ↔ operation_profiles）
                         from ..runtime.operation_profiles import BuiltinOperationProfiles
+
+                        # 按需导入：循环依赖（action_commits ↔ operation_materialization_inputs）
                         from .operation_materialization_inputs import (
                             OperationMaterializationInputError,
                         )
@@ -1038,6 +1042,7 @@ class ActionCommitsMixin:
             )
             handoffs = int(action.get("handoffs") or 0) + 1
             if start_use is not None and start_use.certificate is not None:
+                # 按需导入：循环依赖（action_commits ↔ assurance_point_use）
                 from .assurance_point_use import record_point_use_locked
 
                 record_point_use_locked(self._store, start_use)
@@ -1132,6 +1137,7 @@ class ActionCommitsMixin:
         not a wait on a person, so ground that does not come back ends in the stall record,
         with the refusal named, and the Planner decides.  The certificate is recorded beside
         the HANDED_OFF write, in this same transaction."""
+        # 按需导入：循环依赖（action_commits ↔ assurance_point_use）
         from .assurance_point_use import ACTION_CONSUMER, EvidenceClaim, certify_point_use_locked
 
         task_id = str(action["task_id"])

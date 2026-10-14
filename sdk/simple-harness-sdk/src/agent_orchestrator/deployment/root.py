@@ -281,6 +281,7 @@ def initialize_root(
     An assured Mission's factory already wrote revision 1 inside the same create
     transaction; that body must be byte-identical and is never inserted twice.
     """
+    # 按需导入：循环依赖（root ↔ hierarchical_dispatch）
     from ..orchestrator.hierarchical_dispatch import is_hierarchical
 
     if not is_hierarchical(mission):

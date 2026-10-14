@@ -314,7 +314,6 @@ def _ask_planner_after_rejection(orch: Any, mission: Any, rejected: dict[str, An
     上限（秩序，不是判断）：每次拒绝只问一次；规划器回应了而内容没换出新版本就停；同一效果被人
     拒绝累计 ``SOURCE_REPAIR_CAP`` 次直接停。被拒过的同一份内容系统不会再自动重交。"""
 
-    from ..contracts.state_machines import MissionStopReason
 
     count = len(rejected["rejections"])
     latest = rejected["rejections"][-1]
@@ -740,7 +739,6 @@ def prepare_system_operations(orch: Any, mission_id: str) -> bool:
             return _stop(orch, mission_id, plan["stop"])
         if "stop_failed" in plan:
             # 阶段 B 裁决第 1 类：同一效果按原内容重交到上限仍没生效——具名停，列出每次的结局
-            from ..contracts.state_machines import MissionStopReason
 
             orch._commit_fail_mission(
                 mission_id,
@@ -780,6 +778,7 @@ def prepare_system_operations(orch: Any, mission_id: str) -> bool:
             # 系统代办直接调底层提交，必须自己先装，否则进程里没人手动提交过时每轮都被
             # "operation runtime is unavailable" 拒掉、任务空转（2026-09-29 真机）。只在真要
             # 提交时装：没有发布效果的任务所在环境可能根本没注册发布连接器。
+            # 按需导入：循环依赖（system_operations ↔ operation_runtime）
             from .operation_runtime import ensure_operation_runtime
 
             ensure_operation_runtime(orch)
@@ -793,7 +792,6 @@ def prepare_system_operations(orch: Any, mission_id: str) -> bool:
                 # 阶段 B 裁决第 4 类: the deployment changed after confirmation and its
                 # profile can no longer reach the confirmed milestone. Deterministic: no
                 # retry; the Mission stops by name with the fact recorded.
-                from ..contracts.state_machines import MissionStopReason
 
                 orch._commit_fail_mission(
                     mission_id,

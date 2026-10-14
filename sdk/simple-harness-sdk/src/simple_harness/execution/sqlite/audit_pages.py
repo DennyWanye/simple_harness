@@ -23,6 +23,7 @@ from simple_harness.execution.audit import (
     audit_reference,
 )
 
+from . import command_audit, stage_audit
 from .audit import _opaque_operation, read_snapshot, terminal_evidence
 from .stage_audit import run_stage_cut
 
@@ -148,18 +149,14 @@ def open_pages(database, run_id=None, *, page_size=256, command_id=None, stage_i
                 lambda: int(time.monotonic() - spool.started > MAX_SECONDS), 1000
             )
             try:
-                from .command_audit import command_cut, command_incarnation, read_command_snapshot
-
                 if query_kind == "stage":
-                    from .stage_audit import (
-                        read_stage_snapshot as read_command_snapshot,
-                    )
-                    from .stage_audit import (
-                        stage_cut as command_cut,
-                    )
-                    from .stage_audit import (
-                        stage_incarnation as command_incarnation,
-                    )
+                    read_command_snapshot = stage_audit.read_stage_snapshot
+                    command_cut = stage_audit.stage_cut
+                    command_incarnation = stage_audit.stage_incarnation
+                else:
+                    read_command_snapshot = command_audit.read_command_snapshot
+                    command_cut = command_audit.command_cut
+                    command_incarnation = command_audit.command_incarnation
 
                 if command_id is None:
                     header = read_snapshot(source, run_id.value, 256, operation_sink=spool)
@@ -303,11 +300,12 @@ def read_page(database, run_id=None, *, cursor, command_id=None, stage_id=None):
             # Prove current canonical Run ownership/start and the captured immutable
             # cut. Filesystem identity is only a location, never an incarnation.
             with database.transaction(read_only=True) as source:
-                from .command_audit import command_cut, command_incarnation
-
                 if query_kind == "stage":
-                    from .stage_audit import stage_cut as command_cut
-                    from .stage_audit import stage_incarnation as command_incarnation
+                    command_cut = stage_audit.stage_cut
+                    command_incarnation = stage_audit.stage_incarnation
+                else:
+                    command_cut = command_audit.command_cut
+                    command_incarnation = command_audit.command_incarnation
 
                 cut = manifest["event_cut"]
                 if command_id is None:

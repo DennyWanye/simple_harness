@@ -132,6 +132,7 @@ def _parameterize_ground_methods(domain: str) -> str:
 
 def _hierarchy(problem: Any, plan: Any) -> dict[str, Any]:
     """Translate the solver's actual decomposition, never reconstruct one from SH."""
+    # 按需导入：重型包
     from unified_planning.plans import (  # type: ignore[import-not-found]
         ActionInstance,
         HierarchicalPlan,
@@ -210,6 +211,7 @@ def _hierarchy(problem: Any, plan: Any) -> dict[str, Any]:
 
 
 def _worker(root: Path, timeout: float) -> dict[str, Any]:
+    # 按需导入：重型包
     from unified_planning.exceptions import (  # type: ignore[import-not-found]
         UPNoSuitableEngineAvailableException,
         UPUnsupportedProblemTypeError,

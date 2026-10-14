@@ -96,6 +96,7 @@ def _validate_package(reader: AssuranceReader, package: ReviewPackage, body: dic
             AssuranceRef.from_json(body["criterion_policy_ref"], kinds={"check_policy"})
         ).body_json
     )
+    # 按需导入：循环依赖（assurance_review_transport ↔ assurance_purpose_reviews）
     from .assurance_purpose_reviews import policy_domain_hash
 
     scope_pin = subject["completion_scope_ref"]

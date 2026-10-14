@@ -3247,6 +3247,7 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
     ) -> WorkflowCheckpoint:
         """Append the public child completion once the Provider Tool batch is closed."""
 
+        # 按需导入：循环依赖（uow ↔ context）
         from simple_harness.runtime.context import _append_context_in_transaction
 
         run_id = _required(run_id, "run_id")
@@ -13817,6 +13818,7 @@ class SqliteExecutionUnitOfWork(ProviderAccountingMixin):
         now: float,
         fault: FaultHook | None = None,
     ) -> WorkflowSpawnToolOutcome:
+        # 按需导入：循环依赖（uow ↔ context）
         from simple_harness.runtime.context import _append_context_in_transaction
 
         tx = self._assert_open_workflow_transaction(transaction)

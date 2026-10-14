@@ -2516,7 +2516,6 @@ class HierarchicalDispatch:
         resolution_id = resolution_id or f"res-{inputs.occurrence_id}"
         # Assurance §7.2（2026-10-06 车道 O）：根结论复述的是根的内容投影——根终审判的那一份；
         # 效果判据由各自的结果审阅判、收尾核对收敛，不写进根结论。
-        from ..contracts.models import ContractError
 
         try:
             root_scope = read_occurrence_completion(
@@ -2785,6 +2784,7 @@ class HierarchicalDispatch:
                 # 是按旧版要求通过的、现在不算数 → 不派执行者：系统请审阅员按新要求重审同一份结果
                 # （TaskGraph 补全第四批）；重审没过 → 如实报出来，换掉这一步或换做法由规划器定。
                 counts = self._accepted_result_counts(mission_id, str(spec.occurrence_id))
+                # 按需导入：循环依赖（hierarchical_dispatch ↔ carried_review）
                 from .carried_review import (
                     CARRIED_RESULT_NOT_KEPT,
                     CARRIED_RESULT_REJECTED,
@@ -3111,6 +3111,7 @@ class HierarchicalDispatch:
             )
         # 片 B：中间目标的类型不声明判据，它负责的是上级做法分给它的要求（原编号、用户原话）。
         # 夜间 N6：读不出分给它的那一份时如实写进材料（criterion_share_unreadable），不当成"没有"。
+        # 按需导入：循环依赖（hierarchical_dispatch ↔ assurance_check_policy）
         from .assurance_check_policy import goal_share
 
         listed = {item["id"] for item in request.criterion_evidence}
@@ -3270,6 +3271,7 @@ class HierarchicalDispatch:
         network = self.network(mission_id)
         snapshot = world.snapshot()
         capabilities = world.capabilities()
+        # 按需导入：循环依赖（hierarchical_dispatch ↔ planning_repair_requests）
         from .planning_repair_requests import repair_goal_occurrences
 
         repair_goals = set(repair_goal_occurrences(self.store, network))
@@ -3731,6 +3733,7 @@ class HierarchicalDispatch:
         mission = self.store.get_mission(mission_id)
         if mission is None:
             return []
+        # 按需导入：测试替身（agent_orchestrator.deployment.root）
         from ..deployment.root import current_statements
 
         criteria = [str(item).strip() for item in current_statements(self.store, mission)]

@@ -1,4 +1,5 @@
-最后更新：2026-10-13 CST（代码质量整治阶段 2）。宿主入口已拆成 `backend/main.py`（只做组装）+ `backend/host/` 包，结构与"原主入口函数现在在哪"见 [HOST_ENTRY.md](HOST_ENTRY.md)。本索引里 `main.py:<行号>` 形式的引用已失效。
+最后更新：2026-10-14 CST（代码质量整治阶段 3：函数内导入与循环依赖）。导入约定：导入写在模块顶部；确需留在函数里的，上方单独一行写 `# 按需导入：<类别>（细节）`，类别只有可选依赖 / 重型包 / 平台专用 / 测试替身 / 导入隔离 / 按需声明 / 循环依赖 / 死代码待删八种，`scripts/code_quality/tag_inner_imports.py --check` 检查；测试钉住的导入隔离约定登记在 `scripts/code_quality/import_contracts.py`。
+阶段 2：宿主入口已拆成 `backend/main.py`（只做组装）+ `backend/host/` 包，结构与"原主入口函数现在在哪"见 [HOST_ENTRY.md](HOST_ENTRY.md)。本索引里 `main.py:<行号>` 形式的引用已失效。
 
 最后更新：2026-10-05 CST（Assurance 原计划对照与补改，SDK `opt.162`）。保证通道是唯一通道：`assurance_profile` 开关、不走保证通道的旧审阅路径、受管恢复都已删除（10-03），下面较早条目里提到它们的地方是当时的状态。本次：收尾也等资料变更问完；"完成"只有一个写方；发布之后用户改要求不重发、由结果审阅员按新要求重审原来那次发布。详见 [ASSURANCE.md](ASSURANCE.md) 顶部。
 

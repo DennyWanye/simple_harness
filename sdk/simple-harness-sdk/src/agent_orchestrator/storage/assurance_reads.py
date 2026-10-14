@@ -266,6 +266,7 @@ class AssuranceReader:
         if ref.kind in EVENT_REF_KINDS:
             return self._event_metadata(ref, now_ms)
         if ref.kind in {"artifact", "source"}:
+            # 按需导入：循环依赖（assurance_reads ↔ assurance_blobs）
             from .assurance_blobs import read_blob_metadata
 
             return read_blob_metadata(self, ref, now_ms=now_ms)

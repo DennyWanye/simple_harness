@@ -3563,6 +3563,7 @@ class CommitService(
                         task_id=task.id,
                         payload={"reason": "not_needed_paused"},
                     )
+            # 按需导入：测试替身（agent_orchestrator.deployment.root）
             from ..deployment.root import current_statements
 
             criteria = list(current_statements(self._store, mission))

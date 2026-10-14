@@ -156,6 +156,7 @@ def sdk_fingerprint() -> str:
     if record:
         return hashlib.sha256(record.encode("utf-8")).hexdigest()
     try:
+        # 按需导入：可选依赖
         from simple_harness import __version__ as sdk_version
     except ImportError:  # pragma: no cover - the SDK ships both packages
         sdk_version = "unknown"

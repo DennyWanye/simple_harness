@@ -214,6 +214,7 @@ class Store:
         self.fired: list[str] = []
         self._readonly = False
         self._assurance_change_context: tuple[str, object | None] | None = None
+        # 按需导入：循环依赖（store ↔ assurance_changes）
         from .assurance_changes import install_change_context
 
         install_change_context(self)
@@ -234,6 +235,7 @@ class Store:
         connection.execute("PRAGMA synchronous = FULL")
         store = cls(connection, resolved, clock)
         store._initialize_or_validate()
+        # 按需导入：循环依赖（store ↔ source_records）
         from . import source_records  # 业务行写入的统一记账（HTN 补齐阶段 G）
 
         source_records.install(connection)
@@ -465,6 +467,7 @@ class Store:
             self._holder = self._current_task()
             self._transaction_generation += 1
             if self._source_naming:  # 只记本事务里的写（偏差裁决 1 第 5 条）
+                # 按需导入：循环依赖（store ↔ source_records）
                 from .source_records import begin
 
                 begin(self._connection)
@@ -476,6 +479,7 @@ class Store:
             else:
                 try:
                     if self._source_naming:
+                        # 按需导入：循环依赖（store ↔ source_records）
                         from .source_records import record_written_rows
 
                         record_written_rows(self, self._connection)
@@ -624,6 +628,7 @@ class Store:
         out (阶段 G 阻断核验：它约占一个任务事件的四分之一，混进来会把读前 N 条再筛的读取方
         挤到读不到最新事件)；全业务重放直接读它，要它的读取方显式点名这个类型。"""
 
+        # 按需导入：循环依赖（store ↔ source_records）
         from .source_records import EVENT_TYPE
 
         kinds = (
@@ -642,6 +647,7 @@ class Store:
         layer's own ``RowsWritten`` bookkeeping is left out, so a count and a full page
         walk agree (2026-10-07, Host 事件分页对不上数)."""
         if event_type is None:
+            # 按需导入：循环依赖（store ↔ source_records）
             from .source_records import EVENT_TYPE
 
             row = self._connection.execute(

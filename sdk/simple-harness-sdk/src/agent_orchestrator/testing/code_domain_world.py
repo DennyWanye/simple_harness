@@ -41,6 +41,7 @@ def code_world_factory(loop: Any, mission: Any) -> Any:
     """随 SDK 发的代码领域种子库，加一个根目标类型：形状照 ``code.fix-failing-test``，负责的判据
     是这个任务的 ``c-user-<n>``（与产品根的要求书同号；代码目标自带的判据号产品根没有）。"""
 
+    # 按需导入：测试替身（agent_orchestrator.deployment.root）
     from ..deployment.root import criterion_ids
 
     world = build_planning_world(

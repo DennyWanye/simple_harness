@@ -455,6 +455,7 @@ def method_plan_package(
     requirements = htn.latest_requirements_revision(mission_id)
     if requirements is None:
         raise AssuranceError("SOURCE_UNAVAILABLE", "requirements")
+    # 按需导入：循环依赖（assurance_purpose_reviews ↔ assurance_check_policy）
     from .assurance_check_policy import planning_subject_criteria
 
     criteria = planning_subject_criteria(store, mission_id, binding, requirements)

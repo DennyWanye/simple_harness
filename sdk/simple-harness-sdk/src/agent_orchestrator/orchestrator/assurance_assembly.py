@@ -171,6 +171,7 @@ def mission_requirements(principal: Principal) -> Callable[[Mission, Any], Requi
     initialisation writes too (``deployment.root.user_requirements``), so the factory and
     the root agree byte for byte on revision 1 and neither writes a second body."""
 
+    # 按需导入：测试替身（agent_orchestrator.deployment.root）
     from ..deployment.root import user_requirements
 
     def build(mission: Mission, spec: Any) -> RequirementsRevision:

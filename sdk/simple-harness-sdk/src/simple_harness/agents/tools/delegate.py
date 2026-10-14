@@ -257,6 +257,7 @@ class AgentDelegateTool:
             ),
             limits=limits,
         )
+        # 按需导入：循环依赖（delegate ↔ runtime）
         from ..runtime import start_input_for
 
         child_input = start_input_for(

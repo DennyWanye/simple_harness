@@ -381,6 +381,7 @@ def build_arp_runtime(
         )
         caller = runtime_caller(arp.profile.refs.activation_receipt_ref, owner_contract)
         state.catalogue.mount(mount_receipt_ref=caller.command_receipt_ref)
+        # 按需导入：测试替身（simple_harness）
         from simple_harness import __version__ as sdk_version
 
         state.bootstrap = bootstrap_builtin_tools(

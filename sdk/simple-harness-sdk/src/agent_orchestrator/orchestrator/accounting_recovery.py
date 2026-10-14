@@ -310,6 +310,7 @@ def _import_hold(orch, intent_id: str) -> bool:
             reservation = orch.commit.ledger.reservation(intent.subject_id)
             if reservation is None or reservation["state"] == "SETTLED":
                 return False
+            # 按需导入：循环依赖（accounting_recovery ↔ taskgraph_runtime_imports）
             from .taskgraph_runtime_imports import TaskGraphRuntimeImports
 
             try:

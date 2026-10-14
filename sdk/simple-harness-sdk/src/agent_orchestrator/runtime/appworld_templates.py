@@ -10,6 +10,7 @@ WORKER_APPWORLD_HIERARCHICAL_VERSION = "worker-appworld-hierarchical-v3"
 
 
 def register_appworld_templates() -> None:
+    # 按需导入：循环依赖（appworld_templates ↔ role_templates）
     from .role_templates import RoleTemplate, register_hierarchical_worker
 
     register_hierarchical_worker(

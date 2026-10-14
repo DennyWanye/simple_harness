@@ -110,6 +110,7 @@ def step_summaries(store: Store, mission_id: str) -> list[dict[str, Any]]:
     only while both hold: the step's acceptance still stands in the active plan (the one
     judgement knowledge uses), and the official content review that acceptance rests on says
     ``faithful`` for exactly this text of exactly this result."""
+    # 按需导入：测试替身（agent_orchestrator.memory.knowledge_standing.acceptance_is_current）
     from ..memory.knowledge_standing import acceptance_is_current
 
     htn = htn_store.HtnStore(store)

@@ -123,11 +123,13 @@ class ToolContext:
         if self.effect_id is not None and not isinstance(self.effect_id, EffectId):
             raise TypeError("effect_id must use EffectId")
         if self.workflow_spawn_context is not None:
+            # 按需导入：循环依赖（contracts ↔ workflow_spawn）
             from simple_harness.runtime.workflow_spawn import WorkflowSpawnToolContext
 
             if not isinstance(self.workflow_spawn_context, WorkflowSpawnToolContext):
                 raise TypeError("workflow_spawn_context must use the SDK typed context")
         if self.task_execution_envelope is not None:
+            # 按需导入：循环依赖（contracts ↔ execution）
             from simple_harness.execution.effects import TaskExecutionEnvelope
 
             if not isinstance(self.task_execution_envelope, TaskExecutionEnvelope):

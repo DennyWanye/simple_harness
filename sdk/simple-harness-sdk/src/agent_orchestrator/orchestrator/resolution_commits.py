@@ -646,6 +646,7 @@ class ResolutionCommitsMixin:
                 )
             binding = self._require_binding(semantics, command.mission_id, command.task_id)
             if command.purpose is ReviewPurpose.TASK_CONTENT:
+                # 按需导入：循环依赖（resolution_commits ↔ taskgraph_review）
                 from .taskgraph_review import read_review_origin
 
                 result_id = command.source.get("result_id")
@@ -713,6 +714,7 @@ class ResolutionCommitsMixin:
 
             checker = acceptable_scoped_task_content
             if command.purpose is ReviewPurpose.OPERATION_OUTCOME:
+                # 按需导入：循环依赖（resolution_commits ↔ operation_outcomes）
                 from .operation_outcomes import validate_scoped_outcome_command
 
                 projection = validate_scoped_outcome_command(
@@ -897,6 +899,7 @@ class ResolutionCommitsMixin:
         outputs = tuple(command.outputs)
         pinned = None
         if command.purpose is ReviewPurpose.TASK_CONTENT:
+            # 按需导入：循环依赖（resolution_commits ↔ taskgraph_review）
             from .taskgraph_review import read_review_origin
 
             result_id = command.source.get("result_id")
@@ -1466,6 +1469,7 @@ class ResolutionCommitsMixin:
                 f"the presented record {record.record_id!s} is not the official record "
                 f"{official.record_id!s} of package {package.package_id!s}",
             )
+        # 按需导入：循环依赖（resolution_commits ↔ assurance_review_import）
         from .assurance_review_import import read_official_review_binding_locked
 
         try:
@@ -1771,6 +1775,7 @@ class ResolutionCommitsMixin:
     ) -> tuple[Any, str]:
         """2026-10-01（第 3 项）：中间目标结论的许可 = 组合审阅记录的当前证书，同根终审。"""
 
+        # 按需导入：循环依赖（resolution_commits ↔ assurance_validity）
         from .assurance_validity import COMPOUND_RESOLUTION_CONSUMER
 
         validity = getattr(self, "_assurance_validity", None)
@@ -1854,6 +1859,7 @@ class ResolutionCommitsMixin:
         checks under the lock, so the resolution and its licence land together.
         """
 
+        # 按需导入：循环依赖（resolution_commits ↔ assurance_validity）
         from .assurance_validity import ROOT_RESOLUTION_CONSUMER
 
         validity = getattr(self, "_assurance_validity", None)

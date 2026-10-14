@@ -397,6 +397,7 @@ def request_planner_for_stall(
     用户还是别的，由规划器定。范围是整个计划——任何一步上的计划改动都算处理了它。每个计划
     版本只记一条；已经记过返回 False，调用方据此按"没有可派发的工作"停。
     """
+    # 按需导入：测试替身（agent_orchestrator.scheduling.wait_for.collect_wait_facts）
     from ..scheduling.wait_for import collect_wait_facts, deadlock_facts
 
     network = dispatch.network(mission.id)

@@ -164,6 +164,7 @@ def _unique(claims: Sequence[EvidenceClaim]) -> tuple[EvidenceClaim, ...]:
 
 def planning_claims(package: Mapping[str, Any]) -> tuple[EvidenceClaim, ...]:
     """规划包里当作事实给规划器看的：已验证知识与核对过的步骤摘要（候选结论是线索，不在内）。"""
+    # 按需导入：循环依赖（assurance_point_use ↔ knowledge_tools）
     from ..context.knowledge_tools import _digest
 
     claims: list[EvidenceClaim] = []
@@ -179,6 +180,7 @@ def context_claims(
     knowledge: Any, upstream: Sequence[Mapping[str, Any]]
 ) -> tuple[EvidenceClaim, ...]:
     """推给执行者的：冻结的已验证知识、步骤摘要层、直接上游里核对过的摘要。"""
+    # 按需导入：循环依赖（assurance_point_use ↔ knowledge_tools）
     from ..context.knowledge_tools import _digest
 
     claims = [EvidenceClaim.knowledge(item["id"], item["version"]) for item in knowledge.frozen_ids]
@@ -271,6 +273,7 @@ def _judge_knowledge(store: Any, mission_id: str, claim: EvidenceClaim) -> _Judg
 def _judge_summary(
     store: Any, mission_id: str, claim: EvidenceClaim, rows: list[Mapping[str, Any]]
 ) -> _Judged:
+    # 按需导入：测试替身（agent_orchestrator.memory.knowledge_standing.acceptance_is_current）
     from ..memory.knowledge_standing import acceptance_is_current
 
     row = next((item for item in rows if item["id"] == claim.id), None)
@@ -296,6 +299,7 @@ def _judge_step_ground(store: Any, mission_id: str, task_id: str, now_ms: int) -
     当前验收、这一步也对它持有好见证（上游重做过、重读过），旧的算历史；否则地基没了。
     """
 
+    # 按需导入：测试替身（agent_orchestrator.memory.knowledge_standing.acceptance_is_current）
     from ..memory.knowledge_standing import acceptance_is_current
 
     htn = htn_store.HtnStore(store)
@@ -366,6 +370,7 @@ def _judge_all(
             judged = _judge_knowledge(store, mission_id, claim)
         elif claim.kind == "summary":
             if summaries is None:
+                # 按需导入：循环依赖（assurance_point_use ↔ knowledge_tools）
                 from ..context.knowledge_tools import step_summaries
 
                 summaries = step_summaries(store, mission_id)

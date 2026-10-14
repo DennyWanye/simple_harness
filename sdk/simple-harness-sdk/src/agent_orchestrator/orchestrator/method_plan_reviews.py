@@ -249,6 +249,7 @@ def advance(orch: Any, mission: Any) -> bool:
     Whether to revise the method, choose another or ask the person is the Planner's.
     """
 
+    # 按需导入：循环依赖（method_plan_reviews ↔ hierarchical_dispatch）
     from .hierarchical_dispatch import append_hierarchical_event
 
     progressed = False

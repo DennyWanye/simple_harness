@@ -49,6 +49,7 @@ def _output_nodes(value: Any) -> int:
 def _compile(schema: Mapping[str, Any], path: str) -> dict[str, Any]:
     # Tool package initialization imports ProviderToolSpec. Defer this import
     # until serialization so providers can be imported without a package cycle.
+    # 按需导入：循环依赖（deepseek_strict ↔ tools）
     from simple_harness.tools.schema import SchemaDefinitionError
 
     unknown = set(schema) - _KEYWORDS
@@ -122,6 +123,7 @@ def compile_deepseek_strict_schema(schema: Mapping[str, Any]) -> dict[str, Any]:
     The caller passes a detached plain JSON mapping; neither input nor Tool
     argument names are changed by this pure compiler.
     """
+    # 按需导入：循环依赖（deepseek_strict ↔ tools）
     from simple_harness.tools.schema import SchemaDefinitionError, validate_tool_schema
 
     validate_tool_schema(schema)

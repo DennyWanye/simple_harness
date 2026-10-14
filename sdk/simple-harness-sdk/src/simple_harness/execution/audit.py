@@ -373,6 +373,7 @@ class RunOperationAuditSnapshotV1:
             raise TypeError("invalid coverage gaps")
 
     def _payload(self):
+        # 按需导入：循环依赖（audit ↔ runtime_audit）
         from .runtime_audit import RUNTIME_BOUNDARIES
 
         return dict(
@@ -402,6 +403,7 @@ class RunOperationAuditSnapshotV1:
 
     @property
     def source_set(self):
+        # 按需导入：循环依赖（audit ↔ audit_core）
         from .sqlite.audit_core import CORE_SOURCES
 
         return (

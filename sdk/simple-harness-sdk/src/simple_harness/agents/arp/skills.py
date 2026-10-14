@@ -260,6 +260,7 @@ def inspect_bundle(data: bytes) -> Bundle:
 
 def _strict_loader():  # type: ignore[no-untyped-def]
     try:
+        # 按需导入：可选依赖
         import yaml
     except ImportError as error:  # pragma: no cover - environment without the extra
         raise ArpError(
@@ -422,6 +423,7 @@ class SkillImporter:
         mirror: bool = False,
     ) -> SkillImportResult:
         if self.managed_by is not None and not mirror:
+            # 按需导入：循环依赖（skills ↔ shared_catalogue）
             from .shared_catalogue import managed_elsewhere
 
             raise managed_elsewhere()

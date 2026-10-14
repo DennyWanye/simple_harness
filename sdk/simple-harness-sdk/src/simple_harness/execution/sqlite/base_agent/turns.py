@@ -519,6 +519,7 @@ def finalize_turn(
     closing→closed convergence.  Fault points keep their Slice 1 names and order.
     """
 
+    # 按需导入：循环依赖（turns ↔ control）
     from .control import read_binding_lifecycle, set_lifecycle
 
     fault("agent_turn_finalize.result.before_write")

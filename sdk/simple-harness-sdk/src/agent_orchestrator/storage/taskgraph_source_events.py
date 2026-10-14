@@ -19,6 +19,7 @@ def record_source_change(
     """
     if not store.connection.in_transaction:
         raise StoreError("TASKGRAPH_SOURCE_EVENT_TRANSACTION_REQUIRED")
+    # 按需导入：循环依赖（taskgraph_source_events ↔ taskgraph_store）
     from .taskgraph_store import require_bound
 
     require_bound(store, mission_id)

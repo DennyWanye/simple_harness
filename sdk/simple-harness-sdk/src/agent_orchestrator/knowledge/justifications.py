@@ -875,6 +875,7 @@ def grounded_closure(
     """
 
     if limits is not None:
+        # 按需导入：循环依赖（justifications ↔ bounded_closure）
         from .bounded_closure import bounded_grounded_closure
 
         return bounded_grounded_closure(

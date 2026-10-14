@@ -409,7 +409,10 @@ def freeze_plan_completion_scopes(
     Legacy protocol missions keep their original path. A new-protocol mission
     cannot publish a dispatchable plan without an approved completion mapping.
     """
+    # 按需导入：循环依赖（operation_completion ↔ completion_scopes）
     from ..planning.htn.completion_scopes import compile_completion_scopes
+
+    # 按需导入：循环依赖（operation_completion ↔ accepted_outputs）
     from .accepted_outputs import carried_criteria_in_revision
 
     protocol = store.connection.execute(

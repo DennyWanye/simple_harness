@@ -967,7 +967,10 @@ class HtnStore:
         now = self._store.now
         with self._store.transaction() as connection:
             if official:
+                # 按需导入：循环依赖（htn_store ↔ assurance_review_import）
                 from ..orchestrator.assurance_review_import import PreparedOfficialReview
+
+                # 按需导入：循环依赖（htn_store ↔ assurance_store）
                 from .assurance_store import AssuranceStore
 
                 AssuranceStore(self._store).require_assured(mission)

@@ -91,6 +91,7 @@ class CompositeSink:
         child_capacity: int = 256,
         close_timeout: float = 1.0,
     ) -> None:
+        # 按需导入：循环依赖（sinks ↔ runtime）
         from .runtime import SafeEmitter
 
         self._children = tuple(

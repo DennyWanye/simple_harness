@@ -641,6 +641,7 @@ class ProviderBudgetGuard:
                 # allowance (see WIRE_TERMINAL_TABLE).
                 held = self.held_grant_rows()
                 active = len(held)
+                # 按需导入：循环依赖（provider_budget_guard ↔ legacy_provider_slots）
                 from .legacy_provider_slots import held_legacy_slots
 
                 active += held_legacy_slots(self.store)

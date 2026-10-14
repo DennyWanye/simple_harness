@@ -675,10 +675,6 @@ class WorkflowRunner:
         ticket: VerifiedWorkflowLaunchTicket,
         start: RunStart,
     ) -> StartAdmissionRequest:
-        from simple_harness.workflow.execution_ports import (
-            StartAdmissionRequest,
-            StartMode,
-        )
 
         if type(ticket) is not VerifiedWorkflowLaunchTicket or not ticket._is_sdk_verified():
             raise TypeError("start admission requires an SDK-verified ticket")
@@ -1793,6 +1789,7 @@ class WorkflowRunner:
         return await self._replay().history(run_id, limit=limit)
 
     def _replay(self):  # type: ignore[no-untyped-def]
+        # 按需导入：循环依赖（runner ↔ replay）
         from .replay import WorkflowReplay
 
         return WorkflowReplay(

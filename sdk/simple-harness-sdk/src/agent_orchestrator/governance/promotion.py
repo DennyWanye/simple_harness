@@ -91,6 +91,7 @@ def _hash(value: Any) -> str:
 
 
 def builtin_weights() -> dict[str, float]:
+    # 按需导入：循环依赖（promotion ↔ allocator）
     from ..scheduling.allocator import WEIGHTS
 
     return {name: float(value) for name, value in WEIGHTS.items()}
@@ -197,6 +198,7 @@ def diff_params(a: Mapping[str, Any], b: Mapping[str, Any]) -> list[dict[str, An
 def code_versions() -> dict[str, str]:
 
     try:
+        # 按需导入：可选依赖
         from simple_harness.version import __version__ as sdk_version
     except ImportError:  # pragma: no cover - the SDK always ships its version module
         sdk_version = "unknown"
@@ -207,6 +209,7 @@ def interpreter_versions() -> dict[str, str]:
     """The code that reads a policy (plan D9-1' / D9-4'): a version records them so a
     Mission resumed under other code can say so instead of changing silently."""
 
+    # 按需导入：循环依赖（promotion ↔ allocator）
     from ..scheduling.allocator import ALLOCATOR_VERSION
 
     return {

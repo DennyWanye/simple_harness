@@ -378,6 +378,7 @@ _AGENT_EXPORTS = frozenset(
 
 def __getattr__(name: str) -> Any:
     if name == "ExpiredAuthorizationTerminalRecoveryV1":
+        # 按需导入：导入隔离
         from .execution.decision_recovery import ExpiredAuthorizationTerminalRecoveryV1
 
         return ExpiredAuthorizationTerminalRecoveryV1
@@ -395,10 +396,12 @@ def __getattr__(name: str) -> Any:
         "RunAuditUsageV1",
         "RunAuditUnavailable",
     }:
+        # 按需导入：导入隔离
         from .execution import audit
 
         return getattr(audit, name)
     if name in _AGENT_EXPORTS:
+        # 按需导入：测试替身（simple_harness）
         from . import agents
 
         value = getattr(agents, name)
@@ -406,6 +409,7 @@ def __getattr__(name: str) -> Any:
         return value
     if name not in _RUNTIME_EXPORTS:
         raise AttributeError(name)
+    # 按需导入：测试替身（simple_harness）
     from . import runtime
 
     value = getattr(runtime, name)

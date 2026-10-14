@@ -69,6 +69,7 @@ class DeepSeekV41TokenEstimator:
         if sha256(raw).hexdigest() != TOKENIZER_SHA256:
             raise ValueError("DeepSeek tokenizer bytes differ from the pinned counting profile")
         # Optional native dependency; constructing an unrelated profile never imports it.
+        # 按需导入：重型包
         from deepseek_recipe import DeepseekV41Encoding, Tokenizer
 
         self._model = model
@@ -110,6 +111,7 @@ class DeepSeekV41TokenEstimator:
     def estimate_input_tokens(self, request: ProviderRequest) -> int:
         if any(not isinstance(message.content, str) for message in request.messages):
             raise ValueError("the pinned DeepSeek counter supports text messages only")
+        # 按需导入：重型包
         from deepseek_recipe import ChatCompletionRequest, ConversionOptions
 
         payload = openai_chat_request_payload(
