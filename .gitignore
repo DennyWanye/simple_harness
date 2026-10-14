@@ -3,7 +3,7 @@ target/
 dist/
 __pycache__/
 *.pyc
-.venv/
+.venv
 *.egg-info/
 build/
 .DS_Store
