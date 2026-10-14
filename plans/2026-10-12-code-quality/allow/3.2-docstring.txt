@@ -1,0 +1,1 @@
+'What the repair Attempt is told about the failures before it.\n\n    2026-09-26 真机文档任务: a provider turn failure in between hid the earlier\n    content rejection, so the next Attempt repeated the rejected mistake.  Walk back\n    past turn failures to the most recent failure that judged the content.\n    '
