@@ -1,6 +1,6 @@
 # 代码质量整治 交接
 
-最后更新：2026-10-14（阶段 3 完成）（用户说"继续"，阶段 1～4 暂停功能开发）
+最后更新：2026-10-14 晚（阶段 3 完成并合并主分支 57b91b0c6；虚拟环境事故已修 f97b5c6f8）（用户说"继续"，阶段 1～4 暂停功能开发）
 当前计划：代码质量整治计划-v2.md（2.4 修订）
 用户授权：2026-10-12 说"好的，请你开始吧"，按四条建议执行：现在开工；全量回归一次授权 7 次（另加阶段 0 基线一次）；证据目录移出 git 不重写历史；阶段 1～4 暂停功能开发。
 
@@ -44,6 +44,8 @@ python3 scripts/code_quality/patch_targets.py
 - 指标变好后：`metrics.py lower` 下调基线并提交。
 
 ## 坑
+
+- **工作树的 backend/.venv 是符号链接**：10-14 被 `git add -A backend` 提交过，合并时删了主检出的虚拟环境（已修，忽略规则改成 `.venv`，主检出用 `uv sync --python 3.12 --extra dev` 重建）。合并前查 `git diff --summary main..分支 | grep 120000`。
 
 - 阶段 3 工具：上提 `lift_batch.sh <树> <种类> <说明> <路径…>`（每批全部门禁通过才提交）；补注释 `tag_inner_imports.py --tree X`，检查 `--check`；导入隔离约定登记 `import_contracts.py`，新增"导入某入口不得加载某模块"的测试要补登记。
 - SDK 源码字节一变，执行图部署清单就要重生成（lift_batch 已自动做），否则约 10 个测试报 installed source bytes changed。
