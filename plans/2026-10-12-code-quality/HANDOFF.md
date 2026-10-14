@@ -18,7 +18,7 @@
 ## 接着做
 
 1. 阶段 4：后端与 SDK 边界收口（计划 v2 §阶段 4）。开工前先出切片设计。
-2. 阶段 4 发 SDK opt 版本时：跑执行图验收门把部署清单写回 VALIDATED（阶段 3 每批重生成过，现为 NOT_RUN）；Host 两处从 commit_service 导入预算账户名字的地方改从 budget_accounts 导入。
+2. 阶段 4 发 SDK opt 版本时：跑执行图验收门把部署清单写回 VALIDATED（阶段 3 每批重生成过，现为 NOT_RUN）（Host 继续从 commit_service 导入预算账户名字——它们在 commit_service 的公开 __all__ 里；budget_accounts 是内部模块）。
 3. 阶段 5（SDK）、阶段 6（后端）：循环依赖导入清单见 阶段3-移交-循环依赖清单.md，阶段末上限 SDK ≤ 30、后端 ≤ 20（指标 cycle_imports_sdk / cycle_imports_backend）。
 4. 阶段 8：死代码待删 7 处（`grep -rn "按需导入：死代码待删"`）；sys.path 修改 26 处（grok_build_runtime 白名单）；阶段 2 记下的死代码。
 
