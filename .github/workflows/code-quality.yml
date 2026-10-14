@@ -21,13 +21,17 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-      - name: Install ruff
-        run: pip install ruff==0.16.3
+      - name: Install ruff and import-linter
+        run: pip install ruff==0.16.3 import-linter==2.15
       - name: Python format check
         run: ruff format --check --config scripts/code_quality/ruff.toml backend sdk/simple-harness-sdk/src sdk/simple-harness-sdk/tests
       - name: Frontend format check
         working-directory: tauri-app
         run: npx --yes prettier@3.3.3 --check "src/**/*.{ts,tsx}"
+      - name: Backend layering (阶段 4.3)
+        run: |
+          (cd backend && lint-imports)
+          python scripts/code_quality/backend_layers.py
       - name: Ratchet
         run: |
           BASE="${{ github.event.pull_request.base.sha || github.event.before }}"

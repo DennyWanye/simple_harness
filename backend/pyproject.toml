@@ -210,6 +210,8 @@ dev = [
     # dev extras so the frozen wheel doesn't ship the bootloader source.
     "pyinstaller>=6.11",
     "pyinstaller-hooks-contrib>=2024.8",
+    # 代码质量整治阶段 4.3：后端分层契约（backend/.importlinter），CI 阻断
+    "import-linter==2.15",
 ]
 
 [tool.setuptools]
