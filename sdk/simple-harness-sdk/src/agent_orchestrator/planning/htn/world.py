@@ -57,10 +57,13 @@ from ...contracts.htn import MethodRegistryStatus
 from ...contracts.models import ContractError
 from ...contracts.semantic_base import VersionedRef, content_hash_of
 from ...knowledge.predicates import PredicateRegistry, PredicateSignature
+from ...runtime import role_templates
 from .applicability import CapabilityRecord, CapabilitySnapshot
 from .domain_package import DomainPackageInstaller
 from .observation_pipeline import ObserverIndex, build_index
 from .observers import PredicateObserver
+from .observers.appworld import appworld_observers
+from .observers.code import code_observers
 from .registry import (
     AdmissionPolicy,
     MethodRegistry,
@@ -249,12 +252,8 @@ def domain_observers(
     out: list[PredicateObserver] = []
     for name in domains:
         if name == "code" and worktree is not None:
-            from .observers.code import code_observers
-
             out.extend(code_observers(Path(worktree)))
         elif name == "appworld" and appworld_episode is not None:
-            from .observers.appworld import appworld_observers
-
             out.extend(appworld_observers(appworld_episode, scope_id=appworld_scope))
     return tuple(out)
 
@@ -389,7 +388,6 @@ def catalog_digest(world: Any) -> str:
     predicate declarations and the planning package version.  Task types do not depend on the
     Mission, so two Missions of one deployment get the same digest; a library method is listed
     only to Missions whose digest equals the one it was promoted under."""
-    from ...runtime.role_templates import PLANNING_DECISION_PACKAGE_VERSION
 
     return content_hash_of(
         {
@@ -403,7 +401,7 @@ def catalog_digest(world: Any) -> str:
             "predicates": sorted(
                 content_hash_of(signature.to_json()) for signature in world.predicates.signatures()
             ),
-            "package_version": PLANNING_DECISION_PACKAGE_VERSION,
+            "package_version": role_templates.PLANNING_DECISION_PACKAGE_VERSION,
         }
     )
 

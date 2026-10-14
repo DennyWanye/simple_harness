@@ -19,6 +19,12 @@ from simple_harness.contracts import canonical_json
 
 from ..contracts.htn import TaskSemanticBindingV1
 from ..contracts.models import ContractError
+from ..contracts.operation_completion import (
+    AcceptanceContributionScopeV1,
+    OccurrenceCompletionScopeV1,
+    OperationCompletionRequirementsV1,
+    OperationOutcomeReviewBindingV1,
+)
 from ..contracts.semantic_base import TypedRefKind, content_hash_of, hash_hex, identifier
 from .htn_store import HtnStore
 from .store import Store, StoreConflict, StoreError
@@ -27,12 +33,6 @@ from .store import Store, StoreConflict, StoreError
 def _completion_contracts() -> tuple[type[Any], type[Any], type[Any], type[Any]]:
     # Local import keeps schema discovery independent while the contract module and
     # this adapter are installed in parallel.
-    from ..contracts.operation_completion import (
-        AcceptanceContributionScopeV1,
-        OccurrenceCompletionScopeV1,
-        OperationCompletionRequirementsV1,
-        OperationOutcomeReviewBindingV1,
-    )
 
     return (
         OperationCompletionRequirementsV1,

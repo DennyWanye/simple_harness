@@ -37,7 +37,7 @@ from typing import Any
 from ...contracts.evidence_state import EvidenceSnapshot, TruthValue
 from ...contracts.semantic_base import VersionedRef
 from ...graph.eligibility import ReadinessReason
-from ...knowledge.predicates import PredicateRegistry, proposition_key
+from ...knowledge.predicates import PredicateRegistry, atom_truth, proposition_key
 from .applicability import ground_value
 from .observation_pipeline import ObservationOutcomeRecord, ObserverIndex, observe_predicate
 from .observation_pipeline import record_observation as _record
@@ -125,7 +125,6 @@ def pending_asks(
         key = proposition_key(signature, arguments)
         if key in seen:
             continue
-        from ...knowledge.predicates import atom_truth
 
         if atom_truth(signature, snapshot.lookup(key), now_ms=now_ms) is not TruthValue.UNKNOWN:
             continue

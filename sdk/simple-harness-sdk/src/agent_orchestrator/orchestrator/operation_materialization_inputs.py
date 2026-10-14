@@ -11,6 +11,7 @@ from typing import Any
 
 from ..contracts import ContractError
 from ..contracts.operation_completion import CompletionPinV1
+from ..contracts.operation_intents import OperationIntentSourceKind
 from ..contracts.operation_payloads import (
     ConditionalWriteKind,
     ConnectorOperationProfileV1,
@@ -264,7 +265,6 @@ def build_operation_materialization_inputs(
             connectors=connectors,
             deployment=deployment,
         )
-        from ..contracts.operation_intents import OperationIntentSourceKind
 
         if (
             sources.command.intent_source.kind is OperationIntentSourceKind.AUTHORIZED_SLOT

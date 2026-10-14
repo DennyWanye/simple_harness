@@ -13,12 +13,21 @@ frozen into the dispatch intent; the Tool Gateway enforces it again on every cal
 
 from __future__ import annotations
 
+import dataclasses
+import hashlib
+import importlib
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
+from simple_harness.contracts import canonical_json
+
 from ..contracts.models import STEP2_IMPLEMENTED_LAYERS
+from ..runtime import role_templates
+from ..runtime.connectors import level_rank
 from ..runtime.tool_gateway import TOOL_NAMES
+from .permissions import required_approvals
 
 #: NEXT-TG-1.0 §11: the model-side Skill tools a native-plane pool's own runtime serves
 #: (catalogue discovery, instruction load, execution).  They are not gateway tools; a
@@ -216,9 +225,6 @@ def action_decision(deployment: DeploymentPolicy, connector: Any, operation: str
     enabled, lacks idempotency / reconciliation for L2+, or sits above the deployment's
     ceiling is refused (ORCH §12.3)."""
 
-    from ..runtime.connectors import level_rank
-    from .permissions import required_approvals
-
     spec = (getattr(connector, "operations", {}) or {}).get(operation)
     level = spec.level if spec is not None else "L3"
     override = dict(deployment.level_overrides).get(
@@ -415,8 +421,6 @@ VERSION_SOURCES: tuple[tuple[str, str, str], ...] = (
 
 
 def _plain(value: Any) -> Any:
-    import dataclasses
-    from pathlib import Path
 
     if isinstance(value, Path):
         return str(value)
@@ -456,14 +460,6 @@ def policy_snapshot(
     §13): every classified configuration field, every version constant with its source,
     the role templates, profiles, routing, connectors and the provider's identity."""
 
-    import dataclasses
-    import hashlib
-    import importlib
-
-    from simple_harness.contracts import canonical_json
-
-    from ..runtime.role_templates import ROLES
-
     fields = {f.name for f in dataclasses.fields(config)}
     unclassified = sorted(fields - set(SNAPSHOT_FIELDS))
     if unclassified:
@@ -475,7 +471,9 @@ def policy_snapshot(
     for key, module, attribute in VERSION_SOURCES:
         versions[key] = getattr(importlib.import_module(module), attribute)
         sources[f"versions.{key}"] = f"{module}.{attribute}"
-    roles = {name: template.prompt_version for name, template in sorted(ROLES.items())}
+    roles = {
+        name: template.prompt_version for name, template in sorted(role_templates.ROLES.items())
+    }
     for name in roles:
         sources[f"role_templates.{name}"] = (
             f"agent_orchestrator.runtime.role_templates.ROLES[{name!r}].prompt_version"

@@ -17,12 +17,15 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
+from ..assurance.codec import fingerprint
 from ..contracts import AttemptStatus, MissionStatus, MissionStopReason, TaskStatus
 from ..governance.permissions import Principal, decision_receipt_hash
 from ..observability.secrets import find_secrets
 from ..scheduling.allocator import OPEN_ATTEMPT_STATES
+from ..storage import htn_store
 from ..verification.human_review import arbitration_request_id, review_request_id
 from .action_commits import ActionCommitError
+from .completion_inputs import frozen_requirements_revision
 from .state_machine import next_task
 
 if TYPE_CHECKING:
@@ -307,14 +310,11 @@ class HumanCommitsMixin:
         read set, so "reviewers could not decide, the person passed it" is a recorded,
         auditable ground — never an edit of the immutable record.
         """
-        from ..assurance.codec import fingerprint
-        from ..storage.htn_store import HtnStore
 
         mission_id = str(request["mission_id"])
         stored = self._store.get_result(result_id)
         if stored is None:
             return
-        from .completion_inputs import frozen_requirements_revision
 
         rows = self._store.connection.execute(
             "SELECT package_id FROM assurance_review_bindings WHERE mission_id=? AND subject_hash=? "
@@ -327,7 +327,7 @@ class HumanCommitsMixin:
         ).fetchall()
         if len(rows) != 1:
             return
-        record = HtnStore(self._store).official_review_record(rows[0][0])
+        record = htn_store.HtnStore(self._store).official_review_record(rows[0][0])
         if record is None:
             return
         self.adjudicate_review_record(
@@ -363,7 +363,6 @@ class HumanCommitsMixin:
         review, the root Task for the final review — and is what the use certificate
         matches against its target. The same review can carry only one ruling.
         """
-        from ..assurance.codec import fingerprint
 
         body = {
             "mission_id": mission_id,

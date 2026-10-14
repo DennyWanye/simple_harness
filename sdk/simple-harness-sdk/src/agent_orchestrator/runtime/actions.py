@@ -20,7 +20,11 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from ..orchestrator.action_commits import ActionCommitError
+from ..storage.planning_admission_store import PlanningAdmissionStore
+from . import operation_reconciliation
 from .connectors import ConnectorRejected, Receipt
+from .operation_reconciliation import context, stored_negative_proof
 
 if TYPE_CHECKING:
     from ..governance.policies import DeploymentPolicy
@@ -218,12 +222,11 @@ class ActionExecutor:
     def _failed_unproven(self, action: Mapping[str, Any]) -> bool:
         """FAILED, handed off at least once, operation-linked, no stored proof, and not
         already waiting for a person."""
-        from .operation_reconciliation import action_outcome_unresolved
 
         return (
             action.get("state") == "FAILED"
             and not action.get("needs_human")
-            and action_outcome_unresolved(self._commit.store, action)
+            and operation_reconciliation.action_outcome_unresolved(self._commit.store, action)
         )
 
     async def reconcile_one(
@@ -231,7 +234,6 @@ class ActionExecutor:
     ) -> dict[str, Any] | None:
         """Observe one exact Action; TaskGraph convergence never re-sends it."""
         self._require_execution_root()
-        from ..orchestrator.action_commits import ActionCommitError
 
         store = self._commit.store
         if store.connection.in_transaction:
@@ -268,8 +270,6 @@ class ActionExecutor:
             return None  # a live hand-off may still be on its way
         runtime = getattr(self._commit, "_operation_materialization_runtime", None)
         if runtime is not None:
-            from .operation_reconciliation import stored_negative_proof
-
             if stored_negative_proof(self._commit.store, action):
                 return await self._rehandoff_scoped(key, runtime) if allow_rehandoff else action
         connector = self._connectors.get(str(action["connector"]))
@@ -293,15 +293,12 @@ class ActionExecutor:
                 verdict = lookup_verdict(connector, receipt)
         # New Operation links require a scoped, registered proof. Empty lookup,
         # timeout and an expired local lease cannot establish nonapplication.
-        from ..storage.planning_admission_store import PlanningAdmissionStore
 
         link = PlanningAdmissionStore(self._commit.store).get_operation_action_link_for_action(key)
         runtime = getattr(self._commit, "_operation_materialization_runtime", None)
         if link is not None and verdict != "COMPLETED":
             verdict = "STILL_UNKNOWN"
             if runtime is not None:
-                from .operation_reconciliation import context
-
                 try:
                     with self._commit.store.read_view():
                         resolved, _profile, adapter, events = context(

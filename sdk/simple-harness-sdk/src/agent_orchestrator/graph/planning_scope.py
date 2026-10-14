@@ -14,7 +14,7 @@ from ..contracts.models import ContractError
 from ..runtime.planning_operations import OperationSnapshot
 from ..runtime.taskgraph_operation_sources import OperationProducer
 from .convergence import compute_convergence_impact
-from .network_codec import NetworkDocumentV1
+from .network_codec import NetworkDocumentV1, decode
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -36,7 +36,6 @@ def planning_convergence_scope(
     if not operations.complete_read or operations.mission_id != before.mission_id:
         raise ContractError("TASKGRAPH_OPERATION_SOURCE_INCOMPLETE")
     impact = compute_convergence_impact(before, candidate)
-    from .network_codec import decode
 
     network = decode(before.to_json()).snapshot
     members = {str(item.occurrence_id): item for item in network.occurrences}

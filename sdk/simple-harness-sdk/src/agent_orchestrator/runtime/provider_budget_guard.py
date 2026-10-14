@@ -31,6 +31,10 @@ from simple_harness.execution.provider_invocations import provider_request_finge
 
 from ..contracts import TERMINAL_ATTEMPT, TERMINAL_MISSION, TERMINAL_TASK, TaskStatus
 from ..governance.budgets import BudgetExhausted
+from ..orchestrator.assurance_review_import import carried_review_alive
+from ..storage.operation_completion_store import OperationCompletionStore
+from ..storage.operation_intent_store import OperationIntentStore
+from ..storage.store import StoreError
 from .first_request_budget import (
     INPUT_CAP_PROTOCOL,
     FirstRequestBudgetUnknown,
@@ -280,8 +284,6 @@ class ProviderBudgetCommitAdapter:
                 # 它活着 = 这一步还在现行计划里（与审阅交接处同一个判断）
                 carried = intent.config.get("carried_requirements_revision") is not None
                 if carried:
-                    from ..orchestrator.assurance_review_import import carried_review_alive
-
                     if not carried_review_alive(self.store, mission.id, parent_attempt.task_id):
                         raise _deny("the step under re-review left the current plan")
                 elif parent_attempt.status in TERMINAL_ATTEMPT:
@@ -298,7 +300,6 @@ class ProviderBudgetCommitAdapter:
                 )
             ):
                 raise _deny("provider Task is terminal or differs from Mission")
-        from ..storage.store import StoreError
 
         try:
             self.commit.require_taskgraph_handoff(intent)
@@ -322,8 +323,6 @@ class ProviderBudgetCommitAdapter:
         return intent, reservation
 
     def _accepted_operation_review(self, intent, task) -> bool:
-        from ..storage.operation_completion_store import OperationCompletionStore
-        from ..storage.operation_intent_store import OperationIntentStore
 
         if intent.kind != "plan" or task.status is not TaskStatus.COMPLETED:
             return False

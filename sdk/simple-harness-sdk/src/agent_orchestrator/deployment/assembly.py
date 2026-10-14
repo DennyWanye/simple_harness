@@ -22,6 +22,10 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ..graph.task_network import DEFAULT_PROJECTION_BUDGET
+from ..orchestrator.assurance_assembly import AssuranceDeploymentPorts, install_assurance
+from ..orchestrator.taskgraph_assembly import TaskGraphDeploymentPorts
+from ..orchestrator.taskgraph_deployment import InstalledHtnWiringAcceptance
+from ..orchestrator.taskgraph_policy import enable_command_id
 from .duties import DeploymentDuties
 from .root import goal_parameters, initialize_root, install_planning, user_requirements
 
@@ -78,9 +82,6 @@ class UserMissionDeployment:
 
     def assemble(self, orchestrator: Any) -> None:
         """``Orchestrator(startup_assembly=...)``: planning, TaskGraph and Assurance."""
-        from ..orchestrator.assurance_assembly import AssuranceDeploymentPorts, install_assurance
-        from ..orchestrator.taskgraph_assembly import TaskGraphDeploymentPorts
-        from ..orchestrator.taskgraph_deployment import InstalledHtnWiringAcceptance
 
         install_planning(orchestrator, self.world_factory)
         ports = self.taskgraph_ports or TaskGraphDeploymentPorts(
@@ -137,7 +138,6 @@ class UserMissionDeployment:
         return receipt
 
     def _complete(self, orchestrator: Any, mission: Any) -> None:
-        from ..orchestrator.taskgraph_policy import enable_command_id
 
         initialize_root(
             orchestrator,

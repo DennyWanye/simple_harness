@@ -13,6 +13,7 @@ from ..assurance.codec import AssuranceError, canonical, decode, fingerprint
 from ..contracts import Event, Mission, ids
 from ..contracts.models import ContractError
 from ..contracts.planning_decisions import PLANNING_DECISION_V1
+from ..runtime.role_templates import hierarchical_planner_pairing_is_valid
 
 
 def _legacy_proof(
@@ -33,8 +34,6 @@ def _legacy_proof(
             return None
         protocol = None if protocol_json is None else decode(protocol_json)
         if protocol is not None:
-            from ..runtime.role_templates import hierarchical_planner_pairing_is_valid
-
             frozen = {
                 key: protocol[key]
                 for key in ("protocol_version", "package_version", "prompt_version")

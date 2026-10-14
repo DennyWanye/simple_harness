@@ -21,6 +21,7 @@ from simple_harness import Message, MessageRole, RunId
 from simple_harness.agents import AgentConfig, AgentTurnResult, AgentTurnState
 from simple_harness.agents.contracts import _message_from_json
 from simple_harness.agents.runtime import AgentRuntime
+from simple_harness.contracts.identity import EffectId
 
 from ..governance.budgets import UsageFact
 
@@ -187,7 +188,6 @@ class AgentBridge:
         out = dict(blocker)
         if out.get("kind") != "tool" or not out.get("ledger_identity"):
             return out
-        from simple_harness.contracts.identity import EffectId
 
         try:
             record = self._runtime.uow.read_effect(EffectId(str(out["ledger_identity"])))

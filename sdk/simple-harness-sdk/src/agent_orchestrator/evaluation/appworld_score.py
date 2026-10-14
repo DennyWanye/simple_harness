@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import json
 import sys
+from importlib import import_module
 from pathlib import Path
 
 
 def _declared_status(task_id: str, experiment_name: str) -> str:
     """Read the saved public supervisor state, with no extra Agent/world action."""
-    from importlib import import_module
 
     paths = import_module("appworld.common.path_store").path_store
     database = import_module("appworld.apps.model_lib").get_db_home_path
@@ -33,7 +33,6 @@ def _declared_status(task_id: str, experiment_name: str) -> str:
 
 
 def main() -> None:
-    from importlib import import_module
 
     update_root = import_module("appworld").update_root
     evaluate_task = import_module("appworld.evaluator").evaluate_task

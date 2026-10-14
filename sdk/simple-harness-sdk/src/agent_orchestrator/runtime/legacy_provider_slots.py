@@ -29,6 +29,7 @@ from simple_harness.execution.provider_admission import (
 from simple_harness.execution.provider_invocations import provider_request_fingerprint
 
 from ..contracts.models import jsonable, sha256_hex
+from .provider_budget_guard import held_guarded_grants
 
 TABLE = "legacy_provider_slots_v1"
 HELD_SQL = "state IN ('RESERVED','HANDED_OFF','UNKNOWN')"
@@ -311,7 +312,6 @@ class LegacyProviderSlots(LocalProviderAdmission):
                     # unresolved usage (they keep their allowance, not a slot); a legacy
                     # pool sharing the store counts the same set, or it would freeze as
                     # those marks accumulate (independent review 2026-09-24).
-                    from .provider_budget_guard import held_guarded_grants
 
                     active = held_guarded_grants(self.store) + held_legacy_slots(self.store)
                     if (

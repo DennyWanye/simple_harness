@@ -32,14 +32,17 @@ from typing import Any
 
 from ...contracts.evidence_state import PreconditionPhase, PreconditionWitnessRecord, TruthValue
 from ...contracts.htn import (
+    ArrayValue,
     Binding,
     ChildBinding,
+    ConstantValue,
     MethodContract,
     MethodInstanceDraft,
     MethodInstanceId,
     MethodOccurrenceBinding,
     MethodRef,
     MethodStep,
+    ObjectValue,
     ObligationId,
     ObligationRelation,
     OccurrenceId,
@@ -365,7 +368,6 @@ def resolve_arguments(
 
 
 def _resolve_value(value: Any, parameters: Mapping[str, Any], *, path: str) -> Any:
-    from ...contracts.htn import ArrayValue, ConstantValue, ObjectValue
 
     if isinstance(value, ConstantValue):
         return value.value

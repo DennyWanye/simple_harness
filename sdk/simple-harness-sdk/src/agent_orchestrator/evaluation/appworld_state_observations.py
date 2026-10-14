@@ -9,9 +9,11 @@ Only aggregate counts leave the service, never database rows or credentials.
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from .appworld_api_observations import canonical, digest
@@ -84,7 +86,6 @@ class AppWorldStatePolicy:
         return cls(raw)
 
     def to_json(self) -> dict[str, Any]:
-        import json
 
         result: dict[str, Any] = json.loads(self.document)
         return result
@@ -151,7 +152,6 @@ class AppWorldStatePolicy:
                 raise ValueError("state observation predicate differs")
         if result["satisfied"] != all(row["satisfied"] for row in rows):
             raise ValueError("state observation conclusion differs")
-        import json
 
         validated: dict[str, Any] = json.loads(canonical(result))
         return validated
@@ -160,8 +160,6 @@ class AppWorldStatePolicy:
 def load_state_policies(path: str | None) -> Mapping[str, AppWorldStatePolicy]:
     if path is None:
         return {}
-    import json
-    from pathlib import Path
 
     value = json.loads(Path(path).read_bytes())
     if not isinstance(value, list) or not value:
@@ -175,7 +173,6 @@ def load_state_policies(path: str | None) -> Mapping[str, AppWorldStatePolicy]:
 
 def task_dataset_hash(data_root: Any, task_id: str) -> str:
     """Hash public task inputs and base databases; never open hidden scoring files."""
-    from pathlib import Path
 
     root = Path(data_root).resolve(strict=True)
     task = (root / "tasks" / task_id).resolve(strict=True)

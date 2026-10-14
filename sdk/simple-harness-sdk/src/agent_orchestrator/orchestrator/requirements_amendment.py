@@ -24,6 +24,9 @@ from ..contracts.state_machines import TERMINAL_MISSION
 from ..storage.htn_store import HtnStore
 from ..storage.obligation_store import ObligationStore
 from ..storage.store import StoreError
+from . import hierarchical_dispatch
+from .assurance_final_writer import assured_closeout_pending
+from .state_machine import next_mission
 
 RECEIPT_KIND = "requirements_amended"
 EVENT = "RequirementsAmended"
@@ -90,9 +93,6 @@ def amend_requirements(
         split_goal_change,
         unchanged_entries,
     )
-    from .assurance_final_writer import assured_closeout_pending
-    from .hierarchical_dispatch import append_hierarchical_event
-    from .state_machine import next_mission
 
     store = orchestrator.store
     proposal = {
@@ -226,7 +226,7 @@ def amend_requirements(
             "goal": goal,
             "scope_epoch": int(epoch),
         }
-        append_hierarchical_event(
+        hierarchical_dispatch.append_hierarchical_event(
             store,
             EVENT,
             mission_id,

@@ -21,6 +21,10 @@ from ..contracts.htn import TaskForm
 from ..graph.eligibility import OccurrenceOutcome
 from ..storage.htn_store import HtnStore
 from ..storage.store import Store
+from .assurance_validity import acceptance_id_for
+from .completion_inputs import frozen_requirements_revision, load_completion_result_inputs
+from .operation_completion import OperationCompletionError
+from .taskgraph_outcomes import read_taskgraph_outcomes
 
 #: 修复请求里的原因：沿用的结果按新要求重审没过。
 CARRIED_RESULT_REJECTED = "CARRIED_RESULT_REJECTED"
@@ -54,11 +58,6 @@ class CarriedReview:
 
 def carried_reviews(store: Store, dispatch: Any, mission_id: str) -> list[CarriedReview]:
     """The kept steps due for a review under the current requirements, in data order."""
-
-    from .assurance_validity import acceptance_id_for
-    from .completion_inputs import frozen_requirements_revision
-    from .operation_completion import OperationCompletionError
-    from .taskgraph_outcomes import read_taskgraph_outcomes
 
     htn = HtnStore(store)
     latest = htn.latest_requirements_revision(mission_id)
@@ -137,8 +136,6 @@ def rejected(store: Store, result_id: str, requirements_revision: int) -> bool:
 def kept(store: Store, result_id: str, requirements_revision: int) -> bool:
     """Whether this accepted result can be reviewed under this revision at all: only the
     requirements moved under its step (same Task contract, duty, effects and data edges)."""
-    from .completion_inputs import load_completion_result_inputs
-    from .operation_completion import OperationCompletionError
 
     stored = store.get_result(result_id)
     if stored is None:

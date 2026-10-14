@@ -32,8 +32,12 @@ from typing import Any
 from ..artifacts.input_bindings import AcceptedOutput, DisclosureState, ResourceIdentity
 from ..contracts.htn import OccurrenceId, TaskRef
 from ..contracts.models import ContractError
+from ..contracts.operation_completion import PlanRevisionPinV1
 from ..contracts.semantic_base import VersionedRef
 from ..graph.task_network import TaskNetworkSnapshot
+from ..planning.htn.compiler import CompilationRefused, coverage_from_slots
+from ..storage.store import StoreError
+from .operation_completion import OperationCompletionReader
 
 
 def accepted_output_json(output: AcceptedOutput) -> dict[str, Any]:
@@ -194,8 +198,6 @@ def output_ports_in_revision(
     # The frozen completion scope covers even preparation-only and single primitive
     # Task contracts: a step's required ports are declared without a Method criterion
     # link or a downstream consumer.
-    from ..contracts.operation_completion import PlanRevisionPinV1
-    from .operation_completion import OperationCompletionReader
 
     active = semantics.active_plan_revision(mission_id)
     if active is None or int(active.revision) != int(revision):
@@ -243,8 +245,6 @@ def _adopted_in_revision(
     """The method instances of one plan revision, which of them are adopted, and the
     semantic bindings of the tasks they refine — the three inputs every "what does the
     adopted plan say" reader starts from."""
-
-    from ..contracts.htn import TaskRef
 
     bindings: dict[Any, Any] = {}
     for spec in semantics.list_plan_memberships(mission_id, revision):
@@ -314,9 +314,6 @@ def carried_criteria_in_revision(
     the leaf then owes the parent criterion by name, which is what the method wrote.
     """
 
-    from ..contracts.htn import TaskRef
-    from ..storage.store import StoreError
-
     instances, adopted, bindings = _adopted_in_revision(semantics, mission_id, revision)
     task_of = {
         str(spec.occurrence_id): str(spec.task_id)
@@ -377,8 +374,6 @@ def owned_criteria(network: Any, semantics: Any) -> dict[str, list[tuple[str, st
     longer holds contributes nothing.
     """
 
-    from ..storage.store import StoreError
-
     owned: dict[str, list[tuple[str, str]]] = {}
     for draft in getattr(network, "method_instances", ()):
         if not network.is_adopted(draft.instance_id):
@@ -419,10 +414,6 @@ def stored_coverage(
     than raising: the plan is still readable, and the coverage check will report the
     gap in the language it is about.
     """
-
-    from ..contracts.htn import TaskRef
-    from ..planning.htn.compiler import CompilationRefused, coverage_from_slots
-    from ..storage.store import StoreError
 
     chosen = {str(item) for item in adopted}
     claims: list[Any] = []

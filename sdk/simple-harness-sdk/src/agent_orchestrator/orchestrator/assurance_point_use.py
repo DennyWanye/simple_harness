@@ -24,6 +24,7 @@ MAINTAIN（执行期间持续成立）要实际持续监测；产品没有，签
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -37,11 +38,16 @@ from ..assurance.certificates import (
 from ..assurance.codec import AssuranceError, canonical, decode, fingerprint, integer, text
 from ..assurance.evidence import ReadItem
 from ..assurance.refs import AssuranceRef, Pin
+from ..contracts.evidence_state import ValidityWitness, WitnessDecision
+from ..contracts.semantic_base import TypedRefKind
+from ..memory.knowledge_standing import CURRENT, knowledge_standing
+from ..storage import htn_store
 from ..storage.assurance_reads import AssuranceReader, clock_discontinuous, read_epochs_locked
 from ..storage.assurance_store import AssuranceStore
 from ..storage.assurance_work import atomic
+from ..storage.store import StoreError
 from .assurance_check_use import _merge_reads
-from .assurance_validity import USE_CERTIFIED_KIND
+from .assurance_validity import USE_CERTIFIED_KIND, result_acceptance_ids
 
 ACTION_CONSUMER = "ACTION"
 ATTEMPT_CONSUMER = "ATTEMPT"
@@ -249,7 +255,6 @@ def _subject_ref(store: Any, mission_id: str, subject: tuple[str, str]) -> Assur
 
 
 def _judge_knowledge(store: Any, mission_id: str, claim: EvidenceClaim) -> _Judged:
-    from ..memory.knowledge_standing import CURRENT, knowledge_standing
 
     record = store.get_knowledge(claim.id)
     if record is None or record.mission_id != mission_id:
@@ -267,7 +272,6 @@ def _judge_summary(
     store: Any, mission_id: str, claim: EvidenceClaim, rows: list[Mapping[str, Any]]
 ) -> _Judged:
     from ..memory.knowledge_standing import acceptance_is_current
-    from .assurance_validity import result_acceptance_ids
 
     row = next((item for item in rows if item["id"] == claim.id), None)
     if row is None:
@@ -291,15 +295,10 @@ def _judge_step_ground(store: Any, mission_id: str, task_id: str, now_ms: int) -
     现行纪元下新鲜（见证合同自己的 ``is_fresh_for``）。见证所依据的验收已不当前时，若同一上游已有
     当前验收、这一步也对它持有好见证（上游重做过、重读过），旧的算历史；否则地基没了。
     """
-    import json
 
-    from ..contracts.evidence_state import ValidityWitness, WitnessDecision
-    from ..contracts.semantic_base import TypedRefKind
     from ..memory.knowledge_standing import acceptance_is_current
-    from ..storage.htn_store import HtnStore
-    from ..storage.store import StoreError
 
-    htn = HtnStore(store)
+    htn = htn_store.HtnStore(store)
     latest: dict[tuple[str, str], ValidityWitness] = {}
     for digest, raw in store.connection.execute(
         "SELECT subject_digest, witness_json FROM validity_witnesses WHERE mission_id=?"

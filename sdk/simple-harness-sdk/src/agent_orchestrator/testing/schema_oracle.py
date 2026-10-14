@@ -16,6 +16,8 @@ import re
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from ..graph import schemas
+
 _SUPPORTED = {
     "$schema",
     "$id",
@@ -46,7 +48,6 @@ _SUPPORTED = {
 
 def _resolve(ref: str, root: Mapping[str, Any]) -> tuple[Mapping[str, Any], Mapping[str, Any]]:
     """``$ref`` → (指到的那一段, 它所在的那份文件)。"""
-    from ..graph import schemas
 
     file_part, _, pointer = ref.partition("#")
     document = schemas.load_schema(file_part.removesuffix(".schema.json")) if file_part else root

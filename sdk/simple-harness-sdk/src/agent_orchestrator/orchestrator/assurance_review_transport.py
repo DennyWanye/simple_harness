@@ -6,10 +6,13 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
-from ..assurance.codec import AssuranceError, decode, fingerprint, integer, text
+from ..assurance.codec import AssuranceError, canonical, decode, fingerprint, integer, text
+from ..assurance.policy import AssurancePolicy
 from ..assurance.refs import AssuranceRef, Pin
+from ..assurance.review_input import read_initial_materials
 from ..assurance.reviews import AssuranceReviewBinding, ReviewInvocation
 from ..contracts import TERMINAL_MISSION
+from ..contracts.operation_completion import OccurrenceCompletionScopeV1
 from ..contracts.resolution import (
     AllExpr,
     AnyExpr,
@@ -20,11 +23,16 @@ from ..contracts.resolution import (
 )
 from ..contracts.semantic_base import TypedRefKind
 from ..governance.budgets import BudgetError
+from ..runtime.agent_worker import user_message_json
 from ..storage.assurance_reads import AssuranceReader
 from ..storage.assurance_store import AssuranceStore
 from ..storage.assurance_work import atomic
 from ..storage.htn_store import HtnStore
 from ..storage.store import StoreError
+from .assurance_review_pins import bind_review_blob_pins
+from .commit_service import Reservation, mission_account, task_account
+from .failure_classes import REVIEW_CALL_ABANDONED
+from .operation_completion import OperationCompletionReader
 
 if TYPE_CHECKING:
     from .commit_service import CommitService, Reservation
@@ -125,8 +133,6 @@ def _validate_package(reader: AssuranceReader, package: ReviewPackage, body: dic
             AssuranceRef("completion_scope", Pin.from_json(scope_pin))
         ).body_json
     )
-    from ..contracts.operation_completion import OccurrenceCompletionScopeV1
-    from .operation_completion import OperationCompletionReader
 
     scope = OccurrenceCompletionScopeV1.from_json(scope_body)
     if (
@@ -217,7 +223,6 @@ def ensure_review_invocation(
     The original service writer joins that UoW; the savepoint rolls everything
     back even when an outer caller catches an error.
     """
-    from .commit_service import mission_account, task_account
 
     if not isinstance(binding, AssuranceReviewBinding) or not callable(require_current_locked):
         raise AssuranceError("REVIEW_PREPARATION_REQUIRED")
@@ -240,7 +245,6 @@ def ensure_review_invocation(
     invocation_config = dict(config)
     if "message" not in invocation_config or "agent_config" not in invocation_config:
         raise AssuranceError("REVIEW_RUNTIME_CONFIG_REQUIRED")
-    from ..assurance.review_input import read_initial_materials
 
     read_initial_materials(dict(invocation_config["message"]), binding)
     invocation_config.update(
@@ -360,7 +364,6 @@ def ensure_review_invocation(
                 ("mission_id", "request_command_id", "round_no"),
             ),
         )
-        from .assurance_review_pins import bind_review_blob_pins
 
         bind_review_blob_pins(commit, binding)
         if commit.store.get_intent_for_subject(subject_id) is not None:
@@ -745,7 +748,6 @@ def _require_format_repair(
     ):
         raise AssuranceError("REVIEW_REPAIR_SOURCE_INVALID")
     classification = str(body["classification"])
-    from .failure_classes import REVIEW_CALL_ABANDONED
 
     if body.get("error_code") == REVIEW_CALL_ABANDONED:
         # A call that never came back has no turn to cite (阶段 B 裁决第 6 类); it must
@@ -797,7 +799,6 @@ def _require_format_repair(
     ).fetchone()
     if HtnStore(commit.store).official_review_record(package[0]) is not None:
         raise AssuranceError("REVIEW_ALREADY_OFFICIAL")
-    from ..assurance.policy import AssurancePolicy
 
     profile = commit.store.connection.execute(
         "SELECT policy_json FROM assurance_mission_bindings WHERE mission_id=?",
@@ -817,9 +818,6 @@ def ensure_format_repair_invocation(
     semantic review, extra account or fabricated zero-token reservation is used.
     The current handoff validator must admit these bytes before reserving again.
     """
-    from ..assurance.codec import canonical
-    from ..runtime.agent_worker import user_message_json
-    from .commit_service import Reservation
 
     original = commit.store.get_receipt(prior_failure.pin.id)
     if original is None:

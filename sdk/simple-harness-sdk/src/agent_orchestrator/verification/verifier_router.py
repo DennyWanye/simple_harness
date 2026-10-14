@@ -25,10 +25,12 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from ..artifacts.workspace import Workspace
+from ..assurance.codec import AssuranceError, fingerprint
 from ..contracts import Artifact, ContractError, Mission, ResultEnvelope, Task
 from ..contracts.models import VERIFICATION_LAYERS
 from ..governance.domains import DomainProfileV1
 from ..memory.verified_knowledge import KnowledgeIndex
+from .assurance_local import freeze_verifier_inputs
 from .critics import CriticVerdict
 from .deterministic_checks import (
     ERROR,
@@ -111,7 +113,6 @@ class VerifierRouter:
         frozen_input_hash = None
 
         def actual_local_inputs() -> dict[str, Any]:
-            from .assurance_local import freeze_verifier_inputs
 
             return freeze_verifier_inputs(
                 mission=mission,
@@ -127,8 +128,6 @@ class VerifierRouter:
             )
 
         if local_check_recorder_factory is not None:
-            from ..assurance.codec import fingerprint
-
             actual_inputs = actual_local_inputs()
             frozen_input_hash = fingerprint(actual_inputs)
             local_check_recorder = local_check_recorder_factory(actual_inputs)
@@ -158,7 +157,6 @@ class VerifierRouter:
                 return execute()
 
             def bound_execute() -> LayerResult:
-                from ..assurance.codec import AssuranceError, fingerprint
 
                 if fingerprint(actual_local_inputs()) != frozen_input_hash:
                     raise AssuranceError("CHECK_INPUT_CHANGED")

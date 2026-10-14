@@ -11,7 +11,7 @@ from simple_harness.contracts import canonical_json
 
 from ..contracts import TERMINAL_MISSION, ContractError
 from ..governance.permissions import Principal
-from ..governance.planning_authorization import PlanningLanePolicy
+from ..governance.planning_authorization import PlanningLanePolicy, planning_policy_for_mission
 from ..storage.planning_admission_store import PlanningAdmissionStore
 from ..storage.planning_decision_store import PlanningDecisionStore
 from ..storage.store import StoreConflict
@@ -90,7 +90,6 @@ class PlanningAuthorizationApi:
             raise StoreConflict("planning mission is not available to this caller")
         if str(mission.status) in {str(item) for item in TERMINAL_MISSION}:
             raise StoreConflict("planning authorization cannot change a terminal mission")
-        from ..governance.planning_authorization import planning_policy_for_mission
 
         self._policy = planning_policy_for_mission(self._store, mission_id)
         return mission

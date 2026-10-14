@@ -14,7 +14,8 @@ from typing import Any
 
 from ..artifacts.workspace import Workspace, sha256_file
 from ..assurance.checks import Grade
-from ..assurance.codec import AssuranceError, canonical, digest, fingerprint, integer, text
+from ..assurance.codec import AssuranceError, canonical, decode, digest, fingerprint, integer, text
+from ..assurance.executor_checks import executor_run_facts, record_actual_run
 from ..assurance.local_checks import (
     AssertionOutput,
     LocalCheckRecorder,
@@ -185,7 +186,6 @@ class LocalVerificationRecorder:
             actual = LayerResult(layer, ERROR, "local checker execution failed", {})
         # Only the original LayerResult is returned, with provenance. The model
         # never supplies this ref, and an ERROR is never upgraded to PASS.
-        from ..assurance.codec import decode
 
         if decode(recorded.receipt_json)["execution_state"] != "SUCCEEDED":
             actual = LayerResult(layer, ERROR, "local checker execution failed", {})
@@ -204,7 +204,6 @@ class LocalVerificationRecorder:
         without them stays UNKNOWN, and the returned LayerResult keeps the
         original status with the imported receipt ref attached.
         """
-        from ..assurance.executor_checks import executor_run_facts, record_actual_run
 
         binding = self.executor_bindings.get(layer)
         if binding is None or self.persist_executor is None:

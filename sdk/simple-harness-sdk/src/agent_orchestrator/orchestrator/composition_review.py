@@ -29,6 +29,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from ..assurance.codec import AssuranceError
 from ..contracts.evidence_state import (
     Validity,
 )
@@ -62,9 +63,12 @@ from ..contracts.semantic_base import (
     content_hash_of,
 )
 from ..graph.task_network import GATING_REQUIREDNESS
+from ..storage.assurance_store import AssuranceStore
 from ..storage.htn_store import HtnStore
 from ..storage.store import StoreError
 from ..verification.acceptance_rules import CompoundFacts, ExecutionPosture, IndependenceFacts
+from .assurance_purpose_reviews import assurance_review_runtime
+from .completion_support import current_child_supports, read_completion_support
 from .hierarchical_dispatch import CompoundPhase, HierarchicalDispatch, next_compound_phase
 from .resolution_commits import (
     CommitGoalResolutionCommand,
@@ -72,6 +76,8 @@ from .resolution_commits import (
     ResolutionCommitRejected,
     ResolutionPrincipal,
 )
+from .review_adjudication import adjudication_of
+from .scoped_composition_review import read_compound_projection
 
 COMPOSITION_REVIEW_POLICY = "hierarchical-composition-review-v1"
 COMPOSITION_REVIEWER = "composition-reviewer"
@@ -190,14 +196,12 @@ class CompositionAcceptanceAssembly:
         now_ms = int(self.store.now * 1000)
         producers = self._producers(mission_id, accepted)
         # The goal's criteria and success expression are its frozen completion scope's.
-        from .scoped_composition_review import read_compound_projection
 
         projection = read_compound_projection(
             self.store, mission_id, str(occurrence_id), str(spec.task_id)
         )
         revision = projection.requirements
         manifest = self._manifest_hash(mission_id, str(spec.task_id))
-        from ..storage.assurance_store import AssuranceStore
 
         AssuranceStore(self.store).require_assured(mission_id)
         package = self._package(
@@ -214,8 +218,6 @@ class CompositionAcceptanceAssembly:
         )
         # BW03: the composition is judged by an independent review on the round
         # transport; the official COMPOSITION record is consumed below.
-        from ..assurance.codec import AssuranceError
-        from .assurance_purpose_reviews import assurance_review_runtime
 
         mission = self.store.get_mission(mission_id)
         try:
@@ -226,7 +228,6 @@ class CompositionAcceptanceAssembly:
             raise ContractError(f"Assurance COMPOSITION review unavailable: {error}") from error
         # 2026-10-01（第 3 项）：消费正式记录。此前这里直接返回，记录进来后没人读它，
         # 中间目标永远收不了尾（真机库里从没跑过三层计划，所以没暴露）。
-        from .review_adjudication import adjudication_of
 
         record = self.semantics.official_review_record(str(package.package_id))
         if record is None:
@@ -347,14 +348,12 @@ class CompositionAcceptanceAssembly:
     def _accepted_children(
         self, mission_id: str, gating: Sequence[Any]
     ) -> dict[str, tuple[str, ...]]:
-        from .completion_support import current_child_supports
 
         return current_child_supports(self.store, mission_id, gating)
 
     def _producers(
         self, mission_id: str, accepted: Mapping[str, tuple[str, ...]]
     ) -> tuple[str, ...]:
-        from .completion_support import read_completion_support
 
         agents: list[str] = []
         for ids in accepted.values():
@@ -382,7 +381,6 @@ class CompositionAcceptanceAssembly:
         expression: Any,
     ) -> ReviewPackage:
         # ``accepted`` 装的是子步骤的支撑（验收或复用的目标结论），引用由支撑读取给出。
-        from .completion_support import read_completion_support
 
         supports = tuple(
             read_completion_support(self.store, mission_id, source_id)

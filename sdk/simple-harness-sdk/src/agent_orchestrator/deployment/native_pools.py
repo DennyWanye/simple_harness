@@ -32,7 +32,9 @@ from simple_harness.agents.arp.strict import digest
 from simple_harness.agents.context.budget import ContextPolicy
 from simple_harness.runtime.ports import AuthorizationResult
 
+from ..artifacts.store import ArtifactStoreError
 from ..runtime.assembly import OWNER_SCOPE, resolve_profile_context_policy
+from ..runtime.deepseek_meter import CalibratingProvider, RelayDeepSeekCounter
 from ..runtime.mission_sources import MissionSourceReader
 from ..runtime.model_router import RuntimeProfile
 from ..runtime.native_plane import NativePlaneAssembly, intent_caller
@@ -213,7 +215,6 @@ class NativePools:
         assembled = getattr(self._orchestrator, "assembled", None)
         if assembled is None:
             raise ArpError("SOURCE_UNAVAILABLE", "artifact store is not assembled")
-        from ..artifacts.store import ArtifactStoreError
 
         try:
             return assembled.workspaces.artifact_store.read(ref.content_hash)
@@ -404,8 +405,6 @@ class NativePools:
 
 def calibrated(provider: Any, counter: Any) -> Any:
     """A relay pool's provider learns the relay margin from every reported prompt count."""
-
-    from ..runtime.deepseek_meter import CalibratingProvider, RelayDeepSeekCounter
 
     if provider is None or not isinstance(counter, RelayDeepSeekCounter):
         return provider

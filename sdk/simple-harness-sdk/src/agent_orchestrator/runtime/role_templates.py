@@ -23,6 +23,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from ..contracts import ContractError
+from ..governance import domains
 
 if TYPE_CHECKING:
     from ..governance.domains import DomainProfileV1
@@ -644,9 +645,7 @@ def hierarchical_worker_for_domain(domain: DomainProfileV1 | Any) -> RoleTemplat
     the code-domain words again without anybody being told.
     """
 
-    from ..governance.domains import HIERARCHICAL_WORKER_TEMPLATES
-
-    wanted = HIERARCHICAL_WORKER_TEMPLATES.get(str(getattr(domain, "id", "")))
+    wanted = domains.HIERARCHICAL_WORKER_TEMPLATES.get(str(getattr(domain, "id", "")))
     if wanted is None:
         return WORKER_HIERARCHICAL
     selected = TEMPLATE_VERSIONS.get("worker", {}).get(wanted)

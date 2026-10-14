@@ -8,8 +8,12 @@ Original result, input manifest, CAS and event/receipt writers remain owners.
 
 from __future__ import annotations
 
+import hashlib
+import platform
+import sys
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from ..artifacts.store import ArtifactStore
@@ -25,9 +29,12 @@ from ..assurance.executor_checks import OUTPUT_SCHEMA
 from ..assurance.local_checks import RecordedLocalCheck, validate_local_check
 from ..assurance.refs import AssuranceRef, Pin
 from ..contracts import Artifact
+from ..storage import htn_store
 from ..storage.assurance_reads import AssuranceReader
 from ..storage.assurance_work import atomic
 from ..verification.assurance_local import LocalLayerBinding, LocalVerificationRecorder
+from .assurance_check_import import import_local_check_locked
+from .completion_inputs import load_completion_result_inputs
 
 if TYPE_CHECKING:
     from .commit_service import CommitService
@@ -358,10 +365,6 @@ class AssuranceLocalChecks:
         cas: ArtifactStore,
         require_current_root: Callable[[], None],
     ) -> None:
-        import hashlib
-        import platform
-        import sys
-        from pathlib import Path
 
         self.commit = commit
         self.tenant_id = text(tenant_id)
@@ -415,7 +418,6 @@ class AssuranceLocalChecks:
         execution_ref: AssuranceRef,
         completion_scope: AssuranceRef,
     ) -> AssuranceRef:
-        from .assurance_check_import import import_local_check_locked
 
         return import_local_check_locked(
             self,
@@ -425,7 +427,6 @@ class AssuranceLocalChecks:
         )
 
     def _require_deployment(self) -> None:
-        import hashlib
 
         self.require_current_root()
         for path, expected in self.hashes.items():
@@ -512,8 +513,6 @@ class AssuranceLocalChecks:
 
         ``requirements_revision``: the revision the checks are bound under — ``None`` is the
         result's own; a newer one reviews a kept, accepted result again (TaskGraph 补全第四批)."""
-        from ..storage.htn_store import HtnStore
-        from .completion_inputs import load_completion_result_inputs
 
         self._require_deployment()
         if self.commit.store.connection.in_transaction:
@@ -551,7 +550,7 @@ class AssuranceLocalChecks:
             ):
                 raise AssuranceError("CHECK_INPUT_MANIFEST_MISMATCH")
             registry = self._read_registry(mission_id)
-            manifest_hash = HtnStore(self.commit.store).insert_input_manifest(
+            manifest_hash = htn_store.HtnStore(self.commit.store).insert_input_manifest(
                 mission_id,
                 inputs["task_id"],
                 inputs,

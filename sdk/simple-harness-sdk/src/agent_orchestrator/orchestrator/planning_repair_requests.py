@@ -7,16 +7,35 @@ snapshot as the request; the original PlanningDecision pipeline chooses and comm
 
 from __future__ import annotations
 
+import difflib
 from collections.abc import Mapping
 from dataclasses import asdict
 from typing import Any
 
+from ..contracts.evidence_state import TruthValue
+from ..contracts.htn import TaskForm, condition_digest
+from ..contracts.models import ContractError
 from ..contracts.semantic_base import content_hash_of
+from ..contracts.state_machines import TERMINAL_ATTEMPT
 from ..planning.htn.repair_adapter import RepairEventAdapter
 from ..planning.htn.repair_decision import analyze_impact
+from ..runtime import planning_operations
+from ..verification.evidence_resolver import EvidenceResolver
 from .assurance_recheck import closeout_stale_findings
+from .failure_classes import (
+    classify_failure,
+    output_exhausted,
+    output_exhausted_fact,
+    turn_cap_exceeded,
+    turn_cap_fact,
+)
 from .hierarchical_dispatch import append_hierarchical_event
+from .occurrence_tasks import verification_failure_fingerprint
+from .planning_retry import RETRY_AUTHORIZED, pending_retry_permit, retry_decision_required
 from .repair_impact import read_repair_impact_indexes
+from .requirements_amendment import EVENT as AMENDED
+from .requirements_amendment import compare_revisions
+from .resource_requests import planner_detail
 
 REQUESTED = "PlanningRepairRequested"
 ADDRESSED = "PlanningRepairAddressed"
@@ -46,9 +65,6 @@ def _source_diff(
     handler: Any, mission: Any, path: str, old_hash: str, new_hash: str | None, source_roots: Any
 ) -> str | None:
     """新旧两版正文的逐行差异摘录——字节比较得出的事实，不是判断。读不到任一版就不带。"""
-    import difflib
-
-    from ..verification.evidence_resolver import EvidenceResolver
 
     if new_hash is None:
         return None
@@ -82,7 +98,6 @@ def source_change_triggers(
     跑完，白花两轮次数）；还没派发的步骤不算（下次派发自动拿新版）；新登记的资料不发请求。
     请求以资料事件的幂等键去重。
     """
-    from ..contracts.state_machines import TERMINAL_ATTEMPT
 
     store = handler.store
     events = tuple(store.iter_events(mission.id))
@@ -241,9 +256,6 @@ def precondition_triggers(handler: Any, dispatch: Any, mission: Any, *, seen: se
     由规划器定。前提还没人看过（真值未知）走原来的取证，不叫规划器；同一组前提每翻一次（纪元加一）
     只记一条。复用"证据失效"这类请求，不加新词。
     """
-    from ..contracts.evidence_state import TruthValue
-    from ..contracts.htn import TaskForm, condition_digest
-    from ..contracts.models import ContractError
 
     store = handler.store
     network = dispatch.network(mission.id)
@@ -454,7 +466,6 @@ def open_goal_triggers(handler: Any, dispatch: Any, mission: Any, *, seen: set[s
     还是问人由规划器定；规划器为其中任何一个目标提交了做法，这条请求就算处理了，剩下的
     目标由新计划版本的请求接着问。第一份计划之前的根目标不归这里（那是规划的起点）。
     """
-    from ..contracts.htn import TaskForm
 
     store = handler.store
     active = dispatch.semantics().active_plan_revision(mission.id)
@@ -530,7 +541,6 @@ def settle_addressed_requests(handler: Any, dispatch: Any, mission: Any) -> bool
     晚于请求）时，系统记一条 ``PlanningRepairAddressed``（decision_type=SYSTEM_REVALIDATED）。
     影响范围含义务、操作、方法实例等只有计划改动才能了结的对象时，不由系统消费。
     """
-    from ..contracts.htn import TaskForm
 
     store = handler.store
     events = tuple(store.iter_events(mission.id))
@@ -633,7 +643,6 @@ def failure_fingerprint(event_type: str, payload: Any) -> str:
     验收失败按"哪一层 + 具体问题"算（``verification_failure_fingerprint``）；其余失败按
     事件类型、原因和涉及路径算。只用来如实报告"连续几次一样"，不据此替规划器做任何决定。
     """
-    from .occurrence_tasks import verification_failure_fingerprint
 
     body = dict(payload or {})
     if event_type == "VerificationFailed":
@@ -664,13 +673,6 @@ def attempt_failure_facts(failure: Mapping[str, Any] | None) -> dict[str, str]:
     causes are redone in place by the system) and, for the two caps the executor can run into,
     the plain fact — output ceiling (2026-10-09) or per-turn model-call cap (2026-10-10).
     Whether to redo or split the step is the planner's judgment."""
-    from .failure_classes import (
-        classify_failure,
-        output_exhausted,
-        output_exhausted_fact,
-        turn_cap_exceeded,
-        turn_cap_fact,
-    )
 
     if not failure:
         return {}
@@ -867,7 +869,6 @@ def collect_triggers(handler: Any, mission: Any) -> bool:
         refs = tuple(dict.fromkeys(str(x) for x in (event.attempt_id, event.task_id) if x)) or (
             mission.id,
         )
-        from .resource_requests import planner_detail
 
         produced |= record_request(
             dispatch,
@@ -921,9 +922,6 @@ def collect_triggers(handler: Any, mission: Any) -> bool:
         if planned_for is None or number <= planned_for:
             continue
         if revision.amendment_credential_ref and source_key not in seen:
-            from .requirements_amendment import EVENT as AMENDED
-            from .requirements_amendment import compare_revisions
-
             # what changed is a comparison of the two revisions by id — a fact, not a judgment
             previous = revisions.get(number - 1)
             # 只改目标时条目三列表全空（N3-02 / H19）：目标的新旧原文只在同一次修订的改要求事件里，
@@ -972,7 +970,6 @@ def collect_triggers(handler: Any, mission: Any) -> bool:
     # A committed retry is bound to the exact task/plan/input/operation read.
     # If it becomes stale before dispatch, reopen a system request; silently
     # retaining the old addressed trigger would leave the Task blocked forever.
-    from .planning_retry import RETRY_AUTHORIZED, pending_retry_permit, retry_decision_required
 
     permits = [e for e in store.iter_events(mission.id) if e.type == RETRY_AUTHORIZED]
     for task in store.list_tasks(mission.id):
@@ -990,16 +987,13 @@ def collect_triggers(handler: Any, mission: Any) -> bool:
         )
         if previous is None or pending_retry_permit(store, mission.id, task.id) is not None:
             continue
-        from ..runtime.planning_operations import (
-            SourceUnavailable,
-            StoreOperationReader,
-            build_operation_snapshot,
-        )
 
         try:
-            operations = build_operation_snapshot(mission.id, reader=StoreOperationReader(store))
+            operations = planning_operations.build_operation_snapshot(
+                mission.id, reader=planning_operations.StoreOperationReader(store)
+            )
             operation_state = operations.read_digest
-        except SourceUnavailable as error:
+        except planning_operations.SourceUnavailable as error:
             operation_state = error.reason
         current = htn.task_semantics_of(mission.id, task.id)
         retry_state = {
@@ -1044,7 +1038,6 @@ def repair_goal_occurrences(store: Any, network: Any) -> tuple[str, ...]:
     Visibility is not a repair authorization. The decision compiler still checks
     the current instance, impact, accepted work, and operation state at admission.
     """
-    from ..contracts.htn import TaskForm
 
     mission_id = str(network.mission_id)
     affected = {

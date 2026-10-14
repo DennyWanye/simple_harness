@@ -17,6 +17,7 @@ from typing import Any
 from ..contracts import Budget, ContractError, Event, Mission
 from ..governance.domains import CODE_DOMAIN, DOMAINS
 from ..orchestrator.commit_service import CommitService, MissionSpec
+from ..orchestrator.stop_conditions import parse_stop_conditions
 from ..runtime.tool_gateway import TOOL_NAMES
 
 
@@ -67,7 +68,6 @@ def spec_from_request(
         ):
             raise MissionRequestError(f"{name} must be a list of strings")
     # 第 2 批车道 H（H06）：两种计数型停止条件的阈值写法在建任务时就校验，不留到主循环里才发现
-    from ..orchestrator.stop_conditions import parse_stop_conditions
 
     try:
         parse_stop_conditions(request.get("stop_conditions") or (), None)

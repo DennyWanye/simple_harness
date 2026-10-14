@@ -54,10 +54,12 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
+from pathlib import PurePosixPath, PureWindowsPath
 from typing import Any
 
 from ..contracts.htn import TaskForm, TaskSemanticBindingV1
 from ..contracts.models import ContractError
+from ..contracts.operation_completion import PlanRevisionPinV1
 from ..contracts.resolution import (
     CheckExecution,
     CriterionOutcome,
@@ -79,15 +81,23 @@ from ..contracts.semantic_base import (
     TypedRefKind,
     content_hash_of,
 )
+from ..graph.projection_validation import GraphIntegrityError
 from ..storage.htn_store import HtnStore
 from ..storage.store import StoreError
+from ..verification.evidence_resolver import in_source_roots
 from .accepted_outputs import CarriedCriterion, carried_criteria_in_revision
+from .completion_status import read_current_effect
+from .failure_classes import review_exhausted_by_interruption
 from .hierarchical_dispatch import (
     ROOT_REVIEW_CUT,
     ROOT_REVIEW_SUPERSEDED,
     append_hierarchical_event,
 )
 from .method_library import methods_to_judge
+from .operation_completion import OperationCompletionError, OperationCompletionReader
+from .planning_repair_requests import source_change_open
+from .review_adjudication import adjudication_of
+from .scoped_composition_review import root_content_projection
 
 #: The review policy this deployment cuts a root ``MISSION_FINAL`` package under.
 #: One named constant rather than a literal at three call sites, so the package, the
@@ -203,7 +213,6 @@ PATH_PLACEHOLDER = "<path>"
 
 
 def _is_absolute_path(value: str) -> bool:
-    from pathlib import PurePosixPath, PureWindowsPath
 
     return PurePosixPath(value).is_absolute() or PureWindowsPath(value).is_absolute()
 
@@ -371,8 +380,6 @@ class RootReviewCoordinator:
     def _source_versions_hash(self, mission_id: str) -> str | None:
         """The current active source set (path -> version) of the Mission, hashed; None
         for a domain without source roots."""
-        from ..contracts.semantic_base import content_hash_of
-        from ..verification.evidence_resolver import in_source_roots
 
         domain = self.commit.domain_for(mission_id)
         if not domain.source_roots:
@@ -462,7 +469,6 @@ class RootReviewCoordinator:
             if was_sources is not None and was_sources != self._source_versions_hash(mission_id):
                 reasons.append("SOURCES_MOVED")
         from .assurance_purpose_reviews import purpose_review_key
-        from .failure_classes import review_exhausted_by_interruption
 
         # 2026-09-29：这个包的审阅两次调用都用完、且第 2 次是被重启打断的——不是审阅员的
         # 结论。重切一个新包就是新审阅、新的 2 次机会（仍受每版切包次数上限约束）。
@@ -473,8 +479,6 @@ class RootReviewCoordinator:
 
     def state(self, mission_id: str) -> RootReviewState:
         """Where the root review stands.  Reads only; decides nothing and writes nothing."""
-
-        from ..graph.projection_validation import GraphIntegrityError
 
         try:
             binding = self._root_binding(mission_id)
@@ -516,7 +520,6 @@ class RootReviewCoordinator:
                 task_id=str(binding.task_id),
                 obligation_id=str(binding.obligation_id),
             )
-        from .planning_repair_requests import source_change_open
 
         if source_change_open(self.store, mission_id):
             return RootReviewState(
@@ -587,7 +590,6 @@ class RootReviewCoordinator:
         record = semantics.official_review_record(str(package.package_id))
         if record is None:
             return base
-        from .review_adjudication import adjudication_of
 
         ruling = (
             adjudication_of(semantics._store, str(record.record_id))
@@ -686,7 +688,6 @@ class RootReviewCoordinator:
         requirements, scope = self._requirements(mission_id, binding)
         # 2026-10-06（Assurance §7.2，车道 O）：根终审只判根范围的内容判据；效果判据由各自的结果审阅判、
         # 收尾核对收敛。效果的现状作为事实随包交给审阅员。
-        from .scoped_composition_review import root_content_projection
 
         projection = root_content_projection(requirements, scope)
         contributions = self.contributions(mission_id)
@@ -818,7 +819,6 @@ class RootReviewCoordinator:
 
         效果由它自己的结果审阅判、由收尾核对收敛；这里只让根终审员知道发布之类的效果走到了哪一步。
         """
-        from .completion_status import read_current_effect
 
         rows = []
         for effect_key in scope.required_effect_keys:
@@ -843,8 +843,6 @@ class RootReviewCoordinator:
         """
 
         semantics = self.semantics
-        from ..contracts.operation_completion import PlanRevisionPinV1
-        from .operation_completion import OperationCompletionError, OperationCompletionReader
 
         active = semantics.active_plan_revision(mission_id)
         network = self.dispatch.network(mission_id)

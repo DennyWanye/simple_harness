@@ -9,6 +9,7 @@ from typing import Any
 from ..assurance.certificates import UseIdentity
 from ..assurance.check_bindings import CheckBinding
 from ..assurance.codec import AssuranceError, decode, fingerprint, text
+from ..assurance.policy import AssurancePolicy
 from ..assurance.refs import AssuranceRef, Pin
 from ..contracts import Artifact, Event
 from ..contracts.resolution import ReviewVerdict
@@ -26,6 +27,7 @@ from .assurance_review_import import (
     review_subject_stopped,
 )
 from .assurance_review_pins import ensure_review_blob_pins
+from .assurance_review_transport import read_review_invocation_locked
 from .assurance_tick import AssuranceWait, PreparedAssuranceWork
 
 #: 一次审阅作废的原因：它开始之后，证据里的一份资料换了版本或被撤销（2026-10-05 真机）。
@@ -625,7 +627,6 @@ class AssuranceReviewConsumer:
     def _prepare_format_repair(
         self, reader: AssuranceReader, ref: AssuranceRef
     ) -> PreparedAssuranceWork:
-        from .assurance_review_transport import read_review_invocation_locked
 
         metadata = reader.read_exact_metadata(ref)
         source, row = decode(metadata.body_json), decode(metadata.state_witness_json)
@@ -708,7 +709,6 @@ SECOND_OPINION_REQUESTED = "AssuranceReviewSecondOpinionRequested"
 
 
 def _format_retries(store: Any, mission_id: str) -> int | None:
-    from ..assurance.policy import AssurancePolicy
 
     row = store.connection.execute(
         "SELECT policy_json FROM assurance_mission_bindings WHERE mission_id=?", (mission_id,)

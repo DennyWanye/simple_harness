@@ -4,6 +4,10 @@
 
 from __future__ import annotations
 
+from simple_harness.agents.arp.meter import MeterBinding, model_limits
+from simple_harness.agents.arp.pins import Pin
+from simple_harness.agents.arp.strict import digest
+
 
 class FixtureWordCounter:
     """One token per whitespace word: the certified counter of the fixture lanes.
@@ -29,9 +33,6 @@ class FixtureWordCounter:
         )
 
     def meter_factory(self, counter, *, input_limit_tokens, max_output_tokens, prior_reserve=None):  # type: ignore[no-untyped-def]
-        from simple_harness.agents.arp.meter import MeterBinding, model_limits
-        from simple_harness.agents.arp.pins import Pin
-        from simple_harness.agents.arp.strict import digest
 
         limits = model_limits(
             model="agent-model",

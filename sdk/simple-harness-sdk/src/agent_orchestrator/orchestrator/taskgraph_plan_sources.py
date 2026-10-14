@@ -9,7 +9,9 @@ IO inside this Store view. It supplies facts, never a candidate or a PASS verdic
 
 from __future__ import annotations
 
+import hashlib
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from typing import Any, Protocol
 
@@ -28,6 +30,7 @@ from ..graph.eligibility import OccurrenceOutcome
 from ..graph.execution_contracts import CompleteRead, GraphSourceRead
 from ..graph.taskgraph_sharing import SharingSources
 from ..planning.htn.grounding import SharedGoalEntry
+from ..planning.htn.planner_package import package_hash
 from ..planning.plan_preview import _source_snapshot_payload
 from ..runtime.planning_operations import (
     SourceUnavailable,
@@ -39,8 +42,12 @@ from ..storage.htn_store import HtnStore
 from ..storage.planning_admission_store import PlanningAdmissionStore
 from ..storage.planning_decision_store import PlanningDecisionStore
 from ..storage.store import Store
+from .assurance_validity import acceptance_id_for
+from .carried_review import rejected
 from .hierarchical_dispatch import shared_goal_index
 from .plan_commits import PlanPrincipal
+from .taskgraph_bindings import current_bindings
+from .taskgraph_completion_sources import read_completion_sources
 from .taskgraph_demands import independently_required_occurrences
 from .taskgraph_execution_sources import (
     LocalExecutionSources,
@@ -176,7 +183,6 @@ def _kept_acceptance(
     """The one acceptance a step's accepted result holds under an earlier requirements
     revision, when the step may be kept across the amendment: same Task contract, not
     yet judged under the current revision (the reviewer's rejection ends the candidacy)."""
-    from .carried_review import rejected
 
     task = store.get_task(str(entry.task_id))
     result_id = None if task is None else task.accepted_result_id
@@ -190,7 +196,6 @@ def _earlier_acceptances(
     store: Store, acceptances: Any, entry: SharedGoalEntry, binding: Any, requirement: Any
 ) -> list[Any]:
     """The acceptances the step's accepted result holds under earlier requirements revisions."""
-    from .assurance_validity import acceptance_id_for
 
     task = store.get_task(str(entry.task_id))
     result_id = None if task is None else task.accepted_result_id
@@ -284,7 +289,6 @@ class TaskGraphPlanSourceReader:
             raw = decision["canonical_json"]
             if not isinstance(raw, str) or not raw:
                 raise SourceUnavailable("taskgraph_plan_decision_unreadable")
-            import hashlib
 
             decision_body = json.loads(raw)
             if (
@@ -296,11 +300,9 @@ class TaskGraphPlanSourceReader:
             if intent is None or intent.mission_id != request.mission_id:
                 raise SourceUnavailable("taskgraph_plan_intent_missing")
             package = intent.config.get("planning_package")
-            from collections.abc import Mapping
 
             if not isinstance(package, Mapping):
                 raise SourceUnavailable("taskgraph_plan_package_missing")
-            from ..planning.htn.planner_package import package_hash
 
             if package_hash(package) != request.package_hash:
                 raise SourceUnavailable("taskgraph_plan_package_changed")
@@ -333,7 +335,6 @@ class TaskGraphPlanSourceReader:
                 content_hash=sha256_hex(requirement.to_json()),
             )
             tasks = store.list_tasks(request.mission_id)
-            from .taskgraph_bindings import current_bindings
 
             bindings = current_bindings(semantics, request.mission_id)
             world = self.local.dispatch_for(request.mission_id).require_planning_world()
@@ -379,7 +380,6 @@ class TaskGraphPlanSourceReader:
             operation_producers = read_operation_producers(
                 store, execution.operation_snapshot.value
             )
-            from .taskgraph_completion_sources import read_completion_sources
 
             completion = read_completion_sources(store, request.mission_id, local.view.network)
             network_body = _source_snapshot_payload(local.view.network)

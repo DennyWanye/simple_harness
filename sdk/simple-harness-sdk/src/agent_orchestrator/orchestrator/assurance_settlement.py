@@ -8,6 +8,7 @@ from typing import Any
 from ..contracts import ContractError
 from ..governance.budgets import BudgetError
 from ..runtime.planning_operations import SourceUnavailable
+from . import taskgraph_action_settlement
 from .taskgraph_runtime_imports import TaskGraphRuntimeImports
 
 
@@ -30,10 +31,11 @@ class AssuranceSettlement:
             # TaskGraph lane uses. Real run 2026-09-28 (mission-e5f82ae8c9f24ff8):
             # the publish succeeded but its reservation stayed held forever and the
             # closeout drained on OPEN_RESERVATIONS after the root was resolved.
-            from .taskgraph_action_settlement import require_action_settlement
 
             try:
-                require_action_settlement(self.orchestrator, subject_id, mission_id)
+                taskgraph_action_settlement.require_action_settlement(
+                    self.orchestrator, subject_id, mission_id
+                )
             except (SourceUnavailable, ContractError, OSError) as error:
                 raise BudgetError(
                     "Assurance action settlement source unavailable; reservation held"

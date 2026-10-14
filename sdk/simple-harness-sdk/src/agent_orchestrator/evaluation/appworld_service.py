@@ -8,12 +8,14 @@ change explicit, version-bound and outside the agent process and scoring process
 from __future__ import annotations
 
 from importlib import import_module
+from importlib.metadata import version
+from pathlib import Path
 from threading import Lock
 from typing import Any
 from uuid import uuid4
 
 from .appworld_api_observations import PUBLIC_READ_APIS, digest, project
-from .appworld_state_observations import AppWorldStatePolicy, load_state_policies
+from .appworld_state_observations import AppWorldStatePolicy, load_state_policies, task_dataset_hash
 
 
 def install_public_observation_route(
@@ -84,9 +86,6 @@ def install_public_observation_route(
 
     @environment.app.get("/host_dataset_identity")
     def host_dataset_identity(task_id: str, experiment_name: str) -> dict[str, str]:
-        from pathlib import Path
-
-        from .appworld_state_observations import task_dataset_hash
 
         active = environment.world
         if active is None or active.task_id != task_id or active.experiment_name != experiment_name:
@@ -169,8 +168,6 @@ def install_public_observation_route(
 
 
 def serve(root: str, *, port: int = 18244, state_policy_file: str | None = None) -> None:
-    from importlib import import_module
-    from importlib.metadata import version
 
     uvicorn = import_module("uvicorn")
     appworld: Any = import_module("appworld")

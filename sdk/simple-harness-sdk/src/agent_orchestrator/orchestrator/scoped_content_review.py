@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 
 from ..artifacts.paths import normalise_workspace_path
+from ..assurance.check_specs import REVIEW_LAYERS
 from ..assurance.codec import fingerprint
 from ..contracts.htn import OccurrenceId, TaskForm, TaskRef
 from ..contracts.models import ContractError
@@ -26,11 +27,13 @@ from ..contracts.resolution import (
     CriterionExpr,
     EvaluationKind,
     RequirementsRevision,
+    ReviewPurpose,
     SuccessExpression,
 )
-from ..contracts.semantic_base import TypedRef, TypedRefKind
+from ..contracts.semantic_base import Provenance, TypedRef, TypedRefKind, content_hash_of
 from ..storage.htn_store import HtnStore
 from ..storage.store import Store
+from .accepted_outputs import carried_criteria_for, output_ports_in_revision
 from .operation_completion import OperationCompletionError, OperationCompletionReader
 
 
@@ -63,7 +66,6 @@ def read_task_check_policy_projection(
     verification requirements are retained for local derived criteria, including
     unavailable checkers; absence of recorded successful layers never drops them.
     """
-    from .accepted_outputs import carried_criteria_for
 
     with store.read_view():
         prompt_scope = task_content_prompt_scope(store, mission_id, task_id)
@@ -113,7 +115,6 @@ def local_check_criterion(criterion: Criterion, verification_policy: tuple[str, 
     reviewer's grade still enters every CHECKED criterion too.  Any other unregistered
     layer (human_review, ...) is kept and stays unresolved — nothing is invented or dropped.
     """
-    from ..assurance.check_specs import REVIEW_LAYERS
 
     checks = tuple(layer for layer in verification_policy if layer not in REVIEW_LAYERS)
     policy = replace(criterion.required_evidence_policy, required_check_ids=checks)
@@ -145,7 +146,6 @@ def task_content_prompt_scope(
     store: Store, mission_id: str, task_id: str, *, attempt_id: str | None = None
 ) -> dict:
     """Resolve local review criteria before the Critic runs, without claiming PASS."""
-    from .accepted_outputs import carried_criteria_for
 
     with store.read_view():
         htn = HtnStore(store)
@@ -208,7 +208,6 @@ def read_task_content_projection(
 ) -> ScopedTaskContent:
     # Local import avoids a module cycle; the established leaf policy is shared,
     # never redefined from a model reply or a caller-supplied criterion catalogue.
-    from .accepted_outputs import carried_criteria_for
     from .leaf_acceptance import layer_outcomes
 
     with store.read_view():
@@ -422,9 +421,6 @@ def read_task_content_candidate(
 
 def validate_scoped_command(store: Store, command: object) -> ScopedTaskContent:
     """Re-read the authoritative projection inside the Acceptance transaction."""
-    from ..contracts.resolution import ReviewPurpose
-    from ..contracts.semantic_base import Provenance, content_hash_of
-    from .accepted_outputs import output_ports_in_revision
     from .completion_inputs import load_completion_result_inputs
     from .leaf_acceptance import (
         LEAF_REVIEW_POLICY,

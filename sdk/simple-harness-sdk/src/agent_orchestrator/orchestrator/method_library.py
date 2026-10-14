@@ -20,6 +20,7 @@ from typing import Any
 from ..contracts.semantic_base import content_hash_of
 from ..storage.htn_store import HtnStore
 from ..storage.method_library_store import LISTED, MethodLibraryStore
+from . import hierarchical_dispatch, method_plan_reviews
 
 PROMOTED = "MethodPromoted"
 PROMOTION_SKIPPED = "MethodPromotionSkipped"
@@ -83,7 +84,6 @@ def proposals(store: Any, mission_id: str) -> dict[str, dict[str, Any]]:
 def adopted_methods(store: Any, mission_id: str) -> list[dict[str, Any]]:
     """The methods the active plan adopts that this Mission proposed and its own method review
     passed — the only ones a root review is asked about."""
-    from .method_plan_reviews import review_of
 
     htn = HtnStore(store)
     proposed = proposals(store, mission_id)
@@ -94,7 +94,7 @@ def adopted_methods(store: Any, mission_id: str) -> list[dict[str, Any]]:
         if (
             proposal is None
             or key in rows
-            or not review_of(store, mission_id, draft.method_ref).passed
+            or not method_plan_reviews.review_of(store, mission_id, draft.method_ref).passed
         ):
             continue
         stored = htn.get_method(draft.method_ref.method_id, int(draft.method_ref.version))
@@ -136,9 +136,10 @@ def review_manifest(store: Any, record: Any) -> dict[str, Any]:
 
 
 def _emit(store: Any, kind: str, mission_id: str, key: str, payload: Mapping[str, Any]) -> None:
-    from .hierarchical_dispatch import append_hierarchical_event
 
-    append_hierarchical_event(store, kind, mission_id, key=key, payload=dict(payload))
+    hierarchical_dispatch.append_hierarchical_event(
+        store, kind, mission_id, key=key, payload=dict(payload)
+    )
 
 
 def promote_methods(store: Any, mission_id: str, resolution: Any) -> list[str]:

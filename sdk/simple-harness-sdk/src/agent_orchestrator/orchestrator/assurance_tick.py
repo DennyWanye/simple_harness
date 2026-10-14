@@ -17,6 +17,7 @@ from ..assurance.codec import AssuranceError, integer, text
 from ..assurance.expiry import AssuranceExpiry
 from ..assurance.refs import AssuranceRef
 from ..contracts import ContractError, Event
+from ..contracts.state_machines import TERMINAL_ATTEMPT, TERMINAL_TASK, MissionStopReason
 from ..governance.budgets import BudgetError, BudgetExhausted
 from ..graph.projection_validation import GraphIntegrityError
 from ..storage.assurance_store import AssuranceStore
@@ -30,6 +31,7 @@ from ..storage.assurance_work import (
 )
 from ..storage.store import StoreConflict, StoreError
 from .assurance_clock import observe_assurance_clock
+from .commit_service import CommitRejected
 
 #: 一项工作在读**它自己任务**的数据时可能抛出的错误：计划读不回来、执行图文档按现在的编解码
 #: 清单读不了（开发期不兼容旧数据）、库里这一行坏了。这是这个任务自己的事，这一项按持久
@@ -325,7 +327,6 @@ class AssuranceTick:
         """Whether waiting can help: a reservation that could still give tokens back to the
         account that refused — on that account itself (a step account) or anywhere under
         the Mission (its total or the global quota) — belongs to a subject still running."""
-        from ..contracts.state_machines import TERMINAL_ATTEMPT
 
         if self._account_scope(account_id) == "task":
             rows = self.store.connection.execute(
@@ -352,8 +353,6 @@ class AssuranceTick:
         quota ends the Mission.  A step that cannot be stopped where it stands (a BLOCKED
         compound or root that owns a method/final review, an already accepted one) ends
         the Mission too — the review it needs can never be paid (独立核验 opt.183 M1)."""
-        from ..contracts.state_machines import TERMINAL_TASK, MissionStopReason
-        from .commit_service import CommitRejected
 
         detail = {
             "source_kind": "assurance_review",

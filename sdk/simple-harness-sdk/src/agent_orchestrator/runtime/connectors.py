@@ -23,6 +23,7 @@ import fcntl
 import hashlib
 import json
 import threading
+import time
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -263,7 +264,6 @@ class TestConfigService:
     def execute(
         self, operation: str, target: str, params: Mapping[str, Any], *, idempotency_key: str
     ) -> Receipt:
-        import time
 
         with self._exclusive():
             self.calls.append(

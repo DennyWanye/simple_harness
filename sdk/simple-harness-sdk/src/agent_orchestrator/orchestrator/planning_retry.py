@@ -13,9 +13,14 @@ from ..contracts import TERMINAL_ATTEMPT, ContractError
 from ..contracts.htn import TaskForm
 from ..contracts.planning_decisions import RepairRetrySameMethodDecision
 from ..contracts.semantic_base import content_hash_of
-from ..runtime.planning_operations import StoreOperationReader, build_operation_snapshot
+from ..runtime.planning_operations import (
+    SourceUnavailable,
+    StoreOperationReader,
+    build_operation_snapshot,
+)
 from ..storage.htn_store import HtnStore
 from ..storage.planning_decision_store import PlanningDecisionStore
+from ..storage.store import StoreError
 
 RETRY_AUTHORIZED = "PlanningRetryAuthorized"
 
@@ -118,8 +123,6 @@ def retry_binding(
 
 def pending_retry_permit(store: Any, mission_id: str, task_id: str) -> dict[str, Any] | None:
     """Return a current committed permit, or None. Missing evidence never authorizes."""
-    from ..runtime.planning_operations import SourceUnavailable
-    from ..storage.store import StoreError
 
     for event in reversed(tuple(store.iter_events(mission_id))):
         if event.type != RETRY_AUTHORIZED or event.payload.get("task_id") != task_id:

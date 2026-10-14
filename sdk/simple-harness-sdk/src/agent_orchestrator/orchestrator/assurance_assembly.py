@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from functools import partial
 from typing import Any
 
+from ..api.assurance import AssuranceApi
 from ..assurance.certificates import PURPOSES, UseIdentity
 from ..assurance.codec import AssuranceError, canonical, fingerprint, integer, text
 from ..assurance.evidence import ReadItem
@@ -440,7 +441,6 @@ def install_assurance(orchestrator: Any, ports: AssuranceDeploymentPorts) -> Ins
         check_adapter=local_checks,
         authority=authority,
     )
-    from ..api.assurance import AssuranceApi
 
     api = AssuranceApi(
         commit,

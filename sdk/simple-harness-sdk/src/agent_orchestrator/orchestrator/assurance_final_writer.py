@@ -30,6 +30,7 @@ from ..contracts.state_machines import MissionStopReason
 from ..storage.assurance_store import AssuranceStore
 from ..storage.assurance_work import AssuranceWorkStore, WorkTarget
 from ..storage.htn_store import HtnStore
+from . import hierarchical_dispatch, method_library
 from .state_machine import next_mission
 
 FINALIZED_KIND = "AssuranceMissionFinalized"
@@ -329,18 +330,16 @@ def _promote_methods(store: Any, mission_id: str, resolution: Any) -> None:
     """The one road into the method library (阶段 C3): delivered, the root's final review passed,
     and that review called the method reusable.  Same transaction as ``MissionCompleted``; a
     promotion that fails for any reason is undone and recorded — the Mission still completes."""
-    from .method_library import PROMOTION_SKIPPED, promote_methods
 
     store.connection.execute("SAVEPOINT method_promotion")
     try:
-        promote_methods(store, mission_id, resolution)
+        method_library.promote_methods(store, mission_id, resolution)
     except Exception as error:  # noqa: BLE001 - the library is a by-product; completion never fails on it
         store.connection.execute("ROLLBACK TO method_promotion")
-        from .hierarchical_dispatch import append_hierarchical_event
 
-        append_hierarchical_event(
+        hierarchical_dispatch.append_hierarchical_event(
             store,
-            PROMOTION_SKIPPED,
+            method_library.PROMOTION_SKIPPED,
             mission_id,
             key=f"{mission_id}:unreadable",
             payload={

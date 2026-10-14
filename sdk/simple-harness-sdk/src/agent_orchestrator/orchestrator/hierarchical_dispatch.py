@@ -45,6 +45,7 @@ from __future__ import annotations
 import json
 from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
+from dataclasses import replace as _replace
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any, Protocol
 
@@ -53,6 +54,7 @@ from ..artifacts.input_bindings import (
     AcceptedOutputsIndex,
     DeliveredFile,
     DeliverySources,
+    ExplicitPortOrder,
     InputManifest,
     ManifestNotFrozen,
     ResolutionPolicy,
@@ -61,19 +63,21 @@ from ..artifacts.input_bindings import (
     TargetRules,
     resolve_deliveries,
 )
-from ..artifacts.taskgraph_inputs import decode_frozen_manifest
+from ..artifacts.taskgraph_inputs import decode_frozen_manifest, encode_target_rules
 from ..artifacts.versioning import (
     ArtifactConflict,
     UpstreamInput,
     manifest_upstream_inputs,
     resolve_input_manifest,
 )
+from ..assurance.codec import AssuranceError
 from ..contracts import (
     TERMINAL_MISSION,
     ContractError,
     Event,
     TaskStatus,
     ids,
+    models,
 )
 from ..contracts.error_table import RoundFaultCode
 from ..contracts.evidence_state import (
@@ -83,9 +87,11 @@ from ..contracts.evidence_state import (
     ValidityWitness,
     WitnessDecision,
     WitnessPurpose,
+    truth_change,
 )
 from ..contracts.htn import (
     ORDERED_CARDINALITIES,
+    GraphStructureBudget,
     MissionRef,
     ObligationId,
     OccurrenceId,
@@ -117,7 +123,14 @@ from ..contracts.resolution import (
     ReviewVerdict,
     WorkspaceAccess,
 )
-from ..contracts.semantic_base import TypedRef, TypedRefKind, content_hash_of
+from ..contracts.semantic_base import (
+    EvidenceRef,
+    EvidenceRefKind,
+    TypedRef,
+    TypedRefKind,
+    VersionedRef,
+    content_hash_of,
+)
 from ..graph.eligibility import (
     ActivePlanView,
     EligiblePrimitiveTask,
@@ -133,27 +146,73 @@ from ..graph.eligibility import (
     evaluate_readiness,
     legacy_ready_is_not_eligibility,
 )
-from ..graph.projection_validation import GraphIntegrityError, require_topological_order
+from ..graph.network_codec import decode
+from ..graph.projection_validation import (
+    GraphIntegrityError,
+    ordering_of,
+    require_topological_order,
+)
 from ..graph.task_network import GATING_REQUIREDNESS, TaskNetworkSnapshot
+from ..knowledge.predicates import proposition_key
 from ..knowledge.validity import CONDITION_REASON_PREFIX as WITNESS_CONDITION_PREFIX
 from ..knowledge.validity import acceptance_subject, condition_subject
-from ..planning.htn.applicability import assess_method
+from ..planning import plan_preview
+from ..planning.htn.applicability import (
+    all_truth,
+    assess_method,
+    authorization_gate,
+    evaluate_condition,
+    ground_value,
+)
+from ..planning.htn.applicability import assess_method as _assess
 from ..planning.htn.compiler import (
     RefinementCompilation,
     RootNetwork,
+    _derive_requirement_id,
+)
+from ..planning.htn.evidence_round import (
+    EvidenceAsk,
+    EvidenceRoundResult,
+    asks_for_requests,
+    pending_asks,
+    run_round,
 )
 from ..planning.htn.grounding import (
     SharedGoalEntry,
     SharingSignature,
 )
+from ..planning.htn.method_proposals import MAX_PROPOSED_METHOD_STEPS, build_context
+from ..planning.htn.method_selection import MethodSelectionCandidateV1, filter_candidates
+from ..planning.htn.observation_pipeline import observe_predicate, record_observation
+from ..planning.htn.planner_package import MethodApplicability, applicability_reports, task_type_row
+from ..planning.htn.refinement import evidence_requests, unknown_predicates
+from ..planning.htn.registry import AdmissionPolicy, iter_predicates, iter_values
+from ..planning.htn.repair_adapter import RepairEventAdapter
+from ..planning.plan_preview import preview_candidate
 from ..runtime.action_schema import is_operation_candidate_path
+from ..runtime.planning_operations import SourceUnavailable
+from ..storage import planning_decision_store
 from ..storage.htn_store import HtnStore, PlanCommitReceipt
 from ..storage.obligation_store import ObligationStore
+from ..storage.operation_completion_store import OperationCompletionStore
 from ..storage.store import StoreError
+from ..storage.taskgraph_store import require_bound
 from ..verification.acceptance_rules import CompoundFacts, ExecutionPosture, IndependenceFacts
 from .accepted_outputs import (
     accepted_output_from_json,
+    carried_criteria_for,
+    output_ports_in_revision,
 )
+from .action_commits import parse_action_criterion
+from .completion_status import (
+    EFFECT_SETTLED_STATES,
+    read_current_effect,
+    read_occurrence_completion,
+)
+from .completion_support import current_child_supports
+from .method_plan_reviews import seed_keys
+from .occurrence_tasks import read_only_leaf
+from .operation_completion import OperationCompletionError
 from .plan_commits import (
     HIERARCHICAL_SEMANTICS,
     PLAN_REVISION_COMMITTED,
@@ -162,11 +221,19 @@ from .plan_commits import (
     PlanPrincipal,
     semantics_of,
 )
+from .planning_admission_commits import PlanningCommitAdmission
+from .planning_backend_commit import SolverPlanCommitLane
+from .repair_impact import read_repair_impact_indexes
 from .resolution_commits import (
     CommitGoalResolutionCommand,
     ResolutionCommitRejected,
     ResolutionPrincipal,
 )
+from .review_adjudication import accepted_or_adjudicated
+from .scoped_composition_review import root_content_projection
+from .taskgraph_epochs import current_scope_epochs
+from .taskgraph_outcomes import read_taskgraph_outcomes
+from .taskgraph_policy import read_installed_graph_policy
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from ..contracts import Mission
@@ -684,7 +751,6 @@ class HierarchicalDispatch:
     @classmethod
     def for_commit(cls, commit: CommitService, mission_id: str) -> HierarchicalDispatch:
         """Use the installed graph readers for an enabled Mission's original commits."""
-        from ..storage.taskgraph_store import require_bound
 
         require_bound(commit.store, mission_id)
         binding = commit._taskgraph_dispatch
@@ -707,7 +773,6 @@ class HierarchicalDispatch:
 
     def target_rules_policy(self) -> dict[str, Any]:
         """Freeze the installed rule or its original per-Task namespace strategy."""
-        from ..artifacts.taskgraph_inputs import encode_target_rules
 
         if self.target_rules is not None:
             return {"kind": "FIXED", "rules": encode_target_rules(self.target_rules)}
@@ -778,11 +843,6 @@ class HierarchicalDispatch:
             # root is its own occurrence, which is why the compiler owns the shape.
             return self._read_seed_network(mission_id)
         revision = int(active.revision)
-        from dataclasses import replace
-
-        from ..graph.network_codec import decode
-        from ..runtime.planning_operations import SourceUnavailable
-        from ..storage.taskgraph_store import require_bound
 
         require_bound(self.store, mission_id)
         if self._taskgraph_history is None:
@@ -923,8 +983,6 @@ class HierarchicalDispatch:
 
         # A newly bumped scope can have no witness yet. Its barrier still belongs in
         # the complete current read token and input policy.
-        from ..storage.taskgraph_store import require_bound
-        from .taskgraph_epochs import current_scope_epochs
 
         require_bound(self.store, mission_id)
         return current_scope_epochs(self.store, mission_id)
@@ -972,8 +1030,6 @@ class HierarchicalDispatch:
         plan = self.plan_view(mission_id, network, integrity=integrity)
         outcomes = self.occurrence_outcomes(mission_id, network)
         if not callable(self._taskgraph_settlement_reader):
-            from ..runtime.planning_operations import SourceUnavailable
-
             raise SourceUnavailable("taskgraph_settlement_reader_unavailable")
         settlements = self._taskgraph_settlement_reader(mission_id, network, outcomes)
         resolved = self.resolved_occurrences(mission_id, network)
@@ -1060,9 +1116,6 @@ class HierarchicalDispatch:
         ``RUNNING`` or ``UNKNOWN`` however its legacy Task row happens to read.
         """
 
-        from ..storage.taskgraph_store import require_bound
-        from .taskgraph_outcomes import read_taskgraph_outcomes
-
         require_bound(self.store, mission_id)
         return read_taskgraph_outcomes(self.store, mission_id, network)
 
@@ -1075,7 +1128,6 @@ class HierarchicalDispatch:
             # No plan is committed yet, so nothing has a completion scope or a resolution.
             self.seed_network(mission_id)  # verify the original seed
             return frozenset()
-        from .completion_status import read_occurrence_completion
 
         return frozenset(
             spec.occurrence_id
@@ -1191,8 +1243,6 @@ class HierarchicalDispatch:
         evaluation clock.
         """
 
-        from dataclasses import replace as _replace
-
         policy = self.resolution_policy
         explicit = tuple(policy.explicit_orders)
         if consumer is not None:
@@ -1211,9 +1261,6 @@ class HierarchicalDispatch:
         """The declared order of each EXPLICIT set input port of ``consumer``: the order the
         adopted method lists the upstream outputs in that port's argument array (TaskGraph §5.5
         "按显式 order 列表").  Read from the plan, decided by nobody here."""
-        from ..artifacts.input_bindings import ExplicitPortOrder
-        from ..planning.htn.compiler import _derive_requirement_id
-        from ..planning.htn.registry import iter_values
 
         network = self.network(mission_id) if network is None else network
         binding = network.binding_for_occurrence(consumer)
@@ -1569,12 +1616,6 @@ class HierarchicalDispatch:
         member is enough to withhold the whole licence (§6.6 rule 1).
         """
 
-        from ..planning.htn.applicability import (
-            all_truth,
-            authorization_gate,
-            evaluate_condition,
-        )
-
         try:
             world = self._world()
         except ContractError:
@@ -1686,10 +1727,6 @@ class HierarchicalDispatch:
         as far as the snapshot already went — this method never observes.
         """
 
-        from ..knowledge.predicates import proposition_key
-        from ..planning.htn.applicability import ground_value
-        from ..planning.htn.registry import iter_predicates
-
         refs: list[TypedRef] = []
         seen: set[tuple[str, str]] = set()
         for atom in iter_predicates((condition,)):
@@ -1798,7 +1835,6 @@ class HierarchicalDispatch:
         del outcomes  # the completion scopes below are the reading, not the projection
         if self.semantics().active_plan_revision(mission_id) is None:
             return AcceptedOutputsIndex(outputs=(), completed_producers=frozenset())
-        from .completion_status import read_occurrence_completion
 
         statuses = {
             spec.occurrence_id: read_occurrence_completion(
@@ -1812,7 +1848,6 @@ class HierarchicalDispatch:
             for value in statuses.values()
             for acceptance in value.preparation_acceptance_ids
         }
-        from ..storage.operation_completion_store import OperationCompletionStore
 
         completion_store = OperationCompletionStore(self.store)
         scoped_outputs = []
@@ -1874,8 +1909,6 @@ class HierarchicalDispatch:
         阶段 D（补全方案 2.2）：目标端口与收尾步骤同名端口声明的格式不同就不出别名——接它的步骤
         拿不到数据（数据未绑定），并记一条 ``GoalPortSchemaMismatch`` 说明是哪个目标哪个端口。
         """
-
-        from dataclasses import replace
 
         if not complete:
             return ()
@@ -1962,8 +1995,6 @@ class HierarchicalDispatch:
     def _complete_goals(self, mission_id: str, network: TaskNetworkSnapshot) -> frozenset[Any]:
         """The non-root compound occurrences whose completion is recorded (片 B)."""
 
-        from .completion_status import read_occurrence_completion
-
         roots = {str(item) for item in network.root_occurrence_ids}
         return frozenset(
             spec.occurrence_id
@@ -2009,8 +2040,6 @@ class HierarchicalDispatch:
         a port the binding does not list is reported ``single``, the contract's own
         default.
         """
-
-        from .accepted_outputs import output_ports_in_revision
 
         semantics = self.semantics()
         active = semantics.active_plan_revision(mission_id)
@@ -2061,8 +2090,6 @@ class HierarchicalDispatch:
         declared port carried code, the Worker was never told it owed an explanation
         anywhere, and the root reviewer correctly found none in the package.
         """
-
-        from .accepted_outputs import carried_criteria_for, output_ports_in_revision
 
         semantics = self.semantics()
         active = semantics.active_plan_revision(mission_id)
@@ -2161,7 +2188,6 @@ class HierarchicalDispatch:
     def seed_method_keys(self) -> set[tuple[str, int, str]]:
         """The deployment's own seed methods, as the adoption rule keys them (the plan-commit gate
         and the planner's candidate list read this one set)."""
-        from .method_plan_reviews import seed_keys
 
         return seed_keys(getattr(self.require_planning_world(), "seed_methods", ()))
 
@@ -2215,11 +2241,6 @@ class HierarchicalDispatch:
         roots = view.network.root_occurrence_ids
         if not roots:
             return False
-        from .completion_status import (
-            EFFECT_SETTLED_STATES,
-            read_current_effect,
-            read_occurrence_completion,
-        )
 
         for root in roots:
             scope = read_occurrence_completion(self.store, mission_id, str(root)).scope
@@ -2251,7 +2272,6 @@ class HierarchicalDispatch:
         required = set(view.network.required_obligations)
         if not required:
             return False
-        from .completion_status import read_occurrence_completion
 
         return all(
             read_occurrence_completion(self.store, mission_id, str(root)).complete
@@ -2274,8 +2294,6 @@ class HierarchicalDispatch:
         effect landing while it runs does not re-cut it.  The accepted effects' facts
         still reach the reviewer as materials (``_root_effect_materials``).
         """
-
-        from .completion_status import read_occurrence_completion
 
         network = self.network(mission_id)
         scoped: dict[str, tuple[str, ...]] = {}
@@ -2373,7 +2391,6 @@ class HierarchicalDispatch:
         # Direct children of the adopted root method, not every Acceptance in the
         # Mission: what supports the root is each direct child's current completion
         # support (a leaf's accepted contribution, an inner goal's resolution).
-        from .completion_support import current_child_supports
 
         contributions = current_child_supports(
             self.store, mission_id, network.adopted_children(root)
@@ -2500,9 +2517,6 @@ class HierarchicalDispatch:
         # Assurance §7.2（2026-10-06 车道 O）：根结论复述的是根的内容投影——根终审判的那一份；
         # 效果判据由各自的结果审阅判、收尾核对收敛，不写进根结论。
         from ..contracts.models import ContractError
-        from .completion_status import read_occurrence_completion
-        from .review_adjudication import accepted_or_adjudicated
-        from .scoped_composition_review import root_content_projection
 
         try:
             root_scope = read_occurrence_completion(
@@ -2521,7 +2535,6 @@ class HierarchicalDispatch:
         # UseCertificate over the bound MISSION_FINAL manifest, prepared here outside
         # the write lock and committed by ``commit_goal_resolution`` under it. The
         # resolution then restates the manifest's current effective grades.
-        from ..assurance.codec import AssuranceError
 
         validity = getattr(self.commit, "_assurance_validity", None)
         try:
@@ -2877,7 +2890,6 @@ class HierarchicalDispatch:
     def _accepted_result_counts(self, mission_id: str, occurrence_id: str) -> bool:
         """Whether this step's completion rests on an acceptance right now — the completion
         reading's answer (the same one the Planner package's ``counts_under_current`` gives)."""
-        from .completion_status import read_occurrence_completion
 
         try:
             return bool(
@@ -3046,9 +3058,6 @@ class HierarchicalDispatch:
         should take.  Nothing about the principal or any budget account is in it.
         """
 
-        from ..planning.htn.applicability import assess_method as _assess
-        from ..planning.htn.method_proposals import build_context
-
         world = self._world()
         network = self.network(mission_id)
         goal = network.binding_for_task(TaskRef(str(goal_task_id)))
@@ -3075,7 +3084,6 @@ class HierarchicalDispatch:
             reports=reports,
             mission_id=mission_id,
         )
-        from dataclasses import replace
 
         # 2026-09-29 第十局：criterion_evidence 原先给每个编号配同一句总目标，模型看不出
         # c-user-3 是"跑测试"、c-user-6 是"写出 README.md"，只能按目标描述自己猜编号，
@@ -3104,7 +3112,6 @@ class HierarchicalDispatch:
         # 片 B：中间目标的类型不声明判据，它负责的是上级做法分给它的要求（原编号、用户原话）。
         # 夜间 N6：读不出分给它的那一份时如实写进材料（criterion_share_unreadable），不当成"没有"。
         from .assurance_check_policy import goal_share
-        from .operation_completion import OperationCompletionError
 
         listed = {item["id"] for item in request.criterion_evidence}
         unreadable: dict[str, str] | None = None
@@ -3144,8 +3151,6 @@ class HierarchicalDispatch:
         如实告诉规划器；要不要再拆一层由它判断。目标类型没有层级，或没有更深的类型，就是空。
         """
 
-        from ..planning.htn.planner_package import task_type_row
-
         owner = next(
             (
                 spec
@@ -3183,8 +3188,6 @@ class HierarchicalDispatch:
         只列目标还在当前计划里的；退役它的那次计划提交找不到的（不是规划决定退役的）不列。
         """
 
-        from ..storage.planning_decision_store import PlanningDecisionStore
-
         network = self.network(mission_id)
         present = {str(spec.occurrence_id) for spec in network.occurrences}
         commits: dict[str, Mapping[str, Any]] = {}
@@ -3204,7 +3207,7 @@ class HierarchicalDispatch:
                     "trigger_source": request.get("trigger_source"),
                     "source_key": event.payload.get("source_key"),
                 }
-        decisions = PlanningDecisionStore(self.store)
+        decisions = planning_decision_store.PlanningDecisionStore(self.store)
         rows: list[dict[str, Any]] = []
         for draft in self.semantics().list_method_instances(mission_id, state="RETIRED"):
             occurrence = str(draft.goal_occurrence_id or draft.goal_id)
@@ -3263,8 +3266,6 @@ class HierarchicalDispatch:
         the repair round sees which methods could replace the adopted one.
         """
 
-        from ..planning.htn.planner_package import MethodApplicability
-
         world = self._world()
         network = self.network(mission_id)
         snapshot = world.snapshot()
@@ -3320,8 +3321,6 @@ class HierarchicalDispatch:
         current plan revision here prevents a repair event from being evaluated
         against an ambient or stale mission identity.
         """
-        from ..planning.htn.repair_adapter import RepairEventAdapter
-        from .repair_impact import read_repair_impact_indexes
 
         del all_items
         with self.store.read_view():
@@ -3359,8 +3358,6 @@ class HierarchicalDispatch:
         read); which candidate to use, or whether to propose a new method, is the
         Planner's.  No model call, no plan mutation, nothing persisted.
         """
-
-        from ..planning.htn.method_selection import MethodSelectionCandidateV1, filter_candidates
 
         network = self.network(mission_id)
         current_reports = (
@@ -3409,8 +3406,6 @@ class HierarchicalDispatch:
         refused" and the absence of an event are the same fact, and writing the first
         one per round would bury the rounds that have something to say.
         """
-
-        from ..planning.htn.planner_package import applicability_reports
 
         entries = tuple(reports) if reports is not None else self.method_applicability(mission_id)
         if not entries:
@@ -3539,7 +3534,6 @@ class HierarchicalDispatch:
     def run_evidence_round(self, mission_id: str, *, now_ms: int | None = None) -> Any:
         """One evidence round: re-read what the world may have changed, then look at the
         UNKNOWN preconditions (阶段 D)."""
-        from ..planning.htn.evidence_round import EvidenceRoundResult
 
         reread, read = self._reread_recorded(mission_id, now_ms=now_ms)
         # a proposition read again just now is not asked a second time in the same round
@@ -3563,9 +3557,6 @@ class HierarchicalDispatch:
         says what was read and what changed.  An unchanged world is not read again: a
         seed domain's observer may be expensive, and writing an unchanged reading would
         stale every planning round in flight."""
-        from ..contracts.evidence_state import truth_change
-        from ..contracts.semantic_base import VersionedRef
-        from ..planning.htn.observation_pipeline import observe_predicate, record_observation
 
         index = getattr(self._world(), "observer_index", None)
         if index is None:
@@ -3660,15 +3651,6 @@ class HierarchicalDispatch:
         simply not wired the evidence lane, which the readiness reports already say.
         """
 
-        from ..planning.htn.evidence_round import (
-            EvidenceAsk,
-            EvidenceRoundResult,
-            asks_for_requests,
-            pending_asks,
-            run_round,
-        )
-        from ..planning.htn.refinement import evidence_requests, unknown_predicates
-
         world = self._world()
         index = getattr(world, "observer_index", None)
         if index is None:
@@ -3745,7 +3727,6 @@ class HierarchicalDispatch:
         ``share``（片 B）：这份做法的目标负责的要求编号。给了就只查其中的 ``file:`` 要求——
         要发布的文件归别的目标或步骤时，这份做法既不该、也不能（覆盖检查会判越界）链接它。
         """
-        from .action_commits import parse_action_criterion
 
         mission = self.store.get_mission(mission_id)
         if mission is None:
@@ -3790,9 +3771,6 @@ class HierarchicalDispatch:
         if callable(builder):
             policy = builder(mission_id=mission_id)
         else:
-            from ..contracts.htn import MissionRef
-            from ..planning.htn.registry import AdmissionPolicy
-
             policy = AdmissionPolicy(
                 policy_ref="deployment-policy",
                 policy_version=1,
@@ -3803,9 +3781,6 @@ class HierarchicalDispatch:
                 capabilities=world.capabilities(),
             )
         # A method the Planner proposes is capped at the method-width bound.
-        from dataclasses import replace
-
-        from ..planning.htn.method_proposals import MAX_PROPOSED_METHOD_STEPS
 
         current = int(getattr(policy, "max_steps", MAX_PROPOSED_METHOD_STEPS))
         if current > MAX_PROPOSED_METHOD_STEPS:
@@ -3824,20 +3799,18 @@ class HierarchicalDispatch:
         source: Mapping[str, Any],
     ) -> Any:
         """Prepare H7's real compiler/Commit lane; solve outside any write transaction."""
-        from ..contracts.models import sha256_hex
-        from ..planning.plan_preview import CandidatePreview, _source_snapshot_payload
-        from .planning_admission_commits import PlanningCommitAdmission
-        from .planning_backend_commit import SolverPlanCommitLane
 
-        if not isinstance(preview, CandidatePreview) or not isinstance(
+        if not isinstance(preview, plan_preview.CandidatePreview) or not isinstance(
             admission, PlanningCommitAdmission
         ):
             raise ContractError("solver commit requires the typed preview and H1-H admission")
         self.require_hierarchical(mission_id)
         network = self.network(mission_id)
-        if sha256_hex(_source_snapshot_payload(network)) != preview.source_snapshot_hash or int(
-            proposal.expected_plan_revision
-        ) != int(network.plan_revision):
+        if models.sha256_hex(
+            plan_preview._source_snapshot_payload(network)
+        ) != preview.source_snapshot_hash or int(proposal.expected_plan_revision) != int(
+            network.plan_revision
+        ):
             raise ContractError(
                 "REQUEST_BINDING_STALE: solver preview no longer matches the active Plan"
             )
@@ -3860,7 +3833,7 @@ class HierarchicalDispatch:
         mission_id: str,
         proposal: PlanProposal,
         *,
-        preview: CandidatePreview,
+        preview: plan_preview.CandidatePreview,
         admission: Any | None = None,
         principal: PlanPrincipal,
         command_id: str,
@@ -3877,11 +3850,7 @@ class HierarchicalDispatch:
         identity, and sends that compilation directly to ``CommitService``.
         """
 
-        from ..contracts.models import sha256_hex
-        from ..planning.plan_preview import CandidatePreview, _source_snapshot_payload
-        from .planning_admission_commits import PlanningCommitAdmission
-
-        if not isinstance(preview, CandidatePreview):
+        if not isinstance(preview, plan_preview.CandidatePreview):
             raise ContractError("SOURCE_UNAVAILABLE: final commit requires a typed preview")
         if not isinstance(admission, PlanningCommitAdmission):
             raise ContractError("SOURCE_UNAVAILABLE: final commit requires H1-H admission")
@@ -3889,7 +3858,7 @@ class HierarchicalDispatch:
         del mission
         compilation = preview.compilation
         network = self.network(mission_id)
-        current_hash = sha256_hex(_source_snapshot_payload(network))
+        current_hash = models.sha256_hex(plan_preview._source_snapshot_payload(network))
         if current_hash != preview.source_snapshot_hash:
             raise ContractError(
                 "REQUEST_BINDING_STALE: preview network changed before final commit"
@@ -3942,8 +3911,6 @@ class HierarchicalDispatch:
     def preview_plan_proposal(proposal: PlanProposal, *, inputs: Any) -> Any:
         """Run the pure candidate preview without entering dispatch or commit."""
 
-        from ..planning.plan_preview import preview_candidate
-
         return preview_candidate(proposal, inputs=inputs)
 
     def _lease_blocks_cancel(self, attempt: Any, owner: str | None) -> bool:
@@ -3986,8 +3953,6 @@ class HierarchicalDispatch:
         """
 
         policy: dict[str, Any] = {}
-        from ..contracts.htn import GraphStructureBudget
-        from .taskgraph_policy import read_installed_graph_policy
 
         policy["structure_budget"] = GraphStructureBudget.from_json(
             read_installed_graph_policy(self.store, mission_id).to_json()["graph_structure_budget"]
@@ -4136,7 +4101,6 @@ class HierarchicalDispatch:
     ) -> list[dict[str, Any]]:
         """Rule one of :meth:`write_conflicts`, on its own so dispatch can ask it before a step
         starts without re-entering the per-consumer resolution (rule two)."""
-        from ..graph.projection_validation import ordering_of
 
         semantics = self.semantics()
         occurrences: dict[str, list[Any]] = {}
@@ -4204,7 +4168,6 @@ class HierarchicalDispatch:
 
         A source that cannot be read is named in ``unavailable`` rather than skipped.
         """
-        from .occurrence_tasks import read_only_leaf
 
         mission = self.store.get_mission(mission_id)
         if mission is None:
@@ -4405,8 +4368,6 @@ def _root_criteria(
     public ``CriterionOutcome`` projection of an assured record shows a SEMANTIC
     PASS as UNKNOWN, and the resolution restates the manifest, not the projection.
     """
-
-    from ..contracts.semantic_base import EvidenceRef, EvidenceRefKind
 
     reviewed = {str(item.criterion_id): item.verdict for item in record.criteria}
     if effective_grades is not None:

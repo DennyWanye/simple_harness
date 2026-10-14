@@ -21,6 +21,7 @@ run until the caller says every usage ref is final.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -177,7 +178,6 @@ class BudgetLedger:
         ).fetchone()
         if row is None:
             raise BudgetError(f"unknown budget account {account_id}")
-        import json
 
         return AccountSnapshot(
             account_id=row["account_id"],

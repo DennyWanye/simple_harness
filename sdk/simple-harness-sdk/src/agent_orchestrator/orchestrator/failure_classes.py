@@ -11,6 +11,9 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from ..contracts.error_table import RoundFaultHandling, round_fault_handling
+from ..contracts.semantic_base import content_hash_of
+
 MODEL = "MODEL"
 FORMAT = "FORMAT"
 INFRA = "INFRA"
@@ -197,7 +200,6 @@ def record_review_interruption(
     store: Any, *, mission_id: str, review_key: str, ordinal: int, intent_id: str, error_code: str
 ) -> None:
     """Once per review call (keyed by its intent); replays write nothing."""
-    from ..contracts.semantic_base import content_hash_of
 
     receipt_id = "assurance-review-interrupted:" + intent_id
     if store.get_receipt(receipt_id) is not None:
@@ -257,8 +259,6 @@ def round_fault_delay(count: int) -> float:
 
 def classify_round_fault(error: BaseException) -> tuple[str, str | None]:
     """(CORRUPT | RETRY, the error's type code) for an exception that escaped one Mission's round."""
-
-    from ..contracts.error_table import RoundFaultHandling, round_fault_handling
 
     handling, code = round_fault_handling(error)
     return (ROUND_CORRUPT if handling is RoundFaultHandling.CORRUPT_STOP else ROUND_RETRY), code

@@ -12,6 +12,7 @@ import math
 import sqlite3
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +20,8 @@ from simple_harness.contracts import canonical_json
 
 from ..contracts.models import ContractError
 from ..contracts.semantic_base import content_hash_of
+from ..planning.htn.observers import COMPLETE_COVERAGE, observed, unavailable
+from ..planning.htn.world import build_planning_world
 from ..runtime.domain_tools import DomainTool
 
 DOMAIN_ID = "drone-sim-v1"
@@ -271,7 +274,6 @@ class DroneObserver:
         return tuple(f"drone-sim.{name}" for name in PREDICATES)
 
     def observe(self, signature: Any, arguments: Mapping[str, Any], *, now_ms: int) -> Any:
-        from ..planning.htn.observers import COMPLETE_COVERAGE, observed, unavailable
 
         try:
             state = self.simulator.read(self.mission_id, str(arguments["vehicle"]))
@@ -305,7 +307,6 @@ class DroneObserver:
 
 def deployment(config: Any, simulator: DroneSimulator) -> Any:
     """Explicit simulator deployment; default tool permissions include its tools."""
-    from dataclasses import replace
 
     tools = simulator.tools()
     names = tuple(tools)
@@ -322,7 +323,6 @@ def deployment(config: Any, simulator: DroneSimulator) -> Any:
 
 
 def planning_world(simulator: DroneSimulator, mission_id: str, *, semantics: Any) -> Any:
-    from ..planning.htn.world import build_planning_world
 
     return build_planning_world(
         mission_id,

@@ -32,6 +32,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ..contracts import Artifact, ids
+from ..runtime.sandbox import pending_workspace_executions, recover_workspace_executions
 from .input_bindings import MaterialisationEntry
 from .paths import under_prefix
 from .store import ArtifactStore, ArtifactStoreError, read_nofollow, read_verified
@@ -457,7 +458,6 @@ class WorkspaceManager:
         target = self._root / name
         if not name or name in {".", ".."} or "/" in name or target.parent != self._root:
             raise WorkspaceError(f"not a workspace name: {name!r}")
-        from ..runtime.sandbox import pending_workspace_executions
 
         if pending_workspace_executions(self._root, target):
             raise WorkspaceCleanupIncomplete(({"status": "pending", "cwd": str(target)},))
@@ -469,7 +469,6 @@ class WorkspaceManager:
     def discard(self, copy: Workspace) -> None:
         if EXEC_COPY_MARK not in copy.root.name or copy.root.parent != self._root:
             raise WorkspaceError(f"not an execution copy: {copy.root.name}")
-        from ..runtime.sandbox import pending_workspace_executions
 
         if pending_workspace_executions(self._root, copy.root):
             return  # preserve the copy without masking the executor's error receipt
@@ -482,7 +481,6 @@ class WorkspaceManager:
         Unknown/residual cleanup raises with its receipts, retaining all copies.
         Legacy copies without durable identity keep the previous age-only policy.
         """
-        from ..runtime.sandbox import pending_workspace_executions, recover_workspace_executions
 
         reports = recover_workspace_executions(self._root)
         self.last_sandbox_cleanup = tuple(reports)

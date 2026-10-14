@@ -5,12 +5,13 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 from ..contracts import ContractError
 from ..contracts.operation_payloads import ConnectorOperationProfileV1, OperationParametersV1
 from ..runtime.connectors import Receipt
 from .connectors_publish import PUBLISH_NAME, FilePublishConnector, _hash, _read_nofollow
+from .operation_payloads import require_connector_profile
 
 
 class OutcomeReceiptError(ContractError):
@@ -160,9 +161,6 @@ def resolve_receipt_adapter(
     A model/API caller cannot name an import, supply a receipt parser, or promote
     arbitrary shell output to an external-effect fact.
     """
-    from typing import cast
-
-    from .operation_payloads import require_connector_profile
 
     if profiles is not None:
         require_connector_profile(

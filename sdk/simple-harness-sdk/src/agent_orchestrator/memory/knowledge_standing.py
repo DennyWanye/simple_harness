@@ -19,6 +19,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from ..contracts.evidence_state import Validity
+from ..contracts.htn import ObligationId
+from ..contracts.models import ContractError
+from ..orchestrator.completion_status import read_occurrence_completion
+from ..storage import htn_store
+from ..storage.obligation_store import ObligationStore
 from ..storage.store import StoreConflict, StoreError
 
 if TYPE_CHECKING:
@@ -36,13 +41,8 @@ def acceptance_is_current(store: Store, mission_id: str, acceptance_id: str) -> 
     its obligation is live, and the step's completion scope in the active plan still
     retains this acceptance with its official review (``read_occurrence_completion``).
     """
-    from ..contracts.htn import ObligationId
-    from ..contracts.models import ContractError
-    from ..orchestrator.completion_status import read_occurrence_completion
-    from ..storage.htn_store import HtnStore
-    from ..storage.obligation_store import ObligationStore
 
-    htn = HtnStore(store)
+    htn = htn_store.HtnStore(store)
     try:
         acceptance = htn.get_acceptance(acceptance_id)
     except StoreError:

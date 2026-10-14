@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
+from ..artifacts.versioning import topological
 from ..contracts import Task, TaskStatus
 
 
@@ -40,7 +41,6 @@ def finalizer_task_id(network: Any, semantics: Any, mission_id: str) -> str | No
 
 def accepted_tasks(tasks: Sequence[Task]) -> list[Task]:
     """Every task with an accepted result, in the network's topological order."""
-    from ..artifacts.versioning import topological
 
     live = [task for task in tasks if task.status is not TaskStatus.CANCELLED]
     ordered = topological(live, {task.id: task for task in live})

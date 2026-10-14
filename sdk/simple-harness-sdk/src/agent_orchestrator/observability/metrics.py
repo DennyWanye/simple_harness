@@ -25,6 +25,7 @@ from __future__ import annotations
 from collections import Counter
 from typing import Any
 
+from ..orchestrator.stop_conditions import duplicate_count, result_hashes
 from ..storage.store import Store
 
 METRICS_VERSION = "metrics-v2"
@@ -106,7 +107,6 @@ def metrics(store: Store, mission_id: str) -> dict[str, Any]:
     }
     approvals = store.list_approvals(mission_id)
     actions = store.list_actions(mission_id)
-    from ..orchestrator.stop_conditions import duplicate_count, result_hashes
 
     adopted = sum(
         len(e.payload.get("adopted_method_instances") or ())

@@ -33,6 +33,8 @@ from typing import Any
 
 from simple_harness.contracts import canonical_json
 
+from ..assurance.codec import AssuranceError
+from ..contracts import models
 from ..contracts.evidence_state import ObservationRecord, TruthValue, ValidityWitness, truth_change
 from ..contracts.htn import (
     ChildBinding,
@@ -57,10 +59,12 @@ from ..contracts.resolution import (
     ReviewRecord,
     account_for_purpose,
 )
-from ..contracts.semantic_base import content_hash_of, enum_of, identifier, index
+from ..contracts.semantic_base import VersionedRef, content_hash_of, enum_of, identifier, index
+from ..knowledge.predicates import proposition_key_of
 from ..knowledge.validity import witness_subject
 from .assurance_changes import original_source_mutation
 from .store import Store, StoreConflict
+from .taskgraph_source_events import record_source_change
 
 #: A plan revision is PREPARED until it is adopted, ACTIVE while it is the plan
 #: being scheduled, RETIRED once another revision replaced it (TG §7.1).
@@ -182,7 +186,6 @@ class DirtyEntry:
 
 def _observation_question(question: Mapping[str, Any] | None, proposition: str) -> str:
     """Canonical ``question_json`` of an observation, checked against its proposition key."""
-    from ..contracts.semantic_base import VersionedRef
 
     if (
         not isinstance(question, Mapping)
@@ -194,7 +197,6 @@ def _observation_question(question: Mapping[str, Any] | None, proposition: str) 
         )
     predicate = VersionedRef.from_json(question["predicate_ref"]).to_json()
     arguments = {key: question["arguments"][key] for key in sorted(question["arguments"])}
-    from ..knowledge.predicates import proposition_key_of
 
     if proposition_key_of(predicate, arguments) != proposition:
         raise StoreConflict(
@@ -965,7 +967,6 @@ class HtnStore:
         now = self._store.now
         with self._store.transaction() as connection:
             if official:
-                from ..assurance.codec import AssuranceError
                 from ..orchestrator.assurance_review_import import PreparedOfficialReview
                 from .assurance_store import AssuranceStore
 
@@ -1253,8 +1254,6 @@ class HtnStore:
                 f"validity witness {witness.witness_id} conflicts with one already stored"
                 f" for {witness.consumer_ref.id}/{witness.purpose!s}",
             )
-            from ..contracts.models import sha256_hex
-            from .taskgraph_source_events import record_source_change
 
             record_source_change(
                 self._store,
@@ -1262,7 +1261,7 @@ class HtnStore:
                 kind="validity_witness",
                 source_id=witness.witness_id,
                 revision=1,
-                content_hash=sha256_hex(witness.to_json()),
+                content_hash=models.sha256_hex(witness.to_json()),
             )
         return witness
 
@@ -1351,8 +1350,6 @@ class HtnStore:
                     identifier(scope_id, "scope_id"),
                     bumped_by=f"observation:{observation.observation_id}",
                 )
-            from ..contracts.models import sha256_hex
-            from .taskgraph_source_events import record_source_change
 
             record_source_change(
                 self._store,
@@ -1360,7 +1357,7 @@ class HtnStore:
                 kind="observation",
                 source_id=observation.observation_id,
                 revision=1,
-                content_hash=sha256_hex(observation.to_json()),
+                content_hash=models.sha256_hex(observation.to_json()),
             )
         return observation
 
@@ -1430,8 +1427,6 @@ class HtnStore:
                 " updated_at = excluded.updated_at",
                 (mission, scope, epoch, actor, self._store.now),
             )
-            from ..contracts.models import sha256_hex
-            from .taskgraph_source_events import record_source_change
 
             record_source_change(
                 self._store,
@@ -1439,7 +1434,7 @@ class HtnStore:
                 kind="validity_epoch",
                 source_id=scope,
                 revision=epoch,
-                content_hash=sha256_hex(
+                content_hash=models.sha256_hex(
                     {"mission_id": mission, "scope_id": scope, "epoch": epoch, "bumped_by": actor}
                 ),
             )

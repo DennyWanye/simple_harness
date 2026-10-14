@@ -28,7 +28,7 @@ from ..storage.assurance_store import AssuranceStore
 from ..storage.htn_store import HtnStore
 from .assurance_check_use import _merge_reads
 from .assurance_purpose_reviews import next_review_round, output_manifest_hash
-from .assurance_review_pins import ensure_review_blob_pins
+from .assurance_review_pins import ensure_review_blob_pins, release_failed_preparation
 from .assurance_review_transport import assurance_formula, read_review_invocation_locked
 from .completion_inputs import load_completion_result_inputs
 from .leaf_acceptance import LeafAcceptanceAssembly
@@ -330,7 +330,5 @@ def ensure_task_content_review(
             require_current_locked=require_current_locked,
         )
     except Exception:
-        from .assurance_review_pins import release_failed_preparation
-
         release_failed_preparation(commit, binding)
         raise

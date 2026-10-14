@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 
 from ..contracts.evidence_state import ValidityWitness
@@ -33,8 +34,6 @@ def acceptable_scoped_composition(
     all identities, outcomes, evidence, independence, witness and posture remain
     the caller's original records.
     """
-
-    from dataclasses import replace
 
     if (
         subject.compound is None

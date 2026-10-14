@@ -40,7 +40,15 @@ from .assurance_recheck import (
     live_usable_certificates,
     stale_certificates,
 )
-from .assurance_tick import AssuranceWait, PreparedAssuranceWork
+from .assurance_tick import MISSION_DATA_ERRORS, AssuranceWait, PreparedAssuranceWork
+from .commit_service import CommitRejected
+from .completion_status import (
+    EFFECT_SETTLED_STATES,
+    read_current_effect,
+    read_occurrence_completion,
+)
+from .planning_repair_requests import source_change_open
+from .requirements_amendment import requirements_ref
 
 #: 收尾原因：有资料变更还没问完规划器。
 SOURCE_CHANGE_OPEN = "SOURCE_CHANGE_OPEN"
@@ -374,7 +382,6 @@ def unmet_only_by_unknown_effects(status: Any, effect_states: Mapping[str, str])
     ``RECONCILIATION_REQUIRED``.  Anything else that keeps the scope open (content not
     ready, an effect still awaiting its intent / review) is ``ROOT_SCOPE_UNMET`` as before.
     """
-    from .completion_status import EFFECT_SETTLED_STATES
 
     if not bool(getattr(status, "content_ready", False)) or not effect_states:
         return False
@@ -457,8 +464,6 @@ class AssuranceCloseoutConsumer(_ConsumerBase):
         plan the original judge refuses) has no root to resolve: reported as
         ``ROOT_NETWORK_UNAVAILABLE`` and NOT_READY, never repaired here.
         """
-        from .assurance_tick import MISSION_DATA_ERRORS
-        from .commit_service import CommitRejected
 
         try:
             network = self.commit._judgment_network(mission)
@@ -481,8 +486,6 @@ class AssuranceCloseoutConsumer(_ConsumerBase):
 
     def _evaluate_locked(self, mission: Any, *, now_ms: int) -> dict:
         integer(now_ms)
-        from .completion_status import read_current_effect, read_occurrence_completion
-        from .requirements_amendment import requirements_ref
 
         epochs = read_epochs_locked(self.store.connection, mission.id)
         body: dict[str, Any] = {
@@ -566,7 +569,6 @@ class AssuranceCloseoutConsumer(_ConsumerBase):
         # 2026-10-05（原计划 §7.2"最终事务重读"）：资料不在证书钉住的对象里，换版本 / 撤销由
         # 规划器判现有成果还作不作数。终审等这件事问完才开；终审之后、完成之前才换的，同一个
         # 判断在这里再拦一次——问完之前不收尾。
-        from .planning_repair_requests import source_change_open
 
         if source_change_open(self.store, mission.id):
             reasons.append(SOURCE_CHANGE_OPEN)

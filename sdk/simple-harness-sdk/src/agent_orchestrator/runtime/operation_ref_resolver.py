@@ -21,6 +21,7 @@ from ..contracts.resolution import ReviewPurpose, ReviewVerdict
 from ..contracts.semantic_base import TypedRef, TypedRefKind, content_hash_of
 from ..orchestrator.operation_completion import OperationCompletionReader
 from ..storage.htn_store import HtnStore
+from ..storage.operation_completion_store import OperationCompletionStore
 from ..storage.operation_intent_store import OperationIntentStore
 from ..storage.operation_payload_store import OperationPayloadStore
 from ..storage.store import Store, StoreConflict
@@ -241,7 +242,6 @@ class OperationReferenceResolver:
             or proposal.effect_key not in owner.owned_effect_keys
         ):
             raise OperationReferenceUnavailable("current_contract_or_scope_changed")
-        from ..storage.operation_completion_store import OperationCompletionStore
 
         original = OperationCompletionStore(self._store).get_scope_exact(
             str(intent["mission_id"]),

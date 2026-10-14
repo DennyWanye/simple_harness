@@ -30,6 +30,7 @@ from ..assurance.codec import MAX_RECORD_BYTES, AssuranceError, canonical, decod
 from ..assurance.disclosure import DisclosureBatch, disclosed_to_turn
 from ..assurance.evidence import CatalogueEntry, ReadItem, resolve_evidence_ids
 from ..assurance.refs import AssuranceRef, Pin
+from ..assurance.review_input import read_initial_materials
 from ..assurance.reviews import (
     REVIEW_CODEC_VERSION,
     AssuranceReviewBinding,
@@ -42,10 +43,12 @@ from ..contracts.resolution import (
     CheckExecution,
     CriterionOutcome,
     CriterionVerdict,
+    ReviewPackage,
     ReviewRecord,
     ReviewVerdict,
 )
 from ..contracts.state_machines import TaskStatus
+from ..storage import htn_store
 from ..storage.assurance_blobs import PreparedBlob, read_pinned_blob
 from ..storage.assurance_reads import (
     AssuranceReader,
@@ -62,8 +65,13 @@ from ..storage.assurance_reads import (
 from ..storage.assurance_store import AssuranceStore
 from ..storage.assurance_work import atomic
 from ..storage.htn_store import HtnStore
+from ..storage.store import StoreError
 from .assurance_check_use import PreparedCheckUse, _merge_reads
 from .assurance_review_transport import read_review_invocation_locked
+from .completion_inputs import frozen_requirements_revision
+from .hierarchical_dispatch import ROOT_REVIEW_SUPERSEDED
+from .method_library import record_attribution
+from .operation_completion import OperationCompletionError
 
 
 @dataclass(frozen=True, slots=True)
@@ -126,16 +134,15 @@ def review_subject_stopped(store: Any, binding: AssuranceReviewBinding) -> bool:
     if purpose == "MISSION_FINAL":
         if task.status in {TaskStatus.FAILED, TaskStatus.CANCELLED}:
             return True
-        from ..storage.htn_store import HtnStore
-        from ..storage.store import StoreError
-        from .hierarchical_dispatch import ROOT_REVIEW_SUPERSEDED
 
         package_id = body["package_ref"]["id"]
         try:
-            package = HtnStore(store).get_review_package(package_id)
+            package = htn_store.HtnStore(store).get_review_package(package_id)
         except StoreError:
             return True
-        if HtnStore(store).adopted_goal_resolution(mission.id, str(package.binding.obligation_id)):
+        if htn_store.HtnStore(store).adopted_goal_resolution(
+            mission.id, str(package.binding.obligation_id)
+        ):
             return True
         return any(
             event.type == ROOT_REVIEW_SUPERSEDED
@@ -158,8 +165,6 @@ def review_subject_stopped(store: Any, binding: AssuranceReviewBinding) -> bool:
 def carried_review_binding(store: Any, body: Any, result: Any) -> bool:
     """Whether a TASK_CONTENT review binding judges an accepted result again under
     requirements newer than the ones it was produced under (TaskGraph 补全第四批)."""
-    from .completion_inputs import frozen_requirements_revision
-    from .operation_completion import OperationCompletionError
 
     try:
         return int(body["requirements_ref"]["revision"]) > frozen_requirements_revision(
@@ -173,12 +178,11 @@ def carried_review_alive(store: Any, mission_id: str, task_id: str) -> bool:
     """Whether a re-review of a kept, accepted result still has a subject: its Mission has
     not ended and the step is in the current plan.  The one reading every carried-review
     liveness check uses — the Attempt ended long ago and says nothing."""
-    from ..storage.htn_store import HtnStore
 
     mission = store.get_mission(mission_id)
     if mission is None or mission.status in TERMINAL_MISSION:
         return False
-    htn = HtnStore(store)
+    htn = htn_store.HtnStore(store)
     active = htn.active_plan_revision(mission_id)
     return active is not None and any(
         str(item.task_id) == str(task_id)
@@ -515,7 +519,6 @@ def _interpret_reply(
             }
         )
     # Package's original binding remains authoritative; no expanded TypedRef V1.
-    from ..contracts.resolution import ReviewPackage
 
     package = ReviewPackage.from_json(decode(raw_package(imported)))
     # 逐条确认（阶段 C）：只能确认审查包"本步待确认结论"里的编号；证据照准则那样解析，
@@ -619,7 +622,6 @@ def _interpret_reply(
 def raw_package(imported: ImportedReview) -> str:
     # The frozen initial message contains the exact package; its hash was
     # checked by the original invocation writer. No latest reconstruction.
-    from ..assurance.review_input import read_initial_materials
 
     if imported.provider_manifest is None:
         if imported.package_json is None:
@@ -668,7 +670,6 @@ class PreparedOfficialReview:
             "REJECTED",
         }:
             return
-        from .method_library import record_attribution
 
         for row in decode(self.manifest_json).get("methods") or ():
             if row["at_fault"] and row["based_on"]:

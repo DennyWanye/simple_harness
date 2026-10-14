@@ -28,6 +28,7 @@ from ..storage.operation_completion_store import OperationCompletionStore
 from ..storage.store import Store, StoredResult, StoreError
 from .completion_status import read_occurrence_completion
 from .operation_completion import OperationCompletionReader
+from .system_operations import authorized_slot_operation, source_matches, system_candidate_bytes
 
 
 class OperationIntentSourceError(ValueError):
@@ -128,7 +129,6 @@ def prepare_operation_intent_sources(
         if system:
             # 2026-09-29：系统按已批准效果准备的申请单（system_operations）。候选引用指向那份
             # 审过的真实文件本身；申请单 JSON 由系统从效果生成，不来自任何模型产出。
-            from .system_operations import authorized_slot_operation
 
             try:
                 operation = authorized_slot_operation(
@@ -149,8 +149,6 @@ def prepare_operation_intent_sources(
         ):
             raise _fail("OP_INTENT_CANDIDATE_UNAVAILABLE", "candidate Artifact differs")
         if operation is not None:
-            from .system_operations import source_matches, system_candidate_bytes
-
             if not source_matches(artifact.path, operation[2]):
                 raise _fail("OP_INTENT_SOURCE_UNRESOLVED", "source file does not match the target")
             raw = system_candidate_bytes(operation, artifact.path)

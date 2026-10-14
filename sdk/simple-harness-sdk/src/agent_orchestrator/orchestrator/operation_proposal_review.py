@@ -15,6 +15,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from typing import Any
 
+from ..assurance.codec import AssuranceError, decode
+from ..assurance.refs import AssuranceRef, Pin
 from ..contracts import ContractError
 from ..contracts.operation_payloads import (
     FrozenActionProposalV2,
@@ -47,6 +49,9 @@ from ..contracts.semantic_base import (
 from ..governance.policies import DeploymentPolicy
 from ..planning.htn.grounding import derive_id
 from ..runtime.operation_payloads import ConnectorProfileRegistry
+from ..storage import htn_store
+from ..storage.assurance_reads import AssuranceReader
+from ..storage.assurance_store import AssuranceStore
 from ..storage.htn_store import HtnStore
 from ..storage.store import Store, StoreError
 from ..verification.critics import CriticVerdict
@@ -235,9 +240,8 @@ def _published_artifact(
     artifact_id = params.get("artifact_id")
     if artifact_id is None:
         return None
-    from ..storage.htn_store import HtnStore
 
-    htn = HtnStore(store)
+    htn = htn_store.HtnStore(store)
     for ref in payloads.parameters.accepted_input_refs:
         acceptance = htn.get_acceptance(str(ref.id))
         for accepted in acceptance.artifact_refs:
@@ -584,9 +588,6 @@ def _assured_check_receipts(
     refs and projects a SEMANTIC PASS as UNKNOWN — see ``assurance_review_import``).
     The caller then re-verifies every receipt exactly as on the legacy path.
     """
-    from ..assurance.codec import decode
-    from ..assurance.refs import AssuranceRef, Pin
-    from ..storage.assurance_reads import AssuranceReader
 
     mission = store.get_mission(package.binding.mission_id)
     if mission is None:
@@ -708,8 +709,6 @@ def validate_materialization_review(
     by_id = {item.criterion_id: item for item in review.criteria}
     if set(by_id) != set(ACTION_PROPOSAL_CRITERIA):
         raise ActionProposalReviewError("OP_REVIEW_RECORD_MISSING", "criterion coverage differs")
-    from ..assurance.codec import AssuranceError
-    from ..storage.assurance_store import AssuranceStore
 
     try:
         AssuranceStore(store).require_assured(package.binding.mission_id)

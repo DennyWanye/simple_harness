@@ -24,6 +24,7 @@ from ..assurance.codec import (
     canonical,
     decode,
     fingerprint,
+    integer,
     text,
 )
 from ..assurance.event_kinds import EVENT_REF_KINDS, SOURCE_EVENT_SQL
@@ -31,6 +32,7 @@ from ..assurance.evidence import ReadItem
 from ..assurance.refs import AssuranceRef
 from ..assurance.root_gate import CurrentReadPermission
 from .assurance_source_inventory import GLOBAL_TABLES, MISSION_TABLES, SOURCE_PRIMARY_KEYS
+from .operation_completion_store import OperationCompletionStore
 from .store import Store, StoreConflict
 
 MISSION_EPOCH_SCOPE = "assurance:mission"
@@ -340,7 +342,6 @@ class AssuranceReader:
             return self._resolved(ref, canonical(body, limit=limit), issuer, witness, now_ms)
 
     def _completion_metadata(self, ref: AssuranceRef, now_ms: int | None) -> ResolvedRef:
-        from .operation_completion_store import OperationCompletionStore
 
         if ref.pin.revision != 0:
             raise AssuranceError("REF_REVISION_MISMATCH", ref.kind)
@@ -460,7 +461,6 @@ def read_complete_evidence_snapshot(
     No result is returned if a table is missing, a row cannot decode, or a budget
     is exceeded. Even an empty set carries the captured epochs and schema.
     """
-    from ..assurance.codec import integer
 
     text(scope_id)
     integer(maximum_rows, minimum=1, maximum=20_000)

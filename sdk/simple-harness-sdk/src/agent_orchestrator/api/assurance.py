@@ -24,9 +24,13 @@ from collections.abc import Mapping
 from importlib import metadata
 from typing import Any, NoReturn
 
+from .. import __version__ as orchestrator_version
 from ..assurance.codec import AssuranceError, canonical, decode, fingerprint
 from ..assurance.refs import AssuranceRef, Pin
 from ..governance.permissions import Principal
+from ..orchestrator.assurance_recheck import certificate_expired, closeout_detail
+from ..orchestrator.completion_status import read_current_effect
+from ..orchestrator.requirements_amendment import EVENT as REQUIREMENTS_AMENDED
 from ..storage.assurance_reads import EpochSnapshot, read_epochs_locked
 from ..storage.assurance_store import AssuranceStore
 from ..storage.htn_store import HtnStore
@@ -143,7 +147,6 @@ def _cursor_decode(value: object) -> dict[str, Any]:
 
 def sdk_fingerprint() -> str:
     """Bytes identity of the installed SDK: the wheel RECORD when installed, else versions."""
-    from .. import __version__ as orchestrator_version
 
     record = None
     try:
@@ -246,7 +249,6 @@ class AssuranceApi:
         self, rows: list[Any], *, now_ms: int, epochs: EpochSnapshot, root: str
     ) -> tuple[str, list[str]]:
         """Classify the newest committed certificate under the current epochs."""
-        from ..orchestrator.assurance_recheck import certificate_expired
 
         if not rows:
             return "UNAVAILABLE", ["NO_COMMITTED_CERTIFICATE"]
@@ -393,7 +395,6 @@ class AssuranceApi:
     def _current_items(
         self, mission: Any, *, now_ms: int, epochs: EpochSnapshot, root: str
     ) -> list[dict[str, Any]]:
-        from ..orchestrator.completion_status import read_current_effect
 
         store, mission_id = self._store, mission.id
         htn = HtnStore(store)
@@ -477,7 +478,6 @@ class AssuranceApi:
                 )
         # CLOSEOUT: the consumer's projected row.
         # 收尾行正文只有 closeout-v1 字段；根化身与纪元在那次评估的回执里（第 2 批车道 N，A17）。
-        from ..orchestrator.assurance_recheck import closeout_detail
 
         found = closeout_detail(store, mission_id)
         if found is None:
@@ -580,7 +580,6 @@ class AssuranceApi:
                     root_manifest = self._manifest(mission_id, record.evidence_manifest_hash)
         # Criteria of the requirements revision in force at ``at_seq`` (C.6，推后第 3 批 A22): the
         # last amendment at or before it pins revision + content hash; none means the activated one.
-        from ..orchestrator.requirements_amendment import EVENT as REQUIREMENTS_AMENDED
 
         amended = [e for e in events if e.type == REQUIREMENTS_AMENDED]
         if amended:

@@ -11,6 +11,7 @@ from simple_harness.contracts import canonical_json
 
 from ..contracts.models import sha256_hex
 from ..contracts.obligations import ObligationAccountView
+from ..graph.network_codec import decode
 from ..runtime.planning_operations import SourceUnavailable
 from ..storage.obligation_store import ObligationStore
 from ..storage.store import Store
@@ -128,7 +129,6 @@ def independently_required_occurrences(
     authorization must name both occurrence and Task in its original requester;
     the obligation bit alone cannot identify a refines-parent descendant.
     """
-    from ..graph.network_codec import decode
 
     network = decode(document.to_json()).snapshot
     members = {str(item.occurrence_id): item for item in network.occurrences}

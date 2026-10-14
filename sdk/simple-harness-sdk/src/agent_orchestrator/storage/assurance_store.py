@@ -30,9 +30,10 @@ from ..assurance.disclosure import DisclosureBatch
 from ..assurance.policy import AssurancePolicy
 from ..assurance.policy_domain import policy_domain_hash
 from ..assurance.refs import AssuranceRef, Pin
-from .assurance_reads import MISSION_EPOCH_SCOPE
-from .assurance_work import WorkTarget, atomic
-from .store import Store, StoreConflict
+from .assurance_pins import require_pin_receipt
+from .assurance_reads import MISSION_EPOCH_SCOPE, read_epochs_locked
+from .assurance_work import CONSUMERS, AssuranceWorkStore, WorkTarget, atomic
+from .store import Store, StoreConflict, _event_from_row
 
 
 class AssuranceStore:
@@ -93,7 +94,6 @@ class AssuranceStore:
         integer(now_ms)
         if not isinstance(policy, AssurancePolicy):
             raise AssuranceError("ASSURANCE_POLICY_UNREGISTERED")
-        from .assurance_work import CONSUMERS, AssuranceWorkStore
 
         if set(reconciliation) != CONSUMERS:
             raise AssuranceError("ACTIVATION_RECONCILIATION_INCOMPLETE")
@@ -167,7 +167,6 @@ class AssuranceStore:
                 ):
                     raise AssuranceError("IMMUTABLE_IDENTITY_CONFLICT", mission_id)
                 # Replay must not repair missing state or reset cursors/epochs.
-                from .assurance_reads import read_epochs_locked
 
                 read_epochs_locked(connection, mission_id)
                 consumers = {
@@ -473,7 +472,6 @@ class AssuranceStore:
                 raise AssuranceError("DISCLOSURE_EVENT_INVALID")
             # Reuse Event.to_json, including original seq, rather than hashing a
             # projection with fields removed from the canonical event contract.
-            from .store import _event_from_row
 
             actual = _event_from_row(event)
             if fingerprint(actual.to_json()) != batch.delivery_receipt_ref.pin.content_hash:
@@ -569,7 +567,6 @@ class AssuranceStore:
         }
         with atomic(self.store) as connection:
             # Acquisition replay may encounter an already BOUND/RELEASED pin.
-            from .assurance_pins import require_pin_receipt
 
             require_pin_receipt(
                 connection,
@@ -627,7 +624,6 @@ class AssuranceStore:
             ).fetchone()
             if row is None:
                 raise AssuranceError("SOURCE_UNAVAILABLE", pin_id)
-            from .assurance_pins import require_pin_receipt
 
             require_pin_receipt(
                 connection,

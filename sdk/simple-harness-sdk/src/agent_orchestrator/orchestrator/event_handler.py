@@ -24,19 +24,245 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import functools
+import hashlib
 import json
 import logging
 import os
 import sqlite3
 from collections.abc import Awaitable, Callable, Collection, Iterable, Iterator, Mapping, Sequence
 from dataclasses import replace
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from simple_harness.agents import AgentConfig, AgentLimits, AgentTurnState
+from simple_harness.agents.arp.errors import ArpError
+from simple_harness.contracts import canonical_json
 from simple_harness.execution.provider_admission import ProviderAdmissionDenied
 
+from ..api.assurance import AssuranceApi, AssuranceReadError
+from ..api.missions import MissionRequestError, spec_from_request, validate_spec
+from ..api.taskgraph import TaskGraphReadApi, _fail
+from ..artifacts.taskgraph_inputs import decode_target_rules
+from ..artifacts.versioning import manifest_upstream_inputs, materialise_v2
+from ..assurance.codec import AssuranceError
+from ..assurance.refs import Pin as AssurancePin
+from ..assurance.root_gate import AssuranceRootGate
+from ..context.context_builder import TaskPackage, _seal
+from ..context.knowledge_tools import read_knowledge_tool
+from ..contracts.error_table import (
+    HANDOFF_VALIDITY_STALE,
+    handoff_refusal_transient,
+    refusal_free_reask,
+)
+from ..contracts.htn import (
+    CancelBranchOperation,
+    GraphStructureBudget,
+    MethodRef,
+    MethodRegistryStatus,
+    ObligationId,
+    PlanProposal,
+    ProposeSuccessorOperation,
+    ReadItemKind,
+    RebindInputOperation,
+    TaskForm,
+)
+from ..contracts.obligations import ObligationLifecycle
+from ..contracts.planning_decisions import (
+    ENABLED_DECISIONS,
+    HumanOptionV1,
+    PlanningDecisionRejectionCode,
+    PlanningDecisionStatus,
+    PlanningDecisionType,
+    PlanningRetryBudgetView,
+    ProposeMethodDecision,
+    ReadMethodLibraryDecision,
+    RepairReplaceMethodDecision,
+    RepairRetrySameMethodDecision,
+    RepairRuntimeBlockedDecision,
+    RequestEvidenceDecision,
+    RequestHumanDecision,
+    internal_enablement_keys,
+)
+from ..contracts.resolution import Validity
+from ..governance import planning_authorization
+from ..governance.domains import resolve_domain
+from ..governance.planning_authorization import SourceUnavailable as AuthoritySourceUnavailable
+from ..governance.policies import policy_snapshot
+from ..graph.execution_contracts import PreviewBindingV1
+from ..graph.planning_scope import planning_convergence_scope
+from ..graph.task_network import GATING_REQUIREDNESS
+from ..graph.terminal import accepted_tasks
+from ..orchestrator.planning_admission_commits import PlanningCommitAdmission
+from ..planning import plan_preview
+from ..planning.decision_adapter import AdapterContext, adapt_admitted_decision, adapt_for_preview
+from ..planning.decision_admission import (
+    AdmittedPlanningDecision,
+    DecisionAdmissionContext,
+    NoMutationDecision,
+    PlanShapeView,
+    PreAdmittedPlanningDecision,
+    _enablement_key,
+    admit_planning_decision,
+    pre_admit_planning_decision,
+)
+from ..planning.decision_codec import (
+    PlanningDecisionCodecError,
+    allocate_decision_id,
+    canonical_decision_hash,
+    canonical_decision_json,
+    hash_raw_output,
+    parse_planning_decision,
+)
+from ..planning.decision_feedback import feedback_from_decision, package_filler
+from ..planning.htn.backend_port import BackendStatus, PlanningBackendBridge
+from ..planning.htn.planner_package import (
+    attempt_is_indexed,
+    package_hash,
+    subject_bindings_hash,
+    visible_refs_digest,
+)
+from ..planning.htn.registry import iter_predicates
+from ..runtime import operation_reconciliation, planning_operations, role_templates
+from ..runtime.action_schema import (
+    declared_action_outputs,
+    with_candidate_targets,
+    worker_action_contract,
+)
+from ..runtime.assembly import admission_accepts
+from ..runtime.legacy_provider_slots import (
+    LegacyProviderSlots,
+    create_slot_table,
+    profile_has_frozen_admission,
+)
+from ..runtime.planning_operations import SourceUnavailable, StoreOperationReader, read_running_work
+from ..runtime.planning_operations import SourceUnavailable as OperationSourceUnavailable
+from ..runtime.planning_operations import SourceUnavailable as RetrySourceUnavailable
+from ..runtime.planning_operations import SourceUnavailable as RuntimeSourceUnavailable
+from ..runtime.provider_budget_guard import (
+    ProviderBudgetGuard,
+    check_unknown_handoff,
+    resend_record,
+)
+from ..runtime.role_templates import hierarchical_worker_for_domain, hierarchical_worker_versions
+from ..storage import htn_store, planning_decision_store, planning_human_store
+from ..storage.obligation_store import ObligationStore
+from ..storage.operation_completion_store import OperationCompletionStore
+from ..storage.operation_intent_store import OperationIntentStore
+from ..storage.planning_admission_store import PlanningAdmissionStore
+from ..storage.recovery_store import RecoveryStore, StoreSandboxLedger
+from ..storage.taskgraph_store import NotBoundError, require_bound
+from ..verification.evidence_resolver import EvidenceResolver, in_source_roots
+from . import (
+    assurance_review_wait,
+    failure_classes,
+    method_plan_reviews,
+    planning_backend_runtime,
+    planning_selection,
+    resource_requests,
+    taskgraph_runtime_imports,
+)
+from . import planning_repair_requests as repair_requests
+from . import stop_conditions as stop_rules
+from ._read_set import SemanticReadSetChecker
 from .accounting_recovery import import_late_accounting
+from .assurance_final_writer import is_assured, request_assured_notification
+from .assurance_point_use import (
+    PLANNING_REQUEST_CONSUMER,
+    PointUseRefused,
+    certify_recovery_locked,
+    context_claims,
+    knowledge_handover,
+    planning_claims,
+    planning_evidence_stale,
+    require_point_use_locked,
+)
+from .assurance_purpose_reviews import purpose_review_key
+from .assurance_review_collect import abandon_assurance_review, collect_assurance_review
+from .assurance_review_import import carried_review_alive
+from .assurance_review_runtime import REVIEW_ROUTE_UNAVAILABLE
+from .assurance_review_transport import require_review_handoff
+from .carried_review import MAX_CARRIED_REVIEW_ERRORS, source_key
+from .commit_service import NonModelFailuresExhausted
+from .completion_inputs import frozen_requirements_revision, load_completion_result_inputs
+from .completion_status import read_occurrence_completion
+from .composition_review import CompositionAcceptanceAssembly
+from .failure_classes import (
+    INFRA,
+    ROUND_FAULT_BACKOFF_CAP,
+    classify_failure,
+    output_exhausted,
+    output_exhausted_fact,
+    review_exhausted_by_interruption,
+    turn_cap_exceeded,
+    turn_cap_fact,
+)
+from .hierarchical_dispatch import CompoundPhase, PlanRoundOutcome, next_compound_phase
+from .method_library import record_attribution
+from .method_plan_reviews import awaiting as method_review_awaiting
+from .operation_completion import OperationCompletionError
+from .operation_outcomes import outcome_exhaustion_is_final
+from .operation_runtime import (
+    advance_operation_outcomes,
+    dispatch_materialized_operations,
+    ensure_assured_proposal_reviews,
+    ensure_operation_runtime,
+    recover_materializations,
+)
+from .planner_views import read_planner_package
+from .planning_backend_runtime import bind_deployment, frozen_deployment_conflict
+from .planning_evidence import (
+    evidence_authority,
+    observe_questions,
+    persist_questions,
+    prepare_questions,
+)
+from .planning_method_proposal import (
+    MAX_METHOD_PROPOSALS_PER_GOAL,
+    MethodProposalRefused,
+    decode_proposal,
+    persist_method,
+    prepare_method,
+    proposal_origin,
+    proposals_for,
+    read_library,
+)
+from .planning_protocol_binding import current_planning_protocol
+from .planning_repair_requests import (
+    REQUESTED,
+    address_requests,
+    collect_triggers,
+    pending_requests,
+    record_request,
+)
+from .planning_retry import pending_retry_permit, retry_decision_required
+from .planning_runtime_block import (
+    blocks_intent,
+    last_wake,
+    pending_block,
+    planner_binding,
+    register_block,
+    resolve_after_decision,
+    resume_source_current,
+    wake_blocks,
+)
+from .planning_selection import SYSTEM_RETRY_ORIGIN, dispatch_local, infrastructure_retry
+from .planning_wait_targets import steps_under
+from .repair_impact import read_repair_impact_indexes
+from .resource_requests import quota_check
+from .review_adjudication import adjudication_of
+from .root_review import RootReviewCoordinator, RootReviewStatus
+from .scoped_content_review import task_content_prompt_scope
+from .system_operations import prepare_system_operations
+from .taskgraph_assembly import install_taskgraph
+from .taskgraph_epochs import current_scope_epochs
+from .taskgraph_execution_sources import _document
+from .taskgraph_materialization import require_mounts, verify_materialized
+from .taskgraph_notifications import TaskGraphNotifications
+from .taskgraph_policy import read_installed_graph_policy
+from .worker_context import parent_goal as read_parent_goal
+from .worker_context import upstream_steps
 
 if TYPE_CHECKING:
     from ..graph.task_network import TaskNetworkSnapshot
@@ -490,7 +716,6 @@ def _free_reask(event: Any) -> bool:
     """这条拒绝是同一请求的第一次回答读不懂（错误码表 free_reask 列），重问一次不算答错
     （2026-10-09 四项修复第 2 条）。重问仍读不懂（本请求第 2 次回答）照常算；输出上限用完
     不是格式错，照常算。"""
-    from ..contracts.error_table import refusal_free_reask
 
     detail = event.payload.get("detail") if isinstance(event.payload, Mapping) else None
     if not isinstance(detail, Mapping) or detail.get("output_exhausted") is True:
@@ -567,8 +792,6 @@ class Orchestrator:
         ):
             raise ValueError("per-pool token estimators must explicitly cover every profile")
         if provider_token_estimators is not None:
-            from ..runtime.legacy_provider_slots import profile_has_frozen_admission
-
             for key, estimator in provider_token_estimators.items():
                 if (
                     estimator is None
@@ -723,13 +946,9 @@ class Orchestrator:
                 deployed_layers=self._deployed,
                 mission_profile_validator=self._validate_mission_profile,
             )
-            from ..assurance.codec import AssuranceError
-            from ..assurance.root_gate import AssuranceRootGate
 
             # 车道 J H04（§14.4）：模型写的代码起的子进程，身份与回收材料落库；重启后按它回收。
             if self._executor is not None:
-                from ..storage.recovery_store import StoreSandboxLedger
-
                 self._executor.ledger = StoreSandboxLedger(self._store)
             if self._assurance_root_setup is not None or AssuranceRootGate.required(
                 self._store, self._config.evidence_root
@@ -756,8 +975,6 @@ class Orchestrator:
                     self._assurance_management_only = True
                     return self
             if self._provider_token_estimator is not None:
-                from ..runtime.provider_budget_guard import ProviderBudgetGuard
-
                 self._provider_admission = ProviderBudgetGuard(
                     self._commit,
                     owner=self._owner,
@@ -780,8 +997,6 @@ class Orchestrator:
                     ),
                 )
             if self._provider_token_estimators is not None:
-                from ..runtime.provider_budget_guard import ProviderBudgetGuard
-
                 slots = (
                     {
                         key: min(
@@ -840,8 +1055,6 @@ class Orchestrator:
             if self._provider_admissions is not None and any(
                 admission is None for admission in self._provider_admissions.values()
             ):
-                from ..runtime.legacy_provider_slots import LegacyProviderSlots, create_slot_table
-
                 create_slot_table(self.store)
                 local_admissions = {
                     key: LegacyProviderSlots(
@@ -904,7 +1117,6 @@ class Orchestrator:
             self._assembled.gateway.on_rejected = self._audit_tool_rejection
             self._assembled.gateway.before_execute = self._taskgraph_tool_handoff
             self._assembled.gateway.on_executed = self._record_tool_call
-            from ..context.knowledge_tools import read_knowledge_tool
 
             self._assembled.gateway.knowledge_reader = lambda mission_id, tool, args, reader: (
                 read_knowledge_tool(
@@ -1050,7 +1262,6 @@ class Orchestrator:
 
     def _validate_mission_profile(self, selected: str, params: Mapping[str, Any]) -> None:
         """Creation-transaction guard: a selected pool cannot mask a policy route."""
-        from ..api.missions import MissionRequestError
 
         if selected not in self._profiles:
             raise MissionRequestError(f"runtime profile {selected!r} is not configured")
@@ -1126,7 +1337,6 @@ class Orchestrator:
         if selected is not None:
             # All roles, including Planner/Critic/system tasks, use the Mission's
             # persisted choice. No fallback or escalation may leave that pool.
-            from ..api.missions import MissionRequestError
 
             try:
                 self._validate_mission_profile(selected, self.policy_for(mission_id))
@@ -1191,8 +1401,6 @@ class Orchestrator:
 
     def policy_snapshot(self) -> dict[str, Any]:
         """Step 8 (plan D8-5'): where this orchestrator's behaviour comes from."""
-
-        from ..governance.policies import policy_snapshot
 
         return policy_snapshot(
             self._config,
@@ -1333,8 +1541,6 @@ class Orchestrator:
         if self._assurance_root_gate is not None:
             self._assurance_root_gate.require_execution()
         if self._assurance_management_only:
-            from ..assurance.codec import AssuranceError
-
             raise AssuranceError("ROOT_RUNTIME_NOT_STARTED")
 
     @property
@@ -1402,15 +1608,12 @@ class Orchestrator:
     def _blame_replaced_method(self, mission_id: str, decision: Any, decision_id: str) -> None:
         """换做法提交成功、规划器写明"换下的做法本身有错"（阶段 C3）：换下的做法若是照全库先例
         写的，记一条归因。同一事务；程序只记规划器明确写出的，怎么数在 method_library 里。"""
-        from ..contracts.planning_decisions import RepairReplaceMethodDecision
-        from .method_library import record_attribution
 
         payload = decision.payload
         if not isinstance(payload, RepairReplaceMethodDecision) or not payload.method_at_fault:
             return
-        from ..storage.htn_store import HtnStore
 
-        replaced = HtnStore(self.store).get_method_instance(
+        replaced = htn_store.HtnStore(self.store).get_method_instance(
             mission_id, str(payload.rejected_method_instance.id)
         )
         record_attribution(
@@ -1452,7 +1655,6 @@ class Orchestrator:
     def install_taskgraph_notifications(
         self, *, history: Any, convergence: Any, validate_current: Any
     ) -> Any:
-        from .taskgraph_notifications import TaskGraphNotifications
 
         if self._taskgraph_notifications is not None:
             raise ValueError("TaskGraph notifications are already installed")
@@ -1465,12 +1667,10 @@ class Orchestrator:
 
     def install_taskgraph(self, ports: Any) -> Any:
         """Fixed deployment setup; never called with model or Host request JSON."""
-        from .taskgraph_assembly import install_taskgraph
 
         return install_taskgraph(self, ports)
 
     def install_taskgraph_read_api(self, api: Any, *, tenant_id: str, principal: Any) -> None:
-        from ..api.taskgraph import TaskGraphReadApi
 
         if not isinstance(api, TaskGraphReadApi) or not api.matches_binding(
             self.commit, tenant_id, principal
@@ -1487,7 +1687,6 @@ class Orchestrator:
         for api in self._taskgraph_read_apis:
             if api.matches_binding(self.commit, tenant_id, principal):
                 return api
-        from ..api.taskgraph import _fail
 
         _fail(
             "SOURCE_UNAVAILABLE",
@@ -1497,7 +1696,6 @@ class Orchestrator:
 
     def install_assurance_read_api(self, api: Any, *, tenant_id: str, principal: Any) -> None:
         """Fixed-caller Assurance read verbs (S25); bound by the deployment assembly only."""
-        from ..api.assurance import AssuranceApi
 
         if not isinstance(api, AssuranceApi) or not api.matches_binding(
             self.commit, tenant_id, principal
@@ -1514,7 +1712,6 @@ class Orchestrator:
         for api in self._assurance_read_apis:
             if api.matches_binding(self.commit, tenant_id, principal):
                 return api
-        from ..api.assurance import AssuranceReadError
 
         raise AssuranceReadError(
             "PROFILE_UNBOUND", "Assurance read assembly is not installed for this caller"
@@ -1557,7 +1754,6 @@ class Orchestrator:
         starts = dispatch.issue_start_witnesses(mission_id, network, now_ms=moment)
         phases = dispatch.advance_compound_phases(mission_id)
         view = dispatch.read(mission_id, now_ms=moment)
-        from .taskgraph_execution_sources import _document
 
         # ReadinessReport is a typed dataclass, not a JSON-contract object. Keep
         # its complete read set and detail identities in the durable observation.
@@ -1581,9 +1777,6 @@ class Orchestrator:
     async def taskgraph_request_composition(
         self, mission_id: str, occurrence_id: Any
     ) -> dict[str, Any]:
-        from ..contracts.htn import TaskForm
-        from .hierarchical_dispatch import CompoundPhase, next_compound_phase
-        from .root_review import RootReviewStatus
 
         mission = self.store.get_mission(mission_id)
         if mission is None:
@@ -1696,8 +1889,6 @@ class Orchestrator:
             )
             self._note(f"mission {mission.id}: {error} → stopped")
             return True
-        from ..storage.taskgraph_store import NotBoundError, require_bound
-        from .assurance_final_writer import is_assured
 
         try:
             require_bound(self.store, mission.id)
@@ -1718,8 +1909,6 @@ class Orchestrator:
             )
             self._note(f"mission {mission.id}: not TaskGraph-bound/assured at creation → stopped")
             return True
-        from .planning_backend_runtime import frozen_deployment_conflict
-        from .planning_protocol_binding import current_planning_protocol
 
         try:
             current_planning_protocol(self.store, mission.id)
@@ -1859,7 +2048,6 @@ class Orchestrator:
         mission = self.store.get_mission(mission_id)
         if mission is None:
             return
-        from ..storage.taskgraph_store import NotBoundError, require_bound
 
         try:
             require_bound(self.store, mission_id)
@@ -1873,10 +2061,8 @@ class Orchestrator:
                 if intent.mission_id == mission_id:
                     self._settle_intent(intent, "FAILED")
             return
-        from ..runtime.planning_operations import SourceUnavailable
-        from .taskgraph_runtime_imports import TaskGraphRuntimeImports
 
-        reader = TaskGraphRuntimeImports(self)
+        reader = taskgraph_runtime_imports.TaskGraphRuntimeImports(self)
         for intent in self.store.list_intents(
             "PENDING", "CLAIMED", "AGENT_CREATED", "SUBMITTED", "FAILED", "SETTLED"
         ):
@@ -1982,7 +2168,6 @@ class Orchestrator:
         profile = self.assembled.pool(profile_id).profile
         if config.get("runtime_context") != profile.context_snapshot():
             raise ContractError("context identity differs from the frozen dispatch intent")
-        from ..runtime.assembly import admission_accepts
 
         if not admission_accepts(
             self._admission_for(profile_id), config.get("provider_admission_fingerprint")
@@ -2085,8 +2270,6 @@ class Orchestrator:
         request under the same key raises ``MissionConflict`` (review round 1 P2-4).  Every
         other refusal is a ``MissionRequestError``; no refusal writes anything."""
 
-        from ..api.missions import MissionRequestError, spec_from_request, validate_spec
-
         deployment = self._config.deployment_policy
         spec = spec_from_request(tenant_id, request, default_tools=deployment.allowed_tools)
         validate_spec(spec, available_tools=deployment.allowed_tools)
@@ -2105,7 +2288,6 @@ class Orchestrator:
         principal: Principal,
     ) -> dict[str, Any]:
         """Apply the deployment door before the single atomic Mission/source commit."""
-        from ..api.missions import MissionRequestError, spec_from_request, validate_spec
 
         deployment = self._config.deployment_policy
         spec = spec_from_request(tenant_id, request, default_tools=deployment.allowed_tools)
@@ -2140,8 +2322,6 @@ class Orchestrator:
         if spec.domain == "appworld-v1" and self._config.appworld_execute is None:
             raise ContractError("AppWorld Mission requires a bound episode environment")
         if spec.runtime_profile_id is not None:
-            from ..api.missions import MissionRequestError
-
             if (
                 not isinstance(spec.runtime_profile_id, str)
                 or not spec.runtime_profile_id.strip()
@@ -2173,7 +2353,6 @@ class Orchestrator:
         Domain roots are logical paths, so compare physical deployment roots here.
         This is a write-boundary check, not a claim about the origin of user text.
         """
-        from ..governance.domains import resolve_domain
 
         if not resolve_domain(spec.domain).source_roots:
             return
@@ -2226,8 +2405,6 @@ class Orchestrator:
         its first round, instead of taking ``__aenter__`` / ``recover`` down for every
         Mission.
         """
-        from ..storage.taskgraph_store import NotBoundError, require_bound
-        from .assurance_final_writer import is_assured
 
         try:
             self.commit.domain_for(mission_id)
@@ -2311,7 +2488,6 @@ class Orchestrator:
 
         if self._recovery is not None:
             return self._recovery.status()
-        from ..storage.recovery_store import RecoveryStore
 
         return {
             "state": "RECOVERY_LOCKED",
@@ -2335,7 +2511,6 @@ class Orchestrator:
                 # 推后第 1 批 A26（AER §12.2）：冻结的请求不静默替换上下文。恢复前按它开工时装进
                 # 上下文的证据重签 RECOVERY；签不出就不恢复：按"被打断"记丢失（不扣次数），失败明细
                 # 写明哪一项、为什么；这一步下一轮拿当前上下文重做。
-                from .assurance_point_use import certify_recovery_locked
 
                 with self.store.transaction():
                     use = certify_recovery_locked(self.commit, attempt)
@@ -2394,7 +2569,6 @@ class Orchestrator:
 
         Each action is reconciled behind its Mission's round boundary (2026-10-03 收尾裁决
         第 3 张): a store fault on one action is that Mission's, and the others go on."""
-        from .operation_runtime import ensure_operation_runtime
 
         if self.connectors:
             try:
@@ -2429,8 +2603,6 @@ class Orchestrator:
         them is known — a late answer, a lookup, a proof it did not happen, a person's
         ruling — say so once, through the same notice the stop itself went out on (HTN
         一致性补改 H-2).  Read here, after every reconcile pass; whoever settled it."""
-        from ..runtime.operation_reconciliation import action_outcome_unresolved
-        from .assurance_final_writer import request_assured_notification
 
         rows = self.store.connection.execute(
             "SELECT mission_id FROM missions WHERE status IN ('CANCELLED','FAILED')"
@@ -2447,7 +2619,9 @@ class Orchestrator:
                 for listed in (mission.final_report or {}).get("unresolved_actions") or ():
                     key = str(listed.get("action_key") or "")
                     action = self.store.get_action(key)
-                    if action is None or action_outcome_unresolved(self.store, action):
+                    if action is None or operation_reconciliation.action_outcome_unresolved(
+                        self.store, action
+                    ):
                         continue
                     state = str(action["state"])
                     if (
@@ -2666,13 +2840,10 @@ class Orchestrator:
         Assurance lane's own ``assurance:`` scopes are not plan facts — and every duty of
         the Mission and the newest observation of every recorded proposition, each read with
         the commit checker's own formula."""
-        from ..contracts.htn import ReadItemKind
-        from ..storage.htn_store import HtnStore
-        from ..storage.obligation_store import ObligationStore
-        from ._read_set import SemanticReadSetChecker
-        from .taskgraph_epochs import current_scope_epochs
 
-        checker = SemanticReadSetChecker(self.store, HtnStore(self.store), mission_id=mission_id)
+        checker = SemanticReadSetChecker(
+            self.store, htn_store.HtnStore(self.store), mission_id=mission_id
+        )
         duties = ObligationStore(self.store).obligation_ids(mission_id)
         mission = self.store.get_mission(mission_id)
         return {
@@ -2692,7 +2863,7 @@ class Orchestrator:
                 for key, record in sorted(
                     {
                         str(item.proposition_key): item
-                        for item in HtnStore(self.store).list_observations(mission_id)
+                        for item in htn_store.HtnStore(self.store).list_observations(mission_id)
                     }.items()
                 )
             ),
@@ -2708,7 +2879,6 @@ class Orchestrator:
         }
 
     def _handoff_ground_gone(self, action_key: str) -> bool:
-        from ..contracts.error_table import HANDOFF_VALIDITY_STALE
 
         actions = getattr(self, "_actions", None)
         return actions is not None and str(actions.last_refusal.get(action_key, "")).startswith(
@@ -2733,7 +2903,6 @@ class Orchestrator:
     def _materialization_refusals(self, mission_id: str) -> dict[str, Any]:
         """For the stall record: reviewed operation requests whose materialisation is refused
         (every round the same refusal) — an effect waiting on one of these will never move."""
-        from ..storage.operation_intent_store import OperationIntentStore
 
         intents = OperationIntentStore(self.store).for_mission(mission_id)
         replaced = {
@@ -2768,8 +2937,6 @@ class Orchestrator:
         its source is missing for good (a SUCCEEDED action without a receipt, a ruling receipt nobody
         recorded, a broken T1 link) — refused the same way every round; the effect waiting on it
         will never move (2026-10-06 第 1 批车道 E)."""
-        from ..storage.operation_completion_store import OperationCompletionStore
-        from ..storage.operation_intent_store import OperationIntentStore
 
         intents = OperationIntentStore(self.store).for_mission(mission_id)
         replaced = {
@@ -2822,7 +2989,6 @@ class Orchestrator:
         longer waits for the effects (Assurance §7.2, 2026-10-06 车道 O), by the idle facts:
         a judged Mission waits for its closeout only while the closeout can still converge.
         """
-        from .operation_outcomes import outcome_exhaustion_is_final
 
         if self._materialization_refusals(mission.id):
             return True  # 2026-10-05：物化一直被拒的申请单不是合法等待，交给卡死检测
@@ -2852,16 +3018,12 @@ class Orchestrator:
         """Accepted preparation with real unmet effects is work, not an idle failure."""
         if self._operation_dead_end(mission):
             return False
-        from ..storage.htn_store import HtnStore
-        from .completion_status import read_occurrence_completion
 
         try:
-            htn = HtnStore(self.store)
+            htn = htn_store.HtnStore(self.store)
             active = htn.active_plan_revision(mission.id)
             if active is None:
                 return False
-            from ..contracts.htn import TaskForm
-            from ..graph.task_network import GATING_REQUIREDNESS
 
             dispatch = self._new_mode(mission)
             if dispatch is None:
@@ -3005,11 +3167,9 @@ class Orchestrator:
     def _root_resolved(self, mission: Mission, new_mode: Any) -> bool:
         """The root goal has an adopted resolution and the Mission is not judged yet."""
 
-        from ..storage.htn_store import HtnStore
-
         try:
             network = new_mode.network(mission.id)
-            htn = HtnStore(self.store)
+            htn = htn_store.HtnStore(self.store)
             for occurrence in network.root_occurrence_ids:
                 binding = htn.task_semantics_of(
                     mission.id, str(network.occurrence(occurrence).task_id)
@@ -3110,14 +3270,8 @@ class Orchestrator:
         this digest.
         """
 
-        from simple_harness.contracts import canonical_json
-
-        from ..contracts.htn import ObligationId
-        from ..storage.htn_store import HtnStore
-        from ..storage.obligation_store import ObligationStore
-
         new_mode = self._new_mode(mission)
-        semantics = HtnStore(self.store)
+        semantics = htn_store.HtnStore(self.store)
         duties = ObligationStore(self.store)
         epochs: Mapping[str, int] = {}
         demands: list[str] = []
@@ -3183,10 +3337,6 @@ class Orchestrator:
         A ``False`` therefore means "nothing here needs another cycle": either a
         Mission was stopped, or there was no stalled hierarchical Mission at all.
         """
-
-        from ..contracts.htn import ObligationId
-        from ..contracts.obligations import ObligationLifecycle
-        from ..storage.obligation_store import ObligationStore
 
         carry_on = False
         for mission in self._active_missions():
@@ -3278,8 +3428,6 @@ class Orchestrator:
                 continue
             # 片 D 第 1 项："计划卡住了要不要改"是规划器的判断。确认停滞之后先把局面如实交给
             # 它一次（每个计划版本一条请求）；同一版计划问过之后又停在原地，才判停。
-            from ..runtime.planning_operations import SourceUnavailable
-            from . import planning_repair_requests as repair_requests
 
             withheld = [item.to_json() for item in admissions.refusals]
             # 表二 20（2026-10-03 收尾裁决）：规划器改了计划却没派出任何新尝试、又停在原地——每个新
@@ -3471,19 +3619,16 @@ class Orchestrator:
 
     def _resume_planning_services(self, mission: Mission) -> bool:
         """Consume service receipts and reserve the next Planner atomically."""
-        from ..storage.planning_human_store import PlanningHumanStore
-        from .planning_runtime_block import last_wake, pending_block
 
         runtime_block = pending_block(self.store, mission.id)
         if runtime_block is not None and last_wake(self.store, mission.id, runtime_block) is None:
             return False
-        questions = PlanningHumanStore(self.store)
+        questions = planning_human_store.PlanningHumanStore(self.store)
         questions.retire_stale(mission.id)
         if questions.pending(mission.id) or self._planner_intents_in_flight(mission.id):
             return False
         if self._requirements_unconfirmed(mission):
             return False
-        from .assurance_point_use import PointUseRefused
 
         try:
             return self._resume_planning_services_now(mission, questions)
@@ -3572,7 +3717,6 @@ class Orchestrator:
             # 本任务有做法正在送审、结论还没入库：这时开一轮规划，规划器看到的只能是"审阅中"，
             # 采用不了、也没有别的可做（联测真机：它只好选等待，等待又被退回，白丢一轮）。等结论
             # 入库（PlanningMethodReviewed）再开，别的待处理请求那时一并交给它。
-            from .method_plan_reviews import awaiting as method_review_awaiting
 
             if method_review_awaiting(self.store, mission.id):
                 return False
@@ -3615,25 +3759,22 @@ class Orchestrator:
         missions = self._active_missions()
         if mission_id is not None:
             missions = [mission for mission in missions if mission.id == mission_id]
-        from ..storage.planning_human_store import PlanningHumanStore
-        from .planning_selection import awaits_authority
 
         pending_intents = self.store.list_intents("PENDING", "CLAIMED", "AGENT_CREATED")
-        from .planning_runtime_block import pending_block
 
         for mission in missions:
             if pending_block(self.store, mission.id) is not None:
                 return True
             if any(
-                intent.mission_id == mission.id and awaits_authority(self.store, intent)
+                intent.mission_id == mission.id
+                and planning_selection.awaits_authority(self.store, intent)
                 for intent in pending_intents
             ):
                 return True
-            if PlanningHumanStore(self.store).pending(mission.id):
+            if planning_human_store.PlanningHumanStore(self.store).pending(mission.id):
                 return True
             if self._pending_planning_wait(mission.id) is not None:
                 return True
-            from .method_plan_reviews import awaiting as method_review_awaiting
 
             if method_review_awaiting(self.store, mission.id):
                 return True  # 提出的做法还在审：在等，不是卡住
@@ -3691,13 +3832,7 @@ class Orchestrator:
         """
 
         try:
-            from ..contracts.htn import ObligationId
-            from ..contracts.obligations import ObligationLifecycle
-            from ..contracts.resolution import Validity
-            from ..storage.htn_store import HtnStore
-            from ..storage.obligation_store import ObligationStore
-
-            htn = HtnStore(self.store)
+            htn = htn_store.HtnStore(self.store)
             if ref.kind is PlanningRefKind.TASK:
                 semantics = htn.task_semantics_of(mission.id, ref.id)
                 task = self.store.get_task(ref.id)
@@ -3765,10 +3900,9 @@ class Orchestrator:
             return True
         if ref.kind is not PlanningRefKind.TASK:
             return False
-        from ..storage.htn_store import HtnStore
 
         task = self.store.get_task(ref.id)
-        semantics = HtnStore(self.store).task_semantics_of(mission.id, ref.id)
+        semantics = htn_store.HtnStore(self.store).task_semantics_of(mission.id, ref.id)
         return bool(
             task is not None
             and task.mission_id == mission.id
@@ -3798,10 +3932,6 @@ class Orchestrator:
         内容哈希），再换成它下面正在跑的步骤；下面没有正在跑的步骤就不能等。步骤与已完成
         记录照旧原样认。
         """
-        from ..contracts.htn import ObligationId
-        from ..storage.htn_store import HtnStore
-        from ..storage.obligation_store import ObligationStore
-        from .planning_wait_targets import steps_under
 
         waited: list[PlanningRefV1] = []
         for ref in refs:
@@ -3847,7 +3977,7 @@ class Orchestrator:
                 return None
             running = []
             for task_id in task_ids:
-                semantics = HtnStore(self.store).task_semantics_of(mission.id, task_id)
+                semantics = htn_store.HtnStore(self.store).task_semantics_of(mission.id, task_id)
                 if semantics is None:
                     continue
                 step = PlanningRefV1(
@@ -3877,7 +4007,6 @@ class Orchestrator:
         return progressed
 
     def _wake_planning_wait(self, listed: Mission) -> bool:
-        from .assurance_point_use import PointUseRefused
 
         progressed = False
         for _ in (0,):  # one Mission; ``continue`` below ends its share
@@ -4063,8 +4192,6 @@ class Orchestrator:
         """这一处上次出错后的退避间隔到了没有（没出过错就是到了）。扫描类调用方在进
         ``_round_boundary`` 之前先问它，没到就跳过这个任务的这一份。"""
 
-        from .failure_classes import ROUND_FAULT_BACKOFF_CAP
-
         fault = self._round_faults.get((mission_id, where))
         # 墙钟往回拨时，到点时刻会比"现在"晚出一个最长间隔以上：视为已到点，不多等
         return (
@@ -4078,13 +4205,14 @@ class Orchestrator:
         它没有可停的东西，不该让 ``run()`` 一直等它。已到停止条件（连续轮数与时长都够）
         却停不了的（比如还没开始的任务）也不算：再等也只是重复，``run()`` 照常空闲返回。"""
 
-        from .failure_classes import NON_MODEL_FAILURE_CAP, ROUND_FAULT_MIN_SECONDS
-
         now = self.store.now
         if not any(
             key[0] == mission_id
             and now < due
-            and not (count >= NON_MODEL_FAILURE_CAP and now - first >= ROUND_FAULT_MIN_SECONDS)
+            and not (
+                count >= failure_classes.NON_MODEL_FAILURE_CAP
+                and now - first >= failure_classes.ROUND_FAULT_MIN_SECONDS
+            )
             for key, (count, first, due) in self._round_faults.items()
         ):
             return False
@@ -4099,19 +4227,16 @@ class Orchestrator:
         return progressed
 
     async def _round_fault(self, mission_id: str, where: str, error: Exception) -> bool:
-        from .failure_classes import (
-            NON_MODEL_FAILURE_CAP,
-            ROUND_CORRUPT,
-            ROUND_FAULT_MIN_SECONDS,
-            classify_round_fault,
-            round_fault_delay,
-        )
 
-        kind, code = classify_round_fault(error)
+        kind, code = failure_classes.classify_round_fault(error)
         now = self.store.now
         count, first, _due = self._round_faults.get((mission_id, where), (0, now, now))
         count += 1
-        self._round_faults[(mission_id, where)] = (count, first, now + round_fault_delay(count))
+        self._round_faults[(mission_id, where)] = (
+            count,
+            first,
+            now + failure_classes.round_fault_delay(count),
+        )
         summary = f"{type(error).__name__}: {str(error)[:300]}"
         self._note(f"mission {mission_id}: round fault at {where} #{count} ({kind}) {summary}")
         logger.warning(
@@ -4157,8 +4282,8 @@ class Orchestrator:
                 mission is not None
                 and intent_id
                 and where.startswith("collect")
-                and count >= NON_MODEL_FAILURE_CAP
-                and now - first >= ROUND_FAULT_MIN_SECONDS
+                and count >= failure_classes.NON_MODEL_FAILURE_CAP
+                and now - first >= failure_classes.ROUND_FAULT_MIN_SECONDS
             ):
                 try:
                     intent = self.store.get_intent(intent_id)
@@ -4190,14 +4315,17 @@ class Orchestrator:
                     )
             return False
         try:
-            if kind == ROUND_CORRUPT:
+            if kind == failure_classes.ROUND_CORRUPT:
                 await self._plan_integrity_stop(mission, error)
                 ended = self.store.get_mission(mission_id)
                 if ended is not None and ended.status in TERMINAL_MISSION:
                     self._round_faults.pop((mission_id, where), None)
                     return True
                 return False  # not stoppable from its state (still CREATED): retried next round
-            if count >= NON_MODEL_FAILURE_CAP and now - first >= ROUND_FAULT_MIN_SECONDS:
+            if (
+                count >= failure_classes.NON_MODEL_FAILURE_CAP
+                and now - first >= failure_classes.ROUND_FAULT_MIN_SECONDS
+            ):
                 detail = {
                     "where": where,
                     "error_type": type(error).__name__,
@@ -4294,7 +4422,6 @@ class Orchestrator:
         progressed = import_late_accounting(self) or progressed
         if self._assurance_tick is not None and await self._assurance_tick.tick():
             progressed = True
-        from .planning_runtime_block import wake_blocks
 
         progressed = wake_blocks(self) or progressed
         if self._taskgraph_notifications is not None and await self._taskgraph_notifications.tick():
@@ -4320,12 +4447,10 @@ class Orchestrator:
                 continue
 
             async def before_planning(mission: Mission = mission) -> bool:
-                from .method_plan_reviews import advance as advance_method_reviews
-                from .planning_repair_requests import collect_triggers
 
                 moved = False
                 try:
-                    moved = advance_method_reviews(self, mission) or moved
+                    moved = method_plan_reviews.advance(self, mission) or moved
                     moved = collect_triggers(self, mission) or moved
                     moved = self._resume_planning_services(mission) or moved
                 except BudgetExhausted as error:
@@ -4524,7 +4649,6 @@ class Orchestrator:
         """``knowledge_read`` 交出正文前的那道门（裁决 2026-10-07 第 5 件）：同一个使用证书签发方，消费方
         是这次工具调用。执行者是装上下文（CONTEXT）；审阅员读黑板是披露（DISCLOSE，推后第 2 批 A03），
         钉住审阅所属的那一步。"""
-        from .assurance_point_use import knowledge_handover
 
         if reader.get("review_key") is not None:
             row = self.store.connection.execute(
@@ -4592,7 +4716,6 @@ class Orchestrator:
             return False
         if mission is not None and self._requirements_unconfirmed(mission):
             return False
-        from .assurance_point_use import PointUseRefused
 
         try:
             await self._create_planner_intent(mission_id, ordinal=ordinal)
@@ -4786,8 +4909,6 @@ class Orchestrator:
     def _planning_retry_budgets(self, mission: Mission, *, format_retries: int) -> Any:
         """The §39 budget view a feedback value reports (same count admission uses)."""
 
-        from ..contracts.planning_decisions import PlanningRetryBudgetView
-
         allowance = max(0, int(self._config.max_planning_attempts))
         return PlanningRetryBudgetView(
             same_request_format_retries_remaining=max(0, int(format_retries)),
@@ -4800,10 +4921,9 @@ class Orchestrator:
         """2026-09-30：新请求的 ``previous_feedback``——本任务最近一条规划决定被拒时，
         告诉规划器拒在哪（字段路径）；最近一条没被拒就是 ``None``。"""
 
-        from ..planning.decision_feedback import feedback_from_decision
-        from ..storage.planning_decision_store import PlanningDecisionStore
-
-        row = PlanningDecisionStore(self.store).latest_planning_decision(mission.id)
+        row = planning_decision_store.PlanningDecisionStore(self.store).latest_planning_decision(
+            mission.id
+        )
         return feedback_from_decision(
             row, budgets=self._planning_retry_budgets(mission, format_retries=1)
         )
@@ -4831,10 +4951,6 @@ class Orchestrator:
         # ``_seal`` is private to the context builder and is reached anyway, on
         # purpose: it renders the package *and* derives the context hash, and a second
         # renderer here would be a second answer to "what did the model see".
-        from ..context.context_builder import _seal
-        from ..runtime.role_templates import PLANNING_DECISION_PACKAGE_VERSION
-        from .planner_views import read_planner_package
-        from .planning_protocol_binding import current_planning_protocol
 
         del ordinal  # the round number is not a fact the Planner reads
         current_planning_protocol(self.store, mission.id)
@@ -4865,7 +4981,7 @@ class Orchestrator:
                 dispatch=new_mode,
                 reports=reports,
                 previous_feedback=previous_feedback,
-                package_version=PLANNING_DECISION_PACKAGE_VERSION,
+                package_version=role_templates.PLANNING_DECISION_PACKAGE_VERSION,
                 budget={
                     "planning_remaining": max(
                         0, self._config.max_planning_attempts - self._planning_attempts(mission.id)
@@ -4918,14 +5034,6 @@ class Orchestrator:
         substituted for an unavailable field.
         """
 
-        from ..planning.htn.planner_package import (
-            package_hash,
-            subject_bindings_hash,
-            visible_refs_digest,
-        )
-        from ..storage.planning_decision_store import PlanningDecisionStore
-        from .planning_protocol_binding import current_planning_protocol
-
         stored = current_planning_protocol(self.store, mission.id)
         body = package.package
         protocol = body.get("planning_protocol")
@@ -4952,7 +5060,7 @@ class Orchestrator:
             created_at=intent.created_at,
             intent_id=intent.intent_id,
         )
-        decisions = PlanningDecisionStore(self.store)
+        decisions = planning_decision_store.PlanningDecisionStore(self.store)
         if request_id is None or request_id == intent.intent_id:
             decisions.insert_planning_request(binding)
             return
@@ -5003,14 +5111,12 @@ class Orchestrator:
         """
 
         del new_mode
-        from ..contracts.planning_decisions import PlanningDecisionStatus
-        from ..storage.planning_decision_store import PlanningDecisionStore
 
         existing = self.store.get_intent_for_subject(f"{mission.id}:planner:{ordinal}")
         if existing is not None and existing.config.get("planning_decision_attempt_ordinal") == 1:
-            bound = PlanningDecisionStore(self.store).get_planning_request_for_intent(
-                existing.intent_id
-            )
+            bound = planning_decision_store.PlanningDecisionStore(
+                self.store
+            ).get_planning_request_for_intent(existing.intent_id)
             if bound is None:
                 raise ContractError("format retry lost its original planning request")
             return bound.request_id
@@ -5019,7 +5125,7 @@ class Orchestrator:
         opener = self.store.get_intent_for_subject(f"{mission.id}:planner:{ordinal - 1}")
         if opener is None or self._planning_decision_attempt_ordinal(opener) != 0:
             return None
-        decisions = PlanningDecisionStore(self.store)
+        decisions = planning_decision_store.PlanningDecisionStore(self.store)
         binding = decisions.get_planning_request(opener.intent_id)
         if binding is None:
             return None
@@ -5063,20 +5169,6 @@ class Orchestrator:
     ) -> Any:
         """Assemble admission from the request snapshot and the live HTN world."""
 
-        from ..contracts.htn import MethodRef, MethodRegistryStatus
-        from ..contracts.planning_decisions import (
-            ENABLED_DECISIONS,
-            PlanningRefKind,
-            PlanningRefV1,
-        )
-        from ..governance.planning_authorization import (
-            SourceUnavailable as AuthoritySourceUnavailable,
-        )
-        from ..governance.planning_authorization import (
-            StorePlanningAuthorityReader,
-            build_planning_authorization,
-            planning_policy_for_mission,
-        )
         from ..orchestrator.plan_commits import PlanPrincipal
         from ..planning.decision_admission import (
             AdmissionContext,
@@ -5089,32 +5181,15 @@ class Orchestrator:
             PlanningRetryBudgetView,
             PlanShapeView,
         )
-        from ..planning.decision_codec import allocate_decision_id, hash_raw_output
-        from ..planning.htn.registry import iter_predicates
-        from ..runtime.planning_operations import (
-            SourceUnavailable as OperationSourceUnavailable,
-        )
-        from ..runtime.planning_operations import (
-            StoreOperationReader,
-            build_operation_snapshot,
-        )
-        from ..storage.planning_admission_store import PlanningAdmissionStore
-        from ..storage.planning_decision_store import PlanningDecisionStore
-        from .assurance_point_use import planning_evidence_stale
-        from .planning_protocol_binding import current_planning_protocol
 
         body = intent.config.get("planning_package")
         if not isinstance(body, Mapping):
             raise ContractError("planning intent has no sealed planning package")
-        decision_store = PlanningDecisionStore(self.store)
+        decision_store = planning_decision_store.PlanningDecisionStore(self.store)
         request = decision_store.get_planning_request_for_intent(intent.intent_id)
         if request is None:
             raise ContractError(f"planning request {intent.intent_id!r} is not persisted")
         current_planning_protocol(self.store, mission.id)
-
-        from ..planning.htn.planner_package import (
-            package_hash,
-        )
 
         network = new_mode.network(mission.id)
         world = new_mode.require_planning_world()
@@ -5123,8 +5198,6 @@ class Orchestrator:
         # readers themselves also use ``read_view``; Store joins that nested view to
         # this connection, so the two snapshots cannot straddle a concurrent write.
         with self.store.read_view():
-            from .planning_runtime_block import resume_source_current
-
             if not resume_source_current(self, intent, mission):
                 return AuthoritySourceUnavailable(
                     "runtime_resume_binding", "runtime wake or its authoritative sources changed"
@@ -5143,9 +5216,11 @@ class Orchestrator:
                 and request_authority_binding.get("planner_principal_id")
                 else (intent.agent_id or self._owner)
             )
-            authority = build_planning_authorization(
+            authority = planning_authorization.build_planning_authorization(
                 request.request_id,
-                read=StorePlanningAuthorityReader(PlanningAdmissionStore(self.store), self.store),
+                read=planning_authorization.StorePlanningAuthorityReader(
+                    PlanningAdmissionStore(self.store), self.store
+                ),
                 caller=PlanPrincipal(
                     # The authority is bound to the durable planning request, not
                     # to the executor lease assigned to a particular retry intent.
@@ -5154,16 +5229,16 @@ class Orchestrator:
                     principal_id=bound_planner,
                     scope_id="mission",
                 ),
-                policy=planning_policy_for_mission(self.store, mission.id),
+                policy=planning_authorization.planning_policy_for_mission(self.store, mission.id),
                 now_ms=int(self.store.now * 1000),
             )
             if isinstance(authority, AuthoritySourceUnavailable):
                 return authority
             if include_plan_sources:
                 try:
-                    operation_snapshot = build_operation_snapshot(
+                    operation_snapshot = planning_operations.build_operation_snapshot(
                         mission.id,
-                        reader=StoreOperationReader(self.store),
+                        reader=planning_operations.StoreOperationReader(self.store),
                         now_ms=int(self.store.now * 1000),
                     )
                 except OperationSourceUnavailable as error:
@@ -5309,7 +5384,6 @@ class Orchestrator:
         protocol = body.get("planning_protocol")
         # 2026-09-25: the package lists decision types and repair kinds separately;
         # admission keys rows as ``REPAIR/<kind>``, so translate back here (once).
-        from ..contracts.planning_decisions import internal_enablement_keys
 
         enabled = (
             internal_enablement_keys(
@@ -5325,11 +5399,8 @@ class Orchestrator:
         latest = new_mode.semantics().latest_requirements_revision(mission.id)
         current_package_hash = package_hash(body)
         prompt = self._hierarchical_planner_template(mission.id)
-        from .planning_evidence import evidence_authority
 
         evidence_observers, evidence_authorized = evidence_authority(world, authority)
-        from ..contracts.htn import ObligationId
-        from ..storage.obligation_store import ObligationStore
 
         duties = ObligationStore(self.store)
         open_duties = {
@@ -5413,8 +5484,6 @@ class Orchestrator:
         ``current_planning_protocol``, not served on other words.
         """
 
-        from .planning_protocol_binding import current_planning_protocol
-
         current_planning_protocol(self.store, mission_id)
         return PLANNER_HIERARCHICAL
 
@@ -5428,11 +5497,6 @@ class Orchestrator:
         choice made for the other mode and is replaced by the domain's hierarchical
         Worker.
         """
-
-        from ..runtime.role_templates import (
-            hierarchical_worker_for_domain,
-            hierarchical_worker_versions,
-        )
 
         if role.name != "worker":
             return role
@@ -5471,7 +5535,6 @@ class Orchestrator:
             mission=mission, new_mode=new_mode, ordinal=ordinal
         )
         retry_package_frozen = False
-        from .planning_backend_runtime import bind_deployment
 
         bind_deployment(self, mission_id)
         # A format retry keeps the request identity and all request facts frozen;
@@ -5499,12 +5562,10 @@ class Orchestrator:
             # rejection event and H3's durable selection ledger may change what a
             # fresh collector would render, so rehydrate the opener package and
             # provider message before rebinding the retry intent.
-            from ..context.context_builder import TaskPackage
-            from ..storage.planning_decision_store import PlanningDecisionStore
 
-            opener_binding = PlanningDecisionStore(self.store).get_planning_request(
-                retry_request_id
-            )
+            opener_binding = planning_decision_store.PlanningDecisionStore(
+                self.store
+            ).get_planning_request(retry_request_id)
             opener = (
                 None if opener_binding is None else self.store.get_intent(opener_binding.intent_id)
             )
@@ -5541,13 +5602,11 @@ class Orchestrator:
         if retry_package_frozen and retry_request_id is not None:
             # 2026-09-30 格式三件：同一请求的格式重试原来一字不差重发原消息，模型不知道错在
             # 哪、照样再错。包仍冻结不变（请求事实不动）；只在消息末尾附上上一次的字段路径反馈。
-            from ..planning.decision_feedback import feedback_from_decision
-            from ..storage.planning_decision_store import PlanningDecisionStore
 
             feedback = feedback_from_decision(
-                PlanningDecisionStore(self.store).get_planning_decision_by_attempt(
-                    retry_request_id, 0
-                ),
+                planning_decision_store.PlanningDecisionStore(
+                    self.store
+                ).get_planning_decision_by_attempt(retry_request_id, 0),
                 budgets=self._planning_retry_budgets(mission, format_retries=0),
             )
             if feedback is not None:
@@ -5556,12 +5615,10 @@ class Orchestrator:
                     + json.dumps(feedback.to_json(), ensure_ascii=False, sort_keys=True)
                     + "\n按 problems 里的 field_path 改正，重新输出完整的 <planning_decision> 块。"
                 )
-        from .planning_selection import infrastructure_retry
 
         native_decision = infrastructure_retry(package.package)
         message = user_message_json(package_text)
         subject = f"{mission_id}:planner:{ordinal}"
-        from .planning_runtime_block import planner_binding
 
         intent = self.commit.create_service_intent(
             kind="plan",
@@ -5605,11 +5662,6 @@ class Orchestrator:
             # 推后第 1 批 A26：把知识与核对过的摘要当事实交给规划器，就是一次 PLAN 使用——同一事务里
             # 签证书；签不出（证据此刻不当前、时钟不可信、授权变了）这一轮不开，回滚后下一轮重来。
             # 格式重试沿用开头那次请求冻结的包，它的回复照样在准入时复核这张证书的证据。
-            from .assurance_point_use import (
-                PLANNING_REQUEST_CONSUMER,
-                planning_claims,
-                require_point_use_locked,
-            )
 
             require_point_use_locked(
                 self.commit,
@@ -5634,8 +5686,6 @@ class Orchestrator:
         """ORCH §4.3 steps 2–3 with the identity frozen in the intent (D5')."""
 
         self._require_assurance_execution_root()
-        from ..assurance.codec import AssuranceError
-        from .assurance_review_transport import require_review_handoff
 
         try:
             require_review_handoff(self.commit, intent)
@@ -5645,7 +5695,6 @@ class Orchestrator:
         mission = self.store.get_mission(intent.mission_id)
         if mission is not None and self._assembly_missing(mission, at="dispatch"):
             return False
-        from .planning_runtime_block import blocks_intent, resume_source_current
 
         if blocks_intent(self.store, intent):
             return False
@@ -5655,15 +5704,15 @@ class Orchestrator:
             and not resume_source_current(self, intent, mission)
         ):
             return False
-        from ..storage.planning_human_store import PlanningHumanStore
 
-        if intent.kind != "critic" and PlanningHumanStore(self.store).pending(intent.mission_id):
+        if intent.kind != "critic" and planning_human_store.PlanningHumanStore(self.store).pending(
+            intent.mission_id
+        ):
             # Existing handed-off work is collected normally; do not start another
             # plan or Worker while a blocking human question is pending.
             return False
         if intent.kind == "critic" and self._critic_subject_stopped(intent):
             return await self._collect_stopped_critic(intent)
-        from ..storage.store import StoreError
 
         try:
             with self.store.read_view():
@@ -5677,9 +5726,8 @@ class Orchestrator:
         except StoreError:
             self._note(f"intent {intent.intent_id}: TaskGraph handoff is currently blocked")
             return False
-        from .planning_selection import awaits_authority
 
-        if awaits_authority(self.store, intent):
+        if planning_selection.awaits_authority(self.store, intent):
             return False
         if intent.config.get("native_planning_decision") is None and self._pool_missing(intent):
             return False
@@ -5691,8 +5739,6 @@ class Orchestrator:
             return False
         config = claimed.config
         if config.get("native_planning_decision") is not None:
-            from .planning_selection import dispatch_local
-
             return await dispatch_local(self, claimed)
         if claimed.kind == "attempt":
             attempt = self.store.get_attempt(claimed.subject_id)
@@ -5719,7 +5765,6 @@ class Orchestrator:
             except AssuranceError as error:
                 self._note(f"intent {claimed.intent_id}: Assurance create waits ({error.code})")
                 return False
-            from simple_harness.agents.arp.errors import ArpError
 
             try:
                 agent_id, _run_id, _ = await self.bridge_for(claimed).create(
@@ -5792,7 +5837,6 @@ class Orchestrator:
         domain = self.commit.domain_for(mission_id)
         if not domain.source_roots:
             return {}
-        from ..verification.evidence_resolver import in_source_roots
 
         # Only what the reader will accept is frozen: registered rows outside the
         # domain's source roots (e.g. Assurance review output) are not Mission sources.
@@ -5817,7 +5861,6 @@ class Orchestrator:
     def _current_source_files(self, mission: Mission) -> dict[str, bytes]:
         """The Mission's registered sources at their current versions, read back from the
         CAS: what the judgment tree carries alongside the accepted outputs."""
-        from ..verification.evidence_resolver import EvidenceResolver, in_source_roots
 
         roots = tuple(self.commit.domain_for(mission.id).source_roots)
         rows = [
@@ -5844,7 +5887,6 @@ class Orchestrator:
         return files
 
     def _source_files(self, attempt: Attempt) -> dict[str, bytes]:
-        from ..verification.evidence_resolver import EvidenceResolver
 
         binding = self._frozen_source_binding(attempt)
         versions = binding.get("source_versions", {})
@@ -5872,8 +5914,6 @@ class Orchestrator:
         self._require_assurance_execution_root()
         if binding.view != "work":
             return
-        from ..storage.store import StoreError
-        from ..storage.taskgraph_store import require_bound
 
         with self.store.read_view():
             attempt = self.store.get_attempt(binding.attempt_id)
@@ -5888,7 +5928,6 @@ class Orchestrator:
             self.commit.require_taskgraph_handoff(intent)
 
     def _taskgraph_mount_rules(self, attempt: Attempt) -> Any:
-        from ..artifacts.taskgraph_inputs import decode_target_rules
 
         self.commit.taskgraph_attempt_context(attempt.mission_id, attempt.id)
         intent = self.store.get_intent_for_subject(attempt.id)
@@ -5903,13 +5942,11 @@ class Orchestrator:
         previous = None
         if attempt.retry_of is not None:
             previous = self.assembled.workspaces.root / attempt.retry_of
-        from .taskgraph_materialization import require_mounts, verify_materialized
 
         graph_rules = self._taskgraph_mount_rules(attempt)
         upstream = self._upstream_inputs(attempt)
         require_mounts(upstream, graph_rules)
         taskgraph_context = self.commit.taskgraph_attempt_context(attempt.mission_id, attempt.id)
-        from ..artifacts.versioning import manifest_upstream_inputs
 
         manifest_paths = {
             item.path
@@ -6011,8 +6048,6 @@ class Orchestrator:
         except WorkspaceError as error:  # P3.2 D3: e.g. a symlink in the previous tree
             raise ArtifactConflict(str(error)) from error
         if building:
-            from ..artifacts.versioning import materialise_v2
-
             context = taskgraph_context
             artifacts = {}
             # 第三批：交付绑定与端口绑定一样物化（同一份清单、同一道身份复核）
@@ -6140,8 +6175,6 @@ class Orchestrator:
         rules = self._taskgraph_mount_rules(attempt)
         additional = self._source_files(attempt)
         if rules is not None:
-            from .taskgraph_materialization import require_mounts
-
             require_mounts(
                 [
                     UpstreamInput("frozen", path, sha256_hex_text(data), "frozen")
@@ -6364,8 +6397,6 @@ class Orchestrator:
         self._note_turn_health(intent, result)
         self._fault("after_turn_committed", intent.kind)
         if intent.config.get("assurance_protocol") == "assurance-exec-v1.1":
-            from .assurance_review_collect import collect_assurance_review
-
             await collect_assurance_review(self, intent)
             self.assembled.gateway.unbind(intent.agent_id)
         elif intent.kind == "plan":
@@ -6386,7 +6417,6 @@ class Orchestrator:
             return False
         if intent.config.get("carried_requirements_revision") is not None:
             # 第四批：重审已验收的结果——原尝试早已结束，看任务是否还在现行计划里
-            from .assurance_review_import import carried_review_alive
 
             return not carried_review_alive(self.store, intent.mission_id, attempt.task_id)
         task = self.store.get_task(attempt.task_id)
@@ -6448,19 +6478,16 @@ class Orchestrator:
                     return True
             return False
         if result is None:
-            from ..runtime.planning_operations import SourceUnavailable
-            from .taskgraph_runtime_imports import TaskGraphRuntimeImports
-
             try:
-                source = TaskGraphRuntimeImports(self).read_subject(intent)
+                source = taskgraph_runtime_imports.TaskGraphRuntimeImports(self).read_subject(
+                    intent
+                )
                 self.commit.import_usage(intent.subject_id, intent.mission_id, source.usage)
             except (SourceUnavailable, BudgetError, ContractError, ValueError):
                 return False  # retain its original late-result collection identity
             if not source.accounting_complete or not source.physical_settled:
                 return False
         if result is not None and intent.config.get("assurance_protocol") == "assurance-exec-v1.1":
-            from .assurance_review_collect import collect_assurance_review
-
             await collect_assurance_review(self, intent)
             self.assembled.gateway.unbind(intent.agent_id)
             return True
@@ -6693,7 +6720,6 @@ class Orchestrator:
             # session, its own call key is re-read.  A result that turned up is collected,
             # not re-asked (one more window); otherwise the record says what the check found
             # and which call the fresh session stands in for.
-            from ..runtime.provider_budget_guard import resend_record
 
             check = self._unknown_handoff_check(intent)
             if (
@@ -6712,7 +6738,6 @@ class Orchestrator:
                 "handoff_check": check.to_json(),
                 "resend": resend_record(check, ordinal=None),
             }
-        from .assurance_review_collect import abandon_assurance_review
 
         await abandon_assurance_review(self, intent, detail=overdue)
         self._review_call_marks.pop(intent.intent_id, None)
@@ -6780,8 +6805,6 @@ class Orchestrator:
         self.commit.settle_intent(intent.intent_id, state)
 
     def _import_usage(self, intent: DispatchIntent) -> None:
-        from ..storage.taskgraph_store import require_bound
-        from .taskgraph_runtime_imports import TaskGraphRuntimeImports
 
         require_bound(self.store, intent.mission_id)
         # Read the latest control row but retain all original executor/input
@@ -6789,7 +6812,7 @@ class Orchestrator:
         current = self.store.get_intent(intent.intent_id)
         if current is None:
             raise BudgetError("ORIGINAL_ACCOUNTING_INTENT_MISSING")
-        source = TaskGraphRuntimeImports(self).read_subject(current)
+        source = taskgraph_runtime_imports.TaskGraphRuntimeImports(self).read_subject(current)
         self.commit.import_usage(current.subject_id, current.mission_id, source.usage)
 
     def _reimport_unsettled(self, mission: Mission) -> None:
@@ -6874,9 +6897,6 @@ class Orchestrator:
         did not change in anything but the revision (TaskGraph 补全第 8a 条): the
         verification started under the old revision is dropped and the same result is
         verified again next round under the current scope — not set aside."""
-
-        from .completion_inputs import load_completion_result_inputs
-        from .operation_completion import OperationCompletionError
 
         stored = self.store.get_result(result_id)
         if stored is None:
@@ -7047,7 +7067,6 @@ class Orchestrator:
         new_mode = self._new_mode(mission)
         if new_mode is None:
             return False
-        from ..contracts.htn import TaskForm
 
         try:
             network = new_mode.network(mission.id)
@@ -7077,7 +7096,6 @@ class Orchestrator:
         new_mode = self._new_mode(mission)
         if new_mode is None:
             return
-        from .planning_repair_requests import record_request
 
         # This hook receives an original durable failure. It opens a request; it
         # must never invent RETRY_SAME_METHOD on behalf of a model.
@@ -7101,8 +7119,6 @@ class Orchestrator:
         assert mission is not None
         self._import_usage(intent)
         if intent.config.get("assurance_protocol") == "assurance-exec-v1.1":
-            from .assurance_review_collect import collect_assurance_review
-
             await collect_assurance_review(self, intent)
             self.assembled.gateway.unbind(intent.agent_id)
             return
@@ -7157,7 +7173,6 @@ class Orchestrator:
     def submit_operation_intent(
         self, command: Any, *, tenant_id: str, principal: Any
     ) -> dict[str, Any]:
-        from .operation_runtime import ensure_operation_runtime
 
         ensure_operation_runtime(self)
         return self.commit.submit_operation_intent(
@@ -7245,7 +7260,6 @@ class Orchestrator:
     def _awaiting_retry_decision(self, mission_id: str, task: Any) -> bool:
         """An ACTIVE leaf whose latest attempt ended failed and that waits for the
         planner's retry decision: nothing of it is running."""
-        from .planning_retry import retry_decision_required
 
         return task.status is TaskStatus.ACTIVE and retry_decision_required(
             self.store, mission_id, task.id
@@ -7254,7 +7268,6 @@ class Orchestrator:
     def _repair_still_owed(self, mission_id: str) -> bool:
         """A repair is still owed to this Mission: an unaddressed repair request, or a
         leaf waiting for a retry decision that only a planning round can give."""
-        from .planning_repair_requests import pending_requests
 
         if pending_requests(self.store, mission_id):
             return True
@@ -7271,13 +7284,10 @@ class Orchestrator:
     def _method_proposals_remaining(self, mission: Mission, new_mode: HierarchicalDispatch) -> int:
         """How many more methods the Planner may propose for the goals still open."""
 
-        from .planning_method_proposal import MAX_METHOD_PROPOSALS_PER_GOAL, proposals_for
-
         try:
             network = new_mode.network(mission.id)
         except (GraphIntegrityError, ContractError, StoreError):
             return 0
-        from ..contracts.htn import TaskForm
 
         open_goals = [
             str(spec.task_id)
@@ -7306,8 +7316,6 @@ class Orchestrator:
         """
 
         if result.state is not AgentTurnState.COMMITTED:
-            from .failure_classes import output_exhausted
-
             if output_exhausted(result.error):
                 # 2026-10-09：思考写满输出、没有正文，不是服务出错，是模型这一轮没完成——按一条
                 # 空回复评估（读不懂、扣答错次数、事实进下一问的 previous_feedback），不走服务故障宽限。
@@ -7333,54 +7341,6 @@ class Orchestrator:
         new_mode: HierarchicalDispatch,
     ) -> None:
         """Evaluate one new-protocol reply and bridge executable decisions to HTN."""
-
-        from ..contracts.htn import PlanProposal
-        from ..contracts.planning_decisions import (
-            PlanningDecisionRejectionCode,
-            PlanningDecisionStatus,
-            PlanningDecisionType,
-        )
-        from ..governance.planning_authorization import (
-            SourceUnavailable as AuthoritySourceUnavailable,
-        )
-        from ..orchestrator.planning_admission_commits import PlanningCommitAdmission
-        from ..planning.decision_adapter import (
-            AdapterContext,
-            adapt_admitted_decision,
-            adapt_for_preview,
-        )
-        from ..planning.decision_admission import (
-            AdmittedPlanningDecision,
-            DecisionAdmissionContext,
-            NoMutationDecision,
-            PlanShapeView,
-            PreAdmittedPlanningDecision,
-            admit_planning_decision,
-            pre_admit_planning_decision,
-        )
-        from ..planning.decision_codec import (
-            PlanningDecisionCodecError,
-            allocate_decision_id,
-            canonical_decision_hash,
-            canonical_decision_json,
-            hash_raw_output,
-            parse_planning_decision,
-        )
-        from ..planning.plan_preview import (
-            CandidatePreview,
-            PreviewInputs,
-            PreviewUnavailable,
-            _source_snapshot_payload,
-        )
-        from ..runtime.planning_operations import (
-            SourceUnavailable as RuntimeSourceUnavailable,
-        )
-        from ..runtime.planning_operations import (
-            StoreOperationReader,
-            read_running_work,
-        )
-        from ..storage.planning_decision_store import PlanningDecisionStore
-        from .failure_classes import output_exhausted, output_exhausted_fact
 
         # 规划器这一轮因输出上限停止（没有正文）：评估的是一条空回复，事实替代"没找到决定块"
         # （系统自己发起的原样重做没有模型回合，result 为 None）
@@ -7410,9 +7370,8 @@ class Orchestrator:
             except ValueError:
                 return str(PlanningDecisionRejectionCode.INTERNAL_CONTRACT_ERROR)
 
-        store = PlanningDecisionStore(self.store)
+        store = planning_decision_store.PlanningDecisionStore(self.store)
         record_decision = store.record_planning_decision
-        from .planning_protocol_binding import current_planning_protocol
 
         current_planning_protocol(self.store, mission.id)
         binding = store.get_planning_request_for_intent(intent.intent_id)
@@ -7448,8 +7407,6 @@ class Orchestrator:
                 return
 
         if existing is not None and existing["status"] == str(PlanningDecisionStatus.COMPILED):
-            from ..graph.execution_contracts import PreviewBindingV1
-
             held = PreviewBindingV1.from_json(existing.get("detail", {}).get("taskgraph_preview"))
             if held.required_convergence_ids:
                 if new_mode._taskgraph_preview is None or len(held.required_convergence_ids) != 1:
@@ -7536,7 +7493,6 @@ class Orchestrator:
         autofilled: list[str] = []
 
         def evaluated(status: PlanningDecisionStatus, **payload: Any) -> None:
-            from .planning_repair_requests import address_requests
 
             address_requests(
                 self.store,
@@ -7547,7 +7503,6 @@ class Orchestrator:
                 status=str(status),
                 subject_key=decoded_subject_key,
             )
-            from .planning_runtime_block import resolve_after_decision
 
             resolve_after_decision(
                 self,
@@ -7556,7 +7511,6 @@ class Orchestrator:
                 decision_type=str(payload.get("decision_type") or ""),
                 decision_id=decision_id,
             )
-            from .planning_selection import SYSTEM_RETRY_ORIGIN
 
             payload.setdefault(
                 "decision_origin",
@@ -7586,8 +7540,6 @@ class Orchestrator:
             )
 
         try:
-            from ..planning.decision_feedback import package_filler
-
             decision = parse_planning_decision(
                 text,
                 request_id=request_id,
@@ -7741,13 +7693,10 @@ class Orchestrator:
             ),
             for_repair_preview=True,
         )
-        from ..contracts.planning_decisions import RepairRuntimeBlockedDecision
 
         if isinstance(pre_admitted, PreAdmittedPlanningDecision) and isinstance(
             decision.payload, RepairRuntimeBlockedDecision
         ):
-            from .planning_runtime_block import register_block
-
             try:
                 with self.store.transaction():
                     current = self._hierarchical_admission_context(
@@ -7816,13 +7765,10 @@ class Orchestrator:
                     self._settle_service_if_known(intent.subject_id, mission.id)
                 await reject_planning(intent, reason="proposal_not_grounded", detail=detail)
             return
-        from ..contracts.planning_decisions import RepairRetrySameMethodDecision
 
         if isinstance(pre_admitted, PreAdmittedPlanningDecision) and isinstance(
             decision.payload, RepairRetrySameMethodDecision
         ):
-            from ..runtime.planning_operations import SourceUnavailable as RetrySourceUnavailable
-
             try:
                 with self.store.transaction():
                     current = self._hierarchical_admission_context(
@@ -7837,7 +7783,6 @@ class Orchestrator:
                     checked = pre_admit_planning_decision(decision, context=current)
                     if not isinstance(checked, PreAdmittedPlanningDecision):
                         raise ContractError("retry decision is no longer admitted")
-                    from ..planning.htn.planner_package import attempt_is_indexed
 
                     if not attempt_is_indexed(
                         intent.config.get("planning_package") or {},
@@ -7904,19 +7849,6 @@ class Orchestrator:
             PlanningDecisionType.PROPOSE_METHOD,
             PlanningDecisionType.READ_METHOD_LIBRARY,
         }:
-            from ..contracts.planning_decisions import (
-                ProposeMethodDecision,
-                ReadMethodLibraryDecision,
-                RequestHumanDecision,
-            )
-            from .planning_method_proposal import (
-                decode_proposal,
-                persist_method,
-                prepare_method,
-                proposal_origin,
-                read_library,
-            )
-
             prepared_method = None
             try:
                 with self.store.transaction():
@@ -7965,8 +7897,6 @@ class Orchestrator:
                         event_type = "PlanningMethodProposed"
                         # BW03: the admitted draft gets its independent METHOD_PLAN
                         # review on the round transport, authored by this intent.
-                        from ..assurance.codec import AssuranceError
-                        from ..assurance.refs import Pin as AssurancePin
 
                         if self._assurance_reviews is None:
                             raise ContractError(
@@ -8038,7 +7968,6 @@ class Orchestrator:
                     "proposal_not_grounded",
                     {"error": str(error)},
                 )
-                from .planning_method_proposal import MethodProposalRefused
 
                 if isinstance(error, MethodProposalRefused):
                     # 片 A 第 5 项：被拒的做法草案把每条可修正的问题原样列出。
@@ -8054,7 +7983,6 @@ class Orchestrator:
                         "assurance_purpose": error.purpose,
                         "assurance_error": error.code,
                     }
-                    from .assurance_review_runtime import REVIEW_ROUTE_UNAVAILABLE
 
                     if error.code == REVIEW_ROUTE_UNAVAILABLE:
                         # A provider outage, not a wrong answer: it uses the service-failure
@@ -8092,9 +8020,6 @@ class Orchestrator:
             isinstance(pre_admitted, PreAdmittedPlanningDecision)
             and decision.decision_type is PlanningDecisionType.REQUEST_EVIDENCE
         ):
-            from ..contracts.planning_decisions import RequestEvidenceDecision
-            from .planning_evidence import observe_questions, persist_questions, prepare_questions
-
             assert isinstance(decision.payload, RequestEvidenceDecision)
             try:
                 world = new_mode.require_planning_world()
@@ -8276,7 +8201,7 @@ class Orchestrator:
                 return
             return
         admitted: AdmittedPlanningDecision | Any
-        preview_candidate: CandidatePreview | None = None
+        preview_candidate: plan_preview.CandidatePreview | None = None
         planning_commit_admission: PlanningCommitAdmission | None = None
         if isinstance(pre_admitted, PreAdmittedPlanningDecision):
             adapter_context = AdapterContext.from_admission_context(context)
@@ -8315,9 +8240,6 @@ class Orchestrator:
                     raise ContractError(f"SOURCE_UNAVAILABLE: {error}") from error
                 world = new_mode.require_planning_world()
                 network = new_mode.network(mission.id)
-                from ..contracts.htn import GraphStructureBudget
-                from ..storage.taskgraph_store import require_bound
-                from .taskgraph_policy import read_installed_graph_policy
 
                 require_bound(self.store, mission.id)
                 preview_budget = GraphStructureBudget.from_json(
@@ -8337,12 +8259,6 @@ class Orchestrator:
                 taskgraph_sources = new_mode._taskgraph_preview.capture(
                     request_id, decision_id, source_principal
                 )
-                from ..contracts.htn import (
-                    CancelBranchOperation,
-                    ProposeSuccessorOperation,
-                    RebindInputOperation,
-                )
-                from .repair_impact import read_repair_impact_indexes
 
                 graph_mutation = any(
                     isinstance(
@@ -8350,12 +8266,12 @@ class Orchestrator:
                     )
                     for op in proposal.operations
                 )
-                frozen_inputs = PreviewInputs(
+                frozen_inputs = plan_preview.PreviewInputs(
                     decision_id=decision_id,
                     decision_hash=canonical_hash,
                     request_id=request_id,
                     source_plan_revision=int(network.plan_revision),
-                    source_network_hash=sha256_hex(_source_snapshot_payload(network)),
+                    source_network_hash=sha256_hex(plan_preview._source_snapshot_payload(network)),
                     proposal=proposal,
                     network=network,
                     registry=world.registry,
@@ -8377,7 +8293,7 @@ class Orchestrator:
                     **self._preview_read_facts(mission.id),
                 )
             preview = new_mode.preview_plan_proposal(proposal, inputs=frozen_inputs)
-            if isinstance(preview, PreviewUnavailable):
+            if isinstance(preview, plan_preview.PreviewUnavailable):
                 try:
                     preview_codes = tuple(
                         str(PlanningDecisionRejectionCode(code)) for code in preview.mapped_problems
@@ -8418,7 +8334,7 @@ class Orchestrator:
                     detail={"preview": detail},
                 )
                 return
-            if not isinstance(preview, CandidatePreview):
+            if not isinstance(preview, plan_preview.CandidatePreview):
                 raise ContractError("SOURCE_UNAVAILABLE: preview did not return a typed candidate")
             preview_candidate = preview
             if context.authorization.planning_snapshot is None:
@@ -8427,7 +8343,6 @@ class Orchestrator:
                 )
             if context.operations.snapshot is None:
                 raise ContractError("SOURCE_UNAVAILABLE: preview has no operation snapshot")
-            from ..planning.decision_admission import _enablement_key
 
             decision_key = _enablement_key(decision)
             planning_commit_admission = PlanningCommitAdmission(
@@ -8507,7 +8422,6 @@ class Orchestrator:
             planning_commit_admission = replace(
                 planning_commit_admission, taskgraph_candidate=frozen_graph
             )
-            from ..graph.planning_scope import planning_convergence_scope
 
             context = replace(
                 context,
@@ -8616,16 +8530,12 @@ class Orchestrator:
                         self._settle_intent(intent, "SETTLED")
                         self._settle_service_if_known(intent.subject_id, mission.id)
                         return
-            from .planning_backend_runtime import bind_deployment
 
             bind_deployment(self, mission.id)
             solver_lane = None
             solver_snapshot = None
             solver_result = None
             if self._config.planning_backend is not None:
-                from ..planning.htn.backend_port import BackendStatus
-                from .planning_backend_runtime import solve_decision
-
                 solver_lane = new_mode.solver_preview_lane(
                     mission.id,
                     outcome.proposal,
@@ -8639,7 +8549,7 @@ class Orchestrator:
                     ),
                     source={"intent_id": intent.intent_id, "agent_id": intent.agent_id},
                 )
-                solver_snapshot, solver_result = await solve_decision(
+                solver_snapshot, solver_result = await planning_backend_runtime.solve_decision(
                     self, mission_id=mission.id, decision_id=decision_id, lane=solver_lane
                 )
                 if solver_result.status is not BackendStatus.SOLVED:
@@ -8648,9 +8558,6 @@ class Orchestrator:
                     )
             with self.store.transaction():
                 if solver_lane is not None:
-                    from ..planning.htn.backend_port import PlanningBackendBridge
-                    from .hierarchical_dispatch import PlanRoundOutcome
-
                     assert solver_result is not None and solver_snapshot is not None
                     receipt = PlanningBackendBridge(solver_lane).commit(
                         solver_result, snapshot=solver_snapshot
@@ -9170,7 +9077,6 @@ class Orchestrator:
                     f"attempt {attempt.id}: unified diff {error.path} {error.reason} → RETRY_WAIT"
                 )
                 return
-        from .operation_completion import OperationCompletionError
 
         try:
             self.commit.record_result(
@@ -9228,12 +9134,9 @@ class Orchestrator:
         # the files this Attempt actually wrote — so a bad claim is a bounded repair
         # on the same Attempt rather than a wrong artifact bound downstream.
         claims = self._port_claims_from(raw, attempt)
-        from . import resource_requests
 
         resource_request = resource_requests.pop_request(raw)  # H10: shape errors are ContractError
         if isinstance(raw.get("artifacts"), list):
-            from ..runtime.action_schema import with_candidate_targets
-
             raw["artifacts"] = with_candidate_targets(
                 raw["artifacts"], self.assembled.workspaces.get(attempt.id)
             )
@@ -9445,8 +9348,6 @@ class Orchestrator:
 
         human, reuse, escalation_left = self._human_inputs(result_id, task)
         domain = self.commit.domain_for(mission.id)
-        from ..assurance.codec import AssuranceError
-        from .operation_completion import OperationCompletionError
 
         try:
             local_check_factory = None
@@ -9615,13 +9516,6 @@ class Orchestrator:
         的扫描驱动，不要尝试租约、不建尝试、不调执行者、不动尝试 / 任务 / 产物状态；验证记录与
         验收都按（结果, 要求版本）记。通过 → 按新版要求写一条验收；没过 → 修复请求交规划器
         （``CARRIED_RESULT_REJECTED``）；审阅员两次都判不下来 → 问用户裁决。"""
-        import functools
-
-        from ..assurance.codec import AssuranceError
-        from .assurance_review_import import carried_review_alive
-        from .operation_completion import OperationCompletionError
-        from .resolution_commits import ResolutionCommitRejected
-        from .review_adjudication import adjudication_of
 
         revision = int(item.requirements_revision)
         stored = self.store.get_result(item.result_id)
@@ -9674,7 +9568,6 @@ class Orchestrator:
             )
 
         async def run_critic(test_output: str | None) -> CriticVerdict:
-            from ..runtime.model_router import RoutingUnavailable
 
             try:
                 return await reviews.run_task(
@@ -9772,8 +9665,6 @@ class Orchestrator:
     ) -> bool:
         """The one durable end of a re-review that did not accept: a repair request to the
         Planner (the scan stops on it).  Recorded once per (result, requirements revision)."""
-        from .carried_review import source_key
-        from .planning_repair_requests import record_request
 
         revision = int(item.requirements_revision)
         produced = record_request(
@@ -9812,7 +9703,6 @@ class Orchestrator:
         A round that could not conclude — the plan moved, the reviewer or a checker was
         unavailable, anything unexpected — is retried, at most ``MAX_CARRIED_REVIEW_ERRORS``
         times; then the Planner is told the review could not be done and decides."""
-        from .carried_review import MAX_CARRIED_REVIEW_ERRORS
 
         try:
             done = await self._carried_review_once(item)
@@ -9886,7 +9776,6 @@ class Orchestrator:
                 and stored.envelope.mission_id == task.mission_id
                 else {}
             )
-            from .completion_inputs import frozen_requirements_revision
 
             rows = []
             revision = None if stored is None else frozen_requirements_revision(self.store, stored)
@@ -10013,14 +9902,12 @@ class Orchestrator:
 
     def _action_candidate_outputs(self, mission: Mission, task: Task) -> tuple[str, ...]:
         """See :func:`..runtime.action_schema.declared_action_outputs` (2A.1e/1f)."""
-        from ..runtime.action_schema import declared_action_outputs
 
         return declared_action_outputs(self.store, mission.id, task)
 
     def _worker_action_contract(self, mission: Mission, task: Task) -> dict[str, Any] | None:
         """What the Worker is told about operation candidates, and whether the system
         writes the candidate itself (the same answer for its package and its result)."""
-        from ..runtime.action_schema import worker_action_contract
 
         return worker_action_contract(
             mission_criteria=dict(current_criteria(self.store, mission)),
@@ -10032,9 +9919,8 @@ class Orchestrator:
 
     def _revises_its_inputs(self, mission_id: str, task_id: str) -> bool:
         """Every declared input port is also an output port of the same schema."""
-        from ..storage.htn_store import HtnStore
 
-        binding = HtnStore(self.store).task_semantics_of(mission_id, task_id)
+        binding = htn_store.HtnStore(self.store).task_semantics_of(mission_id, task_id)
         if binding is None or not binding.input_ports:
             return False
         outputs = {(port.port_key, port.schema_ref) for port in binding.output_ports}
@@ -10099,7 +9985,6 @@ class Orchestrator:
         test_output: str | None,
         attempt_id: str | None = None,
     ) -> CriticVerdict:
-        from ..assurance.codec import AssuranceError
 
         if task is None or attempt_id is None or self._assurance_reviews is None:
             raise ContractError("Assurance review builder is not installed for this purpose")
@@ -10239,9 +10124,8 @@ class Orchestrator:
         mission = self.store.get_mission(intent.mission_id)
         if mission is None or mission.status in TERMINAL_MISSION:
             return None
-        from .assurance_review_wait import record_provider_wait
 
-        record_provider_wait(self.commit, intent, liveness)
+        assurance_review_wait.record_provider_wait(self.commit, intent, liveness)
         # Preserve the exact original executor, reservation and UNKNOWN
         # grants. The ordinary collector can still import a later answer.
         # Neither an auth failure nor a business timeout is accounting proof.
@@ -10285,7 +10169,6 @@ class Orchestrator:
             return None  # still waiting: not progress (阶段 B 裁决第 6 类)
         # 第 2 批 A27 (§6.2 "原 intent 由 runtime 核对"): the bound passed — re-read this
         # hand-off's own call key before the round is ended and the ladder asks again.
-        from ..runtime.provider_budget_guard import resend_record
 
         check = self._unknown_handoff_check(intent)
         if check.verdict == "result_known" and key not in self._handoff_known_waits:
@@ -10318,7 +10201,6 @@ class Orchestrator:
     def _unknown_handoff_check(self, intent: DispatchIntent):  # type: ignore[no-untyped-def]
         """第 2 批 A27: re-read the intent's latest hand-off (same invocation, same ordinal)
         in the pool's own runtime ledger.  No runtime to read from leaves it unresolved."""
-        from ..runtime.provider_budget_guard import check_unknown_handoff
 
         try:
             uow = self.bridge_for(intent).runtime.uow
@@ -10554,8 +10436,6 @@ class Orchestrator:
     def _check_resource_request(self, mission: Mission, task: Task, request: Any) -> dict[str, Any]:
         """推后第 3 批 H10：只核数——上限（一次最多再要一份基础额度）与账户链上还没花掉的工具次数。"""
 
-        from .resource_requests import quota_check
-
         room = (
             self._tool_call_room(mission, task)[1]
             if self._tool_calls_limited(mission, task)
@@ -10570,9 +10450,6 @@ class Orchestrator:
         """推后第 3 批 H10：规划器的原样重试许可指向的那次失败尝试带着核过的申请 → 再核一次额度后发放。
 
         额度这时已不够就不发放（记 ``ResourceGrantLapsed``），这次尝试按基础额度开工。"""
-
-        from . import resource_requests
-        from .planning_retry import pending_retry_permit, retry_decision_required
 
         if not retry_decision_required(self.store, mission.id, task.id):
             return None
@@ -10697,8 +10574,6 @@ class Orchestrator:
         版计划没有改动（计划改了版本号就变，这条请求随之过时），才按条件的名字停。规划器还没答、或在
         等人时不停。返回 True 表示这一轮写了事件（记了请求或停了任务）。
         """
-        from . import planning_repair_requests as repair_requests
-        from . import stop_conditions as stop_rules
 
         policy = self._config.deployment_policy
         if not stop_rules.parse_stop_conditions(mission.stop_conditions, policy):
@@ -10807,23 +10682,15 @@ class Orchestrator:
         new_mode = self._new_mode(mission)
         if new_mode is None:
             return False
-        from ..storage.planning_human_store import PlanningHumanStore
 
-        if PlanningHumanStore(self.store).pending(mission.id):
+        if planning_human_store.PlanningHumanStore(self.store).pending(mission.id):
             return False
         tasks = self.store.list_tasks(mission.id)
         if not tasks or mission.status is not MissionStatus.ACTIVE:
             return False
-        from .operation_runtime import (
-            advance_operation_outcomes,
-            dispatch_materialized_operations,
-            ensure_assured_proposal_reviews,
-            recover_materializations,
-        )
 
         if ensure_assured_proposal_reviews(self, mission.id):
             return True
-        from .system_operations import prepare_system_operations
 
         if prepare_system_operations(self, mission.id):
             return True
@@ -10997,8 +10864,6 @@ class Orchestrator:
         would outlive the store handle a restart replaces.
         """
 
-        from .root_review import RootReviewCoordinator
-
         return RootReviewCoordinator(
             self.store,
             self.commit,
@@ -11019,8 +10884,6 @@ class Orchestrator:
         Mission and stops it after one confirming cycle, rather than being retried
         here every cycle on the Mission's own account.
         """
-
-        from .root_review import RootReviewStatus
 
         coordinator = self._root_review(mission, new_mode)
         try:
@@ -11074,9 +10937,6 @@ class Orchestrator:
 
     def _composition_assembly(self, mission: Mission, dispatch: Any) -> Any:
         """The inner-compound resolver with this loop's two assured outlets bound."""
-        from functools import partial
-
-        from .composition_review import CompositionAcceptanceAssembly
 
         return CompositionAcceptanceAssembly(
             self.store,
@@ -11131,9 +10991,8 @@ class Orchestrator:
         2026-10-01（审阅升级具名后续）：真机第 4 局规划器对同一件事连问 13 次直到次数用完。
         带修复上下文的问题（补偿、裁决）各有各的主体，不去重。
         """
-        from ..storage.planning_human_store import PlanningHumanStore
 
-        questions = PlanningHumanStore(self.store)
+        questions = planning_human_store.PlanningHumanStore(self.store)
         binding = {
             "plan_revision": current.plan_revision,
             "requirements_revision": current.requirements_revision,
@@ -11205,8 +11064,6 @@ class Orchestrator:
         走验收失败同一条路（``PlanningRepairRequested``，触发步骤 = 该中间目标），规划器
         在修复轮里拿到审阅员的具体意见；同一份记录只记一次。
         """
-        from .planning_repair_requests import record_request
-        from .review_adjudication import adjudication_of
 
         ruling = adjudication_of(self.store, str(record.record_id))
         produced = record_request(
@@ -11283,9 +11140,8 @@ class Orchestrator:
         """The person was asked to rule and the question was retired unanswered (the plan,
         the requirements or the management epoch changed).  No ruling will come: reported
         to the Planner as "no verdict", once per record, never re-asked by this loop."""
-        from ..storage.planning_human_store import PlanningHumanStore
 
-        row = PlanningHumanStore(self.store).get(decision_id)
+        row = planning_human_store.PlanningHumanStore(self.store).get(decision_id)
         return row is not None and row["state"] == "STALE"
 
     def _ask_person_to_adjudicate(
@@ -11303,11 +11159,8 @@ class Orchestrator:
         """One blocking two-option question per official record; its answer becomes the
         ``AssuranceReviewAdjudicated`` receipt (never a planner round). True when this
         call registered the question or consumed its answer; False while waiting."""
-        from ..contracts.planning_decisions import HumanOptionV1, RequestHumanDecision
-        from ..storage.htn_store import HtnStore
-        from ..storage.planning_human_store import PlanningHumanStore
 
-        questions = PlanningHumanStore(self.store)
+        questions = planning_human_store.PlanningHumanStore(self.store)
         row = questions.get(decision_id)
         if row is None:
             findings = (
@@ -11326,7 +11179,7 @@ class Orchestrator:
                 (HumanOptionV1("pass", "通过"), HumanOptionV1("fail", "打回")),
                 True,
             )
-            htn = HtnStore(self.store)
+            htn = htn_store.HtnStore(self.store)
             plan = htn.active_plan_revision(mission.id)
             requirements = htn.latest_requirements_revision(mission.id)
             with self.store.transaction():
@@ -11414,8 +11267,6 @@ class Orchestrator:
         ``ROOT_REVIEW_REPAIRS_EXHAUSTED`` 停。请求的范围是整个计划——审查的是整个任务，
         任何一步上的计划改动都算处理了它。
         """
-        from .planning_repair_requests import record_request
-        from .review_adjudication import adjudication_of
 
         record, package = getattr(state, "record", None), getattr(state, "package", None)
         limit = int(self._config.max_root_review_repairs)
@@ -11485,8 +11336,6 @@ class Orchestrator:
     def _root_review_request_keys(self, mission_id: str) -> list[str]:
         """The final-review rejections already handed to the Planner, one key per record."""
 
-        from .planning_repair_requests import REQUESTED
-
         return [
             str(event.payload.get("source_key"))
             for event in self.store.iter_events(mission_id)
@@ -11496,8 +11345,6 @@ class Orchestrator:
 
     def _final_review_findings_for_workers(self, mission_id: str) -> list[dict[str, Any]]:
         """The findings of the latest final review that was handed back to the Planner."""
-
-        from .planning_repair_requests import REQUESTED
 
         latest: list[dict[str, Any]] = []
         for event in self.store.iter_events(mission_id):
@@ -11557,7 +11404,6 @@ class Orchestrator:
             "('AssuranceReviewFormatExhausted','AssuranceReviewImportRejected') ORDER BY seq",
             (mission_id,),
         ).fetchall()
-        from .failure_classes import review_exhausted_by_interruption
 
         found = []
         for (raw,) in rows:
@@ -11577,11 +11423,9 @@ class Orchestrator:
         """Inconclusive official records the person was asked to rule on and has not passed:
         ``ruling`` is ``pending`` / ``stale`` / ``fail``.  Read from the questions this loop
         registered (one per record), so every kind of review is reported the same way."""
-        from ..storage.planning_human_store import PlanningHumanStore
-        from .review_adjudication import adjudication_of
 
         found = []
-        for row in PlanningHumanStore(self.store).list(mission_id):
+        for row in planning_human_store.PlanningHumanStore(self.store).list(mission_id):
             decision_id = str(row["decision_id"])
             if not decision_id.startswith("adjudicate-"):
                 continue
@@ -11612,8 +11456,6 @@ class Orchestrator:
         status, the package, the findings the reviewer filed, and how many times the
         Mission was handed back to the Planner for it.
         """
-
-        from .root_review import RootReviewStatus
 
         try:
             state = self._root_review(mission, new_mode).state(mission.id)
@@ -11655,8 +11497,6 @@ class Orchestrator:
         Mission) and none of them is still waiting for the Planner — a request the
         Planner has not answered yet is work in progress, not an exhausted repair.
         """
-
-        from .planning_repair_requests import pending_requests
 
         if int(self._config.max_root_review_repairs) < 1:
             return False
@@ -11771,11 +11611,8 @@ class Orchestrator:
         """Open the Assurance MISSION_FINAL review of the cut package.  Idempotent per
         review package; a package already out for review is not progress."""
 
-        from ..assurance.codec import AssuranceError
-
         if self._assurance_reviews is None:
             raise ContractError("Assurance review builder is not installed for MISSION_FINAL")
-        from .assurance_purpose_reviews import purpose_review_key
 
         review_key = purpose_review_key("MISSION_FINAL", mission.id, str(package.package_id))
         already = (
@@ -12034,11 +11871,9 @@ class Orchestrator:
                 "(§18.5 constraint 4)"
             )
             return False
-        from .planning_runtime_block import pending_block
 
         if pending_block(self.store, mission.id) is not None:
             return False
-        from .planning_retry import pending_retry_permit, retry_decision_required
 
         if (
             retry_decision_required(self.store, mission.id, task.id)
@@ -12181,9 +12016,6 @@ class Orchestrator:
         # 第 2 批车道 H（K04，原计划 §10 第 3 项）：父目标与直接上游从分层网络读——这一步所在做法
         # 细化的目标（原文、它负责的要求原文），与数据边上把产出交给它的生产者（目标、状态、已验收
         # 结论的摘要、交到这一步的产物）。``Task.dependency_ids`` 在分层下恒空，不再按它过滤。
-        from .assurance_point_use import context_claims
-        from .worker_context import parent_goal as read_parent_goal
-        from .worker_context import upstream_steps
 
         try:
             if network is None:
@@ -12222,8 +12054,6 @@ class Orchestrator:
             self._note(f"task {task.id} stopped: worker package refused ({error})")
             return True
         if step_parent is not None:
-            from ..context.context_builder import _seal
-
             # §10 第 3 项的另一半：父目标。与 dependencies（直接上游）一样是数据，不是指令。
             package = _seal({**dict(package.package), "parent_goal": step_parent})
         # P2.3c part 2d, decision 4: tell the leaf which output ports its own
@@ -12233,8 +12063,6 @@ class Orchestrator:
         # the envelope's ``outputs`` may then be omitted.
         declared_ports = new_mode.declared_output_ports_for(mission.id, task.id)
         if declared_ports:
-            from ..context.context_builder import _seal
-
             package = _seal(
                 {
                     **dict(package.package),
@@ -12251,8 +12079,6 @@ class Orchestrator:
         # the root review reads for that criterion.  Absent when it carries none.
         carried = new_mode.carried_root_criteria_for(mission.id, task.id)
         if carried:
-            from ..context.context_builder import _seal
-
             package = _seal(
                 {
                     **dict(package.package),
@@ -12273,8 +12099,6 @@ class Orchestrator:
         # was the Planner's decision and is in the step's own instructions.
         final_review_findings = self._final_review_findings_for_workers(mission.id)
         if final_review_findings:
-            from ..context.context_builder import _seal
-
             package = _seal(
                 {
                     **dict(package.package),
@@ -12289,8 +12113,6 @@ class Orchestrator:
                     },
                 }
             )
-        from ..context.context_builder import _seal
-        from .scoped_content_review import task_content_prompt_scope
 
         content_scope = task_content_prompt_scope(self.store, mission.id, task.id)
         # The Task contract is a durable document-assessment identity. Keep it
@@ -12448,8 +12270,6 @@ class Orchestrator:
                 context_evidence=context_claims(knowledge, upstream),
             )
         except CommitRejected as error:
-            from .commit_service import NonModelFailuresExhausted
-
             if isinstance(error, NonModelFailuresExhausted):
                 # 2026-09-28：格式、服务、打断这类不扣次数的失败同一步已到上限——多半是服务
                 # 或格式本身有问题，停下这一步并写明，不无限重做。
@@ -12588,7 +12408,6 @@ class Orchestrator:
             detail={"artifacts": sorted(a.id for a in artifacts), "seed": sorted(seed)},
         )
         # 2026-10-11 偏离 5：判定看的是全部验收步骤各自的总结，不是任取一步的
-        from ..graph.terminal import accepted_tasks
 
         summaries = []
         for accepted in accepted_tasks(list(tasks)):
@@ -12677,9 +12496,8 @@ class Orchestrator:
         of the Mission; None when they are not formed."""
         if new_mode is None:
             return None
-        from ..storage.htn_store import HtnStore
 
-        htn = HtnStore(self.store)
+        htn = htn_store.HtnStore(self.store)
         network = new_mode.network(mission.id)
         duties = tuple(dict.fromkeys(str(d) for d in network.required_obligations))
         resolutions = [htn.adopted_goal_resolution(mission.id, duty) for duty in duties]
@@ -12773,8 +12591,6 @@ class Orchestrator:
             done = await self.actions.hand_off(key_)
             after = self.store.get_action(key_) if done is None else done
             if after is not None and after["state"] in HANDOFF_READY_STATES:
-                from ..contracts.error_table import handoff_refusal_transient
-
                 if handoff_refusal_transient(self.actions.last_refusal.get(key_, "")):
                     continue  # stays handoff-ready; tried again next round (阶段 B 裁决第 5 类)
                 # the deployment will not run it (cap, budget, switched off): it cannot happen
@@ -12849,7 +12665,6 @@ def _under_source_root(path: str, roots: Sequence[str]) -> bool:
 
 
 def sha256_hex_text(content: str | bytes) -> str:
-    import hashlib
 
     return hashlib.sha256(
         content if isinstance(content, bytes) else content.encode("utf-8")
@@ -12867,15 +12682,6 @@ def _turn_error_code(failure: Mapping[str, Any]) -> str | None:
 def retry_feedback(
     attempts: Sequence[Attempt], previous: Attempt | None
 ) -> tuple[list[str], list[Mapping[str, Any]]]:
-    from .failure_classes import (
-        INFRA,
-        classify_failure,
-        output_exhausted,
-        output_exhausted_fact,
-        turn_cap_exceeded,
-        turn_cap_fact,
-    )
-
     """What the repair Attempt is told about the failures before it.
 
     2026-09-26 真机文档任务: a provider turn failure in between hid the earlier

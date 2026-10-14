@@ -23,6 +23,7 @@ from ..storage.store import Store
 from ..storage.taskgraph_attempt_inputs import TaskGraphAttemptInputStore
 from ..storage.taskgraph_convergence import ConvergenceJob
 from ..storage.taskgraph_store import TaskGraphStore
+from . import taskgraph_runtime_imports
 from .taskgraph_convergence import ConvergenceAction, ConvergenceActionKind, ConvergenceObservation
 
 
@@ -35,9 +36,12 @@ class TaskGraphRuntimeObservationReader:
 
     def _physical_settled(self, intent: Any) -> bool:
         # All historical rehandoffs, tools and actual imported charges participate.
-        from .taskgraph_runtime_imports import TaskGraphRuntimeImports
 
-        return TaskGraphRuntimeImports(self.orchestrator).read_subject(intent).physical_settled
+        return (
+            taskgraph_runtime_imports.TaskGraphRuntimeImports(self.orchestrator)
+            .read_subject(intent)
+            .physical_settled
+        )
 
     def __call__(self, store: Store, job: ConvergenceJob) -> ConvergenceObservation:
         if store is not self.store:

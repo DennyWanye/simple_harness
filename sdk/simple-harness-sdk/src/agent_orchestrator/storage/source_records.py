@@ -34,6 +34,8 @@ from typing import TYPE_CHECKING, Any
 
 from simple_harness.contracts import canonical_json
 
+from .store import StoreError
+
 if TYPE_CHECKING:
     from .store import Store
 
@@ -240,8 +242,6 @@ def _receipt_owner(content: Mapping[str, Any]) -> str | None:
 
 def record_written_rows(store: Store, connection: sqlite3.Connection) -> None:
     """Called by the store right before the outermost COMMIT."""
-
-    from .store import StoreError
 
     tx_events: dict[str, set[str]] = {}
     for mission_id, kind in connection.execute("SELECT mission_id, type FROM temp.rows_tx_events"):

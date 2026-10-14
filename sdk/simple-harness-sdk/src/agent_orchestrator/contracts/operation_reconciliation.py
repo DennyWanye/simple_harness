@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from typing import Any
+
+from simple_harness.contracts import canonical_json
 
 from .models import ContractError
 from .semantic_base import (
@@ -46,7 +49,6 @@ class ScopedReconciliationObservationV1:
 
     @classmethod
     def from_json(cls, value: object) -> ScopedReconciliationObservationV1:
-        from simple_harness.contracts import canonical_json
 
         data = _exact(
             value,
@@ -151,7 +153,6 @@ class ScopedReconciliationObservationV1:
         return cls(canonical_json(data))
 
     def to_json(self) -> dict[str, Any]:
-        import json
 
         return json.loads(self.canonical)
 

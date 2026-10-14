@@ -19,8 +19,13 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from simple_harness.agents.context.tokenizer import UpperBoundTokenizer
+
 from ..assurance.codec import AssuranceError, decode, fingerprint, text
 from ..assurance.refs import AssuranceRef, Pin
+from ..assurance.review_input import REVIEW_INSTRUCTIONS, REVIEW_INSTRUCTIONS_VERSION
+from ..assurance.reviews import REVIEW_CODEC_VERSION
+from ..runtime.tool_gateway import ASSURANCE_REVIEWER_TOOLS
 from ..storage.assurance_reads import AssuranceReader
 from ..storage.assurance_work import atomic
 
@@ -35,9 +40,6 @@ _PREFIX = {
 
 def reviewer_policy_body() -> dict[str, Any]:
     """当前部署的审阅员政策：审阅指令（原文与版本）、回复编解码版本、审阅员可用工具。"""
-    from ..assurance.review_input import REVIEW_INSTRUCTIONS, REVIEW_INSTRUCTIONS_VERSION
-    from ..assurance.reviews import REVIEW_CODEC_VERSION
-    from ..runtime.tool_gateway import ASSURANCE_REVIEWER_TOOLS
 
     return {
         "schema_version": 1,
@@ -50,7 +52,6 @@ def reviewer_policy_body() -> dict[str, Any]:
 
 def context_policy_body(orchestrator: Any, profile_id: str) -> dict[str, Any]:
     """这个执行池当前的上下文政策：档案、模型、分词器指纹与 ``ContextPolicy`` 全文。"""
-    from simple_harness.agents.context.tokenizer import UpperBoundTokenizer
 
     ports = orchestrator.assembled.pool(profile_id).bridge.runtime.ports
     tokenizer = ports.tokenizer or UpperBoundTokenizer()

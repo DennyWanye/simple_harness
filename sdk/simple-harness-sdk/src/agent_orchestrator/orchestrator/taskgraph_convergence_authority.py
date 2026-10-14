@@ -3,10 +3,12 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from ..contracts.htn import GraphStructureBudget
 from ..contracts.models import sha256_hex
+from ..contracts.planning_decisions import PlanningDecisionEnvelopeV1
 from ..governance.planning_authorization import (
     PlanningAuthorizationSnapshot,
     StorePlanningAuthorityReader,
@@ -16,8 +18,10 @@ from ..governance.planning_authorization import (
 )
 from ..graph.execution_contracts import PreviewBindingV1
 from ..graph.network_codec import NetworkDocumentV1, decode
+from ..graph.notification_contracts import _text
 from ..graph.taskgraph_sharing import validate_sharing
 from ..graph.taskgraph_validation import validate_taskgraph_structure
+from ..planning.decision_admission import _enablement_key
 from ..runtime.taskgraph_local_work import read_local_work
 from ..storage.planning_admission_store import PlanningAdmissionStore
 from ..storage.planning_decision_store import PlanningDecisionStore
@@ -94,10 +98,6 @@ class VerifiedConvergenceAuthority:
         )
         if not isinstance(authority, PlanningAuthorizationSnapshot):
             raise StoreError("TASKGRAPH_CONVERGENCE_BEGIN_AUTHORITY_MISSING")
-        import json
-
-        from ..contracts.planning_decisions import PlanningDecisionEnvelopeV1
-        from ..planning.decision_admission import _enablement_key
 
         decoded = PlanningDecisionEnvelopeV1.from_json(json.loads(decision["canonical_json"]))
         decision_key = _enablement_key(decoded)
@@ -157,7 +157,6 @@ class VerifiedConvergenceAuthority:
     def require_safe_abandonment(
         self, store: Store, job: ConvergenceJob, caller: object, command_id: str
     ) -> None:
-        from ..graph.notification_contracts import _text
 
         _text(command_id, "command_id")
         self.operator.require(store, job.mission_id, caller)

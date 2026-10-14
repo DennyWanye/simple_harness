@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from typing import Any
 
@@ -18,6 +19,7 @@ from ..storage.taskgraph_followups import (
     TaskGraphFollowupStore,
 )
 from ..storage.taskgraph_store import TaskGraphStore
+from . import taskgraph_resume
 from .taskgraph_convergence import TaskGraphConvergence
 from .taskgraph_followups import TaskGraphEventConsumer, TaskGraphFollowupPump
 from .taskgraph_wakeups import TaskGraphConvergenceWakeups
@@ -177,7 +179,6 @@ class TaskGraphNotifications:
         ).fetchone()
         if row is None:
             return None
-        import json
 
         if json.loads(row["payload_json"]).get("notification_hash") != sha256_hex(
             message.to_json()
@@ -280,9 +281,7 @@ class TaskGraphNotifications:
             message.mission_id, message.subject_key, now_ms=int(self.store.now * 1000)
         )
         if job.state == "READY":
-            from .taskgraph_resume import resume_converged_plan
-
-            await resume_converged_plan(self.orchestrator, job)
+            await taskgraph_resume.resume_converged_plan(self.orchestrator, job)
             job = self.convergence.jobs.get_job(job.mission_id, job.job_id)
         return self._record(
             message, key, {"job_id": job.job_id, "row_version": job.row_version, "state": job.state}
@@ -363,7 +362,6 @@ class TaskGraphNotifications:
 
     async def tick(self) -> bool:
         self.orchestrator._require_assurance_execution_root()
-        from ..storage.taskgraph_store import TaskGraphStore
 
         consumed = 0
         for mission_id in TaskGraphStore(self.store).bound_mission_ids():

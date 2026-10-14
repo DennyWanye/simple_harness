@@ -9,12 +9,16 @@ in particular, operation/action links contain only immutable identity facts.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Mapping
 from contextlib import nullcontext
 from typing import Any
 
+from simple_harness.contracts import canonical_json
+
 from .store import Store, StoreConflict
+from .taskgraph_source_events import record_source_change
 
 
 class PlanningAdmissionStore:
@@ -223,7 +227,6 @@ class PlanningAdmissionStore:
                 if binding is None:
                     raise StoreConflict("request authority binding is required")
                 self._insert_binding(connection, request_id, binding, planner)
-            from .taskgraph_source_events import record_source_change
 
             record_source_change(
                 self._store,
@@ -244,10 +247,8 @@ class PlanningAdmissionStore:
     def _insert_binding(
         connection: Any, request_id: str, binding: Mapping[str, Any], planner: str
     ) -> None:
-        from simple_harness.contracts import canonical_json
 
         payload = {"request_id": request_id, **dict(binding)}
-        import hashlib
 
         bind_hash = hashlib.sha256(canonical_json(payload).encode()).hexdigest()
         connection.execute(

@@ -10,7 +10,7 @@ from ..contracts.models import Event
 from ..graph.convergence import ConvergenceTarget, compute_convergence_impact
 from ..graph.execution_contracts import PreviewBindingV1
 from ..graph.network_codec import NetworkDocumentV1
-from ..graph.notification_contracts import FollowupCauseRef, FollowupKind, FollowupV1
+from ..graph.notification_contracts import FollowupCauseRef, FollowupKind, FollowupV1, _integer
 from ..planning.htn.grounding import derive_id
 from .store import CodedStoreConflict, Store, StoreConflict, StoreError
 from .taskgraph_followups import TaskGraphFollowupStore
@@ -337,7 +337,6 @@ class TaskGraphConvergenceStore:
     def _transition(
         self, job: ConvergenceJob, state: str, now_ms: int, *, reason: str | None = None
     ) -> None:
-        from ..graph.notification_contracts import _integer
 
         _integer(now_ms, "now_ms")
         changed = self.store.connection.execute(

@@ -26,6 +26,13 @@ from typing import TYPE_CHECKING, Any
 
 from simple_harness.contracts import canonical_json
 
+from ..context import retrieval
+from ..context.context_builder import CONTEXT_BUILDER_VERSION
+from ..runtime import role_templates
+from ..runtime.model_router import ROUTER_VERSION
+from ..verification.verifier_router import VERIFIER_VERSION
+from ..version import __version__ as orchestrator_version
+
 if TYPE_CHECKING:
     from ..storage.store import Store
 
@@ -90,9 +97,10 @@ def builtin_weights() -> dict[str, float]:
 
 
 def builtin_prompt_versions() -> dict[str, str]:
-    from ..runtime.role_templates import ROLES
 
-    return {name: template.prompt_version for name, template in sorted(ROLES.items())}
+    return {
+        name: template.prompt_version for name, template in sorted(role_templates.ROLES.items())
+    }
 
 
 def resolve_params(
@@ -187,7 +195,6 @@ def diff_params(a: Mapping[str, Any], b: Mapping[str, Any]) -> list[dict[str, An
 
 
 def code_versions() -> dict[str, str]:
-    from ..version import __version__ as orchestrator_version
 
     try:
         from simple_harness.version import __version__ as sdk_version
@@ -200,16 +207,12 @@ def interpreter_versions() -> dict[str, str]:
     """The code that reads a policy (plan D9-1' / D9-4'): a version records them so a
     Mission resumed under other code can say so instead of changing silently."""
 
-    from ..context.context_builder import CONTEXT_BUILDER_VERSION
-    from ..context.retrieval import RETRIEVAL_VERSION
-    from ..runtime.model_router import ROUTER_VERSION
     from ..scheduling.allocator import ALLOCATOR_VERSION
-    from ..verification.verifier_router import VERIFIER_VERSION
 
     return {
         "allocator": ALLOCATOR_VERSION,
         "model_router": ROUTER_VERSION,
-        "retrieval": RETRIEVAL_VERSION,
+        "retrieval": retrieval.RETRIEVAL_VERSION,
         "context_builder": CONTEXT_BUILDER_VERSION,
         "verifier": VERIFIER_VERSION,
         "promotion": PROMOTION_VERSION,

@@ -12,15 +12,23 @@ from ...contracts.htn import (
     ContractRevision,
     DispatchGeneration,
     InputBindingRevision,
+    MethodInstanceId,
+    MethodOccurrenceBinding,
     OccurrenceId,
+    OccurrenceSpec,
+    OrderConstraint,
     PlanRevision,
     ProposedPlanDelta,
     ReadItem,
     ReadItemKind,
     RebindInputOperation,
+    Requiredness,
+    ReusePolicy,
     SemanticReadSet,
     TaskBindingRewrite,
+    TaskForm,
     TaskRef,
+    TaskSemanticBindingV1,
 )
 from ...contracts.models import ContractError
 from ...contracts.semantic_base import content_hash_of
@@ -29,7 +37,8 @@ from ...graph.projection_validation import (
     validate_refinement_acyclic,
 )
 from ...graph.task_network import TaskNetworkSnapshot
-from .compiler import BudgetRequirement, RefinementCompilation
+from .compiler import BudgetRequirement, RefinementCompilation, _edge_names_any
+from .grounding import ParameterBindingsError
 
 if TYPE_CHECKING:
     from ..plan_preview import PreviewInputs
@@ -82,7 +91,6 @@ def _current_owner(
     network: TaskNetworkSnapshot, binding: Any, instances: Sequence[Any] | None = None
 ) -> Any:
     """Resolve a retained Task's live owner without rewriting its creation history."""
-    from ...contracts.htn import MethodOccurrenceBinding
 
     occurrences = {
         spec.occurrence_id for spec in network.occurrences if spec.task_id == binding.task_id
@@ -262,7 +270,6 @@ def compile_rebind(inputs: PreviewInputs, operation: RebindInputOperation) -> Re
 
 def compile_cancel(inputs: PreviewInputs, operation: Any) -> RefinementCompilation:
     """Cancel an optional slot, retaining any goal still held by another consumer."""
-    from ...contracts.htn import MethodInstanceId, Requiredness
 
     current = inputs.network
     original = current.instance(MethodInstanceId(operation.method_instance_id))
@@ -319,7 +326,6 @@ def compile_cancel(inputs: PreviewInputs, operation: Any) -> RefinementCompilati
         raise ContractError("cancelled branch is still named by an Obligation coverage claim")
     # ORDER reachability through a removed optional branch still constrains the
     # remaining endpoints. No new accepted outcome is invented for a cancelled leaf.
-    from ...contracts.htn import OrderConstraint
 
     order = [
         edge
@@ -375,8 +381,6 @@ def replace_membership(
     extra_affected: tuple[str, ...] = (),
 ) -> RefinementCompilation:
     """Version a method membership; retain semantic contracts and duty accounts."""
-    from ...contracts.htn import MethodInstanceId
-    from .compiler import _edge_names_any
 
     current = inputs.network
     if inputs.repair_impact is None:
@@ -550,14 +554,6 @@ def replace_membership(
 
 def compile_successor(inputs: PreviewInputs, operation: Any) -> RefinementCompilation:
     """A fresh Task replaces one owned leaf while retaining its original duty."""
-    from ...contracts.htn import (
-        MethodOccurrenceBinding,
-        OccurrenceSpec,
-        ReusePolicy,
-        TaskForm,
-        TaskSemanticBindingV1,
-    )
-    from .grounding import ParameterBindingsError
 
     current = inputs.network
     old = current.binding_for_task(TaskRef(operation.old_task_id))

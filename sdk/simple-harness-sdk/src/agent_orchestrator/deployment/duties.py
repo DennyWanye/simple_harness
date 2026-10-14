@@ -23,6 +23,16 @@ from collections.abc import Callable, Mapping
 from hashlib import sha256
 from typing import Any
 
+from ..assurance.codec import fingerprint
+from ..orchestrator.assurance_check_policy import (
+    lossless_planning_subject_mapping,
+    lossless_scope_mapping,
+    mission_final_scope_id,
+)
+from ..storage import htn_store
+from ..storage.assurance_store import AssuranceStore
+from ..storage.taskgraph_store import require_bound
+
 logger = logging.getLogger(__name__)
 
 TERMINAL = frozenset({"COMPLETED", "FAILED", "CANCELLED"})
@@ -209,12 +219,6 @@ class DeploymentDuties:
         named checks → the exact registered CheckSpecs); nothing is added or dropped.  One
         command per Scope, replay-safe through the SDK's own approval receipt.
         """
-        from ..assurance.codec import fingerprint
-        from ..orchestrator.assurance_check_policy import (
-            lossless_scope_mapping,
-            mission_final_scope_id,
-        )
-        from ..storage.assurance_store import AssuranceStore
 
         if not self.bound:
             return 0
@@ -299,7 +303,6 @@ class DeploymentDuties:
                 ):
                     unassured.add(mid)  # a finished Mission needs no new policy
                     continue
-                from ..storage.taskgraph_store import require_bound
 
                 try:
                     # A global scan skips an older unbound Mission of a development library
@@ -341,9 +344,6 @@ class DeploymentDuties:
         approved on the exact goal Task (its contract revision and hash), by the SDK's own
         lossless mapping of the requirements that goal covers.
         """
-        from ..orchestrator.assurance_check_policy import lossless_planning_subject_mapping
-        from ..storage.assurance_store import AssuranceStore
-        from ..storage.htn_store import HtnStore
 
         orchestrator = self.orchestrator
         store = orchestrator.store
@@ -370,7 +370,7 @@ class DeploymentDuties:
             except Exception:  # noqa: BLE001 - a Mission without a lane row is not assured
                 unassured.add(mid)
                 continue
-            htn = HtnStore(store)
+            htn = htn_store.HtnStore(store)
             requirements = htn.latest_requirements_revision(mid)
             # The policy is approved against one requirements revision; a revised requirements
             # document needs its own approval, so the revision is part of what "done" means.

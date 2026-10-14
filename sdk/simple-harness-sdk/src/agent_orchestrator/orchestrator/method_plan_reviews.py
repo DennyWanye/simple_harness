@@ -23,7 +23,9 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from ..contracts.htn import MethodRef
 from ..contracts.resolution import ReviewPurpose, ReviewVerdict
+from ..storage import planning_human_store
 from ..storage.htn_store import HtnStore
 from .review_adjudication import adjudication_of
 
@@ -233,9 +235,9 @@ def _no_verdict_reason(orch: Any, mission_id: str, review_key: str) -> str | Non
 def _ruling_question_stale(store: Any, record: Any) -> bool:
     """The person was asked to rule on this record and the question was retired unanswered."""
 
-    from ..storage.planning_human_store import PlanningHumanStore
-
-    row = PlanningHumanStore(store).get("adjudicate-method:" + str(record.record_id))
+    row = planning_human_store.PlanningHumanStore(store).get(
+        "adjudicate-method:" + str(record.record_id)
+    )
     return row is not None and row["state"] == "STALE"
 
 
@@ -247,7 +249,6 @@ def advance(orch: Any, mission: Any) -> bool:
     Whether to revise the method, choose another or ask the person is the Planner's.
     """
 
-    from ..contracts.htn import MethodRef
     from .hierarchical_dispatch import append_hierarchical_event
 
     progressed = False

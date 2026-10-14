@@ -22,6 +22,7 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
+from simple_harness.agents.arp.runtime import build_arp_runtime
 from simple_harness.agents.context.budget import ContextPolicy
 from simple_harness.agents.context.tokenizer import TokenizerPort, UpperBoundTokenizer
 from simple_harness.agents.ports import AgentRuntimePorts
@@ -40,6 +41,7 @@ from ..scheduling.backpressure import BackpressureLimits
 from .agent_worker import AgentBridge
 from .domain_tools import DomainTool
 from .model_router import DEFAULT_PROFILE, RuntimeProfile
+from .sandbox import resolve_executor
 from .tool_gateway import TOOL_NAMES, WorkspaceToolGateway, read_tool_schemas
 
 OWNER_SCOPE = "agent-orchestrator"  # D3-10': one scope shared by every orchestrator instance
@@ -478,7 +480,6 @@ def assemble_orchestrator_runtime(
     )
     if chosen_default not in profiles:
         raise ValueError(f"default profile {chosen_default!r} is not among the profiles")
-    from .sandbox import resolve_executor
 
     executor = resolve_executor(config.deployment_policy, config.sandbox_executor)  # P3.2 D2
     workspaces = WorkspaceManager(config.workspaces_root)
@@ -543,7 +544,6 @@ def assemble_orchestrator_runtime(
             provider_handoff_fence=provider_handoff_fence,
             local_provider_admission=(local_provider_admissions or {}).get(profile_id),
         )
-        from simple_harness.agents.arp.runtime import build_arp_runtime
 
         runtime = build_arp_runtime(ports, native.arp_ports(database), owner_scope=OWNER_SCOPE)
         if native.after_build is not None:

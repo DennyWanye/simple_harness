@@ -3,7 +3,9 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
+import json
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any, NoReturn
 
@@ -15,8 +17,10 @@ from ..contracts.models import ContractError
 from ..contracts.semantic_base import TypedRef
 from ..graph.eligibility import ReadinessReason
 from ..graph.network_codec import decode
-from ..graph.notification_contracts import TaskGraphErrorV1, _integer, _text
+from ..graph.notification_contracts import FollowupCauseRef, TaskGraphErrorV1, _integer, _text
+from ..graph.projection_validation import ProblemKind
 from ..graph.structural_diff import diff_documents
+from ..graph.taskgraph_validation import validate_taskgraph_structure
 from ..graph.view_contracts import (
     TaskGraphConvergenceViewV2,
     TaskGraphExecutionDetailV1,
@@ -24,9 +28,15 @@ from ..graph.view_contracts import (
     TaskGraphExplanationV1,
     TaskGraphViewV1,
 )
+from ..orchestrator.completion_status import read_current_effect, read_occurrence_completion
 from ..orchestrator.hierarchical_dispatch import NetworkView, next_compound_phase
+from ..orchestrator.operation_completion import OperationCompletionError
+from ..orchestrator.taskgraph_execution_view import ExecutionProjection, turn_items
+from ..orchestrator.taskgraph_policy import read_installed_graph_policy
+from ..orchestrator.taskgraph_sources import SeedStructuralReadContext
+from ..storage import htn_store
 from ..storage.store import Store
-from ..storage.taskgraph_store import TaskGraphStore
+from ..storage.taskgraph_store import NotBoundError, TaskGraphStore, require_bound
 
 
 class TaskGraphReadError(ContractError):
@@ -74,14 +84,11 @@ EXECUTION_PAGE_DEFAULT, EXECUTION_PAGE_MAX = 100, 200
 
 
 def _encode_cursor(value: Mapping[str, Any]) -> str:
-    import base64
 
     return base64.urlsafe_b64encode(canonical_json(dict(value)).encode("utf-8")).decode("ascii")
 
 
 def _decode_cursor(cursor: Any) -> dict[str, Any]:
-    import base64
-    import json
 
     if not isinstance(cursor, str) or not cursor or len(cursor) > 4096:
         _fail("INVALID_CURSOR", "cursor is malformed")
@@ -189,12 +196,9 @@ class TaskGraphReadApi:
     def _completion_phase(
         self, mission_id: str, occurrence_id: str, fallback: str
     ) -> tuple[str, list[str]]:
-        from ..storage.htn_store import HtnStore
 
-        if HtnStore(self._store).active_plan_revision(mission_id) is None:
+        if htn_store.HtnStore(self._store).active_plan_revision(mission_id) is None:
             return "AWAITING_INITIAL_PLAN", ["尚无已提交计划；初始目标不具有执行或完成许可。"]
-        from ..orchestrator.completion_status import read_current_effect, read_occurrence_completion
-        from ..orchestrator.operation_completion import OperationCompletionError
 
         try:
             status = read_occurrence_completion(self._store, mission_id, occurrence_id)
@@ -242,7 +246,6 @@ class TaskGraphReadApi:
         was wrong.  Say so plainly instead; once enabled, the strict integrity
         checks below still apply unchanged.
         """
-        from ..storage.taskgraph_store import NotBoundError, require_bound
 
         try:
             require_bound(self._store, mission_id)
@@ -275,7 +278,6 @@ class TaskGraphReadApi:
                             "original root seed reader is required",
                             retry="REQUERY",
                         )
-                    from ..orchestrator.taskgraph_sources import SeedStructuralReadContext
 
                     seed = self._seed_reader(mission_id)
                     if (
@@ -307,9 +309,6 @@ class TaskGraphReadApi:
                 document, manifest_hash = seed.document, seed.token.manifest_hash
             network = decode(document.to_json()).snapshot
             if not historical:
-                from ..graph.taskgraph_validation import validate_taskgraph_structure
-                from ..orchestrator.taskgraph_policy import read_installed_graph_policy
-
                 policy_budget = GraphStructureBudget.from_json(
                     read_installed_graph_policy(self._store, mission_id).to_json()[
                         "graph_structure_budget"
@@ -317,8 +316,6 @@ class TaskGraphReadApi:
                 )
                 structure_report = validate_taskgraph_structure(document, policy_budget)
                 if not structure_report.ok:
-                    from ..graph.projection_validation import ProblemKind
-
                     if any(
                         problem.kind is ProblemKind.BOUND_REACHED
                         for problem in structure_report.problems
@@ -484,9 +481,7 @@ class TaskGraphReadApi:
                 if seed is None:
                     roots = list(self._resolution_reader(mission_id, selected))
                 else:
-                    from ..storage.htn_store import HtnStore
-
-                    if HtnStore(self._store).list_goal_resolutions(mission_id):
+                    if htn_store.HtnStore(self._store).list_goal_resolutions(mission_id):
                         _fail("GRAPH_INTEGRITY", "uncommitted root seed has a resolution")
                     roots = []
                     if execution:
@@ -547,7 +542,6 @@ class TaskGraphReadApi:
         projection. Pages are keyed by ``(at_ms, node_id)``; a cursor pins the
         Mission, caller, plan revision and the execution content hash, so a page
         can never mix two different histories (``SNAPSHOT_CHANGED``)."""
-        from ..orchestrator.taskgraph_execution_view import ExecutionProjection
 
         if type(limit) is not int or not 1 <= limit <= EXECUTION_PAGE_MAX:
             _fail("INVALID_REQUEST", f"limit must be 1..{EXECUTION_PAGE_MAX}")
@@ -641,7 +635,6 @@ class TaskGraphReadApi:
         """One execution node's facts and, when it was a model turn, what that turn
         visibly did — read from its own runtime pool by exact agent id, redacted and
         whitelisted (plan §8.4–§8.5). ``through_journal_seq`` re-reads a pinned cut."""
-        from ..orchestrator.taskgraph_execution_view import ExecutionProjection, turn_items
 
         if not isinstance(node_id, str) or not node_id or len(node_id) > 512:
             _fail("INVALID_REQUEST", "node_id is required")
@@ -788,8 +781,6 @@ class TaskGraphReadApi:
                 if len(diagnostics) > 64:
                     _fail("BOUND_REACHED", "convergence diagnostics exceed their public bound")
                 for ref in diagnostics:
-                    from ..graph.notification_contracts import FollowupCauseRef
-
                     FollowupCauseRef.from_json(ref)
                 jobs.append(
                     {

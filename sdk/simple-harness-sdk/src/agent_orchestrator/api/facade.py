@@ -32,17 +32,41 @@ from functools import wraps
 from pathlib import Path
 from typing import Any
 
+from ..artifacts.store import ArtifactStoreError, open_nofollow
+from ..assurance.checks import CriterionPolicy
+from ..assurance.codec import AssuranceError, array, fields
+from ..assurance.refs import AssuranceRef, Pin
 from ..contracts import ContractError
 from ..contracts.error_table import RecoveryBoundaryCode
+from ..contracts.operation_completion import OperationCompletionRequirementsV1
 from ..governance.budgets import BudgetError
 from ..governance.permissions import Principal
 from ..observability.secrets import find_secrets
+from ..orchestrator import assurance_point_use, planning_selection
 from ..orchestrator.action_commits import ActionCommitError
 from ..orchestrator.commit_service import MissionConflict
+from ..orchestrator.method_library import LibraryCommandError, library_listing, retire_by_command
+from ..orchestrator.obligation_accounts import obligation_accounts, obligation_rows
+from ..orchestrator.operation_completion import OperationCompletionError
+from ..orchestrator.operation_materialization_inputs import OperationMaterializationInputError
+from ..orchestrator.operation_runtime import ensure_operation_runtime
+from ..orchestrator.planner_views import accepted_steps
+from ..orchestrator.requirements_amendment import RequirementsAmendmentError, amend_requirements
 from ..orchestrator.source_commits import SourceCommitError
+from ..planning.htn.refinement import planning_frontier
+from ..runtime.operation_profiles import BuiltinOperationProfiles
+from ..storage import planning_decision_store, planning_human_store
+from ..storage.planning_admission_store import PlanningAdmissionStore
 from ..storage.store import StoreError
+from ..verification.conflicts import mission_disputes
 from .approvals import ApprovalApi, ApprovalRequestError
+from .assurance import AssuranceReadError
 from .missions import MissionRequestError
+from .operation_completion import OperationCompletionApi
+from .operation_intents import OperationIntentApi
+from .operation_workspace import operation_workspace
+from .planning_answers import answer_planning_question
+from .planning_authorization import PlanningAuthorizationApi
 
 FACADE_VERSION = "mission-control-v1"
 OPEN_FIELDS = frozenset(
@@ -116,7 +140,6 @@ class MissionControlV1:
 
     # ------------------------------------------------------------ ownership
     def _require_native_root(self) -> None:
-        from ..assurance.codec import AssuranceError
 
         gate = self._orchestrator.commit._assurance_root_gate
         if gate is not None:
@@ -149,9 +172,6 @@ class MissionControlV1:
 
     @_native_root
     def approve_assurance_check_policy(self, command: Mapping[str, Any]) -> dict[str, Any]:
-        from ..assurance.checks import CriterionPolicy
-        from ..assurance.codec import AssuranceError, array, fields
-        from ..assurance.refs import AssuranceRef
 
         try:
             body = fields(
@@ -222,7 +242,6 @@ class MissionControlV1:
     # ------------------------------------------------------ assurance reads
     def _assurance_read(self, verb: str, body: Mapping[str, Any]) -> dict[str, Any]:
         """S25 read verbs: caller fixed at construction; the body never names it."""
-        from .assurance import AssuranceReadError
 
         try:
             api = self._orchestrator.assurance_read_api(
@@ -297,7 +316,6 @@ class MissionControlV1:
         The caller supplies no principal, tenant, decision allowlist or policy;
         those remain fixed by this facade and the original issuer API.
         """
-        from .planning_authorization import PlanningAuthorizationApi
 
         operation = command.get("operation")
         fields = {
@@ -354,16 +372,14 @@ class MissionControlV1:
 
     def _refuse_isolated_grant(self, operation: str, body: Mapping[str, Any]) -> None:
         """签发、绑定、续期都推进规划；撤销是收回，照常（与取消同向）。"""
-        from ..storage.planning_admission_store import PlanningAdmissionStore
-        from ..storage.planning_decision_store import PlanningDecisionStore
 
         mission_id: object = None
         if operation == "issue":
             mission_id = body["mission_id"]
         elif operation == "bind":
-            request = PlanningDecisionStore(self._store).get_planning_request(
-                str(body["request_id"])
-            )
+            request = planning_decision_store.PlanningDecisionStore(
+                self._store
+            ).get_planning_request(str(body["request_id"]))
             mission_id = None if request is None else request.mission_id
         elif operation == "renew":
             grant = PlanningAdmissionStore(self._store).get_grant(str(body["grant_id"]))
@@ -378,13 +394,11 @@ class MissionControlV1:
         ``planning_authorization_requests``.  Lets the Host issue for them under its
         auto permission mode without reading storage itself.
         """
-        from ..orchestrator.planning_selection import awaits_authority
-        from ..storage.planning_decision_store import PlanningDecisionStore
 
         store = self._store
         rows: list[dict[str, Any]] = []
         with store.read_view():
-            planning = PlanningDecisionStore(store)
+            planning = planning_decision_store.PlanningDecisionStore(store)
             owned: dict[str, bool] = {}
             for intent in store.list_intents("PENDING", "CLAIMED", "AGENT_CREATED"):
                 mid = intent.mission_id
@@ -394,7 +408,7 @@ class MissionControlV1:
                         owned[mid] = True
                     except FacadeError:
                         owned[mid] = False
-                if not owned[mid] or not awaits_authority(store, intent):
+                if not owned[mid] or not planning_selection.awaits_authority(store, intent):
                     continue
                 request = planning.get_planning_request_for_intent(intent.intent_id)
                 if request is not None:
@@ -410,7 +424,6 @@ class MissionControlV1:
 
     @_native_root
     def answer_planning_question(self, command: Mapping[str, Any]) -> dict[str, Any]:
-        from .planning_answers import answer_planning_question
 
         required = {"decision_id", "answer", "expected_version", "nonce"}
         if (
@@ -431,9 +444,8 @@ class MissionControlV1:
         if type(attach) is not bool:
             raise FacadeError("invalid_request", "attach_as_source must be a boolean")
         self._clean(command["answer"])
-        from ..storage.planning_human_store import PlanningHumanStore
 
-        question = PlanningHumanStore(self._store).get(command["decision_id"])
+        question = planning_human_store.PlanningHumanStore(self._store).get(command["decision_id"])
         if question is not None:
             self._refuse_isolated(question["mission_id"])
         try:
@@ -454,7 +466,6 @@ class MissionControlV1:
 
     @_native_root
     def submit_operation_intent(self, command: Mapping[str, Any]) -> dict[str, Any]:
-        from .operation_intents import OperationIntentApi
 
         if isinstance(command, Mapping) and isinstance(command.get("mission_id"), str):
             self._refuse_isolated(command["mission_id"])
@@ -469,7 +480,6 @@ class MissionControlV1:
 
     @_native_root
     def operation_intent_status(self, intent_id: str) -> dict[str, Any]:
-        from .operation_intents import OperationIntentApi
 
         try:
             return OperationIntentApi(
@@ -485,11 +495,6 @@ class MissionControlV1:
 
         The page lists only supported choices; this is the gate for a caller that went
         around it, or a deployment that changed — never left to fail at materialisation."""
-        from ..contracts.operation_completion import OperationCompletionRequirementsV1
-        from ..orchestrator.operation_materialization_inputs import (
-            OperationMaterializationInputError,
-        )
-        from ..runtime.operation_profiles import BuiltinOperationProfiles
 
         proposal = command.get("proposal") if isinstance(command, Mapping) else None
         if not isinstance(proposal, Mapping) or not proposal.get("effects"):
@@ -507,8 +512,6 @@ class MissionControlV1:
     @_native_root
     def approve_operation_completion_spec(self, command: Mapping[str, Any]) -> dict[str, Any]:
         """Confirm the exact completion mapping using this facade's fixed caller."""
-        from ..orchestrator.operation_completion import OperationCompletionError
-        from .operation_completion import OperationCompletionApi
 
         if isinstance(command, Mapping) and isinstance(command.get("mission_id"), str):
             self._refuse_isolated(command["mission_id"])
@@ -531,10 +534,6 @@ class MissionControlV1:
     def amend_requirements(self, command: Mapping[str, Any]) -> dict[str, Any]:
         """Amend a running Mission's requirements (add / rewrite / remove entries) using this
         facade's fixed caller.  One transaction; the same command id replays its receipt."""
-        from ..orchestrator.requirements_amendment import (
-            RequirementsAmendmentError,
-            amend_requirements,
-        )
 
         fields = {
             "mission_id",
@@ -586,14 +585,12 @@ class MissionControlV1:
     def list_method_library(self) -> dict[str, Any]:
         """Every entry of the method library (precedents promoted from delivered Missions):
         id, one line of purpose, state, where it came from and which Missions blamed it."""
-        from ..orchestrator.method_library import library_listing
 
         return {"entries": library_listing(self._store)}
 
     def retire_library_entry(self, command: Mapping[str, Any]) -> dict[str, Any]:
         """Retire one library entry on the person's word, using this facade's fixed caller.
         One transaction; the same command id replays its receipt."""
-        from ..orchestrator.method_library import LibraryCommandError, retire_by_command
 
         fields = {"entry_id", "command_id", "reason"}
         if (
@@ -872,7 +869,6 @@ class MissionControlV1:
             raise FacadeError("not_found", NOT_FOUND)
         self._mission(str(action["mission_id"]))
         self._refuse_isolated(action["mission_id"])
-        from ..orchestrator.operation_runtime import ensure_operation_runtime
 
         try:
             ensure_operation_runtime(self._orchestrator)
@@ -923,7 +919,6 @@ class MissionControlV1:
     def _unrefined_goals(self, mission_id: str) -> list[dict[str, Any]]:
         """Goals in the current plan that no method has refined yet — the planning frontier,
         by the same function the execution-graph snapshot uses (阶段 E)."""
-        from ..planning.htn.refinement import planning_frontier
 
         dispatch = self._orchestrator._dispatch_for(mission_id)
         if dispatch is None:
@@ -952,7 +947,6 @@ class MissionControlV1:
         """Steps that passed their acceptance but no longer count under the current plan and
         requirements (e.g. accepted under an earlier version of the requirements) — the same
         reading the Planner package's ``counts_under_current`` gives."""
-        from ..orchestrator.planner_views import accepted_steps
 
         dispatch = self._orchestrator._dispatch_for(mission_id)
         if dispatch is None:
@@ -984,20 +978,18 @@ class MissionControlV1:
         with store.read_view():  # the snapshot and its cursor come from one read
             mission = self._mission(mission_id)
             snapshot = store.snapshot(mission.id)
-            from ..storage.planning_human_store import PlanningHumanStore
 
-            snapshot["planning_questions"] = PlanningHumanStore(store).list(mission.id)
+            snapshot["planning_questions"] = planning_human_store.PlanningHumanStore(store).list(
+                mission.id
+            )
             # 这件事（含下级、含换过的做法）到现在花了多少：读时由尝试与结算推出
-            from ..orchestrator.obligation_accounts import obligation_accounts, obligation_rows
 
             snapshot["obligation_accounts"] = obligation_accounts(store, mission.id)
             snapshot["budget_by_duty"] = obligation_rows(store, mission.id)
             snapshot["unrefined_goals"] = self._unrefined_goals(mission.id)
             snapshot["steps_no_longer_counting"] = self._steps_no_longer_counting(mission.id)
-            from ..orchestrator.planning_selection import awaits_authority
-            from ..storage.planning_decision_store import PlanningDecisionStore
 
-            planning = PlanningDecisionStore(store)
+            planning = planning_decision_store.PlanningDecisionStore(store)
             snapshot["planning_authorization_requests"] = [
                 {
                     "mission_id": mission.id,
@@ -1007,16 +999,14 @@ class MissionControlV1:
                 }
                 for intent in store.list_intents("PENDING", "CLAIMED", "AGENT_CREATED")
                 if intent.mission_id == mission.id
-                and awaits_authority(store, intent)
+                and planning_selection.awaits_authority(store, intent)
                 and (request := planning.get_planning_request_for_intent(intent.intent_id))
                 is not None
             ]
-            from .operation_workspace import operation_workspace
 
             snapshot["operation_workspace"] = operation_workspace(
                 self._orchestrator, mission, principal=self._principal
             )
-            from ..verification.conflicts import mission_disputes
 
             snapshot["disputes"] = mission_disputes(store, mission.id)  # read from the claims
             through = store.last_event_seq(mission.id)
@@ -1062,22 +1052,16 @@ class MissionControlV1:
         """把一个产物交给本人之前过使用证书签发方（用途 DISCLOSE，推后第 2 批 A03；附录 C.1 第 496 行
         "原生下载"）：产物精确存在、调用者就是部署的主体、授权当前、根实例、时钟可信，签一张证书留底。
         签不出：不给正文，原因具名。"""
-        from ..assurance.refs import AssuranceRef, Pin
-        from ..orchestrator.assurance_point_use import (
-            NATIVE_READ_CONSUMER,
-            EvidenceClaim,
-            certify_point_use_locked,
-        )
 
         ref = AssuranceRef("artifact", Pin(artifact.id, artifact.version, artifact.content_hash))
         with self._store.transaction():
-            use = certify_point_use_locked(
+            use = assurance_point_use.certify_point_use_locked(
                 self._orchestrator.commit,
                 mission_id=artifact.mission_id,
                 purpose="DISCLOSE",
-                consumer_kind=NATIVE_READ_CONSUMER,
+                consumer_kind=assurance_point_use.NATIVE_READ_CONSUMER,
                 consumer_id=f"{self._principal.principal_id}:{artifact.id}",
-                claims=(EvidenceClaim.exact(ref),),
+                claims=(assurance_point_use.EvidenceClaim.exact(ref),),
                 subject=("requirements", artifact.mission_id),
                 caller=(self._principal.principal_id, self._tenant),
             )
@@ -1101,7 +1085,6 @@ class MissionControlV1:
         digest = hashlib.sha256()
         head = bytearray()
         size = 0
-        from ..artifacts.store import ArtifactStoreError, open_nofollow
 
         try:
             if not artifact.storage_uri:  # P3.2 D3: bytes lost before the library upgrade

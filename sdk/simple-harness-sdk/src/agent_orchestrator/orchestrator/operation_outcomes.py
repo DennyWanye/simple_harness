@@ -7,7 +7,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from ..contracts import ContractError
+from ..assurance.codec import AssuranceError
+from ..contracts import ContractError, TaskStatus
+from ..contracts.htn import TaskForm
 from ..contracts.operation_completion import (
     CompletionPinV1,
     OperationOutcomeReviewBindingV1,
@@ -30,14 +32,21 @@ from ..runtime.connectors import Receipt, human_ruling_in, human_ruling_receipt,
 from ..runtime.operation_outcomes import ObservedOperationMilestone, resolve_receipt_adapter
 from ..runtime.operation_payloads import require_connector_profile
 from ..runtime.operation_ref_resolver import OperationReferenceResolver
+from ..storage.assurance_store import AssuranceStore
 from ..storage.htn_store import HtnStore
 from ..storage.operation_completion_store import OperationCompletionStore
 from ..storage.operation_intent_store import OperationIntentStore
 from ..storage.planning_admission_store import PlanningAdmissionStore
 from ..storage.store import Store, StoreError
-from .completion_status import _owner_scope
+from ..verification.acceptance_rules import ExecutionPosture, IndependenceFacts
+from .assurance_purpose_reviews import purpose_review_key
+from .completion_status import _owner_scope, read_occurrence_completion
+from .failure_classes import review_exhausted_by_interruption
+from .leaf_acceptance import LeafAcceptanceAssembly
 from .operation_completion import OperationCompletionReader
+from .resolution_commits import AcceptReviewCommand, ResolutionPrincipal
 from .review_adjudication import accepted_or_adjudicated
+from .state_machine import next_task
 
 
 class OperationOutcomeError(ContractError):
@@ -694,8 +703,6 @@ def accept_operation_outcome(
 def _assured_outcome_use(commit: Any, mission_id: str, binding_id: str) -> Any:
     """The outcome acceptance is licensed by a current UseCertificate prepared here,
     outside the write lock, and committed by ``accept_review`` beside the Acceptance."""
-    from ..assurance.codec import AssuranceError
-    from ..storage.assurance_store import AssuranceStore
 
     store = commit.store
     try:
@@ -713,13 +720,6 @@ def _assured_outcome_use(commit: Any, mission_id: str, binding_id: str) -> Any:
 
 
 def _accept_operation_outcome(commit: Any, mission_id: str, binding_id: str, candidate: Any) -> Any:
-    from ..contracts import TaskStatus
-    from ..contracts.htn import TaskForm
-    from ..verification.acceptance_rules import ExecutionPosture, IndependenceFacts
-    from .completion_status import read_occurrence_completion
-    from .leaf_acceptance import LeafAcceptanceAssembly
-    from .resolution_commits import AcceptReviewCommand, ResolutionPrincipal
-    from .state_machine import next_task
 
     store = commit.store
     with store.transaction():
@@ -819,7 +819,6 @@ def _accept_operation_outcome(commit: Any, mission_id: str, binding_id: str, can
 
 def outcome_review_key(mission_id: str, binding_id: str) -> str:
     """The review round key of one outcome binding's package."""
-    from .assurance_purpose_reviews import purpose_review_key
 
     return purpose_review_key("OPERATION_OUTCOME", mission_id, "pkg-" + str(binding_id))
 
@@ -830,7 +829,6 @@ def outcome_retake_due(store: Store, mission_id: str, bindings: Any) -> bool:
     只在唯一一份审阅、未验收、没有正式结论、两次调用用完且第 2 次是被打断时成立；
     重审本身再用完就不再重审（最多多给一次机会）。
     """
-    from .failure_classes import review_exhausted_by_interruption
 
     items = tuple(bindings)
     if len(items) != 1:
@@ -849,7 +847,6 @@ def outcome_retake_due(store: Store, mission_id: str, bindings: Any) -> bool:
 
 def outcome_exhaustion_is_final(store: Store, mission_id: str, review_key: str) -> bool:
     """Whether an exhausted outcome review ends that effect (no retake left to wait for)."""
-    from .failure_classes import review_exhausted_by_interruption
 
     if not review_exhausted_by_interruption(store, review_key):
         return True

@@ -17,6 +17,8 @@ from __future__ import annotations
 from collections import deque
 from typing import TYPE_CHECKING, Any
 
+from ..graph.terminal import accepted_tasks
+
 if TYPE_CHECKING:
     from ..storage.store import Store
 
@@ -79,7 +81,6 @@ def lineage(store: Store, mission_id: str, *, terminal_task_id: str | None) -> d
                 add_record(old, via={"knowledge": record.id, "supersedes": old.id})
 
     # 2026-10-11 偏离 5：血缘从全部验收结果展开，不只从"最后一个叶"（分层计划里那是任取的一步）
-    from ..graph.terminal import accepted_tasks
 
     for accepted in accepted_tasks(tasks):
         if accepted.accepted_result_id and accepted.accepted_result_id not in queue:

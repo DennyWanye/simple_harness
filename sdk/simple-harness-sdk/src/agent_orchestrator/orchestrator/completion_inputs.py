@@ -21,6 +21,7 @@ from ..contracts.operation_completion import PlanRevisionPinV1
 from ..contracts.semantic_base import content_hash_of
 from ..runtime.output_blocks import PortClaim
 from ..storage.htn_store import HtnStore
+from ..storage.operation_completion_store import OperationCompletionStore
 from ..storage.store import Store
 from .accepted_outputs import check_against_ports, output_ports_in_revision
 from .hierarchical_dispatch import HierarchicalDispatch
@@ -353,8 +354,6 @@ def _current_scope(
     ``carried``: an accepted result reviewed again under amended requirements (第四批):
     the current scope may also differ in its requirements, to a newer revision only."""
 
-    from ..storage.operation_completion_store import OperationCompletionStore
-
     completion = OperationCompletionStore(store)
     row = completion.get_scope_exact(mission_id, frozen.plan_revision, frozen.occurrence_id)
     original = None if row is None else row["document"]
@@ -393,8 +392,6 @@ def frozen_requirements_revision(store: Store, result: Any) -> int:
     """The requirements revision a result was produced under — the scope frozen at its
     dispatch, read without asking whether it is still current.  What a result's ordinary
     verification layers are recorded under (TaskGraph 补全第四批)."""
-
-    from ..storage.operation_completion_store import OperationCompletionStore
 
     envelope = getattr(result, "envelope", None)
     intent = None if envelope is None else store.get_intent_for_subject(str(envelope.attempt_id))

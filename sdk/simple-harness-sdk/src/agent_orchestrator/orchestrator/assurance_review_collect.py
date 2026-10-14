@@ -22,7 +22,11 @@ from ..verification.reviewer_evidence_tools import (
     record_disclosure_batch,
 )
 from .assurance_review_transport import read_review_invocation_locked
-from .failure_classes import record_review_interruption, review_turn_interrupted
+from .failure_classes import (
+    REVIEW_CALL_ABANDONED,
+    record_review_interruption,
+    review_turn_interrupted,
+)
 
 
 async def collect_assurance_review(orchestrator: Any, intent: Any) -> None:
@@ -239,7 +243,6 @@ async def abandon_assurance_review(
     reply is never imported as a conclusion; its usage is still imported by the
     accounting scan and an unknown charge keeps the reservation (never undercount).
     """
-    from .failure_classes import REVIEW_CALL_ABANDONED
 
     store, commit = orchestrator.store, orchestrator.commit
     mission = store.get_mission(intent.mission_id)

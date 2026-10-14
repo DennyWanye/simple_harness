@@ -21,6 +21,54 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any
 
+from ..artifacts.store import ArtifactStoreError
+from ..artifacts.versioning import ArtifactConflict
+from ..assurance.codec import AssuranceError, decode
+from ..assurance.refs import AssuranceRef, Pin
+from ..contracts.evidence_state import Validity
+from ..contracts.semantic_base import content_hash_of
+from ..governance.tail_budget import TailReserve
+from ..graph.projection_validation import GraphIntegrityError
+from ..graph.terminal import accepted_tasks, finalizer_task_id
+from ..memory.code_observations import scoped_test_observations
+from ..runtime import operation_reconciliation
+from ..runtime.planning_operations import SourceUnavailable
+from ..storage import htn_store
+from ..storage.assurance_reads import AssuranceReader
+from ..storage.assurance_store import AssuranceStore
+from ..storage.assurance_work import atomic
+from ..storage.operation_completion_store import OperationCompletionStore
+from ..storage.taskgraph_store import TaskGraphStore, require_bound
+from . import taskgraph_terminal
+from .assurance_factory import record_mission_creation, validate_creation_replay
+from .assurance_final_writer import (
+    assured_closeout_pending,
+    request_assured_closeout,
+    request_assured_notification,
+)
+from .assurance_root_commits import install_native_root
+from .attempt_execution import freeze_attempt_execution
+from .completion_inputs import (
+    freeze_attempt_completion_inputs,
+    frozen_requirements_revision,
+    load_completion_result_inputs,
+    validate_result_port_claims,
+)
+from .completion_status import read_occurrence_completion
+from .failure_classes import NON_MODEL, NON_MODEL_FAILURE_CAP, classify_failure, non_model_failures
+from .hierarchical_dispatch import HierarchicalDispatch
+from .leaf_acceptance import LeafAcceptanceAssembly
+from .planning_retry import (
+    RETRY_AUTHORIZED,
+    pending_retry_permit,
+    retry_binding,
+    retry_decision_required,
+)
+from .planning_runtime_block import pending_block
+from .resolution_commits import ResolutionCommitRejected
+from .resource_requests import GRANTED, LAPSED, REQUESTED
+from .taskgraph_dispatch import TaskGraphDispatchBinding
+
 if TYPE_CHECKING:
     from .taskgraph_dispatch import TaskGraphDispatchBinding
 
@@ -413,8 +461,6 @@ class CommitService(
     ) -> Event:
         """推后第 3 批 H10：批准了但发放时额度已不够——如实记一条，这次尝试按基础额度开工。"""
 
-        from .resource_requests import LAPSED
-
         with self._store.transaction():
             return self._emit(
                 LAPSED,
@@ -646,7 +692,6 @@ class CommitService(
 
     def install_taskgraph_dispatch(self, binding: TaskGraphDispatchBinding) -> None:
         """Called by fixed deployment assembly, never from model or Host JSON."""
-        from .taskgraph_dispatch import TaskGraphDispatchBinding
 
         if not isinstance(binding, TaskGraphDispatchBinding) or binding.store is not self._store:
             raise ValueError("TaskGraph dispatch binding must use this Commit Store")
@@ -662,12 +707,10 @@ class CommitService(
         return self._taskgraph_dispatch.read_attempt(mission_id, attempt_id)
 
     def require_taskgraph_handoff(self, intent: DispatchIntent) -> None:
-        from ..storage.taskgraph_store import require_bound
 
         require_bound(self._store, intent.mission_id)
         if self._taskgraph_dispatch is None:
             raise StoreError("TASKGRAPH_EXECUTION_ASSEMBLY_REQUIRED")
-        from ..runtime.planning_operations import SourceUnavailable
 
         try:
             self._taskgraph_dispatch.require_handoff(intent)
@@ -686,10 +729,7 @@ class CommitService(
         The one query behind both the terminal-event gate and the stop cascade: a member
         with a missing binding cannot have a terminal record written for it."""
 
-        from ..storage.htn_store import HtnStore
-        from ..storage.taskgraph_store import TaskGraphStore
-
-        if HtnStore(self._store).task_semantics_of(mission_id, task_id) is not None:
+        if htn_store.HtnStore(self._store).task_semantics_of(mission_id, task_id) is not None:
             return "bound"
         return (
             "missing" if TaskGraphStore(self._store).ever_member(mission_id, task_id) else "outside"
@@ -719,9 +759,8 @@ class CommitService(
         actor_id: str = ORCHESTRATOR_ID,
     ) -> Event:
         idempotency_key = f"{event_type}:{key}"
-        from .taskgraph_terminal import TERMINAL_EVENTS, record_terminal_event
 
-        bind_terminal = event_type in TERMINAL_EVENTS and task_id is not None
+        bind_terminal = event_type in taskgraph_terminal.TERMINAL_EVENTS and task_id is not None
         if bind_terminal:
             binding = self._terminal_binding(mission_id, str(task_id))
             if binding == "missing":
@@ -752,7 +791,7 @@ class CommitService(
                 )
             )
             if bind_terminal:
-                record_terminal_event(self._store, event)
+                taskgraph_terminal.record_terminal_event(self._store, event)
         return event
 
     # ------------------------------------------------------------- missions
@@ -776,7 +815,6 @@ class CommitService(
     def import_assurance_check_locked(
         self, *, mission_id: str, execution_ref: Any, completion_scope: Any
     ):
-        from ..assurance.codec import AssuranceError
 
         if self._assurance_check_importer is None:
             raise AssuranceError("CHECK_IMPORTER_UNAVAILABLE")
@@ -785,11 +823,8 @@ class CommitService(
         )
 
     def install_assurance_root(self, *, principal: Any, tenant_id: str, command_id: str):
-        from .assurance_root_commits import install_native_root
 
         if self._assurance_root_gate is None:
-            from ..assurance.codec import AssuranceError
-
             raise AssuranceError("ASSURANCE_ROOT_GATE_UNBOUND")
         return install_native_root(
             self,
@@ -825,7 +860,6 @@ class CommitService(
             domain = resolve_domain(spec.domain)
         except KeyError as error:
             raise CommitRejected(f"unknown domain profile {spec.domain!r}") from error
-        from ..storage.assurance_work import atomic
 
         with atomic(self._store):
             found = self._store.find_mission(spec.tenant_id, spec.idempotency_key)
@@ -840,7 +874,6 @@ class CommitService(
                 )
                 if conflict is not None:
                     raise MissionConflict(conflict)
-                from .assurance_factory import validate_creation_replay
 
                 validate_creation_replay(self, mission)
                 return mission, False
@@ -947,7 +980,6 @@ class CommitService(
                 actor_type="user",
                 actor_id=spec.tenant_id,
             )
-            from .assurance_factory import record_mission_creation
 
             record_mission_creation(self, mission, spec, creation_event)
             # 2026-10-03: a Mission is created with its root and its TaskGraph binding in
@@ -1222,7 +1254,6 @@ class CommitService(
         ]
         # Only runtime-recorded verification is evidence; caller-supplied acceptance
         # summaries are not execution receipts.
-        from .completion_inputs import frozen_requirements_revision
 
         layers = [
             dict(item)
@@ -1230,7 +1261,6 @@ class CommitService(
                 envelope.id, requirements_revision=frozen_requirements_revision(self._store, stored)
             )
         ]
-        from ..memory.code_observations import scoped_test_observations
 
         artifacts = [self._store.get_artifact(item) for item in stored.artifacts]
         observations = scoped_test_observations(
@@ -1459,9 +1489,6 @@ class CommitService(
         validity = getattr(self, "_assurance_validity", None)
         if review is None or validity is None or not accepted_or_adjudicated(self._store, review):
             return {}
-        from ..assurance.codec import decode
-        from ..assurance.refs import AssuranceRef, Pin
-        from ..storage.assurance_reads import AssuranceReader
 
         reader = AssuranceReader(self._store, tenant_id=validity.tenant_id, mission_id=mission.id)
         manifest = decode(
@@ -1499,8 +1526,6 @@ class CommitService(
         """第 2 批 K02：审阅确认入库的知识的三个登记项，只从已有记录取——有效期取这次验收用的
         使用证书的签发/失效时刻与任务纪元；保障等级取任务的保证通道；允许用途没有任何记录写它
         （审阅回复与证书都没有这一项），一律 None。取不到的就是 None，不猜。"""
-        from ..assurance.codec import AssuranceError
-        from ..storage.assurance_store import AssuranceStore
 
         out: dict[str, Any] = {
             "validity_interval": None,
@@ -1534,9 +1559,7 @@ class CommitService(
         acceptance of its source step, the evidence artifacts (the ones the reviewer cited
         or the claim names; all of the result's when neither says), and the knowledge the
         step used.  Nothing is written by this — the record carries it."""
-        from ..contracts.semantic_base import content_hash_of
         from .assurance_validity import acceptance_id_for
-        from .completion_inputs import frozen_requirements_revision
 
         envelope = stored.envelope
         cited = {
@@ -1816,7 +1839,6 @@ class CommitService(
         """A stopped Mission's report says which actions left our hands with no known
         outcome; reconciliation goes on after the stop and says when each one is known
         (HTN 一致性补改 H-2)."""
-        from ..runtime.operation_reconciliation import action_outcome_unresolved
 
         rows = [
             {
@@ -1827,7 +1849,7 @@ class CommitService(
                 "state": str(action.get("state") or ""),
             }
             for action in self._store.list_actions(mission_id)
-            if action_outcome_unresolved(self._store, action)
+            if operation_reconciliation.action_outcome_unresolved(self._store, action)
         ]
         if rows:
             report["unresolved_actions"] = rows
@@ -1932,7 +1954,6 @@ class CommitService(
         request_id: str,
     ) -> dict[str, Any]:
         """Commit one retry permit; caller atomically records the admitted decision."""
-        from .planning_retry import RETRY_AUTHORIZED, retry_binding
 
         with self._store.transaction():
             binding = retry_binding(
@@ -1993,18 +2014,15 @@ class CommitService(
                 )
             if task.status not in {TaskStatus.READY, TaskStatus.ACTIVE, TaskStatus.VERIFYING}:
                 raise CommitRejected(f"task {task_id} is {task.status}; no new Attempt")
-            from .failure_classes import NON_MODEL_FAILURE_CAP, non_model_failures
 
             spent = non_model_failures(self._store.list_attempts(task_id))
             if spent >= NON_MODEL_FAILURE_CAP:
                 raise NonModelFailuresExhausted(task_id, spent, NON_MODEL_FAILURE_CAP)
             if task.paused and task.pause_reason == "provider_admission:usage_unresolved":
                 raise CommitRejected("provider admission is waiting for unresolved usage")
-            from .planning_runtime_block import pending_block
 
             if pending_block(self._store, task.mission_id) is not None:
                 raise CommitRejected("H4 runtime block prevents new Attempts")
-            from .planning_retry import pending_retry_permit, retry_decision_required
 
             if retry_decision_required(self._store, task.mission_id, task.id):
                 permit = pending_retry_permit(self._store, task.mission_id, task.id)
@@ -2016,7 +2034,6 @@ class CommitService(
                     **dict(intent_config),
                     "planning_retry_decision_id": permit["decision_id"],
                 }
-            from ..storage.taskgraph_store import require_bound
 
             try:
                 require_bound(self._store, task.mission_id)
@@ -2024,9 +2041,6 @@ class CommitService(
                 raise CommitRejected(str(error)) from error
             if self._taskgraph_dispatch is None:
                 raise CommitRejected("TASKGRAPH_EXECUTION_ASSEMBLY_REQUIRED")
-            from ..artifacts.store import ArtifactStoreError
-            from ..artifacts.versioning import ArtifactConflict
-            from ..runtime.planning_operations import SourceUnavailable
 
             try:
                 graph_prepared = self._taskgraph_dispatch.prepare(
@@ -2098,7 +2112,6 @@ class CommitService(
                 raise CommitRejected(
                     f"CONTEXT_EVIDENCE_NOT_CURRENT: {'; '.join(refused.use.refusals)}"
                 ) from refused
-            from .completion_inputs import freeze_attempt_completion_inputs
 
             frozen_completion = freeze_attempt_completion_inputs(
                 self._store,
@@ -2108,8 +2121,6 @@ class CommitService(
                 request_id=ids.intent_id("attempt", attempt_id),
             )
             if self._source_artifact_store is not None:
-                from .attempt_execution import freeze_attempt_execution
-
                 execution = freeze_attempt_execution(
                     self._store,
                     self._source_artifact_store,
@@ -2130,8 +2141,6 @@ class CommitService(
             elif "attempt_execution" in intent_config:
                 raise CommitRejected("attempt execution requires an explicit artifact store")
             if critic_tail is not None:
-                from ..governance.tail_budget import TailReserve
-
                 self.reserve_critic_tail(
                     attempt_id=attempt_id,
                     task_id=task.id,
@@ -2250,8 +2259,6 @@ class CommitService(
                 )
             grant = intent_config.get("resource_grant")
             if grant:  # 推后第 3 批 H10：规划器批准的资源申请，和这次尝试同一个事务
-                from .resource_requests import GRANTED
-
                 self._emit(
                     GRANTED,
                     task.mission_id,
@@ -2516,8 +2523,6 @@ class CommitService(
         否则等于凭空多给次数。按尝试幂等。
         """
 
-        from .failure_classes import NON_MODEL, classify_failure
-
         category = classify_failure(attempt.failure)
         if category not in NON_MODEL:
             return False
@@ -2705,8 +2710,6 @@ class CommitService(
             attempt = self._require_attempt(attempt_id)
             existing = self._store.find_result_for_attempt(attempt_id)
             if existing is not None and existing.turn_id == turn_id:
-                from .completion_inputs import load_completion_result_inputs
-
                 frozen = load_completion_result_inputs(self._store, existing)
                 if tuple(port_claims) != tuple(frozen.port_claims):
                     raise CommitRejected("result replay changed its frozen output claims")
@@ -2741,7 +2744,6 @@ class CommitService(
                 self._store.upsert_artifact(artifact)
                 registered.append(artifact)
             stored = replace(stored, artifacts=tuple(artifact.id for artifact in registered))
-            from .completion_inputs import validate_result_port_claims
 
             completion_claims = validate_result_port_claims(
                 self._store,
@@ -2918,7 +2920,6 @@ class CommitService(
             )
             if resource_request is not None:
                 # 推后第 3 批 H10：申请与核的结果，和这次结果同一个事务
-                from .resource_requests import REQUESTED
 
                 self._emit(
                     REQUESTED,
@@ -3125,13 +3126,11 @@ class CommitService(
         revision the result was produced under (``None``), or — for an accepted result
         reviewed again under amended requirements (TaskGraph 补全第四批) — the newer one.
         A revision under which the result is already accepted is immutable."""
-        from .completion_inputs import frozen_requirements_revision
 
         with self._store.transaction():
             stored = self._require_result(result_id)
             frozen = frozen_requirements_revision(self._store, stored)
             revision = frozen if requirements_revision is None else int(requirements_revision)
-            from ..storage.operation_completion_store import OperationCompletionStore
             from .assurance_validity import acceptance_id_for
 
             accepted = (
@@ -3231,7 +3230,6 @@ class CommitService(
         connectors: Mapping[str, Any] | None = None,
         deployment: DeploymentPolicy | None = None,
     ) -> Task:
-        from .resolution_commits import ResolutionCommitRejected
 
         prepared = self._prepare_assured_acceptance(result_id)
         for retry in (False, True):
@@ -3262,8 +3260,6 @@ class CommitService(
         """TaskGraph 补全第四批：一份按旧版要求通过、被新计划沿用的结果，审阅员按新版要求重审
         通过后，写一条按新版要求的验收（同一份结果与产物、带要求版本的新验收编号）。
         不动尝试 / 任务 / 产物状态、不结清预算——那些在它当初通过时都已落定。"""
-        from ..assurance.codec import AssuranceError
-        from .resolution_commits import ResolutionCommitRejected
 
         def prepare() -> Any:
             with self._store.read_view():
@@ -3299,8 +3295,6 @@ class CommitService(
         return receipt
 
     def _accept_carried(self, result_id: str, requirements_revision: int) -> Any:
-        from .completion_inputs import load_completion_result_inputs
-        from .leaf_acceptance import LeafAcceptanceAssembly
 
         stored = self._require_result(result_id)
         if stored.verification_state != "DONE" or stored.verdict != "PASS":
@@ -3347,8 +3341,6 @@ class CommitService(
         Every layer the router recorded (an inventoried source) has already moved
         the mission epoch by now, so a candidate prepared earlier would be stale.
         Outside the write transaction, read only; the UoW then locks it first."""
-        from ..assurance.codec import AssuranceError
-        from .resolution_commits import ResolutionCommitRejected
 
         with self._store.read_view():
             stored = self._store.get_result(result_id)
@@ -3382,14 +3374,11 @@ class CommitService(
         is committed later by ``accept_review`` in this same generation. A missing
         candidate is not licensed here; ``accept_review`` refuses it.  Returns the locked
         candidate (its official review record is what claim confirmation reads), or None."""
-        from ..assurance.codec import AssuranceError
         from .assurance_validity import ACCEPTANCE_CONSUMER, acceptance_id_for
-        from .resolution_commits import ResolutionCommitRejected
 
         validity = getattr(self, "_assurance_validity", None)
         if validity is None:
             return None
-        from .completion_inputs import frozen_requirements_revision
 
         revision = (
             frozen_requirements_revision(self._store, self._require_result(result_id))
@@ -3423,12 +3412,9 @@ class CommitService(
         moved it yet), the losing candidates → SUPERSEDED with their results kept as
         history, and every dependent whose dependencies are now all COMPLETED → READY."""
 
-        from .completion_inputs import frozen_requirements_revision
-
         with self._store.transaction():
             stored = self._require_result(result_id)
             if stored.verification_state == "DONE" and stored.verdict == "PASS":
-                from ..storage.operation_completion_store import OperationCompletionStore
                 from .assurance_validity import acceptance_id_for
 
                 acceptance_id = acceptance_id_for(
@@ -3451,7 +3437,6 @@ class CommitService(
             self._require_lease(attempt, owner)
             task = self._require_task(stored.envelope.task_id)
             mission = self._require_mission(stored.envelope.mission_id)
-            from .completion_inputs import load_completion_result_inputs
 
             frozen_completion = load_completion_result_inputs(self._store, stored)
             materials = self._acceptance_materials(
@@ -3501,7 +3486,6 @@ class CommitService(
             self.refuse_policy_files(
                 stored, mission_id=mission.id, task_id=task.id, result_id=result_id
             )
-            from .leaf_acceptance import LeafAcceptanceAssembly
 
             # Preparation, its accepted bytes and contribution share the result
             # transaction. No effect proposal is inferred from a Worker file.
@@ -3625,11 +3609,9 @@ class CommitService(
             # 2026-10-11 偏离 5（TaskGraph §8.4）：分层计划里步骤之间没有依赖边，"最后一个叶"退化成任取
             # 一步，报告的结果、产物只有那一步的。现在：产物是全部验收步骤的（按网络顺序），"终结步"
             # 是做法声明的收尾步骤（没有就不指定），每一步各自的结果列在 accepted_results。
-            from ..graph.terminal import accepted_tasks, finalizer_task_id
-            from ..storage.htn_store import HtnStore
 
             accepted = accepted_tasks(tasks)
-            finalizer_id = finalizer_task_id(network, HtnStore(self._store), mission_id)
+            finalizer_id = finalizer_task_id(network, htn_store.HtnStore(self._store), mission_id)
             finalizer = next((task for task in accepted if task.id == finalizer_id), None)
             artifact_ids: list[str] = []
             for task in accepted:
@@ -3668,10 +3650,6 @@ class CommitService(
                 payload={"met": met, "judgments": [dict(item) for item in judgments]},
             )
             if met:
-                from ..assurance.codec import AssuranceError
-                from ..storage.assurance_store import AssuranceStore
-                from .assurance_final_writer import request_assured_closeout
-
                 report.update(self._ledger.usage_flags(mission_id))
                 # The judge never completes a Mission (spec §7.1): it records that the
                 # criteria are met and requests the closeout; COMPLETED is written only
@@ -3713,9 +3691,6 @@ class CommitService(
         a race; but ``judge_mission`` is public, and the honest answer to "may this
         Mission be judged" on a damaged plan is a refusal that says so, not a crash.
         """
-
-        from ..graph.projection_validation import GraphIntegrityError
-        from .hierarchical_dispatch import HierarchicalDispatch
 
         try:
             return HierarchicalDispatch.for_commit(self, mission.id).network(mission.id)
@@ -3763,10 +3738,7 @@ class CommitService(
         D5-4 drops superseded work from the judged set before this runs.)
         """
 
-        from ..contracts.evidence_state import Validity
-        from ..storage.htn_store import HtnStore
-
-        semantics = HtnStore(self._store)
+        semantics = htn_store.HtnStore(self._store)
         accepted = {
             (str(item.task_id), str(item.obligation_id))
             for item in semantics.list_acceptances(mission.id)
@@ -3805,14 +3777,10 @@ class CommitService(
     def _assured_terminal_notice(self, mission_id: str, final: Event, state_version: int) -> None:
         """Every terminal write on the assured lane requests the NOTIFY transport."""
 
-        from .assurance_final_writer import request_assured_notification
-
         request_assured_notification(self, mission_id, final, state_version=state_version)
 
     def assured_closeout_pending(self, mission_id: str) -> bool:
         """An ACTIVE assured Mission judged successful and waiting for its closeout."""
-
-        from .assurance_final_writer import assured_closeout_pending
 
         return assured_closeout_pending(self._store, self._store.get_mission(mission_id))
 
@@ -3828,13 +3796,10 @@ class CommitService(
 
         """
 
-        from ..storage.htn_store import HtnStore
-
         mission = self._store.get_mission(mission_id)
         if mission is None:
             return
         network = self._judgment_network(mission)
-        from .completion_status import read_occurrence_completion
 
         # Assurance §7.2（2026-10-06 车道 O）：判定读的是根的内容是否满足（根结论据此形成）；根的
         # 必需效果由收尾核对收敛（结果不明 → BLOCKED_UNKNOWN），不是判定的前置。
@@ -3843,7 +3808,7 @@ class CommitService(
             for root in network.root_occurrence_ids
         ):
             raise CommitRejected("approved completion Scope still has unmet content")
-        semantics = HtnStore(self._store)
+        semantics = htn_store.HtnStore(self._store)
         unresolved = sorted(
             str(duty)
             for duty in dict.fromkeys(network.required_obligations)

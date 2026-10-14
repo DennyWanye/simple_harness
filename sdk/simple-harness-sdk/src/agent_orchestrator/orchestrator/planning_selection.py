@@ -16,9 +16,13 @@ from typing import Any
 
 from simple_harness.contracts import canonical_json
 
+from ..contracts.htn import MethodRef
 from ..contracts.models import ContractError
 from ..contracts.planning_decisions import PlanningDecisionEnvelopeV1
+from ..storage import planning_decision_store
+from ..storage.planning_admission_store import PlanningAdmissionStore
 from .hierarchical_dispatch import append_hierarchical_event
+from .method_plan_reviews import adoption_refusal
 
 SYSTEM_RETRY_ORIGIN = "system_infrastructure_retry"
 
@@ -30,8 +34,6 @@ def candidate_context(dispatch: Any, mission_id: str, reports: Any) -> list[dict
     the person, or sent it back) is not offered as a candidate: it is listed under
     ``not_adoptable`` with its review state — the gate's own rule, one function (HTN 补齐 F1
     偏差单 2).  The reviewer's words stay in ``views.methods``."""
-    from ..contracts.htn import MethodRef
-    from .method_plan_reviews import adoption_refusal
 
     candidates = dispatch.method_candidates(mission_id, reports=reports)
     network = dispatch.network(mission_id)
@@ -224,11 +226,9 @@ def awaits_authority(store: Any, intent: Any) -> bool:
     """
     if intent.kind != "plan":
         return False
-    from ..storage.planning_admission_store import PlanningAdmissionStore
-    from ..storage.planning_decision_store import PlanningDecisionStore
 
     with store.read_view():
-        decisions = PlanningDecisionStore(store)
+        decisions = planning_decision_store.PlanningDecisionStore(store)
         protocol = decisions.get_mission_protocol(intent.mission_id)
         if protocol is None:  # a flat-mode Mission has no planning protocol
             return False

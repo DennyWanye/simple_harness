@@ -23,6 +23,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from ..artifacts.workspace import EXEC_COPY_MARK
 from .store import Store, StoreBusy
 
 
@@ -268,7 +269,6 @@ class StoreSandboxLedger:
         self._recovery = RecoveryStore(store)
 
     def _owner_of(self, cwd: str) -> dict[str, Any]:
-        from ..artifacts.workspace import EXEC_COPY_MARK
 
         name = Path(cwd).name
         attempt_id = name.split(EXEC_COPY_MARK, 1)[0] if EXEC_COPY_MARK in name else name

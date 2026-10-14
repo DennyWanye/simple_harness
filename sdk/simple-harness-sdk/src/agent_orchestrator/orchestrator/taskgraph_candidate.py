@@ -15,6 +15,7 @@ from ..graph.convergence import compute_convergence_impact
 from ..graph.network_codec import NetworkDocumentV1, encode
 from ..storage.htn_store import HtnStore
 from ..storage.store import Store, StoreError
+from .plan_commits import _superseded
 from .taskgraph_bindings import current_bindings as read_current_bindings
 
 if TYPE_CHECKING:
@@ -117,7 +118,6 @@ def document_from_bindings(
     if not set(rewrites).issubset(surviving):
         raise StoreError("TASKGRAPH_CANDIDATE_REWRITE_MEMBER_MISSING")
     replacements = {}
-    from .plan_commits import _superseded
 
     for target in impact.targets:
         current_binding = current.get(target.task_id)

@@ -68,6 +68,7 @@ from ..contracts.htn import (
     require_commit_ready,
 )
 from ..contracts.obligations import ObligationAccountView, ObligationLedger
+from ..contracts.operation_completion import PlanRevisionPinV1
 from ..contracts.semantic_base import content_hash_of
 from ..governance.budget_limits import inherit_limits
 from ..governance.budgets import BudgetError
@@ -76,16 +77,22 @@ from ..graph.projection_validation import (
     validate_refinement_acyclic,
 )
 from ..graph.task_network import DEFAULT_PROJECTION_BUDGET, TaskNetworkSnapshot
+from ..graph.taskgraph_validation import taskgraph_projection_report
 from ..planning.htn.compiler import (
     BudgetRequirement,
     DemandAdmission,
     DemandNotAdmissible,
     apply_obligation_openings,
 )
+from ..planning.htn.graph_repair import affected_occurrences
+from ..storage import planning_decision_store
 from ..storage.htn_store import HtnStore, PlanCommitReceipt
 from ..storage.obligation_store import ObligationStore
 from ..storage.store import StoreError
+from ..storage.taskgraph_store import NotBoundError, require_bound
 from ._read_set import ReadSetChannelUnknown, SemanticReadSetChecker
+from .accepted_outputs import criterion_linked_occurrences, owned_criteria
+from .method_plan_reviews import REVIEW_REQUIRED, unreviewed_adopted_methods
 from .occurrence_tasks import (
     COMPOUND_TOKENS,
     MIN_TOKEN_SHARE,
@@ -94,7 +101,10 @@ from .occurrence_tasks import (
     occurrence_task,
     task_pool_tokens,
 )
+from .operation_completion import freeze_plan_completion_scopes
+from .repair_impact import read_repair_impact_indexes
 from .state_machine import next_mission
+from .taskgraph_demands import read_independent_demands
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from ..contracts import Event, Mission
@@ -329,7 +339,6 @@ class PlanCommitsMixin:
                 return replayed
             if precommit_guard is not None:
                 precommit_guard()
-            from ..storage.taskgraph_store import NotBoundError, require_bound
 
             try:
                 require_bound(self._store, command.mission_id)
@@ -394,8 +403,6 @@ class PlanCommitsMixin:
         闸门不判断做法好不好，只认正式记录（或人对"判不下来"的裁决）。
         """
 
-        from .method_plan_reviews import REVIEW_REQUIRED, unreviewed_adopted_methods
-
         if not command.delta.method_instances:
             return
         refused = unreviewed_adopted_methods(
@@ -413,9 +420,13 @@ class PlanCommitsMixin:
         """H4 rewires lineage/input control; Task meaning and duty stay immutable."""
         if not command.delta.binding_rewrites:
             return
-        from ..storage.planning_decision_store import PlanningDecisionStore
 
-        if PlanningDecisionStore(self._store).get_mission_protocol(command.mission_id) is None:
+        if (
+            planning_decision_store.PlanningDecisionStore(self._store).get_mission_protocol(
+                command.mission_id
+            )
+            is None
+        ):
             raise PlanCommitRejected(
                 "DECISION_NOT_ENABLED_IN_PHASE",
                 "binding rewrites require a planning-protocol binding",
@@ -468,9 +479,6 @@ class PlanCommitsMixin:
                     "instead of changing it in place",
                 )
         if input_changes:
-            from ..planning.htn.graph_repair import affected_occurrences
-            from .repair_impact import read_repair_impact_indexes
-
             indexes = read_repair_impact_indexes(self._store, command.network, command.mission_id)
             required = {
                 str(item)
@@ -785,7 +793,6 @@ class PlanCommitsMixin:
         projection = validate_execution_projection(
             network.execution_projection(), command.structure_budget
         )
-        from ..graph.taskgraph_validation import taskgraph_projection_report
 
         projection = taskgraph_projection_report(network, projection)
         refinement = validate_refinement_acyclic(network)
@@ -1138,7 +1145,6 @@ class PlanCommitsMixin:
             orphaned -= {str(binding.obligation_id) for binding in draft.child_bindings}
         for draft in command.delta.method_instances:
             orphaned -= {str(binding.obligation_id) for binding in draft.child_bindings}
-        from .taskgraph_demands import read_independent_demands
 
         accounts = tuple(
             obligations.account(command.mission_id, identity)
@@ -1386,9 +1392,6 @@ class PlanCommitsMixin:
             },
         )
 
-        from ..contracts.operation_completion import PlanRevisionPinV1
-        from .operation_completion import freeze_plan_completion_scopes
-
         freeze_plan_completion_scopes(
             self._store,
             mission_id=command.mission_id,
@@ -1518,10 +1521,8 @@ class PlanCommitsMixin:
         ordinal = len(stored)
         # P2.3k verification P1-2: the occurrences a root criterion is linked to keep
         # ``code_test`` whatever their side effect declares (``verify-tests``).
-        from .accepted_outputs import criterion_linked_occurrences
 
         linked = criterion_linked_occurrences(network.obligation_coverage)
-        from .accepted_outputs import owned_criteria
 
         owned = owned_criteria(network, semantics)
         claimed = frozenset(ref for items in owned.values() for ref, _ in items)

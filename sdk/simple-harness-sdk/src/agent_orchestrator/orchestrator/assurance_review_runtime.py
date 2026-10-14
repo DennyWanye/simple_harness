@@ -19,6 +19,8 @@ from ..assurance.refs import AssuranceRef, Pin
 from ..assurance.review_input import REVIEW_INSTRUCTIONS, REVIEW_INSTRUCTIONS_VERSION
 from ..assurance.reviews import REVIEW_CODEC_VERSION
 from ..contracts import TERMINAL_ATTEMPT, TERMINAL_MISSION, TERMINAL_TASK, ContractError
+from ..runtime.first_request_budget import FirstRequestBudget, ProviderInputCap
+from ..runtime.model_router import RoutingUnavailable
 
 # One review turn: the initial request plus a bounded number of tool rounds.
 # The per-call cap on the gateway binding is MAX_EVIDENCE_TOOL_CALLS; the turn's
@@ -30,12 +32,24 @@ from ..runtime.tool_gateway import ASSURANCE_REVIEWER_TOOLS, TOOL_ANSWER_MARGIN
 from ..storage.assurance_reads import AssuranceReader
 from ..storage.htn_store import HtnStore
 from ..verification.critics import CriticVerdict
-from ..verification.reviewer_evidence_tools import MAX_EVIDENCE_TOOL_CALLS
+from ..verification.reviewer_evidence_tools import MAX_EVIDENCE_TOOL_CALLS, ReviewerEvidenceTools
 from .assurance_content_review import ensure_task_content_review
+from .assurance_purpose_reviews import (
+    action_proposal_subject,
+    composition_subject,
+    method_plan_package,
+    mission_final_subject,
+    operation_outcome_subject,
+    prepare_purpose_review,
+)
 from .assurance_review_collect import collect_assurance_review
-from .assurance_review_consumer import AssuranceReviewConsumer
+from .assurance_review_consumer import REVIEW_SOURCE_REPLACED, AssuranceReviewConsumer
+from .assurance_review_handoff import AssuranceReviewHandoff
 from .assurance_review_import import carried_review_alive, read_official_review_binding_locked
 from .assurance_review_policies import register_review_policies
+from .assurance_review_transport import read_review_invocation_locked
+from .assurance_settlement import AssuranceSettlement
+from .completion_inputs import frozen_requirements_revision
 from .failure_classes import INTERRUPTED_REVIEW, REVIEW_INTERRUPTED_CODE
 
 #: 2026-10-09 库存题：最终审阅员每轮查 2 次左右，10 次模型调用先用完（只查了 20 次，工具上限 32），
@@ -75,7 +89,6 @@ class AssuranceReviewRuntime:
         # Deployment port: projects the frozen Scope's check policy under the
         # Host's caller right before the first review preparation needs it.
         self._check_policy_projector = check_policy_projector
-        from ..verification.reviewer_evidence_tools import ReviewerEvidenceTools
 
         self.evidence_tools = ReviewerEvidenceTools(self)
 
@@ -85,8 +98,6 @@ class AssuranceReviewRuntime:
         Startup may call this before execution pools are opened. The actual pool,
         root and complete tick are required again on each later runtime entry.
         """
-        from .assurance_review_handoff import AssuranceReviewHandoff
-        from .assurance_settlement import AssuranceSettlement
 
         orch = self.orchestrator
         if orch._assurance_reviews not in (None, self):
@@ -111,7 +122,6 @@ class AssuranceReviewRuntime:
     ):
         """Exact official source for this Result under one requirements revision (``None``:
         the one it was produced under); no latest-Review fallback (TaskGraph 补全第四批)."""
-        from .completion_inputs import frozen_requirements_revision
 
         result = self.store.find_result_for_attempt(attempt_id)
         if result is None or result.envelope.mission_id != mission_id:
@@ -234,7 +244,6 @@ class AssuranceReviewRuntime:
         orch = self.orchestrator
         if mission.tenant_id != self.consumer.tenant_id:
             raise AssuranceError("ASSURANCE_TENANT_MISMATCH")
-        from ..runtime.model_router import RoutingUnavailable
 
         try:
             decision = orch._route_service("critic", mission.id)
@@ -273,7 +282,6 @@ class AssuranceReviewRuntime:
         request_command_id: str,
         allow_in_transaction: bool = False,
     ) -> Any:
-        from .assurance_purpose_reviews import prepare_purpose_review
 
         decision, config, reservation = self._purpose_config(mission, name)
         return prepare_purpose_review(
@@ -299,7 +307,6 @@ class AssuranceReviewRuntime:
         self, mission: Any, *, task_id: str, method_ref: Pin, producer_agent_ids: tuple[str, ...]
     ) -> Any:
         """METHOD_PLAN from the original method admission (planning subject + registry)."""
-        from .assurance_purpose_reviews import method_plan_package
 
         package, subject, requirements = method_plan_package(
             self.store,
@@ -322,7 +329,6 @@ class AssuranceReviewRuntime:
         self, mission: Any, *, package: Any, occurrence_id: str, accepted: Mapping[str, Any]
     ) -> Any:
         """COMPOSITION from the original composition assembly's package."""
-        from .assurance_purpose_reviews import composition_subject
 
         subject, requirements = composition_subject(
             self.store,
@@ -344,7 +350,6 @@ class AssuranceReviewRuntime:
         self, mission: Any, *, draft: Any, sources: Any, payloads: Any
     ) -> Any:
         """ACTION_PROPOSAL from T0's frozen draft, inside T0's own UoW."""
-        from .assurance_purpose_reviews import action_proposal_subject
 
         subject, requirements = action_proposal_subject(
             self.store,
@@ -365,7 +370,6 @@ class AssuranceReviewRuntime:
 
     def ensure_operation_outcome(self, mission: Any, *, prepared: Any) -> Any:
         """OPERATION_OUTCOME from the original outcome readback, inside its persistence UoW."""
-        from .assurance_purpose_reviews import operation_outcome_subject
 
         subject, requirements = operation_outcome_subject(
             self.store, mission_id=mission.id, prepared=prepared
@@ -382,7 +386,6 @@ class AssuranceReviewRuntime:
 
     def ensure_mission_final(self, mission: Any, *, package: Any, dispatch: Any) -> Any:
         """MISSION_FINAL from the root coordinator's cut package."""
-        from .assurance_purpose_reviews import mission_final_subject
 
         if self._check_policy_projector is not None and not self.store.connection.in_transaction:
             # Same deployment port as TASK_CONTENT: the root Scope's MISSION_FINAL
@@ -424,7 +427,6 @@ class AssuranceReviewRuntime:
         with self.store.read_view():
             if result is None or result.envelope.task_id != task.id:
                 raise AssuranceError("REVIEW_RESULT_SOURCE_MISMATCH")
-            from .completion_inputs import frozen_requirements_revision
 
             prior = self.store.connection.execute(
                 "SELECT i.dispatch_intent_id FROM assurance_review_invocations i "
@@ -441,8 +443,6 @@ class AssuranceReviewRuntime:
             ).fetchone()
             invocation = None
             if prior is not None:
-                from .assurance_review_transport import read_review_invocation_locked
-
                 invocation, _ = read_review_invocation_locked(
                     orch.commit,
                     AssuranceReader(self.store, tenant_id=mission.tenant_id, mission_id=mission.id),
@@ -577,8 +577,6 @@ class AssuranceReviewRuntime:
             (review_key,),
         ).fetchone()
         if row is not None:
-            from .assurance_review_consumer import REVIEW_SOURCE_REPLACED
-
             if row[1] == REVIEW_SOURCE_REPLACED:
                 # 说出真正的原因（2026-10-05 真机：规划器只看到"审阅准备需要人工处理"）
                 raise ContractError(
@@ -602,7 +600,6 @@ class AssuranceReviewRuntime:
 
 def protected_critic_budget(orch: Any, decision: Any, task_id: str, attempt_id: str):
     """Retain the original first-Critic protected-tail contract and account."""
-    from ..runtime.first_request_budget import FirstRequestBudget, ProviderInputCap
 
     worker = orch.store.get_intent_for_subject(attempt_id)
     if worker is None:

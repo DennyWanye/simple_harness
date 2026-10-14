@@ -13,6 +13,7 @@ from ..runtime.planning_operations import (
     build_operation_snapshot,
 )
 from ..runtime.taskgraph_operation_sources import read_operation_producers
+from ..storage.taskgraph_store import NotBoundError, require_bound
 
 
 def require_action_settlement(orchestrator: Any, subject_id: str, mission_id: str) -> None:
@@ -45,7 +46,6 @@ def require_action_settlement(orchestrator: Any, subject_id: str, mission_id: st
 
 def settle_resolved_actions(orchestrator: Any) -> bool:
     """Revisit actual held Action accounts after the original proof is imported."""
-    from ..storage.taskgraph_store import NotBoundError, require_bound
 
     store = orchestrator.store
     progressed = False

@@ -29,12 +29,25 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
 from . import __version__
-from .orchestrator.commit_service import CommitService
-from .storage.store import Store
+from .api import policies
+from .api.approvals import ApprovalApi, ApprovalRequestError
+from .artifacts.store import ArtifactStoreError, read_verified
+from .contracts import ContractError
+from .governance.permissions import Principal
+from .governance.promotion import registry_consistency
+from .observability.business_replay import CONSISTENT, verify_library, verify_mission
+from .observability.secrets import redact_text
+from .observability.traces import attribution, failure_timeline
+from .orchestrator.action_commits import ActionCommitError
+from .orchestrator.commit_service import CommitRejected, CommitService
+from .orchestrator.method_library import library_listing
+from .storage.method_library_store import MethodLibraryStore
+from .storage.store import Store, StoreError, library_copy
 
 EXIT_OK = 0
 EXIT_FAILED = 1
@@ -102,7 +115,6 @@ def cmd_artifact(args: argparse.Namespace) -> int:
             _print({"error": "unknown artifact"})
             return EXIT_FAILED
         record = artifact.to_json()
-        from .artifacts.store import ArtifactStoreError, read_verified
 
         try:  # P3.2 D3: the stored bytes, hash re-checked, never through a symlink
             record["content"] = read_verified(artifact).decode("utf-8")
@@ -132,13 +144,6 @@ def cmd_replay(args: argparse.Namespace) -> int:
     and compare them with the library (全业务重放 v3, HTN 补齐阶段 G).  Anything but
     "consistent" — inconsistent, not covered, or out of scope — exits 1; a missing library
     or Mission exits 2."""
-
-    import tempfile
-
-    from .observability.business_replay import CONSISTENT, verify_library, verify_mission
-    from .observability.secrets import redact_text
-    from .observability.traces import attribution, failure_timeline
-    from .storage.store import StoreError, library_copy
 
     library = Path(args.evidence_dir).resolve() / "orchestrator.db"
     if not library.is_file():  # review P2-5: an answer, never a traceback or a silent gap
@@ -179,13 +184,6 @@ def cmd_replay(args: argparse.Namespace) -> int:
 def cmd_approval(args: argparse.Namespace) -> int:
     """``approval ...`` (plan D7-10'): the caller named by ``--as`` decides; the local
     build takes that name as given — a real deployment binds it to authentication."""
-
-    from .api.approvals import ApprovalApi, ApprovalRequestError
-    from .contracts import ContractError
-    from .governance.permissions import Principal
-    from .orchestrator.action_commits import ActionCommitError
-    from .orchestrator.commit_service import CommitRejected
-    from .storage.store import StoreError
 
     store = _open_store(args)
     try:
@@ -241,8 +239,6 @@ def cmd_method_library(args: argparse.Namespace) -> int:
     """``method-library list / clear``: the library of method precedents (阶段 C3).  ``clear``
     is a development diagnostic: it empties the two library tables (the method definitions are
     not touched) and needs ``--yes``."""
-    from .orchestrator.method_library import library_listing
-    from .storage.method_library_store import MethodLibraryStore
 
     library = Path(args.evidence_dir).resolve() / "orchestrator.db"
     if not library.is_file():
@@ -267,13 +263,6 @@ def cmd_policy(args: argparse.Namespace) -> int:
     library is opened as a read-only copy; nothing here writes.  Exit 0 done, 1 refused,
     2 a bad call."""
 
-    import tempfile
-
-    from .api.policies import PolicyApi, PolicyRequestError
-    from .governance.permissions import Principal
-    from .governance.promotion import registry_consistency
-    from .storage.store import library_copy
-
     library = Path(args.evidence_dir).resolve() / "orchestrator.db"
     if not library.is_file():  # review P2-4: never create an empty library by accident
         _print({"error": f"no orchestrator library at {library}"})
@@ -281,7 +270,7 @@ def cmd_policy(args: argparse.Namespace) -> int:
     scratch = tempfile.TemporaryDirectory(prefix="orch-policy-")
     store = Store.open_readonly(library_copy(library, Path(scratch.name)))
     try:
-        reader = PolicyApi(CommitService(store), Principal("cli-reader", "cli-reader"))
+        reader = policies.PolicyApi(CommitService(store), Principal("cli-reader", "cli-reader"))
         try:
             value: Any
             if args.action == "list":
@@ -290,7 +279,7 @@ def cmd_policy(args: argparse.Namespace) -> int:
                 value = reader.show(args.identifier)
             else:
                 value = {**reader.status(), "consistency": registry_consistency(store)}
-        except PolicyRequestError as error:
+        except policies.PolicyRequestError as error:
             _print({"error": str(error)})
             return EXIT_FAILED
         except (OSError, KeyError, TypeError, ValueError) as error:

@@ -29,6 +29,7 @@ from ..contracts.resolution import (
     RequirementsRevision,
 )
 from ..contracts.semantic_base import TypedRef, TypedRefKind, content_hash_of
+from ..orchestrator.operation_completion import OperationCompletionError, OperationCompletionReader
 from ..storage.htn_store import HtnStore
 from ..storage.obligation_store import ObligationStore
 
@@ -334,10 +335,6 @@ def initialize_root(
 def install_planning(loop: Any, world_factory: Callable[[Any, Any], Any]) -> None:
     """Install the deployment's per-Mission planning world; a Mission starts planning once
     its completion mapping is confirmed."""
-    from ..orchestrator.operation_completion import (
-        OperationCompletionError,
-        OperationCompletionReader,
-    )
 
     def ready(mission: Any) -> bool:
         requirements = HtnStore(loop.store).latest_requirements_revision(mission.id)

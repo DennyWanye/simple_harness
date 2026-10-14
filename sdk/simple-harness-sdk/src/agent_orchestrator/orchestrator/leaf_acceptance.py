@@ -53,11 +53,13 @@ Two things this module refuses to do:
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
 from ..artifacts.input_bindings import AcceptedOutput, DisclosureState, ResourceIdentity
+from ..assurance.codec import fingerprint
 from ..contracts.htn import (
     OccurrenceId,
     ReadItem,
@@ -89,12 +91,23 @@ from ..contracts.semantic_base import (
     TypedRefKind,
     content_hash_of,
 )
+from ..memory.verified_knowledge import parse_knowledge_ref
 from ..runtime.output_blocks import PortClaim
+from ..storage.assurance_store import AssuranceStore
 from ..storage.htn_store import HtnStore
 from ..storage.store import StoreError
 from ..verification.acceptance_rules import ExecutionPosture, IndependenceFacts
+from ..verification.conflicts import contradictions
+from ..verification.evidence_resolver import in_source_roots
 from .accepted_outputs import CarriedCriterion, output_ports_in_revision
-from .resolution_commits import AcceptanceReceipt, AcceptReviewCommand, ResolutionPrincipal
+from .resolution_commits import (
+    AcceptanceReceipt,
+    AcceptReviewCommand,
+    ResolutionCommitRejected,
+    ResolutionPrincipal,
+)
+from .scoped_content_review import read_task_content_projection
+from .taskgraph_review import read_review_origin
 
 #: The review policy this deployment reviews a hierarchical leaf under.  A named
 #: constant rather than a literal at three call sites, so the package, the record
@@ -395,7 +408,6 @@ class LeafAcceptanceAssembly:
         """
 
         outcomes = layer_outcomes(layers)
-        from .taskgraph_review import read_review_origin
 
         origin = read_review_origin(self.commit, mission_id, task_id, result_id)
         binding = origin.semantic
@@ -410,7 +422,6 @@ class LeafAcceptanceAssembly:
                 "commit_goal_resolution out of its children's acceptances, never by a review "
                 "of its own (§6.3)"
             )
-        from .scoped_content_review import read_task_content_projection
 
         # What is judged — criteria, layers, producer — is read back from the stored
         # result under the frozen completion scope, never taken from the caller.
@@ -423,7 +434,6 @@ class LeafAcceptanceAssembly:
         manifest = origin.context.inputs.binding.manifest_hash
         if input_manifest_hash and input_manifest_hash != manifest:
             raise ContractError("TASKGRAPH_REVIEW_MANIFEST_MISMATCH")
-        from ..storage.assurance_store import AssuranceStore
 
         AssuranceStore(self.store).require_assured(mission_id)
         package = self._package(
@@ -447,7 +457,6 @@ class LeafAcceptanceAssembly:
             now_ms = previous.accepted_at_ms
         # The acceptance is licensed by a current UseCertificate prepared outside
         # this transaction and committed by accept_review beside the Acceptance.
-        from .resolution_commits import ResolutionCommitRejected
 
         validity = getattr(self.commit, "_assurance_validity", None)
         candidate = (
@@ -609,7 +618,6 @@ class LeafAcceptanceAssembly:
         return self._stored_package(package)
 
     def _result_fingerprint(self, result_id: str) -> str:
-        from ..assurance.codec import fingerprint
 
         stored = self.store.get_result(result_id)
         if stored is None:
@@ -623,7 +631,6 @@ class LeafAcceptanceAssembly:
         reference material the reviewed attempt was dispatched with, the version it held and
         the version in force now.  Two facts read from the records — whether the difference
         matters to a criterion is the reviewer's judgement.  Frozen at the first cut."""
-        from ..verification.evidence_resolver import in_source_roots
 
         try:
             return tuple(
@@ -653,7 +660,6 @@ class LeafAcceptanceAssembly:
         """The package's summary section (阶段 C3): the Worker's ``summary`` of the reviewed
         result, bound to the result's fingerprint.  Frozen at the first cut like the claim
         sections."""
-        import hashlib
 
         try:
             return self.semantics.get_review_package(package_id).summary_to_confirm
@@ -684,10 +690,6 @@ class LeafAcceptanceAssembly:
         in ``contradicts``), and the knowledge this result declares it used.  Nothing of
         the reviewed step itself (any attempt) is ever listed as related.
         """
-        import hashlib
-
-        from ..memory.verified_knowledge import parse_knowledge_ref
-        from ..verification.conflicts import contradictions
 
         try:
             stored = self.semantics.get_review_package(package_id)
@@ -776,8 +778,6 @@ class LeafAcceptanceAssembly:
         local layers never assemble one."""
         official = self.semantics.official_review_record(str(package.package_id))
         if official is None:
-            from .resolution_commits import ResolutionCommitRejected
-
             raise ResolutionCommitRejected(
                 "REVIEW_NOT_OFFICIAL",
                 f"no official Assurance review record is stored for package {package.package_id!s}",

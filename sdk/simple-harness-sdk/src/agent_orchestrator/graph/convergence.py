@@ -11,7 +11,9 @@ from simple_harness.contracts import canonical_json
 
 from ..contracts.error_table import SharingRefusalCode, SharingRefused
 from ..contracts.models import ContractError
+from .execution_contracts import PlanEffectSet
 from .network_codec import NetworkDocumentV1, decode
+from .notification_contracts import _integer, _text
 from .revision_pins import build_revision_pins
 
 if TYPE_CHECKING:
@@ -26,7 +28,6 @@ class ConvergenceTarget:
     target_kind: str
 
     def __post_init__(self) -> None:
-        from .notification_contracts import _integer, _text
 
         _text(self.occurrence_id, "occurrence_id")
         _text(self.task_id, "task_id")
@@ -155,7 +156,6 @@ def compute_plan_effects(before: NetworkDocumentV1, candidate: NetworkDocumentV1
     A downstream consumer may keep valid frozen inputs; needing a new validity
     judgement is not by itself permission to cancel it or reset its accounting.
     """
-    from .execution_contracts import PlanEffectSet
 
     impact = compute_convergence_impact(before, candidate)
     old, new = decode(before.to_json()).snapshot, decode(candidate.to_json()).snapshot

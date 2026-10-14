@@ -22,6 +22,7 @@ from simple_harness.contracts import canonical_json
 
 from ..storage.planning_admission_store import PlanningAdmissionStore
 from .connectors import Receipt
+from .operation_reconciliation import stored_negative_proof
 
 
 class SourceUnavailable(RuntimeError):
@@ -466,7 +467,6 @@ class StoreOperationReader:
                 bindings = adapter.list_operation_bindings(mission_id)
                 links = adapter.list_operation_action_links(mission_id)
                 actions = adapter.list_operation_actions(mission_id)
-                from .operation_reconciliation import stored_negative_proof
 
                 actions = [
                     dict(
@@ -499,8 +499,6 @@ class StoreOperationReader:
         used to discard work.  A cancelled Task with an active Attempt therefore
         remains a convergence requirement.
         """
-
-        from .operation_reconciliation import stored_negative_proof
 
         with self.store.read_view() as connection:
             try:

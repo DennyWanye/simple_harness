@@ -21,6 +21,8 @@ import asyncio
 import posixpath
 import re
 
+from simple_harness.tools.reconciliation import ReconciliationObservation, ReconciliationState
+
 from ..contracts.models import SEARCH_TOOL_NAMES
 from .domain_tools import DomainTool
 
@@ -565,10 +567,6 @@ class WorkspaceToolGateway:
         This never re-executes tools. Reads, tests and external world mutations
         cannot be reconstructed from a current file and remain UNKNOWN.
         """
-        from simple_harness.tools.reconciliation import (
-            ReconciliationObservation,
-            ReconciliationState,
-        )
 
         unknown = ReconciliationObservation(
             ReconciliationState.STILL_UNKNOWN, "workspace-write:proof-unavailable"

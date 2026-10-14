@@ -9,7 +9,7 @@ current execution authority before this data can authorize dispatch or Commit.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, fields, is_dataclass
+from dataclasses import dataclass, fields, is_dataclass, replace
 from enum import Enum
 from typing import Any, TypeVar
 
@@ -173,7 +173,6 @@ class TaskGraphLocalExecutionReader:
                 if semantics.task_semantics_of(mission_id, str(binding.task_id)) != binding:
                     # The hierarchy decorates adopted method identity on its view;
                     # compare that field to the adopted draft, not raw current bytes.
-                    from dataclasses import replace
 
                     actual = semantics.task_semantics_of(mission_id, str(binding.task_id))
                     if (

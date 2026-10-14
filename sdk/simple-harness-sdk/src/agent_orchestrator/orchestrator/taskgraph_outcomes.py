@@ -9,6 +9,9 @@ from ..graph.task_network import TaskNetworkSnapshot
 from ..runtime.planning_operations import SourceUnavailable
 from ..storage.htn_store import HtnStore
 from ..storage.store import Store
+from .completion_status import read_occurrence_completion
+from .operation_completion import OperationCompletionError
+from .taskgraph_terminal import read_terminal_outcome
 
 
 def read_taskgraph_outcomes(
@@ -25,9 +28,6 @@ def read_taskgraph_outcomes(
 def _completion_outcomes(
     store: Store, mission_id: str, network: TaskNetworkSnapshot
 ) -> dict[OccurrenceId, OccurrenceOutcome]:
-    from .completion_status import read_occurrence_completion
-    from .operation_completion import OperationCompletionError
-    from .taskgraph_terminal import read_terminal_outcome
 
     semantics = HtnStore(store)
     active = semantics.active_plan_revision(mission_id)

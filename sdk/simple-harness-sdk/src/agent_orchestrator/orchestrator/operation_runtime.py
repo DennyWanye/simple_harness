@@ -7,15 +7,27 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from ..assurance.codec import AssuranceError
 from ..contracts import ContractError
+from ..contracts.error_table import handoff_refusal_transient
 from ..contracts.operation_intents import SubmitOperationIntentV2
 from ..contracts.resolution import ReviewVerdict
 from ..contracts.semantic_base import TypedRef, TypedRefKind, content_hash_of
+from ..contracts.state_machines import MissionStopReason
 from ..governance.permissions import Principal
+from ..runtime.operation_profiles import BuiltinOperationProfiles
+from ..storage.assurance_store import AssuranceStore
 from ..storage.htn_store import HtnStore
+from ..storage.operation_completion_store import OperationCompletionStore
 from ..storage.operation_intent_store import OperationIntentStore
+from . import operation_outcomes
+from .action_commits import HANDOFF_READY_STATES
+from .assurance_purpose_reviews import assurance_review_runtime, purpose_review_key
 from .operation_completion import OperationCompletionError
 from .operation_materialization import OperationMaterializationRuntime
+from .operation_proposal_review import ActionProposalReviewCoordinator
+from .review_adjudication import accepted_or_adjudicated, adjudication_of
+from .system_operations import _ask_planner_once, _stop
 
 logger = logging.getLogger("agent_orchestrator")
 
@@ -24,7 +36,6 @@ def ensure_operation_runtime(orchestrator: Any) -> OperationMaterializationRunti
     existing = getattr(orchestrator.commit, "_operation_materialization_runtime", None)
     if existing is not None:
         return existing
-    from ..runtime.operation_profiles import BuiltinOperationProfiles
 
     profiles = getattr(orchestrator, "_operation_profiles", None) or BuiltinOperationProfiles(
         orchestrator.connectors
@@ -48,7 +59,6 @@ def ensure_operation_runtime(orchestrator: Any) -> OperationMaterializationRunti
 
 
 def coordinator_for(orchestrator: Any, sources: Any) -> Any:
-    from .operation_proposal_review import ActionProposalReviewCoordinator
 
     runtime = ensure_operation_runtime(orchestrator)
     return ActionProposalReviewCoordinator(
@@ -91,9 +101,6 @@ def ensure_assured_proposal_reviews(orchestrator: Any, mission_id: str) -> bool:
     refusal is logged and retried next round; it never falls back to the legacy
     reviewer.
     """
-    from ..assurance.codec import AssuranceError
-    from ..storage.assurance_store import AssuranceStore
-    from .assurance_purpose_reviews import assurance_review_runtime, purpose_review_key
 
     store = orchestrator.store
     rows = OperationIntentStore(store).for_mission(mission_id)
@@ -188,8 +195,6 @@ async def dispatch_materialized_operations(orchestrator: Any, mission_id: str) -
     idempotency check. This bridge supplies no new authority and never re-sends
     HANDED_OFF, UNKNOWN or SUCCEEDED actions.
     """
-    from ..contracts.state_machines import MissionStopReason
-    from .action_commits import HANDOFF_READY_STATES
 
     for row in OperationIntentStore(orchestrator.store).for_mission(mission_id):
         receipt = orchestrator.store.get_receipt("materialize:" + row["intent_id"])
@@ -206,8 +211,6 @@ async def dispatch_materialized_operations(orchestrator: Any, mission_id: str) -
         await orchestrator.actions.hand_off(key)
         after = orchestrator.store.get_action(key)
         if after is not None and after["state"] in HANDOFF_READY_STATES:
-            from ..contracts.error_table import handoff_refusal_transient
-
             if handoff_refusal_transient(orchestrator.actions.last_refusal.get(key, "")):
                 return False  # stays handoff-ready; tried again next round
             orchestrator._commit_fail_mission(
@@ -225,15 +228,6 @@ async def dispatch_materialized_operations(orchestrator: Any, mission_id: str) -
 
 def advance_operation_outcomes(orchestrator: Any, mission_id: str) -> bool:
     """Queue one review or consume a durable verdict, without re-sending an action."""
-    from ..storage.operation_completion_store import OperationCompletionStore
-    from .operation_outcomes import (
-        _effect_owner,
-        accept_operation_outcome,
-        outcome_retake_due,
-        persist_operation_outcome_review,
-        prepare_operation_outcome_review,
-    )
-    from .review_adjudication import accepted_or_adjudicated, adjudication_of
 
     store = orchestrator.store
     rows = OperationIntentStore(store).for_mission(mission_id)
@@ -249,7 +243,7 @@ def advance_operation_outcomes(orchestrator: Any, mission_id: str) -> bool:
         if action is None or action["state"] != "SUCCEEDED":
             continue
         try:
-            owner, spec, _ = _effect_owner(
+            owner, spec, _ = operation_outcomes._effect_owner(
                 store, mission_id, row["binding"]["completion"]["effect_key"]
             )
             current = tuple(
@@ -273,7 +267,7 @@ def advance_operation_outcomes(orchestrator: Any, mission_id: str) -> bool:
                     if record is None:
                         continue
                     if accepted_or_adjudicated(store, record):
-                        accept_operation_outcome(
+                        operation_outcomes.accept_operation_outcome(
                             orchestrator.commit,
                             mission_id=mission_id,
                             binding_id=existing["binding_id"],
@@ -292,7 +286,6 @@ def advance_operation_outcomes(orchestrator: Any, mission_id: str) -> bool:
                     if record.verdict in {ReviewVerdict.REJECTED, ReviewVerdict.REWORK}:
                         # 结果审阅员判这次操作的结果不满足要求：操作不能重发，把它的结论交给规划器
                         # 一次（问用户、改计划由它判断）；它回应过仍没解决就具名停下，不挂着等。
-                        from .system_operations import _ask_planner_once, _stop
 
                         facts = {
                             "reason": "operation_outcome_rejected",
@@ -319,10 +312,10 @@ def advance_operation_outcomes(orchestrator: Any, mission_id: str) -> bool:
                         ):
                             return True
                 # 2026-09-29：唯一一份审阅被重启打断而用完（不是审阅员的结论）——重审一次。
-                if not outcome_retake_due(store, mission_id, current):
+                if not operation_outcomes.outcome_retake_due(store, mission_id, current):
                     continue
                 retake = True
-            prepared = prepare_operation_outcome_review(
+            prepared = operation_outcomes.prepare_operation_outcome_review(
                 store,
                 intent_id=row["intent_id"],
                 connectors=runtime.connectors,
@@ -330,12 +323,12 @@ def advance_operation_outcomes(orchestrator: Any, mission_id: str) -> bool:
                 retake=retake,
             )
             with store.transaction():
-                persist_operation_outcome_review(orchestrator.commit, prepared, runtime=runtime)
+                operation_outcomes.persist_operation_outcome_review(
+                    orchestrator.commit, prepared, runtime=runtime
+                )
                 mission = store.get_mission(mission_id)
                 # BW03: the persisted outcome preparation is reviewed on the
                 # Assurance round transport in this same UoW.
-                from ..assurance.codec import AssuranceError
-                from .assurance_purpose_reviews import assurance_review_runtime
 
                 try:
                     assurance_review_runtime(orchestrator.commit).ensure_operation_outcome(

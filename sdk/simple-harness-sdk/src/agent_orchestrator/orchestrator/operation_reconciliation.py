@@ -4,13 +4,17 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..contracts.semantic_base import content_hash_of
+from ..contracts.operation_reconciliation import ScopedReconciliationObservationV1
+from ..contracts.semantic_base import TypedRef, TypedRefKind, content_hash_of
 from ..runtime.operation_reconciliation import (
     ReconciliationEvidence,
     ReconciliationProofError,
     context,
+    scope,
+    stored_negative_proof,
     validate_evidence,
 )
+from .failure_classes import NON_MODEL_FAILURE_CAP
 
 
 class OperationReconciliationCommitsMixin:
@@ -126,9 +130,6 @@ class OperationReconciliationCommitsMixin:
         """A person ruled an operation-linked action not applied: the ruling is the proof
         (阶段 B 裁决第 3 类), stored like any scoped proof so the operation gate opens.
         Called in the override's own transaction; no adapter is asked."""
-        from ..contracts.operation_reconciliation import ScopedReconciliationObservationV1
-        from ..contracts.semantic_base import TypedRef, TypedRefKind
-        from ..runtime.operation_reconciliation import scope
 
         if not self._store.connection.in_transaction:
             raise ReconciliationProofError("a human ruling proof needs the override's transaction")
@@ -185,7 +186,6 @@ class OperationReconciliationCommitsMixin:
         """A failed, handed-off action whose proof could not be read this round (the
         service unreachable, a publish in flight).  Counted; at the shared non-model cap it
         is marked for a person instead of being asked again (阶段 B 裁决第 1 类)."""
-        from .failure_classes import NON_MODEL_FAILURE_CAP
 
         with self._store.transaction():
             action = self._store.get_action(action_key)
@@ -224,7 +224,6 @@ class OperationReconciliationCommitsMixin:
         Recheck under the write lock: a concurrently admitted new handoff invalidates
         the old proof and must retain its own reservation and effect uncertainty.
         """
-        from ..runtime.operation_reconciliation import stored_negative_proof
 
         runtime = self._operation_runtime()
         if service_authority is not runtime.service_authority:

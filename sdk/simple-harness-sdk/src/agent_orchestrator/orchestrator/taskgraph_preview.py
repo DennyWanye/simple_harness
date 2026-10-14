@@ -8,6 +8,7 @@ a deployment cannot replace those steps with an arbitrary successful factory.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
@@ -29,6 +30,7 @@ from ..storage.store import Store, StoreConflict, StoreError
 from ..storage.taskgraph_convergence import TaskGraphConvergenceStore
 from ..storage.taskgraph_store import TaskGraphStore
 from .plan_commits import CommitPlanCommand, PlanPrincipal
+from .taskgraph_bindings import current_bindings
 from .taskgraph_candidate import document_from_bindings
 from .taskgraph_plan_commit import TaskGraphPlanCommitParticipant
 
@@ -158,7 +160,6 @@ class TaskGraphPreviewService:
             tasks = self.store.list_tasks(sources.mission_id)
             if frozenset(task.id for task in tasks) != sources.existing_task_ids:
                 raise StoreConflict("TASKGRAPH_PLAN_TASK_SET_CHANGED")
-            from .taskgraph_bindings import current_bindings
 
             actual_bindings = current_bindings(semantics, sources.mission_id)
             if {str(item.task_id): item for item in actual_bindings} != {
@@ -326,7 +327,6 @@ class TaskGraphPreviewService:
     def _event_once(
         self, identity: str, event_type: str, mission_id: str, payload: dict[str, Any]
     ) -> Event:
-        import json
 
         row = self.store.connection.execute(
             "SELECT seq,mission_id,type,payload_json FROM events WHERE event_id=?", (identity,)

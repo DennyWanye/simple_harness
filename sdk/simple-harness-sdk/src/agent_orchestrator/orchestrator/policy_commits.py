@@ -17,16 +17,19 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from ..artifacts.store import read_verified
 from ..contracts.models import sha256_hex
 from ..governance.promotion import (
     DEPLOYMENT_TIMELINE,
     NON_PROMOTABLE,
     interpreter_versions,
     params_hash,
+    resolve_params,
 )
 from ..governance.promotion import (
     version_id as make_version_id,
 )
+from ..runtime.assembly import OrchestratorConfig
 from ..storage.assurance_changes import original_source_mutation
 
 if TYPE_CHECKING:
@@ -160,9 +163,6 @@ class PolicyCommitsMixin:
             active = self._store.active_policy()
             if active is None:
                 if default_params is None:
-                    from ..governance.promotion import resolve_params
-                    from ..runtime.assembly import OrchestratorConfig
-
                     default_params = resolve_params(
                         OrchestratorConfig(evidence_root=self._store.path.parent)
                     )
@@ -266,8 +266,6 @@ class PolicyCommitsMixin:
                 continue
             keys: list[str] = []
             try:
-                from ..artifacts.store import read_verified  # P3.2 D3: one way to read
-
                 parsed = json.loads(read_verified(artifact).decode("utf-8"))
                 if isinstance(parsed, Mapping):
                     keys = sorted(str(k) for k in parsed)

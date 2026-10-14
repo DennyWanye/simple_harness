@@ -9,10 +9,11 @@ from dataclasses import dataclass
 from typing import Any
 
 from ..contracts.evidence_state import Validity
-from ..contracts.htn import TaskForm
+from ..contracts.htn import ObligationId, TaskForm
 from ..contracts.resolution import ReviewPurpose, ReviewVerdict
 from ..contracts.semantic_base import Provenance, TypedRef, TypedRefKind, content_hash_of
 from ..storage.htn_store import HtnStore
+from ..storage.obligation_store import ObligationStore
 from ..storage.operation_completion_store import OperationCompletionStore
 from ..storage.store import Store, StoreError
 from .completion_status import _official_accept_review, read_occurrence_completion
@@ -62,8 +63,6 @@ def current_child_supports(
     store: Store, mission_id: str, children: Sequence[Any]
 ) -> dict[str, tuple[str, ...]]:
     """Return only fully completed occurrences in their current immutable Scopes."""
-    from ..contracts.htn import ObligationId
-    from ..storage.obligation_store import ObligationStore
 
     htn = HtnStore(store)
     completion = OperationCompletionStore(store)

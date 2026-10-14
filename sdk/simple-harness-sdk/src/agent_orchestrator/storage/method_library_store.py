@@ -11,6 +11,9 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from ..contracts import Event, ids
+from .source_records import DEPLOYMENT_TIMELINE
+
 LISTED = "LISTED"
 RETIRED = "RETIRED"
 CLEARED_EVENT = "MethodLibraryCleared"
@@ -147,8 +150,6 @@ class MethodLibraryStore:
 
         A deployment-level fact: one ``MethodLibraryCleared`` on the deployment timeline in the
         same transaction — a global table never changes silently (HTN 补齐阶段 G 第 6 批)."""
-        from ..contracts import Event, ids
-        from .source_records import DEPLOYMENT_TIMELINE
 
         with self.store.transaction() as connection:
             blamed = connection.execute("DELETE FROM method_library_attributions").rowcount

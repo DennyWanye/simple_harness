@@ -55,10 +55,18 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any
 
+from ..assurance.codec import AssuranceError
 from ..contracts import TERMINAL_MISSION, ContractError
 from ..contracts.evidence_state import Validity
 from ..contracts.htn import ObligationId, SemanticReadSet
 from ..contracts.obligations import ObligationAccountView, ObligationLifecycle
+from ..contracts.operation_completion import (
+    AcceptanceContributionScopeV1,
+    CompletionPinV1,
+    CompletionScopeRole,
+    ContributionKind,
+    PlanRevisionPinV1,
+)
 from ..contracts.resolution import (
     Acceptance,
     AcceptanceId,
@@ -74,8 +82,10 @@ from ..contracts.resolution import (
     account_for_purpose,
 )
 from ..contracts.semantic_base import EvidenceRef, TypedRefKind, content_hash_of
+from ..storage.assurance_store import AssuranceStore
 from ..storage.htn_store import HtnStore
 from ..storage.obligation_store import ObligationStore
+from ..storage.operation_completion_store import OperationCompletionStore
 from ..storage.store import StoreError
 from ..verification.acceptance_rules import (
     AcceptanceSubject,
@@ -84,9 +94,21 @@ from ..verification.acceptance_rules import (
     ExecutionPosture,
     IndependenceFacts,
 )
+from ..verification.scoped_acceptance import (
+    AssuredAcceptance,
+    acceptable_assured_root,
+    acceptable_scoped_operation_outcome,
+    acceptable_scoped_task_content,
+)
+from ..verification.scoped_composition import acceptable_scoped_composition
 from ._read_set import ReadSetChannelUnknown, SemanticReadSetChecker
-from .accepted_outputs import accepted_output_json, output_ports_in_revision
+from .accepted_outputs import accepted_output_json, check_against_ports, output_ports_in_revision
+from .completion_status import read_occurrence_completion
+from .completion_support import current_child_supports
+from .operation_completion import OperationCompletionReader
 from .plan_commits import HIERARCHICAL_SEMANTICS, semantics_of
+from .scoped_composition_review import read_compound_projection, root_content_projection
+from .scoped_content_review import validate_scoped_command
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from ..contracts import Event, Mission
@@ -609,7 +631,6 @@ class ResolutionCommitsMixin:
             replayed = self._replayed(semantics, command.mission_id, command.command_id, intent)
             if replayed is not None:
                 self._require_kind(replayed, ACCEPTANCE_KIND)
-                from ..storage.operation_completion_store import OperationCompletionStore
 
                 replayed_contribution = OperationCompletionStore(
                     self._store
@@ -672,7 +693,6 @@ class ResolutionCommitsMixin:
                     f"presents revision {int(command.requirements.revision)}",
                 )
             self._check_reads(semantics, command.mission_id, command.read_set)
-            from ..storage.assurance_store import AssuranceStore
 
             AssuranceStore(self._store).require_assured(command.mission_id)
             # The current UseCertificate licenses the acceptance; it is committed
@@ -690,11 +710,6 @@ class ResolutionCommitsMixin:
             )
             # The command is judged against the frozen completion scope's own
             # projection of the stored result, never against what the command claims.
-            from ..verification.scoped_acceptance import (
-                acceptable_scoped_operation_outcome,
-                acceptable_scoped_task_content,
-            )
-            from .scoped_content_review import validate_scoped_command
 
             checker = acceptable_scoped_task_content
             if command.purpose is ReviewPurpose.OPERATION_OUTCOME:
@@ -793,13 +808,6 @@ class ResolutionCommitsMixin:
                 payload=payload,
             )
             commit = self._record_receipt(semantics, command.mission_id, event.id, payload)
-            from ..contracts.operation_completion import (
-                AcceptanceContributionScopeV1,
-                CompletionPinV1,
-                CompletionScopeRole,
-                ContributionKind,
-            )
-            from ..storage.operation_completion_store import OperationCompletionStore
 
             delivery_pin = None
             if command.purpose is ReviewPurpose.OPERATION_OUTCOME:
@@ -885,8 +893,6 @@ class ResolutionCommitsMixin:
         undo the verification (part 2b's rule): it is §9.1's "content defect → a new
         content attempt against the same duty", and the retry path is the ordinary one.
         """
-
-        from .accepted_outputs import check_against_ports
 
         outputs = tuple(command.outputs)
         pinned = None
@@ -1046,8 +1052,6 @@ class ResolutionCommitsMixin:
             )
             scoped_projection = None
             if not command.is_mission_root and command.purpose is ReviewPurpose.COMPOSITION:
-                from .scoped_composition_review import read_compound_projection
-
                 occurrence_id = str(command.source.get("occurrence_id", ""))
                 try:
                     scoped_projection = read_compound_projection(
@@ -1064,7 +1068,6 @@ class ResolutionCommitsMixin:
                     raise ResolutionCommitRejected(
                         "OP_EFFECT_SCOPE_STALE", "compound Requirements differ from its Scope"
                     )
-            from ..storage.assurance_store import AssuranceStore
 
             AssuranceStore(self._store).require_assured(command.mission_id)
             root_projection = None
@@ -1120,8 +1123,6 @@ class ResolutionCommitsMixin:
                 compound=compound,
             )
             if scoped_projection is not None:
-                from ..verification.scoped_composition import acceptable_scoped_composition
-
                 decision = acceptable_scoped_composition(
                     subject,
                     projected_criteria=scoped_projection.criteria,
@@ -1134,8 +1135,6 @@ class ResolutionCommitsMixin:
                     assured=assured,
                 )
             else:
-                from ..verification.scoped_acceptance import acceptable_assured_root
-
                 assert root_projection is not None  # the root branch above read it
                 decision = acceptable_assured_root(
                     subject,
@@ -1157,7 +1156,6 @@ class ResolutionCommitsMixin:
                 # are the closeout's to converge (Assurance §7.2: the root resolution
                 # records that the business requirement is met while the Mission stays
                 # ACTIVE in BLOCKED_UNKNOWN / DRAINING until they do).
-                from .completion_status import read_occurrence_completion
 
                 active = semantics.active_plan_revision(command.mission_id)
                 members = (
@@ -1468,8 +1466,6 @@ class ResolutionCommitsMixin:
                 f"the presented record {record.record_id!s} is not the official record "
                 f"{official.record_id!s} of package {package.package_id!s}",
             )
-        from ..assurance.codec import AssuranceError
-        from ..storage.assurance_store import AssuranceStore
         from .assurance_review_import import read_official_review_binding_locked
 
         try:
@@ -1681,8 +1677,6 @@ class ResolutionCommitsMixin:
         longer the work this method asked for (§6.1).
         """
 
-        from .completion_support import current_child_supports
-
         del duties  # the completion supports read the duty's standing themselves
         return current_child_supports(semantics._store, mission_id, children)
 
@@ -1731,9 +1725,6 @@ class ResolutionCommitsMixin:
         Acceptance and its licence either both land or neither does.
         """
 
-        from ..assurance.codec import AssuranceError
-        from ..verification.scoped_acceptance import AssuredAcceptance
-
         validity = getattr(self, "_assurance_validity", None)
         if validity is None:
             raise ResolutionCommitRejected(
@@ -1780,8 +1771,6 @@ class ResolutionCommitsMixin:
     ) -> tuple[Any, str]:
         """2026-10-01（第 3 项）：中间目标结论的许可 = 组合审阅记录的当前证书，同根终审。"""
 
-        from ..assurance.codec import AssuranceError
-        from ..verification.scoped_acceptance import AssuredAcceptance
         from .assurance_validity import COMPOUND_RESOLUTION_CONSUMER
 
         validity = getattr(self, "_assurance_validity", None)
@@ -1828,9 +1817,6 @@ class ResolutionCommitsMixin:
         """The Mission root's content projection, read from the active plan's frozen root Scope
         (Assurance §7.2, 2026-10-06): what the MISSION_FINAL review was cut over and what the
         root resolution restates.  Callers cannot supply it."""
-        from ..contracts.operation_completion import PlanRevisionPinV1
-        from .operation_completion import OperationCompletionReader
-        from .scoped_composition_review import root_content_projection
 
         active = semantics.active_plan_revision(command.mission_id)
         members = (
@@ -1868,8 +1854,6 @@ class ResolutionCommitsMixin:
         checks under the lock, so the resolution and its licence land together.
         """
 
-        from ..assurance.codec import AssuranceError
-        from ..verification.scoped_acceptance import AssuredAcceptance
         from .assurance_validity import ROOT_RESOLUTION_CONSUMER
 
         validity = getattr(self, "_assurance_validity", None)

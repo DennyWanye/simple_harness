@@ -28,6 +28,9 @@ from ..assurance.review_input import (
 from ..assurance.reviews import AssuranceReviewBinding
 from ..contracts import TERMINAL_MISSION
 from ..contracts.models import ContractError
+from ..orchestrator import assurance_point_use
+from ..orchestrator.assurance_review_import import review_scope_id, review_subject_stopped
+from ..orchestrator.assurance_review_pins import ensure_review_blob_pins
 from ..runtime.tool_gateway import ASSURANCE_REVIEWER_TOOLS, EvidenceToolRefusal, WorkspaceBinding
 from ..storage.assurance_blobs import read_pinned_blob
 from ..storage.assurance_reads import AssuranceReader, _permission
@@ -130,7 +133,6 @@ class ReviewerEvidenceTools:
 
     def refusal(self, run_id: str, binding: WorkspaceBinding) -> str | None:
         """Re-read the live invocation and subject before each physical read."""
-        from ..orchestrator.assurance_review_import import review_subject_stopped
 
         if binding.review_key is None:
             return "assurance_review_unbound"
@@ -161,7 +163,6 @@ class ReviewerEvidenceTools:
 
     def _identity(self, binding: AssuranceReviewBinding) -> UseIdentity:
         body = binding.to_json()
-        from ..orchestrator.assurance_review_import import review_scope_id
 
         try:
             scope_id = review_scope_id(body)
@@ -283,21 +284,16 @@ class ReviewerEvidenceTools:
     def _disclose(self, binding: AssuranceReviewBinding, ref: AssuranceRef, call_id: str) -> None:
         """交给审阅模型之前过使用证书签发方（用途 DISCLOSE，消费方是这次工具调用；推后第 2 批 A03）。
         签不出：不交，原因具名；审阅员可以换一条读或直接作答。"""
-        from ..orchestrator.assurance_point_use import (
-            TOOL_CALL_CONSUMER,
-            EvidenceClaim,
-            certify_point_use_locked,
-        )
 
         body = binding.to_json()
         with self.store.transaction():
-            use = certify_point_use_locked(
+            use = assurance_point_use.certify_point_use_locked(
                 self.orchestrator.commit,
                 mission_id=body["mission_id"],
                 purpose="DISCLOSE",
-                consumer_kind=TOOL_CALL_CONSUMER,
+                consumer_kind=assurance_point_use.TOOL_CALL_CONSUMER,
                 consumer_id=text(call_id),
-                claims=(EvidenceClaim.exact(ref),),
+                claims=(assurance_point_use.EvidenceClaim.exact(ref),),
                 subject=("task", body["subject"]["owner_task_ref"]["id"]),
             )
         if not use.usable:
@@ -376,7 +372,6 @@ class ReviewerEvidenceTools:
         }
 
     def _read(self, reader, binding, identity, authorize, arguments, call_id) -> dict:  # type: ignore[no-untyped-def]
-        from ..orchestrator.assurance_review_pins import ensure_review_blob_pins
 
         label = text(arguments.get("label", ""))
         offset = integer(arguments.get("offset", 0), minimum=0)

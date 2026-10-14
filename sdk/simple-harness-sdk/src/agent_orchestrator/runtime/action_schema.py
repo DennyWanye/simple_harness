@@ -13,12 +13,15 @@ import re
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from ..artifacts.workspace import WorkspaceError
 from ..governance.policies import DeploymentPolicy, action_decision
 from ..orchestrator.action_commits import (
     BOUND_ARTIFACT_FIELDS,
     CANDIDATE_FIELDS,
     parse_action_criterion,
 )
+from ..storage import htn_store
+from ..verification.criteria import task_criterion_text
 from .connectors_publish import FilePublishConnector
 
 ACTION_CANDIDATE_CONTEXT_VERSION = "action-candidate-context-v2"
@@ -49,7 +52,6 @@ _USER_REQUIREMENT_ID = re.compile(r"c-user-[1-9][0-9]*")
 def _task_action_scope(
     mission_criteria: Mapping[str, str], task_criteria: Sequence[str]
 ) -> set[tuple[str, str, str]]:
-    from ..verification.criteria import task_criterion_text
 
     # 2026-09-28 真机第四局：分层步骤的要求是编号（c-user-5 = 第 5 条原始要求），直接按
     # 文字解析一条也认不出，每一步都看到了整个任务的全部操作。先还原成原文再收窄。
@@ -162,12 +164,11 @@ def declared_action_outputs(store: Any, mission_id: str, task: Any) -> tuple[str
     accept transaction all use — three separate readings of ``task.outputs`` made the
     candidate the contract asked for "undeclared" twice over (2A upstream runs).
     """
-    from ..storage.htn_store import HtnStore
 
     outputs = tuple(task.outputs)
     if any(path.startswith("actions/") and path.endswith(".json") for path in outputs):
         return outputs
-    binding = HtnStore(store).task_semantics_of(mission_id, task.id)
+    binding = htn_store.HtnStore(store).task_semantics_of(mission_id, task.id)
     if binding is not None and any(
         port.port_key == OPERATION_CANDIDATE_PORT for port in binding.output_ports
     ):
@@ -220,8 +221,6 @@ def with_candidate_targets(listed: Sequence[Any], workspace: Any) -> list[Any]:
     Attempt's workspace, never another candidate.  Identity is still bound later from
     the accepted Result by ``bind_artifact_params``; nothing here trusts the model.
     """
-
-    from ..artifacts.workspace import WorkspaceError
 
     out = list(listed)
     for path in [item for item in listed if isinstance(item, str)]:

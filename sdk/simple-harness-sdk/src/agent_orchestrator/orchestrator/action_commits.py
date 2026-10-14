@@ -19,7 +19,11 @@ import json
 from collections.abc import Callable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
+from simple_harness.contracts import canonical_json
+
 from ..contracts import ContractError, MissionStatus
+from ..contracts.error_table import HANDOFF_VALIDITY_STALE
+from ..contracts.operation_payloads import OperationParametersV1
 from ..deployment.root import current_statements
 from ..governance.budgets import BudgetError, BudgetExhausted
 from ..governance.permissions import (
@@ -29,9 +33,18 @@ from ..governance.permissions import (
     decision_receipt_hash,
 )
 from ..governance.policies import ActionDecision, DeploymentPolicy, action_decision
+from ..runtime import planning_operations
 from ..runtime.connectors import Receipt, human_ruling_receipt, level_rank, params_hash
+from ..runtime.operation_reconciliation import nonapplication_outcome, stored_negative_proof
+from ..runtime.operation_ref_resolver import (
+    OperationReferenceResolver,
+    OperationReferenceUnavailable,
+)
 from ..runtime.planning_operations import BoundPlanningOperationOrigin
+from ..storage import htn_store
+from ..storage.operation_intent_store import OperationIntentStore
 from ..storage.planning_admission_store import PlanningAdmissionStore
+from ..storage.store import StoreConflict
 
 if TYPE_CHECKING:
     from ..contracts import Event
@@ -281,10 +294,6 @@ class ActionCommitsMixin:
                 deployment=deployment,
             )
             if operation_parameters is not None:
-                from ..contracts.operation_payloads import OperationParametersV1
-                from ..storage.htn_store import HtnStore
-                from ..storage.operation_intent_store import OperationIntentStore
-
                 frozen = operation_parameters
                 if planning_origin is None or not isinstance(frozen, OperationParametersV1):
                     raise CandidateRejected("operation_mapping_incomplete")
@@ -313,7 +322,9 @@ class ActionCommitsMixin:
                 accepted_pins = {
                     (ref.id, ref.revision, ref.content_hash)
                     for accepted in frozen.accepted_input_refs
-                    for ref in HtnStore(self._store).get_acceptance(accepted.id).artifact_refs
+                    for ref in htn_store.HtnStore(self._store)
+                    .get_acceptance(accepted.id)
+                    .artifact_refs
                 }
                 artifacts = {}
                 for output_id in result.artifacts:
@@ -350,10 +361,6 @@ class ActionCommitsMixin:
             live = [v for v in versions if v["state"] != "REFUSED"]
             latest = live[-1] if live else None
             phash = params_hash(cand["params"])
-            from ..runtime.operation_reconciliation import (
-                nonapplication_outcome,
-                stored_negative_proof,
-            )
 
             # 阶段 B 裁决第 1 类: a failed version that left our hands is offered again only
             # once it is proven not to have happened; same content is then a new version,
@@ -526,7 +533,6 @@ class ActionCommitsMixin:
             "idempotency_key": str(action.get("idempotency_key") or ""),
             "provenance_receipt_id": origin.provenance_receipt_id,
         }
-        from simple_harness.contracts import canonical_json  # local to keep old path light
 
         link_body["link_hash"] = hashlib.sha256(
             canonical_json(link_body).encode("utf-8")
@@ -923,7 +929,6 @@ class ActionCommitsMixin:
                 action, connectors=connectors, deployment=deployment, rehandoff=rehandoff
             )
             if reason is None and action.get("task_id"):
-                from ..storage.store import StoreConflict
                 from .taskgraph_dispatch import require_taskgraph_unfenced
 
                 try:
@@ -938,8 +943,6 @@ class ActionCommitsMixin:
             # Every action is linked to the operation it was materialised from (2026-10-02:
             # the flat mode, whose actions carried no link, was removed).
             if reason is None:
-                from ..storage.planning_admission_store import PlanningAdmissionStore
-
                 bridge = PlanningAdmissionStore(self._store).get_operation_action_link_for_action(
                     str(action_key)
                 )
@@ -955,28 +958,19 @@ class ActionCommitsMixin:
                 ):
                     reason = "operation_link_mismatch"
                 else:
-                    from ..runtime.planning_operations import (
-                        SourceUnavailable,
-                        StoreOperationReader,
-                        build_operation_snapshot,
-                    )
-
                     # The marker is descriptive, never the switch that grants an
                     # exemption. Re-read the exact frozen identities under this
                     # handoff transaction before any reservation or outbox write.
                     try:
-                        build_operation_snapshot(
-                            str(action["mission_id"]), reader=StoreOperationReader(self._store)
+                        planning_operations.build_operation_snapshot(
+                            str(action["mission_id"]),
+                            reader=planning_operations.StoreOperationReader(self._store),
                         )
-                    except SourceUnavailable:
+                    except planning_operations.SourceUnavailable:
                         reason = "operation_link_mismatch"
                     if reason is None:
                         # Every link is a T0 link: a broken chain cannot reserve or send.
                         from ..runtime.operation_profiles import BuiltinOperationProfiles
-                        from ..runtime.operation_ref_resolver import (
-                            OperationReferenceResolver,
-                            OperationReferenceUnavailable,
-                        )
                         from .operation_materialization_inputs import (
                             OperationMaterializationInputError,
                         )
@@ -1140,7 +1134,6 @@ class ActionCommitsMixin:
         not a wait on a person, so ground that does not come back ends in the stall record,
         with the refusal named, and the Planner decides.  The certificate is recorded beside
         the HANDED_OFF write, in this same transaction."""
-        from ..contracts.error_table import HANDOFF_VALIDITY_STALE
         from .assurance_point_use import ACTION_CONSUMER, EvidenceClaim, certify_point_use_locked
 
         task_id = str(action["task_id"])
@@ -1161,7 +1154,6 @@ class ActionCommitsMixin:
     def _planning_rehandoff_proven(
         self, action: Mapping[str, Any], bridge: Mapping[str, Any]
     ) -> bool:
-        from ..runtime.operation_reconciliation import stored_negative_proof
 
         return stored_negative_proof(self._store, action, bridge)
 
@@ -1329,8 +1321,6 @@ class ActionCommitsMixin:
             raise ActionCommitError(f"a ruling is succeeded or failed, not {outcome!r}")
         if not basis.strip() or not evidence:
             raise ActionCommitError("a ruling on an UNKNOWN action needs a basis and evidence")
-        from ..runtime.operation_reconciliation import stored_negative_proof
-        from ..storage.planning_admission_store import PlanningAdmissionStore
 
         with self._store.transaction():
             action = self._store.get_action(action_key)

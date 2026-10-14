@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from ..assurance.codec import AssuranceError, fingerprint, text
+from .assurance_work import atomic
 
 if TYPE_CHECKING:
     from .store import Store
@@ -44,7 +45,6 @@ def source_change_receipt(store: Store, receipt_id: str) -> Iterator[None]:
     Commit UoW must insert its real receipt before its own commit. A caught
     exception rolls source writes and epochs back together using a savepoint.
     """
-    from .assurance_work import atomic
 
     text(receipt_id)
     if not store.connection.in_transaction:
@@ -70,7 +70,6 @@ def original_source_mutation(store: Store, *, writer: str) -> Iterator[None]:
     It carries no approval, truth, or permission verdict.
     When an enclosing original command already supplies a receipt, reuse it.
     """
-    from .assurance_work import atomic
 
     text(writer)
     with atomic(store) as connection:

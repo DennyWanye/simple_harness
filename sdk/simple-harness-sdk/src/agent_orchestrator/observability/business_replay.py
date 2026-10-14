@@ -34,11 +34,16 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from collections import Counter
 from collections.abc import Mapping
+from contextlib import closing
 from functools import cache
 from pathlib import Path
 from typing import Any
+
+from simple_harness.execution.sqlite.database import Database
+from simple_harness.execution.sqlite.uow import SqliteExecutionUnitOfWork
 
 from ..storage.source_records import (
     DEPLOYMENT_TIMELINE,
@@ -380,12 +385,6 @@ def verify_execution_ledgers(store: Store, execution_paths: list[Path]) -> dict[
     一条调用、已知用量一致。执行库仍是调用事实的唯一权威，编排只记"消费了哪一条、按多少算"。
 
     还记着"未知"、执行库此刻已有用量的，是等下一轮补导入的迟到用量，单独计数，不算不一致。"""
-
-    import sqlite3
-    from contextlib import closing
-
-    from simple_harness.execution.sqlite.database import Database
-    from simple_harness.execution.sqlite.uow import SqliteExecutionUnitOfWork
 
     calls: dict[str, list[Any]] = {}
     for path in execution_paths:

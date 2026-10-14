@@ -22,13 +22,23 @@ from ..contracts.operation_completion import (
     OperationCompletionRequirementsV1,
     PlanRevisionPinV1,
 )
-from ..contracts.resolution import CriterionVerdict, ReviewPurpose, ReviewVerdict
+from ..contracts.resolution import (
+    CheckExecution,
+    CriterionOutcome,
+    CriterionVerdict,
+    ReviewPurpose,
+    ReviewVerdict,
+)
 from ..contracts.semantic_base import Provenance, TypedRef, TypedRefKind, content_hash_of
 from ..storage.htn_store import HtnStore
 from ..storage.operation_completion_store import OperationCompletionStore
+from ..storage.operation_intent_store import OperationIntentStore
+from ..storage.planning_admission_store import PlanningAdmissionStore
 from ..storage.store import Store, StoreConflict, StoreError
+from ..verification.acceptance_rules import evaluate_success_expression, outcomes_by_id
 from .operation_completion import OperationCompletionReader
 from .review_adjudication import accepted_or_adjudicated
+from .scoped_composition_review import root_content_projection
 
 #: 效果"不在途"的两种状态（Assurance §7.2，2026-10-06 车道 O）：已验收，或结果不明等人 / 对账。
 #: 根终审只在根范围每项必需效果都不在途时开门；收尾把"只差结果不明的效果"记 BLOCKED_UNKNOWN。
@@ -53,7 +63,6 @@ def read_current_effect(
     effect_key: str,
 ) -> dict[str, Any]:
     """Explain one approved effect without treating an action success as completion."""
-    from ..storage.operation_intent_store import OperationIntentStore
 
     with store.read_view():
         htn = HtnStore(store)
@@ -303,12 +312,9 @@ def _compound_content(
         return False
     required = set(scope.content_criterion_ids)
     if record.purpose is ReviewPurpose.MISSION_FINAL:
-        from ..verification.acceptance_rules import evaluate_success_expression, outcomes_by_id
-
         requirements = htn.get_requirements_revision(mission_id, scope.requirements_ref.revision)
         # Assurance §7.2（2026-10-06 车道 O）：根终审判的是根的内容投影；效果另由 ``effects_ready`` 读
         # 效果验收。与切包 / 根结论提交读同一个投影。
-        from .scoped_composition_review import root_content_projection
 
         projection = root_content_projection(requirements, scope)
         if (
@@ -325,7 +331,6 @@ def _compound_content(
         # restates exactly those certified grades, so it is the conclusive
         # source here (Host real model run 17, 2026-09-23: ACCEPTed root read
         # as UNKNOWN from the record → ROOT_SCOPE_UNMET → stall).
-        from ..contracts.resolution import CheckExecution, CriterionOutcome
 
         outcomes = tuple(
             CriterionOutcome(
@@ -451,8 +456,6 @@ def _effect_ready(
             for ref in package.candidate_refs
         ):
             continue
-        from ..storage.operation_intent_store import OperationIntentStore
-        from ..storage.planning_admission_store import PlanningAdmissionStore
 
         intent = OperationIntentStore(store).get(outcome.intent_id)
         materialized = store.get_receipt("materialize:" + outcome.intent_id)

@@ -10,13 +10,15 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 from ..contracts.models import Event
-from ..graph.notification_contracts import FollowupKind, FollowupV1
+from ..graph.notification_contracts import FollowupKind, FollowupV1, _integer, _text
+from ..planning.htn.grounding import derive_id
 from ..storage.store import StoreConflict, StoreError
 from ..storage.taskgraph_followups import (
     BlockedFollowup,
     DurableFollowupReceipt,
     TaskGraphFollowupStore,
 )
+from ..storage.taskgraph_store import NotBoundError, require_bound
 
 FollowupHandler = Callable[[FollowupV1, str], Awaitable[DurableFollowupReceipt]]
 
@@ -137,7 +139,6 @@ class TaskGraphEventConsumer:
         consumer_id: str,
         projector: Callable[[Event], tuple[FollowupV1, ...]],
     ) -> None:
-        from ..graph.notification_contracts import _text
 
         _text(consumer_id, "consumer_id")
         self.notifications = notifications
@@ -145,8 +146,6 @@ class TaskGraphEventConsumer:
         self.projector = projector
 
     def consume(self, mission_id: str, *, now_ms: int, batch_size: int = 128) -> int:
-        from ..graph.notification_contracts import _integer
-        from ..planning.htn.grounding import derive_id
 
         _integer(now_ms, "now_ms")
         if type(batch_size) is not int or not 1 <= batch_size <= 1024:
@@ -154,8 +153,6 @@ class TaskGraphEventConsumer:
         store = self.notifications.store
         key = derive_id("taskgraph-exec-v2-event-cursor", self.consumer_id, mission_id)
         with store.transaction():
-            from ..storage.taskgraph_store import NotBoundError, require_bound
-
             try:
                 require_bound(store, mission_id)
             except NotBoundError:

@@ -24,7 +24,8 @@ check() { if ! grep -qE "$1" "$LOG"; then echo "   不通过：$1"; ok=0; fi; }
 python3 scripts/code_quality/import_smoke.py --fresh-changed HEAD >> "$LOG" 2>&1 || { echo "   不通过：导入冒烟"; ok=0; }
 python3 scripts/code_quality/startup_snapshot.py >> "$LOG" 2>&1; check "启动快照：一致"
 python3 scripts/code_quality/control_snapshot.py >> "$LOG" 2>&1; check "控制通道快照：一致"
-python3 scripts/code_quality/guard.py --ref HEAD >> "$LOG" 2>&1; check "禁区比对：通过"
+# CQ_GUARD_ALLOW：本批允许变化的字面量清单（原因写进实施记录）
+python3 scripts/code_quality/guard.py --ref HEAD ${CQ_GUARD_ALLOW:+--allow "$CQ_GUARD_ALLOW"} >> "$LOG" 2>&1; check "禁区比对：通过"
 python3 scripts/code_quality/metrics.py check --new-since HEAD >> "$LOG" 2>&1; check "棘轮检查：通过"
 python3 scripts/code_quality/startup_profile.py >> "$LOG" 2>&1; check "启动耗时检查：通过"
 python3 scripts/code_quality/import_contracts.py >> "$LOG" 2>&1; check "导入隔离约定：全部满足"

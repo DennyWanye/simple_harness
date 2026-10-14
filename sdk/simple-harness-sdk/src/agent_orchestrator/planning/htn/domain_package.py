@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from types import MappingProxyType
 from typing import Any
+
+from simple_harness.contracts import canonical_json
 
 from ...contracts.models import ContractError
 from ...contracts.semantic_base import content_hash_of
@@ -122,10 +126,6 @@ class PlanningDomainPackageV1:
         }
         if self.definitions and set(self.definitions) != expected:
             raise ContractError("domain definitions do not match the declared inventory")
-        import json
-        from types import MappingProxyType
-
-        from simple_harness.contracts import canonical_json
 
         # Detach caller-owned dictionaries; installation checks the digest again.
         object.__setattr__(

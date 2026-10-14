@@ -13,12 +13,15 @@
 
 from __future__ import annotations
 
+import dataclasses
 from collections.abc import Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
+from ..contracts.semantic_base import VersionedRef, content_hash_of
 from ..deployment.assembly import RootNames
+from ..planning.htn.world import build_planning_world
 from ..storage.htn_store import HtnStore
 from .product_world import product_world
 
@@ -37,11 +40,8 @@ CONFIG = {
 def code_world_factory(loop: Any, mission: Any) -> Any:
     """随 SDK 发的代码领域种子库，加一个根目标类型：形状照 ``code.fix-failing-test``，负责的判据
     是这个任务的 ``c-user-<n>``（与产品根的要求书同号；代码目标自带的判据号产品根没有）。"""
-    import dataclasses
 
-    from ..contracts.semantic_base import VersionedRef, content_hash_of
     from ..deployment.root import criterion_ids
-    from ..planning.htn.world import build_planning_world
 
     world = build_planning_world(
         mission.id,

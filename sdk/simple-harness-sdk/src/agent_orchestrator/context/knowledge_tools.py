@@ -27,9 +27,16 @@ from collections.abc import Callable, Mapping
 from hashlib import sha256
 from typing import Any
 
+from ..assurance.codec import fingerprint
+from ..contracts.resolution import ReviewPurpose
 from ..contracts.state_machines import ClaimStatus
 from ..memory.knowledge_standing import CURRENT, knowledge_standing
 from ..memory.verified_knowledge import knowledge_ref
+from ..orchestrator.assurance_point_use import EvidenceClaim
+from ..orchestrator.assurance_validity import result_acceptance_ids
+from ..orchestrator.method_library import review_manifest
+from ..orchestrator.review_adjudication import accepted_or_adjudicated
+from ..storage import htn_store
 from ..storage.store import Store
 from .retrieval import knowledge_view
 
@@ -103,15 +110,9 @@ def step_summaries(store: Store, mission_id: str) -> list[dict[str, Any]]:
     only while both hold: the step's acceptance still stands in the active plan (the one
     judgement knowledge uses), and the official content review that acceptance rests on says
     ``faithful`` for exactly this text of exactly this result."""
-    from ..assurance.codec import fingerprint
-    from ..contracts.resolution import ReviewPurpose
     from ..memory.knowledge_standing import acceptance_is_current
-    from ..orchestrator.assurance_validity import result_acceptance_ids
-    from ..orchestrator.method_library import review_manifest
-    from ..orchestrator.review_adjudication import accepted_or_adjudicated
-    from ..storage.htn_store import HtnStore
 
-    htn = HtnStore(store)
+    htn = htn_store.HtnStore(store)
     packages: dict[str, Any] = {}
     for package in htn.list_review_packages(mission_id, purpose=ReviewPurpose.TASK_CONTENT):
         if package.summary_to_confirm is not None and package.candidate_refs:
@@ -357,7 +358,6 @@ def read_knowledge_tool(
     end = min(offset + 2048, len(text))
     if row["layer"] in {VERIFIED_LAYER, SUMMARY_LAYER}:
         # 读取后复核（K05）：正文已取出，交出去之前过一道门；目录那次判定不替这一次作数
-        from ..orchestrator.assurance_point_use import EvidenceClaim
 
         if handover is None:
             raise ValueError("knowledge content needs the hand-over gate")

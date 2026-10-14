@@ -10,7 +10,10 @@ from typing import Any
 from ..contracts import ContractError
 from ..contracts.planning_decisions import RepairRuntimeBlockedDecision
 from ..contracts.semantic_base import content_hash_of
+from ..runtime import planning_operations
+from ..storage import planning_human_store
 from .hierarchical_dispatch import append_hierarchical_event
+from .planning_repair_requests import pending_requests
 
 BLOCKED = "PlanningRuntimeBlocked"
 WOKEN = "PlanningRuntimeBlockWoken"
@@ -98,17 +101,12 @@ def resolve_after_decision(
     # checks the pre-commit sources; NO_CHANGE must still match them here.
     if status != "COMMITTED" and not resume_source_current(handler, intent, mission):
         return
-    from ..runtime.planning_operations import (
-        SourceUnavailable,
-        StoreOperationReader,
-        build_operation_snapshot,
-    )
 
     try:
-        operations = build_operation_snapshot(
-            intent.mission_id, reader=StoreOperationReader(handler.store)
+        operations = planning_operations.build_operation_snapshot(
+            intent.mission_id, reader=planning_operations.StoreOperationReader(handler.store)
         )
-    except SourceUnavailable:
+    except planning_operations.SourceUnavailable:
         return
     if operations.unresolved or any(
         t.paused and t.pause_reason == "provider_admission:usage_unresolved"
@@ -159,11 +157,9 @@ def runtime_binding(handler: Any, mission: Any, conditions: tuple[str, ...]) -> 
         snapshot = world.snapshot()
         result["evidence"] = [snapshot.scope_epoch, snapshot.support_revision]
     if "human_resolved" in conditions:
-        from ..storage.planning_human_store import PlanningHumanStore
-
         result["human_answers"] = sorted(
             row["decision_id"]
-            for row in PlanningHumanStore(handler.store).list(mission.id)
+            for row in planning_human_store.PlanningHumanStore(handler.store).list(mission.id)
             if row["state"] == "ANSWERED"
         )
     return result
@@ -178,7 +174,6 @@ def register_block(
     decision_id: str,
     canonical_hash: str,
 ) -> dict[str, Any]:
-    from .planning_repair_requests import pending_requests
 
     requests = [] if not isinstance(package, Mapping) else package.get("repair_requests", ())
     requested = next((r for r in requests if r["request_id"] == payload.repair_request_id), None)

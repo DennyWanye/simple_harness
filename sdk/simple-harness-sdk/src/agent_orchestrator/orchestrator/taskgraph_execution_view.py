@@ -30,6 +30,7 @@ from collections.abc import Callable, Iterable, Mapping
 from typing import Any
 
 from ..observability.secrets import redact_text
+from ..runtime.model_router import DEFAULT_PROFILE
 
 SUMMARY_LIMIT = 240
 SAY_LIMIT = 600
@@ -731,7 +732,6 @@ def read_turn_journal(orchestrator: Any, intent: Mapping[str, Any]) -> tuple[Any
 
     An intent bound to a profile this process does not run raises (the caller shows
     SOURCE_UNAVAILABLE); it is never looked up in another pool."""
-    from ..runtime.model_router import DEFAULT_PROFILE
 
     profile = str(intent["config"].get("runtime_profile_id") or DEFAULT_PROFILE)
     return orchestrator.assembled.pool(profile).runtime.uow.read_agent_journal(

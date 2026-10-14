@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from simple_harness.agents import AgentConfig
@@ -13,6 +14,7 @@ from simple_harness.contracts import canonical_json
 from ..contracts.models import Event, jsonable, sha256_hex
 from ..contracts.state_machines import TERMINAL_ATTEMPT, AttemptStatus
 from ..planning.htn.grounding import derive_id
+from ..runtime.dispatch_history import read_dispatch_history
 from ..runtime.planning_operations import (
     SourceUnavailable,
     StoreOperationReader,
@@ -25,7 +27,9 @@ from ..storage.store import Store, StoreConflict, StoreError
 from ..storage.taskgraph_attempt_inputs import TaskGraphAttemptInputStore
 from ..storage.taskgraph_convergence import ConvergenceJob, TaskGraphConvergenceStore
 from ..storage.taskgraph_store import TaskGraphStore
+from . import taskgraph_runtime_imports
 from .taskgraph_convergence import ConvergenceAction, ConvergenceActionKind, ConvergenceObservation
+from .taskgraph_runtime_observation import TaskGraphRuntimeObservationReader
 
 
 class TaskGraphRuntimeCommands:
@@ -44,7 +48,6 @@ class TaskGraphRuntimeCommands:
             raise ValueError(
                 "convergence requires the original runtime and complete observation reader"
             )
-        from .taskgraph_runtime_observation import TaskGraphRuntimeObservationReader
 
         self.jobs, self.history = jobs, history
         self._observe = TaskGraphRuntimeObservationReader(orchestrator, history=history)
@@ -95,8 +98,6 @@ class TaskGraphRuntimeCommands:
             "SELECT payload_json FROM events WHERE event_id=?", (identity,)
         ).fetchone()
         if existing is not None:
-            import json
-
             if json.loads(existing[0]) != payload:
                 raise StoreConflict("TASKGRAPH_CONVERGENCE_COMMAND_CONFLICT")
             return
@@ -276,8 +277,6 @@ class TaskGraphRuntimeCommands:
                 "turn_id": intent.expected_turn_id,
             }
         runtime = self.orchestrator.bridge_for(intent).runtime
-        from ..runtime.dispatch_history import read_dispatch_history
-        from .taskgraph_runtime_imports import TaskGraphRuntimeImports
 
         with self.store.read_view(), runtime.uow.database.transaction(read_only=True):
             executors = read_dispatch_history(self.store, runtime, intent)
@@ -336,7 +335,7 @@ class TaskGraphRuntimeCommands:
             )
         # Read-only verification can retain UNKNOWN even after every actual
         # cancel request has a receipt. Neither FAILED nor those receipts settle it.
-        TaskGraphRuntimeImports(self.orchestrator).read_subject(intent)
+        taskgraph_runtime_imports.TaskGraphRuntimeImports(self.orchestrator).read_subject(intent)
         source["executors"] = receipts
         with self.store.transaction():
             self._target(job, action, command_key)
@@ -356,9 +355,10 @@ class TaskGraphRuntimeCommands:
         the two were split; quiet with an unknown charge used to raise BudgetError, roll back and
         wear the delivery down to BLOCKED).  An unknown charge on a wire that already ended keeps
         its reservation (counted at its bound later) and raises nothing (opt.177 核验建议 S6)."""
-        from .taskgraph_runtime_imports import TaskGraphRuntimeImports
 
-        facts = TaskGraphRuntimeImports(self.orchestrator).read_subject(current)
+        facts = taskgraph_runtime_imports.TaskGraphRuntimeImports(self.orchestrator).read_subject(
+            current
+        )
         if facts.physical_settled and facts.accounting_complete:
             self.orchestrator.commit.settle_subject(current.subject_id, current.mission_id)
             return True

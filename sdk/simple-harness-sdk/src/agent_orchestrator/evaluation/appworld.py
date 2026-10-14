@@ -21,12 +21,14 @@ from threading import Lock, RLock
 from typing import Any
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
+from uuid import uuid4
 
 from .appworld_api_observations import (
     PUBLIC_READ_APIS,
     AppWorldAPILedger,
     AppWorldAPIReceipt,
     canonical,
+    digest,
     project,
 )
 from .appworld_observations import AppWorldExecutionReceipt, AppWorldObservationLedger
@@ -519,9 +521,6 @@ class AppWorldEpisode:
         self, policy: AppWorldStatePolicy
     ) -> tuple[AppWorldStateReceipt, dict[str, Any]]:
         """Read trusted service state; never call the hidden official evaluator."""
-        from uuid import uuid4
-
-        from .appworld_api_observations import digest
 
         with self._lock:
             if self._finalized or not isinstance(self._world, _ExternallyScoredWorld):

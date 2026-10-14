@@ -11,14 +11,19 @@ from ..assurance.checks import CriterionPolicy
 from ..assurance.codec import AssuranceError, canonical, decode, fingerprint, text
 from ..assurance.refs import AssuranceRef, Pin
 from ..contracts.htn import TaskForm
-from ..contracts.operation_completion import OccurrenceCompletionScopeV1
+from ..contracts.operation_completion import OccurrenceCompletionScopeV1, PlanRevisionPinV1
 from ..contracts.resolution import EvaluationKind, RequirementsRevision
 from ..governance.permissions import Principal
 from ..storage.assurance_reads import AssuranceReader
 from ..storage.assurance_store import AssuranceStore
 from ..storage.assurance_work import atomic
 from ..storage.htn_store import HtnStore
-from .operation_completion import OperationCompletionReader
+from .assurance_purpose_reviews import _scope_ref_for, policy_domain_hash
+from .operation_completion import OperationCompletionError, OperationCompletionReader
+from .operation_outcomes import OperationOutcomeError, _effect_owner
+from .operation_proposal_review import _criteria as proposal_criteria
+from .scoped_composition_review import read_compound_projection, root_content_projection
+from .scoped_content_review import read_task_check_policy_projection
 
 if TYPE_CHECKING:
     from .commit_service import CommitService
@@ -72,7 +77,6 @@ def approve_check_policy(
     (the whole root requirements), ACTION_PROPOSAL and OPERATION_OUTCOME, whose
     catalogues are not the Scope's content criteria. No Scope is invented.
     """
-    from .assurance_purpose_reviews import policy_domain_hash
 
     if purpose not in {
         "CONTENT",
@@ -177,7 +181,6 @@ def approve_check_policy(
         elif purpose == "MISSION_FINAL":
             # 2026-10-06（Assurance §7.2，车道 O）：根终审只判根范围的内容判据；效果判据由各自的
             # 结果审阅判，根终审不判第二遍。与切包、根结论提交读的是同一个投影。
-            from .scoped_composition_review import root_content_projection
 
             if scope is None:
                 raise AssuranceError("CHECK_POLICY_APPROVAL_INVALID", purpose)
@@ -185,12 +188,8 @@ def approve_check_policy(
                 requirements, tuple(root_content_projection(requirements, scope).criteria)
             )
         elif purpose == "ACTION_PROPOSAL":
-            from .operation_proposal_review import _criteria as proposal_criteria
-
             projection = _PlanningProjection(requirements, proposal_criteria())
         elif purpose == "OPERATION_OUTCOME":
-            from .operation_outcomes import _effect_owner
-
             owner, spec, owner_requirements = _effect_owner(commit.store, mission_id, effect_key)
             if owner != scope or owner_requirements != requirements:
                 raise AssuranceError("CHECK_POLICY_SCOPE_MISMATCH")
@@ -208,7 +207,6 @@ def approve_check_policy(
                 result = decode(reader.read_exact_metadata(result_ref).body_json)
                 if result["task_id"] != scope.task_ref.id:
                     raise AssuranceError("CHECK_POLICY_SCOPE_MISMATCH")
-            from .scoped_content_review import read_task_check_policy_projection
 
             projection = read_task_check_policy_projection(
                 commit.store, mission_id, scope.task_ref.id
@@ -216,7 +214,6 @@ def approve_check_policy(
         else:
             if result_ref is not None:
                 raise AssuranceError("CHECK_POLICY_SCOPE_MISMATCH")
-            from .scoped_composition_review import read_compound_projection
 
             projection = read_compound_projection(
                 commit.store, mission_id, scope.occurrence_id, scope.task_ref.id
@@ -349,8 +346,6 @@ def lossless_scope_mapping(
     criteria, and the effect slot's criteria.  A Scope that owns no effect (or not
     this one) is ``CHECK_POLICY_UNRESOLVED``.
     """
-    from .scoped_composition_review import read_compound_projection, root_content_projection
-    from .scoped_content_review import read_task_check_policy_projection
 
     text(mission_id)
     text(scope_id)
@@ -386,12 +381,8 @@ def lossless_scope_mapping(
         if not owned or (effect_key is not None and effect_key not in owned):
             raise AssuranceError("CHECK_POLICY_UNRESOLVED", scope_id)
     if purpose == "ACTION_PROPOSAL":
-        from .operation_proposal_review import _criteria as proposal_criteria
-
         criteria_source = proposal_criteria()
     elif purpose == "OPERATION_OUTCOME":
-        from .operation_outcomes import OperationOutcomeError, _effect_owner
-
         try:
             owner, spec, requirements = _effect_owner(store, mission_id, str(effect_key))
         except OperationOutcomeError as error:
@@ -464,7 +455,6 @@ def planning_subject_criteria(
     type declares none of its own), the ones the current plan handed to this goal
     instance (:func:`goal_share`).  A share that cannot be read is ``SOURCE_UNAVAILABLE``.
     """
-    from .operation_completion import OperationCompletionError
 
     try:
         covered = set(goal_share(store, mission_id, binding))
@@ -510,7 +500,6 @@ def assigned_criterion_ids(store: Any, mission_id: str, task_id: str) -> tuple[s
     ).fetchall()
     if len(rows) != 1:
         return ()
-    from ..contracts.operation_completion import PlanRevisionPinV1
 
     scope = OperationCompletionReader(store).read_scope(
         mission_id,
@@ -558,7 +547,6 @@ def lossless_planning_subject_mapping(
 def mission_final_scope_id(orchestrator: Any, mission_id: str) -> str | None:
     """The frozen root Scope a MISSION_FINAL review is judged on, or None when the
     plan has not frozen it yet (same rule as ``mission_final_subject``)."""
-    from .assurance_purpose_reviews import _scope_ref_for
 
     dispatch = orchestrator._dispatch_for(mission_id)
     if dispatch is None:

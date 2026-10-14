@@ -15,6 +15,7 @@ from simple_harness.contracts import canonical_json
 from ..contracts import ContractError
 from ..contracts.planning_decisions import ENABLED_DECISIONS
 from ..orchestrator.plan_commits import PlanPrincipal
+from ..storage import planning_decision_store
 from ..storage.store import StoreError
 
 #: One policy: every hierarchical Mission runs the current protocol, and the planning
@@ -130,9 +131,10 @@ class StorePlanningAuthorityReader:
     def get_planning_request(self, request_id: str) -> Any:
         if hasattr(self.planning, "get_planning_request"):
             return self.planning.get_planning_request(request_id)
-        from ..storage.planning_decision_store import PlanningDecisionStore
 
-        return PlanningDecisionStore(self.store).get_planning_request(request_id)
+        return planning_decision_store.PlanningDecisionStore(self.store).get_planning_request(
+            request_id
+        )
 
     def get_mission(self, mission_id: str) -> Any:
         return self.store.get_mission(mission_id)

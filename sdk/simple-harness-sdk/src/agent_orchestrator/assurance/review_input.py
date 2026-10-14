@@ -6,6 +6,7 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Mapping
 
+from ..runtime.agent_worker import user_message_json
 from .codec import AssuranceError, array, canonical, decode, fields, fingerprint
 from .evidence import CatalogueEntry, evidence_label
 from .refs import AssuranceRef
@@ -128,7 +129,6 @@ def render_review_input(
     materials: Mapping[AssuranceRef, bytes],
     feedback: str = "",
 ) -> dict:
-    from ..runtime.agent_worker import user_message_json
 
     body = binding.to_json()
     evidence = []

@@ -46,7 +46,7 @@ from typing import Any
 
 from simple_harness.contracts import canonical_json
 
-from ...contracts.htn import ReadItemKind, TaskForm
+from ...contracts.htn import MissionRef, ReadItemKind, TaskForm
 from ...contracts.models import ContractError
 from ...contracts.planning_decisions import (
     MAX_PD_ALTERNATIVES,
@@ -390,8 +390,6 @@ def method_rows(
     for signature in sorted({str(item) for item in signatures}):
         found = _methods_for(registry, signature)
         if mission_id is not None:
-            from ...contracts.htn import MissionRef
-
             found = tuple(
                 contract
                 for contract in found

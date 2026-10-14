@@ -17,10 +17,17 @@ from simple_harness.execution.provider_admission import ProviderAdmissionDenied
 from simple_harness.execution.uow import UnitOfWorkConflict
 
 from ..contracts.models import jsonable, sha256_hex
+from ..contracts.resolution import ReviewAccount
 from ..contracts.state_machines import TERMINAL_MISSION
 from ..governance.budgets import BudgetError, UsageFact
 from ..runtime.planning_operations import SourceUnavailable
 from ..runtime.provider_budget_guard import ProviderBudgetGuard
+from ..storage import htn_store
+from ..storage.assurance_reads import AssuranceReader
+from ..storage.taskgraph_store import NotBoundError, require_bound
+from . import taskgraph_action_settlement
+from .assurance_consumers import UPPER_BOUND_EVENT
+from .assurance_review_transport import read_review_invocation_locked, review_budget_subject
 
 # 已结束任务的旧预留/旧授权多久重核一次（秒）。
 ENDED_MISSION_RECHECK_SECONDS = 300.0
@@ -54,11 +61,6 @@ def _task_scope(store, intent):
 
 def _account_subject(commit, intent, task_id):
     if intent.config.get("assurance_protocol") == "assurance-exec-v1.1":
-        from ..contracts.resolution import ReviewAccount
-        from ..storage.assurance_reads import AssuranceReader
-        from ..storage.htn_store import HtnStore
-        from .assurance_review_transport import read_review_invocation_locked
-
         mission = commit.store.get_mission(intent.mission_id)
         _require(mission is not None, "missing Mission")
         _, binding = read_review_invocation_locked(
@@ -66,9 +68,10 @@ def _account_subject(commit, intent, task_id):
             AssuranceReader(commit.store, tenant_id=mission.tenant_id, mission_id=mission.id),
             intent.intent_id,
         )
-        package = HtnStore(commit.store).get_review_package(binding.to_json()["package_ref"]["id"])
+        package = htn_store.HtnStore(commit.store).get_review_package(
+            binding.to_json()["package_ref"]["id"]
+        )
         # Same rule as the invocation writer, by the same function.
-        from .assurance_review_transport import review_budget_subject
 
         if package.account not in {ReviewAccount.MISSION, ReviewAccount.MISSION_PLANNING}:
             _require(
@@ -234,9 +237,8 @@ def import_late_accounting(orch) -> bool:
         orch._late_accounting_full_quiet = unchanged
     if full:
         progressed = _settle_expired_ended_holds(orch) or progressed
-    from .taskgraph_action_settlement import settle_resolved_actions
 
-    return settle_resolved_actions(orch) or progressed
+    return taskgraph_action_settlement.settle_resolved_actions(orch) or progressed
 
 
 def _settle_expired_ended_holds(orch) -> bool:
@@ -256,7 +258,6 @@ def _settle_expired_ended_holds(orch) -> bool:
     事件写明原因是"尝试已结束、用量未知"。仍在跑的尝试（意图 SUBMITTED）不碰；用量都知道、只是
     还没导入的留给导入路径。
     """
-    from .assurance_consumers import UPPER_BOUND_EVENT
 
     store = orch.store
     ended = sorted(str(status) for status in TERMINAL_MISSION)
@@ -309,7 +310,6 @@ def _import_hold(orch, intent_id: str) -> bool:
             reservation = orch.commit.ledger.reservation(intent.subject_id)
             if reservation is None or reservation["state"] == "SETTLED":
                 return False
-            from ..storage.taskgraph_store import NotBoundError, require_bound
             from .taskgraph_runtime_imports import TaskGraphRuntimeImports
 
             try:

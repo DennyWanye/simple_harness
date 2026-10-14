@@ -37,6 +37,7 @@ from .input_bindings import (
     materialise_plan,
     resolve_declared_inputs,
 )
+from .store import ArtifactStoreError, read_verified
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from .workspace import Workspace
@@ -328,7 +329,6 @@ def materialise_v2(
     plan = materialise_plan(manifest, target_rules)
     if plan.problems:
         raise _refuse(plan.problems)
-    from .store import ArtifactStoreError, read_verified
 
     blobs: dict[str, bytes] = {}
     for entry in plan.entries:

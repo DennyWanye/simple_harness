@@ -37,7 +37,7 @@ from ..storage.assurance_reads import (
     require_epochs_locked,
 )
 from ..storage.htn_store import HtnStore
-from .assurance_check_import import read_local_check_binding_locked
+from .assurance_check_import import _SOURCES, read_local_check_binding_locked
 
 if TYPE_CHECKING:
     from .assurance_local_checks import AssuranceLocalChecks
@@ -90,7 +90,6 @@ class PreparedCheckUse:
         if now_ms < self.prepared_at_ms or now_ms >= self.not_after_ms:
             raise AssuranceError("CHECK_USE_EXPIRED")
         adapter._require_deployment()
-        from .assurance_check_import import _SOURCES
 
         # The adapter that recorded a check is fixed by its receipt kind: a local check
         # receipt by the local adapter, an executor receipt (code_test) by the executor

@@ -18,11 +18,13 @@ from ..runtime.planning_operations import SourceUnavailable
 from ..storage.taskgraph_convergence import TaskGraphConvergenceStore
 from ..storage.taskgraph_followups import TaskGraphFollowupStore
 from ..storage.taskgraph_store import TaskGraphStore
+from . import taskgraph_action_settlement
 from .taskgraph_convergence import TaskGraphConvergence
 from .taskgraph_convergence_authority import VerifiedConvergenceAuthority
 from .taskgraph_dispatch import TaskGraphDispatchBinding
 from .taskgraph_execution_policy import TaskGraphExecutionImports
 from .taskgraph_execution_sources import TaskGraphLocalExecutionReader
+from .taskgraph_execution_view import read_turn_journal
 from .taskgraph_materialization import TaskGraphExecutionGuard
 from .taskgraph_notifications import TaskGraphNotifications
 from .taskgraph_operator import TaskGraphOperatorGuard, TaskGraphOperatorService
@@ -151,9 +153,9 @@ def install_taskgraph(orchestrator: Any, ports: TaskGraphDeploymentPorts) -> Ins
         intent = store.get_intent_for_subject(subject_id)
         try:
             if intent is None:
-                from .taskgraph_action_settlement import require_action_settlement
-
-                require_action_settlement(orchestrator, subject_id, mission_id)
+                taskgraph_action_settlement.require_action_settlement(
+                    orchestrator, subject_id, mission_id
+                )
                 return
             if intent.mission_id != mission_id:
                 raise SourceUnavailable("taskgraph_settlement_intent_mismatch")
@@ -205,7 +207,6 @@ def install_taskgraph(orchestrator: Any, ports: TaskGraphDeploymentPorts) -> Ins
     operator = TaskGraphOperatorService(
         operator_guard, jobs=jobs, notifications=notifications, sources=plan_sources
     )
-    from .taskgraph_execution_view import read_turn_journal
 
     reads = TaskGraphReadApi(
         commit,

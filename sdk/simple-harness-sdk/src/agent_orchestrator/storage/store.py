@@ -17,6 +17,7 @@ instead of a lost update.  Event appends are idempotent on ``idempotency_key``
 
 from __future__ import annotations
 
+import asyncio
 import json
 import shutil
 import sqlite3
@@ -41,9 +42,10 @@ from ..contracts import (
     Task,
 )
 from ..contracts.error_table import CodedFault, RoundFaultCode
-from ..contracts.models import sha256_hex
+from ..contracts.models import SEARCH_TOOL_NAMES, sha256_hex
 from ..memory.verified_knowledge import KnowledgeRecord
 from . import schema
+from .assurance_upgrade import install_upgrade_functions
 
 
 class StoreError(RuntimeError):
@@ -215,7 +217,6 @@ class Store:
         from .assurance_changes import install_change_context
 
         install_change_context(self)
-        from .assurance_upgrade import install_upgrade_functions
 
         install_upgrade_functions(connection)
 
@@ -429,8 +430,6 @@ class Store:
     @staticmethod
     def _current_task() -> object | None:
         try:
-            import asyncio
-
             return asyncio.current_task()
         except RuntimeError:  # no running loop: plain synchronous caller
             return None
@@ -1299,8 +1298,6 @@ class Store:
 
     def count_search_calls(self, subject_id: str) -> int:
         """推后第 3 批 H08：这个主体真执行过的检索类工具调用数（``SEARCH_TOOL_NAMES``）。"""
-
-        from ..contracts.models import SEARCH_TOOL_NAMES
 
         names = sorted(SEARCH_TOOL_NAMES)
         row = self._connection.execute(

@@ -23,7 +23,26 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from ..api import facade
+from ..contracts.htn import (
+    GoalSignature,
+    PortCardinality,
+    PortOrdering,
+    PortSpec,
+    SideEffectKind,
+    TaskForm,
+)
+from ..contracts.semantic_base import VersionedRef, content_hash_of
 from ..deployment.assembly import RootNames, UserMissionDeployment
+from ..deployment.native_pools import NativePools, pool_options
+from ..governance.permissions import Principal
+from ..orchestrator import event_handler
+from ..planning.htn.observers.workspace import workspace_observers, workspace_predicates
+from ..planning.htn.registry import ObjectSchema, SchemaField, TaskTypeSpec
+from ..planning.htn.world import build_planning_world, capability_records
+from ..runtime.assembly import OrchestratorConfig
+from ..storage import htn_store
+from .word_counter import FixtureWordCounter
 
 #: The SDK test world's root names (product deployments use their own).
 USER_GOAL_NAMES = RootNames("user-goal", "user-root-", "user-duty-")
@@ -34,24 +53,11 @@ TENANT = "tenant-product-world"
 def user_goal_world(loop: Any, mission: Any) -> Any:
     """A planning world shaped like the product's: a root goal, two levels of sub-goals and a
     workspace step (plus a continuation step that consumes an upstream delivery)."""
-    from ..contracts.htn import (
-        GoalSignature,
-        PortCardinality,
-        PortOrdering,
-        PortSpec,
-        SideEffectKind,
-        TaskForm,
-    )
-    from ..contracts.semantic_base import VersionedRef, content_hash_of
-    from ..planning.htn.observers.workspace import workspace_observers, workspace_predicates
-    from ..planning.htn.registry import ObjectSchema, SchemaField, TaskTypeSpec
-    from ..planning.htn.world import build_planning_world, capability_records
-    from ..storage.htn_store import HtnStore
 
     world = build_planning_world(
         mission.id,
         domains=(),
-        semantics=HtnStore(loop.store),
+        semantics=htn_store.HtnStore(loop.store),
         predicates=workspace_predicates(),
         observers=workspace_observers(loop.store, mission.id),
     )
@@ -237,12 +243,6 @@ async def product_world(
     ``connectors`` 与 ``deployment_policy=``（落在 ``**config`` 里交给 ``OrchestratorConfig``）
     照产品的接法透传：要发布文件的测试给一个真实的 ``FilePublishConnector`` 和启用它的部署策略。
     """
-    from ..api.facade import MissionControlV1
-    from ..deployment.native_pools import NativePools, pool_options
-    from ..governance.permissions import Principal
-    from ..orchestrator.event_handler import Orchestrator
-    from ..runtime.assembly import OrchestratorConfig
-    from .word_counter import FixtureWordCounter
 
     principal = principal or Principal("product-world-user")
     counter = FixtureWordCounter()
@@ -273,7 +273,7 @@ async def product_world(
 
     if connectors is not None:
         options = {**options, "connectors": dict(connectors)}
-    async with Orchestrator(
+    async with event_handler.Orchestrator(
         cfg,
         provider,
         owner="product-world",
@@ -281,7 +281,7 @@ async def product_world(
         assurance_root_setup=deployment.assurance_root_setup(),
         **options,
     ) as loop:
-        control = MissionControlV1(loop, tenant_id=tenant_id, principal=principal)
+        control = facade.MissionControlV1(loop, tenant_id=tenant_id, principal=principal)
         deployment.bind(loop, control)
         world = ProductWorld(
             loop=loop,

@@ -19,11 +19,14 @@ from ..contracts.state_machines import TERMINAL_ATTEMPT, TERMINAL_TASK
 from ..governance.policies import DeploymentPolicy, effective_tools
 from ..governance.promotion import params_hash
 from ..graph.execution_contracts import CompleteRead
+from ..runtime.assembly import admission_accepts
 from ..runtime.planning_operations import SourceUnavailable
 from ..runtime.role_templates import role_for_task
+from ..runtime.tool_gateway import TOOL_ANSWER_MARGIN
 from ..storage.htn_store import HtnStore
 from ..storage.store import DispatchIntent, Store, StoreConflict, StoreError
 from .occurrence_tasks import read_only_leaf
+from .resource_requests import GrantUnverified, verified_grant_amount
 from .taskgraph_execution_sources import _document
 from .taskgraph_plan_sources import ImportedExecutionSource
 
@@ -270,7 +273,6 @@ class TaskGraphExecutionImports:
         selected = body["routing_inputs"]["selected_profile"]
         if selected is not None and selected != profile_id:
             raise StoreConflict("TASKGRAPH_EXECUTION_MISSION_PROFILE_CHANGED")
-        from ..runtime.assembly import admission_accepts
 
         if not admission_accepts(
             self.orchestrator._admission_for(profile_id),
@@ -284,7 +286,6 @@ class TaskGraphExecutionImports:
         grant = intent_config.get("resource_grant")
         if grant is not None:
             # 推后第 3 批 H10：冻结的资源发放只在库里有对应的、核过的申请时放宽工具上限
-            from .resource_requests import GrantUnverified, verified_grant_amount
 
             try:
                 tool_limit += verified_grant_amount(
@@ -300,7 +301,6 @@ class TaskGraphExecutionImports:
             deadline = min(deadline, task.budget.max_runtime_seconds)
         # R3-3 补裁（B 级 #52）：网关上限（派发配置 ``max_tool_calls``）不超过工具上限；交给 SDK 的
         # 单回合上限恰好多一轮余量，让网关的拒绝话能到达执行者。
-        from ..runtime.tool_gateway import TOOL_ANSWER_MARGIN
 
         gateway_cap = intent_config.get("max_tool_calls")
         if (

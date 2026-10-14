@@ -19,6 +19,7 @@ from ..artifacts.taskgraph_inputs import (
     require_current_manifest_use,
 )
 from ..artifacts.versioning import ArtifactConflict, UpstreamInput, manifest_upstream_inputs
+from ..contracts.htn import TaskForm
 from ..contracts.models import Attempt, ContractError, Event, sha256_hex
 from ..graph.attempt_inputs import AttemptInputBinding, FrozenAttemptInputs
 from ..graph.eligibility import EligiblePrimitiveTask, admit_for_dispatch
@@ -345,8 +346,6 @@ class TaskGraphDispatchBinding:
             for task_id in task_ids:
                 task = self.store.get_task(task_id)
                 if task is None:
-                    from ..contracts.htn import TaskForm
-
                     semantic = HtnStore(self.store).task_semantics_of(intent.mission_id, task_id)
                     if semantic is None or semantic.form is not TaskForm.COMPOUND:
                         raise StoreError("TASKGRAPH_SERVICE_TASK_IDENTITY_MISSING")

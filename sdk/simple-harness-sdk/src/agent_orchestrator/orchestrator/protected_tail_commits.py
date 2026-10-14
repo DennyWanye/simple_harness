@@ -10,6 +10,7 @@ They must share the caller's transaction with the corresponding real writes.
 
 from __future__ import annotations
 
+import json
 import re
 from typing import TYPE_CHECKING, Any
 
@@ -251,7 +252,6 @@ def _assurance_critic_attempt(store: Any, subject_id: str) -> str | None:
     model run 12 (2026-09-23): without this the protected first-Critic tail refused
     every assured review and the loop re-raised forever.
     """
-    import json
 
     match = _ASSURANCE_CRITIC_SUBJECT.fullmatch(subject_id)
     if match is None:

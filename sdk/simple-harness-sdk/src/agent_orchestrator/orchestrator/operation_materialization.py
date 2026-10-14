@@ -18,13 +18,17 @@ from ..contracts.semantic_base import TypedRef, TypedRefKind, content_hash_of
 from ..governance.budgets import BudgetError
 from ..governance.permissions import Principal
 from ..planning.htn.grounding import derive_id
+from ..runtime.operation_reconciliation import stored_negative_proof
 from ..runtime.planning_operations import BoundPlanningOperationOrigin
 from ..storage.htn_store import HtnStore
 from ..storage.operation_intent_store import OperationIntentStore
 from ..storage.operation_payload_store import OperationPayloadStore
 from ..storage.planning_admission_store import PlanningAdmissionStore
+from .completion_status import read_current_effect
 from .operation_completion import OperationCompletionError
 from .operation_intent_sources import prepare_operation_intent_sources
+from .operation_materialization_inputs import build_operation_materialization_inputs
+from .operation_proposal_review import validate_materialization_review
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,7 +88,6 @@ class OperationMaterializationCommitsMixin:
         intent_id: str,
         object_ids: tuple[str, str, str],
     ) -> tuple[Any, Any]:
-        from .operation_materialization_inputs import build_operation_materialization_inputs
 
         runtime = self._operation_runtime()
         sources = prepare_operation_intent_sources(
@@ -151,7 +154,6 @@ class OperationMaterializationCommitsMixin:
     def _closed_without_effect(self, materialized: Any) -> bool:
         """The head's action ended and is proven not to have happened (never handed off,
         or a stored non-application proof) — it may be replaced (阶段 B 裁决第 1 类)."""
-        from ..runtime.operation_reconciliation import stored_negative_proof
 
         action = self._store.get_action(str(materialized.get("action_key") or ""))
         if action is None or action["state"] not in {"FAILED", "REJECTED"}:
@@ -356,7 +358,6 @@ class OperationMaterializationCommitsMixin:
                 if dispatch is not None and dispatch.state == "FAILED"
                 else "AWAITING_REVIEW"
             )
-            from .completion_status import read_current_effect
 
             slot = row["binding"]["command"]["completion_slot"]
             completion = read_current_effect(
@@ -454,7 +455,6 @@ class OperationMaterializationCommitsMixin:
                 raise OperationCompletionError(
                     "OP_REVIEW_NOT_OFFICIAL", "exact independent proposal ACCEPT required"
                 )
-            from .operation_proposal_review import validate_materialization_review
 
             validate_materialization_review(self._store, sources, payloads, package, review)
             connector = runtime.connectors[payloads.parameters.connector_id]

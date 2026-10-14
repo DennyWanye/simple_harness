@@ -23,6 +23,7 @@ it was given, never follows a symlink on the way, and refuses any target outside
 
 from __future__ import annotations
 
+import contextlib
 import fcntl
 import hashlib
 import json
@@ -224,7 +225,6 @@ class FilePublishConnector:
             )
 
     def _exclusive(self) -> Any:
-        import contextlib
 
         @contextlib.contextmanager
         def held() -> Any:

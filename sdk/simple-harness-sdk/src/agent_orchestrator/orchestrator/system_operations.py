@@ -19,6 +19,7 @@ import json
 from types import SimpleNamespace
 from typing import Any
 
+from ..contracts import MissionStopReason
 from ..contracts.htn import TaskForm
 from ..contracts.models import ContractError
 from ..contracts.operation_intents import (
@@ -29,12 +30,16 @@ from ..contracts.operation_intents import (
 )
 from ..contracts.semantic_base import TypedRef, TypedRefKind, content_hash_of
 from ..governance.permissions import Principal
+from ..governance.policies import DeploymentPolicy, action_decision
 from ..planning.htn.grounding import derive_id
 from ..runtime.action_schema import is_operation_candidate_path
+from ..runtime.operation_reconciliation import nonapplication_outcome, stored_negative_proof
+from ..storage import planning_human_store
 from ..storage.htn_store import HtnStore
 from ..storage.operation_completion_store import OperationCompletionStore
 from ..storage.operation_intent_store import OperationIntentStore
-from .action_commits import parse_action_criterion
+from .action_commits import business_action_id, parse_action_criterion
+from .planning_repair_requests import REQUESTED, record_request
 
 SYSTEM_REASON = "用户在确认页批准的操作：发布 {source} 到 {target}"
 
@@ -196,7 +201,6 @@ def _sources(
 
 
 def _stop(orch: Any, mission_id: str, detail: dict[str, Any]) -> bool:
-    from ..contracts import MissionStopReason
 
     orch._commit_fail_mission(
         mission_id,
@@ -214,9 +218,6 @@ def _ask_planner_once(
 
     "回应过"只认规划器真正提交的决定（格式错被退回不算，审阅 2026-09-29）；它提交的决定是
     去问用户、问题还没答时不算回应完——等人答。"""
-
-    from ..storage.planning_human_store import PlanningHumanStore
-    from .planning_repair_requests import REQUESTED, record_request
 
     store = orch.store
     events = tuple(store.iter_events(mission.id))
@@ -238,7 +239,7 @@ def _ask_planner_once(
             )
             for e in events
         )
-        if answered and not PlanningHumanStore(store).pending(mission.id):
+        if answered and not planning_human_store.PlanningHumanStore(store).pending(mission.id):
             return stop("；规划器已回应但仍未解决")
         return False
     dispatch = orch._new_mode(mission)
@@ -262,8 +263,6 @@ def _ask_planner_for_source(
     orch: Any, mission: Any, htn: HtnStore, effect_key: str, target: str, matches: list[str]
 ) -> bool:
     """找不到要发布的文件（或判断不了用哪一版）：请规划器补/改步骤；它回应过仍不行就停。"""
-
-    from .planning_repair_requests import REQUESTED
 
     active = htn.active_plan_revision(mission.id)
     prefix = f"system-operation-source:{effect_key}:"
@@ -355,7 +354,6 @@ def _ask_planner_after_rejection(orch: Any, mission: Any, rejected: dict[str, An
 
 
 def _needs_approval(orch: Any, operation: tuple[str, str, str]) -> bool:
-    from ..governance.policies import DeploymentPolicy, action_decision
 
     connectors = getattr(orch, "_connectors", None) or {}
     config = getattr(orch, "_config", None)
@@ -495,8 +493,6 @@ def pending_system_operations(orch: Any, mission_id: str) -> list[dict[str, Any]
                 if action is None or not _proven_not_applied(store, action):
                     continue
                 if len(mine) > SYSTEM_RESUBMIT_CAP:
-                    from ..runtime.operation_reconciliation import nonapplication_outcome
-
                     attempts = [
                         nonapplication_outcome(store, item)
                         for item in (
@@ -587,7 +583,6 @@ def _earlier_operation_fact(
     而现行完成映射下还没有任何一份申请单进入执行链——也就是它是按更早一版要求做的（用户后来改了
     要求）。台账本来就不许同一目标在一个任务里再发生一次；这里只是提前读到这件事实，不去准备一份
     注定被拒的申请单。"""
-    from .action_commits import business_action_id
 
     if any(store.get_receipt("materialize:" + item["intent_id"]) is not None for item in mine):
         return None
@@ -676,7 +671,6 @@ def _person_rejections(store: Any, intents: list[Any]) -> list[dict[str, Any]]:
 
 def _proven_not_applied(store: Any, action: Any) -> bool:
     """FAILED after leaving our hands, with a stored proof it never happened."""
-    from ..runtime.operation_reconciliation import stored_negative_proof
 
     return (
         action["state"] == "FAILED"

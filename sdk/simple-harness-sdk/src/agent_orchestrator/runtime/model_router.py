@@ -27,6 +27,7 @@ from simple_harness.agents.context.tokenizer import TokenizerPort, UpperBoundTok
 from simple_harness.contracts import JsonValue, canonical_json
 
 from ..contracts import Attempt
+from .tool_gateway import LARGE_READ_PAGE_BYTES, read_tool_schemas
 
 ROUTER_VERSION = "model-router-v1"
 DEFAULT_PROFILE = "default"
@@ -104,7 +105,6 @@ class RuntimeProfile:
         ):
             raise TypeError("tokenizer must implement count_text and a nonempty fingerprint")
         object.__setattr__(self, "tokenizer", tokenizer)
-        from .tool_gateway import LARGE_READ_PAGE_BYTES, read_tool_schemas
 
         snapshot: dict[str, Any] = {
             "schema": 1,

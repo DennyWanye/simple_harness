@@ -61,6 +61,7 @@ from ...graph.projection_validation import (
     validate_refinement_acyclic,
 )
 from ...graph.task_network import DEFAULT_PROJECTION_BUDGET, TaskNetworkSnapshot
+from ...graph.taskgraph_validation import pending_compounds, taskgraph_projection_report
 from ...knowledge.predicates import PredicateRegistry
 from .applicability import evaluate_condition
 from .registry import iter_conditions
@@ -243,7 +244,6 @@ def validate_delta(
     refinement_report = validate_refinement_acyclic(merged)
     if type(taskgraph_contract) is not bool:
         raise ContractError("taskgraph_contract must be a boolean")
-    from ...graph.taskgraph_validation import pending_compounds, taskgraph_projection_report
 
     pending = pending_compounds(merged)
     if taskgraph_contract:

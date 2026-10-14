@@ -26,6 +26,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from ..storage import htn_store
+from ..storage.store import StoreError
 from .lineage import lineage
 from .metrics import _service_role
 
@@ -148,13 +150,10 @@ def attribution(store: Store, mission_id: str) -> dict[str, Any]:  # noqa: C901 
     goal_chain: list[dict[str, Any]] = []
     final_ids: set[str] = set()
     if success:
-        from ..storage.htn_store import HtnStore
-        from ..storage.store import StoreError
-
         chain = read_contribution_chain(store, mission_id)
         goal_chain = [dict(row) for row in chain.goal_chain]
         breaks.extend(dict(row) for row in chain.breaks)
-        semantics = HtnStore(store)
+        semantics = htn_store.HtnStore(store)
         # 验收记录 → 产出它的步骤；一个步骤几条验收记录只算一次，顺序按贡献链
         producers: list[tuple[str, str]] = []
         for acceptance_id in chain.acceptance_ids:

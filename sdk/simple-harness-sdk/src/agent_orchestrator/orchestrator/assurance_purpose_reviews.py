@@ -51,6 +51,7 @@ from ..storage.assurance_reads import (
 )
 from ..storage.assurance_store import AssuranceStore
 from ..storage.htn_store import HtnStore
+from ..verification.evidence_resolver import in_source_roots
 from .assurance_check_use import _merge_reads
 from .assurance_review_pins import ensure_review_blob_pins, release_failed_preparation
 from .assurance_review_transport import assurance_formula, read_review_invocation_locked
@@ -814,7 +815,6 @@ def _sources_in_force(store: Any, mission_id: str, dispatch: Any) -> set[Assuran
     """Reference material that was replaced during the Mission, as it stands now (2026-10-05):
     the final reviewer judges the delivery against the current version, so that text has to be in
     front of it.  Material that never changed stays on demand through the evidence tools."""
-    from ..verification.evidence_resolver import in_source_roots
 
     roots = tuple(dispatch.commit.domain_for(mission_id).source_roots)
     rows = store.list_sources(mission_id)

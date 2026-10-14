@@ -49,6 +49,7 @@ from ..knowledge.assurance_sources import (
     evaluate_acceptance_support,
     support_fingerprint,
 )
+from ..storage import htn_store
 from ..storage.assurance_reads import (
     AssuranceReader,
     CompleteRead,
@@ -69,6 +70,7 @@ from .assurance_review_import import (
     read_imported_review_locked,
     read_official_review_binding_locked,
 )
+from .completion_inputs import frozen_requirements_revision
 
 USE_CERTIFIED_KIND = "AssuranceUseCertified"
 ACCEPTANCE_CONSUMER = "ACCEPTANCE"
@@ -106,11 +108,10 @@ def result_acceptance_ids(
     store: Any, mission_id: str, task_id: str, result_id: str
 ) -> tuple[str, ...]:
     """Every leaf acceptance of one result, oldest requirements revision first."""
-    from ..storage.htn_store import HtnStore
 
     found = sorted(
         (int(item.requirements_revision), str(item.acceptance_id))
-        for item in HtnStore(store).list_acceptances(mission_id)
+        for item in htn_store.HtnStore(store).list_acceptances(mission_id)
         if str(item.task_id) == str(task_id)
         and str(item.acceptance_id)
         == acceptance_id_for(task_id, result_id, int(item.requirements_revision))
@@ -229,7 +230,6 @@ class AssuranceValidity:
         """The exact official TASK_CONTENT record bound to this Result under one requirements
         revision (``None``: the one it was produced under); no latest fallback.  A result
         kept across an amendment has one record per revision (TaskGraph 补全第四批)."""
-        from .completion_inputs import frozen_requirements_revision
 
         store = self.store
         with store.read_view():

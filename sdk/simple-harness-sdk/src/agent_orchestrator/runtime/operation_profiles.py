@@ -34,6 +34,7 @@ from ..orchestrator.operation_materialization_inputs import (
 )
 from .connectors_publish import PUBLISH_NAME, FilePublishConnector
 from .operation_payloads import ConnectorProfileRegistration, ConnectorProfileRegistry
+from .operation_reconciliation_file_publish import FilePublishReconciliationAdapter
 
 _PARAMETERS_DOCUMENT = {
     "kind": "file-publish-parameters-v1",
@@ -111,7 +112,6 @@ class BuiltinOperationProfiles(ConnectorProfileRegistry):
         )
         self._profile = self._build_profile()
         self._adapter = _FilePublishProfileAdapter(candidate, self._profile)
-        from .operation_reconciliation_file_publish import FilePublishReconciliationAdapter
 
         self._reconciliation = FilePublishReconciliationAdapter(candidate, self._profile)
 

@@ -10,11 +10,14 @@ and is the row the model sees; there is no intermediate mapping to convert.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from ..context.knowledge_tools import candidate_claims, current_knowledge, step_summaries
 from ..contracts.htn import TaskForm
 from ..contracts.semantic_base import content_hash_of
+from ..planning.htn.grounding import occurrence_criteria
 from ..planning.htn.planner_package import (
     PlannerPackageError,
     _network_authorities,
@@ -29,9 +32,17 @@ from ..planning.htn.planner_package import (
     plan_row,
     task_type_row,
 )
+from ..planning.htn.world import catalog_digest
+from ..storage import planning_decision_store, planning_human_store
 from ..storage.obligation_store import ObligationStore
+from ._read_set import SemanticReadSetChecker
+from .completion_status import read_occurrence_completion
 from .completion_support import read_completion_support
+from .method_library import directory, library_reads
+from .method_plan_reviews import reviews_by_method
 from .obligation_accounts import account_of, obligation_accounts
+from .planning_repair_requests import pending_requests, repair_goal_occurrences
+from .planning_selection import candidate_context
 
 #: The Planner's own rejected replies, as the store records them.
 _PLANNING_REJECTIONS = frozenset({"PlanningRejected"})
@@ -44,7 +55,6 @@ def accepted_steps(
     completion rests on it under the current plan and requirements — the completion
     reading's answer, not a rule of its own.  The Planner package and the mission snapshot
     both read it here."""
-    from .completion_status import read_occurrence_completion
 
     counted: dict[str, frozenset[str]] = {}
 
@@ -84,8 +94,6 @@ def sharing_candidate_rows(
     """What a refining decision may name in ``reuse`` (TaskGraph 补全第三批): exactly the
     steps preview and commit accept — read by the same function — each with what the
     Planner needs to judge whether it is the step it means.  Order only; no ranking."""
-
-    from ..planning.htn.grounding import occurrence_criteria
 
     preview = getattr(dispatch, "_taskgraph_preview", None)
     if preview is None:
@@ -138,13 +146,6 @@ def read_planner_package(
     request (one read, rendered and recorded); ``budget`` is the planning budget view,
     whose numbers only the event handler can compute.
     """
-
-    from ..planning.htn.world import catalog_digest
-    from ._read_set import SemanticReadSetChecker
-    from .method_library import directory, library_reads
-    from .method_plan_reviews import reviews_by_method
-    from .planning_repair_requests import pending_requests, repair_goal_occurrences
-    from .planning_selection import candidate_context
 
     htn = dispatch.semantics()
     duties = ObligationStore(store)
@@ -209,7 +210,6 @@ def read_planner_package(
     # 黑板给规划器看的三层：现在仍然当前的已验证知识（与读工具、推送上下文、审查包同一个判定）、
     # 审阅员核对过忠实的步骤摘要、还没验证的候选结论（夜间 N3-03，与目录同一个读法，是线索不是事实）；
     # 按任务范围、按有效性过滤、有上限。
-    from ..context.knowledge_tools import candidate_claims, current_knowledge, step_summaries
 
     current = current_knowledge(store, mission.id)
     knowledge, omitted_knowledge = knowledge_rows(
@@ -435,9 +435,8 @@ def answered_questions_for_planner(store: Any, mission_id: str) -> list[dict[str
     答过的问题就从规划器眼前消失，它于是把同一个问题连问 13 次。回答是给这个任务的，一律给看，
     只标明 ``binding_current``。
     """
-    from ..storage.planning_human_store import PlanningHumanStore
 
-    questions = PlanningHumanStore(store)
+    questions = planning_human_store.PlanningHumanStore(store)
     return [
         {
             "subject_key": row["subject_key"],
@@ -455,11 +454,8 @@ def abandoned_plan_changes_for_planner(store: Any, mission_id: str) -> list[dict
 
     阶段 B 第 2 条（2026-10-03）：一次改计划卡在半路、用户点"放弃这次改计划"后，旧计划恢复执行；
     不告诉规划器，它会再提同样的改法，来回循环。这里只摆事实，要不要换个改法由它判断。"""
-    import json
 
-    from ..storage.planning_decision_store import PlanningDecisionStore
-
-    decisions = PlanningDecisionStore(store)
+    decisions = planning_decision_store.PlanningDecisionStore(store)
     rows = []
     for event in store.list_events(mission_id, types=["TaskGraphConvergenceAbandoned"]):
         result = event.payload.get("result") or {}

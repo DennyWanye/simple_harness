@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 from simple_harness.contracts import canonical_json
 
+from ..contracts import Event, ids
 from ..contracts.models import ContractError
 from ..contracts.planning_decisions import RequestHumanDecision
 from ..contracts.semantic_base import content_hash_of
@@ -294,8 +295,6 @@ class PlanningHumanStore:
         任务级的 ``HumanCommentAdded``（与界面"带说明重做"同一种备注）在每个 Attempt 开工时
         作为"信息、不是授权"交给执行者。
         """
-
-        from ..contracts import Event, ids
 
         chosen = next((o.get("label") for o in options if o.get("key") == answer), None)
         question = row["request"]["payload"]["question"]

@@ -19,6 +19,7 @@ earlier output of the run and shrank the window monotonically (RP-E4 real-model 
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -120,8 +121,6 @@ class RelayToolMargin:
         self.alarms: list[dict[str, int]] = []
         self.observations = 0
         if self.state_path is not None and self.state_path.is_file():
-            import json
-
             try:
                 saved = json.loads(self.state_path.read_text())
                 stored = saved.get("value")
@@ -155,7 +154,6 @@ class RelayToolMargin:
     def _save(self) -> None:
         if self.state_path is None:
             return
-        import json
 
         self.state_path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self.state_path.with_suffix(".tmp")

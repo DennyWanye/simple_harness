@@ -20,8 +20,14 @@ from typing import Any
 from ..contracts.htn import TaskRef
 from ..contracts.models import ContractError
 from ..planning.htn.method_proposals import admit_proposal, rejection_problems
+from ..planning.htn.planner_package import method_signatures
 from ..planning.htn.registry import MethodProposal
+from ..planning.htn.world import catalog_digest
 from ..planning.unknown_fields import decode_dropping_unknown
+from .assurance_check_policy import assigned_criterion_ids, goal_share
+from .method_library import MAX_LIBRARY_READS, reads_used, visible_entry
+from .operation_completion import OperationCompletionError
+from .planning_repair_requests import repair_goal_occurrences
 
 #: How many methods the Planner may propose for one goal in one Mission (规划预算之一).
 MAX_METHOD_PROPOSALS_PER_GOAL = 3
@@ -104,8 +110,6 @@ def _coverage_problems(dispatch: Any, mission_id: str, binding: Any, method: Any
     秩序检查（覆盖完整、归属唯一），不判断拆得好不好。根目标的要求写在根绑定的签名上（类型与
     任务无关，阶段 C3）：每一条都要有链接；中间目标的要求是上级做法分下来的。
     """
-    from .assurance_check_policy import assigned_criterion_ids
-    from .operation_completion import OperationCompletionError
 
     if binding.goal_signature.coverage_criteria:
         linked = {str(link.parent_criterion_id) for link in method.composition.criterion_links}
@@ -207,8 +211,6 @@ def prepare_method(
             )
         )
     problems = _identity_problems(dispatch, mission_id, proposal.method)
-    from .assurance_check_policy import goal_share
-    from .operation_completion import OperationCompletionError
 
     # 发布来源唯一只查这个目标自己负责的要求：类型声明的；中间目标是上级做法分给这个实例的。
     try:
@@ -253,10 +255,6 @@ def read_library(dispatch: Any, mission: Any, payload: Any) -> dict[str, Any]:
     """A READ_METHOD_LIBRARY decision: order only — within the Mission's read allowance, and
     every entry is one the Mission is listed for the goals it is planning.  Nothing changes;
     the event this returns the detail of is what the next package's ``library_reads`` reads."""
-    from ..planning.htn.planner_package import method_signatures
-    from ..planning.htn.world import catalog_digest
-    from .method_library import MAX_LIBRARY_READS, reads_used, visible_entry
-    from .planning_repair_requests import repair_goal_occurrences
 
     store = dispatch.store
     if reads_used(store, mission.id) >= MAX_LIBRARY_READS:
@@ -288,8 +286,6 @@ def read_library(dispatch: Any, mission: Any, payload: Any) -> dict[str, Any]:
 def proposal_origin(dispatch: Any, mission_id: str, proposal: Any) -> dict[str, Any]:
     """What a proposal's event records about where it came from: the type catalogue it was
     written against, and the library entry it cites when this Mission may see that entry."""
-    from ..planning.htn.world import catalog_digest
-    from .method_library import visible_entry
 
     digest = catalog_digest(dispatch.require_planning_world())
     entry = (

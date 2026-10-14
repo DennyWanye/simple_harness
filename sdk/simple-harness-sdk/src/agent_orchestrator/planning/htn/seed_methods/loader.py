@@ -32,7 +32,12 @@ from ....contracts.htn import MethodContract, RegistryAuthor
 from ....contracts.models import ContractError
 from ....contracts.semantic_base import VersionedRef, sequence_of
 from ....knowledge.predicates import PredicateRegistry, PredicateSignature
-from ..domain_package import DomainPackageInstaller
+from ..domain_package import (
+    DomainPackageInstaller,
+    ObserverRegistrationV1,
+    OperatorRegistrationV1,
+    PlanningDomainPackageV1,
+)
 from ..registry import (
     AdmissionPolicy,
     AdmissionReceipt,
@@ -135,11 +140,6 @@ class SeedDomain:
         carries references and capabilities only; the existing catalogues still
         perform their detailed schema, predicate, task and method admission.
         """
-        from ..domain_package import (
-            ObserverRegistrationV1,
-            OperatorRegistrationV1,
-            PlanningDomainPackageV1,
-        )
 
         def ref_name(ref: VersionedRef) -> str:
             return f"{ref.id}@{ref.version}"
@@ -288,8 +288,6 @@ def install_domain(
     """
 
     if package_installer is not None:
-        from ..domain_package import DomainPackageInstaller
-
         if not isinstance(package_installer, DomainPackageInstaller):
             raise ContractError("package_installer must be a DomainPackageInstaller")
         package_installer.install(domain.planning_package())

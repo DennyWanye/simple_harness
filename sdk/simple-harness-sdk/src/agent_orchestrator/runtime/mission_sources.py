@@ -35,9 +35,16 @@ from typing import Any
 from simple_harness.agents.arp.errors import ArpError
 from simple_harness.agents.arp.mission_sources import SCHEMA
 from simple_harness.agents.arp.ports import TrustedCaller
+from simple_harness.agents.arp.strict import digest
 from simple_harness.agents.arp.strict import digest as strict_digest
 
+from ..assurance.codec import AssuranceError
+from ..contracts import ContractError
 from ..contracts.state_machines import TERMINAL_ATTEMPT, TERMINAL_MISSION
+from ..orchestrator.assurance_review_transport import ROLES, require_review_handoff
+from ..orchestrator.taskgraph_dispatch import _mission_judge_tasks
+from ..storage import htn_store
+from ..storage.store import StoreError
 
 LIVE_INTENT_STATES = frozenset({"CLAIMED", "AGENT_CREATED", "SUBMITTED"})
 #: Planning inputs frozen into a service intent when it is created.
@@ -108,7 +115,6 @@ class MissionSourceReader:
             intent = store.get_intent(receipt_id[len("dispatch-intent:") :])
             if intent is None:
                 raise ArpError("SOURCE_UNAVAILABLE", "the caller's dispatch intent is not recorded")
-            from simple_harness.agents.arp.strict import digest
 
             if digest(_receipt(intent)) != caller.command_receipt_ref.content_hash:
                 # another Mission / kind / creation key / input than the intent recorded
@@ -145,9 +151,6 @@ class MissionSourceReader:
                     "the Mission sources moved since the Agent was created",
                     detail={"changed": changed[:16]},
                 )
-        from ..assurance.codec import AssuranceError
-        from ..orchestrator.assurance_review_transport import require_review_handoff
-        from ..storage.store import StoreError
 
         try:
             with store.read_view():
@@ -239,8 +242,6 @@ class MissionSourceReader:
             or store.get_attempt(view_id) is not None
         ):
             return None
-        from ..orchestrator.taskgraph_dispatch import _mission_judge_tasks
-        from ..storage.store import StoreError
 
         try:
             task_ids = _mission_judge_tasks(store, intent, view_id)
@@ -294,8 +295,6 @@ class MissionSourceReader:
                 "the Worker Attempt is terminal",
                 detail={"status": str(live.status)},
             )
-        from ..contracts import ContractError
-        from ..storage.store import StoreError
 
         try:
             # the installed, validating history reader (the same one recovery/review use)
@@ -318,13 +317,10 @@ class MissionSourceReader:
         return {"source_kind": "worker", "attempt": attempt, "input_manifest": manifest}
 
     def _reviewer(self, store: Any, intent: Any) -> dict[str, Any]:
-        from ..orchestrator.assurance_review_transport import ROLES
-        from ..storage.htn_store import HtnStore
-        from ..storage.store import StoreError
 
         package_id = str(intent.config["review_package_id"])
         try:
-            package = HtnStore(store).get_review_package(package_id)
+            package = htn_store.HtnStore(store).get_review_package(package_id)
         except StoreError as error:
             raise ArpError("SOURCE_UNAVAILABLE", "the review package is not recorded") from error
         purpose = str(getattr(package.purpose, "value", package.purpose))

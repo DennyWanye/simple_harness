@@ -15,6 +15,7 @@ import ast
 import re
 import subprocess
 import sys
+import textwrap
 from collections import Counter, defaultdict
 from pathlib import Path
 
@@ -94,34 +95,66 @@ def patched_targets() -> set[str]:
                     if isinstance(n, ast.Constant) and isinstance(n.value, str) and DOTTED.match(n.value) \
                             and n.value.rpartition(".")[0] in INDEX:
                         out.add(n.value)
-            aliases: dict[str, str] = {}
-            for n in ast.walk(tree):
-                if isinstance(n, ast.Import):
-                    for a in n.names:
-                        aliases[a.asname or a.name] = a.name if a.asname else a.name
-                elif isinstance(n, ast.ImportFrom) and n.module and not n.level:
-                    for a in n.names:
-                        full = f"{n.module}.{a.name}"
-                        if full in INDEX:
-                            aliases[a.asname or a.name] = full
-            for n in ast.walk(tree):
-                if not isinstance(n, ast.Call):
-                    continue
-                fname = ast.unparse(n.func)
-                if not any(fname.endswith(s) for s in ("setattr", "patch", "patch.object", "delattr")):
-                    continue
-                args = n.args
-                if args and isinstance(args[0], ast.Constant) and isinstance(args[0].value, str) \
-                        and "." in args[0].value:
-                    out.add(args[0].value)
-                if len(args) >= 2 and isinstance(args[1], ast.Constant) and isinstance(args[1].value, str):
-                    target = ast.unparse(args[0])
-                    mod = aliases.get(target.split(".")[0])
-                    if mod is not None:
-                        rest = target.split(".")[1:]
-                        full = ".".join([mod, *rest])
-                        out.add(f"{full}.{args[1].value}")
+            # 测试里以字符串形式交给子进程执行的代码也要看
+            for sub in [tree, *_embedded_code(tree)]:
+                _scan_patches(sub, out)
     return out
+
+
+def _embedded_code(tree: ast.AST) -> list[ast.Module]:
+    out = []
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Constant) and isinstance(n.value, str) and "\n" in n.value \
+                and re.search(r"^\s*(import|from)\s", n.value, re.M):
+            try:
+                out.append(ast.parse(textwrap.dedent(n.value)))
+            except SyntaxError:
+                continue
+    return out
+
+
+def _scan_patches(tree: ast.AST, out: set[str]) -> None:
+    """一棵语法树里的打桩：setattr/patch 调用，以及直接给"模块别名.属性"赋值。"""
+    aliases: dict[str, str] = {}
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Import):
+            for a in n.names:
+                aliases[a.asname or a.name] = a.name
+        elif isinstance(n, ast.ImportFrom) and n.module and not n.level:
+            for a in n.names:
+                full = f"{n.module}.{a.name}"
+                if full in INDEX:
+                    aliases[a.asname or a.name] = full
+
+    def module_of(target: str) -> str | None:
+        if target in INDEX:
+            return target
+        head, *rest = target.split(".")
+        mod = aliases.get(head)
+        return ".".join([mod, *rest]) if mod is not None else None
+
+    for n in ast.walk(tree):
+        if isinstance(n, (ast.Assign, ast.AugAssign, ast.Delete)):
+            targets = n.targets if isinstance(n, (ast.Assign, ast.Delete)) else [n.target]
+            for t in targets:
+                if isinstance(t, ast.Attribute):
+                    mod = module_of(ast.unparse(t.value))
+                    if mod is not None:
+                        out.add(f"{mod}.{t.attr}")
+            continue
+        if not isinstance(n, ast.Call):
+            continue
+        fname = ast.unparse(n.func)
+        if not any(fname.endswith(s) for s in ("setattr", "patch", "patch.object", "delattr")):
+            continue
+        args = n.args
+        if args and isinstance(args[0], ast.Constant) and isinstance(args[0].value, str) \
+                and "." in args[0].value:
+            out.add(args[0].value)
+        if len(args) >= 2 and isinstance(args[1], ast.Constant) and isinstance(args[1].value, str):
+            mod = module_of(ast.unparse(args[0]))
+            if mod is not None:
+                out.add(f"{mod}.{args[1].value}")
 
 
 # ---------- 单个文件的分析 ----------

@@ -8,7 +8,9 @@ from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any
 
 from simple_harness.agents import AgentTurnResult, AgentTurnState
-from simple_harness.contracts import RunId, canonical_json, thaw_json
+from simple_harness.agents.arp.errors import ArpError
+from simple_harness.agents.wire import restore_wire_messages
+from simple_harness.contracts import RequestId, RunId, canonical_json, thaw_json
 from simple_harness.execution.provider_invocations import (
     provider_invocation_id,
     provider_request_fingerprint,
@@ -98,7 +100,6 @@ def read_actual_review_turn(bridge: AgentBridge, intent: DispatchIntent) -> Actu
 def _exposure(
     uow: Any, run_id: str, turn: Any, result: AgentTurnResult, *, native_context: Any = None
 ) -> dict:
-    from simple_harness.contracts import RequestId
 
     if result.state is not AgentTurnState.COMMITTED:
         raise AssuranceError("REVIEW_TURN_NOT_COMMITTED")
@@ -200,8 +201,6 @@ def _native_exposure(
     reproduce the planned wire hash (the same rule every native prepare obeys).  Only
     journal messages whose exact bytes are in that wire count as exposure — nothing is
     relaxed relative to the legacy selection proof (host-final-arp10, 2026-09-24)."""
-    from simple_harness.agents.arp.errors import ArpError
-    from simple_harness.contracts import RequestId
 
     if provider.request_json is None:
         raise AssuranceError("REVIEW_PROVIDER_INPUT_UNAVAILABLE")
@@ -297,7 +296,6 @@ def _selection_binds_request(
     """
     if selection.request_hash == provider.request_fingerprint:
         return True
-    from simple_harness.agents.wire import restore_wire_messages
 
     if not any(message.role.value in ("tool", "assistant") for message in request.messages):
         return False

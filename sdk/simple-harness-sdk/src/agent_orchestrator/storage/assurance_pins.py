@@ -13,7 +13,7 @@ import sqlite3
 from collections.abc import Mapping
 from typing import Any
 
-from ..assurance.codec import AssuranceError, decode, fingerprint, integer, text
+from ..assurance.codec import AssuranceError, canonical, decode, fingerprint, integer, text
 from ..assurance.refs import AssuranceRef
 
 
@@ -105,7 +105,6 @@ def require_live_pin_locked(
     pin_id: str,
     review_key: str,
 ) -> None:
-    from ..assurance.codec import canonical
 
     if not connection.in_transaction:
         raise AssuranceError("READ_TRANSACTION_REQUIRED")

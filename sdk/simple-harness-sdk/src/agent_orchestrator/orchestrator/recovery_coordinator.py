@@ -30,14 +30,30 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
+from ..contracts.models import ContractError
+from ..observability.business_replay import (
+    CONSISTENT,
+    INCONSISTENT,
+    InventoryError,
+    inventory,
+    verify_mission,
+)
+from ..runtime.planning_operations import SourceUnavailable
+from ..runtime.sandbox import SandboxUnavailable, process_identity, reclaim_recorded_executions
+from ..storage import schema
 from ..storage.recovery_store import RecoveryStore
 from ..storage.store import InjectedCrash, StoreBusy
+from ..storage.taskgraph_store import TaskGraphStore
+from .accounting_recovery import import_late_accounting
+from .operation_runtime import ensure_operation_runtime
+from .taskgraph_deployment import InstalledHtnWiringAcceptance
 
 if TYPE_CHECKING:
     from .event_handler import Orchestrator
@@ -109,7 +125,6 @@ class RecoveryReport:
 
 
 def _process_started_at(pid: int) -> str:
-    from ..runtime.sandbox import process_identity
 
     identity = process_identity(pid)
     return "" if identity is None else str(identity["process_started_at"])
@@ -117,8 +132,6 @@ def _process_started_at(pid: int) -> str:
 
 def _owner_alive(pid: int, started_at: str) -> bool:
     """锁的持有者还在不在：进程号在、启动时间也对得上才算（进程号可能被复用）。"""
-
-    from ..runtime.sandbox import SandboxUnavailable, process_identity
 
     try:
         identity = process_identity(pid)
@@ -314,10 +327,6 @@ class RecoveryCoordinator:
         }
 
     async def _step_manifest(self) -> dict[str, Any]:
-        from ..observability.business_replay import InventoryError, inventory
-        from ..runtime.planning_operations import SourceUnavailable
-        from ..storage import schema
-        from .taskgraph_deployment import InstalledHtnWiringAcceptance
 
         orch = self._orch
         store = orch.store
@@ -349,7 +358,6 @@ class RecoveryCoordinator:
             unclassified = sorted(live - classified)
         except InventoryError as error:
             problems.append(f"replay_inventory: {error}")
-        from ..storage.taskgraph_store import TaskGraphStore
 
         bound = len(TaskGraphStore(store).bound_mission_ids(open_only=True))
         deployment: str | None = None
@@ -385,7 +393,6 @@ class RecoveryCoordinator:
         return detail
 
     async def _step_rebuild(self) -> dict[str, Any]:
-        from ..observability.business_replay import CONSISTENT, INCONSISTENT, verify_mission
 
         orch = self._orch
         statuses: dict[str, str] = {}
@@ -445,9 +452,6 @@ class RecoveryCoordinator:
     async def _step_pending(self) -> dict[str, Any]:
         """未决核对：只问已交出去的操作结果，不重交接、不发通知（那两样是新动作，READY 之后才有）。"""
 
-        from ..contracts.models import ContractError
-        from .operation_runtime import ensure_operation_runtime
-
         orch = self._orch
         if orch.connectors:
             try:
@@ -482,9 +486,6 @@ class RecoveryCoordinator:
         return {"active_missions": len(missions), "unrecovered": sorted(orch._unrecovered)}
 
     async def _step_orphans(self) -> dict[str, Any]:
-        import asyncio
-
-        from ..runtime.sandbox import reclaim_recorded_executions
 
         orch = self._orch
         rows = self._recovery.open_sandbox_executions()
@@ -514,7 +515,6 @@ class RecoveryCoordinator:
         return detail
 
     async def _step_ready(self) -> dict[str, Any]:
-        from .accounting_recovery import import_late_accounting
 
         orch = self._orch
         woken: list[str] = []

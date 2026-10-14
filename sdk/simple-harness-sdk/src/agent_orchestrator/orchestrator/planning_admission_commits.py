@@ -31,6 +31,7 @@ from ..governance.planning_authorization import (
     SourceUnavailable as AuthoritySourceUnavailable,
 )
 from ..graph.execution_contracts import PreviewBindingV1
+from ..graph.planning_scope import planning_convergence_scope
 from ..planning.htn.grounding import derive_id
 from ..planning.plan_preview import _source_snapshot_payload
 from ..runtime.planning_operations import (
@@ -44,10 +45,13 @@ from ..runtime.planning_operations import (
 from ..runtime.planning_operations import (
     SourceUnavailable as OperationSourceUnavailable,
 )
+from ..runtime.taskgraph_operation_sources import read_operation_producers
 from ..storage.htn_store import HtnStore, PlanCommitReceipt
 from ..storage.planning_admission_store import PlanningAdmissionStore
 from ..storage.planning_decision_store import PlanningDecisionStore
+from ..storage.taskgraph_store import require_bound
 from .plan_commits import CommitPlanCommand, PlanCommitRejected, PlanPrincipal
+from .taskgraph_plan_commit import TaskGraphPlanCommitParticipant
 
 if TYPE_CHECKING:
     from .taskgraph_plan_commit import TaskGraphPlanCommitParticipant
@@ -257,9 +261,6 @@ def _check_planning_commit(
         )
     if operations.read_digest != admission.operations.read_digest:
         _raise("OPERATION_SNAPSHOT_STALE", "operation bindings/links/actions changed since preview")
-    from ..graph.planning_scope import planning_convergence_scope
-    from ..runtime.taskgraph_operation_sources import read_operation_producers
-    from .taskgraph_plan_commit import TaskGraphPlanCommitParticipant
 
     if (
         not isinstance(taskgraph, TaskGraphPlanCommitParticipant)
@@ -354,8 +355,6 @@ class PlanningAdmissionCommitsMixin:
             return _write_taskgraph_applied(store, command, receipt, preview, admission, checked)
 
         with self._store.transaction():  # type: ignore[attr-defined]
-            from ..storage.taskgraph_store import require_bound
-
             replay = self._store.connection.execute(  # type: ignore[attr-defined]
                 "SELECT 1 FROM plan_commit_receipts WHERE command_id=?", (command.command_id,)
             ).fetchone()
@@ -369,8 +368,6 @@ class PlanningAdmissionCommitsMixin:
                     )
                 taskgraph = factory(command, principal, admission)
             if taskgraph is not None and replay is None:
-                from .taskgraph_plan_commit import TaskGraphPlanCommitParticipant
-
                 if not isinstance(taskgraph, TaskGraphPlanCommitParticipant):
                     _raise(
                         "TASKGRAPH_COMMIT_PARTICIPANT_REQUIRED",

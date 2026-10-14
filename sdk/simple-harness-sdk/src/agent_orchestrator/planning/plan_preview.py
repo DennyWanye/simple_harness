@@ -43,6 +43,7 @@ from .htn.compiler import (
 from .htn.compiler import (
     compile_candidate_from_snapshot as compile_refinement_candidate,
 )
+from .htn.graph_repair import compile_cancel, compile_rebind, compile_successor
 from .htn.grounding import (
     ParameterBindingsError,
     ReuseRefused,
@@ -315,16 +316,10 @@ def compile_candidate_from_snapshot(inputs: PreviewInputs) -> RefinementCompilat
     if len(proposal.operations) == 1 and isinstance(
         proposal.operations[0], ProposeSuccessorOperation
     ):
-        from .htn.graph_repair import compile_successor
-
         return compile_successor(inputs, proposal.operations[0])
     if len(proposal.operations) == 1 and isinstance(proposal.operations[0], CancelBranchOperation):
-        from .htn.graph_repair import compile_cancel
-
         return compile_cancel(inputs, proposal.operations[0])
     if len(proposal.operations) == 1 and isinstance(proposal.operations[0], RebindInputOperation):
-        from .htn.graph_repair import compile_rebind
-
         return compile_rebind(inputs, proposal.operations[0])
     refinements = [item for item in proposal.operations if isinstance(item, RefineOperation)]
     retirements = [item for item in proposal.operations if isinstance(item, RetireMethodOperation)]

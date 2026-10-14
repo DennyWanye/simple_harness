@@ -12,6 +12,7 @@ Bookkeeping only: nothing here is a limit, and nothing here enters a plan bindin
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from ..storage.obligation_store import ObligationStore
@@ -143,7 +144,6 @@ def _steps_by_duty(store: Store, mission_id: str) -> dict[str, list[dict[str, An
 
 def _labels(store: Store, mission_id: str) -> dict[str, str]:
     """duty id → what the work under it is for, in the words its task was given."""
-    import json
 
     labels: dict[str, str] = {}
     for duty, raw in store.connection.execute(
