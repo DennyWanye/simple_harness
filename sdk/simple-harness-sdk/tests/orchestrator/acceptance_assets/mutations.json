@@ -894,8 +894,8 @@
       "id": "TG4-02",
       "source": "TaskGraph 补全第四批（重审打回交规划器）",
       "file": "src/agent_orchestrator/orchestrator/event_handler.py",
-      "original": "        from .carried_review import source_key\n        from .planning_repair_requests import record_request\n",
-      "replacement": "        from .carried_review import source_key\n        record_request = lambda *args, **kwargs: False  # noqa: E731\n",
+      "original": "        Planner (the scan stops on it).  Recorded once per (result, requirements revision).\"\"\"\n\n        revision = int(item.requirements_revision)\n",
+      "replacement": "        Planner (the scan stops on it).  Recorded once per (result, requirements revision).\"\"\"\n        record_request = lambda *args, **kwargs: False  # noqa: E731\n\n        revision = int(item.requirements_revision)\n",
       "tests": [
         "tests/orchestrator/product_world/test_carried_review.py::test_a_kept_step_rejected_under_the_new_requirements_goes_to_the_planner"
       ],

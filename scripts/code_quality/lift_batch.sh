@@ -32,6 +32,8 @@ python3 scripts/code_quality/import_contracts.py >> "$LOG" 2>&1; check "导入�
 grep -E "^启动耗时|^启动完成后多加载|^多加载了" "$LOG" | tail -3
 LIST=$(mktemp)
 python3 scripts/code_quality/tests_for_changes.py --tree "$TREE" > "$LIST"
+# 改坏清单用源码原文定锚：SDK 源码一变就要核对锚点（阶段 4 发版门因此挡过一次）
+[ "$TREE" = sdk ] && echo "tests/orchestrator/acceptance_assets/test_acceptance_assets.py" >> "$LIST"
 echo "相关测试文件 $(wc -l < "$LIST" | tr -d ' ') 个" | tee -a "$LOG"
 if [ -s "$LIST" ]; then
   python3 scripts/code_quality/run_related.py "$TREE" @"$LIST" >> "$LOG" 2>&1
