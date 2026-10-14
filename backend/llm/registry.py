@@ -27,7 +27,7 @@ import logging
 from typing import Any
 
 from agent.context_report import auto_context_attempt_call
-from deskpet.execution.dispatch import current_dispatch_handoff
+from providers.dispatch_handoff import current_dispatch_handoff
 
 from llm.anthropic_adapter import AnthropicAdapter
 from llm.base import BaseLLMAdapter

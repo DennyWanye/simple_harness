@@ -16,8 +16,8 @@ from __future__ import annotations
 
 import httpx
 import pytest
-from agent.context_messages import provider_purpose_scope
 from agent.context_report import ContextAttemptStore, set_context_attempt_store
+from llm.context_messages import provider_purpose_scope
 from providers.base import LLMProvider
 from providers.openai_compatible import OpenAICompatibleProvider
 from router.hybrid_router import (

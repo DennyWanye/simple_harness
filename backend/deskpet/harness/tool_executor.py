@@ -9,6 +9,14 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from providers.dispatch_handoff import (
+    PreparedToolDispatch,
+    PreparedToolDispatchNotStarted,
+    PreparedToolDispatchStartedAck,
+    PreparedToolDispatchStartUnknown,
+    dispatch_with_run_fence,
+)
+
 from deskpet.execution.contracts import (
     ActorContext,
     DecisionAuthorization,
@@ -21,13 +29,6 @@ from deskpet.execution.contracts import (
     StaleRecoveryLease,
     VersionConflict,
     fingerprint_json,
-)
-from deskpet.execution.dispatch import (
-    PreparedToolDispatch,
-    PreparedToolDispatchNotStarted,
-    PreparedToolDispatchStartedAck,
-    PreparedToolDispatchStartUnknown,
-    dispatch_with_run_fence,
 )
 from deskpet.execution.fences import validate_run_execution_epoch
 from deskpet.execution.ports import (

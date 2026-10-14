@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Protocol, TypeVar
 
-from agent.context_messages import (
+from llm.context_messages import (
     ProviderAttemptOptions,
     context_attempt_scope,
     provider_purpose_scope,

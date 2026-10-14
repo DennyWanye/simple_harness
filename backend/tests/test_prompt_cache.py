@@ -36,7 +36,7 @@ import logging
 import httpx
 import pytest
 import structlog
-from agent.context_messages import (
+from llm.context_messages import (
     CONTEXT_MESSAGE_META_KEY,
     ContextMessageMeta,
     ProviderAttemptOptions,

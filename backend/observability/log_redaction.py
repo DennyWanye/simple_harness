@@ -5,8 +5,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from deskpet.security.redaction import TraceRedactor
-from deskpet.security.sensitive_text import redact_sensitive_text
+from observability.redaction import TraceRedactor
+from observability.sensitive_text import redact_sensitive_text
 
 _TRACE_REDACTOR = TraceRedactor()
 

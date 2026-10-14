@@ -14,14 +14,14 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
-from agent.context_messages import (
+from llm.anthropic_adapter import AnthropicAdapter
+from llm.context_messages import (
     CONTEXT_MESSAGE_META_KEY,
     ContextMessageMeta,
     ProviderAttemptOptions,
     context_attempt_scope,
     tag_message,
 )
-from llm.anthropic_adapter import AnthropicAdapter
 from llm.errors import LLMProviderError
 from llm.gemini_adapter import GeminiAdapter
 from llm.openai_adapter import OpenAIAdapter

@@ -105,8 +105,10 @@ def test_identity_rejects_missing_wheel(tmp_path) -> None:
 def test_consumers_share_single_source_of_truth() -> None:
     """No consumer may keep its own hardcoded copy of the wheel identity."""
 
-    from deskpet.sdk_adapters import conformance, desktop_runtime
+    from deskpet.sdk_adapters import desktop_runtime
     from host import harness_chat, sdk_execution, sdk_runtime_stack
+
+    from tests import conformance_host as conformance
 
     assert not hasattr(desktop_runtime, "_SDK_VERSION")
     assert not hasattr(desktop_runtime, "_SDK_WHEEL_SHA256")

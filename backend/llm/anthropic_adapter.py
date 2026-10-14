@@ -37,14 +37,11 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 import httpx
-from agent.context_messages import (
-    current_provider_attempt_options,
-    split_wire_messages,
-)
-from deskpet.execution.dispatch import current_dispatch_handoff
+from providers.dispatch_handoff import current_dispatch_handoff
 from providers.dispatch_transport import DispatchAwareAsyncTransport
 
 from llm.base import BaseLLMAdapter
+from llm.context_messages import current_provider_attempt_options, split_wire_messages
 from llm.errors import (
     LLMAuthError,
     LLMProviderError,

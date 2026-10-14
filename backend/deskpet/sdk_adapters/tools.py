@@ -18,6 +18,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Literal, Protocol
 
+from observability.sensitive_text import redact_sensitive_text
 from simple_harness import CallId, JsonValue, thaw_json
 from simple_harness.execution.effects import EffectState
 from simple_harness.tools import (
@@ -39,7 +40,6 @@ from deskpet.permissions import protected_paths
 from deskpet.permissions.protected_paths import dispatch_clearance
 from deskpet.sdk_adapters.context_partitions import tool_schema_tokens
 from deskpet.sdk_adapters.effect_gate import EffectGateRejected, classify_objective_event
-from deskpet.security.sensitive_text import redact_sensitive_text
 
 logger = logging.getLogger(__name__)
 

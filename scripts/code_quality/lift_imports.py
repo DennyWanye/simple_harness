@@ -56,6 +56,14 @@ LAZY_LINE = re.compile(r"#.*(lazy|lazily|PLC0415|延迟|按需|懒|启动耗时)
 # 导入语句上方紧挨着的注释（中间只隔导入语句）说明这些依赖要按需加载
 LAZY_ABOVE = re.compile(r"#.*(lazy|lazily|PLC0415|延迟|按需|懒|启动耗时|heavy|重型|below the switch)", re.I)
 DOTTED = re.compile(r"^[A-Za-z_]\w*(\.[A-Za-z_]\w*)+$")
+TAG_LINE = re.compile(r"^[ \t]*# 按需导入：.*$", re.M)
+
+
+def without_tags(text: str) -> str:
+    """去掉补注释工具写的原因行（它们含"按需导入"字样，不是作者的声明）。"""
+    return TAG_LINE.sub("", text)
+
+
 TEST_ROOTS = [BACKEND / "tests", REPO / "sdk/simple-harness-sdk/tests"]
 RUFF = REPO.parent / "simple_harness/sdk/simple-harness-sdk/.venv/bin/ruff"
 
@@ -321,7 +329,9 @@ def lazy_comment_above(lines: list[str], i: int) -> bool:
     """从第 i 行（0 起）往上，跨过空行与导入语句，看紧挨着的注释是否声明按需导入。"""
     while i >= 0:
         text = lines[i].strip()
-        if text.startswith("#"):
+        if text.startswith("# 按需导入："):  # 补注释工具自己写的原因行，不算作者声明
+            pass
+        elif text.startswith("#"):
             if LAZY_ABOVE.search(text):
                 return True
         elif not (text.startswith(("import ", "from ")) or text == "" or text.endswith((",", "(", ")"))
@@ -658,7 +668,7 @@ def main() -> int:
             me = module_name(path)
         except KeyError:
             continue
-        if LAZY_DECLARED.search(path.read_text(encoding="utf-8")):
+        if LAZY_DECLARED.search(without_tags(path.read_text(encoding="utf-8"))):
             stats["keep:文件声明按需导入"] += 1
             continue
         src, tree, decisions, plans = analyse_file(path, me, graph, patched, kinds, contracts, stubbed)

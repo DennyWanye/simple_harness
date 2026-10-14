@@ -9,7 +9,7 @@ import urllib.request
 from dataclasses import dataclass
 from urllib.parse import urlencode, urlparse
 
-from agent.context_messages import current_provider_attempt_options, normalize_provider_purpose
+from llm.context_messages import current_provider_attempt_options, normalize_provider_purpose
 
 
 def _loopback(url: str) -> bool:

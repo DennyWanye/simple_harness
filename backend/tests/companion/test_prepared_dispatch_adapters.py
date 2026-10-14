@@ -4,17 +4,17 @@ import hashlib
 import time
 
 import pytest
-from deskpet.execution.dispatch import (
+from deskpet.execution.ports import (
+    CurrentExecutionScopeLease,
+    CurrentExecutionScopeLeasePort,
+)
+from providers.dispatch_handoff import (
     PreparedToolDispatch,
     PreparedToolDispatchAdapter,
     PreparedToolDispatchIdentity,
     PreparedToolDispatchNotStarted,
     PreparedToolDispatchStartedAck,
     PreparedToolDispatchStartUnknown,
-)
-from deskpet.execution.ports import (
-    CurrentExecutionScopeLease,
-    CurrentExecutionScopeLeasePort,
 )
 
 

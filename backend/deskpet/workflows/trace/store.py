@@ -7,8 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import aiosqlite
-
-from deskpet.security.redaction import TraceRedactor
+from observability.redaction import TraceRedactor
 
 from ..store.schema import initialize_workflow_db
 from .context import SpanContext, current_span

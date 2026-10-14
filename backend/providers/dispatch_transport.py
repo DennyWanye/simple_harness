@@ -3,7 +3,8 @@ from __future__ import annotations
 import asyncio
 
 import httpx
-from deskpet.execution.dispatch import current_dispatch_handoff
+
+from providers.dispatch_handoff import current_dispatch_handoff
 
 
 class DispatchAwareAsyncTransport(httpx.AsyncBaseTransport):

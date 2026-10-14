@@ -4,12 +4,6 @@ from types import SimpleNamespace
 
 import pytest
 from agent.agent_loop import AgentLoop
-from agent.context_messages import (
-    ProviderAttemptOptions,
-    context_attempt_scope,
-    current_provider_attempt_options,
-    provider_purpose_scope,
-)
 from agent.context_report import (
     ContextAttemptReport,
     ContextAttemptStore,
@@ -19,6 +13,12 @@ from agent.context_report import (
     mark_current_attempt_sent,
     mark_current_attempt_transport_retry,
     set_context_attempt_store,
+)
+from llm.context_messages import (
+    ProviderAttemptOptions,
+    context_attempt_scope,
+    current_provider_attempt_options,
+    provider_purpose_scope,
 )
 
 

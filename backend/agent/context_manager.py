@@ -50,10 +50,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from llm.context_messages import provider_purpose_scope
 from llm.model_info import ModelContextInfo
 from llm.model_info import resolve as resolve_model_info
 
-from agent.context_messages import provider_purpose_scope
 from agent.history_compactor import compact_messages, should_compact
 from agent.token_budget import BudgetCheckResult, check_budget
 from agent.tool_result_truncator import (

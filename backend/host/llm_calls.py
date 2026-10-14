@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from agent.context_messages import provider_purpose_scope
 from deskpet.execution.provider_workloads import SessionAwareLLMCall
 from deskpet.tools import image_tools as _image_tools
 from deskpet.tools import research_tools as _research_tools
 from deskpet.tools.research_tools import _research_llm_result_from_provider_response
+from llm.context_messages import provider_purpose_scope
 from providers.openai_compatible import OpenAICompatibleProvider
 
 from host.llm_providers import _e2e_provider_base, _resolved_api_key, _sanitize_cot_dsml

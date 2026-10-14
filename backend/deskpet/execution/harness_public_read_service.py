@@ -20,6 +20,8 @@ from pathlib import Path
 from typing import Any
 
 import aiosqlite
+from observability.redaction import TraceRedactor
+from observability.sensitive_text import redact_sensitive_text
 
 from deskpet.execution.run_read_model import (
     CONTEXT_VISIBILITY_EXCLUDE,
@@ -35,8 +37,6 @@ from deskpet.execution.run_read_model import (
     ReadSourceCutV1,
 )
 from deskpet.security.provider_public_projection import ProviderPublicProjectorV1
-from deskpet.security.redaction import TraceRedactor
-from deskpet.security.sensitive_text import redact_sensitive_text
 from deskpet.security.tool_public_projection import (
     ToolPresentationPolicyV1,
     ToolPublicProjectorV1,

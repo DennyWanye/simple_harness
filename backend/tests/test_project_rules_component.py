@@ -71,7 +71,7 @@ async def test_e2e_project_rules_fault_fails_optional_component_closed(
     root.mkdir()
     (root / "AGENTS.md").write_text("must not be loaded", encoding="utf-8")
     monkeypatch.setattr(
-        "deskpet.context_os_e2e_hooks.consume_context_os_e2e_fault",
+        "providers.context_os_e2e_hooks.consume_context_os_e2e_fault",
         lambda name: True if name == "project_rules_io_error" else None,
     )
 

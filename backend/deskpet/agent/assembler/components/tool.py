@@ -23,9 +23,10 @@ from __future__ import annotations
 import time
 from typing import Any
 
+from providers.context_os_e2e_hooks import trusted_context_os_e2e_case
+
 from deskpet.agent.assembler.bundle import Slice
 from deskpet.agent.assembler.components.base import Component, ComponentContext
-from deskpet.context_os_e2e_hooks import trusted_context_os_e2e_case
 from deskpet.tools.capabilities import ToolExposureIntent, ToolExposurePolicy
 
 

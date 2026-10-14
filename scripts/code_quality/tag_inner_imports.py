@@ -128,7 +128,7 @@ def tag_tree(tree: str, dry_run: bool) -> Counter:
     stats: Counter = Counter()
     for path, me in iter_files(tree):
         text = path.read_text(encoding="utf-8")
-        if L.LAZY_DECLARED.search(text):
+        if L.LAZY_DECLARED.search(L.without_tags(text)):
             continue
         src, _tree, plan = file_plan(path, me, graph, patched, contracts, stubbed)
         lines = src.splitlines(keepends=True)
@@ -168,7 +168,7 @@ def check() -> int:
             text = path.read_text(encoding="utf-8")
             plain = text.splitlines()
             t = ast.parse(text)
-            declared = bool(L.LAZY_DECLARED.search(text))
+            declared = bool(L.LAZY_DECLARED.search(L.without_tags(text)))
 
             def walk(node, in_func):
                 for ch in ast.iter_child_nodes(node):

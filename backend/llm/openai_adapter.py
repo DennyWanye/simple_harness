@@ -26,7 +26,7 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 import httpx
-from deskpet.execution.dispatch import current_dispatch_handoff
+from providers.dispatch_handoff import current_dispatch_handoff
 from providers.dispatch_transport import DispatchAwareAsyncTransport
 
 from llm.base import BaseLLMAdapter

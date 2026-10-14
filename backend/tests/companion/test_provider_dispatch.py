@@ -23,10 +23,6 @@ from deskpet.execution.contracts import (
     fingerprint_json,
     root_idempotency_key,
 )
-from deskpet.execution.dispatch import (
-    DispatchStartedAck,
-    DispatchStartUnknown,
-)
 from deskpet.execution.provider_fault_script import (
     ProviderFaultInjectedError,
     ProviderFaultScriptV1,
@@ -40,6 +36,7 @@ from deskpet.execution.provider_invocations import (
     coordinate_provider_stream,
 )
 from deskpet.workflows.store import SqliteExecutionUnitOfWork
+from providers.dispatch_handoff import DispatchStartedAck, DispatchStartUnknown
 from providers.dispatch_transport import DispatchAwareAsyncTransport
 from providers.openai_compatible import OpenAICompatibleProvider
 

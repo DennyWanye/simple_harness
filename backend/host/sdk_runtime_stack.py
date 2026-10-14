@@ -52,7 +52,6 @@ from deskpet.orchestration.chat_tool import (
 from deskpet.product_state.authorization_saga import AuthorizationSagaRepository
 from deskpet.product_state.database import ProductStateDatabase
 from deskpet.product_state.task_grants import DurableTaskGrantAuthority
-from deskpet.provider_extra_headers import install_httpx_extra_headers_hook
 from deskpet.sdk_adapters.authorization import ProductAuthorizationAdapter
 from deskpet.sdk_adapters.capability_catalog import ProductCapabilityCatalogSourceAdapter
 from deskpet.sdk_adapters.composition import (
@@ -137,6 +136,7 @@ from deskpet.tool_catalog import ToolCatalogDependencies, build_explicit_product
 from deskpet.tools import registry as live_tool_registry
 from deskpet.tools import skill_tools as _skill_tools
 from observability.memory_probe import install_memory_probe as _install_memory_probe
+from providers.extra_headers import install_httpx_extra_headers_hook
 from simple_harness import RuntimeProfile
 from simple_harness.execution.budget import BudgetPolicy
 from simple_harness.execution.context_authority import DurableToolCatalogResolver

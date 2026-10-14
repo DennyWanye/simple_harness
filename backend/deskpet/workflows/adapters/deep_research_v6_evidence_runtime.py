@@ -27,8 +27,7 @@ from typing import Any, Literal, Protocol
 from urllib.parse import urljoin, urlsplit
 
 import structlog
-
-from deskpet.execution.dispatch import dispatch_with_run_fence
+from providers.dispatch_handoff import dispatch_with_run_fence
 
 from ...retrieval.contracts import (
     EvidenceDocument,

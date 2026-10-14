@@ -34,8 +34,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import structlog
-
-from agent.context_messages import provider_purpose_scope
+from llm.context_messages import provider_purpose_scope
 
 logger = structlog.get_logger(__name__)
 

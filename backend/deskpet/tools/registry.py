@@ -64,13 +64,13 @@ from pathlib import Path
 from typing import Any, Optional
 
 from paths import output_dir
-
-from deskpet.execution.contracts import OutcomeStatus, fingerprint_json, thaw_json
-from deskpet.execution.dispatch import (
+from providers.dispatch_handoff import (
     FunctionPreparedToolDispatch,
     PreparedToolDispatch,
     PreparedToolDispatchIdentity,
 )
+
+from deskpet.execution.contracts import OutcomeStatus, fingerprint_json, thaw_json
 from deskpet.tools import _legacy_registry_proxy, receipt_store
 from deskpet.tools.artifact import (
     extract_artifacts_from_result,

@@ -11,8 +11,9 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import asdict, is_dataclass
 from typing import Any
 
+from observability.redaction import TraceRedactor
+
 from deskpet.capabilities.contracts import OwnerScopeKey
-from deskpet.security.redaction import TraceRedactor
 
 from .store import canonical_hash, canonical_json
 

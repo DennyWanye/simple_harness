@@ -17,11 +17,11 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
-from agent.context_messages import provider_purpose_scope
+from llm.context_messages import provider_purpose_scope
 from llm.types import ChatResponse
+from providers.dispatch_handoff import dispatch_with_run_fence
 
 from deskpet.agent.tokens import count_messages_tokens
-from deskpet.execution.dispatch import dispatch_with_run_fence
 from deskpet.execution.provider_invocations import coordinate_provider_call
 from deskpet.tools.capabilities import (
     PreparedToolCapability,

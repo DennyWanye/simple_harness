@@ -23,8 +23,7 @@ from typing import Any
 from deskpet.agent.context_budget import RequestBudget
 from deskpet.agent.tokens import count_messages_tokens
 from llm import model_info
-
-from agent.context_messages import (
+from llm.context_messages import (
     ProviderAttemptOptions,
     context_attempt_scope,
     current_provider_attempt_options,

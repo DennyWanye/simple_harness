@@ -27,13 +27,13 @@ from typing import (
     Union,
 )
 
-from deskpet import context_os_e2e_hooks
 from deskpet.agent.compression_model_resolver import CompressionModelCandidate
 from deskpet.agent.context_segment_store import CoverageCommitProof
 from deskpet.agent.context_snapshot_store import SnapshotConflictError, await_snapshot_commit_ack
 from deskpet.agent.context_usage import context_usage_sample_id
 from deskpet.agent.reflection import _REFLECTION_INSTRUCTION, parse_reflection
 from deskpet.agent.tokens import count_messages_tokens as _cmt
+from providers import context_os_e2e_hooks
 
 from agent.context_report import (
     build_prepared_attempt_report,
@@ -53,12 +53,7 @@ from deskpet.execution.provider_invocations import (
 )
 from deskpet.workflows.trace import SpanContext, SpanKind, SpanStatus, TraceStore
 from llm.budget import DailyBudget
-from llm.errors import LLMBudgetExceededError, LLMProviderError
-from llm.types import ChatResponse, ToolCall
-
-from agent import errors as agent_errors
-from agent.context_manager import ContextManager
-from agent.context_messages import (
+from llm.context_messages import (
     CONTEXT_MESSAGE_META_KEY,
     ContextMessageMeta,
     ProviderAttemptOptions,
@@ -67,6 +62,11 @@ from agent.context_messages import (
     context_attempt_scope,
     tag_message,
 )
+from llm.errors import LLMBudgetExceededError, LLMProviderError
+from llm.types import ChatResponse, ToolCall
+
+from agent import errors as agent_errors
+from agent.context_manager import ContextManager
 from agent.skill_remount import (
     frozen_skill_scope,
     prepare_frozen_skill_remounts,

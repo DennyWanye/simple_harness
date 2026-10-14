@@ -7,6 +7,8 @@ import json
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from observability.redaction import TraceRedactor
+
 from deskpet.capabilities.refresh import context_os_snapshot_ref
 from deskpet.execution.contracts import (
     DeliveryPolicy,
@@ -17,7 +19,6 @@ from deskpet.execution.contracts import (
     canonical_json,
     fingerprint_json,
 )
-from deskpet.security.redaction import TraceRedactor
 from deskpet.tools.prepared_snapshot import load_context_os_snapshot
 
 from .contracts import (

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import pytest
-from agent.context_messages import ProviderAttemptOptions
+from llm.context_messages import ProviderAttemptOptions
 
 
 def test_session_auxiliary_attempt_requires_root_identity():

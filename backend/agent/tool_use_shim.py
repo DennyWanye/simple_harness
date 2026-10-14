@@ -32,9 +32,9 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from deskpet.execution.contracts import ProviderLaunchSnapshot
 
-from deskpet.execution.dispatch import current_dispatch_handoff
 from llm.errors import LLMProviderError
 from llm.types import ChatResponse, ChatUsage, ToolCall
+from providers.dispatch_handoff import current_dispatch_handoff
 
 
 def _launch_kwargs(

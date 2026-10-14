@@ -33,9 +33,9 @@ from typing import Any
 import paths as _paths
 import structlog
 import tomlkit
-from deskpet.context_os_e2e_hooks import ContextOSE2EHooks
 from llm import model_info
 from llm.model_info import BUILTIN
+from providers.context_os_e2e_hooks import ContextOSE2EHooks
 
 logger = structlog.get_logger(__name__)
 

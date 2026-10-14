@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from agent.context_messages import ContextMessageMeta, tag_message
 from config import load_config
 from deskpet.agent.assembler.bundle import ContextFragment
 from deskpet.agent.context_task import (
@@ -12,6 +11,7 @@ from deskpet.agent.context_task import (
     TaskFact,
     WorkflowProjectionAdapter,
 )
+from llm.context_messages import ContextMessageMeta, tag_message
 from p4_ipc import _context_compaction_config_path, _read_context_compaction_model
 
 from host.runtime import _CONFIG_PATH, config, logger, service_context

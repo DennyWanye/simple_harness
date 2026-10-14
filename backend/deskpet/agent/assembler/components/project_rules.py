@@ -11,7 +11,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from deskpet import context_os_e2e_hooks
+from providers import context_os_e2e_hooks
+
 from deskpet.agent.assembler.bundle import ContextFragment, Slice
 from deskpet.agent.assembler.components.base import Component, ComponentContext
 from deskpet.agent.tokens import count_text_tokens

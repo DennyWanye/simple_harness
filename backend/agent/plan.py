@@ -29,7 +29,7 @@ import logging
 import re
 from dataclasses import dataclass
 
-from agent.context_messages import provider_purpose_scope
+from llm.context_messages import provider_purpose_scope
 
 log = logging.getLogger(__name__)
 

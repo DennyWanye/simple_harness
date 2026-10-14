@@ -11,30 +11,27 @@ import re as _re
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING
 
-from deskpet.context_os_e2e_hooks import trusted_provider_headers
+from providers.context_os_e2e_hooks import trusted_provider_headers
 
 if TYPE_CHECKING:
     from deskpet.execution.contracts import ProviderLaunchSnapshot
 
 import httpx
 import structlog
-from agent.context_messages import (
-    current_provider_attempt_options,
-    split_wire_messages,
-)
 from agent.context_report import (
     auto_context_attempt_call,
     auto_context_attempt_iter,
     mark_current_attempt_sent,
     mark_current_attempt_transport_retry,
 )
-from deskpet.execution.dispatch import current_dispatch_handoff
-from deskpet.provider_extra_headers import extra_headers_for
+from llm.context_messages import current_provider_attempt_options, split_wire_messages
 from llm.errors import LLMProviderError
 from llm.relay_errors import classify_relay_error
 
 from providers._response_sanitizer import sanitize_response
+from providers.dispatch_handoff import current_dispatch_handoff
 from providers.dispatch_transport import DispatchAwareAsyncTransport
+from providers.extra_headers import extra_headers_for
 
 logger = structlog.get_logger()
 

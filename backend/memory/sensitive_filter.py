@@ -22,7 +22,7 @@ Design notes:
 
 from __future__ import annotations
 
-from deskpet.security.sensitive_text import redact_sensitive_text as redact
+from observability.sensitive_text import redact_sensitive_text as redact
 
 
 class RedactingMemoryStore:

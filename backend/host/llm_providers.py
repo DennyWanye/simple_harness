@@ -127,7 +127,7 @@ def _resolve_llm_api_key(configured: str) -> str:
 
 
 _resolved_api_key = _resolve_llm_api_key(config.llm.local.api_key)
-from deskpet.context_os_e2e_hooks import ContextOSE2EHooks as _ContextOSE2EHooks
+from providers.context_os_e2e_hooks import ContextOSE2EHooks as _ContextOSE2EHooks
 
 _context_os_e2e_boot_hooks = _ContextOSE2EHooks.from_env()
 _e2e_provider_base = (

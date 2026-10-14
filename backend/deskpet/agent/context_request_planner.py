@@ -11,7 +11,7 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from agent.context_messages import ContextMessageMeta, tag_message
+from llm.context_messages import ContextMessageMeta, tag_message
 
 from deskpet.agent.assembler.bundle import (
     AttachmentRef,

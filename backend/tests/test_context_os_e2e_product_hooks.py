@@ -1,14 +1,6 @@
 from __future__ import annotations
 
 import pytest
-
-from agent.context_messages import ProviderAttemptOptions, context_attempt_scope
-from deskpet.context_os_e2e_hooks import (
-    ContextOSE2EHooks,
-    consume_context_os_e2e_fault,
-    trusted_context_os_e2e_case,
-    trusted_provider_headers,
-)
 from deskpet.tools.capabilities import (
     ToolCapabilityBridgeService,
     ToolCapabilityResolver,
@@ -21,6 +13,14 @@ from deskpet.tools.capabilities import (
 )
 from deskpet.tools.registry import ToolRegistry
 from deskpet.tools.tool_search import register_capability_bridge_tools
+from llm.context_messages import ProviderAttemptOptions, context_attempt_scope
+from providers.context_os_e2e_hooks import (
+    ContextOSE2EHooks,
+    consume_context_os_e2e_fault,
+    trusted_context_os_e2e_case,
+    trusted_provider_headers,
+)
+
 from tests.host_source import host_source_text
 
 
@@ -73,7 +73,7 @@ def test_trusted_case_requires_loopback_case_session_and_source_checkout(monkeyp
     assert trusted_context_os_e2e_case(allowed_cases=("E2E-CTX-10",), session_id="session-a")
     assert not trusted_context_os_e2e_case(allowed_cases=("E2E-CTX-10",), session_id="session-b")
     assert not trusted_context_os_e2e_case(allowed_cases=("E2E-CTX-02",), session_id="session-a")
-    monkeypatch.setattr("deskpet.context_os_e2e_hooks.sys.frozen", True, raising=False)
+    monkeypatch.setattr("providers.context_os_e2e_hooks.sys.frozen", True, raising=False)
     assert not trusted_context_os_e2e_case(allowed_cases=("E2E-CTX-10",), session_id="session-a")
 
 

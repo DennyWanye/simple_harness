@@ -17,7 +17,7 @@ from functools import partial
 from pathlib import Path
 from typing import Any, TypeVar, cast
 
-from deskpet.execution.dispatch import dispatch_with_run_fence
+from providers.dispatch_handoff import dispatch_with_run_fence
 
 from ...tools import ppt_tools, ppt_visual_review
 from ..contracts import EffectKind, EffectPolicy, JsonValue, canonical_json, validate_json_value

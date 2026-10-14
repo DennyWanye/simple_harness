@@ -50,7 +50,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional, Protocol
 
 import httpx
-from agent.context_messages import provider_purpose_scope
+from llm.context_messages import provider_purpose_scope
 from paths import deepresearch_dir
 
 from deskpet.retrieval import runtime

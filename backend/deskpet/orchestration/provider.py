@@ -21,9 +21,8 @@ from typing import Any
 from urllib.parse import urlparse
 
 import httpx
+from providers.extra_headers import install_httpx_extra_headers_hook
 from simple_harness.providers import OpenAICompatibleProvider, Secret
-
-from deskpet.provider_extra_headers import install_httpx_extra_headers_hook
 
 DEEPSEEK_OFFICIAL_HOSTS = frozenset({"api.deepseek.com"})
 MODEL_ALIASES = {"deepseek-v4-flash": "deepseek-flash"}

@@ -45,7 +45,7 @@ from dataclasses import dataclass, field
 from typing import Any, Optional
 
 import structlog
-from agent.context_messages import (
+from llm.context_messages import (
     CONTEXT_MESSAGE_META_KEY,
     ContextMessageMeta,
     ProviderAttemptOptions,

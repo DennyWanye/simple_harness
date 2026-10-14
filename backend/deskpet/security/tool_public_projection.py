@@ -9,9 +9,10 @@ from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
 from typing import Any
 
+from observability.redaction import TraceRedactor
+from observability.sensitive_text import redact_sensitive_text
+
 from deskpet.harness.contracts import HostExtensionRefV1
-from deskpet.security.redaction import TraceRedactor
-from deskpet.security.sensitive_text import redact_sensitive_text
 
 _ACTIVITY_KINDS = frozenset({"inspect", "plan", "mutate", "verify", "communicate", "wait"})
 _POINTER = re.compile(r"(?:/(?:[^~/]|~[01])*)*")

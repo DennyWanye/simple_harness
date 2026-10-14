@@ -11,8 +11,9 @@ from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
-from deskpet.execution import contracts
-from deskpet.execution.dispatch import (
+from observability.redaction import TraceRedactor
+from observability.sensitive_text import redact_sensitive_text
+from providers.dispatch_handoff import (
     DispatchIdentity,
     DispatchNotStarted,
     DispatchOperation,
@@ -22,7 +23,8 @@ from deskpet.execution.dispatch import (
     provisional_stream_envelope,
     provisional_stream_retract,
 )
-from deskpet.security import TraceRedactor, redact_sensitive_text
+
+from deskpet.execution import contracts
 
 logger = logging.getLogger(__name__)
 
