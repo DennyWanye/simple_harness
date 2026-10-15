@@ -1,0 +1,7 @@
+{
+ "package": "htn_store_domains",
+ "stubs_in_core": false,
+ "groups": [],
+ "records": "records",
+ "records_doc": "HTN store records: errors, row types, state constants and row conversions."
+}

@@ -50,8 +50,15 @@ from .state import (
 )
 
 if TYPE_CHECKING:
+    from ...contracts.error_table import SharingRefused
+    from ...contracts.planning_decisions import PlanningDecisionEnvelopeV1, PlanningDecisionStatus
+    from ...governance.planning_authorization import SourceUnavailable as AuthoritySourceUnavailable
     from ...graph.task_network import TaskNetworkSnapshot
+    from ...planning import plan_preview
+    from ...planning.decision_admission import NoMutationDecision
+    from ...planning.decision_codec import PlanningDecisionCodecError
     from ...runtime.provider_budget_guard import ProviderBudgetGuard
+    from .planning_decisions import PlanningReply
 
 
 if TYPE_CHECKING:
@@ -376,6 +383,125 @@ class OrchestratorCore:
         @property
         def store(self) -> Store: ...
         def validate_source_storage(self, mission_id: str) -> None: ...
+        async def _answer_evidence_request(
+            self,
+            reply: PlanningReply,
+            *,
+            decision: PlanningDecisionEnvelopeV1,
+            canonical_json: str,
+            canonical_hash: str,
+            context: Any,
+            evaluated: Callable[..., None],
+        ) -> None: ...
+        async def _reject_failed_commit(
+            self,
+            reply: PlanningReply,
+            *,
+            decision: PlanningDecisionEnvelopeV1,
+            canonical_json: str,
+            canonical_hash: str,
+            error: Exception,
+            evaluated: Callable[..., None],
+        ) -> None: ...
+        async def _reject_refused_plan(
+            self,
+            reply: PlanningReply,
+            *,
+            decision: PlanningDecisionEnvelopeV1,
+            canonical_json: str,
+            canonical_hash: str,
+            plan_outcome: Any,
+            evaluated: Callable[..., None],
+        ) -> None: ...
+        async def _reject_shared_refusal(
+            self,
+            reply: PlanningReply,
+            *,
+            decision: PlanningDecisionEnvelopeV1,
+            canonical_json: str,
+            canonical_hash: str,
+            error: SharingRefused,
+            codes: Sequence[str],
+            refusal_status: PlanningDecisionStatus,
+            evaluated: Callable[..., None],
+        ) -> None: ...
+        async def _reject_unadmitted_decision(
+            self,
+            reply: PlanningReply,
+            *,
+            decision: PlanningDecisionEnvelopeV1,
+            canonical_json: str,
+            canonical_hash: str,
+            admitted: Any,
+            refusal_status: PlanningDecisionStatus,
+            evaluated: Callable[..., None],
+        ) -> None: ...
+        def _reject_unavailable_authority(
+            self,
+            reply: PlanningReply,
+            *,
+            decision: PlanningDecisionEnvelopeV1,
+            canonical_json: str,
+            canonical_hash: str,
+            context: AuthoritySourceUnavailable,
+            refusal_status: PlanningDecisionStatus,
+            evaluated: Callable[..., None],
+        ) -> None: ...
+        async def _reject_unavailable_preview(
+            self,
+            reply: PlanningReply,
+            *,
+            decision: PlanningDecisionEnvelopeV1,
+            canonical_json: str,
+            canonical_hash: str,
+            preview: plan_preview.PreviewUnavailable,
+            refusal_status: PlanningDecisionStatus,
+            evaluated: Callable[..., None],
+        ) -> None: ...
+        async def _reject_undecodable_reply(
+            self,
+            reply: PlanningReply,
+            error: PlanningDecisionCodecError,
+            exhausted_fact: str | None,
+            evaluated: Callable[..., None],
+        ) -> None: ...
+        async def _repair_retry_same_method(
+            self,
+            reply: PlanningReply,
+            *,
+            decision: PlanningDecisionEnvelopeV1,
+            canonical_json: str,
+            canonical_hash: str,
+            evaluated: Callable[..., None],
+        ) -> None: ...
+        async def _repair_runtime_blocked(
+            self,
+            reply: PlanningReply,
+            *,
+            decision: PlanningDecisionEnvelopeV1,
+            canonical_json: str,
+            canonical_hash: str,
+            evaluated: Callable[..., None],
+        ) -> None: ...
+        async def _route_method_or_human_request(
+            self,
+            reply: PlanningReply,
+            *,
+            decision: PlanningDecisionEnvelopeV1,
+            canonical_json: str,
+            canonical_hash: str,
+            evaluated: Callable[..., None],
+        ) -> None: ...
+        async def _settle_no_mutation_decision(
+            self,
+            reply: PlanningReply,
+            *,
+            decision: PlanningDecisionEnvelopeV1,
+            canonical_json: str,
+            canonical_hash: str,
+            pre_admitted: NoMutationDecision,
+            evaluated: Callable[..., None],
+        ) -> None: ...
 
     def __init__(
         self,

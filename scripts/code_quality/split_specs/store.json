@@ -1,0 +1,173 @@
+{
+ "package": "store_domains",
+ "stubs_in_core": false,
+ "groups": [
+  {
+   "module": "core",
+   "class": "StoreCore",
+   "core": true,
+   "doc": "Opening, schema migration, transactions, read views and fault injection.",
+   "methods": [
+    "__init__",
+    "open",
+    "open_readonly",
+    "has_table",
+    "close",
+    "path",
+    "now",
+    "_initialize_or_validate",
+    "_apply_migration",
+    "_bind_legacy_missions",
+    "_renumber_artifact_lineage",
+    "_current_task",
+    "transaction",
+    "transaction_generation",
+    "read_view",
+    "connection",
+    "read_generation",
+    "arm",
+    "disarm",
+    "fault",
+    "_cas"
+   ]
+  },
+  {
+   "module": "events",
+   "class": "StoreEventMixin",
+   "doc": "The append-only event log.",
+   "methods": [
+    "iter_events",
+    "append_event",
+    "list_events",
+    "count_events",
+    "last_event_seq"
+   ]
+  },
+  {
+   "module": "missions_tasks",
+   "class": "StoreMissionTaskMixin",
+   "doc": "Missions, tasks and attempts.",
+   "methods": [
+    "insert_mission",
+    "update_mission",
+    "get_mission",
+    "find_mission",
+    "list_missions",
+    "insert_task",
+    "update_task",
+    "get_task",
+    "list_tasks",
+    "insert_attempt",
+    "update_attempt",
+    "get_attempt",
+    "list_attempts",
+    "count_attempts_by_status",
+    "list_attempts_by_status"
+   ]
+  },
+  {
+   "module": "intents_results",
+   "class": "StoreIntentResultMixin",
+   "doc": "Dispatch intents, results and verifications.",
+   "methods": [
+    "insert_intent",
+    "update_intent",
+    "get_intent",
+    "get_intent_for_subject",
+    "list_intents",
+    "insert_result",
+    "set_result_verification",
+    "get_result",
+    "find_result_for_attempt",
+    "has_unverified_results",
+    "list_results_by_verification",
+    "upsert_verification",
+    "list_verifications"
+   ]
+  },
+  {
+   "module": "knowledge_claims",
+   "class": "StoreKnowledgeClaimMixin",
+   "doc": "Claims and knowledge entries.",
+   "methods": [
+    "upsert_claim",
+    "get_claim",
+    "list_claims",
+    "list_mission_claims",
+    "upsert_knowledge",
+    "get_knowledge",
+    "list_knowledge"
+   ]
+  },
+  {
+   "module": "governance",
+   "class": "StoreGovernanceMixin",
+   "doc": "Actions, approvals, decisions, overrides, tool calls, scheduler state and policies.",
+   "methods": [
+    "put_action",
+    "get_action",
+    "list_action_versions",
+    "list_actions",
+    "put_approval",
+    "get_approval",
+    "list_approvals",
+    "insert_decision",
+    "list_decisions",
+    "insert_override",
+    "list_overrides",
+    "record_tool_call",
+    "get_tool_call",
+    "count_search_calls",
+    "count_tool_calls",
+    "get_scheduler_state",
+    "put_scheduler_state",
+    "insert_policy_version",
+    "set_policy_version_status",
+    "get_policy_version",
+    "list_policy_versions",
+    "insert_policy_activation",
+    "list_policy_activations",
+    "active_policy",
+    "bind_mission_policy",
+    "get_mission_policy",
+    "bind_mission_domain",
+    "get_mission_domain",
+    "list_mission_policies"
+   ]
+  },
+  {
+   "module": "artifacts_sources",
+   "class": "StoreArtifactSourceMixin",
+   "doc": "Artifacts, workspaces, sources and receipts.",
+   "methods": [
+    "upsert_artifact",
+    "update_artifact_verification",
+    "register_workspace",
+    "set_workspace_state",
+    "get_workspace",
+    "list_workspaces",
+    "get_artifact",
+    "list_artifacts",
+    "list_mission_artifacts",
+    "get_source",
+    "list_sources",
+    "put_source",
+    "get_receipt",
+    "insert_receipt"
+   ]
+  },
+  {
+   "module": "queries",
+   "class": "StoreQueryMixin",
+   "doc": "Cross-table read queries: waits, snapshots and budget usage.",
+   "methods": [
+    "waiting_on",
+    "human_wait_seconds",
+    "snapshot",
+    "mission_budget_usage"
+   ]
+  }
+ ],
+ "records": "records",
+ "records_doc": "Store records: errors, row types, state constants and row conversions."
+}

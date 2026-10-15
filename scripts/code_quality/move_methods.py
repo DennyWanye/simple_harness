@@ -81,25 +81,49 @@ def main() -> int:
     core_text = core_path.read_text(encoding="utf-8")
     core_tree = ast.parse(core_text)
     core_cls = next(n for n in core_tree.body if isinstance(n, ast.ClassDef) and n.name == core_name)
-    stub_block = next(
-        n for n in core_cls.body if isinstance(n, ast.If) and "TYPE_CHECKING" in ast.unparse(n.test)
-    )
-    existing = {n.name for n in stub_block.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
     core_methods = {n.name for n in core_cls.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
-    need = ((self_calls(moved_code) & set(staying)) | (self_calls(kept_code) & set(moving))) - existing - core_methods
 
-    stubs: list[str] = []
-    stub_names: set[str] = set()
-    for name in sorted(need):
+    def stub_of(name: str) -> str:
         node = ast.parse(textwrap.dedent(src.chunk(methods[name], body))).body[0]
         node.body = [ast.Expr(ast.Constant(...))]  # type: ignore[attr-defined]
-        text = ast.unparse(node)
-        stub_names |= names_in(text)
-        stubs.append(text)
+        return ast.unparse(node)
+
+    # 存根写在哪：源类自己有 `if TYPE_CHECKING:` 存根块（每个 mixin 各写一份的包）就写在两个类里，否则写进公共基类
+    local_block = next(
+        (n for n in body if isinstance(n, ast.If) and "TYPE_CHECKING" in ast.unparse(n.test)), None
+    )
+    calls_moved, calls_kept = self_calls(moved_code), self_calls(kept_code)
+    stubs: list[str] = []
+    stub_names: set[str] = set()
+    need: set[str] = set()
+    new_stub_block = source_stub_block = ""
+    if local_block is not None:
+        local = {
+            n.name: textwrap.dedent(ast.get_source_segment(src.text, n, padded=True) or "")
+            for n in local_block.body
+            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+
+        def render_block(names: set[str]) -> str:
+            texts = [local[n] if n in local else stub_of(n) for n in sorted(names)]
+            return ("    if TYPE_CHECKING:\n" + "".join(textwrap.indent(x.rstrip() + "\n", "        ") for x in texts) + "\n") if texts else ""
+
+        new_stub_block = render_block((calls_moved & set(local)) | (calls_moved & set(staying)))
+        source_stub_block = render_block((calls_kept & set(local)) | (calls_kept & set(moving)))
+    else:
+        stub_block = next(
+            n for n in core_cls.body if isinstance(n, ast.If) and "TYPE_CHECKING" in ast.unparse(n.test)
+        )
+        existing = {n.name for n in stub_block.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+        need = ((calls_moved & set(staying)) | (calls_kept & set(moving))) - existing - core_methods
+        for name in sorted(need):
+            text = stub_of(name)
+            stub_names |= names_in(text)
+            stubs.append(text)
 
     # 新模块
     header = "".join(src.lines[: src.tree.body[0].lineno - 1])
-    used = names_in(moved_code)
+    used = names_in(moved_code + new_stub_block)
 
     def imports_for(names: set[str], *, in_block: bool) -> list[str]:
         out = []
@@ -120,7 +144,7 @@ def main() -> int:
     block = "\n".join(lines)
     if checking:
         block += "\n\nif TYPE_CHECKING:\n" + "\n".join("    " + x for x in checking)
-    cls_text = f'class {args.new_class}({core_name}):\n    """{args.doc}"""\n\n    __slots__ = ()\n\n' + moved_code
+    cls_text = f'class {args.new_class}({core_name}):\n    """{args.doc}"""\n\n    __slots__ = ()\n\n' + new_stub_block + moved_code
     new_module = path.parent / f"{args.module}.py"
     new_text = header + f'"""{args.doc}"""\n\nfrom __future__ import annotations\n\n' + block + "\n\n\n" + cls_text
 
@@ -129,6 +153,10 @@ def main() -> int:
     for node in sorted(moved, key=lambda n: n.lineno, reverse=True):
         start, end = src.span(node, body)
         del keep_lines[start:end]
+    if local_block is not None:  # 源类的存根块换成余下方法要的那份
+        del keep_lines[local_block.lineno - 1 : local_block.end_lineno]
+        if source_stub_block:
+            keep_lines.insert(local_block.lineno - 1, source_stub_block.rstrip("\n") + "\n")
     source_text = "".join(keep_lines)
 
     # 公共基类加存根与类型检查导入
@@ -146,6 +174,7 @@ def main() -> int:
         extra = imports_for(stub_names - core_bound, in_block=True) + imports_for(
             stub_names - core_bound, in_block=False
         )
+        extra += [f"from .{path.stem} import {n}" for n in sorted((stub_names - core_bound) & set(src.helpers))]
         if extra:
             module_checking = next(
                 n for n in core_tree.body if isinstance(n, ast.If) and "TYPE_CHECKING" in ast.unparse(n.test)
@@ -167,7 +196,8 @@ def main() -> int:
     if count != 1:
         sys.exit("组合类基类列表里找不到源类")
 
-    print(f"搬走 {len(moving)} 个方法；源类余 {len(staying)} 个；公共基类加存根 {sorted(need)}")
+    print(f"搬走 {len(moving)} 个方法；源类余 {len(staying)} 个；公共基类加存根 {sorted(need)}；"
+          f"类内存根：新类 {new_stub_block.count('def ')} 个，源类 {source_stub_block.count('def ')} 个")
     if args.dry_run:
         return 0
     new_module.write_text(new_text, encoding="utf-8")
@@ -177,7 +207,8 @@ def main() -> int:
     files = [str(new_module), str(path), str(core_path), str(comp)]
     ruff = [os.environ.get("RUFF") or str(REPO.parent / "simple_harness/sdk/simple-harness-sdk/.venv/bin/ruff")]
     subprocess.run([*ruff, "check", "--config", str(RUFF_CONFIG), "--select", "F401,I001", "--fix", "--quiet", *files], check=False)
-    subprocess.run([*ruff, "format", "--config", str(RUFF_CONFIG), "--quiet", str(new_module)], check=False)
+    subprocess.run([*ruff, "format", "--config", str(RUFF_CONFIG), "--quiet", str(new_module), str(core_path)]
+                   + ([str(path)] if local_block is not None else []), check=False)
     res = subprocess.run([*ruff, "check", "--config", str(RUFF_CONFIG), "--select", "F401,F811,F821,F841", *files],
                          capture_output=True, text=True)
     print(res.stdout[-4000:] or "ruff：无未定义/未使用名字")

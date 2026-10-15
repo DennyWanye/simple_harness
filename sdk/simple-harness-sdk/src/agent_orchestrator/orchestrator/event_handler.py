@@ -52,6 +52,7 @@ from .orchestrator_domains.mission_lifecycle import (
     FAULT_POINTS,
     MissionLifecycleMixin,
 )
+from .orchestrator_domains.planning_decision_branches import PlanningDecisionBranchMixin
 from .orchestrator_domains.planning_decisions import PlanningDecisionMixin
 from .orchestrator_domains.planning_feedback import PlanningFeedbackMixin
 from .orchestrator_domains.planning_rounds import PlanningRoundMixin
@@ -84,6 +85,7 @@ class Orchestrator(
     AttemptCollectionMixin,
     PlanningFeedbackMixin,
     PlanningDecisionMixin,
+    PlanningDecisionBranchMixin,
     VerificationMixin,
     ServiceTurnMixin,
     ResourceLimitMixin,

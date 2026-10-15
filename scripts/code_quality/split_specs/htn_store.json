@@ -1,0 +1,141 @@
+{
+ "package": "htn_store_domains",
+ "stubs_in_core": false,
+ "groups": [
+  {
+   "module": "core",
+   "class": "HtnStoreCore",
+   "core": true,
+   "doc": "HTN store construction and the row helpers every table family uses.",
+   "methods": [
+    "__init__",
+    "_one",
+    "_insert",
+    "_execute",
+    "_state"
+   ]
+  },
+  {
+   "module": "semantics_methods",
+   "class": "HtnSemanticsMethodMixin",
+   "doc": "Task semantics, method registrations, method instances and child occurrences.",
+   "methods": [
+    "put_task_semantics",
+    "get_task_semantics",
+    "latest_task_semantics",
+    "task_semantics_of",
+    "list_task_semantics",
+    "register_method",
+    "set_method_registration",
+    "get_method",
+    "list_methods",
+    "insert_method_instance",
+    "get_method_instance",
+    "method_instance_state",
+    "set_method_instance_state",
+    "list_method_instances",
+    "list_child_occurrences",
+    "occurrence_consumers",
+    "_insert_child_occurrence",
+    "_method_row",
+    "_stored_method"
+   ]
+  },
+  {
+   "module": "plan_structure",
+   "class": "HtnPlanStructureMixin",
+   "doc": "Plan revisions, memberships, order constraints, data requirements, input manifests and requirements revisions.",
+   "methods": [
+    "insert_plan_revision",
+    "get_plan_revision",
+    "list_plan_revisions",
+    "active_plan_revision",
+    "activate_plan_revision",
+    "insert_plan_membership",
+    "list_plan_memberships",
+    "insert_order_constraint",
+    "list_order_constraints",
+    "insert_data_requirement",
+    "list_data_requirements",
+    "insert_input_manifest",
+    "get_input_manifest",
+    "list_manifest_bindings",
+    "insert_requirements_revision",
+    "get_requirements_revision",
+    "latest_requirements_revision",
+    "list_requirements_revisions",
+    "_plan_revision"
+   ]
+  },
+  {
+   "module": "reviews_acceptance",
+   "class": "HtnReviewAcceptanceMixin",
+   "doc": "Review packages and records, acceptances, goal resolutions, validity witnesses and observations.",
+   "methods": [
+    "insert_review_package",
+    "get_review_package",
+    "list_review_packages",
+    "insert_review_record",
+    "get_review_record",
+    "list_review_records",
+    "official_review_record",
+    "list_criterion_evaluations",
+    "insert_acceptance",
+    "get_acceptance",
+    "list_acceptances",
+    "insert_goal_resolution",
+    "get_goal_resolution",
+    "adopted_goal_resolution",
+    "list_goal_resolutions",
+    "insert_validity_witness",
+    "get_validity_witness",
+    "list_validity_witnesses",
+    "insert_observation",
+    "observation_questions",
+    "get_observation",
+    "list_observations"
+   ]
+  },
+  {
+   "module": "dirty_bindings",
+   "class": "HtnDirtyBindingMixin",
+   "doc": "Epochs, dirty marks, operation bindings and read sets.",
+   "methods": [
+    "bump_epoch",
+    "epoch",
+    "mark_dirty",
+    "clear_revoked_generation",
+    "list_dirty",
+    "bind_operation",
+    "get_operation_binding",
+    "list_operation_bindings",
+    "record_read_set",
+    "get_read_set",
+    "list_read_set_items",
+    "read_set_consumers"
+   ]
+  },
+  {
+   "module": "receipts",
+   "class": "HtnReceiptMixin",
+   "doc": "Commit, acceptance and delivery receipts and acceptance outputs.",
+   "methods": [
+    "record_commit_receipt",
+    "get_commit_receipt",
+    "list_commit_receipts",
+    "record_acceptance_receipt",
+    "find_acceptance_receipt",
+    "list_acceptance_receipts",
+    "record_delivery_receipt",
+    "find_delivery_receipt",
+    "list_delivery_receipts",
+    "insert_acceptance_output",
+    "list_acceptance_outputs",
+    "_acceptance_receipt",
+    "_commit_receipt"
+   ]
+  }
+ ],
+ "records": "records",
+ "records_doc": "HTN store records: errors, row types, state constants and row conversions."
+}

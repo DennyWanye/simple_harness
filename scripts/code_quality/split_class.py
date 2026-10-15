@@ -30,12 +30,14 @@ from __future__ import annotations
 
 import argparse
 import ast
+import io
 import json
 import os
 import re
 import subprocess
 import sys
 import textwrap
+import tokenize
 from pathlib import Path
 
 if sys.version_info < (3, 12):
@@ -189,7 +191,22 @@ def main() -> int:
                 extra_imports[module].add(target)
             return f"{cls_of[target]}.{m.group(1)}"
 
-        return re.sub(rf"\b{re.escape(args.class_name)}\.(\w+)", sub, code)
+        # 只改代码里的 `原类名.方法`（按词法记号找），字符串与注释原样不动（如 writer="HtnStore.x" 会落库）
+        toks = list(tokenize.generate_tokens(io.StringIO(code).readline))
+        lines = code.splitlines(keepends=True)
+        edits = []
+        for i in range(len(toks) - 2):
+            a, dot, b = toks[i], toks[i + 1], toks[i + 2]
+            if (a.type == tokenize.NAME and a.string == args.class_name and dot.string == "."
+                    and b.type == tokenize.NAME and (i == 0 or toks[i - 1].string != ".")):
+                m = re.match(r"(\w+)\.(\w+)", f"{a.string}.{b.string}")
+                assert m is not None
+                edits.append((a.start, b.end, sub(m)))
+        for (r1, c1), (r2, c2), rep in reversed(edits):
+            assert r1 == r2
+            line = lines[r1 - 1]
+            lines[r1 - 1] = line[:c1] + rep + line[c2:]
+        return "".join(lines)
 
     # 每个模块（含源文件余下部分）的代码文本
     texts: dict[str, list[str]] = {g["module"]: [] for g in spec["groups"]}
@@ -228,9 +245,13 @@ def main() -> int:
     for module, used in used_by_module.items():
         for name in used & set(src.helpers):
             users[name].add(module)
-    support = spec.get("support", "support")
+    # 分组 JSON 写 "records": 模块名 时，源文件的模块级定义整族搬进子包的这个模块（源文件只组合类、经 __all__ 转出）
+    records = spec.get("records")
+    support = records or spec.get("support", "support")
 
     def place(name: str) -> str:
+        if records:
+            return records
         found = users[name] - {MAIN}
         if not found:
             return MAIN
@@ -306,7 +327,9 @@ def main() -> int:
                 classes += "\nfrom typing import TYPE_CHECKING"
         parts.append("\n".join(x for x in (block, helpers, classes) if x))
         parts.append(code)
-        return "\n\n".join(p.rstrip("\n") for p in parts) + "\n"
+        text = "\n\n".join(p.rstrip("\n") for p in parts) + "\n"
+        # 源文件经 `.子包.模块` 导入的名字，子包里的文件改成同包导入（从定义处导入）
+        return re.sub(rf"^(\s*)from \.\.{re.escape(spec['package'])}\.", r"\1from .", text, flags=re.M)
 
     all_wanted: set[str] = set()
     for g in spec["groups"]:
@@ -324,7 +347,9 @@ def main() -> int:
             if not support_names:
                 continue
             outputs[package / f"{support}.py"] = module_file(
-                support, spec.get("support_doc", "Shared helpers for the split class."), own
+                support,
+                spec.get("records_doc" if records else "support_doc", "Shared helpers for the split class."),
+                own,
             )
             continue
         group = next(g for g in spec["groups"] if g["module"] == module)
@@ -373,11 +398,12 @@ def main() -> int:
     old_bases = ", ".join(ast.unparse(b) for b in src.cls.bases)
     head = f"class {args.class_name}({old_bases}):" if old_bases else f"class {args.class_name}:"
     kept_bases = [ast.unparse(b) for b in src.cls.bases if ast.unparse(b) not in moved_bases]
-    if head not in new_text:
-        sys.exit(f"找不到类头 {head}")
-    new_text = new_text.replace(
-        head, f"class {args.class_name}({', '.join([mixins, *kept_bases])}):", 1
-    )
+    if spec["groups"]:  # 没有分组时只搬模块级定义，类头不动
+        if head not in new_text:
+            sys.exit(f"找不到类头 {head}")
+        new_text = new_text.replace(
+            head, f"class {args.class_name}({', '.join([mixins, *kept_bases])}):", 1
+        )
     tree = ast.parse(new_text)
     used_main = names_in(
         "\n".join(
