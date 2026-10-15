@@ -31,7 +31,7 @@ if TYPE_CHECKING:
         WorkflowSpawnContinuationReady,
     )
     from simple_harness.workflow.execution_ports import WorkflowTerminalOutcome
-from .core import ExecutionUnitOfWorkCore
+from .core import ExecutionUnitOfWorkCore, _SqliteWorkflowTransaction
 from .support import (
     _fault,
     _time,
@@ -600,94 +600,14 @@ class WorkflowSpawnSettleMixin(ExecutionUnitOfWorkCore):
         operation_id = ready_or_continuation.spawn_operation_id
         existing = await self.read_spawn_continuation_outcome(transaction, operation_id)
         if existing is not None:
-            completion = tx.connection.execute(
-                "SELECT * FROM workflow_spawn_completion_receipts WHERE spawn_operation_id=?",
-                (operation_id,),
-            ).fetchone()
-            if completion is None:
-                raise UnitOfWorkConflict("workflow spawn terminal completion disappeared")
-            path_kind = str(completion["path_kind"])
-            if path_kind.startswith("parent_terminal_"):
-                evidence = _workflow_spawn_failure_evidence(completion)
-                replay_identity = (
-                    evidence.get("terminal_receipt_id"),
-                    evidence.get("terminal_state"),
-                    evidence.get("terminal_outcome_hash"),
-                )
-                requested_identity = (
-                    parent_terminal_snapshot.receipt_id,
-                    parent_terminal_snapshot.state,
-                    parent_terminal_snapshot.outcome_hash,
-                )
-                durable_ticket = tx.connection.execute(
-                    "SELECT * FROM workflow_launch_ticket_receipts WHERE ticket_receipt_id=?",
-                    (ticket.ticket_receipt_id,),
-                ).fetchone()
-                if (
-                    replay_identity != requested_identity
-                    or durable_ticket is None
-                    or _workflow_launch_ticket(durable_ticket) != ticket
-                    or ticket.ticket_receipt_id != str(completion["ticket_receipt_id"])
-                ):
-                    raise UnitOfWorkConflict(
-                        "workflow spawn parent-terminal replay evidence differs"
-                    )
-                replay_ready_row = tx.connection.execute(
-                    "SELECT * FROM workflow_spawn_continuation_ready WHERE operation_id=?",
-                    (operation_id,),
-                ).fetchone()
-                if path_kind == "parent_terminal_ticket_only":
-                    continuation_row = tx.connection.execute(
-                        "SELECT * FROM workflow_spawn_continuations WHERE operation_id=?",
-                        (operation_id,),
-                    ).fetchone()
-                    if (
-                        not isinstance(
-                            ready_or_continuation,
-                            WorkflowSpawnContinuationClaim,
-                        )
-                        or continuation_row is None
-                        or ready_or_continuation.version + 1 != int(continuation_row["version"])
-                        or (
-                            ready_or_continuation.spawn_operation_id,
-                            ready_or_continuation.ticket_receipt_id,
-                            ready_or_continuation.parent_run_id,
-                            ready_or_continuation.owner_id,
-                            ready_or_continuation.runtime_lease_epoch,
-                            ready_or_continuation.run_fence_epoch,
-                            ready_or_continuation.workflow_lease_epoch,
-                            ready_or_continuation.claim_epoch,
-                            ready_or_continuation.expires_at,
-                        )
-                        != (
-                            str(continuation_row["operation_id"]),
-                            str(continuation_row["ticket_receipt_id"]),
-                            str(continuation_row["parent_run_id"]),
-                            str(continuation_row["owner_id"]),
-                            int(continuation_row["runtime_lease_epoch"]),
-                            int(continuation_row["run_fence_epoch"]),
-                            (
-                                None
-                                if continuation_row["workflow_lease_epoch"] is None
-                                else int(continuation_row["workflow_lease_epoch"])
-                            ),
-                            int(continuation_row["claim_epoch"]),
-                            float(continuation_row["expires_at"]),
-                        )
-                    ):
-                        raise UnitOfWorkConflict(
-                            "workflow spawn parent-terminal replay continuation differs"
-                        )
-                elif (
-                    not isinstance(
-                        ready_or_continuation,
-                        WorkflowSpawnContinuationReady,
-                    )
-                    or replay_ready_row is None
-                    or _workflow_spawn_continuation_ready(replay_ready_row) != ready_or_continuation
-                ):
-                    raise UnitOfWorkConflict("workflow spawn parent-terminal replay ready differs")
-            return existing
+            return self._verify_parent_terminal_replay(
+                tx,
+                operation_id=operation_id,
+                ticket=ticket,
+                ready_or_continuation=ready_or_continuation,
+                parent_terminal_snapshot=parent_terminal_snapshot,
+                existing=existing,
+            )
 
         now = _time(now)
         if not self._verify_workflow_terminal(tx.connection, parent_terminal_snapshot):
@@ -709,6 +629,250 @@ class WorkflowSpawnSettleMixin(ExecutionUnitOfWorkCore):
         ):
             raise UnitOfWorkConflict("workflow spawn parent-terminal identity differs")
 
+        path_kind, ready_row, blocker, activation = self._parent_terminal_recovery_path(
+            tx,
+            operation_id=operation_id,
+            ticket=ticket,
+            ready_or_continuation=ready_or_continuation,
+            parent_terminal_snapshot=parent_terminal_snapshot,
+            continuation=continuation,
+        )
+
+        effect = tx.connection.execute(
+            "SELECT * FROM execution_effects WHERE effect_id=?",
+            (str(continuation["effect_id"]),),
+        ).fetchone()
+        if (
+            effect is None
+            or str(effect["state"]) not in {EffectState.HANDED_OFF.value, EffectState.UNKNOWN.value}
+            or str(effect["run_id"]) != parent_terminal_snapshot.run_id
+            or str(effect["request_hash"]) != str(continuation["effect_request_hash"])
+            or int(effect["handoff_attempt"]) != int(continuation["handoff_attempt"])
+        ):
+            raise UnitOfWorkConflict("workflow spawn parent-terminal Effect authority differs")
+
+        result = ToolResult.failed(
+            CallId(str(effect["call_id"])),
+            "workflow_parent_terminal_before_spawn",
+            "The parent Run became terminal before the child Run was admitted.",
+        )
+        result_json = _tool_result_json(result)
+        result_hash = hashlib.sha256(result_json.encode()).hexdigest()
+        failure_evidence: dict[str, JsonValue] = {
+            "kind": "workflow_parent_terminal_before_spawn",
+            "terminal_receipt_id": parent_terminal_snapshot.receipt_id,
+            "terminal_state": parent_terminal_snapshot.state,
+            "terminal_outcome_hash": parent_terminal_snapshot.outcome_hash,
+        }
+        evidence_json = canonical_json(failure_evidence)
+        evidence_hash = hashlib.sha256(evidence_json.encode()).hexdigest()
+        evidence_id = self._derived_id("workflow-spawn/failure-evidence/v1", evidence_hash)
+        completion_receipt_id = self._derived_id("workflow-spawn/completion/v1", operation_id)
+        completion_values: dict[str, object] = {
+            "completion_receipt_id": completion_receipt_id,
+            "spawn_operation_id": operation_id,
+            "ticket_receipt_id": ticket.ticket_receipt_id,
+            "parent_run_id": parent_terminal_snapshot.run_id,
+            "path_kind": path_kind,
+            "effect_id": str(continuation["effect_id"]),
+            "handoff_attempt": int(continuation["handoff_attempt"]),
+            "effect_request_hash": str(continuation["effect_request_hash"]),
+            "issue_authority_hash": str(continuation["issue_authority_hash"]),
+            "tool_result_json": result_json,
+            "tool_result_hash": result_hash,
+            "child_runtime_start_receipt_id": None,
+            "failure_evidence_kind": failure_evidence["kind"],
+            "failure_evidence_id": evidence_id,
+            "failure_evidence_json": evidence_json,
+            "failure_evidence_hash": evidence_hash,
+            "activation_chain_head_id": (
+                None if activation is None else str(activation["activation_receipt_id"])
+            ),
+            "child_wait_receipt_id": None,
+            "created_at": now,
+        }
+        completion_hash = _workflow_spawn_completion_hash(completion_values)
+
+        _fault(fault, "workflow:spawn_parent_terminal:before_effect_write")
+        changed = tx.connection.execute(
+            "UPDATE execution_effects SET state='failed',result_json=?,"
+            "evidence_ref=?,settled_at=?,version=version+1 WHERE effect_id=? "
+            "AND state IN ('handed_off','unknown') AND version=?",
+            (
+                result_json,
+                evidence_id,
+                now,
+                str(continuation["effect_id"]),
+                int(effect["version"]),
+            ),
+        ).rowcount
+        if changed != 1:
+            raise UnitOfWorkConflict("workflow spawn parent-terminal Effect CAS failed")
+        _fault(fault, "workflow:spawn_parent_terminal:after_effect_write")
+
+        self._release_parent_terminal_recovery_rows(
+            tx, ready_row=ready_row, blocker=blocker, activation=activation, now=now, fault=fault
+        )
+
+        _fault(fault, "workflow:spawn_parent_terminal:before_completion_write")
+        tx.connection.execute(
+            "INSERT INTO workflow_spawn_completion_receipts("
+            "completion_receipt_id,spawn_operation_id,ticket_receipt_id,parent_run_id,"
+            "path_kind,effect_id,handoff_attempt,effect_request_hash,"
+            "issue_authority_hash,tool_result_json,tool_result_hash,"
+            "child_runtime_start_receipt_id,failure_evidence_kind,"
+            "failure_evidence_id,failure_evidence_json,failure_evidence_hash,"
+            "activation_chain_head_id,child_wait_receipt_id,canonical_hash,created_at"
+            ") VALUES(?,?,?,?,?,?,?,?,?,?,?,NULL,?,?,?,?,?,NULL,?,?)",
+            (
+                completion_receipt_id,
+                operation_id,
+                ticket.ticket_receipt_id,
+                parent_terminal_snapshot.run_id,
+                path_kind,
+                str(continuation["effect_id"]),
+                int(continuation["handoff_attempt"]),
+                str(continuation["effect_request_hash"]),
+                str(continuation["issue_authority_hash"]),
+                result_json,
+                result_hash,
+                str(failure_evidence["kind"]),
+                evidence_id,
+                evidence_json,
+                evidence_hash,
+                completion_values["activation_chain_head_id"],
+                completion_hash,
+                now,
+            ),
+        )
+        _fault(fault, "workflow:spawn_parent_terminal:after_completion_write")
+        _fault(fault, "workflow:spawn_parent_terminal:before_continuation_write")
+        changed = tx.connection.execute(
+            "UPDATE workflow_spawn_continuations SET state='completed',"
+            "completion_receipt_id=?,completion_path_kind=?,version=version+1,"
+            "updated_at=? WHERE operation_id=? AND state IN ('pending','claimed') "
+            "AND version=?",
+            (
+                completion_receipt_id,
+                path_kind,
+                now,
+                operation_id,
+                int(continuation["version"]),
+            ),
+        ).rowcount
+        if changed != 1:
+            raise UnitOfWorkConflict("workflow spawn parent-terminal continuation CAS failed")
+        _fault(fault, "workflow:spawn_parent_terminal:after_continuation_write")
+        tx.register_after_commit_fault("workflow:spawn_parent_terminal:after_commit")
+        return result
+
+    def _verify_parent_terminal_replay(
+        self,
+        tx: _SqliteWorkflowTransaction,
+        *,
+        operation_id: str,
+        ticket: WorkflowLaunchTicket,
+        ready_or_continuation: WorkflowSpawnContinuationReady | WorkflowSpawnContinuationClaim,
+        parent_terminal_snapshot: WorkflowTerminalOutcome,
+        existing: ToolResult,
+    ) -> ToolResult:
+        completion = tx.connection.execute(
+            "SELECT * FROM workflow_spawn_completion_receipts WHERE spawn_operation_id=?",
+            (operation_id,),
+        ).fetchone()
+        if completion is None:
+            raise UnitOfWorkConflict("workflow spawn terminal completion disappeared")
+        path_kind = str(completion["path_kind"])
+        if path_kind.startswith("parent_terminal_"):
+            evidence = _workflow_spawn_failure_evidence(completion)
+            replay_identity = (
+                evidence.get("terminal_receipt_id"),
+                evidence.get("terminal_state"),
+                evidence.get("terminal_outcome_hash"),
+            )
+            requested_identity = (
+                parent_terminal_snapshot.receipt_id,
+                parent_terminal_snapshot.state,
+                parent_terminal_snapshot.outcome_hash,
+            )
+            durable_ticket = tx.connection.execute(
+                "SELECT * FROM workflow_launch_ticket_receipts WHERE ticket_receipt_id=?",
+                (ticket.ticket_receipt_id,),
+            ).fetchone()
+            if (
+                replay_identity != requested_identity
+                or durable_ticket is None
+                or _workflow_launch_ticket(durable_ticket) != ticket
+                or ticket.ticket_receipt_id != str(completion["ticket_receipt_id"])
+            ):
+                raise UnitOfWorkConflict("workflow spawn parent-terminal replay evidence differs")
+            replay_ready_row = tx.connection.execute(
+                "SELECT * FROM workflow_spawn_continuation_ready WHERE operation_id=?",
+                (operation_id,),
+            ).fetchone()
+            if path_kind == "parent_terminal_ticket_only":
+                continuation_row = tx.connection.execute(
+                    "SELECT * FROM workflow_spawn_continuations WHERE operation_id=?",
+                    (operation_id,),
+                ).fetchone()
+                if (
+                    not isinstance(
+                        ready_or_continuation,
+                        WorkflowSpawnContinuationClaim,
+                    )
+                    or continuation_row is None
+                    or ready_or_continuation.version + 1 != int(continuation_row["version"])
+                    or (
+                        ready_or_continuation.spawn_operation_id,
+                        ready_or_continuation.ticket_receipt_id,
+                        ready_or_continuation.parent_run_id,
+                        ready_or_continuation.owner_id,
+                        ready_or_continuation.runtime_lease_epoch,
+                        ready_or_continuation.run_fence_epoch,
+                        ready_or_continuation.workflow_lease_epoch,
+                        ready_or_continuation.claim_epoch,
+                        ready_or_continuation.expires_at,
+                    )
+                    != (
+                        str(continuation_row["operation_id"]),
+                        str(continuation_row["ticket_receipt_id"]),
+                        str(continuation_row["parent_run_id"]),
+                        str(continuation_row["owner_id"]),
+                        int(continuation_row["runtime_lease_epoch"]),
+                        int(continuation_row["run_fence_epoch"]),
+                        (
+                            None
+                            if continuation_row["workflow_lease_epoch"] is None
+                            else int(continuation_row["workflow_lease_epoch"])
+                        ),
+                        int(continuation_row["claim_epoch"]),
+                        float(continuation_row["expires_at"]),
+                    )
+                ):
+                    raise UnitOfWorkConflict(
+                        "workflow spawn parent-terminal replay continuation differs"
+                    )
+            elif (
+                not isinstance(
+                    ready_or_continuation,
+                    WorkflowSpawnContinuationReady,
+                )
+                or replay_ready_row is None
+                or _workflow_spawn_continuation_ready(replay_ready_row) != ready_or_continuation
+            ):
+                raise UnitOfWorkConflict("workflow spawn parent-terminal replay ready differs")
+        return existing
+
+    def _parent_terminal_recovery_path(
+        self,
+        tx: _SqliteWorkflowTransaction,
+        *,
+        operation_id: str,
+        ticket: WorkflowLaunchTicket,
+        ready_or_continuation: WorkflowSpawnContinuationReady | WorkflowSpawnContinuationClaim,
+        parent_terminal_snapshot: WorkflowTerminalOutcome,
+        continuation: sqlite3.Row,
+    ) -> tuple[str, sqlite3.Row | None, sqlite3.Row | None, sqlite3.Row | None]:
         ready_rows = tx.connection.execute(
             "SELECT * FROM workflow_spawn_continuation_ready "
             "WHERE operation_id=? ORDER BY ready_receipt_id",
@@ -816,79 +980,18 @@ class WorkflowSpawnSettleMixin(ExecutionUnitOfWorkCore):
                 ):
                     raise UnitOfWorkConflict("workflow spawn active terminal claim differs")
                 path_kind = "parent_terminal_activated"
+        return path_kind, ready_row, blocker, activation
 
-        effect = tx.connection.execute(
-            "SELECT * FROM execution_effects WHERE effect_id=?",
-            (str(continuation["effect_id"]),),
-        ).fetchone()
-        if (
-            effect is None
-            or str(effect["state"]) not in {EffectState.HANDED_OFF.value, EffectState.UNKNOWN.value}
-            or str(effect["run_id"]) != parent_terminal_snapshot.run_id
-            or str(effect["request_hash"]) != str(continuation["effect_request_hash"])
-            or int(effect["handoff_attempt"]) != int(continuation["handoff_attempt"])
-        ):
-            raise UnitOfWorkConflict("workflow spawn parent-terminal Effect authority differs")
-
-        result = ToolResult.failed(
-            CallId(str(effect["call_id"])),
-            "workflow_parent_terminal_before_spawn",
-            "The parent Run became terminal before the child Run was admitted.",
-        )
-        result_json = _tool_result_json(result)
-        result_hash = hashlib.sha256(result_json.encode()).hexdigest()
-        failure_evidence: dict[str, JsonValue] = {
-            "kind": "workflow_parent_terminal_before_spawn",
-            "terminal_receipt_id": parent_terminal_snapshot.receipt_id,
-            "terminal_state": parent_terminal_snapshot.state,
-            "terminal_outcome_hash": parent_terminal_snapshot.outcome_hash,
-        }
-        evidence_json = canonical_json(failure_evidence)
-        evidence_hash = hashlib.sha256(evidence_json.encode()).hexdigest()
-        evidence_id = self._derived_id("workflow-spawn/failure-evidence/v1", evidence_hash)
-        completion_receipt_id = self._derived_id("workflow-spawn/completion/v1", operation_id)
-        completion_values: dict[str, object] = {
-            "completion_receipt_id": completion_receipt_id,
-            "spawn_operation_id": operation_id,
-            "ticket_receipt_id": ticket.ticket_receipt_id,
-            "parent_run_id": parent_terminal_snapshot.run_id,
-            "path_kind": path_kind,
-            "effect_id": str(continuation["effect_id"]),
-            "handoff_attempt": int(continuation["handoff_attempt"]),
-            "effect_request_hash": str(continuation["effect_request_hash"]),
-            "issue_authority_hash": str(continuation["issue_authority_hash"]),
-            "tool_result_json": result_json,
-            "tool_result_hash": result_hash,
-            "child_runtime_start_receipt_id": None,
-            "failure_evidence_kind": failure_evidence["kind"],
-            "failure_evidence_id": evidence_id,
-            "failure_evidence_json": evidence_json,
-            "failure_evidence_hash": evidence_hash,
-            "activation_chain_head_id": (
-                None if activation is None else str(activation["activation_receipt_id"])
-            ),
-            "child_wait_receipt_id": None,
-            "created_at": now,
-        }
-        completion_hash = _workflow_spawn_completion_hash(completion_values)
-
-        _fault(fault, "workflow:spawn_parent_terminal:before_effect_write")
-        changed = tx.connection.execute(
-            "UPDATE execution_effects SET state='failed',result_json=?,"
-            "evidence_ref=?,settled_at=?,version=version+1 WHERE effect_id=? "
-            "AND state IN ('handed_off','unknown') AND version=?",
-            (
-                result_json,
-                evidence_id,
-                now,
-                str(continuation["effect_id"]),
-                int(effect["version"]),
-            ),
-        ).rowcount
-        if changed != 1:
-            raise UnitOfWorkConflict("workflow spawn parent-terminal Effect CAS failed")
-        _fault(fault, "workflow:spawn_parent_terminal:after_effect_write")
-
+    def _release_parent_terminal_recovery_rows(
+        self,
+        tx: _SqliteWorkflowTransaction,
+        *,
+        ready_row: sqlite3.Row | None,
+        blocker: sqlite3.Row | None,
+        activation: sqlite3.Row | None,
+        now: float,
+        fault: FaultHook | None,
+    ) -> None:
         if activation is not None:
             _fault(fault, "workflow:spawn_parent_terminal:before_activation_write")
             consumed_version = int(activation["version"]) + 1
@@ -957,55 +1060,3 @@ class WorkflowSpawnSettleMixin(ExecutionUnitOfWorkCore):
             if changed != 1:
                 raise UnitOfWorkConflict("workflow spawn parent-terminal blocker CAS failed")
             _fault(fault, "workflow:spawn_parent_terminal:after_blocker_write")
-
-        _fault(fault, "workflow:spawn_parent_terminal:before_completion_write")
-        tx.connection.execute(
-            "INSERT INTO workflow_spawn_completion_receipts("
-            "completion_receipt_id,spawn_operation_id,ticket_receipt_id,parent_run_id,"
-            "path_kind,effect_id,handoff_attempt,effect_request_hash,"
-            "issue_authority_hash,tool_result_json,tool_result_hash,"
-            "child_runtime_start_receipt_id,failure_evidence_kind,"
-            "failure_evidence_id,failure_evidence_json,failure_evidence_hash,"
-            "activation_chain_head_id,child_wait_receipt_id,canonical_hash,created_at"
-            ") VALUES(?,?,?,?,?,?,?,?,?,?,?,NULL,?,?,?,?,?,NULL,?,?)",
-            (
-                completion_receipt_id,
-                operation_id,
-                ticket.ticket_receipt_id,
-                parent_terminal_snapshot.run_id,
-                path_kind,
-                str(continuation["effect_id"]),
-                int(continuation["handoff_attempt"]),
-                str(continuation["effect_request_hash"]),
-                str(continuation["issue_authority_hash"]),
-                result_json,
-                result_hash,
-                str(failure_evidence["kind"]),
-                evidence_id,
-                evidence_json,
-                evidence_hash,
-                completion_values["activation_chain_head_id"],
-                completion_hash,
-                now,
-            ),
-        )
-        _fault(fault, "workflow:spawn_parent_terminal:after_completion_write")
-        _fault(fault, "workflow:spawn_parent_terminal:before_continuation_write")
-        changed = tx.connection.execute(
-            "UPDATE workflow_spawn_continuations SET state='completed',"
-            "completion_receipt_id=?,completion_path_kind=?,version=version+1,"
-            "updated_at=? WHERE operation_id=? AND state IN ('pending','claimed') "
-            "AND version=?",
-            (
-                completion_receipt_id,
-                path_kind,
-                now,
-                operation_id,
-                int(continuation["version"]),
-            ),
-        ).rowcount
-        if changed != 1:
-            raise UnitOfWorkConflict("workflow spawn parent-terminal continuation CAS failed")
-        _fault(fault, "workflow:spawn_parent_terminal:after_continuation_write")
-        tx.register_after_commit_fault("workflow:spawn_parent_terminal:after_commit")
-        return result

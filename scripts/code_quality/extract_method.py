@@ -14,6 +14,7 @@
 - 参数与返回值由调用者写明（先用 block_flow.py 看数据流）；工具核对：段内读到、段前赋过值的名字都要
   在参数里，段内赋值、段后还读到的名字都要在返回值里（--tail 时没有返回值），否则拒绝。
 - 段里有 await 时新方法是 async，调用处加 await。
+- 参数多于 4 个时，第一个之后的参数仅限关键字，调用处按名字传。
 - 段内代码逐字搬走，只调整缩进。收尾跑 ruff 格式化。
 """
 
@@ -105,9 +106,26 @@ def main() -> int:
     given_params = split_top(a.params)
     param_names = {p.split(":")[0].strip() for p in given_params}
     returns = [r.strip() for r in a.returns.split(",") if r.strip()]
-    missing_in = sorted(need_in - param_names)
-    if missing_in:
-        sys.exit(f"参数缺：{missing_in}（段内读到、段前赋过值）")
+    missing_in = need_in - param_names
+    # 段内自己也赋值的名字，可能是先赋值再读（段前那次赋值与它无关）：只提示，由调用者确认
+    shadowed = missing_in & names(block, ast.Store)
+    if missing_in - shadowed:
+        sys.exit(f"参数缺：{sorted(missing_in - shadowed)}（段内读到、段前赋过值）")
+    def first(name: str, ctx: type) -> tuple[int, int]:
+        spots = [
+            (n.lineno, n.col_offset)
+            for s in block
+            for n in ast.walk(s)
+            if isinstance(n, ast.Name) and n.id == name and isinstance(n.ctx, ctx)
+        ]
+        return min(spots) if spots else (10**9, 0)
+
+    # 赋值语句右边先求值：同一行里"读在右、写在左"按读在先处理（行号相同比列号不可靠，保守判为读在先）
+    read_first = sorted(n for n in shadowed if first(n, ast.Load)[0] <= first(n, ast.Store)[0])
+    if read_first:
+        sys.exit(f"参数缺：{read_first}（段内先读后写，要从段前传进来）")
+    if shadowed:
+        print(f"提示：{sorted(shadowed)} 段内先赋值再读，不作参数")
     if not a.tail and sorted(need_out - set(returns)):
         print(f"提示：段后还读到 {sorted(need_out - set(returns))}；确认段后读之前会重新赋值，否则补进 --returns")
     is_async = any(isinstance(n, ast.Await) for s in block for n in ast.walk(s))
@@ -116,7 +134,10 @@ def main() -> int:
     body_src = textwrap.dedent("".join(lines[start - 1 : end]))
     method_indent = " " * fn.col_offset
     ret_ann = a.returns_type or ("None" if not returns and not a.tail else "")
-    sig_params = ", ".join((["self"] if not a.static else []) + given_params)
+    # 参数多于 4 个时，第一个之后都写成仅限关键字，调用处按名字传，免得位置传错
+    keyword = len(given_params) > 4
+    shown = given_params[:1] + (["*"] + given_params[1:] if keyword else given_params[1:])
+    sig_params = ", ".join((["self"] if not a.static else []) + shown)
     head = (
         (f"{method_indent}@staticmethod\n" if a.static else "")
         + f"{method_indent}{'async ' if is_async else ''}def {a.new_name}({sig_params})"
@@ -128,7 +149,10 @@ def main() -> int:
         new_body += f"{method_indent}    return {', '.join(returns)}\n"
     new_method = "\n" + head + new_body
 
-    call_args = ", ".join(p.split(":")[0].strip() for p in given_params)
+    arg_names = [p.split(":")[0].strip() for p in given_params]
+    call_args = ", ".join(
+        arg_names[:1] + ([f"{n}={n}" for n in arg_names[1:]] if keyword else arg_names[1:])
+    )
     owner = "self" if not a.static else type_owner(tree, fn)
     call = f"{'await ' if is_async else ''}{owner}.{a.new_name}({call_args})"
     if a.tail:

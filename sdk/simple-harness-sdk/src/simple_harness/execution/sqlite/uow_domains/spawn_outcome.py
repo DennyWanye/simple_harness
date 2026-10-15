@@ -46,9 +46,11 @@ from simple_harness.workflow.execution_ports import (
 )
 
 if TYPE_CHECKING:
+    from simple_harness.runtime.context import ContextSnapshot
     from simple_harness.runtime.orchestration import (
         RuntimeActivationClaim,
         RuntimeStartAdmission,
+        WorkflowLaunchRequest,
         WorkflowLaunchTicket,
         WorkflowSpawnContinuationClaim,
     )
@@ -58,7 +60,7 @@ if TYPE_CHECKING:
         WorkflowSpawnToolOutcome,
     )
     from simple_harness.workflow.execution_ports import WorkflowTerminalOutcome
-from .core import ExecutionUnitOfWorkCore
+from .core import ExecutionUnitOfWorkCore, _SqliteWorkflowTransaction
 from .support import (
     _WORKFLOW_SPAWN_COMPLETION_FIELDS,
     _fault,
@@ -138,6 +140,37 @@ class WorkflowSpawnOutcomeMixin(ExecutionUnitOfWorkCore):
         ):
             raise UnitOfWorkConflict("workflow spawn completion pointer differs")
 
+        ticket, request = self._verify_spawn_completion_ticket(
+            tx, spawn_operation_id, continuation, completion
+        )
+
+        result = self._verify_spawn_completion_effect(tx, completion)
+
+        path_kind = self._verify_spawn_completion_path(tx, spawn_operation_id, completion)
+
+        child_start_receipt_id = completion["child_runtime_start_receipt_id"]
+        child_wait_receipt_id = completion["child_wait_receipt_id"]
+        if child_start_receipt_id is not None or child_wait_receipt_id is not None:
+            return self._verify_spawn_child_success(
+                tx,
+                spawn_operation_id,
+                completion,
+                request,
+                result,
+                child_start_receipt_id,
+                child_wait_receipt_id,
+            )
+
+        self._verify_spawn_failure_evidence(tx, completion, result, path_kind, ticket)
+        return result
+
+    def _verify_spawn_completion_ticket(
+        self,
+        tx: _SqliteWorkflowTransaction,
+        spawn_operation_id: str,
+        continuation: sqlite3.Row,
+        completion: sqlite3.Row,
+    ) -> tuple[sqlite3.Row, WorkflowLaunchRequest]:
         ticket = tx.connection.execute(
             "SELECT * FROM workflow_launch_ticket_receipts WHERE ticket_receipt_id=?",
             (str(continuation["ticket_receipt_id"]),),
@@ -172,7 +205,11 @@ class WorkflowSpawnOutcomeMixin(ExecutionUnitOfWorkCore):
             or str(completion["issue_authority_hash"]) != str(continuation["issue_authority_hash"])
         ):
             raise UnitOfWorkConflict("workflow spawn completion identity differs")
+        return ticket, request
 
+    def _verify_spawn_completion_effect(
+        self, tx: _SqliteWorkflowTransaction, completion: sqlite3.Row
+    ) -> ToolResult:
         result = _tool_result(completion["tool_result_json"])
         effect = tx.connection.execute(
             "SELECT * FROM execution_effects WHERE effect_id=?",
@@ -196,7 +233,11 @@ class WorkflowSpawnOutcomeMixin(ExecutionUnitOfWorkCore):
             )
         ):
             raise UnitOfWorkConflict("workflow spawn completion Effect differs")
+        return result
 
+    def _verify_spawn_completion_path(
+        self, tx: _SqliteWorkflowTransaction, spawn_operation_id: str, completion: sqlite3.Row
+    ) -> str:
         path_kind = str(completion["path_kind"])
         ready_count = int(
             tx.connection.execute(
@@ -316,554 +357,622 @@ class WorkflowSpawnOutcomeMixin(ExecutionUnitOfWorkCore):
                 raise UnitOfWorkConflict("workflow spawn unactivated terminal chain differs")
         else:
             raise UnitOfWorkConflict("workflow spawn completion path is unsupported")
+        return path_kind
 
-        child_start_receipt_id = completion["child_runtime_start_receipt_id"]
-        child_wait_receipt_id = completion["child_wait_receipt_id"]
-        if child_start_receipt_id is not None or child_wait_receipt_id is not None:
-            if (
-                child_start_receipt_id is None
-                or child_wait_receipt_id is None
-                or result.outcome is not ToolOutcome.SUCCEEDED
-                or completion["failure_evidence_kind"] is not None
-                or completion["failure_evidence_id"] is not None
-                or completion["failure_evidence_json"] is not None
-                or completion["failure_evidence_hash"] is not None
-                or not isinstance(result.value, Mapping)
-            ):
-                raise UnitOfWorkConflict("workflow spawn success completion shape differs")
-            wait = tx.connection.execute(
-                "SELECT * FROM workflow_spawn_child_wait_receipts WHERE parent_wait_receipt_id=?",
-                (str(child_wait_receipt_id),),
+    def _verify_spawn_child_success(
+        self,
+        tx: _SqliteWorkflowTransaction,
+        spawn_operation_id: str,
+        completion: sqlite3.Row,
+        request: WorkflowLaunchRequest,
+        result: ToolResult,
+        child_start_receipt_id: object,
+        child_wait_receipt_id: object,
+    ) -> ToolResult:
+        if (
+            child_start_receipt_id is None
+            or child_wait_receipt_id is None
+            or result.outcome is not ToolOutcome.SUCCEEDED
+            or completion["failure_evidence_kind"] is not None
+            or completion["failure_evidence_id"] is not None
+            or completion["failure_evidence_json"] is not None
+            or completion["failure_evidence_hash"] is not None
+            or not isinstance(result.value, Mapping)
+        ):
+            raise UnitOfWorkConflict("workflow spawn success completion shape differs")
+        wait = tx.connection.execute(
+            "SELECT * FROM workflow_spawn_child_wait_receipts WHERE parent_wait_receipt_id=?",
+            (str(child_wait_receipt_id),),
+        ).fetchone()
+        start_receipt = tx.connection.execute(
+            "SELECT * FROM runtime_start_receipts WHERE ticket_receipt_id=?",
+            (str(child_start_receipt_id),),
+        ).fetchone()
+        child = (
+            None
+            if start_receipt is None
+            else tx.connection.execute(
+                "SELECT * FROM runs WHERE run_id=?",
+                (str(start_receipt["run_id"]),),
             ).fetchone()
-            start_receipt = tx.connection.execute(
-                "SELECT * FROM runtime_start_receipts WHERE ticket_receipt_id=?",
-                (str(child_start_receipt_id),),
+        )
+        command = tx.connection.execute(
+            "SELECT * FROM child_commands WHERE workflow_ticket_receipt_id=?",
+            (str(child_start_receipt_id),),
+        ).fetchone()
+        link = (
+            None
+            if child is None
+            else tx.connection.execute(
+                "SELECT * FROM run_links WHERE parent_run_id=? AND child_run_id=?",
+                (str(completion["parent_run_id"]), str(child["run_id"])),
             ).fetchone()
-            child = (
+        )
+        parent = tx.connection.execute(
+            "SELECT state,version FROM runs WHERE run_id=?",
+            (str(completion["parent_run_id"]),),
+        ).fetchone()
+        if (
+            wait is None
+            or start_receipt is None
+            or child is None
+            or command is None
+            or link is None
+            or parent is None
+            or str(wait["spawn_operation_id"]) != spawn_operation_id
+            or str(wait["parent_run_id"]) != str(completion["parent_run_id"])
+            or str(wait["child_run_id"]) != str(child["run_id"])
+            or str(wait["child_command_id"]) != str(command["command_id"])
+            or str(command["parent_run_id"]) != str(completion["parent_run_id"])
+            or str(command["child_run_id"]) != str(child["run_id"])
+            or str(command["state"]) not in {"pending", "scheduled", "acked"}
+            or str(link["attachment_policy"]) != AttachmentPolicy.ATTACHED.value
+            or str(child["parent_run_id"]) != str(completion["parent_run_id"])
+            or str(child["root_run_id"]) != request.root_run_id
+        ):
+            raise UnitOfWorkConflict("workflow spawn success durable chain differs")
+        wait_state = str(wait["state"])
+        claimed_continuation = self._verify_spawn_child_wait(
+            tx, spawn_operation_id, completion, parent, child, wait, wait_state
+        )
+        if str(command["state"]) == "acked":
+            terminal = tx.connection.execute(
+                "SELECT * FROM child_terminal_receipts WHERE command_id=?",
+                (str(command["command_id"]),),
+            ).fetchone()
+            signal = (
                 None
-                if start_receipt is None
+                if terminal is None or terminal["signal_id"] is None
                 else tx.connection.execute(
-                    "SELECT * FROM runs WHERE run_id=?",
-                    (str(start_receipt["run_id"]),),
+                    "SELECT * FROM child_signals WHERE signal_id=?",
+                    (str(terminal["signal_id"]),),
                 ).fetchone()
             )
-            command = tx.connection.execute(
-                "SELECT * FROM child_commands WHERE workflow_ticket_receipt_id=?",
-                (str(child_start_receipt_id),),
-            ).fetchone()
-            link = (
-                None
-                if child is None
-                else tx.connection.execute(
-                    "SELECT * FROM run_links WHERE parent_run_id=? AND child_run_id=?",
-                    (str(completion["parent_run_id"]), str(child["run_id"])),
-                ).fetchone()
-            )
-            parent = tx.connection.execute(
-                "SELECT state,version FROM runs WHERE run_id=?",
-                (str(completion["parent_run_id"]),),
-            ).fetchone()
             if (
-                wait is None
-                or start_receipt is None
-                or child is None
-                or command is None
-                or link is None
-                or parent is None
-                or str(wait["spawn_operation_id"]) != spawn_operation_id
-                or str(wait["parent_run_id"]) != str(completion["parent_run_id"])
-                or str(wait["child_run_id"]) != str(child["run_id"])
-                or str(wait["child_command_id"]) != str(command["command_id"])
-                or str(command["parent_run_id"]) != str(completion["parent_run_id"])
-                or str(command["child_run_id"]) != str(child["run_id"])
-                or str(command["state"]) not in {"pending", "scheduled", "acked"}
-                or str(link["attachment_policy"]) != AttachmentPolicy.ATTACHED.value
-                or str(child["parent_run_id"]) != str(completion["parent_run_id"])
-                or str(child["root_run_id"]) != request.root_run_id
+                terminal is None
+                or signal is None
+                or str(terminal["child_run_id"]) != str(child["run_id"])
+                or str(terminal["terminal_state"]) != str(child["state"])
+                or str(signal["parent_run_id"]) != str(completion["parent_run_id"])
+                or str(signal["child_run_id"]) != str(child["run_id"])
             ):
-                raise UnitOfWorkConflict("workflow spawn success durable chain differs")
-            wait_state = str(wait["state"])
-            claimed_continuation: sqlite3.Row | None = None
-            expected_lifecycle_hash: str | None
-            if wait_state == "unconsumed":
-                if (
-                    wait["child_signal_id"] is not None
-                    or wait["continuation_id"] is not None
-                    or str(parent["state"]) != RunState.WAITING.value
-                    or int(parent["version"]) != int(wait["parent_waiting_version"])
-                    or tx.connection.execute(
-                        "SELECT 1 FROM workflow_leases WHERE run_id=? LIMIT 1",
-                        (str(completion["parent_run_id"]),),
-                    ).fetchone()
-                    is not None
-                ):
-                    raise UnitOfWorkConflict("workflow spawn unconsumed child-wait differs")
-            elif wait_state == "woken":
-                signal = tx.connection.execute(
-                    "SELECT * FROM child_signals WHERE signal_id=?",
-                    (wait["child_signal_id"],),
+                raise UnitOfWorkConflict("workflow spawn child terminal successor differs")
+        checkpoint = tx.connection.execute(
+            "SELECT * FROM workflow_checkpoints WHERE run_id=? AND"
+            " namespace='react.termination.v1' AND version=?",
+            (
+                str(completion["parent_run_id"]),
+                int(wait["react_checkpoint_revision"]),
+            ),
+        ).fetchone()
+        context = tx.connection.execute(
+            "SELECT checkpoint_json FROM workflow_checkpoints WHERE run_id=? AND"
+            " namespace='react.context.v1' AND version=?",
+            (
+                str(completion["parent_run_id"]),
+                int(wait["context_post_revision"]),
+            ),
+        ).fetchone()
+        fence = tx.connection.execute(
+            "SELECT * FROM run_fences WHERE run_id=?",
+            (str(completion["parent_run_id"]),),
+        ).fetchone()
+        historical_checkpoint_differs = (
+            checkpoint is None
+            or context is None
+            or fence is None
+            or str(checkpoint["checkpoint_hash"]) != str(wait["react_checkpoint_hash"])
+            or hashlib.sha256(str(checkpoint["checkpoint_json"]).encode()).hexdigest()
+            != str(checkpoint["checkpoint_hash"])
+        )
+        historical_fence_differs = wait_state in {"unconsumed", "woken"} and (
+            fence is None
+            or str(fence["state"]) != "released"
+            or int(fence["runtime_lease_epoch"]) != int(wait["released_runtime_lease_epoch"])
+            or int(fence["epoch"]) != int(wait["released_run_fence_epoch"])
+        )
+        current_fence_differs = wait_state in {"claimed", "acked_completion_pending"} and (
+            fence is None
+            or claimed_continuation is None
+            or str(fence["state"]) != "active"
+            or str(fence["owner_id"]) != str(claimed_continuation["claimed_by"])
+            or int(fence["runtime_lease_epoch"]) != int(claimed_continuation["runtime_lease_epoch"])
+            or int(fence["runtime_lease_epoch"]) <= int(wait["released_runtime_lease_epoch"])
+            or int(fence["epoch"]) <= int(wait["released_run_fence_epoch"])
+        )
+        if historical_checkpoint_differs or historical_fence_differs or current_fence_differs:
+            raise UnitOfWorkConflict("workflow spawn success checkpoint differs")
+        return result
+
+    def _verify_spawn_child_wait(
+        self,
+        tx: _SqliteWorkflowTransaction,
+        spawn_operation_id: str,
+        completion: sqlite3.Row,
+        parent: sqlite3.Row,
+        child: sqlite3.Row,
+        wait: sqlite3.Row,
+        wait_state: str,
+    ) -> sqlite3.Row | None:
+        claimed_continuation: sqlite3.Row | None = None
+        if wait_state == "unconsumed":
+            if (
+                wait["child_signal_id"] is not None
+                or wait["continuation_id"] is not None
+                or str(parent["state"]) != RunState.WAITING.value
+                or int(parent["version"]) != int(wait["parent_waiting_version"])
+                or tx.connection.execute(
+                    "SELECT 1 FROM workflow_leases WHERE run_id=? LIMIT 1",
+                    (str(completion["parent_run_id"]),),
                 ).fetchone()
-                continuation = tx.connection.execute(
-                    "SELECT * FROM continuations WHERE continuation_id=?",
-                    (wait["continuation_id"],),
-                ).fetchone()
-                expected_lifecycle_hash = hashlib.sha256(
-                    canonical_json(
-                        {
-                            "identity_hash": str(wait["identity_hash"]),
-                            "state": "woken",
-                            "version": int(wait["version"]),
-                            "child_signal_id": wait["child_signal_id"],
-                            "continuation_id": wait["continuation_id"],
-                        }
-                    ).encode()
-                ).hexdigest()
-                if (
-                    signal is None
-                    or continuation is None
-                    or str(signal["state"]) != "acked"
-                    or str(signal["parent_run_id"]) != str(completion["parent_run_id"])
-                    or str(signal["child_run_id"]) != str(child["run_id"])
-                    or str(continuation["run_id"]) != str(completion["parent_run_id"])
-                    or str(continuation["state"]) != "pending"
-                    or str(parent["state"]) != RunState.QUEUED.value
-                    or str(wait["lifecycle_hash"]) != expected_lifecycle_hash
-                ):
-                    raise UnitOfWorkConflict("workflow spawn woken child-wait differs")
-            elif wait_state == "claimed":
-                signal = tx.connection.execute(
-                    "SELECT * FROM child_signals WHERE signal_id=?",
-                    (wait["child_signal_id"],),
-                ).fetchone()
-                continuation = tx.connection.execute(
-                    "SELECT * FROM continuations WHERE continuation_id=?",
-                    (wait["continuation_id"],),
-                ).fetchone()
-                claimed_continuation = continuation
-                runtime_lease = tx.connection.execute(
-                    "SELECT * FROM workflow_leases WHERE run_id=? AND namespace=?",
-                    (str(completion["parent_run_id"]), RUNTIME_LEASE_NAMESPACE),
-                ).fetchone()
-                expected_lifecycle_hash = (
-                    None
-                    if continuation is None
-                    else hashlib.sha256(
-                        canonical_json(
-                            {
-                                "identity_hash": str(wait["identity_hash"]),
-                                "state": "claimed",
-                                "version": int(wait["version"]),
-                                "child_signal_id": wait["child_signal_id"],
-                                "continuation_id": wait["continuation_id"],
-                                "claim_owner": continuation["claimed_by"],
-                                "runtime_lease_epoch": continuation["runtime_lease_epoch"],
-                            }
-                        ).encode()
-                    ).hexdigest()
-                )
-                if (
-                    signal is None
-                    or continuation is None
-                    or runtime_lease is None
-                    or str(signal["state"]) != "acked"
-                    or str(continuation["state"]) != "claimed"
-                    or str(continuation["run_id"]) != str(completion["parent_run_id"])
-                    or str(runtime_lease["owner_id"]) != str(continuation["claimed_by"])
-                    or int(runtime_lease["epoch"]) != int(continuation["runtime_lease_epoch"])
-                    or str(parent["state"]) != RunState.RUNNING.value
-                    or str(wait["lifecycle_hash"]) != expected_lifecycle_hash
-                ):
-                    raise UnitOfWorkConflict("workflow spawn claimed child-wait differs")
-            elif wait_state in {"acked_completion_pending", "acked"}:
-                signal = tx.connection.execute(
-                    "SELECT * FROM child_signals WHERE signal_id=?",
-                    (wait["child_signal_id"],),
-                ).fetchone()
-                continuation = tx.connection.execute(
-                    "SELECT * FROM continuations WHERE continuation_id=?",
-                    (wait["continuation_id"],),
-                ).fetchone()
-                progress = tx.connection.execute(
-                    "SELECT * FROM continuation_progress_receipts WHERE receipt_id=?",
-                    (wait["progress_receipt_id"],),
-                ).fetchone()
-                claimed_continuation = continuation
-                pending_json = wait["pending_child_completion_json"]
-                pending_hash = wait["pending_child_completion_hash"]
-                if (
-                    signal is None
-                    or continuation is None
-                    or progress is None
-                    or str(signal["state"]) != "acked"
-                    or str(continuation["state"]) != "acked"
-                    or continuation["ack_receipt_id"] != wait["progress_receipt_id"]
-                    or str(progress["continuation_id"]) != str(continuation["continuation_id"])
-                    or str(progress["owner_id"]) != str(continuation["claimed_by"])
-                    or int(progress["runtime_lease_epoch"])
-                    != int(continuation["runtime_lease_epoch"])
-                    or int(progress["claim_epoch"]) != int(continuation["claim_epoch"])
-                    or pending_json is None
-                    or pending_hash is None
-                    or hashlib.sha256(str(pending_json).encode()).hexdigest() != str(pending_hash)
-                ):
-                    raise UnitOfWorkConflict("workflow spawn acknowledged child-wait differs")
-                if wait_state == "acked_completion_pending":
-                    expected_lifecycle_hash = hashlib.sha256(
-                        canonical_json(
-                            {
-                                "identity_hash": str(wait["identity_hash"]),
-                                "state": "acked_completion_pending",
-                                "version": int(wait["version"]),
-                                "child_signal_id": wait["child_signal_id"],
-                                "continuation_id": wait["continuation_id"],
-                                "progress_receipt_id": wait["progress_receipt_id"],
-                                "pending_child_completion_hash": pending_hash,
-                            }
-                        ).encode()
-                    ).hexdigest()
-                    if (
-                        wait["child_completion_append_receipt_id"] is not None
-                        or wait["child_completion_context_revision"] is not None
-                        or str(parent["state"]) != RunState.RUNNING.value
-                        or str(wait["lifecycle_hash"]) != expected_lifecycle_hash
-                    ):
-                        raise UnitOfWorkConflict("workflow spawn pending completion differs")
-                else:
-                    expected_lifecycle_hash = hashlib.sha256(
-                        canonical_json(
-                            {
-                                "identity_hash": str(wait["identity_hash"]),
-                                "state": "acked",
-                                "version": int(wait["version"]),
-                                "progress_receipt_id": wait["progress_receipt_id"],
-                                "child_completion_append_id": wait["child_completion_append_id"],
-                                "child_completion_context_revision": wait[
-                                    "child_completion_context_revision"
-                                ],
-                            }
-                        ).encode()
-                    ).hexdigest()
-                    appended_context = tx.connection.execute(
-                        "SELECT checkpoint_json FROM workflow_checkpoints "
-                        "WHERE run_id=? AND namespace='react.context.v1' "
-                        "AND version=?",
-                        (
-                            str(completion["parent_run_id"]),
-                            wait["child_completion_context_revision"],
-                        ),
-                    ).fetchone()
-                    appended_payload = (
-                        None
-                        if appended_context is None
-                        else json.loads(str(appended_context["checkpoint_json"]))
-                    )
-                    append_receipts = (
-                        None
-                        if not isinstance(appended_payload, dict)
-                        else appended_payload.get("append_receipts")
-                    )
-                    if (
-                        wait["child_completion_append_receipt_id"]
-                        != wait["child_completion_append_id"]
-                        or not isinstance(append_receipts, dict)
-                        or wait["child_completion_append_id"] not in append_receipts
-                        or str(wait["lifecycle_hash"]) != expected_lifecycle_hash
-                    ):
-                        raise UnitOfWorkConflict("workflow spawn completed Context append differs")
-            elif wait_state == "acked_parent_terminal":
-                signal = tx.connection.execute(
-                    "SELECT * FROM child_signals WHERE signal_id=?",
-                    (wait["child_signal_id"],),
-                ).fetchone()
-                continuation = tx.connection.execute(
-                    "SELECT * FROM continuations WHERE continuation_id=?",
-                    (wait["continuation_id"],),
-                ).fetchone()
-                progress = tx.connection.execute(
-                    "SELECT * FROM continuation_progress_receipts WHERE receipt_id=?",
-                    (wait["progress_receipt_id"],),
-                ).fetchone()
-                terminal_event = tx.connection.execute(
-                    "SELECT kind FROM run_events WHERE event_id=? AND run_id=?",
-                    (
-                        wait["pending_completion_terminal_receipt_id"],
-                        str(completion["parent_run_id"]),
-                    ),
-                ).fetchone()
-                pending_json = wait["pending_child_completion_json"]
-                pending_hash = wait["pending_child_completion_hash"]
-                terminal_state = wait["pending_completion_terminal_state"]
-                terminal_receipt_id = wait["pending_completion_terminal_receipt_id"]
-                phase_kind = wait["parent_terminal_phase_kind"]
-                claimed_ack = wait["claimed_continuation_terminal_ack_receipt_id"]
-                if phase_kind not in {
-                    "child_active",
-                    "signal_pending",
-                    "continuation_claimed",
-                    "completion_pending",
-                }:
-                    raise UnitOfWorkConflict("workflow spawn parent-terminal phase differs")
-                expected_terminal_hash = hashlib.sha256(
-                    canonical_json(
-                        {
-                            "parent_wait_receipt_id": str(wait["parent_wait_receipt_id"]),
-                            "spawn_operation_id": spawn_operation_id,
-                            "phase_kind": phase_kind,
-                            "terminal_receipt_id": terminal_receipt_id,
-                            "terminal_state": terminal_state,
-                            "child_signal_id": (
-                                None if phase_kind == "child_active" else wait["child_signal_id"]
-                            ),
-                            "continuation_id": (
-                                None if phase_kind == "child_active" else wait["continuation_id"]
-                            ),
-                            "pending_child_completion_hash": pending_hash,
-                            "claimed_continuation_ack_receipt_id": claimed_ack,
-                            "child_cancel_request_id": wait["child_cancel_request_id"],
-                            "child_cancel_receipt_id": wait["child_cancel_receipt_id"],
-                            "reused_child_cancel_receipt_id": wait[
-                                "reused_child_cancel_receipt_id"
-                            ],
-                        }
-                    ).encode()
-                ).hexdigest()
-                lifecycle_payload: dict[str, JsonValue] = {
+                is not None
+            ):
+                raise UnitOfWorkConflict("workflow spawn unconsumed child-wait differs")
+        elif wait_state == "woken":
+            self._verify_spawn_child_wait_woken(tx, completion, parent, child, wait)
+        elif wait_state == "claimed":
+            claimed_continuation = self._verify_spawn_child_wait_claimed(
+                tx, completion, parent, wait
+            )
+        elif wait_state in {"acked_completion_pending", "acked"}:
+            claimed_continuation = self._verify_spawn_child_wait_acked(
+                tx, completion, parent, wait, wait_state
+            )
+        elif wait_state == "acked_parent_terminal":
+            self._verify_spawn_child_wait_parent_terminal(
+                tx, spawn_operation_id, completion, parent, child, wait
+            )
+        else:
+            raise UnitOfWorkConflict("workflow spawn child-wait lifecycle is unsupported")
+        return claimed_continuation
+
+    def _verify_spawn_child_wait_woken(
+        self,
+        tx: _SqliteWorkflowTransaction,
+        completion: sqlite3.Row,
+        parent: sqlite3.Row,
+        child: sqlite3.Row,
+        wait: sqlite3.Row,
+    ) -> None:
+        signal = tx.connection.execute(
+            "SELECT * FROM child_signals WHERE signal_id=?",
+            (wait["child_signal_id"],),
+        ).fetchone()
+        continuation = tx.connection.execute(
+            "SELECT * FROM continuations WHERE continuation_id=?",
+            (wait["continuation_id"],),
+        ).fetchone()
+        expected_lifecycle_hash = hashlib.sha256(
+            canonical_json(
+                {
                     "identity_hash": str(wait["identity_hash"]),
-                    "state": "acked_parent_terminal",
+                    "state": "woken",
                     "version": int(wait["version"]),
+                    "child_signal_id": wait["child_signal_id"],
+                    "continuation_id": wait["continuation_id"],
+                }
+            ).encode()
+        ).hexdigest()
+        if (
+            signal is None
+            or continuation is None
+            or str(signal["state"]) != "acked"
+            or str(signal["parent_run_id"]) != str(completion["parent_run_id"])
+            or str(signal["child_run_id"]) != str(child["run_id"])
+            or str(continuation["run_id"]) != str(completion["parent_run_id"])
+            or str(continuation["state"]) != "pending"
+            or str(parent["state"]) != RunState.QUEUED.value
+            or str(wait["lifecycle_hash"]) != expected_lifecycle_hash
+        ):
+            raise UnitOfWorkConflict("workflow spawn woken child-wait differs")
+
+    def _verify_spawn_child_wait_claimed(
+        self,
+        tx: _SqliteWorkflowTransaction,
+        completion: sqlite3.Row,
+        parent: sqlite3.Row,
+        wait: sqlite3.Row,
+    ) -> sqlite3.Row:
+        signal = tx.connection.execute(
+            "SELECT * FROM child_signals WHERE signal_id=?",
+            (wait["child_signal_id"],),
+        ).fetchone()
+        continuation = tx.connection.execute(
+            "SELECT * FROM continuations WHERE continuation_id=?",
+            (wait["continuation_id"],),
+        ).fetchone()
+        claimed_continuation = continuation
+        runtime_lease = tx.connection.execute(
+            "SELECT * FROM workflow_leases WHERE run_id=? AND namespace=?",
+            (str(completion["parent_run_id"]), RUNTIME_LEASE_NAMESPACE),
+        ).fetchone()
+        expected_lifecycle_hash = (
+            None
+            if continuation is None
+            else hashlib.sha256(
+                canonical_json(
+                    {
+                        "identity_hash": str(wait["identity_hash"]),
+                        "state": "claimed",
+                        "version": int(wait["version"]),
+                        "child_signal_id": wait["child_signal_id"],
+                        "continuation_id": wait["continuation_id"],
+                        "claim_owner": continuation["claimed_by"],
+                        "runtime_lease_epoch": continuation["runtime_lease_epoch"],
+                    }
+                ).encode()
+            ).hexdigest()
+        )
+        if (
+            signal is None
+            or continuation is None
+            or runtime_lease is None
+            or str(signal["state"]) != "acked"
+            or str(continuation["state"]) != "claimed"
+            or str(continuation["run_id"]) != str(completion["parent_run_id"])
+            or str(runtime_lease["owner_id"]) != str(continuation["claimed_by"])
+            or int(runtime_lease["epoch"]) != int(continuation["runtime_lease_epoch"])
+            or str(parent["state"]) != RunState.RUNNING.value
+            or str(wait["lifecycle_hash"]) != expected_lifecycle_hash
+        ):
+            raise UnitOfWorkConflict("workflow spawn claimed child-wait differs")
+        return claimed_continuation
+
+    def _verify_spawn_child_wait_acked(
+        self,
+        tx: _SqliteWorkflowTransaction,
+        completion: sqlite3.Row,
+        parent: sqlite3.Row,
+        wait: sqlite3.Row,
+        wait_state: str,
+    ) -> sqlite3.Row:
+        signal = tx.connection.execute(
+            "SELECT * FROM child_signals WHERE signal_id=?",
+            (wait["child_signal_id"],),
+        ).fetchone()
+        continuation = tx.connection.execute(
+            "SELECT * FROM continuations WHERE continuation_id=?",
+            (wait["continuation_id"],),
+        ).fetchone()
+        progress = tx.connection.execute(
+            "SELECT * FROM continuation_progress_receipts WHERE receipt_id=?",
+            (wait["progress_receipt_id"],),
+        ).fetchone()
+        claimed_continuation = continuation
+        pending_json = wait["pending_child_completion_json"]
+        pending_hash = wait["pending_child_completion_hash"]
+        if (
+            signal is None
+            or continuation is None
+            or progress is None
+            or str(signal["state"]) != "acked"
+            or str(continuation["state"]) != "acked"
+            or continuation["ack_receipt_id"] != wait["progress_receipt_id"]
+            or str(progress["continuation_id"]) != str(continuation["continuation_id"])
+            or str(progress["owner_id"]) != str(continuation["claimed_by"])
+            or int(progress["runtime_lease_epoch"]) != int(continuation["runtime_lease_epoch"])
+            or int(progress["claim_epoch"]) != int(continuation["claim_epoch"])
+            or pending_json is None
+            or pending_hash is None
+            or hashlib.sha256(str(pending_json).encode()).hexdigest() != str(pending_hash)
+        ):
+            raise UnitOfWorkConflict("workflow spawn acknowledged child-wait differs")
+        if wait_state == "acked_completion_pending":
+            expected_lifecycle_hash = hashlib.sha256(
+                canonical_json(
+                    {
+                        "identity_hash": str(wait["identity_hash"]),
+                        "state": "acked_completion_pending",
+                        "version": int(wait["version"]),
+                        "child_signal_id": wait["child_signal_id"],
+                        "continuation_id": wait["continuation_id"],
+                        "progress_receipt_id": wait["progress_receipt_id"],
+                        "pending_child_completion_hash": pending_hash,
+                    }
+                ).encode()
+            ).hexdigest()
+            if (
+                wait["child_completion_append_receipt_id"] is not None
+                or wait["child_completion_context_revision"] is not None
+                or str(parent["state"]) != RunState.RUNNING.value
+                or str(wait["lifecycle_hash"]) != expected_lifecycle_hash
+            ):
+                raise UnitOfWorkConflict("workflow spawn pending completion differs")
+        else:
+            expected_lifecycle_hash = hashlib.sha256(
+                canonical_json(
+                    {
+                        "identity_hash": str(wait["identity_hash"]),
+                        "state": "acked",
+                        "version": int(wait["version"]),
+                        "progress_receipt_id": wait["progress_receipt_id"],
+                        "child_completion_append_id": wait["child_completion_append_id"],
+                        "child_completion_context_revision": wait[
+                            "child_completion_context_revision"
+                        ],
+                    }
+                ).encode()
+            ).hexdigest()
+            appended_context = tx.connection.execute(
+                "SELECT checkpoint_json FROM workflow_checkpoints "
+                "WHERE run_id=? AND namespace='react.context.v1' "
+                "AND version=?",
+                (
+                    str(completion["parent_run_id"]),
+                    wait["child_completion_context_revision"],
+                ),
+            ).fetchone()
+            appended_payload = (
+                None
+                if appended_context is None
+                else json.loads(str(appended_context["checkpoint_json"]))
+            )
+            append_receipts = (
+                None
+                if not isinstance(appended_payload, dict)
+                else appended_payload.get("append_receipts")
+            )
+            if (
+                wait["child_completion_append_receipt_id"] != wait["child_completion_append_id"]
+                or not isinstance(append_receipts, dict)
+                or wait["child_completion_append_id"] not in append_receipts
+                or str(wait["lifecycle_hash"]) != expected_lifecycle_hash
+            ):
+                raise UnitOfWorkConflict("workflow spawn completed Context append differs")
+        return claimed_continuation
+
+    def _verify_spawn_child_wait_parent_terminal(
+        self,
+        tx: _SqliteWorkflowTransaction,
+        spawn_operation_id: str,
+        completion: sqlite3.Row,
+        parent: sqlite3.Row,
+        child: sqlite3.Row,
+        wait: sqlite3.Row,
+    ) -> None:
+        signal = tx.connection.execute(
+            "SELECT * FROM child_signals WHERE signal_id=?",
+            (wait["child_signal_id"],),
+        ).fetchone()
+        continuation = tx.connection.execute(
+            "SELECT * FROM continuations WHERE continuation_id=?",
+            (wait["continuation_id"],),
+        ).fetchone()
+        progress = tx.connection.execute(
+            "SELECT * FROM continuation_progress_receipts WHERE receipt_id=?",
+            (wait["progress_receipt_id"],),
+        ).fetchone()
+        terminal_event = tx.connection.execute(
+            "SELECT kind FROM run_events WHERE event_id=? AND run_id=?",
+            (
+                wait["pending_completion_terminal_receipt_id"],
+                str(completion["parent_run_id"]),
+            ),
+        ).fetchone()
+        pending_json = wait["pending_child_completion_json"]
+        pending_hash = wait["pending_child_completion_hash"]
+        terminal_state = wait["pending_completion_terminal_state"]
+        terminal_receipt_id = wait["pending_completion_terminal_receipt_id"]
+        phase_kind = wait["parent_terminal_phase_kind"]
+        claimed_ack = wait["claimed_continuation_terminal_ack_receipt_id"]
+        if phase_kind not in {
+            "child_active",
+            "signal_pending",
+            "continuation_claimed",
+            "completion_pending",
+        }:
+            raise UnitOfWorkConflict("workflow spawn parent-terminal phase differs")
+        expected_terminal_hash = hashlib.sha256(
+            canonical_json(
+                {
+                    "parent_wait_receipt_id": str(wait["parent_wait_receipt_id"]),
+                    "spawn_operation_id": spawn_operation_id,
                     "phase_kind": phase_kind,
                     "terminal_receipt_id": terminal_receipt_id,
                     "terminal_state": terminal_state,
-                    "terminal_hash": expected_terminal_hash,
+                    "child_signal_id": (
+                        None if phase_kind == "child_active" else wait["child_signal_id"]
+                    ),
+                    "continuation_id": (
+                        None if phase_kind == "child_active" else wait["continuation_id"]
+                    ),
+                    "pending_child_completion_hash": pending_hash,
+                    "claimed_continuation_ack_receipt_id": claimed_ack,
+                    "child_cancel_request_id": wait["child_cancel_request_id"],
+                    "child_cancel_receipt_id": wait["child_cancel_receipt_id"],
+                    "reused_child_cancel_receipt_id": wait["reused_child_cancel_receipt_id"],
                 }
-                if (
-                    phase_kind == "child_active"
-                    and wait["late_signal_quarantine_receipt_id"] is not None
-                ):
-                    lifecycle_payload["late_signal_quarantine_receipt_id"] = wait[
-                        "late_signal_quarantine_receipt_id"
-                    ]
-                expected_lifecycle_hash = hashlib.sha256(
-                    canonical_json(lifecycle_payload).encode()
-                ).hexdigest()
-                common_differs = (
-                    terminal_state
-                    not in {
-                        RunState.COMPLETED.value,
-                        RunState.FAILED.value,
-                        RunState.CANCELLED.value,
-                    }
-                    or terminal_event is None
-                    or str(parent["state"]) != str(terminal_state)
-                    or str(terminal_event["kind"]) != f"run.{terminal_state}"
-                    or str(wait["pending_completion_terminal_hash"]) != expected_terminal_hash
-                    or str(wait["lifecycle_hash"]) != expected_lifecycle_hash
-                )
-                progress_differs = (
-                    continuation is None
-                    or progress is None
-                    or str(continuation["state"]) != "acked"
-                    or continuation["ack_receipt_id"] != wait["progress_receipt_id"]
-                    or str(progress["continuation_id"]) != str(continuation["continuation_id"])
-                )
-                phase_differs = False
-                if phase_kind == "child_active":
-                    cancel_id = (
-                        wait["child_cancel_receipt_id"]
-                        if wait["child_cancel_receipt_id"] is not None
-                        else wait["reused_child_cancel_receipt_id"]
-                    )
-                    cancel = tx.connection.execute(
-                        "SELECT * FROM workflow_cancel_receipts WHERE cancel_id=?",
-                        (cancel_id,),
-                    ).fetchone()
-                    late_receipt_id = wait["late_signal_quarantine_receipt_id"]
-                    late_ack = (
-                        None
-                        if late_receipt_id is None
-                        else tx.connection.execute(
-                            "SELECT * FROM child_signal_ack_receipts WHERE receipt_id=?",
-                            (late_receipt_id,),
-                        ).fetchone()
-                    )
-                    late_event = (
-                        None
-                        if late_ack is None
-                        else tx.connection.execute(
-                            "SELECT kind FROM run_events WHERE event_id=?",
-                            (late_ack["event_id"],),
-                        ).fetchone()
-                    )
-                    cancel_is_terminal = cancel is not None and str(cancel["phase"]) == "terminal"
-                    late_differs = (
-                        signal is not None or continuation is not None
-                        if late_receipt_id is None
-                        else (
-                            signal is None
-                            or continuation is None
-                            or late_ack is None
-                            or late_event is None
-                            or str(signal["state"]) != "acked"
-                            or signal["ack_receipt_id"] != late_receipt_id
-                            or str(continuation["state"]) != "quarantined"
-                            or str(late_ack["signal_id"]) != str(signal["signal_id"])
-                            or str(late_ack["continuation_id"])
-                            != str(continuation["continuation_id"])
-                            or str(late_event["kind"]) != "child.signal_quarantined"
-                        )
-                    )
-                    phase_differs = (
-                        late_differs
-                        or progress is not None
-                        or pending_json is not None
-                        or pending_hash is not None
-                        or cancel is None
-                        or str(cancel["run_id"]) != str(child["run_id"])
-                        or str(cancel["phase"])
-                        not in {
-                            "requested",
-                            "cancelling",
-                            "blocked",
-                            "terminal",
-                        }
-                        or (cancel_is_terminal and str(child["state"]) != RunState.CANCELLED.value)
-                        or (
-                            not cancel_is_terminal
-                            and str(child["state"]) != RunState.CANCEL_REQUESTED.value
-                        )
-                        or (
-                            wait["child_cancel_receipt_id"] is not None
-                            and wait["child_cancel_request_id"] != wait["child_cancel_receipt_id"]
-                        )
-                        or (
-                            wait["child_cancel_receipt_id"] is None
-                            and wait["reused_child_cancel_receipt_id"] is None
-                        )
-                        or (
-                            wait["child_cancel_receipt_id"] is not None
-                            and wait["reused_child_cancel_receipt_id"] is not None
-                        )
-                        or claimed_ack is not None
-                    )
-                elif phase_kind == "signal_pending":
-                    phase_differs = (
-                        signal is None
-                        or continuation is None
-                        or str(signal["state"]) != "acked"
-                        or str(continuation["state"]) != "quarantined"
-                        or progress is not None
-                        or pending_json is not None
-                        or pending_hash is not None
-                        or wait["late_signal_quarantine_receipt_id"] != terminal_receipt_id
-                        or claimed_ack is not None
-                        or wait["child_cancel_request_id"] is not None
-                        or wait["child_cancel_receipt_id"] is not None
-                        or wait["reused_child_cancel_receipt_id"] is not None
-                    )
-                elif phase_kind == "continuation_claimed":
-                    phase_differs = (
-                        signal is None
-                        or str(signal["state"]) != "acked"
-                        or progress_differs
-                        or pending_json is not None
-                        or pending_hash is not None
-                        or claimed_ack != wait["progress_receipt_id"]
-                        or wait["late_signal_quarantine_receipt_id"] is not None
-                        or wait["child_cancel_request_id"] is not None
-                        or wait["child_cancel_receipt_id"] is not None
-                        or wait["reused_child_cancel_receipt_id"] is not None
-                    )
-                else:
-                    phase_differs = (
-                        signal is None
-                        or str(signal["state"]) != "acked"
-                        or progress_differs
-                        or pending_json is None
-                        or pending_hash is None
-                        or hashlib.sha256(str(pending_json).encode()).hexdigest()
-                        != str(pending_hash)
-                        or wait["child_completion_append_receipt_id"] is not None
-                        or wait["child_completion_context_revision"] is not None
-                        or wait["late_signal_quarantine_receipt_id"] is not None
-                        or claimed_ack is not None
-                        or wait["child_cancel_request_id"] is not None
-                        or wait["child_cancel_receipt_id"] is not None
-                        or wait["reused_child_cancel_receipt_id"] is not None
-                    )
-                if common_differs or phase_differs:
-                    raise UnitOfWorkConflict("workflow spawn parent-terminal child-wait differs")
-            else:
-                raise UnitOfWorkConflict("workflow spawn child-wait lifecycle is unsupported")
-            if str(command["state"]) == "acked":
-                terminal = tx.connection.execute(
-                    "SELECT * FROM child_terminal_receipts WHERE command_id=?",
-                    (str(command["command_id"]),),
+            ).encode()
+        ).hexdigest()
+        lifecycle_payload: dict[str, JsonValue] = {
+            "identity_hash": str(wait["identity_hash"]),
+            "state": "acked_parent_terminal",
+            "version": int(wait["version"]),
+            "phase_kind": phase_kind,
+            "terminal_receipt_id": terminal_receipt_id,
+            "terminal_state": terminal_state,
+            "terminal_hash": expected_terminal_hash,
+        }
+        if phase_kind == "child_active" and wait["late_signal_quarantine_receipt_id"] is not None:
+            lifecycle_payload["late_signal_quarantine_receipt_id"] = wait[
+                "late_signal_quarantine_receipt_id"
+            ]
+        expected_lifecycle_hash = hashlib.sha256(
+            canonical_json(lifecycle_payload).encode()
+        ).hexdigest()
+        common_differs = (
+            terminal_state
+            not in {
+                RunState.COMPLETED.value,
+                RunState.FAILED.value,
+                RunState.CANCELLED.value,
+            }
+            or terminal_event is None
+            or str(parent["state"]) != str(terminal_state)
+            or str(terminal_event["kind"]) != f"run.{terminal_state}"
+            or str(wait["pending_completion_terminal_hash"]) != expected_terminal_hash
+            or str(wait["lifecycle_hash"]) != expected_lifecycle_hash
+        )
+        progress_differs = (
+            continuation is None
+            or progress is None
+            or str(continuation["state"]) != "acked"
+            or continuation["ack_receipt_id"] != wait["progress_receipt_id"]
+            or str(progress["continuation_id"]) != str(continuation["continuation_id"])
+        )
+        phase_differs = False
+        if phase_kind == "child_active":
+            cancel_id = (
+                wait["child_cancel_receipt_id"]
+                if wait["child_cancel_receipt_id"] is not None
+                else wait["reused_child_cancel_receipt_id"]
+            )
+            cancel = tx.connection.execute(
+                "SELECT * FROM workflow_cancel_receipts WHERE cancel_id=?",
+                (cancel_id,),
+            ).fetchone()
+            late_receipt_id = wait["late_signal_quarantine_receipt_id"]
+            late_ack = (
+                None
+                if late_receipt_id is None
+                else tx.connection.execute(
+                    "SELECT * FROM child_signal_ack_receipts WHERE receipt_id=?",
+                    (late_receipt_id,),
                 ).fetchone()
-                signal = (
-                    None
-                    if terminal is None or terminal["signal_id"] is None
-                    else tx.connection.execute(
-                        "SELECT * FROM child_signals WHERE signal_id=?",
-                        (str(terminal["signal_id"]),),
-                    ).fetchone()
+            )
+            late_event = (
+                None
+                if late_ack is None
+                else tx.connection.execute(
+                    "SELECT kind FROM run_events WHERE event_id=?",
+                    (late_ack["event_id"],),
+                ).fetchone()
+            )
+            cancel_is_terminal = cancel is not None and str(cancel["phase"]) == "terminal"
+            late_differs = (
+                signal is not None or continuation is not None
+                if late_receipt_id is None
+                else (
+                    signal is None
+                    or continuation is None
+                    or late_ack is None
+                    or late_event is None
+                    or str(signal["state"]) != "acked"
+                    or signal["ack_receipt_id"] != late_receipt_id
+                    or str(continuation["state"]) != "quarantined"
+                    or str(late_ack["signal_id"]) != str(signal["signal_id"])
+                    or str(late_ack["continuation_id"]) != str(continuation["continuation_id"])
+                    or str(late_event["kind"]) != "child.signal_quarantined"
                 )
-                if (
-                    terminal is None
-                    or signal is None
-                    or str(terminal["child_run_id"]) != str(child["run_id"])
-                    or str(terminal["terminal_state"]) != str(child["state"])
-                    or str(signal["parent_run_id"]) != str(completion["parent_run_id"])
-                    or str(signal["child_run_id"]) != str(child["run_id"])
-                ):
-                    raise UnitOfWorkConflict("workflow spawn child terminal successor differs")
-            checkpoint = tx.connection.execute(
-                "SELECT * FROM workflow_checkpoints WHERE run_id=? AND"
-                " namespace='react.termination.v1' AND version=?",
-                (
-                    str(completion["parent_run_id"]),
-                    int(wait["react_checkpoint_revision"]),
-                ),
-            ).fetchone()
-            context = tx.connection.execute(
-                "SELECT checkpoint_json FROM workflow_checkpoints WHERE run_id=? AND"
-                " namespace='react.context.v1' AND version=?",
-                (
-                    str(completion["parent_run_id"]),
-                    int(wait["context_post_revision"]),
-                ),
-            ).fetchone()
-            fence = tx.connection.execute(
-                "SELECT * FROM run_fences WHERE run_id=?",
-                (str(completion["parent_run_id"]),),
-            ).fetchone()
-            historical_checkpoint_differs = (
-                checkpoint is None
-                or context is None
-                or fence is None
-                or str(checkpoint["checkpoint_hash"]) != str(wait["react_checkpoint_hash"])
-                or hashlib.sha256(str(checkpoint["checkpoint_json"]).encode()).hexdigest()
-                != str(checkpoint["checkpoint_hash"])
             )
-            historical_fence_differs = wait_state in {"unconsumed", "woken"} and (
-                fence is None
-                or str(fence["state"]) != "released"
-                or int(fence["runtime_lease_epoch"]) != int(wait["released_runtime_lease_epoch"])
-                or int(fence["epoch"]) != int(wait["released_run_fence_epoch"])
+            phase_differs = (
+                late_differs
+                or progress is not None
+                or pending_json is not None
+                or pending_hash is not None
+                or cancel is None
+                or str(cancel["run_id"]) != str(child["run_id"])
+                or str(cancel["phase"])
+                not in {
+                    "requested",
+                    "cancelling",
+                    "blocked",
+                    "terminal",
+                }
+                or (cancel_is_terminal and str(child["state"]) != RunState.CANCELLED.value)
+                or (
+                    not cancel_is_terminal
+                    and str(child["state"]) != RunState.CANCEL_REQUESTED.value
+                )
+                or (
+                    wait["child_cancel_receipt_id"] is not None
+                    and wait["child_cancel_request_id"] != wait["child_cancel_receipt_id"]
+                )
+                or (
+                    wait["child_cancel_receipt_id"] is None
+                    and wait["reused_child_cancel_receipt_id"] is None
+                )
+                or (
+                    wait["child_cancel_receipt_id"] is not None
+                    and wait["reused_child_cancel_receipt_id"] is not None
+                )
+                or claimed_ack is not None
             )
-            current_fence_differs = wait_state in {"claimed", "acked_completion_pending"} and (
-                fence is None
-                or claimed_continuation is None
-                or str(fence["state"]) != "active"
-                or str(fence["owner_id"]) != str(claimed_continuation["claimed_by"])
-                or int(fence["runtime_lease_epoch"])
-                != int(claimed_continuation["runtime_lease_epoch"])
-                or int(fence["runtime_lease_epoch"]) <= int(wait["released_runtime_lease_epoch"])
-                or int(fence["epoch"]) <= int(wait["released_run_fence_epoch"])
+        elif phase_kind == "signal_pending":
+            phase_differs = (
+                signal is None
+                or continuation is None
+                or str(signal["state"]) != "acked"
+                or str(continuation["state"]) != "quarantined"
+                or progress is not None
+                or pending_json is not None
+                or pending_hash is not None
+                or wait["late_signal_quarantine_receipt_id"] != terminal_receipt_id
+                or claimed_ack is not None
+                or wait["child_cancel_request_id"] is not None
+                or wait["child_cancel_receipt_id"] is not None
+                or wait["reused_child_cancel_receipt_id"] is not None
             )
-            if historical_checkpoint_differs or historical_fence_differs or current_fence_differs:
-                raise UnitOfWorkConflict("workflow spawn success checkpoint differs")
-            return result
+        elif phase_kind == "continuation_claimed":
+            phase_differs = (
+                signal is None
+                or str(signal["state"]) != "acked"
+                or progress_differs
+                or pending_json is not None
+                or pending_hash is not None
+                or claimed_ack != wait["progress_receipt_id"]
+                or wait["late_signal_quarantine_receipt_id"] is not None
+                or wait["child_cancel_request_id"] is not None
+                or wait["child_cancel_receipt_id"] is not None
+                or wait["reused_child_cancel_receipt_id"] is not None
+            )
+        else:
+            phase_differs = (
+                signal is None
+                or str(signal["state"]) != "acked"
+                or progress_differs
+                or pending_json is None
+                or pending_hash is None
+                or hashlib.sha256(str(pending_json).encode()).hexdigest() != str(pending_hash)
+                or wait["child_completion_append_receipt_id"] is not None
+                or wait["child_completion_context_revision"] is not None
+                or wait["late_signal_quarantine_receipt_id"] is not None
+                or claimed_ack is not None
+                or wait["child_cancel_request_id"] is not None
+                or wait["child_cancel_receipt_id"] is not None
+                or wait["reused_child_cancel_receipt_id"] is not None
+            )
+        if common_differs or phase_differs:
+            raise UnitOfWorkConflict("workflow spawn parent-terminal child-wait differs")
 
+    def _verify_spawn_failure_evidence(
+        self,
+        tx: _SqliteWorkflowTransaction,
+        completion: sqlite3.Row,
+        result: ToolResult,
+        path_kind: str,
+        ticket: sqlite3.Row,
+    ) -> None:
         evidence = _workflow_spawn_failure_evidence(completion)
         evidence_hash = str(completion["failure_evidence_hash"])
         if str(completion["failure_evidence_id"]) != self._derived_id(
@@ -955,7 +1064,6 @@ class WorkflowSpawnOutcomeMixin(ExecutionUnitOfWorkCore):
                 raise UnitOfWorkConflict("workflow spawn parent-terminal evidence differs")
         else:
             raise UnitOfWorkConflict("workflow spawn failure evidence is unsupported")
-        return result
 
     async def read_spawn_admission_outcome(
         self,
@@ -1062,64 +1170,14 @@ class WorkflowSpawnOutcomeMixin(ExecutionUnitOfWorkCore):
                 "workflow spawn admission already committed; use receipt reader"
             )
         now = _time(now)
-        continuation_row = tx.connection.execute(
-            "SELECT * FROM workflow_spawn_continuations WHERE operation_id=?",
-            (continuation.spawn_operation_id,),
-        ).fetchone()
-        if (
-            continuation_row is None
-            or str(continuation_row["state"]) != "claimed"
-            or _workflow_spawn_continuation_claim(continuation_row) != continuation
-            or continuation.expires_at <= now
-            or continuation.ticket_receipt_id != ticket.ticket_receipt_id
-        ):
-            raise UnitOfWorkConflict("workflow spawn continuation claim differs")
-        parent = tx.connection.execute(
-            "SELECT * FROM runs WHERE run_id=?",
-            (continuation.parent_run_id,),
-        ).fetchone()
-        runtime = tx.connection.execute(
-            "SELECT * FROM workflow_leases WHERE run_id=? AND namespace=?",
-            (continuation.parent_run_id, RUNTIME_LEASE_NAMESPACE),
-        ).fetchone()
-        fence = tx.connection.execute(
-            "SELECT * FROM run_fences WHERE run_id=?",
-            (continuation.parent_run_id,),
-        ).fetchone()
-        if (
-            parent is None
-            or str(parent["state"]) != RunState.RUNNING.value
-            or runtime is None
-            or fence is None
-            or str(runtime["owner_id"]) != continuation.owner_id
-            or int(runtime["epoch"]) != continuation.runtime_lease_epoch
-            or float(runtime["expires_at"]) <= now
-            or str(fence["state"]) != "active"
-            or str(fence["owner_id"]) != continuation.owner_id
-            or int(fence["runtime_lease_epoch"]) != continuation.runtime_lease_epoch
-            or int(fence["epoch"]) != continuation.run_fence_epoch
-        ):
-            raise UnitOfWorkConflict("workflow spawn parent authority differs")
-        active_activation = tx.connection.execute(
-            "SELECT * FROM workflow_spawn_ready_activations "
-            "WHERE spawn_operation_id=? AND state='active'",
-            (continuation.spawn_operation_id,),
-        ).fetchone()
-        path_kind = "direct"
-        activation_chain_head_id: str | None = None
-        if active_activation is not None:
-            durable_activation = _workflow_spawn_ready_activation(tx.connection, active_activation)
-            if durable_activation.continuation_claim != continuation:
-                raise UnitOfWorkConflict("workflow spawn recovery activation claim differs")
-            ready = tx.connection.execute(
-                "SELECT consumed_at FROM workflow_spawn_continuation_ready "
-                "WHERE ready_receipt_id=?",
-                (durable_activation.ready_receipt.ready_receipt_id,),
-            ).fetchone()
-            if ready is None or ready["consumed_at"] is None:
-                raise UnitOfWorkConflict("workflow spawn recovery ready receipt is unconsumed")
-            path_kind = "ready_recovery"
-            activation_chain_head_id = durable_activation.activation_receipt_id
+        (
+            continuation_row,
+            parent,
+            runtime,
+            active_activation,
+            path_kind,
+            activation_chain_head_id,
+        ) = self._require_spawn_admission_parent(tx, ticket, continuation, now)
 
         admission = await self.admit_runtime_start(
             transaction,
@@ -1210,121 +1268,25 @@ class WorkflowSpawnOutcomeMixin(ExecutionUnitOfWorkCore):
         )
         _fault(fault, "workflow:spawn_admission:after_context_write")
         batch_digest = hashlib.sha256(checkpoint_json.encode()).hexdigest()
-        next_checkpoint = dict(checkpoint_value)
-        next_checkpoint.update(
-            {
-                "phase": "child_wait",
-                "context_revision": context.revision,
-                "tool_result_progress": int(effect["call_ordinal"]) + 1,
-                "workflow_spawn_operation_id": continuation.spawn_operation_id,
-                "workflow_spawn_child_run_id": admission.receipt.run_id,
-            }
+        next_checkpoint_hash, next_checkpoint_version = self._write_spawn_child_wait_checkpoint(
+            tx,
+            continuation=continuation,
+            admission=admission,
+            checkpoint=checkpoint,
+            checkpoint_value=checkpoint_value,
+            context=context,
+            effect=effect,
+            now=now,
+            fault=fault,
         )
-        next_checkpoint_json = canonical_json(cast(JsonValue, next_checkpoint))
-        next_checkpoint_hash = hashlib.sha256(next_checkpoint_json.encode()).hexdigest()
-        next_checkpoint_version = int(checkpoint["version"]) + 1
-        tx.connection.execute(
-            "INSERT INTO"
-            " workflow_checkpoints(checkpoint_id,run_id,namespace,checkpoint_json,checkpoint_hash,lease_epoch,version,created_at)"  # noqa: E501
-            " VALUES(?,?,?,?,?,?,?,?)",
-            (
-                f"{continuation.parent_run_id}:react.termination.v1:{next_checkpoint_version}",
-                continuation.parent_run_id,
-                "react.termination.v1",
-                next_checkpoint_json,
-                next_checkpoint_hash,
-                continuation.runtime_lease_epoch,
-                next_checkpoint_version,
-                now,
-            ),
+        parent_waiting_version = self._suspend_parent_for_spawn_child(
+            tx,
+            continuation=continuation,
+            parent=parent,
+            active_activation=active_activation,
+            now=now,
+            fault=fault,
         )
-        _fault(fault, "workflow:spawn_admission:after_checkpoint_write")
-        parent_waiting_version = int(parent["version"]) + 1
-        changed = tx.connection.execute(
-            "UPDATE runs SET state='waiting',version=version+1,updated_at=? WHERE run_id=? AND"
-            " state='running' AND version=?",
-            (now, continuation.parent_run_id, int(parent["version"])),
-        ).rowcount
-        if changed != 1:
-            raise UnitOfWorkConflict("workflow spawn parent WAITING CAS failed")
-        _fault(fault, "workflow:spawn_admission:after_parent_write")
-        runtime_deleted = tx.connection.execute(
-            "DELETE FROM workflow_leases WHERE run_id=? AND namespace=? AND owner_id=? AND epoch=?",
-            (
-                continuation.parent_run_id,
-                RUNTIME_LEASE_NAMESPACE,
-                continuation.owner_id,
-                continuation.runtime_lease_epoch,
-            ),
-        ).rowcount
-        if runtime_deleted != 1:
-            raise UnitOfWorkConflict("workflow spawn Runtime release CAS failed")
-        if continuation.workflow_lease_epoch is not None:
-            workflow_deleted = tx.connection.execute(
-                "DELETE FROM workflow_leases WHERE run_id=? AND namespace<>? AND owner_id=? AND"
-                " epoch=?",
-                (
-                    continuation.parent_run_id,
-                    RUNTIME_LEASE_NAMESPACE,
-                    continuation.owner_id,
-                    continuation.workflow_lease_epoch,
-                ),
-            ).rowcount
-            if workflow_deleted != 1:
-                raise UnitOfWorkConflict("workflow spawn Workflow release CAS failed")
-        changed = tx.connection.execute(
-            "UPDATE run_fences SET state='released',released_at=? WHERE run_id=? AND owner_id=? AND"
-            " runtime_lease_epoch=? AND epoch=? AND state='active'",
-            (
-                now,
-                continuation.parent_run_id,
-                continuation.owner_id,
-                continuation.runtime_lease_epoch,
-                continuation.run_fence_epoch,
-            ),
-        ).rowcount
-        if changed != 1:
-            raise UnitOfWorkConflict("workflow spawn RunFence release CAS failed")
-        _fault(fault, "workflow:spawn_admission:after_authority_release")
-        if active_activation is not None:
-            consumed_version = int(active_activation["version"]) + 1
-            consumed_hash = _workflow_spawn_activation_hash(
-                activation_receipt_id=str(active_activation["activation_receipt_id"]),
-                ready_receipt_id=str(active_activation["ready_receipt_id"]),
-                spawn_operation_id=str(active_activation["spawn_operation_id"]),
-                parent_run_id=str(active_activation["parent_run_id"]),
-                effect_id=str(active_activation["effect_id"]),
-                owner_id=str(active_activation["owner_id"]),
-                runtime_lease_epoch=int(active_activation["runtime_lease_epoch"]),
-                run_fence_epoch=int(active_activation["run_fence_epoch"]),
-                workflow_lease_epoch=(
-                    None
-                    if active_activation["workflow_lease_epoch"] is None
-                    else int(active_activation["workflow_lease_epoch"])
-                ),
-                continuation_claim_epoch=int(active_activation["continuation_claim_epoch"]),
-                predecessor_activation_receipt_id=(
-                    None
-                    if active_activation["predecessor_activation_receipt_id"] is None
-                    else str(active_activation["predecessor_activation_receipt_id"])
-                ),
-                version=consumed_version,
-            )
-            consumed = tx.connection.execute(
-                "UPDATE workflow_spawn_ready_activations "
-                "SET state='consumed',version=?,canonical_hash=?,consumed_at=? "
-                "WHERE activation_receipt_id=? AND state='active' AND version=?",
-                (
-                    consumed_version,
-                    consumed_hash,
-                    now,
-                    str(active_activation["activation_receipt_id"]),
-                    int(active_activation["version"]),
-                ),
-            ).rowcount
-            if consumed != 1:
-                raise UnitOfWorkConflict("workflow spawn recovery activation consume CAS failed")
-            _fault(fault, "workflow:spawn_admission:after_activation_write")
         parent_wait_receipt_id = self._derived_id(
             "workflow-spawn/child-wait/v1", continuation.spawn_operation_id
         )
@@ -1413,6 +1375,296 @@ class WorkflowSpawnOutcomeMixin(ExecutionUnitOfWorkCore):
             ),
         )
         _fault(fault, "workflow:spawn_admission:after_child_wait_write")
+        self._record_spawn_admission_completion(
+            tx,
+            continuation=continuation,
+            continuation_row=continuation_row,
+            admission=admission,
+            effect=effect,
+            tool_result_json=tool_result_json,
+            tool_result_hash=tool_result_hash,
+            parent_wait_receipt_id=parent_wait_receipt_id,
+            path_kind=path_kind,
+            activation_chain_head_id=activation_chain_head_id,
+            now=now,
+            fault=fault,
+        )
+        tx.register_after_commit_fault("workflow:spawn_admission:after_commit")
+        child_start_ref = ChildStartDispatchRef(
+            admission.receipt.ticket_receipt_id,
+            admission.dispatch_claim.claim_id,
+            admission.receipt.run_id,
+        )
+        suspension = WorkflowChildWaitBinding(
+            parent_run_id=continuation.parent_run_id,
+            child_run_id=admission.receipt.run_id,
+            child_command_id=str(ticket_row["child_command_id"]),
+            parent_wait_receipt_id=parent_wait_receipt_id,
+            expected_parent_version=parent_waiting_version,
+            react_checkpoint_revision=next_checkpoint_version,
+            expected_signal_domain="child.terminal.v1",
+            source_phase="tool_batch_reserved",
+            batch_digest=batch_digest,
+            spawn_ordinal=int(effect["call_ordinal"]),
+            next_tool_ordinal=int(effect["call_ordinal"]) + 1,
+            spawn_result_append_receipt_id=append_id,
+            context_revision=context.revision,
+            termination_started_at=termination_started_at,
+            termination_last_observed_at=termination_last_observed_at,
+            wall_deadline=None,
+            termination_policy_snapshot_hash=termination_policy_snapshot_hash,
+        )
+        control_kind = {
+            RuntimeStartDisposition.START_NEW: WorkflowSpawnChildControlKind.START,
+            RuntimeStartDisposition.START_ORPHAN: WorkflowSpawnChildControlKind.START,
+            RuntimeStartDisposition.RECOVER_START: WorkflowSpawnChildControlKind.RECOVER,
+            RuntimeStartDisposition.RECOVER_RESUME: WorkflowSpawnChildControlKind.RECOVER,
+            RuntimeStartDisposition.ATTACH_CURRENT: WorkflowSpawnChildControlKind.ATTACH,
+            RuntimeStartDisposition.FOREIGN_ACTIVE: WorkflowSpawnChildControlKind.WAITING,
+            RuntimeStartDisposition.WAITING: WorkflowSpawnChildControlKind.WAITING,
+            RuntimeStartDisposition.CANCEL_PENDING: WorkflowSpawnChildControlKind.CANCEL,
+            RuntimeStartDisposition.TERMINAL: WorkflowSpawnChildControlKind.TERMINAL,
+        }[admission.disposition]
+        child_control = _create_workflow_spawn_child_control(kind=control_kind, admission=admission)
+        return _create_workflow_spawn_tool_outcome(
+            tool_result=tool_result,
+            child_control=child_control,
+            child_start_ref=child_start_ref,
+            suspension=suspension,
+        )
+
+    def _write_spawn_child_wait_checkpoint(
+        self,
+        tx: _SqliteWorkflowTransaction,
+        *,
+        continuation: WorkflowSpawnContinuationClaim,
+        admission: RuntimeStartAdmission,
+        checkpoint: sqlite3.Row,
+        checkpoint_value: dict[str, JsonValue],
+        context: ContextSnapshot,
+        effect: sqlite3.Row,
+        now: float,
+        fault: FaultHook | None,
+    ) -> tuple[str, int]:
+        next_checkpoint = dict(checkpoint_value)
+        next_checkpoint.update(
+            {
+                "phase": "child_wait",
+                "context_revision": context.revision,
+                "tool_result_progress": int(effect["call_ordinal"]) + 1,
+                "workflow_spawn_operation_id": continuation.spawn_operation_id,
+                "workflow_spawn_child_run_id": admission.receipt.run_id,
+            }
+        )
+        next_checkpoint_json = canonical_json(cast(JsonValue, next_checkpoint))
+        next_checkpoint_hash = hashlib.sha256(next_checkpoint_json.encode()).hexdigest()
+        next_checkpoint_version = int(checkpoint["version"]) + 1
+        tx.connection.execute(
+            "INSERT INTO"
+            " workflow_checkpoints(checkpoint_id,run_id,namespace,checkpoint_json,checkpoint_hash,lease_epoch,version,created_at)"  # noqa: E501
+            " VALUES(?,?,?,?,?,?,?,?)",
+            (
+                f"{continuation.parent_run_id}:react.termination.v1:{next_checkpoint_version}",
+                continuation.parent_run_id,
+                "react.termination.v1",
+                next_checkpoint_json,
+                next_checkpoint_hash,
+                continuation.runtime_lease_epoch,
+                next_checkpoint_version,
+                now,
+            ),
+        )
+        _fault(fault, "workflow:spawn_admission:after_checkpoint_write")
+        return next_checkpoint_hash, next_checkpoint_version
+
+    def _require_spawn_admission_parent(
+        self,
+        tx: _SqliteWorkflowTransaction,
+        ticket: WorkflowLaunchTicket,
+        continuation: WorkflowSpawnContinuationClaim,
+        now: float,
+    ) -> tuple[sqlite3.Row, sqlite3.Row, sqlite3.Row, sqlite3.Row | None, str, str | None]:
+        continuation_row = tx.connection.execute(
+            "SELECT * FROM workflow_spawn_continuations WHERE operation_id=?",
+            (continuation.spawn_operation_id,),
+        ).fetchone()
+        if (
+            continuation_row is None
+            or str(continuation_row["state"]) != "claimed"
+            or _workflow_spawn_continuation_claim(continuation_row) != continuation
+            or continuation.expires_at <= now
+            or continuation.ticket_receipt_id != ticket.ticket_receipt_id
+        ):
+            raise UnitOfWorkConflict("workflow spawn continuation claim differs")
+        parent = tx.connection.execute(
+            "SELECT * FROM runs WHERE run_id=?",
+            (continuation.parent_run_id,),
+        ).fetchone()
+        runtime = tx.connection.execute(
+            "SELECT * FROM workflow_leases WHERE run_id=? AND namespace=?",
+            (continuation.parent_run_id, RUNTIME_LEASE_NAMESPACE),
+        ).fetchone()
+        fence = tx.connection.execute(
+            "SELECT * FROM run_fences WHERE run_id=?",
+            (continuation.parent_run_id,),
+        ).fetchone()
+        if (
+            parent is None
+            or str(parent["state"]) != RunState.RUNNING.value
+            or runtime is None
+            or fence is None
+            or str(runtime["owner_id"]) != continuation.owner_id
+            or int(runtime["epoch"]) != continuation.runtime_lease_epoch
+            or float(runtime["expires_at"]) <= now
+            or str(fence["state"]) != "active"
+            or str(fence["owner_id"]) != continuation.owner_id
+            or int(fence["runtime_lease_epoch"]) != continuation.runtime_lease_epoch
+            or int(fence["epoch"]) != continuation.run_fence_epoch
+        ):
+            raise UnitOfWorkConflict("workflow spawn parent authority differs")
+        active_activation = tx.connection.execute(
+            "SELECT * FROM workflow_spawn_ready_activations "
+            "WHERE spawn_operation_id=? AND state='active'",
+            (continuation.spawn_operation_id,),
+        ).fetchone()
+        path_kind = "direct"
+        activation_chain_head_id: str | None = None
+        if active_activation is not None:
+            durable_activation = _workflow_spawn_ready_activation(tx.connection, active_activation)
+            if durable_activation.continuation_claim != continuation:
+                raise UnitOfWorkConflict("workflow spawn recovery activation claim differs")
+            ready = tx.connection.execute(
+                "SELECT consumed_at FROM workflow_spawn_continuation_ready "
+                "WHERE ready_receipt_id=?",
+                (durable_activation.ready_receipt.ready_receipt_id,),
+            ).fetchone()
+            if ready is None or ready["consumed_at"] is None:
+                raise UnitOfWorkConflict("workflow spawn recovery ready receipt is unconsumed")
+            path_kind = "ready_recovery"
+            activation_chain_head_id = durable_activation.activation_receipt_id
+        return (
+            continuation_row,
+            parent,
+            runtime,
+            active_activation,
+            path_kind,
+            activation_chain_head_id,
+        )
+
+    def _suspend_parent_for_spawn_child(
+        self,
+        tx: _SqliteWorkflowTransaction,
+        *,
+        continuation: WorkflowSpawnContinuationClaim,
+        parent: sqlite3.Row,
+        active_activation: sqlite3.Row | None,
+        now: float,
+        fault: FaultHook | None,
+    ) -> int:
+        parent_waiting_version = int(parent["version"]) + 1
+        changed = tx.connection.execute(
+            "UPDATE runs SET state='waiting',version=version+1,updated_at=? WHERE run_id=? AND"
+            " state='running' AND version=?",
+            (now, continuation.parent_run_id, int(parent["version"])),
+        ).rowcount
+        if changed != 1:
+            raise UnitOfWorkConflict("workflow spawn parent WAITING CAS failed")
+        _fault(fault, "workflow:spawn_admission:after_parent_write")
+        runtime_deleted = tx.connection.execute(
+            "DELETE FROM workflow_leases WHERE run_id=? AND namespace=? AND owner_id=? AND epoch=?",
+            (
+                continuation.parent_run_id,
+                RUNTIME_LEASE_NAMESPACE,
+                continuation.owner_id,
+                continuation.runtime_lease_epoch,
+            ),
+        ).rowcount
+        if runtime_deleted != 1:
+            raise UnitOfWorkConflict("workflow spawn Runtime release CAS failed")
+        if continuation.workflow_lease_epoch is not None:
+            workflow_deleted = tx.connection.execute(
+                "DELETE FROM workflow_leases WHERE run_id=? AND namespace<>? AND owner_id=? AND"
+                " epoch=?",
+                (
+                    continuation.parent_run_id,
+                    RUNTIME_LEASE_NAMESPACE,
+                    continuation.owner_id,
+                    continuation.workflow_lease_epoch,
+                ),
+            ).rowcount
+            if workflow_deleted != 1:
+                raise UnitOfWorkConflict("workflow spawn Workflow release CAS failed")
+        changed = tx.connection.execute(
+            "UPDATE run_fences SET state='released',released_at=? WHERE run_id=? AND owner_id=? AND"
+            " runtime_lease_epoch=? AND epoch=? AND state='active'",
+            (
+                now,
+                continuation.parent_run_id,
+                continuation.owner_id,
+                continuation.runtime_lease_epoch,
+                continuation.run_fence_epoch,
+            ),
+        ).rowcount
+        if changed != 1:
+            raise UnitOfWorkConflict("workflow spawn RunFence release CAS failed")
+        _fault(fault, "workflow:spawn_admission:after_authority_release")
+        if active_activation is not None:
+            consumed_version = int(active_activation["version"]) + 1
+            consumed_hash = _workflow_spawn_activation_hash(
+                activation_receipt_id=str(active_activation["activation_receipt_id"]),
+                ready_receipt_id=str(active_activation["ready_receipt_id"]),
+                spawn_operation_id=str(active_activation["spawn_operation_id"]),
+                parent_run_id=str(active_activation["parent_run_id"]),
+                effect_id=str(active_activation["effect_id"]),
+                owner_id=str(active_activation["owner_id"]),
+                runtime_lease_epoch=int(active_activation["runtime_lease_epoch"]),
+                run_fence_epoch=int(active_activation["run_fence_epoch"]),
+                workflow_lease_epoch=(
+                    None
+                    if active_activation["workflow_lease_epoch"] is None
+                    else int(active_activation["workflow_lease_epoch"])
+                ),
+                continuation_claim_epoch=int(active_activation["continuation_claim_epoch"]),
+                predecessor_activation_receipt_id=(
+                    None
+                    if active_activation["predecessor_activation_receipt_id"] is None
+                    else str(active_activation["predecessor_activation_receipt_id"])
+                ),
+                version=consumed_version,
+            )
+            consumed = tx.connection.execute(
+                "UPDATE workflow_spawn_ready_activations "
+                "SET state='consumed',version=?,canonical_hash=?,consumed_at=? "
+                "WHERE activation_receipt_id=? AND state='active' AND version=?",
+                (
+                    consumed_version,
+                    consumed_hash,
+                    now,
+                    str(active_activation["activation_receipt_id"]),
+                    int(active_activation["version"]),
+                ),
+            ).rowcount
+            if consumed != 1:
+                raise UnitOfWorkConflict("workflow spawn recovery activation consume CAS failed")
+            _fault(fault, "workflow:spawn_admission:after_activation_write")
+        return parent_waiting_version
+
+    def _record_spawn_admission_completion(
+        self,
+        tx: _SqliteWorkflowTransaction,
+        *,
+        continuation: WorkflowSpawnContinuationClaim,
+        continuation_row: sqlite3.Row,
+        admission: RuntimeStartAdmission,
+        effect: sqlite3.Row,
+        tool_result_json: str,
+        tool_result_hash: str,
+        parent_wait_receipt_id: str,
+        path_kind: str,
+        activation_chain_head_id: str | None,
+        now: float,
+        fault: FaultHook | None,
+    ) -> None:
         changed = tx.connection.execute(
             "UPDATE execution_effects SET"
             " state='succeeded',result_json=?,settled_at=?,version=version+1 WHERE effect_id=? AND"
@@ -1491,46 +1743,3 @@ class WorkflowSpawnOutcomeMixin(ExecutionUnitOfWorkCore):
         if changed != 1:
             raise UnitOfWorkConflict("workflow spawn completion CAS failed")
         _fault(fault, "workflow:spawn_admission:after_completion_write")
-        tx.register_after_commit_fault("workflow:spawn_admission:after_commit")
-        child_start_ref = ChildStartDispatchRef(
-            admission.receipt.ticket_receipt_id,
-            admission.dispatch_claim.claim_id,
-            admission.receipt.run_id,
-        )
-        suspension = WorkflowChildWaitBinding(
-            parent_run_id=continuation.parent_run_id,
-            child_run_id=admission.receipt.run_id,
-            child_command_id=str(ticket_row["child_command_id"]),
-            parent_wait_receipt_id=parent_wait_receipt_id,
-            expected_parent_version=parent_waiting_version,
-            react_checkpoint_revision=next_checkpoint_version,
-            expected_signal_domain="child.terminal.v1",
-            source_phase="tool_batch_reserved",
-            batch_digest=batch_digest,
-            spawn_ordinal=int(effect["call_ordinal"]),
-            next_tool_ordinal=int(effect["call_ordinal"]) + 1,
-            spawn_result_append_receipt_id=append_id,
-            context_revision=context.revision,
-            termination_started_at=termination_started_at,
-            termination_last_observed_at=termination_last_observed_at,
-            wall_deadline=None,
-            termination_policy_snapshot_hash=termination_policy_snapshot_hash,
-        )
-        control_kind = {
-            RuntimeStartDisposition.START_NEW: WorkflowSpawnChildControlKind.START,
-            RuntimeStartDisposition.START_ORPHAN: WorkflowSpawnChildControlKind.START,
-            RuntimeStartDisposition.RECOVER_START: WorkflowSpawnChildControlKind.RECOVER,
-            RuntimeStartDisposition.RECOVER_RESUME: WorkflowSpawnChildControlKind.RECOVER,
-            RuntimeStartDisposition.ATTACH_CURRENT: WorkflowSpawnChildControlKind.ATTACH,
-            RuntimeStartDisposition.FOREIGN_ACTIVE: WorkflowSpawnChildControlKind.WAITING,
-            RuntimeStartDisposition.WAITING: WorkflowSpawnChildControlKind.WAITING,
-            RuntimeStartDisposition.CANCEL_PENDING: WorkflowSpawnChildControlKind.CANCEL,
-            RuntimeStartDisposition.TERMINAL: WorkflowSpawnChildControlKind.TERMINAL,
-        }[admission.disposition]
-        child_control = _create_workflow_spawn_child_control(kind=control_kind, admission=admission)
-        return _create_workflow_spawn_tool_outcome(
-            tool_result=tool_result,
-            child_control=child_control,
-            child_start_ref=child_start_ref,
-            suspension=suspension,
-        )

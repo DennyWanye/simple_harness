@@ -1100,100 +1100,17 @@ class RuntimeStartMixin(ExecutionUnitOfWorkCore):
         )
         run_state = str(run["state"])
         if run_state == RunState.WAITING.value:
-            retry_wake = self._runtime_retry_wake(
+            return self._classify_waiting_runtime_start(
                 connection,
+                receipt=receipt,
                 run_id=run_id,
-                run_version=int(run["version"]),
-                resume_row=resume_receipt_row,
-            )
-            if retry_wake is None:
-                if start_receipt_row is None:
-                    raise UnitOfWorkConflict("generic WAITING Run lacks pinned workflow admission")
-                request_payload = json.loads(str(start_receipt_row["request_json"]))
-                namespace = _required(
-                    request_payload.get("checkpoint_namespace"),
-                    "checkpoint_namespace",
-                )
-                head = connection.execute(
-                    "SELECT checkpoint_id,checkpoint_json,checkpoint_hash "
-                    "FROM workflow_checkpoints "
-                    "WHERE run_id=? AND namespace=? ORDER BY version DESC LIMIT 1",
-                    (run_id, namespace),
-                ).fetchone()
-                open_decision = None
-                blocker = None
-                if head is not None:
-                    if hashlib.sha256(str(head["checkpoint_json"]).encode()).hexdigest() != str(
-                        head["checkpoint_hash"]
-                    ):
-                        raise UnitOfWorkConflict("pinned workflow checkpoint self-hash changed")
-                    checkpoint_payload = json.loads(str(head["checkpoint_json"]))
-                    interrupt = (
-                        checkpoint_payload.get("interrupt")
-                        if isinstance(checkpoint_payload, dict)
-                        else None
-                    )
-                    if interrupt is None:
-                        interrupt_operation = connection.execute(
-                            "SELECT payload_json FROM workflow_native_operations "
-                            "WHERE run_id=? AND namespace=? AND base_checkpoint_id=? "
-                            "AND operation_kind='interrupt' "
-                            "ORDER BY created_at DESC,operation_id DESC LIMIT 1",
-                            (run_id, namespace, str(head["checkpoint_id"])),
-                        ).fetchone()
-                        if interrupt_operation is not None:
-                            operation_payload = json.loads(str(interrupt_operation["payload_json"]))
-                            interrupt = (
-                                operation_payload.get("interrupt")
-                                if isinstance(operation_payload, dict)
-                                else None
-                            )
-                    interrupt_id = (
-                        interrupt.get("interrupt_id") if isinstance(interrupt, dict) else None
-                    )
-                    if isinstance(interrupt_id, str) and interrupt_id:
-                        open_decision = connection.execute(
-                            "SELECT 1 FROM decisions WHERE run_id=? "
-                            "AND decision_id=? AND state='open' LIMIT 1",
-                            (run_id, interrupt_id),
-                        ).fetchone()
-                    if open_decision is None:
-                        open_decision = connection.execute(
-                            "SELECT 1 FROM decisions WHERE run_id=? AND state='open' "
-                            "AND json_extract(request_json,'$.checkpoint_id')=? "
-                            "AND json_extract(request_json,'$.checkpoint_namespace')=? LIMIT 1",
-                            (run_id, str(head["checkpoint_id"]), namespace),
-                        ).fetchone()
-                    linked_blockers = (
-                        checkpoint_payload.get("wait_blocker_ids", [])
-                        if isinstance(checkpoint_payload, dict)
-                        else []
-                    )
-                    if isinstance(linked_blockers, list) and linked_blockers:
-                        placeholders = ",".join("?" for _ in linked_blockers)
-                        blocker = connection.execute(
-                            "SELECT 1 FROM run_wait_blockers WHERE run_id=? "
-                            "AND resolution_id IS NULL AND blocker_id IN ("
-                            + placeholders
-                            + ") LIMIT 1",
-                            (run_id, *linked_blockers),
-                        ).fetchone()
-                if head is None or (open_decision is None and blocker is None):
-                    raise UnitOfWorkConflict(
-                        "generic WAITING Run lacks matching workflow authority"
-                    )
-                self._require_waiting_authority_shape(
-                    connection,
-                    run_id=run_id,
-                    runtime=runtime,
-                    fence=fence,
-                    dispatch=dispatch,
-                    start_receipt=start_receipt_row,
-                    resume_receipt=resume_receipt_row,
-                    now=now,
-                )
-            return RuntimeStartAdmission(
-                receipt, RuntimeStartDisposition.WAITING, retry_wake=retry_wake
+                run=run,
+                dispatch=dispatch,
+                runtime=runtime,
+                fence=fence,
+                start_receipt_row=start_receipt_row,
+                resume_receipt_row=resume_receipt_row,
+                now=now,
             )
         if run_state == RunState.CANCEL_REQUESTED.value:
             cancel = connection.execute(
@@ -1396,4 +1313,112 @@ class RuntimeStartMixin(ExecutionUnitOfWorkCore):
             RuntimeStartDisposition.RECOVER_START,
             activation=activation,
             recovery_work=work,
+        )
+
+    def _classify_waiting_runtime_start(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        receipt: RuntimeStartReceipt,
+        run_id: str,
+        run: sqlite3.Row,
+        dispatch: sqlite3.Row,
+        runtime: sqlite3.Row | None,
+        fence: sqlite3.Row | None,
+        start_receipt_row: sqlite3.Row | None,
+        resume_receipt_row: sqlite3.Row | None,
+        now: float,
+    ) -> RuntimeStartAdmission:
+        retry_wake = self._runtime_retry_wake(
+            connection,
+            run_id=run_id,
+            run_version=int(run["version"]),
+            resume_row=resume_receipt_row,
+        )
+        if retry_wake is None:
+            if start_receipt_row is None:
+                raise UnitOfWorkConflict("generic WAITING Run lacks pinned workflow admission")
+            request_payload = json.loads(str(start_receipt_row["request_json"]))
+            namespace = _required(
+                request_payload.get("checkpoint_namespace"),
+                "checkpoint_namespace",
+            )
+            head = connection.execute(
+                "SELECT checkpoint_id,checkpoint_json,checkpoint_hash "
+                "FROM workflow_checkpoints "
+                "WHERE run_id=? AND namespace=? ORDER BY version DESC LIMIT 1",
+                (run_id, namespace),
+            ).fetchone()
+            open_decision = None
+            blocker = None
+            if head is not None:
+                if hashlib.sha256(str(head["checkpoint_json"]).encode()).hexdigest() != str(
+                    head["checkpoint_hash"]
+                ):
+                    raise UnitOfWorkConflict("pinned workflow checkpoint self-hash changed")
+                checkpoint_payload = json.loads(str(head["checkpoint_json"]))
+                interrupt = (
+                    checkpoint_payload.get("interrupt")
+                    if isinstance(checkpoint_payload, dict)
+                    else None
+                )
+                if interrupt is None:
+                    interrupt_operation = connection.execute(
+                        "SELECT payload_json FROM workflow_native_operations "
+                        "WHERE run_id=? AND namespace=? AND base_checkpoint_id=? "
+                        "AND operation_kind='interrupt' "
+                        "ORDER BY created_at DESC,operation_id DESC LIMIT 1",
+                        (run_id, namespace, str(head["checkpoint_id"])),
+                    ).fetchone()
+                    if interrupt_operation is not None:
+                        operation_payload = json.loads(str(interrupt_operation["payload_json"]))
+                        interrupt = (
+                            operation_payload.get("interrupt")
+                            if isinstance(operation_payload, dict)
+                            else None
+                        )
+                interrupt_id = (
+                    interrupt.get("interrupt_id") if isinstance(interrupt, dict) else None
+                )
+                if isinstance(interrupt_id, str) and interrupt_id:
+                    open_decision = connection.execute(
+                        "SELECT 1 FROM decisions WHERE run_id=? "
+                        "AND decision_id=? AND state='open' LIMIT 1",
+                        (run_id, interrupt_id),
+                    ).fetchone()
+                if open_decision is None:
+                    open_decision = connection.execute(
+                        "SELECT 1 FROM decisions WHERE run_id=? AND state='open' "
+                        "AND json_extract(request_json,'$.checkpoint_id')=? "
+                        "AND json_extract(request_json,'$.checkpoint_namespace')=? LIMIT 1",
+                        (run_id, str(head["checkpoint_id"]), namespace),
+                    ).fetchone()
+                linked_blockers = (
+                    checkpoint_payload.get("wait_blocker_ids", [])
+                    if isinstance(checkpoint_payload, dict)
+                    else []
+                )
+                if isinstance(linked_blockers, list) and linked_blockers:
+                    placeholders = ",".join("?" for _ in linked_blockers)
+                    blocker = connection.execute(
+                        "SELECT 1 FROM run_wait_blockers WHERE run_id=? "
+                        "AND resolution_id IS NULL AND blocker_id IN ("
+                        + placeholders
+                        + ") LIMIT 1",
+                        (run_id, *linked_blockers),
+                    ).fetchone()
+            if head is None or (open_decision is None and blocker is None):
+                raise UnitOfWorkConflict("generic WAITING Run lacks matching workflow authority")
+            self._require_waiting_authority_shape(
+                connection,
+                run_id=run_id,
+                runtime=runtime,
+                fence=fence,
+                dispatch=dispatch,
+                start_receipt=start_receipt_row,
+                resume_receipt=resume_receipt_row,
+                now=now,
+            )
+        return RuntimeStartAdmission(
+            receipt, RuntimeStartDisposition.WAITING, retry_wake=retry_wake
         )
