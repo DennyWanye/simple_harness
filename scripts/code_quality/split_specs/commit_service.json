@@ -155,5 +155,6 @@
     "fail_result"
    ]
   }
- ]
+ ],
+ "composite_doc": "The single writer of orchestrator state, composed from one mixin per commit kind."
 }

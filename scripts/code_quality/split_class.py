@@ -407,11 +407,16 @@ def main() -> int:
     head = f"class {args.class_name}({old_bases}):" if old_bases else f"class {args.class_name}:"
     kept_bases = [ast.unparse(b) for b in src.cls.bases if ast.unparse(b) not in moved_bases]
     if spec["groups"]:  # 没有分组时只搬模块级定义，类头不动
-        if head not in new_text:
+        # 类头可能跨多行（基类一行一个），按正则匹配到第一个 "):"
+        pattern = re.compile(rf"^class {re.escape(args.class_name)}(\([^)]*\))?:", re.M)
+        if not pattern.search(new_text):
             sys.exit(f"找不到类头 {head}")
-        new_text = new_text.replace(
-            head, f"class {args.class_name}({', '.join([mixins, *kept_bases])}):", 1
+        new_text = pattern.sub(
+            lambda _m: f"class {args.class_name}({', '.join([mixins, *kept_bases])}):", new_text, count=1
         )
+        if spec.get("composite_doc"):  # 原类没有说明、方法又全搬走时类体会空：补一行类说明
+            end = new_text.index("\n", pattern.search(new_text).end()) + 1  # type: ignore[union-attr]
+            new_text = new_text[:end] + f'    """{spec["composite_doc"]}"""\n' + new_text[end:]
     tree = ast.parse(new_text)
     used_main = names_in(
         "\n".join(
