@@ -6,6 +6,7 @@
         --params "tx: _SqliteWorkflowTransaction, completion: sqlite3.Row, ..."
         [--returns "ticket, request" --returns-type "tuple[sqlite3.Row, WorkflowLaunchRequest]"]
         [--tail]          # 这段走完必定 return 或 raise：调用处写成 `return self.新方法(...)`
+                          #（返回类型为 None 时写成调用后单独 `return`）
         [--static]        # 新方法不用 self：写成 @staticmethod
         [--after 方法名]  # 新方法插在哪个方法后面（默认紧跟原方法）
 
@@ -100,13 +101,32 @@ def main() -> int:
     after = [s for s in all_stmts if s.lineno > end]
     params = {x.arg for x in (*fn.args.posonlyargs, *fn.args.args, *fn.args.kwonlyargs)}
     assigned_before = names(before, ast.Store) | params
+    # 段在 `except … as 名字` 里面时，名字由外层的异常处理绑定
+    assigned_before |= {
+        h.name
+        for h in ast.walk(fn)
+        if isinstance(h, ast.ExceptHandler) and h.name and h.lineno < start <= h.end_lineno
+    }
     need_in = (names(block, ast.Load) & assigned_before) - {"self"}
     need_out = names(block, ast.Store) & names(after, ast.Load)
     # 参数串里可能有带逗号的注解（tuple[a, b]），按顶层逗号切
     given_params = split_top(a.params)
     param_names = {p.split(":")[0].strip() for p in given_params}
     returns = [r.strip() for r in a.returns.split(",") if r.strip()]
-    missing_in = need_in - param_names
+    missing_in = need_in - param_names - {
+        t.id
+        for s in block
+        for c in ast.walk(s)
+        if isinstance(c, ast.comprehension)
+        for t in ast.walk(c.target)
+        if isinstance(t, ast.Name)
+        if not any(
+            isinstance(n, ast.Name) and n.id == t.id and isinstance(n.ctx, ast.Store)
+            for s2 in block
+            for n in ast.walk(s2)
+            if n is not t and not any(n is x for cc in ast.walk(s2) if isinstance(cc, ast.comprehension) for x in ast.walk(cc.target))
+        )
+    }
     # 段内自己也赋值的名字，可能是先赋值再读（段前那次赋值与它无关）：只提示，由调用者确认
     shadowed = missing_in & names(block, ast.Store)
     if missing_in - shadowed:
@@ -118,7 +138,25 @@ def main() -> int:
             for n in ast.walk(s)
             if isinstance(n, ast.Name) and n.id == name and isinstance(n.ctx, ctx)
         ]
+        if ctx is ast.Store:  # except ... as 名字
+            spots += [
+                (h.lineno, h.col_offset)
+                for s in block
+                for h in ast.walk(s)
+                if isinstance(h, ast.ExceptHandler) and h.name == name
+            ]
         return min(spots) if spots else (10**9, 0)
+
+    # 推导式里绑定的名字只在推导式内有效，不算段外传入
+    comp_bound = {
+        t.id
+        for s in block
+        for c in ast.walk(s)
+        if isinstance(c, ast.comprehension)
+        for t in ast.walk(c.target)
+        if isinstance(t, ast.Name)
+    }
+    shadowed -= comp_bound
 
     # 赋值语句右边先求值：同一行里"读在右、写在左"按读在先处理（行号相同比列号不可靠，保守判为读在先）
     read_first = sorted(n for n in shadowed if first(n, ast.Load)[0] <= first(n, ast.Store)[0])
@@ -126,8 +164,38 @@ def main() -> int:
         sys.exit(f"参数缺：{read_first}（段内先读后写，要从段前传进来）")
     if shadowed:
         print(f"提示：{sorted(shadowed)} 段内先赋值再读，不作参数")
+    redundant = sorted(
+        n
+        for n in param_names & names(block, ast.Store)
+        if first(n, ast.Store)[0] < first(n, ast.Load)[0]
+    )
+    if redundant:
+        sys.exit(f"多余参数：{redundant}（段内先赋值再读，不用传进来）")
     if not a.tail and sorted(need_out - set(returns)):
         print(f"提示：段后还读到 {sorted(need_out - set(returns))}；确认段后读之前会重新赋值，否则补进 --returns")
+    # 闭包按调用时的值读外层变量：段内给被闭包读的变量重新赋值，抽出后闭包就读不到新值。
+    # 只有"该变量在返回值里、段内不调用读它的闭包"时才安全（调用处先赋回再调闭包）。
+    captured: dict[str, set[str]] = {}
+    for inner in ast.walk(fn):
+        if inner is fn or not isinstance(inner, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+            continue
+        if start <= inner.lineno <= end:  # 段内自己的闭包随段一起搬走
+            continue
+        own = {x.arg for x in (*inner.args.posonlyargs, *inner.args.args, *inner.args.kwonlyargs)}
+        if inner.args.vararg:
+            own.add(inner.args.vararg.arg)
+        if inner.args.kwarg:
+            own.add(inner.args.kwarg.arg)
+        body_nodes = inner.body if isinstance(inner.body, list) else [inner.body]
+        own |= names(body_nodes, ast.Store)
+        for name in names(body_nodes, ast.Load) - own:
+            captured.setdefault(name, set()).add(getattr(inner, "name", "<lambda>"))
+    called = names(block, ast.Load)
+    for name in sorted(names(block, ast.Store) & set(captured)):
+        readers = captured[name]
+        if name not in returns or readers & called:
+            sys.exit(f"段内给闭包 {sorted(readers)} 读的 {name} 赋值，抽出后闭包读不到新值")
+        print(f"提示：{name} 被闭包 {sorted(readers)} 读；段内不调这些闭包，调用处赋回后再用")
     is_async = any(isinstance(n, ast.Await) for s in block for n in ast.walk(s))
 
     indent = " " * (block[0].col_offset)
@@ -155,7 +223,9 @@ def main() -> int:
     )
     owner = "self" if not a.static else type_owner(tree, fn)
     call = f"{'await ' if is_async else ''}{owner}.{a.new_name}({call_args})"
-    if a.tail:
+    if a.tail and ret_ann == "None":  # 段走完就结束原函数、不带返回值：调用后单独 return
+        call_line = f"{indent}{call}\n{indent}return\n"
+    elif a.tail:
         call_line = f"{indent}return {call}\n"
     elif returns:
         call_line = f"{indent}{', '.join(returns)} = {call}\n"

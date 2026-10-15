@@ -49,6 +49,12 @@ def main() -> int:
         before = [s for s in stmts if s.end_lineno < start]
         after = [s for s in stmts if s.lineno > end]
         assigned_before = names(before, ast.Store) | params
+        # 段在 `except … as 名字` 里面时，名字由外层的异常处理绑定
+        assigned_before |= {
+            h.name
+            for h in ast.walk(fn)
+            if isinstance(h, ast.ExceptHandler) and h.name and h.lineno < start <= h.end_lineno
+        }
         reads = names(top, ast.Load)
         writes = names(top, ast.Store)
         inputs = sorted(reads & assigned_before)

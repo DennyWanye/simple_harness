@@ -193,7 +193,7 @@
       "id": "F1-13",
       "source": "F1 新用例 13",
       "file": "src/agent_orchestrator/orchestrator/orchestrator_domains/planning_decisions.py",
-      "original": "                    self._blame_replaced_method(mission.id, decision, decision_id)\n",
+      "original": "                    self._blame_replaced_method(reply.mission.id, decision, reply.decision_id)\n",
       "replacement": "",
       "tests": [
         "tests/orchestrator/product_world/test_method_library.py::test_planner_blame_when_replacing_a_derived_method"
