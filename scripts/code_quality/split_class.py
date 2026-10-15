@@ -249,9 +249,21 @@ def main() -> int:
     records = spec.get("records")
     support = records or spec.get("support", "support")
 
+    def runtime_names(text: str) -> set[str]:
+        """运行期用到的名字（注解里的不算：`from __future__ import annotations` 下注解不求值）。"""
+        tree = ast.parse(textwrap.dedent(text))
+        skip: set[int] = set()
+        for n in ast.walk(tree):
+            anns = [n.annotation] if isinstance(n, (ast.arg, ast.AnnAssign)) and n.annotation else []
+            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.returns:
+                anns.append(n.returns)
+            skip |= {id(x) for a in anns for x in ast.walk(a)}
+        return {n.id for n in ast.walk(tree) if isinstance(n, ast.Name) and id(n) not in skip}
+
     def place(name: str) -> str:
         if records:
-            return records
+            # 运行期要用原类本身的定义（如构造它的 build_runtime）留在门面：搬进子包就只能在类型检查块里导入原类
+            return MAIN if args.class_name in runtime_names(helper_text[name]) else records
         found = users[name] - {MAIN}
         if not found:
             return MAIN

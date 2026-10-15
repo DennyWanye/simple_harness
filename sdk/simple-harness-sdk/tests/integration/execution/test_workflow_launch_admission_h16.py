@@ -41,9 +41,9 @@ from simple_harness.runtime.kernel import (
     DriverResult,
     RuntimePorts,
     RuntimeProfile,
-    _CanonicalWorkflowSpawnRuntimeCoordinator,
     build_runtime,
 )
+from simple_harness.runtime.kernel_domains.support import _CanonicalWorkflowSpawnRuntimeCoordinator
 from simple_harness.runtime.orchestration import (
     RuntimeActivationClaim,
     RuntimeStartAdmission,

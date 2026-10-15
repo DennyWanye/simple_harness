@@ -30,6 +30,10 @@ python3 scripts/code_quality/guard.py --ref HEAD ${CQ_GUARD_ALLOW:+--allow "$CQ_
 python3 scripts/code_quality/metrics.py check --new-since HEAD >> "$LOG" 2>&1; check "棘轮检查：通过"
 python3 scripts/code_quality/startup_profile.py >> "$LOG" 2>&1; check "启动耗时检查：通过"
 python3 scripts/code_quality/import_contracts.py >> "$LOG" 2>&1; check "导入隔离约定：全部满足"
+# 只在 TYPE_CHECKING 块里导入、运行期却用到的名字（调用时才 NameError；阶段 5C 拆运行内核时查出）
+CHANGED_PY=$(git diff --name-only --diff-filter=AM HEAD -- '*.py')
+[ -n "$CHANGED_PY" ] && python3 scripts/code_quality/typing_only_runtime.py $CHANGED_PY >> "$LOG" 2>&1 || echo "类型检查专用名字检查：通过" >> "$LOG"
+check "类型检查专用名字检查：通过"
 grep -E "^启动耗时|^启动完成后多加载|^多加载了" "$LOG" | tail -3
 # CQ_NO_TESTS=1：只做前置检查，相关测试交给 snapshot_tests.sh 在快照里排队跑
 if [ -n "${CQ_NO_TESTS:-}" ]; then [ $ok -eq 1 ] || { echo "停下，日志 $LOG"; exit 1; }; echo "前置检查：全部通过" | tee -a "$LOG"; exit 0; fi

@@ -1,0 +1,7 @@
+{
+ "package": "kernel_domains",
+ "records": "support",
+ "records_doc": "Module-level definitions of the runtime kernel: driver contracts, ports, the run client and the runtime builder.",
+ "stubs_in_core": false,
+ "groups": []
+}

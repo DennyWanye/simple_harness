@@ -113,6 +113,7 @@ files = [
   "src/agent_orchestrator",
   "src/simple_harness/runtime/commands.py",
   "src/simple_harness/runtime/kernel.py",
+  "src/simple_harness/runtime/kernel_domains",
   "src/simple_harness/runtime/agent_memory.py",
   "src/simple_harness/runtime/disclosure_protocol.py",
   "src/simple_harness/runtime/evidence_protocol.py",

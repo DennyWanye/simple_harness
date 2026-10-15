@@ -1,0 +1,122 @@
+{
+ "package": "kernel_domains",
+ "records": "support",
+ "records_doc": "Module-level definitions of the runtime kernel: driver contracts, ports, the run client and the runtime builder.",
+ "stubs_in_core": false,
+ "groups": [
+  {
+   "module": "core",
+   "class": "RuntimeCore",
+   "core": true,
+   "doc": "Runtime construction, lifecycle state and the accessors every part uses.",
+   "methods": [
+    "__init__",
+    "_now",
+    "_require_started",
+    "state",
+    "production_authorities",
+    "observability",
+    "_emit_transition"
+   ]
+  },
+  {
+   "module": "base_agent",
+   "class": "BaseAgentStartMixin",
+   "doc": "Starting base-agent and legacy runs and signalling base-agent input.",
+   "methods": [
+    "_reserve_legacy_start",
+    "_reserve_base_agent_start",
+    "start_base_agent_run",
+    "signal_base_agent_input",
+    "_require_legacy_mode"
+   ]
+  },
+  {
+   "module": "lifecycle",
+   "class": "RuntimeLifecycleMixin",
+   "doc": "Start, recovery, reconciliation, diagnostics and shutdown.",
+   "methods": [
+    "diagnostics_snapshot",
+    "_degraded_authority_snapshot",
+    "_authority_diagnostics_snapshot",
+    "start",
+    "_start_once",
+    "recover",
+    "reconcile",
+    "close",
+    "_stop_background_tasks",
+    "wait_idle",
+    "__aenter__",
+    "__aexit__"
+   ]
+  },
+  {
+   "module": "pumps",
+   "class": "RuntimePumpMixin",
+   "doc": "Background pumps: commands, deliveries, memory, resolved waits, child signals and spawn readiness.",
+   "methods": [
+    "dispatch_deliveries_once",
+    "_wake_drain",
+    "_drain_commands_bounded",
+    "_command_heartbeat",
+    "_command_pump",
+    "_process_command",
+    "_process_start_command",
+    "_process_continue_command",
+    "_drain_deliveries_bounded",
+    "_delivery_pump",
+    "_drain_recall_releases",
+    "_drain_memory_bounded",
+    "_memory_pump",
+    "_drain_resolved_waits_once",
+    "_drain_child_signals_once",
+    "_drain_spawn_ready_once",
+    "_register_spawn_ready_activation",
+    "_release_child_signal_wait_handoff"
+   ]
+  },
+  {
+   "module": "driving",
+   "class": "RunDrivingMixin",
+   "doc": "Driving a run: start, activation, heartbeat, scheduling, the drive loop and agent-turn commits.",
+   "methods": [
+    "_start_run",
+    "_wake_continuation",
+    "_activate",
+    "_heartbeat",
+    "_schedule",
+    "_drive",
+    "_cancel_run",
+    "_commit_authorization_wait",
+    "_commit_agent_turn",
+    "_finalize_agent_turn",
+    "_finalize_pending_agent_turn",
+    "_reschedule"
+   ]
+  },
+  {
+   "module": "termination",
+   "class": "RunTerminationMixin",
+   "doc": "Terminalizing runs and releasing their authority and leases.",
+   "methods": [
+    "_terminalize_cancelled",
+    "_terminalize",
+    "_emit_run_terminal",
+    "_abandon_run_authority",
+    "_release_runtime_lease",
+    "_drop_local_authority"
+   ]
+  },
+  {
+   "module": "spawn",
+   "class": "WorkflowSpawnControlMixin",
+   "doc": "Workflow spawn control: accepting spawns and registering recovered and started children.",
+   "methods": [
+    "_accept_workflow_spawn_control",
+    "_register_recovered_spawn_child",
+    "_register_workflow_child_recovery",
+    "_register_workflow_child_start"
+   ]
+  }
+ ]
+}
