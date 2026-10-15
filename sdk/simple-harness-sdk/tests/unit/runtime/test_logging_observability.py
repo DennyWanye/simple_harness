@@ -208,10 +208,23 @@ def _function_uses_logger(source: Path, func_name: str) -> bool:
     return False
 
 
+#: 运行内核拆成子包后的全部文件（阶段 5C）：日志字段检查要覆盖每一个
+KERNEL_DOMAINS = (
+    "core",
+    "support",
+    "base_agent",
+    "lifecycle",
+    "pumps",
+    "driving",
+    "termination",
+    "spawn",
+)
+
+
 @pytest.mark.parametrize(
     "file,func",
     [
-        ("runtime/kernel.py", "_terminalize"),
+        ("runtime/kernel_domains/termination.py", "_terminalize"),
         ("execution/dispatch.py", "_response_charge"),
         # execute() 现在只包一层审计记录，授权/执行日志都在 _execute_audited() 里。
         ("tools/executor.py", "_execute_audited"),
@@ -248,6 +261,7 @@ def _logger_call_field_names(source: Path) -> set[str]:
     "file",
     [
         "runtime/kernel.py",
+        *(f"runtime/kernel_domains/{name}.py" for name in KERNEL_DOMAINS),
         "execution/dispatch.py",
         "tools/executor.py",
         "execution/budget.py",

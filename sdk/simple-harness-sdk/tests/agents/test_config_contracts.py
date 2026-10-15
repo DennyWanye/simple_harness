@@ -119,7 +119,10 @@ def test_agent_turn_outcome_has_no_agents_dependency():
         del sys.modules[name]
     importlib.import_module("simple_harness.runtime.agent_turn")
     assert not any(key.startswith("simple_harness.agents") for key in sys.modules)
-    for relative in ("runtime/agent_turn.py", "runtime/kernel.py"):
+    kernel_parts = sorted(
+        f"runtime/kernel_domains/{path.name}" for path in (SRC / "runtime/kernel_domains").glob("*.py")
+    )
+    for relative in ("runtime/agent_turn.py", "runtime/kernel.py", *kernel_parts):
         tree = ast.parse((SRC / relative).read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
