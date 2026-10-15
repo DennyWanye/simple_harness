@@ -34,6 +34,7 @@ FACADES = (
     "agent_orchestrator.orchestrator.hierarchical_dispatch",
     "agent_orchestrator.storage.htn_store",
     "agent_orchestrator.storage.store",
+    "simple_harness.runtime.kernel",
 )
 
 
