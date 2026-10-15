@@ -164,7 +164,14 @@ def test_a24_removed_symbols_do_not_come_back():
 
 
 def test_a24_unreachable_branches_and_stale_wording_are_gone():
-    commit_service = (SRC / "orchestrator" / "commit_service.py").read_text()
+    # 阶段 5C 把提交服务拆成门面 + commit_service_domains/ 下的 mixin：按整个包扫
+    commit_service = "\n".join(
+        path.read_text()
+        for path in (
+            SRC / "orchestrator" / "commit_service.py",
+            *sorted((SRC / "orchestrator" / "commit_service_domains").glob("*.py")),
+        )
+    )
     assert (
         "def finalize_assured_mission" not in commit_service
     )  # 包装无调用者；唯一终写在 assurance_final_writer
