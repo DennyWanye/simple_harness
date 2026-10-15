@@ -1,0 +1,7 @@
+{
+ "package": "commit_service_domains",
+ "records": "support",
+ "records_doc": "Module-level definitions of the commit service: rejections, mission specs and account names.",
+ "stubs_in_core": false,
+ "groups": []
+}

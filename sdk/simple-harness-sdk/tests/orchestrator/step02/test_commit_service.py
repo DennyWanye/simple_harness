@@ -27,7 +27,7 @@ from typing import Any
 
 import pytest
 from agent_orchestrator.contracts import AttemptStatus, MissionStatus, MissionStopReason, TaskStatus
-from agent_orchestrator.orchestrator.commit_service import OPEN_ATTEMPT_STATES
+from agent_orchestrator.scheduling.allocator import OPEN_ATTEMPT_STATES
 from agent_orchestrator.testing.fixtures import RoleScriptedProvider, package_of, role_of
 from agent_orchestrator.testing.product_world import product_world
 from agent_orchestrator.testing.scripted_replies import (

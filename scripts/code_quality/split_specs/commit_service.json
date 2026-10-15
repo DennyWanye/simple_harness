@@ -1,0 +1,159 @@
+{
+ "package": "commit_service_domains",
+ "records": "support",
+ "records_doc": "Module-level definitions of the commit service: rejections, mission specs and account names.",
+ "stubs_in_core": false,
+ "groups": [
+  {
+   "module": "core",
+   "class": "CommitServiceCore",
+   "core": true,
+   "doc": "Commit service construction, event emission and entity lookups every commit kind uses.",
+   "methods": [
+    "__init__",
+    "store",
+    "ledger",
+    "_emit",
+    "_require_lease",
+    "_require_mission",
+    "_require_task",
+    "_require_attempt",
+    "_require_intent",
+    "_require_result"
+   ]
+  },
+  {
+   "module": "accounting",
+   "class": "AccountingCommitsMixin",
+   "doc": "Global quota, backpressure, resource grants, tool calls and provider profile health.",
+   "methods": [
+    "_follow_global_quota",
+    "_follow_global_quota_on_start",
+    "backpressure_state",
+    "record_backpressure",
+    "record_resource_grant_lapsed",
+    "record_backlog_response",
+    "record_tool_rejected",
+    "record_tool_call",
+    "record_reservation_held",
+    "profile_health",
+    "unavailable_until",
+    "record_profile_failure",
+    "record_profile_success",
+    "record_profile_unavailable",
+    "global_account"
+   ]
+  },
+  {
+   "module": "installs",
+   "class": "InstallCommitsMixin",
+   "doc": "TaskGraph and Assurance installation hooks and terminal bindings.",
+   "methods": [
+    "install_taskgraph_dispatch",
+    "taskgraph_attempt_context",
+    "require_taskgraph_handoff",
+    "_terminal_binding",
+    "_unbound_open_tasks",
+    "approve_assurance_check_policy",
+    "ensure_assurance_review_invocation",
+    "ensure_assurance_format_repair",
+    "import_assurance_check_locked",
+    "install_assurance_root"
+   ]
+  },
+  {
+   "module": "mission_lifecycle",
+   "class": "MissionLifecycleCommitsMixin",
+   "doc": "Mission creation, planning, cancellation, failure, judgement and stopping.",
+   "methods": [
+    "create_mission",
+    "begin_planning",
+    "create_service_intent",
+    "domain_for",
+    "heal_mission",
+    "record_planning_rejected",
+    "fail_planning",
+    "cancel_mission",
+    "fail_mission",
+    "_note_unresolved_actions",
+    "_cascade_stop",
+    "judge_mission",
+    "_judgment_network",
+    "_drop_compound_rows",
+    "_require_accepted_work",
+    "_assured_terminal_notice",
+    "assured_closeout_pending",
+    "_require_root_resolution",
+    "stop_task",
+    "_task_reports",
+    "_completed_parts"
+   ]
+  },
+  {
+   "module": "grading",
+   "class": "GradingCommitsMixin",
+   "doc": "Grading results into knowledge: claims, confirmations, disputes and supersession.",
+   "methods": [
+    "_close_attempt",
+    "_reject_open_claims",
+    "set_aside_result",
+    "_grade_and_project",
+    "_review_confirmations",
+    "_knowledge_registration",
+    "_knowledge_support",
+    "_accepted_result",
+    "_dispute",
+    "_require_claim",
+    "record_retrieval_unavailable",
+    "_supersede_knowledge"
+   ]
+  },
+  {
+   "module": "attempt_lifecycle",
+   "class": "AttemptLifecycleCommitsMixin",
+   "doc": "Intents and attempts: creation, claims, submission, leases, losses and usage settlement.",
+   "methods": [
+    "settle_intent",
+    "_settle_intent",
+    "authorize_planning_retry",
+    "create_attempt",
+    "claim_intent",
+    "record_agent_created",
+    "_intent_event_key",
+    "record_submitted",
+    "renew_lease",
+    "_release_attempt_charge",
+    "mark_attempt_lost",
+    "mark_attempt_timed_out",
+    "import_usage",
+    "settle_subject",
+    "_settle_subject"
+   ]
+  },
+  {
+   "module": "results",
+   "class": "ResultCommitsMixin",
+   "doc": "Results, verification layers and acceptance.",
+   "methods": [
+    "check_result_evidence",
+    "record_result",
+    "record_outcome_result",
+    "record_artifact_merge_not_applicable",
+    "record_late_result",
+    "reject_result",
+    "wait_for_admission_usage",
+    "resume_admission_usage",
+    "start_verification",
+    "record_verification_layer",
+    "_acceptance_materials",
+    "accept_result",
+    "accept_carried_result",
+    "_accept_carried",
+    "_prepare_assured_acceptance",
+    "_lock_assured_acceptance",
+    "_accept_result",
+    "fail_result"
+   ]
+  }
+ ]
+}

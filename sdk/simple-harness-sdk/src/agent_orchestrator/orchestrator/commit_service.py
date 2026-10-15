@@ -17,68 +17,15 @@ import contextlib
 import hashlib
 import json
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field, replace
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any
-
-from ..artifacts.store import ArtifactStoreError
-from ..artifacts.versioning import ArtifactConflict
-from ..assurance.codec import AssuranceError, decode
-from ..assurance.refs import AssuranceRef, Pin
-from ..contracts.evidence_state import Validity
-from ..contracts.semantic_base import content_hash_of
-from ..governance.tail_budget import TailReserve
-from ..graph.projection_validation import GraphIntegrityError
-from ..graph.terminal import accepted_tasks, finalizer_task_id
-from ..memory.code_observations import scoped_test_observations
-from ..runtime import operation_reconciliation
-from ..runtime.planning_operations import SourceUnavailable
-from ..storage import htn_store
-from ..storage.assurance_reads import AssuranceReader
-from ..storage.assurance_store import AssuranceStore
-from ..storage.assurance_work import atomic
-from ..storage.operation_completion_store import OperationCompletionStore
-from ..storage.taskgraph_store import TaskGraphStore, require_bound
-from . import taskgraph_terminal
-from .assurance_check_policy import approve_check_policy
-from .assurance_factory import record_mission_creation, validate_creation_replay
-from .assurance_final_writer import (
-    assured_closeout_pending,
-    request_assured_closeout,
-    request_assured_notification,
-)
-from .assurance_point_use import ATTEMPT_CONSUMER, PointUseRefused, require_point_use_locked
-from .assurance_review_transport import ensure_format_repair_invocation, ensure_review_invocation
-from .assurance_root_commits import install_native_root
-from .assurance_validity import ACCEPTANCE_CONSUMER, acceptance_id_for
-from .attempt_execution import freeze_attempt_execution
-from .completion_inputs import (
-    freeze_attempt_completion_inputs,
-    frozen_requirements_revision,
-    load_completion_result_inputs,
-    validate_result_port_claims,
-)
-from .completion_status import read_occurrence_completion
-from .failure_classes import NON_MODEL, NON_MODEL_FAILURE_CAP, classify_failure, non_model_failures
-from .hierarchical_dispatch import HierarchicalDispatch
-from .leaf_acceptance import LeafAcceptanceAssembly
-from .planning_retry import (
-    RETRY_AUTHORIZED,
-    pending_retry_permit,
-    retry_binding,
-    retry_decision_required,
-)
-from .planning_runtime_block import pending_block
-from .resolution_commits import ResolutionCommitRejected
-from .resource_requests import GRANTED, LAPSED, REQUESTED
-from .taskgraph_dispatch import TaskGraphDispatchBinding
-
-if TYPE_CHECKING:
-    from .taskgraph_dispatch import TaskGraphDispatchBinding
 
 from simple_harness.agents import AgentTurnState
 
-from ..artifacts.store import ArtifactStore
-from ..artifacts.versioning import next_versions
+from ..artifacts.store import ArtifactStore, ArtifactStoreError
+from ..artifacts.versioning import ArtifactConflict, next_versions
+from ..assurance.codec import AssuranceError, decode
+from ..assurance.refs import AssuranceRef, Pin
 from ..contracts import (
     TERMINAL_ATTEMPT,
     TERMINAL_MISSION,
@@ -100,23 +47,19 @@ from ..contracts import (
     TaskStatus,
     ids,
 )
+from ..contracts.evidence_state import Validity
 from ..contracts.htn import TaskForm
-from ..contracts.models import (
-    STEP2_IMPLEMENTED_LAYERS,
-    jsonable,
-    sha256_hex,
-)
-from ..contracts.planning_decisions import PLANNING_DECISION_V1
+from ..contracts.models import STEP2_IMPLEMENTED_LAYERS, jsonable, sha256_hex
+from ..contracts.semantic_base import content_hash_of
 from ..governance.budget_limits import inherit_limits
 from ..governance.budgets import AccountSnapshot, BudgetError, BudgetLedger, UsageFact
-from ..governance.domains import (
-    CODE_DOMAIN,
-    DomainProfileV1,
-    check_against_domain,
-    resolve_domain,
-)
+from ..governance.domains import CODE_DOMAIN, DomainProfileV1, check_against_domain, resolve_domain
 from ..governance.policies import DeploymentPolicy
+from ..governance.tail_budget import TailReserve
+from ..graph.projection_validation import GraphIntegrityError
+from ..graph.terminal import accepted_tasks, finalizer_task_id
 from ..memory.claims import grade_claim
+from ..memory.code_observations import scoped_test_observations
 from ..memory.knowledge_standing import CURRENT as KNOWLEDGE_CURRENT
 from ..memory.knowledge_standing import knowledge_standing
 from ..memory.verified_knowledge import (
@@ -126,6 +69,8 @@ from ..memory.verified_knowledge import (
     parse_knowledge_ref,
 )
 from ..observability.lineage import lineage
+from ..runtime import operation_reconciliation
+from ..runtime.planning_operations import SourceUnavailable
 from ..scheduling.allocator import OPEN_ATTEMPT_STATES
 from ..scheduling.backpressure import (
     BACKLOG_KEY,
@@ -137,14 +82,29 @@ from ..scheduling.backpressure import (
     Transition,
     evaluate,
 )
+from ..storage import htn_store
+from ..storage.assurance_reads import AssuranceReader
+from ..storage.assurance_store import AssuranceStore
+from ..storage.assurance_work import atomic
+from ..storage.operation_completion_store import OperationCompletionStore
 from ..storage.source_records import replay_scope_digest
 from ..storage.store import DispatchIntent, Store, StoredResult, StoreError
-from ..verification.conflicts import (
-    Contradiction,
-    find_contradiction,
-    mission_disputes,
-)
+from ..storage.taskgraph_store import TaskGraphStore, require_bound
+from ..verification.conflicts import Contradiction, find_contradiction, mission_disputes
+from . import taskgraph_terminal
 from .action_commits import ActionCommitsMixin
+from .assurance_check_policy import approve_check_policy
+from .assurance_factory import record_mission_creation, validate_creation_replay
+from .assurance_final_writer import (
+    assured_closeout_pending,
+    request_assured_closeout,
+    request_assured_notification,
+)
+from .assurance_point_use import ATTEMPT_CONSUMER, PointUseRefused, require_point_use_locked
+from .assurance_review_transport import ensure_format_repair_invocation, ensure_review_invocation
+from .assurance_root_commits import install_native_root
+from .assurance_validity import ACCEPTANCE_CONSUMER, acceptance_id_for
+from .attempt_execution import freeze_attempt_execution
 from .budget_accounts import (
     GLOBAL_ACCOUNT_PREFIX,
     Reservation,
@@ -153,149 +113,59 @@ from .budget_accounts import (
     mission_account,
     task_account,
 )
+from .completion_inputs import (
+    freeze_attempt_completion_inputs,
+    frozen_requirements_revision,
+    load_completion_result_inputs,
+    validate_result_port_claims,
+)
+from .completion_status import read_occurrence_completion
+from .failure_classes import NON_MODEL, NON_MODEL_FAILURE_CAP, classify_failure, non_model_failures
+from .hierarchical_dispatch import HierarchicalDispatch
 from .human_commits import HumanCommitsMixin
+from .leaf_acceptance import LeafAcceptanceAssembly
 from .obligation_commits import ObligationCommitsMixin
 from .occurrence_tasks import DEFAULT_TASK_MAX_TOKENS
 from .operation_completion import OperationCompletionCommitsMixin
 from .operation_materialization import OperationMaterializationCommitsMixin
 from .operation_reconciliation import OperationReconciliationCommitsMixin
-from .plan_commits import (
-    HIERARCHICAL_SEMANTICS,
-    SEMANTICS_KEY,
-    PlanCommitsMixin,
-    normalise_semantics,
-)
+from .plan_commits import SEMANTICS_KEY, PlanCommitsMixin, normalise_semantics
 from .planning_admission_commits import PlanningAdmissionCommitsMixin
 from .planning_protocol_binding import (
     bind_planning_protocol,
     checked_planning_protocol,
     planning_protocol_replay_conflict,
 )
+from .planning_retry import (
+    RETRY_AUTHORIZED,
+    pending_retry_permit,
+    retry_binding,
+    retry_decision_required,
+)
+from .planning_runtime_block import pending_block
 from .policy_commits import PolicyCommitsMixin
 from .protected_tail_commits import ProtectedTailCommitsMixin
-from .resolution_commits import ResolutionCommitsMixin
+from .resolution_commits import ResolutionCommitRejected, ResolutionCommitsMixin
+from .resource_requests import GRANTED, LAPSED, REQUESTED
 from .review_adjudication import accepted_or_adjudicated, adjudication_of
 from .source_commits import SourceCommitsMixin
 from .state_machine import next_attempt, next_claim, next_mission, next_task
+from .taskgraph_dispatch import TaskGraphDispatchBinding
 
-#: P2.3k / defect N3.  Appended once per hierarchical Mission when the Mission Judge
-#: builds its integrated tree: the former all-ancestors merge (override legal only along
-#: ``Task.dependency_ids``, anything else an ``ArtifactConflict``; removed 2026-10-06) is not applied, because
-#: in this mode ``dependency_ids`` is empty by design (§18.5 constraint 4) and the rule
-#: read every pair of leaves that wrote the same path as "independent branches".  The
-#: Grok C3 episodes lost a root ``GoalResolution`` that already stood to exactly that
-#: (``MissionFailed{artifact_conflict}`` one event after ``GoalResolutionCommitted``).
-#: The tree is read from the resolution's own contributions instead; the record says so
-#: and names every path more than one contribution wrote and which writer was kept.
-ARTIFACT_MERGE_NOT_APPLICABLE = "ArtifactMergeNotApplicableUnderHierarchical"
-
-#: P2.3c part 2c (review F6).  Appended when ``judge_mission`` is asked to conclude a
-#: hierarchical Mission whose root duty carries no adopted ``GoalResolution``.  A new
-#: event type for the same reason as the one above: the judgment was not *wrong*, it
-#: was asked at a door that does not decide this — in this mode a Mission is completed
-#: out of its root resolution and never out of a sweep of Task statuses (§6.3, §8.1).
-HIERARCHICAL_JUDGMENT_REFUSED = "HierarchicalJudgmentRefused"
-
-#: P2.3f.  A hierarchical Mission's service intent (Planner, root
-#: reviewer, Critic) whose executor turn was left waiting on a Provider hand-off with
-#: an *unknown* outcome was handed off once more — same subject, same reservation, a
-#: new executor.  The runtime records the unknown invocation honestly and by design
-#: settles nothing for it (the request may have reached the model), and nothing in
-#: the orchestration loop resolved that wait: the intent stayed SUBMITTED until the
-#: caller's deadline.  Durable so the bound ("once") survives a restart and an
-#: operator can see which turn was abandoned and which one answered.
-SERVICE_INTENT_REHANDED_OFF = "ServiceIntentRehandedOff"
-
-SUBMITTED_STATES = frozenset({AttemptStatus.SUBMITTED, AttemptStatus.VERIFYING})
-
-ACTOR_SYSTEM = "system"
-ORCHESTRATOR_ID = "orchestrator"
-
-
-class CommitRejected(StoreError):
-    """The proposal violates a contract, a budget or the state machine; nothing was written."""
-
-
-class MissionConflict(CommitRejected):
-    """Same (tenant, idempotency_key) with a different specification."""
-
-
-class NonModelFailuresExhausted(CommitRejected):
-    """同一步不扣次数的失败（格式、服务、打断）已到上限；什么都没预留。"""
-
-    def __init__(self, task_id: str, failure_count: int, cap: int) -> None:
-        self.task_id = task_id
-        self.failure_count = failure_count
-        self.cap = cap
-        super().__init__(
-            f"task {task_id} failed {failure_count} times for reasons that are not the model's"
-            f" own mistakes (format, service or interruption); cap {cap}"
-        )
-
-
-@dataclass(frozen=True, slots=True)
-class MissionSpec:
-    """Input of ``create_mission`` (§5: 任务章程)."""
-
-    goal: str
-    success_criteria: tuple[str, ...]
-    tenant_id: str
-    idempotency_key: str
-    # 第 2 批车道 H（H06）：两种计数型停止默认开启，阈值取部署政策（``stop_conditions`` 模块）
-    stop_conditions: tuple[str, ...] = (
-        "verification_passed",
-        "budget_exhausted",
-        "no_new_knowledge",
-        "result_duplication",
-    )
-    allowed_tools: tuple[str, ...] = ()
-    risk_level: str = "sandbox"
-    budget: Budget = field(default_factory=Budget)
-    task_kind: str = "code"
-    workspace_seed: Mapping[str, str] = field(default_factory=dict)
-    untrusted_sources: tuple[str, ...] = ()  # step 4 (D4-12): path prefixes of external content
-    domain: str = CODE_DOMAIN  # P3.3 (D1): the domain profile this Mission freezes
-    runtime_profile_id: str | None = None
-    # 2026-10-01: the default is the hierarchical mode on the one planning protocol.
-    # The flat mode was removed on 2026-10-02: naming it is refused here, before any
-    # entry (facade, CLI, benchmark runner) can write a row.
-    orchestration_semantics_version: str = HIERARCHICAL_SEMANTICS
-    planning_protocol_version: str = PLANNING_DECISION_V1
-
-    def __post_init__(self) -> None:
-        normalise_semantics(self.orchestration_semantics_version)
-        checked_planning_protocol(self.planning_protocol_version)
-
-    @property
-    def bound_planning_protocol(self) -> str:
-        """The planning protocol this Mission is created under."""
-
-        return self.planning_protocol_version
-
-    def to_json(self) -> dict[str, Any]:
-        data: dict[str, Any] = {
-            "goal": self.goal,
-            "success_criteria": list(self.success_criteria),
-            "tenant_id": self.tenant_id,
-            "idempotency_key": self.idempotency_key,
-            "stop_conditions": list(self.stop_conditions),
-            "allowed_tools": list(self.allowed_tools),
-            "risk_level": self.risk_level,
-            "budget": self.budget.to_json(),
-            "task_kind": self.task_kind,
-            "workspace_seed": dict(self.workspace_seed),
-        }
-        if self.untrusted_sources:
-            data["untrusted_sources"] = list(self.untrusted_sources)
-        if self.domain != CODE_DOMAIN:
-            # A07: the default must not change ``spec_hash`` — a Host that re-sends the same
-            # request after upgrading would otherwise get a MissionConflict
-            data["domain"] = self.domain
-        if self.runtime_profile_id is not None:
-            data["runtime_profile_id"] = self.runtime_profile_id
-        data[SEMANTICS_KEY] = self.orchestration_semantics_version
-        data["planning_protocol_version"] = self.planning_protocol_version
-        return data
+if TYPE_CHECKING:
+    from .taskgraph_dispatch import TaskGraphDispatchBinding
+from .commit_service_domains.support import (
+    ACTOR_SYSTEM,
+    ARTIFACT_MERGE_NOT_APPLICABLE,
+    HIERARCHICAL_JUDGMENT_REFUSED,
+    ORCHESTRATOR_ID,
+    SERVICE_INTENT_REHANDED_OFF,
+    SUBMITTED_STATES,
+    CommitRejected,
+    MissionConflict,
+    MissionSpec,
+    NonModelFailuresExhausted,
+)
 
 
 class CommitService(
@@ -3996,7 +3866,9 @@ __all__ = (
     "GLOBAL_ACCOUNT_PREFIX",
     "MissionConflict",
     "MissionSpec",
+    "NonModelFailuresExhausted",
     "Reservation",
+    "SERVICE_INTENT_REHANDED_OFF",
     "global_account_id",
     "is_global_account",
     "mission_account",
