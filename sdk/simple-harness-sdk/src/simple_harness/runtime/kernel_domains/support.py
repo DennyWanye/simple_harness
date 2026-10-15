@@ -147,7 +147,8 @@ if TYPE_CHECKING:
     from ..kernel import Runtime
 
 
-logger = logging.getLogger(__name__)
+# 名字照拆分前的运行内核模块写死：按 simple_harness.runtime.kernel 配的级别和处理器继续生效
+logger = logging.getLogger("simple_harness.runtime.kernel")
 
 #: Re-wakes granted to a BaseAgent Run whose driver raised (per process, per Run).
 BASE_AGENT_DRIVER_EXCEPTION_WAKES = 3

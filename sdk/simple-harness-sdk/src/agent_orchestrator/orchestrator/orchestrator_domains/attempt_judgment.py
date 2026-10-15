@@ -42,6 +42,7 @@ from ...governance.policies import effective_tools
 from ...graph.eligibility import EligiblePrimitiveTask
 from ...graph.projection_validation import GraphIntegrityError
 from ...graph.terminal import accepted_tasks
+from ...runtime.action_schema import ACTION_PREFIX
 from ...runtime.agent_worker import user_message_json
 from ...runtime.first_request_budget import FirstRequestBudget
 from ...runtime.model_router import RoutingUnavailable
@@ -49,7 +50,7 @@ from ...runtime.role_templates import role_for_task
 from ...runtime.tool_gateway import TOOL_ANSWER_MARGIN, run_pytest
 from ...storage import htn_store
 from ...storage.store import StoreError
-from ..action_commits import ACTION_PREFIX, HANDOFF_READY_STATES, judgment_key
+from ..action_commits import HANDOFF_READY_STATES, judgment_key
 from ..assurance_point_use import context_claims
 from ..budget_accounts import Reservation, is_global_account, mission_account, task_account
 from ..commit_service import CommitRejected, NonModelFailuresExhausted

@@ -22,7 +22,7 @@ from ...planning.htn.evidence_round import (
 )
 from ...planning.htn.observation_pipeline import observe_predicate, record_observation
 from ...planning.htn.refinement import evidence_requests, unknown_predicates
-from ..action_commits import parse_action_criterion
+from ...runtime.action_schema import parse_action_criterion
 from ..plan_commits import PLAN_REVISION_COMMITTED
 from .core import HierarchicalDispatchCore
 from .support import append_hierarchical_event

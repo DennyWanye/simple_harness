@@ -10,6 +10,10 @@ LOG=${LOG:-/tmp/cq-snapshot.log}
 SHA=$(git rev-parse --short "$REF")
 # 放在仓库旁边：有测试按相对路径读 ../simple_harness 下的证据文件
 SNAP=${CQ_SNAP_ROOT:-$(cd "$(git rev-parse --show-toplevel)/.." && pwd)}/cq-snap-$SHA
+# 一次只跑一组测试：多次调用按锁排队（锁目录随进程退出删除）
+LOCK=${TMPDIR:-/tmp}/cq-snapshot-tests.lock
+until mkdir "$LOCK" 2>/dev/null; do sleep 20; done
+trap 'rmdir "$LOCK" 2>/dev/null' EXIT
 echo "== 快照测试 $(date '+%F %T') 提交 $SHA 快照 $SNAP" >> "$LOG"
 git worktree add --detach "$SNAP" "$REF" >> "$LOG" 2>&1 || { echo "   不通过：建快照"; exit 1; }
 LIST=$(mktemp)

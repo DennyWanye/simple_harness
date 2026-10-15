@@ -13,6 +13,7 @@
 （这几类会被自动修复改写，都不是数据）。
 纯移动、改名、拆函数不会改变字面量多重集。确需改动的（例如删死代码、改日志措辞），
 在 --allow 文件里逐行写出允许变化的字面量 repr，并在该片实施记录里说明原因。
+偏差单裁决允许改动的禁区文件，在 --allow 文件里写一行 file:<仓库相对路径>。
 
 用法：
     python3 scripts/code_quality/guard.py [--ref HEAD] [--allow FILE] [--show-text]
@@ -210,6 +211,9 @@ def main() -> int:
     changed = sorted(f for f in set(h0) | set(h1) if h0.get(f) != h1.get(f))
     for f in changed:
         state = "新增" if f not in h0 else "删除" if f not in h1 else "改动"
+        if f"file:{f}" in allow:  # 放行清单里写 file:<路径>（只用于偏差单裁决允许的禁区改动）
+            print(f"禁区文件{state}（放行）：{f}")
+            continue
         print(f"禁区文件{state}：{f}")
         fail = True
 

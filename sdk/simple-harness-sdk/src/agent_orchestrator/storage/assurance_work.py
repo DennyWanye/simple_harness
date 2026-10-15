@@ -10,11 +10,17 @@ import uuid
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import TypeVar
+from typing import TYPE_CHECKING, TypeVar
 
 from ..assurance.codec import AssuranceError, digest, integer, one_of, text
 from ..contracts import Event
-from .store import Store, StoreConflict
+
+# 门面规则的显式例外（tests/test_facade_import_paths.py 的 RECORDS_DIRECT）：
+# 经门面取会成环（store → mixin → assurance_changes → 本模块）
+from .store_domains.records import StoreConflict
+
+if TYPE_CHECKING:
+    from .store import Store
 
 CONSUMERS = frozenset({"REVIEW", "VALIDITY", "CLOSEOUT", "NOTIFY"})
 T = TypeVar("T")

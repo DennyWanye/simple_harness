@@ -25,7 +25,6 @@ from typing import Any
 
 from ..contracts.htn import MethodRef
 from ..contracts.resolution import ReviewPurpose, ReviewVerdict
-from ..storage import planning_human_store
 from ..storage.htn_store import HtnStore
 from .review_adjudication import adjudication_of
 
@@ -234,6 +233,9 @@ def _no_verdict_reason(orch: Any, mission_id: str, review_key: str) -> str | Non
 
 def _ruling_question_stale(store: Any, record: Any) -> bool:
     """The person was asked to rule on this record and the question was retired unanswered."""
+
+    # 按需导入：循环依赖（method_plan_reviews ↔ planning_human_store：人工问答要记分层事件）
+    from ..storage import planning_human_store
 
     row = planning_human_store.PlanningHumanStore(store).get(
         "adjudicate-method:" + str(record.record_id)

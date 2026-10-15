@@ -34,7 +34,9 @@ from typing import TYPE_CHECKING, Any
 
 from simple_harness.contracts import canonical_json
 
-from .store import StoreError
+# 门面规则的显式例外（tests/test_facade_import_paths.py 的 RECORDS_DIRECT）：
+# 经门面取会成环（store → mixin → 本模块）
+from .store_domains.records import StoreError
 
 if TYPE_CHECKING:
     from .store_domains.core import StoreCore

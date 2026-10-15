@@ -12,25 +12,12 @@ from ..contracts import Event, ids
 from ..contracts.models import ContractError
 from ..contracts.planning_decisions import RequestHumanDecision
 from ..contracts.semantic_base import content_hash_of
+from ..orchestrator.hierarchical_dispatch import append_hierarchical_event
+from .htn_store import HtnStore
+from .store import StoreConflict
 
 if TYPE_CHECKING:
     from .store import Store
-
-DDL = """
-CREATE TABLE planning_human_requests (
- decision_id TEXT PRIMARY KEY,
- mission_id TEXT NOT NULL REFERENCES missions(mission_id),
- subject_key TEXT NOT NULL,
- request_json TEXT NOT NULL,
- request_hash TEXT NOT NULL,
- state TEXT NOT NULL CHECK(state IN ('PENDING','ANSWERED','STALE')),
- answer_json TEXT,
- version INTEGER NOT NULL DEFAULT 1,
- created_at REAL NOT NULL,
- answered_at REAL
-) STRICT;
-CREATE INDEX planning_human_pending ON planning_human_requests(mission_id,state);
-"""
 
 
 class PlanningHumanStore:
@@ -56,8 +43,6 @@ class PlanningHumanStore:
         return [item for row in rows if (item := self.get(row[0])) is not None]
 
     def binding_current(self, row: dict[str, Any]) -> bool:
-        # 按需导入：循环依赖（planning_human_store ↔ htn_store）
-        from .htn_store import HtnStore
 
         htn = HtnStore(self.store)
         plan = htn.active_plan_revision(row["mission_id"])
@@ -76,8 +61,6 @@ class PlanningHumanStore:
                         "UPDATE planning_human_requests SET state='STALE',version=version+1 WHERE decision_id=? AND state='PENDING'",
                         (row["decision_id"],),
                     )
-                    # 按需导入：循环依赖（planning_human_store ↔ hierarchical_dispatch）
-                    from ..orchestrator.hierarchical_dispatch import append_hierarchical_event
 
                     append_hierarchical_event(
                         self.store,
@@ -116,8 +99,6 @@ class PlanningHumanStore:
         if repair_context is not None:
             body["repair_context"] = dict(repair_context)
         digest = content_hash_of(body)
-        # 按需导入：循环依赖（planning_human_store ↔ store）
-        from .store import StoreConflict
 
         with self.store.transaction():
             old = self.get(decision_id)
@@ -173,8 +154,6 @@ class PlanningHumanStore:
         真机第 4 局：规划器对同一件事连问 13 次，每次都等人。回执与普通回答同形，
         ``PlanningHumanAnswered`` 照常发出，下一轮规划照常拿到答案。
         """
-        # 按需导入：循环依赖（planning_human_store ↔ hierarchical_dispatch）
-        from ..orchestrator.hierarchical_dispatch import append_hierarchical_event
 
         body: dict[str, Any] = {
             "payload": payload.to_json(),
@@ -237,8 +216,6 @@ class PlanningHumanStore:
             raise ContractError(
                 "human answer requires an authenticated caller, nonce and bounded text"
             )
-        # 按需导入：循环依赖（planning_human_store ↔ store）
-        from .store import StoreConflict
 
         with self.store.transaction():
             row = self.get(decision_id)
@@ -266,8 +243,6 @@ class PlanningHumanStore:
             options = row["request"]["payload"]["options"]
             if options and answer not in {o["key"] for o in options}:
                 raise ContractError("answer must name one of the offered option keys")
-            # 按需导入：循环依赖（planning_human_store ↔ hierarchical_dispatch）
-            from ..orchestrator.hierarchical_dispatch import append_hierarchical_event
 
             self.store.connection.execute(
                 "UPDATE planning_human_requests SET state='ANSWERED',answer_json=?,version=version+1,answered_at=? WHERE decision_id=?",
@@ -334,7 +309,4 @@ class PlanningHumanStore:
         )
 
 
-__all__ = (
-    "DDL",
-    "PlanningHumanStore",
-)
+__all__ = ("PlanningHumanStore",)

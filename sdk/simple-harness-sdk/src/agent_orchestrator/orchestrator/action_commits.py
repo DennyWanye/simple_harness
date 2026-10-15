@@ -33,6 +33,11 @@ from ..governance.permissions import (
 )
 from ..governance.policies import ActionDecision, DeploymentPolicy, action_decision
 from ..runtime import planning_operations
+from ..runtime.action_schema import (
+    BOUND_ARTIFACT_FIELDS,
+    CANDIDATE_FIELDS,
+    parse_action_criterion,
+)
 from ..runtime.connectors import Receipt, human_ruling_receipt, level_rank, params_hash
 from ..runtime.operation_reconciliation import nonapplication_outcome, stored_negative_proof
 from ..runtime.operation_ref_resolver import (
@@ -44,7 +49,14 @@ from ..storage import htn_store
 from ..storage.operation_intent_store import OperationIntentStore
 from ..storage.planning_admission_store import PlanningAdmissionStore
 from ..storage.store import StoreConflict
+from .assurance_point_use import (
+    ACTION_CONSUMER,
+    EvidenceClaim,
+    certify_point_use_locked,
+    record_point_use_locked,
+)
 from .budget_accounts import mission_account
+from .taskgraph_dispatch import require_taskgraph_unfenced
 
 if TYPE_CHECKING:
     from ..contracts import Event
@@ -56,11 +68,6 @@ IN_FLIGHT_ACTION_STATES = frozenset({"HANDED_OFF", "UNKNOWN"})
 CLOSED_ACTION_STATES = frozenset(
     {"SUCCEEDED", "FAILED", "REJECTED", "REVOKED", "EXPIRED", "SUPERSEDED", "CANCELLED", "REFUSED"}
 )
-CANDIDATE_FIELDS = ("connector", "operation", "target", "params", "reason")
-# P3.2 D6: what a candidate names (artifact_path) versus what the system binds from the
-# Result's own accepted Artifacts — a model may never state the identity of the bytes
-BOUND_ARTIFACT_FIELDS = frozenset({"artifact_id", "content_hash", "size", "storage_uri"})
-ACTION_PREFIX = "action:"
 HANDOFF_READY_STATES = frozenset({"APPROVED", "PROPOSED"})
 MAX_HANDOFFS_PER_ACTION = 2  # one hand-off + at most one re-hand-off (SDK rehandoff_count <= 1)
 OUTCOME_EVENTS = {
@@ -100,21 +107,6 @@ def validate_candidate(candidate: Mapping[str, Any]) -> dict[str, Any]:
     if not isinstance(candidate["params"], Mapping):
         raise ContractError("action candidate field 'params' must be an object")
     return {name: candidate[name] for name in CANDIDATE_FIELDS}
-
-
-def parse_action_criterion(criterion: str) -> tuple[str, str, str] | None:
-    """``action:<connector>.<operation>:<target>`` (plan D7-7) — ``None`` for any other
-    criterion; a malformed action criterion is a contract error."""
-
-    if not criterion.startswith(ACTION_PREFIX):
-        return None
-    head, sep, target = criterion[len(ACTION_PREFIX) :].strip().partition(":")
-    connector, dot, operation = head.partition(".")
-    if not (sep and dot and connector.strip() and operation.strip() and target.strip()):
-        raise ContractError(
-            f"an action criterion is action:<connector>.<operation>:<target>, got {criterion!r}"
-        )
-    return connector.strip(), operation.strip(), target.strip()
 
 
 def _normalize(connector: Any, target: str) -> str:
@@ -927,9 +919,6 @@ class ActionCommitsMixin:
                 action, connectors=connectors, deployment=deployment, rehandoff=rehandoff
             )
             if reason is None and action.get("task_id"):
-                # 按需导入：循环依赖（action_commits ↔ taskgraph_dispatch）
-                from .taskgraph_dispatch import require_taskgraph_unfenced
-
                 try:
                     require_taskgraph_unfenced(
                         self._store, str(action["mission_id"]), str(action["task_id"])
@@ -1042,9 +1031,6 @@ class ActionCommitsMixin:
             )
             handoffs = int(action.get("handoffs") or 0) + 1
             if start_use is not None and start_use.certificate is not None:
-                # 按需导入：循环依赖（action_commits ↔ assurance_point_use）
-                from .assurance_point_use import record_point_use_locked
-
                 record_point_use_locked(self._store, start_use)
             updated = self._set_action_state(
                 action_key,
@@ -1137,8 +1123,6 @@ class ActionCommitsMixin:
         not a wait on a person, so ground that does not come back ends in the stall record,
         with the refusal named, and the Planner decides.  The certificate is recorded beside
         the HANDED_OFF write, in this same transaction."""
-        # 按需导入：循环依赖（action_commits ↔ assurance_point_use）
-        from .assurance_point_use import ACTION_CONSUMER, EvidenceClaim, certify_point_use_locked
 
         task_id = str(action["task_id"])
         use = certify_point_use_locked(
@@ -1491,7 +1475,6 @@ __all__ = (
     "CLOSED_ACTION_STATES",
     "IN_FLIGHT_ACTION_STATES",
     "OPEN_ACTION_STATES",
-    "ACTION_PREFIX",
     "HANDOFF_READY_STATES",
     "MAX_HANDOFFS_PER_ACTION",
     "ActionCommitError",
@@ -1501,7 +1484,6 @@ __all__ = (
     "business_action_id",
     "check_candidate",
     "judgment_key",
-    "parse_action_criterion",
     "receipt_mismatch",
     "validate_candidate",
 )

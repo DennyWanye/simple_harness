@@ -17,8 +17,10 @@ from typing import Any, Self
 
 from simple_harness.contracts import canonical_json
 
-from .. import schema
+from .. import schema, source_records
+from ..assurance_changes import install_change_context
 from ..assurance_upgrade import install_upgrade_functions
+from ..source_records import begin, record_written_rows
 from .records import InjectedCrash, SchemaIncompatible, StoreBusy, StoreConflict, StoreError, _loads
 
 
@@ -43,8 +45,6 @@ class StoreCore:
         self.fired: list[str] = []
         self._readonly = False
         self._assurance_change_context: tuple[str, object | None] | None = None
-        # 按需导入：循环依赖（store ↔ assurance_changes）
-        from ..assurance_changes import install_change_context
 
         install_change_context(self)
 
@@ -64,8 +64,6 @@ class StoreCore:
         connection.execute("PRAGMA synchronous = FULL")
         store = cls(connection, resolved, clock)
         store._initialize_or_validate()
-        # 按需导入：循环依赖（store ↔ source_records）
-        from .. import source_records  # 业务行写入的统一记账（HTN 补齐阶段 G）
 
         source_records.install(connection)
         store._source_naming = True
@@ -283,9 +281,6 @@ class StoreCore:
             self._holder = self._current_task()
             self._transaction_generation += 1
             if self._source_naming:  # 只记本事务里的写（偏差裁决 1 第 5 条）
-                # 按需导入：循环依赖（store ↔ source_records）
-                from ..source_records import begin
-
                 begin(self._connection)
             try:
                 yield self._connection
@@ -295,9 +290,6 @@ class StoreCore:
             else:
                 try:
                     if self._source_naming:
-                        # 按需导入：循环依赖（store ↔ source_records）
-                        from ..source_records import record_written_rows
-
                         record_written_rows(self, self._connection)
                     self._connection.execute("COMMIT")
                 except BaseException:

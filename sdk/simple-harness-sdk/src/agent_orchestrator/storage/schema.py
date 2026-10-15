@@ -23,7 +23,7 @@ from .assurance_schema import DDL as DDL_V26
 from .assurance_pin_object_schema import DDL as DDL_V27
 from .fragment_schema import FRAGMENT_SCHEMA_SQL as DDL_V14
 from .htn_schema import DDL as DDL_V16
-from .planning_human_store import DDL as DDL_V24
+from .planning_human_schema import DDL as DDL_V24
 from .planning_decision_schema import DDL as DDL_V19
 from .operation_seams_schema import DDL as DDL_V21
 from .operation_completion_schema import DDL as DDL_V22

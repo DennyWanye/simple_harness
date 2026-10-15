@@ -319,7 +319,8 @@ def test_the_plan_commit_has_one_way_in_and_it_carries_the_preview():
     ]
     dispatch = sources["orchestrator/hierarchical_dispatch_domains/admission.py"]
     build = dispatch[dispatch.index("    def build_command(") :]
-    build = build[: build.index("\n    def ", 10)]
+    end = build.find("\n    def ", 10)  # build_command 可能是文件里最后一个方法
+    build = build if end < 0 else build[:end]
     for field in (
         "delta=compilation.delta",
         "network=compilation.network",

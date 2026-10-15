@@ -29,6 +29,7 @@ from ..contracts.resolution import (
     RequirementsRevision,
 )
 from ..contracts.semantic_base import TypedRef, TypedRefKind, content_hash_of
+from ..orchestrator.hierarchical_dispatch import is_hierarchical
 from ..orchestrator.operation_completion import OperationCompletionError, OperationCompletionReader
 from ..storage.htn_store import HtnStore
 from ..storage.obligation_store import ObligationStore
@@ -281,8 +282,6 @@ def initialize_root(
     An assured Mission's factory already wrote revision 1 inside the same create
     transaction; that body must be byte-identical and is never inserted twice.
     """
-    # 按需导入：循环依赖（root ↔ hierarchical_dispatch）
-    from ..orchestrator.hierarchical_dispatch import is_hierarchical
 
     if not is_hierarchical(mission):
         return

@@ -32,13 +32,13 @@ from ..contracts.semantic_base import TypedRef, TypedRefKind, content_hash_of
 from ..governance.permissions import Principal
 from ..governance.policies import DeploymentPolicy, action_decision
 from ..planning.htn.grounding import derive_id
-from ..runtime.action_schema import is_operation_candidate_path
+from ..runtime.action_schema import is_operation_candidate_path, parse_action_criterion
 from ..runtime.operation_reconciliation import nonapplication_outcome, stored_negative_proof
 from ..storage import planning_human_store
 from ..storage.htn_store import HtnStore
 from ..storage.operation_completion_store import OperationCompletionStore
 from ..storage.operation_intent_store import OperationIntentStore
-from .action_commits import business_action_id, parse_action_criterion
+from .action_commits import business_action_id
 from .planning_repair_requests import REQUESTED, record_request
 
 SYSTEM_REASON = "用户在确认页批准的操作：发布 {source} 到 {target}"

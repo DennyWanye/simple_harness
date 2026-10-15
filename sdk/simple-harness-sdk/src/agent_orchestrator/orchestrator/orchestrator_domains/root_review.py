@@ -33,10 +33,10 @@ from ...contracts.resolution import DeliveryStage
 from ...contracts.semantic_base import content_hash_of
 from ...deployment.root import current_statements
 from ...graph.projection_validation import GraphIntegrityError
+from ...runtime.action_schema import ACTION_PREFIX
 from ...scheduling.allocator import allocate_v2
 from ...storage import htn_store, planning_human_store
 from ...storage.store import StoreError
-from ..action_commits import ACTION_PREFIX
 from ..assurance_purpose_reviews import purpose_review_key
 from ..composition_review import CompositionAcceptanceAssembly
 from ..failure_classes import review_exhausted_by_interruption

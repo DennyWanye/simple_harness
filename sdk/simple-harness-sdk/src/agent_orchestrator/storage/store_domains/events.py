@@ -11,6 +11,7 @@ from collections.abc import Sequence
 from simple_harness.contracts import canonical_json
 
 from ...contracts import Event
+from ..source_records import EVENT_TYPE
 from .core import StoreCore
 from .records import _event_from_row
 
@@ -77,9 +78,6 @@ class StoreEventMixin(StoreCore):
         out (阶段 G 阻断核验：它约占一个任务事件的四分之一，混进来会把读前 N 条再筛的读取方
         挤到读不到最新事件)；全业务重放直接读它，要它的读取方显式点名这个类型。"""
 
-        # 按需导入：循环依赖（store ↔ source_records）
-        from ..source_records import EVENT_TYPE
-
         kinds = (
             f" AND type != '{EVENT_TYPE}'"
             if types is None
@@ -96,9 +94,6 @@ class StoreEventMixin(StoreCore):
         layer's own ``RowsWritten`` bookkeeping is left out, so a count and a full page
         walk agree (2026-10-07, Host 事件分页对不上数)."""
         if event_type is None:
-            # 按需导入：循环依赖（store ↔ source_records）
-            from ..source_records import EVENT_TYPE
-
             row = self._connection.execute(
                 "SELECT COUNT(*) FROM events WHERE mission_id = ? AND type != ?",
                 (mission_id, EVENT_TYPE),
