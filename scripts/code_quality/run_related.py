@@ -5,6 +5,7 @@
     python3 scripts/code_quality/run_related.py backend tests/a.py tests/b.py ...
     python3 scripts/code_quality/run_related.py backend @清单文件     （一行一个，相对 backend/）
     python3 scripts/code_quality/run_related.py sdk tests/x.py ...
+    CQ_SDK_DIR=<快照>/sdk/simple-harness-sdk python3 ... sdk @清单   （在快照副本里跑）
 每个文件单独起进程；输出 N 秒不动判卡死并杀整棵进程树。最后打印失败与卡死清单，有则退出码 1。
 """
 from __future__ import annotations
@@ -24,8 +25,9 @@ def main() -> int:
     files: list[str] = []
     for a in args:
         files += Path(a[1:]).read_text().split() if a.startswith("@") else [a]
-    cwd = BACKEND if tree == "backend" else SDK
-    py = str(cwd / ".venv/bin/python")
+    # CQ_SDK_DIR：在冻结的快照副本里跑 SDK 测试（snapshot_tests.sh），虚拟环境仍用工作树的
+    cwd = BACKEND if tree == "backend" else Path(os.environ.get("CQ_SDK_DIR") or SDK)
+    py = str((BACKEND if tree == "backend" else SDK) / ".venv/bin/python")
     env = dict(os.environ)
     plugin: list[str] = []
     if tree == "sdk":

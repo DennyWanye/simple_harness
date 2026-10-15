@@ -37,7 +37,7 @@ from simple_harness.contracts import canonical_json
 from .store import StoreError
 
 if TYPE_CHECKING:
-    from .store import Store
+    from .store_domains.core import StoreCore
 
 EVENT_TYPE = "RowsWritten"
 DEPLOYMENT_TIMELINE = "deployment"
@@ -240,7 +240,7 @@ def _receipt_owner(content: Mapping[str, Any]) -> str | None:
     return None
 
 
-def record_written_rows(store: Store, connection: sqlite3.Connection) -> None:
+def record_written_rows(store: StoreCore, connection: sqlite3.Connection) -> None:
     """Called by the store right before the outermost COMMIT."""
 
     tx_events: dict[str, set[str]] = {}

@@ -19,9 +19,10 @@ from .assurance_work import atomic
 
 if TYPE_CHECKING:
     from .store import Store
+    from .store_domains.core import StoreCore
 
 
-def install_change_context(store: Store) -> None:
+def install_change_context(store: StoreCore) -> None:
     """Install a connection-local receipt accessor, including on reopened Stores."""
     store._assurance_change_context = None
 
