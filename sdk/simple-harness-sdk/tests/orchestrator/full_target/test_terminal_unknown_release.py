@@ -60,7 +60,12 @@ def test_every_mission_terminal_writer_goes_through_the_ledger_hook() -> None:
 
     from agent_orchestrator.orchestrator import event_handler
 
-    source = inspect.getsource(event_handler.Orchestrator)
+    # 编排器类由协调者与 orchestrator_domains/ 下的领域类组成，按方法解析顺序取全部类的源码
+    source = "".join(
+        inspect.getsource(cls)
+        for cls in event_handler.Orchestrator.__mro__
+        if cls.__module__.startswith("agent_orchestrator.")
+    )
     assert source.count("self.commit.fail_mission(") == 1, (
         "every fail_mission site must go through _commit_fail_mission"
     )

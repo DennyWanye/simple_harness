@@ -287,7 +287,7 @@ def test_a_startup_binding_that_refuses_one_intent_stops_only_its_mission(tmp_pa
                     await runner
 
                 def refuse(intent):  # type: ignore[no-untyped-def]
-                    from agent_orchestrator.orchestrator.event_handler import (
+                    from agent_orchestrator.orchestrator.orchestrator_domains.mission_lifecycle import (
                         ServiceTurnIdentityMismatch,
                     )
 

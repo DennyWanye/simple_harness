@@ -49,10 +49,11 @@ from _unknown_outcome_world import (  # noqa: E402
     status,
     transport_loss,
 )
+
 from agent_orchestrator.orchestrator.commit_service import SERVICE_INTENT_REHANDED_OFF  # noqa: E402
-from agent_orchestrator.orchestrator.event_handler import (  # noqa: E402
-    MAX_SERVICE_BLOCKER_SECONDS,
-    Orchestrator,
+from agent_orchestrator.orchestrator.event_handler import Orchestrator  # noqa: E402
+from agent_orchestrator.orchestrator.orchestrator_domains.service_turns import (
+    MAX_SERVICE_BLOCKER_SECONDS,  # noqa: E402
 )
 from agent_orchestrator.runtime.assembly import OrchestratorConfig  # noqa: E402
 from agent_orchestrator.testing.product_world import product_world  # noqa: E402
@@ -140,9 +141,10 @@ def test_an_unknown_outcome_with_no_rung_left_stops_as_runtime_unavailable(
     ``runtime_unavailable`` is the stop for a model service that did not answer.  The
     call is asked exactly once; the books keep it as unknown, its reservation held."""
 
-    import agent_orchestrator.orchestrator.event_handler as event_handler
-
-    monkeypatch.setattr(event_handler, "PLANNER_TURN_FAILURE_GRACE", 0)
+    monkeypatch.setattr(
+        "agent_orchestrator.orchestrator.orchestrator_domains.planning_feedback.PLANNER_TURN_FAILURE_GRACE",
+        0,
+    )
 
     async def case() -> dict[str, Any]:
         provider = FaultyProvider({"planner": [transport_loss]})

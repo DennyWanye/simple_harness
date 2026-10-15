@@ -34,7 +34,7 @@ def test_a_deferred_planner_round_survives_a_restart(tmp_path):
     """NEXT-TG-1.0 §3.6: the pool-cooldown deferral was memory only; a restart
     forgot the round. It is kept in scheduler_state, ``since`` included."""
 
-    from agent_orchestrator.orchestrator.event_handler import DeferredPlanning
+    from agent_orchestrator.orchestrator.deferred_planning import DeferredPlanning
     from agent_orchestrator.storage.store import Store
 
     store = Store.open(tmp_path / "o.db")

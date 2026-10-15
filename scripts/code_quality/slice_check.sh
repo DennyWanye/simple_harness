@@ -6,6 +6,7 @@
 set -uo pipefail
 TREE=$1
 LOG=${LOG:-/tmp/cq-slice.log}
+echo "== 单片校验 $(date '+%F %T')" >> "$LOG"  # 日志是追加写，看最后一段
 if [ "$TREE" = backend ]; then
   ../simple_harness/backend/.venv/bin/python scripts/generate_execution_build_manifest.py --write >> "$LOG" 2>&1
 else
@@ -31,7 +32,10 @@ python3 scripts/code_quality/startup_profile.py >> "$LOG" 2>&1; check "启动耗
 python3 scripts/code_quality/import_contracts.py >> "$LOG" 2>&1; check "导入隔离约定：全部满足"
 grep -E "^启动耗时|^启动完成后多加载|^多加载了" "$LOG" | tail -3
 LIST=$(mktemp)
+# CQ_TESTS=清单文件：用调用者挑好的相关测试代替按模块路径自动挑（自动挑超过约 150 个文件时用，见阶段 5 裁决）
+if [ -n "${CQ_TESTS:-}" ]; then cp "$CQ_TESTS" "$LIST"; else
 python3 scripts/code_quality/tests_for_changes.py --tree "$TREE" > "$LIST"
+fi
 # 改坏清单用源码原文定锚：SDK 源码一变就要核对锚点（阶段 4 发版门因此挡过一次）
 [ "$TREE" = sdk ] && echo "tests/orchestrator/acceptance_assets/test_acceptance_assets.py" >> "$LIST"
 echo "相关测试文件 $(wc -l < "$LIST" | tr -d ' ') 个" | tee -a "$LOG"

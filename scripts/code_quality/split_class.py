@@ -17,7 +17,8 @@
 - 分组可写 "bases"：把原类的某个基类改挂到这个 mixin 上（原类不再直接继承它）。
 - 标 "core" 的分组是公共基类：原类的 `__slots__` 搬进它，各 mixin 都继承它（mixin 用到的共用方法放这里）。
 - mixin 类 `__slots__ = ()`，按分组顺序排在原类基类之前；原类保留没列进分组的方法。
-- mixin 调用别的 mixin 的方法时，在类里 `if TYPE_CHECKING:` 块写同签名的存根（只给类型检查看）；
+- mixin 调用别的 mixin 的方法时，在类里 `if TYPE_CHECKING:` 块写同签名的存根（只给类型检查看；
+  分组 JSON 写 "stubs_in_core": true 时集中写在公共基类里一处）；
   `原类名.方法` 的写法改成 `所属类名.方法` 并导入该类。
 - 源文件的模块级辅助定义（函数、类、常量）按使用方放置：只被一个 mixin 模块用 → 放进该模块；
   被多个 mixin 模块用 → 放进 support；只被源文件用 → 留下。辅助定义之间的依赖做闭包。
@@ -155,10 +156,10 @@ def main() -> int:
     cls_of = {g["module"]: g["class"] for g in spec["groups"]}
     extra_imports: dict[str, set[str]] = {g["module"]: set() for g in spec["groups"]}
 
-    def stubs_for(module: str, code: str) -> str:
-        """本模块用到、但定义在别的 mixin 里的方法：类型检查用的同签名存根。"""
+    def wanted_stubs(module: str, code: str) -> set[str]:
+        """本模块用到、但定义在别的 mixin 里的方法。"""
         tree = ast.parse(textwrap.dedent(code)) if code.strip() else ast.Module(body=[])
-        wanted = sorted(
+        return set(
             {
                 n.attr
                 for n in ast.walk(tree)
@@ -169,8 +170,11 @@ def main() -> int:
                 and owner[n.attr] not in (module, core and core["module"])
             }
         )
+
+    def render_stubs(wanted: set[str]) -> str:
+        """类型检查用的同签名存根（`if TYPE_CHECKING:` 块，运行期不存在）。"""
         out = []
-        for name in wanted:
+        for name in sorted(wanted):
             node = ast.parse(textwrap.dedent(src.chunk(methods[name], body))).body[0]
             node.body = [ast.Expr(ast.Constant(...))]  # type: ignore[attr-defined]
             out.append(textwrap.indent(ast.unparse(node), "        "))
@@ -195,6 +199,8 @@ def main() -> int:
         if core and node is slots:
             texts[core["module"]].append(chunk)
             remaining_body.append("    __slots__ = ()\n")
+        elif core and isinstance(node, (ast.Assign, ast.AnnAssign)):
+            texts[core["module"]].append(chunk)  # 类属性（常量）搬进公共基类，各 mixin 经 self 读得到
         elif getattr(node, "name", None) in owner:
             texts[owner[node.name]].append(chunk)  # type: ignore[union-attr]
         else:
@@ -292,9 +298,19 @@ def main() -> int:
         classes = "\n".join(
             f"from .{m} import {cls_of[m]}" for m in sorted(extra_imports.get(module, ()))
         )
+        if args.class_name in used:  # 注解里用到原类本身：只给类型检查导入（运行期会循环）
+            classes += (
+                f"\n\nif TYPE_CHECKING:\n    from ..{path.stem} import {args.class_name}"
+            )
+            if "TYPE_CHECKING" not in block:
+                classes += "\nfrom typing import TYPE_CHECKING"
         parts.append("\n".join(x for x in (block, helpers, classes) if x))
         parts.append(code)
         return "\n\n".join(p.rstrip("\n") for p in parts) + "\n"
+
+    all_wanted: set[str] = set()
+    for g in spec["groups"]:
+        all_wanted |= wanted_stubs(g["module"], "".join(texts[g["module"]]))
 
     # support 模块
     support_names = [n for n in src.helpers if placement[n] == support]
@@ -313,7 +329,11 @@ def main() -> int:
             continue
         group = next(g for g in spec["groups"] if g["module"] == module)
         moved_code = retarget_class_refs(module, deepen_relative_imports("".join(texts[module])))
-        stubs = stubs_for(module, "".join(texts[module]))
+        if spec.get("stubs_in_core") and core:
+            # 跨领域调用的存根集中写在公共基类里一处，各 mixin 不再各写一份
+            stubs = render_stubs(all_wanted - set(group["methods"])) if group.get("core") else ""
+        else:
+            stubs = render_stubs(wanted_stubs(module, "".join(texts[module])))
         if group.get("core"):
             head = f"class {group['class']}:\n"
             slot_line = ""
@@ -333,7 +353,9 @@ def main() -> int:
     # 源文件：删搬走的方法与辅助定义，改基类，加导入，删不再用的导入
     drop: list[tuple[int, int]] = []
     for node in body:
-        if getattr(node, "name", None) in owner:
+        if getattr(node, "name", None) in owner or (
+            core and node is not slots and isinstance(node, (ast.Assign, ast.AnnAssign))
+        ):
             drop.append(src.span(node, body))
     for name, node in src.helpers.items():
         if placement[name] != MAIN:
@@ -349,7 +371,7 @@ def main() -> int:
     mixins = ", ".join(g["class"] for g in spec["groups"] if not g.get("core"))
     moved_bases = {b for g in spec["groups"] for b in g.get("bases", [])}
     old_bases = ", ".join(ast.unparse(b) for b in src.cls.bases)
-    head = f"class {args.class_name}({old_bases}):"
+    head = f"class {args.class_name}({old_bases}):" if old_bases else f"class {args.class_name}:"
     kept_bases = [ast.unparse(b) for b in src.cls.bases if ast.unparse(b) not in moved_bases]
     if head not in new_text:
         sys.exit(f"找不到类头 {head}")
@@ -365,7 +387,8 @@ def main() -> int:
             and not (isinstance(n, ast.If) and "TYPE_CHECKING" in ast.unparse(n.test))
         )
     )
-    # 重写导入区：原导入按用到的名字筛，加 mixin 与辅助定义导入
+    # 重写导入区：删掉原有的每条模块级导入（含 TYPE_CHECKING 块；散在代码中间的也删），
+    # 在第一条导入的位置放新的导入块：原导入按用到的名字筛，加 mixin 与辅助定义导入
     first_import = min(s.lineno for s, _ in src.imports)
     lines = new_text.splitlines(keepends=True)
     import_nodes = [
@@ -374,7 +397,6 @@ def main() -> int:
         if isinstance(n, (ast.Import, ast.ImportFrom))
         or (isinstance(n, ast.If) and "TYPE_CHECKING" in ast.unparse(n.test))
     ]
-    last_import = max(n.end_lineno for n in import_nodes)  # type: ignore[type-var]
     block = import_block(used_main | {"annotations"}, 0)
     mixin_imports = "\n".join(
         f"from .{spec['package']}.{g['module']} import {g['class']}"
@@ -383,7 +405,10 @@ def main() -> int:
     )
     helpers_for_main = helper_imports(MAIN, used_main, from_main=True)
     new_imports = "\n".join(x for x in (block, mixin_imports, helpers_for_main) if x) + "\n"
-    new_text = "".join(lines[: first_import - 1]) + new_imports + "".join(lines[last_import:])
+    for n in sorted(import_nodes, key=lambda n: n.lineno, reverse=True):
+        del lines[n.lineno - 1 : n.end_lineno]
+    lines.insert(first_import - 1, new_imports)
+    new_text = "".join(lines)
 
     outputs[path] = new_text
     summary = {m: sum(t.count("\n") for t in texts[m]) for m in module_names}

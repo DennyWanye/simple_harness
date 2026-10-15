@@ -3,7 +3,7 @@
 
 from types import SimpleNamespace
 
-from agent_orchestrator.orchestrator.event_handler import retry_feedback
+from agent_orchestrator.orchestrator.orchestrator_domains.attempt_judgment import retry_feedback
 
 REJECTED = {
     "reason": "result_evidence_kind_not_allowed",

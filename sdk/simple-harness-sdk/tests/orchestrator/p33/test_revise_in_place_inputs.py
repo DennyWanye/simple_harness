@@ -6,9 +6,10 @@
 from types import SimpleNamespace
 
 import pytest
+
 from agent_orchestrator.artifacts.versioning import UpstreamInput
-from agent_orchestrator.orchestrator import event_handler
 from agent_orchestrator.orchestrator.event_handler import Orchestrator
+from agent_orchestrator.orchestrator.orchestrator_domains import verification
 
 
 def _port(key, schema="s1"):
@@ -47,8 +48,8 @@ def test_upstream_inputs_of_a_revise_in_place_task_are_writable(revises, protect
         _upstream_inputs=lambda attempt: [UpstreamInput("up", "summary.md", "h" * 64, "art-1")],
         store=SimpleNamespace(get_artifact=lambda artifact_id: artifact),
     )
-    original = event_handler.read_verified
-    event_handler.read_verified = lambda art: b"draft"
+    original = verification.read_verified
+    verification.read_verified = lambda art: b"draft"
     try:
         protected = Orchestrator._protected_files(
             fake,
@@ -57,5 +58,5 @@ def test_upstream_inputs_of_a_revise_in_place_task_are_writable(revises, protect
             object(),
         )
     finally:
-        event_handler.read_verified = original
+        verification.read_verified = original
     assert set(protected) == protected_paths

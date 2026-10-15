@@ -15,8 +15,10 @@ import json
 import re
 from pathlib import Path
 
-import agent_orchestrator.orchestrator.event_handler as event_handler
 import pytest
+from fixtures_provider import RoleScriptedProvider
+
+import agent_orchestrator.orchestrator.event_handler as event_handler
 from agent_orchestrator.__main__ import main
 from agent_orchestrator.api.policies import PolicyApi, PolicyRequestError
 from agent_orchestrator.governance.permissions import Principal
@@ -29,11 +31,11 @@ from agent_orchestrator.governance.promotion import (
     resolve_params,
     version_id,
 )
+from agent_orchestrator.orchestrator import orchestrator_domains
 from agent_orchestrator.orchestrator.commit_service import CommitService
 from agent_orchestrator.orchestrator.event_handler import Orchestrator
 from agent_orchestrator.runtime.assembly import OrchestratorConfig
 from agent_orchestrator.storage.store import Store
-from fixtures_provider import RoleScriptedProvider
 
 
 def _library(tmp_path, **config):
@@ -101,7 +103,14 @@ def test_no_decision_point_reads_a_whitelisted_value_from_the_configuration():
     """Plan D9-4' (review P1-1): the decision points go through the Mission's bound
     policy — structurally, no whitelisted item is read from ``self._config`` any more."""
 
-    source = Path(event_handler.__file__).read_text(encoding="utf-8")
+    # 编排器类由 event_handler.py 与 orchestrator_domains/ 下的领域文件组成
+    source = "".join(
+        f.read_text(encoding="utf-8")
+        for f in (
+            Path(event_handler.__file__),
+            *Path(orchestrator_domains.__file__).parent.glob("*.py"),
+        )
+    )
     pattern = re.compile(
         r"self\._config\.(candidates_per_task|exploration_slots|aging_window_seconds)\b"
     )
@@ -120,7 +129,7 @@ def test_no_decision_point_reads_a_whitelisted_value_from_the_configuration():
 
 
 def test_review_p2_6_a_profile_nobody_labelled_is_not_taken_for_fixtures():
-    from agent_orchestrator.orchestrator.event_handler import _provider_kind
+    from agent_orchestrator.orchestrator.orchestrator_domains.core import _provider_kind
     from agent_orchestrator.runtime.model_router import RuntimeProfile
 
     class SomeVendorProvider:  # not a fixture class, and nobody set provider_kind

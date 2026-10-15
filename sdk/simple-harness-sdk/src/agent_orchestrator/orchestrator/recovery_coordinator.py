@@ -52,6 +52,7 @@ from ..storage.recovery_store import RecoveryStore
 from ..storage.store import InjectedCrash, StoreBusy
 from ..storage.taskgraph_store import TaskGraphStore
 from .accounting_recovery import import_late_accounting
+from .deferred_planning import DeferredPlanning
 from .operation_runtime import ensure_operation_runtime
 from .taskgraph_deployment import InstalledHtnWiringAcceptance
 
@@ -316,9 +317,6 @@ class RecoveryCoordinator:
             alive=_owner_alive,
         )
         self.recovery_id = recovery_id
-        # 按需导入：循环依赖（recovery_coordinator ↔ event_handler）
-        from .event_handler import DeferredPlanning
-
         if isinstance(orch._deferred_planning, DeferredPlanning):
             orch._deferred_planning.bind(orch.store)
         return {

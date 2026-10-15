@@ -580,7 +580,7 @@ def test_the_carry_on_is_bounded_so_a_moving_world_ends_the_run(tmp_path) -> Non
     recorded — an answer to the caller, not a verdict about the Mission.
     """
 
-    from agent_orchestrator.orchestrator.event_handler import MAX_STALL_CARRY_ONS
+    from agent_orchestrator.orchestrator.orchestrator_domains.idle_and_stall import MAX_STALL_CARRY_ONS
 
     async def case():
         async with stalled(tmp_path, key="stall-bounded") as world:

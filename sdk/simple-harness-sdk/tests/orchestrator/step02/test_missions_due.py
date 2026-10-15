@@ -9,7 +9,8 @@
 from types import SimpleNamespace
 
 from agent_orchestrator.contracts import MissionStatus
-from agent_orchestrator.orchestrator.event_handler import MISSION_RECHECK_SECONDS, Orchestrator
+from agent_orchestrator.orchestrator.event_handler import Orchestrator
+from agent_orchestrator.orchestrator.orchestrator_domains.cycle import MISSION_RECHECK_SECONDS
 
 NO_LIMIT = SimpleNamespace(max_runtime_seconds=None)
 

@@ -20,13 +20,14 @@ def test_v30_both_grace_counters_treat_an_unknown_outcome_as_unanswered():
 
     **Mutation**: ``_planner_turn_failure_forgiven`` 改回只认 ``_turn_failed`` → red."""
     from agent_orchestrator.orchestrator import event_handler as eh
+    from agent_orchestrator.orchestrator.orchestrator_domains import planning_feedback
 
     def rejected(**payload):
         return SimpleNamespace(type="PlanningRejected", payload=payload)
 
     events = [rejected(reason="provider_outcome_unknown", refusals=[])]
     fake = SimpleNamespace(store=SimpleNamespace(list_events=lambda mission_id: events))
-    assert eh._planning_turn_unanswered(events[0]) is True
+    assert planning_feedback._planning_turn_unanswered(events[0]) is True
     assert eh.Orchestrator._planner_turn_failure_forgiven(fake, "m") is True
     assert eh.Orchestrator._planning_attempts(fake, "m") == 0
     # 一条真正答错的回合两边都不宽限

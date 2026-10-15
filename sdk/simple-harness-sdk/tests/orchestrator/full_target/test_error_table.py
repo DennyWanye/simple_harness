@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import pytest
+
 from agent_orchestrator.contracts.error_table import (
     PLANNING_ERRORS,
     SHARING_PLANNER_CODE,
@@ -148,7 +149,9 @@ def test_the_main_loop_judges_a_sharing_refusal_by_type_not_by_text():
     """**Mutation**: ``event_handler`` 那段改回 ``str(error).startswith("TASKGRAPH_SHARED_")`` → red。"""
     from pathlib import Path
 
-    import agent_orchestrator.orchestrator.event_handler as handler
+    import agent_orchestrator.orchestrator.event_handler as event_handler
+    from agent_orchestrator.orchestrator import orchestrator_domains
+    from agent_orchestrator.orchestrator.orchestrator_domains import planning_decisions as handler
 
     refused = SharingRefused(SharingRefusalCode.TASKGRAPH_SHARED_PRODUCER_BINDING_CHANGED)
     assert handler._sharing_refusal_codes(refused) == [str(P.REUSE_NOT_ALLOWED)]
@@ -163,7 +166,13 @@ def test_the_main_loop_judges_a_sharing_refusal_by_type_not_by_text():
         handler._sharing_refusal_codes(RuntimeError("TASKGRAPH_REUSE_ACCEPTANCE_NOT_CURRENT"))
         is None
     )
-    text = Path(handler.__file__).read_text(encoding="utf-8")
+    text = "".join(
+        f.read_text(encoding="utf-8")
+        for f in (
+            Path(event_handler.__file__),
+            *Path(orchestrator_domains.__file__).parent.glob("*.py"),
+        )
+    )
     assert "except SharingRefused as error:" in text
     assert 'startswith(("TASKGRAPH_SHARED_"' not in text
 

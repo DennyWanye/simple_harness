@@ -139,7 +139,10 @@ async def main() -> None:
                  "Host or UI.",
         "results": results, "provider_calls": 0,
         "source_sha256": source_sha256(["assurance/root_gate.py", "orchestrator/assurance_root_commits.py",
-                                        "orchestrator/event_handler.py", "api/facade.py",
+                                        "orchestrator/event_handler.py",
+                                        "orchestrator/orchestrator_domains/core.py",
+                                        "orchestrator/orchestrator_domains/deployment.py",
+                                        "api/facade.py",
                                         "orchestrator/assurance_point_use.py",
                                         "deployment/assembly.py"])})
 

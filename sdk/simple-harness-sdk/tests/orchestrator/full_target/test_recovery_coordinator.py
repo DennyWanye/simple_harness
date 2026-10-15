@@ -307,7 +307,7 @@ def test_an_inconsistent_mission_is_isolated_and_the_others_go_on(tmp_path):
         second = LayeredScriptedProvider()
         async with product_world(root, second) as world:  # 自动模式：部署职责会替没隔离的任务签
             from agent_orchestrator.api.facade import FacadeError
-            from agent_orchestrator.orchestrator.event_handler import ServiceTurnIdentityMismatch
+            from agent_orchestrator.orchestrator.orchestrator_domains.mission_lifecycle import ServiceTurnIdentityMismatch
 
             # 部署职责发出的每条命令记下是替哪个任务发的
             duty_calls: list[tuple[str, str]] = []

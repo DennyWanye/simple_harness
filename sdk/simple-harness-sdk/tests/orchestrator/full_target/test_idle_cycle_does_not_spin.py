@@ -13,7 +13,6 @@ from __future__ import annotations
 import asyncio
 from types import SimpleNamespace
 
-from agent_orchestrator.orchestrator import event_handler
 from agent_orchestrator.orchestrator.event_handler import Orchestrator
 
 
@@ -34,7 +33,10 @@ def _planner(gate_open: bool, assembly_missing: bool = False):
 
 
 def test_a_closed_start_gate_is_not_progress(monkeypatch) -> None:
-    monkeypatch.setattr(event_handler, "is_hierarchical", lambda mission: True)
+    monkeypatch.setattr(
+        "agent_orchestrator.orchestrator.orchestrator_domains.deployment.is_hierarchical",
+        lambda mission: True,
+    )
     mission = SimpleNamespace(id="m1")
     fake, calls = _planner(gate_open=False)
     assert asyncio.run(Orchestrator._start_planning(fake, mission)) is False and calls == []
@@ -43,7 +45,10 @@ def test_a_closed_start_gate_is_not_progress(monkeypatch) -> None:
 
 
 def test_an_open_start_gate_starts_planning(monkeypatch) -> None:
-    monkeypatch.setattr(event_handler, "is_hierarchical", lambda mission: True)
+    monkeypatch.setattr(
+        "agent_orchestrator.orchestrator.orchestrator_domains.deployment.is_hierarchical",
+        lambda mission: True,
+    )
     fake, calls = _planner(gate_open=True)
     assert asyncio.run(Orchestrator._start_planning(fake, SimpleNamespace(id="m1"))) is True
     assert calls == ["begin", "planner"]

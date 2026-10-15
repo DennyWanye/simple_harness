@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import inspect
+from pathlib import Path
 
 from agent_orchestrator.contracts.models import sha256_hex
-from agent_orchestrator.orchestrator import event_handler
+from agent_orchestrator.orchestrator import event_handler, orchestrator_domains
 from agent_orchestrator.orchestrator.taskgraph_epochs import planning_scope_digest
 
 
@@ -28,6 +29,9 @@ def test_every_other_scope_still_moves_the_digest():
 
 
 def test_request_binding_and_admission_hash_through_the_same_function():
-    source = inspect.getsource(event_handler)
+    source = inspect.getsource(event_handler) + "".join(
+        f.read_text(encoding="utf-8")
+        for f in Path(orchestrator_domains.__file__).parent.glob("*.py")
+    )
     assert source.count("scope_epoch_digest=planning_scope_digest(epochs)") == 2
     assert "scope_epoch_digest=sha256_hex(" not in source

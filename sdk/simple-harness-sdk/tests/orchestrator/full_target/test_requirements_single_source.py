@@ -25,7 +25,7 @@ ALLOWED = {
     "verification/criteria.py",  # 受保护尾部的任务身份哈希（初始输入的身份）
 }
 #: 建任务门口里的一处（把章程交给"能不能用 action / pytest"的检查）
-DOOR = {"orchestrator/event_handler.py": 1}
+DOOR = {"orchestrator/orchestrator_domains/mission_lifecycle.py": 1}
 #: 任意变量名读章程都算；步骤合同（``task`` / ``contract`` / ``self`` 等）的同名字段不算
 TASK_SIDE = {
     "task",

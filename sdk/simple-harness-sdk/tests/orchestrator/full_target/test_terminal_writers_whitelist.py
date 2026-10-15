@@ -296,26 +296,26 @@ WHITELIST: dict[Site, str] = {
     ): "SDK API 取消：先要求执行根",
     (
         "entry",
-        "orchestrator/event_handler.py",
-        "Orchestrator._commit_cancel_mission",
+        "orchestrator/orchestrator_domains/mission_lifecycle.py",
+        "MissionLifecycleMixin._commit_cancel_mission",
         "cancel_mission",
     ): "主循环取消入口：先准备终态台账",
     (
         "entry",
-        "orchestrator/event_handler.py",
-        "Orchestrator._commit_fail_mission",
+        "orchestrator/orchestrator_domains/mission_lifecycle.py",
+        "MissionLifecycleMixin._commit_fail_mission",
         "fail_mission",
     ): "主循环任务级停止入口：先准备终态台账",
     (
         "entry",
-        "orchestrator/event_handler.py",
-        "Orchestrator._commit_fail_planning",
+        "orchestrator/orchestrator_domains/mission_lifecycle.py",
+        "MissionLifecycleMixin._commit_fail_planning",
         "fail_planning",
     ): "主循环规划失败入口：先准备终态台账",
     (
         "entry",
-        "orchestrator/event_handler.py",
-        "Orchestrator._commit_stop_task",
+        "orchestrator/orchestrator_domains/mission_lifecycle.py",
+        "MissionLifecycleMixin._commit_stop_task",
         "stop_task",
     ): "主循环一步停止入口：先准备终态台账",
     (
@@ -326,14 +326,14 @@ WHITELIST: dict[Site, str] = {
     ): "人接管停止一步（HumanOverride 先落库再 stop_task）",
     (
         "entry",
-        "orchestrator/event_handler.py",
-        "Orchestrator._judge",
+        "orchestrator/orchestrator_domains/attempt_judgment.py",
+        "AttemptJudgmentMixin._judge",
         "judge_mission",
     ): "主循环判定（纯内容任务）：判定只记'满足 / 不满足'，满足走收尾",
     (
         "entry",
-        "orchestrator/event_handler.py",
-        "Orchestrator._judge_with_actions",
+        "orchestrator/orchestrator_domains/attempt_judgment.py",
+        "AttemptJudgmentMixin._judge_with_actions",
         "judge_mission",
     ): "主循环两段判定（带动作的任务）",
     (

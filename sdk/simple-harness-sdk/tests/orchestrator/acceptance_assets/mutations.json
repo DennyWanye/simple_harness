@@ -137,7 +137,7 @@
     {
       "id": "F1-08",
       "source": "F1 新用例 8",
-      "file": "src/agent_orchestrator/orchestrator/event_handler.py",
+      "file": "src/agent_orchestrator/orchestrator/orchestrator_domains/attempt_judgment.py",
       "original": "                mission_requirements=current_statements(self.store, mission),",
       "replacement": "                mission_requirements=mission.success_criteria,",
       "tests": [
@@ -192,7 +192,7 @@
     {
       "id": "F1-13",
       "source": "F1 新用例 13",
-      "file": "src/agent_orchestrator/orchestrator/event_handler.py",
+      "file": "src/agent_orchestrator/orchestrator/orchestrator_domains/planning_decisions.py",
       "original": "                    self._blame_replaced_method(mission.id, decision, decision_id)\n",
       "replacement": "",
       "tests": [
@@ -236,7 +236,7 @@
     {
       "id": "F1-17",
       "source": "F1-6 随机序列发现的缺陷",
-      "file": "src/agent_orchestrator/orchestrator/event_handler.py",
+      "file": "src/agent_orchestrator/orchestrator/orchestrator_domains/verification.py",
       "original": "            # 读完成范围就会发现，检查跑到一半撞上也一样。别的错误照旧抛出（HTN 补齐 F1）\n            if error.code not in {\"CHECK_SCOPE_CHANGED\", \"OP_EFFECT_SCOPE_STALE\"}:\n                raise",
       "replacement": "            # 读完成范围就会发现，检查跑到一半撞上也一样。别的错误照旧抛出（HTN 补齐 F1）\n            if True:\n                raise",
       "tests": [
@@ -291,7 +291,7 @@
     {
       "id": "F1-22",
       "source": "F1 阻断核验 B1",
-      "file": "src/agent_orchestrator/orchestrator/event_handler.py",
+      "file": "src/agent_orchestrator/orchestrator/orchestrator_domains/verification.py",
       "original": "                return self._verdict_refused(result_id, error)\n            return await self._set_aside_stale(result_id)\n        if critic_admission_failure is not None:",
       "replacement": "                return self._verdict_refused(result_id, error)\n            return False\n        if critic_admission_failure is not None:",
       "tests": [
@@ -410,7 +410,7 @@
     {
       "id": "G-11",
       "source": "阶段 G 第 4 批（崩溃切点 K12）",
-      "file": "src/agent_orchestrator/orchestrator/event_handler.py",
+      "file": "src/agent_orchestrator/orchestrator/orchestrator_domains/cycle.py",
       "original": "                if await self._mission_round(\n                    intent.mission_id,\n                    f\"collect_after_stop:{intent.intent_id}\",\n                    lambda intent=intent: self._collect_after_stop(intent),\n                ):\n",
       "replacement": "                if await self._collect_after_stop(intent):\n",
       "tests": [
@@ -505,7 +505,7 @@
     {
       "id": "G-20",
       "source": "阶段 G 第 2 批（偏差裁决 1）",
-      "file": "src/agent_orchestrator/orchestrator/event_handler.py",
+      "file": "src/agent_orchestrator/orchestrator/orchestrator_domains/idle_and_stall.py",
       "original": "        \"RowsWritten\",\n",
       "replacement": "",
       "tests": [
@@ -538,7 +538,7 @@
     {
       "id": "G-23",
       "source": "阶段 G 第 2 批（随机序列发现）",
-      "file": "src/agent_orchestrator/orchestrator/event_handler.py",
+      "file": "src/agent_orchestrator/orchestrator/orchestrator_domains/verification.py",
       "original": "            # 随机序列发现：这一处与验证开头是同一条规则的两个时刻）\n            if error.code not in {\"CHECK_SCOPE_CHANGED\", \"OP_EFFECT_SCOPE_STALE\"}:\n                raise\n",
       "replacement": "            # 随机序列发现：这一处与验证开头是同一条规则的两个时刻）\n            raise\n",
       "tests": [
@@ -728,7 +728,7 @@
     {
       "id": "M11",
       "source": "TaskGraph 代码级计划 §15",
-      "file": "src/agent_orchestrator/orchestrator/event_handler.py",
+      "file": "src/agent_orchestrator/orchestrator/orchestrator_domains/planning_decisions.py",
       "original": "                str(PlanningDecisionStatus.NO_STATE_CHANGE),\n                str(PlanningDecisionStatus.COMMITTED),\n            }:\n                # Internal collector replay",
       "replacement": "                str(PlanningDecisionStatus.NO_STATE_CHANGE),\n            }:\n                # Internal collector replay",
       "tests": [
@@ -783,7 +783,7 @@
     {
       "id": "H-02b",
       "source": "HTN 一致性补改 H-2",
-      "file": "src/agent_orchestrator/orchestrator/event_handler.py",
+      "file": "src/agent_orchestrator/orchestrator/orchestrator_domains/mission_lifecycle.py",
       "original": "        self._notice_actions_settled_after_stop()\n",
       "replacement": "",
       "tests": [
@@ -827,7 +827,7 @@
     {
       "id": "TG3-03",
       "source": "TaskGraph 补全第二批（已创建就损坏也按名停）",
-      "file": "src/agent_orchestrator/orchestrator/event_handler.py",
+      "file": "src/agent_orchestrator/orchestrator/orchestrator_domains/deployment.py",
       "original": "        if status is MissionStatus.CREATED:\n            # Damaged before its first planning round: stopped the same way, by name\n",
       "replacement": "        if False:\n            # Damaged before its first planning round: stopped the same way, by name\n",
       "tests": [
@@ -882,7 +882,7 @@
     {
       "id": "TG4-01",
       "source": "TaskGraph 补全第四批（重审通过写新版验收）",
-      "file": "src/agent_orchestrator/orchestrator/event_handler.py",
+      "file": "src/agent_orchestrator/orchestrator/orchestrator_domains/verification.py",
       "original": "            self.commit.accept_carried_result(item.result_id, requirements_revision=revision)\n",
       "replacement": "            pass\n",
       "tests": [
@@ -893,7 +893,7 @@
     {
       "id": "TG4-02",
       "source": "TaskGraph 补全第四批（重审打回交规划器）",
-      "file": "src/agent_orchestrator/orchestrator/event_handler.py",
+      "file": "src/agent_orchestrator/orchestrator/orchestrator_domains/verification.py",
       "original": "        Planner (the scan stops on it).  Recorded once per (result, requirements revision).\"\"\"\n\n        revision = int(item.requirements_revision)\n",
       "replacement": "        Planner (the scan stops on it).  Recorded once per (result, requirements revision).\"\"\"\n        record_request = lambda *args, **kwargs: False  # noqa: E731\n\n        revision = int(item.requirements_revision)\n",
       "tests": [
@@ -937,7 +937,7 @@
     {
       "id": "TG4-05",
       "source": "TaskGraph 补全第四批阻断核验 B1（重审出错有上限）",
-      "file": "src/agent_orchestrator/orchestrator/event_handler.py",
+      "file": "src/agent_orchestrator/orchestrator/orchestrator_domains/verification.py",
       "original": "            if count < MAX_CARRIED_REVIEW_ERRORS:\n",
       "replacement": "            if True:\n",
       "tests": [
@@ -970,7 +970,7 @@
     {
       "id": "TG4-06",
       "source": "F2 联测（改要求后重审判不下来→人裁决）",
-      "file": "src/agent_orchestrator/orchestrator/event_handler.py",
+      "file": "src/agent_orchestrator/orchestrator/orchestrator_domains/verification.py",
       "original": "            target_id=item.result_id,\n",
       "replacement": "            target_id=task.id,\n",
       "tests": [
@@ -1047,7 +1047,7 @@
     {
       "id": "PLN-01",
       "source": "F2 联测真机（做法在审时又开规划轮）",
-      "file": "src/agent_orchestrator/orchestrator/event_handler.py",
+      "file": "src/agent_orchestrator/orchestrator/orchestrator_domains/planning_waits.py",
       "original": "            if method_review_awaiting(self.store, mission.id):\n                return False\n            if self._planning_ladder_spent(mission.id):",
       "replacement": "            if False and method_review_awaiting(self.store, mission.id):\n                return False\n            if self._planning_ladder_spent(mission.id):",
       "tests": [
@@ -1490,7 +1490,7 @@
     {
       "id": "OPA-05",
       "source": "Assurance 原计划用例 E06（2026-10-05 发布后改要求，裁决见 Assurance-补改-偏差裁决-发布后改要求.md）",
-      "file": "src/agent_orchestrator/orchestrator/event_handler.py",
+      "file": "src/agent_orchestrator/orchestrator/orchestrator_domains/idle_and_stall.py",
       "original": "        if self._materialization_refusals(mission.id):\n            return True  # 2026-10-05：物化一直被拒的申请单不是合法等待，交给卡死检测",
       "replacement": "        if False:\n            return True",
       "tests": [
@@ -1512,7 +1512,7 @@
     {
       "id": "JDG-01",
       "source": "真实模型验收 2026-10-06（编程题：判定树没有资料，模型写的测试全红）",
-      "file": "src/agent_orchestrator/orchestrator/event_handler.py",
+      "file": "src/agent_orchestrator/orchestrator/orchestrator_domains/attempt_judgment.py",
       "original": "            for path, data in self._current_source_files(mission).items():\n                files.setdefault(path, data)",
       "replacement": "            pass",
       "tests": [
@@ -1795,7 +1795,7 @@
     {
       "id": "SM-01",
       "source": "2026-10-10 第三轮复查：规划器自己的调用结果未知不计次",
-      "file": "src/agent_orchestrator/orchestrator/event_handler.py",
+      "file": "src/agent_orchestrator/orchestrator/orchestrator_domains/planning_feedback.py",
       "original": "                if _planning_turn_unanswered(event) and forgiven < PLANNER_TURN_FAILURE_GRACE:",
       "replacement": "                if _turn_failed(event) and forgiven < PLANNER_TURN_FAILURE_GRACE:",
       "tests": [
@@ -1806,7 +1806,7 @@
     {
       "id": "SM-02",
       "source": "2026-10-10 第三轮复查：服务侧出错后只给一句事实",
-      "file": "src/agent_orchestrator/orchestrator/event_handler.py",
+      "file": "src/agent_orchestrator/orchestrator/orchestrator_domains/attempt_judgment.py",
       "original": "                feedback.append(\n                    f\"上一轮有一次模型调用没有拿到回复（服务侧错误，代码 {code}）；这一轮从头做。\"\n                )\n",
       "replacement": "                feedback.append(f\"turn_failed: {failure.get('error', '')}\")\n",
       "tests": [
@@ -1829,7 +1829,7 @@
     {
       "id": "SM-04",
       "source": "2026-10-10 parse 重跑：线路上的长调用在 180 秒被当成卡死",
-      "file": "src/agent_orchestrator/orchestrator/event_handler.py",
+      "file": "src/agent_orchestrator/orchestrator/orchestrator_domains/attempt_collection.py",
       "original": "            if (\n                running\n                and not liveness.blocked\n                and attempt.progress_at is not None\n                and not in_flight\n            ):\n",
       "replacement": "            if running and not liveness.blocked and attempt.progress_at is not None:\n",
       "tests": [
@@ -1840,7 +1840,7 @@
     {
       "id": "SM-05",
       "source": "2026-10-10 parse 重跑：调用自己的上限",
-      "file": "src/agent_orchestrator/orchestrator/event_handler.py",
+      "file": "src/agent_orchestrator/orchestrator/orchestrator_domains/attempt_collection.py",
       "original": "            if (\n                state == \"handed_off\"\n                and handed_off is not None\n                and now - float(handed_off) < self._config.provider_call_seconds\n            ):\n",
       "replacement": "            if state == \"handed_off\" and handed_off is not None and handed_off is not None:\n",
       "tests": [
@@ -1863,7 +1863,7 @@
     {
       "id": "SM-07",
       "source": "2026-10-10 parse/docopt 重跑：卡死终止后的反馈只写一句事实",
-      "file": "src/agent_orchestrator/orchestrator/event_handler.py",
+      "file": "src/agent_orchestrator/orchestrator/orchestrator_domains/attempt_judgment.py",
       "original": "            feedback.append(f\"上一次尝试 {how_long}没有进展，被系统终止；这一轮从头做。\")",
       "replacement": "            feedback.append(f\"executor_stalled: {failure.get('error', '')}\")",
       "tests": [
@@ -1874,7 +1874,7 @@
     {
       "id": "SM-08",
       "source": "2026-10-10 独立核验 M1：长调用回来那一刻被杀",
-      "file": "src/agent_orchestrator/orchestrator/event_handler.py",
+      "file": "src/agent_orchestrator/orchestrator/orchestrator_domains/attempt_collection.py",
       "original": "                if last_settled is not None:\n                    since = max(since, last_settled)",
       "replacement": "                if last_settled is not None:\n                    since = since",
       "tests": [
@@ -1885,7 +1885,7 @@
     {
       "id": "SM-09",
       "source": "2026-10-10 独立核验 M2：模型自己的回合失败被说成服务侧错误",
-      "file": "src/agent_orchestrator/orchestrator/event_handler.py",
+      "file": "src/agent_orchestrator/orchestrator/orchestrator_domains/attempt_judgment.py",
       "original": "            if classify_failure(failure) == INFRA:\n",
       "replacement": "            if True:\n",
       "tests": [
@@ -1918,7 +1918,7 @@
     {
       "id": "SM-12",
       "source": "2026-10-10 parse 重跑：单轮时限到被终止的反馈不是事实",
-      "file": "src/agent_orchestrator/orchestrator/event_handler.py",
+      "file": "src/agent_orchestrator/orchestrator/orchestrator_domains/attempt_judgment.py",
       "original": "        elif reason == \"turn_failed\" and _turn_error_code(failure) == \"react_wall_clock_exceeded\":",
       "replacement": "        elif reason == \"turn_failed\" and _turn_error_code(failure) == \"never\":",
       "tests": [
@@ -1929,7 +1929,7 @@
     {
       "id": "SM-13",
       "source": "2026-10-10 parse 重跑：做满单轮调用次数被终止的反馈不是事实",
-      "file": "src/agent_orchestrator/orchestrator/event_handler.py",
+      "file": "src/agent_orchestrator/orchestrator/orchestrator_domains/attempt_judgment.py",
       "original": "        elif reason == \"turn_failed\" and turn_cap_exceeded(failure.get(\"error\")):",
       "replacement": "        elif reason == \"turn_failed\" and False:",
       "tests": [
@@ -2017,7 +2017,7 @@
     {
       "id": "SM-21",
       "source": "2026-10-11 第二批：停止条件在步骤待开工时就问规划器（第三轮复查发现 3）",
-      "file": "src/agent_orchestrator/orchestrator/event_handler.py",
+      "file": "src/agent_orchestrator/orchestrator/orchestrator_domains/resource_limits.py",
       "original": "        if any(\n            task.status is TaskStatus.READY and not task.paused\n            for task in self.store.list_tasks(mission.id)\n        ):\n            return False  # V38：暂停的步骤不会开工，不算\"正要开工\"\n",
       "replacement": "",
       "tests": [
@@ -2105,7 +2105,7 @@
     {
       "id": "SM-29",
       "source": "2026-10-11 V30 宽限口径一致",
-      "file": "src/agent_orchestrator/orchestrator/event_handler.py",
+      "file": "src/agent_orchestrator/orchestrator/orchestrator_domains/planning_feedback.py",
       "original": "                latest_forgiven = (\n                    _planning_turn_unanswered(event) and forgiven < PLANNER_TURN_FAILURE_GRACE\n                )\n",
       "replacement": "                latest_forgiven = _turn_failed(event) and forgiven < PLANNER_TURN_FAILURE_GRACE\n",
       "tests": [
@@ -2138,7 +2138,7 @@
     {
       "id": "SM-32",
       "source": "2026-10-11 V38 暂停步骤不算正要开工",
-      "file": "src/agent_orchestrator/orchestrator/event_handler.py",
+      "file": "src/agent_orchestrator/orchestrator/orchestrator_domains/resource_limits.py",
       "original": "        if any(\n            task.status is TaskStatus.READY and not task.paused\n            for task in self.store.list_tasks(mission.id)\n        ):\n",
       "replacement": "        if any(task.status is TaskStatus.READY for task in self.store.list_tasks(mission.id)):\n",
       "tests": [
