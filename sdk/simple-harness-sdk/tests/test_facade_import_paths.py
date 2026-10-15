@@ -35,6 +35,7 @@ FACADES = (
     "agent_orchestrator.storage.htn_store",
     "agent_orchestrator.storage.store",
     "simple_harness.runtime.kernel",
+    "simple_harness.runtime.memory_protocol",
 )
 
 
