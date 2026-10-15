@@ -7,6 +7,8 @@
         [--returns "ticket, request" --returns-type "tuple[sqlite3.Row, WorkflowLaunchRequest]"]
         [--tail]          # 这段走完必定 return 或 raise：调用处写成 `return self.新方法(...)`
                           #（返回类型为 None 时写成调用后单独 `return`）
+        [--sentinel 名字] # 这段要么提前 return 一个非空结果、要么走完不返回：新方法走完返回 None，
+                          # 调用处写成 `名字 = self.新方法(...)` 加 `if 名字 is not None: return 名字`
         [--static]        # 新方法不用 self：写成 @staticmethod
         [--after 方法名]  # 新方法插在哪个方法后面（默认紧跟原方法）
 
@@ -59,6 +61,7 @@ def main() -> int:
     ap.add_argument("--returns-type", default="")
     ap.add_argument("--tail", action="store_true")
     ap.add_argument("--static", action="store_true")
+    ap.add_argument("--sentinel")
     ap.add_argument("--after")
     a = ap.parse_args()
 
@@ -109,6 +112,37 @@ def main() -> int:
     }
     need_in = (names(block, ast.Load) & assigned_before) - {"self"}
     need_out = names(block, ast.Store) & names(after, ast.Load)
+    # 段在循环里：下一轮循环还会读到段内赋的值（block_flow 只看段后面的语句，看不到下一轮）
+    loops = [
+        n for n in ast.walk(fn)
+        if isinstance(n, (ast.While, ast.For, ast.AsyncFor)) and n.lineno < start and end <= n.end_lineno
+    ]
+    loop_reads: set[str] = set()
+    for loop in loops:
+        outside = [s for s in ast.walk(loop) if isinstance(s, ast.stmt) and s is not loop
+                   and (s.end_lineno < start or s.lineno > end)]
+        loop_reads |= names(outside, ast.Load)
+        if isinstance(loop, (ast.For, ast.AsyncFor)):
+            loop_reads |= names([loop.iter], ast.Load)
+        elif isinstance(loop, ast.While):
+            loop_reads |= names([loop.test], ast.Load)
+    loop_carried = (names(block, ast.Store) & loop_reads) - need_out
+    need_out |= loop_carried
+
+    # 段里作用于外层循环的 break / continue 抽不出去
+    def escapes(node: ast.AST, inside_loop: bool) -> bool:
+        if isinstance(node, (ast.Break, ast.Continue)) and not inside_loop:
+            return True
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)):
+            return False
+        nested = inside_loop or isinstance(node, (ast.While, ast.For, ast.AsyncFor))
+        orelse = getattr(node, "orelse", [])  # 条件表达式的 orelse 是表达式，不是语句列表
+        orelse = orelse if isinstance(orelse, list) else []
+        return any(escapes(c, inside_loop if any(c is o for o in orelse) else nested)
+                   for c in ast.iter_child_nodes(node))
+
+    if any(escapes(s, False) for s in block):
+        sys.exit("段内有作用于外层循环的 break/continue，抽不出去")
     # 参数串里可能有带逗号的注解（tuple[a, b]），按顶层逗号切
     given_params = split_top(a.params)
     param_names = {p.split(":")[0].strip() for p in given_params}
@@ -131,9 +165,19 @@ def main() -> int:
     shadowed = missing_in & names(block, ast.Store)
     if missing_in - shadowed:
         sys.exit(f"参数缺：{sorted(missing_in - shadowed)}（段内读到、段前赋过值）")
+    # 赋值语句先求右边再写左边：左边目标的写入时刻算在整条语句末尾（右边跨行时按行号比会误判）
+    target_at: dict[int, tuple[int, int]] = {}
+    for s in block:
+        for st in ast.walk(s):
+            if isinstance(st, (ast.Assign, ast.AugAssign, ast.AnnAssign)):
+                targets = st.targets if isinstance(st, ast.Assign) else [st.target]
+                for tg in targets:
+                    for n in ast.walk(tg):
+                        target_at[id(n)] = (st.end_lineno, 10**6)  # type: ignore[assignment]
+
     def first(name: str, ctx: type) -> tuple[int, int]:
         spots = [
-            (n.lineno, n.col_offset)
+            target_at.get(id(n), (n.lineno, n.col_offset))
             for s in block
             for n in ast.walk(s)
             if isinstance(n, ast.Name) and n.id == name and isinstance(n.ctx, ctx)
@@ -159,7 +203,7 @@ def main() -> int:
     shadowed -= comp_bound
 
     # 赋值语句右边先求值：同一行里"读在右、写在左"按读在先处理（行号相同比列号不可靠，保守判为读在先）
-    read_first = sorted(n for n in shadowed if first(n, ast.Load)[0] <= first(n, ast.Store)[0])
+    read_first = sorted(n for n in shadowed if first(n, ast.Load) <= first(n, ast.Store))
     if read_first:
         sys.exit(f"参数缺：{read_first}（段内先读后写，要从段前传进来）")
     if shadowed:
@@ -167,12 +211,14 @@ def main() -> int:
     redundant = sorted(
         n
         for n in param_names & names(block, ast.Store)
-        if first(n, ast.Store)[0] < first(n, ast.Load)[0]
+        if first(n, ast.Store) < first(n, ast.Load)
     )
     if redundant:
         sys.exit(f"多余参数：{redundant}（段内先赋值再读，不用传进来）")
     if not a.tail and sorted(need_out - set(returns)):
         print(f"提示：段后还读到 {sorted(need_out - set(returns))}；确认段后读之前会重新赋值，否则补进 --returns")
+        if loop_carried - set(returns):
+            print(f"提示（循环）：{sorted(loop_carried - set(returns))} 下一轮循环还会读，确认每轮读之前都会重新赋值")
     # 闭包按调用时的值读外层变量：段内给被闭包读的变量重新赋值，抽出后闭包就读不到新值。
     # 只有"该变量在返回值里、段内不调用读它的闭包"时才安全（调用处先赋回再调闭包）。
     captured: dict[str, set[str]] = {}
@@ -197,6 +243,23 @@ def main() -> int:
             sys.exit(f"段内给闭包 {sorted(readers)} 读的 {name} 赋值，抽出后闭包读不到新值")
         print(f"提示：{name} 被闭包 {sorted(readers)} 读；段内不调这些闭包，调用处赋回后再用")
     is_async = any(isinstance(n, ast.Await) for s in block for n in ast.walk(s))
+    if a.sentinel:
+        if a.tail or returns:
+            sys.exit("--sentinel 不和 --tail、--returns 一起用")
+        if a.sentinel in names([fn], ast.Store) | names([fn], ast.Load):
+            sys.exit(f"--sentinel 名字 {a.sentinel} 已在原方法里用过")
+
+        def own_returns(node: ast.AST) -> list[ast.Return]:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+                return []
+            found = [node] if isinstance(node, ast.Return) else []
+            return found + [r for c in ast.iter_child_nodes(node) for r in own_returns(c)]
+
+        rets = [r for s in block for r in own_returns(s)]
+        if not rets:
+            sys.exit("--sentinel 的段里没有 return")
+        if any(r.value is None or (isinstance(r.value, ast.Constant) and r.value.value is None) for r in rets):
+            sys.exit("--sentinel 的段里有返回 None 的 return，和'走完返回 None'分不开")
 
     indent = " " * (block[0].col_offset)
     body_src = textwrap.dedent("".join(lines[start - 1 : end]))
@@ -215,6 +278,8 @@ def main() -> int:
     new_body = textwrap.indent(body_src, method_indent + "    ")
     if returns and not a.tail:
         new_body += f"{method_indent}    return {', '.join(returns)}\n"
+    if a.sentinel:
+        new_body += f"{method_indent}    return None\n"
     new_method = "\n" + head + new_body
 
     arg_names = [p.split(":")[0].strip() for p in given_params]
@@ -223,7 +288,10 @@ def main() -> int:
     )
     owner = "self" if not a.static else type_owner(tree, fn)
     call = f"{'await ' if is_async else ''}{owner}.{a.new_name}({call_args})"
-    if a.tail and ret_ann == "None":  # 段走完就结束原函数、不带返回值：调用后单独 return
+    if a.sentinel:
+        call_line = (f"{indent}{a.sentinel} = {call}\n{indent}if {a.sentinel} is not None:\n"
+                     f"{indent}    return {a.sentinel}\n")
+    elif a.tail and ret_ann == "None":  # 段走完就结束原函数、不带返回值：调用后单独 return
         call_line = f"{indent}{call}\n{indent}return\n"
     elif a.tail:
         call_line = f"{indent}return {call}\n"

@@ -9,7 +9,7 @@ import asyncio
 import hashlib
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from simple_harness.contracts import (
     FrozenJsonValue,
@@ -72,6 +72,11 @@ from simple_harness.tools.runtime_catalog import (
 )
 
 from ..termination import TerminationLimits, TerminationState
+
+if TYPE_CHECKING:
+    from simple_harness.execution.budget import BudgetSnapshot
+
+    from ..context import ContextSnapshot
 
 
 @dataclass(frozen=True, slots=True)
@@ -285,65 +290,17 @@ class ReActLoop:
         )
         protected = getattr(services.provider, "context_use_required", False)
         scope = getattr(services.provider, "context_use_authority_scope", None)
-        if state.context_use_authority_scope is not None and (
-            not protected or state.context_use_authority_scope != scope
-        ):
-            raise ValueError("context_use_authority_downgrade_or_scope_change")
-        if protected:
-            if services.run_context_authority is None:
-                raise ValueError("context_use_snapshot_authority_required")
-            if state.context_use_authority_scope is None:
-                if state.provider_turns_reserved_total:
-                    raise ValueError("context_use_legacy_active_run_unverified")
-                state = replace(
-                    state,
-                    source_schema_version=7,
-                    context_use_authority_scope=scope,
-                    active_turn_id=value.turn_id,
-                )
-                state, checkpoint_version = checkpoint.cas(
-                    value.run_id, execution_lease, checkpoint_version, state
-                )
-            if (
-                value.continuation_id is not None
-                and value.continuation_id != state.active_continuation_id
-            ):
-                if state.phase not in {"ready", "response_reserved", "tool_batch_reserved"}:
-                    raise ValueError("context_use_continuation_before_previous_attempt_settled")
-                state = replace(
-                    state,
-                    active_turn_id=value.turn_id,
-                    active_continuation_id=value.continuation_id,
-                    context_use_attempt=None,
-                )
-                state, checkpoint_version = checkpoint.cas(
-                    value.run_id, execution_lease, checkpoint_version, state
-                )
-        if any(f.rejection.run_id != value.run_id.value for f in state.mandatory_context_repairs):
-            raise ValueError("mandatory_context_repair_run_differs")
-        context = services.context.load(value.run_id)
-        if context.revision == 0:
-            if not initial_messages:
-                raise ValueError("ReAct requires at least one initial message")
-            context = services.context.append(
-                value.run_id,
-                execution_lease,
-                0,
-                f"{value.run_id.value}:context:initial",
-                initial_messages,
-            )
-        if value.tool_exposure is not None:
-            value.tool_exposure.restore(value.run_id, state.tool_exposure_state)
-        if self._policy_fingerprint is not None:
-            if state.policy_fingerprint and (state.policy_fingerprint != self._policy_fingerprint):
-                raise RuntimeError("ReAct policy fingerprint differs from checkpoint")
-            if not state.policy_fingerprint:
-                if state.provider_turns_reserved_total or state.tool_calls_reserved_total:
-                    raise RuntimeError("legacy active ReAct checkpoint lacks policy binding")
-                state = replace(state, policy_fingerprint=self._policy_fingerprint)
-                state, checkpoint_version = checkpoint.cas(
-                    value.run_id, execution_lease, checkpoint_version, state
-                )
+        state, checkpoint_version = self._bind_run_checkpoint(
+            value,
+            services=services,
+            execution_lease=execution_lease,
+            checkpoint=checkpoint,
+            state=state,
+            checkpoint_version=checkpoint_version,
+            initial_messages=initial_messages,
+            protected=protected,
+            scope=scope,
+        )
 
         while True:
             _cancel(cancel, tool_cancel)
@@ -364,140 +321,17 @@ class ReActLoop:
                 state, checkpoint_version = checkpoint.cas(
                     value.run_id, execution_lease, checkpoint_version, state
                 )
-            if state.phase == "ready":
-                state = state.before_provider(
-                    self._collaborator.limits, now=self._clock(), budget=budget
-                )
-                provider_request_id = (
-                    f"{value.run_id.value}:provider-turn:{state.provider_turns_reserved_total}"
-                )
-                with runtime_operation(
-                    services.operation_audit,
-                    "context.prepare",
-                    lease=execution_lease,
-                    clock=self._clock,
-                    identity={"run": value.run_id.value, "request": provider_request_id},
-                ) as audit_receipt:
-                    context = services.context.load(value.run_id)
-                    provider_tools = (
-                        value.tools
-                        if value.tool_exposure is None
-                        else value.tool_exposure.provider_specs(value.run_id)
-                    )
-                    context_snapshot_revision = state.context_snapshot_revision
-                    context_snapshot_bindings = state.context_snapshot_bindings
-                    if services.run_context_authority is None:
-                        request = ProviderRequest(
-                            RequestId(provider_request_id),
-                            context.messages,
-                            tools=provider_tools,
-                            temperature=value.temperature,
-                            max_output_tokens=value.max_output_tokens,
-                        )
-                        context_authority_receipt = None
-                        context_authority_receipt_hash = None
-                    else:
-                        route_receipt = _checkpoint_route_receipt(state, value.run_id)
-                        snapshot = await services.run_context_authority.prepare_snapshot(
-                            RunContextAuthorityRequest(
-                                value.run_id,
-                                state.provider_turns_reserved_total,
-                                context.revision,
-                                ContextRouteState(state.route_state),
-                                route_receipt,
-                                _tool_catalog_fingerprint(
-                                    value.run_id, value.tool_exposure, provider_tools
-                                ),
-                                turn_id=state.active_turn_id or value.turn_id,
-                                continuation_id=state.active_continuation_id,
-                                provider_request_id=provider_request_id,
-                                mandatory_context_feedback=(
-                                    state.mandatory_context_repairs[-1]
-                                    if state.mandatory_context_repairs
-                                    else None
-                                ),
-                            )
-                        )
-                        if state.mandatory_context_repairs:
-                            required_message = state.mandatory_context_repairs[-1].message()
-                            if snapshot.messages.count(required_message) != 1:
-                                raise ValueError(
-                                    "mandatory_context_feedback_snapshot_missing_or_duplicate"
-                                )
-                        if (
-                            snapshot.run_id != value.run_id.value
-                            or snapshot.provider_turn_ordinal != state.provider_turns_reserved_total
-                            or snapshot.prior_context_revision != context.revision
-                        ):
-                            raise RuntimeError("Host Context snapshot lineage differs")
-                        if snapshot.snapshot_revision <= state.context_snapshot_revision:
-                            raise RuntimeError("Host Context snapshot revision is stale")
-                        snapshot_bindings = dict(state.context_snapshot_bindings)
-                        prior_payload_hash = snapshot_bindings.get(snapshot.snapshot_id)
-                        if (
-                            prior_payload_hash is not None
-                            and prior_payload_hash != snapshot.payload_hash
-                        ):
-                            raise RuntimeError("Host Context snapshot identity changed payload")
-                        snapshot_bindings[snapshot.snapshot_id] = snapshot.payload_hash
-                        context_snapshot_revision = snapshot.snapshot_revision
-                        context_snapshot_bindings = tuple(sorted(snapshot_bindings.items()))
-                        request = ProviderRequest(
-                            RequestId(provider_request_id),
-                            snapshot.messages,
-                            tools=snapshot.tools,
-                            temperature=snapshot.temperature,
-                            max_output_tokens=snapshot.max_output_tokens,
-                            metadata=snapshot.metadata,
-                        )
-                        if provider_request_fingerprint(request) != (
-                            snapshot.expected_request_fingerprint
-                        ):
-                            raise RuntimeError("Host Context snapshot request fingerprint differs")
-                        if snapshot.schema_version == 2 and not protected:
-                            raise ValueError("context_use_authority_required_for_typed_snapshot")
-                        context_authority_receipt = snapshot.receipt_json()
-                        context_authority_receipt_hash = hashlib.sha256(
-                            canonical_json(context_authority_receipt).encode()
-                        ).hexdigest()
-                    context_use_attempt = None
-                    if protected:
-                        if snapshot.schema_version != 2 or snapshot.recall_intents is None:
-                            raise ValueError("context_use_snapshot_attestation_missing")
-                        attempt = ProviderContextUseAttemptV1(
-                            cast(str, scope),
-                            cast(str, snapshot.recall_subject),
-                            value.run_id.value,
-                            cast(str, state.active_turn_id),
-                            state.active_continuation_id,
-                            provider_request_id,
-                            state.provider_turns_reserved_total,
-                            1,
-                            snapshot.snapshot_id,
-                            snapshot.snapshot_revision,
-                            provider_request_fingerprint(request),
-                            self._clock(),
-                            snapshot.recall_intents,
-                        )
-                        attempt.validate_provider_request(value.run_id, request)
-                        context_use_attempt = attempt.to_json()
-                    request_snapshot = provider_request_json(request)
-                    state = replace(
-                        state,
-                        provider_request_id=provider_request_id,
-                        context_revision=context.revision,
-                        context_use_attempt=context_use_attempt,
-                        provider_request_snapshot=request_snapshot,
-                        provider_request_fingerprint=provider_request_fingerprint(request),
-                        context_authority_receipt=context_authority_receipt,
-                        context_authority_receipt_hash=context_authority_receipt_hash,
-                        context_snapshot_revision=context_snapshot_revision,
-                        context_snapshot_bindings=context_snapshot_bindings,
-                    )
-                    state, checkpoint_version = checkpoint.cas(
-                        value.run_id, execution_lease, checkpoint_version, state
-                    )
-                    audit_receipt["request_fingerprint"] = provider_request_fingerprint(request)
+            state, checkpoint_version = await self._reserve_provider_request(
+                value,
+                services=services,
+                execution_lease=execution_lease,
+                checkpoint=checkpoint,
+                state=state,
+                checkpoint_version=checkpoint_version,
+                budget=budget,
+                protected=protected,
+                scope=scope,
+            )
             if state.phase not in {
                 "provider_reserved",
                 "response_reserved",
@@ -505,112 +339,20 @@ class ReActLoop:
             }:
                 raise RuntimeError(f"unsupported ReAct checkpoint phase: {state.phase}")
             assert state.provider_request_id is not None
-            if state.phase == "provider_reserved":
-                if state.provider_request_snapshot is None:
-                    raise RuntimeError("provider_reserved checkpoint lacks frozen request")
-                request = provider_request_from_json(
-                    RequestId(cast(str, state.provider_request_id)),
-                    state.provider_request_snapshot,
-                )
-                if provider_request_fingerprint(request) != state.provider_request_fingerprint:
-                    raise RuntimeError("frozen Provider request fingerprint mismatch")
-                with runtime_operation(
-                    services.operation_audit,
-                    "context.verify",
-                    lease=execution_lease,
-                    clock=self._clock,
-                    identity={"request": provider_request_fingerprint(request)},
-                ):
-                    _verify_context_authority_receipt(state, value.run_id, request)
-                context_use_kwargs = {}
-                if protected:
-                    context_use_kwargs["context_use"] = ProviderContextUseAttemptV1.from_json(
-                        state.context_use_attempt
-                    )
-                response = await services.provider.invoke(
-                    value.run_id,
-                    request,
-                    cancel=cancel,
-                    execution_lease=execution_lease,
-                    **context_use_kwargs,
-                )
-                if response.request_id != request.request_id:
-                    raise RuntimeError("Provider response request identity mismatch")
-                with runtime_operation(
-                    services.operation_audit,
-                    "tool.proposal",
-                    lease=execution_lease,
-                    clock=self._clock,
-                    identity={
-                        "request": request.request_id.value,
-                        "calls": [
-                            {
-                                "call": c.call_id.value,
-                                "name": c.name,
-                                "arguments": thaw_json(cast(FrozenJsonValue, c.arguments)),
-                            }
-                            for c in response.tool_calls
-                        ],
-                    },
-                ):
-                    raw_ids = tuple(call.call_id.value for call in response.tool_calls)
-                    if len(set(raw_ids)) != len(raw_ids):
-                        raise RuntimeError("duplicate raw Provider call ID in one turn")
-                    if response.tool_calls:
-                        keys = tuple(
-                            _repeat_key(call.name, call.arguments) for call in response.tool_calls
-                        )
-                        state = state.before_tool_batch(
-                            keys,
-                            self._collaborator.limits,
-                            now=self._clock(),
-                            budget=services.provider.read_provider_budget(value.run_id),
-                        )
-                    else:
-                        state = replace(state, phase="response_reserved")
-                continuation_capability = _provider_continuation_capability(services, value.run_id)
-                response_snapshot = provider_response_json(
-                    response, capability=continuation_capability
-                )
-                state = replace(
-                    state,
-                    provider_response_snapshot=response_snapshot,
-                    provider_response_digest=hashlib.sha256(
-                        canonical_json(response_snapshot).encode()
-                    ).hexdigest(),
-                    tool_result_progress=0,
-                )
-                state, checkpoint_version = checkpoint.cas(
-                    value.run_id, execution_lease, checkpoint_version, state
-                )
-            else:
-                if state.provider_response_snapshot is None:
-                    raise RuntimeError("response checkpoint lacks frozen response")
-                response_payload = state.provider_response_snapshot
-                if (
-                    hashlib.sha256(canonical_json(response_payload).encode()).hexdigest()
-                    != state.provider_response_digest
-                ):
-                    raise RuntimeError("frozen Provider response digest mismatch")
-                continuation_capability = _provider_continuation_capability(services, value.run_id)
-                legacy_public_response = state.source_schema_version <= 3
-                response = provider_response_from_json(
-                    response_payload,
-                    expected_capability=continuation_capability,
-                    allow_legacy_public_response=legacy_public_response,
-                )
-                if legacy_public_response:
-                    normalized_response = provider_response_json(
-                        response, capability=continuation_capability
-                    )
-                    state = replace(
-                        state,
-                        provider_response_snapshot=normalized_response,
-                        provider_response_digest=hashlib.sha256(
-                            canonical_json(normalized_response).encode()
-                        ).hexdigest(),
-                        source_schema_version=5,
-                    )
+            (
+                state,
+                checkpoint_version,
+                continuation_capability,
+            ) = await self._settle_provider_response(
+                value,
+                services=services,
+                execution_lease=execution_lease,
+                checkpoint=checkpoint,
+                state=state,
+                checkpoint_version=checkpoint_version,
+                cancel=cancel,
+                protected=protected,
+            )
             # Only the strict durable/public projection may enter Context.  The
             # physical Provider response may contain hidden reasoning or private
             # metadata that is valid for an opaque continuation but never public
@@ -775,115 +517,20 @@ class ReActLoop:
                 )
                 return ReActResult(response, state)
             _cancel(cancel, tool_cancel)
-            for call_ordinal in range(state.tool_result_progress, len(response.tool_calls)):
-                call = response.tool_calls[call_ordinal]
-                internal_call_id, effect_id = internal_effect_identity(
-                    value.run_id,
-                    state.provider_turns_reserved_total,
-                    call.call_id.value,
-                    call_ordinal,
-                )
-                with runtime_operation(
-                    services.operation_audit,
-                    "tool.route_gate",
-                    lease=execution_lease,
-                    clock=self._clock,
-                    identity={"effect": effect_id.value, "call": internal_call_id.value},
-                ) as gate_receipt:
-                    rejection = barrier_rejections.get(call_ordinal)
-                    if rejection is not None:
-                        gate_receipt["audit_outcome"] = "rejected"
-                if rejection is None:
-                    executions = await self._effects.execute(
-                        (call,),
-                        services=services,
-                        run_id=value.run_id,
-                        request_id=value.request_id,
-                        execution_lease=execution_lease,
-                        run_fence=run_fence,
-                        cancellation=tool_cancel,
-                        turn_ordinal=state.provider_turns_reserved_total,
-                        call_offset=call_ordinal,
-                        tool_exposure=value.tool_exposure,
-                        route_receipt=_checkpoint_route_receipt(state, value.run_id),
-                    )
-                    execution = executions[0]
-                else:
-                    execution = EffectExecution(
-                        None,
-                        ToolResult.rejected(
-                            internal_call_id,
-                            rejection,
-                            "Observe a Context route before executing this Tool.",
-                        ),
-                    )
-                result = execution.result
-                if result.outcome is ToolOutcome.UNKNOWN:
-                    if execution.effect is None:
-                        raise RuntimeError("tool_outcome_unknown_without_ledger")
-                    raise ToolEffectUnknownError(execution.effect)
-                result_value = thaw_json(result.value)
-                policy = batch_policies.get(call_ordinal)
-                if (
-                    policy is not None
-                    and policy.effect_class is ToolEffectClass.CONTEXT_CONTROL
-                    and result.outcome is ToolOutcome.SUCCEEDED
-                ):
-                    with runtime_operation(
-                        services.operation_audit,
-                        "context.apply",
-                        lease=execution_lease,
-                        clock=self._clock,
-                        identity={"effect": effect_id.value, "result": result_value},
-                    ):
-                        receipt = _route_receipt_from_tool_result(result_value)
-                        if (
-                            receipt.run_id != value.run_id.value
-                            or receipt.raw_call_id != call.call_id.value
-                            or receipt.effect_id != effect_id.value
-                        ):
-                            raise RuntimeError("Context route receipt differs from control effect")
-                        state = replace(
-                            state,
-                            route_state=receipt.route_state.value,
-                            route_receipt=receipt.to_json(),
-                            route_receipt_hash=receipt.receipt_hash,
-                        )
-                payload: dict[str, JsonValue] = {
-                    "outcome": result.outcome.value,
-                    "value": result_value,
-                    "error_code": result.error_code,
-                    "public_message": result.public_message,
-                }
-                if value.tool_exposure is not None and isinstance(result_value, dict):
-                    value.tool_exposure.observe_tool_result(
-                        value.run_id,
-                        call.name,
-                        result_value,
-                    )
-                    state = replace(
-                        state,
-                        tool_exposure_state=value.tool_exposure.checkpoint(value.run_id),
-                    )
-                context = services.context.append(
-                    value.run_id,
-                    execution_lease,
-                    context.revision,
-                    f"{value.run_id.value}:turn:{state.provider_turns_reserved_total}:"
-                    f"raw-call:{call.call_id.value}:ordinal:{call_ordinal}:context",
-                    (
-                        Message(
-                            MessageRole.TOOL,
-                            canonical_json(payload),
-                            name=call.name,
-                            call_id=call.call_id,
-                        ),
-                    ),
-                )
-                state = replace(state, tool_result_progress=call_ordinal + 1)
-                state, checkpoint_version = checkpoint.cas(
-                    value.run_id, execution_lease, checkpoint_version, state
-                )
+            state, checkpoint_version = await self._apply_tool_batch(
+                value,
+                services=services,
+                execution_lease=execution_lease,
+                run_fence=run_fence,
+                tool_cancel=tool_cancel,
+                checkpoint=checkpoint,
+                state=state,
+                checkpoint_version=checkpoint_version,
+                response=response,
+                context=context,
+                batch_policies=batch_policies,
+                barrier_rejections=barrier_rejections,
+            )
             if state.workflow_spawn_wait_receipt_id is not None:
                 stored = (
                     services.react_checkpoint.commit_pending_spawn_child_completion_and_react_ready(
@@ -920,6 +567,474 @@ class ReActLoop:
             state, checkpoint_version = checkpoint.cas(
                 value.run_id, execution_lease, checkpoint_version, state
             )
+
+    def _bind_run_checkpoint(
+        self,
+        value: ReActRunInput,
+        *,
+        services: RuntimeServices,
+        execution_lease: ExecutionLease,
+        checkpoint: DurableReactCheckpoint,
+        state: TerminationState,
+        checkpoint_version: int,
+        initial_messages: Sequence[Message],
+        protected: bool,
+        scope: str | None,
+    ) -> tuple[TerminationState, int]:
+        if state.context_use_authority_scope is not None and (
+            not protected or state.context_use_authority_scope != scope
+        ):
+            raise ValueError("context_use_authority_downgrade_or_scope_change")
+        if protected:
+            if services.run_context_authority is None:
+                raise ValueError("context_use_snapshot_authority_required")
+            if state.context_use_authority_scope is None:
+                if state.provider_turns_reserved_total:
+                    raise ValueError("context_use_legacy_active_run_unverified")
+                state = replace(
+                    state,
+                    source_schema_version=7,
+                    context_use_authority_scope=scope,
+                    active_turn_id=value.turn_id,
+                )
+                state, checkpoint_version = checkpoint.cas(
+                    value.run_id, execution_lease, checkpoint_version, state
+                )
+            if (
+                value.continuation_id is not None
+                and value.continuation_id != state.active_continuation_id
+            ):
+                if state.phase not in {"ready", "response_reserved", "tool_batch_reserved"}:
+                    raise ValueError("context_use_continuation_before_previous_attempt_settled")
+                state = replace(
+                    state,
+                    active_turn_id=value.turn_id,
+                    active_continuation_id=value.continuation_id,
+                    context_use_attempt=None,
+                )
+                state, checkpoint_version = checkpoint.cas(
+                    value.run_id, execution_lease, checkpoint_version, state
+                )
+        if any(f.rejection.run_id != value.run_id.value for f in state.mandatory_context_repairs):
+            raise ValueError("mandatory_context_repair_run_differs")
+        context = services.context.load(value.run_id)
+        if context.revision == 0:
+            if not initial_messages:
+                raise ValueError("ReAct requires at least one initial message")
+            context = services.context.append(
+                value.run_id,
+                execution_lease,
+                0,
+                f"{value.run_id.value}:context:initial",
+                initial_messages,
+            )
+        if value.tool_exposure is not None:
+            value.tool_exposure.restore(value.run_id, state.tool_exposure_state)
+        if self._policy_fingerprint is not None:
+            if state.policy_fingerprint and (state.policy_fingerprint != self._policy_fingerprint):
+                raise RuntimeError("ReAct policy fingerprint differs from checkpoint")
+            if not state.policy_fingerprint:
+                if state.provider_turns_reserved_total or state.tool_calls_reserved_total:
+                    raise RuntimeError("legacy active ReAct checkpoint lacks policy binding")
+                state = replace(state, policy_fingerprint=self._policy_fingerprint)
+                state, checkpoint_version = checkpoint.cas(
+                    value.run_id, execution_lease, checkpoint_version, state
+                )
+        return state, checkpoint_version
+
+    async def _apply_tool_batch(
+        self,
+        value: ReActRunInput,
+        *,
+        services: RuntimeServices,
+        execution_lease: ExecutionLease,
+        run_fence: RunFenceLease,
+        tool_cancel: CancellationToken,
+        checkpoint: DurableReactCheckpoint,
+        state: TerminationState,
+        checkpoint_version: int,
+        response: ProviderResponse,
+        context: ContextSnapshot,
+        batch_policies: dict[int, ToolExecutionPolicy],
+        barrier_rejections: dict[int, str],
+    ) -> tuple[TerminationState, int]:
+        for call_ordinal in range(state.tool_result_progress, len(response.tool_calls)):
+            call = response.tool_calls[call_ordinal]
+            internal_call_id, effect_id = internal_effect_identity(
+                value.run_id,
+                state.provider_turns_reserved_total,
+                call.call_id.value,
+                call_ordinal,
+            )
+            with runtime_operation(
+                services.operation_audit,
+                "tool.route_gate",
+                lease=execution_lease,
+                clock=self._clock,
+                identity={"effect": effect_id.value, "call": internal_call_id.value},
+            ) as gate_receipt:
+                rejection = barrier_rejections.get(call_ordinal)
+                if rejection is not None:
+                    gate_receipt["audit_outcome"] = "rejected"
+            if rejection is None:
+                executions = await self._effects.execute(
+                    (call,),
+                    services=services,
+                    run_id=value.run_id,
+                    request_id=value.request_id,
+                    execution_lease=execution_lease,
+                    run_fence=run_fence,
+                    cancellation=tool_cancel,
+                    turn_ordinal=state.provider_turns_reserved_total,
+                    call_offset=call_ordinal,
+                    tool_exposure=value.tool_exposure,
+                    route_receipt=_checkpoint_route_receipt(state, value.run_id),
+                )
+                execution = executions[0]
+            else:
+                execution = EffectExecution(
+                    None,
+                    ToolResult.rejected(
+                        internal_call_id,
+                        rejection,
+                        "Observe a Context route before executing this Tool.",
+                    ),
+                )
+            result = execution.result
+            if result.outcome is ToolOutcome.UNKNOWN:
+                if execution.effect is None:
+                    raise RuntimeError("tool_outcome_unknown_without_ledger")
+                raise ToolEffectUnknownError(execution.effect)
+            result_value = thaw_json(result.value)
+            policy = batch_policies.get(call_ordinal)
+            if (
+                policy is not None
+                and policy.effect_class is ToolEffectClass.CONTEXT_CONTROL
+                and result.outcome is ToolOutcome.SUCCEEDED
+            ):
+                with runtime_operation(
+                    services.operation_audit,
+                    "context.apply",
+                    lease=execution_lease,
+                    clock=self._clock,
+                    identity={"effect": effect_id.value, "result": result_value},
+                ):
+                    receipt = _route_receipt_from_tool_result(result_value)
+                    if (
+                        receipt.run_id != value.run_id.value
+                        or receipt.raw_call_id != call.call_id.value
+                        or receipt.effect_id != effect_id.value
+                    ):
+                        raise RuntimeError("Context route receipt differs from control effect")
+                    state = replace(
+                        state,
+                        route_state=receipt.route_state.value,
+                        route_receipt=receipt.to_json(),
+                        route_receipt_hash=receipt.receipt_hash,
+                    )
+            payload: dict[str, JsonValue] = {
+                "outcome": result.outcome.value,
+                "value": result_value,
+                "error_code": result.error_code,
+                "public_message": result.public_message,
+            }
+            if value.tool_exposure is not None and isinstance(result_value, dict):
+                value.tool_exposure.observe_tool_result(
+                    value.run_id,
+                    call.name,
+                    result_value,
+                )
+                state = replace(
+                    state,
+                    tool_exposure_state=value.tool_exposure.checkpoint(value.run_id),
+                )
+            context = services.context.append(
+                value.run_id,
+                execution_lease,
+                context.revision,
+                f"{value.run_id.value}:turn:{state.provider_turns_reserved_total}:"
+                f"raw-call:{call.call_id.value}:ordinal:{call_ordinal}:context",
+                (
+                    Message(
+                        MessageRole.TOOL,
+                        canonical_json(payload),
+                        name=call.name,
+                        call_id=call.call_id,
+                    ),
+                ),
+            )
+            state = replace(state, tool_result_progress=call_ordinal + 1)
+            state, checkpoint_version = checkpoint.cas(
+                value.run_id, execution_lease, checkpoint_version, state
+            )
+        return state, checkpoint_version
+
+    async def _settle_provider_response(
+        self,
+        value: ReActRunInput,
+        *,
+        services: RuntimeServices,
+        execution_lease: ExecutionLease,
+        checkpoint: DurableReactCheckpoint,
+        state: TerminationState,
+        checkpoint_version: int,
+        cancel: CancelToken,
+        protected: bool,
+    ) -> tuple[TerminationState, int, ProviderContinuationCapability]:
+        if state.phase == "provider_reserved":
+            if state.provider_request_snapshot is None:
+                raise RuntimeError("provider_reserved checkpoint lacks frozen request")
+            request = provider_request_from_json(
+                RequestId(cast(str, state.provider_request_id)),
+                state.provider_request_snapshot,
+            )
+            if provider_request_fingerprint(request) != state.provider_request_fingerprint:
+                raise RuntimeError("frozen Provider request fingerprint mismatch")
+            with runtime_operation(
+                services.operation_audit,
+                "context.verify",
+                lease=execution_lease,
+                clock=self._clock,
+                identity={"request": provider_request_fingerprint(request)},
+            ):
+                _verify_context_authority_receipt(state, value.run_id, request)
+            context_use_kwargs = {}
+            if protected:
+                context_use_kwargs["context_use"] = ProviderContextUseAttemptV1.from_json(
+                    state.context_use_attempt
+                )
+            response = await services.provider.invoke(
+                value.run_id,
+                request,
+                cancel=cancel,
+                execution_lease=execution_lease,
+                **context_use_kwargs,
+            )
+            if response.request_id != request.request_id:
+                raise RuntimeError("Provider response request identity mismatch")
+            with runtime_operation(
+                services.operation_audit,
+                "tool.proposal",
+                lease=execution_lease,
+                clock=self._clock,
+                identity={
+                    "request": request.request_id.value,
+                    "calls": [
+                        {
+                            "call": c.call_id.value,
+                            "name": c.name,
+                            "arguments": thaw_json(cast(FrozenJsonValue, c.arguments)),
+                        }
+                        for c in response.tool_calls
+                    ],
+                },
+            ):
+                raw_ids = tuple(call.call_id.value for call in response.tool_calls)
+                if len(set(raw_ids)) != len(raw_ids):
+                    raise RuntimeError("duplicate raw Provider call ID in one turn")
+                if response.tool_calls:
+                    keys = tuple(
+                        _repeat_key(call.name, call.arguments) for call in response.tool_calls
+                    )
+                    state = state.before_tool_batch(
+                        keys,
+                        self._collaborator.limits,
+                        now=self._clock(),
+                        budget=services.provider.read_provider_budget(value.run_id),
+                    )
+                else:
+                    state = replace(state, phase="response_reserved")
+            continuation_capability = _provider_continuation_capability(services, value.run_id)
+            response_snapshot = provider_response_json(response, capability=continuation_capability)
+            state = replace(
+                state,
+                provider_response_snapshot=response_snapshot,
+                provider_response_digest=hashlib.sha256(
+                    canonical_json(response_snapshot).encode()
+                ).hexdigest(),
+                tool_result_progress=0,
+            )
+            state, checkpoint_version = checkpoint.cas(
+                value.run_id, execution_lease, checkpoint_version, state
+            )
+        else:
+            if state.provider_response_snapshot is None:
+                raise RuntimeError("response checkpoint lacks frozen response")
+            response_payload = state.provider_response_snapshot
+            if (
+                hashlib.sha256(canonical_json(response_payload).encode()).hexdigest()
+                != state.provider_response_digest
+            ):
+                raise RuntimeError("frozen Provider response digest mismatch")
+            continuation_capability = _provider_continuation_capability(services, value.run_id)
+            legacy_public_response = state.source_schema_version <= 3
+            response = provider_response_from_json(
+                response_payload,
+                expected_capability=continuation_capability,
+                allow_legacy_public_response=legacy_public_response,
+            )
+            if legacy_public_response:
+                normalized_response = provider_response_json(
+                    response, capability=continuation_capability
+                )
+                state = replace(
+                    state,
+                    provider_response_snapshot=normalized_response,
+                    provider_response_digest=hashlib.sha256(
+                        canonical_json(normalized_response).encode()
+                    ).hexdigest(),
+                    source_schema_version=5,
+                )
+        return state, checkpoint_version, continuation_capability
+
+    async def _reserve_provider_request(
+        self,
+        value: ReActRunInput,
+        *,
+        services: RuntimeServices,
+        execution_lease: ExecutionLease,
+        checkpoint: DurableReactCheckpoint,
+        state: TerminationState,
+        checkpoint_version: int,
+        budget: BudgetSnapshot,
+        protected: bool,
+        scope: str | None,
+    ) -> tuple[TerminationState, int]:
+        if state.phase == "ready":
+            state = state.before_provider(
+                self._collaborator.limits, now=self._clock(), budget=budget
+            )
+            provider_request_id = (
+                f"{value.run_id.value}:provider-turn:{state.provider_turns_reserved_total}"
+            )
+            with runtime_operation(
+                services.operation_audit,
+                "context.prepare",
+                lease=execution_lease,
+                clock=self._clock,
+                identity={"run": value.run_id.value, "request": provider_request_id},
+            ) as audit_receipt:
+                context = services.context.load(value.run_id)
+                provider_tools = (
+                    value.tools
+                    if value.tool_exposure is None
+                    else value.tool_exposure.provider_specs(value.run_id)
+                )
+                context_snapshot_revision = state.context_snapshot_revision
+                context_snapshot_bindings = state.context_snapshot_bindings
+                if services.run_context_authority is None:
+                    request = ProviderRequest(
+                        RequestId(provider_request_id),
+                        context.messages,
+                        tools=provider_tools,
+                        temperature=value.temperature,
+                        max_output_tokens=value.max_output_tokens,
+                    )
+                    context_authority_receipt = None
+                    context_authority_receipt_hash = None
+                else:
+                    route_receipt = _checkpoint_route_receipt(state, value.run_id)
+                    snapshot = await services.run_context_authority.prepare_snapshot(
+                        RunContextAuthorityRequest(
+                            value.run_id,
+                            state.provider_turns_reserved_total,
+                            context.revision,
+                            ContextRouteState(state.route_state),
+                            route_receipt,
+                            _tool_catalog_fingerprint(
+                                value.run_id, value.tool_exposure, provider_tools
+                            ),
+                            turn_id=state.active_turn_id or value.turn_id,
+                            continuation_id=state.active_continuation_id,
+                            provider_request_id=provider_request_id,
+                            mandatory_context_feedback=(
+                                state.mandatory_context_repairs[-1]
+                                if state.mandatory_context_repairs
+                                else None
+                            ),
+                        )
+                    )
+                    if state.mandatory_context_repairs:
+                        required_message = state.mandatory_context_repairs[-1].message()
+                        if snapshot.messages.count(required_message) != 1:
+                            raise ValueError(
+                                "mandatory_context_feedback_snapshot_missing_or_duplicate"
+                            )
+                    if (
+                        snapshot.run_id != value.run_id.value
+                        or snapshot.provider_turn_ordinal != state.provider_turns_reserved_total
+                        or snapshot.prior_context_revision != context.revision
+                    ):
+                        raise RuntimeError("Host Context snapshot lineage differs")
+                    if snapshot.snapshot_revision <= state.context_snapshot_revision:
+                        raise RuntimeError("Host Context snapshot revision is stale")
+                    snapshot_bindings = dict(state.context_snapshot_bindings)
+                    prior_payload_hash = snapshot_bindings.get(snapshot.snapshot_id)
+                    if (
+                        prior_payload_hash is not None
+                        and prior_payload_hash != snapshot.payload_hash
+                    ):
+                        raise RuntimeError("Host Context snapshot identity changed payload")
+                    snapshot_bindings[snapshot.snapshot_id] = snapshot.payload_hash
+                    context_snapshot_revision = snapshot.snapshot_revision
+                    context_snapshot_bindings = tuple(sorted(snapshot_bindings.items()))
+                    request = ProviderRequest(
+                        RequestId(provider_request_id),
+                        snapshot.messages,
+                        tools=snapshot.tools,
+                        temperature=snapshot.temperature,
+                        max_output_tokens=snapshot.max_output_tokens,
+                        metadata=snapshot.metadata,
+                    )
+                    if provider_request_fingerprint(request) != (
+                        snapshot.expected_request_fingerprint
+                    ):
+                        raise RuntimeError("Host Context snapshot request fingerprint differs")
+                    if snapshot.schema_version == 2 and not protected:
+                        raise ValueError("context_use_authority_required_for_typed_snapshot")
+                    context_authority_receipt = snapshot.receipt_json()
+                    context_authority_receipt_hash = hashlib.sha256(
+                        canonical_json(context_authority_receipt).encode()
+                    ).hexdigest()
+                context_use_attempt = None
+                if protected:
+                    if snapshot.schema_version != 2 or snapshot.recall_intents is None:
+                        raise ValueError("context_use_snapshot_attestation_missing")
+                    attempt = ProviderContextUseAttemptV1(
+                        cast(str, scope),
+                        cast(str, snapshot.recall_subject),
+                        value.run_id.value,
+                        cast(str, state.active_turn_id),
+                        state.active_continuation_id,
+                        provider_request_id,
+                        state.provider_turns_reserved_total,
+                        1,
+                        snapshot.snapshot_id,
+                        snapshot.snapshot_revision,
+                        provider_request_fingerprint(request),
+                        self._clock(),
+                        snapshot.recall_intents,
+                    )
+                    attempt.validate_provider_request(value.run_id, request)
+                    context_use_attempt = attempt.to_json()
+                request_snapshot = provider_request_json(request)
+                state = replace(
+                    state,
+                    provider_request_id=provider_request_id,
+                    context_revision=context.revision,
+                    context_use_attempt=context_use_attempt,
+                    provider_request_snapshot=request_snapshot,
+                    provider_request_fingerprint=provider_request_fingerprint(request),
+                    context_authority_receipt=context_authority_receipt,
+                    context_authority_receipt_hash=context_authority_receipt_hash,
+                    context_snapshot_revision=context_snapshot_revision,
+                    context_snapshot_bindings=context_snapshot_bindings,
+                )
+                state, checkpoint_version = checkpoint.cas(
+                    value.run_id, execution_lease, checkpoint_version, state
+                )
+                audit_receipt["request_fingerprint"] = provider_request_fingerprint(request)
+        return state, checkpoint_version
 
 
 def _repeat_key(name: str, arguments: object) -> str:

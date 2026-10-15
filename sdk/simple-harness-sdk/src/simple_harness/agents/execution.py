@@ -24,7 +24,7 @@ import sqlite3
 import time
 from collections.abc import Callable, Mapping, MutableMapping
 from dataclasses import dataclass, replace
-from typing import cast
+from typing import Any, cast
 
 from simple_harness.contracts import (
     JsonValue,
@@ -57,6 +57,7 @@ from simple_harness.runtime.drivers.react_loop import (
     AgentLoopCollaborator,
     EffectBatchExecutor,
     ReActLoop,
+    ReActResult,
     ReActRunInput,
     ToolEffectUnknownError,
 )
@@ -253,18 +254,7 @@ class AgentExecutionDriver:
                 "base_agent_binding_missing", "BaseAgent binding lacks agent_id."
             )
 
-        turn_input: dict[str, JsonValue] | None = None
-        unexpected: list[str] = []
-        for continuation in invocation.continuations:
-            payload = thaw_json(continuation.payload)
-            if isinstance(payload, dict) and payload.get("kind") == BASE_AGENT_INPUT_KIND:
-                turn_input = payload
-            else:
-                unexpected.append(
-                    str(payload.get("kind"))
-                    if isinstance(payload, dict)
-                    else type(payload).__name__
-                )
+        turn_input, unexpected = AgentExecutionDriver._scan_continuations(invocation)
         if turn_input is None:
             if unexpected:
                 # Closure E3: consume (the kernel acks it) but never terminalize the Agent.
@@ -306,38 +296,12 @@ class AgentExecutionDriver:
                 "base_agent_input_malformed", f"base_agent_input message is invalid: {error}"
             )
 
-        expected_budget = invocation.start.provider_budget_fingerprint
-        if expected_budget is not None:
-            actual_budget = invocation.services.provider.budget_policy_fingerprint_for(run_id)
-            if actual_budget != expected_budget:
-                raise ValueError("Provider budget policy differs from frozen Run binding")
-        elif self.provider_budget_fingerprint is not None and (
-            getattr(invocation.services.provider, "budget_policy_fingerprint", None)
-            != self.provider_budget_fingerprint
-        ):
-            raise ValueError("Provider budget policy differs from BaseAgent composition")
+        self._check_provider_budget_binding(invocation, run_id)
 
         checkpoint_port = invocation.services.react_checkpoint
-        totals = _checkpoint_totals(checkpoint_port, invocation.run.run_id)
-        ordinal_from = totals.provider_turns
-        turn_created_at: float | None = None
-        tool_calls_from: int | None = totals.tool_calls
-        mark_running = getattr(checkpoint_port, "mark_agent_turn_running", None)
-        if callable(mark_running):
-            # The baselines are written once: a resume of the same turn (UNKNOWN or
-            # authorization wait) reads the first admission back instead of the
-            # current cumulative totals, so "per turn" never means "per attempt".
-            turn_row = mark_running(
-                turn_id=turn_id,
-                execution_lease=invocation.execution_lease,
-                provider_turn_ordinal_from=ordinal_from,
-                tool_call_ordinal_from=totals.tool_calls,
-                now=self._clock(),
-            )
-            if turn_row is not None:
-                ordinal_from = getattr(turn_row, "provider_turn_ordinal_from", ordinal_from)
-                tool_calls_from = getattr(turn_row, "tool_call_ordinal_from", tool_calls_from)
-                turn_created_at = getattr(turn_row, "created_at", None)
+        totals, ordinal_from, turn_created_at, tool_calls_from = self._turn_baselines(
+            invocation, checkpoint_port, turn_id
+        )
 
         # T7: the run-level ReAct checkpoint may only be resumed by the turn that left
         # it in flight; any other turn on an in-flight checkpoint is a kernel-integrity
@@ -353,108 +317,59 @@ class AgentExecutionDriver:
         # T8: a durable cancel intent recorded before this (re)admission fails the turn
         # without a single provider call; an in-process intent arrives via the token.
         read_cancel = getattr(checkpoint_port, "read_agent_turn_cancel", None)
-        if callable(read_cancel) and read_cancel(turn_id) is not None:
-            unknown = _unknown_effects(checkpoint_port, run_id)
-            if unknown:
-                # The turn still owns an UNKNOWN effect: keep waiting for its
-                # reconciliation (the loop identities depend on the in-flight
-                # checkpoint).  The intent is durable and applies once it settles.
-                return _react_failure_result(ToolEffectUnknownError(unknown[0]))
-            self._settle_failed_turn(invocation, run_id)
-            return self._cancelled_turn(
-                agent_id=agent_id,
-                turn_id=turn_id,
-                seq=seq,
-                input_id=input_id,
-                input_hash=input_hash,
-                ordinal_from=ordinal_from,
-                checkpoint_port=checkpoint_port,
-                run_id_value=invocation.run.run_id,
-            )
+        cancelled_early = self._refuse_cancelled_turn(
+            invocation,
+            run_id=run_id,
+            read_cancel=read_cancel,
+            agent_id=agent_id,
+            turn_id=turn_id,
+            seq=seq,
+            input_id=input_id,
+            input_hash=input_hash,
+            ordinal_from=ordinal_from,
+            checkpoint_port=checkpoint_port,
+        )
+        if cancelled_early is not None:
+            return cancelled_early
         deadline = _turn_deadline(binding.get("limits"))
-        if (
-            deadline is not None
-            and turn_created_at is not None
-            and self._clock() - float(turn_created_at) >= deadline
-        ):
-            # Anchored on the turn's first durable admission: a restart that arrives
-            # after the deadline fails the turn without a single provider call.
-            self._settle_failed_turn(invocation, run_id)
-            return self._budget_failure(
-                TerminationBudgetExceeded(TerminationReason.WALL_CLOCK),
-                agent_id=agent_id,
-                turn_id=turn_id,
-                seq=seq,
-                input_id=input_id,
-                input_hash=input_hash,
-                ordinal_from=ordinal_from,
-                checkpoint_port=checkpoint_port,
-                run_id_value=invocation.run.run_id,
-            )
-        turn_limits = _turn_limits(
-            self._lifetime_limits,
-            binding.get("limits"),
-            provider_turns_from=ordinal_from,
+        past_deadline = self._refuse_past_deadline(
+            invocation,
+            run_id=run_id,
+            deadline=deadline,
+            turn_created_at=turn_created_at,
+            agent_id=agent_id,
+            turn_id=turn_id,
+            seq=seq,
+            input_id=input_id,
+            input_hash=input_hash,
+            ordinal_from=ordinal_from,
+            checkpoint_port=checkpoint_port,
+        )
+        if past_deadline is not None:
+            return past_deadline
+        loop = self._turn_loop(
+            binding,
+            totals=totals,
+            ordinal_from=ordinal_from,
             tool_calls_from=tool_calls_from,
             turn_created_at=turn_created_at,
-            loop_started_at=totals.started_at,
-        )
-        loop = ReActLoop(
-            collaborator=AgentLoopCollaborator(limits=turn_limits),
-            effects=self._effects,
-            clock=self._clock,
-            policy_fingerprint=self.policy_fingerprint,
         )
 
         # Both branches append the user message under the turn-scoped id so a rerun of the
         # first turn is idempotent (review F4); instructions get their own id.
-        revision_reader = getattr(invocation.services.context, "revision", None)
-        if callable(revision_reader):
-            # Journal port: only the CAS anchor is needed here, not an assembled
-            # request (that happens once per provider turn inside the loop).
-            current_context = ContextSnapshot(int(revision_reader(run_id)), ())
-        else:
-            current_context = invocation.services.context.load(run_id)
-        initial = _messages(input_value.get("messages"))
-        if current_context.revision == 0 and initial:
-            current_context = invocation.services.context.append(
-                run_id,
-                invocation.execution_lease,
-                0,
-                f"{invocation.run.run_id}:context:instructions",
-                initial,
-            )
-        current_context = invocation.services.context.append(
-            run_id,
-            invocation.execution_lease,
-            current_context.revision,
-            f"{turn_id}:context:user",
-            (user_message,),
+        initial_messages, tools, tool_exposure = await self._prepare_turn_context(
+            invocation,
+            run_id=run_id,
+            input_value=input_value,
+            turn_id=turn_id,
+            user_message=user_message,
         )
-        initial_messages: tuple[Message, ...] = (user_message,)
-        tools = _tools(
-            input_value.get("capability_snapshot"),
-            invocation.services.tools,
-            catalog=invocation.services.tool_catalog,
-            generation=invocation.start.tool_catalog_generation,
-            fingerprint=invocation.start.tool_catalog_fingerprint,
-        )
-        tool_exposure = (
-            None if self._tool_exposure_resolver is None else self._tool_exposure_resolver(run_id)
-        )
-        prepare = getattr(invocation.services.context, "prepare", None)
-        if callable(prepare):
-            # Slice 4: pre-embed the recall query off the loop thread (review S4-04).
-            await prepare(run_id)
         output_cap = _optional_int(input_value.get("max_output_tokens"), "max_output_tokens")
         attempt = 0
         escalations: list[dict[str, JsonValue]] = []
         # One cooperative token per admission (not per attempt): a cancel_turn that
         # lands between two output-cap attempts must still be observed (review E1).
-        token = self.turn_cancellations.get(turn_id)
-        if token is None:
-            token = CancellationToken()
-            self.turn_cancellations[turn_id] = token
+        token = self._turn_token(turn_id)
         try:
             while True:
                 try:
@@ -506,12 +421,7 @@ class AgentExecutionDriver:
                 ) as error:
                     # Model protocol violations and definite Provider refusals end this turn as
                     # FAILED; the Agent stays alive (UNKNOWN outcomes keep the legacy wait path).
-                    if isinstance(error, UnknownToolError):
-                        code = "tool_not_exposed"
-                    elif isinstance(error, MalformedToolArgumentsError):
-                        code = "invalid_tool_arguments"
-                    else:
-                        code = str(getattr(error, "code", "provider_rejected"))
+                    code = AgentExecutionDriver._failure_code(error)
                     detail = getattr(error, "detail", None)
                     # 2026-09-26 Host run: DeepSeek ends about one tool response in a
                     # hundred with ``finish_reason=tool_calls`` and arguments that are not
@@ -587,47 +497,20 @@ class AgentExecutionDriver:
                         continue
                     # Whatever the cause, the turn is definitely over: release the loop
                     # checkpoint so the next AgentTurn starts a fresh provider request.
-                    self._settle_failed_turn(invocation, run_id)
-                    error_payload: dict[str, JsonValue] = {
-                        "error_code": code,
-                        "source_kind": (
-                            "provider_admission"
-                            if code == "provider_admission_denied"
-                            else "tool_parse"
-                        ),
-                        "error_type": type(error).__name__,
-                        # 2026-10-10 parse 局：三次"回复无法解析"只留了错误码，没人知道为什么。
-                        # 错误自带的说明（不含回复内容）记进去，给模型和审计看。
-                        "message": str(error)[:500],
-                    }
-                    if code == "provider_admission_denied":
-                        error_payload["retryable"] = False
-                    if isinstance(detail, Mapping):
-                        # e.g. finish_reason / observed usage of an empty provider response,
-                        # kept in the durable turn result (review F6).
-                        error_payload["detail"] = cast(
-                            JsonValue, thaw_json(freeze_json(dict(detail)))
-                        )
-                    if escalations:
-                        error_payload["output_cap_escalations"] = cast(
-                            JsonValue, thaw_json(freeze_json(list(escalations)))
-                        )
-                    return DriverResult(
-                        RunState.WAITING,
-                        {"response_present": False, "raw_failures": [{"error_code": code}]},
-                        agent_turn_outcome=failed_outcome(
-                            agent_id=agent_id,
-                            turn_id=turn_id,
-                            seq=seq,
-                            input_id=input_id,
-                            input_hash=input_hash,
-                            error=error_payload,
-                            delegation_count=self._delegations(turn_id),
-                            provider_turn_ordinal_from=ordinal_from,
-                            provider_turn_ordinal_to=_checkpoint_totals(
-                                checkpoint_port, invocation.run.run_id
-                            ).provider_turns,
-                        ),
+                    return self._definite_turn_failure(
+                        invocation,
+                        run_id=run_id,
+                        error=error,
+                        code=code,
+                        detail=detail,
+                        escalations=escalations,
+                        agent_id=agent_id,
+                        turn_id=turn_id,
+                        seq=seq,
+                        input_id=input_id,
+                        input_hash=input_hash,
+                        ordinal_from=ordinal_from,
+                        checkpoint_port=checkpoint_port,
                     )
                 except (
                     ProviderInvocationUnknownError,
@@ -638,6 +521,301 @@ class AgentExecutionDriver:
                 break
         finally:
             self.turn_cancellations.pop(turn_id, None)
+        return self._committed_turn_result(
+            result,
+            agent_id=agent_id,
+            turn_id=turn_id,
+            seq=seq,
+            input_id=input_id,
+            input_hash=input_hash,
+            ordinal_from=ordinal_from,
+            escalations=escalations,
+        )
+
+    @staticmethod
+    def _scan_continuations(
+        invocation: DriverInvocation,
+    ) -> tuple[dict[str, JsonValue] | None, list[str]]:
+        turn_input: dict[str, JsonValue] | None = None
+        unexpected: list[str] = []
+        for continuation in invocation.continuations:
+            payload = thaw_json(continuation.payload)
+            if isinstance(payload, dict) and payload.get("kind") == BASE_AGENT_INPUT_KIND:
+                turn_input = payload
+            else:
+                unexpected.append(
+                    str(payload.get("kind"))
+                    if isinstance(payload, dict)
+                    else type(payload).__name__
+                )
+        return turn_input, unexpected
+
+    def _turn_loop(
+        self,
+        binding: Mapping[str, object],
+        *,
+        totals: _CheckpointTotals,
+        ordinal_from: int,
+        tool_calls_from: int | None,
+        turn_created_at: float | None,
+    ) -> ReActLoop:
+        turn_limits = _turn_limits(
+            self._lifetime_limits,
+            binding.get("limits"),
+            provider_turns_from=ordinal_from,
+            tool_calls_from=tool_calls_from,
+            turn_created_at=turn_created_at,
+            loop_started_at=totals.started_at,
+        )
+        loop = ReActLoop(
+            collaborator=AgentLoopCollaborator(limits=turn_limits),
+            effects=self._effects,
+            clock=self._clock,
+            policy_fingerprint=self.policy_fingerprint,
+        )
+        return loop
+
+    def _turn_token(self, turn_id: str) -> CancellationToken:
+        token = self.turn_cancellations.get(turn_id)
+        if token is None:
+            token = CancellationToken()
+            self.turn_cancellations[turn_id] = token
+        return token
+
+    @staticmethod
+    def _failure_code(error: Exception) -> str:
+        if isinstance(error, UnknownToolError):
+            code = "tool_not_exposed"
+        elif isinstance(error, MalformedToolArgumentsError):
+            code = "invalid_tool_arguments"
+        else:
+            code = str(getattr(error, "code", "provider_rejected"))
+        return code
+
+    def _check_provider_budget_binding(self, invocation: DriverInvocation, run_id: RunId) -> None:
+        expected_budget = invocation.start.provider_budget_fingerprint
+        if expected_budget is not None:
+            actual_budget = invocation.services.provider.budget_policy_fingerprint_for(run_id)
+            if actual_budget != expected_budget:
+                raise ValueError("Provider budget policy differs from frozen Run binding")
+        elif self.provider_budget_fingerprint is not None and (
+            getattr(invocation.services.provider, "budget_policy_fingerprint", None)
+            != self.provider_budget_fingerprint
+        ):
+            raise ValueError("Provider budget policy differs from BaseAgent composition")
+
+    def _turn_baselines(
+        self, invocation: DriverInvocation, checkpoint_port: Any, turn_id: str
+    ) -> tuple[_CheckpointTotals, int, float | None, int | None]:
+        totals = _checkpoint_totals(checkpoint_port, invocation.run.run_id)
+        ordinal_from = totals.provider_turns
+        turn_created_at: float | None = None
+        tool_calls_from: int | None = totals.tool_calls
+        mark_running = getattr(checkpoint_port, "mark_agent_turn_running", None)
+        if callable(mark_running):
+            # The baselines are written once: a resume of the same turn (UNKNOWN or
+            # authorization wait) reads the first admission back instead of the
+            # current cumulative totals, so "per turn" never means "per attempt".
+            turn_row = mark_running(
+                turn_id=turn_id,
+                execution_lease=invocation.execution_lease,
+                provider_turn_ordinal_from=ordinal_from,
+                tool_call_ordinal_from=totals.tool_calls,
+                now=self._clock(),
+            )
+            if turn_row is not None:
+                ordinal_from = getattr(turn_row, "provider_turn_ordinal_from", ordinal_from)
+                tool_calls_from = getattr(turn_row, "tool_call_ordinal_from", tool_calls_from)
+                turn_created_at = getattr(turn_row, "created_at", None)
+        return totals, ordinal_from, turn_created_at, tool_calls_from
+
+    def _refuse_cancelled_turn(
+        self,
+        invocation: DriverInvocation,
+        *,
+        run_id: RunId,
+        read_cancel: Any,
+        agent_id: str,
+        turn_id: str,
+        seq: int,
+        input_id: str,
+        input_hash: str,
+        ordinal_from: int,
+        checkpoint_port: Any,
+    ) -> DriverResult | None:
+        if callable(read_cancel) and read_cancel(turn_id) is not None:
+            unknown = _unknown_effects(checkpoint_port, run_id)
+            if unknown:
+                # The turn still owns an UNKNOWN effect: keep waiting for its
+                # reconciliation (the loop identities depend on the in-flight
+                # checkpoint).  The intent is durable and applies once it settles.
+                return _react_failure_result(ToolEffectUnknownError(unknown[0]))
+            self._settle_failed_turn(invocation, run_id)
+            return self._cancelled_turn(
+                agent_id=agent_id,
+                turn_id=turn_id,
+                seq=seq,
+                input_id=input_id,
+                input_hash=input_hash,
+                ordinal_from=ordinal_from,
+                checkpoint_port=checkpoint_port,
+                run_id_value=invocation.run.run_id,
+            )
+        return None
+
+    def _refuse_past_deadline(
+        self,
+        invocation: DriverInvocation,
+        *,
+        run_id: RunId,
+        deadline: float | None,
+        turn_created_at: float | None,
+        agent_id: str,
+        turn_id: str,
+        seq: int,
+        input_id: str,
+        input_hash: str,
+        ordinal_from: int,
+        checkpoint_port: Any,
+    ) -> DriverResult | None:
+        if (
+            deadline is not None
+            and turn_created_at is not None
+            and self._clock() - float(turn_created_at) >= deadline
+        ):
+            # Anchored on the turn's first durable admission: a restart that arrives
+            # after the deadline fails the turn without a single provider call.
+            self._settle_failed_turn(invocation, run_id)
+            return self._budget_failure(
+                TerminationBudgetExceeded(TerminationReason.WALL_CLOCK),
+                agent_id=agent_id,
+                turn_id=turn_id,
+                seq=seq,
+                input_id=input_id,
+                input_hash=input_hash,
+                ordinal_from=ordinal_from,
+                checkpoint_port=checkpoint_port,
+                run_id_value=invocation.run.run_id,
+            )
+        return None
+
+    async def _prepare_turn_context(
+        self,
+        invocation: DriverInvocation,
+        *,
+        run_id: RunId,
+        input_value: Mapping[str, object],
+        turn_id: str,
+        user_message: Message,
+    ) -> tuple[tuple[Message, ...], Any, Any]:
+        revision_reader = getattr(invocation.services.context, "revision", None)
+        if callable(revision_reader):
+            # Journal port: only the CAS anchor is needed here, not an assembled
+            # request (that happens once per provider turn inside the loop).
+            current_context = ContextSnapshot(int(revision_reader(run_id)), ())
+        else:
+            current_context = invocation.services.context.load(run_id)
+        initial = _messages(input_value.get("messages"))
+        if current_context.revision == 0 and initial:
+            current_context = invocation.services.context.append(
+                run_id,
+                invocation.execution_lease,
+                0,
+                f"{invocation.run.run_id}:context:instructions",
+                initial,
+            )
+        current_context = invocation.services.context.append(
+            run_id,
+            invocation.execution_lease,
+            current_context.revision,
+            f"{turn_id}:context:user",
+            (user_message,),
+        )
+        initial_messages: tuple[Message, ...] = (user_message,)
+        tools = _tools(
+            input_value.get("capability_snapshot"),
+            invocation.services.tools,
+            catalog=invocation.services.tool_catalog,
+            generation=invocation.start.tool_catalog_generation,
+            fingerprint=invocation.start.tool_catalog_fingerprint,
+        )
+        tool_exposure = (
+            None if self._tool_exposure_resolver is None else self._tool_exposure_resolver(run_id)
+        )
+        prepare = getattr(invocation.services.context, "prepare", None)
+        if callable(prepare):
+            # Slice 4: pre-embed the recall query off the loop thread (review S4-04).
+            await prepare(run_id)
+        return initial_messages, tools, tool_exposure
+
+    def _definite_turn_failure(
+        self,
+        invocation: DriverInvocation,
+        *,
+        run_id: RunId,
+        error: Exception,
+        code: str,
+        detail: object,
+        escalations: list[dict[str, JsonValue]],
+        agent_id: str,
+        turn_id: str,
+        seq: int,
+        input_id: str,
+        input_hash: str,
+        ordinal_from: int,
+        checkpoint_port: Any,
+    ) -> DriverResult:
+        self._settle_failed_turn(invocation, run_id)
+        error_payload: dict[str, JsonValue] = {
+            "error_code": code,
+            "source_kind": (
+                "provider_admission" if code == "provider_admission_denied" else "tool_parse"
+            ),
+            "error_type": type(error).__name__,
+            # 2026-10-10 parse 局：三次"回复无法解析"只留了错误码，没人知道为什么。
+            # 错误自带的说明（不含回复内容）记进去，给模型和审计看。
+            "message": str(error)[:500],
+        }
+        if code == "provider_admission_denied":
+            error_payload["retryable"] = False
+        if isinstance(detail, Mapping):
+            # e.g. finish_reason / observed usage of an empty provider response,
+            # kept in the durable turn result (review F6).
+            error_payload["detail"] = cast(JsonValue, thaw_json(freeze_json(dict(detail))))
+        if escalations:
+            error_payload["output_cap_escalations"] = cast(
+                JsonValue, thaw_json(freeze_json(list(escalations)))
+            )
+        return DriverResult(
+            RunState.WAITING,
+            {"response_present": False, "raw_failures": [{"error_code": code}]},
+            agent_turn_outcome=failed_outcome(
+                agent_id=agent_id,
+                turn_id=turn_id,
+                seq=seq,
+                input_id=input_id,
+                input_hash=input_hash,
+                error=error_payload,
+                delegation_count=self._delegations(turn_id),
+                provider_turn_ordinal_from=ordinal_from,
+                provider_turn_ordinal_to=_checkpoint_totals(
+                    checkpoint_port, invocation.run.run_id
+                ).provider_turns,
+            ),
+        )
+
+    def _committed_turn_result(
+        self,
+        result: ReActResult,
+        *,
+        agent_id: str,
+        turn_id: str,
+        seq: int,
+        input_id: str,
+        input_hash: str,
+        ordinal_from: int,
+        escalations: list[dict[str, JsonValue]],
+    ) -> DriverResult:
         response = result.response
         outcome = committed_outcome(
             agent_id=agent_id,

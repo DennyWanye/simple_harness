@@ -717,83 +717,11 @@ class WorkspaceToolGateway:
             # External tool parameters called path refer to the original environment,
             # never the SDK report workspace.
             path = None if call.name in self._domain_schemas else arguments.get("path")
-            if isinstance(path, str):
-                workspace.resolve(path)  # escapes raise WorkspaceError here, before any effect
-                canonical = _canonical(path)
-                if _under(canonical, binding.denied_prefixes):
-                    return self._reject(
-                        call,
-                        record,
-                        code="policy_denied",
-                        outcome="policy_denied",
-                        stage="policy",
-                        message=f"{path} is denied by the deployment policy",
-                    )
-                if call.name == "workspace_write_file" and (
-                    canonical.casefold()
-                    in {
-                        _canonical(p).casefold()
-                        for p in binding.protected  # case-insensitive FS
-                    }
-                    or _under(
-                        canonical.casefold(),
-                        tuple(p.casefold() for p in binding.protected_prefixes),
-                    )
-                ):
-                    return self._reject(
-                        call,
-                        record,
-                        code="protected_input",
-                        outcome="protected_input",
-                        stage="policy",
-                        message=f"{path} is a read-only input from an upstream Task",
-                    )
-                if call.name == "workspace_write_file" and binding.read_only_writes_blocked:
-                    return self._reject(
-                        call,
-                        record,
-                        code="read_only_snapshot_unavailable",
-                        outcome="read_only_snapshot_unavailable",
-                        stage="policy",
-                        message=(
-                            "this read-only leaf has no snapshot of files it started "
-                            "from; every write is refused"
-                        ),
-                    )
-                if call.name == "workspace_write_file" and binding.read_only_existing:
-                    existing = {_canonical(p).casefold() for p in binding.read_only_existing}
-                    if canonical.casefold() in existing:
-                        streak = self._read_only_existing_streak.get(run_id, 0) + 1
-                        self._read_only_existing_streak[run_id] = streak
-                        if streak >= MAX_READ_ONLY_EXISTING_REJECTIONS:
-                            return self._reject(
-                                call,
-                                record,
-                                code="read_only_leaf_kept_writing",
-                                outcome="read_only_leaf_kept_writing",
-                                stage="policy",
-                                message=(
-                                    f"{path} already exists in this workspace. This "
-                                    "read-only leaf kept rewriting existing files "
-                                    f"({streak}/{MAX_READ_ONLY_EXISTING_REJECTIONS}); "
-                                    "the Attempt is ending. Write findings to a "
-                                    "declared output port or REPORT.md."
-                                ),
-                            )
-                        return self._reject(
-                            call,
-                            record,
-                            code="read_only_existing_file",
-                            outcome="read_only_existing_file",
-                            stage="policy",
-                            message=(
-                                f"{path} already exists in this workspace. This leaf's "
-                                "task type is read-only (observe and report): do not "
-                                "change existing files. Write findings to a declared "
-                                "output port or REPORT.md."
-                            ),
-                        )
-                    self._read_only_existing_streak.pop(run_id, None)
+            path_refusal = self._refuse_workspace_path(
+                call, record=record, binding=binding, workspace=workspace, path=path, run_id=run_id
+            )
+            if path_refusal is not None:
+                return path_refusal
         except WorkspaceError as error:
             return self._reject(
                 call,
@@ -804,94 +732,14 @@ class WorkspaceToolGateway:
                 message=str(error),
             )
         # 4. rate and budget: the Attempt's reserved tool-call cap
-        used = (
-            self.executed_counter(binding.attempt_id)
-            if self.executed_counter is not None and binding.view == "work"
-            else self.executed_calls(run_id)
-        )
-        if binding.max_tool_calls is not None and used >= binding.max_tool_calls:
-            return self._reject(
-                call,
-                record,
-                code="tool_rate_limited",
-                outcome="rate_limited",
-                stage="rate",
-                message=(
-                    # 2026-09-29 第六局：最终审阅查满次数后被截断、两次都没给结论，整个任务
-                    # 判失败。审阅员查满时明确告诉它别再查、马上作答（循环上限留了余量）。
-                    f"查看次数已用完（最多 {binding.max_tool_calls} 次）：不要再调用任何工具，"
-                    "立即根据已经看到的证据，按要求的格式给出结论。"
-                    if binding.review_key is not None
-                    # 推后第 3 批 H10（裁决 2026-10-07 第 4 件，偏离 #52）：执行者只在工具次数用完时
-                    # 从这句话得知可申请；模板、工具说明、上下文包都不改
-                    else f"this Attempt may execute at most {binding.max_tool_calls} tool calls. "
-                    "本次尝试的工具次数已用完。如果确实还需要更多工具次数才能完成：交 blocked 结果，"
-                    '并在结果块里加 "resource_request": {"dimension": "tool_calls", '
-                    f'"amount": 正整数（不超过 {binding.max_tool_calls if binding.max_request_amount is None else binding.max_request_amount}）, "reason": "为什么需要"}}；'
-                    "给不给由规划器决定。"
-                ),
-            )
-        # 4b. 推后第 3 批 H08：检索次数用完只拒绝检索类工具，别的工具照常
-        if call.name in SEARCH_TOOL_NAMES and binding.max_search_calls is not None:
-            searched = (
-                self.search_counter(binding.attempt_id)
-                if self.search_counter is not None and binding.view == "work"
-                else sum(
-                    1
-                    for item in self.calls
-                    if item.get("run_id") == run_id
-                    and item.get("tool") in SEARCH_TOOL_NAMES
-                    and str(item.get("outcome", "")).startswith("succeeded")
-                )
-            )
-            if searched >= binding.max_search_calls:
-                return self._reject(
-                    call,
-                    record,
-                    code="search_budget_exhausted",
-                    outcome="rate_limited",
-                    stage="rate",
-                    message=(
-                        f"本次尝试的检索次数已用完（最多 {binding.max_search_calls} 次）："
-                        "检索类工具不再可用，其余工具照常；请用已有信息继续。"
-                    ),
-                )
+        over_budget = self._refuse_over_budget(call, record, binding, run_id)
+        if over_budget is not None:
+            return over_budget
         # Re-read the original Attempt control and temporary graph fence immediately
         # before physical work. It never changes an already handed-off effect.
-        if self.before_execute is not None:
-            try:
-                self.before_execute(binding)
-            except Exception:
-                return self._reject(
-                    call,
-                    record,
-                    code="taskgraph_handoff_blocked",
-                    outcome="taskgraph_handoff_blocked",
-                    stage="permission",
-                    message="current TaskGraph execution control refuses this handoff",
-                )
-        # 5. execute
-        if binding.review_key is not None:
-            refusal = (
-                "assurance_review_unbound"
-                if self.assurance_review_refusal is None
-                else self.assurance_review_refusal(run_id, binding)
-            )
-        else:
-            refusal = (
-                None
-                if self.execution_refusal is None
-                else self.execution_refusal(binding.attempt_id)
-            )
-        if refusal is not None:
-            return self._reject(
-                call,
-                record,
-                code=refusal,
-                outcome="execution_stopped",
-                stage="authority",
-                message="This Attempt no longer has authority to start a tool call.",
-            )
+        stopped = self._refuse_stopped_handoff(call, record, binding, run_id)
+        if stopped is not None:
+            return stopped
         appworld_started = False
         try:
             if call.name == "workspace_read_file":
@@ -1091,6 +939,191 @@ class WorkspaceToolGateway:
             except Exception as error:  # noqa: BLE001 - accounting must never break the call path
                 record["accounting_error"] = str(error)[:200]
         return ToolResult.succeeded(call.call_id, value)
+
+    def _refuse_workspace_path(
+        self,
+        call: Any,
+        *,
+        record: dict[str, Any],
+        binding: WorkspaceBinding,
+        workspace: Workspace | None,
+        path: Any,
+        run_id: str,
+    ) -> ToolResult | None:
+        if isinstance(path, str):
+            workspace.resolve(path)  # escapes raise WorkspaceError here, before any effect
+            canonical = _canonical(path)
+            if _under(canonical, binding.denied_prefixes):
+                return self._reject(
+                    call,
+                    record,
+                    code="policy_denied",
+                    outcome="policy_denied",
+                    stage="policy",
+                    message=f"{path} is denied by the deployment policy",
+                )
+            if call.name == "workspace_write_file" and (
+                canonical.casefold()
+                in {
+                    _canonical(p).casefold()
+                    for p in binding.protected  # case-insensitive FS
+                }
+                or _under(
+                    canonical.casefold(),
+                    tuple(p.casefold() for p in binding.protected_prefixes),
+                )
+            ):
+                return self._reject(
+                    call,
+                    record,
+                    code="protected_input",
+                    outcome="protected_input",
+                    stage="policy",
+                    message=f"{path} is a read-only input from an upstream Task",
+                )
+            if call.name == "workspace_write_file" and binding.read_only_writes_blocked:
+                return self._reject(
+                    call,
+                    record,
+                    code="read_only_snapshot_unavailable",
+                    outcome="read_only_snapshot_unavailable",
+                    stage="policy",
+                    message=(
+                        "this read-only leaf has no snapshot of files it started "
+                        "from; every write is refused"
+                    ),
+                )
+            if call.name == "workspace_write_file" and binding.read_only_existing:
+                existing = {_canonical(p).casefold() for p in binding.read_only_existing}
+                if canonical.casefold() in existing:
+                    streak = self._read_only_existing_streak.get(run_id, 0) + 1
+                    self._read_only_existing_streak[run_id] = streak
+                    if streak >= MAX_READ_ONLY_EXISTING_REJECTIONS:
+                        return self._reject(
+                            call,
+                            record,
+                            code="read_only_leaf_kept_writing",
+                            outcome="read_only_leaf_kept_writing",
+                            stage="policy",
+                            message=(
+                                f"{path} already exists in this workspace. This "
+                                "read-only leaf kept rewriting existing files "
+                                f"({streak}/{MAX_READ_ONLY_EXISTING_REJECTIONS}); "
+                                "the Attempt is ending. Write findings to a "
+                                "declared output port or REPORT.md."
+                            ),
+                        )
+                    return self._reject(
+                        call,
+                        record,
+                        code="read_only_existing_file",
+                        outcome="read_only_existing_file",
+                        stage="policy",
+                        message=(
+                            f"{path} already exists in this workspace. This leaf's "
+                            "task type is read-only (observe and report): do not "
+                            "change existing files. Write findings to a declared "
+                            "output port or REPORT.md."
+                        ),
+                    )
+                self._read_only_existing_streak.pop(run_id, None)
+        return None
+
+    def _refuse_over_budget(
+        self, call: Any, record: dict[str, Any], binding: WorkspaceBinding, run_id: str
+    ) -> ToolResult | None:
+        used = (
+            self.executed_counter(binding.attempt_id)
+            if self.executed_counter is not None and binding.view == "work"
+            else self.executed_calls(run_id)
+        )
+        if binding.max_tool_calls is not None and used >= binding.max_tool_calls:
+            return self._reject(
+                call,
+                record,
+                code="tool_rate_limited",
+                outcome="rate_limited",
+                stage="rate",
+                message=(
+                    # 2026-09-29 第六局：最终审阅查满次数后被截断、两次都没给结论，整个任务
+                    # 判失败。审阅员查满时明确告诉它别再查、马上作答（循环上限留了余量）。
+                    f"查看次数已用完（最多 {binding.max_tool_calls} 次）：不要再调用任何工具，"
+                    "立即根据已经看到的证据，按要求的格式给出结论。"
+                    if binding.review_key is not None
+                    # 推后第 3 批 H10（裁决 2026-10-07 第 4 件，偏离 #52）：执行者只在工具次数用完时
+                    # 从这句话得知可申请；模板、工具说明、上下文包都不改
+                    else f"this Attempt may execute at most {binding.max_tool_calls} tool calls. "
+                    "本次尝试的工具次数已用完。如果确实还需要更多工具次数才能完成：交 blocked 结果，"
+                    '并在结果块里加 "resource_request": {"dimension": "tool_calls", '
+                    f'"amount": 正整数（不超过 {binding.max_tool_calls if binding.max_request_amount is None else binding.max_request_amount}）, "reason": "为什么需要"}}；'
+                    "给不给由规划器决定。"
+                ),
+            )
+        # 4b. 推后第 3 批 H08：检索次数用完只拒绝检索类工具，别的工具照常
+        if call.name in SEARCH_TOOL_NAMES and binding.max_search_calls is not None:
+            searched = (
+                self.search_counter(binding.attempt_id)
+                if self.search_counter is not None and binding.view == "work"
+                else sum(
+                    1
+                    for item in self.calls
+                    if item.get("run_id") == run_id
+                    and item.get("tool") in SEARCH_TOOL_NAMES
+                    and str(item.get("outcome", "")).startswith("succeeded")
+                )
+            )
+            if searched >= binding.max_search_calls:
+                return self._reject(
+                    call,
+                    record,
+                    code="search_budget_exhausted",
+                    outcome="rate_limited",
+                    stage="rate",
+                    message=(
+                        f"本次尝试的检索次数已用完（最多 {binding.max_search_calls} 次）："
+                        "检索类工具不再可用，其余工具照常；请用已有信息继续。"
+                    ),
+                )
+        return None
+
+    def _refuse_stopped_handoff(
+        self, call: Any, record: dict[str, Any], binding: WorkspaceBinding, run_id: str
+    ) -> ToolResult | None:
+        if self.before_execute is not None:
+            try:
+                self.before_execute(binding)
+            except Exception:
+                return self._reject(
+                    call,
+                    record,
+                    code="taskgraph_handoff_blocked",
+                    outcome="taskgraph_handoff_blocked",
+                    stage="permission",
+                    message="current TaskGraph execution control refuses this handoff",
+                )
+        # 5. execute
+        if binding.review_key is not None:
+            refusal = (
+                "assurance_review_unbound"
+                if self.assurance_review_refusal is None
+                else self.assurance_review_refusal(run_id, binding)
+            )
+        else:
+            refusal = (
+                None
+                if self.execution_refusal is None
+                else self.execution_refusal(binding.attempt_id)
+            )
+        if refusal is not None:
+            return self._reject(
+                call,
+                record,
+                code=refusal,
+                outcome="execution_stopped",
+                stage="authority",
+                message="This Attempt no longer has authority to start a tool call.",
+            )
+        return None
 
 
 def _canonical(path: str) -> str:
