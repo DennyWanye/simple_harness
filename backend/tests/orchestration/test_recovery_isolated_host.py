@@ -142,7 +142,7 @@ async def test_a_write_to_an_isolated_mission_is_refused_with_the_sdks_code_and_
     try:
         bad = service.create_mission(notes_request("iso-write-bad"))["mission_id"]
         good = service.create_mission(notes_request("iso-write-good"))["mission_id"]
-        service._orchestrator._recovery_isolated[bad] = {
+        service._orchestrator._rounds.recovery_isolated[bad] = {
             "tables": ["missions"],
             "silent_changes": [],
         }

@@ -240,7 +240,7 @@ async def test_check_policy_projector_is_installed_into_the_sdk_review_runtime(
     now calls the Host projector right before preparing a review."""
     service = await _service(orchestration_root, principal)
     try:
-        runtime = service._orchestrator._assurance_reviews
+        runtime = service._orchestrator._wiring.assurance_reviews
         projector = runtime._check_policy_projector
         assert projector is not None
         # Same function as the loop hook: nothing to project before a Scope is frozen.

@@ -247,9 +247,9 @@ async def test_a_restart_during_a_model_call_resumes_and_completes(
     被打断的那次调用结果不明。系统等够时限（产品里 30 秒，这里调成 3 秒）后判它丢失、
     原地重做一次——不用人接管，也不重做计划。"""
 
-    import agent_orchestrator.orchestrator.event_handler as event_handler
+    import agent_orchestrator.orchestrator.orchestrator_domains.service_turns as service_turns
 
-    monkeypatch.setattr(event_handler, "MAX_SERVICE_BLOCKER_SECONDS", 3.0)
+    monkeypatch.setattr(service_turns, "MAX_SERVICE_BLOCKER_SECONDS", 3.0)
     first = LayeredScriptedProvider()
     first.held.add("worker")
     service = layered_service(orchestration_root, principal, first, lease_seconds=4.0)
@@ -350,9 +350,9 @@ async def test_a_backend_killed_inside_a_model_call_is_resumed_by_the_next_one(
     import time
     from pathlib import Path
 
-    import agent_orchestrator.orchestrator.event_handler as event_handler
+    import agent_orchestrator.orchestrator.orchestrator_domains.service_turns as service_turns
 
-    monkeypatch.setattr(event_handler, "MAX_SERVICE_BLOCKER_SECONDS", 3.0)
+    monkeypatch.setattr(service_turns, "MAX_SERVICE_BLOCKER_SECONDS", 3.0)
     marker = tmp_path / "worker.marker"
     child = subprocess.Popen(
         [
