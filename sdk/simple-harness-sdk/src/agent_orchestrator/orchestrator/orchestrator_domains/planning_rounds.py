@@ -10,7 +10,7 @@ import json
 import sqlite3
 from collections.abc import Mapping
 from dataclasses import replace
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from simple_harness.agents import AgentConfig, AgentLimits
 
@@ -78,6 +78,10 @@ from ..planning_runtime_block import planner_binding, resume_source_current
 from ..planning_selection import infrastructure_retry
 from ..taskgraph_epochs import planning_scope_digest
 from .core import OrchestratorCore
+
+if TYPE_CHECKING:
+    from ...graph.task_network import TaskNetworkSnapshot
+    from ..hierarchical_dispatch import PlanningWorld
 
 
 class PlanningRoundMixin(OrchestratorCore):
@@ -683,114 +687,14 @@ class PlanningRoundMixin(OrchestratorCore):
         subject_by_occurrence = {
             str(item.get("occurrence_id")): str(item.get("subject_key")) for item in subjects
         }
-        signature_by_subject = {
-            subject_by_occurrence[str(spec.occurrence_id)]: str(
-                network.binding_for_occurrence(spec.occurrence_id).goal_signature.signature_id
-            )
-            for spec in network.occurrences
-            if str(spec.occurrence_id) in subject_by_occurrence
-        }
-        reports = new_mode.method_applicability(mission.id)
-        report_by_method = {
-            (
-                str(item.goal_occurrence_id),
-                str(getattr(item.method_ref, "method_id", "")),
-                int(getattr(item.method_ref, "version", 0)),
-                str(getattr(item.method_ref, "content_hash", "")),
-            ): item.report
-            for item in reports
-        }
-        methods: list[MethodView] = []
-        for row in (body.get("views") or {}).get("methods", ()):
-            if not isinstance(row, Mapping):
-                continue
-            raw_ref = row.get("method_ref")
-            if not isinstance(raw_ref, Mapping):
-                continue
-            # the row quotes the method as a decision does: the reference quadruple
-            ref = MethodRef(
-                method_id=str(raw_ref["id"]),
-                version=int(raw_ref["semantic_revision"]),
-                content_hash=str(raw_ref["content_hash"]),
-            )
-            contract = world.registry.definition(ref)
-            registration = world.registry.registration(ref)
-            if contract is None or registration is None:
-                raise ContractError(
-                    f"planning package method {ref.method_id}@{ref.version} is missing "
-                    "from the live registry"
-                )
-            applies_to = tuple(
-                sorted(
-                    subject
-                    for subject, signature in signature_by_subject.items()
-                    if signature == str(row.get("goal_signature_id", ""))
-                )
-            )
-            schema = world.schemas.resolve(contract.parameter_schema_ref)
-            if schema is None:
-                raise ContractError(
-                    f"planning package method {ref.method_id}@{ref.version} references "
-                    f"an unavailable parameter schema {contract.parameter_schema_ref!s}"
-                )
-            required_parameters = tuple(
-                sorted(str(field.name) for field in getattr(schema, "fields", ()))
-            )
-            predicates = tuple(
-                sorted(
-                    str(item.predicate_ref.id) for item in iter_predicates(contract.applicable_when)
-                )
-            )
-            # several goals may share the method's type; the first one assessed against it
-            # carries the report (a goal already refined is no longer assessed)
-            report = next(
-                (
-                    found
-                    for found in (
-                        report_by_method.get(
-                            (str(spec.occurrence_id), ref.method_id, ref.version, ref.content_hash)
-                        )
-                        for spec in network.occurrences
-                        if str(spec.occurrence_id) in subject_by_occurrence
-                        and subject_by_occurrence[str(spec.occurrence_id)] in applies_to
-                    )
-                    if found is not None
-                ),
-                None,
-            )
-            if report is None:
-                raise ContractError(
-                    f"planning package method {ref.method_id}@{ref.version} has no "
-                    "authoritative applicability report"
-                )
-            truth = report.truth
-            authorization = report.authorization
-            if authorization is None:
-                raise ContractError(
-                    f"planning package method {ref.method_id}@{ref.version} has no "
-                    "authoritative authorization report"
-                )
-            methods.append(
-                MethodView(
-                    method_id=ref.method_id,
-                    version=ref.version,
-                    content_hash=ref.content_hash,
-                    status=registration.status
-                    if isinstance(registration.status, MethodRegistryStatus)
-                    else MethodRegistryStatus(str(registration.status)),
-                    applies_to=applies_to,
-                    required_parameters=required_parameters,
-                    predicate_keys=predicates,
-                    required_capabilities=tuple(
-                        str(item) for item in contract.required_capabilities
-                    ),
-                    # Match grounding/refinement: an absent precondition needs
-                    # no evidence gate. Its vacuous TRUE still grants no authority.
-                    requires_authorization=bool(contract.applicable_when),
-                    authorization_granted=bool(authorization.allowed),
-                    precondition_truth=truth,
-                )
-            )
+        methods = self._method_views(
+            mission,
+            new_mode=new_mode,
+            body=body,
+            network=network,
+            world=world,
+            subject_by_occurrence=subject_by_occurrence,
+        )
 
         active_instances = tuple(
             MethodInstanceView(
@@ -909,6 +813,126 @@ class PlanningRoundMixin(OrchestratorCore):
                 self.commit, mission.id, request.request_id
             ),
         )
+
+    def _method_views(
+        self,
+        mission: Mission,
+        *,
+        new_mode: HierarchicalDispatch,
+        body: Mapping[Any, Any],
+        network: TaskNetworkSnapshot,
+        world: PlanningWorld,
+        subject_by_occurrence: dict[str, str],
+    ) -> list[MethodView]:
+        signature_by_subject = {
+            subject_by_occurrence[str(spec.occurrence_id)]: str(
+                network.binding_for_occurrence(spec.occurrence_id).goal_signature.signature_id
+            )
+            for spec in network.occurrences
+            if str(spec.occurrence_id) in subject_by_occurrence
+        }
+        reports = new_mode.method_applicability(mission.id)
+        report_by_method = {
+            (
+                str(item.goal_occurrence_id),
+                str(getattr(item.method_ref, "method_id", "")),
+                int(getattr(item.method_ref, "version", 0)),
+                str(getattr(item.method_ref, "content_hash", "")),
+            ): item.report
+            for item in reports
+        }
+        methods: list[MethodView] = []
+        for row in (body.get("views") or {}).get("methods", ()):
+            if not isinstance(row, Mapping):
+                continue
+            raw_ref = row.get("method_ref")
+            if not isinstance(raw_ref, Mapping):
+                continue
+            # the row quotes the method as a decision does: the reference quadruple
+            ref = MethodRef(
+                method_id=str(raw_ref["id"]),
+                version=int(raw_ref["semantic_revision"]),
+                content_hash=str(raw_ref["content_hash"]),
+            )
+            contract = world.registry.definition(ref)
+            registration = world.registry.registration(ref)
+            if contract is None or registration is None:
+                raise ContractError(
+                    f"planning package method {ref.method_id}@{ref.version} is missing "
+                    "from the live registry"
+                )
+            applies_to = tuple(
+                sorted(
+                    subject
+                    for subject, signature in signature_by_subject.items()
+                    if signature == str(row.get("goal_signature_id", ""))
+                )
+            )
+            schema = world.schemas.resolve(contract.parameter_schema_ref)
+            if schema is None:
+                raise ContractError(
+                    f"planning package method {ref.method_id}@{ref.version} references "
+                    f"an unavailable parameter schema {contract.parameter_schema_ref!s}"
+                )
+            required_parameters = tuple(
+                sorted(str(field.name) for field in getattr(schema, "fields", ()))
+            )
+            predicates = tuple(
+                sorted(
+                    str(item.predicate_ref.id) for item in iter_predicates(contract.applicable_when)
+                )
+            )
+            # several goals may share the method's type; the first one assessed against it
+            # carries the report (a goal already refined is no longer assessed)
+            report = next(
+                (
+                    found
+                    for found in (
+                        report_by_method.get(
+                            (str(spec.occurrence_id), ref.method_id, ref.version, ref.content_hash)
+                        )
+                        for spec in network.occurrences
+                        if str(spec.occurrence_id) in subject_by_occurrence
+                        and subject_by_occurrence[str(spec.occurrence_id)] in applies_to
+                    )
+                    if found is not None
+                ),
+                None,
+            )
+            if report is None:
+                raise ContractError(
+                    f"planning package method {ref.method_id}@{ref.version} has no "
+                    "authoritative applicability report"
+                )
+            truth = report.truth
+            authorization = report.authorization
+            if authorization is None:
+                raise ContractError(
+                    f"planning package method {ref.method_id}@{ref.version} has no "
+                    "authoritative authorization report"
+                )
+            methods.append(
+                MethodView(
+                    method_id=ref.method_id,
+                    version=ref.version,
+                    content_hash=ref.content_hash,
+                    status=registration.status
+                    if isinstance(registration.status, MethodRegistryStatus)
+                    else MethodRegistryStatus(str(registration.status)),
+                    applies_to=applies_to,
+                    required_parameters=required_parameters,
+                    predicate_keys=predicates,
+                    required_capabilities=tuple(
+                        str(item) for item in contract.required_capabilities
+                    ),
+                    # Match grounding/refinement: an absent precondition needs
+                    # no evidence gate. Its vacuous TRUE still grants no authority.
+                    requires_authorization=bool(contract.applicable_when),
+                    authorization_granted=bool(authorization.allowed),
+                    precondition_truth=truth,
+                )
+            )
+        return methods
 
     def _hierarchical_planner_template(self, mission_id: str) -> Any:
         """The hierarchical Planner's prompt: there is one.

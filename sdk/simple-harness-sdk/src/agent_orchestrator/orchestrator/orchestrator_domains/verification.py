@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import functools
 from collections.abc import Mapping, Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from simple_harness.agents import AgentTurnState
 
@@ -78,6 +78,9 @@ from ..review_adjudication import adjudication_of
 from .core import OrchestratorCore
 from .support import _under_source_root, logger, sha256_hex_text
 
+if TYPE_CHECKING:
+    from ...contracts.htn import TaskSemanticBindingV1
+
 
 class _AcceptedSiblingSupersededVerification(Exception):
     """Only the recorder's rejected lease may signal this obsolete verifier."""
@@ -130,144 +133,10 @@ class VerificationMixin(OrchestratorCore):
         if echoed and echoed != {self._expected_model(intent)}:
             # D10': the provider answered as a different model; charges are unknown and
             # the deployment binding is wrong.  Fail fast and visibly, hold the reservation.
-            self.commit.reject_result(
-                attempt.id,
-                turn_id=result.turn_id,
-                reason="model_echo_mismatch",
-                detail={"expected": self._expected_model(intent), "echoed": sorted(echoed)},
-            )
-            self._settle_intent(intent, "FAILED")
-            self._settle_if_known(attempt)
-            await self._release_attempt(attempt.id, cancel=False)
-            self._commit_stop_task(
-                attempt.task_id,
-                stop_reason=MissionStopReason.MODEL_ECHO_MISMATCH,
-                detail={"expected": self._expected_model(intent), "echoed": sorted(echoed)},
-            )
-            await self._release_mission(attempt.mission_id)
-            self._note(f"attempt {attempt.id}: model echo mismatch {sorted(echoed)} → stopped")
+            await self._reject_echoed_model_mismatch(intent, result, attempt, echoed)
             return
         if result.state is AgentTurnState.FAILED:
-            error = result.error
-            context_limit = (
-                isinstance(error, Mapping)
-                and error.get("error_code") == "context_required_content_too_large"
-            )
-            admission = (
-                error.get("detail")
-                if isinstance(error, Mapping)
-                and error.get("error_code") == "provider_admission_denied"
-                and error.get("source_kind") == "provider_admission"
-                and error.get("retryable") is False
-                else None
-            )
-            if not (
-                isinstance(admission, Mapping)
-                and type(admission.get("schema_version")) is int
-                and admission.get("schema_version") == 1
-            ):
-                admission = None
-            mission_now = self.store.get_mission(attempt.mission_id)
-            if mission_now is not None and self._definite_auth_failure(error):
-                self.commit.reject_result(
-                    attempt.id,
-                    turn_id=result.turn_id,
-                    reason="turn_failed",
-                    detail={
-                        "error": jsonable(result.error or {}),
-                        "error_kind": "provider_unavailable",
-                    },
-                )
-                self._settle_intent(intent, "FAILED")
-                self._settle_if_known(attempt)
-                await self._release_attempt(attempt.id, cancel=False)
-                self._commit_stop_task(
-                    attempt.task_id,
-                    stop_reason=MissionStopReason.RUNTIME_UNAVAILABLE,
-                    detail={
-                        "source_kind": "provider",
-                        "retryable": False,
-                        "error": jsonable(error or {}),
-                    },
-                )
-                await self._release_mission(attempt.mission_id)
-                self._note(
-                    f"attempt {attempt.id}: definite provider auth/payment failure → stopped"
-                )
-                return
-            self.commit.reject_result(
-                attempt.id,
-                turn_id=result.turn_id,
-                reason=(
-                    "context_required_content_too_large"
-                    if context_limit
-                    else "provider_admission_denied"
-                    if admission is not None
-                    else "turn_failed"
-                ),
-                detail={
-                    "error": jsonable(result.error or {}),
-                    "error_kind": classify_turn_error(result.error),  # D6-4' classification
-                },
-            )
-            self._settle_intent(intent, "FAILED")
-            self._settle_if_known(attempt)
-            await self._release_attempt(attempt.id, cancel=False)
-            if context_limit:
-                self._commit_stop_task(
-                    attempt.task_id,
-                    stop_reason=MissionStopReason.RUNTIME_UNAVAILABLE,
-                    detail={
-                        "source_kind": "runtime_context",
-                        "retryable": False,
-                        "error": jsonable(error),
-                    },
-                )
-                await self._release_mission(attempt.mission_id)
-                self._note(f"attempt {attempt.id}: required context exceeds limit → stopped")
-                return
-            if admission is not None:
-                reason = admission.get("reason_code")
-                if reason == "usage_unresolved":
-                    self.commit.wait_for_admission_usage(attempt.id)
-                    self._note(f"attempt {attempt.id}: admission waits for usage; no new Attempt")
-                    return
-                if reason == "lease_lost":
-                    # 2026-10-02 真机：强杀后重启，这一轮的执行权还记在旧进程名下。被打断，
-                    # 不是这一步做不了：原地重做（不扣次数，同一步合计有上限）。
-                    self._note(f"attempt {attempt.id}: executor lost its lease → RETRY_WAIT")
-                    return
-                if reason == "cancelled":
-                    self._commit_cancel_mission(attempt.mission_id)
-                elif reason == "deadline" and await self._runtime_exhausted(
-                    self.store.get_mission(attempt.mission_id), ()
-                ):
-                    # 2026-09-29：排队到点往往就是任务总时限到了：按任务总时限停（带用时明细），
-                    # 不再和主循环的时限检查抢先后。
-                    return
-                else:
-                    # Runtime/deadline is the existing budget time-cap category.
-                    # Other admission failures retain their exact configuration /
-                    # authority cause; they never enter provider health fallback.
-                    stop = (
-                        MissionStopReason.BUDGET_EXHAUSTED
-                        if reason in {"budget_exhausted", "deadline"}
-                        else MissionStopReason.RUNTIME_UNAVAILABLE
-                    )
-                    self._commit_stop_task(
-                        attempt.task_id,
-                        stop_reason=stop,
-                        detail={
-                            "source_kind": "provider_admission",
-                            "retryable": False,
-                            "admission": dict(admission),
-                            **({"dimension": "runtime"} if reason == "deadline" else {}),
-                        },
-                    )
-                await self._release_mission(attempt.mission_id)
-                self._note(f"attempt {attempt.id}: admission denied ({reason}) → stopped")
-                return
-            self._note(f"attempt {attempt.id}: SDK turn failed → RETRY_WAIT")
+            await self._settle_failed_turn(intent, result, attempt)
             return
         text = "" if result.public_output is None else str(result.public_output.content)
         stale_plan = self._dispatch_for(attempt.mission_id)
@@ -311,22 +180,14 @@ class VerificationMixin(OrchestratorCore):
         if envelope.outcome is not ResultOutcome.CANDIDATE:
             # D5-5: execution evidence, not a candidate — kept as history; the Attempt
             # ends in RETRY_WAIT and the Task is tried again within its allowance
-            request = self._resource_requests.pop(envelope.id, None)
-            self.commit.record_outcome_result(
-                attempt.id,
+            await self._settle_non_candidate_result(
+                intent,
+                result=result,
+                attempt=attempt,
+                mission=mission,
+                task=task,
                 envelope=envelope,
-                turn_id=result.turn_id,
-                usage_refs=tuple(result.usage_refs),
-                resource_request=None
-                if request is None
-                else self._check_resource_request(mission, task, request),
             )
-            self._settle_intent(intent, "SETTLED")
-            # Same order as every other outcome: close the intent, then settle (an
-            # open Assurance responsibility keeps the reservation held, visibly).
-            self._settle_if_known(self.store.get_attempt(attempt.id) or attempt)
-            await self._release_attempt(attempt.id, cancel=False)
-            self._note(f"attempt {attempt.id}: outcome {envelope.outcome} → RETRY_WAIT")
             return
         workspace = self.assembled.workspaces.get(attempt.id)
         artifacts = workspace.snapshot(
@@ -422,28 +283,9 @@ class VerificationMixin(OrchestratorCore):
             )
         )
         if rewrote:
-            assert binding is not None
-            self.commit.reject_result(
-                attempt.id,
-                turn_id=result.turn_id,
-                reason="read_only_leaf_rewrote_workspace",
-                detail={
-                    "paths": rewrote,
-                    "side_effect_kind": str(binding.side_effect_kind),
-                    "capabilities": list(binding.capability_requirements),
-                    "hint": (
-                        "this leaf's task type is read-only: observe and report at "
-                        "its declared output ports; do not change existing files"
-                    ),
-                },
+            await self._reject_read_only_rewrite(
+                intent, result=result, attempt=attempt, binding=binding, rewrote=rewrote
             )
-            # The refusal is the permission rule and stays.  What happens next is
-            # the Planner's call: the ``ResultRejected`` event becomes an ordinary
-            # repair request carrying the paths and how many times it has happened.
-            self._settle_intent(intent, "FAILED")
-            self._settle_if_known(attempt)
-            await self._release_attempt(attempt.id, cancel=False)
-            self._note(f"attempt {attempt.id}: read-only leaf rewrote {rewrote} → RETRY_WAIT")
             return
         # P2.3m: drop files whose bytes already belong to a completed leaf.
         # P2.3v: a *write* leaf that reproduces a retired method's accepted bytes
@@ -539,6 +381,211 @@ class VerificationMixin(OrchestratorCore):
         # (``new_mode`` was asked once, above, before the read-only check.)
         if new_mode is not None:
             new_mode.advance_compound_phases(mission.id)
+
+    async def _reject_echoed_model_mismatch(
+        self, intent: DispatchIntent, result: Any, attempt: Attempt, echoed: set[str]
+    ) -> None:
+        self.commit.reject_result(
+            attempt.id,
+            turn_id=result.turn_id,
+            reason="model_echo_mismatch",
+            detail={"expected": self._expected_model(intent), "echoed": sorted(echoed)},
+        )
+        self._settle_intent(intent, "FAILED")
+        self._settle_if_known(attempt)
+        await self._release_attempt(attempt.id, cancel=False)
+        self._commit_stop_task(
+            attempt.task_id,
+            stop_reason=MissionStopReason.MODEL_ECHO_MISMATCH,
+            detail={"expected": self._expected_model(intent), "echoed": sorted(echoed)},
+        )
+        await self._release_mission(attempt.mission_id)
+        self._note(f"attempt {attempt.id}: model echo mismatch {sorted(echoed)} → stopped")
+        return
+
+    async def _settle_failed_turn(
+        self, intent: DispatchIntent, result: Any, attempt: Attempt
+    ) -> None:
+        error = result.error
+        context_limit = (
+            isinstance(error, Mapping)
+            and error.get("error_code") == "context_required_content_too_large"
+        )
+        admission = (
+            error.get("detail")
+            if isinstance(error, Mapping)
+            and error.get("error_code") == "provider_admission_denied"
+            and error.get("source_kind") == "provider_admission"
+            and error.get("retryable") is False
+            else None
+        )
+        if not (
+            isinstance(admission, Mapping)
+            and type(admission.get("schema_version")) is int
+            and admission.get("schema_version") == 1
+        ):
+            admission = None
+        mission_now = self.store.get_mission(attempt.mission_id)
+        if mission_now is not None and self._definite_auth_failure(error):
+            self.commit.reject_result(
+                attempt.id,
+                turn_id=result.turn_id,
+                reason="turn_failed",
+                detail={
+                    "error": jsonable(result.error or {}),
+                    "error_kind": "provider_unavailable",
+                },
+            )
+            self._settle_intent(intent, "FAILED")
+            self._settle_if_known(attempt)
+            await self._release_attempt(attempt.id, cancel=False)
+            self._commit_stop_task(
+                attempt.task_id,
+                stop_reason=MissionStopReason.RUNTIME_UNAVAILABLE,
+                detail={
+                    "source_kind": "provider",
+                    "retryable": False,
+                    "error": jsonable(error or {}),
+                },
+            )
+            await self._release_mission(attempt.mission_id)
+            self._note(f"attempt {attempt.id}: definite provider auth/payment failure → stopped")
+            return
+        self.commit.reject_result(
+            attempt.id,
+            turn_id=result.turn_id,
+            reason=(
+                "context_required_content_too_large"
+                if context_limit
+                else "provider_admission_denied"
+                if admission is not None
+                else "turn_failed"
+            ),
+            detail={
+                "error": jsonable(result.error or {}),
+                "error_kind": classify_turn_error(result.error),  # D6-4' classification
+            },
+        )
+        self._settle_intent(intent, "FAILED")
+        self._settle_if_known(attempt)
+        await self._release_attempt(attempt.id, cancel=False)
+        if context_limit:
+            self._commit_stop_task(
+                attempt.task_id,
+                stop_reason=MissionStopReason.RUNTIME_UNAVAILABLE,
+                detail={
+                    "source_kind": "runtime_context",
+                    "retryable": False,
+                    "error": jsonable(error),
+                },
+            )
+            await self._release_mission(attempt.mission_id)
+            self._note(f"attempt {attempt.id}: required context exceeds limit → stopped")
+            return
+        if admission is not None:
+            reason = admission.get("reason_code")
+            if reason == "usage_unresolved":
+                self.commit.wait_for_admission_usage(attempt.id)
+                self._note(f"attempt {attempt.id}: admission waits for usage; no new Attempt")
+                return
+            if reason == "lease_lost":
+                # 2026-10-02 真机：强杀后重启，这一轮的执行权还记在旧进程名下。被打断，
+                # 不是这一步做不了：原地重做（不扣次数，同一步合计有上限）。
+                self._note(f"attempt {attempt.id}: executor lost its lease → RETRY_WAIT")
+                return
+            if reason == "cancelled":
+                self._commit_cancel_mission(attempt.mission_id)
+            elif reason == "deadline" and await self._runtime_exhausted(
+                self.store.get_mission(attempt.mission_id), ()
+            ):
+                # 2026-09-29：排队到点往往就是任务总时限到了：按任务总时限停（带用时明细），
+                # 不再和主循环的时限检查抢先后。
+                return
+            else:
+                # Runtime/deadline is the existing budget time-cap category.
+                # Other admission failures retain their exact configuration /
+                # authority cause; they never enter provider health fallback.
+                stop = (
+                    MissionStopReason.BUDGET_EXHAUSTED
+                    if reason in {"budget_exhausted", "deadline"}
+                    else MissionStopReason.RUNTIME_UNAVAILABLE
+                )
+                self._commit_stop_task(
+                    attempt.task_id,
+                    stop_reason=stop,
+                    detail={
+                        "source_kind": "provider_admission",
+                        "retryable": False,
+                        "admission": dict(admission),
+                        **({"dimension": "runtime"} if reason == "deadline" else {}),
+                    },
+                )
+            await self._release_mission(attempt.mission_id)
+            self._note(f"attempt {attempt.id}: admission denied ({reason}) → stopped")
+            return
+        self._note(f"attempt {attempt.id}: SDK turn failed → RETRY_WAIT")
+        return
+
+    async def _settle_non_candidate_result(
+        self,
+        intent: DispatchIntent,
+        *,
+        result: Any,
+        attempt: Attempt,
+        mission: Mission,
+        task: Task,
+        envelope: ResultEnvelope,
+    ) -> None:
+        request = self._resource_requests.pop(envelope.id, None)
+        self.commit.record_outcome_result(
+            attempt.id,
+            envelope=envelope,
+            turn_id=result.turn_id,
+            usage_refs=tuple(result.usage_refs),
+            resource_request=None
+            if request is None
+            else self._check_resource_request(mission, task, request),
+        )
+        self._settle_intent(intent, "SETTLED")
+        # Same order as every other outcome: close the intent, then settle (an
+        # open Assurance responsibility keeps the reservation held, visibly).
+        self._settle_if_known(self.store.get_attempt(attempt.id) or attempt)
+        await self._release_attempt(attempt.id, cancel=False)
+        self._note(f"attempt {attempt.id}: outcome {envelope.outcome} → RETRY_WAIT")
+        return
+
+    async def _reject_read_only_rewrite(
+        self,
+        intent: DispatchIntent,
+        *,
+        result: Any,
+        attempt: Attempt,
+        binding: TaskSemanticBindingV1 | None,
+        rewrote: list[str],
+    ) -> None:
+        assert binding is not None
+        self.commit.reject_result(
+            attempt.id,
+            turn_id=result.turn_id,
+            reason="read_only_leaf_rewrote_workspace",
+            detail={
+                "paths": rewrote,
+                "side_effect_kind": str(binding.side_effect_kind),
+                "capabilities": list(binding.capability_requirements),
+                "hint": (
+                    "this leaf's task type is read-only: observe and report at "
+                    "its declared output ports; do not change existing files"
+                ),
+            },
+        )
+        # The refusal is the permission rule and stays.  What happens next is
+        # the Planner's call: the ``ResultRejected`` event becomes an ordinary
+        # repair request carrying the paths and how many times it has happened.
+        self._settle_intent(intent, "FAILED")
+        self._settle_if_known(attempt)
+        await self._release_attempt(attempt.id, cancel=False)
+        self._note(f"attempt {attempt.id}: read-only leaf rewrote {rewrote} → RETRY_WAIT")
+        return
 
     def _parse_envelope(
         self, text: str, attempt: Attempt, *, turn_id: str

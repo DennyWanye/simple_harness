@@ -18,6 +18,7 @@ from ...artifacts.versioning import ArtifactConflict, UpstreamInput
 from ...context.context_builder import (
     CONTEXT_BUILDER_VERSION,
     ContextRejected,
+    TaskPackage,
     _seal,
     build_worker_package,
 )
@@ -50,7 +51,7 @@ from ...storage import htn_store
 from ...storage.store import StoreError
 from ..action_commits import ACTION_PREFIX, HANDOFF_READY_STATES, judgment_key
 from ..assurance_point_use import context_claims
-from ..budget_accounts import is_global_account, mission_account, task_account
+from ..budget_accounts import Reservation, is_global_account, mission_account, task_account
 from ..commit_service import CommitRejected, NonModelFailuresExhausted
 from ..failure_classes import (
     INFRA,
@@ -299,76 +300,10 @@ class AttemptJudgmentMixin(OrchestratorCore):
         new_mode = self._new_mode(mission)
         if new_mode is None:
             return False
-        # P2.3b / §18.5 rule 4: before anything else, a compound is refused here with
-        # NEEDS_REFINEMENT.  The gate is ``form`` from the semantic binding, not the
-        # status string — ``TaskStatus.READY`` on a compound is a rebuildable display
-        # index and never a permission to dispatch.
-        intercepted = new_mode.intercept_worker_dispatch(mission.id, task.id)
-        if intercepted is not None:
-            self._note(
-                f"task {task.id} not dispatched: {intercepted.reason} "
-                f"(occurrence {intercepted.occurrence_id})"
-            )
-            return False
-        # P2.3c part 2 / TG §8.3: the dispatch transaction re-checks.  An
-        # ``EligiblePrimitiveTask`` is *not* a capability — it records that a
-        # controlled check passed at ``admitted_at_ms`` and grants nothing — so
-        # this entry refuses a Task that arrived without one, however it got here.
-        # ``_decide`` hands its admission down so the common path does not re-read
-        # the whole plan; every other caller (repair, a manual drive)
-        # pays for the fresh read rather than skipping the gate.
-        if admission is None:
-            admission = new_mode.admissions(mission.id).admission_for(task.id)
-        # Review F11: ``isinstance`` and not a duck-typed ``gate_passed`` probe.
-        # ``EligiblePrimitiveTask.gate_passed`` is guarded by the admission token,
-        # but a structural test would let *any* object carrying a true attribute of
-        # that name through this door — which is exactly the "admission with a flag"
-        # shape ``admissions()`` is written to avoid.
-        if not isinstance(admission, EligiblePrimitiveTask) or not admission.gate_passed:
-            self._note(
-                f"task {task.id} not dispatched: no admission from the readiness gate "
-                "(§18.5 constraint 4)"
-            )
-            return False
-
-        if pending_block(self.store, mission.id) is not None:
-            return False
-
-        if (
-            retry_decision_required(self.store, mission.id, task.id)
-            and pending_retry_permit(self.store, mission.id, task.id) is None
-        ):
-            return False
-        # A Worker already in flight can produce another pending verification.
-        # Account for that obligation before creating more work, across Missions.
-        active_missions = {item.id for item in self._active_missions()}
-        pending_verification = sum(
-            stored.envelope.mission_id in active_missions
-            for stored in self.store.list_results_by_verification("PENDING", "RUNNING")
-        )
-        potential_results = sum(
-            attempt.mission_id in active_missions
-            and self.store.find_result_for_attempt(attempt.id) is None
-            for attempt in self.store.list_attempts_by_status(
-                "PENDING", "CLAIMED", "RUNNING", "SUBMITTED", "VERIFYING"
-            )
-        )
-        if pending_verification + potential_results >= self._config.max_pending_verifications:
+        if self._dispatch_held(mission, task, admission, new_mode):
             return False
         # a repair follows the last *failed* Attempt
-        previous = next(
-            (a for a in reversed(attempts) if a.status in TERMINAL_ATTEMPT and a.failure), None
-        )
-        feedback, verifier_feedback = retry_feedback(attempts, previous)
-        for event in self.store.list_events(mission.id):  # D7-9': a person's notes, as data
-            if event.type == "HumanCommentAdded" and event.payload.get("target_id") in {
-                task.id,
-                mission.id,
-            }:
-                feedback.append(
-                    f"human note from {event.payload.get('principal_id')} "
-                    f"(information, not a permission change): {event.payload.get('text')}"
-                )
+        previous, feedback, verifier_feedback = self._attempt_feedback(mission, task, attempts)
         # P2.3b / §24.1 decision 4: the Attempt starts from the resolved InputManifest,
         # so an ORDER-only predecessor contributes nothing.
         try:
@@ -451,27 +386,9 @@ class AttemptJudgmentMixin(OrchestratorCore):
             task_version=task.version,
             feedback=tuple(feedback),
         )
-        seed = dict((mission.final_report or {}).get("workspace_seed", {}))
-        source_binding = self._active_source_binding(mission.id)
-        source_versions = source_binding.get("source_versions")
-        source_paths = set(source_versions or {})
-        if source_binding:
-            untrusted = sorted(set(untrusted) | source_paths)
-        previous_files = sorted({*seed, *(item.path for item in inputs), *source_paths})
-        if previous is not None:
-            try:
-                previous_files = sorted(
-                    set(self.assembled.workspaces.get(previous.id).list_files()) | source_paths
-                )
-            except Exception:  # noqa: BLE001
-                pass
-        if source_binding:
-            previous_files = [
-                path
-                for path in previous_files
-                if path in source_paths
-                or not _under_source_root(path, source_binding["source_roots"])
-            ]
+        untrusted, previous_files, source_binding, source_versions = self._workspace_files_for(
+            mission, previous, inputs, untrusted
+        )
         # 第 2 批车道 H（K04，原计划 §10 第 3 项）：父目标与直接上游从分层网络读——这一步所在做法
         # 细化的目标（原文、它负责的要求原文），与数据边上把产出交给它的生产者（目标、状态、已验收
         # 结论的摘要、交到这一步的产物）。``Task.dependency_ids`` 在分层下恒空，不再按它过滤。
@@ -512,6 +429,249 @@ class AttemptJudgmentMixin(OrchestratorCore):
             await self._release_mission(mission.id)
             self._note(f"task {task.id} stopped: worker package refused ({error})")
             return True
+        package = self._with_leaf_context(
+            mission, task=task, new_mode=new_mode, package=package, step_parent=step_parent
+        )
+        # D6-7: Mission ∩ Task ∩ Role ∩ Deployment, frozen into the intent below
+        # P2.3u: a hierarchical read-only leaf also drops patch/apply-class tools.
+        read_only, allowed = self._leaf_tools(mission, task, role, new_mode)
+        # D6-8: the Attempt's tool-call cap = the deployment's per-turn cap, narrowed by the
+        # Task budget's own dimension; it is reserved up front and enforced at the gateway
+        tool_cap = self._config.max_tool_calls_per_turn
+        if task.budget.max_tool_calls is not None:
+            tool_cap = min(tool_cap, task.budget.max_tool_calls)
+        if self._tool_calls_limited(mission, task):
+            # review P1-2: never reserve more than the chain can still hold; in-flight
+            # reservations are not spending — only a spent dimension is exhaustion
+            reservable, spent_room = self._tool_call_room(mission, task)
+            if spent_room is not None and spent_room > 0 and reservable is not None:
+                if reservable <= 0:
+                    self._note(f"task {task.id}: tool calls all reserved in flight; waiting")
+                    return False
+                tool_cap = min(tool_cap, reservable)
+        # 推后第 3 批 H08：检索次数按账户链还能预留的数给这次尝试；用完不停任务，只让网关拒绝检索
+        search_cap = self._search_call_room(mission, task)
+        # 推后第 3 批 H10：规划器批准了（原样重试）上一次尝试的资源申请 → 这次的工具上限加上批准数
+        resource_grant = self._resource_grant(mission, task)
+        if resource_grant is not None:
+            tool_cap = int(resource_grant["base_cap"]) + int(resource_grant["amount"])
+        config = AgentConfig(
+            name=f"{role.name}-{placeholder.ordinal}",
+            instructions=role.instructions,
+            model_profile_ref=decision.profile_id,  # the label *is* the pool it runs in
+            tool_names=allowed,
+            limits=AgentLimits(
+                max_model_calls_per_turn=self._config.max_model_calls_per_turn,
+                # R3-3 补裁（B 级 #52）：SDK 单回合上限多留一轮余量，网关按 tool_cap 拒绝并告知
+                max_tool_calls_per_turn=tool_cap + TOOL_ANSWER_MARGIN,
+                turn_deadline_seconds=min(
+                    self._config.turn_deadline_seconds,
+                    float(task.budget.max_runtime_seconds or self._config.turn_deadline_seconds),
+                ),
+            ),
+        )
+        message = user_message_json(package.text)
+        tokens = self._config.attempt_reserve_tokens
+        critic_tail = None
+        first_critic_binding: dict[str, Any] = {}
+        if "critic_review" in task.verification_policy:
+            try:
+                critic_decision = self._route_service("critic", mission.id)
+            except RoutingUnavailable as unavailable:
+                return await self._defer_for_profile(mission, task, unavailable)
+            first = self._first_critic_budget(critic_decision)
+            if isinstance(first, FirstRequestBudget):
+                first_reservation = self._first_critic_reservation(first)
+                first_critic_binding = {
+                    "first_critic_budget": {
+                        "provider_input_cap": first.provider_input_cap.to_json(),
+                        "output_ceiling": first.output_ceiling,
+                        "minimum_tokens": first.minimum_tokens,
+                    }
+                }
+                critic_tail = first_reservation
+            else:
+                first_critic_binding = {"first_critic_budget_unknown": first.reason}
+                critic_tail = self._reservation(self._config.critic_reserve_tokens)
+        self._deferred.pop(task.id, None)
+        tokens = self._attempt_reserve_tokens(task, tokens, critic_tail)
+        try:
+            attempt, _intent = self.commit.create_attempt(
+                task.id,
+                critic_tail=critic_tail,
+                role=role.name,
+                model=decision.model,
+                prompt_version=role.prompt_version,
+                context_version=package.context_version,
+                reservation=replace(
+                    self._reservation(tokens),
+                    tool_calls=tool_cap if self._tool_calls_limited(mission, task) else 0,
+                    search_calls=search_cap or 0,
+                ),
+                runtime_profile_id=decision.profile_id,
+                routing=decision.to_json(),
+                intent_config={
+                    "agent_config": config.to_json(),
+                    "message": message,
+                    "attempt_id": placeholder.id,
+                    "allowed_tools": list(allowed),
+                    **self._service_config(decision),
+                    "max_tool_calls": tool_cap,
+                    **({} if search_cap is None else {"max_search_calls": search_cap}),
+                    **({} if resource_grant is None else {"resource_grant": resource_grant}),
+                    "context_version": package.context_version,
+                    "prompt_version": role.prompt_version,
+                    "policy_version_id": self.policy_version_of(mission.id),
+                    "task_version": task.version,
+                    "role": role.name,
+                    **first_critic_binding,
+                    "knowledge": knowledge.frozen_ids,  # D4-10: what this Attempt saw
+                    "retrieval_version": knowledge.retrieval.version,
+                    "retrieval_status": knowledge.retrieval.status,
+                    "context_builder_version": CONTEXT_BUILDER_VERSION,
+                    "untrusted_sources": untrusted,
+                    **({"read_only_leaf": True} if read_only else {}),
+                    **source_binding,
+                    "allocation": dict(
+                        allocation or {}
+                    ),  # D5-8': the §29.3 score it was granted on
+                },
+                input_hash=sha256_hex(message),
+                retry_of=placeholder.retry_of,
+                feedback=feedback,
+                inputs=[item.to_json() for item in inputs],
+                max_open_attempts=min(
+                    int(bound["mission_concurrency"]), self._config.max_concurrency
+                ),
+                max_running_attempts=self._config.max_running_attempts,
+                context_evidence=context_claims(knowledge, upstream),
+            )
+        except CommitRejected as error:
+            return await self._stop_on_attempt_rejected(mission, task, error)
+        except BudgetExhausted as error:
+            return await self._stop_on_budget_exhausted(mission, task, error)
+        self._note(
+            f"attempt {attempt.id} created (retry_of={attempt.retry_of}, inputs={len(inputs)})"
+        )
+        return True
+
+    def _dispatch_held(
+        self, mission: Mission, task: Task, admission: Any, new_mode: HierarchicalDispatch
+    ) -> bool:
+        """True when this Task must not be dispatched now (each check says why where it applies)."""
+        # P2.3b / §18.5 rule 4: before anything else, a compound is refused here with
+        # NEEDS_REFINEMENT.  The gate is ``form`` from the semantic binding, not the
+        # status string — ``TaskStatus.READY`` on a compound is a rebuildable display
+        # index and never a permission to dispatch.
+        intercepted = new_mode.intercept_worker_dispatch(mission.id, task.id)
+        if intercepted is not None:
+            self._note(
+                f"task {task.id} not dispatched: {intercepted.reason} "
+                f"(occurrence {intercepted.occurrence_id})"
+            )
+            return True
+        # P2.3c part 2 / TG §8.3: the dispatch transaction re-checks.  An
+        # ``EligiblePrimitiveTask`` is *not* a capability — it records that a
+        # controlled check passed at ``admitted_at_ms`` and grants nothing — so
+        # this entry refuses a Task that arrived without one, however it got here.
+        # ``_decide`` hands its admission down so the common path does not re-read
+        # the whole plan; every other caller (repair, a manual drive)
+        # pays for the fresh read rather than skipping the gate.
+        if admission is None:
+            admission = new_mode.admissions(mission.id).admission_for(task.id)
+        # Review F11: ``isinstance`` and not a duck-typed ``gate_passed`` probe.
+        # ``EligiblePrimitiveTask.gate_passed`` is guarded by the admission token,
+        # but a structural test would let *any* object carrying a true attribute of
+        # that name through this door — which is exactly the "admission with a flag"
+        # shape ``admissions()`` is written to avoid.
+        if not isinstance(admission, EligiblePrimitiveTask) or not admission.gate_passed:
+            self._note(
+                f"task {task.id} not dispatched: no admission from the readiness gate "
+                "(§18.5 constraint 4)"
+            )
+            return True
+
+        if pending_block(self.store, mission.id) is not None:
+            return True
+
+        if (
+            retry_decision_required(self.store, mission.id, task.id)
+            and pending_retry_permit(self.store, mission.id, task.id) is None
+        ):
+            return True
+        # A Worker already in flight can produce another pending verification.
+        # Account for that obligation before creating more work, across Missions.
+        active_missions = {item.id for item in self._active_missions()}
+        pending_verification = sum(
+            stored.envelope.mission_id in active_missions
+            for stored in self.store.list_results_by_verification("PENDING", "RUNNING")
+        )
+        potential_results = sum(
+            attempt.mission_id in active_missions
+            and self.store.find_result_for_attempt(attempt.id) is None
+            for attempt in self.store.list_attempts_by_status(
+                "PENDING", "CLAIMED", "RUNNING", "SUBMITTED", "VERIFYING"
+            )
+        )
+        return pending_verification + potential_results >= self._config.max_pending_verifications
+
+    def _attempt_feedback(
+        self, mission: Mission, task: Task, attempts: Sequence[Attempt]
+    ) -> tuple[Attempt | None, list[str], list[Mapping[str, Any]]]:
+        previous = next(
+            (a for a in reversed(attempts) if a.status in TERMINAL_ATTEMPT and a.failure), None
+        )
+        feedback, verifier_feedback = retry_feedback(attempts, previous)
+        for event in self.store.list_events(mission.id):  # D7-9': a person's notes, as data
+            if event.type == "HumanCommentAdded" and event.payload.get("target_id") in {
+                task.id,
+                mission.id,
+            }:
+                feedback.append(
+                    f"human note from {event.payload.get('principal_id')} "
+                    f"(information, not a permission change): {event.payload.get('text')}"
+                )
+        return previous, feedback, verifier_feedback
+
+    def _workspace_files_for(
+        self,
+        mission: Mission,
+        previous: Attempt | None,
+        inputs: list[UpstreamInput],
+        untrusted: list[str],
+    ) -> tuple[list[str], list[str], dict[str, Any], Any]:
+        seed = dict((mission.final_report or {}).get("workspace_seed", {}))
+        source_binding = self._active_source_binding(mission.id)
+        source_versions = source_binding.get("source_versions")
+        source_paths = set(source_versions or {})
+        if source_binding:
+            untrusted = sorted(set(untrusted) | source_paths)
+        previous_files = sorted({*seed, *(item.path for item in inputs), *source_paths})
+        if previous is not None:
+            try:
+                previous_files = sorted(
+                    set(self.assembled.workspaces.get(previous.id).list_files()) | source_paths
+                )
+            except Exception:  # noqa: BLE001
+                pass
+        if source_binding:
+            previous_files = [
+                path
+                for path in previous_files
+                if path in source_paths
+                or not _under_source_root(path, source_binding["source_roots"])
+            ]
+        return untrusted, previous_files, source_binding, source_versions
+
+    def _with_leaf_context(
+        self,
+        mission: Mission,
+        *,
+        task: Task,
+        new_mode: HierarchicalDispatch,
+        package: TaskPackage,
+        step_parent: Any,
+    ) -> TaskPackage:
         if step_parent is not None:
             # §10 第 3 项的另一半：父目标。与 dependencies（直接上游）一样是数据，不是指令。
             package = _seal({**dict(package.package), "parent_goal": step_parent})
@@ -577,9 +737,11 @@ class AttemptJudgmentMixin(OrchestratorCore):
         # The Task contract is a durable document-assessment identity. Keep it
         # byte-equivalent to the committed Task; the separate content scope
         # narrows this turn's responsibility without rewriting that contract.
-        package = _seal({**dict(package.package), "task_content_scope": content_scope})
-        # D6-7: Mission ∩ Task ∩ Role ∩ Deployment, frozen into the intent below
-        # P2.3u: a hierarchical read-only leaf also drops patch/apply-class tools.
+        return _seal({**dict(package.package), "task_content_scope": content_scope})
+
+    def _leaf_tools(
+        self, mission: Mission, task: Task, role: Any, new_mode: HierarchicalDispatch
+    ) -> tuple[bool, tuple[str, ...]]:
         read_only = False
         operator_tool_limit = None
         semantic = new_mode.semantics().task_semantics_of(mission.id, task.id)
@@ -599,65 +761,11 @@ class AttemptJudgmentMixin(OrchestratorCore):
         )
         if operator_tool_limit is not None:
             allowed = tuple(name for name in allowed if name in operator_tool_limit)
-        # D6-8: the Attempt's tool-call cap = the deployment's per-turn cap, narrowed by the
-        # Task budget's own dimension; it is reserved up front and enforced at the gateway
-        tool_cap = self._config.max_tool_calls_per_turn
-        if task.budget.max_tool_calls is not None:
-            tool_cap = min(tool_cap, task.budget.max_tool_calls)
-        if self._tool_calls_limited(mission, task):
-            # review P1-2: never reserve more than the chain can still hold; in-flight
-            # reservations are not spending — only a spent dimension is exhaustion
-            reservable, spent_room = self._tool_call_room(mission, task)
-            if spent_room is not None and spent_room > 0 and reservable is not None:
-                if reservable <= 0:
-                    self._note(f"task {task.id}: tool calls all reserved in flight; waiting")
-                    return False
-                tool_cap = min(tool_cap, reservable)
-        # 推后第 3 批 H08：检索次数按账户链还能预留的数给这次尝试；用完不停任务，只让网关拒绝检索
-        search_cap = self._search_call_room(mission, task)
-        # 推后第 3 批 H10：规划器批准了（原样重试）上一次尝试的资源申请 → 这次的工具上限加上批准数
-        resource_grant = self._resource_grant(mission, task)
-        if resource_grant is not None:
-            tool_cap = int(resource_grant["base_cap"]) + int(resource_grant["amount"])
-        config = AgentConfig(
-            name=f"{role.name}-{placeholder.ordinal}",
-            instructions=role.instructions,
-            model_profile_ref=decision.profile_id,  # the label *is* the pool it runs in
-            tool_names=allowed,
-            limits=AgentLimits(
-                max_model_calls_per_turn=self._config.max_model_calls_per_turn,
-                # R3-3 补裁（B 级 #52）：SDK 单回合上限多留一轮余量，网关按 tool_cap 拒绝并告知
-                max_tool_calls_per_turn=tool_cap + TOOL_ANSWER_MARGIN,
-                turn_deadline_seconds=min(
-                    self._config.turn_deadline_seconds,
-                    float(task.budget.max_runtime_seconds or self._config.turn_deadline_seconds),
-                ),
-            ),
-        )
-        message = user_message_json(package.text)
-        tokens = self._config.attempt_reserve_tokens
-        critic_tail = None
-        first_critic_binding: dict[str, Any] = {}
-        if "critic_review" in task.verification_policy:
-            try:
-                critic_decision = self._route_service("critic", mission.id)
-            except RoutingUnavailable as unavailable:
-                return await self._defer_for_profile(mission, task, unavailable)
-            first = self._first_critic_budget(critic_decision)
-            if isinstance(first, FirstRequestBudget):
-                first_reservation = self._first_critic_reservation(first)
-                first_critic_binding = {
-                    "first_critic_budget": {
-                        "provider_input_cap": first.provider_input_cap.to_json(),
-                        "output_ceiling": first.output_ceiling,
-                        "minimum_tokens": first.minimum_tokens,
-                    }
-                }
-                critic_tail = first_reservation
-            else:
-                first_critic_binding = {"first_critic_budget_unknown": first.reason}
-                critic_tail = self._reservation(self._config.critic_reserve_tokens)
-        self._deferred.pop(task.id, None)
+        return read_only, allowed
+
+    def _attempt_reserve_tokens(
+        self, task: Task, tokens: int, critic_tail: Reservation | None
+    ) -> int:
         if self._pressure.is_raised:  # §18.5 "缩小每个 Attempt 预算" (D6-3 ④)
             tokens = max(4_000, int(tokens * self._config.reduced_reserve_ratio))
         if task.budget.max_tokens is not None:
@@ -677,117 +785,65 @@ class AttemptJudgmentMixin(OrchestratorCore):
                 head_room = remaining - critic_share  # keep the Critic's own share free
                 if 0 < head_room < tokens:
                     tokens = head_room
-        try:
-            attempt, _intent = self.commit.create_attempt(
+        return tokens
+
+    async def _stop_on_attempt_rejected(
+        self, mission: Mission, task: Task, error: CommitRejected
+    ) -> bool:
+        if isinstance(error, NonModelFailuresExhausted):
+            # 2026-09-28：格式、服务、打断这类不扣次数的失败同一步已到上限——多半是服务
+            # 或格式本身有问题，停下这一步并写明，不无限重做。
+            self._commit_stop_task(
                 task.id,
-                critic_tail=critic_tail,
-                role=role.name,
-                model=decision.model,
-                prompt_version=role.prompt_version,
-                context_version=package.context_version,
-                reservation=replace(
-                    self._reservation(tokens),
-                    tool_calls=tool_cap if self._tool_calls_limited(mission, task) else 0,
-                    search_calls=search_cap or 0,
-                ),
-                runtime_profile_id=decision.profile_id,
-                routing=decision.to_json(),
-                intent_config={
-                    "agent_config": config.to_json(),
-                    "message": message,
-                    "attempt_id": placeholder.id,
-                    "allowed_tools": list(allowed),
-                    **self._service_config(decision),
-                    "max_tool_calls": tool_cap,
-                    **({} if search_cap is None else {"max_search_calls": search_cap}),
-                    **({} if resource_grant is None else {"resource_grant": resource_grant}),
-                    "context_version": package.context_version,
-                    "prompt_version": role.prompt_version,
-                    "policy_version_id": self.policy_version_of(mission.id),
-                    "task_version": task.version,
-                    "role": role.name,
-                    **first_critic_binding,
-                    "knowledge": knowledge.frozen_ids,  # D4-10: what this Attempt saw
-                    "retrieval_version": knowledge.retrieval.version,
-                    "retrieval_status": knowledge.retrieval.status,
-                    "context_builder_version": CONTEXT_BUILDER_VERSION,
-                    "untrusted_sources": untrusted,
-                    **({"read_only_leaf": True} if read_only else {}),
-                    **source_binding,
-                    "allocation": dict(
-                        allocation or {}
-                    ),  # D5-8': the §29.3 score it was granted on
+                stop_reason=MissionStopReason.RUNTIME_UNAVAILABLE,
+                detail={
+                    "reason": "non_model_failures_exhausted",
+                    "failures": error.failure_count,
+                    "cap": error.cap,
                 },
-                input_hash=sha256_hex(message),
-                retry_of=placeholder.retry_of,
-                feedback=feedback,
-                inputs=[item.to_json() for item in inputs],
-                max_open_attempts=min(
-                    int(bound["mission_concurrency"]), self._config.max_concurrency
-                ),
-                max_running_attempts=self._config.max_running_attempts,
-                context_evidence=context_claims(knowledge, upstream),
             )
-        except CommitRejected as error:
-            if isinstance(error, NonModelFailuresExhausted):
-                # 2026-09-28：格式、服务、打断这类不扣次数的失败同一步已到上限——多半是服务
-                # 或格式本身有问题，停下这一步并写明，不无限重做。
-                self._commit_stop_task(
-                    task.id,
-                    stop_reason=MissionStopReason.RUNTIME_UNAVAILABLE,
-                    detail={
-                        "reason": "non_model_failures_exhausted",
-                        "failures": error.failure_count,
-                        "cap": error.cap,
-                    },
-                )
-                await self._release_mission(mission.id)
-                self._note(
-                    f"task {task.id} stopped: non_model_failures_exhausted ({error.failure_count})"
-                )
-                return True
-            self._note(f"task {task.id}: no new attempt ({error})")
-            return False
-        except BudgetExhausted as error:
-            detail = {
-                "dimension": error.dimension,
-                "requested": error.requested,
-                "remaining": error.remaining,
-                "account": error.account_id,
-            }
-            reason = (
-                MissionStopReason.MAX_ATTEMPTS_REACHED
-                if error.dimension == "attempts"
-                else MissionStopReason.BUDGET_EXHAUSTED
-            )
-            if is_global_account(error.account_id):
-                # review P1-1 / D6-1': the deployment-wide pool ran out — no Task and no
-                # Mission is to blame; the Mission stops with the Global scope named
-                reason = MissionStopReason.BUDGET_EXHAUSTED
-                self._commit_fail_mission(
-                    mission.id, stop_reason=reason, detail={**detail, "scope": "global"}
-                )
-                self._note(
-                    f"mission {mission.id} stopped: {reason} ({error.dimension}, global pool)"
-                )
-            elif error.account_id == mission_account(mission.id):
-                # D3-12': the Mission pool itself is exhausted (any dimension) — no Task
-                # is to blame and the stop reason is the pool's: budget_exhausted
-                reason = MissionStopReason.BUDGET_EXHAUSTED
-                self._commit_fail_mission(
-                    mission.id, stop_reason=reason, detail={**detail, "scope": "mission"}
-                )
-                self._note(
-                    f"mission {mission.id} stopped: {reason} ({error.dimension}, mission pool)"
-                )
-            else:
-                self._commit_stop_task(task.id, stop_reason=reason, detail=detail)
-                self._note(f"task {task.id} stopped: {reason} ({error.dimension})")
             await self._release_mission(mission.id)
+            self._note(
+                f"task {task.id} stopped: non_model_failures_exhausted ({error.failure_count})"
+            )
             return True
-        self._note(
-            f"attempt {attempt.id} created (retry_of={attempt.retry_of}, inputs={len(inputs)})"
+        self._note(f"task {task.id}: no new attempt ({error})")
+        return False
+
+    async def _stop_on_budget_exhausted(
+        self, mission: Mission, task: Task, error: BudgetExhausted
+    ) -> bool:
+        detail = {
+            "dimension": error.dimension,
+            "requested": error.requested,
+            "remaining": error.remaining,
+            "account": error.account_id,
+        }
+        reason = (
+            MissionStopReason.MAX_ATTEMPTS_REACHED
+            if error.dimension == "attempts"
+            else MissionStopReason.BUDGET_EXHAUSTED
         )
+        if is_global_account(error.account_id):
+            # review P1-1 / D6-1': the deployment-wide pool ran out — no Task and no
+            # Mission is to blame; the Mission stops with the Global scope named
+            reason = MissionStopReason.BUDGET_EXHAUSTED
+            self._commit_fail_mission(
+                mission.id, stop_reason=reason, detail={**detail, "scope": "global"}
+            )
+            self._note(f"mission {mission.id} stopped: {reason} ({error.dimension}, global pool)")
+        elif error.account_id == mission_account(mission.id):
+            # D3-12': the Mission pool itself is exhausted (any dimension) — no Task
+            # is to blame and the stop reason is the pool's: budget_exhausted
+            reason = MissionStopReason.BUDGET_EXHAUSTED
+            self._commit_fail_mission(
+                mission.id, stop_reason=reason, detail={**detail, "scope": "mission"}
+            )
+            self._note(f"mission {mission.id} stopped: {reason} ({error.dimension}, mission pool)")
+        else:
+            self._commit_stop_task(task.id, stop_reason=reason, detail=detail)
+            self._note(f"task {task.id} stopped: {reason} ({error.dimension})")
+        await self._release_mission(mission.id)
         return True
 
     async def _judge(self, mission: Mission, tasks: Sequence[Task]) -> bool:
