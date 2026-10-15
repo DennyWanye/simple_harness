@@ -1,0 +1,432 @@
+{
+ "package": "uow_domains",
+ "support": "support",
+ "support_doc": "Module-level helpers shared by several execution unit-of-work domain mixins.",
+ "groups": [
+  {
+   "module": "core",
+   "class": "ExecutionUnitOfWorkCore",
+   "core": true,
+   "doc": "Connection state and run/start/continuation primitives shared by all domains.",
+   "methods": [
+    "__init__",
+    "read_run",
+    "read_admission",
+    "read_decision",
+    "read_continuation",
+    "_run_by_request",
+    "_require_runtime_lease",
+    "_require_continuation_claim",
+    "_read_continuation_progress_receipt",
+    "_read_child_terminal_receipt",
+    "_read_child_terminal_receipt_for_command",
+    "_replay_child_terminal",
+    "_replay_continuation_progress",
+    "_replay_continuation_terminal",
+    "_require_run_fence",
+    "_verify_existing_start",
+    "_insert_event",
+    "_workflow_request_payload",
+    "_derived_id",
+    "_start_identity",
+    "_start_receipt",
+    "_read_workflow_activation",
+    "_assert_open_workflow_transaction",
+    "read_child_signal"
+   ]
+  },
+  {
+   "module": "audit",
+   "class": "RunAuditMixin",
+   "doc": "Run, context-stage and command operation audit records and reads.",
+   "methods": [
+    "configure_context_use_authority",
+    "validate_context_use_recovery",
+    "read_run_terminal_record",
+    "read_expired_authorization_terminal_recovery",
+    "recover_expired_authorization_terminal",
+    "read_run_operation_audit",
+    "open_run_operation_audit",
+    "read_run_operation_audit_page",
+    "open_context_stage_operation_audit",
+    "read_context_stage_operation_audit_page",
+    "open_command_operation_audit",
+    "read_command_operation_audit_page",
+    "_audit_operation_head",
+    "record_runtime_operation",
+    "record_tool_audit"
+   ]
+  },
+  {
+   "module": "commands",
+   "class": "CommandIngressMixin",
+   "doc": "Command ingress: submission, claiming, application and run-mode reservation.",
+   "methods": [
+    "submit_start_command",
+    "submit_continue_command",
+    "submit_cancel_command",
+    "get_command_receipt",
+    "get_command_snapshot",
+    "reserve_legacy_run_mode",
+    "reserve_host_control_run_mode",
+    "require_legacy_or_unmanaged_run",
+    "reserve_base_agent_run_mode",
+    "require_base_agent_run_mode",
+    "claim_next_command",
+    "transition_command",
+    "retry_command",
+    "heartbeat_command",
+    "reject_command",
+    "apply_start_command",
+    "apply_continue_command",
+    "apply_cancel_command",
+    "_settle_applied_command",
+    "_insert_conversation_output",
+    "_verify_conversation_output_replay"
+   ]
+  },
+  {
+   "module": "base_agent",
+   "class": "BaseAgentMixin",
+   "doc": "Base-agent bindings, turns, journal, batches and delegations.",
+   "methods": [
+    "create_agent_binding",
+    "read_agent_binding",
+    "read_agent_binding_for_run",
+    "submit_agent_input",
+    "read_agent_turn",
+    "read_agent_turn_by_input",
+    "list_agent_turns",
+    "read_pending_agent_turn",
+    "read_open_agent_turn",
+    "_base_agent_tables_present",
+    "list_runs_with_open_agent_turns",
+    "read_agent_turn_result",
+    "reserve_child_base_agent_delegation",
+    "close_agent",
+    "request_agent_turn_cancel",
+    "read_agent_turn_cancel",
+    "mark_agent_closed",
+    "read_agent_control_command",
+    "reserve_agent_batch",
+    "commit_agent_batch",
+    "read_agent_batch",
+    "count_agent_bindings",
+    "append_agent_journal",
+    "read_agent_journal",
+    "latest_agent_journal_record",
+    "read_agent_journal_group_head",
+    "agent_journal_highwater",
+    "record_agent_context_selection",
+    "bind_agent_context_selection_request",
+    "latest_agent_context_selection",
+    "read_agent_context_selection_by_request",
+    "upsert_agent_summary",
+    "list_agent_summaries",
+    "read_agent_delegation",
+    "count_agent_delegations",
+    "set_agent_delegation_state",
+    "mark_agent_turn_running",
+    "list_open_wait_blockers_for_run",
+    "stage_agent_turn_result",
+    "commit_agent_turn_result_and_idle"
+   ]
+  },
+  {
+   "module": "runtime_state",
+   "class": "RuntimeStateMixin",
+   "doc": "Runtime activation leases, run fences, waits, cancellation requests and ReAct checkpoints.",
+   "methods": [
+    "claim_runtime_activation",
+    "release_runtime_lease",
+    "renew_runtime_lease",
+    "commit_runtime_state",
+    "commit_runtime_wait_with_blocker",
+    "list_resolved_wait_blockers",
+    "consume_resolved_wait_and_claim_activation",
+    "read_reconciliation_resolution",
+    "_request_run_cancel_on_connection",
+    "request_run_cancel",
+    "read_react_checkpoint",
+    "read_initial_react_checkpoint",
+    "read_legacy_turn_cursor",
+    "cas_react_checkpoint",
+    "acquire",
+    "current_epoch",
+    "release"
+   ]
+  },
+  {
+   "module": "delivery",
+   "class": "RootTerminalDeliveryMixin",
+   "doc": "Root terminal commits and outbound delivery lifecycle.",
+   "methods": [
+    "commit_root_terminal_with_deliveries",
+    "claim_delivery",
+    "record_delivery_handoff",
+    "complete_delivery",
+    "release_delivery",
+    "read_delivery",
+    "_settle_delivery",
+    "commit_root_terminal_with_deliveries_and_ack_continuation"
+   ]
+  },
+  {
+   "module": "admission",
+   "class": "StartAdmissionMixin",
+   "doc": "Root start creation, admission, decisions and continuations.",
+   "methods": [
+    "_create_start_on_connection",
+    "create_with_start_snapshot",
+    "start_admission",
+    "resolve_admission",
+    "commit_decision",
+    "_enqueue_continuation_on_connection",
+    "enqueue_continuation",
+    "claim_continuation",
+    "commit_runtime_state_and_ack_continuation"
+   ]
+  },
+  {
+   "module": "child_runs",
+   "class": "ChildRunMixin",
+   "doc": "Child run launch tickets, child terminals and child reads.",
+   "methods": [
+    "_close_spawn_child_waits_for_parent_terminal",
+    "issue_profile_launch_ticket",
+    "claim_profile_launch_and_commit_child",
+    "finalize_child_and_enqueue_parent_signal",
+    "commit_detached_child_terminal",
+    "_commit_child_terminal",
+    "read_profile_launch_ticket",
+    "read_child_command",
+    "read_child_command_for_run",
+    "is_workflow_spawn_child",
+    "read_child_terminal_result_for_run",
+    "read_child_attachment_policy",
+    "list_child_signal_parent_run_ids",
+    "read_child_signal_ack_receipt",
+    "_same_existing_child_launch"
+   ]
+  },
+  {
+   "module": "child_signals",
+   "class": "ChildSignalMixin",
+   "doc": "Child signals to parents and spawn-child continuation acknowledgements.",
+   "methods": [
+    "ack_spawn_child_continuation_and_continue_batch",
+    "commit_pending_spawn_child_completion_and_react_ready",
+    "claim_next_child_signal",
+    "_quarantine_late_spawn_child_signal",
+    "ack_child_signal_and_commit_parent_progress"
+   ]
+  },
+  {
+   "module": "effects",
+   "class": "EffectMixin",
+   "doc": "Tool effect preparation, hand-off, settlement and reconciliation.",
+   "methods": [
+    "prepare_effect",
+    "list_effects_for_run",
+    "list_unknown_effects_for_run",
+    "read_effect",
+    "mark_effect_handed_off",
+    "settle_effect",
+    "mark_effect_unknown",
+    "record_tool_reconciliation",
+    "reauthorize_effect_not_started",
+    "refresh_prepared_effect_authority"
+   ]
+  },
+  {
+   "module": "provider_invocations",
+   "class": "ProviderInvocationMixin",
+   "doc": "Tool catalog snapshots, provider invocations, context-use grants and provider budgets.",
+   "methods": [
+    "put_tool_catalog_snapshot",
+    "read_tool_catalog_snapshot",
+    "current_tool_catalog_generation",
+    "list_provider_projection_receipts",
+    "claim_provider_invocation",
+    "_verify_existing_context_use",
+    "prepare_provider_context_use",
+    "read_provider_context_use_grant",
+    "read_provider_context_use",
+    "verify_provider_context_use_terminal",
+    "read_provider_invocation",
+    "hand_off_provider_invocation",
+    "settle_provider_invocation",
+    "record_provider_reconciliation",
+    "reauthorize_provider_not_started",
+    "list_incomplete_provider_invocations",
+    "read_provider_budget",
+    "list_provider_invocations",
+    "list_provider_invocation_liveness",
+    "_provider_budget",
+    "_provider_invocation_by_logical_call"
+   ],
+   "bases": [
+    "ProviderAccountingMixin"
+   ]
+  },
+  {
+   "module": "workflow_start",
+   "class": "WorkflowStartMixin",
+   "doc": "Workflow start admission, precreated starts and activation leases.",
+   "methods": [
+    "admit_start_standalone",
+    "_require_runtime_and_fence",
+    "_require_current_start_claim",
+    "_require_workflow_handoff_authority",
+    "ensure_and_bind_precreated_start",
+    "recover_precreated_start",
+    "list_unsettled_start_admissions",
+    "list_unsettled_resume_admissions",
+    "_acquire_activation_rows",
+    "claim_activation",
+    "bind_activation",
+    "renew_activation",
+    "release_activation",
+    "_record_workflow_terminal_outcome",
+    "_commit_native_child_terminal"
+   ]
+  },
+  {
+   "module": "workflow_resume",
+   "class": "WorkflowResumeMixin",
+   "doc": "Workflow resume admission, claims and settlement.",
+   "methods": [
+    "_resume_payload",
+    "_resume_fingerprint",
+    "_resume_receipt",
+    "admit_resume",
+    "resolve_decision_and_admit_resume",
+    "_claim_resume",
+    "claim_resume_standalone",
+    "claim_resume_precreated",
+    "settle_resume",
+    "defer_resume_retry"
+   ]
+  },
+  {
+   "module": "workflow_cancel",
+   "class": "WorkflowCancelMixin",
+   "doc": "Workflow cancellation requests and convergence.",
+   "methods": [
+    "_cancel_outcome",
+    "_cancel_resolution_snapshot",
+    "read_cancel_resolution_snapshot",
+    "read_cancel_outcome",
+    "read_cancel_request",
+    "verify_workflow_cancel_terminal",
+    "request_cancel",
+    "_invalidate_cancel_activation",
+    "claim_cancel_convergence",
+    "settle_cancel_convergence",
+    "_materialize_cancelled_attached_child_terminal"
+   ]
+  },
+  {
+   "module": "recovery",
+   "class": "WorkflowRecoveryMixin",
+   "doc": "Workflow recovery candidates, snapshots and outcomes.",
+   "methods": [
+    "list_candidates",
+    "_recovery_candidate_rows",
+    "_recovery_candidate",
+    "_recovery_snapshot_from_connection",
+    "read_recovery_snapshot",
+    "commit_recovery_outcome",
+    "claim_resolved_recovery"
+   ]
+  },
+  {
+   "module": "fork",
+   "class": "WorkflowForkMixin",
+   "doc": "Workflow fork preparation, checkpoints, commit and rollback.",
+   "methods": [
+    "_fork_receipt",
+    "read_fork",
+    "_fork_payload",
+    "_dangerous_confirmation_is_current",
+    "_validate_dangerous_confirmation",
+    "_fork_source_head_is_current",
+    "_rollback_fork_for_changed_source",
+    "prepare_fork",
+    "claim_fork",
+    "checkpoint_fork",
+    "commit_fork",
+    "rollback_fork",
+    "list_orphaned_forks"
+   ]
+  },
+  {
+   "module": "spawn_issue",
+   "class": "WorkflowSpawnIssueMixin",
+   "doc": "Workflow spawn catalog publication, launch-ticket issue and continuation claims.",
+   "methods": [
+    "publish_catalog",
+    "read_catalog",
+    "_require_workflow_spawn_issue_authority",
+    "issue",
+    "read_issued",
+    "claim_spawn_continuation",
+    "mark_spawn_continuation_ready",
+    "list_ready_spawn_continuations",
+    "read_spawn_ready_blocker",
+    "verify"
+   ]
+  },
+  {
+   "module": "spawn_activation",
+   "class": "WorkflowSpawnActivationMixin",
+   "doc": "Activation of ready workflow spawn continuations.",
+   "methods": [
+    "consume_spawn_ready_and_claim_activation",
+    "read_spawn_ready_activation",
+    "reclaim_spawn_ready_activation",
+    "_require_matching_spawn_ready"
+   ]
+  },
+  {
+   "module": "spawn_outcome",
+   "class": "WorkflowSpawnOutcomeMixin",
+   "doc": "Workflow spawn continuation outcomes and admission continuation.",
+   "methods": [
+    "read_spawn_continuation_outcome",
+    "read_spawn_admission_outcome",
+    "continue_spawn_admission"
+   ]
+  },
+  {
+   "module": "spawn_settle",
+   "class": "WorkflowSpawnSettleMixin",
+   "doc": "Settlement of workflow spawn continuations (stale catalog, graph, parent terminal).",
+   "methods": [
+    "settle_spawn_continuation_catalog_stale",
+    "settle_spawn_continuation_graph_unavailable",
+    "settle_spawn_continuation_for_parent_terminal"
+   ]
+  },
+  {
+   "module": "runtime_start",
+   "class": "RuntimeStartMixin",
+   "doc": "Runtime start admission, retry wakes and workflow terminal verification.",
+   "methods": [
+    "admit_runtime_start",
+    "resume_admitted_runtime_start",
+    "resume_spawn_child_start",
+    "_runtime_retry_wake",
+    "_read_workflow_terminal_outcome",
+    "read_workflow_terminal_outcome",
+    "_verify_workflow_terminal_unchecked",
+    "_verify_workflow_terminal",
+    "verify_workflow_terminal",
+    "_require_runtime_start_shape",
+    "_require_live_runtime_start_cofence",
+    "_require_waiting_authority_shape",
+    "_classify_runtime_start_admission"
+   ]
+  }
+ ]
+}
