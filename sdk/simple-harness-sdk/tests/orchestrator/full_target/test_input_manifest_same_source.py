@@ -43,8 +43,11 @@ from agent_orchestrator.artifacts.input_bindings import (  # noqa: E402
 )
 from agent_orchestrator.graph import eligibility  # noqa: E402
 from agent_orchestrator.graph.eligibility import NotEligible  # noqa: E402
-from agent_orchestrator.orchestrator import hierarchical_dispatch, taskgraph_dispatch  # noqa: E402
+from agent_orchestrator.orchestrator import taskgraph_dispatch  # noqa: E402
 from agent_orchestrator.orchestrator.hierarchical_dispatch import HierarchicalDispatch  # noqa: E402
+from agent_orchestrator.orchestrator.hierarchical_dispatch_domains import (  # noqa: E402
+    admission as dispatch_admission,
+)
 from production_fixture import CHAIN_CRITERIA, chain_planner, enabled_world  # noqa: E402
 
 
@@ -88,7 +91,7 @@ def test_the_consumer_is_admitted_only_with_the_manifest_its_readiness_checked(
                 refusals.append(str(refused.value))
         return real_admit(report, task_view, plan, manifest, **kwargs)
 
-    monkeypatch.setattr(hierarchical_dispatch, "admit_for_dispatch", guarded)
+    monkeypatch.setattr(dispatch_admission, "admit_for_dispatch", guarded)  # 读它的是准入 mixin
     monkeypatch.setattr(taskgraph_dispatch, "admit_for_dispatch", guarded)
 
     resolved: list[list[str]] = []

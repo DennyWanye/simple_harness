@@ -19,9 +19,11 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
+from agent_orchestrator.artifacts.input_bindings import TargetRules
 from agent_orchestrator.artifacts.versioning import UpstreamInput
 from agent_orchestrator.contracts.semantic_base import VersionedRef
 from agent_orchestrator.orchestrator import hierarchical_dispatch as hd
+from agent_orchestrator.orchestrator.hierarchical_dispatch_domains import core as hd_core
 from agent_orchestrator.runtime.action_schema import (
     OPERATION_CANDIDATE_FILE,
     OPERATION_CANDIDATE_PORT,
@@ -247,7 +249,7 @@ def _sources_world(monkeypatch, *, read_only_module=False):
         def get_input_manifest(self, digest):
             return manifests[digest]
 
-    monkeypatch.setattr(hd, "HtnStore", _Htn)
+    monkeypatch.setattr(hd_core, "HtnStore", _Htn)  # 读它的是公共基类的 semantics()
     store = SimpleNamespace(
         get_artifact=artifacts.get,
         get_mission=lambda mission_id: SimpleNamespace(
@@ -256,8 +258,8 @@ def _sources_world(monkeypatch, *, read_only_module=False):
     )
     fake = SimpleNamespace(
         store=store,
-        semantics=lambda: hd.HtnStore(store),
-        target_rules_for=lambda task_id: hd.TargetRules(namespace=f"workspace:{task_id}"),
+        semantics=lambda: hd_core.HtnStore(store),
+        target_rules_for=lambda task_id: TargetRules(namespace=f"workspace:{task_id}"),
     )
     return fake, artifacts, tests_manifest
 

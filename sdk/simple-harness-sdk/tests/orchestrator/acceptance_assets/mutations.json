@@ -115,7 +115,7 @@
     {
       "id": "F1-05",
       "source": "F1 新用例 5",
-      "file": "src/agent_orchestrator/orchestrator/hierarchical_dispatch.py",
+      "file": "src/agent_orchestrator/orchestrator/hierarchical_dispatch_domains/witnesses.py",
       "original": "        semantics = self.semantics()\n        epoch = semantics.epoch(mission_id, scope_id)\n        issued: list[ValidityWitness] = []",
       "replacement": "        semantics = self.semantics()\n        epoch = 0\n        issued: list[ValidityWitness] = []",
       "tests": [
@@ -661,7 +661,7 @@
     {
       "id": "M05",
       "source": "TaskGraph 代码级计划 §15",
-      "file": "src/agent_orchestrator/orchestrator/hierarchical_dispatch.py",
+      "file": "src/agent_orchestrator/orchestrator/hierarchical_dispatch_domains/inputs_outputs.py",
       "original": "        if not requirements and not any(port.required for port in binding.input_ports):\n            return None",
       "replacement": "        if not requirements:\n            return None",
       "tests": [
@@ -926,7 +926,7 @@
     {
       "id": "TG5-01",
       "source": "TaskGraph 补全第五批（下游输入引用现行算数的验收；HTN 补齐 F1 第 6 号空缺）",
-      "file": "src/agent_orchestrator/orchestrator/hierarchical_dispatch.py",
+      "file": "src/agent_orchestrator/orchestrator/hierarchical_dispatch_domains/inputs_outputs.py",
       "original": "            if (\n                state is None\n                or output.acceptance_id not in allowed_acceptances\n                or output.acceptance_id not in state.preparation_acceptance_ids\n            ):\n",
       "replacement": "            if state is None:\n",
       "tests": [
@@ -1716,7 +1716,7 @@
     {
       "id": "MU-03",
       "source": "2026-10-09 编程测评四项修复第 4 条（多上游汇合）",
-      "file": "src/agent_orchestrator/orchestrator/hierarchical_dispatch.py",
+      "file": "src/agent_orchestrator/orchestrator/hierarchical_dispatch_domains/inputs_outputs.py",
       "original": "                    ExplicitPortOrder(port.port_key, tuple(dict.fromkeys([*ids, *later])))\n",
       "replacement": "                    ExplicitPortOrder(port.port_key, tuple(sorted(dict.fromkeys([*ids, *later]))))\n",
       "tests": [
@@ -2006,7 +2006,7 @@
     {
       "id": "SM-20",
       "source": "2026-10-11 第二批：写入冲突扫描每轮解析已做完的下游（opt.176 建议 1）",
-      "file": "src/agent_orchestrator/orchestrator/hierarchical_dispatch.py",
+      "file": "src/agent_orchestrator/orchestrator/hierarchical_dispatch_domains/inputs_outputs.py",
       "original": "            consumer_task = self.store.get_task(consumer)\n            if consumer_task is not None and consumer_task.status is TaskStatus.COMPLETED:",
       "replacement": "            consumer_task = self.store.get_task(consumer)\n            if False:",
       "tests": [
@@ -2072,7 +2072,7 @@
     {
       "id": "SM-26",
       "source": "2026-10-11 第三批：接续上游只从它自己的冻结清单接力",
-      "file": "src/agent_orchestrator/orchestrator/hierarchical_dispatch.py",
+      "file": "src/agent_orchestrator/orchestrator/hierarchical_dispatch_domains/inputs_outputs.py",
       "original": "            if not _is_continuation(semantic):\n                continue\n            for item in frozen:",
       "replacement": "            if True:\n                continue\n            for item in frozen:",
       "tests": [

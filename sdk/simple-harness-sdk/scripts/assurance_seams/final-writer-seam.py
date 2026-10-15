@@ -133,7 +133,11 @@ async def main() -> None:
     report["source_sha256"] = source_sha256([
         "orchestrator/assurance_final_writer.py", "orchestrator/assurance_consumers.py",
         "orchestrator/assurance_assembly.py", "orchestrator/assurance_validity.py", "orchestrator/resolution_commits.py",
-        "orchestrator/hierarchical_dispatch.py", "orchestrator/commit_service.py"])
+        "orchestrator/hierarchical_dispatch.py", *sorted(
+            f"orchestrator/hierarchical_dispatch_domains/{name}.py"
+            for name in ("core", "support", "plan_reading", "witnesses", "inputs_outputs",
+                         "root_resolution", "admission", "method_planning", "evidence_rounds")),
+        "orchestrator/commit_service.py"])
     write_report("final-writer-seam", report)
 
 

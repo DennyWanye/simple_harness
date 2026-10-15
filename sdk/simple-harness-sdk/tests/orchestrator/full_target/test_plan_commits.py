@@ -311,13 +311,13 @@ def test_the_plan_commit_has_one_way_in_and_it_carries_the_preview():
             name for name, text in sources.items() if needle in text.replace(f"def {needle}", "")
         )
 
-    assert callers("CommitPlanCommand(") == ["orchestrator/hierarchical_dispatch.py"]
+    assert callers("CommitPlanCommand(") == ["orchestrator/hierarchical_dispatch_domains/admission.py"]
     assert callers("commit_plan_revision(") == ["orchestrator/planning_admission_commits.py"]
     assert callers("commit_planning_revision(") == [
-        "orchestrator/hierarchical_dispatch.py",
+        "orchestrator/hierarchical_dispatch_domains/method_planning.py",
         "orchestrator/planning_backend_commit.py",
     ]
-    dispatch = sources["orchestrator/hierarchical_dispatch.py"]
+    dispatch = sources["orchestrator/hierarchical_dispatch_domains/admission.py"]
     build = dispatch[dispatch.index("    def build_command(") :]
     build = build[: build.index("\n    def ", 10)]
     for field in (
