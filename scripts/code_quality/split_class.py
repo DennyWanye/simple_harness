@@ -367,7 +367,8 @@ def main() -> int:
         else:
             stubs = render_stubs(wanted_stubs(module, "".join(texts[module])))
         if group.get("core"):
-            head = f"class {group['class']}:\n"
+            # 分组可写 "decorators"：公共基类带的类装饰器（数据类的字段放在公共基类里，基类也要是数据类）
+            head = "".join(d + "\n" for d in group.get("decorators", [])) + f"class {group['class']}:\n"
             slot_line = ""
         else:
             bases = ([core["class"]] if core else []) + group.get("bases", [])
@@ -414,7 +415,7 @@ def main() -> int:
     tree = ast.parse(new_text)
     used_main = names_in(
         "\n".join(
-            ast.get_source_segment(new_text, n) or ""
+            ast.unparse(n)  # 源码片段不含类装饰器（@dataclass），用 unparse 才数得到
             for n in tree.body
             if not isinstance(n, (ast.Import, ast.ImportFrom))
             and not (isinstance(n, ast.If) and "TYPE_CHECKING" in ast.unparse(n.test))

@@ -1,0 +1,7 @@
+{
+ "package": "hierarchical_dispatch_domains",
+ "records": "support",
+ "records_doc": "Module-level definitions of the hierarchical dispatcher: plan views, outcomes, refusals and event helpers.",
+ "stubs_in_core": false,
+ "groups": []
+}

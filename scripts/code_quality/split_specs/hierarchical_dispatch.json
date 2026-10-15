@@ -1,0 +1,158 @@
+{
+ "package": "hierarchical_dispatch_domains",
+ "records": "support",
+ "records_doc": "Module-level definitions of the hierarchical dispatcher: plan views, outcomes, refusals and event helpers.",
+ "stubs_in_core": false,
+ "groups": [
+  {
+   "module": "core",
+   "class": "HierarchicalDispatchCore",
+   "core": true,
+   "decorators": [
+    "@dataclass"
+   ],
+   "doc": "The dispatcher's assembly fields and the helpers every part uses.",
+   "methods": [
+    "for_commit",
+    "semantics",
+    "mission",
+    "require_hierarchical",
+    "require_planning_world",
+    "_world",
+    "_record_refusal",
+    "_append"
+   ]
+  },
+  {
+   "module": "plan_reading",
+   "class": "PlanReadingMixin",
+   "doc": "Reading the plan: networks, plan views, occurrences and readiness reads.",
+   "methods": [
+    "target_rules_for",
+    "target_rules_policy",
+    "network",
+    "_read_network",
+    "seed_network",
+    "_read_seed_network",
+    "plan_view",
+    "requirements_revisions",
+    "requirements_changed",
+    "scope_epochs",
+    "obligation_accounts",
+    "read",
+    "task_view",
+    "occurrence_outcomes",
+    "resolved_occurrences",
+    "occurrences",
+    "seed_method_keys",
+    "ready_occurrences",
+    "running_occurrences"
+   ]
+  },
+  {
+   "module": "witnesses",
+   "class": "WitnessIssueMixin",
+   "doc": "START licences: issuing and indexing input and precondition witnesses.",
+   "methods": [
+    "witnesses",
+    "input_witness_index",
+    "input_witnesses",
+    "issue_input_witnesses",
+    "_issue_acceptance_witness",
+    "_carried_acceptances",
+    "_record_witness",
+    "_witness_key_taken",
+    "issue_start_witnesses",
+    "_condition_support",
+    "start_witness_index",
+    "start_witnesses"
+   ]
+  },
+  {
+   "module": "inputs_outputs",
+   "class": "InputOutputMixin",
+   "doc": "Data contracts: resolved inputs, accepted outputs, delivery sources and write conflicts.",
+   "methods": [
+    "input_result",
+    "resolution_policy_for",
+    "_explicit_port_orders",
+    "resolved_inputs",
+    "accepted_outputs",
+    "goal_port_outputs",
+    "_complete_goals",
+    "declared_output_ports_for",
+    "carried_root_criteria_for",
+    "_recorded_outputs",
+    "attempt_inputs",
+    "write_conflicts",
+    "producer_write_conflicts",
+    "delivery_sources"
+   ]
+  },
+  {
+   "module": "root_resolution",
+   "class": "RootResolutionMixin",
+   "doc": "Closing the root goal: review readiness, root resolution inputs and the root commit.",
+   "methods": [
+    "root_review_ready",
+    "terminal",
+    "root_contributions",
+    "root_resolution_inputs",
+    "superseded_review_packages",
+    "live_root_review_package",
+    "attempt_root_resolution",
+    "_refuse_root_resolution",
+    "read_set_for_root"
+   ]
+  },
+  {
+   "module": "admission",
+   "class": "DispatchAdmissionMixin",
+   "doc": "The readiness gate, compound phases, dispatch interception and commit commands.",
+   "methods": [
+    "admissions",
+    "_accepted_result_counts",
+    "record_withheld",
+    "intercept_worker_dispatch",
+    "record_integrity_failure",
+    "_occurrence_of",
+    "advance_compound_phases",
+    "_lease_blocks_cancel",
+    "build_command"
+   ]
+  },
+  {
+   "module": "method_planning",
+   "class": "MethodPlanningMixin",
+   "doc": "Planner context, method applicability and the preview-and-commit lane.",
+   "methods": [
+    "method_proposal_context",
+    "_subgoal_types",
+    "retired_methods",
+    "planner_round_in_flight",
+    "method_applicability",
+    "dispatch_repair_event",
+    "method_candidates",
+    "record_method_applicability",
+    "_applicability_record_key",
+    "_admission_policy",
+    "solver_preview_lane",
+    "commit_preview_plan_proposal",
+    "preview_plan_proposal"
+   ]
+  },
+  {
+   "module": "evidence_rounds",
+   "class": "EvidenceRoundMixin",
+   "doc": "Evidence rounds: re-reading recorded propositions and unknown preconditions, publish steps.",
+   "methods": [
+    "plan_revision_committed_at",
+    "propositions_looked_at",
+    "run_evidence_round",
+    "_reread_recorded",
+    "_unknown_precondition_round",
+    "_publish_source_steps"
+   ]
+  }
+ ]
+}

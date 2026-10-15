@@ -885,7 +885,7 @@ def test_a_criterion_the_review_never_judged_is_restated_unknown() -> None:
         RequirementsRevision,
         RequirementsRevisionId,
     )
-    from agent_orchestrator.orchestrator.hierarchical_dispatch import _root_criteria
+    from agent_orchestrator.orchestrator.hierarchical_dispatch_domains.support import _root_criteria
 
     widened = RequirementsRevision(
         revision_id=RequirementsRevisionId("req-1"),
