@@ -238,11 +238,11 @@ class BaseAgentMixin(ExecutionUnitOfWorkCore):
                     now=_time(now),
                 )
                 return stored
-            lifecycle = control.read_binding_lifecycle(connection, _required(agent_id, "agent_id"))
+            lifecycle = turns.read_binding_lifecycle(connection, _required(agent_id, "agent_id"))
             if lifecycle is None:
                 raise UnitOfWorkConflict("agent binding is missing")
             if lifecycle == "open":
-                binding = control.set_lifecycle(
+                binding = turns.set_lifecycle(
                     connection, agent_id=agent_id, lifecycle="closing", now=_time(now)
                 )
                 generation = control.bump_control_generation(connection, agent_id)
@@ -326,7 +326,7 @@ class BaseAgentMixin(ExecutionUnitOfWorkCore):
         with self.database.transaction() as connection:
             if turns.read_open_turn(connection, _required(agent_id, "agent_id")) is not None:
                 raise UnitOfWorkConflict("agent still has an open turn")
-            return control.set_lifecycle(
+            return turns.set_lifecycle(
                 connection, agent_id=agent_id, lifecycle="closed", now=_time(now)
             )
 

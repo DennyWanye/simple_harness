@@ -31,7 +31,7 @@ from ..orchestrator.assurance_check_policy import (
 )
 from ..storage import htn_store
 from ..storage.assurance_store import AssuranceStore
-from ..storage.taskgraph_store import require_bound
+from ..storage.taskgraph_binding import require_bound
 
 logger = logging.getLogger(__name__)
 

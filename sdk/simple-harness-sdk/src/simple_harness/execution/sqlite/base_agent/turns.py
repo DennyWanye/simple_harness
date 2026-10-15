@@ -17,6 +17,7 @@ from collections.abc import Callable, Mapping
 
 from simple_harness.contracts import JsonValue, canonical_json, thaw_json
 from simple_harness.execution.base_agent import (
+    AGENT_LIFECYCLES,
     BASE_AGENT_API_MODE,
     AgentBindingRecord,
     AgentTurnRecord,
@@ -173,6 +174,45 @@ def read_binding_by_creation_key(
         (owner_scope, creation_key),
     ).fetchone()
     return None if row is None else _binding(row)
+
+
+_LIFECYCLE_NEXT: dict[str, tuple[str, ...]] = {
+    "open": ("open", "closing", "closed"),
+    "closing": ("closing", "closed"),
+    "closed": ("closed",),
+}
+
+
+def read_binding_lifecycle(connection: sqlite3.Connection, agent_id: str) -> str | None:
+    row = connection.execute(
+        "SELECT lifecycle FROM base_agent_bindings_v1 WHERE agent_id=?", (agent_id,)
+    ).fetchone()
+    return None if row is None else str(row["lifecycle"])
+
+
+def set_lifecycle(
+    connection: sqlite3.Connection, *, agent_id: str, lifecycle: str, now: float
+) -> AgentBindingRecord:
+    """Move ``open -> closing -> closed`` (one way); a same-state replay is a no-op."""
+
+    if lifecycle not in AGENT_LIFECYCLES:
+        raise ValueError("unknown agent lifecycle")
+    current = read_binding_lifecycle(connection, agent_id)
+    if current is None:
+        raise UnitOfWorkConflict("agent binding is missing")
+    if lifecycle not in _LIFECYCLE_NEXT[current]:
+        raise UnitOfWorkConflict(f"agent lifecycle cannot move from {current} to {lifecycle}")
+    if lifecycle != current:
+        connection.execute(
+            "UPDATE base_agent_bindings_v1 SET lifecycle=?, lifecycle_updated_at=? "
+            "WHERE agent_id=? AND lifecycle=?",
+            (lifecycle, float(now), agent_id, current),
+        )
+        if connection.execute("SELECT changes()").fetchone()[0] != 1:
+            raise UnitOfWorkConflict("agent lifecycle changed concurrently")
+    binding = read_binding(connection, agent_id)
+    assert binding is not None
+    return binding
 
 
 # --- turns --------------------------------------------------------------------
@@ -519,9 +559,6 @@ def finalize_turn(
     closing→closed convergence.  Fault points keep their Slice 1 names and order.
     """
 
-    # 按需导入：循环依赖（turns ↔ control）
-    from .control import read_binding_lifecycle, set_lifecycle
-
     fault("agent_turn_finalize.result.before_write")
     record = commit_staged_result(
         connection,
@@ -621,11 +658,13 @@ __all__ = (
     "read_binding",
     "read_binding_by_creation_key",
     "read_binding_by_run",
+    "read_binding_lifecycle",
     "read_open_turn",
     "read_pending_turn",
     "read_result",
     "read_turn",
     "read_turn_by_input",
+    "set_lifecycle",
     "stage_result",
     "submit_input",
 )

@@ -65,6 +65,7 @@ from ..contracts.htn import (
     TaskSemanticBindingV1,
 )
 from ..contracts.models import ContractError, default_change_policy
+from ..contracts.operation_completion import LEAF_LOCAL_CRITERION
 from ..contracts.resolution import RequirementsRevision
 
 #: ``Task.context`` keys this bridge writes.  Namespaced so nothing in the legacy
@@ -305,9 +306,6 @@ def occurrence_criteria(
     if not criteria:
         # 阶段 E：桌面步骤类型不带本任务的要求。做法没有把任何要求链接给它的一步，欠的只是
         # "这一步的结果通过核验"——与叶子验收在同样情形下用的是同一条本地判据。
-        # 按需导入：循环依赖（occurrence_tasks ↔ leaf_acceptance）
-        from .leaf_acceptance import LEAF_LOCAL_CRITERION
-
         criteria = [LEAF_LOCAL_CRITERION]
     return tuple(criteria)
 

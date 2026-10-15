@@ -10,6 +10,79 @@ from typing import Protocol
 
 from simple_harness.contracts import RunId, canonical_json, freeze_json, thaw_json
 
+RUNTIME_BOUNDARIES = frozenset(
+    {
+        "runtime.driver",
+        "runtime.preflight",
+        "provider.prepare",
+        "context.prepare",
+        "context.verify",
+        "tool.batch",
+        "tool.envelope",
+        "tool.proposal",
+        "tool.preflight",
+        "tool.route_gate",
+        "context.no_recall",
+        "context.apply",
+    }
+)
+
+# Table, immutable/composite identity, actual owning Run columns, public domain.
+CORE_SOURCES = (
+    ("terminal_projection_prepares", ("operation_id",), ("run_id",), "workflow"),
+    ("provider_projection_outbox", ("sequence",), ("run_id",), "context"),
+    ("run_wait_blockers", ("blocker_id",), ("run_id",), "control"),
+    ("continuation_progress_receipts", ("receipt_id",), ("run_id",), "control"),
+    ("wait_activation_receipts", ("receipt_id",), ("run_id",), "control"),
+    ("runtime_start_receipts", ("run_id",), ("run_id",), "control"),
+    ("runtime_start_dispatch_claims", ("claim_id",), ("run_id",), "control"),
+    ("conversation_outputs", ("run_id",), ("run_id",), "control"),
+    ("context_preparation_staging", ("stage_id",), ("consumed_run_id",), "context"),
+    ("profile_launch_tickets", ("ticket_id",), ("parent_run_id", "child_run_id"), "child"),
+    ("child_commands", ("command_id",), ("parent_run_id", "child_run_id"), "child"),
+    ("run_links", ("parent_run_id", "child_run_id"), ("parent_run_id", "child_run_id"), "child"),
+    ("child_terminal_receipts", ("receipt_id",), ("child_run_id",), "child"),
+    ("child_signals", ("signal_id",), ("parent_run_id", "child_run_id"), "child"),
+    ("child_signal_ack_receipts", ("receipt_id",), ("parent_run_id",), "child"),
+    (
+        "workflow_launch_ticket_receipts",
+        ("ticket_receipt_id",),
+        ("resolved_run_id", "parent_run_id"),
+        "workflow",
+    ),
+    ("workflow_operation_receipts", ("operation_id",), ("run_id",), "workflow"),
+    ("workflow_native_operations", ("operation_id",), ("run_id",), "workflow"),
+    ("workflow_checkpoint_effect_links", ("checkpoint_id", "effect_id"), ("run_id",), "workflow"),
+    ("workflow_decision_consumptions", ("decision_id", "checkpoint_id"), ("run_id",), "workflow"),
+    ("workflow_start_admissions", ("request_id",), ("run_id",), "workflow"),
+    ("workflow_resume_admissions", ("receipt_id",), ("run_id",), "workflow"),
+    ("workflow_cancel_receipts", ("cancel_id",), ("run_id",), "workflow"),
+    ("workflow_recovery_receipts", ("receipt_id",), ("run_id",), "workflow"),
+    ("workflow_recovery_claims", ("blocker_id",), ("run_id",), "workflow"),
+    ("workflow_fork_receipts", ("fork_id",), ("source_run_id", "target_run_id"), "workflow"),
+    ("workflow_spawn_continuations", ("operation_id",), ("parent_run_id",), "workflow"),
+    (
+        "workflow_spawn_ready_activations",
+        ("activation_receipt_id",),
+        ("parent_run_id",),
+        "workflow",
+    ),
+    (
+        "workflow_spawn_child_wait_receipts",
+        ("parent_wait_receipt_id",),
+        ("parent_run_id", "child_run_id"),
+        "workflow",
+    ),
+    (
+        "workflow_spawn_completion_receipts",
+        ("completion_receipt_id",),
+        ("parent_run_id",),
+        "workflow",
+    ),
+    ("workflow_terminal_fence_receipts", ("receipt_id",), ("run_id",), "workflow"),
+    ("workflow_terminal_receipts", ("receipt_id",), ("run_id",), "workflow"),
+)
+
 
 def audit_hash(value: object) -> str:
     return hashlib.sha256(canonical_json(value).encode()).hexdigest()
@@ -373,9 +446,6 @@ class RunOperationAuditSnapshotV1:
             raise TypeError("invalid coverage gaps")
 
     def _payload(self):
-        # 按需导入：循环依赖（audit ↔ runtime_audit）
-        from .runtime_audit import RUNTIME_BOUNDARIES
-
         return dict(
             schema_version=self.schema_version,
             run_id=self.run_id,
@@ -403,9 +473,6 @@ class RunOperationAuditSnapshotV1:
 
     @property
     def source_set(self):
-        # 按需导入：循环依赖（audit ↔ audit_core）
-        from .sqlite.audit_core import CORE_SOURCES
-
         return (
             (
                 "provider_invocations",
@@ -578,6 +645,8 @@ class ContextStageOperationAuditPort(Protocol):
 
 
 __all__ = (
+    "CORE_SOURCES",
+    "RUNTIME_BOUNDARIES",
     "CommandOperationAuditPageV1",
     "CommandOperationAuditPort",
     "ContextStageOperationAuditPageV1",

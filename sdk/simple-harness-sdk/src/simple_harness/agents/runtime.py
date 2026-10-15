@@ -21,14 +21,12 @@ from simple_harness.agents.background_health import BackgroundHealth, Background
 from simple_harness.contracts import (
     ExecutionSessionId,
     JsonValue,
-    Message,
-    MessageRole,
     RequestId,
     RunId,
     canonical_json,
     thaw_json,
 )
-from simple_harness.execution.base_agent import BASE_AGENT_API_MODE, AgentBindingRecord
+from simple_harness.execution.base_agent import AgentBindingRecord
 from simple_harness.execution.budget import FrozenPriceEstimator
 from simple_harness.execution.delivery import DeliveryDispatcher
 from simple_harness.execution.dispatch import ProviderInvocationCoordinator
@@ -59,7 +57,7 @@ from simple_harness.tools import EffectExecutor, FunctionTool, Tool
 from simple_harness.tools.contracts import CancellationToken
 
 from .base import BaseAgent
-from .config import AgentConfig, config_hash
+from .config import AgentConfig, config_hash, start_input_for
 from .context.port import JournalContextPort, RequestGuard
 from .context.tokenizer import UpperBoundTokenizer
 from .contracts import (
@@ -312,40 +310,6 @@ def agent_id_for(owner_scope: str, creation_key: str) -> str:
 
     digest = hashlib.sha256(f"{owner_scope}\x00{creation_key}".encode()).hexdigest()
     return f"agent-{digest[:32]}"
-
-
-def start_input_for(
-    config: AgentConfig,
-    *,
-    agent_id: str,
-    role: str,
-    owner_scope: str,
-    max_output_tokens: int,
-) -> dict[str, JsonValue]:
-    """``start.input`` carrying the Agent binding next to the capability snapshot."""
-
-    messages: list[JsonValue] = []
-    if config.instructions.strip():
-        messages.append(Message(MessageRole.SYSTEM, config.instructions).to_dict())
-    return {
-        "capability_snapshot": {"tools": list(config.tool_names)},
-        "base_agent_binding": {
-            "agent_id": agent_id,
-            "config_hash": config_hash(config),
-            "api_mode": BASE_AGENT_API_MODE,
-            "role": role,
-            "owner_scope": owner_scope,
-            # Per-turn guard-rails travel with the frozen start input so the driver
-            # never reads the agents' configuration tables (T6).
-            "limits": {
-                "max_model_calls_per_turn": config.limits.max_model_calls_per_turn,
-                "max_tool_calls_per_turn": config.limits.max_tool_calls_per_turn,
-                "turn_deadline_seconds": config.limits.turn_deadline_seconds,
-            },
-        },
-        "messages": messages,
-        "max_output_tokens": max_output_tokens,
-    }
 
 
 class AgentRuntime:
@@ -830,5 +794,4 @@ __all__ = (
     "assemble_runtime",
     "batch_fingerprint",
     "build_agent_runtime",
-    "start_input_for",
 )

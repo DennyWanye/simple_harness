@@ -49,7 +49,7 @@ from ..runtime.taskgraph_operation_sources import read_operation_producers
 from ..storage.htn_store import HtnStore, PlanCommitReceipt
 from ..storage.planning_admission_store import PlanningAdmissionStore
 from ..storage.planning_decision_store import PlanningDecisionStore
-from ..storage.taskgraph_store import require_bound
+from ..storage.taskgraph_binding import require_bound
 from .plan_commits import CommitPlanCommand, PlanCommitRejected, PlanPrincipal
 from .taskgraph_plan_commit import TaskGraphPlanCommitParticipant
 

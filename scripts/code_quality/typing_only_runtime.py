@@ -29,6 +29,11 @@ for path in sys.argv[1:]:
         if isinstance(n,ast.If) and "TYPE_CHECKING" in ast.unparse(n.test): skip|={id(x) for x in ast.walk(n)}
         for ann in ([n.annotation] if isinstance(n,(ast.arg,ast.AnnAssign)) and n.annotation is not None else [])+([n.returns] if isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef)) and n.returns is not None else []):
             skip|={id(x) for x in ast.walk(ann)}
+    # 函数里先按需导入了同名（循环依赖的局部导入），函数内的使用不算
+    for fn in ast.walk(tree):
+        if isinstance(fn,(ast.FunctionDef,ast.AsyncFunctionDef)):
+            local={(a.asname or a.name).split(".")[0] for s in ast.walk(fn) if isinstance(s,(ast.Import,ast.ImportFrom)) for a in s.names}
+            skip|={id(x) for x in ast.walk(fn) if isinstance(x,ast.Name) and x.id in local}
     hits=sorted({(x.id,x.lineno) for x in ast.walk(tree) if isinstance(x,ast.Name) and x.id in only_tc and id(x) not in skip})
     if hits:
         bad += 1

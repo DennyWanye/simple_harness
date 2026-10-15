@@ -16,13 +16,13 @@ from pathlib import Path
 import pytest
 from agent_orchestrator.contracts.htn import ObligationCoverage, SideEffectKind, TaskForm
 from agent_orchestrator.contracts.operation_completion import (
+    LEAF_LOCAL_CRITERION,
     CompletionMode,
     CompletionScopeRole,
     OperationCompletionRequirementsV1,
     PlanRevisionPinV1,
 )
 from agent_orchestrator.orchestrator.accepted_outputs import CarriedCriterion
-from agent_orchestrator.orchestrator.leaf_acceptance import LEAF_LOCAL_CRITERION
 from agent_orchestrator.planning.htn.completion_scopes import (
     CompletionScopeCompilationError,
     _plan_identity,

@@ -29,7 +29,7 @@ from .codec import check
 from .errors import ArpError
 from .pins import Pin
 from .ports import PendingAssuranceAcceptance, TrustedCaller
-from .shared_catalogue import managed_elsewhere
+from .skills import managed_elsewhere
 from .strict import digest, plain
 
 TRIAL_TTL_MS = 24 * 3600 * 1000

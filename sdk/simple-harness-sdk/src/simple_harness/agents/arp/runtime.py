@@ -18,12 +18,12 @@ from pathlib import Path
 from typing import Any
 
 from simple_harness.agents.background_health import BackgroundHealthBook
+from simple_harness.agents.config import start_input_for
 from simple_harness.agents.ports import AgentRuntimePorts
 from simple_harness.agents.runtime import (
     AgentRuntime,
     agent_id_for,
     build_agent_runtime,
-    start_input_for,
 )
 from simple_harness.execution.sqlite.database import Database
 

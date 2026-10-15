@@ -60,7 +60,7 @@ from ...runtime.planning_operations import SourceUnavailable as RuntimeSourceUna
 from ...runtime.planning_operations import StoreOperationReader, read_running_work
 from ...storage import planning_decision_store
 from ...storage.store import DispatchIntent, StoreConflict
-from ...storage.taskgraph_store import require_bound
+from ...storage.taskgraph_binding import require_bound
 from .. import planning_backend_runtime
 from ..failure_classes import output_exhausted, output_exhausted_fact
 from ..hierarchical_dispatch import (

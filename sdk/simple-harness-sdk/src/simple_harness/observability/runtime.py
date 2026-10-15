@@ -8,7 +8,7 @@ from __future__ import annotations
 import queue
 import threading
 import time
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from typing import cast
 
@@ -17,7 +17,7 @@ from simple_harness.version import __version__
 from .contracts import ObservabilityEventV1, Outcome, Severity
 from .correlation import CorrelationContext
 from .redaction import SafeValue
-from .sinks import CompositeSink, NoopSink, ObservabilitySink
+from .sinks import NoopSink, ObservabilitySink
 from .snapshot import DiagnosticsSnapshotV1
 
 
@@ -186,6 +186,49 @@ class SafeEmitter:
         )
 
 
+class CompositeSink:
+    """Fan out without allowing one child failure to skip later children."""
+
+    def __init__(
+        self,
+        sinks: Sequence[ObservabilitySink],
+        *,
+        child_capacity: int = 256,
+        close_timeout: float = 1.0,
+    ) -> None:
+        self._children = tuple(
+            SafeEmitter(sink, capacity=child_capacity, close_timeout=close_timeout)
+            for sink in sinks
+        )
+
+    def emit(self, event: ObservabilityEventV1) -> None:
+        for child in self._children:
+            child.emit(event)
+
+    def flush(self, timeout: float = 1.0) -> bool:
+        deadline = time.monotonic() + max(0.0, timeout)
+        result = True
+        for child in self._children:
+            remaining = max(0.0, deadline - time.monotonic())
+            result = child.flush(remaining) and result
+        return result
+
+    def close(self, timeout: float = 1.0) -> bool:
+        deadline = time.monotonic() + max(0.0, timeout)
+        result = True
+        for child in self._children:
+            remaining = max(0.0, deadline - time.monotonic())
+            result = child.close(remaining) and result
+        return result
+
+    def diagnostics(self) -> dict[str, int]:
+        counters = tuple(child.counters for child in self._children)
+        return {
+            "accepted_children": sum(item.accepted for item in counters),
+            "failed_children": sum(item.sink_errors + item.overflow_dropped for item in counters),
+        }
+
+
 class ObservabilityRuntime:
     """Public composition object retained by Host-facing runtimes."""
 
@@ -249,4 +292,4 @@ class ObservabilityRuntime:
         return self._emitter.diagnostics_snapshot().to_dict()
 
 
-__all__ = ("EmitterCounters", "ObservabilityRuntime", "SafeEmitter")
+__all__ = ("CompositeSink", "EmitterCounters", "ObservabilityRuntime", "SafeEmitter")

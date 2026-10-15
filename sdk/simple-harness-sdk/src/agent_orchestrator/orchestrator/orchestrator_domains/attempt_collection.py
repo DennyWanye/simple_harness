@@ -42,7 +42,7 @@ from ...runtime.planning_operations import SourceUnavailable
 from ...runtime.provider_budget_guard import resend_record
 from ...runtime.role_templates import RESULT_ENVELOPE_TAG
 from ...storage.store import DispatchIntent, InjectedCrash, StoreBusy
-from ...storage.taskgraph_store import require_bound
+from ...storage.taskgraph_binding import require_bound
 from .. import taskgraph_runtime_imports
 from ..assurance_review_collect import abandon_assurance_review, collect_assurance_review
 from ..assurance_review_import import carried_review_alive

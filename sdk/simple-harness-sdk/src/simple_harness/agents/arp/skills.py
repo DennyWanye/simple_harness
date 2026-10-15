@@ -61,6 +61,13 @@ INSTRUCTIONS_SCHEMA_ID = "sdk.skill.instructions.io"
 # ---- bundle inspection ------------------------------------------------------------------
 
 
+def managed_elsewhere() -> ArpError:
+    return ArpError(
+        "REF_OUTSIDE_SCOPE",
+        "Skills of this pool are managed by the deployment's shared catalogue owner",
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class BundleFile:
     path: str
@@ -423,9 +430,6 @@ class SkillImporter:
         mirror: bool = False,
     ) -> SkillImportResult:
         if self.managed_by is not None and not mirror:
-            # 按需导入：循环依赖（skills ↔ shared_catalogue）
-            from .shared_catalogue import managed_elsewhere
-
             raise managed_elsewhere()
         value = check("SkillInstallCommand", plain(command))
         artifact = Pin.from_json(value["bundle_artifact_ref"])
@@ -827,5 +831,6 @@ __all__ = (
     "SkillImportResult",
     "SkillImporter",
     "inspect_bundle",
+    "managed_elsewhere",
     "parse_frontmatter",
 )

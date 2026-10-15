@@ -4,9 +4,9 @@
 """Connection-level helpers for the BaseAgent control plane (Slice 2 · T3).
 
 All functions run inside the caller's transaction; they never open one.  The only
-state they touch is the binding's ``lifecycle`` / ``control_generation`` columns
-and ``base_agent_control_commands_v1``.  Nothing here calls the kernel: ``close``
-is a persisted intent, never a Run cancel.
+state they touch is the binding's ``control_generation`` column and
+``base_agent_control_commands_v1`` (the binding ``lifecycle`` lives in :mod:`.turns`).
+Nothing here calls the kernel: ``close`` is a persisted intent, never a Run cancel.
 """
 
 from __future__ import annotations
@@ -17,19 +17,9 @@ from collections.abc import Mapping
 
 from simple_harness.contracts import JsonValue, canonical_json, freeze_json, thaw_json
 from simple_harness.execution.base_agent import (
-    AGENT_LIFECYCLES,
-    AgentBindingRecord,
     AgentControlCommandRecord,
 )
 from simple_harness.execution.uow import UnitOfWorkConflict
-
-from .turns import read_binding
-
-_LIFECYCLE_NEXT: dict[str, tuple[str, ...]] = {
-    "open": ("open", "closing", "closed"),
-    "closing": ("closing", "closed"),
-    "closed": ("closed",),
-}
 
 
 def _command(row: sqlite3.Row) -> AgentControlCommandRecord:
@@ -43,13 +33,6 @@ def _command(row: sqlite3.Row) -> AgentControlCommandRecord:
         receipt=json.loads(str(row["receipt_json"])),
         created_at=float(row["created_at"]),
     )
-
-
-def read_binding_lifecycle(connection: sqlite3.Connection, agent_id: str) -> str | None:
-    row = connection.execute(
-        "SELECT lifecycle FROM base_agent_bindings_v1 WHERE agent_id=?", (agent_id,)
-    ).fetchone()
-    return None if row is None else str(row["lifecycle"])
 
 
 def read_control_command(
@@ -99,31 +82,6 @@ def record_control_command(
     return stored, True
 
 
-def set_lifecycle(
-    connection: sqlite3.Connection, *, agent_id: str, lifecycle: str, now: float
-) -> AgentBindingRecord:
-    """Move ``open -> closing -> closed`` (one way); a same-state replay is a no-op."""
-
-    if lifecycle not in AGENT_LIFECYCLES:
-        raise ValueError("unknown agent lifecycle")
-    current = read_binding_lifecycle(connection, agent_id)
-    if current is None:
-        raise UnitOfWorkConflict("agent binding is missing")
-    if lifecycle not in _LIFECYCLE_NEXT[current]:
-        raise UnitOfWorkConflict(f"agent lifecycle cannot move from {current} to {lifecycle}")
-    if lifecycle != current:
-        connection.execute(
-            "UPDATE base_agent_bindings_v1 SET lifecycle=?, lifecycle_updated_at=? "
-            "WHERE agent_id=? AND lifecycle=?",
-            (lifecycle, float(now), agent_id, current),
-        )
-        if connection.execute("SELECT changes()").fetchone()[0] != 1:
-            raise UnitOfWorkConflict("agent lifecycle changed concurrently")
-    binding = read_binding(connection, agent_id)
-    assert binding is not None
-    return binding
-
-
 def read_pending_cancel_for_turn(
     connection: sqlite3.Connection, turn_id: str
 ) -> AgentControlCommandRecord | None:
@@ -153,9 +111,7 @@ def bump_control_generation(connection: sqlite3.Connection, agent_id: str) -> in
 
 __all__ = (
     "bump_control_generation",
-    "read_binding_lifecycle",
     "read_control_command",
     "read_pending_cancel_for_turn",
     "record_control_command",
-    "set_lifecycle",
 )

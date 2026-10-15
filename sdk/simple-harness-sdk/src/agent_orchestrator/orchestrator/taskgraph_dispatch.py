@@ -30,7 +30,8 @@ from ..planning.htn.grounding import derive_id
 from ..storage.htn_store import HtnStore
 from ..storage.store import DispatchIntent, Store, StoreConflict, StoreError
 from ..storage.taskgraph_attempt_inputs import TaskGraphAttemptInputStore
-from ..storage.taskgraph_store import TaskGraphStore, require_bound
+from ..storage.taskgraph_binding import require_bound
+from ..storage.taskgraph_store import TaskGraphStore
 from .hierarchical_dispatch import HierarchicalDispatch, NetworkView
 
 #: 2026-10-11 第三批：冻结输入第 3 版——清单本身列出全部交付（端口绑定 + 交付绑定），意图的

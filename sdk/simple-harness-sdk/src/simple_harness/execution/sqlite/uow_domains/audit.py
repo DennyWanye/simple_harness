@@ -9,6 +9,7 @@ import sqlite3
 
 from simple_harness.contracts import RunId, canonical_json, thaw_json
 from simple_harness.execution.audit import (
+    RUNTIME_BOUNDARIES,
     RunAuditUnavailable,
     RunOperationAuditSnapshotV1,
     audit_error_code,
@@ -16,12 +17,11 @@ from simple_harness.execution.audit import (
     audit_label_syntax,
 )
 from simple_harness.execution.effects import effect_request_hash
-from simple_harness.execution.runtime_audit import RUNTIME_BOUNDARIES
 from simple_harness.execution.uow import UnitOfWorkConflict
 
+from ...context_use_requirements import validate_recovery
 from ..audit import head_fact, read_snapshot, read_terminal_record
 from ..audit_pages import open_pages, read_page
-from ...context_use_requirements import validate_recovery
 from ..decision_terminal import eligible, recover
 from .core import ExecutionUnitOfWorkCore
 from .support import _fault

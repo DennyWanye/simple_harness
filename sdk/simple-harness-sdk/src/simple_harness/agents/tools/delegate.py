@@ -61,7 +61,7 @@ from ..arp.errors import ArpError
 from ..arp.pins import Pin
 from ..arp.ports import TrustedCaller
 from ..arp.strict import digest
-from ..config import AgentConfig, config_hash
+from ..config import AgentConfig, config_hash, start_input_for
 from ..contracts import AgentTurnResult
 
 if TYPE_CHECKING:
@@ -257,9 +257,6 @@ class AgentDelegateTool:
             ),
             limits=limits,
         )
-        # 按需导入：循环依赖（delegate ↔ runtime）
-        from ..runtime import start_input_for
-
         child_input = start_input_for(
             child_config,
             agent_id=child_agent_id,

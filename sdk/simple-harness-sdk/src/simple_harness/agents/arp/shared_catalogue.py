@@ -67,13 +67,6 @@ _PATH = {
 }
 
 
-def managed_elsewhere() -> ArpError:
-    return ArpError(
-        "REF_OUTSIDE_SCOPE",
-        "Skills of this pool are managed by the deployment's shared catalogue owner",
-    )
-
-
 class SharedSkillCatalogue:
     """The realm's Skill authority: ``owner`` runtime + ``members`` runtimes (bound late —
     the pools are assembled one by one)."""
@@ -519,6 +512,5 @@ __all__ = (
     "SKILL_READ_VERBS",
     "SKILL_WRITE_VERBS",
     "SharedSkillCatalogue",
-    "managed_elsewhere",
     "mirror_caller",
 )

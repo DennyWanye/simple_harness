@@ -13,12 +13,12 @@ from ..contracts.models import Event
 from ..graph.notification_contracts import FollowupKind, FollowupV1, _integer, _text
 from ..planning.htn.grounding import derive_id
 from ..storage.store import StoreConflict, StoreError
+from ..storage.taskgraph_binding import NotBoundError, require_bound
 from ..storage.taskgraph_followups import (
     BlockedFollowup,
     DurableFollowupReceipt,
     TaskGraphFollowupStore,
 )
-from ..storage.taskgraph_store import NotBoundError, require_bound
 
 FollowupHandler = Callable[[FollowupV1, str], Awaitable[DurableFollowupReceipt]]
 

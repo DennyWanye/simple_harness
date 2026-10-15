@@ -8,6 +8,7 @@ from dataclasses import replace
 
 from simple_harness.contracts import RunId, thaw_json
 from simple_harness.execution.audit import (
+    RUNTIME_BOUNDARIES,
     RunAuditUnavailable,
     RunAuditUsageV1,
     RunOperationAuditSnapshotV1,
@@ -21,7 +22,6 @@ from simple_harness.execution.audit import (
 )
 from simple_harness.execution.effects import effect_request_hash, internal_effect_identity
 from simple_harness.execution.provider_invocations import provider_response_from_json
-from simple_harness.execution.runtime_audit import RUNTIME_BOUNDARIES
 
 from .audit_core import core_operation, core_rows
 from .audit_coverage import recording_coverage

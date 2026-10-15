@@ -30,6 +30,8 @@ from ...contracts.htn import (
 )
 from ...contracts.models import ContractError
 from ...contracts.operation_completion import (
+    LEAF_LOCAL_CRITERION,
+    LEAF_REVIEW_POLICY,
     CompletionPinV1,
     CompletionScopeRole,
     OccurrenceCompletionScopeV1,
@@ -41,7 +43,6 @@ from ...contracts.operation_completion import (
 from ...contracts.semantic_base import content_hash_of
 from ...graph.task_network import TaskNetworkSnapshot
 from ...orchestrator.accepted_outputs import CarriedCriterion
-from ...orchestrator.leaf_acceptance import LEAF_LOCAL_CRITERION, LEAF_REVIEW_POLICY
 
 if TYPE_CHECKING:
     from ...graph.task_network import OccurrenceSpec

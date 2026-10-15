@@ -1000,7 +1000,24 @@ def validate_spec_scope_coverage(
     validate_scope_owners(spec, scopes)
 
 
+#: The review policy this deployment reviews a hierarchical leaf under.  A named
+#: constant rather than a literal at three call sites, so the package, the record
+#: and the command cannot drift into quoting two policies.
+LEAF_REVIEW_POLICY = "hierarchical-leaf-review-v1"
+
+#: The one criterion a leaf owes when the plan hangs no root criterion on it and its
+#: own goal type declares none (P2.3h).  Such a step — ``facts``, ``reproduce`` — is
+#: still accepted on its verified result; what it is *not* is a witness to the root
+#: goal, and its acceptance must not say otherwise.  Before P2.3h the fallback was
+#: the obligation's ``requirement_refs``, i.e. the **parent's** criteria, so every
+#: leaf's review stamped ``c-test-passes`` PASS and the root reviewer of the Grok C3
+#: run correctly refused to count those stamps as evidence.
+LEAF_LOCAL_CRITERION = "c-leaf-verified"
+
+
 __all__ = (
+    "LEAF_LOCAL_CRITERION",
+    "LEAF_REVIEW_POLICY",
     "OPERATION_COMPLETION_SCHEMA_VERSION",
     "MAX_COMPLETION_BYTES",
     "MAX_COMPLETION_DEPTH",

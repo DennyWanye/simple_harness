@@ -24,7 +24,7 @@ from ..runtime.planning_operations import SourceUnavailable
 from ..runtime.provider_budget_guard import ProviderBudgetGuard
 from ..storage import htn_store
 from ..storage.assurance_reads import AssuranceReader
-from ..storage.taskgraph_store import NotBoundError, require_bound
+from ..storage.taskgraph_binding import NotBoundError, require_bound
 from . import taskgraph_action_settlement
 from .assurance_consumers import UPPER_BOUND_EVENT
 from .assurance_review_transport import read_review_invocation_locked, review_budget_subject

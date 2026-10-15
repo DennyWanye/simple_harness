@@ -13,7 +13,7 @@ from ..runtime.planning_operations import (
     build_operation_snapshot,
 )
 from ..runtime.taskgraph_operation_sources import read_operation_producers
-from ..storage.taskgraph_store import NotBoundError, require_bound
+from ..storage.taskgraph_binding import NotBoundError, require_bound
 
 
 def require_action_settlement(orchestrator: Any, subject_id: str, mission_id: str) -> None:

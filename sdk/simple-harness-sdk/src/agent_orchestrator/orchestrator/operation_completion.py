@@ -22,11 +22,13 @@ from ..contracts.resolution import RequirementsRevision
 from ..contracts.semantic_base import TypedRef, TypedRefKind, content_hash_of, identifier
 from ..governance.permissions import Principal
 from ..graph.task_network import TaskNetworkSnapshot
+from ..planning.htn.completion_scopes import compile_completion_scopes
 from ..planning.htn.grounding import derive_id
 from ..storage.htn_store import HtnStore
 from ..storage.obligation_store import ObligationStore
 from ..storage.operation_completion_store import OperationCompletionStore
 from ..storage.store import Store, StoreError
+from .accepted_outputs import carried_criteria_in_revision
 
 #: The actor recorded when the Host confirms content-only requirements in auto mode.
 HOST_AUTO_COMPLETION_CONFIRMER_ID = "host:auto-permission-completion"
@@ -409,11 +411,6 @@ def freeze_plan_completion_scopes(
     Legacy protocol missions keep their original path. A new-protocol mission
     cannot publish a dispatchable plan without an approved completion mapping.
     """
-    # 按需导入：循环依赖（operation_completion ↔ completion_scopes）
-    from ..planning.htn.completion_scopes import compile_completion_scopes
-
-    # 按需导入：循环依赖（operation_completion ↔ accepted_outputs）
-    from .accepted_outputs import carried_criteria_in_revision
 
     protocol = store.connection.execute(
         "SELECT protocol_version FROM mission_planning_protocols WHERE mission_id=?",

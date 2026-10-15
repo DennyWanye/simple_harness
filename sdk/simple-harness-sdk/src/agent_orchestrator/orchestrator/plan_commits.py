@@ -89,7 +89,7 @@ from ..storage import planning_decision_store
 from ..storage.htn_store import HtnStore, PlanCommitReceipt
 from ..storage.obligation_store import ObligationStore
 from ..storage.store import StoreError
-from ..storage.taskgraph_store import NotBoundError, require_bound
+from ..storage.taskgraph_binding import NotBoundError, require_bound
 from ._read_set import ReadSetChannelUnknown, SemanticReadSetChecker
 from .accepted_outputs import criterion_linked_occurrences, owned_criteria
 from .budget_accounts import mission_account, task_account

@@ -15,7 +15,7 @@ from ...contracts.evidence_state import WitnessPurpose
 from ...knowledge.validity import CONDITION_REASON_PREFIX as WITNESS_CONDITION_PREFIX
 from ...storage.htn_store import HtnStore
 from ...storage.store import StoreError
-from ...storage.taskgraph_store import require_bound
+from ...storage.taskgraph_binding import require_bound
 from ..plan_commits import semantics_of
 from .support import (
     PLAN_COMMIT_REFUSED,

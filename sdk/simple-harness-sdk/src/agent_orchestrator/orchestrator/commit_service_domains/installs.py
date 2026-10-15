@@ -13,7 +13,8 @@ from ...contracts import ContractError, TaskStatus
 from ...runtime.planning_operations import SourceUnavailable
 from ...storage import htn_store
 from ...storage.store import DispatchIntent, StoreError
-from ...storage.taskgraph_store import TaskGraphStore, require_bound
+from ...storage.taskgraph_binding import require_bound
+from ...storage.taskgraph_store import TaskGraphStore
 from ..assurance_check_policy import approve_check_policy
 from ..assurance_review_transport import ensure_format_repair_invocation, ensure_review_invocation
 from ..assurance_root_commits import install_native_root

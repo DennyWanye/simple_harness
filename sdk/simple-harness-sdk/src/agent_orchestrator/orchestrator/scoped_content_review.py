@@ -16,6 +16,8 @@ from ..assurance.codec import fingerprint
 from ..contracts.htn import OccurrenceId, TaskForm, TaskRef
 from ..contracts.models import ContractError
 from ..contracts.operation_completion import (
+    LEAF_LOCAL_CRITERION,
+    LEAF_REVIEW_POLICY,
     CompletionPinV1,
     OccurrenceCompletionScopeV1,
     OperationCompletionRequirementsV1,
@@ -37,8 +39,6 @@ from ..storage.store import Store
 from .accepted_outputs import carried_criteria_for, output_ports_in_revision
 from .completion_inputs import load_completion_result_inputs
 from .leaf_acceptance import (
-    LEAF_LOCAL_CRITERION,
-    LEAF_REVIEW_POLICY,
     accepted_outputs_for,
     criteria_for,
     layer_outcomes,

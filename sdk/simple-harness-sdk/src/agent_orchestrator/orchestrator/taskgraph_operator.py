@@ -18,8 +18,9 @@ from ..graph.notification_contracts import (
 )
 from ..planning.htn.grounding import derive_id
 from ..storage.store import CodedStoreConflict, Store, StoreConflict, StoreError
+from ..storage.taskgraph_binding import KERNEL_VERSION
 from ..storage.taskgraph_convergence import TaskGraphConvergenceStore
-from ..storage.taskgraph_store import KERNEL_VERSION, TaskGraphStore
+from ..storage.taskgraph_store import TaskGraphStore
 
 
 class TaskGraphOperatorGuard:

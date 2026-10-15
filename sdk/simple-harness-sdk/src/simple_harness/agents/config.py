@@ -16,7 +16,8 @@ import math
 from dataclasses import dataclass, fields
 from typing import Literal
 
-from simple_harness.contracts import JsonValue, canonical_json
+from simple_harness.contracts import JsonValue, Message, MessageRole, canonical_json
+from simple_harness.execution.base_agent import BASE_AGENT_API_MODE
 from simple_harness.runtime.termination import TerminationLimits
 
 MAX_NAME_LENGTH = 128
@@ -181,4 +182,38 @@ def config_hash(config: AgentConfig) -> str:
     return hashlib.sha256(canonical_json(config.to_json()).encode("utf-8")).hexdigest()
 
 
-__all__ = ("AGENT_CONFIG_FIELDS", "AgentConfig", "AgentLimits", "config_hash")
+def start_input_for(
+    config: AgentConfig,
+    *,
+    agent_id: str,
+    role: str,
+    owner_scope: str,
+    max_output_tokens: int,
+) -> dict[str, JsonValue]:
+    """``start.input`` carrying the Agent binding next to the capability snapshot."""
+
+    messages: list[JsonValue] = []
+    if config.instructions.strip():
+        messages.append(Message(MessageRole.SYSTEM, config.instructions).to_dict())
+    return {
+        "capability_snapshot": {"tools": list(config.tool_names)},
+        "base_agent_binding": {
+            "agent_id": agent_id,
+            "config_hash": config_hash(config),
+            "api_mode": BASE_AGENT_API_MODE,
+            "role": role,
+            "owner_scope": owner_scope,
+            # Per-turn guard-rails travel with the frozen start input so the driver
+            # never reads the agents' configuration tables (T6).
+            "limits": {
+                "max_model_calls_per_turn": config.limits.max_model_calls_per_turn,
+                "max_tool_calls_per_turn": config.limits.max_tool_calls_per_turn,
+                "turn_deadline_seconds": config.limits.turn_deadline_seconds,
+            },
+        },
+        "messages": messages,
+        "max_output_tokens": max_output_tokens,
+    }
+
+
+__all__ = ("AGENT_CONFIG_FIELDS", "AgentConfig", "AgentLimits", "config_hash", "start_input_for")

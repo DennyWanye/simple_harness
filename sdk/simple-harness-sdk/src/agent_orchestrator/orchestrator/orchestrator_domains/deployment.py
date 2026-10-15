@@ -21,7 +21,7 @@ from ...contracts.planning_decisions import RepairReplaceMethodDecision, Unsuppo
 from ...graph.projection_validation import GraphIntegrityError
 from ...storage import htn_store
 from ...storage.store import Store, StoreError
-from ...storage.taskgraph_store import NotBoundError, require_bound
+from ...storage.taskgraph_binding import NotBoundError, require_bound
 from ..assurance_final_writer import is_assured
 from ..commit_service import CommitRejected, CommitService
 from ..hierarchical_dispatch import (

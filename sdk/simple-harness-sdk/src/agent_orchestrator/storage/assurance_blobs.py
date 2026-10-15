@@ -14,81 +14,21 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from ..artifacts.store import ArtifactStore, ArtifactStoreError, open_nofollow
-from ..assurance.codec import AssuranceError, canonical, decode, integer, text
+from ..assurance.codec import AssuranceError, decode, integer, text
 from ..assurance.evidence import ReadItem
 from ..assurance.refs import AssuranceRef
-from ..contracts import Artifact
 from ..contracts.operation_payloads import decode_operation_payload
 from .assurance_pins import require_live_pin_locked
 from .assurance_reads import (
     EpochSnapshot,
     ResolvedRef,
+    read_blob_metadata,
     read_epochs_locked,
     require_epochs_locked,
 )
 
 if TYPE_CHECKING:
     from .assurance_reads import AssuranceReader
-
-
-def read_blob_metadata(
-    reader: AssuranceReader, ref: AssuranceRef, *, now_ms: int | None = None
-) -> ResolvedRef:
-    """Blob pins use the ORIGINAL byte hash and revision, never latest metadata.
-
-    Source id is the original source.path, pinned by its version_hash and exact
-    lifecycle revision. Artifacts use their existing id/version/content_hash;
-    operation payloads retain their original fixed revision 1. 身份找得到、生命周期版本
-    已不是钉住的那个，是当前性错误 ``SOURCE_NOT_CURRENT``（第 2 批 A08）。
-    """
-    with reader.store.read_view() as connection:
-        reader._mission_locked(connection)
-        if ref.kind == "source":
-            row = connection.execute(
-                "SELECT * FROM sources WHERE mission_id=? AND path=? AND version_hash=?",
-                (reader.mission_id, ref.pin.id, ref.pin.content_hash),
-            ).fetchone()
-            if row is None:
-                raise AssuranceError("SOURCE_UNAVAILABLE", ref.pin.id)
-            if row["tenant_id"] != reader.tenant_id:
-                raise AssuranceError("REF_SCOPE_MISMATCH", ref.pin.id)
-            if row["revision"] != ref.pin.revision:
-                raise AssuranceError("SOURCE_NOT_CURRENT", ref.pin.id)
-            return reader._resolved(ref, canonical(dict(row)), "sources", dict(row), now_ms)
-        if ref.kind != "artifact":
-            raise AssuranceError("REF_KIND_UNSUPPORTED", ref.kind)
-        artifact = connection.execute(
-            "SELECT * FROM artifacts WHERE artifact_id=?", (ref.pin.id,)
-        ).fetchone()
-        payload = connection.execute(
-            "SELECT * FROM operation_payload_objects WHERE object_id=?", (ref.pin.id,)
-        ).fetchone()
-        if artifact is not None and payload is not None:
-            raise AssuranceError("REF_LOCATOR_AMBIGUOUS", ref.pin.id)
-        if artifact is None and payload is None:
-            raise AssuranceError("SOURCE_UNAVAILABLE", ref.pin.id)
-        row = artifact if artifact is not None else payload
-        if row["mission_id"] != reader.mission_id:
-            raise AssuranceError("REF_SCOPE_MISMATCH", ref.pin.id)
-        revision = row["version"] if artifact is not None else row["object_revision"]
-        if revision != ref.pin.revision:
-            raise AssuranceError("SOURCE_NOT_CURRENT", ref.pin.id)
-        if row["content_hash"] != ref.pin.content_hash:
-            raise AssuranceError("REF_BODY_CONFLICT", ref.pin.id)
-        if artifact is not None:
-            body = decode(row["json"])
-            original = Artifact.from_json(body)
-            if (original.id, original.mission_id, original.version, original.content_hash) != (
-                ref.pin.id,
-                reader.mission_id,
-                ref.pin.revision,
-                ref.pin.content_hash,
-            ):
-                raise AssuranceError("REF_BODY_CONFLICT", ref.pin.id)
-        else:
-            body = dict(row)
-        issuer = "artifacts" if artifact is not None else "operation_payload_objects"
-        return reader._resolved(ref, canonical(body), issuer, dict(row), now_ms)
 
 
 def _require_pin(reader: AssuranceReader, ref: AssuranceRef, pin_id: str, review_key: str) -> None:

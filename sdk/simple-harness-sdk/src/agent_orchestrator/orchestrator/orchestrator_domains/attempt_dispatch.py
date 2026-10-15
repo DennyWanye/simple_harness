@@ -35,7 +35,7 @@ from ...contracts.models import sha256_hex
 from ...runtime.tool_gateway import CRITIC_TOOLS, WORKER_TOOLS, WorkspaceBinding
 from ...storage import planning_human_store
 from ...storage.store import DispatchIntent, StoreError
-from ...storage.taskgraph_store import require_bound
+from ...storage.taskgraph_binding import require_bound
 from ...verification.evidence_resolver import EvidenceResolver, in_source_roots
 from .. import planning_selection
 from ..assurance_review_transport import require_review_handoff

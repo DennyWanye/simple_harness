@@ -35,8 +35,8 @@ from ..orchestrator.taskgraph_execution_view import ExecutionProjection, turn_it
 from ..orchestrator.taskgraph_policy import read_installed_graph_policy
 from ..orchestrator.taskgraph_sources import SeedStructuralReadContext
 from ..storage import htn_store
-from ..storage.store import Store
-from ..storage.taskgraph_store import NotBoundError, TaskGraphStore, require_bound
+from ..storage.taskgraph_binding import NotBoundError, require_bound
+from ..storage.taskgraph_store import TaskGraphStore
 
 
 class TaskGraphReadError(ContractError):

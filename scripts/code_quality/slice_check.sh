@@ -32,7 +32,8 @@ python3 scripts/code_quality/startup_profile.py >> "$LOG" 2>&1; check "启动耗
 python3 scripts/code_quality/import_contracts.py >> "$LOG" 2>&1; check "导入隔离约定：全部满足"
 # 只在 TYPE_CHECKING 块里导入、运行期却用到的名字（调用时才 NameError；阶段 5C 拆运行内核时查出）
 CHANGED_PY=$(git diff --name-only --diff-filter=AM HEAD -- '*.py')
-[ -n "$CHANGED_PY" ] && python3 scripts/code_quality/typing_only_runtime.py $CHANGED_PY >> "$LOG" 2>&1 || echo "类型检查专用名字检查：通过" >> "$LOG"
+# 不能写成 A && B || C：B 失败时 C 会补写"通过"，把失败盖掉
+if [ -n "$CHANGED_PY" ]; then python3 scripts/code_quality/typing_only_runtime.py $CHANGED_PY >> "$LOG" 2>&1; else echo "类型检查专用名字检查：通过" >> "$LOG"; fi
 check "类型检查专用名字检查：通过"
 grep -E "^启动耗时|^启动完成后多加载|^多加载了" "$LOG" | tail -3
 # CQ_NO_TESTS=1：只做前置检查，相关测试交给 snapshot_tests.sh 在快照里排队跑

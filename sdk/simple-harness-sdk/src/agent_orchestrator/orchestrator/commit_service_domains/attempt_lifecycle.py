@@ -32,7 +32,7 @@ from ...governance.tail_budget import TailReserve
 from ...runtime.planning_operations import SourceUnavailable
 from ...scheduling.allocator import OPEN_ATTEMPT_STATES
 from ...storage.store import DispatchIntent, StoreError
-from ...storage.taskgraph_store import require_bound
+from ...storage.taskgraph_binding import require_bound
 from ..assurance_point_use import ATTEMPT_CONSUMER, PointUseRefused, require_point_use_locked
 from ..attempt_execution import freeze_attempt_execution
 from ..budget_accounts import Reservation, task_account

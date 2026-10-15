@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 
 from ..assurance.checks import CriterionPolicy
 from ..assurance.codec import AssuranceError, canonical, decode, fingerprint, text
+from ..assurance.policy_domain import policy_domain_hash
 from ..assurance.refs import AssuranceRef, Pin
 from ..contracts.htn import TaskForm
 from ..contracts.operation_completion import OccurrenceCompletionScopeV1, PlanRevisionPinV1
@@ -18,7 +19,7 @@ from ..storage.assurance_reads import AssuranceReader
 from ..storage.assurance_store import AssuranceStore
 from ..storage.assurance_work import atomic
 from ..storage.htn_store import HtnStore
-from .assurance_purpose_reviews import _scope_ref_for, policy_domain_hash
+from .assurance_purpose_reviews import _scope_ref_for
 from .operation_completion import OperationCompletionError, OperationCompletionReader
 from .operation_outcomes import OperationOutcomeError, _effect_owner
 from .operation_proposal_review import _criteria as proposal_criteria

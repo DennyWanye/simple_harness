@@ -37,7 +37,6 @@ from ..contracts.semantic_base import VersionedRef
 from ..graph.task_network import TaskNetworkSnapshot
 from ..planning.htn.compiler import CompilationRefused, coverage_from_slots
 from ..storage.store import StoreError
-from .operation_completion import OperationCompletionReader
 
 
 def accepted_output_json(output: AcceptedOutput) -> dict[str, Any]:
@@ -198,6 +197,9 @@ def output_ports_in_revision(
     # The frozen completion scope covers even preparation-only and single primitive
     # Task contracts: a step's required ports are declared without a Method criterion
     # link or a downstream consumer.
+
+    # 按需导入：循环依赖（accepted_outputs ↔ operation_completion：完成范围读取器要用本模块的继承判据）
+    from .operation_completion import OperationCompletionReader
 
     active = semantics.active_plan_revision(mission_id)
     if active is None or int(active.revision) != int(revision):

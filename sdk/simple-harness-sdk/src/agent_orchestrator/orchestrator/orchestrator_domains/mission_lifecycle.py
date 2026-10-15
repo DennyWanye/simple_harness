@@ -31,7 +31,7 @@ from ...runtime.actions import publication_overlaps_storage
 from ...runtime.planning_operations import SourceUnavailable
 from ...storage.recovery_store import RecoveryStore
 from ...storage.store import DispatchIntent, InjectedCrash, StoreBusy
-from ...storage.taskgraph_store import NotBoundError, require_bound
+from ...storage.taskgraph_binding import NotBoundError, require_bound
 from .. import taskgraph_runtime_imports
 from ..assurance_final_writer import is_assured, request_assured_notification
 from ..assurance_point_use import certify_recovery_locked

@@ -12,9 +12,8 @@ from .contracts import (
 )
 from .correlation import CorrelationContext
 from .redaction import SAFE_ATTRIBUTE_KEYS, UnsafeAttributeError, safe_attributes
-from .runtime import EmitterCounters, ObservabilityRuntime, SafeEmitter
+from .runtime import CompositeSink, EmitterCounters, ObservabilityRuntime, SafeEmitter
 from .sinks import (
-    CompositeSink,
     JsonlSink,
     LoggingSink,
     NoopSink,

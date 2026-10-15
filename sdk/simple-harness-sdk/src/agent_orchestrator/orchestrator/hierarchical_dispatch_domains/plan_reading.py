@@ -37,7 +37,7 @@ from ...graph.task_network import TaskNetworkSnapshot
 from ...planning.htn.compiler import RootNetwork
 from ...runtime.planning_operations import SourceUnavailable
 from ...storage.obligation_store import ObligationStore
-from ...storage.taskgraph_store import require_bound
+from ...storage.taskgraph_binding import require_bound
 from ..completion_status import read_occurrence_completion
 from ..method_plan_reviews import seed_keys
 from ..taskgraph_epochs import current_scope_epochs

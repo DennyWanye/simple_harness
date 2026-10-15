@@ -8,23 +8,6 @@ from uuid import uuid4
 
 from .audit import audit_error_code, audit_hash
 
-RUNTIME_BOUNDARIES = frozenset(
-    {
-        "runtime.driver",
-        "runtime.preflight",
-        "provider.prepare",
-        "context.prepare",
-        "context.verify",
-        "tool.batch",
-        "tool.envelope",
-        "tool.proposal",
-        "tool.preflight",
-        "tool.route_gate",
-        "context.no_recall",
-        "context.apply",
-    }
-)
-
 _CURRENT_OPERATION = ContextVar("sdk_runtime_audit_operation", default=None)
 
 

@@ -7,6 +7,7 @@ from ..contracts.models import Event
 from ..graph.notification_contracts import FollowupCauseRef
 from ..planning.htn.grounding import derive_id
 from .store import Store, StoreConflict, StoreError
+from .taskgraph_binding import require_bound
 
 
 def record_source_change(
@@ -19,8 +20,6 @@ def record_source_change(
     """
     if not store.connection.in_transaction:
         raise StoreError("TASKGRAPH_SOURCE_EVENT_TRANSACTION_REQUIRED")
-    # 按需导入：循环依赖（taskgraph_source_events ↔ taskgraph_store）
-    from .taskgraph_store import require_bound
 
     require_bound(store, mission_id)
     source = FollowupCauseRef(

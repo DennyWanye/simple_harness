@@ -17,12 +17,8 @@ from ..graph.notification_contracts import _text
 from ..graph.revision_records import SourceRef
 from ..planning.htn.grounding import derive_id
 from ..storage.store import Store, StoreConflict, StoreError
-from ..storage.taskgraph_store import (  # noqa: E402 - the one kernel identity and policy store
-    KERNEL_VERSION,
-    InstalledGraphPolicy,
-    PolicyBinding,
-    TaskGraphStore,
-)
+from ..storage.taskgraph_binding import KERNEL_VERSION
+from ..storage.taskgraph_store import InstalledGraphPolicy, PolicyBinding, TaskGraphStore
 from .plan_commits import HIERARCHICAL_SEMANTICS, semantics_of
 from .planning_protocol_binding import planning_protocol_for_mission
 

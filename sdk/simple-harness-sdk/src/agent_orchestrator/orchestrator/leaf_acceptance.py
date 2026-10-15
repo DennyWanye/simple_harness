@@ -71,6 +71,7 @@ from ..contracts.htn import (
     TaskSemanticBindingV1,
 )
 from ..contracts.models import ContractError
+from ..contracts.operation_completion import LEAF_LOCAL_CRITERION, LEAF_REVIEW_POLICY
 from ..contracts.resolution import (
     Criterion,
     CriterionOrigin,
@@ -108,11 +109,6 @@ from .resolution_commits import (
 )
 from .taskgraph_review import read_review_origin
 
-#: The review policy this deployment reviews a hierarchical leaf under.  A named
-#: constant rather than a literal at three call sites, so the package, the record
-#: and the command cannot drift into quoting two policies.
-LEAF_REVIEW_POLICY = "hierarchical-leaf-review-v1"
-
 #: The layer statuses that mean the check *ran to a conclusion*.  ``ERROR`` and
 #: ``NEEDS_HUMAN`` are deliberately absent: a check that could not finish is not a
 #: check that passed, and AER-V04 exists because "the model said it passed" is not
@@ -122,15 +118,6 @@ CONCLUSIVE_LAYER_STATUSES = frozenset({"PASS", "FAIL"})
 #: What the reviewer is allowed to do to the candidate.  ``WRITE`` is refused at
 #: construction, so stating ``READ_ONLY`` here is a claim the package can hold.
 REVIEWER_ACCESS = WorkspaceAccess.READ_ONLY
-
-#: The one criterion a leaf owes when the plan hangs no root criterion on it and its
-#: own goal type declares none (P2.3h).  Such a step — ``facts``, ``reproduce`` — is
-#: still accepted on its verified result; what it is *not* is a witness to the root
-#: goal, and its acceptance must not say otherwise.  Before P2.3h the fallback was
-#: the obligation's ``requirement_refs``, i.e. the **parent's** criteria, so every
-#: leaf's review stamped ``c-test-passes`` PASS and the root reviewer of the Grok C3
-#: run correctly refused to count those stamps as evidence.
-LEAF_LOCAL_CRITERION = "c-leaf-verified"
 
 
 @dataclass(frozen=True, slots=True)
@@ -843,8 +830,6 @@ class LeafAcceptanceAssembly:
 
 __all__ = (
     "CONCLUSIVE_LAYER_STATUSES",
-    "LEAF_LOCAL_CRITERION",
-    "LEAF_REVIEW_POLICY",
     "LayerOutcome",
     "LeafAcceptanceAssembly",
     "accepted_outputs_for",

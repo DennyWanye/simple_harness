@@ -10,9 +10,7 @@ import logging
 import os
 import stat
 import threading
-import time
 from collections import deque
-from collections.abc import Sequence
 from pathlib import Path
 from typing import Protocol
 
@@ -79,52 +77,6 @@ class RingBufferSink:
     def overflow_count(self) -> int:
         with self._lock:
             return self._overflow
-
-
-class CompositeSink:
-    """Fan out without allowing one child failure to skip later children."""
-
-    def __init__(
-        self,
-        sinks: Sequence[ObservabilitySink],
-        *,
-        child_capacity: int = 256,
-        close_timeout: float = 1.0,
-    ) -> None:
-        # 按需导入：循环依赖（sinks ↔ runtime）
-        from .runtime import SafeEmitter
-
-        self._children = tuple(
-            SafeEmitter(sink, capacity=child_capacity, close_timeout=close_timeout)
-            for sink in sinks
-        )
-
-    def emit(self, event: ObservabilityEventV1) -> None:
-        for child in self._children:
-            child.emit(event)
-
-    def flush(self, timeout: float = 1.0) -> bool:
-        deadline = time.monotonic() + max(0.0, timeout)
-        result = True
-        for child in self._children:
-            remaining = max(0.0, deadline - time.monotonic())
-            result = child.flush(remaining) and result
-        return result
-
-    def close(self, timeout: float = 1.0) -> bool:
-        deadline = time.monotonic() + max(0.0, timeout)
-        result = True
-        for child in self._children:
-            remaining = max(0.0, deadline - time.monotonic())
-            result = child.close(remaining) and result
-        return result
-
-    def diagnostics(self) -> dict[str, int]:
-        counters = tuple(child.counters for child in self._children)
-        return {
-            "accepted_children": sum(item.accepted for item in counters),
-            "failed_children": sum(item.sink_errors + item.overflow_dropped for item in counters),
-        }
 
 
 class LoggingSink:
@@ -209,7 +161,6 @@ class JsonlSink:
 
 
 __all__ = (
-    "CompositeSink",
     "JsonlSink",
     "LoggingSink",
     "NoopSink",
