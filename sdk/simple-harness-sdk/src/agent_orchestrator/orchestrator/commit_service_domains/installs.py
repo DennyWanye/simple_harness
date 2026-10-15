@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from ...assurance.codec import AssuranceError
 from ...contracts import ContractError, TaskStatus
@@ -22,6 +22,7 @@ from ..taskgraph_dispatch import TaskGraphDispatchBinding
 from .support import CommitRejected
 
 if TYPE_CHECKING:
+    from ..commit_service import CommitService
     from ..taskgraph_dispatch import TaskGraphDispatchBinding
 from .core import CommitServiceCore
 
@@ -86,16 +87,16 @@ class InstallCommitsMixin(CommitServiceCore):
     # ------------------------------------------------------------- missions
     def approve_assurance_check_policy(self, **command: Any):
 
-        return approve_check_policy(self, **command)
+        return approve_check_policy(cast("CommitService", self), **command)
 
     def ensure_assurance_review_invocation(self, **command: Any):
 
-        return ensure_review_invocation(self, **command)
+        return ensure_review_invocation(cast("CommitService", self), **command)
 
     def ensure_assurance_format_repair(self, *, tenant_id: str, prior_failure: Any):
 
         return ensure_format_repair_invocation(
-            self, tenant_id=tenant_id, prior_failure=prior_failure
+            cast("CommitService", self), tenant_id=tenant_id, prior_failure=prior_failure
         )
 
     def import_assurance_check_locked(
@@ -113,7 +114,7 @@ class InstallCommitsMixin(CommitServiceCore):
         if self._assurance_root_gate is None:
             raise AssuranceError("ASSURANCE_ROOT_GATE_UNBOUND")
         return install_native_root(
-            self,
+            cast("CommitService", self),
             self._assurance_root_gate,
             principal=principal,
             tenant_id=tenant_id,

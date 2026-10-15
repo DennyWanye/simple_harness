@@ -281,7 +281,7 @@ def parse_planning_decision(
 
     # 1. The single, unique decision block.
     try:
-        raw = extract_block(text, PLANNING_DECISION_TAG)
+        raw: Any = extract_block(text, PLANNING_DECISION_TAG)
     except BlockError as error:
         code = _BLOCK_ERROR_CODES.get(
             error.reason, PlanningDecisionRejectionCode.MALFORMED_DECISION

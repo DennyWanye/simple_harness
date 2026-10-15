@@ -221,7 +221,7 @@ def validate_receipt_backed_completion(
 
     # No obligations: any success is sufficient
     if not requires_write and not requires_test:
-        evidence = [
+        evidence: list[JsonValue] = [
             str(r.get("stable_call_id", "")) for r in successful if str(r.get("stable_call_id", ""))
         ]
         return {

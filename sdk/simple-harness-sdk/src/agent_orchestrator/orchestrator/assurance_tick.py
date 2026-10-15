@@ -198,7 +198,8 @@ class AssuranceTick:
                     mission_id,
                     consumer,
                     expected_version=cursor["row_version"],
-                    classify=lambda event, _consumer, a=adapter: a.classify(event),
+                    # 默认参数捕获循环变量，mypy 推不出这个 lambda 的类型
+                    classify=lambda event, _consumer, a=adapter: a.classify(event),  # type: ignore[misc]
                     now_ms=coordination_ms,
                 )
             except StoreConflict:
@@ -245,7 +246,7 @@ class AssuranceTick:
                     != "STABLE"
                 ):
                     return progressed
-                claims = ()
+                claims: tuple[WorkClaim, ...] = ()
                 if not self.orchestrator._round_due(mission_id, "assurance_claim"):
                     continue
                 with self.orchestrator._round_boundary(mission_id, "assurance_claim"):
@@ -263,18 +264,18 @@ class AssuranceTick:
                         async with asyncio.timeout(self.prepare_timeout_ms / 1000):
                             prepared = await self.consumers[consumer].prepare(claim)
                         self.require_execution_root()
-                        now_ms = self._settlement_time(claim)
-                        if now_ms is None:
+                        settle_ms = self._settlement_time(claim)
+                        if settle_ms is None:
                             return progressed
                         if isinstance(prepared, AssuranceWait):
                             if prepared.reason == "RECHECK_REQUIRED":
-                                self.work.recheck(claim, now_ms=now_ms)
+                                self.work.recheck(claim, now_ms=settle_ms)
                             else:
                                 self.work.wait(
                                     claim,
-                                    now_ms=now_ms,
+                                    now_ms=settle_ms,
                                     reason=prepared.reason,
-                                    not_before_ms=max(now_ms, prepared.not_before_ms),
+                                    not_before_ms=max(settle_ms, prepared.not_before_ms),
                                 )
                         elif isinstance(prepared, PreparedAssuranceWork):
 
@@ -293,7 +294,7 @@ class AssuranceTick:
                                 return value
 
                             self.work.commit(
-                                claim, now_ms=now_ms, effect=effect, rejected=prepared.rejected
+                                claim, now_ms=settle_ms, effect=effect, rejected=prepared.rejected
                             )
                         else:
                             raise AssuranceError("ASSURANCE_PREPARED_RESULT_INVALID")

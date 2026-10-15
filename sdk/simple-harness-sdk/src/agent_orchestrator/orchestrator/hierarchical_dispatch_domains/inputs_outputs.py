@@ -8,7 +8,7 @@ from __future__ import annotations
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import replace
 from dataclasses import replace as _replace
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from ...artifacts.input_bindings import (
     AcceptedOutput,
@@ -33,6 +33,7 @@ from ...contracts import ContractError, TaskStatus
 from ...contracts.evidence_state import ValidityWitness
 from ...contracts.htn import (
     ORDERED_CARDINALITIES,
+    MethodContract,
     OccurrenceId,
     OccurrenceSpec,
     OutputValue,
@@ -199,7 +200,8 @@ class InputOutputMixin(HierarchicalDispatchCore):
             entry = semantics.get_method(
                 str(instance.method_ref.method_id), int(instance.method_ref.version)
             )
-            contract = getattr(entry, "contract", entry)
+            # get_method 返回 StoredMethod，总带 contract；getattr 的回落分支走不到（阶段 8 清理）
+            contract = cast(MethodContract, getattr(entry, "contract", entry))
             step = next((item for item in contract.steps if item.local_id == mine.slot_key), None)
             if step is None:
                 continue
@@ -379,7 +381,7 @@ class InputOutputMixin(HierarchicalDispatchCore):
             ):
                 continue
             adopted = network.adopted_instance_for(spec.occurrence_id)
-            ports = {
+            ports: Any = {
                 str(port.port_key): port.schema_ref
                 for port in network.binding_for_occurrence(spec.occurrence_id).output_ports
             }

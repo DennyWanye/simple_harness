@@ -59,7 +59,7 @@ async def _execute_handler(state: WorkflowState, context: WorkflowContext) -> St
     if not callable(execute):
         raise TypeError("personal workflow runtime port is unavailable")
 
-    values = dict(state.get("values") or {})
+    values: dict[str, Any] = dict(state.get("values") or {})
     selection = PersonalWorkflowSelectionV1.from_authoritative_mapping(
         values["personal_workflow_selection"]
     )

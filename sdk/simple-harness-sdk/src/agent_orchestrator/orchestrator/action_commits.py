@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Callable, Mapping, Sequence
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from simple_harness.contracts import canonical_json
 
@@ -62,6 +62,7 @@ if TYPE_CHECKING:
     from ..contracts import Event
     from ..governance.budgets import BudgetLedger
     from ..storage.store import Store
+    from .operation_materialization import OperationMaterializationRuntime
 
 OPEN_ACTION_STATES = frozenset({"PROPOSED", "AWAITING_APPROVAL", "APPROVED"})
 IN_FLIGHT_ACTION_STATES = frozenset({"HANDED_OFF", "UNKNOWN"})
@@ -219,6 +220,8 @@ def receipt_mismatch(action: Mapping[str, Any], receipt: Receipt | None) -> str 
 class ActionCommitsMixin:
     if TYPE_CHECKING:
         _store: Store
+        # Bound by ``OperationMaterializationCommitsMixin.bind_operation_materialization_runtime``.
+        _operation_materialization_runtime: OperationMaterializationRuntime | None
         _ledger: BudgetLedger
 
         def _validate_source_binding(self, request: Mapping[str, Any]) -> None: ...
@@ -252,6 +255,10 @@ class ActionCommitsMixin:
             actor_type: str = ...,
             actor_id: str = ...,
         ) -> Event: ...
+
+        def record_human_nonapplication(
+            self, action_key: str, *, override: dict[str, Any], principal_id: str
+        ) -> dict[str, Any]: ...
 
     # ------------------------------------------------------------ proposals
     def propose_action(
@@ -362,7 +369,10 @@ class ActionCommitsMixin:
                 and latest["state"] == "FAILED"
                 and int(latest.get("handoffs") or 0) >= 1
             )
-            proven_failure = handed_failure and stored_negative_proof(self._store, latest)
+            # handed_failure 为真时上面已确认 latest 非空
+            proven_failure = handed_failure and stored_negative_proof(
+                self._store, cast("dict[str, Any]", latest)
+            )
             unproven_failure = handed_failure and not proven_failure
             if (
                 latest is not None
@@ -426,7 +436,10 @@ class ActionCommitsMixin:
             }
             if proven_failure:
                 # The facts the next card carries: how the last attempt did not happen.
-                record["previous_attempt"] = nonapplication_outcome(self._store, latest)
+                # proven_failure 蕴含 handed_failure，latest 非空
+                record["previous_attempt"] = nonapplication_outcome(
+                    self._store, cast("dict[str, Any]", latest)
+                )
             if refused is not None:
                 blocked_by = "" if latest is None else str(latest["action_key"])
                 record.update(state="REFUSED", refused=refused, blocked_by=blocked_by)
@@ -970,7 +983,11 @@ class ActionCommitsMixin:
                             resolver = OperationReferenceResolver(
                                 self._store,
                                 (
-                                    self._operation_materialization_runtime.profiles
+                                    # 条件里的 getattr 已确认运行时非空
+                                    cast(
+                                        "OperationMaterializationRuntime",
+                                        self._operation_materialization_runtime,
+                                    ).profiles
                                     if getattr(self, "_operation_materialization_runtime", None)
                                     is not None
                                     else BuiltinOperationProfiles(connectors)

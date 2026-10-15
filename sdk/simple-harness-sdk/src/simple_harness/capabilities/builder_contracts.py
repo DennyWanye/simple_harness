@@ -159,7 +159,7 @@ class CapabilityBuildSearchEvidence:
         }
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, object]) -> CapabilityBuildSearchEvidence:
+    def from_dict(cls, value: Mapping[str, Any]) -> CapabilityBuildSearchEvidence:
         stamp = value.get("catalog_stamp")
         if not isinstance(stamp, Mapping):
             raise CapabilityBuildError(
@@ -260,7 +260,7 @@ class CapabilityBuildLineage:
             )
 
         # Compute deterministic lineage_id
-        identity: Mapping[str, JsonValue] = {
+        identity: dict[str, JsonValue] = {
             "root_run_id": self.root_run_id,
             "parent_run_id": self.parent_run_id,
             "parent_goal_ref": self.parent_goal_ref,
@@ -546,7 +546,7 @@ class CapabilityBuildLaunch:
         }
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, object]) -> CapabilityBuildLaunch:
+    def from_dict(cls, value: Mapping[str, Any]) -> CapabilityBuildLaunch:
         lineage = value.get("lineage")
         search = value.get("search_evidence")
         if not isinstance(lineage, Mapping) or not isinstance(search, Mapping):

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
 from simple_harness.contracts import canonical_json
@@ -266,7 +267,7 @@ class PlanningHumanStore:
         row: dict[str, Any],
         principal: Any,
         answer: str,
-        options: list[dict[str, Any]],
+        options: Sequence[dict[str, Any]],
         attached_source_path: str | None = None,
     ) -> None:
         """The answer is also a mission-level human note, so every later Attempt sees it.

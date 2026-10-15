@@ -150,7 +150,7 @@ class GoalTree:
     ) -> GoalTree:
         parent: dict[str, str | None] = {}
         links: dict[str, set[str]] = {}
-        pending = deque((str(root), None) for root in roots)
+        pending: deque[tuple[str, str | None]] = deque((str(root), None) for root in roots)
         while pending:
             node, above = pending.popleft()
             if node in parent:

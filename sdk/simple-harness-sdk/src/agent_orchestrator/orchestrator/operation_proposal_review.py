@@ -603,6 +603,7 @@ def _assured_check_receipts(
         ACTION_PROPOSAL_CRITERIA
     ):
         raise ActionProposalReviewError("OP_REVIEW_REJECTED", "assured manifest verdict")
+    criterion_id: Any
     for criterion_id in ACTION_PROPOSAL_CRITERIA:
         if grades[criterion_id] != "PASS":
             raise ActionProposalReviewError("OP_REVIEW_REJECTED", criterion_id)

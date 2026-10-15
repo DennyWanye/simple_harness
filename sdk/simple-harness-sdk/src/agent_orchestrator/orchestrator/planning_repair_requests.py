@@ -10,7 +10,7 @@ from __future__ import annotations
 import difflib
 from collections.abc import Mapping
 from dataclasses import asdict
-from typing import Any
+from typing import Any, cast
 
 from ..contracts.evidence_state import TruthValue
 from ..contracts.htn import TaskForm, condition_digest
@@ -648,7 +648,7 @@ def failure_fingerprint(event_type: str, payload: Any) -> str:
     body = dict(payload or {})
     if event_type == "VerificationFailed":
         return verification_failure_fingerprint(body.get("failures") or ())
-    detail = body.get("detail") if isinstance(body.get("detail"), dict) else {}
+    detail: Any = body.get("detail") if isinstance(body.get("detail"), dict) else {}
     return content_hash_of(
         {
             "event_type": event_type,
@@ -682,7 +682,8 @@ def attempt_failure_facts(failure: Mapping[str, Any] | None) -> dict[str, str]:
     if failure.get("reason") == "turn_failed" and output_exhausted(error):
         out["failure_fact"] = output_exhausted_fact(error)
     elif failure.get("reason") == "turn_failed" and turn_cap_exceeded(error):
-        out["failure_fact"] = turn_cap_fact(error)
+        # turn_cap_exceeded 已确认 error 是映射
+        out["failure_fact"] = turn_cap_fact(cast("Mapping[str, Any]", error))
     return out
 
 

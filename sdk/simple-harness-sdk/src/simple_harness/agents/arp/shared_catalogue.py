@@ -419,6 +419,8 @@ class SharedSkillCatalogue:
             current = cat.read_activation(
                 mc.connection, mc.namespace_id, "SKILL", local.entry_id, local.revision
             )
+            if current is None:  # 5E 显式判空：与上面同一个错误
+                raise ArpError("CATALOGUE_STALE", "a lifecycle row is missing")
         return {
             "skill_ref": revision.pin.to_json(),
             "mirrored": True,

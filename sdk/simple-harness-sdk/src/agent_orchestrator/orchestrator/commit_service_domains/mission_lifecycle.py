@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from ...assurance.codec import AssuranceError
 from ...contracts import (
@@ -59,6 +59,9 @@ from ..state_machine import next_mission, next_task
 from .core import CommitServiceCore
 from .support import HIERARCHICAL_JUDGMENT_REFUSED, CommitRejected, MissionConflict, MissionSpec
 
+if TYPE_CHECKING:
+    from ..commit_service import CommitService
+
 
 class MissionLifecycleCommitsMixin(CommitServiceCore):
     """Mission creation, planning, cancellation, failure, judgement and stopping."""
@@ -73,6 +76,38 @@ class MissionLifecycleCommitsMixin(CommitServiceCore):
         def _follow_global_quota(self, account_id: str) -> None: ...
         def _settle_intent(self, intent: DispatchIntent, state: str) -> DispatchIntent: ...
         def _unbound_open_tasks(self, mission_id: str) -> list[str]: ...
+
+        def bind_policy(
+            self,
+            mission_id: str,
+            *,
+            provider_kind: str,
+            default_params: Mapping[str, Any] | None = ...,
+        ) -> dict[str, Any]: ...
+
+        def protected_tail_hold(self, hold_id: str) -> dict[str, Any] | None: ...
+
+        @staticmethod
+        def critic_tail_id(attempt_id: str) -> str: ...
+
+        def consume_critic_tail(
+            self,
+            *,
+            attempt_id: str,
+            task_id: str,
+            subject_id: str,
+            account_id: str,
+            reservation: Any,
+            semantic_revision: str,
+        ) -> dict[str, Any]: ...
+
+        def protected_tail_revision(self, task_id: str) -> str: ...
+
+        def _cancel_open_actions(self, mission_id: str, *, reason: str) -> list[dict[str, Any]]: ...
+
+        def release_terminal_tail_holds(
+            self, *, mission_id: str, task_id: str | None = ..., attempt_id: str | None = ...
+        ) -> list[str]: ...
 
     def create_mission(
         self,
@@ -115,7 +150,7 @@ class MissionLifecycleCommitsMixin(CommitServiceCore):
                 if conflict is not None:
                     raise MissionConflict(conflict)
 
-                validate_creation_replay(self, mission)
+                validate_creation_replay(cast("CommitService", self), mission)
                 return mission, False
             mission_id = ids.mission_id(spec.tenant_id, spec.idempotency_key)
             # review fix: with a Global Budget the Mission's unnamed dimensions are inherited, and
@@ -221,7 +256,7 @@ class MissionLifecycleCommitsMixin(CommitServiceCore):
                 actor_id=spec.tenant_id,
             )
 
-            record_mission_creation(self, mission, spec, creation_event)
+            record_mission_creation(cast("CommitService", self), mission, spec, creation_event)
             # 2026-10-03: a Mission is created with its root and its TaskGraph binding in
             # this one transaction, whichever door it came through.
             if self._mission_completer is None:
@@ -732,7 +767,9 @@ class MissionLifecycleCommitsMixin(CommitServiceCore):
         """
 
         try:
-            return HierarchicalDispatch.for_commit(self, mission.id).network(mission.id)
+            return HierarchicalDispatch.for_commit(cast("CommitService", self), mission.id).network(
+                mission.id
+            )
         except GraphIntegrityError as error:
             raise CommitRejected(
                 f"mission {mission.id} cannot be judged: its committed plan does not read back "

@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 from ..contracts.htn import TaskForm
 from ..graph.eligibility import OccurrenceOutcome
@@ -25,6 +25,9 @@ from .assurance_validity import acceptance_id_for
 from .completion_inputs import frozen_requirements_revision, load_completion_result_inputs
 from .operation_completion import OperationCompletionError
 from .taskgraph_outcomes import read_taskgraph_outcomes
+
+if TYPE_CHECKING:
+    from ..contracts import Task
 
 #: 修复请求里的原因：沿用的结果按新要求重审没过。
 CARRIED_RESULT_REJECTED = "CARRIED_RESULT_REJECTED"
@@ -67,7 +70,9 @@ def carried_reviews(store: Store, dispatch: Any, mission_id: str) -> list[Carrie
     revision = int(latest.revision)
     try:
         network = dispatch.network(mission_id)
-        outcomes = read_taskgraph_outcomes(store, mission_id, network)
+        outcomes = cast(
+            "dict[str, OccurrenceOutcome]", read_taskgraph_outcomes(store, mission_id, network)
+        )
     except Exception:  # noqa: BLE001 - an unreadable plan is reported by this Mission's own round
         return []
     producers: dict[str, set[str]] = {}
@@ -100,7 +105,8 @@ def carried_reviews(store: Store, dispatch: Any, mission_id: str) -> list[Carrie
         if (
             store.connection.execute(
                 "SELECT 1 FROM acceptances WHERE acceptance_id=?",
-                (acceptance_id_for(task.id, result_id, revision),),
+                # task 为空时 stored 也为空，上面已跳过
+                (acceptance_id_for(cast("Task", task).id, result_id, revision),),
             ).fetchone()
             is not None
         ):
@@ -112,7 +118,9 @@ def carried_reviews(store: Store, dispatch: Any, mission_id: str) -> list[Carrie
             continue  # 上游在现行要求下还不算数：先审上游
         if not kept(store, result_id, revision):
             continue  # 这一步除要求外也变了：不是"沿用"，派发处如实报出来，由规划器定
-        due.append(CarriedReview(mission_id, str(task.id), occurrence, result_id, revision))
+        due.append(
+            CarriedReview(mission_id, str(cast("Task", task).id), occurrence, result_id, revision)
+        )
     return due
 
 

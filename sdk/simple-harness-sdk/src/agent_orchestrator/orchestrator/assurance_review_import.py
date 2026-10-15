@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 from ..assurance.certificates import UseIdentity
 from ..assurance.checks import (
@@ -72,6 +72,9 @@ from .completion_inputs import frozen_requirements_revision
 from .hierarchical_dispatch import ROOT_REVIEW_SUPERSEDED
 from .method_library import record_attribution
 from .operation_completion import OperationCompletionError
+
+if TYPE_CHECKING:
+    from ..contracts.resolution import ReviewRecordId
 
 
 @dataclass(frozen=True, slots=True)
@@ -242,6 +245,9 @@ def read_imported_review_locked(
     )
     payload = decode(turn.body_json)["payload"]
     intent = reader.store.get_intent(intent_id)
+    if intent is None or intent.agent_id is None:
+        # 5E 显式判空：调用记录在、派发意图不在（或意图没记执行者），按未绑定拒绝
+        raise AssuranceError("REVIEW_INTENT_UNBOUND")
     if (
         payload.get("intent_id") != intent_id
         or payload.get("state") != ("FAILED" if failed_second else "COMMITTED")
@@ -543,17 +549,17 @@ def _interpret_reply(
     # 做法与摘要（阶段 C3）：与逐条确认同一个规矩——只能说审查包里列出的；漏写就是没表态。
     judged = {row["method_ref"]: row for row in package.methods_to_judge}
     methods = []
-    for item in sorted(reply.methods, key=lambda item: item.method_ref):
-        if item.method_ref not in judged:
+    for judgement in sorted(reply.methods, key=lambda item: item.method_ref):
+        if judgement.method_ref not in judged:
             raise AssuranceError("METHOD_SCOPE")
         methods.append(
             {
-                "method_ref": item.method_ref,
-                "based_on": judged[item.method_ref]["based_on"],
-                "reusable": bool(item.reusable),
-                "purpose": item.purpose,
-                "at_fault": bool(item.at_fault),
-                "reason": item.reason,
+                "method_ref": judgement.method_ref,
+                "based_on": judged[judgement.method_ref]["based_on"],
+                "reusable": bool(judgement.reusable),
+                "purpose": judgement.purpose,
+                "at_fault": bool(judgement.at_fault),
+                "reason": judgement.reason,
             }
         )
     summary = None
@@ -605,8 +611,13 @@ def _interpret_reply(
         ),
     }
     record = ReviewRecord(
-        "assurance-review:"
-        + fingerprint({"review_key": bound["review_key"], "turn_ref": imported.turn.ref.to_json()}),
+        cast(
+            "ReviewRecordId",
+            "assurance-review:"
+            + fingerprint(
+                {"review_key": bound["review_key"], "turn_ref": imported.turn.ref.to_json()}
+            ),
+        ),
         package.package_id,
         package.purpose,
         package.binding,
@@ -919,7 +930,10 @@ def prepare_official_review(
             reader.read_exact_metadata(ref, now_ms=now_ms)
             for ref in sorted(refs, key=lambda ref: ref.key)
         )
-        permissions = tuple((item.ref, item.permission) for item in metadata)
+        # 读取器带授权与身份，解析时必填许可（assurance_reads.read_exact_metadata）
+        permissions = tuple(
+            (item.ref, cast("CurrentReadPermission", item.permission)) for item in metadata
+        )
         complete = read_complete_evidence_snapshot(reader, scope_id=identity.scope_id)
         checks = _consume_checks(check_uses, check_adapter, identity, authority, now_ms)
         allowed = {

@@ -56,7 +56,7 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 from ..artifacts.input_bindings import AcceptedOutput, DisclosureState, ResourceIdentity
 from ..assurance.codec import fingerprint
@@ -108,6 +108,9 @@ from .resolution_commits import (
     ResolutionPrincipal,
 )
 from .taskgraph_review import read_review_origin
+
+if TYPE_CHECKING:
+    from ..contracts.semantic_base import EvidenceRef
 
 #: The layer statuses that mean the check *ran to a conclusion*.  ``ERROR`` and
 #: ``NEEDS_HUMAN`` are deliberately absent: a check that could not finish is not a
@@ -499,9 +502,15 @@ class LeafAcceptanceAssembly:
                 port_claims=port_claims,
                 pinned_origin=origin,
             ),
-            artifact_refs=tuple(
-                TypedRef(kind=TypedRefKind.ARTIFACT, **ref.to_json(), produced_by=Provenance.TOOL)
-                for ref in projection.artifacts
+            # 字段标的是 EvidenceRef，这里放的是同样序列化的 TypedRef；落库读回即为 EvidenceRef
+            artifact_refs=cast(
+                "tuple[EvidenceRef, ...]",
+                tuple(
+                    TypedRef(
+                        kind=TypedRefKind.ARTIFACT, **ref.to_json(), produced_by=Provenance.TOOL
+                    )
+                    for ref in projection.artifacts
+                ),
             ),
             purpose=ReviewPurpose.TASK_CONTENT,
             # The Critic layer is the independent semantic review; this deployment
@@ -646,7 +655,7 @@ class LeafAcceptanceAssembly:
             if in_source_roots(path, roots)
         )
 
-    def _summary_section(self, result_id: str, package_id: str) -> dict[str, Any] | None:
+    def _summary_section(self, result_id: str, package_id: str) -> Mapping[str, Any] | None:
         """The package's summary section (阶段 C3): the Worker's ``summary`` of the reviewed
         result, bound to the result's fingerprint.  Frozen at the first cut like the claim
         sections."""
@@ -667,7 +676,7 @@ class LeafAcceptanceAssembly:
 
     def _claim_sections(
         self, mission_id: str, task_id: str, result_id: str, package_id: str
-    ) -> tuple[tuple[dict[str, Any], ...], tuple[dict[str, Any], ...]]:
+    ) -> tuple[tuple[Mapping[str, Any], ...], tuple[Mapping[str, Any], ...]]:
         """The package's two claim sections (阶段 C): what this result claims, and what
         elsewhere in the Mission bears on it.
 
@@ -806,7 +815,7 @@ class LeafAcceptanceAssembly:
         semantics = self.semantics
         if pinned_origin is not None:
             occurrence = OccurrenceId(pinned_origin.context.inputs.binding.occurrence_id)
-            ports = dict(pinned_origin.ports)
+            ports: Mapping[str, Any] = dict(pinned_origin.ports)
         else:
             located = self._occurrence_in_active_revision(mission_id, str(binding.task_id))
             if located is None:

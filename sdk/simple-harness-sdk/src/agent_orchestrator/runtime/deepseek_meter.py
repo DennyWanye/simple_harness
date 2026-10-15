@@ -22,7 +22,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from simple_harness.agents.arp.meter import MeterBinding, PriorBasis, model_limits
 from simple_harness.agents.arp.pins import Pin
@@ -251,7 +251,11 @@ def certification_ref(counter: CertifiedDeepSeekCounter) -> Pin:
         "count_mode": counter.count_mode,
         "input_limit_scope": "WIRE_ONLY",
         "context_scope_source": CONTEXT_SCOPE_SOURCE,
-        **({"relay_tool_margin_floor": counter.margin.floor} if relay else {}),
+        **(
+            {"relay_tool_margin_floor": cast("RelayDeepSeekCounter", counter).margin.floor}
+            if relay
+            else {}
+        ),
     }
     return Pin("receipt", f"meter-certification:{COUNTER_ID}", 0, digest(body))
 

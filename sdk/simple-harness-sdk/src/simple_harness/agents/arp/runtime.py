@@ -15,7 +15,7 @@ from __future__ import annotations
 from contextlib import nullcontext
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 from simple_harness.agents.background_health import BackgroundHealthBook
 from simple_harness.agents.config import start_input_for
@@ -54,6 +54,9 @@ from .skill_tools import ArpModelTools
 from .skill_use import SkillUseService
 from .skills import SkillImporter
 from .strict import digest
+
+if TYPE_CHECKING:
+    from simple_harness.agents.context.tokenizer import TokenizerPort
 
 
 @dataclass(slots=True)
@@ -325,7 +328,8 @@ def build_arp_runtime(
             agent_id_for=agent_id_for,
             start_input_for=start_input_for,
         )
-        tokenizer = ports.tokenizer
+        # 外层开头已要求 ports.tokenizer 就是计量绑定里那个（非空）tokenizer
+        tokenizer = cast("TokenizerPort", ports.tokenizer)
         index = SessionIndexCoordinator(
             uow=runtime.uow,
             root=root,
@@ -386,7 +390,7 @@ def build_arp_runtime(
 
         state.bootstrap = bootstrap_builtin_tools(
             state.catalogue,
-            specs=tuple(runtime._assembled.registry.specs),
+            specs=tuple(cast(Any, runtime._assembled.registry).specs),
             caller=caller,
             approval_ref=policy.approval_ref,
             effect_classes=arp.extra.get("tool_effect_classes"),

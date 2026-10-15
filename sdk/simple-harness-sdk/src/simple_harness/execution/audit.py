@@ -6,9 +6,9 @@ import hashlib
 import math
 import re
 from dataclasses import asdict, dataclass
-from typing import Protocol
+from typing import Protocol, cast
 
-from simple_harness.contracts import RunId, canonical_json, freeze_json, thaw_json
+from simple_harness.contracts import JsonValue, RunId, canonical_json, freeze_json, thaw_json
 
 RUNTIME_BOUNDARIES = frozenset(
     {
@@ -85,7 +85,7 @@ CORE_SOURCES = (
 
 
 def audit_hash(value: object) -> str:
-    return hashlib.sha256(canonical_json(value).encode()).hexdigest()
+    return hashlib.sha256(canonical_json(cast(JsonValue, value)).encode()).hexdigest()
 
 
 class RunAuditUnavailable(RuntimeError):

@@ -48,6 +48,8 @@ if TYPE_CHECKING:
     from simple_harness.workflow.execution_ports import WorkflowRecoveryWork
     from simple_harness.workflow.runner import WorkflowRunner
 
+    from ..kernel import Runtime
+
 
 class RuntimeCore:
     """Runtime construction, lifecycle state and the accessors every part uses."""
@@ -210,7 +212,7 @@ class RuntimeCore:
         self._closing = False
         self._production_authorities: object | None = None
         self._observability: object | None = None
-        self.client = RunClient(self)
+        self.client = RunClient(cast("Runtime", self))  # 组合类 Runtime 才会走到这里
         self.children = ChildCoordinator(self)
 
     def _emit_transition(

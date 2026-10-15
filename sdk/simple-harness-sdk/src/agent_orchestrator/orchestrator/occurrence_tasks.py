@@ -407,7 +407,7 @@ def read_only_rewrites(
     initial: Mapping[str, str],
     *,
     guarded: Iterable[str] = (),
-    accepted: Mapping[str, str] = (),
+    accepted: Mapping[str, str] | Iterable[tuple[str, str]] = (),
 ) -> list[str]:
     """The files a read-only leaf's Attempt changed that it was not allowed to change.
 

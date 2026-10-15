@@ -9,7 +9,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 from ..contracts.htn import (
     ContractRevision,
@@ -33,6 +33,9 @@ from ..orchestrator.hierarchical_dispatch import is_hierarchical
 from ..orchestrator.operation_completion import OperationCompletionError, OperationCompletionReader
 from ..storage.htn_store import HtnStore
 from ..storage.obligation_store import ObligationStore
+
+if TYPE_CHECKING:
+    from ..contracts.resolution import RequirementsRevisionId
 
 ROOT_RECURSION_FUEL = 8
 
@@ -60,7 +63,7 @@ def build_requirements(
         for identifier, entry_revision, statement in entries
     )
     return RequirementsRevision(
-        revision_id=f"req-{mission_id}-{int(revision)}",
+        revision_id=cast("RequirementsRevisionId", f"req-{mission_id}-{int(revision)}"),
         mission_id=mission_id,
         revision=int(revision),
         criteria=criteria,

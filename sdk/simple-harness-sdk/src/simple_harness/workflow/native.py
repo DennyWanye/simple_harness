@@ -1714,7 +1714,7 @@ class NativeWorkflowExecutable:
             selected = min(suspends, key=lambda item: item.task.task_id)
             node = self.workflow.node(selected.task.node_id)
             if len(snapshot.frontier) != 1 or str(node.dispatch) == "parallel":
-                error = WorkflowNodeError(
+                error: BaseException | None = WorkflowNodeError(
                     code=WorkflowErrorCode.INVALID_STATE,
                     message_ref="workflow_engine:parallel_interrupt_invariant",
                     node_id=selected.task.node_id,

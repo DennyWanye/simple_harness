@@ -9,7 +9,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 from types import MappingProxyType
-from typing import Any
+from typing import Any, cast
 
 from .codec import (
     MAX_BYTES,
@@ -102,8 +102,10 @@ class Formula:
         if self.operator == "criterion":
             if self.criterion not in grades:
                 raise AssuranceError("FORMULA_UNKNOWN_CRITERION")
-            value = grades[self.criterion]
-            return value, frozenset({self.criterion}) if value is Grade.PASS else frozenset()
+            value = grades[cast(str, self.criterion)]  # 上一行已排除不在表里的取值（含 None）
+            return value, frozenset(
+                {cast(str, self.criterion)}
+            ) if value is Grade.PASS else frozenset()
         evaluated = [child.evaluate(grades) for child in self.children]
         if self.operator == "any":
             for value, witness in evaluated:
@@ -436,7 +438,7 @@ class ReviewReply:
 
 
 _FENCE = re.compile(r"\A```(?:json)?[ \t]*\r?\n(.*)\r?\n```\Z", re.DOTALL)
-_EMPTY = (None, "", [], {})
+_EMPTY: tuple[object, ...] = (None, "", [], {})
 
 
 def _drop_empty_extras(value: object, allowed: frozenset[str]) -> object:
@@ -464,7 +466,7 @@ def decode_review_reply(raw: str | bytes) -> ReviewReply:
     except UnicodeDecodeError:
         body = ""
     fenced = _FENCE.match(body.strip()) if len(body.encode("utf-8")) <= MAX_BYTES else None
-    value = decode(fenced.group(1)) if fenced else decode(raw)
+    value: Any = decode(fenced.group(1)) if fenced else decode(raw)
     if isinstance(value, dict):
         value = _drop_empty_extras(value, _REPLY_KEYS)
         for key, allowed in (

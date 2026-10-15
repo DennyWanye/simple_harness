@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from simple_harness.agents import AgentTurnResult, AgentTurnState
 from simple_harness.agents.arp.errors import ArpError
@@ -137,7 +137,8 @@ def _exposure(
         or selection.turn_id != result.turn_id
         or not _selection_binds_request(uow, run_id, selection, provider, decoded_request)
         or response is None
-        or response.get("request_id") != request_id
+        # provider_response_from_json 已拒绝非对象（TypeError 转成上面的 MISMATCH）
+        or cast("dict[str, Any]", response).get("request_id") != request_id
         or result.public_output is None
         or decoded_response.message.to_dict() != result.public_output.to_dict()
         or provider_request_json(decoded_request) != request
@@ -226,7 +227,8 @@ def _native_exposure(
         or frozen.agent_id != result.agent_id
         or frozen.turn_id != result.turn_id
         or response is None
-        or response.get("request_id") != request_id
+        # provider_response_from_json 已拒绝非对象（TypeError 转成上面的 MISMATCH）
+        or cast("dict[str, Any]", response).get("request_id") != request_id
         or result.public_output is None
         or decoded_response.message.to_dict() != result.public_output.to_dict()
         or provider_request_json(decoded_request) != request

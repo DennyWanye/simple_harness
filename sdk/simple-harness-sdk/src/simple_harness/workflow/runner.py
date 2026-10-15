@@ -22,7 +22,7 @@ from simple_harness.contracts import (
     thaw_json,
 )
 from simple_harness.execution.fences import RunFenceLease
-from simple_harness.execution.uow import ExecutionLease, RunRecord, RunState
+from simple_harness.execution.uow import DecisionRecord, ExecutionLease, RunRecord, RunState
 from simple_harness.runtime.orchestration import (
     RuntimeStartDispatchClaim,
     VerifiedWorkflowCatalogAuthority,
@@ -985,7 +985,9 @@ class WorkflowRunner:
 
         run = cast(RunRecord | None, self.execution_ports.unit_of_work.read_run(run_id))
         snapshot = self.execution_ports.unit_of_work.read_start_snapshot(run_id)
-        decision = self.execution_ports.unit_of_work.read_decision(decision_id)
+        decision = cast(
+            DecisionRecord | None, self.execution_ports.unit_of_work.read_decision(decision_id)
+        )
         if run is None or snapshot is None or decision is None:
             raise KeyError(f"workflow decision not found: {decision_id}")
         if run.driver_kind != "workflow" or decision.run_id != run_id:
@@ -1349,7 +1351,8 @@ class WorkflowRunner:
                             tx: WorkflowTransaction,
                             *,
                             current: WorkflowActivation = current_activation,
-                            version: int = current_run.version,
+                            # 外层刚判过不为空，嵌套函数的默认值里 mypy 不沿用收窄
+                            version: int = cast(RunRecord, current_run).version,
                         ) -> None:
                             await self.execution_ports.lifecycle.release_activation(
                                 tx,

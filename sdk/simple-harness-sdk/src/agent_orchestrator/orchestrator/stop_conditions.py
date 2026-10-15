@@ -199,7 +199,7 @@ def duplicate_count(hashes: Sequence[Any]) -> tuple[int, int]:
 
 
 def reached_stop_conditions(
-    mission: Any, deployment: Any, *, streak: int, hashes: Sequence[str]
+    mission: Any, deployment: Any, *, streak: int, hashes: Sequence[tuple[int, str, bool]]
 ) -> list[dict[str, Any]]:
     """达到或超过上限的条件，每条带它的计数与上限（给规划器与停机报告的事实）。"""
     limits = parse_stop_conditions(mission.stop_conditions, deployment)

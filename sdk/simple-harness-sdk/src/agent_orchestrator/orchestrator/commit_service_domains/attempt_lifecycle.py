@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping, Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from simple_harness.agents import AgentTurnState
 
@@ -53,6 +53,18 @@ from .support import CommitRejected, NonModelFailuresExhausted
 
 class AttemptLifecycleCommitsMixin(CommitServiceCore):
     """Intents and attempts: creation, claims, submission, leases, losses and usage settlement."""
+
+    if TYPE_CHECKING:  # pragma: no cover - provided by the composed class
+
+        def reserve_critic_tail(
+            self, *, attempt_id: str, task_id: str, reserve: TailReserve, semantic_revision: str
+        ) -> dict[str, Any]: ...
+
+        def protected_tail_revision(self, task_id: str) -> str: ...
+
+        def release_terminal_tail_holds(
+            self, *, mission_id: str, task_id: str | None = ..., attempt_id: str | None = ...
+        ) -> list[str]: ...
 
     __slots__ = ()
 

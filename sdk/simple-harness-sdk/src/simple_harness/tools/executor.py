@@ -8,9 +8,9 @@ from __future__ import annotations
 import logging
 import secrets
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, replace
-from typing import cast
+from typing import Any, cast
 
 from simple_harness.contracts import (
     CallId,
@@ -46,7 +46,7 @@ from .authorization import (
     bind_authorization_receipts,
     sdk_authorization_receipt,
 )
-from .contracts import ToolCall, ToolContext, ToolResult
+from .contracts import JsonObject, ToolCall, ToolContext, ToolResult
 from .errors import UnknownToolError
 from .reconciliation import (
     ReconciliationState,
@@ -208,7 +208,7 @@ class EffectExecutor:
         ):
             raise ValueError("authorization Tool sidecar authority changed")
 
-        resources_raw = request.get("resources", [])
+        resources_raw: Any = request.get("resources", [])
         if not isinstance(resources_raw, (list, tuple)):
             raise TypeError("authorization resources must be an array")
         resources: list[ToolResource] = []
@@ -219,7 +219,7 @@ class EffectExecutor:
                 ToolResource(
                     str(raw.get("namespace") or ""),
                     str(raw.get("resource_id") or ""),
-                    tuple(str(value) for value in raw["actions"]),
+                    tuple(str(value) for value in cast("Iterable[object]", raw["actions"])),
                 )
             )
         if request.get("resources_digest") != resource_digest(resources):
@@ -426,7 +426,7 @@ class EffectExecutor:
         prepare = getattr(self._authorization, "prepare", None)
         if authorization_receipt_ref is None:
             if prepare is None:
-                prepare = self._authorization.authorize
+                prepare = cast(Any, self._authorization).authorize
             authorization = await prepare(prepared)
         else:
             authorization = None
@@ -440,7 +440,7 @@ class EffectExecutor:
                 nonce=secrets.token_urlsafe(32),
                 expires_at=authorization.request.expires_at,
                 metadata=cast(
-                    dict[str, JsonValue],
+                    JsonObject,
                     thaw_json(cast(FrozenJsonValue, authorization.request.metadata)),
                 ),
             )
@@ -632,9 +632,9 @@ def _authorization_request(decision: DecisionRecord) -> AuthorizationRequest:
     return AuthorizationRequest(
         prompt=str(value["prompt"]),
         nonce=str(value["nonce"]),
-        expires_at=None if expires_at is None else float(expires_at),
+        expires_at=None if expires_at is None else float(cast("float | str", expires_at)),
         metadata=cast(
-            dict[str, JsonValue],
+            JsonObject,
             thaw_json(cast(FrozenJsonValue, metadata)),
         ),
     )

@@ -1182,7 +1182,7 @@ class SqliteNativeCheckpointStore:
             self._insert_snapshot(
                 connection, snapshot=snapshot, lease_epoch=epoch, version=next_version, now=now
             )
-            event_ids = []
+            event_ids: list[JsonValue] = []
             for intent in intents:
                 intent_id = cast(str, intent.get("event_key", intent.get("intent_id")))
                 outcome = await self._execution_ports.checkpoint.materialize_intent(
@@ -1288,7 +1288,8 @@ class SqliteNativeCheckpointStore:
                     outcome=frontier_outcome,
                     now=now,
                 )
-            return NativeCommitResult(snapshot, tuple(event_ids))
+            # 第 1199 行只追加 str；列表注解成 JsonValue 是为了放进 JSON 载荷
+            return NativeCommitResult(snapshot, tuple(cast("list[str]", event_ids)))
 
         return await self._atomic("frontier", operation)
 

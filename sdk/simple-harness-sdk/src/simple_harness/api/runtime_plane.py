@@ -414,6 +414,7 @@ class RuntimePlaneService:
     def _settings_view(
         self, session: store.SessionRow, *, adoption: store.PolicyAdoptionRow | None = None
     ) -> dict[str, Any]:
+        policy: store.PolicyObjectRow | None
         if adoption is None:
             adoption, policy = self._adoption(session)
         else:
@@ -1017,6 +1018,7 @@ class RuntimePlaneService:
         if verb == "agent_skill_install":
             if not self._owner_replayed(verb, command_id):
                 self._expect(value, int(payload["expected_catalogue_revision"]))
+            activation: cat.ActivationRow | None
             item, revision, activation = self.skill_install(
                 payload, caller=caller, command_id=command_id
             )

@@ -792,7 +792,7 @@ class SkillImporter:
         chosen = files[offset : offset + limit]
         while True:
             end = offset + len(chosen)
-            page = {
+            page: dict[str, Any] = {
                 "schema_version": 1,
                 "skill_ref": skill.pin.to_json(),
                 "bundle_digest": skill.bundle_root_ref.content_hash

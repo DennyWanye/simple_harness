@@ -42,7 +42,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 from simple_harness.contracts import canonical_json
 
@@ -68,6 +68,9 @@ from ...contracts.planning_decisions import (
 )
 from ...contracts.semantic_base import content_hash_of
 from ...graph.task_network import TaskNetworkSnapshot
+
+if TYPE_CHECKING:
+    from simple_harness.contracts import JsonValue
 
 #: The views, in the order the package lists them.  ``method_library`` is the directory of
 #: library precedents (id and one line of purpose, never the method); ``library_reads`` the
@@ -668,7 +671,7 @@ def task_type_row(spec: Any, schemas: Any) -> dict[str, Any]:
 
 
 def _one_ref(
-    kind: str, id: object, semantic_revision: object, content_hash: object = None
+    kind: object, id: object, semantic_revision: object, content_hash: object = None
 ) -> dict[str, Any] | None:
     """One reference quadruple, or ``None`` when the source is not usable.
 
@@ -710,7 +713,7 @@ def _one_ref(
             kind=PlanningRefKind(str(kind)),
             id=str(id),
             semantic_revision=semantic_revision,
-            content_hash=content_hash,
+            content_hash=cast(str, content_hash),  # PlanningRefV1 自己校验，不合格就跳过
         )
     except (ContractError, ValueError):
         return None
@@ -1050,7 +1053,7 @@ def _merge_authorities(builder_rows: Sequence[Any], caller_rows: object) -> list
 
 
 def _size(package: Mapping[str, Any]) -> int:
-    return len(canonical_json(package).encode("utf-8"))
+    return len(canonical_json(cast("JsonValue", package)).encode("utf-8"))
 
 
 def assemble_planner_package(

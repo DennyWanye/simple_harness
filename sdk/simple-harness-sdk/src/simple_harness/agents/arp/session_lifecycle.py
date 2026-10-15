@@ -31,7 +31,7 @@ import shutil
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from . import embedding_call, store
 from .codec import check
@@ -878,7 +878,8 @@ class SessionLifecycleService:
                 with self.uow.database.transaction() as connection:
                     return self._seal_locked(connection, session, capture, now_ms=now_ms)
             observation = self.observe(session, now_ms=now_ms)
-            action = recovery_action(session.purge_progress, observation)
+            # 开头已拒绝 purge_progress 为空的会话（重读会话的分支都已返回）
+            action = recovery_action(cast("Mapping[str, Any]", session.purge_progress), observation)
             if action == "RENAME_EXACT":
                 return self._rename(session, observation, recovered=False, now_ms=now_ms)
             if action == "RECORD_RECOVERED_RENAME":

@@ -12,10 +12,11 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import TYPE_CHECKING, Protocol, cast, runtime_checkable
 
-from simple_harness.contracts import CallId, JsonValue, canonical_json, thaw_json
+from simple_harness.contracts import CallId, FrozenJsonValue, JsonValue, canonical_json, thaw_json
 from simple_harness.workflow.contracts import (
     EffectKind,
     EffectPolicy,
+    ToolAccess,
     ToolInventoryEntry,
 )
 
@@ -100,7 +101,7 @@ def _inventory_json(value: ToolInventoryEntry) -> dict[str, JsonValue]:
     policy = value.effect_policy
     return {
         "name": value.name,
-        "access": value.access.value,
+        "access": cast(ToolAccess, value.access).value,  # __post_init__ 已规范成枚举
         "spec_version": value.spec_version,
         "schema_hash": value.schema_hash,
         "effect_policy": (
@@ -109,7 +110,7 @@ def _inventory_json(value: ToolInventoryEntry) -> dict[str, JsonValue]:
             else {
                 "policy_id": policy.policy_id,
                 "version": policy.version,
-                "kind": policy.kind.value,
+                "kind": cast(EffectKind, policy.kind).value,  # __post_init__ 已规范成枚举
                 "max_attempts": policy.max_attempts,
                 "reusable_across_branches": policy.reusable_across_branches,
             }
@@ -244,7 +245,7 @@ def _json_envelope(call_id: CallId, raw: object) -> ToolResult:
         if raw.call_id != call_id:
             raise ValueError("ToolResult call identity differs")
         return raw
-    value = thaw_json(raw) if raw is not None else None
+    value = thaw_json(cast(FrozenJsonValue, raw)) if raw is not None else None
     if isinstance(value, Mapping):
         explicit = value.get("outcome") or value.get("status")
         if explicit is not None:
@@ -303,7 +304,7 @@ def parse_tool_outcome(
     parser = ToolOutcomeParser(parser)
     if parser is ToolOutcomeParser.JSON_ERROR_ENVELOPE:
         return _json_envelope(call_id, raw)
-    value = thaw_json(raw) if raw is not None else None
+    value = thaw_json(cast(FrozenJsonValue, raw)) if raw is not None else None
     if parser is ToolOutcomeParser.SHELL_EXIT:
         exit_code = value.get("exit_code") if isinstance(value, Mapping) else None
         if isinstance(exit_code, bool) or not isinstance(exit_code, int):

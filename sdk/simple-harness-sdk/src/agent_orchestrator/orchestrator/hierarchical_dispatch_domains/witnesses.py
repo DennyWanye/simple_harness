@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from collections.abc import Collection, Mapping, Sequence
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from ...artifacts.taskgraph_inputs import decode_frozen_manifest
 from ...contracts import ContractError
@@ -40,6 +40,9 @@ from .support import (
     _typed,
     append_hierarchical_event,
 )
+
+if TYPE_CHECKING:
+    from ...artifacts.input_bindings import DeliveryBinding, ResolvedInputBinding
 
 
 class WitnessIssueMixin(HierarchicalDispatchCore):
@@ -247,7 +250,10 @@ class WitnessIssueMixin(HierarchicalDispatchCore):
         except (StoreError, ContractError):
             return []  # the resolution names this source as unavailable; nothing to license
         found: dict[str, int] = {}
-        for item in (*frozen.bindings, *frozen.deliveries):
+        for item in cast(
+            "tuple[ResolvedInputBinding | DeliveryBinding, ...]",
+            (*frozen.bindings, *frozen.deliveries),
+        ):
             found.setdefault(item.acceptance_id, int(item.support_revision))
         return sorted(found.items())
 

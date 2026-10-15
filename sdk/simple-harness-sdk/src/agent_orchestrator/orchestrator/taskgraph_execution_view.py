@@ -215,7 +215,7 @@ class ExecutionProjection:
             "SELECT attempt_id, task_id, ordinal, status, json FROM attempts WHERE mission_id=?"
             " ORDER BY task_id, ordinal"
         ):
-            body = _json(raw) if isinstance(_json(raw), dict) else {}
+            body: Any = _json(raw) if isinstance(_json(raw), dict) else {}
             intent = self.by_subject.get(str(attempt_id))
             config = intent["config"] if intent else {}
             context = (
@@ -377,11 +377,13 @@ class ExecutionProjection:
             "SELECT seq, created_at, payload_json FROM events WHERE mission_id=?"
             " AND type='PlanningRepairRequested' ORDER BY seq"
         ):
-            body = _json(payload) if isinstance(_json(payload), dict) else {}
-            request = body.get("request") if isinstance(body.get("request"), dict) else {}
+            body: Any = _json(payload) if isinstance(_json(payload), dict) else {}
+            request: Any = body.get("request") if isinstance(body.get("request"), dict) else {}
             request_id = str(body.get("request_id") or request.get("request_id") or f"event-{seq}")
-            context = request.get("context") if isinstance(request.get("context"), dict) else {}
-            detail = context.get("detail") if isinstance(context.get("detail"), dict) else {}
+            context: Any = (
+                request.get("context") if isinstance(request.get("context"), dict) else {}
+            )
+            detail: Any = context.get("detail") if isinstance(context.get("detail"), dict) else {}
             reasons = [
                 f.get("summary") for f in detail.get("failures") or () if isinstance(f, dict)
             ]
@@ -463,8 +465,8 @@ class ExecutionProjection:
         for action_key, state, raw, created_at in self._rows(
             "SELECT action_key, state, json, created_at FROM actions WHERE mission_id=? ORDER BY created_at"
         ):
-            body = _json(raw) if isinstance(_json(raw), dict) else {}
-            params = body.get("params") if isinstance(body.get("params"), dict) else {}
+            body: Any = _json(raw) if isinstance(_json(raw), dict) else {}
+            params: Any = body.get("params") if isinstance(body.get("params"), dict) else {}
             target = (
                 params.get("artifact_path")
                 if isinstance(params.get("artifact_path"), str)
@@ -644,7 +646,7 @@ def _assistant(content: Any, *, review: bool) -> list[dict[str, Any]]:
                 }
             )
         elif tag == "method_proposal":
-            method = body.get("method") if isinstance(body.get("method"), Mapping) else {}
+            method: Any = body.get("method") if isinstance(body.get("method"), Mapping) else {}
             out.append(
                 {
                     "t": "method",
@@ -695,7 +697,7 @@ def _tool(message: Mapping[str, Any]) -> dict[str, Any]:
     if not isinstance(reply, Mapping):
         return {"t": "tool", "tool": name, "ok": False, "error": "回复无法解析"}
     ok = reply.get("outcome") == "succeeded"
-    value = reply.get("value") if isinstance(reply.get("value"), Mapping) else {}
+    value: Any = reply.get("value") if isinstance(reply.get("value"), Mapping) else {}
     item: dict[str, Any] = {"t": "tool", "tool": name, "ok": ok}
     if not ok:
         item["error"] = _cut(

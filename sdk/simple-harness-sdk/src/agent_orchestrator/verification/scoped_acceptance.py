@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from ..assurance.checks import Formula, Grade
 from ..contracts.evidence_state import ValidityWitness
@@ -285,7 +285,8 @@ def _acceptable_scoped(
             _witness_reasons(witness, now_ms=now_ms, current_scope_epoch=current_scope_epoch)
         )
     else:
-        reasons.extend(assured.licence_reasons)
+        # 开头已校验见证与保证恰好给一个：没有见证就一定有保证
+        reasons.extend(cast("AssuredAcceptance", assured).licence_reasons)
     if subject.posture.unowned_critical_operation_ids:
         reasons.append(AcceptReason.CRITICAL_OPERATION_UNOWNED)
     if subject.posture.cancellation_requested:

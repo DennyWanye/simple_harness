@@ -250,7 +250,7 @@ def next_compound_phase(
     network: TaskNetworkSnapshot,
     report: ReadinessReport,
     *,
-    child_outcomes: Mapping[OccurrenceId, OccurrenceOutcome],
+    child_outcomes: Mapping[OccurrenceId, OccurrenceOutcome | None],
     resolved: bool,
 ) -> CompoundPhase:
     """The phase of one compound occurrence, from typed inputs only (TG §7).

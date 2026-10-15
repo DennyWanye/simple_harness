@@ -110,6 +110,7 @@ from .taskgraph_demands import read_independent_demands
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from ..contracts import Event, Mission
     from ..governance.budgets import BudgetLedger
+    from ..governance.domains import DomainProfileV1
     from ..storage.store import Store
     from .taskgraph_plan_commit import TaskGraphPlanCommitParticipant
 
@@ -299,6 +300,10 @@ class PlanCommitsMixin:
             ledger: Any = None,
             plan_revision: int | None = None,
         ) -> ObligationAccountView: ...
+
+        _task_max_tokens: int
+
+        def domain_for(self, mission_id: str) -> DomainProfileV1: ...
 
     # ------------------------------------------------------------------ public entry
     def commit_plan_revision(

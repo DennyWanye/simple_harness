@@ -459,7 +459,9 @@ class AgentExecutionDriver:
                         self._settle_failed_turn(invocation, run_id)
                         attempt += 1
                         if not resample:
-                            output_cap = min(output_cap * 2, self._max_output_tokens_ceiling)
+                            output_cap = min(
+                                cast(int, output_cap) * 2, self._max_output_tokens_ceiling
+                            )
                             escalations.append(
                                 {"attempt": attempt, "max_output_tokens": output_cap}
                             )
@@ -555,7 +557,7 @@ class AgentExecutionDriver:
         binding: Mapping[str, object],
         *,
         totals: _CheckpointTotals,
-        ordinal_from: int,
+        ordinal_from: int | None,
         tool_calls_from: int | None,
         turn_created_at: float | None,
     ) -> ReActLoop:
@@ -606,7 +608,7 @@ class AgentExecutionDriver:
 
     def _turn_baselines(
         self, invocation: DriverInvocation, checkpoint_port: Any, turn_id: str
-    ) -> tuple[_CheckpointTotals, int, float | None, int | None]:
+    ) -> tuple[_CheckpointTotals, int | None, float | None, int | None]:
         totals = _checkpoint_totals(checkpoint_port, invocation.run.run_id)
         ordinal_from = totals.provider_turns
         turn_created_at: float | None = None
@@ -640,7 +642,7 @@ class AgentExecutionDriver:
         seq: int,
         input_id: str,
         input_hash: str,
-        ordinal_from: int,
+        ordinal_from: int | None,
         checkpoint_port: Any,
     ) -> DriverResult | None:
         if callable(read_cancel) and read_cancel(turn_id) is not None:
@@ -675,7 +677,7 @@ class AgentExecutionDriver:
         seq: int,
         input_id: str,
         input_hash: str,
-        ordinal_from: int,
+        ordinal_from: int | None,
         checkpoint_port: Any,
     ) -> DriverResult | None:
         if (
@@ -762,7 +764,7 @@ class AgentExecutionDriver:
         seq: int,
         input_id: str,
         input_hash: str,
-        ordinal_from: int,
+        ordinal_from: int | None,
         checkpoint_port: Any,
     ) -> DriverResult:
         self._settle_failed_turn(invocation, run_id)
@@ -813,7 +815,7 @@ class AgentExecutionDriver:
         seq: int,
         input_id: str,
         input_hash: str,
-        ordinal_from: int,
+        ordinal_from: int | None,
         escalations: list[dict[str, JsonValue]],
     ) -> DriverResult:
         response = result.response

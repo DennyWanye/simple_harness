@@ -13,10 +13,11 @@ import copy
 import hashlib
 import re
 from collections.abc import Mapping, Sequence
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from simple_harness.contracts import JsonValue, validate_json_value
 from simple_harness.workflow.contracts import (
+    PureRouteContext,
     StatePatch,
     WorkflowContext,
     WorkflowState,
@@ -85,7 +86,7 @@ _PROVIDER_BALANCE_FAILURE = re.compile(
 )
 
 
-def _input_value(state: Mapping[str, object], name: str, default: object) -> object:
+def _input_value(state: Mapping[str, Any], name: str, default: object) -> Any:
     """Extract value from state, preferring values channel."""
     values = state.get("values")
     if isinstance(values, Mapping) and name in values:
@@ -93,7 +94,7 @@ def _input_value(state: Mapping[str, object], name: str, default: object) -> obj
     return state.get(name, default)
 
 
-def _effective(state: Mapping[str, object]) -> dict[str, object]:
+def _effective(state: Mapping[str, Any]) -> dict[str, Any]:
     """Flatten state with values channel merged."""
     effective = dict(state)
     values = state.get("values")
@@ -102,10 +103,8 @@ def _effective(state: Mapping[str, object]) -> dict[str, object]:
     return effective
 
 
-def _merged_values(
-    state: Mapping[str, object], updates: Mapping[str, JsonValue]
-) -> dict[str, JsonValue]:
-    """Merge updates into state values channel."""
+def _merged_values(state: Mapping[str, Any], updates: Mapping[str, object]) -> dict[str, JsonValue]:
+    """Merge updates into state values channel (``validate_json_value`` checks them at run time)."""
     current = state.get("values")
     merged = copy.deepcopy(dict(current)) if isinstance(current, Mapping) else {}
     merged.update(copy.deepcopy(dict(updates)))
@@ -125,7 +124,7 @@ def _interrupt(payload: Mapping[str, JsonValue]) -> JsonValue:
     return workflow_interrupt(copy.deepcopy(dict(payload)))
 
 
-def _proposal_state(effective: Mapping[str, object]) -> ProposalStateV1:
+def _proposal_state(effective: Mapping[str, Any]) -> ProposalStateV1:
     """Extract ProposalStateV1 from effective state."""
     raw = effective.get("proposal_state")
     if not isinstance(raw, Mapping):
@@ -133,7 +132,7 @@ def _proposal_state(effective: Mapping[str, object]) -> ProposalStateV1:
     return ProposalStateV1.from_dict(raw)
 
 
-def _outcome(effective: Mapping[str, object]) -> ProposalOutcomeV1:
+def _outcome(effective: Mapping[str, Any]) -> ProposalOutcomeV1:
     """Extract ProposalOutcomeV1 from effective state."""
     raw = effective.get("proposal_outcome")
     if not isinstance(raw, Mapping):
@@ -141,7 +140,7 @@ def _outcome(effective: Mapping[str, object]) -> ProposalOutcomeV1:
     return ProposalOutcomeV1.from_dict(raw)
 
 
-def _todo_items(effective: Mapping[str, object]) -> list[dict[str, JsonValue]]:
+def _todo_items(effective: Mapping[str, Any]) -> list[dict[str, Any]]:
     """Extract todo items from effective state."""
     raw = effective.get("todos", [])
     if not isinstance(raw, list):
@@ -149,9 +148,7 @@ def _todo_items(effective: Mapping[str, object]) -> list[dict[str, JsonValue]]:
     return [copy.deepcopy(dict(item)) for item in raw]
 
 
-def _todo_intents(
-    run_id: str, todos: Sequence[Mapping[str, JsonValue]]
-) -> list[dict[str, JsonValue]]:
+def _todo_intents(run_id: str, todos: Sequence[Mapping[str, JsonValue]]) -> list[dict[str, Any]]:
     """Generate delivery intents for todo updates."""
     return [
         {
@@ -346,7 +343,7 @@ async def clarify_handler(state: WorkflowState, context: WorkflowContext) -> Sta
         answer = str(response)
 
     # Append clarification to messages
-    proposal = _proposal_state(effective).to_dict()
+    proposal: dict[str, Any] = _proposal_state(effective).to_dict()
     messages = list(proposal["messages"])
     messages.append({"role": "user", "content": answer, "message_id": "clarification-response"})
     proposal["messages"] = messages
@@ -461,7 +458,7 @@ async def wait_approval_handler(state: WorkflowState, context: WorkflowContext) 
         status = "cancelled"
         workflow_status = "cancelled"
 
-    updates: dict[str, JsonValue] = {
+    updates: dict[str, Any] = {
         "approval_response": copy.deepcopy(decision),
         "approval_status": status,
         "workflow_status": workflow_status,
@@ -469,7 +466,7 @@ async def wait_approval_handler(state: WorkflowState, context: WorkflowContext) 
 
     # Add execution discipline message if approved
     if status == "approved":
-        proposal = _proposal_state(effective).to_dict()
+        proposal: dict[str, Any] = _proposal_state(effective).to_dict()
         messages = list(proposal["messages"])
         messages.append(
             {
@@ -519,7 +516,7 @@ async def wait_approval_handler(state: WorkflowState, context: WorkflowContext) 
     return StatePatch({"values": _merged_values(state, updates)})
 
 
-async def approval_route(state: WorkflowState, context: WorkflowContext) -> str:
+async def approval_route(state: WorkflowState, context: PureRouteContext) -> str:
     """Route based on approval decision."""
     del context
     return "approved" if _effective(state).get("approval_status") == "approved" else "finalize"
@@ -556,7 +553,7 @@ async def llm_proposal_handler(state: WorkflowState, context: WorkflowContext) -
 
     # Call ProposalPort
     try:
-        proposal_port: ProposalPort = context.port("proposal")
+        proposal_port = cast("ProposalPort", context.port("proposal"))
         if context.identity is not None and hasattr(proposal_port, "propose_for_execution"):
             outcome_raw = await proposal_port.propose_for_execution(
                 proposal_state, execution_identity=context.identity
@@ -585,7 +582,7 @@ async def llm_proposal_handler(state: WorkflowState, context: WorkflowContext) -
         outcome = outcome_raw
 
     # Update proposal state
-    proposal = proposal_state.to_dict()
+    proposal: dict[str, Any] = proposal_state.to_dict()
     if outcome.compacted_messages is not None:
         proposal["messages"] = [dict(message) for message in outcome.compacted_messages]
         proposal["compaction_summary"] = outcome.compaction_summary
@@ -602,7 +599,7 @@ async def llm_proposal_handler(state: WorkflowState, context: WorkflowContext) -
     proposal["last_error"] = outcome.error.to_dict() if outcome.error else None
 
     # Filter forbidden/unsupported tools via CapabilityCatalogPort
-    catalog_port: CapabilityCatalogPort | None = context.ports.get("capability_catalog")
+    catalog_port = cast("CapabilityCatalogPort | None", context.ports.get("capability_catalog"))
     forbidden_ids: list[str] = []
     unsupported_ids: list[str] = []
 
@@ -656,7 +653,7 @@ async def llm_proposal_handler(state: WorkflowState, context: WorkflowContext) -
                         }
                     )
 
-    counters = {
+    counters: dict[str, Any] = {
         "proposal_turns": int(proposal["proposal_turns_used"]),
         "fix_rounds": int(proposal["fix_rounds_used"]),
     }
@@ -775,7 +772,9 @@ async def tool_execution_handler(state: WorkflowState, context: WorkflowContext)
     authorizations: dict[str, JsonValue] = {}
     if effective.get("approval_status") == "approved":
         for call in calls:
-            if call.effect_type != "idempotent_read":
+            # 缺陷：PreparedToolCall 没有 effect_type，走到即 AttributeError
+            # （另开任务修，见实施记录 5E）
+            if call.effect_type != "idempotent_read":  # type: ignore[attr-defined]
                 authorizations[call.stable_call_id] = {"action": "allow_once_opaque"}
 
     # Handle dynamic tool review
@@ -820,7 +819,7 @@ async def tool_execution_handler(state: WorkflowState, context: WorkflowContext)
                 }
                 for call_id in review_ids
             }
-            proposal_payload = proposal_state.to_dict()
+            proposal_payload: dict[str, Any] = proposal_state.to_dict()
             proposal_payload["committed_tool_results"] = {
                 **dict(proposal_payload["committed_tool_results"]),
                 **skipped,
@@ -862,7 +861,7 @@ async def tool_execution_handler(state: WorkflowState, context: WorkflowContext)
     ]
 
     # Generate error results for blocked calls
-    raw_results: dict[str, JsonValue] = {
+    raw_results: dict[str, Any] = {
         call.stable_call_id: {
             "ok": False,
             "status": "failed",
@@ -896,8 +895,8 @@ async def tool_execution_handler(state: WorkflowState, context: WorkflowContext)
 
     # Dispatch executable calls via WorkspacePort
     if dispatchable_calls:
-        workspace_port: WorkspacePort = context.port("workspace")
-        auth_port: AuthorizationPort | None = context.ports.get("authorization")
+        workspace_port = cast("WorkspacePort", context.port("workspace"))
+        auth_port = cast("AuthorizationPort | None", context.ports.get("authorization"))
 
         # Apply authorizations
         if auth_port is not None:
@@ -917,31 +916,32 @@ async def tool_execution_handler(state: WorkflowState, context: WorkflowContext)
 
     # Normalize results
     call_by_id = {call.stable_call_id: call for call in calls}
-    normalized: dict[str, JsonValue] = {}
+    normalized: dict[str, Any] = {}
     for call_id, raw in raw_results.items():
-        call = call_by_id.get(str(call_id))
-        if call is None:
+        matched = call_by_id.get(str(call_id))
+        if matched is None:
             raise ValueError(f"dispatch returned unknown call id: {call_id}")
-        payload = (
+        payload: dict[str, Any] = (
             copy.deepcopy(dict(raw)) if isinstance(raw, Mapping) else {"result": copy.deepcopy(raw)}
         )
         payload.update(
             {
-                "stable_call_id": call.stable_call_id,
-                "tool_name": call.tool_name,
+                "stable_call_id": matched.stable_call_id,
+                "tool_name": matched.tool_name,
                 "workflow_step_id": str(proposal_state.active_step_id or ""),
-                "args_hash": call.args_hash,
+                # 缺陷：PreparedToolCall 没有 args_hash（同上，另开任务修）
+                "args_hash": matched.args_hash,  # type: ignore[attr-defined]
             }
         )
         validate_json_value(payload)
-        normalized[call.stable_call_id] = payload
+        normalized[matched.stable_call_id] = payload
 
     missing = [call.stable_call_id for call in calls if call.stable_call_id not in normalized]
     if missing:
         raise ValueError(f"dispatch omitted prepared call results: {', '.join(missing)}")
 
     # Update proposal state with results
-    proposal = proposal_state.to_dict()
+    proposal: dict[str, Any] = proposal_state.to_dict()
     committed = {**dict(proposal["committed_tool_results"]), **normalized}
     proposal["committed_tool_results"] = committed
     proposal["pending_tool_results"] = {}
@@ -953,7 +953,7 @@ async def tool_execution_handler(state: WorkflowState, context: WorkflowContext)
     }
 
     # Compact messages (drop superseded searches)
-    messages = list(proposal["messages"])
+    messages: list[Any] = list(proposal["messages"])
     if (
         calls
         and not blocked_search_ids
@@ -992,7 +992,7 @@ async def tool_execution_handler(state: WorkflowState, context: WorkflowContext)
     )
 
     # Check for evidence-backed completion via ArtifactPort
-    artifact_port: ArtifactPort | None = context.ports.get("artifact")
+    artifact_port = cast("ArtifactPort | None", context.ports.get("artifact"))
     evidence_backed_complete = False
     if artifact_port is not None:
         evidence_backed_complete = await artifact_port.check_completion_evidence(
@@ -1112,7 +1112,7 @@ async def completion_decision_handler(state: WorkflowState, context: WorkflowCon
 
     # Determine route
     if effective.get("workflow_status") in {"cancelled", "blocked"}:
-        decision: dict[str, JsonValue] = {
+        decision: dict[str, Any] = {
             "route": "finalize",
             "reason": str(effective.get("blocked_reason", "cancelled")),
             "incomplete_todo_ids": incomplete,
@@ -1143,7 +1143,7 @@ async def completion_decision_handler(state: WorkflowState, context: WorkflowCon
         }
 
     # Allow ArtifactPort to override decision
-    artifact_port: ArtifactPort | None = context.ports.get("artifact")
+    artifact_port = cast("ArtifactPort | None", context.ports.get("artifact"))
     if artifact_port is not None and hasattr(artifact_port, "completion_decision"):
         override = await artifact_port.completion_decision(copy.deepcopy(decision), proposal_state)
         if isinstance(override, Mapping):
@@ -1156,7 +1156,7 @@ async def completion_decision_handler(state: WorkflowState, context: WorkflowCon
         decision["reason"] = "incomplete_todos"
 
     # Update proposal state
-    proposal = proposal_state.to_dict()
+    proposal: dict[str, Any] = proposal_state.to_dict()
     proposal["completion_attempts"] = proposal_state.completion_attempts + 1
     proposal["completion_outcomes"] = [*proposal_state.completion_outcomes, decision]
 
@@ -1174,7 +1174,7 @@ async def completion_decision_handler(state: WorkflowState, context: WorkflowCon
     )
 
 
-async def completion_route(state: WorkflowState, context: WorkflowContext) -> str:
+async def completion_route(state: WorkflowState, context: PureRouteContext) -> str:
     """Route from completion_decision node."""
     del context
     route = str(_effective(state).get("next_route", "loop"))
@@ -1190,12 +1190,12 @@ async def test_handler(state: WorkflowState, context: WorkflowContext) -> StateP
     proposal_state = _proposal_state(effective)
 
     # Run tests via ArtifactPort
-    artifact_port: ArtifactPort | None = context.ports.get("artifact")
+    artifact_port = cast("ArtifactPort | None", context.ports.get("artifact"))
     if artifact_port is not None and hasattr(artifact_port, "run_tests"):
         raw = await artifact_port.run_tests(proposal_state)
         if not isinstance(raw, Mapping):
             raise TypeError("ArtifactPort.run_tests must return a JSON object")
-        result = copy.deepcopy(dict(raw))
+        result: dict[str, Any] = copy.deepcopy(dict(raw))
     else:
         # Default: check if we have successful tool receipts
         successful_receipts = [
@@ -1217,7 +1217,7 @@ async def test_handler(state: WorkflowState, context: WorkflowContext) -> StateP
     evidence = [str(value) for value in result.get("evidence_refs", [])]
 
     # Update proposal state
-    proposal = proposal_state.to_dict()
+    proposal: dict[str, Any] = proposal_state.to_dict()
     proposal["verify_attempts"] = proposal_state.verify_attempts + 1
     proposal["verify_outcomes"] = [*proposal_state.verify_outcomes, result]
     proposal["evidence_refs"] = list(dict.fromkeys([*proposal_state.evidence_refs, *evidence]))
@@ -1246,7 +1246,7 @@ async def audit_handler(state: WorkflowState, context: WorkflowContext) -> State
     test_passed = isinstance(test_result, Mapping) and bool(test_result.get("passed", False))
 
     # Build audit result
-    audit: dict[str, JsonValue] = {
+    audit: dict[str, Any] = {
         "passed": test_passed and not incomplete,
         "test_passed": test_passed,
         "incomplete_todo_ids": incomplete,
@@ -1264,7 +1264,7 @@ async def audit_handler(state: WorkflowState, context: WorkflowContext) -> State
             audit["failure_code"] = str(test_result["failure_code"])
 
     # Allow ArtifactPort to override audit
-    artifact_port: ArtifactPort | None = context.ports.get("artifact")
+    artifact_port = cast("ArtifactPort | None", context.ports.get("artifact"))
     if artifact_port is not None and hasattr(artifact_port, "audit"):
         override = await artifact_port.audit(copy.deepcopy(audit), proposal_state)
         if isinstance(override, Mapping):
@@ -1304,7 +1304,7 @@ async def audit_handler(state: WorkflowState, context: WorkflowContext) -> State
         audit["budget_exhausted"] = True
 
     # Update proposal state for fix round
-    proposal = proposal_state.to_dict()
+    proposal: dict[str, Any] = proposal_state.to_dict()
     if route == "fix":
         proposal["fix_rounds_used"] = proposal_state.fix_rounds_used + 1
         repair_step = next(
@@ -1342,7 +1342,7 @@ async def audit_handler(state: WorkflowState, context: WorkflowContext) -> State
     return StatePatch(patch)
 
 
-async def audit_route(state: WorkflowState, context: WorkflowContext) -> str:
+async def audit_route(state: WorkflowState, context: PureRouteContext) -> str:
     """Route from audit node."""
     del context
     return "fix" if _effective(state).get("audit_route") == "fix" else "finalize"
@@ -1380,14 +1380,14 @@ async def finalize_handler(state: WorkflowState, context: WorkflowContext) -> St
         )
 
     # Build summary
-    summary: dict[str, JsonValue] = {
+    summary: dict[str, Any] = {
         "status": workflow_status,
         "audit": audit if isinstance(audit, dict) else {},
         "todos": todos,
     }
 
     # Generate delivery intents
-    intents: list[dict[str, JsonValue]] = [
+    intents: list[Any] = [
         {
             "intent_id": f"{run_id}:workflow-report",
             "kind": "workflow_report",

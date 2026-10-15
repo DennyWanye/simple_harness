@@ -27,7 +27,7 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 from ..assurance.certificates import (
     POINT_PURPOSES,
@@ -49,6 +49,9 @@ from ..storage.assurance_work import atomic
 from ..storage.store import StoreError
 from .assurance_check_use import _merge_reads
 from .assurance_validity import USE_CERTIFIED_KIND, result_acceptance_ids
+
+if TYPE_CHECKING:
+    from ..assurance.root_gate import CurrentReadPermission
 
 ACTION_CONSUMER = "ACTION"
 ATTEMPT_CONSUMER = "ATTEMPT"
@@ -268,7 +271,7 @@ def _judge_knowledge(store: Any, mission_id: str, claim: EvidenceClaim) -> _Judg
 
 
 def _judge_summary(
-    store: Any, mission_id: str, claim: EvidenceClaim, rows: list[Mapping[str, Any]]
+    store: Any, mission_id: str, claim: EvidenceClaim, rows: Sequence[Mapping[str, Any]]
 ) -> _Judged:
     # 按需导入：测试替身（agent_orchestrator.memory.knowledge_standing.acceptance_is_current）
     from ..memory.knowledge_standing import acceptance_is_current
@@ -361,7 +364,7 @@ def _judge_all(
     refusals: list[str] = []
     refs: list[AssuranceRef] = []
     deadlines: list[int] = []
-    summaries: list[Mapping[str, Any]] | None = None
+    summaries: Sequence[Mapping[str, Any]] | None = None
     for claim in claims:
         if claim.kind == "knowledge":
             judged = _judge_knowledge(store, mission_id, claim)
@@ -460,7 +463,8 @@ def certify_point_use_locked(
     try:
         for ref in pinned:
             resolved = reader.read_exact_metadata(ref, now_ms=now_ms)
-            permission = resolved.permission
+            # 读取器带授权与身份，解析时必填许可（assurance_reads.read_exact_metadata）
+            permission = cast("CurrentReadPermission", resolved.permission)
             reads.extend((resolved.read_item, permission.access, permission.policy))
             deadlines.append(permission.not_after_ms)
             if ref == own:
@@ -532,8 +536,9 @@ def certify_point_use_locked(
             clock_generation=final.clock_generation,
             clock_state=final.clock_state,
             now_ms=now_ms,
-            current_access=own_permission.access,
-            current_policy=own_permission.policy,
+            # own 在 pinned 里，上面的循环一定已经取到它的许可（取不到会提前返回拒绝）
+            current_access=cast("CurrentReadPermission", own_permission).access,
+            current_policy=cast("CurrentReadPermission", own_permission).policy,
         )
     except AssuranceError as error:
         return _refused(use, error.code)

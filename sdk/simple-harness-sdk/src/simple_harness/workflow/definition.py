@@ -623,25 +623,25 @@ def _validate_definition(definition: WorkflowDefinition) -> dict[str, NodeDefini
             incoming[edge.target].append(edge)
 
     conditional_by_source: dict[str, ConditionalEdge] = {}
-    for edge in definition.conditional_edges:
-        if edge.source not in nodes:
+    for conditional in definition.conditional_edges:
+        if conditional.source not in nodes:
             raise WorkflowDefinitionError(
-                "invalid_edge", f"Conditional source {edge.source!r} does not exist"
+                "invalid_edge", f"Conditional source {conditional.source!r} does not exist"
             )
-        if edge.source in conditional_by_source:
+        if conditional.source in conditional_by_source:
             raise WorkflowDefinitionError(
                 "duplicate_conditional_edge",
-                f"Node {edge.source} has multiple conditional edges",
+                f"Node {conditional.source} has multiple conditional edges",
             )
-        if edge.source in normal_sources:
+        if conditional.source in normal_sources:
             raise WorkflowDefinitionError(
                 "mixed_edge_modes",
-                f"Node {edge.source} mixes normal and conditional edges",
+                f"Node {conditional.source} mixes normal and conditional edges",
             )
         missing_targets = sorted(
             {
                 target
-                for target in edge.routes.values()
+                for target in conditional.routes.values()
                 if target != END_NODE and target not in nodes
             }
         )
@@ -650,15 +650,15 @@ def _validate_definition(definition: WorkflowDefinition) -> dict[str, NodeDefini
                 "invalid_edge",
                 f"Conditional edge references missing nodes: {', '.join(missing_targets)}",
             )
-        conditional_by_source[edge.source] = edge
-        for target in edge.routes.values():
+        conditional_by_source[conditional.source] = conditional
+        for target in conditional.routes.values():
             if target != END_NODE:
-                incoming[target].append(Edge(edge.source, target))
+                incoming[target].append(Edge(conditional.source, target))
 
     adjacency = {node_id: set(targets) for node_id, targets in outgoing_targets.items()}
-    for edge in definition.conditional_edges:
-        adjacency[edge.source].update(
-            target for target in edge.routes.values() if target != END_NODE
+    for conditional in definition.conditional_edges:
+        adjacency[conditional.source].update(
+            target for target in conditional.routes.values() if target != END_NODE
         )
     _cycle_bindings(definition, adjacency)
 
@@ -674,9 +674,9 @@ def _validate_definition(definition: WorkflowDefinition) -> dict[str, NodeDefini
             ):
                 reachable.add(edge.target)
                 changed = True
-        for edge in definition.conditional_edges:
-            if edge.source in reachable:
-                for target in edge.routes.values():
+        for conditional in definition.conditional_edges:
+            if conditional.source in reachable:
+                for target in conditional.routes.values():
                     if target != END_NODE and target not in reachable:
                         reachable.add(target)
                         changed = True
@@ -785,14 +785,14 @@ class CompiledWorkflow:
             }
         )
         self._join_edges = tuple(edge for edge in definition.edges if len(edge.sources) > 1)
-        adjacency = {node_id: set() for node_id in nodes}
+        adjacency: dict[str, set[str]] = {node_id: set() for node_id in nodes}
         for edge in definition.edges:
             for source in edge.sources:
                 if edge.target != END_NODE:
                     adjacency[source].add(edge.target)
-        for edge in definition.conditional_edges:
-            adjacency[edge.source].update(
-                target for target in edge.routes.values() if target != END_NODE
+        for conditional in definition.conditional_edges:
+            adjacency[conditional.source].update(
+                target for target in conditional.routes.values() if target != END_NODE
             )
         cycle_bindings = _cycle_bindings(definition, adjacency)
         self._cycle_binding_by_edge = MappingProxyType(dict(cycle_bindings))

@@ -317,7 +317,7 @@ class AssuranceDeploymentPorts:
     # plan froze inside the same run() gets its policy before the review needs it
     # (Host real model run 7, 2026-09-23: the after-run projection came too late).
     # None keeps the human approval verb as the only source of check policies.
-    check_policy_projector: Callable[[str], None] | None = None
+    check_policy_projector: Callable[[str], object] | None = None
 
 
 @dataclass(frozen=True)
@@ -402,7 +402,7 @@ def install_assurance(orchestrator: Any, ports: AssuranceDeploymentPorts) -> Ins
     review_runtime = AssuranceReviewRuntime(
         orchestrator, review, check_policy_projector=ports.check_policy_projector
     )
-    consumers = {
+    consumers: dict[str, Any] = {
         "REVIEW": review,
         "VALIDITY": AssuranceValidityConsumer(commit, tenant_id=tenant_id),
         "CLOSEOUT": AssuranceCloseoutConsumer(

@@ -968,9 +968,9 @@ class CatalogueService:
                     Pin.from_json(body["output_schema_ref"]),
                 ]
                 for dependency in dependencies:
-                    ok, why = self._dependency_admitted(dependency)
-                    if not ok:
-                        reasons.append(why)
+                    admitted, reason = self._dependency_admitted(dependency)
+                    if not admitted:
+                        reasons.append(reason)
         return (not reasons), reasons
 
     def _dependency_admitted(self, pin: Pin) -> tuple[bool, str]:

@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterable, Mapping, Sequence
-from typing import Any
+from typing import Any, cast
 
 from ..contracts.semantic_base import content_hash_of
 from ..storage.htn_store import HtnStore
@@ -295,7 +295,9 @@ def record_attribution(
     )
     if entry is None:
         return None
-    reference = proposal["method_ref"]
+    reference = cast("Mapping[str, Any]", proposal)[
+        "method_ref"
+    ]  # proposal 为空时 entry 也为空，上面已返回
     if not library.add_attribution(
         entry["entry_id"],
         source_ref=source_ref,

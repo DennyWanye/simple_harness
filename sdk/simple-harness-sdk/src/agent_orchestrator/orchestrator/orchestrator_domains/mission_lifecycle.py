@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from simple_harness.agents import AgentTurnState
 
@@ -521,7 +521,8 @@ class MissionLifecycleMixin(OrchestratorCore):
                 continue
             # one Mission's fault is that Mission's; the scan goes on (阻断核验 2026-10-04)
             with self._round_boundary(str(mission_id), "notice:settled-actions"):
-                mission = self.store.get_mission(str(mission_id))
+                # 编号刚从 missions 表查出
+                mission = cast("Mission", self.store.get_mission(str(mission_id)))
                 for listed in (mission.final_report or {}).get("unresolved_actions") or ():
                     key = str(listed.get("action_key") or "")
                     action = self.store.get_action(key)

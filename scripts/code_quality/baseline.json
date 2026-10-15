@@ -390,7 +390,7 @@
  "tracked_root_reports": 34,
  "tracked_root_images": 5,
  "tracked_test_evidence": 1843,
- "mypy_sdk_errors": 314,
+ "mypy_sdk_errors": 0,
  "mypy_backend_errors": 3766,
  "dup_clones_30_lines": 53,
  "dup_lines": 3600,

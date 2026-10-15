@@ -532,7 +532,7 @@ class ProviderBudgetGuard:
                 frozen_cap = intent.config.get("provider_input_cap")
                 if frozen_cap is not None:
                     try:
-                        cap = ProviderInputCap.from_json(frozen_cap)
+                        cap: Any = ProviderInputCap.from_json(frozen_cap)
                     except (TypeError, ValueError) as exc:
                         raise _deny(
                             "invalid frozen provider input cap", reason_code="input_cap_identity"

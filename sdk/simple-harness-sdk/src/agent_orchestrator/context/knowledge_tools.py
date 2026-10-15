@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from hashlib import sha256
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 from ..assurance.codec import fingerprint
 from ..contracts.resolution import ReviewPurpose
@@ -38,6 +38,9 @@ from ..orchestrator.review_adjudication import accepted_or_adjudicated
 from ..storage import htn_store
 from ..storage.store import Store
 from .retrieval import knowledge_view
+
+if TYPE_CHECKING:
+    from ..contracts.resolution import ReviewPackage
 
 VERIFIED_LAYER = "verified"
 CANDIDATE_LAYER = "candidate"
@@ -114,6 +117,7 @@ def step_summaries(store: Store, mission_id: str) -> list[dict[str, Any]]:
 
     htn = htn_store.HtnStore(store)
     packages: dict[str, Any] = {}
+    package: ReviewPackage | None
     for package in htn.list_review_packages(mission_id, purpose=ReviewPurpose.TASK_CONTENT):
         if package.summary_to_confirm is not None and package.candidate_refs:
             packages[str(package.candidate_refs[0].id)] = package  # the latest cut for a result
@@ -124,7 +128,8 @@ def step_summaries(store: Store, mission_id: str) -> list[dict[str, Any]]:
         stored = store.get_result(str(result_id)) if package is not None else None
         if stored is None:
             continue
-        record = htn.official_review_record(str(package.package_id))
+        # stored 只在 package 非空时才读，上面 stored is None 已 continue
+        record = htn.official_review_record(str(cast("ReviewPackage", package).package_id))
         if record is None or not accepted_or_adjudicated(store, record):
             continue
         checked = review_manifest(store, record).get("summary") or {}

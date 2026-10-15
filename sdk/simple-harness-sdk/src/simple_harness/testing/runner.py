@@ -11,7 +11,7 @@ import re
 import time
 from collections.abc import Awaitable, Callable, Mapping
 from types import MappingProxyType
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from simple_harness.version import __version__
 
@@ -27,6 +27,9 @@ from .contracts import (
 )
 from .suites import CASES_BY_SUITE
 from .verifiers import verify_observation
+
+if TYPE_CHECKING:
+    from simple_harness.contracts import JsonValue
 
 PROTOCOL_VERSION = "1.0.0"
 _SENSITIVE_KEY_PARTS = (
@@ -240,7 +243,7 @@ async def run_conformance(
                             required=definition.required,
                             duration_seconds=max(0.0, time.perf_counter() - started),
                             message=message,
-                            evidence=cast(Mapping[str, object], evidence),
+                            evidence=cast("Mapping[str, JsonValue]", evidence),
                         )
                     )
         except Exception as error:  # context enter/exit must fail closed

@@ -55,6 +55,7 @@ class WorkflowSpawnOutcomeMixin(ExecutionUnitOfWorkCore):
 
     if TYPE_CHECKING:
 
+        @staticmethod
         def _read_workflow_terminal_outcome(connection: sqlite3.Connection, run_id: str): ...
         def _verify_workflow_terminal(
             cls, connection: sqlite3.Connection, outcome: object

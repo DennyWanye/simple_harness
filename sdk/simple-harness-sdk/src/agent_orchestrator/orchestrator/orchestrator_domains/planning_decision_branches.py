@@ -523,6 +523,7 @@ class PlanningDecisionBranchMixin(OrchestratorCore):
         error: ContractError | StoreError,
         evaluated: Callable[..., None],
     ) -> None:
+        error_detail: dict[str, Any]
         code, reason, error_detail = (
             "PARAMETER_INVALID",
             "proposal_not_grounded",

@@ -5,9 +5,9 @@
 from __future__ import annotations
 
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 from simple_harness.contracts import canonical_json
 
@@ -30,6 +30,13 @@ from .operation_intent_sources import prepare_operation_intent_sources
 from .operation_materialization_inputs import build_operation_materialization_inputs
 from .operation_proposal_review import validate_materialization_review
 
+if TYPE_CHECKING:
+    from ..artifacts.store import ArtifactStore
+    from ..contracts import Event
+    from ..contracts.resolution import OperationId, OperationOccurrenceId
+    from ..governance.policies import DeploymentPolicy
+    from ..storage.store import Store
+
 
 @dataclass(frozen=True, slots=True)
 class OperationMaterializationRuntime:
@@ -44,6 +51,42 @@ class OperationMaterializationRuntime:
 
 
 class OperationMaterializationCommitsMixin:
+    if TYPE_CHECKING:  # pragma: no cover - provided by CommitService
+        _store: Store
+        _source_artifact_store: ArtifactStore | None
+        _operation_materialization_runtime: OperationMaterializationRuntime | None
+
+        def _emit(
+            self,
+            event_type: str,
+            mission_id: str,
+            *,
+            key: str,
+            task_id: str | None = None,
+            attempt_id: str | None = None,
+            payload: Mapping[str, Any] | None = None,
+            actor_type: str = ...,
+            actor_id: str = ...,
+        ) -> Event: ...
+
+        # Provided by ``ActionCommitsMixin``, which ``CommitService`` inherits alongside this one.
+        def propose_action(
+            self,
+            candidate: Mapping[str, Any],
+            *,
+            mission_id: str,
+            task_id: str,
+            result_id: str,
+            attempt_id: str,
+            artifact_id: str,
+            artifact_hash: str,
+            connectors: Mapping[str, Any],
+            deployment: DeploymentPolicy,
+            planning_origin: BoundPlanningOperationOrigin | None = None,
+            operation_parameters: Any | None = None,
+            reason_source: str = ...,
+        ) -> dict[str, Any]: ...
+
     def bind_operation_materialization_runtime(
         self, runtime: OperationMaterializationRuntime
     ) -> None:
@@ -78,7 +121,7 @@ class OperationMaterializationCommitsMixin:
             or previous.get("submission_hash") != submission_hash
         ):
             raise OperationCompletionError("OP_INTENT_CONFLICT", "idempotency key already used")
-        return previous
+        return cast("dict[str, Any] | None", previous)  # 回执由 json.loads 解出，是 dict
 
     def _operation_inputs(
         self,
@@ -92,7 +135,8 @@ class OperationMaterializationCommitsMixin:
         runtime = self._operation_runtime()
         sources = prepare_operation_intent_sources(
             self._store,
-            self._source_artifact_store,
+            # 上一行 _operation_runtime 已确认内容存储非空
+            cast("ArtifactStore", self._source_artifact_store),
             command,
             tenant_id=tenant_id,
             principal=principal,
@@ -184,7 +228,9 @@ class OperationMaterializationCommitsMixin:
             return previous
         # Identity is allocated for this explicit command, never inferred from payload hashes.
         intent_id = "operation-intent-" + uuid.uuid4().hex
-        object_ids = tuple("operation-payload-" + uuid.uuid4().hex for _ in range(3))
+        object_ids = cast(
+            "tuple[str, str, str]", tuple("operation-payload-" + uuid.uuid4().hex for _ in range(3))
+        )
         sources, payloads = self._operation_inputs(
             command, tenant_id, principal, intent_id, object_ids
         )
@@ -251,7 +297,8 @@ class OperationMaterializationCommitsMixin:
                     kind=kind,
                     payload=document,
                     source_receipt_id=receipt_id,
-                    cas=self._source_artifact_store,
+                    # 本方法开头 _operation_runtime 已确认内容存储非空
+                    cas=cast("ArtifactStore", self._source_artifact_store),
                 )
                 if stored != ref:
                     raise OperationCompletionError(
@@ -405,7 +452,7 @@ class OperationMaterializationCommitsMixin:
                     raise OperationCompletionError(
                         "OP_INTENT_CONFLICT", "materialization review differs"
                     )
-                return previous
+                return cast("dict[str, Any]", previous)  # 回执由 json.loads 解出，是 dict
             principal = Principal(principal_id=row["principal_id"], kind="human")
             command = SubmitOperationIntentV2.from_json(row["binding"]["command"])
             self._operation_slot(command, excluding=intent_id)
@@ -429,7 +476,8 @@ class OperationMaterializationCommitsMixin:
                     mission_id=row["mission_id"],
                     ref=ref,
                     expected_kind=kind,
-                    cas=self._source_artifact_store,
+                    # 本方法开头 _operation_runtime 已确认内容存储非空
+                    cas=cast("ArtifactStore", self._source_artifact_store),
                 )
                 if (
                     ref.content_hash != row[hash_column]
@@ -469,8 +517,10 @@ class OperationMaterializationCommitsMixin:
                     "OP_CAPABILITY_UNSUPPORTED", "unsupported connector operation kind"
                 )
             envelope = OperationEnvelope(
-                operation_id="operation-" + uuid.uuid4().hex,
-                operation_occurrence_id="operation-occurrence-" + uuid.uuid4().hex,
+                operation_id=cast("OperationId", "operation-" + uuid.uuid4().hex),
+                operation_occurrence_id=cast(
+                    "OperationOccurrenceId", "operation-occurrence-" + uuid.uuid4().hex
+                ),
                 mission_id=row["mission_id"],
                 obligation_id=row["obligation_id"],
                 scope_id=row["scope_id"],

@@ -11,7 +11,7 @@ import inspect
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, cast, runtime_checkable
 
 from simple_harness.contracts import (
     CallId,
@@ -160,7 +160,7 @@ class ToolResult:
             raise TypeError("call_id must use CallId")
         if not isinstance(self.outcome, ToolOutcome):
             object.__setattr__(self, "outcome", ToolOutcome(self.outcome))
-        object.__setattr__(self, "value", freeze_json(self.value))
+        object.__setattr__(self, "value", freeze_json(cast(JsonValue, self.value)))
         if self.error_code is not None:
             object.__setattr__(self, "error_code", _required(self.error_code, "error_code"))
         if self.public_message is not None:
@@ -177,7 +177,9 @@ class ToolResult:
 
     @classmethod
     def succeeded(cls, call_id: CallId, value: JsonValue = None) -> ToolResult:
-        return cls(call_id=call_id, outcome=ToolOutcome.SUCCEEDED, value=value)
+        return cls(
+            call_id=call_id, outcome=ToolOutcome.SUCCEEDED, value=cast(FrozenJsonValue, value)
+        )
 
     @classmethod
     def partial(
@@ -186,7 +188,7 @@ class ToolResult:
         return cls(
             call_id=call_id,
             outcome=ToolOutcome.PARTIAL,
-            value=value,
+            value=cast(FrozenJsonValue, value),
             public_message=public_message,
         )
 
@@ -272,7 +274,7 @@ class FunctionTool:
         detached = thaw_json(arguments)
         if not isinstance(detached, dict):
             raise TypeError("Tool arguments must thaw to a JSON object")
-        return self.handler(detached, context)
+        return self.handler(cast(JsonObject, detached), context)
 
 
 async def await_tool_value(value: object | Awaitable[object]) -> object:

@@ -785,7 +785,7 @@ class RootReviewMixin(OrchestratorCore):
             detail["inconclusive_reviews"] = inconclusive[:16]
         return detail
 
-    def _exhausted_reviews(self, mission_id: str, prefix: str) -> list[dict[str, str]]:
+    def _exhausted_reviews(self, mission_id: str, prefix: str) -> list[dict[str, Any]]:
         """Reviews under ``prefix`` that will never have an official record.
 
         The review call did not come back and its retries ran out

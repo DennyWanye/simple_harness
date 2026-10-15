@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from ..assurance.checks import CriterionPolicy
 from ..assurance.codec import AssuranceError, canonical, decode, fingerprint, text
@@ -163,8 +163,10 @@ def approve_check_policy(
                 != scope
             ):
                 raise AssuranceError("CHECK_POLICY_SCOPE_MISMATCH")
+        # 开头已校验：没有完成范围时一定有规划主体
         binding = HtnStore(commit.store).task_semantics_of(
-            mission_id, planning_subject.pin.id if scope is None else scope.task_ref.id
+            mission_id,
+            cast(AssuranceRef, planning_subject).pin.id if scope is None else scope.task_ref.id,
         )
         if binding is None:
             raise AssuranceError("CHECK_POLICY_UNRESOLVED")
@@ -175,7 +177,7 @@ def approve_check_policy(
                 or binding.content_hash() != planning_subject.pin.content_hash
             ):
                 raise AssuranceError("CHECK_POLICY_SCOPE_MISMATCH")
-            projection = _PlanningProjection(
+            projection: Any = _PlanningProjection(
                 requirements,
                 planning_subject_criteria(commit.store, mission_id, binding, requirements),
             )
@@ -191,7 +193,10 @@ def approve_check_policy(
         elif purpose == "ACTION_PROPOSAL":
             projection = _PlanningProjection(requirements, proposal_criteria())
         elif purpose == "OPERATION_OUTCOME":
-            owner, spec, owner_requirements = _effect_owner(commit.store, mission_id, effect_key)
+            # 开头已校验：只有 OPERATION_OUTCOME 带效果键
+            owner, spec, owner_requirements = _effect_owner(
+                commit.store, mission_id, cast(str, effect_key)
+            )
             if owner != scope or owner_requirements != requirements:
                 raise AssuranceError("CHECK_POLICY_SCOPE_MISMATCH")
             slot = spec.effect(effect_key)
@@ -206,18 +211,23 @@ def approve_check_policy(
                 if result_ref.kind != "result":
                     raise AssuranceError("CHECK_POLICY_RESULT_REQUIRED")
                 result = decode(reader.read_exact_metadata(result_ref).body_json)
-                if result["task_id"] != scope.task_ref.id:
+                # 走到这里没有规划主体，开头已校验此时一定有完成范围
+                if result["task_id"] != cast(OccurrenceCompletionScopeV1, scope).task_ref.id:
                     raise AssuranceError("CHECK_POLICY_SCOPE_MISMATCH")
 
             projection = read_task_check_policy_projection(
-                commit.store, mission_id, scope.task_ref.id
+                commit.store, mission_id, cast(OccurrenceCompletionScopeV1, scope).task_ref.id
             )
         else:
             if result_ref is not None:
                 raise AssuranceError("CHECK_POLICY_SCOPE_MISMATCH")
 
+            # 同上：一定有完成范围
             projection = read_compound_projection(
-                commit.store, mission_id, scope.occurrence_id, scope.task_ref.id
+                commit.store,
+                mission_id,
+                cast(OccurrenceCompletionScopeV1, scope).occurrence_id,
+                cast(OccurrenceCompletionScopeV1, scope).task_ref.id,
             )
         if projection.requirements != requirements or (
             not isinstance(projection, _PlanningProjection) and projection.scope != scope

@@ -53,7 +53,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from ..assurance.codec import AssuranceError
 from ..contracts import TERMINAL_MISSION, ContractError
@@ -113,6 +113,8 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     from ..contracts import Event, Mission
     from ..contracts.htn import ChildBinding
     from ..storage.store import Store
+    from .operation_outcomes import ScopedOutcomeProjection
+    from .scoped_content_review import ScopedTaskContent
 
 #: The two event types this module appends.  Both are *new*: §18.5 rule 3 lets the
 #: hierarchical mode add event types and forbids it to rewrite an existing one's
@@ -656,11 +658,11 @@ class ResolutionCommitsMixin:
                     )
                 origin = read_review_origin(self, command.mission_id, command.task_id, result_id)
                 frozen = origin.context.inputs.binding
-                subject = command.package.binding.subject_ref
+                subject_ref = command.package.binding.subject_ref
                 if (
-                    subject.id != frozen.task_id
-                    or subject.revision != frozen.binding_revision
-                    or subject.content_hash != frozen.contract_hash
+                    subject_ref.id != frozen.task_id
+                    or subject_ref.revision != frozen.binding_revision
+                    or subject_ref.content_hash != frozen.contract_hash
                     or command.package.binding.input_manifest_hash != frozen.manifest_hash
                 ):
                     raise ResolutionCommitRejected(
@@ -716,10 +718,12 @@ class ResolutionCommitsMixin:
                 # 按需导入：循环依赖（resolution_commits ↔ operation_outcomes）
                 from .operation_outcomes import validate_scoped_outcome_command
 
-                projection = validate_scoped_outcome_command(
-                    self._store,
-                    command,
-                    runtime=getattr(self, "_operation_materialization_runtime", None),
+                projection: ScopedOutcomeProjection | ScopedTaskContent = (
+                    validate_scoped_outcome_command(
+                        self._store,
+                        command,
+                        runtime=getattr(self, "_operation_materialization_runtime", None),
+                    )
                 )
                 checker = acceptable_scoped_operation_outcome
             else:
@@ -815,9 +819,10 @@ class ResolutionCommitsMixin:
 
             delivery_pin = None
             if command.purpose is ReviewPurpose.OPERATION_OUTCOME:
+                # 本分支与第 719 行同一条件：projection 来自 validate_scoped_outcome_command
                 delivery = semantics.record_delivery_receipt(
                     command.mission_id,
-                    projection.delivery_receipt,
+                    cast("ScopedOutcomeProjection", projection).delivery_receipt,
                     command_id="delivery:" + command.command_id,
                     intent_hash=intent,
                 )
@@ -842,11 +847,11 @@ class ResolutionCommitsMixin:
                 content_criterion_ids=()
                 if command.purpose is ReviewPurpose.OPERATION_OUTCOME
                 else tuple(sorted(item.criterion_id for item in projection.criteria)),
-                effect_keys=(projection.effect_key,)
+                effect_keys=(cast("ScopedOutcomeProjection", projection).effect_key,)
                 if command.purpose is ReviewPurpose.OPERATION_OUTCOME
                 else (),
                 output_artifact_refs=projection.artifacts,
-                outcome_binding_id=projection.binding_id
+                outcome_binding_id=cast("ScopedOutcomeProjection", projection).binding_id
                 if command.purpose is ReviewPurpose.OPERATION_OUTCOME
                 else None,
                 delivery_receipt_ref=delivery_pin,
@@ -941,7 +946,7 @@ class ResolutionCommitsMixin:
             # A new consumer or unrelated adoption must not retroactively change
             # the output contract of work that was already dispatched.
             revision = pinned.context.inputs.binding.source_revision
-            consumed = dict(pinned.ports)
+            consumed: Mapping[str, Any] = dict(pinned.ports)
         else:
             consumed = _declared_ports(
                 semantics, command.mission_id, revision, producer, command.task_id
@@ -1503,7 +1508,10 @@ class ResolutionCommitsMixin:
         try:
             AssuranceStore(self._store).require_assured(mission_id)
             read_official_review_binding_locked(
-                self, self._store.get_mission(mission_id).tenant_id, official
+                # 5E 显式判空：用已有的 _require_mission（不存在时抛它原有的错误）
+                self,
+                self._require_mission(mission_id).tenant_id,
+                official,
             )
         except AssuranceError as error:
             raise ResolutionCommitRejected(

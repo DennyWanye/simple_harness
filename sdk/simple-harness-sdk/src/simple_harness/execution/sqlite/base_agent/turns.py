@@ -14,6 +14,7 @@ import hashlib
 import json
 import sqlite3
 from collections.abc import Callable, Mapping
+from typing import Any
 
 from simple_harness.contracts import JsonValue, canonical_json, thaw_json
 from simple_harness.execution.base_agent import (
@@ -544,8 +545,8 @@ def finalize_turn(
     turn_id: str,
     event_id: str,
     payload_json: str,
-    continuation_claim: object | None,
-    execution_lease: object,
+    continuation_claim: Any | None,
+    execution_lease: Any,
     receipt_id: str | None,
     usage_refs: tuple[str, ...],
     now: float,

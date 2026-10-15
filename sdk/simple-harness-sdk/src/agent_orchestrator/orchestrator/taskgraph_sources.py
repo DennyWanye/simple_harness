@@ -150,8 +150,8 @@ class TaskGraphSources:
             for binding in network.task_bindings:
                 if semantics.task_semantics_of(mission_id, str(binding.task_id)) != binding:
                     raise SourceUnavailable("taskgraph_seed_binding_changed")
-            binding = self._policy_binding(mission_id)
-            policy, command = binding.policy, binding.enabling_command_id
+            policy_binding = self._policy_binding(mission_id)
+            policy, command = policy_binding.policy, policy_binding.enabling_command_id
             document = encode(
                 network,
                 TypedRef(

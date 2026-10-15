@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import json
 from types import SimpleNamespace
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 from ..contracts import MissionStopReason
 from ..contracts.htn import TaskForm
@@ -40,6 +40,9 @@ from ..storage.operation_completion_store import OperationCompletionStore
 from ..storage.operation_intent_store import OperationIntentStore
 from .action_commits import business_action_id
 from .planning_repair_requests import REQUESTED, record_request
+
+if TYPE_CHECKING:
+    from ..contracts.resolution import Acceptance
 
 SYSTEM_REASON = "用户在确认页批准的操作：发布 {source} 到 {target}"
 
@@ -163,7 +166,8 @@ def _sources(
         leaves = [
             leaf for leaf in leaves if str(leaf.task.id) == producer or producer in leaf.upstream
         ]
-    current = {}
+    current: dict[tuple[str, str], Any] = {}
+    acceptance: Acceptance | None
     for acceptance in htn.list_acceptances(mission_id):
         if str(acceptance.validity) == "CURRENT":
             for ref in acceptance.artifact_refs:
@@ -265,6 +269,8 @@ def _ask_planner_for_source(
     """找不到要发布的文件（或判断不了用哪一版）：请规划器补/改步骤；它回应过仍不行就停。"""
 
     active = htn.active_plan_revision(mission.id)
+    if active is None:  # 5E 显式判空：这类提问只在有现行计划时生成（_leaves）
+        raise ContractError("a system operation source question needs the active plan")
     prefix = f"system-operation-source:{effect_key}:"
     reason = (
         f"已批准的发布 {target} 找不到"
@@ -313,7 +319,6 @@ def _ask_planner_after_rejection(orch: Any, mission: Any, rejected: dict[str, An
 
     上限（秩序，不是判断）：每次拒绝只问一次；规划器回应了而内容没换出新版本就停；同一效果被人
     拒绝累计 ``SOURCE_REPAIR_CAP`` 次直接停。被拒过的同一份内容系统不会再自动重交。"""
-
 
     count = len(rejected["rejections"])
     latest = rejected["rejections"][-1]
@@ -385,7 +390,8 @@ def pending_system_operations(orch: Any, mission_id: str) -> list[dict[str, Any]
     leaves = _leaves(store, htn, mission_id)
     if leaves is None:
         return []  # 内容还没全部通过
-    receipt = store.get_receipt(str(row["approval_receipt_id"]))
+    # row 为空时 spec 也为空，上面已返回
+    receipt = store.get_receipt(str(cast("dict[str, Any]", row)["approval_receipt_id"]))
     authority = (receipt or {}).get("authority") or {}
     if not authority.get("issuer_id") or not authority.get("tenant_id"):
         return []

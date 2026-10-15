@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import functools
 from collections.abc import Mapping, Sequence
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from simple_harness.agents import AgentTurnState
 
@@ -496,7 +496,9 @@ class VerificationMixin(OrchestratorCore):
             if reason == "cancelled":
                 self._commit_cancel_mission(attempt.mission_id)
             elif reason == "deadline" and await self._runtime_exhausted(
-                self.store.get_mission(attempt.mission_id), ()
+                # attempts.mission_id 非空且外键引用 missions（库开了外键）
+                cast("Mission", self.store.get_mission(attempt.mission_id)),
+                (),
             ):
                 # 2026-09-29：排队到点往往就是任务总时限到了：按任务总时限停（带用时明细），
                 # 不再和主循环的时限检查抢先后。

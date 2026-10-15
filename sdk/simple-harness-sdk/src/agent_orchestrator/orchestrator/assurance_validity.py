@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from ..assurance.certificates import UseCertificate, UseIdentity, check_certificate_binding
 from ..assurance.check_bindings import CheckBinding
@@ -503,7 +503,10 @@ class AssuranceValidity:
                 authorized.read_exact_metadata(ref, now_ms=now_ms)
                 for ref in sorted(required, key=lambda r: r.key)
             )
-            permissions = tuple((row.ref, row.permission) for row in metadata)
+            # 读取器带授权与身份，解析时必填许可（assurance_reads.read_exact_metadata）
+            permissions = tuple(
+                (row.ref, cast("CurrentReadPermission", row.permission)) for row in metadata
+            )
             checks: dict[AssuranceRef, CheckResult] = {}
             check_grades = []
             for use in check_uses:

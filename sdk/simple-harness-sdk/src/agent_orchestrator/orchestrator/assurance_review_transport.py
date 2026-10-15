@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from ..assurance.codec import AssuranceError, canonical, decode, fingerprint, integer, text
 from ..assurance.policy import AssurancePolicy
@@ -36,6 +36,7 @@ from .failure_classes import REVIEW_CALL_ABANDONED
 from .operation_completion import OperationCompletionReader
 
 if TYPE_CHECKING:
+    from ..contracts import Mission
     from .budget_accounts import Reservation
     from .commit_service import CommitService
 
@@ -300,7 +301,8 @@ def ensure_review_invocation(
             return read_review_invocation_locked(
                 commit, reader, value.to_json()["dispatch_intent_id"]
             )[0]
-        mission = commit.store.get_mission(mission_id)
+        # 同一事务里上面已用 _mission_locked 核过任务存在
+        mission = cast("Mission", commit.store.get_mission(mission_id))
         if mission.status in TERMINAL_MISSION:
             raise AssuranceError("REVIEW_MISSION_TERMINAL")
         _validate_package(reader, package, body)
@@ -822,8 +824,9 @@ def ensure_format_repair_invocation(
     original = commit.store.get_receipt(prior_failure.pin.id)
     if original is None:
         raise AssuranceError("REVIEW_REPAIR_SOURCE_INVALID")
+    # 失败回执由本模块写入，各字段都是字符串
     reader = AssuranceReader(
-        commit.store, tenant_id=tenant_id, mission_id=original.get("mission_id")
+        commit.store, tenant_id=tenant_id, mission_id=cast(str, original.get("mission_id"))
     )
     with commit.store.read_view():
         reader.read_exact_metadata(prior_failure)
@@ -837,12 +840,14 @@ def ensure_format_repair_invocation(
                 raise AssuranceError("REVIEW_REPAIR_SOURCE_INVALID")
             return invocation
         classification = _require_format_repair(
-            commit, reader, original.get("review_key"), prior_failure
+            commit, reader, cast(str, original.get("review_key")), prior_failure
         )
         invocation, binding = read_review_invocation_locked(
-            commit, reader, original.get("intent_id")
+            commit, reader, cast(str, original.get("intent_id"))
         )
         old_intent = commit.store.get_intent(invocation.to_json()["dispatch_intent_id"])
+        if old_intent is None:  # 5E 显式判空：调用记录在、原派发意图不在
+            raise AssuranceError("REVIEW_REPAIR_SOURCE_INVALID")
         source = decode(
             reader.read_exact_metadata(
                 AssuranceRef.from_json(invocation.to_json()["source_receipt_ref"])

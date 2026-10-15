@@ -96,7 +96,7 @@ def docstring_ids(tree: ast.AST) -> set[int]:
 
 
 def annotation_ids(tree: ast.AST) -> set[int]:
-    """注解子树里的常量（带引号的类型名）。工具参数结构是字典字面量，不从注解生成。"""
+    """注解子树与 cast 类型参数里的常量（带引号的类型名）。工具参数结构是字典字面量，不从注解生成。"""
     ids: set[int] = set()
     roots: list[ast.AST] = []
     for node in ast.walk(tree):
@@ -106,6 +106,11 @@ def annotation_ids(tree: ast.AST) -> set[int]:
             roots.append(node.annotation)
         elif isinstance(node, ast.AnnAssign):
             roots.append(node.annotation)
+        elif isinstance(node, ast.Call) and len(node.args) == 2 and not node.keywords and (
+            (isinstance(node.func, ast.Name) and node.func.id == "cast")
+            or (isinstance(node.func, ast.Attribute) and node.func.attr == "cast")
+        ):
+            roots.append(node.args[0])  # cast 的第一个参数是类型表达式（阶段 5E）
     for r in roots:
         ids.update(id(n) for n in ast.walk(r))
     return ids

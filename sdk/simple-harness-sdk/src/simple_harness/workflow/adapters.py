@@ -56,11 +56,12 @@ class WorkflowProviderAdapter:
                 f"activation run_id {self._activation.execution_lease.run_id}"
             )
         self._clock()
-        return await self._coordinator.invoke(
+        return await self._coordinator.invoke(  # type: ignore[call-arg]
             run_id,
             request,
             cancel=cancel,
             execution_lease=self._activation.execution_lease,
+            # 缺陷：invoke 没有 run_fence 参数，走到即 TypeError；本类产品代码不用，归阶段 8 删
             run_fence=self._activation.run_fence,
             workflow_lease=self._activation.workflow_lease,
         )

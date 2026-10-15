@@ -9,6 +9,7 @@ import math
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
+from typing import cast
 
 from .errors import ContractValidationError, ErrorCode
 from .identity import CorrelationIds, EventId
@@ -88,7 +89,7 @@ class EventEnvelope:
         return {
             "schema_version": self.schema_version,
             "event_id": self.event_id.value,
-            "kind": self.kind.value,
+            "kind": cast(EventKind, self.kind).value,  # __post_init__ 已规范成枚举
             "correlation": self.correlation.to_dict(),
             "sequence": self.sequence,
             "occurred_at": self.occurred_at,

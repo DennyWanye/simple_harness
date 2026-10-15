@@ -446,9 +446,9 @@ def build_planning_world(
         )
     schemas = SchemaCatalog()
     declared = tuple(predicates)  # the deployment's own declarations, beside the seed domains'
-    predicates = PredicateRegistry()
+    predicate_registry = PredicateRegistry()
     for signature in declared:
-        predicates.register(signature)
+        predicate_registry.register(signature)
     catalog = TaskTypeCatalog()
     registry = MethodRegistry()
     package_installer = DomainPackageInstaller()
@@ -456,7 +456,7 @@ def build_planning_world(
         chosen,
         root=root_path,
         schemas=schemas,
-        predicates=predicates,
+        predicates=predicate_registry,
         catalog=catalog,
         package_installer=package_installer,
     )
@@ -470,7 +470,7 @@ def build_planning_world(
     world = DeploymentPlanningWorld(
         mission_id=mission_id,
         schemas=schemas,
-        predicates=predicates,
+        predicates=predicate_registry,
         catalog=catalog,
         registry=registry,
         records=records,

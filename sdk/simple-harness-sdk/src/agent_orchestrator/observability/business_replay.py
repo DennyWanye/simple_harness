@@ -271,6 +271,7 @@ def _rebuild(
         for item in payload["named"]:
             named[(item["table"], _key_text(item["key"]), item["content_hash"])] += 1
         for item in payload["changed"]:
+            key: Any
             table, key = item["table"], _key_text(item["key"])
             if tables[table]["class"] != kind:
                 continue
@@ -420,8 +421,8 @@ def verify_execution_ledgers(store: Store, execution_paths: list[Path]) -> dict[
         if len(records) > 1:
             ambiguous.append(usage_ref)
             continue
-        usage = records[0].usage_json if isinstance(records[0].usage_json, Mapping) else {}
-        tokens = usage.get("usage") if isinstance(usage.get("usage"), Mapping) else {}
+        usage: Any = records[0].usage_json if isinstance(records[0].usage_json, Mapping) else {}
+        tokens: Any = usage.get("usage") if isinstance(usage.get("usage"), Mapping) else {}
         known = str(records[0].state) in {"succeeded", "failed"} and all(
             type(tokens.get(k)) is int for k in ("input_tokens", "output_tokens")
         )

@@ -441,7 +441,8 @@ class RecoveryCoordinator:
             await orch._mission_round(
                 intent.mission_id,
                 f"recover_intent:{intent.intent_id}",
-                lambda intent=intent: orch._recover_intent(intent),
+                # 默认参数捕获循环变量，mypy 推不出这个 lambda 的类型
+                lambda intent=intent: orch._recover_intent(intent),  # type: ignore[misc]
             )
         detail: dict[str, Any] = {"startup_faults_settled": faults, "frozen_intents": len(intents)}
         if isolated:

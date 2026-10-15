@@ -260,7 +260,7 @@ def reviewer_reply(request: Any) -> Reply | None:
     return None if package is None else review_reply(package)
 
 
-def worker_reply(request: Any) -> Reply | None:
+def worker_reply(request: Any) -> Reply:
     """先把这一步声明的文件逐个写出来，再交结果、认领必需的输出端口。"""
 
     package = package_of(request)

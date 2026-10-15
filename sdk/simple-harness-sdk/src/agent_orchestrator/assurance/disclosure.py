@@ -136,7 +136,7 @@ def disclosed_to_turn(
     This is a pure chain reader; runtime receipt authentication happens upstream.
     """
     previous = None
-    labels = set()
+    labels: set[str] = set()
     for ordinal, batch in enumerate(batches):
         if (
             batch.mission_id != mission_id

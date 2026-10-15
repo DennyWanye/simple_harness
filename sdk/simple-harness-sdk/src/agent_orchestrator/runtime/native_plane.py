@@ -67,7 +67,7 @@ class RunPriorReserve:
             raise ArpError(
                 "PRIOR_RESERVE_UNAVAILABLE", "prior reserve reader is not bound to a runtime"
             )
-        rows: list[tuple[str, int]] = []
+        rows: list[tuple[str, int, str]] = []
         for previous in self._uow.list_provider_invocations(RunId(run_id)):
             record = self._uow.read_effective_provider_invocation(previous.invocation_id)
             if record is None or str(record.state) == "claimed":

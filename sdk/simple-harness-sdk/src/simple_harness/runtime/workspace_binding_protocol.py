@@ -14,7 +14,7 @@ import re
 from collections.abc import Awaitable, Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Protocol
+from typing import Any, Protocol
 
 from simple_harness.contracts import JsonValue
 
@@ -286,7 +286,7 @@ class WorkspaceBindingProposal:
         )
 
 
-def _verify_proposal_fields(record: object, proposal: WorkspaceBindingProposal, name: str) -> None:
+def _verify_proposal_fields(record: Any, proposal: WorkspaceBindingProposal, name: str) -> None:
     if not isinstance(proposal, WorkspaceBindingProposal):
         raise TypeError("proposal must use WorkspaceBindingProposal")
     exact = (

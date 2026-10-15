@@ -478,7 +478,7 @@ def read_complete_evidence_snapshot(
             ]
         )
         for kind, query in _QUERIES.items():
-            rows = []
+            rows: list[Any] = []
             digest = hashlib.sha256()
             digest.update(b"[")
             cursor = connection.execute(query, (reader.mission_id,) * query.count("?"))

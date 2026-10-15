@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from ..assurance.certificates import PURPOSES, UseIdentity
 from ..assurance.check_bindings import CheckBinding
@@ -281,7 +281,10 @@ def prepare_local_check_use(
             reader.read_exact_metadata(ref, now_ms=now_ms)
             for ref in sorted(required, key=lambda r: r.key)
         )
-        permissions = tuple((row.ref, row.permission) for row in metadata)
+        # 读取器带授权与身份，解析时必填许可（assurance_reads.read_exact_metadata）
+        permissions = tuple(
+            (row.ref, cast("CurrentReadPermission", row.permission)) for row in metadata
+        )
         complete = read_complete_evidence_snapshot(reader, scope_id=identity.scope_id)
     # No writer calls above: complete snapshot and sources refer to one read view.
     remaining = maximum_blob_bytes

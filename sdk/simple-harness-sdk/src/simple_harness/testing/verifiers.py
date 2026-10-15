@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
+from typing import NoReturn
 
 from simple_harness.contracts import JsonValue
 
@@ -14,7 +15,7 @@ from .contracts import CaseObservation
 Verifier = Callable[[Mapping[str, JsonValue]], None]
 
 
-def _fail(name: str, expected: object, actual: object) -> None:
+def _fail(name: str, expected: object, actual: object) -> NoReturn:
     raise AssertionError(f"{name}: expected {expected!r}, observed {actual!r}")
 
 

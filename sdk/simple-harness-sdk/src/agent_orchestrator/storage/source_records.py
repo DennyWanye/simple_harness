@@ -311,7 +311,7 @@ def record_written_rows(store: StoreCore, connection: sqlite3.Connection) -> Non
             if mission_id == DEPLOYMENT_TIMELINE and tx_events
             else tx_events.get(mission_id, ())
         )
-        payload = {
+        payload: dict[str, Any] = {
             "named": named.get(mission_id, []),
             "changed": changed.get(mission_id, []),
             "with_events": sorted(signals),

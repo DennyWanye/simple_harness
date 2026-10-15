@@ -24,7 +24,7 @@ from __future__ import annotations
 import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
-from typing import Any
+from typing import Any, cast
 
 from simple_harness.contracts import RunId
 from simple_harness.contracts.messages import Message, MessageRole
@@ -254,7 +254,7 @@ class ArpContextPort(JournalContextPort):
             model_total=limits["combined_limit_tokens"],
             model_input=int(limits["input_limit_tokens"]),
             model_output=int(limits["max_output_tokens"]),
-            output=int(request.max_output_tokens),
+            output=int(cast(int, request.max_output_tokens)),  # 本函数开头已拒绝空值
             safety=int(policy["safety_reserve_tokens"]),
             headroom=int(policy["tool_headroom_tokens"]),
             recent_floor=int(policy["recent_min_tokens"]),
@@ -470,7 +470,8 @@ class ArpContextPort(JournalContextPort):
                     wire,
                     run_id=prepared.session.agent_id,
                     max_input_budget=prepared.selection.input_budget,
-                    requested_output_tokens=int(request.max_output_tokens),
+                    # 唯一调用方 freeze 开头已拒绝空值
+                    requested_output_tokens=int(cast(int, request.max_output_tokens)),
                 )
             except ArpError as error:
                 if error.code != "FINAL_CONTEXT_OVERFLOW":

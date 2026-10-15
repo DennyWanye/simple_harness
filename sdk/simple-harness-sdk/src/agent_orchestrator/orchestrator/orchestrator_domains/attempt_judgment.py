@@ -9,7 +9,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 from simple_harness.agents import AgentConfig, AgentLimits
 
@@ -72,6 +72,9 @@ from ..worker_context import upstream_steps
 from .core import OrchestratorCore
 from .support import _under_source_root
 
+if TYPE_CHECKING:
+    from ...contracts.resolution import GoalResolution
+
 
 def _turn_error_code(failure: Mapping[str, Any]) -> str | None:
     error = failure.get("error")
@@ -114,7 +117,10 @@ def retry_feedback(
             feedback.append("上一次尝试超过了单轮时限，被系统终止；这一轮从头做。")
         elif reason == "turn_failed" and turn_cap_exceeded(failure.get("error")):
             # 2026-10-10 parse 重跑：做满 24 次调用被终止，原来写"模型调用失败"——只写事实
-            feedback.append(turn_cap_fact(failure.get("error")) + "这一轮从头做。")
+            # 上一行 turn_cap_exceeded 已确认 error 是映射
+            feedback.append(
+                turn_cap_fact(cast("Mapping[str, Any]", failure.get("error"))) + "这一轮从头做。"
+            )
         elif reason == "turn_failed" and output_exhausted(failure.get("error")):
             # 2026-10-09：原来拼的是一段原始字典，模型读不懂；只写事实，怎么办由它判断
             feedback.append(output_exhausted_fact(failure.get("error")))
@@ -122,7 +128,7 @@ def retry_feedback(
             # 2026-10-10（第三轮复查）：服务侧出错的那一轮同样只写一句事实，不拼原始字典。
             # 只有归类为服务侧（INFRA）的才说"服务侧错误"；模型自己这一轮的失败（回合上限、
             # 工具参数错…）写错误码和错误自带的说明，不替它定性（独立核验 M2）。
-            error = failure.get("error") if isinstance(failure.get("error"), Mapping) else {}
+            error: Any = failure.get("error") if isinstance(failure.get("error"), Mapping) else {}
             code = error.get("error_code") or failure.get("error_kind") or "unknown"
             if classify_failure(failure) == INFRA:
                 feedback.append(
@@ -1020,7 +1026,8 @@ class AttemptJudgmentMixin(OrchestratorCore):
         if not resolutions or any(item is None for item in resolutions):
             return None
         grades: dict[str, str] = {}
-        for resolution in resolutions:
+        # 上面已排除含 None 的情况
+        for resolution in cast("list[GoalResolution]", resolutions):
             if str(resolution.validity) != "CURRENT" or str(resolution.verdict) != "ACCEPT":
                 return None
             requirements = htn.get_requirements_revision(

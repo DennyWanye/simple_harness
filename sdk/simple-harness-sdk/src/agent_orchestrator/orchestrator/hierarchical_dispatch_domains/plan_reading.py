@@ -244,7 +244,7 @@ class PlanReadingMixin(HierarchicalDispatchCore):
             **self.requirements_revisions(mission_id),
         )
 
-    def requirements_revisions(self, mission_id: str) -> dict[str, int]:
+    def requirements_revisions(self, mission_id: str) -> dict[str, Any]:
         """Which requirements revision the active plan was made for, and which is current
         (阶段 E).  Before any plan is committed there is nothing to compare."""
         semantics = self.semantics()

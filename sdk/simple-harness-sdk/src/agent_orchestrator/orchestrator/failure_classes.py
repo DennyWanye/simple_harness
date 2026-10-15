@@ -96,7 +96,7 @@ def turn_cap_exceeded(error: Mapping[str, Any] | None) -> bool:
     return isinstance(error, Mapping) and error.get("error_code") in _TURN_CAP_FACTS
 
 
-def turn_cap_fact(error: Mapping[str, Any] | None) -> str:
+def turn_cap_fact(error: Mapping[str, Any]) -> str:
     """交给模型/规划器的一句事实：做满了哪条单轮上限，没有交出结果。不替它们判断。"""
     return _TURN_CAP_FACTS[error["error_code"]]
 

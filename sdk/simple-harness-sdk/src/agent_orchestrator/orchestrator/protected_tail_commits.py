@@ -19,6 +19,11 @@ from ..governance.budgets import BudgetError
 from ..governance.tail_budget import TailAllocation, TailBudgetLedger, TailReserve
 from .tail_revision import task_tail_revision
 
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+    from ..contracts import Event
+
 
 class ProtectedTailCommitsMixin:
     if TYPE_CHECKING:
@@ -27,6 +32,19 @@ class ProtectedTailCommitsMixin:
 
         _store: Store
         _ledger: BudgetLedger
+
+        def _emit(
+            self,
+            event_type: str,
+            mission_id: str,
+            *,
+            key: str,
+            task_id: str | None = ...,
+            attempt_id: str | None = ...,
+            payload: Mapping[str, Any] | None = ...,
+            actor_type: str = ...,
+            actor_id: str = ...,
+        ) -> Event: ...
 
     @staticmethod
     def critic_tail_id(attempt_id: str) -> str:

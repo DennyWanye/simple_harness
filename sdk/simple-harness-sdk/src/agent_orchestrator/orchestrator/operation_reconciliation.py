@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any
+from collections.abc import Mapping
+from typing import TYPE_CHECKING, Any
 
 from ..contracts.operation_reconciliation import ScopedReconciliationObservationV1
 from ..contracts.semantic_base import TypedRef, TypedRefKind, content_hash_of
@@ -16,14 +17,54 @@ from ..runtime.operation_reconciliation import (
 )
 from .failure_classes import NON_MODEL_FAILURE_CAP
 
+if TYPE_CHECKING:
+    from ..contracts import Event
+    from ..runtime.connectors import Receipt
+    from ..storage.store import Store
+    from .operation_materialization import OperationMaterializationRuntime
+
 
 class OperationReconciliationCommitsMixin:
+    if TYPE_CHECKING:  # pragma: no cover - provided by CommitService
+        _store: Store
+
+        def _emit(
+            self,
+            event_type: str,
+            mission_id: str,
+            *,
+            key: str,
+            task_id: str | None = None,
+            attempt_id: str | None = None,
+            payload: Mapping[str, Any] | None = None,
+            actor_type: str = ...,
+            actor_id: str = ...,
+        ) -> Event: ...
+
+        # Provided by ``OperationMaterializationCommitsMixin``.
+        def _operation_runtime(self) -> OperationMaterializationRuntime: ...
+
+        # Provided by ``ActionCommitsMixin``.
+        def _update_action(self, action_key: str, **fields: Any) -> dict[str, Any]: ...
+
+        def _resolve_action(
+            self,
+            action: Mapping[str, Any],
+            state: str,
+            *,
+            receipt: Receipt | None = None,
+            error: str = ...,
+            event: str | None = None,
+            extra: Mapping[str, Any] | None = None,
+            actor: Mapping[str, str] | None = None,
+        ) -> dict[str, Any]: ...
+
     def record_scoped_reconciliation(
         self,
         action_key: str,
         *,
         evidence: ReconciliationEvidence,
-        adapter: object,
+        adapter: Any,
         service_authority: object,
     ) -> dict[str, Any]:
         runtime = self._operation_runtime()

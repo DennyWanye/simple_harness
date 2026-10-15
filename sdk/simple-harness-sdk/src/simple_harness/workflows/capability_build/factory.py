@@ -10,7 +10,7 @@ import hashlib
 from collections.abc import Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import cast
+from typing import Any, cast
 
 from simple_harness.contracts import JsonValue, canonical_json
 from simple_harness.workflow.contracts import (
@@ -339,7 +339,7 @@ def _stage_patch(
     stage: str,
     result: Mapping[str, JsonValue],
 ) -> StatePatch:
-    values = dict(state.get("values") or {})
+    values: dict[str, Any] = dict(state.get("values") or {})
     progress = dict(values.get("capability_build_progress") or {})
     progress[stage] = {
         "admission_fingerprint": admission.fingerprint,
@@ -469,7 +469,7 @@ async def _activate_handler(state: WorkflowState, context: WorkflowContext) -> S
         package_ref=package_ref,
         activation_receipt=activated,
     )
-    values = dict(state.get("values") or {})
+    values: dict[str, Any] = dict(state.get("values") or {})
     progress = dict(values.get("capability_build_progress") or {})
     progress["activate"] = {
         "admission_fingerprint": admission.fingerprint,

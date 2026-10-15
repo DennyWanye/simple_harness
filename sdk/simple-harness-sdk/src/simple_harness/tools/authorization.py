@@ -10,7 +10,7 @@ import math
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Protocol, runtime_checkable
+from typing import Protocol, cast, runtime_checkable
 
 from simple_harness.contracts import EffectId, JsonValue, RunId, canonical_json, freeze_json
 
@@ -46,7 +46,7 @@ class AuthorizationRequest:
         ):
             raise ValueError("expires_at must be finite and non-negative")
         metadata = dict(self.metadata)
-        frozen = freeze_json(metadata)
+        frozen = freeze_json(cast(JsonValue, metadata))
         # freeze_json currently preserves Mapping, but keep this boundary explicit.
         if not isinstance(frozen, dict) and not isinstance(frozen, Mapping):
             raise TypeError("authorization metadata must be an object")
@@ -73,7 +73,11 @@ class AuthorizationReceipt:
 def sdk_authorization_receipt(kind: str, payload: dict[str, JsonValue]) -> AuthorizationReceipt:
     """Build the deterministic SDK side of a cross-store receipt handshake."""
 
-    body = {"kind": kind, "payload": payload, "protocol": "authorization-receipt-v1"}
+    body: dict[str, JsonValue] = {
+        "kind": kind,
+        "payload": payload,
+        "protocol": "authorization-receipt-v1",
+    }
     digest = hashlib.sha256(canonical_json(body).encode("utf-8")).hexdigest()
     return AuthorizationReceipt(
         receipt_ref=f"sdk:{kind}:{digest}",
@@ -89,7 +93,7 @@ def bind_authorization_receipts(
 
     if host_receipt.bound_sdk_receipt_hash != sdk_receipt.receipt_hash:
         raise ValueError("Host receipt is not bound to the SDK receipt")
-    payload = {
+    payload: dict[str, JsonValue] = {
         "host_receipt_hash": host_receipt.receipt_hash,
         "host_receipt_ref": host_receipt.receipt_ref,
         "sdk_receipt_hash": sdk_receipt.receipt_hash,

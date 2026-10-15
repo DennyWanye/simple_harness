@@ -21,7 +21,7 @@ from collections.abc import Callable, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 from ..api import facade
 from ..contracts.htn import (
@@ -44,6 +44,9 @@ from ..runtime.assembly import OrchestratorConfig
 from ..storage import htn_store
 from .word_counter import FixtureWordCounter
 
+if TYPE_CHECKING:
+    from ..knowledge.predicates import ArgumentType
+
 #: The SDK test world's root names (product deployments use their own).
 USER_GOAL_NAMES = RootNames("user-goal", "user-root-", "user-duty-")
 DEFAULT_TOOLS = ("workspace_read_file", "workspace_write_file", "workspace_list")
@@ -64,7 +67,9 @@ def user_goal_world(loop: Any, mission: Any) -> Any:
     params_body = {"fields": [{"name": "goal", "type": "string", "required": True}]}
     params = VersionedRef("user.goal-parameters", 1, content_hash_of(params_body))
     outputs = VersionedRef("user.workspace-outputs", 1, content_hash_of({"fields": []}))
-    world.schemas.register(ObjectSchema(params, (SchemaField("goal", "string"),)))
+    world.schemas.register(
+        ObjectSchema(params, (SchemaField("goal", cast("ArgumentType", "string")),))
+    )
     world.schemas.register(ObjectSchema(outputs))
     # 类型与任务无关（阶段 C3）：用户原话与本任务的要求只在根绑定上（deployment.root.root_binding），
     # 一步负责哪些要求只来自上级做法的链接。同一部署上任意两个任务的类型目录逐字节相同。
@@ -264,7 +269,10 @@ async def product_world(
         names=names,
         host_fingerprint="ab" * 32,
         notify=lambda payload: world_holder["world"].notices.append(dict(payload)),
-        **({} if root_parameters is None else {"root_parameters": root_parameters}),
+        **cast(
+            "dict[str, Any]",
+            {} if root_parameters is None else {"root_parameters": root_parameters},
+        ),
     )
 
     def assemble(orchestrator: Any) -> None:

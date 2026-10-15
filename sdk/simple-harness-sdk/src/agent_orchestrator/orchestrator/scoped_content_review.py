@@ -9,6 +9,7 @@ root expression and all effect slots are evaluated by their completion consumers
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from typing import TYPE_CHECKING, cast
 
 from ..artifacts.paths import normalise_workspace_path
 from ..assurance.check_specs import REVIEW_LAYERS
@@ -46,6 +47,9 @@ from .leaf_acceptance import (
 )
 from .operation_completion import OperationCompletionError, OperationCompletionReader
 from .resolution_commits import AcceptReviewCommand, ResolutionCommitRejected
+
+if TYPE_CHECKING:
+    from ..storage.store import StoredResult
 
 
 @dataclass(frozen=True, slots=True)
@@ -178,7 +182,12 @@ def task_content_prompt_scope(
         if attempt_id is not None:
             result = store.find_result_for_attempt(attempt_id)
             frozen = None if result is None else load_completion_result_inputs(store, result)
-            if frozen is None or frozen.scope != scope or result.envelope.task_id != task_id:
+            # result 为空时 frozen 也为空，前面的 or 已短路
+            if (
+                frozen is None
+                or frozen.scope != scope
+                or cast("StoredResult", result).envelope.task_id != task_id
+            ):
                 raise OperationCompletionError(
                     "OP_CONTENT_REVIEW_UNAVAILABLE", "original review inputs differ"
                 )
@@ -469,7 +478,9 @@ def validate_scoped_command(store: Store, command: object) -> ScopedTaskContent:
         or candidates[0].kind is not TypedRefKind.ARTIFACT
         or candidates[0].id != result_id
         or candidates[0].revision != 1
-        or candidates[0].content_hash != fingerprint(result.envelope.to_json())
+        # load_completion_result_inputs 遇到空 result 会拒绝，走到这里一定不为空
+        or candidates[0].content_hash
+        != fingerprint(cast("StoredResult", result).envelope.to_json())
         or actual_refs != expected_refs
         or len(command.artifact_refs) != len(expected_refs)
         or any(ref.produced_by is not Provenance.TOOL for ref in command.artifact_refs)

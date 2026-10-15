@@ -7,7 +7,7 @@ import fcntl
 import os
 from collections.abc import Callable
 from contextlib import contextmanager
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from ..assurance.codec import AssuranceError, canonical, fingerprint, integer, text
@@ -147,7 +147,7 @@ def install_native_root(
                 ).fetchone()
                 if existing is not None or (gate.root / STATE_FILE).exists():
                     raise AssuranceError("ROOT_INSTALL_COMMAND_REQUIRED")
-                body = {
+                body: dict[str, Any] = {
                     **request,
                     "schema_version": 1,
                     "mode": "NATIVE_INSTALLATION",

@@ -522,7 +522,7 @@ def transition_session_locked(
         if purge_progress is None:
             sets.extend(["purge_progress_json=NULL", "purge_progress_hash=NULL"])
         else:
-            body = check("PurgeProgress", dict(purge_progress))  # type: ignore[arg-type]
+            body = check("PurgeProgress", dict(purge_progress))  # type: ignore[call-overload]
             sets.extend(["purge_progress_json=?", "purge_progress_hash=?"])
             values.extend([_json_column(body), digest(body)])
     if delete_proof_ref is not None:

@@ -29,7 +29,7 @@ import sqlite3
 import unicodedata
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from simple_harness.contracts import thaw_json
 from simple_harness.execution.sqlite.base_agent import history
@@ -376,7 +376,7 @@ class SessionSearchService:
                         access.authority_readset_hash,
                     ),
                 )
-                token = self._new_cursor_locked(
+                token: str | None = self._new_cursor_locked(
                     connection,
                     access,
                     query_id=query_id,
@@ -1286,7 +1286,7 @@ def _text_of(record: Any) -> str:
         for block in content:
             if isinstance(block, dict) and isinstance(block.get("text"), str):
                 parts.append(block["text"])
-        return "\n".join(parts)
+        return "\n".join(cast("list[str]", parts))
     return ""
 
 

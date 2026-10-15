@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable, Mapping
-from typing import Any
+from typing import Any, cast
 
 from simple_harness.agents import AgentConfig, AgentLimits
 
@@ -79,7 +79,7 @@ class AssuranceReviewRuntime:
         orchestrator: Any,
         consumer: AssuranceReviewConsumer,
         *,
-        check_policy_projector: Callable[[str], None] | None = None,
+        check_policy_projector: Callable[[str], object] | None = None,
     ) -> None:
         if consumer.commit is not orchestrator.commit or consumer.store is not orchestrator.store:
             raise AssuranceError("ASSURANCE_STORE_MISMATCH")
@@ -438,7 +438,9 @@ class AssuranceReviewRuntime:
                     fingerprint(result.envelope.to_json()),
                     frozen_requirements_revision(self.store, result)
                     if not carried
-                    else int(requirements_revision),
+                    else int(
+                        cast(int, requirements_revision)
+                    ),  # carried 即 requirements_revision 不为空
                 ),
             ).fetchone()
             invocation = None
@@ -454,7 +456,7 @@ class AssuranceReviewRuntime:
             if carried:
                 # 重审不动原尝试的保护预算：在任务上另记一次审阅预留，不计尝试次数
                 fields: dict[str, Any] = {
-                    "carried_requirements_revision": int(requirements_revision)
+                    "carried_requirements_revision": int(cast(int, requirements_revision))
                 }
                 reservation = orch._reservation(orch._config.critic_reserve_tokens)
             else:

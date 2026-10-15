@@ -61,13 +61,13 @@ class UseCertificate:
         one_of(self.coverage, {"COMPLETE", "INCOMPLETE"})
         if not isinstance(self.policy_ref, Pin):
             raise AssuranceError("CERTIFICATE_POLICY_INVALID")
-        for value in (
+        for number in (
             self.issued_at_ms,
             self.mission_epoch,
             self.environment_epoch,
             self.clock_generation,
         ):
-            integer(value)
+            integer(number)
         if self.not_after_ms is not None:
             integer(self.not_after_ms)
         if not self.read_set:

@@ -750,7 +750,7 @@ class WorkspaceToolGateway:
                     tuple(p.casefold() for p in binding.protected_prefixes),
                 )
                 value: Any = _read_page(
-                    workspace,
+                    _attempt_workspace(workspace),
                     arguments,
                     call.call_id,
                     untrusted=untrusted,
@@ -762,13 +762,13 @@ class WorkspaceToolGateway:
             elif call.name == "workspace_write_file":
                 if not binding.writable:
                     raise WorkspaceError("workspace is read-only")
-                workspace.write_text(arguments["path"], arguments["content"])
+                _attempt_workspace(workspace).write_text(arguments["path"], arguments["content"])
                 value = {
                     "path": arguments["path"],
                     "bytes": len(arguments["content"].encode("utf-8")),
                 }
             elif call.name == "workspace_list":
-                files = workspace.list_files()
+                files = _attempt_workspace(workspace).list_files()
                 if binding.denied_prefixes:
                     files = [f for f in files if not _under(_canonical(f), binding.denied_prefixes)]
                 value = {"files": files}
@@ -866,10 +866,10 @@ class WorkspaceToolGateway:
                     )
                 path = arguments.get("path")
                 if path is not None:
-                    resolved = workspace.resolve(path)
+                    resolved = _attempt_workspace(workspace).resolve(path)
                     if not resolved.exists():
                         raise WorkspaceError(f"no such test path: {path}")
-                    path = str(resolved.relative_to(workspace.root.resolve()))
+                    path = str(resolved.relative_to(_attempt_workspace(workspace).root.resolve()))
                 # P3.2 review round 2 P1-1: model-written code runs in a throw-away copy;
                 # what it writes (caches, temp files, symlinks) never reaches the tree
                 copy = self._workspaces.exec_copy(binding.attempt_id)
@@ -951,7 +951,8 @@ class WorkspaceToolGateway:
         run_id: str,
     ) -> ToolResult | None:
         if isinstance(path, str):
-            workspace.resolve(path)  # escapes raise WorkspaceError here, before any effect
+            # escapes raise WorkspaceError here, before any effect
+            _attempt_workspace(workspace).resolve(path)
             canonical = _canonical(path)
             if _under(canonical, binding.denied_prefixes):
                 return self._reject(
@@ -1124,6 +1125,13 @@ class WorkspaceToolGateway:
                 message="This Attempt no longer has authority to start a tool call.",
             )
         return None
+
+
+def _attempt_workspace(workspace: Workspace | None) -> Workspace:
+    """审阅员绑定没有 Attempt 工作区；这时调用工作区工具按"工作区错误"拒绝（5E 显式判空）。"""
+    if workspace is None:
+        raise WorkspaceError("this binding has no Attempt workspace")
+    return workspace
 
 
 def _canonical(path: str) -> str:

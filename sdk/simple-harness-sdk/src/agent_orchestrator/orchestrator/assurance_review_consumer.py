@@ -144,6 +144,7 @@ class AssuranceReviewConsumer:
             # Wake the same unfinished logical work, including a capped wait.
             # Its first-start time/tries remain owned by WorkStore. Completed
             # historical imports are not reinterpreted when a source changes.
+            args: tuple[str, ...]
             extra, args = "", ()
         else:
             # 结清：只唤醒卡在预算上的导入；已被这条事件唤醒、正在准备的那一项也算（准备时重核身份）。
@@ -381,7 +382,7 @@ class AssuranceReviewConsumer:
                     # check (code_test) is used from its recorded receipt, never re-run.
                     continue
                 try:
-                    prepared = prepare_local_check_use(
+                    check_use = prepare_local_check_use(
                         self.check_adapter,
                         binding_ref=ref,
                         result_ref=AssuranceRef.from_json(body["subject"]["target"]),
@@ -396,7 +397,7 @@ class AssuranceReviewConsumer:
                     if error.code == "CHECK_USE_EXPIRED":
                         continue
                     raise
-                checks.append(prepared)
+                checks.append(check_use)
             prepared = prepare_official_review(
                 self.commit,
                 tenant_id=self.tenant_id,

@@ -887,7 +887,7 @@ class AssuranceCloseoutConsumer(_ConsumerBase):
         resolution_ref = evaluation.get("root_resolution_ref")
         resolution_id = None if resolution_ref is None else str(resolution_ref["id"])
         writes_row = resolution_id is not None and not finalized
-        row_version = None if row is None else row["row_version"]
+        row_version: Any = None if row is None else row["row_version"]
         changed = False
         if writes_row:
             if row is None:

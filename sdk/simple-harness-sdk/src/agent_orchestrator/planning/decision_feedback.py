@@ -155,7 +155,7 @@ def feedback_from_decision(
     if row is None or str(row.get("status")) not in REFUSED_STATUSES:
         return None
     codes = [_code(code) for code in row.get("rejection_codes") or ()]
-    detail = row.get("detail") if isinstance(row.get("detail"), Mapping) else {}
+    detail: Any = row.get("detail") if isinstance(row.get("detail"), Mapping) else {}
     return PlanningFeedbackV1(
         previous_decision_id=str(row["decision_id"]),
         status=PlanningDecisionStatus(str(row["status"])),

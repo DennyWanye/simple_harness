@@ -122,7 +122,7 @@ class Message:
 
     def to_dict(self) -> dict[str, JsonValue]:
         result: dict[str, JsonValue] = {
-            "role": self.role.value,
+            "role": cast(MessageRole, self.role).value,  # __post_init__ 已规范成枚举
             "content": (
                 self.content
                 if isinstance(self.content, str)

@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 from collections.abc import Awaitable, Callable, Iterable, Iterator, Sequence
-from typing import Any
+from typing import Any, cast
 
 from ...contracts import TERMINAL_MISSION, TERMINAL_TASK, Mission, MissionStatus, MissionStopReason
 from ...contracts.state_machines import IllegalTransition
@@ -505,7 +505,8 @@ class CycleMixin(OrchestratorCore):
                 if await self._mission_round(
                     mission.id,
                     "start_planning",
-                    lambda mission=mission: self._start_planning(mission),
+                    # 默认参数捕获循环变量，mypy 推不出这个 lambda 的类型
+                    lambda mission=mission: self._start_planning(mission),  # type: ignore[misc]
                 ):
                     progressed = True
         if await self._retry_deferred_planning():
@@ -519,7 +520,8 @@ class CycleMixin(OrchestratorCore):
                 if await self._mission_round(
                     intent.mission_id,
                     f"collect_stopped_critic:{intent.intent_id}",
-                    lambda intent=intent: self._collect_stopped_critic(intent),
+                    # 默认参数捕获循环变量，mypy 推不出这个 lambda 的类型
+                    lambda intent=intent: self._collect_stopped_critic(intent),  # type: ignore[misc]
                 ):
                     progressed = True
                 continue
@@ -528,7 +530,8 @@ class CycleMixin(OrchestratorCore):
             if await self._mission_round(
                 intent.mission_id,
                 f"dispatch:{intent.intent_id}",
-                lambda intent=intent: self._dispatch(intent),
+                # 默认参数捕获循环变量，mypy 推不出这个 lambda 的类型
+                lambda intent=intent: self._dispatch(intent),  # type: ignore[misc]
             ):
                 progressed = True
         for intent in self.store.list_intents("SUBMITTED"):
@@ -536,7 +539,8 @@ class CycleMixin(OrchestratorCore):
                 if self._critic_subject_stopped(intent) and await self._mission_round(
                     intent.mission_id,
                     f"collect_after_stop:{intent.intent_id}",
-                    lambda intent=intent: self._collect_after_stop(intent),
+                    # 默认参数捕获循环变量，mypy 推不出这个 lambda 的类型
+                    lambda intent=intent: self._collect_after_stop(intent),  # type: ignore[misc]
                 ):
                     progressed = True
                 continue  # critics are collected inline by the critic runner
@@ -544,14 +548,16 @@ class CycleMixin(OrchestratorCore):
                 if await self._mission_round(
                     intent.mission_id,
                     f"collect_after_stop:{intent.intent_id}",
-                    lambda intent=intent: self._collect_after_stop(intent),
+                    # 默认参数捕获循环变量，mypy 推不出这个 lambda 的类型
+                    lambda intent=intent: self._collect_after_stop(intent),  # type: ignore[misc]
                 ):
                     progressed = True
                 continue
             if await self._mission_round(
                 intent.mission_id,
                 f"collect:{intent.intent_id}",
-                lambda intent=intent: self._collect(intent),
+                # 默认参数捕获循环变量，mypy 推不出这个 lambda 的类型
+                lambda intent=intent: self._collect(intent),  # type: ignore[misc]
             ):
                 progressed = True
         # D6-9': verification runs in a bounded set of tasks (``verifier_workers``); the loop
@@ -578,7 +584,8 @@ class CycleMixin(OrchestratorCore):
         for mission_id in sorted(active):
             if len(self._attempts.verifying) >= self._verifier_capacity():
                 break
-            new_mode = self._new_mode(self.store.get_mission(mission_id))
+            # 编号来自上面刚读出的活动任务
+            new_mode = self._new_mode(cast("Mission", self.store.get_mission(mission_id)))
             if new_mode is None:
                 continue
             for item in carried_reviews(self.store, new_mode, mission_id):
@@ -600,7 +607,10 @@ class CycleMixin(OrchestratorCore):
                 continue
             self._raise_if_verification_crashed()
             if await self._mission_round(
-                mission.id, "decide", lambda mission=mission: self._decide(mission)
+                # 默认参数捕获循环变量，mypy 推不出这个 lambda 的类型
+                mission.id,
+                "decide",
+                lambda mission=mission: self._decide(mission),  # type: ignore[misc]
             ):
                 progressed = True
                 busy.add(mission.id)

@@ -157,6 +157,77 @@ class Normalize(ast.NodeTransformer):
         return self.generic_visit(node)
 
 
+class TypingOnly(ast.NodeTransformer):
+    """阶段 5E 修类型错误的证明：只改标注、cast、TYPE_CHECKING 导入时，运行期 AST 不变。
+
+    cast(T, x) / typing.cast(T, x) 还原成 x；if TYPE_CHECKING 块去掉；函数体内的
+    「x: T = v」还原成「x = v」，只声明不赋值的「x: T」去掉（函数局部变量的注解不在运行期
+    求值）。类体与模块级的注解保持原样（数据类靠它们生成字段）。"""
+
+    def __init__(self) -> None:
+        self.depth = 0
+
+    def visit_Call(self, node):
+        node = self.generic_visit(node)
+        f = node.func
+        name = f.id if isinstance(f, ast.Name) else f.attr if isinstance(f, ast.Attribute) else ""
+        if name == "cast" and len(node.args) == 2 and not node.keywords:
+            return node.args[1]
+        return node
+
+    def visit_If(self, node):
+        if "TYPE_CHECKING" in ast.unparse(node.test) and not node.orelse:
+            return None
+        return self.generic_visit(node)
+
+    def visit_FunctionDef(self, node):
+        self.depth += 1
+        node = self.generic_visit(node)
+        self.depth -= 1
+        if not node.body:
+            node.body = [ast.Pass()]
+        return node
+
+    visit_AsyncFunctionDef = visit_FunctionDef
+
+    def visit_ClassDef(self, node):
+        saved, self.depth = self.depth, 0  # 函数里定义的类：类体注解照样要保留
+        node = self.generic_visit(node)
+        self.depth = saved
+        return node
+
+    def visit_AnnAssign(self, node):
+        node = self.generic_visit(node)
+        if self.depth == 0:
+            return node
+        if node.value is None:
+            return None
+        return ast.Assign(targets=[node.target], value=node.value, lineno=0)
+
+
+class RenameLocals(ast.NodeTransformer):
+    """函数内的局部变量按第一次出现的顺序重新编号（参数名是接口，不动）：证明"只改了局部变量名"。"""
+
+    def visit_FunctionDef(self, node):
+        params = {a.arg for a in node.args.args + node.args.kwonlyargs + node.args.posonlyargs}
+        params |= {a.arg for a in (node.args.vararg, node.args.kwarg) if a is not None}
+        stored = []
+        for n in ast.walk(node):
+            if n is node:
+                continue
+            if isinstance(n, ast.Name) and isinstance(n.ctx, (ast.Store, ast.Del)) and n.id not in params:
+                if n.id not in stored:
+                    stored.append(n.id)
+        declared = {name for n in ast.walk(node) if isinstance(n, (ast.Global, ast.Nonlocal)) for name in n.names}
+        mapping = {name: f"_v{i}" for i, name in enumerate(n for n in stored if n not in declared)}
+        for n in ast.walk(node):
+            if isinstance(n, ast.Name) and n.id in mapping:
+                n.id = mapping[n.id]
+        return node
+
+    visit_AsyncFunctionDef = visit_FunctionDef
+
+
 def norm(src: bytes) -> ast.Module | None:
     try:
         tree = ast.parse(src)
@@ -171,7 +242,13 @@ def main() -> int:
     ap.add_argument("--detail", type=int, default=3, help="每个不等价文件最多列几处")
     ap.add_argument("--ignore-imports", action="store_true",
                     help="比较时去掉全部导入语句（证明删未用导入只删了导入）")
+    ap.add_argument("--typing-only", action="store_true",
+                    help="修类型错误的证明：还原 cast、去掉 TYPE_CHECKING 块与导入、函数内注解赋值算普通赋值")
+    ap.add_argument("--rename-locals", action="store_true",
+                    help="配合 --typing-only：函数内局部变量按出现顺序重新编号后再比（证明只改了局部变量名）")
     a = ap.parse_args()
+    if a.typing_only:
+        a.ignore_imports = True
     files = subprocess.run(["git", "diff", "--name-only", "--diff-filter=M", a.ref, "--", "*.py"],
                            cwd=REPO, capture_output=True, text=True).stdout.splitlines()
     same = 0
@@ -180,6 +257,10 @@ def main() -> int:
         old = subprocess.run(["git", "show", f"{a.ref}:{f}"], cwd=REPO, capture_output=True).stdout
         new = (REPO / f).read_bytes()
         n0, n1 = norm(old), norm(new)
+        if a.typing_only and n0 is not None and n1 is not None:
+            n0, n1 = TypingOnly().visit(n0), TypingOnly().visit(n1)
+            if a.rename_locals:
+                n0, n1 = RenameLocals().visit(n0), RenameLocals().visit(n1)
         if a.ignore_imports and n0 is not None and n1 is not None:
             for t in (n0, n1):
                 for node in ast.walk(t):

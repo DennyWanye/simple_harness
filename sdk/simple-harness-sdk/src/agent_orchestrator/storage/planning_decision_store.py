@@ -33,7 +33,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from collections.abc import Mapping, Sequence
-from typing import Any
+from typing import Any, cast
 
 from simple_harness.contracts import canonical_json as _canonical_json
 
@@ -490,7 +490,8 @@ class PlanningDecisionStore:
                         decision,
                     ),
                 )
-                return self._read_decision(connection, decision_id=decision)
+                # 同一事务里刚更新过这一行，读回不会为空
+                return cast("dict[str, Any]", self._read_decision(connection, decision_id=decision))
 
             try:
                 connection.execute(
@@ -518,7 +519,8 @@ class PlanningDecisionStore:
                     f"planning decision {decision} for request {request} attempt {ordinal}"
                     f" could not be stored: {error}"
                 ) from error
-            return self._read_decision(connection, decision_id=decision)
+            # 同一事务里刚插入这一行，读回不会为空
+            return cast("dict[str, Any]", self._read_decision(connection, decision_id=decision))
 
     @staticmethod
     def _check_replay(existing: Mapping[str, Any], *, raw_hash: str, decision_id: str) -> None:

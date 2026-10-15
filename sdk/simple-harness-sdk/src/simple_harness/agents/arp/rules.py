@@ -450,7 +450,7 @@ def choose_provider(candidates: Sequence[Mapping[str, object]], required: frozen
     eligible = [
         c
         for c in candidates
-        if all(c.get(k) is True for k in necessary) and required <= frozenset(c.get("features", ()))  # type: ignore[arg-type]
+        if all(c.get(k) is True for k in necessary) and required <= frozenset(c.get("features", ()))  # type: ignore[call-overload]
     ]
     if not eligible:
         raise ArpError("CAPABILITY_UNAVAILABLE")

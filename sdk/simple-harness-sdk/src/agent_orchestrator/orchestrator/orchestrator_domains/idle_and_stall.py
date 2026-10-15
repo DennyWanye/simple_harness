@@ -212,7 +212,7 @@ class IdleStallMixin(OrchestratorCore):
     def _handoff_refusals(self, mission_id: str) -> dict[str, Any]:
         """For the stall record: the operations whose hand-off is refused because the step
         they belong to no longer stands on current ground, with the refusal as given."""
-        actions = getattr(self, "_actions", None)
+        actions: Any = getattr(self, "_actions", None)
         rows = [
             {
                 "action_key": str(a["action_key"]),

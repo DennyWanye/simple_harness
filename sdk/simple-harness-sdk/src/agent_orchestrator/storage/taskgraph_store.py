@@ -143,7 +143,7 @@ class TaskGraphStore:
             _fail("TaskGraphStore requires Store")
         self._store = store
         # (mission, revision) -> (read generation it was verified under, result)
-        self._verified: dict[tuple[str, int], tuple[tuple[int, int, int], HistoricalRevision]] = {}
+        self._verified: dict[tuple[str, int], tuple[str, HistoricalRevision]] = {}
 
     @property
     def store(self) -> Store:

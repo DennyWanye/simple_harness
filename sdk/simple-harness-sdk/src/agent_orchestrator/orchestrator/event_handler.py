@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from ..assurance.codec import AssuranceError
 from ..assurance.root_gate import AssuranceRootGate
@@ -106,7 +106,7 @@ class Orchestrator(
 
             # 车道 J H04（§14.4）：模型写的代码起的子进程，身份与回收材料落库；重启后按它回收。
             if self._executor is not None:
-                self._executor.ledger = StoreSandboxLedger(self._store)
+                cast(Any, self._executor).ledger = StoreSandboxLedger(self._store)
             if self._wiring.assurance_root_setup is not None or AssuranceRootGate.required(
                 self._store, self._config.evidence_root
             ):
@@ -114,7 +114,7 @@ class Orchestrator(
                     self._store, self._config.evidence_root
                 )
                 self._commit._assurance_root_gate = self._wiring.assurance_root_gate
-                self._store._assurance_root_gate = self._wiring.assurance_root_gate
+                cast(Any, self._store)._assurance_root_gate = self._wiring.assurance_root_gate
                 #: 根进隔离时的匿名阻塞码（原计划 §10.3 允许披露的一项）；NATIVE 时为 None
                 self._assurance_quarantine_code: str | None = None
                 try:
@@ -183,7 +183,8 @@ class Orchestrator(
                     changed while the pool kept intents frozen with the older one).  The
                     admission identity persisted in its intents picks the candidate; a
                     pool with no persisted intent takes the first.  Nothing is migrated."""
-                    estimator = self._provider_token_estimators[key]
+                    # 外层已判 _provider_token_estimators 不为空，闭包里 mypy 不沿用收窄
+                    estimator = cast(Any, self._provider_token_estimators)[key]
                     if estimator is None:
                         return None
                     candidates = (

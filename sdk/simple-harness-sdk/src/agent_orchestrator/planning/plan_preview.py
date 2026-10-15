@@ -10,7 +10,7 @@ later plan-admission/Commit step can bind to the exact same candidate.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -98,7 +98,7 @@ class PreviewInputs:
             for scope, epoch in sorted(self.scope_epochs)
         )
 
-    def obligation_reads(self, obligation_ids: Sequence[object]) -> tuple[ReadItem, ...]:
+    def obligation_reads(self, obligation_ids: Iterable[object]) -> tuple[ReadItem, ...]:
         known = dict(self.obligation_items)
         return tuple(
             known[key]

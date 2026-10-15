@@ -20,7 +20,7 @@ import asyncio
 import sqlite3
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 
 from simple_harness.execution.base_agent import AgentJournalRecord
 from simple_harness.execution.sqlite.base_agent import history
@@ -330,7 +330,9 @@ class SessionIndexCoordinator:
             if texts:
                 try:
                     self._prefetched[digest(texts)] = await asyncio.to_thread(
-                        self.embedding.embed, list(texts)
+                        # _job_texts 在没有嵌入端口时返回 None，走到这里一定有
+                        cast(Any, self.embedding).embed,
+                        list(texts),
                     )
                 except Exception:  # noqa: BLE001 - the recorded call below reports the failure
                     pass

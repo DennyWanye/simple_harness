@@ -159,7 +159,7 @@ def cmd_replay(args: argparse.Namespace) -> int:
             if store.get_mission(args.mission_id) is None:
                 _print({"error": f"no Mission {args.mission_id} in {library}"})
                 return EXIT_USAGE
-            report = {
+            report: dict[str, Any] = {
                 "mission": verify_mission(store, args.mission_id),
                 "library": verify_library(store),
             }

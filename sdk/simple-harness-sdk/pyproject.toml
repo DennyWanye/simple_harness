@@ -107,46 +107,24 @@ select = ["E", "F", "W", "I", "UP"]
 
 [tool.mypy]
 python_version = "3.11"
-# Scoped to the public consumer surface and release-owned modules.
-# Legacy full-project typing debt remains outside the release-owned surface.
+# 代码质量整治 5E：范围是 SDK 全部源码（豁免见下面的 overrides）。
 files = [
-  "src/agent_orchestrator",
-  "src/simple_harness/runtime/commands.py",
-  "src/simple_harness/runtime/kernel.py",
-  "src/simple_harness/runtime/kernel_domains",
-  "src/simple_harness/runtime/agent_memory.py",
-  "src/simple_harness/runtime/disclosure_protocol.py",
-  "src/simple_harness/runtime/evidence_protocol.py",
-  "src/simple_harness/runtime/memory_protocol.py",
-  "src/simple_harness/runtime/memory_protocol_domains",
-  "src/simple_harness/runtime/task_scope_protocol.py",
-  "src/simple_harness/runtime/workspace_binding_protocol.py",
-  "src/simple_harness/runtime/conversation_context_provider.py",
-  "src/simple_harness/runtime/consumer_adapter.py",
-  "src/simple_harness/runtime/ports.py",
-  "src/simple_harness/runtime/conversation_memory.py",
-  "src/simple_harness/runtime/conversation_context.py",
-  "src/simple_harness/runtime/start_snapshot.py",
-  "src/simple_harness/runtime/production.py",
-  "src/simple_harness/runtime/drivers/react_loop.py",
-  "src/simple_harness/runtime/termination.py",
-  "src/simple_harness/execution/delivery.py",
-  "src/simple_harness/execution/context_authority.py",
-  "src/simple_harness/execution/effects.py",
-  "src/simple_harness/execution/provider_invocations.py",
-  "src/simple_harness/execution/context_staging.py",
-  "src/simple_harness/execution/memory_outbox.py",
-  "src/simple_harness/execution/command_ingress.py",
-  "src/simple_harness/execution/uow.py",
-  "src/simple_harness/execution/sqlite/uow.py",
-  "src/simple_harness/execution/sqlite/uow_domains",
-  "src/simple_harness/execution/sqlite/migrations/execution_v3_to_v4.py",
-  "src/simple_harness/execution/sqlite/storage.py",
-  "src/simple_harness/testing/arm64_candidate.py",
-  "src/simple_harness/testing/sinks.py",
-  "src/simple_harness/providers/base.py",
-  "src/simple_harness/tools/runtime_catalog.py",
+  "src",
   "tests/conformance/future_consumer_fixture.py",
   "tests/typing/agent_memory_port.py",
   "tests/typing/human_memory_protocol.py",
 ]
+
+# 代码质量整治 5E（阶段5-偏差单-类型清零.md 裁决）：
+# 表结构文件是禁区，字节不变，不为类型注解破例；只豁免这两个完整模块。
+[[tool.mypy.overrides]]
+module = [
+  "simple_harness.execution.sqlite.audit_schema",
+  "simple_harness.execution.sqlite.stage_audit_schema",
+]
+ignore_errors = true
+
+# 可选依赖：只在安装了对应附加包时才导入，没有类型存根。
+[[tool.mypy.overrides]]
+module = ["yaml", "unified_planning.*", "deepseek_recipe"]
+ignore_missing_imports = true

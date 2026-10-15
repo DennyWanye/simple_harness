@@ -13,7 +13,7 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from ..contracts.htn import TaskRef
 from ..contracts.models import sha256_hex
@@ -190,6 +190,8 @@ def freeze_attempt_completion_inputs(
     )
     resolved = dispatch.resolved_inputs(mission_id, network, members[0])
     manifest = resolved.manifest
+    if manifest is None:  # 5E 显式判空：输入还解析不出来（结果只带问题）
+        raise _refuse("OP_COMPLETION_INPUTS_UNAVAILABLE", "inputs are not resolved")
     document = manifest.to_json()
     embedded_hash = document.get("manifest_hash")
     if not isinstance(embedded_hash, str) or embedded_hash != manifest.manifest_hash():
@@ -399,7 +401,10 @@ def frozen_requirements_revision(store: Store, result: Any) -> int:
         raise _refuse("OP_COMPLETION_INPUTS_UNAVAILABLE", "original Attempt intent is unavailable")
     frozen = FrozenCompletionInputs.from_json(intent.config.get("completion_inputs"))
     row = OperationCompletionStore(store).get_scope_exact(
-        str(envelope.mission_id), frozen.plan_revision, frozen.occurrence_id
+        # envelope 为空时 intent 也为空，上面已拒绝
+        str(cast(Any, envelope).mission_id),
+        frozen.plan_revision,
+        frozen.occurrence_id,
     )
     if row is None or str(row["document"].scope_id) != frozen.scope_id:
         raise _refuse("OP_EFFECT_SCOPE_STALE", "frozen completion scope differs")

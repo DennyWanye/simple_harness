@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 from ..assurance.certificates import UseIdentity
 from ..assurance.checks import CriterionPolicy
@@ -33,6 +33,9 @@ from .assurance_review_transport import assurance_formula, read_review_invocatio
 from .completion_inputs import load_completion_result_inputs
 from .leaf_acceptance import LeafAcceptanceAssembly
 from .scoped_content_review import read_task_content_candidate
+
+if TYPE_CHECKING:
+    from ..assurance.root_gate import CurrentReadPermission
 
 
 def ensure_task_content_review(
@@ -74,6 +77,8 @@ def ensure_task_content_review(
         projection = read_task_content_candidate(store, mission_id, task_id, result_id)
         semantics = HtnStore(store)
         task = semantics.task_semantics_of(mission_id, task_id)
+        if task is None:  # 5E 显式判空：与上面结果缺失同一个错误码
+            raise AssuranceError("SOURCE_UNAVAILABLE", task_id)
         # 第四批：已验收的结果按现行（更新的）要求重审时，冻结输入照旧、范围取现行的
         frozen = load_completion_result_inputs(
             store,
@@ -200,7 +205,10 @@ def ensure_task_content_review(
             for ref in sorted(refs, key=lambda ref: ref.key)
         )
         complete = read_complete_evidence_snapshot(reader, scope_id=projection.scope.scope_id)
-        permissions = tuple((item.ref, item.permission) for item in metadata)
+        # 读取器带授权与身份，解析时必填许可（assurance_reads.read_exact_metadata）
+        permissions = tuple(
+            (item.ref, cast("CurrentReadPermission", item.permission)) for item in metadata
+        )
         round_no = next_review_round(
             store.connection,
             mission_id=mission_id,

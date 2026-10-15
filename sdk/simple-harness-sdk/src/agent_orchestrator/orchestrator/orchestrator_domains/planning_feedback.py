@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, cast
 
 from simple_harness.agents import AgentTurnState
 
@@ -281,7 +281,8 @@ class PlanningFeedbackMixin(OrchestratorCore):
         self._import_usage(intent)
         if intent.config.get("assurance_protocol") == "assurance-exec-v1.1":
             await collect_assurance_review(self, intent)
-            self.assembled.gateway.unbind(intent.agent_id)
+            # unbind 对空值是空操作（dict.pop 带默认值）
+            self.assembled.gateway.unbind(cast(str, intent.agent_id))
             return
         if result.state is AgentTurnState.COMMITTED:
             self._reset_after_handoff_unknown_streak(mission.id)
