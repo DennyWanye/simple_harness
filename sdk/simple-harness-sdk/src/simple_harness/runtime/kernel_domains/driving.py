@@ -34,6 +34,7 @@ from .support import (
     BASE_AGENT_DRIVER_KIND,
     WORKFLOW_DRIVER_KIND,
     DriverInvocation,
+    DriverResult,
     _run_id,
     logger,
 )
@@ -360,28 +361,7 @@ class RunDrivingMixin(RuntimeCore):
                         deliveries=(),
                     )
                     return
-                catalog_matches = False
-                if snapshot.tool_catalog_fingerprint is not None:
-                    resolver = getattr(self._ports.tool_catalog, "resolve", None)
-                    resolved_catalog = (
-                        None
-                        if resolver is None
-                        else resolver(
-                            snapshot.tool_catalog_generation,
-                            snapshot.tool_catalog_fingerprint,
-                        )
-                    )
-                    catalog_matches = (
-                        resolved_catalog is not None
-                        and resolved_catalog.generation == snapshot.tool_catalog_generation
-                        and resolved_catalog.content_fingerprint
-                        == snapshot.tool_catalog_fingerprint
-                    )
-                else:
-                    catalog_matches = (
-                        snapshot.tool_catalog_generation
-                        == self._ports.tool_catalog.current_generation()
-                    )
+                catalog_matches = self._tool_catalog_matches(snapshot)
                 if not catalog_matches:
                     error = ToolCatalogStale()
                     preflight_receipt["audit_outcome"] = "rejected"
@@ -550,69 +530,14 @@ class RunDrivingMixin(RuntimeCore):
                 # Run under a new epoch, which is what lets the claimed input be re-claimed.
                 await self._abandon_run_authority(run_id)
                 return
-            if result.state is RunState.WAITING:
-                if result.authorization_wait is not None:
-                    if continuation_claim is not None:
-                        raise UnitOfWorkConflict("authorization wait cannot ack a continuation")
-                    self._commit_authorization_wait(run_id, result.authorization_wait)
-                    return
-                if continuation_claim is None:
-                    if result.wait_blocker is None:
-                        self._uow.commit_runtime_state(
-                            run_id=run_id,
-                            expected_version=current.version,
-                            state=RunState.WAITING,
-                            event_id=f"{run_id}:waiting:{current.version + 1}",
-                            payload=result.payload,
-                            lease=self._leases[run_id],
-                            now=self._now(),
-                        )
-                        if run.driver_kind == BASE_AGENT_DRIVER_KIND and not self._closing:
-                            # Idle BaseAgent (fresh start, nothing queued): drop authority.
-                            await self._abandon_run_authority(run_id)
-                    else:
-                        self._uow.commit_runtime_wait_with_blocker(
-                            run_id=run_id,
-                            expected_version=current.version,
-                            event_id=f"{run_id}:waiting:{current.version + 1}",
-                            payload=result.payload,
-                            blocker=result.wait_blocker,
-                            lease=self._leases[run_id],
-                            now=self._now(),
-                        )
-                else:
-                    if result.wait_blocker is not None:
-                        raise UnitOfWorkConflict(
-                            "uncertain outbound work cannot ack a continuation"
-                        )
-                    self._uow.commit_runtime_state_and_ack_continuation(
-                        run_id=run_id,
-                        expected_version=current.version,
-                        state=RunState.WAITING,
-                        event_id=(
-                            f"{run_id}:waiting:continuation:"
-                            f"{continuation_claim.continuation_id}:"
-                            f"{continuation_claim.claim_epoch}"
-                        ),
-                        payload=result.payload,
-                        continuation_claim=continuation_claim,
-                        execution_lease=self._leases[run_id],
-                        receipt_id=(
-                            f"{run_id}:progress:{continuation_claim.continuation_id}:"
-                            f"{continuation_claim.claim_epoch}"
-                        ),
-                        now=self._now(),
-                    )
-                    asyncio.create_task(self._reschedule(run_id))
-            else:
-                self._terminalize(
-                    current,
-                    state=result.state,
-                    payload=result.payload,
-                    deliveries=result.deliveries,
-                    continuation_claim=continuation_claim,
-                    conversation_output=result.conversation_output,
-                )
+            await self._settle_driver_result(
+                run_id,
+                run=run,
+                current=current,
+                result=result,
+                continuation_claim=continuation_claim,
+            )
+            return
         except asyncio.CancelledError:
             current = self._uow.read_run(run_id)
             if (
@@ -631,52 +556,8 @@ class RunDrivingMixin(RuntimeCore):
         except Exception as error:  # noqa: BLE001 - driver boundary becomes a durable failure
             # private_cause 不进 HarnessError.to_dict()（对外只暴露稳定 public 契约），
             # 但必须落到日志供 host 排障；否则 driver 失败完全不可追踪。
-            logger.exception(
-                "sdk_run_driver_failed",
-                extra={"run_id": str(run_id)},
-            )
-            current = self._uow.read_run(run_id)
-            if current is not None and current.driver_kind == BASE_AGENT_DRIVER_KIND:
-                # A BaseAgent never dies of a driver exception (BA-v1.0 §1.3): keep the
-                # input claimed under the lapsed lease and drop this executor's
-                # authority; the next wake either finalizes a result the loop already
-                # staged (BA31) or re-drives the same turn.  Kernel-integrity
-                # failures reach here as explicit FAILED DriverResults, not exceptions.
-                # The driver itself turns exceptions inside a turn into a visible
-                # failed turn; what reaches here is re-woken through the drain loop a
-                # bounded number of times, after which only recover() re-drives it
-                # (review K1: a claimed input must never wait silently for recover()).
-                await self._abandon_run_authority(run_id)
-                attempts = self._driver_exception_wakes.get(run_id, 0) + 1
-                self._driver_exception_wakes[run_id] = attempts
-                if attempts <= BASE_AGENT_DRIVER_EXCEPTION_WAKES:
-                    self._pending_wakes.add(run_id)
-                else:
-                    logger.error(
-                        "sdk_base_agent_driver_exception_wakes_exhausted",
-                        extra={"run_id": str(run_id), "attempts": attempts},
-                    )
-                return
-            if current is not None and current.state not in {
-                RunState.COMPLETED,
-                RunState.FAILED,
-                RunState.CANCELLED,
-            }:
-                failure = HarnessError(
-                    "driver_failed",
-                    "The Run driver failed.",
-                    private_cause=error,
-                )
-                try:
-                    self._terminalize(
-                        current,
-                        state=RunState.FAILED,
-                        payload=failure.to_dict(),
-                        deliveries=(),
-                        continuation_claim=continuation_claim,
-                    )
-                except UnitOfWorkConflict:
-                    pass
+            await self._settle_driver_exception(run_id, error, continuation_claim)
+            return
         finally:
             current = self._uow.read_run(run_id)
             if current is not None and current.state in {
@@ -685,6 +566,150 @@ class RunDrivingMixin(RuntimeCore):
                 RunState.CANCELLED,
             }:
                 self._release_runtime_lease(run_id)
+
+    def _tool_catalog_matches(self, snapshot: StartSnapshot) -> bool:
+        catalog_matches = False
+        if snapshot.tool_catalog_fingerprint is not None:
+            resolver = getattr(self._ports.tool_catalog, "resolve", None)
+            resolved_catalog = (
+                None
+                if resolver is None
+                else resolver(
+                    snapshot.tool_catalog_generation,
+                    snapshot.tool_catalog_fingerprint,
+                )
+            )
+            catalog_matches = (
+                resolved_catalog is not None
+                and resolved_catalog.generation == snapshot.tool_catalog_generation
+                and resolved_catalog.content_fingerprint == snapshot.tool_catalog_fingerprint
+            )
+        else:
+            catalog_matches = (
+                snapshot.tool_catalog_generation == self._ports.tool_catalog.current_generation()
+            )
+        return catalog_matches
+
+    async def _settle_driver_result(
+        self,
+        run_id: str,
+        *,
+        run: RunRecord,
+        current: RunRecord,
+        result: DriverResult,
+        continuation_claim: ContinuationRecord | None,
+    ) -> None:
+        if result.state is RunState.WAITING:
+            if result.authorization_wait is not None:
+                if continuation_claim is not None:
+                    raise UnitOfWorkConflict("authorization wait cannot ack a continuation")
+                self._commit_authorization_wait(run_id, result.authorization_wait)
+                return
+            if continuation_claim is None:
+                if result.wait_blocker is None:
+                    self._uow.commit_runtime_state(
+                        run_id=run_id,
+                        expected_version=current.version,
+                        state=RunState.WAITING,
+                        event_id=f"{run_id}:waiting:{current.version + 1}",
+                        payload=result.payload,
+                        lease=self._leases[run_id],
+                        now=self._now(),
+                    )
+                    if run.driver_kind == BASE_AGENT_DRIVER_KIND and not self._closing:
+                        # Idle BaseAgent (fresh start, nothing queued): drop authority.
+                        await self._abandon_run_authority(run_id)
+                else:
+                    self._uow.commit_runtime_wait_with_blocker(
+                        run_id=run_id,
+                        expected_version=current.version,
+                        event_id=f"{run_id}:waiting:{current.version + 1}",
+                        payload=result.payload,
+                        blocker=result.wait_blocker,
+                        lease=self._leases[run_id],
+                        now=self._now(),
+                    )
+            else:
+                if result.wait_blocker is not None:
+                    raise UnitOfWorkConflict("uncertain outbound work cannot ack a continuation")
+                self._uow.commit_runtime_state_and_ack_continuation(
+                    run_id=run_id,
+                    expected_version=current.version,
+                    state=RunState.WAITING,
+                    event_id=(
+                        f"{run_id}:waiting:continuation:"
+                        f"{continuation_claim.continuation_id}:"
+                        f"{continuation_claim.claim_epoch}"
+                    ),
+                    payload=result.payload,
+                    continuation_claim=continuation_claim,
+                    execution_lease=self._leases[run_id],
+                    receipt_id=(
+                        f"{run_id}:progress:{continuation_claim.continuation_id}:"
+                        f"{continuation_claim.claim_epoch}"
+                    ),
+                    now=self._now(),
+                )
+                asyncio.create_task(self._reschedule(run_id))
+        else:
+            self._terminalize(
+                current,
+                state=result.state,
+                payload=result.payload,
+                deliveries=result.deliveries,
+                continuation_claim=continuation_claim,
+                conversation_output=result.conversation_output,
+            )
+
+    async def _settle_driver_exception(
+        self, run_id: str, error: Exception, continuation_claim: ContinuationRecord | None
+    ) -> None:
+        logger.exception(
+            "sdk_run_driver_failed",
+            extra={"run_id": str(run_id)},
+        )
+        current = self._uow.read_run(run_id)
+        if current is not None and current.driver_kind == BASE_AGENT_DRIVER_KIND:
+            # A BaseAgent never dies of a driver exception (BA-v1.0 §1.3): keep the
+            # input claimed under the lapsed lease and drop this executor's
+            # authority; the next wake either finalizes a result the loop already
+            # staged (BA31) or re-drives the same turn.  Kernel-integrity
+            # failures reach here as explicit FAILED DriverResults, not exceptions.
+            # The driver itself turns exceptions inside a turn into a visible
+            # failed turn; what reaches here is re-woken through the drain loop a
+            # bounded number of times, after which only recover() re-drives it
+            # (review K1: a claimed input must never wait silently for recover()).
+            await self._abandon_run_authority(run_id)
+            attempts = self._driver_exception_wakes.get(run_id, 0) + 1
+            self._driver_exception_wakes[run_id] = attempts
+            if attempts <= BASE_AGENT_DRIVER_EXCEPTION_WAKES:
+                self._pending_wakes.add(run_id)
+            else:
+                logger.error(
+                    "sdk_base_agent_driver_exception_wakes_exhausted",
+                    extra={"run_id": str(run_id), "attempts": attempts},
+                )
+            return
+        if current is not None and current.state not in {
+            RunState.COMPLETED,
+            RunState.FAILED,
+            RunState.CANCELLED,
+        }:
+            failure = HarnessError(
+                "driver_failed",
+                "The Run driver failed.",
+                private_cause=error,
+            )
+            try:
+                self._terminalize(
+                    current,
+                    state=RunState.FAILED,
+                    payload=failure.to_dict(),
+                    deliveries=(),
+                    continuation_claim=continuation_claim,
+                )
+            except UnitOfWorkConflict:
+                pass
 
     async def _cancel_run(self, run_id: RunId) -> RunRecord:
         self._require_started()

@@ -13,7 +13,7 @@ import copy
 import hashlib
 import re
 from collections.abc import Mapping, Sequence
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from simple_harness.contracts import JsonValue, validate_json_value
 from simple_harness.workflow.contracts import (
@@ -962,43 +962,7 @@ async def tool_execution_handler(state: WorkflowState, context: WorkflowContext)
         messages = _drop_superseded_discovery_search_messages(messages)
 
     # Append assistant + tool messages
-    if calls:
-        raw_by_id = {
-            str(item.get("stable_call_id", "")): item for item in outcome.raw_tool_proposals
-        }
-        messages.append(
-            {
-                "role": "assistant",
-                "content": outcome.assistant_content,
-                "tool_calls": [
-                    {
-                        "id": call.stable_call_id,
-                        "type": "function",
-                        "function": {
-                            "name": call.tool_name,
-                            "arguments": canonical_json(
-                                raw_by_id.get(call.stable_call_id, {}).get(
-                                    "raw_params", call.arguments_json()
-                                )
-                            ),
-                        },
-                    }
-                    for call in calls
-                ],
-            }
-        )
-    elif outcome.assistant_content:
-        messages.append({"role": "assistant", "content": outcome.assistant_content})
-
-    for call in calls:
-        messages.append(
-            {
-                "role": "tool",
-                "tool_call_id": call.stable_call_id,
-                "name": call.tool_name,
-                "content": canonical_json(normalized[call.stable_call_id]),
-            }
-        )
+    _append_turn_messages(messages, calls, outcome, normalized)
 
     # Add error feedback if proposal rejected
     if outcome.error is not None:
@@ -1075,6 +1039,51 @@ async def tool_execution_handler(state: WorkflowState, context: WorkflowContext)
             )
         }
     )
+
+
+def _append_turn_messages(
+    messages: list[Any],
+    calls: list[Any],
+    outcome: ProposalOutcomeV1,
+    normalized: dict[str, JsonValue],
+) -> None:
+    if calls:
+        raw_by_id = {
+            str(item.get("stable_call_id", "")): item for item in outcome.raw_tool_proposals
+        }
+        messages.append(
+            {
+                "role": "assistant",
+                "content": outcome.assistant_content,
+                "tool_calls": [
+                    {
+                        "id": call.stable_call_id,
+                        "type": "function",
+                        "function": {
+                            "name": call.tool_name,
+                            "arguments": canonical_json(
+                                raw_by_id.get(call.stable_call_id, {}).get(
+                                    "raw_params", call.arguments_json()
+                                )
+                            ),
+                        },
+                    }
+                    for call in calls
+                ],
+            }
+        )
+    elif outcome.assistant_content:
+        messages.append({"role": "assistant", "content": outcome.assistant_content})
+
+    for call in calls:
+        messages.append(
+            {
+                "role": "tool",
+                "tool_call_id": call.stable_call_id,
+                "name": call.tool_name,
+                "content": canonical_json(normalized[call.stable_call_id]),
+            }
+        )
 
 
 async def completion_decision_handler(state: WorkflowState, context: WorkflowContext) -> StatePatch:

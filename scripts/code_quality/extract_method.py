@@ -69,11 +69,26 @@ def main() -> int:
     text = path.read_text(encoding="utf-8")
     lines = text.splitlines(keepends=True)
     tree = ast.parse(text)
-    fn = next(
-        n
-        for n in ast.walk(tree)
-        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name == a.method
-    )
+    # 方法名可写成 "外层.内层"：从外层方法里的闭包抽段（同名闭包多时用它定位）
+    outer = None
+    if "." in a.method:
+        outer_name, inner_name = a.method.split(".", 1)
+        outer = next(
+            n
+            for n in ast.walk(tree)
+            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name == outer_name
+        )
+        fn = next(
+            n
+            for n in ast.walk(outer)
+            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name == inner_name and n is not outer
+        )
+    else:
+        fn = next(
+            n
+            for n in ast.walk(tree)
+            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name == a.method
+        )
     start, end = (int(x) for x in a.span.split("-"))
 
     # 找到恰好覆盖这段的同层语句
@@ -104,6 +119,11 @@ def main() -> int:
     after = [s for s in all_stmts if s.lineno > end]
     params = {x.arg for x in (*fn.args.posonlyargs, *fn.args.args, *fn.args.kwonlyargs)}
     assigned_before = names(before, ast.Store) | params
+    if outer is not None:  # 闭包读到的外层变量：外层参数与闭包定义之前的赋值
+        outer_before = [s for s in ast.walk(outer) if isinstance(s, ast.stmt) and s.end_lineno < fn.lineno]
+        assigned_before |= names(outer_before, ast.Store) | {
+            x.arg for x in (*outer.args.posonlyargs, *outer.args.args, *outer.args.kwonlyargs)
+        }
     # 段在 `except … as 名字` 里面时，名字由外层的异常处理绑定
     assigned_before |= {
         h.name
@@ -111,6 +131,20 @@ def main() -> int:
         if isinstance(h, ast.ExceptHandler) and h.name and h.lineno < start <= h.end_lineno
     }
     need_in = (names(block, ast.Load) & assigned_before) - {"self"}
+    # lambda 自己的参数：只在绑定它的 lambda 里读到的名字不是外面传进来的
+    inside_lambda: set[int] = set()
+    lambda_args: set[str] = set()
+    for s in block:
+        for lam in ast.walk(s):
+            if isinstance(lam, ast.Lambda):
+                bound = {x.arg for x in (*lam.args.posonlyargs, *lam.args.args, *lam.args.kwonlyargs)}
+                lambda_args |= bound
+                inside_lambda |= {id(n) for n in ast.walk(lam.body) if isinstance(n, ast.Name) and n.id in bound}
+    need_in -= {
+        name for name in lambda_args
+        if all(id(n) in inside_lambda for s in block for n in ast.walk(s)
+               if isinstance(n, ast.Name) and n.id == name and isinstance(n.ctx, ast.Load))
+    }
     need_out = names(block, ast.Store) & names(after, ast.Load)
     # 段在循环里：下一轮循环还会读到段内赋的值（block_flow 只看段后面的语句，看不到下一轮）
     loops = [
@@ -268,9 +302,13 @@ def main() -> int:
     # 参数多于 4 个时，第一个之后都写成仅限关键字，调用处按名字传，免得位置传错
     keyword = len(given_params) > 4
     shown = given_params[:1] + (["*"] + given_params[1:] if keyword else given_params[1:])
-    sig_params = ", ".join((["self"] if not a.static else []) + shown)
+    # 原函数是模块级函数（不在类里）时，新函数也是模块级函数：不带 self，调用处直接写名字
+    module_level = fn in tree.body
+    if outer is not None:  # 从闭包抽出的段作为类的方法，插在外层方法后面
+        method_indent = " " * outer.col_offset
+    sig_params = ", ".join((["self"] if not (a.static or module_level) else []) + shown)
     head = (
-        (f"{method_indent}@staticmethod\n" if a.static else "")
+        (f"{method_indent}@staticmethod\n" if a.static and not module_level else "")
         + f"{method_indent}{'async ' if is_async else ''}def {a.new_name}({sig_params})"
         + (f" -> {ret_ann}" if ret_ann else "")
         + ":\n"
@@ -286,8 +324,8 @@ def main() -> int:
     call_args = ", ".join(
         arg_names[:1] + ([f"{n}={n}" for n in arg_names[1:]] if keyword else arg_names[1:])
     )
-    owner = "self" if not a.static else type_owner(tree, fn)
-    call = f"{'await ' if is_async else ''}{owner}.{a.new_name}({call_args})"
+    owner = "" if module_level else ("self." if not a.static else type_owner(tree, fn) + ".")
+    call = f"{'await ' if is_async else ''}{owner}{a.new_name}({call_args})"
     if a.sentinel:
         call_line = (f"{indent}{a.sentinel} = {call}\n{indent}if {a.sentinel} is not None:\n"
                      f"{indent}    return {a.sentinel}\n")
@@ -300,7 +338,7 @@ def main() -> int:
     else:
         call_line = f"{indent}{call}\n"
 
-    anchor = fn
+    anchor = fn if outer is None else outer
     if a.after:
         anchor = next(
             n

@@ -22,6 +22,7 @@ from ...contracts import (
     AttemptStatus,
     Budget,
     ContractError,
+    Task,
     TaskStatus,
     ids,
 )
@@ -374,42 +375,61 @@ class AttemptLifecycleCommitsMixin(CommitServiceCore):
                     "tokens": reservation.tokens,
                 },
             )
-            if (
-                routing
-            ):  # step 6 (S6-03): the physical route is on the timeline, frozen before the call
-                self._emit(
-                    "ModelRouted",
-                    task.mission_id,
-                    key=attempt_id,
-                    task_id=task_id,
-                    attempt_id=attempt_id,
-                    payload={
-                        "runtime_profile_id": runtime_profile_id,
-                        "model": model,
-                        **dict(routing),
-                    },
-                )
-            grant = intent_config.get("resource_grant")
-            if grant:  # 推后第 3 批 H10：规划器批准的资源申请，和这次尝试同一个事务
-                self._emit(
-                    GRANTED,
-                    task.mission_id,
-                    key=attempt_id,
-                    task_id=task_id,
-                    attempt_id=attempt_id,
-                    payload=dict(grant),
-                )
-            allocation = intent_config.get("allocation")
-            if allocation:  # step 5 (S5-09): the §29.3 decision is on the timeline as well
-                self._emit(
-                    "AllocationDecided",
-                    task.mission_id,
-                    key=attempt_id,
-                    task_id=task_id,
-                    attempt_id=attempt_id,
-                    payload=dict(allocation),
-                )
+            self._emit_attempt_decisions(
+                task,
+                attempt_id=attempt_id,
+                task_id=task_id,
+                intent_config=intent_config,
+                routing=routing,
+                runtime_profile_id=runtime_profile_id,
+                model=model,
+            )
             return attempt, intent
+
+    def _emit_attempt_decisions(
+        self,
+        task: Task,
+        *,
+        attempt_id: str,
+        task_id: str,
+        intent_config: Mapping[str, Any],
+        routing: Mapping[str, Any] | None,
+        runtime_profile_id: str,
+        model: str,
+    ) -> None:
+        if routing:  # step 6 (S6-03): the physical route is on the timeline, frozen before the call
+            self._emit(
+                "ModelRouted",
+                task.mission_id,
+                key=attempt_id,
+                task_id=task_id,
+                attempt_id=attempt_id,
+                payload={
+                    "runtime_profile_id": runtime_profile_id,
+                    "model": model,
+                    **dict(routing),
+                },
+            )
+        grant = intent_config.get("resource_grant")
+        if grant:  # 推后第 3 批 H10：规划器批准的资源申请，和这次尝试同一个事务
+            self._emit(
+                GRANTED,
+                task.mission_id,
+                key=attempt_id,
+                task_id=task_id,
+                attempt_id=attempt_id,
+                payload=dict(grant),
+            )
+        allocation = intent_config.get("allocation")
+        if allocation:  # step 5 (S5-09): the §29.3 decision is on the timeline as well
+            self._emit(
+                "AllocationDecided",
+                task.mission_id,
+                key=attempt_id,
+                task_id=task_id,
+                attempt_id=attempt_id,
+                payload=dict(allocation),
+            )
 
     def claim_intent(
         self, intent_id: str, *, owner: str, lease_seconds: float

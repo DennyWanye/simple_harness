@@ -1229,44 +1229,17 @@ class ResolutionCommitsMixin:
                     resolution_ref=str(resolution.resolution_id),
                 )
             semantics.clear_revoked_generation(command.mission_id, resolution.goal_task_id)
-            payload = {
-                "command_id": command.command_id,
-                "resolution_id": str(resolution.resolution_id),
-                "goal_task_id": resolution.goal_task_id,
-                "obligation_id": resolution.obligation_id,
-                "method_instance_id": resolution.method_instance_id,
-                "purpose": str(command.purpose),
-                "review_account": command.account,
-                "requirements_version": int(resolution.requirements_version),
-                "contract_revision": int(resolution.contract_revision),
-                "child_resolution_ids": list(resolution.child_resolution_ids),
-                "contributing_occurrences": (
-                    [] if compound is None else sorted(compound.contributing_occurrence_ids)
-                ),
-                "contributing_acceptances": {
-                    occurrence: list(ids) for occurrence, ids in sorted(contributions.items())
-                },
-                "is_mission_root": command.is_mission_root,
-                "required_delivery_stage": (
-                    None
-                    if command.required_delivery_stage is None
-                    else str(command.required_delivery_stage)
-                ),
-                "delivery_receipt_id": delivery,
-                "witness_id": licence_id,
-                "demand_withdrawn": bool(withdrawn and not shared),
-                "intent_hash": intent,
-                "read_set_hash": content_hash_of(command.read_set.to_json()),
-                "source": dict(command.source),
-            }
-            payload["output_identity"] = {
-                "kind": GOAL_RESOLUTION_KIND,
-                "subject_id": str(resolution.resolution_id),
-                "content_hash": content_hash_of(resolution.to_json()),
-                "obligation_id": resolution.obligation_id,
-                "goal_task_id": resolution.goal_task_id,
-                "is_mission_root": command.is_mission_root,
-            }
+            payload = ResolutionCommitsMixin._goal_resolution_payload(
+                command,
+                resolution=resolution,
+                compound=compound,
+                contributions=contributions,
+                delivery=delivery,
+                licence_id=licence_id,
+                withdrawn=withdrawn,
+                shared=shared,
+                intent=intent,
+            )
             payload["detail"] = {
                 "mission_version": mission.version,
                 "scope_id": command.scope_id,
@@ -1286,6 +1259,59 @@ class ResolutionCommitsMixin:
             return GoalResolutionReceipt(
                 resolution=resolution, commit=commit, account=satisfied, decision=decision
             )
+
+    @staticmethod
+    def _goal_resolution_payload(
+        command: CommitGoalResolutionCommand,
+        *,
+        resolution: GoalResolution,
+        compound: CompoundFacts | None,
+        contributions: dict[str, tuple[str, ...]],
+        delivery: str | None,
+        licence_id: str | None,
+        withdrawn: bool,
+        shared: bool,
+        intent: str,
+    ) -> dict[str, Any]:
+        payload = {
+            "command_id": command.command_id,
+            "resolution_id": str(resolution.resolution_id),
+            "goal_task_id": resolution.goal_task_id,
+            "obligation_id": resolution.obligation_id,
+            "method_instance_id": resolution.method_instance_id,
+            "purpose": str(command.purpose),
+            "review_account": command.account,
+            "requirements_version": int(resolution.requirements_version),
+            "contract_revision": int(resolution.contract_revision),
+            "child_resolution_ids": list(resolution.child_resolution_ids),
+            "contributing_occurrences": (
+                [] if compound is None else sorted(compound.contributing_occurrence_ids)
+            ),
+            "contributing_acceptances": {
+                occurrence: list(ids) for occurrence, ids in sorted(contributions.items())
+            },
+            "is_mission_root": command.is_mission_root,
+            "required_delivery_stage": (
+                None
+                if command.required_delivery_stage is None
+                else str(command.required_delivery_stage)
+            ),
+            "delivery_receipt_id": delivery,
+            "witness_id": licence_id,
+            "demand_withdrawn": bool(withdrawn and not shared),
+            "intent_hash": intent,
+            "read_set_hash": content_hash_of(command.read_set.to_json()),
+            "source": dict(command.source),
+        }
+        payload["output_identity"] = {
+            "kind": GOAL_RESOLUTION_KIND,
+            "subject_id": str(resolution.resolution_id),
+            "content_hash": content_hash_of(resolution.to_json()),
+            "obligation_id": resolution.obligation_id,
+            "goal_task_id": resolution.goal_task_id,
+            "is_mission_root": command.is_mission_root,
+        }
+        return payload
 
     # ---------------------------------------------------------------- shared gates
     def _open_mission(self, mission_id: str) -> Mission:

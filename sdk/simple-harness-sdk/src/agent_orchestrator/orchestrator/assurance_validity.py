@@ -453,30 +453,9 @@ class AssuranceValidity:
                         )
             pins = self._bound_pins(mission_id, body["review_key"], blobs)
         # Prepared checks read pinned CAS outside the lock (their own read views).
-        check_uses = []
-        for ref, check in sorted(consumed_bindings.items(), key=lambda item: item[0].key):
-            if (
-                check.execution_ref.kind not in {"local_check_receipt", "execution_receipt"}
-                or self.check_adapter is None
-                or target.kind != "result"
-            ):
-                # A check is bound to a Result (a MISSION_FINAL target is the root
-                # Task): it stays UNKNOWN there rather than being replayed from its
-                # historical PASS.  Executor checks are used from their recorded receipt.
-                continue
-            check_uses.append(
-                prepare_local_check_use(
-                    self.check_adapter,
-                    binding_ref=ref,
-                    result_ref=target,
-                    completion_scope=AssuranceRef("completion_scope", Pin.from_json(scope)),
-                    identity=identity,
-                    review_key=body["review_key"],
-                    pins=pins,
-                    authority=self.authority,
-                    maximum_blob_bytes=self.maximum_blob_bytes,
-                )
-            )
+        check_uses = self._prepare_check_uses(
+            consumed_bindings, target=target, scope=scope, identity=identity, body=body, pins=pins
+        )
         # Second pass: one consistent snapshot for exact objects, complete sets,
         # current authority and the current normalized check grades.
         with store.read_view():
@@ -662,6 +641,42 @@ class AssuranceValidity:
         if remember:
             self._remember(candidate)
         return candidate
+
+    def _prepare_check_uses(
+        self,
+        consumed_bindings: dict[AssuranceRef, Any],
+        *,
+        target: AssuranceRef,
+        scope: Any,
+        identity: UseIdentity,
+        body: Mapping[str, Any],
+        pins: Mapping[AssuranceRef, str],
+    ) -> list[PreparedCheckUse]:
+        check_uses = []
+        for ref, check in sorted(consumed_bindings.items(), key=lambda item: item[0].key):
+            if (
+                check.execution_ref.kind not in {"local_check_receipt", "execution_receipt"}
+                or self.check_adapter is None
+                or target.kind != "result"
+            ):
+                # A check is bound to a Result (a MISSION_FINAL target is the root
+                # Task): it stays UNKNOWN there rather than being replayed from its
+                # historical PASS.  Executor checks are used from their recorded receipt.
+                continue
+            check_uses.append(
+                prepare_local_check_use(
+                    self.check_adapter,
+                    binding_ref=ref,
+                    result_ref=target,
+                    completion_scope=AssuranceRef("completion_scope", Pin.from_json(scope)),
+                    identity=identity,
+                    review_key=body["review_key"],
+                    pins=pins,
+                    authority=self.authority,
+                    maximum_blob_bytes=self.maximum_blob_bytes,
+                )
+            )
+        return check_uses
 
     def _bound_pins(
         self, mission_id: str, review_key: str, blobs: set[AssuranceRef]

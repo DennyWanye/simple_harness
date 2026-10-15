@@ -13,7 +13,7 @@ import sqlite3
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from types import MappingProxyType
-from typing import Protocol, cast
+from typing import Any, Protocol, cast
 
 from simple_harness.contracts import JsonValue, RunId, validate_json_value
 from simple_harness.execution.fences import RunFenceLease
@@ -1140,98 +1140,21 @@ class SqliteNativeCheckpointStore:
                 raise WorkflowOperationConflict("frozen workflow time authority changed")
             prepare_row: sqlite3.Row | None = None
             if terminal_projection_prepare_id is not None:
-                prepare_row = connection.execute(
-                    "SELECT * FROM terminal_projection_prepares WHERE operation_id=?",
-                    (terminal_projection_prepare_id,),
-                ).fetchone()
-                if (
-                    prepare_row is None
-                    or str(prepare_row["run_id"]) != run_id
-                    or str(prepare_row["namespace"]) != namespace
-                    or str(prepare_row["terminal_checkpoint_id"]) != expected_head
-                    or prepare_row["consumed_at"] is not None
-                ):
-                    raise WorkflowOperationConflict("terminal projection prepare is not consumable")
-                descriptor_raw = current.metadata.get("terminal_projection_descriptor")
-                if not isinstance(descriptor_raw, dict):
-                    raise WorkflowOperationConflict("terminal projection descriptor is missing")
-                descriptor = TerminalProjectionDescriptor(
-                    capability_id=cast(str, descriptor_raw["capability_id"]),
-                    version=cast(str, descriptor_raw["version"]),
-                    projector_fingerprint=cast(str, descriptor_raw["projector_fingerprint"]),
-                    request_schema_hash=cast(str, descriptor_raw["request_schema_hash"]),
-                    request_factory_hash=cast(str, descriptor_raw["request_factory_hash"]),
-                )
-                if descriptor.digest != str(prepare_row["descriptor_digest"]):
-                    raise WorkflowOperationConflict("terminal projection descriptor changed")
-                projection_request = NativeWorkflowExecutable._terminal_projection_request(
-                    descriptor=descriptor,
+                prepare_row = self._consumable_terminal_prepare(
+                    connection,
+                    terminal_projection_prepare_id=terminal_projection_prepare_id,
+                    run_id=run_id,
+                    namespace=namespace,
+                    expected_head=expected_head,
+                    current=current,
                     state=state,
-                    run_id=run_id,
-                    workflow_name=cast(str, configurable.get("workflow_name")),
-                    workflow_version=cast(str, configurable.get("workflow_version")),
-                    status=cast(str, terminal_status),
-                    error=terminal_error,
+                    configurable=configurable,
+                    terminal_status=terminal_status,
+                    terminal_error=terminal_error,
                     recovery_action=recovery_action,
+                    intents=intents,
+                    blob_refs=blob_refs,
                 )
-                projection_input_hash = hashlib.sha256(
-                    json.dumps(
-                        projection_request,
-                        ensure_ascii=False,
-                        allow_nan=False,
-                        separators=(",", ":"),
-                        sort_keys=True,
-                    ).encode()
-                ).hexdigest()
-                if projection_input_hash != str(prepare_row["input_hash"]):
-                    raise WorkflowOperationConflict("terminal projection input authority changed")
-                projection_output = _strict_object(
-                    json.loads(str(prepare_row["output_json"])), "terminal_projection"
-                )
-                projected_state = copy.deepcopy(dict(state))
-                projected_values = projected_state.get("values")
-                projected_values = (
-                    copy.deepcopy(dict(projected_values))
-                    if isinstance(projected_values, Mapping)
-                    else {}
-                )
-                projected_values["delivery_intents"] = cast(
-                    JsonValue, copy.deepcopy(projection_output["intents"])
-                )
-                projected_state["values"] = projected_values
-                expected_terminal_intents = NativeWorkflowExecutable.terminal_intents(
-                    projected_state,
-                    run_id=run_id,
-                    status=terminal_status,
-                    error=terminal_error,
-                    recovery_action=recovery_action,
-                )
-                expected_mappings = [
-                    {
-                        "intent_id": intent.intent_id or f"{run_id}:run-terminal",
-                        "event_key": intent.event_key or "run:terminal",
-                        "event_type": intent.event_type,
-                        "channel": intent.channel or "final",
-                        "payload": copy.deepcopy(intent.payload),
-                    }
-                    for intent in expected_terminal_intents
-                ]
-                if json.dumps(
-                    expected_mappings, sort_keys=True, separators=(",", ":")
-                ) != json.dumps(
-                    [dict(intent) for intent in intents],
-                    sort_keys=True,
-                    separators=(",", ":"),
-                ):
-                    raise WorkflowOperationConflict("terminal projection intents changed")
-                expected_blob_refs = tuple(
-                    sorted(
-                        set(NativeWorkflowExecutable._state_blob_refs(state))
-                        | set(cast(list[str], projection_output["blob_refs"]))
-                    )
-                )
-                if expected_blob_refs != tuple(blob_refs):
-                    raise WorkflowOperationConflict("terminal projection blob refs changed")
             await self._blob_references.validate_references(
                 transaction,
                 run_id=run_id,
@@ -1368,6 +1291,113 @@ class SqliteNativeCheckpointStore:
             return NativeCommitResult(snapshot, tuple(event_ids))
 
         return await self._atomic("frontier", operation)
+
+    def _consumable_terminal_prepare(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        terminal_projection_prepare_id: str,
+        run_id: str,
+        namespace: str,
+        expected_head: str,
+        current: NativeSnapshotEnvelope,
+        state: Any,
+        configurable: Any,
+        terminal_status: Any,
+        terminal_error: Any,
+        recovery_action: Any,
+        intents: Any,
+        blob_refs: Any,
+    ) -> sqlite3.Row | None:
+        prepare_row = connection.execute(
+            "SELECT * FROM terminal_projection_prepares WHERE operation_id=?",
+            (terminal_projection_prepare_id,),
+        ).fetchone()
+        if (
+            prepare_row is None
+            or str(prepare_row["run_id"]) != run_id
+            or str(prepare_row["namespace"]) != namespace
+            or str(prepare_row["terminal_checkpoint_id"]) != expected_head
+            or prepare_row["consumed_at"] is not None
+        ):
+            raise WorkflowOperationConflict("terminal projection prepare is not consumable")
+        descriptor_raw = current.metadata.get("terminal_projection_descriptor")
+        if not isinstance(descriptor_raw, dict):
+            raise WorkflowOperationConflict("terminal projection descriptor is missing")
+        descriptor = TerminalProjectionDescriptor(
+            capability_id=cast(str, descriptor_raw["capability_id"]),
+            version=cast(str, descriptor_raw["version"]),
+            projector_fingerprint=cast(str, descriptor_raw["projector_fingerprint"]),
+            request_schema_hash=cast(str, descriptor_raw["request_schema_hash"]),
+            request_factory_hash=cast(str, descriptor_raw["request_factory_hash"]),
+        )
+        if descriptor.digest != str(prepare_row["descriptor_digest"]):
+            raise WorkflowOperationConflict("terminal projection descriptor changed")
+        projection_request = NativeWorkflowExecutable._terminal_projection_request(
+            descriptor=descriptor,
+            state=state,
+            run_id=run_id,
+            workflow_name=cast(str, configurable.get("workflow_name")),
+            workflow_version=cast(str, configurable.get("workflow_version")),
+            status=cast(str, terminal_status),
+            error=terminal_error,
+            recovery_action=recovery_action,
+        )
+        projection_input_hash = hashlib.sha256(
+            json.dumps(
+                projection_request,
+                ensure_ascii=False,
+                allow_nan=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            ).encode()
+        ).hexdigest()
+        if projection_input_hash != str(prepare_row["input_hash"]):
+            raise WorkflowOperationConflict("terminal projection input authority changed")
+        projection_output = _strict_object(
+            json.loads(str(prepare_row["output_json"])), "terminal_projection"
+        )
+        projected_state = copy.deepcopy(dict(state))
+        projected_values = projected_state.get("values")
+        projected_values = (
+            copy.deepcopy(dict(projected_values)) if isinstance(projected_values, Mapping) else {}
+        )
+        projected_values["delivery_intents"] = cast(
+            JsonValue, copy.deepcopy(projection_output["intents"])
+        )
+        projected_state["values"] = projected_values
+        expected_terminal_intents = NativeWorkflowExecutable.terminal_intents(
+            projected_state,
+            run_id=run_id,
+            status=terminal_status,
+            error=terminal_error,
+            recovery_action=recovery_action,
+        )
+        expected_mappings = [
+            {
+                "intent_id": intent.intent_id or f"{run_id}:run-terminal",
+                "event_key": intent.event_key or "run:terminal",
+                "event_type": intent.event_type,
+                "channel": intent.channel or "final",
+                "payload": copy.deepcopy(intent.payload),
+            }
+            for intent in expected_terminal_intents
+        ]
+        if json.dumps(expected_mappings, sort_keys=True, separators=(",", ":")) != json.dumps(
+            [dict(intent) for intent in intents],
+            sort_keys=True,
+            separators=(",", ":"),
+        ):
+            raise WorkflowOperationConflict("terminal projection intents changed")
+        expected_blob_refs = tuple(
+            sorted(
+                set(NativeWorkflowExecutable._state_blob_refs(state))
+                | set(cast(list[str], projection_output["blob_refs"]))
+            )
+        )
+        if expected_blob_refs != tuple(blob_refs):
+            raise WorkflowOperationConflict("terminal projection blob refs changed")
+        return prepare_row
 
 
 __all__ = (

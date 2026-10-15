@@ -18,8 +18,9 @@ heuristic over operator names, prose, capabilities, or side-effect kinds.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from ...contracts.htn import (
     ObligationCoverage,
@@ -41,6 +42,9 @@ from ...contracts.semantic_base import content_hash_of
 from ...graph.task_network import TaskNetworkSnapshot
 from ...orchestrator.accepted_outputs import CarriedCriterion
 from ...orchestrator.leaf_acceptance import LEAF_LOCAL_CRITERION, LEAF_REVIEW_POLICY
+
+if TYPE_CHECKING:
+    from ...graph.task_network import OccurrenceSpec
 
 
 class CompletionScopeCompilationError(ContractError):
@@ -111,22 +115,7 @@ def compile_completion_scopes(
 ) -> tuple[OccurrenceCompletionScopeV1, ...]:
     """Compile immutable per-occurrence scopes without inferring effect authority."""
 
-    if not isinstance(spec, OperationCompletionRequirementsV1):
-        raise _fail("spec must be an OperationCompletionRequirementsV1")
-    if not isinstance(plan, TaskNetworkSnapshot):
-        raise _fail("plan must be a TaskNetworkSnapshot")
-    if not isinstance(plan_ref, PlanRevisionPinV1):
-        raise _fail("plan_ref must be a PlanRevisionPinV1")
-    if isinstance(approved_criterion_coverage, (str, bytes, bytearray)) or not isinstance(
-        approved_criterion_coverage, Sequence
-    ):
-        raise _fail("approved criterion coverage must be a sequence of resolved records")
-    if str(plan.mission_id) != spec.mission_id:
-        raise _fail("Spec and plan belong to different Missions")
-    if int(plan.plan_revision) != int(plan_ref.revision):
-        raise _fail("plan_ref revision does not identify the supplied plan")
-    if _plan_identity(plan) != plan_ref.snapshot_hash:
-        raise _fail("plan_ref snapshot hash does not identify the supplied plan")
+    _check_compile_inputs(spec, plan, plan_ref, approved_criterion_coverage)
 
     occurrences = {str(item.occurrence_id): item for item in plan.occurrences}
     bindings = {str(item.task_id): item for item in plan.task_bindings}
@@ -234,83 +223,19 @@ def compile_completion_scopes(
     # chain to prove the local projection, while keeping only the Spec-rooted
     # criterion in ``spec_content``.  Task names alone are insufficient because the
     # same Task contract may occur more than once in one Plan.
-    local_at: set[tuple[str, str]] = set()
-    local_source: dict[tuple[str, str], tuple[str, str]] = {}
-    while pending:
-        deferred: list[tuple[CarriedCriterion, str, str]] = []
-        progressed = False
-        for item, occurrence_id, criterion_id in pending:
-            local_parent: str | None = None
-            if criterion_id not in content_keys and criterion_id not in effect_criteria:
-                candidates = [
-                    candidate
-                    for candidate in ancestors_including(occurrence_id)
-                    if str(occurrences[candidate].task_id) == str(item.parent_task_id)
-                    and (candidate, criterion_id) in local_at
-                ]
-                if len(candidates) > 1:
-                    raise _fail(f"local criterion {criterion_id!r} has ambiguous ancestor coverage")
-                if not candidates:
-                    deferred.append((item, occurrence_id, criterion_id))
-                    continue
-                local_parent = candidates[0]
-            if criterion_id in content_keys:
-                parent_candidates = [
-                    candidate
-                    for candidate in ancestors_including(occurrence_id)
-                    if str(occurrences[candidate].task_id) == str(item.parent_task_id)
-                ]
-                if len(parent_candidates) != 1:
-                    raise _fail(
-                        f"criterion coverage for {criterion_id!r} has "
-                        f"{len(parent_candidates)} matching parent Task occurrences"
-                    )
-                spec_content[parent_candidates[0]].add(criterion_id)
-                mapped_spec_content.add(criterion_id)
-                source_occurrence = parent_candidates[0]
-            elif criterion_id in effect_criteria:
-                # A composition link proves decomposition coverage, never moves
-                # effect ownership from its approved Obligation root to a leaf.
-                # The leaf still needs its own concrete preparation criterion.
-                progressed = True
-                continue
-            else:
-                assert local_parent is not None
-                source_occurrence = local_parent
-            leaf_criterion_id = str(item.leaf_criterion_id)
-            handed_on[source_occurrence].add(criterion_id)
-            handed_to[occurrence_id].add(leaf_criterion_id)
-            if leaf_criterion_id in content_keys and leaf_criterion_id != criterion_id:
-                raise _fail(
-                    f"leaf criterion {leaf_criterion_id!r} collides with another Spec criterion"
-                )
-            reviewed_content[occurrence_id].add(leaf_criterion_id)
-            if leaf_criterion_id not in content_keys:
-                target = (occurrence_id, leaf_criterion_id)
-                # Multiple consumers may share one goal. They must trace this
-                # local criterion to the same approved root obligation, even if
-                # the immediate parent differs along the two decomposition paths.
-                source = (
-                    (source_occurrence, criterion_id)
-                    if criterion_id in content_keys
-                    else local_source[(source_occurrence, criterion_id)]
-                )
-                previous = local_source.get(target)
-                if previous is not None and previous != source:
-                    raise _fail(
-                        f"local criterion {leaf_criterion_id!r} at {occurrence_id!r} "
-                        "has multiple parent mappings"
-                    )
-                local_source[target] = source
-                local_review_ids[occurrence_id].add(leaf_criterion_id)
-                local_at.add(target)
-            progressed = True
-        if not progressed:
-            unresolved = sorted({criterion for _, _, criterion in deferred})
-            raise _fail(
-                f"criterion coverage names {unresolved}, which has no Spec-rooted ancestor link"
-            )
-        pending = deferred
+    _resolve_carried_criteria(
+        pending,
+        occurrences=occurrences,
+        content_keys=content_keys,
+        effect_criteria=effect_criteria,
+        handed_on=handed_on,
+        handed_to=handed_to,
+        reviewed_content=reviewed_content,
+        spec_content=spec_content,
+        local_review_ids=local_review_ids,
+        mapped_spec_content=mapped_spec_content,
+        ancestors_including=ancestors_including,
+    )
 
     # 片 B（秩序：覆盖完整、归属唯一）：要求是上级做法分下来的中间目标，它采用的做法必须恰好
     # 把这些要求链接下去，每一步都落到某条要求上。漏一条，没被链接的那一步会按它类型的一揽子
@@ -401,6 +326,159 @@ def compile_completion_scopes(
             found.update(descendants(child, visiting | {start}))
         return found
 
+    scopes = _compile_scopes(
+        spec,
+        plan_ref=plan_ref,
+        occurrences=occurrences,
+        bindings=bindings,
+        owner_by_effect=owner_by_effect,
+        effect_linked=effect_linked,
+        spec_content=spec_content,
+        reviewed_content=reviewed_content,
+        descendants=descendants,
+    )
+
+    compiled = tuple(scopes)
+    local_content_by_scope = {
+        occurrence_id: tuple(sorted(local_review_ids[occurrence_id]))
+        for occurrence_id in occurrences
+    }
+    validate_spec_scope_coverage(
+        spec,
+        compiled,
+        root_occurrence_id=roots[0],
+        local_content_criterion_ids_by_occurrence=local_content_by_scope,
+    )
+    validate_scope_owners(spec, compiled)
+    return compiled
+
+
+def _check_compile_inputs(
+    spec: object, plan: object, plan_ref: object, approved_criterion_coverage: object
+) -> None:
+    if not isinstance(spec, OperationCompletionRequirementsV1):
+        raise _fail("spec must be an OperationCompletionRequirementsV1")
+    if not isinstance(plan, TaskNetworkSnapshot):
+        raise _fail("plan must be a TaskNetworkSnapshot")
+    if not isinstance(plan_ref, PlanRevisionPinV1):
+        raise _fail("plan_ref must be a PlanRevisionPinV1")
+    if isinstance(approved_criterion_coverage, (str, bytes, bytearray)) or not isinstance(
+        approved_criterion_coverage, Sequence
+    ):
+        raise _fail("approved criterion coverage must be a sequence of resolved records")
+    if str(plan.mission_id) != spec.mission_id:
+        raise _fail("Spec and plan belong to different Missions")
+    if int(plan.plan_revision) != int(plan_ref.revision):
+        raise _fail("plan_ref revision does not identify the supplied plan")
+    if _plan_identity(plan) != plan_ref.snapshot_hash:
+        raise _fail("plan_ref snapshot hash does not identify the supplied plan")
+
+
+def _resolve_carried_criteria(
+    pending: list[tuple[CarriedCriterion, str, str]],
+    *,
+    occurrences: dict[str, OccurrenceSpec],
+    content_keys: set[str],
+    effect_criteria: set[str],
+    handed_on: dict[str, set[str]],
+    handed_to: dict[str, set[str]],
+    reviewed_content: dict[str, set[str]],
+    spec_content: dict[str, set[str]],
+    local_review_ids: dict[str, set[str]],
+    mapped_spec_content: set[str],
+    ancestors_including: Callable[[str], set[str]],
+) -> None:
+    local_at: set[tuple[str, str]] = set()
+    local_source: dict[tuple[str, str], tuple[str, str]] = {}
+    while pending:
+        deferred: list[tuple[CarriedCriterion, str, str]] = []
+        progressed = False
+        for item, occurrence_id, criterion_id in pending:
+            local_parent: str | None = None
+            if criterion_id not in content_keys and criterion_id not in effect_criteria:
+                candidates = [
+                    candidate
+                    for candidate in ancestors_including(occurrence_id)
+                    if str(occurrences[candidate].task_id) == str(item.parent_task_id)
+                    and (candidate, criterion_id) in local_at
+                ]
+                if len(candidates) > 1:
+                    raise _fail(f"local criterion {criterion_id!r} has ambiguous ancestor coverage")
+                if not candidates:
+                    deferred.append((item, occurrence_id, criterion_id))
+                    continue
+                local_parent = candidates[0]
+            if criterion_id in content_keys:
+                parent_candidates = [
+                    candidate
+                    for candidate in ancestors_including(occurrence_id)
+                    if str(occurrences[candidate].task_id) == str(item.parent_task_id)
+                ]
+                if len(parent_candidates) != 1:
+                    raise _fail(
+                        f"criterion coverage for {criterion_id!r} has "
+                        f"{len(parent_candidates)} matching parent Task occurrences"
+                    )
+                spec_content[parent_candidates[0]].add(criterion_id)
+                mapped_spec_content.add(criterion_id)
+                source_occurrence = parent_candidates[0]
+            elif criterion_id in effect_criteria:
+                # A composition link proves decomposition coverage, never moves
+                # effect ownership from its approved Obligation root to a leaf.
+                # The leaf still needs its own concrete preparation criterion.
+                progressed = True
+                continue
+            else:
+                assert local_parent is not None
+                source_occurrence = local_parent
+            leaf_criterion_id = str(item.leaf_criterion_id)
+            handed_on[source_occurrence].add(criterion_id)
+            handed_to[occurrence_id].add(leaf_criterion_id)
+            if leaf_criterion_id in content_keys and leaf_criterion_id != criterion_id:
+                raise _fail(
+                    f"leaf criterion {leaf_criterion_id!r} collides with another Spec criterion"
+                )
+            reviewed_content[occurrence_id].add(leaf_criterion_id)
+            if leaf_criterion_id not in content_keys:
+                target = (occurrence_id, leaf_criterion_id)
+                # Multiple consumers may share one goal. They must trace this
+                # local criterion to the same approved root obligation, even if
+                # the immediate parent differs along the two decomposition paths.
+                source = (
+                    (source_occurrence, criterion_id)
+                    if criterion_id in content_keys
+                    else local_source[(source_occurrence, criterion_id)]
+                )
+                previous = local_source.get(target)
+                if previous is not None and previous != source:
+                    raise _fail(
+                        f"local criterion {leaf_criterion_id!r} at {occurrence_id!r} "
+                        "has multiple parent mappings"
+                    )
+                local_source[target] = source
+                local_review_ids[occurrence_id].add(leaf_criterion_id)
+                local_at.add(target)
+            progressed = True
+        if not progressed:
+            unresolved = sorted({criterion for _, _, criterion in deferred})
+            raise _fail(
+                f"criterion coverage names {unresolved}, which has no Spec-rooted ancestor link"
+            )
+        pending = deferred
+
+
+def _compile_scopes(
+    spec: OperationCompletionRequirementsV1,
+    *,
+    plan_ref: PlanRevisionPinV1,
+    occurrences: dict[str, OccurrenceSpec],
+    bindings: dict[str, TaskSemanticBindingV1],
+    owner_by_effect: dict[str, str],
+    effect_linked: set[str],
+    spec_content: dict[str, set[str]],
+    reviewed_content: dict[str, set[str]],
+    descendants: Callable[[str], set[str]],
+) -> list[OccurrenceCompletionScopeV1]:
     scopes: list[OccurrenceCompletionScopeV1] = []
     for occurrence_id, occurrence in sorted(occurrences.items()):
         binding = bindings.get(str(occurrence.task_id))
@@ -465,20 +543,7 @@ def compile_completion_scopes(
                 owned_effect_keys=tuple(owned),
             )
         )
-
-    compiled = tuple(scopes)
-    local_content_by_scope = {
-        occurrence_id: tuple(sorted(local_review_ids[occurrence_id]))
-        for occurrence_id in occurrences
-    }
-    validate_spec_scope_coverage(
-        spec,
-        compiled,
-        root_occurrence_id=roots[0],
-        local_content_criterion_ids_by_occurrence=local_content_by_scope,
-    )
-    validate_scope_owners(spec, compiled)
-    return compiled
+    return scopes
 
 
 __all__ = ("CompletionScopeCompilationError", "compile_completion_scopes")

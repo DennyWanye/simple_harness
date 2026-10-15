@@ -368,28 +368,7 @@ def attribution(store: Store, mission_id: str) -> dict[str, Any]:  # noqa: C901 
     )
 
     # -- actions and people on the way (step 7)
-    actions = []
-    if store.has_table("actions"):
-        for action in store.list_actions(mission_id, "SUCCEEDED"):
-            request_id = action.get("approval_request_id")
-            approvers = (
-                []
-                if not request_id
-                else [
-                    d["principal_id"]
-                    for d in store.list_decisions(str(request_id))
-                    if d["decision"] == "grant"
-                ]
-            )
-            actions.append(
-                {
-                    "action_key": action["action_key"],
-                    "target": action.get("target"),
-                    "receipt_hash": (action.get("receipt") or {}).get("receipt_hash"),
-                    "decision_receipts": list(action.get("decision_receipts") or []),
-                    "approved_by": approvers,
-                }
-            )
+    actions = _attribution_actions(store, mission_id)
     human = {
         "wait_seconds": round(store.human_wait_seconds(mission_id, store.now), 3)
         if store.has_table("approvals")
@@ -431,6 +410,32 @@ def attribution(store: Store, mission_id: str) -> dict[str, Any]:  # noqa: C901 
         },
         "breaks": [b for n, b in enumerate(breaks) if b not in breaks[:n]],  # review P2-6
     }
+
+
+def _attribution_actions(store: Store, mission_id: str) -> list[dict[str, Any]]:
+    actions = []
+    if store.has_table("actions"):
+        for action in store.list_actions(mission_id, "SUCCEEDED"):
+            request_id = action.get("approval_request_id")
+            approvers = (
+                []
+                if not request_id
+                else [
+                    d["principal_id"]
+                    for d in store.list_decisions(str(request_id))
+                    if d["decision"] == "grant"
+                ]
+            )
+            actions.append(
+                {
+                    "action_key": action["action_key"],
+                    "target": action.get("target"),
+                    "receipt_hash": (action.get("receipt") or {}).get("receipt_hash"),
+                    "decision_receipts": list(action.get("decision_receipts") or []),
+                    "approved_by": approvers,
+                }
+            )
+    return actions
 
 
 TIMELINE_TYPES = frozenset(
