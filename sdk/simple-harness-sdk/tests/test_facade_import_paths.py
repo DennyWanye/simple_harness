@@ -30,6 +30,7 @@ SKIP = {".venv", "vendor", "__pycache__", "node_modules", "dist", "build"}
 
 #: Facade modules whose class was split into ``<facade>_domains``.
 FACADES = (
+    "agent_orchestrator.orchestrator.commit_service",
     "agent_orchestrator.orchestrator.hierarchical_dispatch",
     "agent_orchestrator.storage.htn_store",
     "agent_orchestrator.storage.store",
