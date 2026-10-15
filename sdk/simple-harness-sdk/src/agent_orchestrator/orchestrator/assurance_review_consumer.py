@@ -16,7 +16,7 @@ from ..contracts.resolution import ReviewVerdict
 from ..storage.assurance_reads import AssuranceReader, CurrentAuthority
 from ..storage.assurance_work import CHECK_PENDING, WorkClaim, WorkTarget, budget_wait_delay_ms
 from ..storage.htn_store import HtnStore
-from ..storage.store import _event_from_row
+from ..storage.store_domains.records import _event_from_row
 from .assurance_check_use import prepare_local_check_use
 from .assurance_review_import import (
     REPAIRABLE_INTERPRETATION_ERRORS,

@@ -323,13 +323,20 @@ def main() -> int:
             classes += (
                 f"\n\nif TYPE_CHECKING:\n    from ..{path.stem} import {args.class_name}"
             )
-            if "TYPE_CHECKING" not in block:
-                classes += "\nfrom typing import TYPE_CHECKING"
         parts.append("\n".join(x for x in (block, helpers, classes) if x))
         parts.append(code)
         text = "\n\n".join(p.rstrip("\n") for p in parts) + "\n"
         # 源文件经 `.子包.模块` 导入的名字，子包里的文件改成同包导入（从定义处导入）
-        return re.sub(rf"^(\s*)from \.\.{re.escape(spec['package'])}\.", r"\1from .", text, flags=re.M)
+        text = re.sub(rf"^(\s*)from \.\.{re.escape(spec['package'])}\.", r"\1from .", text, flags=re.M)
+        # 存根块或类型检查导入要用 TYPE_CHECKING，但源文件的这条导入可能已被删掉：缺就补（ruff 随后排序合并）
+        tree = ast.parse(text)
+        bound = {b for n in ast.walk(tree) if isinstance(n, (ast.Import, ast.ImportFrom)) for b, _ in bound_names(n)}
+        if "TYPE_CHECKING" not in bound and any(
+            isinstance(n, ast.Name) and n.id == "TYPE_CHECKING" for n in ast.walk(tree)
+        ):
+            marker = "from __future__ import annotations\n"
+            text = text.replace(marker, marker + "\nfrom typing import TYPE_CHECKING\n", 1)
+        return text
 
     all_wanted: set[str] = set()
     for g in spec["groups"]:

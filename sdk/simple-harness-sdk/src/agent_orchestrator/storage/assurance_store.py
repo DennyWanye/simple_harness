@@ -33,7 +33,8 @@ from ..assurance.refs import AssuranceRef, Pin
 from .assurance_pins import require_pin_receipt
 from .assurance_reads import MISSION_EPOCH_SCOPE, read_epochs_locked
 from .assurance_work import CONSUMERS, AssuranceWorkStore, WorkTarget, atomic
-from .store import Store, StoreConflict, _event_from_row
+from .store import Store, StoreConflict
+from .store_domains.records import _event_from_row
 
 
 class AssuranceStore:

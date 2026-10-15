@@ -25,7 +25,7 @@ from ..storage.assurance_reads import AssuranceReader, clock_discontinuous, read
 from ..storage.assurance_store import AssuranceStore
 from ..storage.assurance_work import WorkClaim, WorkTarget, atomic
 from ..storage.htn_store import HtnStore
-from ..storage.store import _event_from_row
+from ..storage.store_domains.records import _event_from_row
 from .assurance_final_writer import (
     closeout_document,
     notification_body,
