@@ -108,7 +108,6 @@ from .completion_support import current_child_supports
 from .operation_completion import OperationCompletionReader
 from .plan_commits import HIERARCHICAL_SEMANTICS, semantics_of
 from .scoped_composition_review import read_compound_projection, root_content_projection
-from .scoped_content_review import validate_scoped_command
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from ..contracts import Event, Mission
@@ -724,6 +723,9 @@ class ResolutionCommitsMixin:
                 )
                 checker = acceptable_scoped_operation_outcome
             else:
+                # 按需导入：循环依赖（resolution_commits ↔ scoped_content_review：范围审阅建在提交命令之上）
+                from .scoped_content_review import validate_scoped_command
+
                 projection = validate_scoped_command(self._store, command)
             decision = checker(
                 subject,

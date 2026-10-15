@@ -35,7 +35,6 @@ from typing import Any
 from ..contracts import Attempt, AttemptStatus, Task, TaskStatus
 from ..contracts.htn import TaskSemanticBindingV1
 from ..contracts.state_machines import TERMINAL_TASK
-from ..governance.promotion import weights_hash
 from ..graph.deduplicator import normalise_goal
 from ..graph.eligibility import (
     EligiblePrimitiveTask,
@@ -116,6 +115,9 @@ def score_tasks(
         goals.setdefault(normalise_goal(task.goal), []).append(task.id)
     pool = mission_max_tokens or sum(int(t.budget.max_tokens or 0) for t in live) or 1
     table = WEIGHTS if weights is None else weights  # step 9: a policy version's weights
+    # 按需导入：循环依赖（allocator ↔ promotion：晋升记录要带本模块的权重与版本）
+    from ..governance.promotion import weights_hash
+
     hashed = weights_hash(table)
     scores: dict[str, TaskScore] = {}
     for task in live:

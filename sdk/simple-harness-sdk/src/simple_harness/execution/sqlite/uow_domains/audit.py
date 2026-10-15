@@ -21,7 +21,7 @@ from simple_harness.execution.uow import UnitOfWorkConflict
 
 from ..audit import head_fact, read_snapshot, read_terminal_record
 from ..audit_pages import open_pages, read_page
-from ..context_use_requirements import validate_recovery
+from ...context_use_requirements import validate_recovery
 from ..decision_terminal import eligible, recover
 from .core import ExecutionUnitOfWorkCore
 from .support import _fault

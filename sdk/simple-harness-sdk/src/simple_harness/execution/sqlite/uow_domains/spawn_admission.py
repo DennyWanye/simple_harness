@@ -22,6 +22,7 @@ from simple_harness.execution.uow import (
     RunState,
     UnitOfWorkConflict,
 )
+from simple_harness.runtime.context import _append_context_in_transaction
 from simple_harness.runtime.orchestration import (
     RuntimeStartAdmission,
     RuntimeStartDisposition,
@@ -183,8 +184,6 @@ class WorkflowSpawnAdmissionMixin(ExecutionUnitOfWorkCore):
         now: float,
         fault: FaultHook | None = None,
     ) -> WorkflowSpawnToolOutcome:
-        # 按需导入：循环依赖（uow ↔ context）
-        from simple_harness.runtime.context import _append_context_in_transaction
 
         tx = self._assert_open_workflow_transaction(transaction)
         if (

@@ -19,6 +19,8 @@ from simple_harness.workflow.contracts import (
     ToolInventoryEntry,
 )
 
+from .contracts import ToolOutcome, ToolResult
+
 if TYPE_CHECKING:
     from .contracts import JsonObject, ToolContext, ToolResult
 
@@ -173,8 +175,6 @@ class Sidecar:
         return {"schema_version": 1, "inventory": _inventory_json(self.inventory)}
 
     def parse_outcome(self, call_id: CallId, raw: object) -> ToolResult:
-        # 按需导入：循环依赖（sidecar ↔ contracts）
-        from .contracts import ToolResult
 
         if self.outcome_parser is None:
             if not isinstance(raw, ToolResult):
@@ -234,15 +234,11 @@ def _require_digest(value: str, name: str) -> str:
 
 
 def _failed(call_id: CallId, code: str, message: str) -> ToolResult:
-    # 按需导入：循环依赖（sidecar ↔ contracts）
-    from .contracts import ToolResult
 
     return ToolResult.failed(call_id, code, message)
 
 
 def _json_envelope(call_id: CallId, raw: object) -> ToolResult:
-    # 按需导入：循环依赖（sidecar ↔ contracts）
-    from .contracts import ToolOutcome, ToolResult
 
     if isinstance(raw, ToolResult):
         if raw.call_id != call_id:
@@ -301,9 +297,6 @@ def parse_tool_outcome(
     parser: ToolOutcomeParser | str,
 ) -> ToolResult:
     """Apply one SDK-owned parser and return only the public five-state result."""
-
-    # 按需导入：循环依赖（sidecar ↔ contracts）
-    from .contracts import ToolResult
 
     if not isinstance(call_id, CallId):
         raise TypeError("call_id must use CallId")

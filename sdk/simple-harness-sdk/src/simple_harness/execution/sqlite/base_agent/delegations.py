@@ -18,7 +18,7 @@ from simple_harness.execution.base_agent import AgentDelegationRecord
 from simple_harness.execution.command_ingress import RunApiMode, _bind_namespace
 from simple_harness.execution.uow import UnitOfWorkConflict
 
-from ..context_use_requirements import bind
+from ...context_use_requirements import bind
 
 BASE_AGENT_NAMESPACE = "base-agent/v1"
 BASE_AGENT_PROJECTION_KEY_ID = "base-agent-v1"

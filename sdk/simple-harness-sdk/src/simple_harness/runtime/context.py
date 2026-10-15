@@ -11,16 +11,18 @@ import sqlite3
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from simple_harness.contracts import CallId, JsonValue, RunId, canonical_json
 from simple_harness.contracts.messages import ContentBlock, Message, MessageRole
-from simple_harness.execution.sqlite.database import Database
 from simple_harness.execution.uow import (
     RUNTIME_LEASE_NAMESPACE,
     ExecutionLease,
     UnitOfWorkConflict,
 )
+
+if TYPE_CHECKING:
+    from simple_harness.execution.sqlite.database import Database
 
 CONTEXT_NAMESPACE = "react.context.v1"
 

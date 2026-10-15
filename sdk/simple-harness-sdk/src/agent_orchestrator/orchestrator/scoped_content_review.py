@@ -31,10 +31,21 @@ from ..contracts.resolution import (
     SuccessExpression,
 )
 from ..contracts.semantic_base import Provenance, TypedRef, TypedRefKind, content_hash_of
+from ..planning.htn.completion_scopes import _local_task_content_projection
 from ..storage.htn_store import HtnStore
 from ..storage.store import Store
 from .accepted_outputs import carried_criteria_for, output_ports_in_revision
+from .completion_inputs import load_completion_result_inputs
+from .leaf_acceptance import (
+    LEAF_LOCAL_CRITERION,
+    LEAF_REVIEW_POLICY,
+    accepted_outputs_for,
+    criteria_for,
+    layer_outcomes,
+    local_content_criterion,
+)
 from .operation_completion import OperationCompletionError, OperationCompletionReader
+from .resolution_commits import AcceptReviewCommand, ResolutionCommitRejected
 
 
 @dataclass(frozen=True, slots=True)
@@ -126,16 +137,11 @@ def local_check_criterion(criterion: Criterion, verification_policy: tuple[str, 
 
 
 def _scoped_local_criteria(binding, scope, layers, carried):
-    # 按需导入：循环依赖（scoped_content_review ↔ leaf_acceptance）
-    from .leaf_acceptance import LEAF_LOCAL_CRITERION, criteria_for, local_content_criterion
 
     local = {c.criterion_id: c for c in criteria_for(binding, layers, carried=carried)}
     # The frozen compiler may give an effect-only leaf a local preparation
     # criterion. It is grounded in required output ports, never in effect success.
     if LEAF_LOCAL_CRITERION in scope.content_criterion_ids and LEAF_LOCAL_CRITERION not in local:
-        # 按需导入：循环依赖（scoped_content_review ↔ completion_scopes）
-        from ..planning.htn.completion_scopes import _local_task_content_projection
-
         if _local_task_content_projection(binding) is None:
             raise OperationCompletionError(
                 "OP_COMPLETION_SCOPE_UNRESOLVED", "no required preparation output"
@@ -170,9 +176,6 @@ def task_content_prompt_scope(
             str(members[0].occurrence_id),
         )
         if attempt_id is not None:
-            # 按需导入：循环依赖（scoped_content_review ↔ completion_inputs）
-            from .completion_inputs import load_completion_result_inputs
-
             result = store.find_result_for_attempt(attempt_id)
             frozen = None if result is None else load_completion_result_inputs(store, result)
             if frozen is None or frozen.scope != scope or result.envelope.task_id != task_id:
@@ -211,8 +214,6 @@ def read_task_content_projection(
 ) -> ScopedTaskContent:
     # Local import avoids a module cycle; the established leaf policy is shared,
     # never redefined from a model reply or a caller-supplied criterion catalogue.
-    # 按需导入：循环依赖（scoped_content_review ↔ leaf_acceptance）
-    from .leaf_acceptance import layer_outcomes
 
     with store.read_view():
         htn = HtnStore(store)
@@ -349,8 +350,6 @@ def read_task_content_candidate(
     already-passing layers. Artifact identity is checked but no VERIFIED status
     or successful check is invented. Acceptance keeps its stricter reader above.
     """
-    # 按需导入：循环依赖（scoped_content_review ↔ completion_inputs）
-    from .completion_inputs import load_completion_result_inputs
 
     with store.read_view():
         projected = read_task_check_policy_projection(store, mission_id, task_id)
@@ -426,17 +425,6 @@ def read_task_content_candidate(
 
 def validate_scoped_command(store: Store, command: object) -> ScopedTaskContent:
     """Re-read the authoritative projection inside the Acceptance transaction."""
-    # 按需导入：循环依赖（scoped_content_review ↔ completion_inputs）
-    from .completion_inputs import load_completion_result_inputs
-
-    # 按需导入：循环依赖（scoped_content_review ↔ leaf_acceptance）
-    from .leaf_acceptance import (
-        LEAF_REVIEW_POLICY,
-        accepted_outputs_for,
-    )
-
-    # 按需导入：循环依赖（scoped_content_review ↔ resolution_commits）
-    from .resolution_commits import AcceptReviewCommand, ResolutionCommitRejected
 
     if (
         not isinstance(command, AcceptReviewCommand)

@@ -28,7 +28,7 @@ from simple_harness.execution.uow import (
 )
 
 from ..audit_witness import record_claim_witness
-from ..context_use_requirements import bind, require
+from ...context_use_requirements import bind, require
 from ..decision_terminal import append_decision_terminal
 from .core import ExecutionUnitOfWorkCore
 from .support import _continuation_progress_receipt, _fault, _object_json, _required, _thaw, _time

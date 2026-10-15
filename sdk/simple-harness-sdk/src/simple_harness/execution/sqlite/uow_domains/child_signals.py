@@ -31,6 +31,7 @@ from simple_harness.execution.uow import (
     UnitOfWorkNotFound,
     WorkflowCheckpoint,
 )
+from simple_harness.runtime.context import _append_context_in_transaction
 
 from ..audit_witness import record_claim_witness
 from .core import ExecutionUnitOfWorkCore
@@ -286,9 +287,6 @@ class ChildSignalMixin(ExecutionUnitOfWorkCore):
         fault: FaultHook | None = None,
     ) -> WorkflowCheckpoint:
         """Append the public child completion once the Provider Tool batch is closed."""
-
-        # 按需导入：循环依赖（uow ↔ context）
-        from simple_harness.runtime.context import _append_context_in_transaction
 
         run_id = _required(run_id, "run_id")
         now = _time(now)

@@ -38,6 +38,7 @@ from ..assurance.certificates import (
 from ..assurance.codec import AssuranceError, canonical, decode, fingerprint, integer, text
 from ..assurance.evidence import ReadItem
 from ..assurance.refs import AssuranceRef, Pin
+from ..context.knowledge_tools import _digest, step_summaries
 from ..contracts.evidence_state import ValidityWitness, WitnessDecision
 from ..contracts.semantic_base import TypedRefKind
 from ..memory.knowledge_standing import CURRENT, knowledge_standing
@@ -164,8 +165,6 @@ def _unique(claims: Sequence[EvidenceClaim]) -> tuple[EvidenceClaim, ...]:
 
 def planning_claims(package: Mapping[str, Any]) -> tuple[EvidenceClaim, ...]:
     """规划包里当作事实给规划器看的：已验证知识与核对过的步骤摘要（候选结论是线索，不在内）。"""
-    # 按需导入：循环依赖（assurance_point_use ↔ knowledge_tools）
-    from ..context.knowledge_tools import _digest
 
     claims: list[EvidenceClaim] = []
     for row in (package.get("views") or {}).get("knowledge") or ():
@@ -180,8 +179,6 @@ def context_claims(
     knowledge: Any, upstream: Sequence[Mapping[str, Any]]
 ) -> tuple[EvidenceClaim, ...]:
     """推给执行者的：冻结的已验证知识、步骤摘要层、直接上游里核对过的摘要。"""
-    # 按需导入：循环依赖（assurance_point_use ↔ knowledge_tools）
-    from ..context.knowledge_tools import _digest
 
     claims = [EvidenceClaim.knowledge(item["id"], item["version"]) for item in knowledge.frozen_ids]
     claims.extend(
@@ -370,9 +367,6 @@ def _judge_all(
             judged = _judge_knowledge(store, mission_id, claim)
         elif claim.kind == "summary":
             if summaries is None:
-                # 按需导入：循环依赖（assurance_point_use ↔ knowledge_tools）
-                from ..context.knowledge_tools import step_summaries
-
                 summaries = step_summaries(store, mission_id)
             judged = _judge_summary(store, mission_id, claim, summaries)
         elif claim.kind == "exact":

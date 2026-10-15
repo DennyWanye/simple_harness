@@ -12,8 +12,8 @@ from simple_harness.execution.context_use import (
 )
 from simple_harness.execution.provider_invocations import provider_invocation_id
 
-from .context_use_requirements import DDL as REQUIREMENT_DDL
-from .context_use_requirements import require
+from ..context_use_requirements import DDL as REQUIREMENT_DDL
+from ..context_use_requirements import require
 
 DDL = (
     REQUIREMENT_DDL

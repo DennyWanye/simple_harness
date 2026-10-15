@@ -32,7 +32,6 @@ from ..contracts.resolution import ReviewPurpose
 from ..contracts.state_machines import ClaimStatus
 from ..memory.knowledge_standing import CURRENT, knowledge_standing
 from ..memory.verified_knowledge import knowledge_ref
-from ..orchestrator.assurance_point_use import EvidenceClaim
 from ..orchestrator.assurance_validity import result_acceptance_ids
 from ..orchestrator.method_library import review_manifest
 from ..orchestrator.review_adjudication import accepted_or_adjudicated
@@ -362,6 +361,9 @@ def read_knowledge_tool(
 
         if handover is None:
             raise ValueError("knowledge content needs the hand-over gate")
+        # 按需导入：循环依赖（knowledge_tools ↔ assurance_point_use：使用证书要读本模块的步骤摘要）
+        from ..orchestrator.assurance_point_use import EvidenceClaim
+
         claim = (
             EvidenceClaim.knowledge(row["id"], row["version"])
             if row["layer"] == VERIFIED_LAYER

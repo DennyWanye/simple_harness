@@ -106,7 +106,6 @@ from .resolution_commits import (
     ResolutionCommitRejected,
     ResolutionPrincipal,
 )
-from .scoped_content_review import read_task_content_projection
 from .taskgraph_review import read_review_origin
 
 #: The review policy this deployment reviews a hierarchical leaf under.  A named
@@ -425,6 +424,9 @@ class LeafAcceptanceAssembly:
 
         # What is judged — criteria, layers, producer — is read back from the stored
         # result under the frozen completion scope, never taken from the caller.
+        # 按需导入：循环依赖（leaf_acceptance ↔ scoped_content_review：范围审阅要用本模块的验收口径）
+        from .scoped_content_review import read_task_content_projection
+
         projection = read_task_content_projection(self.store, mission_id, task_id, result_id)
         revision = projection.requirements
         outcomes = layer_outcomes(

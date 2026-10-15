@@ -26,7 +26,6 @@ from simple_harness.contracts import (
 )
 
 from .schema import validate_tool_schema
-from .sidecar import Sidecar
 
 if TYPE_CHECKING:
     from simple_harness.execution.effects import TaskExecutionEnvelope
@@ -78,6 +77,9 @@ class ToolSpec:
         schema = _freeze_object(self.input_schema, "input_schema")
         object.__setattr__(self, "input_schema", schema)
         if self.sidecar is not None:
+            # 按需导入：循环依赖（contracts ↔ sidecar：旁路模块要用本模块的结果类型）
+            from .sidecar import Sidecar
+
             if not isinstance(self.sidecar, Sidecar):
                 raise TypeError("sidecar must use Sidecar")
             if self.sidecar.inventory.name != self.name:

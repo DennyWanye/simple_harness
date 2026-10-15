@@ -32,7 +32,7 @@ from simple_harness.execution.uow import (
     UnitOfWorkNotFound,
 )
 
-from ..context_use_requirements import bind
+from ...context_use_requirements import bind
 from .core import ExecutionUnitOfWorkCore
 from .support import (
     _child_signal_ack_receipt,

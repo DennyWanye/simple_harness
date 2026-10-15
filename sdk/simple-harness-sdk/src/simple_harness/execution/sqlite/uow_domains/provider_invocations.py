@@ -41,7 +41,7 @@ from simple_harness.workflow.lease import WorkflowLease
 
 from .. import context_use
 from ..context_use import prepare, read_grant, require_handoff, verify_terminal, view
-from ..context_use_requirements import require
+from ...context_use_requirements import require
 from ..provider_accounting import ProviderAccountingMixin
 from .core import ExecutionUnitOfWorkCore
 from .support import _fault, _reconciliation_resolution, _required, _thaw_json, _time

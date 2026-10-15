@@ -30,6 +30,8 @@ from simple_harness.runtime.commands import (
 )
 from simple_harness.runtime.conversation_memory import ConversationTurnOutput
 
+from .context_use_requirements import bind, require
+
 if TYPE_CHECKING:
     from .sqlite.database import Database
 
@@ -162,17 +164,12 @@ class CommandIngress:
                     ).fetchone()
                     is not None
                 ):
-                    # 按需导入：循环依赖（command_ingress ↔ sqlite）
-                    from .sqlite.context_use_requirements import require
-
                     require(connection, run_id, self._context_use_scope)
                 connection.execute(
                     "INSERT INTO conversation_run_modes"
                     "(run_id,namespace,api_mode,intent_hash,created_at) VALUES (?,?,?,?,?)",
                     (run_id, namespace, RunApiMode.LEGACY.value, intent_hash, now),
                 )
-                # 按需导入：循环依赖（command_ingress ↔ sqlite）
-                from .sqlite.context_use_requirements import bind
 
                 bind(
                     connection,
@@ -183,8 +180,6 @@ class CommandIngress:
                     intent_hash,
                 )
                 return
-            # 按需导入：循环依赖（command_ingress ↔ sqlite）
-            from .sqlite.context_use_requirements import require
 
             require(connection, run_id, self._context_use_scope)
             if tuple(row) != (namespace, RunApiMode.LEGACY.value, intent_hash):
@@ -441,9 +436,6 @@ class CommandIngress:
                 ):
                     raise CommandError(CommandErrorCode.INTENT_CONFLICT)
                 if intent.kind is not CommandKind.CANCEL:
-                    # 按需导入：循环依赖（command_ingress ↔ sqlite）
-                    from .sqlite.context_use_requirements import require
-
                     require(connection, intent.run_id.value, self._context_use_scope)
                 return _receipt(replay)
             _bind_namespace(connection, intent.namespace, intent.projection_key_id, now)
@@ -514,9 +506,6 @@ class CommandIngress:
                 ),
             )
             if intent.kind is CommandKind.START:
-                # 按需导入：循环依赖（command_ingress ↔ sqlite）
-                from .sqlite.context_use_requirements import bind
-
                 bind(
                     connection,
                     intent.run_id.value,
@@ -526,9 +515,6 @@ class CommandIngress:
                     intent.intent_hash,
                 )
             elif intent.kind is CommandKind.CONTINUE:
-                # 按需导入：循环依赖（command_ingress ↔ sqlite）
-                from .sqlite.context_use_requirements import require
-
                 require(connection, intent.run_id.value, self._context_use_scope)
             _record_audit(connection, intent.command_id, "accepted", now)
             if intent.kind is CommandKind.CANCEL:
