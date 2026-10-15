@@ -594,7 +594,7 @@
     {
       "id": "G-28",
       "source": "阶段 G 收尾大语料",
-      "file": "src/agent_orchestrator/storage/store.py",
+      "file": "src/agent_orchestrator/storage/store_domains/governance.py",
       "original": "                \" WHERE actions.json IS NOT excluded.json OR actions.state IS NOT excluded.state\",",
       "replacement": "                \"\",",
       "tests": [
@@ -2116,7 +2116,7 @@
     {
       "id": "SM-30",
       "source": "2026-10-11 V34 超额记录可见",
-      "file": "src/agent_orchestrator/storage/store.py",
+      "file": "src/agent_orchestrator/storage/store_domains/queries.py",
       "original": "        usage[\"overrun_calls\"] = int(overrun[0])\n        usage[\"overrun_tokens\"] = int(overrun[1])",
       "replacement": "        usage[\"overrun_calls\"] = 0\n        usage[\"overrun_tokens\"] = 0",
       "tests": [

@@ -151,7 +151,7 @@ def test_deployment_identity_never_takes_an_unproven_replay(tmp_path):
 
 #: 允许打开可写连接的文件与理由（偏差裁决 2）。清单外的 ``sqlite3.connect`` 必须是只读打开。
 WRITABLE_CONNECTIONS = {
-    "storage/store.py": "存储层本身（备份目标是副本）",
+    "storage/store_domains/core.py": "存储层本身（备份目标是副本）",
     "observability/taskgraph_replay.py": "执行图历史重建到另一个新库",
     "domains/drone_sim.py": "无人机模拟自己的库",
     "evaluation/appworld_operations.py": "AppWorld 评测自己的库",

@@ -788,7 +788,7 @@ def test_the_output_index_has_exactly_one_writer_in_the_source_tree() -> None:
         for path in root.rglob("*.py")
         if "insert_acceptance_output(" in path.read_text()
     }
-    assert callers == {"storage/htn_store.py", "orchestrator/resolution_commits.py"}
+    assert callers == {"storage/htn_store_domains/receipts.py", "orchestrator/resolution_commits.py"}
     writer = (root / "orchestrator" / "resolution_commits.py").read_text()
     gate = writer.index("check_against_ports(")
     write = writer.index("insert_acceptance_output(")

@@ -234,14 +234,14 @@ WHITELIST: dict[Site, str] = {
     # ---- 直接写 missions 表的 SQL（只有存储层自己）
     (
         "sql",
-        "storage/store.py",
-        "Store.insert_mission",
+        "storage/store_domains/missions_tasks.py",
+        "StoreMissionTaskMixin.insert_mission",
         "INTO missions",
     ): "建任务：出生态 CREATED，不是终态",
     (
         "sql",
-        "storage/store.py",
-        "Store.update_mission",
+        "storage/store_domains/missions_tasks.py",
+        "StoreMissionTaskMixin.update_mission",
         "_cas(missions)",
     ): "版本比对写回：所有 update_mission 调用者（上一组）都经过它",
     # ---- 步骤状态写成终态
