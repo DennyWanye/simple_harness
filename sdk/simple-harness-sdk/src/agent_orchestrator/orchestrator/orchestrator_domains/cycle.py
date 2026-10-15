@@ -42,7 +42,7 @@ class CycleMixin(OrchestratorCore):
         """重启恢复第 3 步核对没通过、已隔离的任务（AER 恢复第 3、8 条"隔离该流、只为核对可继续的
         范围开放执行"）。按任务干活的每个入口都读这一个判断：主循环的任务列表、``_mission_round``、
         保证通道四个消费者、执行图通知、迟到用量导入、已结束任务的通知扫描。"""
-        return mission_id in self._recovery_isolated
+        return mission_id in self._rounds.recovery_isolated
 
     def _active_missions(self) -> list[Mission]:
         # 2026-09-29（第 4 批）：每轮要调好几次；先按状态列筛，只解码未结束的任务，
@@ -79,7 +79,7 @@ class CycleMixin(OrchestratorCore):
         now = float(self.store.now)  # 仓库时钟：生产即墙钟，测试可拨快
         due: set[str] = set()
         for mission in missions:
-            mark = self._mission_marks.get(mission.id)
+            mark = self._rounds.mission_marks.get(mission.id)
             limit = mission.budget.max_runtime_seconds
             if (
                 mark is None
@@ -98,24 +98,24 @@ class CycleMixin(OrchestratorCore):
         the Mission next round, not be folded into its quiet mark (审阅 2026-09-29)."""
         now = float(self.store.now)  # 仓库时钟：生产即墙钟，测试可拨快
         for mission_id in mission_ids:
-            self._mission_marks[mission_id] = (cursor, now)
+            self._rounds.mission_marks[mission_id] = (cursor, now)
 
     def _raise_if_verification_crashed(self) -> None:
         # The task table is the sole completion owner. Do not discard successful
         # siblings or report an error again from a delayed done callback.
-        for result_id, task in list(self._verifying.items()):
+        for result_id, task in list(self._attempts.verifying.items()):
             if task.done() and not task.cancelled():
                 error = task.exception()
                 if error is not None:
-                    del self._verifying[result_id]
+                    del self._attempts.verifying[result_id]
                     raise error
 
     def _has_inflight(self) -> bool:
-        if self._assurance_tick is not None and self._assurance_tick.has_pending():
+        if self._wiring.assurance_tick is not None and self._wiring.assurance_tick.has_pending():
             return True
         if (
-            self._taskgraph_notifications is not None
-            and self._taskgraph_notifications.has_pending()
+            self._wiring.taskgraph_notifications is not None
+            and self._wiring.taskgraph_notifications.has_pending()
         ):
             return True
         """A submitted turn counts as in flight until it is collected — also for a
@@ -124,15 +124,15 @@ class CycleMixin(OrchestratorCore):
 
         if self._actions is not None and self._actions.inflight:
             return True  # D7-5': a hand-off this process is waiting on
-        if self._round_faults and any(
+        if self._rounds.round_faults and any(
             self._round_backing_off(mission_id)
-            for mission_id in {key[0] for key in self._round_faults}
+            for mission_id in {key[0] for key in self._rounds.round_faults}
         ):
             return True  # 试用前第 5 步：出错的一处在等退避间隔，到点就重试，不是空闲
-        if any(not task.done() for task in self._verifying.values()):
+        if any(not task.done() for task in self._attempts.verifying.values()):
             return True
         self._prune_deferred()  # review P0-2: only live waits keep the loop alive
-        if self._deferred or self._deferred_planning:  # D6-5': bounded, not idle
+        if self._attempts.deferred or self._planning.deferred_planning:  # D6-5': bounded, not idle
             return True
         return any(
             (
@@ -167,7 +167,9 @@ class CycleMixin(OrchestratorCore):
         ``where`` names the place and, for an intent, the intent: one healthy intent's
         success must not reset another intent's streak."""
 
-        if mission_id in self._unrecovered and not where.startswith(("recover", "startup_bind")):
+        if mission_id in self._rounds.unrecovered and not where.startswith(
+            ("recover", "startup_bind")
+        ):
             return False  # its restart recovery has not held yet; retried first next round
         if self.recovery_isolated(mission_id):
             return False  # 重启核对没通过、已隔离：本进程不替它做任何事（AER 恢复第 3、8 条）
@@ -195,15 +197,15 @@ class CycleMixin(OrchestratorCore):
         except Exception as error:  # noqa: BLE001 - the boundary: never the loop's end
             if self.store.connection.in_transaction:
                 self.store.connection.rollback()
-            self._parked_faults.append((mission_id, where, error))
+            self._rounds.parked_faults.append((mission_id, where, error))
         else:
-            self._round_faults.pop((mission_id, where), None)
+            self._rounds.round_faults.pop((mission_id, where), None)
 
     def _round_due(self, mission_id: str, where: str) -> bool:
         """这一处上次出错后的退避间隔到了没有（没出过错就是到了）。扫描类调用方在进
         ``_round_boundary`` 之前先问它，没到就跳过这个任务的这一份。"""
 
-        fault = self._round_faults.get((mission_id, where))
+        fault = self._rounds.round_faults.get((mission_id, where))
         # 墙钟往回拨时，到点时刻会比"现在"晚出一个最长间隔以上：视为已到点，不多等
         return (
             fault is None
@@ -224,7 +226,7 @@ class CycleMixin(OrchestratorCore):
                 count >= failure_classes.NON_MODEL_FAILURE_CAP
                 and now - first >= failure_classes.ROUND_FAULT_MIN_SECONDS
             )
-            for key, (count, first, due) in self._round_faults.items()
+            for key, (count, first, due) in self._rounds.round_faults.items()
         ):
             return False
         mission = self.store.get_mission(mission_id)
@@ -232,8 +234,8 @@ class CycleMixin(OrchestratorCore):
 
     async def _settle_parked_faults(self) -> bool:
         progressed = False
-        while self._parked_faults:
-            mission_id, where, error = self._parked_faults.pop(0)
+        while self._rounds.parked_faults:
+            mission_id, where, error = self._rounds.parked_faults.pop(0)
             progressed = await self._round_fault(mission_id, where, error) or progressed
         return progressed
 
@@ -241,9 +243,9 @@ class CycleMixin(OrchestratorCore):
 
         kind, code = failure_classes.classify_round_fault(error)
         now = self.store.now
-        count, first, _due = self._round_faults.get((mission_id, where), (0, now, now))
+        count, first, _due = self._rounds.round_faults.get((mission_id, where), (0, now, now))
         count += 1
-        self._round_faults[(mission_id, where)] = (
+        self._rounds.round_faults[(mission_id, where)] = (
             count,
             first,
             now + failure_classes.round_fault_delay(count),
@@ -315,7 +317,7 @@ class CycleMixin(OrchestratorCore):
                                     "summary": summary,
                                 },
                             )
-                        self._round_faults.pop((mission_id, where), None)
+                        self._rounds.round_faults.pop((mission_id, where), None)
                         self._note(
                             f"mission {mission_id}: intent {intent_id} closed after {count} failing rounds"
                         )
@@ -330,7 +332,7 @@ class CycleMixin(OrchestratorCore):
                 await self._plan_integrity_stop(mission, error)
                 ended = self.store.get_mission(mission_id)
                 if ended is not None and ended.status in TERMINAL_MISSION:
-                    self._round_faults.pop((mission_id, where), None)
+                    self._rounds.round_faults.pop((mission_id, where), None)
                     return True
                 return False  # not stoppable from its state (still CREATED): retried next round
             if (
@@ -358,7 +360,7 @@ class CycleMixin(OrchestratorCore):
                 else:
                     return False
                 await self._release_mission(mission.id)
-                self._round_faults.pop((mission_id, where), None)
+                self._rounds.round_faults.pop((mission_id, where), None)
                 self._note(f"mission {mission.id} stopped: store fault at {where} ({count} rounds)")
                 return True
         except Exception as stop_error:  # noqa: BLE001 - the stop itself could not be written
@@ -392,9 +394,13 @@ class CycleMixin(OrchestratorCore):
         and throttled; a failure to close one Agent never stops the loop."""
 
         now = self.store.now
-        if not force and self._agent_sweep_at is not None and now - self._agent_sweep_at < 30.0:
+        if (
+            not force
+            and self._rounds.agent_sweep_at is not None
+            and now - self._rounds.agent_sweep_at < 30.0
+        ):
             return 0
-        self._agent_sweep_at = now
+        self._rounds.agent_sweep_at = now
         rows = self.store.connection.execute(
             "SELECT d.intent_id, d.agent_id FROM dispatch_intents d JOIN missions m ON m.mission_id=d.mission_id"
             " WHERE d.agent_id IS NOT NULL AND d.state IN ('SETTLED','FAILED')"
@@ -402,7 +408,7 @@ class CycleMixin(OrchestratorCore):
         ).fetchall()
         closed = 0
         for intent_id, agent_id in rows:
-            if agent_id in self._agents_closed:
+            if agent_id in self._rounds.agents_closed:
                 continue
             if closed >= limit:
                 break
@@ -414,7 +420,7 @@ class CycleMixin(OrchestratorCore):
                     closed += 1
             except Exception as error:  # noqa: BLE001 - housekeeping never stops the loop
                 self._note(f"agent {agent_id}: close skipped ({type(error).__name__})")
-            self._agents_closed.add(str(agent_id))
+            self._rounds.agents_closed.add(str(agent_id))
         return closed
 
     async def _cycle_inner(self) -> bool:
@@ -431,11 +437,14 @@ class CycleMixin(OrchestratorCore):
                     progressed = True
         await self._close_finished_agents()
         progressed = import_late_accounting(self) or progressed
-        if self._assurance_tick is not None and await self._assurance_tick.tick():
+        if self._wiring.assurance_tick is not None and await self._wiring.assurance_tick.tick():
             progressed = True
 
         progressed = wake_blocks(self) or progressed
-        if self._taskgraph_notifications is not None and await self._taskgraph_notifications.tick():
+        if (
+            self._wiring.taskgraph_notifications is not None
+            and await self._wiring.taskgraph_notifications.tick()
+        ):
             progressed = True
         if await self._wake_planning_waits():
             progressed = True
@@ -443,9 +452,9 @@ class CycleMixin(OrchestratorCore):
         if await self._settle_parked_faults():
             progressed = True
         for mission in self._active_missions():
-            if mission.id in self._unrecovered:
+            if mission.id in self._rounds.unrecovered:
                 await self._recover_mission_round(mission)
-        self._unrecovered &= {mission.id for mission in self._active_missions()}
+        self._rounds.unrecovered &= {mission.id for mission in self._active_missions()}
         busy: set[str] = set()  # 本轮有进展的任务：下一轮照样处理，不记"安静"
         round_cursor = self._event_cursor()
         due = self._missions_due(self._active_missions(), round_cursor)
@@ -549,39 +558,42 @@ class CycleMixin(OrchestratorCore):
         # reaps finished ones and starts new ones.  A crash inside a verification is raised at
         # the next phase boundary — nothing else is decided after it (fault-injection tests)
         self._raise_if_verification_crashed()
-        for result_id, task in list(self._verifying.items()):
+        for result_id, task in list(self._attempts.verifying.items()):
             if task.done():
-                del self._verifying[result_id]
+                del self._attempts.verifying[result_id]
                 if task.result():
                     progressed = True
         for stored in self.store.list_results_by_verification("PENDING", "RUNNING"):
-            if stored.envelope.mission_id not in active or stored.envelope.id in self._verifying:
+            if (
+                stored.envelope.mission_id not in active
+                or stored.envelope.id in self._attempts.verifying
+            ):
                 continue
-            if len(self._verifying) >= self._verifier_capacity():
+            if len(self._attempts.verifying) >= self._verifier_capacity():
                 break
             task = asyncio.create_task(self._verify(stored.envelope.id))
-            self._verifying[stored.envelope.id] = task
+            self._attempts.verifying[stored.envelope.id] = task
             await asyncio.sleep(0)  # let the verification reach its first Commit before deciding
         # TaskGraph 补全第四批：改要求后沿用的叶子按新要求重审，与验证共用同一组名额
         for mission_id in sorted(active):
-            if len(self._verifying) >= self._verifier_capacity():
+            if len(self._attempts.verifying) >= self._verifier_capacity():
                 break
             new_mode = self._new_mode(self.store.get_mission(mission_id))
             if new_mode is None:
                 continue
             for item in carried_reviews(self.store, new_mode, mission_id):
-                if item.key in self._verifying:
+                if item.key in self._attempts.verifying:
                     continue
-                if len(self._verifying) >= self._verifier_capacity():
+                if len(self._attempts.verifying) >= self._verifier_capacity():
                     break
-                self._verifying[item.key] = asyncio.create_task(self._carried_review(item))
+                self._attempts.verifying[item.key] = asyncio.create_task(self._carried_review(item))
                 await asyncio.sleep(0)
         self._raise_if_verification_crashed()
         self._observe_pressure(active)
         missions = self._active_missions()
         if missions:  # D6-1 fair progress: the allocation order rotates across Missions
-            start = self._rotation % len(missions)
-            self._rotation += 1
+            start = self._rounds.rotation % len(missions)
+            self._rounds.rotation += 1
             missions = missions[start:] + missions[:start]
         for mission in missions:
             if mission.id not in due:
@@ -628,7 +640,7 @@ class CycleMixin(OrchestratorCore):
     def _prune_deferred(self) -> None:
         """Review P0-2: a wait whose Task or Mission has ended is dropped, whoever ended it."""
 
-        for task_id in list(self._deferred):
+        for task_id in list(self._attempts.deferred):
             task = self.store.get_task(task_id)
             mission = None if task is None else self.store.get_mission(task.mission_id)
             if (
@@ -637,8 +649,8 @@ class CycleMixin(OrchestratorCore):
                 or mission is None
                 or mission.status is not MissionStatus.ACTIVE
             ):
-                self._deferred.pop(task_id, None)
-        for mission_id in list(self._deferred_planning):
+                self._attempts.deferred.pop(task_id, None)
+        for mission_id in list(self._planning.deferred_planning):
             mission = self.store.get_mission(mission_id)
             # Review P2-4: the test used to be ``is not PLANNING``, which was right while
             # the only planning round was the one that *produced* the first plan.  P2.3d
@@ -646,4 +658,4 @@ class CycleMixin(OrchestratorCore):
             # refinement), and dropping those silently left the Mission with the round
             # counted as used and never asked.  A Mission that has ended still drops.
             if mission is None or mission.status in TERMINAL_MISSION:
-                self._deferred_planning.pop(mission_id, None)
+                self._planning.deferred_planning.pop(mission_id, None)

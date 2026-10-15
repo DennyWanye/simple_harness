@@ -1007,7 +1007,7 @@ class RootReviewMixin(OrchestratorCore):
         """Open the Assurance MISSION_FINAL review of the cut package.  Idempotent per
         review package; a package already out for review is not progress."""
 
-        if self._assurance_reviews is None:
+        if self._wiring.assurance_reviews is None:
             raise ContractError("Assurance review builder is not installed for MISSION_FINAL")
 
         review_key = purpose_review_key("MISSION_FINAL", mission.id, str(package.package_id))
@@ -1019,7 +1019,7 @@ class RootReviewMixin(OrchestratorCore):
             is not None
         )
         try:
-            self._assurance_reviews.ensure_mission_final(
+            self._wiring.assurance_reviews.ensure_mission_final(
                 mission, package=package, dispatch=coordinator.dispatch
             )
         except AssuranceError as error:

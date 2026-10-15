@@ -204,7 +204,8 @@ class NativePools:
         return report
 
     def _root_incarnation(self) -> Any:
-        gate = getattr(self._orchestrator, "_assurance_root_gate", None)
+        wiring = getattr(self._orchestrator, "_wiring", None)
+        gate = None if wiring is None else wiring.assurance_root_gate
         if gate is None:
             raise ArpError(
                 "SOURCE_UNAVAILABLE", "the Assurance root gate is not installed on this deployment"

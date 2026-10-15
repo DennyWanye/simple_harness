@@ -146,8 +146,8 @@ class AttemptDispatchMixin(OrchestratorCore):
                 # NEXT-TG-1.0 §10: a named refusal of the native plane (e.g. the Mission
                 # sources moved) stops this intent only — never the loop every other
                 # Mission runs on.  The intent stays claimed for its own recovery paths.
-                if claimed.intent_id not in self._creation_refusals_noted:
-                    self._creation_refusals_noted.add(claimed.intent_id)
+                if claimed.intent_id not in self._attempts.creation_refusals_noted:
+                    self._attempts.creation_refusals_noted.add(claimed.intent_id)
                     self._note(f"intent {claimed.intent_id}: Agent creation refused ({error.code})")
                 return False
             expected = await self.bridge_for(claimed).expected_turn_id(
@@ -661,9 +661,9 @@ class AttemptDispatchMixin(OrchestratorCore):
             # assured runtime binds exactly its read-only evidence tools (§4).
             if not config.get("agent_config", {}).get("tool_names"):
                 return
-            if self._assurance_reviews is None:
+            if self._wiring.assurance_reviews is None:
                 raise ContractError("Assurance evidence tool binding is not installed")
-            self._assurance_reviews.evidence_tools.bind(agent_id, config)
+            self._wiring.assurance_reviews.evidence_tools.bind(agent_id, config)
             return
         context_profile = self._context_profile_for(config)
         self.assembled.gateway.bind(

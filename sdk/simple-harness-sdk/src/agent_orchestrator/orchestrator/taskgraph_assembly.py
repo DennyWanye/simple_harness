@@ -64,7 +64,11 @@ def install_taskgraph(orchestrator: Any, ports: TaskGraphDeploymentPorts) -> Ins
     """Install after hierarchical setup, before recovery starts the SDK runtime."""
     if not isinstance(ports, TaskGraphDeploymentPorts):
         raise ValueError("TaskGraph requires fixed deployment ports")
-    hierarchy, commit, store = orchestrator._hierarchical, orchestrator.commit, orchestrator.store
+    hierarchy, commit, store = (
+        orchestrator._wiring.hierarchical,
+        orchestrator.commit,
+        orchestrator.store,
+    )
     if hierarchy is None or hierarchy.store is not store or hierarchy.commit is not commit:
         raise ValueError("TaskGraph requires the original hierarchical runtime")
     if (
@@ -76,13 +80,13 @@ def install_taskgraph(orchestrator: Any, ports: TaskGraphDeploymentPorts) -> Ins
             "TaskGraph requires an authenticated tenant and installed structure budget"
         )
     if (
-        orchestrator._taskgraph_dispatch_setup is not None
+        orchestrator._wiring.taskgraph_dispatch_setup is not None
         or commit._taskgraph_dispatch is not None
         or commit._taskgraph_participant_factory is not None
-        or orchestrator._taskgraph_notifications is not None
-        or orchestrator._taskgraph_read_apis
-        or orchestrator._taskgraph_operator is not None
-        or orchestrator._taskgraph_policy is not None
+        or orchestrator._wiring.taskgraph_notifications is not None
+        or orchestrator._wiring.taskgraph_read_apis
+        or orchestrator._wiring.taskgraph_operator is not None
+        or orchestrator._wiring.taskgraph_policy is not None
         or hierarchy._taskgraph_settlement_reader is not None
         or hierarchy._taskgraph_history is not None
         or hierarchy._taskgraph_preview is not None
@@ -251,10 +255,10 @@ def install_taskgraph(orchestrator: Any, ports: TaskGraphDeploymentPorts) -> Ins
     )
     commit._taskgraph_dispatch = dispatch
     commit._taskgraph_participant_factory = preview.participant
-    orchestrator._taskgraph_notifications = notifications
-    orchestrator._taskgraph_read_apis = [reads]
-    orchestrator._taskgraph_operator = operator
-    orchestrator._taskgraph_policy = policy
+    orchestrator._wiring.taskgraph_notifications = notifications
+    orchestrator._wiring.taskgraph_read_apis = [reads]
+    orchestrator._wiring.taskgraph_operator = operator
+    orchestrator._wiring.taskgraph_policy = policy
 
     def attach_dispatch(dispatch: Any) -> None:
         if dispatch.store is not store or dispatch.commit is not commit:
@@ -263,8 +267,8 @@ def install_taskgraph(orchestrator: Any, ports: TaskGraphDeploymentPorts) -> Ins
         dispatch._taskgraph_history = history
         dispatch._taskgraph_preview = preview
 
-    orchestrator._taskgraph_dispatch_setup = attach_dispatch
+    orchestrator._wiring.taskgraph_dispatch_setup = attach_dispatch
     attach_dispatch(hierarchy)
-    for dispatch in orchestrator._mission_dispatches.values():
+    for dispatch in orchestrator._wiring.mission_dispatches.values():
         attach_dispatch(dispatch)
     return installed

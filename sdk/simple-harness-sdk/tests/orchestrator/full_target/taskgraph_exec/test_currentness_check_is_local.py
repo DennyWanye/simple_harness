@@ -7,8 +7,9 @@
 
 import asyncio
 
-from agent_orchestrator.orchestrator.taskgraph_plan_sources import TaskGraphPlanSourceReader
 from production_fixture import enabled_world
+
+from agent_orchestrator.orchestrator.taskgraph_plan_sources import TaskGraphPlanSourceReader
 
 
 def test_the_currentness_check_reads_no_runtime_history(tmp_path, monkeypatch):
@@ -25,7 +26,7 @@ def test_the_currentness_check_reads_no_runtime_history(tmp_path, monkeypatch):
         async with enabled_world(tmp_path, key="tg-currentness-local", hold_worker=True) as world:
             await world.commit_seed()
             calls.clear()
-            world.loop._taskgraph_notifications.validate_current(world.mission.id)
+            world.loop._wiring.taskgraph_notifications.validate_current(world.mission.id)
             assert calls == []
 
     asyncio.run(case())

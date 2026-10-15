@@ -95,7 +95,10 @@ class PlanningRoundMixin(OrchestratorCore):
         a plan it made would be refused when its completion scopes are frozen.  The
         confirmation page shows "waiting for the completion requirements to be confirmed".
         Every path that opens a Planner round asks this one question (阶段 E)."""
-        return self._planning_start_gate is not None and not self._planning_start_gate(mission)
+        return (
+            self._wiring.planning_start_gate is not None
+            and not self._wiring.planning_start_gate(mission)
+        )
 
     def _knowledge_handover(self, mission_id: str, reader: Mapping[str, Any]) -> Any:
         """``knowledge_read`` 交出正文前的那道门（裁决 2026-10-07 第 5 件）：同一个使用证书签发方，消费方
@@ -133,16 +136,16 @@ class PlanningRoundMixin(OrchestratorCore):
         这一轮不开（开轮事务已回滚），原因写进进度记录，不算一轮故障、不停任务；下一轮按当时的世界
         重新组包再签。"""
         now = self.store.now
-        since, last = self._planning_evidence_waits.get(mission_id, (now, now))
+        since, last = self._planning.planning_evidence_waits.get(mission_id, (now, now))
         if now - last > self._config.profile_wait_seconds:
             since = now  # 上一段等待早已断开（中间没再签不出）：重新计时，不把旧的开始时刻算进来
-        self._planning_evidence_waits[mission_id] = (since, now)
+        self._planning.planning_evidence_waits[mission_id] = (since, now)
         refusals = list(refused.use.refusals)
         waited = now - since
         if waited >= self._config.profile_wait_seconds:
             # opt.169 评估建议 1：原因一直不消失时不无声地等下去——与"规划池不可用"同一个上限，
             # 到点按名停下，明细写清哪条路、哪几条拒绝原因、等了多久。
-            self._planning_evidence_waits.pop(mission_id, None)
+            self._planning.planning_evidence_waits.pop(mission_id, None)
             self._stop_planning_round(
                 mission_id,
                 reason="planning_evidence_uncertifiable",
@@ -177,7 +180,7 @@ class PlanningRoundMixin(OrchestratorCore):
             # 2026-09-25: a Mission bound to a package this build no longer serves stops
             # here, by itself — it must not take the orchestrator loop (and every other
             # Mission in the library) down with it.
-            self._deferred_planning.pop(mission_id, None)
+            self._planning.deferred_planning.pop(mission_id, None)
             self._stop_planning_round(
                 mission_id,
                 reason="unsupported_planning_package",
@@ -187,10 +190,10 @@ class PlanningRoundMixin(OrchestratorCore):
             self._note(f"mission {mission_id}: {error} → stopped")
             return False
         except RoutingUnavailable as unavailable:
-            since = self._deferred_planning.get(mission_id, (self.store.now, ordinal))[0]
-            self._deferred_planning[mission_id] = (since, ordinal)
+            since = self._planning.deferred_planning.get(mission_id, (self.store.now, ordinal))[0]
+            self._planning.deferred_planning[mission_id] = (since, ordinal)
             if self.store.now - since >= self._config.profile_wait_seconds:
-                self._deferred_planning.pop(mission_id, None)
+                self._planning.deferred_planning.pop(mission_id, None)
                 self._stop_planning_round(
                     mission_id,
                     reason="runtime_unavailable",
@@ -207,7 +210,7 @@ class PlanningRoundMixin(OrchestratorCore):
                 )
             return False
         except ContextRejected as error:
-            self._deferred_planning.pop(mission_id, None)
+            self._planning.deferred_planning.pop(mission_id, None)
             # Verification P2-F / mutation VO: ``ordinal`` is added only where it is
             # new information.  A Mission still in PLANNING writes exactly the payload
             # it wrote on main — the legacy ``MissionFailed.detail`` is a shipped shape
@@ -226,7 +229,7 @@ class PlanningRoundMixin(OrchestratorCore):
             )
             self._note(f"mission {mission_id}: planner package refused ({error})")
             return False
-        self._deferred_planning.pop(mission_id, None)
+        self._planning.deferred_planning.pop(mission_id, None)
         return True
 
     def _stop_planning_round(
@@ -303,7 +306,7 @@ class PlanningRoundMixin(OrchestratorCore):
     async def _retry_deferred_planning(self) -> bool:
         progressed = False
         self._prune_deferred()
-        for mission_id, (_since, ordinal) in list(self._deferred_planning.items()):
+        for mission_id, (_since, ordinal) in list(self._planning.deferred_planning.items()):
             mission = self.store.get_mission(mission_id)
             if mission is not None and mission.status is not MissionStatus.PLANNING:
                 # Review P0-1: a deferred round belonging to a Mission that is already
@@ -1131,7 +1134,7 @@ class PlanningRoundMixin(OrchestratorCore):
                 claims=planning_claims(package.package),
                 subject=("requirements", mission_id),
             )
-        self._planning_evidence_waits.pop(mission_id, None)
+        self._planning.planning_evidence_waits.pop(mission_id, None)
         return intent
 
     # -------------------------------------------------------------- dispatch

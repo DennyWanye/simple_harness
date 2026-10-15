@@ -13,11 +13,12 @@ from __future__ import annotations
 import asyncio
 import json
 
+from product_assembly import unstarted
+
 from agent_orchestrator.api.facade import MissionControlV1
 from agent_orchestrator.assurance.codec import AssuranceError
 from agent_orchestrator.assurance.root_gate import STATE_FILE
 from agent_orchestrator.testing.product_world import TENANT
-from product_assembly import unstarted
 
 
 class NeverProvider:
@@ -45,7 +46,7 @@ async def _start_quarantined(root) -> dict:
         report = _diagnostic(parts, loop)
         assert report["state"] == "QUARANTINED" and report["execution_allowed"] is False
         assert report["current_authentication_required"] is True
-        assert loop._assurance_management_only is True
+        assert loop._wiring.assurance_management_only is True
         # 只开非披露诊断：没有装配（规划 / 执行图 / 保证通道），没有一项任务可派发
         assert loop.hierarchical is None and loop._assembled is None
         assert parts.deployment.taskgraph is None and parts.deployment.assurance is None

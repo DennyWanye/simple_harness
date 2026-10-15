@@ -104,7 +104,7 @@ class TaskGraphNotifications:
             converge=self.converge,
             request_composition=self.request_composition,
             require_execution_root=orchestrator._require_assurance_execution_root,
-            excluded_missions=lambda: frozenset(orchestrator._recovery_isolated),
+            excluded_missions=lambda: frozenset(orchestrator._rounds.recovery_isolated),
             clock_ms=lambda: int(self.store.now * 1000),
         )
 
@@ -366,7 +366,7 @@ class TaskGraphNotifications:
         consumed = 0
         for mission_id in TaskGraphStore(self.store).bound_mission_ids():
             if (
-                mission_id in self.orchestrator._unrecovered
+                mission_id in self.orchestrator._rounds.unrecovered
                 or self.orchestrator.recovery_isolated(mission_id)
                 or not self.orchestrator._round_due(mission_id, "taskgraph_notifications")
             ):

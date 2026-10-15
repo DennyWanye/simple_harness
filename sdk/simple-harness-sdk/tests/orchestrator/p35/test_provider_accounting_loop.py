@@ -26,8 +26,6 @@ import asyncio
 from dataclasses import replace
 
 import pytest
-from agent_orchestrator.testing.fixtures import role_of
-from agent_orchestrator.testing.product_world import product_world
 from provider_world import (
     QUICK,
     HeldStep,
@@ -40,6 +38,9 @@ from provider_world import (
     status,
     wire_terminal,
 )
+
+from agent_orchestrator.testing.fixtures import role_of
+from agent_orchestrator.testing.product_world import product_world
 from simple_harness import Message, MessageRole
 from simple_harness.providers import ProviderRequestRejectedError, ProviderUsage
 
@@ -110,7 +111,7 @@ def test_a_charge_nobody_can_state_is_held_at_its_bound_and_counted_at_closeout(
                     await world.drain(timeout=10)
 
             await asyncio.wait_for(drive(), 60)
-            assert status(store, mission_id) == "COMPLETED", world.loop.progress_log[-10:]
+            assert status(store, mission_id) == "COMPLETED", world.loop._rounds.progress_log[-10:]
 
             tried = attempts(store, mission_id)
             first = next(attempt for key, attempt in tried.items() if key.endswith(":attempt-1"))
@@ -257,7 +258,7 @@ def test_a_call_whose_usage_exceeds_its_admitted_bound_is_recorded_and_the_step_
                     await world.drain(timeout=10)
 
             await asyncio.wait_for(drive(), 60)
-            assert status(store, mission_id) == "COMPLETED", world.loop.progress_log[-10:]
+            assert status(store, mission_id) == "COMPLETED", world.loop._rounds.progress_log[-10:]
             assert not events(store, mission_id, "TaskFailed")
             worker_calls = provider.asked.count("worker")
             assert worker_calls >= 2, "超出之后的调用照常交出去"
@@ -305,7 +306,7 @@ def test_an_admission_refusal_that_is_not_an_interruption_stops_the_step(tmp_pat
                     await world.drain(timeout=10)
 
             await asyncio.wait_for(drive(), 60)
-            assert status(store, mission_id) == "FAILED", world.loop.progress_log[-10:]
+            assert status(store, mission_id) == "FAILED", world.loop._rounds.progress_log[-10:]
             [attempt] = attempts(store, mission_id).values()
             [failed] = [event.payload for event in events(store, mission_id, "TaskFailed")]
             admission = failed["detail"]["admission"]

@@ -425,7 +425,9 @@ class PlanningWaitMixin(OrchestratorCore):
 
         progressed = False
         for listed in self._active_missions():
-            if listed.id in self._unrecovered or not self._round_due(listed.id, "planning_wait"):
+            if listed.id in self._rounds.unrecovered or not self._round_due(
+                listed.id, "planning_wait"
+            ):
                 continue
             with self._round_boundary(listed.id, "planning_wait"):
                 progressed = self._wake_planning_wait(listed) or progressed

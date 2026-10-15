@@ -173,7 +173,7 @@ class ServiceTurnMixin(OrchestratorCore):
         key = f"{intent.intent_id}:{intent.replays}"
         auth_blocked = self._definite_auth_failure(liveness.blocker)
         if not self._provider_blocked(liveness) and not auth_blocked:
-            self._service_blocked_since.pop(key, None)
+            self._planning.service_blocked_since.pop(key, None)
             return None
         mission = self.store.get_mission(intent.mission_id)
         if mission is None or mission.status in TERMINAL_MISSION:
@@ -192,11 +192,11 @@ class ServiceTurnMixin(OrchestratorCore):
             # Attempt.  After the same bound as a Planner round it ends as LOST, so
             # the ordinary repair/retry path runs; the UNKNOWN charge keeps its
             # reservation held (overcount, never undercount, never freeze).
-            since = self._service_blocked_since.setdefault(key, self.store.now)
+            since = self._planning.service_blocked_since.setdefault(key, self.store.now)
             waited = self.store.now - since
             if waited < self._service_blocker_limit:
                 return None
-            self._service_blocked_since.pop(key, None)
+            self._planning.service_blocked_since.pop(key, None)
             await self._give_up_blocked_assured_attempt(
                 intent,
                 detail={
@@ -217,7 +217,7 @@ class ServiceTurnMixin(OrchestratorCore):
         # P2.3f it ends through its own failure door instead of waiting for the wall
         # clock (host-final-arp10, 2026-09-24: ~17 minutes frozen).  On this lane that
         # door keeps the UNKNOWN grants and the reservation (never under-counted).
-        since = self._service_blocked_since.setdefault(key, self.store.now)
+        since = self._planning.service_blocked_since.setdefault(key, self.store.now)
         waited = self.store.now - since
         if waited < self._service_blocker_limit:
             return None  # still waiting: not progress (阶段 B 裁决第 6 类)
@@ -225,17 +225,17 @@ class ServiceTurnMixin(OrchestratorCore):
         # hand-off's own call key before the round is ended and the ladder asks again.
 
         check = self._unknown_handoff_check(intent)
-        if check.verdict == "result_known" and key not in self._handoff_known_waits:
+        if check.verdict == "result_known" and key not in self._planning.handoff_known_waits:
             # the same call has a result now: nothing is asked again; the ordinary collector
             # imports it.  One more window only, so a turn that never wakes still ends.
-            self._handoff_known_waits.add(key)
-            self._service_blocked_since[key] = self.store.now
+            self._planning.handoff_known_waits.add(key)
+            self._planning.service_blocked_since[key] = self.store.now
             self._note(
                 f"{intent.subject_id}: the lost call has a result; collecting instead of re-asking"
             )
             return None
-        self._service_blocked_since.pop(key, None)
-        self._handoff_known_waits.discard(key)
+        self._planning.service_blocked_since.pop(key, None)
+        self._planning.handoff_known_waits.discard(key)
         await self._give_up_blocked_plan_intent(
             intent,
             mission,
@@ -350,9 +350,9 @@ class ServiceTurnMixin(OrchestratorCore):
         ``profile_wait_seconds`` measured on the store clock, then stops explicitly."""
 
         now = self.store.now
-        since = self._deferred.get(task.id)
+        since = self._attempts.deferred.get(task.id)
         if since is None:
-            self._deferred[task.id] = now
+            self._attempts.deferred[task.id] = now
             self._note(
                 f"task {task.id}: waiting for runtime profile {unavailable.profile_id!r} "
                 f"(unavailable until {unavailable.until})"
@@ -360,7 +360,7 @@ class ServiceTurnMixin(OrchestratorCore):
             return False
         if now - since < self._config.profile_wait_seconds:
             return False
-        self._deferred.pop(task.id, None)
+        self._attempts.deferred.pop(task.id, None)
         self._commit_stop_task(
             task.id,
             stop_reason=MissionStopReason.RUNTIME_UNAVAILABLE,

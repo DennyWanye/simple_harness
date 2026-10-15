@@ -20,6 +20,7 @@ import sqlite3
 from typing import Any
 
 import pytest
+
 from agent_orchestrator.testing.fixtures import role_of
 from agent_orchestrator.testing.product_world import product_world
 from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider
@@ -139,6 +140,6 @@ def test_an_unbound_legacy_mission_neither_blocks_startup_nor_the_loop(tmp_path)
                 and "unsupported_unbound_mission" in str(event.payload)
                 for event in world.loop.store.list_events(old)
             )
-            assert old not in world.loop._recovery_isolated  # 旧口径的任务不算被改过，不隔离
+            assert old not in world.loop._rounds.recovery_isolated  # 旧口径的任务不算被改过，不隔离
 
     asyncio.run(case())

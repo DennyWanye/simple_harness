@@ -164,7 +164,7 @@ class PolicyRoutingMixin(OrchestratorCore):
         version_id = self.policy_version_of(mission_id)
         if version_id is None:
             raise ContractError(f"mission {mission_id} is bound to no policy version")
-        cached = self._policies.get(version_id)
+        cached = self._routes.policies.get(version_id)
         if cached is None:
             version = self.store.get_policy_version(version_id)
             if version is None:
@@ -173,7 +173,7 @@ class PolicyRoutingMixin(OrchestratorCore):
                 )
             params = version.get("params")
             cached = dict(params) if params else self._config_policy()
-            self._policies[version_id] = cached
+            self._routes.policies[version_id] = cached
         return cached
 
     def _validate_mission_profile(self, selected: str, params: Mapping[str, Any]) -> None:
@@ -245,7 +245,7 @@ class PolicyRoutingMixin(OrchestratorCore):
         selected = self._selected_profile(mission_id)
         frozen_default = None if selected is not None else self._frozen_default_route(mission_id)
         cache_key = (version_id, selected, frozen_default)
-        router = self._routers.get(cache_key)
+        router = self._routes.routers.get(cache_key)
         if router is not None:
             if selected is None:
                 self._note_route_drops(mission_id, version_id)
@@ -259,7 +259,7 @@ class PolicyRoutingMixin(OrchestratorCore):
             except MissionRequestError as error:
                 raise ContractError(f"bound Mission runtime route unavailable: {error}") from error
             router = ModelRouter(self._profiles, RoutingRules(default=selected))
-            self._routers[cache_key] = router
+            self._routes.routers[cache_key] = router
             return router
         routing = dict(self.policy_for(mission_id).get("routing") or {})
         base = self._model_router.rules
@@ -274,7 +274,7 @@ class PolicyRoutingMixin(OrchestratorCore):
                 by_kind[str(kind)] = str(target)
             else:
                 dropped[str(kind)] = str(target)
-        self._route_drops[version_id] = dropped
+        self._routes.route_drops[version_id] = dropped
         self._note_route_drops(mission_id, version_id)
         rules = replace(
             base,
@@ -284,13 +284,13 @@ class PolicyRoutingMixin(OrchestratorCore):
             ),
         )
         router = ModelRouter(self._profiles, rules)
-        self._routers[cache_key] = router
+        self._routes.routers[cache_key] = router
         return router
 
     def _note_route_drops(self, mission_id: str, version_id: str) -> None:
-        dropped = self._route_drops.get(version_id)
-        if dropped and mission_id not in self._route_noted:
-            self._route_noted.add(mission_id)
+        dropped = self._routes.route_drops.get(version_id)
+        if dropped and mission_id not in self._routes.route_noted:
+            self._routes.route_noted.add(mission_id)
             self.commit.record_policy_route_unavailable(
                 mission_id, version_id=version_id, dropped=dropped
             )
@@ -582,8 +582,8 @@ class PolicyRoutingMixin(OrchestratorCore):
         if profile_id in self.assembled.pools:
             return False
         key = f"{intent.intent_id}:not_configured"
-        if key not in self._released:
-            self._released.add(key)
+        if key not in self._attempts.released:
+            self._attempts.released.add(key)
             self.commit.record_profile_unavailable(
                 profile_id,
                 reason="not_configured",

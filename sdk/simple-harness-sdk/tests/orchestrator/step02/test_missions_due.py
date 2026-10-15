@@ -11,6 +11,7 @@ from types import SimpleNamespace
 from agent_orchestrator.contracts import MissionStatus
 from agent_orchestrator.orchestrator.event_handler import Orchestrator
 from agent_orchestrator.orchestrator.orchestrator_domains.cycle import MISSION_RECHECK_SECONDS
+from agent_orchestrator.orchestrator.orchestrator_domains.state import MissionRoundState
 
 NO_LIMIT = SimpleNamespace(max_runtime_seconds=None)
 
@@ -34,7 +35,7 @@ def _orch(events):
             return clock.now
 
     store = Store()
-    orch = SimpleNamespace(store=store, _mission_marks={})
+    orch = SimpleNamespace(store=store, _rounds=MissionRoundState(mission_marks={}))
     for name in ("_event_cursor", "_missions_due", "_mark_quiet"):
         setattr(orch, name, getattr(Orchestrator, name).__get__(orch))
     return orch, clock

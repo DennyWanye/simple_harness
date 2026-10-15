@@ -137,7 +137,7 @@ class PlanningFeedbackMixin(OrchestratorCore):
             self.commit.record_planning_rejected(
                 mission.id, ordinal=ordinal, reason=reason, detail=detail
             )
-        streak = self._after_handoff_zero_streak.get(mission.id, 0)
+        streak = self._planning.after_handoff_zero_streak.get(mission.id, 0)
         if (
             reason == "provider_outcome_unknown"
             and streak >= MAX_CONSECUTIVE_AFTER_HANDOFF_UNKNOWNS

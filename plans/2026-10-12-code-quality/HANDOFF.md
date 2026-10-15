@@ -19,7 +19,7 @@
 
 ## 接着做
 
-2. 阶段 5 剩余：5B.1 字段分组 → 5B.3 协作对象（只读写单一状态对象的方法组）→ 5C（分层分发、提交服务、运行时内核、记忆协议、Store、HtnStore）→ 5D 其余超长函数 → 5G 解环（SDK 循环依赖 87→≤30）→ 5E mypy 清零（SDK 全 src 514）→ 5F 发版、钉版、第 4 次全量回归。5F 时还要改后端 test_layered_scripted_lane.py 两处打桩（服务阻塞上限搬到 orchestrator_domains/service_turns.py）。
+2. 阶段 5 剩余：5B.1 字段分组 → 5B.3 协作对象（只读写单一状态对象的方法组）→ 5C（分层分发、提交服务、运行时内核、记忆协议、Store、HtnStore）→ 5D 其余超长函数 → 5G 解环（SDK 循环依赖 87→≤30）→ 5E mypy 清零（SDK 全 src 514）→ 5F 发版、钉版、第 4 次全量回归。5F 钉版时还要改后端测试：test_layered_scripted_lane.py 两处打桩（服务阻塞上限搬到 orchestrator_domains/service_turns.py）；test_recovery_isolated_host.py、test_assurance_host_api.py 读编排器私有字段（改为 `_rounds.recovery_isolated`、`_wiring.assurance_reviews`）。
    - 阶段 5 每片：`CQ_TESTS=清单 LOG=日志 bash scripts/code_quality/slice_check.sh sdk`；自动挑测试超 150 个文件时自己挑（裁决口径）；一次只跑一组测试（并行会让时间敏感用例超时）。
 3. 阶段 6：import-linter 三条例外、deskpet 与旧 agent 互相引用、后端循环依赖（阶段末 ≤ 20）。
 4. 阶段 8：删 backend/main.py.bak2～4；死代码待删 7 处；sys.path 修改 26 处（grok_build_runtime 白名单）；阶段 2 记下的死代码。

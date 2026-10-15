@@ -103,10 +103,10 @@ class VerificationMixin(OrchestratorCore):
         """A decision whose commit was rejected never applies: its fence ends with it
         (阶段 B 裁决第 5 类), so the old plan's fenced steps can run and publish again."""
 
-        if self._taskgraph_notifications is None:
+        if self._wiring.taskgraph_notifications is None:
             return  # no convergence service installed: no fence was ever raised
         with self.store.transaction():
-            self._taskgraph_notifications.convergence.jobs.release_for_decision(
+            self._wiring.taskgraph_notifications.convergence.jobs.release_for_decision(
                 mission_id,
                 decision_id,
                 reason="decision_refused",
@@ -348,7 +348,7 @@ class VerificationMixin(OrchestratorCore):
                 turn_id=result.turn_id,
                 artifacts=referenced,
                 usage_refs=tuple(result.usage_refs),
-                port_claims=self._port_claims.get(envelope.id, ()),
+                port_claims=self._attempts.port_claims.get(envelope.id, ()),
             )
         except OperationCompletionError as error:
             if error.code != "OP_COMPLETION_PORT_CLAIMS_UNAVAILABLE":
@@ -373,7 +373,7 @@ class VerificationMixin(OrchestratorCore):
         self._fault("after_result_submitted", "attempt")
         self._settle_intent(intent, "SETTLED")
         await self._release_attempt(attempt.id, cancel=False)
-        self._client_ids[envelope.id] = client_result_id
+        self._attempts.client_ids[envelope.id] = client_result_id
         self._note(f"attempt {attempt.id}: result {envelope.id} submitted")
         # P2.3b / TG §7: a child's result advances its parent compound's *typed* phase.
         # It never creates an Attempt for the compound and never writes its Task row —
@@ -536,7 +536,7 @@ class VerificationMixin(OrchestratorCore):
         task: Task,
         envelope: ResultEnvelope,
     ) -> None:
-        request = self._resource_requests.pop(envelope.id, None)
+        request = self._attempts.resource_requests.pop(envelope.id, None)
         self.commit.record_outcome_result(
             attempt.id,
             envelope=envelope,
@@ -629,13 +629,13 @@ class VerificationMixin(OrchestratorCore):
         if outside_text(text, RESULT_ENVELOPE_TAG):
             logger.info("orchestrator.envelope_prose", extra={"attempt_id": attempt.id})
         if claims:
-            self._port_claims[result_id] = claims
+            self._attempts.port_claims[result_id] = claims
         if resource_request is not None:
             if envelope.outcome is ResultOutcome.CANDIDATE:
                 raise ContractError(
                     "resource_request goes with a blocked / failure / no_progress result, not a candidate"
                 )
-            self._resource_requests[result_id] = resource_request
+            self._attempts.resource_requests[result_id] = resource_request
         return envelope, client_result_id
 
     def _port_claims_from(self, raw: dict[str, Any], attempt: Attempt) -> tuple[PortClaim, ...]:
@@ -820,16 +820,16 @@ class VerificationMixin(OrchestratorCore):
         try:
             local_check_factory = None
 
-            if self._assurance_local_checks is None:
+            if self._wiring.assurance_local_checks is None:
                 raise AssuranceError("ASSURANCE_LOCAL_CHECKS_UNBOUND")
-            local_check_factory = self._assurance_local_checks.prepare
+            local_check_factory = self._wiring.assurance_local_checks.prepare
             verdict = await self._router.verify(
                 mission=mission,
                 task=task,
                 envelope=stored.envelope,
                 artifacts=artifacts,
                 verification_copy=copy,
-                client_result_id=self._client_ids.get(result_id),
+                client_result_id=self._attempts.client_ids.get(result_id),
                 run_critic=run_critic,
                 recorder=recorder,
                 tampered=tampered,
@@ -892,7 +892,7 @@ class VerificationMixin(OrchestratorCore):
             self._note(f"task {task.id}: Critic admission denied ({reason}) -> stopped")
             return True
         if verdict.critic is not None:
-            self._critic_verdicts[result_id] = verdict.critic
+            self._reviews.critic_verdicts[result_id] = verdict.critic
         if verdict.suspended:  # D7-8': the sixth layer waits for a person
             reason = (
                 "needs_human"
@@ -947,7 +947,7 @@ class VerificationMixin(OrchestratorCore):
                 error,
             )
             return self._verdict_refused(result_id, error)
-        self._verdict_refusals.pop(result_id, None)
+        self._reviews.verdict_refusals.pop(result_id, None)
         accepted = verdict.passed and (
             completed.status is TaskStatus.COMPLETED or completed.accepted_result_id == result_id
         )
@@ -995,12 +995,12 @@ class VerificationMixin(OrchestratorCore):
             or attempt is None
             or task is None
             or mission is None
-            or self._assurance_reviews is None
-            or self._assurance_local_checks is None
+            or self._wiring.assurance_reviews is None
+            or self._wiring.assurance_local_checks is None
             or not carried_review_alive(self.store, mission.id, task.id)
         ):
             return False
-        reviews = self._assurance_reviews
+        reviews = self._wiring.assurance_reviews
         artifacts = [
             a for a in self.store.list_artifacts(attempt.id) if a.id in set(stored.artifacts)
         ]
@@ -1077,7 +1077,7 @@ class VerificationMixin(OrchestratorCore):
             needs_human_allowed=True,
             domain=self.commit.domain_for(mission.id),
             local_check_recorder_factory=functools.partial(
-                self._assurance_local_checks.prepare, requirements_revision=revision
+                self._wiring.assurance_local_checks.prepare, requirements_revision=revision
             ),
         )
         if verdict.passed:
@@ -1177,16 +1177,16 @@ class VerificationMixin(OrchestratorCore):
         except asyncio.CancelledError:
             raise
         except Exception as error:  # noqa: BLE001 - the boundary; the count below is the bound
-            count = self._carried_errors.get(item.key, 0) + 1
+            count = self._reviews.carried_errors.get(item.key, 0) + 1
             text = f"{type(error).__name__}: {error}"
             self._note(
                 f"result {item.result_id}: re-review under r{item.requirements_revision} "
                 f"could not conclude ({count}/{MAX_CARRIED_REVIEW_ERRORS}): {text}"
             )
             if count < MAX_CARRIED_REVIEW_ERRORS:
-                self._carried_errors[item.key] = count
+                self._reviews.carried_errors[item.key] = count
                 return False
-            self._carried_errors.pop(item.key, None)
+            self._reviews.carried_errors.pop(item.key, None)
             logger.warning(
                 "orchestrator.carried_review_gave_up result=%s mission=%s error=%s",
                 item.result_id,
@@ -1204,7 +1204,7 @@ class VerificationMixin(OrchestratorCore):
             except Exception as late:  # noqa: BLE001 - never out of the boundary
                 self._note(f"result {item.result_id}: repair request not recorded ({late})")
                 return False
-        self._carried_errors.pop(item.key, None)
+        self._reviews.carried_errors.pop(item.key, None)
         return done
 
     def _critic_provenance(self, mission_id: str, attempt_id: str) -> dict[str, str]:
@@ -1216,9 +1216,9 @@ class VerificationMixin(OrchestratorCore):
         Missing or ambiguous execution identity is never proof of a prompt version.
         """
 
-        if self._assurance_reviews is None:
+        if self._wiring.assurance_reviews is None:
             return {}
-        return self._assurance_reviews.provenance(mission_id, attempt_id)
+        return self._wiring.assurance_reviews.provenance(mission_id, attempt_id)
 
     def _human_inputs(
         self, result_id: str, task: Task
@@ -1454,9 +1454,11 @@ class VerificationMixin(OrchestratorCore):
         attempt_id: str | None = None,
     ) -> CriticVerdict:
 
-        if task is None or attempt_id is None or self._assurance_reviews is None:
+        if task is None or attempt_id is None or self._wiring.assurance_reviews is None:
             raise ContractError("Assurance review builder is not installed for this purpose")
         try:
-            return await self._assurance_reviews.run_task(mission, task, attempt_id=attempt_id)
+            return await self._wiring.assurance_reviews.run_task(
+                mission, task, attempt_id=attempt_id
+            )
         except (AssuranceError, RoutingUnavailable) as error:
             raise ContractError(f"Assurance review unavailable: {error}") from error

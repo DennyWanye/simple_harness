@@ -14,16 +14,17 @@ import asyncio
 from types import SimpleNamespace
 
 from agent_orchestrator.orchestrator.event_handler import Orchestrator
+from agent_orchestrator.orchestrator.orchestrator_domains.state import DeploymentWiring
 
 
 def _planner(gate_open: bool, assembly_missing: bool = False):
     calls: list[str] = []
     fake = SimpleNamespace(
         _assembly_missing=lambda mission, at: assembly_missing,
-        _planning_start_gate=lambda mission: gate_open,
         commit=SimpleNamespace(begin_planning=lambda mission_id: calls.append("begin")),
         _dispatch_for=lambda mission_id: None,
         _try_planner_intent=lambda mission_id, ordinal: asyncio.sleep(0, calls.append("planner")),
+        _wiring=DeploymentWiring(planning_start_gate=lambda mission: gate_open),
     )
     # 阶段 E 起，开工关口经同一个问句 _requirements_unconfirmed 读（真方法，绑到假编排器上）
     fake._requirements_unconfirmed = lambda mission: Orchestrator._requirements_unconfirmed(

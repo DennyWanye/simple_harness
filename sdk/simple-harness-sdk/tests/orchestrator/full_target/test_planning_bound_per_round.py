@@ -21,6 +21,7 @@ from agent_orchestrator.orchestrator.orchestrator_domains.planning_feedback impo
     PlannerTurnFailed,
     planning_failure_detail,
 )
+from agent_orchestrator.orchestrator.orchestrator_domains.state import PlanningRoundState
 
 
 def _count(*events: tuple[str, dict]) -> int:
@@ -134,7 +135,7 @@ def _reject(
             ("PlanningRejected", {"reason": kw["reason"], "detail": dict(kw["detail"])})
         )
     )
-    fake._after_handoff_zero_streak = {}
+    fake._planning = PlanningRoundState(after_handoff_zero_streak={})
     fake._planning_format_retry_remaining = lambda **kw: format_retry_left
     fake._planning_ladder_spent = lambda mission_id: ladder_spent
     fake._planning_still_owed = lambda current: owed

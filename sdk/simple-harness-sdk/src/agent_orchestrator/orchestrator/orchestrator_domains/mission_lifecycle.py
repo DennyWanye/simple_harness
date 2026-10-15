@@ -149,7 +149,7 @@ class MissionLifecycleMixin(OrchestratorCore):
         return self.commit.cancel_mission(mission_id)
 
     def _reset_after_handoff_unknown_streak(self, mission_id: str) -> None:
-        self._after_handoff_zero_streak[mission_id] = 0
+        self._planning.after_handoff_zero_streak[mission_id] = 0
 
     @staticmethod
     def _assured_review_intent(intent: DispatchIntent) -> bool:
@@ -171,7 +171,7 @@ class MissionLifecycleMixin(OrchestratorCore):
         self.store.fault(point, kind)
 
     def _note(self, text: str) -> None:
-        self.progress_log.append(text)
+        self._rounds.progress_log.append(text)
         logger.info("orchestrator.progress", extra={"detail": text})
 
     # ------------------------------------------------------------------ api
@@ -340,7 +340,7 @@ class MissionLifecycleMixin(OrchestratorCore):
             except (StoreBusy, InjectedCrash):
                 raise
             except Exception as error:  # noqa: BLE001 - the boundary, deferred to run()
-                self._startup_faults.append(
+                self._rounds.startup_faults.append(
                     (intent.mission_id, f"startup_bind:{intent.intent_id}", error)
                 )
 
@@ -456,15 +456,17 @@ class MissionLifecycleMixin(OrchestratorCore):
     async def _recover_mission_round(self, mission: Mission) -> None:
         """Recover one Mission behind the boundary; until it holds, the Mission is
         ``_unrecovered`` and the rest of its round is skipped (its data is not ready)."""
-        self._unrecovered.discard(mission.id)  # the boundary must not skip the recovery itself
+        self._rounds.unrecovered.discard(
+            mission.id
+        )  # the boundary must not skip the recovery itself
         await self._mission_round(mission.id, "recover", lambda: self._recover_mission(mission))
         current = self.store.get_mission(mission.id)
         if (
-            (mission.id, "recover") in self._round_faults
+            (mission.id, "recover") in self._rounds.round_faults
             and current is not None
             and current.status not in TERMINAL_MISSION
         ):
-            self._unrecovered.add(mission.id)
+            self._rounds.unrecovered.add(mission.id)
 
     async def _reconcile_actions(self) -> list[dict[str, Any]]:
         """Reconcile every live action — with the operation runtime bound first when this

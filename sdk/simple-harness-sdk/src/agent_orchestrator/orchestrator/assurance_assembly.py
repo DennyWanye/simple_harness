@@ -360,16 +360,16 @@ def install_assurance(orchestrator: Any, ports: AssuranceDeploymentPorts) -> Ins
     if not isinstance(ports.principal, Principal):
         raise AssuranceError("CURRENT_AUTHENTICATED_PRINCIPAL_REQUIRED")
     commit, store = orchestrator.commit, orchestrator.store
-    gate = orchestrator._assurance_root_gate
+    gate = orchestrator._wiring.assurance_root_gate
     if gate is None or commit._assurance_root_gate is not gate:
         raise AssuranceError("ASSURANCE_ROOT_GATE_UNBOUND")
     root = gate.require_execution().root_incarnation_id
     if (
         commit._assurance_factory is not None
         or getattr(commit, "_assurance_validity", None) is not None
-        or orchestrator._assurance_tick is not None
-        or orchestrator._assurance_local_checks is not None
-        or orchestrator._assurance_reviews is not None
+        or orchestrator._wiring.assurance_tick is not None
+        or orchestrator._wiring.assurance_local_checks is not None
+        or orchestrator._wiring.assurance_reviews is not None
     ):
         raise AssuranceError("ASSURANCE_ALREADY_INSTALLED")
     assembled = getattr(orchestrator, "_assembled", None)
@@ -432,7 +432,7 @@ def install_assurance(orchestrator: Any, ports: AssuranceDeploymentPorts) -> Ins
         tenant_id=tenant_id,
     )
     # Everything constructed; now bind, in the order the original entries read.
-    orchestrator._assurance_local_checks = local_checks
+    orchestrator._wiring.assurance_local_checks = local_checks
     review_runtime.install()
     validity = AssuranceValidity(
         commit,
@@ -451,7 +451,7 @@ def install_assurance(orchestrator: Any, ports: AssuranceDeploymentPorts) -> Ins
         host_fingerprint=ports.host_fingerprint or fingerprint({"host": "unbound"}),
     )
     commit._assurance_factory = factory
-    orchestrator._assurance_tick = tick
+    orchestrator._wiring.assurance_tick = tick
     orchestrator.install_assurance_read_api(api, tenant_id=tenant_id, principal=ports.principal)
     startup = reconcile_startup(orchestrator, tenant_id=tenant_id, root_incarnation_id=root)
     return InstalledAssurance(

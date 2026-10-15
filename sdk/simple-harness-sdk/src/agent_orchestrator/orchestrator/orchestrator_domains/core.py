@@ -6,7 +6,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import contextlib
 import os
 from collections.abc import Awaitable, Callable, Collection, Iterator, Mapping, Sequence
@@ -31,18 +30,24 @@ from ...runtime.model_router import (
     RoutingUnavailable,
     RuntimeProfile,
 )
-from ...runtime.output_blocks import PortClaim
 from ...runtime.provider_budget_guard import ProviderBudgetGuard
 from ...runtime.sandbox import resolve_executor
 from ...scheduling.backpressure import BacklogResponse, BackpressureState
 from ...storage.store import DispatchIntent, Store
-from ...verification.critics import CriticVerdict
 from ...verification.verifier_router import VerifierRouter
 from ..budget_accounts import Reservation
 from ..commit_service import CommitService
-from ..deferred_planning import DeferredPlanning
 from ..hierarchical_dispatch import HierarchicalDispatch
 from ..recovery_coordinator import RecoveryCoordinator
+from .state import (
+    AttemptState,
+    CycleHooks,
+    DeploymentWiring,
+    MissionRoundState,
+    PlanningRoundState,
+    ReviewState,
+    RoutingCache,
+)
 
 if TYPE_CHECKING:
     from ...graph.task_network import TaskNetworkSnapshot
@@ -395,25 +400,7 @@ class OrchestratorCore:
         # the SDK runtime (``owner_id``); the SDK ``owner_scope`` is one constant for all.
         self._owner = owner or f"orchestrator-{os.getpid()}"
         self._config = replace(config, owner_id=self._owner)
-        # P2.3b: the hierarchical assembly (§14 / §18.2 "only assemble and call").
-        # ``None`` until a deployment installs one; without it nothing is planned,
-        # dispatched or judged (``_assembly_missing``).
-        self._hierarchical: HierarchicalDispatch | None = None
-        self._planning_world_factory: Any = None
-        self._planning_start_gate: Any = None
-        self._mission_dispatches: dict[str, HierarchicalDispatch] = {}
-        self._taskgraph_dispatch_setup: Any = None
-        self._taskgraph_notifications: Any = None
-        self._assurance_tick: Any = None
-        self._assurance_local_checks: Any = None
-        self._assurance_reviews: Any = None
-        self._assurance_root_gate: Any = None
-        self._assurance_root_setup = assurance_root_setup
-        self._assurance_management_only = False
-        self._taskgraph_read_apis: list[Any] = []
-        self._assurance_read_apis: list[Any] = []
-        self._taskgraph_operator: Any = None
-        self._taskgraph_policy: Any = None
+        self._wiring = DeploymentWiring(assurance_root_setup=assurance_root_setup)
         self._provider = provider
         self._provider_token_estimator = provider_token_estimator
         self._provider_admission: ProviderBudgetGuard | None = None
@@ -450,25 +437,8 @@ class OrchestratorCore:
             routing if routing is not None else RoutingRules(default=default_profile),
         )
         self._default_profile = default_profile
-        self._deferred: dict[str, float] = {}  # task_id → first time it waited for a profile
-        # review P0-1: a Planner whose pool is cooling down waits too: mission_id → (since, ordinal)
-        self._deferred_planning: dict[str, tuple[float, int]] = DeferredPlanning()
-        #: 推后第 1 批 A26（裁决 2026-10-07 建议 1）：开规划轮时证据签不出 PLAN 证书、正在等下一轮
-        #: 重签的任务。这是合法等待，不判停滞；建出规划意图即清。
-        #: mission → (这段连续等待开始的存储时钟时刻, 最近一次签不出的时刻)；等待上限从开始时刻算
-        self._planning_evidence_waits: dict[str, tuple[float, float]] = {}
-        #: P2.3f: when this process first saw a service turn blocked on an unknown
-        #: Provider outcome, per ``intent_id:replays``.  In memory on purpose: the
-        #: bound is a *wait*, and a restarted process starting the wait again costs at
-        #: most one more window; the re-hand-off itself is durable (the event).
-        self._service_blocked_since: dict[str, float] = {}
-        #: 第 2 批 A27: blocked keys whose same-call-key re-read found a result at the bound;
-        #: they get exactly one more window for the collector before the round's own door.
-        self._handoff_known_waits: set[str] = set()
-        #: P2.3p: consecutive after-handoff 0-token UNKNOWNs per Mission, and the
-        #: invocation ids already counted so a poll does not increment twice.
-        self._after_handoff_zero_streak: dict[str, int] = {}
-        self._counted_after_handoff_unknowns: set[str] = set()
+        self._attempts = AttemptState()
+        self._planning = PlanningRoundState()
         self._poll = poll_interval
         self._critic_wait = (
             config.turn_deadline_seconds if critic_wait_seconds is None else critic_wait_seconds
@@ -489,70 +459,12 @@ class OrchestratorCore:
         )
         # host support 0.9.8: the verification layers this deployment can run
         self._deployed = deployed_layers(config.deployment_policy)
-        self._critic_verdicts: dict[str, CriticVerdict] = {}
-        # result id -> (refusal signature, consecutive count); see _verdict_refused
-        self._verdict_refusals: dict[str, tuple[str, int]] = {}
-        #: 重审连续没能得出结论的次数（按（结果, 要求版本）），见 ``_carried_review``
-        self._carried_errors: dict[str, int] = {}
-        #: result id → the output-port claims that arrived with that envelope
-        #: (P2.3c part 2d, decision 4).  ``ResultEnvelope`` is a frozen contract with
-        #: ``additionalProperties`` refused, so the claims are parsed out of the block
-        #: and carried beside it for the rest of this cycle — the same shape
-        #: ``_critic_verdicts`` above uses, and for the same reason.  The durable
-        #: guard against a lost claim is ``accept_review``'s ``OUTPUT_PORT_UNCLAIMED``,
-        #: which refuses rather than indexing a port nobody named.
-        self._port_claims: dict[str, tuple[PortClaim, ...]] = {}
-        # 推后第 3 批 H10：结果块上取下的资源申请，按结果编号暂存到记录这次结果为止
-        self._resource_requests: dict[str, Any] = {}
-        #: mission id → the fingerprint of the stall just recorded for it, handed to
-        #: ``_confirm_and_stop_stalled`` so the confirmation compares *this* stall
-        #: against what one more cycle produces (P2.3c part 2d, decision 2).
-        self._stalled_at: dict[str, str] = {}
-        #: mission id → how many times this ``run()`` has already carried on because
-        #: the stall confirmation moved the world (third-round review P1-A).
-        self._stall_carry_ons: dict[str, int] = {}
-        #: The embedding host's own duties (NEXT-TG-1.0 2B, 2A.1g): see
-        #: :meth:`set_between_cycles`.
-        self._between_cycles: Callable[[], Any] | None = None
-        self._between_every = 0.0
-        self._between_last = 0.0
-        self._client_ids: dict[str, str | None] = {}
-        self._released: set[str] = set()
-        self.progress_log: list[str] = []
-        #: intent id → the refusal last noted for its collection, so a refusal that
-        #: repeats every round is noted once per distinct reason (NEXT-TG-1.0 §5.1).
-        # 审阅调用的等待（阶段 B 裁决第 6 类）：意图 → (等待的形态, 这一形态开始的库时钟)
-        self._review_call_marks: dict[str, tuple[Any, float]] = {}
-        # 一轮故障（阶段 B 裁决第 9 类）：(任务, 出事地点) → (连续次数, 第一次的库时钟)
-        #: (任务, 位置) → (连续故障轮数, 第一次的时刻, 下次可以再试的时刻)
-        self._round_faults: dict[tuple[str, str], tuple[int, float, float]] = {}
-        #: Missions whose restart recovery faulted: each round retries the recovery first,
-        #: inside the boundary, and skips the rest of that Mission's round until it holds.
-        self._unrecovered: set[str] = set()
-        # 重启恢复第 3 步（reducer 重建）对不上的任务：本进程主循环不再处理（隔离该流），
-        # 值是对不上的事实（哪些表）。下次启动重新核对。
-        self._recovery_isolated: dict[str, Any] = {}
-        #: faults caught by ``_round_boundary`` inside a global scan, settled right after it
-        self._parked_faults: list[tuple[str, str, Exception]] = []
-        #: Faults caught while binding frozen tool authority at startup, handed to the
-        #: boundary by the first ``run()`` (the loop is not running yet in ``__aenter__``).
-        self._startup_faults: list[tuple[str, str, Exception]] = []
+        self._reviews = ReviewState()
+        self._between = CycleHooks()
+        self._rounds = MissionRoundState()
         #: 重启恢复协议的协调者（车道 J H01，§25.1 第 11 条）：``__aenter__`` 建，``recover()`` 跑；
         #: 降级恢复时主循环只开只读与诊断。
         self._recovery: RecoveryCoordinator | None = None
-        #: planning intents already noted as waiting for their TaskGraph binding.
-        self._creation_refusals_noted: set[str] = set()
-        # 2026-09-30: finished Missions' Agents are closed in bounded, throttled sweeps
-        self._agent_sweep_at: float | None = None
-        self._agents_closed: set[str] = set()
-        self.cancel_receipts: list[dict[str, Any]] = []
-        self._rotation = 0  # D6-1: round-robin start across active Missions
-        # 任务号 → (上次无进展一轮时的全局事件游标, 时刻)；见 _missions_due（第 4 批）
-        self._mission_marks: dict[str, tuple[int, float]] = {}
-        #: Hierarchical Missions whose planning-protocol binding was read and is the
-        #: one this build serves (see ``_refuse_unsupported_contract``).
-        self._contract_checked: set[str] = set()
-        self._verifying: dict[str, asyncio.Task[bool]] = {}  # D6-9': bounded verification set
         self._pressure = BackpressureState()  # D6-2: the current backpressure signal
         # 推后第 3 批 H12：积压时的两种应对（审阅并发、暂停新拆分），每轮观测后重算
         self._backlog = self._backlog_response(self._pressure)
@@ -569,10 +481,7 @@ class OrchestratorCore:
         self._provider_kind = provider_kind or _provider_kind(
             provider, self._profiles, default_profile
         )
-        self._policies: dict[str, dict[str, Any]] = {}
-        self._routers: dict[tuple[str, str | None, str | None], ModelRouter] = {}
-        self._route_drops: dict[str, dict[str, str]] = {}
-        self._route_noted: set[str] = set()
+        self._routes = RoutingCache()
 
     @property
     def assembled(self) -> AssembledOrchestratorRuntime:

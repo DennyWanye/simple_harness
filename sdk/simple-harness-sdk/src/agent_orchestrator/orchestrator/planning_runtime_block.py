@@ -224,7 +224,9 @@ def register_block(
 def wake_blocks(handler: Any) -> bool:
     progressed = False
     for mission in handler._active_missions():
-        if mission.id in handler._unrecovered or not handler._round_due(mission.id, "wake_blocks"):
+        if mission.id in handler._rounds.unrecovered or not handler._round_due(
+            mission.id, "wake_blocks"
+        ):
             continue
         # one Mission's share of this scan, behind the round boundary (阶段 C 第 0′ 条)
         with handler._round_boundary(mission.id, "wake_blocks"), handler.store.transaction():

@@ -493,7 +493,7 @@ class AttemptJudgmentMixin(OrchestratorCore):
             else:
                 first_critic_binding = {"first_critic_budget_unknown": first.reason}
                 critic_tail = self._reservation(self._config.critic_reserve_tokens)
-        self._deferred.pop(task.id, None)
+        self._attempts.deferred.pop(task.id, None)
         tokens = self._attempt_reserve_tokens(task, tokens, critic_tail)
         try:
             attempt, _intent = self.commit.create_attempt(

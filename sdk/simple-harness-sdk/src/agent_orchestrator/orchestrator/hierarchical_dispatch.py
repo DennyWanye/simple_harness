@@ -4451,7 +4451,7 @@ def record_assembly_missing(store: Store, mission: Mission, *, at: str) -> Event
     Review finding F1.  ``commit_plan_revision`` materialises occurrence rows through
     the Commit Service while every dispatch gate — ``allocate_v2``'s admissions, the
     TG §8.3 re-check, the root ``GoalResolution`` trigger — lives on this assembly and
-    is reached only through ``Orchestrator._hierarchical``.  Nothing couples the two,
+    is reached only through ``Orchestrator._wiring.hierarchical``.  Nothing couples the two,
     so a deployment that writes hierarchical plans without calling
     ``install_hierarchical`` used to hand those rows to the legacy ``allocate()``:
     dispatch on the ``TaskStatus.READY`` string, a DATA consumer running before its

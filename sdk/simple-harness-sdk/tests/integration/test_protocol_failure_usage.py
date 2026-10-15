@@ -22,6 +22,7 @@ import sqlite3
 
 import httpx
 import pytest
+
 from agent_orchestrator.testing.fixtures import package_of, role_of
 from agent_orchestrator.testing.product_world import product_world
 from agent_orchestrator.testing.scripted_replies import (
@@ -132,7 +133,7 @@ def test_protocol_failure_keeps_only_valid_usage_without_resampling_or_tools(
 
                 await asyncio.wait_for(drive(), 60)
                 assert str(store.get_mission(mission_id).status.value) == "COMPLETED", (
-                    world.loop.progress_log[-8:]
+                    world.loop._rounds.progress_log[-8:]
                 )
 
                 first = next(

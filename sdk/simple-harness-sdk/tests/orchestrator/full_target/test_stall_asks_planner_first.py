@@ -37,6 +37,8 @@ from contextlib import asynccontextmanager
 from typing import Any, NamedTuple
 
 import pytest
+from h1i_seed import CONFIG
+
 from agent_orchestrator.contracts import MissionStatus
 from agent_orchestrator.contracts.htn import ObligationId
 from agent_orchestrator.orchestrator import planning_repair_requests as requests
@@ -55,7 +57,6 @@ from agent_orchestrator.testing.scripted_replies import (
     review_input,
     review_reply,
 )
-from h1i_seed import CONFIG
 
 
 @pytest.fixture(autouse=True)
@@ -491,7 +492,7 @@ def test_a_stall_that_the_confirm_cycle_clears_does_not_fail_the_mission(tmp_pat
     async def case():
         async with stalled(tmp_path, key="stall-moved") as world:
             loop = world.loop
-            loop._stalled_at[world.mission_id] = "a fingerprint from a world that moved"
+            loop._planning.stalled_at[world.mission_id] = "a fingerprint from a world that moved"
             carried = await loop._confirm_and_stop_stalled()
             return carried, world.mission()
 
@@ -523,7 +524,7 @@ def test_the_stall_path_stops_after_exactly_one_confirm_cycle(tmp_path) -> None:
                 return real(mission_id, *args, **kwargs)
 
             dispatch.admissions = counted  # type: ignore[method-assign]
-            loop._stalled_at[world.mission_id] = "not the current fingerprint"
+            loop._planning.stalled_at[world.mission_id] = "not the current fingerprint"
             await loop._confirm_and_stop_stalled()
             return world.mission_id
 
@@ -553,7 +554,7 @@ def test_run_itself_comes_back_round_after_a_carry_on(tmp_path) -> None:
 
             async def watched_confirm():
                 if "carry-on" not in timeline:
-                    loop._stalled_at[world.mission_id] = "a world that has moved since"
+                    loop._planning.stalled_at[world.mission_id] = "a world that has moved since"
                 carried = await real_confirm()
                 timeline.append("carry-on" if carried else "stop")
                 return carried
@@ -580,14 +581,16 @@ def test_the_carry_on_is_bounded_so_a_moving_world_ends_the_run(tmp_path) -> Non
     recorded — an answer to the caller, not a verdict about the Mission.
     """
 
-    from agent_orchestrator.orchestrator.orchestrator_domains.idle_and_stall import MAX_STALL_CARRY_ONS
+    from agent_orchestrator.orchestrator.orchestrator_domains.idle_and_stall import (
+        MAX_STALL_CARRY_ONS,
+    )
 
     async def case():
         async with stalled(tmp_path, key="stall-bounded") as world:
             loop = world.loop
             answers: list[bool] = []
             for _ in range(MAX_STALL_CARRY_ONS + 2):
-                loop._stalled_at[world.mission_id] = f"never matches {len(answers)}"
+                loop._planning.stalled_at[world.mission_id] = f"never matches {len(answers)}"
                 answers.append(await loop._confirm_and_stop_stalled())
             return answers, world.mission()
 

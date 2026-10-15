@@ -22,6 +22,7 @@ import asyncio
 import sqlite3
 
 import pytest
+
 from agent_orchestrator.observability.business_replay import check_inventory
 from agent_orchestrator.orchestrator.recovery_coordinator import RECOVERY_STEPS, RecoveryState
 from agent_orchestrator.storage import schema
@@ -307,7 +308,9 @@ def test_an_inconsistent_mission_is_isolated_and_the_others_go_on(tmp_path):
         second = LayeredScriptedProvider()
         async with product_world(root, second) as world:  # 自动模式：部署职责会替没隔离的任务签
             from agent_orchestrator.api.facade import FacadeError
-            from agent_orchestrator.orchestrator.orchestrator_domains.mission_lifecycle import ServiceTurnIdentityMismatch
+            from agent_orchestrator.orchestrator.orchestrator_domains.mission_lifecycle import (
+                ServiceTurnIdentityMismatch,
+            )
 
             # 部署职责发出的每条命令记下是替哪个任务发的
             duty_calls: list[tuple[str, str]] = []
@@ -324,7 +327,7 @@ def test_an_inconsistent_mission_is_isolated_and_the_others_go_on(tmp_path):
 
                 setattr(control, name, spy)
             # 被隔离任务的一条启动绑定故障：恢复第 4 步不给它记故障、不停它
-            world.loop._startup_faults.append(
+            world.loop._rounds.startup_faults.append(
                 (
                     damaged,
                     "startup_bind:fixture",
@@ -572,10 +575,11 @@ def test_an_isolated_missions_question_and_approvals_are_refused_and_taken_again
     import json
     from pathlib import Path
 
+    from h1i_seed import CONFIG, CRITERIA, GOAL, run_until
+
     from agent_orchestrator.api.facade import FacadeError
     from agent_orchestrator.storage.planning_human_store import PlanningHumanStore
     from agent_orchestrator.testing.fixtures import package_of
-    from h1i_seed import CONFIG, CRITERIA, GOAL, run_until
 
     fixture = (
         Path(__file__).parent / "fixtures" / "planning_decision_v1" / "valid" / "request-human.json"
@@ -623,7 +627,10 @@ def test_an_isolated_missions_question_and_approvals_are_refused_and_taken_again
                 }
             )
 
-            loop._recovery_isolated[mission_id] = {"tables": ["missions"], "silent_changes": []}
+            loop._rounds.recovery_isolated[mission_id] = {
+                "tables": ["missions"],
+                "silent_changes": [],
+            }
             for call in (
                 lambda: control.answer_planning_question(answer),
                 lambda: control.decide("approval-iso", "approve"),
@@ -635,7 +642,7 @@ def test_an_isolated_missions_question_and_approvals_are_refused_and_taken_again
             assert [row["decision_id"] for row in pending()] == [question["decision_id"]]
             assert loop.store.get_approval("approval-iso")["state"] == "PENDING"
 
-            del loop._recovery_isolated[mission_id]
+            del loop._rounds.recovery_isolated[mission_id]
             control.answer_planning_question(answer)
             assert humans.get(question["decision_id"])["state"] == "ANSWERED"
             with pytest.raises(

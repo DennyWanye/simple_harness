@@ -20,6 +20,8 @@ import asyncio
 import contextlib
 
 import pytest
+
+from agent_orchestrator.orchestrator.orchestrator_domains.state import MissionRoundState
 from agent_orchestrator.testing.product_world import product_world
 from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider
 
@@ -250,7 +252,7 @@ def test_a_fault_while_recovering_one_mission_does_not_stop_the_others(tmp_path)
                 if _status(store, b) in TERMINAL:
                     break
             assert _status(store, b) == "COMPLETED"
-            assert _status(store, a) not in TERMINAL and a in loop._unrecovered
+            assert _status(store, a) not in TERMINAL and a in loop._rounds.unrecovered
             assert [fault["where"] for fault in _faults(store, a)] == ["recover"]
             assert not store.list_tasks(a) or not [
                 e for e in store.iter_events(a) if e.type == "AttemptCreated"
@@ -260,7 +262,7 @@ def test_a_fault_while_recovering_one_mission_does_not_stop_the_others(tmp_path)
                 await world.drain(timeout=20)
                 if _status(store, a) in TERMINAL:
                     break
-            assert _status(store, a) == "COMPLETED" and a not in loop._unrecovered
+            assert _status(store, a) == "COMPLETED" and a not in loop._rounds.unrecovered
 
     asyncio.run(case())
 
@@ -297,7 +299,7 @@ def test_a_startup_binding_that_refuses_one_intent_stops_only_its_mission(tmp_pa
 
                 loop._bind_startup_intent = refuse  # type: ignore[method-assign]
                 loop._bind_startup_tools()  # what ``__aenter__`` runs: must not raise
-                assert loop._startup_faults and loop._startup_faults[0][0] == a
+                assert loop._rounds.startup_faults and loop._rounds.startup_faults[0][0] == a
                 await loop.recover()
                 assert _status(store, a) == "FAILED"
                 [fault] = _faults(store, a)
@@ -382,7 +384,7 @@ def test_a_mission_still_waiting_for_recovery_is_never_a_stall():
 
     from agent_orchestrator.orchestrator.event_handler import Orchestrator
 
-    fake = SimpleNamespace(_unrecovered={"m1"})
+    fake = SimpleNamespace(_rounds=MissionRoundState(unrecovered={"m1"}))
     assert Orchestrator._idle_facts(fake, SimpleNamespace(id="m1")) is None
 
 

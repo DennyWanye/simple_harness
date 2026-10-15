@@ -105,29 +105,29 @@ class Orchestrator(
             # 车道 J H04（§14.4）：模型写的代码起的子进程，身份与回收材料落库；重启后按它回收。
             if self._executor is not None:
                 self._executor.ledger = StoreSandboxLedger(self._store)
-            if self._assurance_root_setup is not None or AssuranceRootGate.required(
+            if self._wiring.assurance_root_setup is not None or AssuranceRootGate.required(
                 self._store, self._config.evidence_root
             ):
-                self._assurance_root_gate = AssuranceRootGate(
+                self._wiring.assurance_root_gate = AssuranceRootGate(
                     self._store, self._config.evidence_root
                 )
-                self._commit._assurance_root_gate = self._assurance_root_gate
-                self._store._assurance_root_gate = self._assurance_root_gate
+                self._commit._assurance_root_gate = self._wiring.assurance_root_gate
+                self._store._assurance_root_gate = self._wiring.assurance_root_gate
                 #: 根进隔离时的匿名阻塞码（原计划 §10.3 允许披露的一项）；NATIVE 时为 None
                 self._assurance_quarantine_code: str | None = None
                 try:
                     # This callback has only Store/Commit, never live runtime pools.
                     # The Host may bind its CURRENT authenticated management authority.
-                    if self._assurance_root_setup is not None:
-                        self._assurance_root_setup(self)
-                    self._assurance_root_gate.require_execution()
+                    if self._wiring.assurance_root_setup is not None:
+                        self._wiring.assurance_root_setup(self)
+                    self._wiring.assurance_root_gate.require_execution()
                 except AssuranceError as error:
                     # 原计划 §10.1（第 2 批 A02）：标记缺失 / 不符、安装身份冲突 → 根进隔离：服务起来，
                     # 只开非披露诊断与隔离只读分支；不装配、不派发、不自动写回状态文件。
                     # Keep the authenticated management API available. No SDK
                     # pools, recovery, workspace cleanup, Context or dispatch runs.
                     self._assurance_quarantine_code = error.code
-                    self._assurance_management_only = True
+                    self._wiring.assurance_management_only = True
                     return self
             if self._provider_token_estimator is not None:
                 self._provider_admission = ProviderBudgetGuard(
@@ -304,13 +304,13 @@ class Orchestrator(
             raise
 
     async def __aexit__(self, *exc_info: object) -> None:
-        for task in list(self._verifying.values()):
+        for task in list(self._attempts.verifying.values()):
             if not task.done():
                 task.cancel()
-        for task in list(self._verifying.values()):
+        for task in list(self._attempts.verifying.values()):
             with contextlib.suppress(BaseException):
                 await task
-        self._verifying.clear()
+        self._attempts.verifying.clear()
         try:
             if self._assembled is not None:
                 await self._assembled.__aexit__(*exc_info)
@@ -344,7 +344,7 @@ class Orchestrator(
         idle_rounds = 0
         # P1-A's carry-on budget is per ``run()``: a fresh execution cycle is allowed
         # to give a Mission the same benefit of the doubt the last one did.
-        self._stall_carry_ons.clear()
+        self._planning.stall_carry_ons.clear()
         mark = self._durable_watermark()
         hollow = 0
         # A wait that writes nothing backs off from ``_poll`` up to WAIT_BACKOFF_MAX:
@@ -408,7 +408,7 @@ class Orchestrator(
             if idle_rounds == 1:
                 # 第 4 批（审阅 2026-09-29）："空闲"只能由一次全量处理得出：清掉安静标记，
                 # 下一轮每个任务都看一遍，仍无进展才算空闲返回。
-                self._mission_marks.clear()
+                self._rounds.mission_marks.clear()
             if idle_rounds >= 2:
                 # review P2-6: one more look at hand-offs whose lease lapsed (a crashed owner)
                 settled = await self._reconcile_actions()

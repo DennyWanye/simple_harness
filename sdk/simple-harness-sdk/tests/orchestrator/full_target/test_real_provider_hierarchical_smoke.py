@@ -44,12 +44,13 @@ for _extra in (_HERE, _AGENTS):
     if str(_extra) not in sys.path:
         sys.path.insert(0, str(_extra))
 
-from agent_orchestrator.contracts import MissionStatus  # noqa: E402
-from agent_orchestrator.planning.htn.planner_package import fact_rows  # noqa: E402
-from agent_orchestrator.storage.htn_store import HtnStore  # noqa: E402
 from code_domain_world import code_world  # noqa: E402
 from h1i_seed import run_until  # noqa: E402
 from real_provider_config import build_real_provider, resolve_real_provider  # noqa: E402
+
+from agent_orchestrator.contracts import MissionStatus  # noqa: E402
+from agent_orchestrator.planning.htn.planner_package import fact_rows  # noqa: E402
+from agent_orchestrator.storage.htn_store import HtnStore  # noqa: E402
 
 pytestmark = pytest.mark.real_provider
 
@@ -189,7 +190,7 @@ async def smoke(
                 {"task_id": str(item.task_id), "ports": ports.get(str(item.acceptance_id), [])}
                 for item in semantics.list_acceptances(mission_id)
             ],
-            "progress": world.loop.progress_log[-40:],
+            "progress": world.loop._rounds.progress_log[-40:],
         }
         return report, final
 

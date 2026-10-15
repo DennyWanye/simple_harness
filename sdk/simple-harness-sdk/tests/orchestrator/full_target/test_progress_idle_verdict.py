@@ -13,7 +13,13 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
+
 from agent_orchestrator.orchestrator.event_handler import Orchestrator
+from agent_orchestrator.orchestrator.orchestrator_domains.state import (
+    DeploymentWiring,
+    MissionRoundState,
+    PlanningRoundState,
+)
 from agent_orchestrator.orchestrator.progress import IdleFacts, Route, idle_verdict
 
 WAITS = (
@@ -70,21 +76,17 @@ def _loop(*, closeout: bool, actions=(), approvals=(), dead_end: bool = False):
         commit=SimpleNamespace(assured_closeout_pending=lambda mission_id: closeout),
         _awaiting_retry_decision=lambda mission_id, task: False,
         _has_pending_operation_completion=lambda mission: False,
-        # 2026-10-06 车道 O（Assurance §7.2）：操作那条线具名判死的效果——已判定的任务不再算"等收尾"
         _operation_dead_end=lambda mission: dead_end,
         _has_pending_assurance_work=lambda mission_id: False,
         _has_pending_planning_waits=lambda mission_id: False,
-        # 推后第 1 批 A26：签不出 PLAN 证书而不开轮的任务算合法等待（假编排器要带这张表）
-        _planning_evidence_waits={},
-        _taskgraph_notifications=None,
         _note=notes.append,
-        _unrecovered=set(),  # 阶段 B：恢复失败的任务这一轮不判空闲（假编排器要带这张表）
-        _round_backing_off=lambda mission_id: (
-            False
-        ),  # 试用前第 5 步：出错等退避间隔的任务也不判空闲
-        _handoff_ground_gone=lambda action_key: False,  # 阶段 C 核验：地基没了的交接拒绝不算等人
-        _requirements_unconfirmed=lambda mission: False,  # 阶段 E：现行要求在等人确认
-        _decomposition_paused=lambda mission: False,  # 推后第 3 批 H12：审阅积压时暂停新拆分
+        _round_backing_off=lambda mission_id: False,
+        _handoff_ground_gone=lambda action_key: False,
+        _requirements_unconfirmed=lambda mission: False,
+        _decomposition_paused=lambda mission: False,
+        _planning=PlanningRoundState(planning_evidence_waits={}),
+        _wiring=DeploymentWiring(taskgraph_notifications=None),
+        _rounds=MissionRoundState(unrecovered=set()),
     )
     fake._root_resolved = lambda mission, new_mode: False
     return fake, mission

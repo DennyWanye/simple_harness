@@ -202,7 +202,7 @@ class RecoveryCoordinator:
             "side_effects_disabled": self.side_effects_disabled,
             "recovery_id": self.recovery_id,
             "latest": latest,
-            "isolated_missions": dict(self._orch._recovery_isolated),
+            "isolated_missions": dict(self._orch._rounds.recovery_isolated),
         }
 
     # ------------------------------------------------------------------ 协议
@@ -317,8 +317,8 @@ class RecoveryCoordinator:
             alive=_owner_alive,
         )
         self.recovery_id = recovery_id
-        if isinstance(orch._deferred_planning, DeferredPlanning):
-            orch._deferred_planning.bind(orch.store)
+        if isinstance(orch._planning.deferred_planning, DeferredPlanning):
+            orch._planning.deferred_planning.bind(orch.store)
         return {
             "owner": orch.owner,
             "owner_pid": pid,
@@ -417,7 +417,7 @@ class RecoveryCoordinator:
             ),
         }
         # 一个任务对不上只隔离它（AER 恢复第 3、8 条），不让整个部署降级
-        orch._recovery_isolated.update(inconsistent)
+        orch._rounds.recovery_isolated.update(inconsistent)
         if inconsistent:
             detail["isolated"] = inconsistent
         return detail
@@ -426,7 +426,7 @@ class RecoveryCoordinator:
         orch = self._orch
         faults = 0
         isolated: list[dict[str, str]] = []
-        for mission_id, where, error in orch._startup_faults:
+        for mission_id, where, error in orch._rounds.startup_faults:
             if orch.recovery_isolated(mission_id):
                 # 第 3 步已隔离：本进程不替它写故障、不停它（N3-27），只在这一步的结果里记一笔
                 isolated.append(
@@ -435,7 +435,7 @@ class RecoveryCoordinator:
                 continue
             await orch._round_fault(mission_id, where, error)
             faults += 1
-        orch._startup_faults.clear()
+        orch._rounds.startup_faults.clear()
         intents = orch.store.list_intents("AGENT_CREATED", "SUBMITTED")
         for intent in intents:
             await orch._mission_round(
@@ -482,7 +482,7 @@ class RecoveryCoordinator:
         missions = orch._active_missions()
         for mission in missions:
             await orch._recover_mission_round(mission)
-        return {"active_missions": len(missions), "unrecovered": sorted(orch._unrecovered)}
+        return {"active_missions": len(missions), "unrecovered": sorted(orch._rounds.unrecovered)}
 
     async def _step_orphans(self) -> dict[str, Any]:
 

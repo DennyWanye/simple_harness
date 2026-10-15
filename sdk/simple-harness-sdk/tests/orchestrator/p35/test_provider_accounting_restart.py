@@ -52,9 +52,6 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-from agent_orchestrator.orchestrator.failure_classes import INTERRUPTED, classify_failure
-from agent_orchestrator.testing.fixtures import role_of
-from agent_orchestrator.testing.scripted_replies import review_input
 from provider_world import (
     QUICK,
     HeldStep,
@@ -68,6 +65,10 @@ from provider_world import (
     settle,
     wire_terminal,
 )
+
+from agent_orchestrator.orchestrator.failure_classes import INTERRUPTED, classify_failure
+from agent_orchestrator.testing.fixtures import role_of
+from agent_orchestrator.testing.scripted_replies import review_input
 
 
 @pytest.fixture(autouse=True)
@@ -153,7 +154,9 @@ def test_a_restart_frees_the_dead_calls_slot_and_redoes_the_queued_turn_as_lease
         second = Scripted()
         async with product_world_as(root, second, owner="process-2", **QUICK) as world:
             store = world.store
-            assert await settle(world, mission_id) == "COMPLETED", world.loop.progress_log[-10:]
+            assert await settle(world, mission_id) == "COMPLETED", world.loop._rounds.progress_log[
+                -10:
+            ]
             tried = attempts(store, mission_id)
 
             # 死掉的调用：槽位放出（否则一个槽位的部署之后什么都跑不了），额度按上限留着、收尾时计入
@@ -244,7 +247,9 @@ def test_a_review_whose_call_died_with_the_process_does_not_hold_the_closeout(tm
         second = Scripted()
         async with product_world_as(root, second, owner="process-2", **QUICK) as world:
             store = world.store
-            assert await settle(world, mission_id) == "COMPLETED", world.loop.progress_log[-10:]
+            assert await settle(world, mission_id) == "COMPLETED", world.loop._rounds.progress_log[
+                -10:
+            ]
             # 那次审阅记为"等原调用对账"，没有重发
             [row] = grants(store, review)
             assert row["state"] == "UNKNOWN" and (

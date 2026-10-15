@@ -35,7 +35,7 @@ def test_two_sources_get_two_access_keys_and_merge_without_conflict(tmp_path):
             )
             mission = world.store.get_mission(created["mission_id"])
             principal = world.deployment.principal
-            authority = world.loop._assurance_reviews.consumer.authority
+            authority = world.loop._wiring.assurance_reviews.consumer.authority
             identity = UseIdentity(
                 mission.id,
                 "REVIEW",

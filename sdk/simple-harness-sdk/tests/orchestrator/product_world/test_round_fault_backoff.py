@@ -76,14 +76,16 @@ def test_a_fault_past_its_stop_condition_no_longer_holds_the_run():
     from types import SimpleNamespace
 
     from agent_orchestrator.orchestrator.event_handler import Orchestrator
+    from agent_orchestrator.orchestrator.orchestrator_domains.state import MissionRoundState
 
     now = 1000.0
     fake = SimpleNamespace(
         store=SimpleNamespace(now=now, get_mission=lambda _id: SimpleNamespace(status="CREATED"))
     )
-    fake._round_faults = {("m1", "decide"): (3, now - 10.0, now + 2.0)}
+    fake._rounds = MissionRoundState()
+    fake._rounds.round_faults = {("m1", "decide"): (3, now - 10.0, now + 2.0)}
     assert Orchestrator._round_backing_off(fake, "m1") is True
-    fake._round_faults = {("m1", "decide"): (7, now - 200.0, now + 10.0)}
+    fake._rounds.round_faults = {("m1", "decide"): (7, now - 200.0, now + 10.0)}
     assert Orchestrator._round_backing_off(fake, "m1") is False
 
 
@@ -94,10 +96,12 @@ def test_a_wall_clock_rollback_does_not_stretch_the_wait():
     from types import SimpleNamespace
 
     from agent_orchestrator.orchestrator.event_handler import Orchestrator
+    from agent_orchestrator.orchestrator.orchestrator_domains.state import MissionRoundState
 
     fake = SimpleNamespace(store=SimpleNamespace(now=1000.0))
-    fake._round_faults = {("m1", "decide"): (2, 999.0, 1000.5)}
+    fake._rounds = MissionRoundState()
+    fake._rounds.round_faults = {("m1", "decide"): (2, 999.0, 1000.5)}
     assert Orchestrator._round_due(fake, "m1", "decide") is False
     assert Orchestrator._round_due(fake, "m1", "other") is True
-    fake._round_faults = {("m1", "decide"): (2, 3999.0, 4000.5)}  # 墙钟回拨了约 3000 秒
+    fake._rounds.round_faults = {("m1", "decide"): (2, 3999.0, 4000.5)}  # 墙钟回拨了约 3000 秒
     assert Orchestrator._round_due(fake, "m1", "decide") is True

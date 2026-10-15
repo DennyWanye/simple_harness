@@ -31,12 +31,13 @@ _PRODUCT_WORLD = Path(__file__).resolve().parents[2] / "product_world"
 if str(_PRODUCT_WORLD) not in sys.path:
     sys.path.insert(0, str(_PRODUCT_WORLD))
 
+from test_repair_replace_method import CRITERIA, _Provider  # noqa: E402
+
 from agent_orchestrator.orchestrator.taskgraph_wakeups import (
     TaskGraphConvergenceWakeups,  # noqa: E402
 )
 from agent_orchestrator.storage.taskgraph_followups import TaskGraphFollowupStore  # noqa: E402
 from agent_orchestrator.testing.product_world import ProductWorld, product_world  # noqa: E402
-from test_repair_replace_method import CRITERIA, _Provider  # noqa: E402
 
 MINUTE_MS = 60_000
 
@@ -275,11 +276,14 @@ def test_an_isolated_missions_followups_are_left_exactly_as_they_are(tmp_path):
             store = loop.store
             wakeups = TaskGraphConvergenceWakeups(TaskGraphFollowupStore(store), interval_ms=5_000)
             assert wakeups.schedule(mission_id, now_ms=int(store.now * 1000) + 10 * MINUTE_MS) == 1
-            notifications = loop._taskgraph_notifications
+            notifications = loop._wiring.taskgraph_notifications
             assert notifications._consume_one(mission_id) >= 1  # 唤醒事件已派生成待投递的跟进
             before = _followup_states(store, mission_id)
             assert any(state == "PENDING" for state, _ in before), before
-            loop._recovery_isolated[mission_id] = {"tables": ["fixture"], "silent_changes": []}
+            loop._rounds.recovery_isolated[mission_id] = {
+                "tables": ["fixture"],
+                "silent_changes": [],
+            }
             delivered = await notifications.pump.pump_taskgraph_followups(limit=16)
             assert all(
                 item.message_id

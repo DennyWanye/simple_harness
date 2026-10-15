@@ -8,6 +8,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from agent_orchestrator.orchestrator.event_handler import Orchestrator
+from agent_orchestrator.orchestrator.orchestrator_domains.state import PlanningRoundState
 
 
 def _harness(now: list[float]) -> SimpleNamespace:
@@ -15,9 +16,9 @@ def _harness(now: list[float]) -> SimpleNamespace:
     fake = SimpleNamespace(
         store=None,
         _config=SimpleNamespace(profile_wait_seconds=10.0),
-        _planning_evidence_waits={},
         _note=lambda _message: None,
         stopped=stopped,
+        _planning=PlanningRoundState(planning_evidence_waits={}),
     )
     fake.store = type("S", (), {"now": property(lambda _self: now[0])})()
     fake._stop_planning_round = lambda mission_id, **kwargs: stopped.append(
@@ -58,4 +59,4 @@ def test_a_wait_that_lapsed_long_ago_does_not_count_toward_a_new_one() -> None:
     now[0] = 1000.0
     _wait(fake)  # 很久以后又一次签不出
     assert fake.stopped == []
-    assert fake._planning_evidence_waits["m1"] == (1000.0, 1000.0)
+    assert fake._planning.planning_evidence_waits["m1"] == (1000.0, 1000.0)

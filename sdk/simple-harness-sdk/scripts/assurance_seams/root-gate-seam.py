@@ -7,12 +7,13 @@
 3. 原生根上的产物读取（推后第 2 批 A03 起走使用证书签发方，原 ``root_gate.require_read`` 已删）：本人
    读得到并留一张 DISCLOSE 证书；别的租户看不到这件任务、别的主体、读权限过期各自按名拒绝，拒绝不留证书。
 """
-from _product_seam import EVIDENCE, SDK, count, quick, source_sha256, write_report  # noqa: F401
 
 import asyncio
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
+
+from _product_seam import EVIDENCE, SDK, count, quick, source_sha256, write_report  # noqa: F401
 
 from agent_orchestrator.api.facade import FacadeError, MissionControlV1
 from agent_orchestrator.assurance.codec import AssuranceError
@@ -45,8 +46,11 @@ def native_reads(world: Any, artifact: Any, results: dict[str, Any]) -> None:
     store = world.store
 
     def certificates() -> int:
-        return count(store, "SELECT count(*) FROM assurance_use_certificates WHERE purpose='DISCLOSE' "
-                            "AND consumer_kind='NATIVE_READ'")
+        return count(
+            store,
+            "SELECT count(*) FROM assurance_use_certificates WHERE purpose='DISCLOSE' "
+            "AND consumer_kind='NATIVE_READ'",
+        )
 
     read = world.control.artifact_read(artifact.id)
     assert read["content_hash"] == artifact.content_hash and read["content"], read
@@ -54,12 +58,20 @@ def native_reads(world: Any, artifact: Any, results: dict[str, Any]) -> None:
     other_tenant = MissionControlV1(world.loop, tenant_id="other-tenant", principal=USER)
     refused(lambda: other_tenant.artifact_read(artifact.id), "not_found")
     stranger = MissionControlV1(world.loop, tenant_id=TENANT, principal=Principal("someone-else"))
-    refused(lambda: stranger.artifact_read(artifact.id), "USE_EVIDENCE_NOT_CURRENT", "ROOT_READ_NOT_AUTHORIZED")
+    refused(
+        lambda: stranger.artifact_read(artifact.id),
+        "USE_EVIDENCE_NOT_CURRENT",
+        "ROOT_READ_NOT_AUTHORIZED",
+    )
     authority = world.loop.commit._assurance_validity.authority
     ttl = authority.ttl_ms
     authority.ttl_ms = -1  # 当前读权限一发出就已过期
     try:
-        refused(lambda: world.control.artifact_read(artifact.id), "USE_EVIDENCE_NOT_CURRENT", "CHECK_USE_EXPIRED")
+        refused(
+            lambda: world.control.artifact_read(artifact.id),
+            "USE_EVIDENCE_NOT_CURRENT",
+            "CHECK_USE_EXPIRED",
+        )
     finally:
         authority.ttl_ms = ttl
     assert certificates() == 1
@@ -69,8 +81,12 @@ def native_reads(world: Any, artifact: Any, results: dict[str, Any]) -> None:
 async def native_round(base: Path, results: dict[str, Any]) -> dict[str, Any]:
     provider = LayeredScriptedProvider()
     async with product_world(base / "source", provider) as world:
-        first = world.create({"goal": "写 NOTES.md", "success_criteria": ["file:NOTES.md"], "idempotency_key": "r1"})
-        second = world.create({"goal": "写 B.md", "success_criteria": ["file:B.md"], "idempotency_key": "r2"})
+        first = world.create(
+            {"goal": "写 NOTES.md", "success_criteria": ["file:NOTES.md"], "idempotency_key": "r1"}
+        )
+        second = world.create(
+            {"goal": "写 B.md", "success_criteria": ["file:B.md"], "idempotency_key": "r2"}
+        )
         root = world.loop._config.evidence_root
         state = root / STATE_FILE
         saved = state.read_bytes()
@@ -88,11 +104,20 @@ async def native_round(base: Path, results: dict[str, Any]) -> dict[str, Any]:
         for created in (first, second):
             mission = await world.run_until_settled(created["mission_id"])
             assert str(mission.status.value) == "COMPLETED", mission.final_report
-        [artifact] = [a for a in world.store.list_mission_artifacts(first["mission_id"]) if a.path == "NOTES.md"]
+        [artifact] = [
+            a
+            for a in world.store.list_mission_artifacts(first["mission_id"])
+            if a.path == "NOTES.md"
+        ]
         results["missing_root_state_refuses_the_main_loop_before_any_model_call"] = True
         native_reads(world, artifact, results)
-        return {"config": world.loop._config, "profiles": world.loop._profiles, "mission_id": first["mission_id"],
-                "artifact": artifact, "root_id": world.loop._assurance_root_gate.require_execution().root_incarnation_id}
+        return {
+            "config": world.loop._config,
+            "profiles": world.loop._profiles,
+            "mission_id": first["mission_id"],
+            "artifact": artifact,
+            "root_id": world.loop._wiring.assurance_root_gate.require_execution().root_incarnation_id,
+        }
 
 
 def management_orchestrator(root: Path) -> Any:
@@ -100,9 +125,15 @@ def management_orchestrator(root: Path) -> Any:
     cfg = OrchestratorConfig(evidence_root=root, model="agent-model")
     counter = FixtureWordCounter()
     provider = LayeredScriptedProvider()
-    native = NativePools(tenant_id=TENANT, principal_id=USER.principal_id, allowed_tools=DEFAULT_TOOLS,
-                         meter_factory=counter.meter_factory)
-    options = pool_options(cfg, native=native, provider=provider, counter=counter, provider_kind="fixtures")
+    native = NativePools(
+        tenant_id=TENANT,
+        principal_id=USER.principal_id,
+        allowed_tools=DEFAULT_TOOLS,
+        meter_factory=counter.meter_factory,
+    )
+    options = pool_options(
+        cfg, native=native, provider=provider, counter=counter, provider_kind="fixtures"
+    )
 
     def never(_: Any) -> None:
         raise AssertionError("runtime started on a quarantined root")
@@ -123,28 +154,42 @@ async def main() -> None:
         state.unlink()
         orchestrator, provider = management_orchestrator(root)
         async with orchestrator as orch:
-            assert orch._assurance_management_only
+            assert orch._wiring.assurance_management_only
             api = MissionControlV1(orch, tenant_id=TENANT, principal=USER)
             assert api.assurance_root_diagnostic()["state"] == "QUARANTINED"
             refused(api.missions, "ROOT_QUARANTINED")
             refused(lambda: api.snapshot(mission_id), "ROOT_QUARANTINED")
-            refused(lambda: api.artifact_read(artifact.id), "USE_EVIDENCE_NOT_CURRENT", "USE_CERTIFICATE_REQUIRED")
+            refused(
+                lambda: api.artifact_read(artifact.id),
+                "USE_EVIDENCE_NOT_CURRENT",
+                "USE_CERTIFICATE_REQUIRED",
+            )
             results["quarantine_without_current_authority_refuses_every_read"] = True
 
             assert provider.asked == []
-    write_report("root-gate-seam", {
-        "status": "PASS",
-        "scope": "product deployment for the native round and its native artifact reads through the use "
-                 "certificate issuer; management-only startup without a bound current authority. No model, "
-                 "Host or UI.",
-        "results": results, "provider_calls": 0,
-        "source_sha256": source_sha256(["assurance/root_gate.py", "orchestrator/assurance_root_commits.py",
-                                        "orchestrator/event_handler.py",
-                                        "orchestrator/orchestrator_domains/core.py",
-                                        "orchestrator/orchestrator_domains/deployment.py",
-                                        "api/facade.py",
-                                        "orchestrator/assurance_point_use.py",
-                                        "deployment/assembly.py"])})
+    write_report(
+        "root-gate-seam",
+        {
+            "status": "PASS",
+            "scope": "product deployment for the native round and its native artifact reads through the use "
+            "certificate issuer; management-only startup without a bound current authority. No model, "
+            "Host or UI.",
+            "results": results,
+            "provider_calls": 0,
+            "source_sha256": source_sha256(
+                [
+                    "assurance/root_gate.py",
+                    "orchestrator/assurance_root_commits.py",
+                    "orchestrator/event_handler.py",
+                    "orchestrator/orchestrator_domains/core.py",
+                    "orchestrator/orchestrator_domains/deployment.py",
+                    "api/facade.py",
+                    "orchestrator/assurance_point_use.py",
+                    "deployment/assembly.py",
+                ]
+            ),
+        },
+    )
 
 
 if __name__ == "__main__":

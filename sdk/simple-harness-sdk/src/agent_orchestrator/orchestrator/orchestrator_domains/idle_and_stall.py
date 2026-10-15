@@ -413,7 +413,7 @@ class IdleStallMixin(OrchestratorCore):
         whether a named wait holds.
         """
 
-        if mission.id in self._unrecovered or self._round_backing_off(mission.id):
+        if mission.id in self._rounds.unrecovered or self._round_backing_off(mission.id):
             # Its recovery is still being retried and the rest of its round is skipped, so
             # it cannot dispatch: that is a wait with its own bound (the round-fault cap),
             # never a stall to confirm, ask the Planner about, or stop on.  The same holds
@@ -466,10 +466,10 @@ class IdleStallMixin(OrchestratorCore):
             "operation_completion": self._has_pending_operation_completion(mission),
             "assurance_work": self._has_pending_assurance_work(mission.id),
             "planning_wait": self._has_pending_planning_waits(mission.id)
-            or mission.id in self._planning_evidence_waits,
+            or mission.id in self._planning.planning_evidence_waits,
             "taskgraph_sources": bool(
-                self._taskgraph_notifications is not None
-                and self._taskgraph_notifications.awaiting_sources(mission.id)
+                self._wiring.taskgraph_notifications is not None
+                and self._wiring.taskgraph_notifications.awaiting_sources(mission.id)
             ),
             "backlog_paused": self._decomposition_paused(mission),
         }
@@ -578,7 +578,9 @@ class IdleStallMixin(OrchestratorCore):
                 f"mission {mission.id}: the loop went idle with work left over "
                 f"({len(blocking)} withheld, {len(admitted)} admitted and not dispatched)"
             )
-            self._stalled_at[mission.id] = self._stall_fingerprint(mission, admissions, rows)
+            self._planning.stalled_at[mission.id] = self._stall_fingerprint(
+                mission, admissions, rows
+            )
 
     def _stall_fingerprint(self, mission: Mission, admissions: Any, rows: Sequence[Any]) -> str:
         """Everything that would have to change for this stall to be a different one.
@@ -670,9 +672,9 @@ class IdleStallMixin(OrchestratorCore):
             # legal wait is never turned into NO_DISPATCHABLE_WORK.
             observed = self._idle_facts(mission, read_plan=False)
             if observed is None or idle_verdict(observed[0]).route is not Route.STOP:
-                self._stalled_at.pop(mission.id, None)
+                self._planning.stalled_at.pop(mission.id, None)
                 continue
-            before = self._stalled_at.pop(mission.id, None)
+            before = self._planning.stalled_at.pop(mission.id, None)
             if before is None:
                 continue
             new_mode = self._new_mode(mission)
@@ -698,9 +700,9 @@ class IdleStallMixin(OrchestratorCore):
                 continue
             after = self._stall_fingerprint(mission, admissions, rows)
             if after != before:
-                spent = self._stall_carry_ons.get(mission.id, 0)
+                spent = self._planning.stall_carry_ons.get(mission.id, 0)
                 if spent < MAX_STALL_CARRY_ONS:
-                    self._stall_carry_ons[mission.id] = spent + 1
+                    self._planning.stall_carry_ons[mission.id] = spent + 1
                     carry_on = True
                     self._note(
                         f"mission {mission.id}: the confirmation cycle moved the world; "

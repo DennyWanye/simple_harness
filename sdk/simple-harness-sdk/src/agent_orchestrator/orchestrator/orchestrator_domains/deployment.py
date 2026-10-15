@@ -53,9 +53,9 @@ class DeploymentMixin(OrchestratorCore):
         return self._store
 
     def _require_assurance_execution_root(self) -> None:
-        if self._assurance_root_gate is not None:
-            self._assurance_root_gate.require_execution()
-        if self._assurance_management_only:
+        if self._wiring.assurance_root_gate is not None:
+            self._wiring.assurance_root_gate.require_execution()
+        if self._wiring.assurance_management_only:
             raise AssuranceError("ROOT_RUNTIME_NOT_STARTED")
 
     @property
@@ -67,15 +67,15 @@ class DeploymentMixin(OrchestratorCore):
     def hierarchical(self) -> HierarchicalDispatch | None:
         """The hierarchical assembly, or None when this deployment has not installed one."""
 
-        return self._hierarchical
+        return self._wiring.hierarchical
 
     def install_hierarchical(self) -> HierarchicalDispatch:
         """Install the hierarchical assembly (P2.3b).  Without it nothing is planned,
         dispatched or judged: a Mission is recorded as waiting for the assembly.  Each
         Mission's planning world is bound per Mission (``_dispatch_for``)."""
 
-        self._hierarchical = HierarchicalDispatch(self.store, self.commit)
-        return self._hierarchical
+        self._wiring.hierarchical = HierarchicalDispatch(self.store, self.commit)
+        return self._wiring.hierarchical
 
     def set_between_cycles(self, duty: Callable[[], Any] | None, *, every_seconds: float) -> None:
         """Let the embedding host run its own duties while :meth:`run` is still going.
@@ -89,19 +89,19 @@ class DeploymentMixin(OrchestratorCore):
         not end the run.
         """
 
-        self._between_cycles = duty
-        self._between_every = max(0.0, float(every_seconds))
-        self._between_last = 0.0
+        self._between.between_cycles = duty
+        self._between.between_every = max(0.0, float(every_seconds))
+        self._between.between_last = 0.0
 
     async def _run_between_cycles(self) -> bool:
-        if self._between_cycles is None:
+        if self._between.between_cycles is None:
             return False
         now = asyncio.get_running_loop().time()
-        if now - self._between_last < self._between_every:
+        if now - self._between.between_last < self._between.between_every:
             return False
-        self._between_last = now
+        self._between.between_last = now
         try:
-            outcome = self._between_cycles()
+            outcome = self._between.between_cycles()
             if asyncio.iscoroutine(outcome):
                 outcome = await outcome
         except Exception as error:  # noqa: BLE001 - a host duty never ends the run
@@ -115,9 +115,9 @@ class DeploymentMixin(OrchestratorCore):
         Each dispatcher has its own registry and evidence scope. Async turns never
         mutate a shared world's mission_id. Rebuilds reconstruct from durable data.
         """
-        self._planning_world_factory = world_factory
-        self._planning_start_gate = start_gate
-        self._mission_dispatches.clear()
+        self._wiring.planning_world_factory = world_factory
+        self._wiring.planning_start_gate = start_gate
+        self._wiring.mission_dispatches.clear()
         self.install_hierarchical()
 
     def _blame_replaced_method(self, mission_id: str, decision: Any, decision_id: str) -> None:
@@ -141,29 +141,29 @@ class DeploymentMixin(OrchestratorCore):
         )
 
     def _dispatch_for(self, mission_id: str) -> HierarchicalDispatch | None:
-        if self._planning_world_factory is None:
-            return self._hierarchical
+        if self._wiring.planning_world_factory is None:
+            return self._wiring.hierarchical
         mission = self.store.get_mission(mission_id)
         if mission is None:
             return None
-        if mission_id not in self._mission_dispatches:
-            world = self._planning_world_factory(mission)
+        if mission_id not in self._wiring.mission_dispatches:
+            world = self._wiring.planning_world_factory(mission)
             if world.mission_id != mission_id:
                 raise ContractError("planning world belongs to another Mission")
-            self._mission_dispatches[mission_id] = HierarchicalDispatch(
+            self._wiring.mission_dispatches[mission_id] = HierarchicalDispatch(
                 self.store,
                 self.commit,
                 planning=world,
             )
-        dispatch = self._mission_dispatches[mission_id]
-        if self._taskgraph_dispatch_setup is not None:
-            self._taskgraph_dispatch_setup(dispatch)
+        dispatch = self._wiring.mission_dispatches[mission_id]
+        if self._wiring.taskgraph_dispatch_setup is not None:
+            self._wiring.taskgraph_dispatch_setup(dispatch)
         return dispatch
 
     def _new_mode(self, mission: Mission) -> HierarchicalDispatch | None:
         """The assembly for this Mission, or None when this deployment installed none."""
 
-        if self._hierarchical is None:
+        if self._wiring.hierarchical is None:
             return None
         return self._dispatch_for(mission.id)
 
@@ -171,14 +171,14 @@ class DeploymentMixin(OrchestratorCore):
         self, *, history: Any, convergence: Any, validate_current: Any
     ) -> Any:
 
-        if self._taskgraph_notifications is not None:
+        if self._wiring.taskgraph_notifications is not None:
             raise ValueError("TaskGraph notifications are already installed")
-        if self._hierarchical is None:
+        if self._wiring.hierarchical is None:
             raise ValueError("TaskGraph notifications require the hierarchical assembly")
-        self._taskgraph_notifications = TaskGraphNotifications(
+        self._wiring.taskgraph_notifications = TaskGraphNotifications(
             self, history=history, convergence=convergence, validate_current=validate_current
         )
-        return self._taskgraph_notifications
+        return self._wiring.taskgraph_notifications
 
     def install_taskgraph(self, ports: Any) -> Any:
         """Fixed deployment setup; never called with model or Host request JSON."""
@@ -193,13 +193,13 @@ class DeploymentMixin(OrchestratorCore):
             raise ValueError("TaskGraph read API must bind this Store and authenticated caller")
         if any(
             item.matches_binding(self.commit, tenant_id, principal)
-            for item in self._taskgraph_read_apis
+            for item in self._wiring.taskgraph_read_apis
         ):
             raise ValueError("TaskGraph read API is already installed for this caller")
-        self._taskgraph_read_apis.append(api)
+        self._wiring.taskgraph_read_apis.append(api)
 
     def taskgraph_read_api(self, *, tenant_id: str, principal: Any) -> Any:
-        for api in self._taskgraph_read_apis:
+        for api in self._wiring.taskgraph_read_apis:
             if api.matches_binding(self.commit, tenant_id, principal):
                 return api
 
@@ -218,13 +218,13 @@ class DeploymentMixin(OrchestratorCore):
             raise ValueError("Assurance read API must bind this Store and authenticated caller")
         if any(
             item.matches_binding(self.commit, tenant_id, principal)
-            for item in self._assurance_read_apis
+            for item in self._wiring.assurance_read_apis
         ):
             raise ValueError("Assurance read API is already installed for this caller")
-        self._assurance_read_apis.append(api)
+        self._wiring.assurance_read_apis.append(api)
 
     def assurance_read_api(self, *, tenant_id: str, principal: Any) -> Any:
-        for api in self._assurance_read_apis:
+        for api in self._wiring.assurance_read_apis:
             if api.matches_binding(self.commit, tenant_id, principal):
                 return api
 
@@ -234,14 +234,14 @@ class DeploymentMixin(OrchestratorCore):
 
     def taskgraph_operator_api(self, *, tenant_id: str, principal: Any) -> Any:
         """Authenticated internal operator access, never part of model tools."""
-        operator = self._taskgraph_operator
+        operator = self._wiring.taskgraph_operator
         if operator is None or not operator.matches_binding(self.commit, tenant_id, principal):
             raise StoreError("TASKGRAPH_OPERATOR_ASSEMBLY_UNAVAILABLE")
         return operator
 
     def taskgraph_policy_api(self, *, tenant_id: str, principal: Any) -> Any:
         """Explicit kernel activation through fixed authenticated Host setup."""
-        policy = self._taskgraph_policy
+        policy = self._wiring.taskgraph_policy
         if policy is None or not policy.matches_binding(self.commit, tenant_id, principal):
             raise StoreError("TASKGRAPH_POLICY_ASSEMBLY_UNAVAILABLE")
         return policy
@@ -355,7 +355,7 @@ class DeploymentMixin(OrchestratorCore):
         inventing the declarations the plan is admitted against.
         """
 
-        if self._hierarchical is not None:
+        if self._wiring.hierarchical is not None:
             return False
         record_assembly_missing(self.store, mission, at=at)
         self._note(
@@ -376,7 +376,7 @@ class DeploymentMixin(OrchestratorCore):
         a fallback path and never allowed to take the loop down.
         """
 
-        if mission.id in self._contract_checked:
+        if mission.id in self._rounds.contract_checked:
             return False
         if not is_hierarchical(mission):
             if mission.status is MissionStatus.CREATED:
@@ -443,7 +443,7 @@ class DeploymentMixin(OrchestratorCore):
             )
             self._note(f"mission {mission.id}: {error} → stopped")
             return True
-        self._contract_checked.add(mission.id)
+        self._rounds.contract_checked.add(mission.id)
         return False
 
     async def _plan_integrity_stop(self, mission: Mission, error: Exception) -> None:
@@ -458,7 +458,7 @@ class DeploymentMixin(OrchestratorCore):
         """
 
         if isinstance(error, GraphIntegrityError):
-            if self._hierarchical is not None:
+            if self._wiring.hierarchical is not None:
                 dispatch = self._dispatch_for(mission.id)
                 if dispatch is not None:
                     dispatch.record_integrity_failure(mission.id, error)

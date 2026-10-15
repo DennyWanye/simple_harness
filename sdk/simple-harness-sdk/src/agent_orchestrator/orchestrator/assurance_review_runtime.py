@@ -100,14 +100,14 @@ class AssuranceReviewRuntime:
         """
 
         orch = self.orchestrator
-        if orch._assurance_reviews not in (None, self):
+        if orch._wiring.assurance_reviews not in (None, self):
             raise AssuranceError("ASSURANCE_REVIEW_RUNTIME_ALREADY_BOUND")
         if (
             orch.commit._assurance_review_handoff is not None
-            and orch._assurance_reviews is not self
+            and orch._wiring.assurance_reviews is not self
         ):
             raise AssuranceError("ASSURANCE_REVIEW_RUNTIME_ALREADY_BOUND")
-        orch._assurance_reviews = self
+        orch._wiring.assurance_reviews = self
         if orch.commit._assurance_review_handoff is None:
             orch.commit._assurance_review_handoff = AssuranceReviewHandoff(self)
         if orch.commit._assurance_settlement is None:
@@ -413,7 +413,7 @@ class AssuranceReviewRuntime:
         alive while the Task is in the current plan."""
         carried = requirements_revision is not None
         orch = self.orchestrator
-        tick = orch._assurance_tick
+        tick = orch._wiring.assurance_tick
         if tick is None or tick.consumers.get("REVIEW") is not self.consumer:
             raise AssuranceError("ASSURANCE_REVIEW_CONSUMER_UNBOUND")
         if mission.tenant_id != self.consumer.tenant_id:

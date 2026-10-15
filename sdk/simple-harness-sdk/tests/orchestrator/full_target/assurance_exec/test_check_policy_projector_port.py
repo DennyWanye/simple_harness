@@ -80,7 +80,7 @@ def test_projector_is_threaded_to_the_review_runtime(tmp_path):
             assurance_root_setup=root_setup,
             **_native(cfg, provider, lambda orch: _install(orch, calls)),
         ) as orch:
-            runtime = orch._assurance_reviews
+            runtime = orch._wiring.assurance_reviews
             assert isinstance(runtime, runtime_module.AssuranceReviewRuntime)
             assert runtime._check_policy_projector == calls.append
             # Source pin: the projector is consulted before the review is prepared,
@@ -115,6 +115,6 @@ def test_without_a_projector_the_runtime_keeps_the_human_verb_as_the_only_source
         async with Orchestrator(
             cfg, provider, assurance_root_setup=root_setup, **_native(cfg, provider, assembly)
         ) as orch:
-            assert orch._assurance_reviews._check_policy_projector is None
+            assert orch._wiring.assurance_reviews._check_policy_projector is None
 
     asyncio.run(scenario())

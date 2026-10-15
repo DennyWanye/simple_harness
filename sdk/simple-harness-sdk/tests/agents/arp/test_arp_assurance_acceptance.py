@@ -18,6 +18,8 @@ from pathlib import Path
 import pytest
 from arp_fixture import build, trusted_caller
 from provider_fixture import ScriptedProvider
+from skill_fixture import activation_of, import_skill, md_bundle, trial_command
+
 from simple_harness.agents.arp.assurance_acceptance import (
     ASSURANCE_1_1,
     AssuranceSkillAcceptance,
@@ -25,12 +27,12 @@ from simple_harness.agents.arp.assurance_acceptance import (
 )
 from simple_harness.agents.arp.errors import ArpError
 from simple_harness.agents.arp.pins import Pin
-from skill_fixture import activation_of, import_skill, md_bundle, trial_command
 
 SDK_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(SDK_ROOT / "tests/orchestrator/full_target/assurance_exec"))
 
 from _review_world import ReviewScript, quick_waits  # noqa: E402
+
 from agent_orchestrator.testing.product_world import USER_GOAL_NAMES, product_world  # noqa: E402
 
 
@@ -107,7 +109,7 @@ class Evaluation:
 
 async def _evaluation(tmp_path, provider, body) -> None:  # type: ignore[no-untyped-def]
     async with product_world(tmp_path / "product", provider) as world:
-        gate = world.loop._assurance_root_gate
+        gate = world.loop._wiring.assurance_root_gate
         reader = AssuranceSkillAcceptance(
             store=world.store,
             clock_ms=lambda: int(world.store.now * 1000),

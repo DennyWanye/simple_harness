@@ -207,17 +207,17 @@ class AttemptCollectionMixin(OrchestratorCore):
             else:
                 self.assembled.gateway.unbind(intent.agent_id)
                 key = f"service:{intent.subject_id}:cancel"
-                if key not in self._released:
-                    self._released.add(key)
+                if key not in self._attempts.released:
+                    self._attempts.released.add(key)
                     await self._cancel_turn(intent)
                 # 阶段 B 裁决第 6 类: a service turn of a stopped Mission that never comes
                 # back (its model call ignores the cancel) is closed after the service
                 # bound — nothing more can be decided for it; a late usage record is
                 # still imported by the accounting scan and an unknown charge keeps its
                 # reservation.  Without this the loop waited on it for ever.
-                since = self._service_blocked_since.setdefault(key, self.store.now)
+                since = self._planning.service_blocked_since.setdefault(key, self.store.now)
                 if self.store.now - since >= self._service_blocker_limit:
-                    self._service_blocked_since.pop(key, None)
+                    self._planning.service_blocked_since.pop(key, None)
                     self._import_usage(intent)
                     self._settle_intent(intent, "FAILED")
                     self._settle_service_if_known(intent.subject_id, intent.mission_id)
@@ -440,7 +440,7 @@ class AttemptCollectionMixin(OrchestratorCore):
             shape, limit = ("running", liveness.progress), float(self._critic_wait)
         else:
             shape, limit = ("untimed",), None
-        mark = self._review_call_marks.get(intent.intent_id)
+        mark = self._reviews.review_call_marks.get(intent.intent_id)
         if mark is None:
             row = self.store.connection.execute(
                 "SELECT created_at FROM events WHERE idempotency_key=?",
@@ -449,7 +449,7 @@ class AttemptCollectionMixin(OrchestratorCore):
             since = now if row is None else float(row[0])
         else:
             since = mark[1] if mark[0] == shape else now
-        self._review_call_marks[intent.intent_id] = (shape, since)
+        self._reviews.review_call_marks[intent.intent_id] = (shape, since)
         if limit is None or now - since < limit:
             return None
         return {
@@ -474,15 +474,15 @@ class AttemptCollectionMixin(OrchestratorCore):
             check = self._unknown_handoff_check(intent)
             if (
                 check.verdict == "result_known"
-                and intent.intent_id not in self._handoff_known_waits
+                and intent.intent_id not in self._planning.handoff_known_waits
             ):
-                self._handoff_known_waits.add(intent.intent_id)
-                self._review_call_marks[intent.intent_id] = (("blocked",), self.store.now)
+                self._planning.handoff_known_waits.add(intent.intent_id)
+                self._reviews.review_call_marks[intent.intent_id] = (("blocked",), self.store.now)
                 self._note(
                     f"{intent.subject_id}: the lost review call has a result; collecting instead of reopening"
                 )
                 return False
-            self._handoff_known_waits.discard(intent.intent_id)
+            self._planning.handoff_known_waits.discard(intent.intent_id)
             overdue = {
                 **overdue,
                 "handoff_check": check.to_json(),
@@ -490,7 +490,7 @@ class AttemptCollectionMixin(OrchestratorCore):
             }
 
         await abandon_assurance_review(self, intent, detail=overdue)
-        self._review_call_marks.pop(intent.intent_id, None)
+        self._reviews.review_call_marks.pop(intent.intent_id, None)
         self._note(
             f"{intent.subject_id}: review call ended as interrupted after "
             f"{overdue['waited_seconds']}s ({overdue['shape']})"
@@ -509,7 +509,7 @@ class AttemptCollectionMixin(OrchestratorCore):
                 command_id=f"{intent.subject_id}:cancel",
                 wait_timeout=0.0,
             )
-            self.cancel_receipts.append(
+            self._attempts.cancel_receipts.append(
                 {
                     "attempt_id": intent.subject_id,
                     "agent_id": receipt.agent_id,
@@ -530,9 +530,9 @@ class AttemptCollectionMixin(OrchestratorCore):
             return
         self.assembled.gateway.unbind(intent.agent_id)
         key = f"{attempt_id}:{'cancel' if cancel else 'unbind'}"
-        if key in self._released:
+        if key in self._attempts.released:
             return
-        self._released.add(key)
+        self._attempts.released.add(key)
         if cancel and intent.expected_turn_id is not None:
             try:
                 liveness = await self.bridge_for(intent).liveness(
@@ -613,12 +613,12 @@ class AttemptCollectionMixin(OrchestratorCore):
         recorded, so the ordinary retry path takes over, visibly."""
 
         signature = f"{type(error).__name__}:{error}"
-        previous = self._verdict_refusals.get(result_id)
+        previous = self._reviews.verdict_refusals.get(result_id)
         count = previous[1] + 1 if previous is not None and previous[0] == signature else 1
         if count < self.VERDICT_REFUSAL_LIMIT:
-            self._verdict_refusals[result_id] = (signature, count)
+            self._reviews.verdict_refusals[result_id] = (signature, count)
             return True
-        self._verdict_refusals.pop(result_id, None)
+        self._reviews.verdict_refusals.pop(result_id, None)
         failure = {
             "layer": "acceptance",
             "status": "FAIL",

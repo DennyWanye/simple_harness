@@ -23,8 +23,9 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import agent_orchestrator.testing.scripted_replies as scripted  # noqa: E402
 from _review_world import ReviewScript, quick_waits, reviewed_mission  # noqa: E402
+
+import agent_orchestrator.testing.scripted_replies as scripted  # noqa: E402
 from agent_orchestrator.orchestrator.assurance_consumers import (  # noqa: E402
     CLOSEOUT_SOURCE_EVENTS,
     VALIDITY_SOURCE_EVENTS,
@@ -205,7 +206,7 @@ def test_a_settlement_wakes_an_import_waiting_on_budget_before_its_due_time(tmp_
         async with reviewed_mission(tmp_path, ReviewScript()) as case:
             mission = await case.settle()
             assert str(mission.status.value) == "COMPLETED", mission.final_report
-            store, tick = case.store, case.world.loop._assurance_tick
+            store, tick = case.store, case.world.loop._wiring.assurance_tick
             consumer = tick.consumers["REVIEW"]
             imports = _imports(store, case.mission_id)
             released = case.events("BudgetReleased")[-1]

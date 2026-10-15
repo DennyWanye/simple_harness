@@ -27,7 +27,7 @@ def _ended_by_refusal(orchestrator: Any, job: ConvergenceJob) -> bool:
     if decision is None or decision["status"] != "COMMIT_REJECTED":
         return False
     with store.transaction():
-        orchestrator._taskgraph_notifications.convergence.jobs.release_for_decision(
+        orchestrator._wiring.taskgraph_notifications.convergence.jobs.release_for_decision(
             job.mission_id, job.decision_id, reason="decision_refused", now_ms=int(store.now * 1000)
         )
     return True

@@ -1167,7 +1167,7 @@ class PlanningDecisionMixin(OrchestratorCore):
                     # BW03: the admitted draft gets its independent METHOD_PLAN
                     # review on the round transport, authored by this intent.
 
-                    if self._assurance_reviews is None:
+                    if self._wiring.assurance_reviews is None:
                         raise ContractError(
                             "Assurance review builder is not installed for METHOD_PLAN"
                         )
@@ -1180,7 +1180,7 @@ class PlanningDecisionMixin(OrchestratorCore):
                     )
                     self.commit.materialise_planning_subject(reply.mission.id, subject_spec)
                     try:
-                        review = self._assurance_reviews.ensure_method_plan(
+                        review = self._wiring.assurance_reviews.ensure_method_plan(
                             reply.mission,
                             task_id=str(checked.subject["task_id"]),
                             method_ref=AssurancePin(

@@ -15,7 +15,6 @@
 * 到期：授权时长过了以后，有效性消费者观察到证书到期；
 * 重启：通知游标丢了，启动对账重建它、按稳定键重放，通知不重发。
 """
-from _product_seam import EVIDENCE, ReviewScript, count, quick, source_sha256, write_report  # noqa: F401
 
 import asyncio
 import dataclasses
@@ -24,12 +23,28 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
 
+from _product_seam import (  # noqa: F401
+    EVIDENCE,
+    ReviewScript,
+    count,
+    quick,
+    source_sha256,
+    write_report,
+)
+
 from agent_orchestrator.assurance.codec import AssuranceError, decode
 from agent_orchestrator.assurance.refs import AssuranceRef, Pin
 from agent_orchestrator.governance.permissions import Principal
 from agent_orchestrator.governance.policies import DeploymentPolicy
-from agent_orchestrator.orchestrator.assurance_assembly import AssuranceDeploymentPorts, install_assurance
-from agent_orchestrator.orchestrator.assurance_consumers import CLOSEOUT_EVENT, NOTIFIED_EVENT, VALIDITY_CHECKED_EVENT
+from agent_orchestrator.orchestrator.assurance_assembly import (
+    AssuranceDeploymentPorts,
+    install_assurance,
+)
+from agent_orchestrator.orchestrator.assurance_consumers import (
+    CLOSEOUT_EVENT,
+    NOTIFIED_EVENT,
+    VALIDITY_CHECKED_EVENT,
+)
 from agent_orchestrator.storage.assurance_store import AssuranceStore
 from agent_orchestrator.storage.htn_store import HtnStore
 from agent_orchestrator.testing.product_world import TENANT, product_world
@@ -49,9 +64,13 @@ def refused(call: Any, codes: set[str]) -> str:
 
 
 def pending(store: Any, mission_id: str) -> list[dict[str, Any]]:
-    return [dict(r) for r in store.connection.execute(
-        "SELECT consumer,work_key,state,tries FROM assurance_pending_work WHERE mission_id=? ORDER BY consumer,work_key",
-        (mission_id,)).fetchall()]
+    return [
+        dict(r)
+        for r in store.connection.execute(
+            "SELECT consumer,work_key,state,tries FROM assurance_pending_work WHERE mission_id=? ORDER BY consumer,work_key",
+            (mission_id,),
+        ).fetchall()
+    ]
 
 
 async def drain(tick: Any, limit: int = 20) -> int:
@@ -70,23 +89,45 @@ async def first_life(root: Path, policy: DeploymentPolicy, report: dict[str, Any
         store = world.store
         installed = world.deployment.assurance
         assert set(installed.consumers) == CONSUMERS
-        assert world.loop._assurance_tick is installed.tick
-        startup = {k: installed.startup[k] for k in ("missions", "cursors_rebuilt", "expiry_events_emitted",
-                                                       "pending_work")}
-        assert startup == {"missions": 0, "cursors_rebuilt": [], "expiry_events_emitted": 0, "pending_work": {}}, startup
-        second = refused(lambda: install_assurance(world.loop, AssuranceDeploymentPorts(
-            tenant_id=TENANT, principal=world.deployment.principal)), {"ASSURANCE_ALREADY_INSTALLED"})
+        assert world.loop._wiring.assurance_tick is installed.tick
+        startup = {
+            k: installed.startup[k]
+            for k in ("missions", "cursors_rebuilt", "expiry_events_emitted", "pending_work")
+        }
+        assert startup == {
+            "missions": 0,
+            "cursors_rebuilt": [],
+            "expiry_events_emitted": 0,
+            "pending_work": {},
+        }, startup
+        second = refused(
+            lambda: install_assurance(
+                world.loop,
+                AssuranceDeploymentPorts(tenant_id=TENANT, principal=world.deployment.principal),
+            ),
+            {"ASSURANCE_ALREADY_INSTALLED"},
+        )
 
-        created = world.create({"goal": "写一份 NOTES.md，列出三条要点。", "success_criteria": ["file:NOTES.md"],
-                                "idempotency_key": "four-consumer-1"})
+        created = world.create(
+            {
+                "goal": "写一份 NOTES.md，列出三条要点。",
+                "success_criteria": ["file:NOTES.md"],
+                "idempotency_key": "four-consumer-1",
+            }
+        )
         mission_id = created["mission_id"]
         assert AssuranceStore(store).lane(mission_id) == "ASSURANCE_1_1"
         requirements = HtnStore(store).get_requirements_revision(mission_id, 1)
         assert [c.criterion_id for c in requirements.criteria] == ["c-user-1"]
         assert requirements.authority_subject == world.deployment.principal.principal_id
         activation = events(store, mission_id, "AssuranceProfileActivated")[0]
-        cursors = {r[0]: r[1] for r in store.connection.execute(
-            "SELECT consumer,last_event_seq FROM assurance_event_cursors WHERE mission_id=?", (mission_id,))}
+        cursors = {
+            r[0]: r[1]
+            for r in store.connection.execute(
+                "SELECT consumer,last_event_seq FROM assurance_event_cursors WHERE mission_id=?",
+                (mission_id,),
+            )
+        }
         assert set(cursors) == CONSUMERS and set(cursors.values()) == {activation.seq}, cursors
 
         # 当前读权限：部署装上的那一份（消费者与使用证书签发方共用），只读，什么都不写。推后第 2 批 A03
@@ -94,23 +135,45 @@ async def first_life(root: Path, policy: DeploymentPolicy, report: dict[str, Any
         # 外来调用者（原生下载就这样调），只核不落库。
         from agent_orchestrator.assurance.certificates import UseIdentity
         from agent_orchestrator.orchestrator.assurance_point_use import (
-            NATIVE_READ_CONSUMER, EvidenceClaim, certify_point_use_locked)
+            NATIVE_READ_CONSUMER,
+            EvidenceClaim,
+            certify_point_use_locked,
+        )
 
         authority = installed.authority
         principal = world.deployment.principal
-        root_id = world.loop._assurance_root_gate.require_execution().root_incarnation_id
-        ref = AssuranceRef("requirements", Pin(str(requirements.revision_id), 1, requirements.content_hash()))
+        root_id = world.loop._wiring.assurance_root_gate.require_execution().root_incarnation_id
+        ref = AssuranceRef(
+            "requirements", Pin(str(requirements.revision_id), 1, requirements.content_hash())
+        )
 
         def read(principal_id: str, purpose: str) -> Any:
-            return authority(UseIdentity(mission_id, NATIVE_READ_CONSUMER, "seam", mission_id, principal_id,
-                                         purpose, root_id), ref)
+            return authority(
+                UseIdentity(
+                    mission_id,
+                    NATIVE_READ_CONSUMER,
+                    "seam",
+                    mission_id,
+                    principal_id,
+                    purpose,
+                    root_id,
+                ),
+                ref,
+            )
 
         def certify(caller: tuple[str, str]) -> Any:
             with store.read_view():
                 return certify_point_use_locked(
-                    world.loop.commit, mission_id=mission_id, purpose="DISCLOSE", consumer_kind=NATIVE_READ_CONSUMER,
-                    consumer_id="seam", claims=(EvidenceClaim.exact(ref),), subject=("requirements", mission_id),
-                    record=False, caller=caller)
+                    world.loop.commit,
+                    mission_id=mission_id,
+                    purpose="DISCLOSE",
+                    consumer_kind=NATIVE_READ_CONSUMER,
+                    consumer_id="seam",
+                    claims=(EvidenceClaim.exact(ref),),
+                    subject=("requirements", mission_id),
+                    record=False,
+                    caller=caller,
+                )
 
         before = store.connection.total_changes
         permission = read(principal.principal_id, "DISCLOSE")
@@ -122,7 +185,9 @@ async def first_life(root: Path, policy: DeploymentPolicy, report: dict[str, Any
         refused(lambda: read("someone-else", "DISCLOSE"), {"CURRENT_READ_AUTHORITY_REQUIRED"})
         refused(lambda: read(principal.principal_id, "BOGUS"), {"CURRENT_READ_AUTHORITY_REQUIRED"})
         assert certify((principal.principal_id, TENANT)).usable
-        assert certify((principal.principal_id, "other-tenant")).refusals == ("ROOT_READ_NOT_AUTHORIZED",)
+        assert certify((principal.principal_id, "other-tenant")).refusals == (
+            "ROOT_READ_NOT_AUTHORIZED",
+        )
         assert certify(("someone-else", TENANT)).refusals == ("ROOT_READ_NOT_AUTHORIZED",)
         assert store.connection.total_changes == before
 
@@ -131,8 +196,9 @@ async def first_life(root: Path, policy: DeploymentPolicy, report: dict[str, Any
         closeouts = [e.payload for e in events(store, mission_id, CLOSEOUT_EVENT)]
         states = [c["state"] for c in closeouts]
         assert states and states[-1] in {"READY", "FINALIZED"}, states
-        row = store.connection.execute("SELECT state FROM assurance_closeouts WHERE mission_id=?",
-                                       (mission_id,)).fetchone()
+        row = store.connection.execute(
+            "SELECT state FROM assurance_closeouts WHERE mission_id=?", (mission_id,)
+        ).fetchone()
         assert row is not None and row[0] == "FINALIZED", row
         notices = [n for n in world.notices if n.get("mission_id") == mission_id]
         assert len(notices) == 1 and len(events(store, mission_id, NOTIFIED_EVENT)) == 1, notices
@@ -140,57 +206,92 @@ async def first_life(root: Path, policy: DeploymentPolicy, report: dict[str, Any
         # 方法计划审查发生在任何完成范围之前：正式记录、绑定里没有范围。
         method_plan = []
         for (binding_json,) in store.connection.execute(
-                "SELECT binding_json FROM assurance_review_bindings WHERE mission_id=?", (mission_id,)):
+            "SELECT binding_json FROM assurance_review_bindings WHERE mission_id=?", (mission_id,)
+        ):
             bound = decode(binding_json)
             if bound["subject"]["purpose"] == "METHOD_PLAN":
                 method_plan.append(bound)
-        assert method_plan and all(b["subject"]["completion_scope_ref"] is None for b in method_plan)
-        official = count(store, "SELECT count(*) FROM review_records WHERE mission_id=? AND official=1 "
-                                "AND purpose='METHOD_PLAN'", mission_id)
+        assert method_plan and all(
+            b["subject"]["completion_scope_ref"] is None for b in method_plan
+        )
+        official = count(
+            store,
+            "SELECT count(*) FROM review_records WHERE mission_id=? AND official=1 "
+            "AND purpose='METHOD_PLAN'",
+            mission_id,
+        )
         assert official >= 1
 
         idle = await drain(installed.tick)
         assert idle == 0 and not installed.tick.has_pending(), pending(store, mission_id)
 
         # 到期：部署策略给的授权时长过了以后，有效性消费者观察到证书到期。
-        deadlines = [r[0] for r in store.connection.execute(
-            "SELECT not_after_ms FROM assurance_use_certificates WHERE mission_id=? AND not_after_ms IS NOT NULL "
-            "AND json_extract(certificate_json,'$.decision')='USABLE'", (mission_id,))]
+        deadlines = [
+            r[0]
+            for r in store.connection.execute(
+                "SELECT not_after_ms FROM assurance_use_certificates WHERE mission_id=? AND not_after_ms IS NOT NULL "
+                "AND json_extract(certificate_json,'$.decision')='USABLE'",
+                (mission_id,),
+            )
+        ]
         assert deadlines
         wait = max(deadlines) / 1000 - store.now + 0.5
         await asyncio.sleep(max(0.0, wait))
         expiry_rounds = await drain(installed.tick)
         due = events(store, mission_id, "AssuranceUseExpiryDue")
-        expired = [e.payload for e in events(store, mission_id, VALIDITY_CHECKED_EVENT)
-                   if "EXPIRED" in e.payload.get("reasons", ())]
+        expired = [
+            e.payload
+            for e in events(store, mission_id, VALIDITY_CHECKED_EVENT)
+            if "EXPIRED" in e.payload.get("reasons", ())
+        ]
         assert due and expired, (len(due), len(expired))
         assert {c["certificate_id"] for c in expired} >= {e.payload["certificate_id"] for e in due}
         assert len([n for n in world.notices if n.get("mission_id") == mission_id]) == 1
 
         report["production_install"] = {
-            "consumers": sorted(installed.consumers), "startup": startup, "second_install": second,
-            "lane": "ASSURANCE_1_1", "cursor_seq": cursors, "requirements": [c.criterion_id for c in requirements.criteria],
+            "consumers": sorted(installed.consumers),
+            "startup": startup,
+            "second_install": second,
+            "lane": "ASSURANCE_1_1",
+            "cursor_seq": cursors,
+            "requirements": [c.criterion_id for c in requirements.criteria],
             "authority": {"access_key": permission.access.key, "policy_key": permission.policy.key},
-            "idle_rounds": idle}
-        report["run"] = {"mission": "COMPLETED", "closeout_states": states, "closeout_row": row[0],
-                         "notices": len(notices), "method_plan_official": official,
-                         "method_plan_scope": None}
-        report["expiry"] = {"usable_certificates_with_deadline": len(deadlines), "due_events": len(due),
-                            "expired_observations": len(expired), "rounds": expiry_rounds}
+            "idle_rounds": idle,
+        }
+        report["run"] = {
+            "mission": "COMPLETED",
+            "closeout_states": states,
+            "closeout_row": row[0],
+            "notices": len(notices),
+            "method_plan_official": official,
+            "method_plan_scope": None,
+        }
+        report["expiry"] = {
+            "usable_certificates_with_deadline": len(deadlines),
+            "due_events": len(due),
+            "expired_observations": len(expired),
+            "rounds": expiry_rounds,
+        }
         return mission_id
 
 
-async def second_life(root: Path, policy: DeploymentPolicy, mission_id: str, report: dict[str, Any]) -> None:
+async def second_life(
+    root: Path, policy: DeploymentPolicy, mission_id: str, report: dict[str, Any]
+) -> None:
     async with product_world(root, LayeredScriptedProvider(), deployment_policy=policy) as world:
         installed = world.deployment.assurance
         summary = dict(installed.startup)
-        assert summary["cursors_rebuilt"] == [mission_id + ":NOTIFY"] and summary["missions"] == 1, summary
+        assert (
+            summary["cursors_rebuilt"] == [mission_id + ":NOTIFY"] and summary["missions"] == 1
+        ), summary
         await drain(installed.tick)
         await world.drain(timeout=10)
         assert world.notices == [], world.notices
         assert len(events(world.store, mission_id, NOTIFIED_EVENT)) == 1
-        report["restart"] = {"cursor_rebuild": {k: summary[k] for k in ("missions", "cursors_rebuilt")},
-                             "notices_after_restart": len(world.notices)}
+        report["restart"] = {
+            "cursor_rebuild": {k: summary[k] for k in ("missions", "cursors_rebuilt")},
+            "notices_after_restart": len(world.notices),
+        }
 
 
 async def main() -> None:
@@ -198,10 +299,11 @@ async def main() -> None:
     report: dict[str, Any] = {
         "status": "PASS",
         "scope": "product deployment, real main loop: install_assurance at startup (four consumers, fixed-principal "
-                 "current authority, factory, startup reconciliation), a user Mission to COMPLETED (METHOD_PLAN before "
-                 "any Scope, closeout to FINALIZED, NOTIFY once), certificate expiry after the deployment's real "
-                 "authority lifetime, a lost NOTIFY cursor rebuilt at restart without a second notification. "
-                 "Scripted model replies only; not a real model, Host or UI."}
+        "current authority, factory, startup reconciliation), a user Mission to COMPLETED (METHOD_PLAN before "
+        "any Scope, closeout to FINALIZED, NOTIFY once), certificate expiry after the deployment's real "
+        "authority lifetime, a lost NOTIFY cursor rebuilt at restart without a second notification. "
+        "Scripted model replies only; not a real model, Host or UI.",
+    }
     policy = dataclasses.replace(DeploymentPolicy(), approval_ttl_seconds=TTL_SECONDS)
     with TemporaryDirectory(prefix="assurance-four-consumer-") as temp:
         root = Path(temp).resolve() / "root"
@@ -210,16 +312,25 @@ async def main() -> None:
 
         connection = sqlite3.connect(root / "orchestrator.db")
         with connection:
-            lost = connection.execute("DELETE FROM assurance_event_cursors WHERE mission_id=? AND consumer='NOTIFY'",
-                                      (mission_id,)).rowcount
+            lost = connection.execute(
+                "DELETE FROM assurance_event_cursors WHERE mission_id=? AND consumer='NOTIFY'",
+                (mission_id,),
+            ).rowcount
         connection.close()
         assert lost == 1
         await second_life(root, policy, mission_id, report)
     report["finished_wall"] = time.time()
-    report["source_sha256"] = source_sha256([
-        "orchestrator/assurance_assembly.py", "orchestrator/assurance_consumers.py", "orchestrator/assurance_factory.py",
-        "orchestrator/assurance_tick.py", "orchestrator/assurance_review_consumer.py", "assurance/expiry.py",
-        "deployment/assembly.py"])
+    report["source_sha256"] = source_sha256(
+        [
+            "orchestrator/assurance_assembly.py",
+            "orchestrator/assurance_consumers.py",
+            "orchestrator/assurance_factory.py",
+            "orchestrator/assurance_tick.py",
+            "orchestrator/assurance_review_consumer.py",
+            "assurance/expiry.py",
+            "deployment/assembly.py",
+        ]
+    )
     write_report("four-consumer-seam", report)
 
 
