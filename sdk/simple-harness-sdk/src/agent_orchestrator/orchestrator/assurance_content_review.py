@@ -200,15 +200,12 @@ def ensure_task_content_review(
             refs.update(ref for group in policy_contract.any_check_sets for ref in group)
         epochs = read_epochs_locked(store.connection, mission_id)
         now_ms = int(store.now * 1000)
-        metadata = tuple(
+        metadata = tuple(  # 读取器带授权与身份：每项许可必填，下面 cast 依据这一点
             reader.read_exact_metadata(ref, now_ms=now_ms)
             for ref in sorted(refs, key=lambda ref: ref.key)
         )
         complete = read_complete_evidence_snapshot(reader, scope_id=projection.scope.scope_id)
-        # 读取器带授权与身份，解析时必填许可（assurance_reads.read_exact_metadata）
-        permissions = tuple(
-            (item.ref, cast("CurrentReadPermission", item.permission)) for item in metadata
-        )
+        permissions = tuple((m.ref, cast("CurrentReadPermission", m.permission)) for m in metadata)
         round_no = next_review_round(
             store.connection,
             mission_id=mission_id,
