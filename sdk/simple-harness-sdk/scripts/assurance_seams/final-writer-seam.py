@@ -137,7 +137,10 @@ async def main() -> None:
             f"orchestrator/hierarchical_dispatch_domains/{name}.py"
             for name in ("core", "support", "plan_reading", "witnesses", "inputs_outputs",
                          "root_resolution", "admission", "method_planning", "evidence_rounds")),
-        "orchestrator/commit_service.py"])
+        "orchestrator/commit_service.py", *sorted(
+            f"orchestrator/commit_service_domains/{name}.py"
+            for name in ("core", "support", "accounting", "installs", "mission_lifecycle", "grading",
+                         "attempt_lifecycle", "results"))])
     write_report("final-writer-seam", report)
 
 

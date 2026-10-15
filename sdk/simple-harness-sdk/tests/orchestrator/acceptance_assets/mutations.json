@@ -324,7 +324,7 @@
     {
       "id": "G-03",
       "source": "阶段 G 第 1 批",
-      "file": "src/agent_orchestrator/orchestrator/commit_service.py",
+      "file": "src/agent_orchestrator/orchestrator/commit_service_domains/mission_lifecycle.py",
       "original": "                    \"replay_scope\": replay_scope_digest(),\n",
       "replacement": "",
       "tests": [
@@ -772,7 +772,7 @@
     {
       "id": "H-02",
       "source": "HTN 一致性补改 H-2",
-      "file": "src/agent_orchestrator/orchestrator/commit_service.py",
+      "file": "src/agent_orchestrator/orchestrator/commit_service_domains/mission_lifecycle.py",
       "original": "        if rows:\n            report[\"unresolved_actions\"] = rows\n",
       "replacement": "        if False:\n            report[\"unresolved_actions\"] = rows\n",
       "tests": [
@@ -794,7 +794,7 @@
     {
       "id": "H-02c",
       "source": "HTN 一致性补改 H-2（完成评估需补项）",
-      "file": "src/agent_orchestrator/orchestrator/commit_service.py",
+      "file": "src/agent_orchestrator/orchestrator/commit_service_domains/mission_lifecycle.py",
       "original": "            self._note_unresolved_actions(mission_id, report)\n            updated = next_mission(\n                mission,\n                MissionStatus.FAILED,\n",
       "replacement": "            updated = next_mission(\n                mission,\n                MissionStatus.FAILED,\n",
       "tests": [
@@ -1003,7 +1003,7 @@
     {
       "id": "TG4-08",
       "source": "F2 联测真机库重建核对",
-      "file": "src/agent_orchestrator/orchestrator/commit_service.py",
+      "file": "src/agent_orchestrator/orchestrator/commit_service_domains/results.py",
       "original": "                key=f\"{result_id}:{layer}:r{revision}:{sha256_hex([status, dict(detail)])[:16]}\",",
       "replacement": "                key=f\"{result_id}:{layer}:{sha256_hex([status, dict(detail)])[:16]}\",",
       "tests": [
@@ -1113,7 +1113,7 @@
     {
       "id": "FIN-01",
       "source": "Assurance 原计划对照后补改（2026-10-05）",
-      "file": "src/agent_orchestrator/orchestrator/commit_service.py",
+      "file": "src/agent_orchestrator/orchestrator/commit_service_domains/mission_lifecycle.py",
       "original": "                return request_assured_closeout(self, mission, report=report, judged=judged)",
       "replacement": "                return self._store.update_mission(next_mission(mission, MissionStatus.COMPLETED, final_report=report), expected_version=mission.version)",
       "tests": [
@@ -1237,7 +1237,7 @@
     {
       "id": "AS-M13",
       "source": "Assurance 原计划 M13（2026-10-05 对照后登记）",
-      "file": "src/agent_orchestrator/orchestrator/commit_service.py",
+      "file": "src/agent_orchestrator/orchestrator/commit_service_domains/results.py",
       "original": "            self._store.fault(\"after_accept_before_supersede\", \"attempt\")",
       "replacement": "            self._store.connection.execute(\"COMMIT\")\n            self._store.connection.execute(\"BEGIN IMMEDIATE\")\n            self._store.fault(\"after_accept_before_supersede\", \"attempt\")",
       "tests": [
@@ -1658,7 +1658,7 @@
     {
       "id": "K07-01",
       "source": "推后第 3 批车道 R2（K07：知识血缘记被谁改过）",
-      "file": "src/agent_orchestrator/orchestrator/commit_service.py",
+      "file": "src/agent_orchestrator/orchestrator/commit_service_domains/grading.py",
       "original": "                    modified(\n                        replace(record, disputed_by=(*record.disputed_by, claim.id)),\n                        change=\"DISPUTED\",\n                        by=claim.id,\n                        task_id=claim.source_task,\n                        attempt_id=claim.source_attempt,\n                        proposed_by=claim.proposed_by,\n                        at=self._store.now,\n                    )\n",
       "replacement": "                    replace(record, disputed_by=(*record.disputed_by, claim.id))\n",
       "tests": [
@@ -2028,7 +2028,7 @@
     {
       "id": "SM-22",
       "source": "2026-10-11 第二批：完成报告任取一步（偏离 5）",
-      "file": "src/agent_orchestrator/orchestrator/commit_service.py",
+      "file": "src/agent_orchestrator/orchestrator/commit_service_domains/mission_lifecycle.py",
       "original": "            artifact_ids: list[str] = []\n            for task in accepted:\n                artifact_ids.extend(a for a in task.accepted_artifacts if a not in artifact_ids)",
       "replacement": "            artifact_ids: list[str] = []\n            for task in accepted[-1:]:\n                artifact_ids.extend(a for a in task.accepted_artifacts if a not in artifact_ids)",
       "tests": [

@@ -19,7 +19,7 @@ ALLOWED = {
     "api/missions.py",
     "api/facade.py",
     "contracts/models.py",
-    "orchestrator/commit_service.py",  # MissionSpec → Mission 行
+    "orchestrator/commit_service_domains/mission_lifecycle.py",  # MissionSpec → Mission 行
     "orchestrator/assurance_assembly.py",  # 建任务：章程 → 第 1 版要求书
     "deployment/root.py",  # 第 1 版要求书的唯一构造
     "verification/criteria.py",  # 受保护尾部的任务身份哈希（初始输入的身份）
