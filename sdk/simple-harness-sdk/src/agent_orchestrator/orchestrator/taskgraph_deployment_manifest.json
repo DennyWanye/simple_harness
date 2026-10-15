@@ -1,6 +1,6 @@
 {
   "acceptance_evidence": null,
-  "deployment_id": "11ad3fb64e43df6496eaef51a80c5a545882108bf73809f114242476d3be4100",
+  "deployment_id": "4fa55ba116f2bef9494efcf065ffdc69c73a13a8733a17a5512d170b1668f50f",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -639,7 +639,7 @@
     "simple_harness/execution/sqlite/stage_audit.py": "6701ca6213807d5bfef931604adad09131cd33d590624146ce18771cf65f5184",
     "simple_harness/execution/sqlite/stage_audit_schema.py": "4c46c8d8c54a7404c5f7f54a3074bb10063eb433839b2faf9c4995ac650ad163",
     "simple_harness/execution/sqlite/storage.py": "1f28052b7739d83c4c794b5f0f63d63f6e4e5533b82bb627a2563a45d36359f5",
-    "simple_harness/execution/sqlite/uow.py": "7e03ad39648b2db72e767190737217a414cee57794ad80a0765bed8d10214bd9",
+    "simple_harness/execution/sqlite/uow.py": "80f331efe00d2660275cc6401f21a17c3af2d130483fe76be5be587e881a9534",
     "simple_harness/execution/sqlite/uow_domains/__init__.py": "e715966d6d3a745958ab631e6bb233c17adcdd8718166adc58c865d101949663",
     "simple_harness/execution/sqlite/uow_domains/admission.py": "7f4c7397c2e2d3ef870744b533b0858dcad8098b76d27c27d9ff23e7c2cfc697",
     "simple_harness/execution/sqlite/uow_domains/audit.py": "bdf31fb0d1b61de1e222ad67ef54b77945c04b4ded61066726a1183572bd830e",
@@ -656,8 +656,9 @@
     "simple_harness/execution/sqlite/uow_domains/runtime_start.py": "5ff1f6c95b71b587a4fdda52c7310e68e6272b29fd101df61ae100e665c32b48",
     "simple_harness/execution/sqlite/uow_domains/runtime_state.py": "7be0ffdd6ebf6c199c24bc7d58c06119fd2f8ee215b5dc16df651c588035fc2f",
     "simple_harness/execution/sqlite/uow_domains/spawn_activation.py": "60123327edea61da0bb4371daef804fb76b7d66064d2e34e04d485f0268a41fe",
+    "simple_harness/execution/sqlite/uow_domains/spawn_admission.py": "0158c1df9a54d297d6233df44dcb9f06668eff821674d6b3fe7d5bbd0b7ac93b",
     "simple_harness/execution/sqlite/uow_domains/spawn_issue.py": "9912e64278b02d7ad34407b26e3bbe2c0c5f95352996dcefda6838bbec5aabf8",
-    "simple_harness/execution/sqlite/uow_domains/spawn_outcome.py": "f2989241a93d335537f7dd365cddd6ce36ad3ae2c20fdd0e373929f232dde883",
+    "simple_harness/execution/sqlite/uow_domains/spawn_outcome.py": "d2190ee2b69a3090908d48369f48b42251c6625d0680cdec75d7a573f3315d15",
     "simple_harness/execution/sqlite/uow_domains/spawn_settle.py": "c9ee162eafbb2e380d0446656fb48fff9d62982536808c32828bd839e2bcc714",
     "simple_harness/execution/sqlite/uow_domains/support.py": "268f51177a088e0391eb8ae382341b32e325c44eab35e7d87fd6f15cbd0bfbd8",
     "simple_harness/execution/sqlite/uow_domains/workflow_cancel.py": "a0bda347780a1af9ee277de4c0f4485809f42ed784c1982cff26860d89e20a6e",

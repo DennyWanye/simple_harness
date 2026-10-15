@@ -31,6 +31,8 @@ python3 scripts/code_quality/metrics.py check --new-since HEAD >> "$LOG" 2>&1; c
 python3 scripts/code_quality/startup_profile.py >> "$LOG" 2>&1; check "启动耗时检查：通过"
 python3 scripts/code_quality/import_contracts.py >> "$LOG" 2>&1; check "导入隔离约定：全部满足"
 grep -E "^启动耗时|^启动完成后多加载|^多加载了" "$LOG" | tail -3
+# CQ_NO_TESTS=1：只做前置检查，相关测试交给 snapshot_tests.sh 在快照里排队跑
+if [ -n "${CQ_NO_TESTS:-}" ]; then [ $ok -eq 1 ] || { echo "停下，日志 $LOG"; exit 1; }; echo "前置检查：全部通过" | tee -a "$LOG"; exit 0; fi
 LIST=$(mktemp)
 # CQ_TESTS=清单文件：用调用者挑好的相关测试代替按模块路径自动挑（自动挑超过约 150 个文件时用，见阶段 5 裁决）
 if [ -n "${CQ_TESTS:-}" ]; then cp "$CQ_TESTS" "$LIST"; else

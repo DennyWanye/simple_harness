@@ -36,6 +36,7 @@ from .uow_domains.recovery import WorkflowRecoveryMixin
 from .uow_domains.runtime_start import RuntimeStartMixin
 from .uow_domains.runtime_state import RuntimeStateMixin
 from .uow_domains.spawn_activation import WorkflowSpawnActivationMixin
+from .uow_domains.spawn_admission import WorkflowSpawnAdmissionMixin
 from .uow_domains.spawn_issue import WorkflowSpawnIssueMixin
 from .uow_domains.spawn_outcome import WorkflowSpawnOutcomeMixin
 from .uow_domains.spawn_settle import WorkflowSpawnSettleMixin
@@ -66,6 +67,7 @@ class SqliteExecutionUnitOfWork(
     WorkflowSpawnIssueMixin,
     WorkflowSpawnActivationMixin,
     WorkflowSpawnOutcomeMixin,
+    WorkflowSpawnAdmissionMixin,
     WorkflowSpawnSettleMixin,
     RuntimeStartMixin,
 ):
