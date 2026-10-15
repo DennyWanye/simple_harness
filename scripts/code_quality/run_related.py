@@ -46,7 +46,8 @@ def main() -> int:
         for i, f in enumerate(files, 1):
             xml = Path(tmp) / f"{i}.xml"
             log = Path(tmp) / f"{i}.log"
-            status = run_watched([py, "-m", "pytest", f, "-q", "-p", "no:cacheprovider", *plugin, f"--junitxml={xml}"],
+            # -v：每条测试一行。-q 的点号写到文件时被缓冲，整份文件超过卡死门槛（300 秒）就被误判卡住
+            status = run_watched([py, "-m", "pytest", f, "-v", "-p", "no:cacheprovider", *plugin, f"--junitxml={xml}"],
                                  cwd, log, stall, env=env)
             counts, failed = junit_failures(xml)
             mark = "ok" if status in ("exit=0", "exit=5") else status
