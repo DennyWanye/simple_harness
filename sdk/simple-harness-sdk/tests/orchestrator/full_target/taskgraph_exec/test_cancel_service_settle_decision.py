@@ -8,19 +8,13 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from agent_orchestrator.orchestrator import taskgraph_runtime
+
 from agent_orchestrator.orchestrator.taskgraph_runtime import TaskGraphRuntimeCommands
 
 
 def _commands(monkeypatch, *, physical: bool, complete: bool) -> tuple[Any, list]:
     settled: list = []
     facts = SimpleNamespace(physical_settled=physical, accounting_complete=complete)
-    monkeypatch.setattr(
-        taskgraph_runtime,
-        "TaskGraphRuntimeImports",
-        lambda orch: SimpleNamespace(read_subject=lambda current: facts),
-        raising=False,
-    )
     import agent_orchestrator.orchestrator.taskgraph_runtime_imports as imports
 
     monkeypatch.setattr(

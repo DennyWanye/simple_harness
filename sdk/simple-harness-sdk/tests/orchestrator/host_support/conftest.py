@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import pytest
-from agent_orchestrator.orchestrator import event_handler as event_handler_module
+from agent_orchestrator.orchestrator.orchestrator_domains import attempt_judgment
 from agent_orchestrator.runtime import tool_gateway
 from agent_orchestrator.verification import deterministic_checks
 
@@ -23,6 +23,6 @@ def spy_on_pytest(monkeypatch):
         calls.append({"root": str(root), "path": path})
         return await real(root, path=path, timeout=timeout, executor=executor)
 
-    for module in (tool_gateway, deterministic_checks, event_handler_module):
+    for module in (tool_gateway, deterministic_checks, attempt_judgment):
         monkeypatch.setattr(module, "run_pytest", spy)
     return calls
