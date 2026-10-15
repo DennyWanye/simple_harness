@@ -39,9 +39,6 @@ from .disclosure_protocol import (
 from .evidence_protocol import EvidenceRef, _evidence_refs, _refs_from_json
 from .information_classification_protocol import InformationAttribute, PrivacyClass
 from .memory_protocol import (
-    _NO_RECALL_REASONS,
-    _RECALL_DEPENDENCY_REASONS,
-    _REJECTED_REASONS,
     ContextAssemblyBudget,
     ContextAssemblyReasonCode,
     ContextFragmentType,
@@ -52,9 +49,16 @@ from .memory_protocol import (
     RecallDecisionOutcome,
     RecallPlan,
     RecallReasonCode,
+)
+from .memory_protocol_domains.common import (
     _bounded_enum_tuple,
     _bounded_identifiers,
     _optional_timestamp,
+)
+from .memory_protocol_domains.recall import (
+    _NO_RECALL_REASONS,
+    _RECALL_DEPENDENCY_REASONS,
+    _REJECTED_REASONS,
     _validate_recall_disclosure,
 )
 

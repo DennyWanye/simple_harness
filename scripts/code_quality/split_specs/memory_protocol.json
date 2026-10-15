@@ -1,0 +1,112 @@
+{
+ "package": "memory_protocol_domains",
+ "common": "common",
+ "common_doc": "Private validation helpers shared by several memory protocol families.",
+ "groups": [
+  {
+   "module": "types",
+   "doc": "Shared memory protocol enums and schema versions.",
+   "names": [
+    "RECALL_DECISION_SCHEMA_VERSION",
+    "MEMORY_MUTATION_SCHEMA_VERSION",
+    "MEMORY_MUTATION_VALIDATION_DIAGNOSTIC_SCHEMA_VERSION",
+    "LongTermMemoryType",
+    "SemanticMemoryKind",
+    "SemanticRelationKind",
+    "MemoryMutationValidationReasonCode",
+    "_MemoryMutationAdmissionError",
+    "WorkingMemoryRole",
+    "ContextFragmentType",
+    "_cognitive_schema_version",
+    "_memory_mutation_schema_version",
+    "_recall_decision_schema_version"
+   ]
+  },
+  {
+   "module": "context",
+   "doc": "Context fragments and context assembly decisions.",
+   "names": [
+    "LegacyContextFragmentV1",
+    "ContextAssemblyBudget",
+    "ContextAssemblyReasonCode",
+    "LegacyContextAssemblyDecisionV1"
+   ]
+  },
+  {
+   "module": "recall",
+   "doc": "Recall contexts, plans and decisions.",
+   "names": [
+    "RecallReasonCode",
+    "RecallDecisionOutcome",
+    "RecallConfirmationItem",
+    "RecallBudget",
+    "LegacyRecallContextV1",
+    "LegacyRecallPlanV1",
+    "RecallSelectorDomain",
+    "RecallRetrievalMode",
+    "RecallCandidateCountStage",
+    "RecallContext",
+    "RecallPlan",
+    "LegacyRecallDecisionV3"
+   ]
+  },
+  {
+   "module": "mutation_payloads",
+   "doc": "Memory mutation targets, lifecycle states and typed payloads.",
+   "names": [
+    "MemoryMutationKind",
+    "MemoryMutationPlanOutcome",
+    "MemoryMutationApplyMode",
+    "ExistingMemoryTarget",
+    "CreatedByOperationTarget",
+    "MemoryMutationTarget",
+    "EpisodeLifecycleState",
+    "SemanticLifecycleState",
+    "ProcedureLifecycleState",
+    "ProspectiveLifecycleState",
+    "CognitiveLifecycleState",
+    "EpistemicStatus",
+    "ConflictStatus",
+    "VerificationState",
+    "ProcedureRiskLevel",
+    "ProspectiveTriggerKind",
+    "ValidTimeInterval",
+    "EpisodeMemoryPayload",
+    "SemanticMemoryPayload",
+    "SemanticRelationEndpoint",
+    "SemanticRelationMemoryPayload",
+    "ProcedureMemoryPayload",
+    "ProspectiveTimeTrigger",
+    "ProspectiveEventTrigger",
+    "ProspectiveTrigger",
+    "ProspectiveMemoryPayload",
+    "MemoryMutationPayload",
+    "_mutation_target_from_json"
+   ]
+  },
+  {
+   "module": "mutation_plan",
+   "doc": "Memory mutation operations and plans, their validation diagnostics and parsing.",
+   "names": [
+    "MemoryMutationOperation",
+    "MemoryMutationPlan",
+    "MemoryMutationValidationDiagnostic",
+    "parse_memory_mutation_plan"
+   ]
+  },
+  {
+   "module": "mutation_apply",
+   "doc": "Applying memory mutations: results, receipts and receipt verification.",
+   "names": [
+    "MemoryMutationApplyReceiptRef",
+    "MemoryMutationApplyOutcome",
+    "MemoryMutationApplyReasonCode",
+    "MemoryActionConfirmationItem",
+    "MemoryMutationApplyResult",
+    "MemoryMutationApplyReceipt",
+    "MemoryMutationApplyAuthorityPort",
+    "verify_memory_mutation_apply_receipt"
+   ]
+  }
+ ]
+}
