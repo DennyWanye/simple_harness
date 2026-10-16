@@ -48,6 +48,15 @@ def host_function_source(name: str) -> str:
     raise LookupError(f"main 与 host 模块里都没有函数 {name}")
 
 
+def host_module_source(name: str) -> str:
+    """返回 host/<name>.py 的整个源码。
+
+    阶段 6D 把超长的宿主函数拆成同模块的多个函数（部分局部变量改成状态对象字段 ``st.x``），
+    原来只在一个函数里的接线文字分散到同模块的几个函数里；这类测试改读整个模块。
+    """
+    return (BACKEND / "host" / f"{name}.py").read_text(encoding="utf-8")
+
+
 def host_source_files() -> list[Path]:
     """返回 main.py 与 host/*.py 的路径；供"扫描生产代码"的测试把 host 包一并纳入。"""
     return _host_files()

@@ -369,7 +369,7 @@ def main() -> int:
     if a.sentinel:
         if a.tail or returns:
             sys.exit("--sentinel 不和 --tail、--returns 一起用")
-        if a.sentinel in names([fn], ast.Store) | names([fn], ast.Load):
+        if a.sentinel in names(fn.body, ast.Store) | names(fn.body, ast.Load):
             sys.exit(f"--sentinel 名字 {a.sentinel} 已在原方法里用过")
 
         def own_returns(node: ast.AST) -> list[ast.Return]:
@@ -415,7 +415,7 @@ def main() -> int:
         if bare and len(bare) != len(rets):
             sys.exit("--early-return 的段里裸 return 与带值 return 混用")
         early_mode = "bool" if bare else "value"
-        host_names = names([fn], ast.Store) | names([fn], ast.Load)
+        host_names = names(fn.body, ast.Store) | names(fn.body, ast.Load)
         if {"_returned", "_result"} & host_names:
             sys.exit("原函数里已有 _returned/_result 这两个名字")
         seg = [ln.encode("utf-8") for ln in lines[start - 1 : end]]
@@ -549,6 +549,8 @@ def _walk_no_defs_keep(root: ast.AST):
 
 def _walk_no_defs(node: ast.AST):
     yield node
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)):
+        return  # 段里顶层的内层函数/类：它们体内的 await 不算段的
     for c in ast.iter_child_nodes(node):
         if isinstance(c, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)):
             continue

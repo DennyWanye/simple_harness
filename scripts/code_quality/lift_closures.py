@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""代码质量整治阶段 6D：把函数里不读外层变量的内层辅助函数原样提成模块级私有函数。
+"""代码质量整治阶段 6D：把函数里不读外层变量的内层辅助函数（或类）原样提成模块级私有定义。
 
 用法：
     python3 scripts/code_quality/lift_closures.py <文件> <函数名> <内层函数名,内层函数名,...>
@@ -72,7 +72,11 @@ def main() -> int:
         key=lambda n: n.end_lineno - n.lineno,
     )
     wanted = [x.strip() for x in a.names.split(",") if x.strip()]
-    defs = {n.name: n for n in fn.body if isinstance(n, FUNCS) and n.name in wanted}
+    defs = {
+        n.name: n
+        for n in fn.body
+        if isinstance(n, (*FUNCS, ast.ClassDef)) and n.name in wanted
+    }
     if set(defs) != set(wanted):
         sys.exit(f"不在函数体顶层的：{sorted(set(wanted) - set(defs))}")
     top_names = module_names(tree)

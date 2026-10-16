@@ -6,8 +6,6 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from simple_harness import RunId as SdkRunId
-
 import paths as _paths
 from agent.agent_loop import FinalEvent
 from deskpet.agent.run_presenter import (
@@ -21,6 +19,11 @@ from deskpet.sdk_adapters.desktop_runtime import DesktopSdkRuntimeBridge, _deliv
 from deskpet.sdk_adapters.ingress import SdkRuntimeIngress
 from deskpet.sdk_adapters.provider import provider_endpoint_identity
 from deskpet.sdk_adapters.sdk_candidate import SDK_VERSION
+from llm.code_params import code_params_to_request
+from llm.model_catalog import model_context_window
+from llm.provider_registry import ProviderMutationConflict
+from simple_harness import RunId as SdkRunId
+
 from host.chat_delivery import _broadcast_default_chat_peers, _send_chat_error
 from host.logging_setup import _sdk_observability
 from host.runtime import logger, service_context
@@ -32,9 +35,6 @@ from host.sdk_registry import (
     _sdk_run_ids_by_root,
 )
 from host.state import host_state
-from llm.code_params import code_params_to_request
-from llm.model_catalog import model_context_window
-from llm.provider_registry import ProviderMutationConflict
 
 
 def _assert_sdk_provider_mutation_allowed(provider_ids: Any) -> None:

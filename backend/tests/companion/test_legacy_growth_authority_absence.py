@@ -3,7 +3,12 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from tests.host_source import host_function_source, host_source_files, host_source_text
+from tests.host_source import (
+    host_function_source,
+    host_module_source,
+    host_source_files,
+    host_source_text,
+)
 
 BACKEND = Path(__file__).resolve().parents[2]
 
@@ -182,13 +187,13 @@ def test_completed_cutover_reconciles_process_local_reminder_registry() -> None:
 
 
 def test_completed_cutover_restores_reminder_specs_before_harness_recovery() -> None:
-    initialize = host_function_source("_initialize_growth_authority")
+    initialize = host_module_source("growth_authority")
     assert 'router.current.phase.value == "companion"' in initialize
     assert "restore_durable_companion_reminder_tools(" in initialize
 
 
 def test_cutover_plan_uses_real_capability_owner_snapshot_without_publish() -> None:
-    authority = host_function_source("_initialize_growth_authority")
+    authority = host_module_source("growth_authority")
 
     assert "read_capability_owner_cutover_snapshot(" in authority
     assert "old_binding_generation=capability_snapshot.binding_generation" in authority

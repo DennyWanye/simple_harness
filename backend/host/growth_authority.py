@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from typing import Any
+
 import paths as _paths
 from deskpet.companion.activation import ActivationDispatcher
 from deskpet.companion.activation_platform import (
@@ -73,32 +76,306 @@ def _legacy_growth_owner() -> tuple[str, int]:
     return host_state.legacy_growth_owner
 
 
+class _ReminderPolicyProvider:
+    def snapshot(self, _owner):
+        return ReminderSchedulerPolicy(
+            proactive_enabled=bool(config.companion.growth.proactive_enabled),
+            paused=bool(config.companion.growth.paused),
+            timezone=str(config.companion.growth.timezone),
+            quiet_hours_start=str(config.companion.growth.quiet_hours_start),
+            quiet_hours_end=str(config.companion.growth.quiet_hours_end),
+        )
+
+
+@dataclass
+class _GrowthAuthorityInit:
+    """_initialize_growth_authority 的运行状态：原函数的局部变量与参数（切段用）。"""
+
+    _ReminderAuthoritySelector: Any = None
+    _inactive_stage: Any = None
+    _legacy_import: Any = None
+    _require_unchanged_capability_snapshot: Any = None
+    _run_reminder_lane: Any = None
+    _settle_ready_reminder: Any = None
+    capability_owner_key: Any = None
+    capability_owner_scope_key: Any = None
+    capability_platform: Any = None
+    capability_snapshot: Any = None
+    companion_clock: Any = None
+    companion_runtime: Any = None
+    coordinator: Any = None
+    cutover_plan: Any = None
+    execution_state: Any = None
+    executor: Any = None
+    identity_gate: Any = None
+    legacy_snapshot: Any = None
+    local_owner: Any = None
+    managed_projection: Any = None
+    migration_hash: Any = None
+    pending_reminder_dispatches: Any = None
+    preference_resolver: Any = None
+    profile_coordinator: Any = None
+    recovered_state: Any = None
+    registry: Any = None
+    reminder_scheduler: Any = None
+    reminder_selector: Any = None
+    reminder_service: Any = None
+    router: Any = None
+    session_db: Any = None
+    state_db_path: Any = None
+    store: Any = None
+    workflow_service: Any = None
+
+
 async def _initialize_growth_authority() -> None:
     """Compose the one durable Companion authority without opening ingress."""
 
     # Early return if P4 services (memory system) are unavailable
-    session_db = service_context.get("session_db")
-    managed_projection = service_context.get("managed_skill_discovery_projection")
-    if session_db is None or managed_projection is None:
+    st = _GrowthAuthorityInit()
+    st.session_db = service_context.get("session_db")
+    st.managed_projection = service_context.get("managed_skill_discovery_projection")
+    if st.session_db is None or st.managed_projection is None:
         logger.warning(
             "growth_authority_skipped",
             reason="p4_services_unavailable",
-            session_db_available=session_db is not None,
-            managed_projection_available=managed_projection is not None,
+            session_db_available=st.session_db is not None,
+            managed_projection_available=st.managed_projection is not None,
         )
         return
 
-    companion_clock = select_companion_clock(
+    st.companion_clock = select_companion_clock(
         warning_sink=lambda reason: logger.warning(
             "companion_clock_selection_warning", reason=reason
         )
     )
-    store = CompanionStore(
+    st.store = CompanionStore(
         _paths.user_data_dir() / "data" / "companion.db",
-        clock=companion_clock.now_utc,
+        clock=st.companion_clock.now_utc,
     )
     # 2026-09-10：认知记忆 SDK（simple-harness-memory-sdk）已从 Host 移除，
     # memory_recall / memory_search 等记忆工具与其 provider 一并下线。
+    st.local_owner, st.preference_resolver = _resolve_local_owner(st.store)
+    st.reminder_service = ReminderService(st.store, clock=st.companion_clock)
+
+    _define_reminder_lane(st)
+
+    st.router = await _start_growth_router(st.preference_resolver, st.reminder_service, st.store)
+    st.identity_gate = IdentityReadyGate()
+    st.workflow_service = service_context.get("workflow_service")
+    st.execution_state = None if st.workflow_service is None else st.workflow_service.execution_uow
+    # A missing port keeps the dormant gate fail-closed. Task 13 must rebind
+    # the live execution projection before enabling Companion authority.
+
+    st.companion_runtime = _build_companion_runtime(
+        st._run_reminder_lane,
+        companion_clock=st.companion_clock,
+        execution_state=st.execution_state,
+        identity_gate=st.identity_gate,
+        router=st.router,
+        store=st.store,
+    )
+    st.profile_coordinator = ProfileBindingCoordinator(
+        store=st.store,
+        gate=st.identity_gate,
+        runtime=st.companion_runtime,
+        runtime_start_enabled=True,
+    )
+    host_state.companion_runtime = st.companion_runtime
+    host_state.companion_identity_gate = st.identity_gate
+    host_state.companion_profile_coordinator = st.profile_coordinator
+    st.capability_platform = service_context.get("capability_platform")
+    st._ReminderAuthoritySelector = _compose_companion_services(
+        st.capability_platform,
+        companion_clock=st.companion_clock,
+        companion_runtime=st.companion_runtime,
+        execution_state=st.execution_state,
+        identity_gate=st.identity_gate,
+        profile_coordinator=st.profile_coordinator,
+        router=st.router,
+        store=st.store,
+    )
+
+    st.reminder_selector = st._ReminderAuthoritySelector()
+    service_context.register("companion_reminder_service", st.reminder_service)
+    service_context.register("companion_reminder_authority_selector", st.reminder_selector)
+
+    st.registry = _require_reminder_registry()
+
+    st.capability_platform = service_context.get("capability_platform")
+    if st.capability_platform is None:
+        raise RuntimeError("growth cutover requires CapabilityPlatform")
+    st.capability_owner_key = st.profile_coordinator.owner_key(st.local_owner)
+    st.capability_owner_scope_key = st.local_owner.profile_id
+    st.capability_snapshot = await read_capability_owner_cutover_snapshot(
+        capability_store=st.capability_platform.store,
+        owner_key=st.capability_owner_key,
+        scope_key=st.capability_owner_scope_key,
+    )
+
+    st.state_db_path = _state_db_path
+    st.legacy_snapshot = read_legacy_growth_snapshot(
+        state_db_path=st.state_db_path,
+        preference_path=_paths.user_data_dir() / "preference_memory.json",
+        skill_roots=(_paths.user_data_dir() / "skills" / "user",),
+    )
+    st.recovered_state = st.router.current
+    st.migration_hash = (
+        str(st.recovered_state.migration_hash)
+        if st.recovered_state.migration_hash
+        else st.legacy_snapshot.migration_hash
+    )
+    st.cutover_plan = _build_cutover_plan(
+        st.capability_snapshot, st.migration_hash, st.recovered_state
+    )
+
+    _build_cutover_coordinator(st)
+    host_state.growth_cutover_coordinator = st.coordinator
+    host_state.growth_cutover_plan = st.cutover_plan
+    service_context.register("growth_authority_cutover", st.coordinator)
+    _publish_growth_authority(
+        st.registry,
+        reminder_selector=st.reminder_selector,
+        reminder_service=st.reminder_service,
+        router=st.router,
+        store=st.store,
+    )
+
+
+def _define_reminder_lane(st: _GrowthAuthorityInit) -> None:
+    """建提醒调度器与提醒通道（结算就绪提醒、逐个推进）。"""
+
+    st.reminder_scheduler = ReminderScheduler(
+        st.store,
+        policy_provider=_ReminderPolicyProvider(),
+        clock=st.companion_clock,
+    )
+    st.pending_reminder_dispatches = {}
+
+    async def _settle_ready_reminder(owner, dispatch):
+        if dispatch.draft_job_id is not None:
+            job = st.store.get_job(owner, job_id=dispatch.draft_job_id)
+            if str(job.get("status") or "") != "succeeded":
+                return False
+        outbox_claim = st.reminder_scheduler.claim_delivery_outbox(
+            owner,
+            claim_owner=(f"reminder-delivery:{owner.profile_id}:{owner.profile_generation}"),
+        )
+        if outbox_claim is None:
+            return False
+        if outbox_claim.item_id != dispatch.outbox_id:
+            st.store.retry_outbox(
+                owner,
+                outbox_id=outbox_claim.item_id,
+                claim_owner=outbox_claim.claim_owner,
+                claim_epoch=outbox_claim.claim_epoch,
+                retry_at=st.companion_clock.now_utc().isoformat(),
+                reason_code="reminder_delivery_order_retry",
+            )
+            return False
+        st.reminder_scheduler.settle(
+            owner,
+            dispatch=dispatch,
+            outbox_claim=outbox_claim,
+            result_hash=canonical_hash(["reminder_local_projection", dispatch.outbox_id]),
+        )
+        st.pending_reminder_dispatches.pop(dispatch.outbox_id, None)
+        if host_state.companion_notification_service is not None:
+            frozen = st.identity_gate.freeze()
+            if frozen.owner == owner:
+                await host_state.companion_notification_service.bind_and_drain(frozen)
+        return True
+
+    st._settle_ready_reminder = _settle_ready_reminder
+
+    async def _run_reminder_lane(owner):
+        for dispatch in tuple(st.pending_reminder_dispatches.values()):
+            if await st._settle_ready_reminder(owner, dispatch):
+                return
+        dispatch = await st.reminder_scheduler.tick(
+            owner,
+            claim_owner=(f"reminder-scheduler:{owner.profile_id}:{owner.profile_generation}"),
+        )
+        if dispatch is None:
+            return
+        st.pending_reminder_dispatches[dispatch.outbox_id] = dispatch
+        await st._settle_ready_reminder(owner, dispatch)
+
+    st._run_reminder_lane = _run_reminder_lane
+
+
+def _build_cutover_coordinator(st: _GrowthAuthorityInit) -> None:
+    """定义迁移各步骤并建迁移协调器。"""
+
+    async def _require_unchanged_capability_snapshot():
+        current = await read_capability_owner_cutover_snapshot(
+            capability_store=st.capability_platform.store,
+            owner_key=st.capability_owner_key,
+            scope_key=st.capability_owner_scope_key,
+        )
+        if current != st.capability_snapshot:
+            raise RuntimeError("growth_cutover_capability_snapshot_drift")
+        return current
+
+    st._require_unchanged_capability_snapshot = _require_unchanged_capability_snapshot
+
+    def _legacy_import(_authorization):
+        return import_legacy_growth_snapshot(
+            store=st.store,
+            preference_resolver=st.preference_resolver,
+            owner=OwnerRef(*host_state.legacy_growth_owner),
+            snapshot=st.legacy_snapshot,
+        )
+
+    st._legacy_import = _legacy_import
+
+    def _inactive_stage(_authorization):
+        proof = require_legacy_skill_immutable_migration(st.legacy_snapshot)
+        return {
+            **proof,
+            "activation_allowed": False,
+            "migration_hash": st.migration_hash,
+        }
+
+    st._inactive_stage = _inactive_stage
+
+    st.executor = _build_cutover_executor(
+        st._inactive_stage,
+        _legacy_import=st._legacy_import,
+        _require_unchanged_capability_snapshot=st._require_unchanged_capability_snapshot,
+        identity_gate=st.identity_gate,
+        profile_coordinator=st.profile_coordinator,
+        registry=st.registry,
+        reminder_selector=st.reminder_selector,
+        reminder_service=st.reminder_service,
+    )
+    st.coordinator = GrowthAuthorityCutoverCoordinator(
+        router=st.router,
+        store=st.store,
+        executor=st.executor,
+    )
+
+
+def _require_reminder_registry():
+    registry = deskpet_tool_registry_v2
+    if registry is None:
+        raise RuntimeError("growth cutover requires ToolRegistry V2")
+    if registry.authority_phase == "legacy":
+        if registry.get(LEGACY_REMINDER_LIST_TOOL_NAME) is None:
+
+            class _RetiredLegacyReminderProjection:
+                async def invoke(self, **_kwargs):
+                    return ""
+
+            register_legacy_reminder_tool(
+                registry,
+                _RetiredLegacyReminderProjection(),
+            )
+    elif registry.authority_phase != "companion":
+        raise RuntimeError("unknown reminder registry authority phase")
+    return registry
+
+
+def _resolve_local_owner(store):
     preference_resolver = PreferenceResolver(
         store,
         policy=PreferencePolicy.from_growth_config(config.companion.growth),
@@ -126,72 +403,10 @@ async def _initialize_growth_authority() -> None:
         local_owner.profile_generation,
     )
     store.cleanup_expired_control_challenges()
-    reminder_service = ReminderService(store, clock=companion_clock)
+    return local_owner, preference_resolver
 
-    class _ReminderPolicyProvider:
-        def snapshot(self, _owner):
-            return ReminderSchedulerPolicy(
-                proactive_enabled=bool(config.companion.growth.proactive_enabled),
-                paused=bool(config.companion.growth.paused),
-                timezone=str(config.companion.growth.timezone),
-                quiet_hours_start=str(config.companion.growth.quiet_hours_start),
-                quiet_hours_end=str(config.companion.growth.quiet_hours_end),
-            )
 
-    reminder_scheduler = ReminderScheduler(
-        store,
-        policy_provider=_ReminderPolicyProvider(),
-        clock=companion_clock,
-    )
-    pending_reminder_dispatches = {}
-
-    async def _settle_ready_reminder(owner, dispatch):
-        if dispatch.draft_job_id is not None:
-            job = store.get_job(owner, job_id=dispatch.draft_job_id)
-            if str(job.get("status") or "") != "succeeded":
-                return False
-        outbox_claim = reminder_scheduler.claim_delivery_outbox(
-            owner,
-            claim_owner=(f"reminder-delivery:{owner.profile_id}:{owner.profile_generation}"),
-        )
-        if outbox_claim is None:
-            return False
-        if outbox_claim.item_id != dispatch.outbox_id:
-            store.retry_outbox(
-                owner,
-                outbox_id=outbox_claim.item_id,
-                claim_owner=outbox_claim.claim_owner,
-                claim_epoch=outbox_claim.claim_epoch,
-                retry_at=companion_clock.now_utc().isoformat(),
-                reason_code="reminder_delivery_order_retry",
-            )
-            return False
-        reminder_scheduler.settle(
-            owner,
-            dispatch=dispatch,
-            outbox_claim=outbox_claim,
-            result_hash=canonical_hash(["reminder_local_projection", dispatch.outbox_id]),
-        )
-        pending_reminder_dispatches.pop(dispatch.outbox_id, None)
-        if host_state.companion_notification_service is not None:
-            frozen = identity_gate.freeze()
-            if frozen.owner == owner:
-                await host_state.companion_notification_service.bind_and_drain(frozen)
-        return True
-
-    async def _run_reminder_lane(owner):
-        for dispatch in tuple(pending_reminder_dispatches.values()):
-            if await _settle_ready_reminder(owner, dispatch):
-                return
-        dispatch = await reminder_scheduler.tick(
-            owner,
-            claim_owner=(f"reminder-scheduler:{owner.profile_id}:{owner.profile_generation}"),
-        )
-        if dispatch is None:
-            return
-        pending_reminder_dispatches[dispatch.outbox_id] = dispatch
-        await _settle_ready_reminder(owner, dispatch)
-
+async def _start_growth_router(preference_resolver, reminder_service, store):
     def _request_owner(request) -> OwnerRef:
         return OwnerRef(request.profile_id, request.profile_generation)
 
@@ -234,12 +449,12 @@ async def _initialize_growth_authority() -> None:
     await router.start()
     host_state.companion_store = store
     host_state.growth_authority_router = router
-    identity_gate = IdentityReadyGate()
-    workflow_service = service_context.get("workflow_service")
-    execution_state = None if workflow_service is None else workflow_service.execution_uow
-    # A missing port keeps the dormant gate fail-closed. Task 13 must rebind
-    # the live execution projection before enabling Companion authority.
+    return router
 
+
+def _build_companion_runtime(
+    _run_reminder_lane, *, companion_clock, execution_state, identity_gate, router, store
+):
     async def _dormant_job_handler(_owner, _claim):
         # Task 13 replaces this only after the durable authority cutover.
         return CompanionJobResult(
@@ -301,16 +516,20 @@ async def _initialize_growth_authority() -> None:
         authority_active=lambda: router.current.phase is GrowthAuthorityPhase.COMPANION,
         scheduled_work_hook=_run_reminder_lane,
     )
-    profile_coordinator = ProfileBindingCoordinator(
-        store=store,
-        gate=identity_gate,
-        runtime=companion_runtime,
-        runtime_start_enabled=True,
-    )
-    host_state.companion_runtime = companion_runtime
-    host_state.companion_identity_gate = identity_gate
-    host_state.companion_profile_coordinator = profile_coordinator
-    capability_platform = service_context.get("capability_platform")
+    return companion_runtime
+
+
+def _compose_companion_services(
+    capability_platform,
+    *,
+    companion_clock,
+    companion_runtime,
+    execution_state,
+    identity_gate,
+    profile_coordinator,
+    router,
+    store,
+):
     if capability_platform is None:
         raise RuntimeError("capability platform is unavailable for Companion identity binding")
     capability_platform.bind_execution_identity_gate(identity_gate)
@@ -452,50 +671,10 @@ async def _initialize_growth_authority() -> None:
                 source_message_refs=source_refs,
             )
 
-    reminder_selector = _ReminderAuthoritySelector()
-    service_context.register("companion_reminder_service", reminder_service)
-    service_context.register("companion_reminder_authority_selector", reminder_selector)
+    return _ReminderAuthoritySelector
 
-    registry = deskpet_tool_registry_v2
-    if registry is None:
-        raise RuntimeError("growth cutover requires ToolRegistry V2")
-    if registry.authority_phase == "legacy":
-        if registry.get(LEGACY_REMINDER_LIST_TOOL_NAME) is None:
 
-            class _RetiredLegacyReminderProjection:
-                async def invoke(self, **_kwargs):
-                    return ""
-
-            register_legacy_reminder_tool(
-                registry,
-                _RetiredLegacyReminderProjection(),
-            )
-    elif registry.authority_phase != "companion":
-        raise RuntimeError("unknown reminder registry authority phase")
-
-    capability_platform = service_context.get("capability_platform")
-    if capability_platform is None:
-        raise RuntimeError("growth cutover requires CapabilityPlatform")
-    capability_owner_key = profile_coordinator.owner_key(local_owner)
-    capability_owner_scope_key = local_owner.profile_id
-    capability_snapshot = await read_capability_owner_cutover_snapshot(
-        capability_store=capability_platform.store,
-        owner_key=capability_owner_key,
-        scope_key=capability_owner_scope_key,
-    )
-
-    state_db_path = _state_db_path
-    legacy_snapshot = read_legacy_growth_snapshot(
-        state_db_path=state_db_path,
-        preference_path=_paths.user_data_dir() / "preference_memory.json",
-        skill_roots=(_paths.user_data_dir() / "skills" / "user",),
-    )
-    recovered_state = router.current
-    migration_hash = (
-        str(recovered_state.migration_hash)
-        if recovered_state.migration_hash
-        else legacy_snapshot.migration_hash
-    )
+def _build_cutover_plan(capability_snapshot, migration_hash, recovered_state):
     operation_id = (
         str(recovered_state.cutover_operation_id)
         if recovered_state.cutover_operation_id
@@ -528,33 +707,20 @@ async def _initialize_growth_authority() -> None:
         new_owner_binding_set_stamp=(capability_snapshot.owner_binding_set_stamp),
         step_hashes=step_hashes,
     )
+    return cutover_plan
 
-    async def _require_unchanged_capability_snapshot():
-        current = await read_capability_owner_cutover_snapshot(
-            capability_store=capability_platform.store,
-            owner_key=capability_owner_key,
-            scope_key=capability_owner_scope_key,
-        )
-        if current != capability_snapshot:
-            raise RuntimeError("growth_cutover_capability_snapshot_drift")
-        return current
 
-    def _legacy_import(_authorization):
-        return import_legacy_growth_snapshot(
-            store=store,
-            preference_resolver=preference_resolver,
-            owner=OwnerRef(*host_state.legacy_growth_owner),
-            snapshot=legacy_snapshot,
-        )
-
-    def _inactive_stage(_authorization):
-        proof = require_legacy_skill_immutable_migration(legacy_snapshot)
-        return {
-            **proof,
-            "activation_allowed": False,
-            "migration_hash": migration_hash,
-        }
-
+def _build_cutover_executor(
+    _inactive_stage,
+    *,
+    _legacy_import,
+    _require_unchanged_capability_snapshot,
+    identity_gate,
+    profile_coordinator,
+    registry,
+    reminder_selector,
+    reminder_service,
+):
     async def _preflight(_authorization):
         current = await _require_unchanged_capability_snapshot()
         return {
@@ -620,14 +786,12 @@ async def _initialize_growth_authority() -> None:
             "final_integrity_verify": _final_integrity_verify,
         }
     )
-    coordinator = GrowthAuthorityCutoverCoordinator(
-        router=router,
-        store=store,
-        executor=executor,
-    )
-    host_state.growth_cutover_coordinator = coordinator
-    host_state.growth_cutover_plan = cutover_plan
-    service_context.register("growth_authority_cutover", coordinator)
+    return executor
+
+
+def _publish_growth_authority(
+    registry, *, reminder_selector, reminder_service, router, store
+) -> None:
     service_context.register(
         "companion_reminder_registry_reconciler",
         lambda: ensure_companion_reminder_tools(

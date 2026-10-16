@@ -17,6 +17,7 @@ from deskpet.agent.verify_gate import (
     load_claim_patterns,
     make_ephemeral_verifier,
 )
+
 from host.context_projection import (
     _build_context_task_projector,
     _configured_context_compaction_model,

@@ -480,9 +480,15 @@
    "from": 2141,
    "to": 2145,
    "reason": "阶段 6D 状态对象切段：读运行依赖的函数内导入常量 LEGACY_PAGE_BYTES/LEGACY_PAGE_SIZE 与局部变量 legacy 变成状态数据类字段并补绑定行（同名搬运，非新增兼容代码）"
+  },
+  {
+   "key": "legacy_lines",
+   "from": 2145,
+   "to": 2150,
+   "reason": "阶段 6D 成长授权初始化函数切段：迁移步骤闭包 _legacy_import 与局部变量 legacy_snapshot 变成状态数据类字段并补绑定行，抽出函数的形参也带原名字（同名搬运，非新增兼容代码）"
   }
  ],
- "legacy_lines": 2145,
+ "legacy_lines": 2150,
  "cycle_imports_backend": 79,
  "cycle_imports_sdk": 87
 }

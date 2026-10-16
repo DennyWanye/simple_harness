@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 
 import pytest
@@ -9,15 +10,15 @@ from deskpet.companion.clock import (
     select_companion_clock,
 )
 
-from tests.host_source import host_function_source
+from tests.host_source import host_module_source
 
 
 def test_production_store_and_scheduler_share_selected_clock() -> None:
-    composition = host_function_source("_initialize_growth_authority")
+    composition = host_module_source("growth_authority")
     selected = composition.index("companion_clock = select_companion_clock(")
     store = composition.index("store = CompanionStore(")
     assert selected < store
-    assert "clock=companion_clock.now_utc" in composition
+    assert re.search(r"clock=(st\.)?companion_clock\.now_utc,", composition)
 
 
 def test_production_mode_cannot_activate_dev_clock_and_warns() -> None:

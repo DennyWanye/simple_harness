@@ -14,7 +14,6 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import httpx
-
 from agent.context_report import (
     auto_context_attempt_iter,
     mark_current_attempt_sent,
@@ -22,6 +21,7 @@ from agent.context_report import (
 )
 from llm.context_messages import current_provider_attempt_options, split_wire_messages
 from llm.errors import LLMProviderError
+
 from providers._response_sanitizer import sanitize_response
 from providers.dispatch_handoff import current_dispatch_handoff
 

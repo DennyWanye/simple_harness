@@ -382,7 +382,16 @@ def closure_factory_problem(fn: ast.AST, block: list[ast.stmt], end: int) -> str
     """段里定义、段后还要用的内层函数（闭包）抽出后变成"工厂函数返回闭包"，闭包读的外层变量从
     "调用时读外层"变成"工厂调用那一刻的参数值"。只有外层在定义之后不再改写这些变量时才等价。
     有问题时返回原因，没问题返回 None。"""
-    defs = [s for s in block if isinstance(s, (ast.FunctionDef, ast.AsyncFunctionDef))]
+    # 段里所有最外层的函数、类、lambda（不论在第几层语句里）都可能被带出段外，一并按闭包查
+    kinds = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)
+    defs = []
+    stack = list(block)
+    while stack:
+        n = stack.pop()
+        if isinstance(n, kinds):
+            defs.append(n)
+            continue
+        stack.extend(ast.iter_child_nodes(n))
     if not defs:
         return None
     start = block[0].lineno
@@ -392,7 +401,8 @@ def closure_factory_problem(fn: ast.AST, block: list[ast.stmt], end: int) -> str
             and loop.lineno < start <= loop.end_lineno
         ):
             return "闭包定义在循环里（每轮一个闭包，晚绑定语义会变）"
-    host_locals = names([fn], ast.Store) | {
+    # 注意传 fn.body：names([fn]) 只会得到函数名本身（内层作用域不算），闭包检查就形同虚设
+    host_locals = names(fn.body, ast.Store) | {
         a.arg
         for a in (*fn.args.posonlyargs, *fn.args.args, *fn.args.kwonlyargs)  # type: ignore[attr-defined]
     }
@@ -401,7 +411,12 @@ def closure_factory_problem(fn: ast.AST, block: list[ast.stmt], end: int) -> str
     rebound = sorted(free & names(after, ast.Store))
     if rebound:
         return f"闭包读的 {rebound} 在定义之后还会被改写"
-    later = sorted(free - defined_before(fn, start) - {d.name for d in defs})
+    later = sorted(
+        free
+        - defined_before(fn, start)
+        - names(block, ast.Store)
+        - {d.name for d in defs if not isinstance(d, ast.Lambda)}
+    )
     if later:
         return f"闭包读的 {later} 在定义处不一定已赋值"
     return None
