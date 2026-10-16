@@ -18,13 +18,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { BACKEND_PORT } from "../backendPort";
 import { chatErrorMessage } from "../chatErrorMessage";
 import { useSessionsStore } from "../stores/sessionsStore";
-import {
-  type Message,
-  type MessageRole,
-  type PlanStep,
-  type SessionModelParams,
-  type WorkflowEventEnvelope,
-} from "../stores/sessionTypes";
+import { type Message, type WorkflowEventEnvelope } from "../stores/sessionTypes";
 import { withClientTurnIdentity } from "../ws/clientTurnIdentity";
 import {
   getWindowControlCredential,
@@ -36,18 +30,22 @@ import { useProvidersStore, type ProviderEntry } from "./providersStore";
 import { useSessionModelsStore } from "./sessionModelsStore";
 // P5-S2 Phase 4 — settings panel provider mutation events
 import { dispatchProviderEvent, type ProviderEventMessage } from "../components/providersStore";
-import type { CompanionDecision, CompanionEvent, ContextUsageSnapshot } from "../types/messages";
-import type { PPTOutlineHistoryItem } from "../types/skillPlatform";
+import type { CompanionEvent, ContextUsageSnapshot } from "../types/messages";
+import type { ControlWireMessage, HistoryRow, SlashCommandResult } from "./controlWsTypes";
+import {
+  pendingRunStatusQueries,
+  companionEventFrom,
+  persistedWorkflowFileArtifact,
+  publicToolErrorText,
+  persistedToolOutcome,
+  format_slash_result,
+  selectNewestInflightRunAfterTerminal,
+} from "./controlWsShared";
 
 const RECONNECT_BASE_MS = 1000;
 const RECONNECT_MAX_MS = 15000;
 export const CONNECT_TIMEOUT_MS = 5000;
 const RUN_STATUS_ACK_TIMEOUT_MS = 5_000;
-const pendingRunStatusQueries = new Map<
-  string,
-  { sid: string; runId: string; timer: ReturnType<typeof setTimeout> }
->();
-
 // ─── 控制连接身份（2026-08-04 Workbench UI 改版，B5）───────────────
 // 聊天通道（本模块单例 WS）的显式身份声明。改版前由 route hash 推断
 // （#/message-panel → message-panel 窗身份）；message-panel 窗口删除后
@@ -63,321 +61,6 @@ const REQUESTED_SCOPE = "companion_action";
  * 整条后端投影链路（D1 决策：sid 不改，仅注释说明）。
  */
 export const CONTROL_SESSION_ID = "message-panel-main";
-
-function companionEventFrom(value: unknown): CompanionEvent | null {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const outer = value as Record<string, unknown>;
-  const raw =
-    outer.type === "companion_event" &&
-    outer.payload &&
-    typeof outer.payload === "object" &&
-    !Array.isArray(outer.payload)
-      ? (outer.payload as Record<string, unknown>)
-      : outer;
-  const notificationSource = (
-    raw.notification && typeof raw.notification === "object" ? raw.notification : raw
-  ) as Record<string, unknown>;
-  const event: CompanionEvent = {
-    event_id: String(raw.event_id || raw.projection_event_id || ""),
-    profile_id: String(raw.profile_id || ""),
-    profile_generation: Number(raw.profile_generation || 0),
-    session_id: String(raw.session_id || ""),
-    seq: Number(raw.seq ?? 0),
-    route_version: raw.route_version === undefined ? undefined : Number(raw.route_version),
-    redaction_version:
-      raw.redaction_version === undefined ? undefined : Number(raw.redaction_version),
-    importance: raw.importance === "important" ? "important" : "normal",
-    occurred_at: typeof raw.occurred_at === "string" ? raw.occurred_at : undefined,
-    received_at: typeof raw.received_at === "number" ? raw.received_at : Date.now(),
-    notification: {
-      notification_id: String(notificationSource.notification_id || ""),
-      kind: String(notificationSource.kind || "growth_notice"),
-      summary: String(notificationSource.summary || ""),
-      detail_ref: String(notificationSource.detail_ref || ""),
-      detail_version: String(notificationSource.detail_version || ""),
-      available_actions: Array.isArray(notificationSource.available_actions)
-        ? notificationSource.available_actions.map(String)
-        : [],
-    },
-    decision:
-      raw.decision && typeof raw.decision === "object"
-        ? (raw.decision as CompanionDecision)
-        : undefined,
-    tombstone: raw.tombstone === true,
-  };
-  if (
-    !event.event_id ||
-    !event.profile_id ||
-    !Number.isInteger(event.profile_generation) ||
-    event.profile_generation < 1 ||
-    !event.session_id ||
-    !Number.isInteger(event.seq) ||
-    event.seq < 0 ||
-    !event.notification.notification_id
-  ) {
-    return null;
-  }
-  return event;
-}
-
-function persistedWorkflowFileArtifact(workflowEvent: unknown): Record<string, unknown> | null {
-  if (!workflowEvent || typeof workflowEvent !== "object" || Array.isArray(workflowEvent)) {
-    return null;
-  }
-  const payload = (workflowEvent as Record<string, unknown>).payload;
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
-  const payloadRecord = payload as Record<string, unknown>;
-  const nestedPayload = payloadRecord.payload;
-  const nestedPayloadRecord =
-    nestedPayload && typeof nestedPayload === "object" && !Array.isArray(nestedPayload)
-      ? (nestedPayload as Record<string, unknown>)
-      : null;
-
-  // Older workflow rows wrapped the intent payload once more than newer rows.
-  // Accept both persisted shapes, but never recursively scan arbitrary payloads.
-  const candidates = [nestedPayloadRecord?.artifact, payloadRecord.artifact];
-  for (const candidate of candidates) {
-    if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) continue;
-    const artifact = candidate as Record<string, unknown>;
-    if (artifact.kind !== "file") continue;
-    const path = typeof artifact.path === "string" ? artifact.path.trim() : "";
-    if (!path) continue;
-    return { ...artifact, kind: "file", path };
-  }
-  return null;
-}
-
-function publicToolErrorText(value: unknown): string | undefined {
-  if (typeof value === "string") return value.trim() || undefined;
-  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return undefined;
-  }
-}
-
-function persistedToolOutcome(text: unknown): {
-  ok: boolean;
-  error?: string;
-  toolName?: string;
-} {
-  let parsed: Record<string, unknown> | null = null;
-  try {
-    const value = JSON.parse(String(text || ""));
-    if (value && typeof value === "object" && !Array.isArray(value)) {
-      parsed = value as Record<string, unknown>;
-    }
-  } catch {
-    parsed = null;
-  }
-  if (!parsed) return { ok: true };
-
-  const durableMeta = parsed._deskpet_tool_outcome_v1;
-  const meta =
-    durableMeta && typeof durableMeta === "object" && !Array.isArray(durableMeta)
-      ? (durableMeta as Record<string, unknown>)
-      : null;
-  const outcomeValue = parsed.outcome;
-  const outcome = typeof outcomeValue === "string" ? outcomeValue.trim().toLowerCase() : "";
-  const explicitOk = typeof parsed.ok === "boolean" ? parsed.ok : undefined;
-  const status = typeof parsed.status === "string" ? parsed.status.trim().toLowerCase() : "";
-  const successfulOutcomes = ["succeeded"];
-  const failedOutcomes = ["partial", "rejected", "failed", "unknown"];
-  const successfulStatuses = ["succeeded", "completed", "ok"];
-  const failedStatuses = ["partial", "rejected", "failed", "unknown", "cancelled", "denied"];
-  const legacyOutcome = typeof meta?.outcome === "string" ? meta.outcome.trim().toLowerCase() : "";
-  const knownOutcome = successfulOutcomes.includes(outcome)
-    ? true
-    : failedOutcomes.includes(outcome)
-      ? false
-      : undefined;
-  const knownStatus = successfulStatuses.includes(status)
-    ? true
-    : failedStatuses.includes(status)
-      ? false
-      : undefined;
-  const legacyKnownOutcome = successfulOutcomes.includes(legacyOutcome)
-    ? true
-    : failedOutcomes.includes(legacyOutcome)
-      ? false
-      : undefined;
-  const ok = knownOutcome ?? explicitOk ?? knownStatus ?? legacyKnownOutcome ?? false;
-  const structuredError =
-    parsed.error ??
-    (parsed.error_code || parsed.public_message
-      ? {
-          code: parsed.error_code,
-          message: parsed.public_message,
-        }
-      : undefined) ??
-    meta?.error;
-  return {
-    ok,
-    error: ok ? undefined : publicToolErrorText(structuredError),
-    toolName: typeof parsed.tool === "string" ? parsed.tool : undefined,
-  };
-}
-
-// P4-S23 fix: stash the live socket on globalThis so vite HMR (which
-// may swap this module while the old WebSocket is still mid-handshake)
-// can find and close the previous instance instead of stacking
-// sockets and getting kicked by the backend's "session replaced"
-// guard. Without this we saw a connect/disconnect storm in the
-// backend log every dev session.
-/** 控制通道收到的一条消息：JSON 解析结果，未经校验；载荷字段由 type 决定。 */
-interface ControlWireMessage {
-  type?: string;
-  request_id?: string;
-  payload?: ControlWirePayload;
-}
-
-/** 各类消息载荷里 dispatch 读取的字段（后端按消息类型各发其中一部分）。 */
-interface ControlWirePayload {
-  action?: unknown;
-  action_categories?: unknown;
-  alert_id?: unknown;
-  arguments?: Record<string, unknown>;
-  artifacts?: unknown;
-  attempt?: unknown;
-  attempts?: unknown;
-  auto_confirmed?: unknown;
-  awaiting_confirm?: unknown;
-  bindingEpoch?: unknown;
-  binding_epoch?: unknown;
-  cancelled?: unknown;
-  challenge?: unknown;
-  companion_events?: unknown[];
-  connectionId?: unknown;
-  connection_id?: unknown;
-  content?: string;
-  controlEpoch?: unknown;
-  control_epoch?: unknown;
-  conversation_boundary_ref?: unknown;
-  conversation_boundary_version?: unknown;
-  decision_id?: string;
-  decision_status?: unknown;
-  default_model?: unknown;
-  detail?: unknown;
-  diagnosis?: unknown;
-  error?: unknown;
-  event_id?: unknown;
-  event_type?: unknown;
-  final_error?: unknown;
-  history?: PPTOutlineHistoryItem[];
-  invocation_id?: unknown;
-  items?: unknown;
-  kind?: unknown;
-  messages?: HistoryRow[];
-  model_params?: SessionModelParams | null;
-  models?: unknown;
-  name?: string;
-  new_sid?: unknown;
-  nextRequestSeq?: unknown;
-  next_request_seq?: unknown;
-  no_research?: unknown;
-  nonce?: string;
-  notification_id?: unknown;
-  occurred_at?: unknown;
-  ok?: boolean;
-  outline_id?: string;
-  outline_md?: string;
-  payload?: unknown;
-  peak_concurrent?: unknown;
-  phase?: unknown;
-  plan?: HistoryPlan;
-  preferred_model?: string | null;
-  profile_generation?: unknown;
-  profile_id?: unknown;
-  projection_event_id?: unknown;
-  projection_id?: unknown;
-  projection_version?: unknown;
-  projections?: Record<string, unknown>[];
-  provider_config_revision?: number | null;
-  provider_id?: string | null;
-  provider_incarnation_id?: string | null;
-  providers?: unknown;
-  provisional?: unknown;
-  query_id?: unknown;
-  queued?: unknown;
-  rationale?: string;
-  ready?: unknown;
-  reason?: unknown;
-  redaction_version?: unknown;
-  requestSeq?: unknown;
-  request_id?: unknown;
-  request_seq?: unknown;
-  result?: unknown;
-  retract?: unknown;
-  retract_provisional?: unknown;
-  root_run_id?: unknown;
-  route_version?: unknown;
-  run_id?: string;
-  run_version?: unknown;
-  seq?: unknown;
-  session_id?: string;
-  severity?: unknown;
-  source?: unknown;
-  sources_count?: unknown;
-  state?: unknown;
-  status?: unknown;
-  steps?: PlanStep[];
-  stream_epoch?: unknown;
-  suggested_buttons?: unknown;
-  summary?: unknown;
-  summary_id?: unknown;
-  target_directory?: string;
-  task_id?: unknown;
-  task_root_run_id?: unknown;
-  task_scope_id?: unknown;
-  text?: string;
-  tool?: string;
-  topic?: string;
-  total_queued?: unknown;
-  total_rejected?: unknown;
-  ts?: unknown;
-  turn_id?: unknown;
-  ui_state?: unknown;
-  unknown?: unknown;
-  user_message?: unknown;
-  version?: number;
-  workflow_event_id?: unknown;
-}
-
-/** 会话历史里的一行（session_messages_response 的 messages 元素）。 */
-interface HistoryRow {
-  id?: string;
-  ts?: number;
-  role?: MessageRole | "tool";
-  text?: string;
-  tool_calls?: HistoryToolCall[];
-  tool_call_id?: string;
-  workflow_event?: WorkflowEventEnvelope;
-  companion_event?: unknown;
-  projection_kind?: string;
-  workflow_event_id?: string;
-  projection_event_id?: string;
-  run_id?: string;
-  task_scope_id?: string;
-}
-
-/** 历史行里助手发起的一次工具调用（OpenAI tool_calls 形状，旧行可能只有 name）。 */
-interface HistoryToolCall {
-  id?: string;
-  name?: string;
-  function?: { name?: string; arguments?: unknown };
-}
-
-/** session_messages_response 单独带回的待确认计划。 */
-interface HistoryPlan {
-  awaiting?: boolean;
-  rationale?: string;
-  steps?: PlanStep[];
-  target_directory?: string;
-  action_categories?: unknown;
-  auto_confirmed?: unknown;
-}
-
 type GlobalWS = {
   __deskpet_panel_ws__?: WebSocket | null;
   __deskpet_panel_listeners__?: Set<(msg: unknown) => void>;
@@ -385,22 +68,18 @@ type GlobalWS = {
   __deskpet_companion_identity_status__?: ControlWireMessage | null;
 };
 const G = globalThis as unknown as GlobalWS;
-
 let ws: WebSocket | null = G.__deskpet_panel_ws__ ?? null;
 let reconnect_timer: number | null = null;
 let reconnect_attempt = 0;
 let connect_timeout: number | null = null;
-
 function clear_connect_timeout() {
   if (connect_timeout == null) return;
   globalThis.clearTimeout(connect_timeout);
   connect_timeout = null;
 }
-
 type Listener = (msg: unknown) => void;
 const listeners: Set<Listener> = G.__deskpet_panel_listeners__ ?? new Set<Listener>();
 G.__deskpet_panel_listeners__ = listeners;
-
 export interface ControlWS {
   send(msg: { type: string; payload?: Record<string, unknown> }): boolean;
   send_command(msg: WorkflowCommand): boolean;
@@ -409,13 +88,11 @@ export interface ControlWS {
   on_state_change(fn: (state: "disconnected" | "connecting" | "connected") => void): () => void;
   state(): "disconnected" | "connecting" | "connected";
 }
-
 export interface WorkflowCommand {
   type: string;
   request_id: string;
   payload: Record<string, unknown>;
 }
-
 interface CompanionActionChallenge {
   connectionId: string;
   controlEpoch: string;
@@ -423,15 +100,12 @@ interface CompanionActionChallenge {
   requestSeq: string;
   bindingEpoch: string;
 }
-
 let companionChallenge: CompanionActionChallenge | null = G.__deskpet_companion_challenge__ ?? null;
 let latestCompanionIdentityStatus: ControlWireMessage | null =
   G.__deskpet_companion_identity_status__ ?? null;
 let companionActionInFlight = false;
-
 let current_state: ControlWS["state"] extends () => infer R ? R : never = "disconnected";
 const state_listeners = new Set<(state: typeof current_state) => void>();
-
 function set_control_state(next: typeof current_state) {
   if (current_state === next) return;
   current_state = next;
@@ -443,7 +117,6 @@ function set_control_state(next: typeof current_state) {
     }
   });
 }
-
 async function open_socket() {
   // Idempotent guard with global lookup. Any pre-existing socket on
   // globalThis (from a previous module instance / HMR cycle) wins —
@@ -640,7 +313,6 @@ async function open_socket() {
     // onclose fires after; reconnect handled there.
   };
 }
-
 function schedule_reconnect() {
   if (reconnect_timer != null) return;
   const delay = Math.min(RECONNECT_MAX_MS, RECONNECT_BASE_MS * Math.pow(2, reconnect_attempt));
@@ -652,96 +324,6 @@ function schedule_reconnect() {
     void open_socket();
   }, delay) as unknown as number;
 }
-
-/** slash_command_result 的 result 对象（后端契约，按 type 各带其中一部分字段）。 */
-export interface SlashCommandResult {
-  type?: string;
-  builtins?: Array<{ name: string; description?: string }>;
-  skills?: Array<{ name: string; description?: string }>;
-  text?: string;
-  max_iterations?: number;
-  active?: boolean;
-  iterations_used?: number;
-  done?: boolean;
-  ok?: boolean;
-  skill?: string;
-  output?: unknown;
-  entries?: Array<{ kind: string; label: string; text: string; ts?: number }>;
-  count?: number;
-  removed?: number;
-  kind?: string;
-  message?: string;
-  hint?: string;
-}
-
-/**
- * FEAT-A2 — 把 slash_command_result 的 result 对象格式化成一条可读文本。
- * 8 种 result.type 全覆盖（help / goal_set / goal_status / goal_cleared /
- * skill_result / prefs_list / prefs_cleared / error）+ default 兜底（raw JSON），
- * 禁止任何 type 落空被静默丢弃。
- */
-export function format_slash_result(result: SlashCommandResult | null | undefined): string {
-  const r = result || {};
-  switch (r.type) {
-    case "help": {
-      const builtins = (r.builtins || [])
-        .map((b) => `  /${b.name} — ${b.description || ""}`)
-        .join("\n");
-      const skills = (r.skills || [])
-        .map((s) => `  /${s.name} — ${s.description || ""}`)
-        .join("\n");
-      const parts = ["可用命令:"];
-      if (builtins) parts.push(builtins);
-      if (skills) parts.push("可用 skill:", skills);
-      return parts.join("\n");
-    }
-    case "goal_set":
-      return `已设置目标: ${r.text || ""}（上限 ${r.max_iterations ?? "?"} 轮）`;
-    case "goal_status":
-      return r.active
-        ? `当前目标: ${r.text || ""}（已用 ${r.iterations_used ?? 0}/${r.max_iterations ?? "?"} 轮${r.done ? "，已完成" : ""}）`
-        : "当前无活动目标";
-    case "goal_cleared":
-      return r.ok ? "已清除当前目标" : "无目标可清除";
-    case "skill_result":
-      return `skill /${r.skill || ""} 输出:\n${
-        typeof r.output === "string" ? r.output : JSON.stringify(r.output, null, 2)
-      }`;
-    case "prefs_list": {
-      const entries = r.entries || [];
-      if (!entries.length) return "偏好记忆为空（暂无意图/计划记录）";
-      const lines = entries.map((e) => `  ${e.kind}/${e.label}: ${e.text}`);
-      return [`偏好记忆（共 ${r.count ?? entries.length} 条）:`, ...lines].join("\n");
-    }
-    case "prefs_cleared":
-      return `已清除 ${r.removed ?? 0} 条偏好记忆${r.kind ? `（kind=${r.kind}）` : ""}`;
-    case "error":
-      return `命令出错: ${r.message || "unknown"}${r.hint ? `\n提示: ${r.hint}` : ""}`;
-    default:
-      // 兜底：未知 type 也要展示，禁止静默丢。
-      return `[slash 结果] ${JSON.stringify(r)}`;
-  }
-}
-
-/**
- * Route a backend WS message into the zustand store. Most events
- * carry `payload.session_id`; otherwise use the currently active session.
- */
-function selectNewestInflightRunAfterTerminal(sid: string, terminalRunId: string): void {
-  const state = useSessionsStore.getState();
-  const session = state.sessions[sid];
-  if (!session || session.selected_run_id !== terminalRunId) return;
-  const next = Object.values(session.run_projections)
-    .filter(
-      (projection) =>
-        projection.run_id !== terminalRunId &&
-        projection.inflight &&
-        projection.ui_state !== "closed",
-    )
-    .sort((left, right) => right.last_activity - left.last_activity)[0];
-  if (next) state.select_run_projection(sid, next.run_id);
-}
-
 function bindDeferredMessagesToRun(
   sid: string,
   parentRequestId: string,
@@ -767,7 +349,6 @@ function bindDeferredMessagesToRun(
   });
   if (changed) state.set_messages(sid, messages);
 }
-
 function flushDeferredMessages(
   sid: string,
   runId: string,
@@ -821,7 +402,6 @@ function flushDeferredMessages(
     }),
   );
 }
-
 function dispatch(msg: ControlWireMessage) {
   if (msg?.type === "companion_identity_status" || msg?.type === "companion_identity_unready") {
     latestCompanionIdentityStatus = msg;
@@ -2230,12 +1810,10 @@ function dispatch(msg: ControlWireMessage) {
       break;
   }
 }
-
 // Bug#2 修复 (2026-06-11)：断连时的出站消息排队(原实现直接丢弃 — 用户
 // 消息静默消失)。重连 onopen 时 flush。上限防泄漏:超出丢最旧并告警。
 const _outbox: string[] = [];
 const _OUTBOX_MAX = 50;
-
 export const controlWS: ControlWS = {
   send(msg) {
     let outbound = msg;
@@ -2364,7 +1942,6 @@ export const controlWS: ControlWS = {
     return current_state;
   },
 };
-
 // P5-S2 Phase 5: vitest hook. Production never imports this; tests use it to
 // drive `dispatch` without spinning up a real WebSocket. Exported under a
 // `__test_` prefix to make the intent obvious at call sites.
@@ -2386,16 +1963,16 @@ export function __test_reset_companion_identity_status() {
   }
   pendingRunStatusQueries.clear();
 }
-
 // ─── Session Health Check (Bug #2 防御) ─────────────────────────────
 // 2026-08-17: 防止会话状态永久卡在 "thinking" 或 "running"。
 // 每 30 秒检查一次，如果发现会话卡住超过 2 分钟，强制重置为 idle。
 
-const SESSION_HEALTH_CHECK_INTERVAL = 15_000; // 15 秒（更频繁检查）
-const SESSION_STUCK_TIMEOUT = 60_000; // 60 秒（从 120 秒降低，更快恢复）
+const SESSION_HEALTH_CHECK_INTERVAL = 15_000;
+// 15 秒（更频繁检查）
+const SESSION_STUCK_TIMEOUT = 60_000;
+// 60 秒（从 120 秒降低，更快恢复）
 
 let healthCheckTimer: ReturnType<typeof setInterval> | null = null;
-
 function startSessionHealthCheck() {
   if (healthCheckTimer) return; // 已经在运行
 
@@ -2464,7 +2041,6 @@ function startSessionHealthCheck() {
 
   console.log("[HealthCheck] Session health monitor started");
 }
-
 function stopSessionHealthCheck() {
   if (healthCheckTimer) {
     clearInterval(healthCheckTimer);
@@ -2472,13 +2048,10 @@ function stopSessionHealthCheck() {
     console.log("[HealthCheck] Session health monitor stopped");
   }
 }
-
 // 启动健康检查
 startSessionHealthCheck();
-
 // Auto-connect on import. Caller doesn't need to do anything.
 void open_socket();
-
 // Vite HMR: when this module is hot-replaced, close the existing
 // socket cleanly so the backend frees the slot before the new module
 // tries to open another. Without this we leak a socket per HMR cycle

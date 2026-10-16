@@ -6,7 +6,7 @@
 // - 搬走的定义用到的源模块导入，按原样复制到目标（只留用到的名字；类型导入保持 import type）。
 // - 源模块其余部分还用到搬走的名字 → 源模块从目标导入（类型用 import type）；源模块因此不再用到的导入删掉。
 // - 全 src 里 `import { 名字 } from "<源>"` 改成从目标导入；`export { 名字 } from "<源>"` 同样改写。
-// - `vi.mock("<源>")` 之类按路径打桩的写法列出来并拒绝（打桩落点会变）。
+// - `vi.mock("<源>")` 之类按路径打桩的文件若提到搬走的名字，列出来并拒绝（打桩落点会变）。
 // 搬后用 ts_move_check.mjs 核对定义逐字相同，再跑 prettier。
 import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from "node:fs";
 import { dirname, relative, resolve, basename, join } from "node:path";
@@ -197,9 +197,11 @@ for (const f of files) {
         repl.push([n.getStart(s2), n.getEnd(), parts.join("\n")]);
       }
     }
+    // 按路径打桩或动态导入源模块：只有该文件提到了搬走的名字才拒绝（落点会变）；没提到就与搬移无关。
     if (ts.isCallExpression(n) && n.arguments.length && ts.isStringLiteral(n.arguments[0])
-        && resolveSpec(f, n.arguments[0].text) === SRC && /mock|import/i.test(n.expression.getText(s2)))
-      problems.push(`${relative(REPO, f)}:${s2.getLineAndCharacterOfPosition(n.getStart(s2)).line + 1} 按路径打桩或动态导入源模块`);
+        && resolveSpec(f, n.arguments[0].text) === SRC && /mock|import/i.test(n.expression.getText(s2))
+        && [...names].some((x) => new RegExp(`\\b${x}\\b`).test(t)))
+      problems.push(`${relative(REPO, f)}:${s2.getLineAndCharacterOfPosition(n.getStart(s2)).line + 1} 按路径打桩或动态导入源模块，且提到了搬走的名字`);
     n.forEachChild(visit);
   };
   visit(s2);

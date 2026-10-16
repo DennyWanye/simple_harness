@@ -15,7 +15,8 @@
  */
 import { describe, it, expect } from "vitest";
 
-import { format_slash_result, type SlashCommandResult } from "./controlWs";
+import { format_slash_result } from "./controlWsShared";
+import { type SlashCommandResult } from "./controlWsTypes";
 
 const EIGHT_TYPES = [
   "help",
