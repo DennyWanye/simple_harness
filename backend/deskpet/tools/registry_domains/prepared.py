@@ -737,7 +737,8 @@ class PreparedExecutionMixin(ToolRegistryCore):
             if late_pending:
                 self._prepared_execution_metadata[effect_id] = {"late_pending": True}
                 if self._prepared_ready_callback is not None and execution_context is not None:
-                    future.add_done_callback(
+                    late_future = self._late_prepared_calls[effect_id][0]
+                    late_future.add_done_callback(
                         lambda _done, run_id=execution_context.run_id: (
                             self._prepared_ready_callback(run_id)
                             if self._prepared_ready_callback is not None

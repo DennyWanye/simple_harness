@@ -45,12 +45,13 @@
 - 6D 对它的拆分由 extract_check 内联核对证明逐字等价，但没有运行期测试能观察到。
 - 下一步：阶段 8 查死代码时确认无调用方后删除整个模块与 `turn_preparer` 里的读取分支。
 
-## F-6 工具注册表超时路径引用未定义的 future（潜在缺陷）
+## F-6 工具注册表超时路径引用未定义的 future（潜在缺陷）——2026-10-16 阶段 8 已修
 
 - 登记：2026-10-16，阶段 6D 审计全分支未定义名字时查出；拆分前的 `deskpet/tools/registry.py` 原样存在，不是整治引入。
 - 位置：`backend/deskpet/tools/registry_domains/prepared.py` 约 729 行，`except TimeoutError:` 分支里 `future.add_done_callback(...)`；该函数里没有 `future` 这个名字。
 - 影响：预备调用超时、标记为晚到挂起、且注册了就绪回调和执行上下文时，会抛 NameError，晚到结果的回调接不上。
 - 下一步：单独修（补上被等待的 future 或改用已有的任务句柄），配一条超时路径的测试。
+- **已修（阶段 8）**：改用登记进 `_late_prepared_calls[effect_id]` 的那个 future；用例 backend/tests/test_prepared_late_timeout.py 修复前报 NameError、修复后通过。属行为变更，阶段末交独立核验签字。
 
 ## F-7 能力存储事务视图里三个方法定义了两次（归阶段 8）
 
