@@ -63,9 +63,8 @@ def fake_llm_agent(monkeypatch):
     from agent.providers.tool_using import ToolUsingAgent
 
     fake = FakeLLM()
-    memory = service_context.get("memory_store")
     registry = service_context.get("tool_router")
-    new_agent = ToolUsingAgent(base=SimpleLLMAgent(fake, memory=memory), registry=registry)
+    new_agent = ToolUsingAgent(base=SimpleLLMAgent(fake, memory=None), registry=registry)
 
     old_agent = service_context.get("agent_engine")
     service_context.register("agent_engine", new_agent)

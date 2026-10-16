@@ -1649,7 +1649,6 @@ async def test_waiting_continuation_uses_sync_sdk_signal_and_resumes(monkeypatch
                 "workflow_service": SimpleNamespace(execution_uow=execution_uow),
                 "session_db": session_db,
                 "sdk_context_staging": object(),
-                "conversation_memory": object(),
                 "sdk_context_source_repository": context_sources,
                 "vector_worker": None,
             }.get(name)

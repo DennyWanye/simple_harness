@@ -22,14 +22,6 @@ from host.stores_bootstrap import (
     _provider_workload_maintenance_tasks,
 )
 
-# ─── WI-4.3 技能自创闭环 hook（方案 B 抽 helper）─────────────────────
-# 2026-06-06：原 codify hook 只 inline 在 chat handler 的 FinalEvent 分支 →
-# turn 经 ErrorEvent（relay ReadError）/ 迭代上限 / 被 stop 中止结束时整段不跑
-# → 多工具 turn 跑了 ≥5 工具但卡不弹（真机诊断）。抽成模块级 helper，在
-# FinalEvent + ErrorEvent 两处都调，让 turn 任意路径结束都能触发技能自创。
-# safe-fail：任何异常只 debug log，不中断正常 turn。flag OFF → 整段跳过（BC）。
-_companion_ingress_tasks: set[asyncio.Task] = set()
-
 
 async def _shutdown_runtimes_and_tasks() -> None:
     """关闭：实时语音、检索网关、前台运行时、审计、SDK 入口与恢复任务、伴侣运行时与各类后台任务。"""
@@ -75,12 +67,6 @@ async def _shutdown_runtimes_and_tasks() -> None:
     if _pending_sdk_recovery:
         await asyncio.gather(*_pending_sdk_recovery, return_exceptions=True)
     _sdk_recovery_watch_tasks.clear()
-    _pending_ingress = tuple(_companion_ingress_tasks)
-    for _task in _pending_ingress:
-        _task.cancel()
-    if _pending_ingress:
-        await asyncio.gather(*_pending_ingress, return_exceptions=True)
-    _companion_ingress_tasks.clear()
     _companion_runtime_service = service_context.get("companion_runtime")
     if _companion_runtime_service is not None:
         try:

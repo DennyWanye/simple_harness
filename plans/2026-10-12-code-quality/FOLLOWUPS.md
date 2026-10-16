@@ -21,14 +21,16 @@
 - **不许做**：为了让测试过而写固化错误行为的测试。
 - 另有一张同内容的任务卡片已开出，可以从卡片直接起一个会话处理。
 
-## F-2 WorkflowProviderAdapter.invoke 多传一个参数（死代码，归阶段 8）
+## F-2 WorkflowProviderAdapter.invoke 多传一个参数（死代码，归阶段 8）——2026-10-17 阶段 8 已删
 
 - 位置：SDK `simple_harness/workflow/adapters.py`。调用会 TypeError；该类产品代码不用。
 - 现状：挂 `# type: ignore[call-arg]` 加原因注释。阶段 8 查死代码时证明无调用方后删除。
+- **已删（阶段 8）**：整个 `simple_harness/workflow/adapters.py`（两个适配器）在 SDK 与 Host 产品代码里都没有导入方，只被专测它的 tests/unit/workflow/test_activation_adapters.py 导入；按 8C-3 裁决连专测文件一起删。
 
-## F-3 LeafAcceptanceAssembly.accept 的 producer_agent_ids 参数不生效（死参数，归阶段 8）
+## F-3 LeafAcceptanceAssembly.accept 的 producer_agent_ids 参数不生效（死参数，归阶段 8）——2026-10-17 阶段 8 已删
 
 - 参数在函数内被覆盖，调用方传了也不生效。阶段 8 处理。
+- **已删（阶段 8）**：删掉这个参数与两处调用方传的值（commit_service_domains/results.py），作者仍以结果投影里的为准，行为不变。
 
 ## F-4 恢复协调器隔离用例偶发失败（观察）
 
@@ -101,3 +103,17 @@
 - 位置：`backend/host/startup_workflows.py` 的 `_deep_v7_context_factory`。它读服务槽位 `subagent_scheduler`，该槽位从不登记，恢复 v7 运行时抛 `subagent_scheduler_unavailable`。
 - 生产不新开 v7 运行（深度研究工作流启动器恒为 None），只剩恢复入口。v7 定义是编解码钉死文件。
 - 本阶段不动：后端工作流引擎整条线在"删工作流线"第 2 片里统一处理（见记忆 workflow-line-removal-slices 与 CLAUDE.md"两套引擎"欠账）。
+
+## F-14 SDK 里没有导入方、但属于暂缓或冻结工作的模块（2026-10-17 阶段 8 登记，不删）
+
+- `agent_orchestrator/domains/drone_sim.py`：无人机模拟世界。跨领域验收（seed_methods/drone-sim-v1、role_templates、cross_domain_acceptance）还在引用这个领域的工具名；用户 2026-10-02 定"跨领域暂时不做"。
+- `agent_orchestrator/evaluation/appworld_operation_profiles.py`、`appworld_resume.py`：AppWorld 评测（冻结的评测线）。
+- `agent_orchestrator/orchestrator/taskgraph_review_evidence.py`：执行图根审阅读取原始核验事实，可能是做好没接上的功能。
+- 下一步：随对应主线决定接线或删除。
+
+
+## F-15 记忆面板两条控制消息初始化完成后不回任何消息（缺陷，2026-10-17 登记）
+
+- 位置：`backend/host/control_memory.py` 的 `_cc_memory_summarize_now`、`_cc_memory_thumbs_up`。
+- 现象：检查通过（已初始化、开关开）以后函数直接结束，不发回执；前端等不到 `memory_summarize_response` / `memory_thumbs_up_response`。原实现随认知记忆 SDK（2026-09-10）移除，只剩前面的拒绝分支。阶段 2 记录里写的"记忆整理消息在初始化完成时什么也不做"就是这处。
+- 下一步：定产品行为——随记忆 SDK 一起删掉这两条消息与前端入口，或明确回"不支持"。涉及前端，不在代码质量整治范围内。
