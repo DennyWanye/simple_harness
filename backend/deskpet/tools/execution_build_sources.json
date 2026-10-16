@@ -3,7 +3,14 @@
   "algorithm": "deskpet-core-execution-build-v1",
   "common_artifacts": [
     "backend/deskpet/tools/build_identity.py",
-    "backend/deskpet/tools/registry.py"
+    "backend/deskpet/tools/registry.py",
+    "backend/deskpet/tools/registry_domains/__init__.py",
+    "backend/deskpet/tools/registry_domains/catalog_views.py",
+    "backend/deskpet/tools/registry_domains/core.py",
+    "backend/deskpet/tools/registry_domains/execution.py",
+    "backend/deskpet/tools/registry_domains/prepared.py",
+    "backend/deskpet/tools/registry_domains/registration.py",
+    "backend/deskpet/tools/registry_domains/support.py"
   ],
   "handlers": [
     {
@@ -348,6 +355,20 @@
       "authority_phase": "both",
       "lifecycle": "active",
       "artifacts": [
+        "backend/deskpet/tools/ppt/__init__.py",
+        "backend/deskpet/tools/ppt/common.py",
+        "backend/deskpet/tools/ppt/config.py",
+        "backend/deskpet/tools/ppt/create.py",
+        "backend/deskpet/tools/ppt/full_page.py",
+        "backend/deskpet/tools/ppt/layouts_v1.py",
+        "backend/deskpet/tools/ppt/layouts_v2.py",
+        "backend/deskpet/tools/ppt/layouts_v2_data.py",
+        "backend/deskpet/tools/ppt/outline.py",
+        "backend/deskpet/tools/ppt/pro_images.py",
+        "backend/deskpet/tools/ppt/research.py",
+        "backend/deskpet/tools/ppt/shapes.py",
+        "backend/deskpet/tools/ppt/template_fill.py",
+        "backend/deskpet/tools/ppt/template_fit.py",
         "backend/deskpet/tools/ppt_tools.py"
       ]
     },
@@ -357,6 +378,20 @@
       "authority_phase": "both",
       "lifecycle": "active",
       "artifacts": [
+        "backend/deskpet/tools/ppt/__init__.py",
+        "backend/deskpet/tools/ppt/common.py",
+        "backend/deskpet/tools/ppt/config.py",
+        "backend/deskpet/tools/ppt/create.py",
+        "backend/deskpet/tools/ppt/full_page.py",
+        "backend/deskpet/tools/ppt/layouts_v1.py",
+        "backend/deskpet/tools/ppt/layouts_v2.py",
+        "backend/deskpet/tools/ppt/layouts_v2_data.py",
+        "backend/deskpet/tools/ppt/outline.py",
+        "backend/deskpet/tools/ppt/pro_images.py",
+        "backend/deskpet/tools/ppt/research.py",
+        "backend/deskpet/tools/ppt/shapes.py",
+        "backend/deskpet/tools/ppt/template_fill.py",
+        "backend/deskpet/tools/ppt/template_fit.py",
         "backend/deskpet/tools/ppt_tools.py"
       ]
     },

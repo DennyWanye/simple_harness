@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import json
 import subprocess
 import sys
@@ -39,6 +40,58 @@ def test_checked_manifest_is_canonical_and_current() -> None:
     manifest = TOOLS.joinpath("execution_build_manifest.json").read_bytes()
     assert manifest.endswith(b"\n")
     assert b"\r\n" not in manifest
+
+
+def _imported_subpackages(path: Path) -> set[Path]:
+    """文件直接导入的、位于它同目录下的子包目录（相对导入与绝对导入都算）。"""
+    backend = ROOT / "backend"
+    found: set[Path] = set()
+
+    def add(candidate: Path) -> None:
+        if path.parent in candidate.parents or candidate == path.parent:
+            rel = candidate.relative_to(path.parent).parts
+            if rel:
+                sub = path.parent / rel[0]
+                if sub.is_dir() and (sub / "__init__.py").exists():
+                    found.add(sub)
+
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            if node.level == 1:
+                if node.module:
+                    add(path.parent / node.module.split(".")[0])
+                else:
+                    for alias in node.names:
+                        add(path.parent / alias.name)
+            elif node.level == 0 and node.module:
+                add(backend.joinpath(*node.module.split(".")))
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                add(backend.joinpath(*alias.name.split(".")))
+    return found
+
+
+def test_split_subpackages_are_registered_with_their_facade() -> None:
+    """拆包守护（2026-10-16 阶段 6 偏差单裁决）：清单里的文件若导入同目录下的子包，
+    子包里全部 .py 也要登记，构建摘要才覆盖搬走的代码（"代码变了摘要就变"）。"""
+    sources = json.loads(TOOLS.joinpath("execution_build_sources.json").read_text(encoding="utf-8"))
+    common = set(sources["common_artifacts"])
+    places = [("common_artifacts", sources["common_artifacts"])] + [
+        (item["handler_id"], item["artifacts"]) for item in sources["handlers"]
+    ]
+    missing = []
+    for owner, artifacts in places:
+        registered = set(artifacts) | common
+        for rel in artifacts:
+            for sub in sorted(_imported_subpackages(ROOT / rel)):
+                for py in sorted(sub.rglob("*.py")):
+                    if py.relative_to(ROOT).as_posix() not in registered:
+                        missing.append(f"{owner}: {py.relative_to(ROOT).as_posix()}")
+    assert missing == [], (
+        "补进 backend/deskpet/tools/execution_build_sources.json 后运行 "
+        "scripts/generate_execution_build_manifest.py --write：\n" + "\n".join(missing)
+    )
 
 
 def test_source_effect_build_handler_sets_are_strictly_equal() -> None:
