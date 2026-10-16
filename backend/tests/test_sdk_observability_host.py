@@ -150,7 +150,9 @@ def test_main_wires_one_host_sink_into_harness() -> None:
     main_source = host_source_text()
     assert 'runtime_config_kwargs["observability_sink"] = _sdk_observability.sink' in main_source
     assert "_sdk_observability.bind_ingress(" in main_source
-    assert "_sdk_observability.reset_ingress(observability_token)" in main_source
+    assert re.search(
+        r"_sdk_observability\.reset_ingress\((st\.)?observability_token\)", main_source
+    )
 
 
 # 2026-09-10 removed with the Memory SDK: test_installed_memory_async_snapshot_reaches_export_without_coroutine_leak

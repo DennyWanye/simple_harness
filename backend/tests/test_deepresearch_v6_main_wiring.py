@@ -44,7 +44,7 @@ from deskpet.workflows.effects import EffectExecutionContext, EffectJournal
 from deskpet.workflows.launcher import WorkflowLauncher
 from deskpet.workflows.store import NativeCheckpointStore, RegisteredBlobStore, RunFence
 
-from tests.host_source import host_source_text
+from tests.host_source import host_nested_function_source, host_source_text
 
 
 @pytest.mark.parametrize(
@@ -129,10 +129,7 @@ def test_main_keeps_v6_and_defaults_new_roots_to_simplified_v7() -> None:
     marker = "context_factory=_deep_v7_context_factory"
     registration_end = source.index(marker, registration) + len(marker)
     assert "new_runs_enabled=True" in source[registration:registration_end]
-    assert (
-        '"v7",\nstate_factory=_deep_v7_state_factory'
-        in source[registration:registration_end]
-    )
+    assert '"v7",\nstate_factory=_deep_v7_state_factory' in source[registration:registration_end]
     assert "context_factory=_deep_v7_context_factory" in source[registration:registration_end]
 
     # R6 removed the product-specific production starter. New roots are routed
@@ -146,10 +143,7 @@ def test_main_keeps_v6_and_defaults_new_roots_to_simplified_v7() -> None:
 
 
 def test_main_websocket_delivery_returns_typed_best_effort_outcome() -> None:
-    source = host_source_text()
-    start = source.index("async def _workflow_websocket_delivery")
-    end = source.index("async def _workflow_artifact_publisher", start)
-    handler = source[start:end]
+    handler = host_nested_function_source("_workflow_websocket_delivery")
     assert "broadcast_websocket_best_effort" in handler
 
 

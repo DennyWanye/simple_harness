@@ -31,18 +31,13 @@ from deskpet.harness.contracts import HostContext
 from deskpet.tools.capabilities import ToolExecutionContext
 from deskpet.tools.registry import ToolRegistry
 
-from tests.host_source import host_source_text
+from tests.host_source import call_source, host_source_text
 
 NOW = datetime(2026, 7, 25, 12, 0, tzinfo=UTC)
 
 
 def test_production_runtime_claims_and_retries_delegated_reminder_drafts() -> None:
-    source = host_source_text()
-    composition = source[
-        source.index("companion_runtime = CompanionRuntime(") : source.index(
-            "profile_coordinator = ProfileBindingCoordinator("
-        )
-    ]
+    composition = call_source(host_source_text(), "companion_runtime = CompanionRuntime(")
 
     for field in ("claim_kinds", "retryable_kinds"):
         start = composition.index(f"{field}=(")

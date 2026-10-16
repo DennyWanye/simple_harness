@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from datetime import UTC, datetime
 
 import pytest
@@ -18,7 +19,7 @@ from tests.companion.test_runtime_scheduler import (
     MutableClock,
     wait_until,
 )
-from tests.host_source import host_source_text
+from tests.host_source import call_source, host_source_text
 
 
 @pytest.mark.asyncio
@@ -112,11 +113,7 @@ def test_main_shutdown_order_closes_active_runtime_then_execution_uow() -> None:
     # then releases its owned UoW); main.py closes that one owner.
     workflow_close = source.index("await asyncio.wait_for(_workflow_service.close(), timeout=5.0)")
     assert runtime_close < sdk_close < workflow_close
-    coordinator_block = source[
-        source.index("profile_coordinator = ProfileBindingCoordinator(") : source.index(
-            "host_state.companion_runtime = companion_runtime"
-        )
-    ]
-    assert "runtime=companion_runtime" in coordinator_block
+    coordinator_block = call_source(source, "ProfileBindingCoordinator(")
+    assert re.search(r"runtime=(st\.)?companion_runtime,", coordinator_block)
     assert "runtime_start_enabled=True" in coordinator_block
     assert "asyncio.create_task(_reflection_loop())" not in source

@@ -72,11 +72,20 @@ def main() -> int:
         key=lambda n: n.end_lineno - n.lineno,
     )
     wanted = [x.strip() for x in a.names.split(",") if x.strip()]
+    # 函数体顶层，或函数体顶层 try 的主体里（该 try 的 except/else/finally 里不能用到这些名字）
+    top_try = [s for s in fn.body if isinstance(s, ast.Try)]
+    bodies = [fn.body] + [t.body for t in top_try]
     defs = {
         n.name: n
-        for n in fn.body
+        for body in bodies
+        for n in body
         if isinstance(n, (*FUNCS, ast.ClassDef)) and n.name in wanted
     }
+    for t in top_try:
+        rest = [*t.handlers, *t.orelse, *t.finalbody]
+        hit = sorted(set(wanted) & names(rest, ast.Load))
+        if hit:
+            sys.exit(f"try 的其余分支用到 {hit}")
     if set(defs) != set(wanted):
         sys.exit(f"不在函数体顶层的：{sorted(set(wanted) - set(defs))}")
     top_names = module_names(tree)
@@ -99,6 +108,13 @@ def main() -> int:
         if any(isinstance(x, (ast.Nonlocal, ast.Global)) for x in ast.walk(d)):
             sys.exit(f"{name} 里有 nonlocal/global")
         free = names([d], ast.Load)
+        used_before = [
+            x
+            for x in ast.walk(fn)
+            if isinstance(x, ast.Name) and x.id == name and x.lineno < d.lineno
+        ]
+        if used_before:
+            sys.exit(f"{name} 在定义之前就被引用")
         bad = sorted((free & (host_locals - set(wanted))) | (free - allowed - host_locals))
         if bad:
             sys.exit(f"{name} 读了外层变量或未知名字：{bad}")

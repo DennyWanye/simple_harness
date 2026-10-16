@@ -57,6 +57,30 @@ def host_module_source(name: str) -> str:
     return (BACKEND / "host" / f"{name}.py").read_text(encoding="utf-8")
 
 
+def call_source(text: str, marker: str) -> str:
+    """从 ``marker``（以左括号结尾，如 ``"CompanionRuntime("``）起，取到配对的右括号为止。"""
+    start = text.index(marker)
+    depth = 0
+    for i in range(start + len(marker) - 1, len(text)):
+        if text[i] == "(":
+            depth += 1
+        elif text[i] == ")":
+            depth -= 1
+            if depth == 0:
+                return text[start : i + 1]
+    raise ValueError(f"{marker} 的括号不配对")
+
+
+def host_nested_function_source(name: str) -> str:
+    """返回 main.py 或 host/*.py 里任意层级（含内层闭包）名为 ``name`` 的函数源码。"""
+    for path in _host_files():
+        text = path.read_text(encoding="utf-8")
+        for node in ast.walk(ast.parse(text)):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == name:
+                return ast.get_source_segment(text, node) or ""
+    raise LookupError(f"main 与 host 模块里都没有函数 {name}")
+
+
 def host_source_files() -> list[Path]:
     """返回 main.py 与 host/*.py 的路径；供"扫描生产代码"的测试把 host 包一并纳入。"""
     return _host_files()

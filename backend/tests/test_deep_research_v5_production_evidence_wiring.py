@@ -20,7 +20,7 @@ from deskpet.workflows.definitions.deep_research_v5_evidence import _normalized_
 from deskpet.workflows.definitions.deep_research_v5_policy import build_research_brief
 from deskpet.workflows.definitions.deep_research_v5_queries import build_dimension_queries
 
-from tests.host_source import host_source_text
+from tests.host_source import host_module_source, host_source_text
 
 
 def _brief() -> ResearchBrief:
@@ -394,9 +394,8 @@ def test_cross_language_concepts_do_not_admit_unrelated_first_party_page() -> No
 
 def test_main_v5_search_uses_one_dimension_batch_and_gap_fetch_admission() -> None:
     source = host_source_text()
-    start = source.index("async def _deep_v5_context_factory")
-    end = source.index("return WorkflowContext(", start)
-    factory = source[start:end]
+    # 阶段 6D 把 v5 工厂的函数体与两个传输闭包拆进同模块的几个函数，改读整个模块
+    factory = host_module_source("startup_workflows")
 
     assert "gateway.search_dimension_batch(" in factory
     assert "DimensionSearchRequest(" in factory
