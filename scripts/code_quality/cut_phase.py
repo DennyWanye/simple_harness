@@ -9,11 +9,13 @@
 - 行范围必须恰好是同一层的若干条完整语句（方法体顶层，或方法里某个 for/while 循环体的顶层）。
 - 段里的 `return` → `state.flow = "stop"` 加 `return`；指向外层循环的 `continue` / `break`
   → `state.flow = "continue"` / `"break"` 加 `return`（段内自己的循环里的不动）。
-- 新方法：段里有 yield → 异步生成器，调用处 `async for _event in self.新方法(state): yield _event`；
+- 新方法：段里有 yield → 异步生成器，调用处 `async with aclosing(self.新方法(state)) as _phase: async for _event in _phase: yield _event`（文件要自己导入 aclosing 与 AsyncGenerator）；
   只有 await → `async def`，调用处 `await`；都没有 → 普通方法。
 - 调用处之前把 `state.flow` 清成 None，之后按段里出现过的流程补检查（stop → return、
   continue → continue、break → break）。
 - 新方法插在原方法后面；段内代码只改缩进与上述流程语句。收尾跑 ruff 格式化。
+- `--nested`：从已切出的阶段方法里再切一段。段里的 `return` 必须紧跟在 `state.flow = "..."`
+  之后（都是上一次切出时改写的），原样保留；调用处之后 `if state.flow is not None: return`。
 """
 
 from __future__ import annotations
@@ -137,6 +139,7 @@ def main() -> int:
     ap.add_argument("name")
     ap.add_argument("--doc", default="")
     ap.add_argument("--state", default="state")
+    ap.add_argument("--nested", action="store_true")
     a = ap.parse_args()
     path = Path(a.file)
     start, end = (int(x) for x in a.span.split("-"))
@@ -151,6 +154,15 @@ def main() -> int:
         top -= 1
     indent = len(lines[start - 1]) - len(lines[start - 1].lstrip())
     edits = dict(flow_edits(stmts, in_loop_body))
+    if a.nested:
+        for ln, kind in edits.items():
+            prev = lines[ln - 2].strip()
+            if kind != "stop" or not re.fullmatch(
+                rf'{a.state}\.flow = "(stop|continue|break)"', prev
+            ):
+                sys.exit(f"--nested：第 {ln} 行的 {kind} 前面没有 state.flow 赋值")
+        nested_returns = bool(edits)
+        edits = {}
     block = lines[top - 1 : end]
     out = []
     for i, line in enumerate(block, start=top):
@@ -166,9 +178,18 @@ def main() -> int:
     body_text = textwrap.indent(textwrap.dedent("".join(out)), " " * 8)
     has_yield, has_await = kinds(stmts)
     flows = sorted(set(edits.values()))
+    if a.nested and nested_returns:
+        flows = ["nested"]
     if has_yield:
-        head = f"    async def {a.name}(self, {a.state}: _RunState) -> AsyncIterator[AgentEvent]:\n"
-        call = f"async for _event in self.{a.name}({a.state}):\n" + " " * 4 + "yield _event\n"
+        head = f"    async def {a.name}(self, {a.state}: _RunState) -> AsyncGenerator[AgentEvent, None]:\n"
+        # aclosing：调用方中途关掉外层生成器时，段内的 finally 立刻跑（与切之前一致）
+        call = (
+            f"async with aclosing(self.{a.name}({a.state})) as _phase:\n"
+            + " " * 4
+            + "async for _event in _phase:\n"
+            + " " * 8
+            + "yield _event\n"
+        )
     elif has_await:
         head = f"    async def {a.name}(self, {a.state}: _RunState) -> None:\n"
         call = f"await self.{a.name}({a.state})\n"
@@ -182,6 +203,9 @@ def main() -> int:
     call_lines += [pad + c + "\n" for c in call.rstrip("\n").split("\n")]
     action = {"stop": "return", "continue": "continue", "break": "break"}
     for f in flows:
+        if f == "nested":
+            call_lines.append(f"{pad}if {a.state}.flow is not None:\n{pad}    return\n")
+            continue
         call_lines.append(f'{pad}if {a.state}.flow == "{f}":\n{pad}    {action[f]}\n')
     new_lines = lines[: top - 1] + call_lines + lines[end:]
     # 新方法插在原方法后面
