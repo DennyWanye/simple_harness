@@ -9,29 +9,7 @@
 // TDD §B TG-5 + TG-3 + MR-1/MR-22。
 import { useCallback, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-
-// ─── Data types (与 backend/deskpet/tools/artifact.py 对应) ─
-
-export type ArtifactKind = "file" | "url" | "text" | "image" | "table";
-export type ActionId = "open" | "show_in_folder" | "copy_path" | "save_as" | "preview";
-
-export interface ArtifactAction {
-  id: ActionId;
-  label?: string;
-}
-
-export interface ToolArtifact {
-  kind: ArtifactKind;
-  path?: string | null;
-  url?: string | null;
-  mime?: string | null;
-  title: string;
-  preview?: string | null;
-  size_bytes?: number | null;
-  sha256?: string | null;
-  created_at?: string;
-  actions?: ArtifactAction[];
-}
+import type { ToolArtifact, ArtifactKind, ArtifactAction, ActionId } from "./artifactExtract";
 
 // ─── Metric event helper (WI-T1.7 埋点) ─────────────────────
 
@@ -40,7 +18,6 @@ declare global {
     __deskpet_metrics_emit?: (event: string, payload: Record<string, unknown>) => void;
   }
 }
-
 function emitArtifactAction(actionId: ActionId, toolName: string, ok: boolean) {
   try {
     // 走全局 metric sink（main.tsx 启动期注入；缺则静默丢，dev/test 友好）
@@ -56,7 +33,6 @@ function emitArtifactAction(actionId: ActionId, toolName: string, ok: boolean) {
     console.warn("[ArtifactCard] metric emit failed:", e);
   }
 }
-
 // ─── Tauri invoke 桥 (D3 4 commands) ──────────────────────────
 
 async function invokeArtifactOpen(path: string, toolName: string) {
@@ -68,7 +44,6 @@ async function invokeArtifactOpen(path: string, toolName: string) {
     throw e;
   }
 }
-
 async function invokeShowInFolder(path: string, toolName: string) {
   try {
     await invoke("artifact_show_in_folder", { path });
@@ -78,7 +53,6 @@ async function invokeShowInFolder(path: string, toolName: string) {
     throw e;
   }
 }
-
 async function invokeCopyPath(path: string, toolName: string) {
   try {
     await invoke("artifact_copy_path", { path });
@@ -88,7 +62,6 @@ async function invokeCopyPath(path: string, toolName: string) {
     throw e;
   }
 }
-
 async function invokeSaveAs(src: string, suggestedName: string, toolName: string) {
   try {
     const dest = await invoke<string | null>("artifact_save_as", {
@@ -102,7 +75,6 @@ async function invokeSaveAs(src: string, suggestedName: string, toolName: string
     throw e;
   }
 }
-
 // ─── Styles ──────────────────────────────────────────────────
 
 const cardStyle: React.CSSProperties = {
@@ -113,27 +85,23 @@ const cardStyle: React.CSSProperties = {
   background: "#1e293b",
   fontSize: 13,
 };
-
 const titleStyle: React.CSSProperties = {
   fontWeight: 600,
   color: "#e2e8f0",
   marginBottom: 4,
   wordBreak: "break-all",
 };
-
 const metaStyle: React.CSSProperties = {
   color: "#94a3b8",
   fontSize: 11,
   marginBottom: 6,
 };
-
 const actionRowStyle: React.CSSProperties = {
   display: "flex",
   gap: 6,
   flexWrap: "wrap",
   marginTop: 6,
 };
-
 const buttonStyle: React.CSSProperties = {
   padding: "3px 10px",
   fontSize: 12,
@@ -143,27 +111,22 @@ const buttonStyle: React.CSSProperties = {
   color: "#e2e8f0",
   cursor: "pointer",
 };
-
 type ActionStatus = "idle" | "pending" | "success" | "error";
-
 interface CurrentAction {
   id: ActionId;
   status: ActionStatus;
   message: string;
 }
-
 const actionMessageStyle: React.CSSProperties = {
   marginTop: 6,
   fontSize: 11.5,
   lineHeight: 1.45,
 };
-
 function actionMessageColor(status: ActionStatus): string {
   if (status === "success") return "#86efac";
   if (status === "error") return "#fca5a5";
   return "#bfdbfe";
 }
-
 function actionErrorMessage(e: unknown): string {
   if (typeof e === "string") return e;
   if (e instanceof Error) return e.message;
@@ -173,7 +136,6 @@ function actionErrorMessage(e: unknown): string {
     return "未知错误";
   }
 }
-
 function successMessage(id: ActionId, dest?: string | null): string {
   if (id === "open") return "已请求系统打开文件";
   if (id === "show_in_folder") return "已在文件夹中定位";
@@ -181,7 +143,6 @@ function successMessage(id: ActionId, dest?: string | null): string {
   if (id === "save_as") return dest ? `已另存为：${dest}` : "已取消另存为";
   return "操作完成";
 }
-
 // ─── Kind icon (MIME → emoji) ─────────────────────────────────
 
 function mimeIcon(mime?: string | null, kind?: ArtifactKind): string {
@@ -197,14 +158,12 @@ function mimeIcon(mime?: string | null, kind?: ArtifactKind): string {
   if (mime.startsWith("image/")) return "🖼️";
   return "📄";
 }
-
 function humanSize(bytes?: number | null): string {
   if (bytes == null) return "";
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
-
 // ─── Sub-cards by kind ───────────────────────────────────────
 
 function FileArtifactCard({ artifact, toolName }: { artifact: ToolArtifact; toolName: string }) {
@@ -295,7 +254,6 @@ function FileArtifactCard({ artifact, toolName }: { artifact: ToolArtifact; tool
     </div>
   );
 }
-
 function UrlArtifactCard({ artifact, toolName }: { artifact: ToolArtifact; toolName: string }) {
   const url = artifact.url || "";
   return (
@@ -325,7 +283,6 @@ function UrlArtifactCard({ artifact, toolName }: { artifact: ToolArtifact; toolN
     </div>
   );
 }
-
 function TextArtifactCard({ artifact, toolName }: { artifact: ToolArtifact; toolName: string }) {
   const [open, setOpen] = useState(true);
   const preview = artifact.preview ?? "";
@@ -377,7 +334,6 @@ function TextArtifactCard({ artifact, toolName }: { artifact: ToolArtifact; tool
     </div>
   );
 }
-
 function ImageArtifactCard({ artifact, toolName }: { artifact: ToolArtifact; toolName: string }) {
   // 与 file 类似，但显示更简洁
   const path = artifact.path || "";
@@ -455,7 +411,6 @@ function ImageArtifactCard({ artifact, toolName }: { artifact: ToolArtifact; too
     </div>
   );
 }
-
 function TableArtifactCard({ artifact }: { artifact: ToolArtifact; toolName: string }) {
   return (
     <div style={cardStyle} data-testid="artifact-card-table">
@@ -478,7 +433,6 @@ function TableArtifactCard({ artifact }: { artifact: ToolArtifact; toolName: str
     </div>
   );
 }
-
 // ─── Dispatcher ──────────────────────────────────────────────
 
 export function ArtifactCard({ artifact, toolName }: { artifact: ToolArtifact; toolName: string }) {
@@ -497,42 +451,4 @@ export function ArtifactCard({ artifact, toolName }: { artifact: ToolArtifact; t
       // 未知 kind 退化为 file 兜底
       return <FileArtifactCard artifact={artifact} toolName={toolName} />;
   }
-}
-
-// ─── Result 解析：从 tool envelope 字符串提取 artifacts ────────
-
-export function extractArtifactsFromResult(resultRaw: string): ToolArtifact[] {
-  try {
-    const obj = JSON.parse(resultRaw);
-    if (obj && typeof obj === "object") {
-      // 优先 envelope.artifacts（registry 包装后）
-      if (Array.isArray(obj.artifacts)) {
-        return obj.artifacts as ToolArtifact[];
-      }
-      // 兼容历史行：presenter 曾泄漏 NormalizedToolOutcome 包装
-      // {state, value: {artifacts}}，已持久化的旧会话仍是这个形状
-      const outcomeValue = (obj as { value?: unknown }).value;
-      if (
-        outcomeValue &&
-        typeof outcomeValue === "object" &&
-        Array.isArray((outcomeValue as { artifacts?: unknown }).artifacts)
-      ) {
-        return (outcomeValue as { artifacts: ToolArtifact[] }).artifacts;
-      }
-      // 兜底：从工具自身的 result.artifacts 嵌套（dry_run 等场景）
-      if (typeof obj.result === "string") {
-        try {
-          const inner = JSON.parse(obj.result);
-          if (inner && Array.isArray(inner.artifacts)) {
-            return inner.artifacts as ToolArtifact[];
-          }
-        } catch {
-          /* ignore */
-        }
-      }
-    }
-  } catch {
-    return [];
-  }
-  return [];
 }

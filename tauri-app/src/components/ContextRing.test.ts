@@ -5,7 +5,8 @@ import { cleanup, render, screen } from "@testing-library/react";
 import React from "react";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { ContextRing, ringColor, ringPercent } from "./ContextRing";
+import { ContextRing } from "./ContextRing";
+import { ringColor, ringPercent } from "./contextRingMath";
 import type { ContextUsageSnapshot } from "../stores/sessionsStore";
 
 function snap(overrides: Partial<ContextUsageSnapshot> = {}): ContextUsageSnapshot {

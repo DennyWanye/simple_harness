@@ -20,4 +20,9 @@ export default defineConfig([
       globals: globals.browser,
     },
   },
+  {
+    // 浏览器布局夹具是页面入口（createRoot 直接挂载），不参与热更新，没有导出。
+    files: ['tests/browser/*.fixture.tsx'],
+    rules: { 'react-refresh/only-export-components': 'off' },
+  },
 ])

@@ -37,6 +37,7 @@ import { PrimaryController, type PrimaryMessage, type PrimaryPort } from "../pri
 import { PrimaryRunPanel } from "../primary/PrimaryRunPanel";
 import { PrimaryWorkspaceBindings } from "../primary/PrimaryWorkspaceBindings";
 import { PrimaryBindingRecovery } from "../primary/bindingRecovery";
+import { toolHeadline } from "./toolHeadline";
 
 const disconnected: PrimaryPort = {
   state: () => "disconnected",
@@ -59,7 +60,6 @@ const runLabels: Record<string, string> = {
   CANCELLED: "已取消",
   STOPPED: "已停止",
 };
-
 /** 消息列 —— 最大宽 760 居中，是整个视图的版心。 */
 const column = {
   width: "100%",
@@ -68,7 +68,6 @@ const column = {
   marginRight: "auto",
   boxSizing: "border-box",
 } as const;
-
 export function PrimaryChatView({ channel, onOpenSettings, active = true }: PrimaryChatViewProps) {
   const [controller] = useState(() => new PrimaryController(disconnected));
   const [bindingRecovery] = useState(() => new PrimaryBindingRecovery());
@@ -343,20 +342,6 @@ const roleSkins: Record<
     accent: dark.textMuted,
   },
 };
-/** 工具正文首行是 Host 拼上的 `{"call_id":…,"name":…}`；拆出来做折叠标题。 */
-export function toolHeadline(text: string): { name: string; body: string } {
-  const cut = text.indexOf("\n");
-  const head = cut === -1 ? text : text.slice(0, cut);
-  try {
-    const meta = JSON.parse(head) as Record<string, unknown>;
-    if (meta && typeof meta === "object" && typeof meta.name === "string" && meta.name) {
-      return { name: meta.name, body: cut === -1 ? "" : text.slice(cut + 1) };
-    }
-  } catch {
-    /* 不是元数据首行就整体当正文 */
-  }
-  return { name: "", body: text };
-}
 function PrimaryMessageRow({
   message,
   controller,

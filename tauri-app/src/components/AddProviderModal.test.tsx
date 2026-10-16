@@ -21,8 +21,8 @@ import {
   prefillFromProvider,
   validateProviderDraft,
   type ProviderDraft,
-} from "./AddProviderModal";
-import type { Provider } from "./SettingsProviders";
+} from "./providerDraft";
+import type { Provider } from "./providersStore";
 
 const valid_draft: ProviderDraft = {
   id: "my-relay-ds",

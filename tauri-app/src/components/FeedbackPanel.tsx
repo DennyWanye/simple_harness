@@ -17,16 +17,15 @@
  * panel is unit-testable without Tauri.
  */
 import { memo, useState, useCallback } from "react";
-
 import { Icon } from "./Icon";
 import { dark } from "../theme/components";
+import { isFeedbackNoteValid } from "./feedbackValidation";
 
 export interface FeedbackBundleResult {
   zip_path: string;
   size_bytes: number;
   collected: Record<string, string>;
 }
-
 export interface FeedbackPanelProps {
   /** Build the diagnostic zip for the given note. */
   onBuildBundle: (note: string) => Promise<FeedbackBundleResult>;
@@ -35,21 +34,7 @@ export interface FeedbackPanelProps {
   /** Where users should send the zip — shown verbatim. */
   feedbackChannel?: string;
 }
-
-/** Minimum note length before packaging is allowed. */
-export const MIN_NOTE_CHARS = 10;
-
-/**
- * Pure: is the feedback note long enough to allow packaging?
- * Trimmed length must be ≥ :data:`MIN_NOTE_CHARS`. Exported for
- * unit-testing without a DOM.
- */
-export function isFeedbackNoteValid(note: string): boolean {
-  return note.trim().length >= MIN_NOTE_CHARS;
-}
-
 type BuildState = "idle" | "building" | "done" | "error";
-
 function FeedbackPanelImpl({
   onBuildBundle,
   onClose,
@@ -174,9 +159,7 @@ function FeedbackPanelImpl({
     </div>
   );
 }
-
 export const FeedbackPanel = memo(FeedbackPanelImpl);
-
 // --------------------------- styles ----------------------------------
 
 const overlayStyle: React.CSSProperties = {
@@ -189,7 +172,6 @@ const overlayStyle: React.CSSProperties = {
   zIndex: 9998,
   backdropFilter: "blur(4px)",
 };
-
 const cardStyle: React.CSSProperties = {
   width: 440,
   maxWidth: "92vw",
@@ -201,19 +183,16 @@ const cardStyle: React.CSSProperties = {
   color: dark.text,
   border: `1px solid ${dark.borderStrong}`,
 };
-
 const headerStyle: React.CSSProperties = {
   display: "flex",
   alignItems: "center",
   justifyContent: "space-between",
 };
-
 const titleStyle: React.CSSProperties = {
   fontSize: 18,
   fontWeight: 700,
   margin: 0,
 };
-
 const closeBtnStyle: React.CSSProperties = {
   display: "inline-flex",
   alignItems: "center",
@@ -226,14 +205,12 @@ const closeBtnStyle: React.CSSProperties = {
   color: dark.textMuted,
   cursor: "pointer",
 };
-
 const hintStyle: React.CSSProperties = {
   fontSize: 13,
   lineHeight: 1.6,
   color: dark.textMuted,
   margin: "10px 0 12px",
 };
-
 const textareaStyle: React.CSSProperties = {
   width: "100%",
   boxSizing: "border-box",
@@ -248,13 +225,11 @@ const textareaStyle: React.CSSProperties = {
   fontFamily: "inherit",
   color: dark.text,
 };
-
 const counterStyle: React.CSSProperties = {
   fontSize: 11.5,
   color: "#94a3b8",
   margin: "4px 2px 12px",
 };
-
 const buildBtnStyle: React.CSSProperties = {
   width: "100%",
   padding: "11px 0",
@@ -266,7 +241,6 @@ const buildBtnStyle: React.CSSProperties = {
   borderRadius: 11,
   boxShadow: "0 6px 18px rgba(37,99,235,0.32)",
 };
-
 const resultStyle: React.CSSProperties = {
   marginTop: 14,
   padding: "12px 14px",
@@ -274,7 +248,6 @@ const resultStyle: React.CSSProperties = {
   border: "1px solid rgba(110,231,183,0.28)",
   borderRadius: 8,
 };
-
 const pathStyle: React.CSSProperties = {
   display: "block",
   fontSize: 11.5,
@@ -284,7 +257,6 @@ const pathStyle: React.CSSProperties = {
   wordBreak: "break-all",
   color: dark.textMuted,
 };
-
 const errStyle: React.CSSProperties = {
   marginTop: 12,
   fontSize: 12.5,

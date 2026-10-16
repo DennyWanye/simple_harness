@@ -19,24 +19,15 @@
  *      可被测试单独 import；React 组件本身只是把它们映射成 JSX。
  */
 import { useSessionsStore } from "../stores/sessionsStore";
+import { buildAutoResumeBannerText, shouldShowAutoResumeBanner } from "./autoResumeBannerText";
 
 const DEFAULT_MAX_ATTEMPTS = 2;
-
-export function buildAutoResumeBannerText(attempts: number, max: number): string {
-  return `🔄 agent 自愈中... (尝试 ${attempts}/${max})`;
-}
-
-export function shouldShowAutoResumeBanner(attempts: number, inflight: boolean): boolean {
-  return attempts > 0 && inflight;
-}
-
 interface AutoResumeBannerProps {
   /** Optional: pin to a specific session (e.g. tile view). Defaults to active_sid. */
   sessionId?: string;
   /** Display max for "N/M" — defaults to backend cap (2). */
   maxAttempts?: number;
 }
-
 export function AutoResumeBanner({
   sessionId,
   maxAttempts = DEFAULT_MAX_ATTEMPTS,

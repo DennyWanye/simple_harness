@@ -3,7 +3,8 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { SettingsProviders, type Provider } from "./SettingsProviders";
+import { SettingsProviders } from "./SettingsProviders";
+import { type Provider } from "./providersStore";
 import type { ControlMessage, IncomingMessage } from "../types/messages";
 import type { ControlChannel, ConnectionState } from "../ws/ControlChannel";
 

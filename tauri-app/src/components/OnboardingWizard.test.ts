@@ -12,7 +12,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-import { nextStepAllowed, stepsForEdition } from "./OnboardingWizard";
+import { nextStepAllowed, stepsForEdition } from "./onboardingSteps";
 
 // --- mock Tauri invoke -------------------------------------------------
 const invokeMock = vi.fn();

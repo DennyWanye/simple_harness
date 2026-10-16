@@ -22,7 +22,7 @@
  * itself (App.tsx tool_use_event / chat_v2_error handlers), not fragile
  * heuristics — keep them in sync if those emit sites change.
  */
-import { splitThinkBlocks } from "./code-panel/MessageBubble";
+import { splitThinkBlocks } from "./code-panel/messageSplit";
 
 /** A line this app emitted as a non-conversational trace, not pet-visible. */
 export function isTraceLine(text: string): boolean {

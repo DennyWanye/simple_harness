@@ -42,7 +42,8 @@ import type {
 // Shared control WS dispatches subagent_progress into subagentStore.
 import { SubagentProgressPanel } from "../code-panel/SubagentProgressPanel";
 import { PPTOutlineCard } from "../code-panel/PPTOutlineCard";
-import { ArtifactCard, extractArtifactsFromResult } from "../code-panel/ArtifactCard";
+import { ArtifactCard } from "../code-panel/ArtifactCard";
+import { extractArtifactsFromResult } from "../code-panel/artifactExtract";
 import { ToolCallCard, ToolResultCard } from "../code-panel/MessageBubble";
 import { CopyMessageButton } from "./CopyMessageButton";
 import { MarkdownMessage } from "./MarkdownMessage";
@@ -115,7 +116,7 @@ const LEGACY_SYNTHETIC_TOOL_PROGRESS = [
   /^\S+\s+未成功，正在检查原因并调整后续步骤。$/,
 ];
 
-export function isLegacySyntheticToolProgress(text: string): boolean {
+function isLegacySyntheticToolProgress(text: string): boolean {
   const normalized = text.trim();
   return LEGACY_SYNTHETIC_TOOL_PROGRESS.some((pattern) => pattern.test(normalized));
 }

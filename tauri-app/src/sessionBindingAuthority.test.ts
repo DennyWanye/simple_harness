@@ -6,7 +6,7 @@ import {
   buildReorderMessage,
   buildToggleEnabledMessage,
   type Provider,
-} from "./components/SettingsProviders";
+} from "./components/providersStore";
 
 const provider: Provider = {
   id: "relay",

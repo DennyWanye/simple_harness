@@ -14,7 +14,6 @@
  */
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
-
 import { Icon } from "./Icon";
 import { ModelContextCard } from "./ModelContextCard";
 import { useConfirm } from "./useConfirm";
@@ -22,8 +21,26 @@ import { SettingsProviders } from "./SettingsProviders";
 import { formatUpdaterError } from "./updaterError";
 import { dark, titleText, transition } from "../theme/components";
 import { tokens } from "../theme/tokens";
-import type { ControlMessage, DailyBudgetStatus, IncomingMessage } from "../types/messages";
+import type { ControlMessage, IncomingMessage } from "../types/messages";
 import type { ControlChannel } from "../ws/ControlChannel";
+import {
+  clampChatTurnTimeoutMinutes,
+  buildChatTurnTimeoutGetMessage,
+  buildChatTurnTimeoutSetMessage,
+  buildAutoModeGetMessage,
+  buildAutoModeSetMessage,
+  readAutoModePolicy,
+  withNextLaunchDataDirPreference,
+  isDataDirPreferenceNoop,
+  buildStorageUsageMessage,
+  formatGb,
+  formatMonth,
+  formatTokens,
+  CHAT_TURN_TIMEOUT_MAX_MINUTES,
+  CHAT_TURN_TIMEOUT_MIN_MINUTES,
+  formatMb,
+} from "./settingsMessages";
+import type { AuthorizationPolicyView, DataDirSetting } from "./settingsMessages";
 
 interface SettingsPanelProps {
   open: boolean;
@@ -50,63 +67,6 @@ interface SettingsPanelProps {
     toggle: () => void;
   };
 }
-
-export const CHAT_TURN_TIMEOUT_DEFAULT_MINUTES = 15;
-export const CHAT_TURN_TIMEOUT_MIN_MINUTES = 1;
-export const CHAT_TURN_TIMEOUT_MAX_MINUTES = 60;
-
-export function clampChatTurnTimeoutMinutes(minutes: number): number {
-  if (!Number.isFinite(minutes)) return CHAT_TURN_TIMEOUT_DEFAULT_MINUTES;
-  return Math.min(
-    CHAT_TURN_TIMEOUT_MAX_MINUTES,
-    Math.max(CHAT_TURN_TIMEOUT_MIN_MINUTES, Math.round(minutes)),
-  );
-}
-
-export function buildChatTurnTimeoutGetMessage(requestId: string) {
-  return {
-    type: "chat_turn_timeout_get",
-    request_id: requestId,
-    payload: {},
-  };
-}
-
-export function buildChatTurnTimeoutSetMessage(minutes: number, requestId?: string) {
-  return {
-    type: "chat_turn_timeout_set",
-    ...(requestId ? { request_id: requestId } : {}),
-    payload: { minutes: clampChatTurnTimeoutMinutes(minutes) },
-  };
-}
-
-/**
- * Send a `budget_status` request on the control channel and resolve with the
- * next `budget_status` reply (or reject after `timeoutMs`).
- *
- * P2-1-S8: replaced S3's hardcoded stub with the real control-WS roundtrip.
- * The DailyBudgetStatus contract (snake_case fields) is the cross-slice
- * import point locked in spec §1.3.
- */
-export async function fetchDailyBudget(
-  channel: ControlChannel,
-  timeoutMs = 3000,
-): Promise<DailyBudgetStatus> {
-  return new Promise<DailyBudgetStatus>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      unsub();
-      reject(new Error("budget_status timeout"));
-    }, timeoutMs);
-    const unsub = channel.onMessage((msg: IncomingMessage) => {
-      if (msg.type === "budget_status") {
-        clearTimeout(timer);
-        unsub();
-        resolve(msg.payload);
-      }
-    });
-    channel.send({ type: "budget_status" });
-  });
-}
-
 export function SettingsPanel({
   open,
   onClose,
@@ -235,7 +195,6 @@ export function SettingsPanel({
     </div>
   );
 }
-
 // ----------------------------------------------------------------------
 // 关于与更新 (2026-06-05) — 手动"检查更新"入口。
 //
@@ -249,7 +208,6 @@ export function SettingsPanel({
 // ----------------------------------------------------------------------
 
 type UpdatePhase = "idle" | "checking" | "latest" | "available" | "downloading" | "done" | "error";
-
 function UpdateSection() {
   const [version, setVersion] = useState<string>("");
   const [phase, setPhase] = useState<UpdatePhase>("idle");
@@ -398,62 +356,6 @@ function UpdateSection() {
     </section>
   );
 }
-
-// ----------------------------------------------------------------------
-// P4-S21 #13 — Auto mode toggle.
-//
-// MM-D4（2026-09-09）：复选框只渲染后端权威策略（workflow.db 的
-// CapabilityStore，见 backend/main.py `_authorization_policy_snapshot`）。
-// 快照到达前 `policy === null` = 加载中：复选框 disabled 且不勾选，任何
-// 点击都不会被解释成对某个默认值的翻转。localStorage 只写不读，仅为
-// CapabilityCenterPanel 的显示缓存保鲜——它不再参与本开关的初始状态。
-// Auto 只处理策略判定可自动放行的请求：deny、健康与平台闸门仍然生效。
-// ----------------------------------------------------------------------
-export interface AuthorizationPolicyView {
-  mode: "auto" | "manual";
-  generation: number;
-  provenance: string;
-}
-
-export function buildAutoModeGetMessage(requestId: string) {
-  return {
-    type: "permission_auto_mode_get",
-    request_id: requestId,
-    payload: {},
-  };
-}
-
-/** MM-D4：写入必须显式携带目标模式，而不是「翻转我以为的当前值」。 */
-export function buildAutoModeSetMessage(enabled: boolean, requestId: string) {
-  return {
-    type: "permission_auto_mode_set",
-    request_id: requestId,
-    payload: { enabled },
-  };
-}
-
-export function readAutoModePolicy(message: IncomingMessage): AuthorizationPolicyView | null {
-  if (message.type !== "permission_auto_mode_response") return null;
-  const payload = (message.payload ?? {}) as {
-    enabled?: unknown;
-    mode?: unknown;
-    generation?: unknown;
-    provenance?: unknown;
-  };
-  const mode: "auto" | "manual" =
-    payload.mode === "auto" || payload.mode === "manual"
-      ? payload.mode
-      : payload.enabled
-        ? "auto"
-        : "manual";
-  const generation = Number(payload.generation);
-  return {
-    mode,
-    generation: Number.isFinite(generation) && generation >= 0 ? generation : 0,
-    provenance: typeof payload.provenance === "string" ? payload.provenance : "unknown",
-  };
-}
-
 export function AutoModeToggle({ getChannel }: { getChannel: () => ControlChannel | null }) {
   // null = 尚未拿到权威快照（加载中）。绝不用默认值占位。
   const [policy, setPolicy] = useState<AuthorizationPolicyView | null>(null);
@@ -605,7 +507,6 @@ export function AutoModeToggle({ getChannel }: { getChannel: () => ControlChanne
     </div>
   );
 }
-
 // ----------------------------------------------------------------------
 // Agent active-execution budget setting.
 //
@@ -749,7 +650,6 @@ export function ChatTurnTimeoutSetting({
     </div>
   );
 }
-
 // ----------------------------------------------------------------------
 // P3-S9 — Danger Zone: 完全卸载（清除用户数据）.
 //
@@ -844,51 +744,6 @@ function DangerZoneSection() {
     </section>
   );
 }
-
-// ----------------------------------------------------------------------
-// 2026-05-21 — 数据目录设置.
-//
-// Lets the user relocate %AppData%\deskpet to a roomier drive
-// without leaving the app. Persistence uses a small bootstrap preference
-// outside the movable data root; explicit launcher env vars remain
-// higher-priority and are surfaced as externally pinned.
-//
-// Why a separate section vs. nesting under DangerZone: the relocate
-// flow is reversible (you can always set the var back) so it doesn't
-// belong with the truly destructive purge action. We do keep a
-// soft confirmation before kicking off the file copy though, because
-// "I clicked the wrong button and now my chat history moved" is a
-// crap user experience even if it's not technically dangerous.
-// ----------------------------------------------------------------------
-export interface DataDirSetting {
-  effective: string;
-  default: string | null;
-  env_override: string | null;
-  preference: string | null;
-  externally_pinned: boolean;
-  effective_exists: boolean;
-  effective_size_bytes: number;
-}
-
-/**
- * Saving the bootstrap preference does not relocate the running backend.
- * Keep the current-process facts stable until the application restarts and
- * only surface the newly persisted next-launch preference.
- */
-export function withNextLaunchDataDirPreference(
-  current: DataDirSetting,
-  updated: DataDirSetting,
-): DataDirSetting {
-  return {
-    ...current,
-    preference: updated.preference,
-  };
-}
-
-export function isDataDirPreferenceNoop(current: DataDirSetting, target: string): boolean {
-  return current.effective === target && current.preference === target;
-}
-
 // ---------------------------------------------------------------------------
 // 任务与会话数据（2026-09-25 主流程优化条目 7）
 //
@@ -905,20 +760,6 @@ export interface StorageUsageData {
   measured: boolean;
   breakdown: { key: string; label: string; bytes: number }[];
 }
-
-export function buildStorageUsageMessage(requestId: string, refresh = false) {
-  return {
-    type: "orchestration_storage_get",
-    request_id: requestId,
-    payload: refresh ? { refresh: true } : {},
-  };
-}
-
-export function formatGb(bytes: number): string {
-  if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
-  return formatMb(bytes);
-}
-
 export function StorageUsageSection({ getChannel }: { getChannel: () => ControlChannel | null }) {
   const [data, setData] = useState<StorageUsageData | null>(null);
   const [busy, setBusy] = useState(false);
@@ -1042,7 +883,6 @@ export function StorageUsageSection({ getChannel }: { getChannel: () => ControlC
     </section>
   );
 }
-
 // ---------------------------------------------------------------------------
 // 本月全局预算（第 2 批 H11 / 车道 P，2026-10-06；原计划 §18.2 Global Budget）：这台机器所有任务
 // 每个自然月合计的 token 上限（月配额）。只读说明：数值在 config.toml 的 [orchestration]
@@ -1056,22 +896,6 @@ export type GlobalBudgetData = {
   reserved_tokens: number;
   remaining_tokens: number;
 };
-
-/** "2026-10" → "2026 年 10 月"；认不出的原样返回。 */
-export function formatMonth(month: string): string {
-  const m = /^(\d{4})-(\d{2})$/.exec(month);
-  return m ? `${m[1]} 年 ${Number(m[2])} 月` : month;
-}
-
-/** token 数按中文习惯：≥1 亿写"亿"，≥1 万写"万"，最多两位小数，整数不带小数。 */
-export function formatTokens(value: number): string {
-  const fixed = (n: number) =>
-    Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/\.?0+$/, "");
-  if (value >= 100_000_000) return `${fixed(Math.round(value / 1_000_000) / 100)} 亿`;
-  if (value >= 10_000) return `${fixed(Math.round(value / 100) / 100)} 万`;
-  return String(value);
-}
-
 export function GlobalBudgetSection({ getChannel }: { getChannel: () => ControlChannel | null }) {
   const [data, setData] = useState<GlobalBudgetData | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -1140,7 +964,6 @@ export function GlobalBudgetSection({ getChannel }: { getChannel: () => ControlC
     </section>
   );
 }
-
 // ---------------------------------------------------------------------------
 // 任务发布目录（NEXT-TG-1.0 §9）：带"发布"要求的任务只能把验收过的文件发布到这里。
 // 后台校验目录存在、能硬链接、不与应用自己的数据目录重叠；保存后编排服务会重启一次
@@ -1152,14 +975,12 @@ export type PublishDirData = {
   publish: { enabled?: boolean; root?: string; reason?: string };
   active_missions: number;
 };
-
 // eslint-disable-next-line react-refresh/only-export-components -- message builder shared with its test
 export function buildPublishDirMessage(requestId: string, path?: string) {
   return path === undefined
     ? { type: "orchestration_publish_dir_get", request_id: requestId, payload: {} }
     : { type: "orchestration_publish_dir_set", request_id: requestId, payload: { path } };
 }
-
 export function PublishDirSection({ getChannel }: { getChannel: () => ControlChannel | null }) {
   const [confirmDialog, ask] = useConfirm();
   const [data, setData] = useState<PublishDirData | null>(null);
@@ -1336,7 +1157,6 @@ export function PublishDirSection({ getChannel }: { getChannel: () => ControlCha
     </section>
   );
 }
-
 // ================ 任务技能目录 (NEXT-TG-1.0 §11) ================
 // 所有任务执行档位共用一个技能目录：在这里安装一次，各档位看到同一版本；暂停/退役一次，
 // 各档位下一次使用就生效。准入要先经过评估：「开始评估」建一个试用任务，由执行者真实调用
@@ -1364,7 +1184,6 @@ export type SkillCatalogueData = {
   members: string[];
   skills: SkillCatalogueRow[];
 };
-
 const SKILL_STATE: Record<string, string> = {
   QUARANTINED: "待评估",
   TRIAL: "评估中",
@@ -1372,13 +1191,11 @@ const SKILL_STATE: Record<string, string> = {
   SUSPENDED: "已暂停",
   RETIRED: "已退役",
 };
-
 // eslint-disable-next-line react-refresh/only-export-components -- shared with its test
 export function poolLabel(profileId: string): string {
   const m = /-(\d+)k-(thinking-)?v\d+$/.exec(profileId);
   return m ? `${m[1]}K${m[2] ? " 思考" : ""}` : profileId;
 }
-
 // eslint-disable-next-line react-refresh/only-export-components -- shared with its test
 export function poolStatus(view: SkillPoolView): string {
   if (view.usable) return "可用";
@@ -1386,7 +1203,6 @@ export function poolStatus(view: SkillPoolView): string {
   if (view.reasons.includes("NOT_MIRRORED")) return "不可用（尚未同步）";
   return `不可用（${SKILL_STATE[view.state ?? ""] ?? "未知状态"}）`;
 }
-
 // eslint-disable-next-line react-refresh/only-export-components -- shared with its test
 export function evaluationStatus(
   state: string | null,
@@ -1403,7 +1219,6 @@ export function evaluationStatus(
     return { text: "评估未通过（试用任务已取消）", action: "evaluate" };
   return { text: "评估中（试用任务在任务编排页运行）", action: null };
 }
-
 type SkillReply = { ok?: boolean; request_id?: unknown; data?: unknown; error?: string };
 const SKILL_DONE: Record<string, string> = {
   orchestration_skill_install_file_response: "已安装，各档位同步为同一版本（需评估准入后才能使用）",
@@ -1411,7 +1226,6 @@ const SKILL_DONE: Record<string, string> = {
     "已开始评估：试用任务会在任务编排页运行，审阅通过后回到这里点「准入」",
   orchestration_skill_admit_response: "已准入，各档位下一次使用即生效",
 };
-
 export function SkillCatalogueSection({ getChannel }: { getChannel: () => ControlChannel | null }) {
   const [confirmDialog, ask] = useConfirm();
   const [data, setData] = useState<SkillCatalogueData | null>(null);
@@ -1667,13 +1481,6 @@ export function SkillCatalogueSection({ getChannel }: { getChannel: () => Contro
     </section>
   );
 }
-
-function formatMb(bytes: number): string {
-  const mb = bytes / (1024 * 1024);
-  if (mb >= 1024) return `${(mb / 1024).toFixed(2)} GB`;
-  return `${mb.toFixed(1)} MB`;
-}
-
 function DataDirSection() {
   const [confirmDialog, ask] = useConfirm();
   const [setting, setSetting] = useState<DataDirSetting | null>(null);
@@ -1980,7 +1787,6 @@ function DataDirSection() {
     </section>
   );
 }
-
 // ---- inline styles (kept local so the panel has no CSS imports to wire) ----
 
 const overlayStyle: React.CSSProperties = {
@@ -1993,7 +1799,6 @@ const overlayStyle: React.CSSProperties = {
   zIndex: 1000,
   animation: `bp-fade-in ${tokens.duration.base}ms ${tokens.easing.out}`,
 };
-
 const panelStyle: React.CSSProperties = {
   background: dark.panel,
   padding: `0 ${tokens.space.xl}px ${tokens.space.xl}px`,
@@ -2009,7 +1814,6 @@ const panelStyle: React.CSSProperties = {
   fontFamily: tokens.font.ui,
   animation: `bp-pop-in ${tokens.duration.base}ms ${tokens.easing.out}`,
 };
-
 // T11 page variant：填满工作台内容区（无模态圆角/边框/阴影/弹入动画），
 // 自身滚动；宽度上限交给内容区布局。
 const pagePanelStyle: React.CSSProperties = {
@@ -2023,7 +1827,6 @@ const pagePanelStyle: React.CSSProperties = {
   color: dark.text,
   fontFamily: tokens.font.ui,
 };
-
 const headerStyle: React.CSSProperties = {
   display: "flex",
   justifyContent: "space-between",
@@ -2036,7 +1839,6 @@ const headerStyle: React.CSSProperties = {
   background: dark.panel,
   borderBottom: `1px solid ${dark.hairline}`,
 };
-
 const closeBtnStyle: React.CSSProperties = {
   display: "inline-flex",
   alignItems: "center",
@@ -2050,7 +1852,6 @@ const closeBtnStyle: React.CSSProperties = {
   color: dark.textMuted,
   transition,
 };
-
 const sectionStyle: React.CSSProperties = {
   borderTop: `1px solid ${dark.hairline}`,
   paddingTop: tokens.space.xl,
@@ -2059,7 +1860,6 @@ const sectionStyle: React.CSSProperties = {
   gap: tokens.space.md,
   maxWidth: 760,
 };
-
 const h3Style: React.CSSProperties = {
   margin: 0,
   fontSize: tokens.text.md.size,
@@ -2067,13 +1867,11 @@ const h3Style: React.CSSProperties = {
   fontWeight: tokens.weight.semibold,
   letterSpacing: tokens.tracking.tight,
 };
-
 const btnRowStyle: React.CSSProperties = {
   display: "flex",
   gap: 8,
   flexWrap: "wrap",
 };
-
 const btnStyle: React.CSSProperties = {
   height: tokens.controlHeight,
   padding: `0 ${tokens.space.lg}px`,
@@ -2088,7 +1886,6 @@ const btnStyle: React.CSSProperties = {
   transition,
   boxSizing: "border-box",
 };
-
 /** 每屏只有一个主按钮用实心强调色。 */
 const primaryBtnStyle: React.CSSProperties = {
   ...btnStyle,
@@ -2097,7 +1894,6 @@ const primaryBtnStyle: React.CSSProperties = {
   color: dark.onAccent,
   fontWeight: tokens.weight.semibold,
 };
-
 const statusStyle: React.CSSProperties = {
   fontSize: tokens.text.sm.size,
   padding: `${tokens.space.sm}px ${tokens.space.md}px`,
@@ -2106,7 +1902,6 @@ const statusStyle: React.CSSProperties = {
   borderRadius: tokens.radius.md,
   lineHeight: tokens.text.sm.lh,
 };
-
 const hintStyle: React.CSSProperties = {
   fontSize: tokens.text.sm.size,
   color: dark.textMuted,

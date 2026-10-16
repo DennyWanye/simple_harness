@@ -4,7 +4,7 @@ import {
   type DataDirSetting,
   isDataDirPreferenceNoop,
   withNextLaunchDataDirPreference,
-} from "./SettingsPanel";
+} from "./settingsMessages";
 
 describe("data directory next-launch preference", () => {
   it("does not claim the saved directory is effective before restart", () => {

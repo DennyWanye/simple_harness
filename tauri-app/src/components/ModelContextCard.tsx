@@ -12,74 +12,17 @@ import type {
   ModelContextSetAck,
 } from "../types/messages";
 import { dark } from "../theme/components";
+import {
+  buildModelContextGetMessage,
+  buildContextCompactionGetMessage,
+  buildContextCompactionSetMessage,
+  buildModelContextSetMessage,
+  parseModelContextEdits,
+} from "./modelContextMessages";
 
 type Props = {
   getChannel: () => ControlChannel | null;
 };
-
-// ---------------------------------------------------------------------------
-// Pure ws message builders + edit→fields 解析。导出供 vitest（node env，不
-// mount React，同 SettingsProviders.test.tsx 约定）单测线格式。
-// ---------------------------------------------------------------------------
-
-export function buildModelContextGetMessage(model: string) {
-  return { type: "model_context_get" as const, payload: { model } };
-}
-
-export function buildContextCompactionGetMessage() {
-  return { type: "context_compaction_get" as const, payload: {} };
-}
-
-export function buildContextCompactionSetMessage(model: string) {
-  return { type: "context_compaction_set" as const, payload: { model } };
-}
-
-export function buildModelContextSetMessage(
-  scope: "global" | "project",
-  model: string,
-  fields: Partial<{
-    context_window: number;
-    effective_pct: number;
-    compact_at_pct: number;
-    recall_sweet_tokens: number;
-  }>,
-  projectRoot?: string,
-) {
-  return {
-    type: "model_context_set" as const,
-    payload: {
-      scope,
-      model,
-      fields,
-      ...(projectRoot ? { project_root: projectRoot } : {}),
-    },
-  };
-}
-
-/** 把受控输入字符串解析成合法的 fields（白名单 + 范围校验）。
- *  返回 null 表示无有效改动（UI 据此提示，不发 ws）。
- *
- *  2026-06-13 用户需求改造: context_window 在本卡改【只读展示】(模型
- *  属性,自由手输危险;档位选择在「模型与参数」modal),卡片只允许调
- *  「压缩触发阈值」compact_at_pct,范围收紧 0.50–0.95(低于 0.5 疯狂
- *  压缩,高于 0.95 撞 budget block)。windowEdit 参数保留签名兼容
- *  (空串=忽略)。 */
-export function parseModelContextEdits(
-  windowEdit: string,
-  compactEdit: string,
-): { context_window?: number; compact_at_pct?: number } | null {
-  const fields: { context_window?: number; compact_at_pct?: number } = {};
-  const w = Number(windowEdit);
-  const c = Number(compactEdit);
-  if (windowEdit.trim() !== "" && Number.isFinite(w) && w > 0) {
-    fields.context_window = Math.round(w);
-  }
-  if (Number.isFinite(c) && c >= 0.5 && c <= 0.95) {
-    fields.compact_at_pct = c;
-  }
-  return Object.keys(fields).length === 0 ? null : fields;
-}
-
 // ModelContextCard — Phase 1.1.6（context-1m-rearch）：SettingsPanel 内嵌
 // 「模型上下文」卡片。后端 p4_ipc handler:
 //   model_context_get → 当前 model 三层 resolve 结果 + builtin 全表
@@ -101,7 +44,6 @@ type State =
       models: string[];
     }
   | { kind: "error"; reason: string };
-
 export function ModelContextCard({ getChannel }: Props) {
   const [state, setState] = useState<State>({ kind: "loading" });
   const [model, setModel] = useState("");
@@ -411,7 +353,6 @@ export function ModelContextCard({ getChannel }: Props) {
     </div>
   );
 }
-
 // token 数 → K/M 单位短串（32000→"32K"、320000→"320K"、25600→"25.6K"、
 // 1000000→"1M"）。整数不带小数,非整数留 1 位。
 function fmtTokens(n: number): string {
@@ -422,7 +363,6 @@ function fmtTokens(n: number): string {
   const k = n / 1000;
   return (Number.isInteger(k) ? String(k) : k.toFixed(1)) + "K";
 }
-
 function SourceBadge({ source }: { source: string }) {
   const color =
     source === "project" ? dark.success : source === "global" ? dark.warning : dark.textFaint;
@@ -444,7 +384,6 @@ function SourceBadge({ source }: { source: string }) {
     </span>
   );
 }
-
 const inputStyle: React.CSSProperties = {
   background: dark.card,
   color: dark.text,

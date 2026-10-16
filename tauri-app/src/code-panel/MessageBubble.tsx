@@ -12,9 +12,17 @@
  */
 import { useMemo, useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import type { Message } from "../stores/sessionsStore";
+import { useSessionsStore } from "../stores/sessionsStore";
+import { CopyMessageButton } from "../components/CopyMessageButton";
+import { MarkdownMessage } from "../components/MarkdownMessage";
+import { ArtifactCard } from "./ArtifactCard";
+import { extractArtifactsFromResult } from "./artifactExtract";
+import { controlWS } from "./controlWs";
+import { PPTOutlineCard } from "./PPTOutlineCard";
+import { splitThinkBlocks, splitToolError } from "./messageSplit";
 
 const LOCAL_FILE_EXTENSIONS = /\.(pptx?|pptm|xlsx?|docx?|pdf|png|jpe?g|gif|md|txt|csv)$/i;
-
 const isLocalFileLink = (href?: string) => {
   if (!href) return false;
   if (/^https?:\/\//i.test(href)) return false;
@@ -28,7 +36,6 @@ const isLocalFileLink = (href?: string) => {
     LOCAL_FILE_EXTENSIONS.test(hrefWithoutQuery)
   );
 };
-
 const localFilePathFromHref = (href: string) => {
   const withoutScheme = href.replace(/^file:\/\//i, "");
   const withoutLeadingWindowsSlash = withoutScheme.replace(/^\/([a-zA-Z]:[\\/])/, "$1");
@@ -39,19 +46,16 @@ const localFilePathFromHref = (href: string) => {
     return withoutLeadingWindowsSlash;
   }
 };
-
 const openLocalFileLink = (href: string) => {
   invoke("artifact_open", { path: localFilePathFromHref(href) }).catch((error) => {
     console.warn("Failed to open local markdown link", error);
   });
 };
-
 declare global {
   interface Window {
     __deskpetLocalMarkdownLinkHandlerInstalled?: boolean;
   }
 }
-
 if (typeof window !== "undefined" && !window.__deskpetLocalMarkdownLinkHandlerInstalled) {
   window.__deskpetLocalMarkdownLinkHandlerInstalled = true;
 
@@ -76,19 +80,9 @@ if (typeof window !== "undefined" && !window.__deskpetLocalMarkdownLinkHandlerIn
     anchor.title = "用系统默认程序打开";
   });
 }
-
-import type { Message } from "../stores/sessionsStore";
-import { useSessionsStore } from "../stores/sessionsStore";
-import { CopyMessageButton } from "../components/CopyMessageButton";
-import { MarkdownMessage } from "../components/MarkdownMessage";
-import { ArtifactCard, extractArtifactsFromResult } from "./ArtifactCard";
-import { controlWS } from "./controlWs";
-import { PPTOutlineCard } from "./PPTOutlineCard";
-
 interface Props {
   msg: Message;
 }
-
 export function MessageBubble({ msg }: Props) {
   switch (msg.role) {
     case "user":
@@ -172,7 +166,6 @@ export function MessageBubble({ msg }: Props) {
       return null;
   }
 }
-
 function findMessageSession(outlineId: string) {
   const sessions = useSessionsStore.getState().sessions;
   for (const [sid, session] of Object.entries(sessions)) {
@@ -182,7 +175,6 @@ function findMessageSession(outlineId: string) {
   }
   return undefined;
 }
-
 function UserBubble({ text }: { text: string }) {
   return (
     <div
@@ -215,50 +207,6 @@ function UserBubble({ text }: { text: string }) {
     </div>
   );
 }
-
-// P5-S2: split a content string on `<think>...</think>` boundaries.
-// Handles both well-formed (closed) and unclosed (streaming or
-// premature-end_turn) think tags. Returns a flat list of segments
-// in original order; consumer renders normal segments through markdown
-// and think segments as collapsed reasoning bubbles.
-//
-// Examples:
-//   "hi <think>foo</think> bye"
-//     → [{kind:"normal","hi "},{kind:"think","foo",closed:true},{kind:"normal"," bye"}]
-//   "<think>still going..."
-//     → [{kind:"think","still going...",closed:false}]
-//   "plain text"
-//     → [{kind:"normal","plain text"}]
-type ThinkSegment =
-  | { kind: "normal"; text: string }
-  | { kind: "think"; text: string; closed: boolean };
-
-export function splitThinkBlocks(text: string): ThinkSegment[] {
-  if (!text) return [];
-  const out: ThinkSegment[] = [];
-  let i = 0;
-  while (i < text.length) {
-    const open = text.indexOf("<think>", i);
-    if (open === -1) {
-      const tail = text.slice(i);
-      if (tail) out.push({ kind: "normal", text: tail });
-      break;
-    }
-    if (open > i) {
-      out.push({ kind: "normal", text: text.slice(i, open) });
-    }
-    const close = text.indexOf("</think>", open + 7);
-    if (close === -1) {
-      // Unclosed — everything after <think> is a still-streaming reasoning block.
-      out.push({ kind: "think", text: text.slice(open + 7), closed: false });
-      break;
-    }
-    out.push({ kind: "think", text: text.slice(open + 7, close), closed: true });
-    i = close + "</think>".length;
-  }
-  return out;
-}
-
 function AssistantBubbleWithThink({ text, streaming }: { text: string; streaming: boolean }) {
   const segments = splitThinkBlocks(text);
   const hasNormal = segments.some((s) => s.kind === "normal" && s.text.trim());
@@ -288,7 +236,6 @@ function AssistantBubbleWithThink({ text, streaming }: { text: string; streaming
     </>
   );
 }
-
 function AssistantBubble({ text }: { text: string }) {
   return (
     <div
@@ -321,7 +268,6 @@ function AssistantBubble({ text }: { text: string }) {
     </div>
   );
 }
-
 export function ToolCallCard({ name, args }: { name: string; args: Record<string, unknown> }) {
   const [open, setOpen] = useState(false);
   const arg_summary = Object.entries(args)
@@ -351,66 +297,6 @@ export function ToolCallCard({ name, args }: { name: string; args: Record<string
     </ToolCard>
   );
 }
-
-// P5-S2 Phase 5.1: 把后端 os_tools 错误返回值（统一 schema）拆成
-//   { body, hint, examples }
-// 让 ToolResultCard 可以对 hint 做高亮渲染。后端 schema:
-//   { ok: false, error: "...", hint: "...", examples: [...] }
-// 没有 hint 字段或不是 JSON 时退化为 { body: 原文, hint: null, examples: null }。
-//
-// 这里挂在 export 是为了 splitToolError.test.ts 能直接 import 测纯函数。
-export interface SplitToolErrorResult {
-  body: string;
-  hint: string | null;
-  examples: unknown[] | null;
-}
-
-export function splitToolError(raw: string): SplitToolErrorResult {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return { body: raw, hint: null, examples: null };
-  }
-  if (!parsed || typeof parsed !== "object") {
-    return { body: JSON.stringify(parsed, null, 2), hint: null, examples: null };
-  }
-  const obj = parsed as Record<string, unknown>;
-  // hint 必须是非空 string；空白也算空
-  let hint: string | null = null;
-  if (typeof obj.hint === "string" && obj.hint.trim().length > 0) {
-    hint = obj.hint;
-  }
-  let examples: unknown[] | null = null;
-  if (Array.isArray(obj.examples)) {
-    examples = obj.examples;
-  }
-  // last-mile envelope 包装后，工具自身的 {ok:false, hint, examples} 被套进
-  // envelope.result（JSON 字符串）→ 顶层取不到 hint，金黄修复建议卡不触发。
-  // 兜底：当顶层无 hint 时，解包 envelope.result 再取 hint/examples（与
-  // ArtifactCard.extractArtifactsFromResult 的嵌套兜底同一模式）。
-  if (hint === null && typeof obj.result === "string") {
-    try {
-      const inner = JSON.parse(obj.result) as Record<string, unknown>;
-      if (inner && typeof inner === "object") {
-        if (typeof inner.hint === "string" && inner.hint.trim().length > 0) {
-          hint = inner.hint;
-        }
-        if (examples === null && Array.isArray(inner.examples)) {
-          examples = inner.examples;
-        }
-      }
-    } catch {
-      /* envelope.result 不是 JSON → 忽略，保持 hint=null */
-    }
-  }
-  return {
-    body: JSON.stringify(parsed, null, 2),
-    hint,
-    examples,
-  };
-}
-
 export function ToolResultCard({
   name,
   ok,
@@ -505,7 +391,6 @@ export function ToolResultCard({
     </ToolCard>
   );
 }
-
 const ACTION_CATEGORY_LABELS: Record<string, string> = {
   filesystem_read: "读取文件",
   filesystem_write: "写入文件",
@@ -516,7 +401,6 @@ const ACTION_CATEGORY_LABELS: Record<string, string> = {
   desktop: "桌面操作",
   capability_manage: "安装/管理能力",
 };
-
 export function PlanCard({
   rationale,
   steps,
@@ -679,7 +563,6 @@ export function PlanCard({
     </div>
   );
 }
-
 function ReasoningBubble({ text }: { text: string }) {
   return (
     <div
@@ -712,7 +595,6 @@ function ReasoningBubble({ text }: { text: string }) {
     </div>
   );
 }
-
 function SlashResultBubble({ text }: { text: string }) {
   return (
     <div
@@ -746,7 +628,6 @@ function SlashResultBubble({ text }: { text: string }) {
     </div>
   );
 }
-
 function ErrorBanner({ text }: { text: string }) {
   return (
     <div style={{ margin: "8px 0" }}>
@@ -767,7 +648,6 @@ function ErrorBanner({ text }: { text: string }) {
     </div>
   );
 }
-
 // ---- shared tool-card chrome ------------------------------------------
 
 function ToolCard({
@@ -818,7 +698,6 @@ function ToolCard({
     </div>
   );
 }
-
 const preStyle: React.CSSProperties = {
   margin: 0,
   padding: "8px 12px",

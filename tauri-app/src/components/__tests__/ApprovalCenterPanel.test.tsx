@@ -24,7 +24,7 @@ import {
   removeResolved,
   pendingFromRequest,
   type ApprovalDecision,
-} from "../ApprovalCenterPanel";
+} from "../approvalMessages";
 import type { PendingPermissionItem } from "../../types/messages";
 
 function mkPending(

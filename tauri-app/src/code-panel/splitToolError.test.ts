@@ -15,7 +15,7 @@
  */
 import { describe, it, expect } from "vitest";
 
-import { splitToolError } from "./MessageBubble";
+import { splitToolError } from "./messageSplit";
 
 describe("splitToolError", () => {
   it("plain text result → no hint", () => {

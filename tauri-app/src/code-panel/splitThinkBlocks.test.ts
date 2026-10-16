@@ -11,7 +11,7 @@
  */
 import { describe, it, expect } from "vitest";
 
-import { splitThinkBlocks } from "./MessageBubble";
+import { splitThinkBlocks } from "./messageSplit";
 
 describe("splitThinkBlocks", () => {
   it("returns single normal segment for plain text", () => {

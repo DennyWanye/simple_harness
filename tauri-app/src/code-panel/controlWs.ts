@@ -28,7 +28,7 @@ import { useSubagentStore } from "./subagentStore";
 import { useProvidersStore } from "./providersStore";
 import { useSessionModelsStore } from "./sessionModelsStore";
 // P5-S2 Phase 4 — settings panel provider mutation events
-import { dispatchProviderEvent } from "../components/SettingsProviders";
+import { dispatchProviderEvent } from "../components/providersStore";
 import type { CompanionEvent } from "../types/messages";
 
 const RECONNECT_BASE_MS = 1000;

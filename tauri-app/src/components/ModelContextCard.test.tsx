@@ -20,7 +20,7 @@ import {
   buildModelContextGetMessage,
   buildModelContextSetMessage,
   parseModelContextEdits,
-} from "./ModelContextCard";
+} from "./modelContextMessages";
 
 describe("Context OS compaction model messages", () => {
   it("gets the default/current compaction setting", () => {

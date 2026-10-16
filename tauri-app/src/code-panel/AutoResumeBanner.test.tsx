@@ -16,7 +16,7 @@
  */
 import { describe, it, expect, beforeEach } from "vitest";
 
-import { buildAutoResumeBannerText, shouldShowAutoResumeBanner } from "./AutoResumeBanner";
+import { buildAutoResumeBannerText, shouldShowAutoResumeBanner } from "./autoResumeBannerText";
 import { __test_dispatch } from "./controlWs";
 import { useSessionsStore } from "../stores/sessionsStore";
 

@@ -12,7 +12,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-import { isFeedbackNoteValid, MIN_NOTE_CHARS } from "./FeedbackPanel";
+import { isFeedbackNoteValid, MIN_NOTE_CHARS } from "./feedbackValidation";
 
 const invokeMock = vi.fn();
 vi.mock("@tauri-apps/api/core", () => ({

@@ -4,7 +4,8 @@
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { GlobalBudgetSection, formatMonth, formatTokens } from "./SettingsPanel";
+import { GlobalBudgetSection } from "./SettingsPanel";
+import { formatMonth, formatTokens } from "./settingsMessages";
 import type { ControlMessage, IncomingMessage } from "../types/messages";
 import type { ControlChannel, ConnectionState } from "../ws/ControlChannel";
 

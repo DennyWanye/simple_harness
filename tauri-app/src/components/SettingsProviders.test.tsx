@@ -27,7 +27,7 @@ import {
   useProvidersStore,
   __test_dispatch_provider_event,
   type Provider,
-} from "./SettingsProviders";
+} from "./providersStore";
 
 // ---------------------------------------------------------------------------
 // 4.2 test_renders_provider_list — sorting helper drives the render.

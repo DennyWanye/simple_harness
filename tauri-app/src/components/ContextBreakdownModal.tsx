@@ -22,7 +22,7 @@ import {
   contextDisplayState,
   newContextRequestId,
 } from "../context/contextAuthority";
-import { ringColor, ringPercent } from "./ContextRing";
+import { ringColor, ringPercent } from "./contextRingMath";
 
 interface BreakdownSection {
   kind: string;

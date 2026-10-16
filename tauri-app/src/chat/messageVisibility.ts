@@ -1,4 +1,4 @@
-import { extractArtifactsFromResult } from "../code-panel/ArtifactCard";
+import { extractArtifactsFromResult } from "../code-panel/artifactExtract";
 import type { Message } from "../stores/sessionsStore";
 import { MISSION_CARD_TOOLS } from "../views/chatMission";
 

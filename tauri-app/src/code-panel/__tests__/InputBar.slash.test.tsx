@@ -15,7 +15,8 @@ vi.mock("../controlWs", () => ({
   },
 }));
 
-import { InputBar, _testing } from "../InputBar";
+import { InputBar } from "../InputBar";
+import { _testing } from "../slashCommands";
 import { SlashDropdown, type SlashCommand } from "../SlashDropdown";
 import { ArgHintBar } from "../ArgHintBar";
 import { controlWS } from "../controlWs";

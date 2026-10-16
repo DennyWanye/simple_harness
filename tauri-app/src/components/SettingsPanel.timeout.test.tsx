@@ -3,11 +3,8 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import {
-  ChatTurnTimeoutSetting,
-  buildChatTurnTimeoutGetMessage,
-  buildChatTurnTimeoutSetMessage,
-} from "./SettingsPanel";
+import { ChatTurnTimeoutSetting } from "./SettingsPanel";
+import { buildChatTurnTimeoutGetMessage, buildChatTurnTimeoutSetMessage } from "./settingsMessages";
 import type { ControlMessage, IncomingMessage } from "../types/messages";
 import type { ControlChannel, ConnectionState } from "../ws/ControlChannel";
 

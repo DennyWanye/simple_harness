@@ -10,7 +10,8 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ArtifactCard, extractArtifactsFromResult, type ToolArtifact } from "./ArtifactCard";
+import { ArtifactCard } from "./ArtifactCard";
+import { extractArtifactsFromResult, type ToolArtifact } from "./artifactExtract";
 
 const invokeMock = vi.fn();
 

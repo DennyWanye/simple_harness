@@ -18,9 +18,9 @@
  * <ContextBreakdownModal>. Hovers show a 1-line summary.
  */
 import React, { useMemo } from "react";
-
 import type { ContextUsageSnapshot } from "../stores/sessionsStore";
 import { contextDisplayState } from "../context/contextAuthority";
+import { ringPercent, ringColor } from "./contextRingMath";
 
 export interface ContextRingProps {
   snapshot: ContextUsageSnapshot | null | undefined;
@@ -37,30 +37,13 @@ export interface ContextRingProps {
   /** Extra inline style for the wrapper. */
   style?: React.CSSProperties;
 }
-
 const RING_STROKE = 2.5;
-
-/** Pure helper — % filled of the *practical* window. Exposed for vitest. */
-export function ringPercent(snap: ContextUsageSnapshot | null | undefined): number {
-  if (!snap || contextDisplayState(snap) !== "measured") return 0;
-  return Math.max(0, Math.min(100, (snap.prompt_tokens / snap.effective_ceiling) * 100));
-}
-
-/** Pure helper — colour for a given fill %. Exposed for vitest. */
-export function ringColor(pct: number): string {
-  if (pct >= 95) return "#dc2626";
-  if (pct >= 80) return "#ea580c";
-  if (pct >= 50) return "#f59e0b";
-  return "#10b981";
-}
-
 function fmtTokens(n: number): string {
   if (n < 1000) return String(n);
   if (n < 10_000) return (n / 1000).toFixed(1) + "k";
   if (n < 1_000_000) return Math.round(n / 1000) + "k";
   return (n / 1_000_000).toFixed(1) + "M";
 }
-
 export function ContextRing({
   snapshot,
   size = 18,
