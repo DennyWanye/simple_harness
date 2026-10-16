@@ -106,19 +106,9 @@ class InstallMixin(CapabilityPackManagerCore):
         """
 
         await self.initialize()
-        operation = await self.store.get_operation(operation_id)
-        if operation is None or operation.kind != "skill_install_batch":
-            raise CapabilityManagerError("batch_operation_missing", operation_id)
-        expected_scope = "user" if project_scope_key.startswith("user:v2:") else "project"
-        if (
-            operation.requested_scope != expected_scope
-            or operation.requested_scope_key != project_scope_key
-        ):
-            raise CapabilityManagerError(
-                "batch_owner_scope_mismatch", "batch operation belongs to another owner scope"
-            )
-        if str(operation.request.get("member_set_stamp") or "") != committed_set_stamp:
-            raise CapabilityManagerError("batch_set_stamp_mismatch", "confirmed member set changed")
+        operation, expected_scope = await self._load_batch_operation_for_owner(
+            operation_id, project_scope_key, committed_set_stamp
+        )
         receipt_evidence = await self.store.get_phase_evidence(operation_id, "batch_committed")
         if operation.status == "succeeded" and receipt_evidence is not None:
             bindings: list[CapabilityBinding] = []
@@ -231,6 +221,24 @@ class InstallMixin(CapabilityPackManagerCore):
             receipt_hash,
             committed_set_stamp,
         )
+
+    async def _load_batch_operation_for_owner(
+        self, operation_id: str, project_scope_key: str, committed_set_stamp: str
+    ) -> tuple[CapabilityOperationRecord, str]:
+        operation = await self.store.get_operation(operation_id)
+        if operation is None or operation.kind != "skill_install_batch":
+            raise CapabilityManagerError("batch_operation_missing", operation_id)
+        expected_scope = "user" if project_scope_key.startswith("user:v2:") else "project"
+        if (
+            operation.requested_scope != expected_scope
+            or operation.requested_scope_key != project_scope_key
+        ):
+            raise CapabilityManagerError(
+                "batch_owner_scope_mismatch", "batch operation belongs to another owner scope"
+            )
+        if str(operation.request.get("member_set_stamp") or "") != committed_set_stamp:
+            raise CapabilityManagerError("batch_set_stamp_mismatch", "confirmed member set changed")
+        return operation, expected_scope
 
     async def _require_batch_versions_absent(self, validations: list[PackValidationResult]) -> None:
         for validation in validations:

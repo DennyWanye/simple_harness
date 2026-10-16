@@ -969,18 +969,7 @@ class StreamingToolMixin(OpenAICompatibleCore):
             # final_content. the relay seems to do this for some
             # thinking-mode models.
             state.msg = state.choices[0].get("message") or {}
-            if state.msg.get("content") and not state.full_content:
-                state.full_content = state.msg["content"]
-            if state.msg.get("reasoning_content") and not state.full_reasoning:
-                state.full_reasoning = state.msg["reasoning_content"]
-            if state.msg.get("tool_calls") and not state.tool_buffers:
-                for state.j, state.tc in enumerate(state.msg.get("tool_calls") or []):
-                    state.fn = state.tc.get("function") or {}
-                    state.tool_buffers[state.j] = {
-                        "id": state.tc.get("id", "") or "",
-                        "name": state.fn.get("name", "") or "",
-                        "args_buf": state.fn.get("arguments", "") or "",
-                    }
+            self._absorb_full_message_frame(state)
             state.finish_reason = state.choices[0].get("finish_reason")
             # Visible content delta.
             state.txt = state.delta.get("content")
@@ -992,33 +981,7 @@ class StreamingToolMixin(OpenAICompatibleCore):
             if state.rtxt:
                 state.full_reasoning += state.rtxt
                 yield {"type": "delta_reasoning", "content": state.rtxt}
-            # Tool_call deltas: name on first chunk, args dripped
-            # across many. Buffer per-index until stream ends.
-            for state.tcd in state.delta.get("tool_calls") or []:
-                state.idx = state.tcd.get("index", 0) or 0
-                state.is_new_tool_call = state.idx not in state.tool_buffers
-                state.buf = state.tool_buffers.setdefault(
-                    state.idx, {"id": "", "name": "", "args_buf": ""}
-                )
-                if state.tcd.get("id"):
-                    state.buf["id"] = state.tcd["id"]
-                state.fn = state.tcd.get("function") or {}
-                if state.fn.get("name"):
-                    state.buf["name"] = state.fn["name"]
-                if state.fn.get("arguments"):
-                    state.buf["args_buf"] += state.fn["arguments"]
-                if (
-                    state.is_new_tool_call
-                    and len(state.tool_buffers) > _MAX_PROVIDER_TOOL_CALLS_BEFORE_REPLAN
-                ):
-                    state.tool_batch_overflow = True
-                    logger.warning(
-                        "provider_stream_tool_batch_overflow",
-                        retained_tool_calls=len(state.tool_buffers),
-                        replan_threshold=(_MAX_PROVIDER_TOOL_CALLS_BEFORE_REPLAN),
-                        sse_lines=state.sse_lines,
-                    )
-                    break
+            self._accumulate_tool_call_deltas(state)
             if state.finish_reason:
                 state.final_stop = (
                     "tool_use"
@@ -1029,6 +992,53 @@ class StreamingToolMixin(OpenAICompatibleCore):
                 )
             if state.tool_batch_overflow:
                 state.final_stop = "tool_use"
+                break
+
+    def _absorb_full_message_frame(self, state: _StreamAttemptState) -> None:
+        """非流式整包帧：把完整消息里的内容、思考与工具调用补进累积状态（只在还没收到对应增量时）。"""
+
+        if state.msg.get("content") and not state.full_content:
+            state.full_content = state.msg["content"]
+        if state.msg.get("reasoning_content") and not state.full_reasoning:
+            state.full_reasoning = state.msg["reasoning_content"]
+        if state.msg.get("tool_calls") and not state.tool_buffers:
+            for state.j, state.tc in enumerate(state.msg.get("tool_calls") or []):
+                state.fn = state.tc.get("function") or {}
+                state.tool_buffers[state.j] = {
+                    "id": state.tc.get("id", "") or "",
+                    "name": state.fn.get("name", "") or "",
+                    "args_buf": state.fn.get("arguments", "") or "",
+                }
+
+    def _accumulate_tool_call_deltas(self, state: _StreamAttemptState) -> None:
+        """把一帧里的工具调用增量累积进缓冲；超过重规划上限时标记溢出。"""
+
+        # Tool_call deltas: name on first chunk, args dripped
+        # across many. Buffer per-index until stream ends.
+        for state.tcd in state.delta.get("tool_calls") or []:
+            state.idx = state.tcd.get("index", 0) or 0
+            state.is_new_tool_call = state.idx not in state.tool_buffers
+            state.buf = state.tool_buffers.setdefault(
+                state.idx, {"id": "", "name": "", "args_buf": ""}
+            )
+            if state.tcd.get("id"):
+                state.buf["id"] = state.tcd["id"]
+            state.fn = state.tcd.get("function") or {}
+            if state.fn.get("name"):
+                state.buf["name"] = state.fn["name"]
+            if state.fn.get("arguments"):
+                state.buf["args_buf"] += state.fn["arguments"]
+            if (
+                state.is_new_tool_call
+                and len(state.tool_buffers) > _MAX_PROVIDER_TOOL_CALLS_BEFORE_REPLAN
+            ):
+                state.tool_batch_overflow = True
+                logger.warning(
+                    "provider_stream_tool_batch_overflow",
+                    retained_tool_calls=len(state.tool_buffers),
+                    replan_threshold=(_MAX_PROVIDER_TOOL_CALLS_BEFORE_REPLAN),
+                    sse_lines=state.sse_lines,
+                )
                 break
 
     async def _recover_empty_stream(self, state: _StreamAttemptState):
@@ -1068,65 +1078,7 @@ class StreamingToolMixin(OpenAICompatibleCore):
             # SSE event delimiter is a blank line.
             state.events = [ev.strip() for ev in state.joined.split("\n\n") if ev.strip()]
             state.recovered_chunks = 0
-            for state.event in state.events:
-                # Each event may have multiple lines; collect data: ones.
-                for state.ev_line in state.event.splitlines():
-                    if not state.ev_line.startswith("data:"):
-                        continue
-                    state.payload_str = state.ev_line[len("data:") :].strip()
-                    if not state.payload_str or state.payload_str == "[DONE]":
-                        continue
-                    try:
-                        state.data = _json.loads(state.payload_str)
-                    except _json.JSONDecodeError:
-                        continue
-                    state.final_model = state.data.get("model") or state.final_model
-                    state.usage = state.data.get("usage")
-                    if state.usage:
-                        state.final_usage = state.usage
-                        self.last_usage = state.usage
-                    state.choices = state.data.get("choices") or []
-                    if not state.choices:
-                        continue
-                    state.c0 = state.choices[0]
-                    state.delta = state.c0.get("delta") or {}
-                    state.msg = state.c0.get("message") or {}
-                    state.txt = state.delta.get("content") or state.msg.get("content")
-                    if state.txt:
-                        state.full_content += state.txt
-                        state.recovered_chunks += 1
-                    state.rtxt = (
-                        state.delta.get("reasoning_content")
-                        or state.delta.get("reasoning")
-                        or state.msg.get("reasoning_content")
-                        or state.msg.get("reasoning")
-                    )
-                    if state.rtxt:
-                        state.full_reasoning += state.rtxt
-                        state.recovered_chunks += 1
-                    for state.tcd in (
-                        state.delta.get("tool_calls") or state.msg.get("tool_calls") or []
-                    ):
-                        state.idx = state.tcd.get("index", 0) or 0
-                        state.buf = state.tool_buffers.setdefault(
-                            state.idx, {"id": "", "name": "", "args_buf": ""}
-                        )
-                        if state.tcd.get("id"):
-                            state.buf["id"] = state.tcd["id"]
-                        state.fn = state.tcd.get("function") or {}
-                        if state.fn.get("name"):
-                            state.buf["name"] = state.fn["name"]
-                        if state.fn.get("arguments"):
-                            state.buf["args_buf"] += state.fn["arguments"]
-                    state.fr = state.c0.get("finish_reason")
-                    if state.fr:
-                        state.final_stop = (
-                            "tool_use"
-                            if state.fr == "tool_calls"
-                            else "end_turn"
-                            if state.fr == "stop"
-                            else state.fr
-                        )
+            self._parse_recovered_events(state)
             if state.recovered_chunks or state.tool_buffers:
                 # Emit a single delta so callers waiting for stream
                 # output (delta_count) treat this as a real response.
@@ -1149,6 +1101,67 @@ class StreamingToolMixin(OpenAICompatibleCore):
                     events_count=len(state.events),
                     body_preview=state.joined[:300],
                 )
+
+    def _parse_recovered_events(self, state: _StreamAttemptState) -> None:
+        """空流兜底：逐个 SSE 事件解析内容、思考、用量与工具调用。"""
+
+        for state.event in state.events:
+            # Each event may have multiple lines; collect data: ones.
+            for state.ev_line in state.event.splitlines():
+                if not state.ev_line.startswith("data:"):
+                    continue
+                state.payload_str = state.ev_line[len("data:") :].strip()
+                if not state.payload_str or state.payload_str == "[DONE]":
+                    continue
+                try:
+                    state.data = _json.loads(state.payload_str)
+                except _json.JSONDecodeError:
+                    continue
+                state.final_model = state.data.get("model") or state.final_model
+                state.usage = state.data.get("usage")
+                if state.usage:
+                    state.final_usage = state.usage
+                    self.last_usage = state.usage
+                state.choices = state.data.get("choices") or []
+                if not state.choices:
+                    continue
+                state.c0 = state.choices[0]
+                state.delta = state.c0.get("delta") or {}
+                state.msg = state.c0.get("message") or {}
+                state.txt = state.delta.get("content") or state.msg.get("content")
+                if state.txt:
+                    state.full_content += state.txt
+                    state.recovered_chunks += 1
+                state.rtxt = (
+                    state.delta.get("reasoning_content")
+                    or state.delta.get("reasoning")
+                    or state.msg.get("reasoning_content")
+                    or state.msg.get("reasoning")
+                )
+                if state.rtxt:
+                    state.full_reasoning += state.rtxt
+                    state.recovered_chunks += 1
+                for state.tcd in state.delta.get("tool_calls") or state.msg.get("tool_calls") or []:
+                    state.idx = state.tcd.get("index", 0) or 0
+                    state.buf = state.tool_buffers.setdefault(
+                        state.idx, {"id": "", "name": "", "args_buf": ""}
+                    )
+                    if state.tcd.get("id"):
+                        state.buf["id"] = state.tcd["id"]
+                    state.fn = state.tcd.get("function") or {}
+                    if state.fn.get("name"):
+                        state.buf["name"] = state.fn["name"]
+                    if state.fn.get("arguments"):
+                        state.buf["args_buf"] += state.fn["arguments"]
+                state.fr = state.c0.get("finish_reason")
+                if state.fr:
+                    state.final_stop = (
+                        "tool_use"
+                        if state.fr == "tool_calls"
+                        else "end_turn"
+                        if state.fr == "stop"
+                        else state.fr
+                    )
 
     def _finalize_tool_buffers(self, state: _StreamAttemptState) -> None:
         """把累积的工具调用参数解析成工具调用（坏 JSON 尝试修复）。"""
