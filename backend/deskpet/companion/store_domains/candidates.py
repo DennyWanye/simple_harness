@@ -312,213 +312,229 @@ class CandidateMixin(CompanionStoreCore):
                 if getattr(receipt, name) != expected:
                     raise CompanionConflictError(f"candidate_bundle_receipt_{name}_mismatch")
 
-            blob_rows = db.execute(
-                """SELECT * FROM candidate_package_blobs
+            blobs, files = self._load_candidate_package_files(db, owner, row)
+
+            return self._verified_candidate_bundle(
+                blobs, files=files, owner=owner, receipt=receipt, row=row
+            )
+
+    def _load_candidate_package_files(self, db, owner: OwnerRef, row):
+        blob_rows = db.execute(
+            """SELECT * FROM candidate_package_blobs
                    WHERE profile_id=? AND profile_generation=?
                      AND package_id=?
                    ORDER BY blob_kind,blob_id""",
-                (
-                    owner.profile_id,
-                    owner.profile_generation,
-                    row["package_id"],
-                ),
-            ).fetchall()
-            file_rows = db.execute(
-                """SELECT * FROM candidate_package_files
+            (
+                owner.profile_id,
+                owner.profile_generation,
+                row["package_id"],
+            ),
+        ).fetchall()
+        file_rows = db.execute(
+            """SELECT * FROM candidate_package_files
                    WHERE profile_id=? AND profile_generation=?
                      AND package_id=?
                    ORDER BY relative_path""",
-                (
-                    owner.profile_id,
-                    owner.profile_generation,
-                    row["package_id"],
-                ),
-            ).fetchall()
-            if not blob_rows or not file_rows:
-                raise CompanionStateError("candidate_bundle_children_missing")
-            blobs: list[CandidatePackageBlob] = []
-            blob_by_key: dict[tuple[str, str], CandidatePackageBlob] = {}
-            for blob_row in blob_rows:
-                payload = bytes(blob_row["payload"])
-                blob = CandidatePackageBlob(
-                    blob_kind=str(blob_row["blob_kind"]),
-                    blob_id=str(blob_row["blob_id"]),
-                    content_hash=str(blob_row["content_hash"]),
-                    payload=payload,
-                )
-                key = (blob.blob_kind, blob.blob_id)
-                if (
-                    key in blob_by_key
-                    or str(blob_row["cleanup_state"]) != "live"
-                    or int(blob_row["size_bytes"]) != len(payload)
-                    or blob.content_hash != _bytes_hash(payload)
-                ):
-                    raise CompanionConflictError("candidate_bundle_blob_integrity_mismatch")
-                blob_by_key[key] = blob
-                blobs.append(blob)
-            manifest_key = (
-                "manifest",
-                str(row["candidate_manifest_hash"]),
+            (
+                owner.profile_id,
+                owner.profile_generation,
+                row["package_id"],
+            ),
+        ).fetchall()
+        if not blob_rows or not file_rows:
+            raise CompanionStateError("candidate_bundle_children_missing")
+        blobs: list[CandidatePackageBlob] = []
+        blob_by_key: dict[tuple[str, str], CandidatePackageBlob] = {}
+        for blob_row in blob_rows:
+            payload = bytes(blob_row["payload"])
+            blob = CandidatePackageBlob(
+                blob_kind=str(blob_row["blob_kind"]),
+                blob_id=str(blob_row["blob_id"]),
+                content_hash=str(blob_row["content_hash"]),
+                payload=payload,
             )
-            archive_key = ("archive", str(row["archive_hash"]))
+            key = (blob.blob_kind, blob.blob_id)
             if (
-                manifest_key not in blob_by_key
-                or archive_key not in blob_by_key
-                or len([key for key in blob_by_key if key[0] == "manifest"]) != 1
-                or len([key for key in blob_by_key if key[0] == "archive"]) != 1
+                key in blob_by_key
+                or str(blob_row["cleanup_state"]) != "live"
+                or int(blob_row["size_bytes"]) != len(payload)
+                or blob.content_hash != _bytes_hash(payload)
             ):
-                raise CompanionConflictError("candidate_bundle_root_blob_mismatch")
+                raise CompanionConflictError("candidate_bundle_blob_integrity_mismatch")
+            blob_by_key[key] = blob
+            blobs.append(blob)
+        manifest_key = (
+            "manifest",
+            str(row["candidate_manifest_hash"]),
+        )
+        archive_key = ("archive", str(row["archive_hash"]))
+        if (
+            manifest_key not in blob_by_key
+            or archive_key not in blob_by_key
+            or len([key for key in blob_by_key if key[0] == "manifest"]) != 1
+            or len([key for key in blob_by_key if key[0] == "archive"]) != 1
+        ):
+            raise CompanionConflictError("candidate_bundle_root_blob_mismatch")
 
-            files: list[CandidatePackageFile] = []
-            for file_row in file_rows:
-                relative_path = str(file_row["relative_path"])
-                self._validate_relative_path(relative_path)
-                file = CandidatePackageFile(
-                    relative_path=relative_path,
-                    file_kind=str(file_row["file_kind"]),
-                    file_mode=int(file_row["file_mode"]),
-                    content_hash=str(file_row["content_hash"]),
-                    size_bytes=int(file_row["size_bytes"]),
-                    blob_id=str(file_row["blob_id"]),
-                )
-                blob = blob_by_key.get(("file", file.blob_id))
-                if (
-                    str(file_row["blob_kind"]) != "file"
-                    or blob is None
-                    or blob.content_hash != file.content_hash
-                    or len(blob.payload) != file.size_bytes
-                ):
-                    raise CompanionConflictError("candidate_bundle_file_blob_mismatch")
-                files.append(file)
-            expected_blob_keys = {
-                manifest_key,
-                archive_key,
-                *(("file", item.blob_id) for item in files),
-            }
-            if set(blob_by_key) != expected_blob_keys:
-                raise CompanionConflictError("candidate_bundle_blob_set_mismatch")
-
-            manifest_bytes = blob_by_key[manifest_key].payload
-            archive_bytes = blob_by_key[archive_key].payload
-            if _bytes_hash(manifest_bytes) != str(row["candidate_manifest_hash"]) or _bytes_hash(
-                archive_bytes
-            ) != str(row["archive_hash"]):
-                raise CompanionConflictError("candidate_bundle_root_hash_mismatch")
-            try:
-                manifest = json.loads(manifest_bytes.decode("utf-8"))
-                with zipfile.ZipFile(io.BytesIO(archive_bytes)) as archive:
-                    archive_names = archive.namelist()
-                    archive_payloads = {name: archive.read(name) for name in archive_names}
-            except (
-                UnicodeDecodeError,
-                json.JSONDecodeError,
-                KeyError,
-                zipfile.BadZipFile,
-            ) as exc:
-                raise CompanionConflictError("candidate_bundle_archive_invalid") from exc
-            expected_names = [
-                "deskpet-pack.json",
-                *(item.relative_path for item in files),
-            ]
+        files: list[CandidatePackageFile] = []
+        for file_row in file_rows:
+            relative_path = str(file_row["relative_path"])
+            self._validate_relative_path(relative_path)
+            file = CandidatePackageFile(
+                relative_path=relative_path,
+                file_kind=str(file_row["file_kind"]),
+                file_mode=int(file_row["file_mode"]),
+                content_hash=str(file_row["content_hash"]),
+                size_bytes=int(file_row["size_bytes"]),
+                blob_id=str(file_row["blob_id"]),
+            )
+            blob = blob_by_key.get(("file", file.blob_id))
             if (
-                not isinstance(manifest, dict)
-                or str(manifest.get("id") or "") != str(row["pack_id"])
-                or str(manifest.get("version") or "") != str(row["version"])
-                or archive_names != expected_names
-                or archive_payloads["deskpet-pack.json"] != manifest_bytes
-                or any(
-                    archive_payloads[item.relative_path]
-                    != blob_by_key[("file", item.blob_id)].payload
-                    for item in files
-                )
+                str(file_row["blob_kind"]) != "file"
+                or blob is None
+                or blob.content_hash != file.content_hash
+                or len(blob.payload) != file.size_bytes
             ):
-                raise CompanionConflictError("candidate_bundle_archive_content_mismatch")
-            declared_files = manifest.get("files")
-            expected_declared = [
-                {
-                    "path": item.relative_path,
-                    "sha256": item.content_hash,
-                }
+                raise CompanionConflictError("candidate_bundle_file_blob_mismatch")
+            files.append(file)
+        expected_blob_keys = {
+            manifest_key,
+            archive_key,
+            *(("file", item.blob_id) for item in files),
+        }
+        if set(blob_by_key) != expected_blob_keys:
+            raise CompanionConflictError("candidate_bundle_blob_set_mismatch")
+
+        manifest_bytes = blob_by_key[manifest_key].payload
+        archive_bytes = blob_by_key[archive_key].payload
+        if _bytes_hash(manifest_bytes) != str(row["candidate_manifest_hash"]) or _bytes_hash(
+            archive_bytes
+        ) != str(row["archive_hash"]):
+            raise CompanionConflictError("candidate_bundle_root_hash_mismatch")
+        try:
+            manifest = json.loads(manifest_bytes.decode("utf-8"))
+            with zipfile.ZipFile(io.BytesIO(archive_bytes)) as archive:
+                archive_names = archive.namelist()
+                archive_payloads = {name: archive.read(name) for name in archive_names}
+        except (
+            UnicodeDecodeError,
+            json.JSONDecodeError,
+            KeyError,
+            zipfile.BadZipFile,
+        ) as exc:
+            raise CompanionConflictError("candidate_bundle_archive_invalid") from exc
+        expected_names = [
+            "deskpet-pack.json",
+            *(item.relative_path for item in files),
+        ]
+        if (
+            not isinstance(manifest, dict)
+            or str(manifest.get("id") or "") != str(row["pack_id"])
+            or str(manifest.get("version") or "") != str(row["version"])
+            or archive_names != expected_names
+            or archive_payloads["deskpet-pack.json"] != manifest_bytes
+            or any(
+                archive_payloads[item.relative_path] != blob_by_key[("file", item.blob_id)].payload
                 for item in files
-            ]
-            if declared_files != expected_declared:
-                raise CompanionConflictError("candidate_bundle_manifest_file_set_mismatch")
+            )
+        ):
+            raise CompanionConflictError("candidate_bundle_archive_content_mismatch")
+        declared_files = manifest.get("files")
+        expected_declared = [
+            {
+                "path": item.relative_path,
+                "sha256": item.content_hash,
+            }
+            for item in files
+        ]
+        if declared_files != expected_declared:
+            raise CompanionConflictError("candidate_bundle_manifest_file_set_mismatch")
+        return blobs, files
 
-            file_set_hash = canonical_hash(
-                {
-                    "schema": "candidate-file-set-v1",
-                    "files": [
-                        {
-                            "path": item.relative_path,
-                            "mode": item.file_mode,
-                            "hash": item.content_hash,
-                            "size": item.size_bytes,
-                        }
-                        for item in files
-                    ],
-                }
-            )
-            if file_set_hash != receipt.file_set_hash:
-                raise CompanionConflictError("candidate_bundle_file_set_hash_mismatch")
-            package_hash = canonical_hash(
-                {
-                    "schema": "capability-candidate-package-v1",
-                    "pack_id": row["pack_id"],
-                    "version": row["version"],
-                    "candidate_content_hash": row["candidate_content_hash"],
-                    "candidate_manifest_hash": row["candidate_manifest_hash"],
-                    "archive_hash": row["archive_hash"],
-                    "file_set_hash": file_set_hash,
-                    "effect_topology_hash": row["effect_topology_hash"],
-                }
-            )
-            if package_hash != str(row["candidate_package_hash"]):
-                raise CompanionConflictError("candidate_bundle_package_hash_mismatch")
-            owner_key = f"companion:{owner.profile_id}:{owner.profile_generation}"
-            package_id = canonical_hash(
-                {
-                    "schema": "candidate-package-id-v1",
-                    "owner_key": owner_key,
-                    "pack_id": row["pack_id"],
-                    "candidate_package_hash": package_hash,
-                }
-            )
-            if package_id != str(row["package_id"]):
-                raise CompanionConflictError("candidate_bundle_package_id_mismatch")
-            source_facts = json.loads(str(row["source_facts_json"]))
-            target_facts = json.loads(str(row["target_facts_json"]))
-            if not isinstance(source_facts, dict) or not isinstance(target_facts, dict):
-                raise CompanionConflictError("candidate_bundle_facts_invalid")
-            package = CandidatePackage(
-                package_id=package_id,
-                candidate_mode=CandidateMode(str(row["candidate_mode"])),
-                pack_id=str(row["pack_id"]),
-                version=str(row["version"]),
-                candidate_content_hash=str(row["candidate_content_hash"]),
-                candidate_manifest_hash=str(row["candidate_manifest_hash"]),
-                candidate_package_hash=package_hash,
-                archive_hash=str(row["archive_hash"]),
-                effect_topology_hash=str(row["effect_topology_hash"]),
-                source_facts=source_facts,
-                target_facts=target_facts,
-                files=tuple(files),
-                blobs=tuple(blobs),
-                schema_version=int(row["package_schema_version"]),
-            )
-            return ExactCandidateBundleV1(
-                owner=owner,
-                candidate_id=str(row["candidate_id"]),
-                candidate_status=str(row["candidate_status"]),
-                build_id=str(row["build_id"]),
-                build_status=str(row["build_status"]),
-                candidate_hash=str(row["candidate_hash"]),
-                proposal_ref=str(row["proposal_ref"]),
-                proposal_hash=str(row["proposal_hash"]),
-                evidence_set_hash=str(row["evidence_set_hash"]),
-                target_fence_hash=str(row["target_fence_hash"]),
-                package=package,
-                receipt=receipt,
-            )
+    def _verified_candidate_bundle(
+        self,
+        blobs: list[CandidatePackageBlob],
+        *,
+        files: list[CandidatePackageFile],
+        owner: OwnerRef,
+        receipt,
+        row,
+    ) -> Any:
+        file_set_hash = canonical_hash(
+            {
+                "schema": "candidate-file-set-v1",
+                "files": [
+                    {
+                        "path": item.relative_path,
+                        "mode": item.file_mode,
+                        "hash": item.content_hash,
+                        "size": item.size_bytes,
+                    }
+                    for item in files
+                ],
+            }
+        )
+        if file_set_hash != receipt.file_set_hash:
+            raise CompanionConflictError("candidate_bundle_file_set_hash_mismatch")
+        package_hash = canonical_hash(
+            {
+                "schema": "capability-candidate-package-v1",
+                "pack_id": row["pack_id"],
+                "version": row["version"],
+                "candidate_content_hash": row["candidate_content_hash"],
+                "candidate_manifest_hash": row["candidate_manifest_hash"],
+                "archive_hash": row["archive_hash"],
+                "file_set_hash": file_set_hash,
+                "effect_topology_hash": row["effect_topology_hash"],
+            }
+        )
+        if package_hash != str(row["candidate_package_hash"]):
+            raise CompanionConflictError("candidate_bundle_package_hash_mismatch")
+        owner_key = f"companion:{owner.profile_id}:{owner.profile_generation}"
+        package_id = canonical_hash(
+            {
+                "schema": "candidate-package-id-v1",
+                "owner_key": owner_key,
+                "pack_id": row["pack_id"],
+                "candidate_package_hash": package_hash,
+            }
+        )
+        if package_id != str(row["package_id"]):
+            raise CompanionConflictError("candidate_bundle_package_id_mismatch")
+        source_facts = json.loads(str(row["source_facts_json"]))
+        target_facts = json.loads(str(row["target_facts_json"]))
+        if not isinstance(source_facts, dict) or not isinstance(target_facts, dict):
+            raise CompanionConflictError("candidate_bundle_facts_invalid")
+        package = CandidatePackage(
+            package_id=package_id,
+            candidate_mode=CandidateMode(str(row["candidate_mode"])),
+            pack_id=str(row["pack_id"]),
+            version=str(row["version"]),
+            candidate_content_hash=str(row["candidate_content_hash"]),
+            candidate_manifest_hash=str(row["candidate_manifest_hash"]),
+            candidate_package_hash=package_hash,
+            archive_hash=str(row["archive_hash"]),
+            effect_topology_hash=str(row["effect_topology_hash"]),
+            source_facts=source_facts,
+            target_facts=target_facts,
+            files=tuple(files),
+            blobs=tuple(blobs),
+            schema_version=int(row["package_schema_version"]),
+        )
+        return ExactCandidateBundleV1(
+            owner=owner,
+            candidate_id=str(row["candidate_id"]),
+            candidate_status=str(row["candidate_status"]),
+            build_id=str(row["build_id"]),
+            build_status=str(row["build_status"]),
+            candidate_hash=str(row["candidate_hash"]),
+            proposal_ref=str(row["proposal_ref"]),
+            proposal_hash=str(row["proposal_hash"]),
+            evidence_set_hash=str(row["evidence_set_hash"]),
+            target_fence_hash=str(row["target_fence_hash"]),
+            package=package,
+            receipt=receipt,
+        )
 
     def create_candidate(
         self,

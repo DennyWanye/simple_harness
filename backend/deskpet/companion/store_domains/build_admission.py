@@ -297,92 +297,30 @@ class BuildAdmissionMixin(CompanionStoreCore):
             raise ValueError("reflection_evidence_id_invalid")
         evidence_hash = evidence_set_hash(evidence_ids)
 
-        typed_proposal: StructuredGrowthProposalV1 | None
-        if proposal is None:
-            typed_proposal = None
-        elif isinstance(proposal, StructuredGrowthProposalV1):
-            typed_proposal = proposal
-        elif isinstance(proposal, Mapping):
-            typed_proposal = StructuredGrowthProposalV1.from_mapping(proposal)
-        else:
-            raise TypeError("structured_growth_proposal_required")
-        if decision == "candidate":
-            if (
-                typed_proposal is None
-                or typed_proposal.decision is not GrowthProposalDecision.CANDIDATE
-            ):
-                raise CompanionStateError("reflection_candidate_proposal_required")
-            if not proposal_ref:
-                raise ValueError("reflection_proposal_ref_required")
-        elif (
-            typed_proposal is not None
-            and typed_proposal.decision is not GrowthProposalDecision.ABSTAIN
-        ):
-            raise CompanionStateError("reflection_non_candidate_proposal_invalid")
-        if typed_proposal is not None and (
-            typed_proposal.evidence_event_ids != evidence_ids
-            or typed_proposal.evidence_set_hash != evidence_hash
-        ):
-            raise CompanionConflictError("reflection_proposal_evidence_mismatch")
+        typed_proposal = self._typed_reflection_proposal(
+            decision,
+            evidence_hash=evidence_hash,
+            evidence_ids=evidence_ids,
+            proposal=proposal,
+            proposal_ref=proposal_ref,
+        )
 
         proposal_json = None if typed_proposal is None else canonical_json(typed_proposal.to_dict())
         proposal_hash = None if typed_proposal is None else typed_proposal.proposal_hash
-        normalized_proposal_ref = None if proposal_ref is None else str(proposal_ref).strip()
-        if proposal_ref is not None and not normalized_proposal_ref:
-            raise ValueError("reflection_proposal_ref_invalid")
-        if decision == "candidate":
-            assert typed_proposal is not None
-            assert normalized_proposal_ref is not None
-            expected_build_id = "candidate-build:" + canonical_hash(
-                {
-                    "schema": "reflection-candidate-build-v1",
-                    "owner": {
-                        "profile_id": owner.profile_id,
-                        "profile_generation": owner.profile_generation,
-                    },
-                    "job_id": job_id,
-                    "proposal_ref": normalized_proposal_ref,
-                    "proposal_hash": proposal_hash,
-                    "evidence_set_hash": evidence_hash,
-                }
-            )
-            if build_id is not None and str(build_id) != expected_build_id:
-                raise CompanionConflictError("reflection_build_id_not_host_derived")
-            normalized_build_id = expected_build_id
-        else:
-            if build_id is not None:
-                raise CompanionStateError("reflection_non_candidate_cannot_build")
-            normalized_build_id = None
+        normalized_build_id, normalized_proposal_ref = self._normalize_reflection_refs(
+            build_id,
+            decision=decision,
+            evidence_hash=evidence_hash,
+            job_id=job_id,
+            owner=owner,
+            proposal_hash=proposal_hash,
+            proposal_ref=proposal_ref,
+            typed_proposal=typed_proposal,
+        )
 
         now = self._now()
         with self._write() as db:
-            self._require_owner(db, owner)
-            job = db.execute(
-                """SELECT * FROM jobs
-                   WHERE profile_id=? AND profile_generation=? AND job_id=?""",
-                (owner.profile_id, owner.profile_generation, job_id),
-            ).fetchone()
-            if (
-                job is None
-                or str(job["kind"]) != "reflection"
-                or str(job["status"]) not in {"leased", "succeeded"}
-            ):
-                raise CompanionStateError("reflection_job_not_admissible")
-            if evidence_ids:
-                placeholders = ",".join("?" for _ in evidence_ids)
-                live = db.execute(
-                    f"""SELECT event_id FROM growth_events
-                        WHERE profile_id=? AND profile_generation=?
-                          AND content_state='live'
-                          AND event_id IN ({placeholders})""",
-                    (
-                        owner.profile_id,
-                        owner.profile_generation,
-                        *evidence_ids,
-                    ),
-                ).fetchall()
-                if {str(row["event_id"]) for row in live} != set(evidence_ids):
-                    raise CompanionStateError("reflection_evidence_missing_or_tombstoned")
+            self._require_reflection_job(db, evidence_ids, job_id, owner)
 
             existing = db.execute(
                 """SELECT * FROM reflection_decisions
@@ -440,146 +378,80 @@ class BuildAdmissionMixin(CompanionStoreCore):
             )
             build_row: sqlite3.Row | None = None
             if decision == "candidate":
-                assert typed_proposal is not None
-                assert typed_proposal.target is not None
-                assert typed_proposal.target_fence is not None
-                assert normalized_build_id is not None
-                assert normalized_proposal_ref is not None
-                target = typed_proposal.target
-                target_expected = {
-                    "kind": target.kind.value,
-                    "stable_name": target.stable_name,
-                    "pack_id": target.pack_id,
-                    "governance_domain": "companion_growth",
-                }
-                target_row = db.execute(
-                    """SELECT * FROM growth_targets
-                       WHERE profile_id=? AND profile_generation=?
-                         AND target_id=?""",
-                    (
-                        owner.profile_id,
-                        owner.profile_generation,
-                        target.target_id,
-                    ),
-                ).fetchone()
-                if target_row is None:
-                    db.execute(
-                        """INSERT INTO growth_targets(
-                             profile_id,profile_generation,target_id,kind,
-                             stable_name,pack_id,governance_domain,reason_code,
-                             schema_version,created_at,updated_at
-                           ) VALUES (?,?,?,?,?,?,?,'reflection_candidate',1,?,?)""",
-                        (
-                            owner.profile_id,
-                            owner.profile_generation,
-                            target.target_id,
-                            target.kind.value,
-                            target.stable_name,
-                            target.pack_id,
-                            "companion_growth",
-                            now,
-                            now,
-                        ),
-                    )
-                elif not self._same(target_row, target_expected):
-                    raise CompanionConflictError(f"growth_target_conflict:{target.target_id}")
-                if typed_proposal.candidate_mode.value == "genesis":
-                    reservation = db.execute(
-                        """SELECT * FROM growth_target_reservations
-                           WHERE profile_id=? AND profile_generation=?
-                             AND kind=? AND stable_name=?""",
-                        (
-                            owner.profile_id,
-                            owner.profile_generation,
-                            target.kind.value,
-                            target.stable_name,
-                        ),
-                    ).fetchone()
-                    if reservation is None:
-                        db.execute(
-                            """INSERT INTO growth_target_reservations(
-                                 profile_id,profile_generation,kind,stable_name,
-                                 target_id,pack_id,candidate_id,
-                                 reservation_version,status,reason_code,
-                                 schema_version,created_at,updated_at
-                               ) VALUES (?,?,?,?,?,?,NULL,1,'held',
-                                         'reflection_candidate_reserved',1,?,?)""",
-                            (
-                                owner.profile_id,
-                                owner.profile_generation,
-                                target.kind.value,
-                                target.stable_name,
-                                target.target_id,
-                                target.pack_id,
-                                now,
-                                now,
-                            ),
-                        )
-                    elif (
-                        str(reservation["target_id"]) == target.target_id
-                        and str(reservation["pack_id"]) == target.pack_id
-                        and str(reservation["status"]) == "released"
-                        and reservation["candidate_id"] is None
-                    ):
-                        cursor = db.execute(
-                            """UPDATE growth_target_reservations
-                               SET status='held',
-                                   reason_code='reflection_candidate_replanned',
-                                   updated_at=?
-                               WHERE profile_id=? AND profile_generation=?
-                                 AND kind=? AND stable_name=?
-                                 AND target_id=? AND pack_id=?
-                                 AND status='released'
-                                 AND candidate_id IS NULL
-                                 AND reservation_version=?""",
-                            (
-                                now,
-                                owner.profile_id,
-                                owner.profile_generation,
-                                target.kind.value,
-                                target.stable_name,
-                                target.target_id,
-                                target.pack_id,
-                                int(reservation["reservation_version"]),
-                            ),
-                        )
-                        if cursor.rowcount != 1:
-                            raise CompanionConflictError(
-                                f"growth_target_reservation_replan_conflict:{target.target_id}"
-                            )
-                    elif (
-                        str(reservation["target_id"]) != target.target_id
-                        or str(reservation["pack_id"]) != target.pack_id
-                        or str(reservation["status"]) != "held"
-                        or reservation["candidate_id"] is not None
-                    ):
-                        raise CompanionConflictError(f"growth_target_reserved:{target.target_id}")
+                self._admit_candidate_build(
+                    db,
+                    evidence_hash=evidence_hash,
+                    evidence_ids=evidence_ids,
+                    job_id=job_id,
+                    normalized_build_id=normalized_build_id,
+                    normalized_proposal_ref=normalized_proposal_ref,
+                    now=now,
+                    owner=owner,
+                    proposal_hash=proposal_hash,
+                    proposal_json=proposal_json,
+                    source_ref=source_ref,
+                    typed_proposal=typed_proposal,
+                )
+                build_row = self._find_candidate_build(db, normalized_build_id, owner=owner)
+            return self._bump_reflection_detail(
+                build_row,
+                db=db,
+                decision=decision,
+                decision_id=decision_id,
+                job_id=job_id,
+                now=now,
+                owner=owner,
+                proposal_hash=proposal_hash,
+            )
 
-                source_fence_json = (
-                    None
-                    if typed_proposal.source_fence is None
-                    else canonical_json(typed_proposal.source_fence.to_dict())
-                )
-                target_fence_json = canonical_json(typed_proposal.target_fence.to_dict())
-                builder_launch_id = "builder-launch:" + canonical_hash(
-                    ["candidate-builder-launch-v1", normalized_build_id]
-                )
-                child_run_id = "candidate-child:" + canonical_hash(
-                    ["candidate-builder-child-v1", normalized_build_id]
-                )
-                expected_child_start_hash = canonical_hash(
-                    {
-                        "schema": "candidate-builder-start-v1",
-                        "build_id": normalized_build_id,
-                        "proposal_ref": normalized_proposal_ref,
-                        "proposal_hash": proposal_hash,
-                        "evidence_set_hash": evidence_hash,
-                        "builder_launch_id": builder_launch_id,
-                        "child_run_id": child_run_id,
-                    }
-                )
-                db.execute(
-                    """INSERT INTO candidate_builds(
+    def _admit_candidate_build(
+        self,
+        db,
+        *,
+        evidence_hash,
+        evidence_ids,
+        job_id: str,
+        normalized_build_id,
+        normalized_proposal_ref,
+        now,
+        owner: OwnerRef,
+        proposal_hash,
+        proposal_json,
+        source_ref: str,
+        typed_proposal,
+    ) -> None:
+        assert typed_proposal is not None
+        assert typed_proposal.target is not None
+        assert typed_proposal.target_fence is not None
+        assert normalized_build_id is not None
+        assert normalized_proposal_ref is not None
+        self._require_proposal_target_state(db, now, owner, typed_proposal)
+
+        source_fence_json = (
+            None
+            if typed_proposal.source_fence is None
+            else canonical_json(typed_proposal.source_fence.to_dict())
+        )
+        target_fence_json = canonical_json(typed_proposal.target_fence.to_dict())
+        builder_launch_id = "builder-launch:" + canonical_hash(
+            ["candidate-builder-launch-v1", normalized_build_id]
+        )
+        child_run_id = "candidate-child:" + canonical_hash(
+            ["candidate-builder-child-v1", normalized_build_id]
+        )
+        expected_child_start_hash = canonical_hash(
+            {
+                "schema": "candidate-builder-start-v1",
+                "build_id": normalized_build_id,
+                "proposal_ref": normalized_proposal_ref,
+                "proposal_hash": proposal_hash,
+                "evidence_set_hash": evidence_hash,
+                "builder_launch_id": builder_launch_id,
+                "child_run_id": child_run_id,
+            }
+        )
+        db.execute(
+            """INSERT INTO candidate_builds(
                          profile_id,profile_generation,build_id,source_kind,
                          source_ref,reflection_job_id,proposal_ref,
                          proposal_json,proposal_hash,evidence_set_json,
@@ -591,62 +463,294 @@ class BuildAdmissionMixin(CompanionStoreCore):
                        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,
                                  'proposed','reflection_candidate_admitted',
                                  1,?,?)""",
+            (
+                owner.profile_id,
+                owner.profile_generation,
+                normalized_build_id,
+                "reflection",
+                source_ref,
+                job_id,
+                normalized_proposal_ref,
+                proposal_json,
+                proposal_hash,
+                canonical_json(evidence_ids),
+                evidence_hash,
+                typed_proposal.candidate_mode.value,
+                source_fence_json,
+                canonical_hash(
+                    None
+                    if typed_proposal.source_fence is None
+                    else typed_proposal.source_fence.to_dict()
+                ),
+                target_fence_json,
+                canonical_hash(typed_proposal.target_fence.to_dict()),
+                builder_launch_id,
+                child_run_id,
+                expected_child_start_hash,
+                now,
+                now,
+            ),
+        )
+
+    def _typed_reflection_proposal(
+        self,
+        decision: str,
+        *,
+        evidence_hash,
+        evidence_ids,
+        proposal: Any | None,
+        proposal_ref: str | None,
+    ) -> StructuredGrowthProposalV1 | None:
+        typed_proposal: StructuredGrowthProposalV1 | None
+        if proposal is None:
+            typed_proposal = None
+        elif isinstance(proposal, StructuredGrowthProposalV1):
+            typed_proposal = proposal
+        elif isinstance(proposal, Mapping):
+            typed_proposal = StructuredGrowthProposalV1.from_mapping(proposal)
+        else:
+            raise TypeError("structured_growth_proposal_required")
+        if decision == "candidate":
+            if (
+                typed_proposal is None
+                or typed_proposal.decision is not GrowthProposalDecision.CANDIDATE
+            ):
+                raise CompanionStateError("reflection_candidate_proposal_required")
+            if not proposal_ref:
+                raise ValueError("reflection_proposal_ref_required")
+        elif (
+            typed_proposal is not None
+            and typed_proposal.decision is not GrowthProposalDecision.ABSTAIN
+        ):
+            raise CompanionStateError("reflection_non_candidate_proposal_invalid")
+        if typed_proposal is not None and (
+            typed_proposal.evidence_event_ids != evidence_ids
+            or typed_proposal.evidence_set_hash != evidence_hash
+        ):
+            raise CompanionConflictError("reflection_proposal_evidence_mismatch")
+        return typed_proposal
+
+    def _normalize_reflection_refs(
+        self,
+        build_id: str | None,
+        *,
+        decision: str,
+        evidence_hash,
+        job_id: str,
+        owner: OwnerRef,
+        proposal_hash,
+        proposal_ref: str | None,
+        typed_proposal: StructuredGrowthProposalV1 | None,
+    ):
+        normalized_proposal_ref = None if proposal_ref is None else str(proposal_ref).strip()
+        if proposal_ref is not None and not normalized_proposal_ref:
+            raise ValueError("reflection_proposal_ref_invalid")
+        if decision == "candidate":
+            assert typed_proposal is not None
+            assert normalized_proposal_ref is not None
+            expected_build_id = "candidate-build:" + canonical_hash(
+                {
+                    "schema": "reflection-candidate-build-v1",
+                    "owner": {
+                        "profile_id": owner.profile_id,
+                        "profile_generation": owner.profile_generation,
+                    },
+                    "job_id": job_id,
+                    "proposal_ref": normalized_proposal_ref,
+                    "proposal_hash": proposal_hash,
+                    "evidence_set_hash": evidence_hash,
+                }
+            )
+            if build_id is not None and str(build_id) != expected_build_id:
+                raise CompanionConflictError("reflection_build_id_not_host_derived")
+            normalized_build_id = expected_build_id
+        else:
+            if build_id is not None:
+                raise CompanionStateError("reflection_non_candidate_cannot_build")
+            normalized_build_id = None
+        return normalized_build_id, normalized_proposal_ref
+
+    def _require_reflection_job(self, db, evidence_ids, job_id: str, owner: OwnerRef) -> None:
+        self._require_owner(db, owner)
+        job = db.execute(
+            """SELECT * FROM jobs
+                   WHERE profile_id=? AND profile_generation=? AND job_id=?""",
+            (owner.profile_id, owner.profile_generation, job_id),
+        ).fetchone()
+        if (
+            job is None
+            or str(job["kind"]) != "reflection"
+            or str(job["status"]) not in {"leased", "succeeded"}
+        ):
+            raise CompanionStateError("reflection_job_not_admissible")
+        if evidence_ids:
+            placeholders = ",".join("?" for _ in evidence_ids)
+            live = db.execute(
+                f"""SELECT event_id FROM growth_events
+                        WHERE profile_id=? AND profile_generation=?
+                          AND content_state='live'
+                          AND event_id IN ({placeholders})""",
+                (
+                    owner.profile_id,
+                    owner.profile_generation,
+                    *evidence_ids,
+                ),
+            ).fetchall()
+            if {str(row["event_id"]) for row in live} != set(evidence_ids):
+                raise CompanionStateError("reflection_evidence_missing_or_tombstoned")
+
+    def _require_proposal_target_state(
+        self, db, now, owner: OwnerRef, typed_proposal: StructuredGrowthProposalV1 | None
+    ) -> None:
+        target = typed_proposal.target
+        target_expected = {
+            "kind": target.kind.value,
+            "stable_name": target.stable_name,
+            "pack_id": target.pack_id,
+            "governance_domain": "companion_growth",
+        }
+        target_row = db.execute(
+            """SELECT * FROM growth_targets
+                       WHERE profile_id=? AND profile_generation=?
+                         AND target_id=?""",
+            (
+                owner.profile_id,
+                owner.profile_generation,
+                target.target_id,
+            ),
+        ).fetchone()
+        if target_row is None:
+            db.execute(
+                """INSERT INTO growth_targets(
+                             profile_id,profile_generation,target_id,kind,
+                             stable_name,pack_id,governance_domain,reason_code,
+                             schema_version,created_at,updated_at
+                           ) VALUES (?,?,?,?,?,?,?,'reflection_candidate',1,?,?)""",
+                (
+                    owner.profile_id,
+                    owner.profile_generation,
+                    target.target_id,
+                    target.kind.value,
+                    target.stable_name,
+                    target.pack_id,
+                    "companion_growth",
+                    now,
+                    now,
+                ),
+            )
+        elif not self._same(target_row, target_expected):
+            raise CompanionConflictError(f"growth_target_conflict:{target.target_id}")
+        if typed_proposal.candidate_mode.value == "genesis":
+            reservation = db.execute(
+                """SELECT * FROM growth_target_reservations
+                           WHERE profile_id=? AND profile_generation=?
+                             AND kind=? AND stable_name=?""",
+                (
+                    owner.profile_id,
+                    owner.profile_generation,
+                    target.kind.value,
+                    target.stable_name,
+                ),
+            ).fetchone()
+            if reservation is None:
+                db.execute(
+                    """INSERT INTO growth_target_reservations(
+                                 profile_id,profile_generation,kind,stable_name,
+                                 target_id,pack_id,candidate_id,
+                                 reservation_version,status,reason_code,
+                                 schema_version,created_at,updated_at
+                               ) VALUES (?,?,?,?,?,?,NULL,1,'held',
+                                         'reflection_candidate_reserved',1,?,?)""",
                     (
                         owner.profile_id,
                         owner.profile_generation,
-                        normalized_build_id,
-                        "reflection",
-                        source_ref,
-                        job_id,
-                        normalized_proposal_ref,
-                        proposal_json,
-                        proposal_hash,
-                        canonical_json(evidence_ids),
-                        evidence_hash,
-                        typed_proposal.candidate_mode.value,
-                        source_fence_json,
-                        canonical_hash(
-                            None
-                            if typed_proposal.source_fence is None
-                            else typed_proposal.source_fence.to_dict()
-                        ),
-                        target_fence_json,
-                        canonical_hash(typed_proposal.target_fence.to_dict()),
-                        builder_launch_id,
-                        child_run_id,
-                        expected_child_start_hash,
+                        target.kind.value,
+                        target.stable_name,
+                        target.target_id,
+                        target.pack_id,
                         now,
                         now,
                     ),
                 )
-                build_row = self._find_candidate_build(db, normalized_build_id, owner=owner)
-            self._bump_detail(
-                db,
-                owner,
-                mutation_hash=canonical_hash(
-                    [
-                        "reflection_decision",
-                        job_id,
-                        decision_id,
-                        decision,
-                        proposal_hash,
-                    ]
-                ),
-                now=now,
-            )
-            decision_row = db.execute(
-                """SELECT * FROM reflection_decisions
-                   WHERE profile_id=? AND profile_generation=?
-                     AND job_id=? AND decision_id=?""",
-                (
-                    owner.profile_id,
-                    owner.profile_generation,
+            elif (
+                str(reservation["target_id"]) == target.target_id
+                and str(reservation["pack_id"]) == target.pack_id
+                and str(reservation["status"]) == "released"
+                and reservation["candidate_id"] is None
+            ):
+                cursor = db.execute(
+                    """UPDATE growth_target_reservations
+                               SET status='held',
+                                   reason_code='reflection_candidate_replanned',
+                                   updated_at=?
+                               WHERE profile_id=? AND profile_generation=?
+                                 AND kind=? AND stable_name=?
+                                 AND target_id=? AND pack_id=?
+                                 AND status='released'
+                                 AND candidate_id IS NULL
+                                 AND reservation_version=?""",
+                    (
+                        now,
+                        owner.profile_id,
+                        owner.profile_generation,
+                        target.kind.value,
+                        target.stable_name,
+                        target.target_id,
+                        target.pack_id,
+                        int(reservation["reservation_version"]),
+                    ),
+                )
+                if cursor.rowcount != 1:
+                    raise CompanionConflictError(
+                        f"growth_target_reservation_replan_conflict:{target.target_id}"
+                    )
+            elif (
+                str(reservation["target_id"]) != target.target_id
+                or str(reservation["pack_id"]) != target.pack_id
+                or str(reservation["status"]) != "held"
+                or reservation["candidate_id"] is not None
+            ):
+                raise CompanionConflictError(f"growth_target_reserved:{target.target_id}")
+
+    def _bump_reflection_detail(
+        self,
+        build_row: sqlite3.Row | None,
+        *,
+        db,
+        decision: str,
+        decision_id: str,
+        job_id: str,
+        now,
+        owner: OwnerRef,
+        proposal_hash,
+    ) -> Mapping[str, Any]:
+        self._bump_detail(
+            db,
+            owner,
+            mutation_hash=canonical_hash(
+                [
+                    "reflection_decision",
                     job_id,
                     decision_id,
-                ),
-            ).fetchone()
-            assert decision_row is not None
-            return {
-                "decision": dict(decision_row),
-                "candidate_build": (None if build_row is None else dict(build_row)),
-            }
+                    decision,
+                    proposal_hash,
+                ]
+            ),
+            now=now,
+        )
+        decision_row = db.execute(
+            """SELECT * FROM reflection_decisions
+                   WHERE profile_id=? AND profile_generation=?
+                     AND job_id=? AND decision_id=?""",
+            (
+                owner.profile_id,
+                owner.profile_generation,
+                job_id,
+                decision_id,
+            ),
+        ).fetchone()
+        assert decision_row is not None
+        return {
+            "decision": dict(decision_row),
+            "candidate_build": (None if build_row is None else dict(build_row)),
+        }

@@ -50,6 +50,94 @@ class EvaluationAdmissionMixin(CompanionStoreCore):
         same transaction.
         """
 
+        baseline_kind, candidate_mode = self._validate_evaluation_run_fields(evaluation)
+        if not case_inputs or not cases:
+            raise ValueError("evaluation_cases_required")
+
+        normalized_cases, normalized_inputs = self._normalize_evaluation_cases(case_inputs, cases)
+
+        evaluation_id = str(evaluation["evaluation_id"]).strip()
+        candidate_id = str(evaluation["candidate_id"]).strip()
+        if not evaluation_id or not candidate_id:
+            raise ValueError("evaluation_identity_required")
+        now = self._now()
+        with self._write() as db:
+            candidate, existing, expected_run = self._load_evaluation_candidate(
+                baseline_kind,
+                candidate_id=candidate_id,
+                candidate_mode=candidate_mode,
+                db=db,
+                evaluation=evaluation,
+                evaluation_id=evaluation_id,
+                owner=owner,
+            )
+            if existing is not None:
+                if not self._same(existing, expected_run):
+                    raise CompanionConflictError("evaluation_experiment_conflict")
+                stored_inputs = db.execute(
+                    """SELECT * FROM evaluation_case_inputs
+                       WHERE profile_id=? AND profile_generation=?
+                         AND evaluation_id=? ORDER BY input_id""",
+                    (
+                        owner.profile_id,
+                        owner.profile_generation,
+                        evaluation_id,
+                    ),
+                ).fetchall()
+                stored_cases = db.execute(
+                    """SELECT * FROM evaluation_cases
+                       WHERE profile_id=? AND profile_generation=?
+                         AND evaluation_id=? ORDER BY case_id,variant""",
+                    (
+                        owner.profile_id,
+                        owner.profile_generation,
+                        evaluation_id,
+                    ),
+                ).fetchall()
+                self._require_same_stored_cases(
+                    normalized_cases, normalized_inputs, stored_cases, stored_inputs
+                )
+                return {
+                    "evaluation": dict(existing),
+                    "input_count": len(stored_inputs),
+                    "case_count": len(stored_cases),
+                }
+            if str(candidate["status"]) != "proposed":
+                raise CompanionStateError("evaluation_candidate_not_proposed")
+            db.execute(
+                """INSERT INTO evaluation_runs(
+                     profile_id,profile_generation,evaluation_id,candidate_id,
+                     candidate_mode,suite_hash,attempt_key,baseline_kind,
+                     old_snapshot_hash,candidate_snapshot_hash,
+                     source_owner_key,source_scope,source_scope_key,
+                     source_pack_id,source_version,source_manifest_hash,
+                     source_binding_generation,absent_baseline_ref,
+                     absent_baseline_hash,runner_id,runner_policy_hash,
+                     provider_id,model_id,status,claim_epoch,reason_code,
+                     schema_version,created_at,updated_at
+                   ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,
+                             'queued',0,?,1,?,?)""",
+                (
+                    owner.profile_id,
+                    owner.profile_generation,
+                    *expected_run.values(),
+                    reason_code,
+                    now,
+                    now,
+                ),
+            )
+            return self._insert_evaluation_rows(
+                candidate_id,
+                db=db,
+                evaluation=evaluation,
+                evaluation_id=evaluation_id,
+                normalized_cases=normalized_cases,
+                normalized_inputs=normalized_inputs,
+                now=now,
+                owner=owner,
+            )
+
+    def _validate_evaluation_run_fields(self, evaluation: Mapping[str, Any]):
         required_run = {
             "evaluation_id",
             "candidate_id",
@@ -93,9 +181,11 @@ class EvaluationAdmissionMixin(CompanionStoreCore):
             or int(evaluation.get("source_binding_generation") or 0) < 1
         ):
             raise ValueError("evaluation_source_baseline_required")
-        if not case_inputs or not cases:
-            raise ValueError("evaluation_cases_required")
+        return baseline_kind, candidate_mode
 
+    def _normalize_evaluation_cases(
+        self, case_inputs: Sequence[Mapping[str, Any]], cases: Sequence[Mapping[str, Any]]
+    ):
         def frozen_blob(value: Any, name: str) -> bytes:
             if isinstance(value, bytes):
                 return value
@@ -234,16 +324,22 @@ class EvaluationAdmissionMixin(CompanionStoreCore):
             or set(variants_by_case) != seen_case_ids
         ):
             raise ValueError("evaluation_case_variants_incomplete")
+        return normalized_cases, normalized_inputs
 
-        evaluation_id = str(evaluation["evaluation_id"]).strip()
-        candidate_id = str(evaluation["candidate_id"]).strip()
-        if not evaluation_id or not candidate_id:
-            raise ValueError("evaluation_identity_required")
-        now = self._now()
-        with self._write() as db:
-            self._require_owner(db, owner)
-            candidate = db.execute(
-                """SELECT a.*,p.candidate_package_hash,
+    def _load_evaluation_candidate(
+        self,
+        baseline_kind,
+        *,
+        candidate_id,
+        candidate_mode,
+        db,
+        evaluation: Mapping[str, Any],
+        evaluation_id,
+        owner: OwnerRef,
+    ):
+        self._require_owner(db, owner)
+        candidate = db.execute(
+            """SELECT a.*,p.candidate_package_hash,
                           p.candidate_manifest_hash,p.archive_hash
                    FROM candidate_artifacts a
                    JOIN candidate_packages p
@@ -252,174 +348,141 @@ class EvaluationAdmissionMixin(CompanionStoreCore):
                     AND p.package_id=a.package_id
                    WHERE a.profile_id=? AND a.profile_generation=?
                      AND a.candidate_id=?""",
-                (
-                    owner.profile_id,
-                    owner.profile_generation,
-                    candidate_id,
-                ),
-            ).fetchone()
-            if candidate is None:
-                raise CompanionStateError("evaluation_candidate_missing")
-            if (
-                str(candidate["candidate_mode"]) != candidate_mode
-                or str(candidate["candidate_package_hash"])
-                != str(evaluation["candidate_package_hash"])
-                or str(candidate["candidate_manifest_hash"])
-                != str(evaluation["candidate_manifest_hash"])
-                or str(candidate["archive_hash"]) != str(evaluation["candidate_archive_hash"])
-            ):
-                raise CompanionConflictError("evaluation_candidate_package_fence_mismatch")
-            existing = db.execute(
-                """SELECT * FROM evaluation_runs
+            (
+                owner.profile_id,
+                owner.profile_generation,
+                candidate_id,
+            ),
+        ).fetchone()
+        if candidate is None:
+            raise CompanionStateError("evaluation_candidate_missing")
+        if (
+            str(candidate["candidate_mode"]) != candidate_mode
+            or str(candidate["candidate_package_hash"]) != str(evaluation["candidate_package_hash"])
+            or str(candidate["candidate_manifest_hash"])
+            != str(evaluation["candidate_manifest_hash"])
+            or str(candidate["archive_hash"]) != str(evaluation["candidate_archive_hash"])
+        ):
+            raise CompanionConflictError("evaluation_candidate_package_fence_mismatch")
+        existing = db.execute(
+            """SELECT * FROM evaluation_runs
                    WHERE profile_id=? AND profile_generation=?
                      AND (evaluation_id=? OR
                           (candidate_id=? AND suite_hash=? AND attempt_key=?))""",
-                (
-                    owner.profile_id,
-                    owner.profile_generation,
-                    evaluation_id,
-                    candidate_id,
-                    str(evaluation["suite_hash"]),
-                    str(evaluation["attempt_key"]),
-                ),
-            ).fetchone()
-            expected_run = {
-                "evaluation_id": evaluation_id,
-                "candidate_id": candidate_id,
-                "candidate_mode": candidate_mode,
-                "suite_hash": str(evaluation["suite_hash"]),
-                "attempt_key": str(evaluation["attempt_key"]),
-                "baseline_kind": baseline_kind,
-                "old_snapshot_hash": str(evaluation["old_snapshot_hash"]),
-                "candidate_snapshot_hash": str(evaluation["candidate_snapshot_hash"]),
-                "source_owner_key": evaluation.get("source_owner_key"),
-                "source_scope": evaluation.get("source_scope"),
-                "source_scope_key": evaluation.get("source_scope_key"),
-                "source_pack_id": evaluation.get("source_pack_id"),
-                "source_version": evaluation.get("source_version"),
-                "source_manifest_hash": evaluation.get("source_manifest_hash"),
-                "source_binding_generation": evaluation.get("source_binding_generation"),
-                "absent_baseline_ref": evaluation.get("absent_baseline_ref"),
-                "absent_baseline_hash": evaluation.get("absent_baseline_hash"),
-                "runner_id": str(evaluation["runner_id"]),
-                "runner_policy_hash": str(evaluation["runner_policy_hash"]),
-                "provider_id": str(evaluation["provider_id"]),
-                "model_id": str(evaluation["model_id"]),
+            (
+                owner.profile_id,
+                owner.profile_generation,
+                evaluation_id,
+                candidate_id,
+                str(evaluation["suite_hash"]),
+                str(evaluation["attempt_key"]),
+            ),
+        ).fetchone()
+        expected_run = {
+            "evaluation_id": evaluation_id,
+            "candidate_id": candidate_id,
+            "candidate_mode": candidate_mode,
+            "suite_hash": str(evaluation["suite_hash"]),
+            "attempt_key": str(evaluation["attempt_key"]),
+            "baseline_kind": baseline_kind,
+            "old_snapshot_hash": str(evaluation["old_snapshot_hash"]),
+            "candidate_snapshot_hash": str(evaluation["candidate_snapshot_hash"]),
+            "source_owner_key": evaluation.get("source_owner_key"),
+            "source_scope": evaluation.get("source_scope"),
+            "source_scope_key": evaluation.get("source_scope_key"),
+            "source_pack_id": evaluation.get("source_pack_id"),
+            "source_version": evaluation.get("source_version"),
+            "source_manifest_hash": evaluation.get("source_manifest_hash"),
+            "source_binding_generation": evaluation.get("source_binding_generation"),
+            "absent_baseline_ref": evaluation.get("absent_baseline_ref"),
+            "absent_baseline_hash": evaluation.get("absent_baseline_hash"),
+            "runner_id": str(evaluation["runner_id"]),
+            "runner_policy_hash": str(evaluation["runner_policy_hash"]),
+            "provider_id": str(evaluation["provider_id"]),
+            "model_id": str(evaluation["model_id"]),
+        }
+        return candidate, existing, expected_run
+
+    def _require_same_stored_cases(
+        self,
+        normalized_cases: list[dict[str, str]],
+        normalized_inputs: list[dict[str, Any]],
+        stored_cases,
+        stored_inputs,
+    ) -> None:
+        expected_inputs = {
+            str(item["input_id"]): {
+                "case_id": item["case_id"],
+                "source_kind": item["source_kind"],
+                "resource_ref": item["resource_ref"],
+                "resource_hash": item["resource_hash"],
+                "source_event_refs_json": item["source_event_refs_json"],
+                "input_envelope_blob": item["input_envelope_blob"],
+                "input_hash": item["input_hash"],
+                "adapter_id": item["adapter_id"],
+                "adapter_version": item["adapter_version"],
+                "adapter_build_fingerprint": item["adapter_build_fingerprint"],
+                "assertion_ref": item["assertion_ref"],
+                "assertion_hash": item["assertion_hash"],
+                "read_tool_fixture_blob": item["read_tool_fixture_blob"],
+                "read_tool_fixture_root_hash": item["read_tool_fixture_root_hash"],
+                "evaluation_tool_adapter_map_json": item["evaluation_tool_adapter_map_json"],
             }
-            if existing is not None:
-                if not self._same(existing, expected_run):
-                    raise CompanionConflictError("evaluation_experiment_conflict")
-                stored_inputs = db.execute(
-                    """SELECT * FROM evaluation_case_inputs
-                       WHERE profile_id=? AND profile_generation=?
-                         AND evaluation_id=? ORDER BY input_id""",
-                    (
-                        owner.profile_id,
-                        owner.profile_generation,
-                        evaluation_id,
-                    ),
-                ).fetchall()
-                stored_cases = db.execute(
-                    """SELECT * FROM evaluation_cases
-                       WHERE profile_id=? AND profile_generation=?
-                         AND evaluation_id=? ORDER BY case_id,variant""",
-                    (
-                        owner.profile_id,
-                        owner.profile_generation,
-                        evaluation_id,
-                    ),
-                ).fetchall()
-                expected_inputs = {
-                    str(item["input_id"]): {
-                        "case_id": item["case_id"],
-                        "source_kind": item["source_kind"],
-                        "resource_ref": item["resource_ref"],
-                        "resource_hash": item["resource_hash"],
-                        "source_event_refs_json": item["source_event_refs_json"],
-                        "input_envelope_blob": item["input_envelope_blob"],
-                        "input_hash": item["input_hash"],
-                        "adapter_id": item["adapter_id"],
-                        "adapter_version": item["adapter_version"],
-                        "adapter_build_fingerprint": item["adapter_build_fingerprint"],
-                        "assertion_ref": item["assertion_ref"],
-                        "assertion_hash": item["assertion_hash"],
-                        "read_tool_fixture_blob": item["read_tool_fixture_blob"],
-                        "read_tool_fixture_root_hash": item["read_tool_fixture_root_hash"],
-                        "evaluation_tool_adapter_map_json": item[
-                            "evaluation_tool_adapter_map_json"
-                        ],
-                    }
-                    for item in normalized_inputs
-                }
-                expected_cases = {
-                    (str(item["case_id"]), str(item["variant"])): {
-                        "input_id": item["input_id"],
-                        "input_hash": item["input_hash"],
-                        "manifest_case_version": item["manifest_case_version"],
-                        "blind_label": item["blind_label"],
-                        "expected_kind": item["expected_kind"],
-                    }
-                    for item in normalized_cases
-                }
-                if (
-                    len(stored_inputs) != len(expected_inputs)
-                    or any(
-                        str(row["input_id"]) not in expected_inputs
-                        or not self._same(row, expected_inputs[str(row["input_id"])])
-                        for row in stored_inputs
-                    )
-                    or len(stored_cases) != len(expected_cases)
-                    or any(
+            for item in normalized_inputs
+        }
+        expected_cases = {
+            (str(item["case_id"]), str(item["variant"])): {
+                "input_id": item["input_id"],
+                "input_hash": item["input_hash"],
+                "manifest_case_version": item["manifest_case_version"],
+                "blind_label": item["blind_label"],
+                "expected_kind": item["expected_kind"],
+            }
+            for item in normalized_cases
+        }
+        if (
+            len(stored_inputs) != len(expected_inputs)
+            or any(
+                str(row["input_id"]) not in expected_inputs
+                or not self._same(row, expected_inputs[str(row["input_id"])])
+                for row in stored_inputs
+            )
+            or len(stored_cases) != len(expected_cases)
+            or any(
+                (
+                    str(row["case_id"]),
+                    str(row["variant"]),
+                )
+                not in expected_cases
+                or not self._same(
+                    row,
+                    expected_cases[
                         (
                             str(row["case_id"]),
                             str(row["variant"]),
                         )
-                        not in expected_cases
-                        or not self._same(
-                            row,
-                            expected_cases[
-                                (
-                                    str(row["case_id"]),
-                                    str(row["variant"]),
-                                )
-                            ],
-                        )
-                        for row in stored_cases
-                    )
-                ):
-                    raise CompanionConflictError("evaluation_experiment_case_conflict")
-                return {
-                    "evaluation": dict(existing),
-                    "input_count": len(stored_inputs),
-                    "case_count": len(stored_cases),
-                }
-            if str(candidate["status"]) != "proposed":
-                raise CompanionStateError("evaluation_candidate_not_proposed")
-            db.execute(
-                """INSERT INTO evaluation_runs(
-                     profile_id,profile_generation,evaluation_id,candidate_id,
-                     candidate_mode,suite_hash,attempt_key,baseline_kind,
-                     old_snapshot_hash,candidate_snapshot_hash,
-                     source_owner_key,source_scope,source_scope_key,
-                     source_pack_id,source_version,source_manifest_hash,
-                     source_binding_generation,absent_baseline_ref,
-                     absent_baseline_hash,runner_id,runner_policy_hash,
-                     provider_id,model_id,status,claim_epoch,reason_code,
-                     schema_version,created_at,updated_at
-                   ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,
-                             'queued',0,?,1,?,?)""",
-                (
-                    owner.profile_id,
-                    owner.profile_generation,
-                    *expected_run.values(),
-                    reason_code,
-                    now,
-                    now,
-                ),
+                    ],
+                )
+                for row in stored_cases
             )
-            for item in normalized_inputs:
-                db.execute(
-                    """INSERT INTO evaluation_case_inputs(
+        ):
+            raise CompanionConflictError("evaluation_experiment_case_conflict")
+
+    def _insert_evaluation_rows(
+        self,
+        candidate_id,
+        *,
+        db,
+        evaluation: Mapping[str, Any],
+        evaluation_id,
+        normalized_cases: list[dict[str, str]],
+        normalized_inputs: list[dict[str, Any]],
+        now,
+        owner: OwnerRef,
+    ) -> Mapping[str, Any]:
+        for item in normalized_inputs:
+            db.execute(
+                """INSERT INTO evaluation_case_inputs(
                          profile_id,profile_generation,evaluation_id,input_id,
                          case_id,source_kind,resource_ref,resource_hash,
                          source_event_refs_json,input_envelope_blob,input_hash,
@@ -430,33 +493,33 @@ class EvaluationAdmissionMixin(CompanionStoreCore):
                          reason_code,schema_version,created_at,updated_at
                        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,
                                  'live','evaluation_input_frozen',1,?,?)""",
-                    (
-                        owner.profile_id,
-                        owner.profile_generation,
-                        evaluation_id,
-                        item["input_id"],
-                        item["case_id"],
-                        item["source_kind"],
-                        item["resource_ref"],
-                        item["resource_hash"],
-                        item["source_event_refs_json"],
-                        item["input_envelope_blob"],
-                        item["input_hash"],
-                        item["adapter_id"],
-                        item["adapter_version"],
-                        item["adapter_build_fingerprint"],
-                        item["assertion_ref"],
-                        item["assertion_hash"],
-                        item["read_tool_fixture_blob"],
-                        item["read_tool_fixture_root_hash"],
-                        item["evaluation_tool_adapter_map_json"],
-                        now,
-                        now,
-                    ),
-                )
-            for item in normalized_cases:
-                db.execute(
-                    """INSERT INTO evaluation_cases(
+                (
+                    owner.profile_id,
+                    owner.profile_generation,
+                    evaluation_id,
+                    item["input_id"],
+                    item["case_id"],
+                    item["source_kind"],
+                    item["resource_ref"],
+                    item["resource_hash"],
+                    item["source_event_refs_json"],
+                    item["input_envelope_blob"],
+                    item["input_hash"],
+                    item["adapter_id"],
+                    item["adapter_version"],
+                    item["adapter_build_fingerprint"],
+                    item["assertion_ref"],
+                    item["assertion_hash"],
+                    item["read_tool_fixture_blob"],
+                    item["read_tool_fixture_root_hash"],
+                    item["evaluation_tool_adapter_map_json"],
+                    now,
+                    now,
+                ),
+            )
+        for item in normalized_cases:
+            db.execute(
+                """INSERT INTO evaluation_cases(
                          profile_id,profile_generation,evaluation_id,case_id,
                          variant,input_id,input_hash,manifest_case_version,
                          blind_label,expected_kind,status,claim_epoch,attempt,
@@ -464,67 +527,67 @@ class EvaluationAdmissionMixin(CompanionStoreCore):
                          created_at,updated_at
                        ) VALUES (?,?,?,?,?,?,?,?,?,?,'queued',0,0,0,
                                  'evaluation_case_queued',1,?,?)""",
-                    (
-                        owner.profile_id,
-                        owner.profile_generation,
-                        evaluation_id,
-                        item["case_id"],
-                        item["variant"],
-                        item["input_id"],
-                        item["input_hash"],
-                        item["manifest_case_version"],
-                        item["blind_label"],
-                        item["expected_kind"],
-                        now,
-                        now,
-                    ),
-                )
-            updated = db.execute(
-                """UPDATE candidate_artifacts
+                (
+                    owner.profile_id,
+                    owner.profile_generation,
+                    evaluation_id,
+                    item["case_id"],
+                    item["variant"],
+                    item["input_id"],
+                    item["input_hash"],
+                    item["manifest_case_version"],
+                    item["blind_label"],
+                    item["expected_kind"],
+                    now,
+                    now,
+                ),
+            )
+        updated = db.execute(
+            """UPDATE candidate_artifacts
                    SET status='evaluating',
                        reason_code='evaluation_experiment_admitted',
                        updated_at=?
                    WHERE profile_id=? AND profile_generation=?
                      AND candidate_id=? AND status='proposed'""",
-                (
-                    now,
-                    owner.profile_id,
-                    owner.profile_generation,
+            (
+                now,
+                owner.profile_id,
+                owner.profile_generation,
+                candidate_id,
+            ),
+        )
+        if updated.rowcount != 1:
+            raise CompanionConflictError("evaluation_candidate_admission_lost")
+        self._bump_detail(
+            db,
+            owner,
+            mutation_hash=canonical_hash(
+                [
+                    "evaluation_experiment",
+                    evaluation_id,
                     candidate_id,
-                ),
-            )
-            if updated.rowcount != 1:
-                raise CompanionConflictError("evaluation_candidate_admission_lost")
-            self._bump_detail(
-                db,
-                owner,
-                mutation_hash=canonical_hash(
-                    [
-                        "evaluation_experiment",
-                        evaluation_id,
-                        candidate_id,
-                        str(evaluation["suite_hash"]),
-                        sorted(item["input_hash"] for item in normalized_inputs),
-                    ]
-                ),
-                now=now,
-            )
-            row = db.execute(
-                """SELECT * FROM evaluation_runs
+                    str(evaluation["suite_hash"]),
+                    sorted(item["input_hash"] for item in normalized_inputs),
+                ]
+            ),
+            now=now,
+        )
+        row = db.execute(
+            """SELECT * FROM evaluation_runs
                    WHERE profile_id=? AND profile_generation=?
                      AND evaluation_id=?""",
-                (
-                    owner.profile_id,
-                    owner.profile_generation,
-                    evaluation_id,
-                ),
-            ).fetchone()
-            assert row is not None
-            return {
-                "evaluation": dict(row),
-                "input_count": len(normalized_inputs),
-                "case_count": len(normalized_cases),
-            }
+            (
+                owner.profile_id,
+                owner.profile_generation,
+                evaluation_id,
+            ),
+        ).fetchone()
+        assert row is not None
+        return {
+            "evaluation": dict(row),
+            "input_count": len(normalized_inputs),
+            "case_count": len(normalized_cases),
+        }
 
     def create_evaluation_authorization(
         self,
