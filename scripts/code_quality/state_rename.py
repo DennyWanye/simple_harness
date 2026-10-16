@@ -25,11 +25,15 @@ from pathlib import Path
 SCOPES = (ast.Lambda, ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)
 
 
-def find_func(tree: ast.Module, qual: str) -> tuple[ast.ClassDef, ast.AsyncFunctionDef | ast.FunctionDef]:
+def find_func(
+    tree: ast.Module, qual: str
+) -> tuple[ast.ClassDef, ast.AsyncFunctionDef | ast.FunctionDef]:
     cls_name, _, fn_name = qual.partition(".")
     cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == cls_name)
     fn = next(
-        n for n in cls.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name == fn_name
+        n
+        for n in cls.body
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name == fn_name
     )
     return cls, fn
 
@@ -53,8 +57,26 @@ def collect(fn: ast.AST) -> tuple[set[str], list[ast.Name]]:
             isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and n is not fn
         ):
             sys.exit(f"拒绝：函数里有 {type(n).__name__}（第 {n.lineno} 行）")
+    for n in ast.walk(fn):
+        if (
+            isinstance(n, ast.Call)
+            and isinstance(n.func, ast.Name)
+            and n.func.id
+            in (
+                "locals",
+                "vars",
+                "eval",
+                "exec",
+                "dir",
+            )
+        ):
+            sys.exit(
+                f"拒绝：第 {n.lineno} 行用 {n.func.id}() 动态取局部变量，改名后会读不到（先手工改掉）"
+            )
     a = fn.args  # type: ignore[attr-defined]
-    params = [p.arg for p in a.posonlyargs + a.args + a.kwonlyargs + [x for x in (a.vararg, a.kwarg) if x]]
+    params = [
+        p.arg for p in a.posonlyargs + a.args + a.kwonlyargs + [x for x in (a.vararg, a.kwarg) if x]
+    ]
     except_names = {n.name for n in ast.walk(fn) if isinstance(n, ast.ExceptHandler) and n.name}
     targets: set[str] = set()
     nodes: list[ast.Name] = []
@@ -146,7 +168,9 @@ def main() -> int:
     a = ap.parse_args()
     path = Path(a.file)
     if a.check:
-        head = subprocess.run(["git", "show", f"HEAD:./{path.name}"], cwd=path.parent, capture_output=True, text=True).stdout
+        head = subprocess.run(
+            ["git", "show", f"HEAD:./{path.name}"], cwd=path.parent, capture_output=True, text=True
+        ).stdout
         _, old = find_func(ast.parse(head), a.qual)
         _, new = find_func(ast.parse(path.read_text()), a.qual)
         names, _ = collect(old)
@@ -171,10 +195,18 @@ def main() -> int:
             b[: node.col_offset] + f"{a.state}.{node.id}".encode("utf-8") + b[node.end_col_offset :]
         ).decode("utf-8")
     args = fn.args
-    params = [p.arg for p in args.posonlyargs + args.args + args.kwonlyargs if p.arg not in ("self", "cls")]
+    params = [
+        p.arg
+        for p in args.posonlyargs + args.args + args.kwonlyargs
+        if p.arg not in ("self", "cls")
+    ]
     params += [x.arg for x in (args.vararg, args.kwarg) if x]
     first = fn.body[0]
-    has_doc = isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant) and isinstance(first.value.value, str)
+    has_doc = (
+        isinstance(first, ast.Expr)
+        and isinstance(first.value, ast.Constant)
+        and isinstance(first.value.value, str)
+    )
     anchor = fn.body[1] if has_doc else first
     indent = " " * anchor.col_offset
     init = f"{indent}{a.state} = {a.cls}({', '.join(f'{p}={p}' for p in params)})\n"
