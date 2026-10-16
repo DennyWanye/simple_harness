@@ -30,6 +30,8 @@ BACKEND = REPO / "backend"
 
 
 def module_of(path: Path) -> str:
+    if not path.is_relative_to(BACKEND):
+        return "__script__." + path.stem  # 仓库根脚本：只会用绝对导入
     rel = path.relative_to(BACKEND).with_suffix("")
     parts = list(rel.parts)
     if parts[-1] == "__init__":
@@ -83,7 +85,9 @@ def main() -> int:
     }
     edits: dict[Path, list[tuple[ast.ImportFrom, str]]] = defaultdict(list)
     problems = []
-    for path in BACKEND.rglob("*.py"):
+    # 仓库根下的脚本也会从 backend 包导入（如 scripts/bench）
+    candidates = [*BACKEND.rglob("*.py"), *(REPO / "scripts").rglob("*.py")]
+    for path in candidates:
         if ".venv" in path.parts or path == init:
             continue
         text = path.read_text(encoding="utf-8")
@@ -107,6 +111,10 @@ def main() -> int:
             groups: dict[str, list[str]] = defaultdict(list)
             for al in n.names:
                 local = al.asname or al.name
+                if al.name in submods and al.name in table:
+                    # 旧包根把同名函数转出、遮住了子模块：清空后这里会拿到模块而不是函数
+                    problems.append(f"{path}:{n.lineno} {al.name} 既是子模块又是旧转出的同名定义")
+                    continue
                 if al.name in submods:
                     groups[""].append(f"{al.name}" + (f" as {al.asname}" if al.asname else ""))
                     continue
@@ -139,7 +147,7 @@ def main() -> int:
     if a.dry_run:
         for path, items in sorted(edits.items()):
             for n, stmts in items:
-                print(f"  {path.relative_to(BACKEND)}:{n.lineno} → {' ; '.join(stmts)}")
+                print(f"  {path}:{n.lineno} → {' ; '.join(stmts)}")
         return 0
     ruff = str(REPO.parent / "simple_harness/sdk/simple-harness-sdk/.venv/bin/ruff")
     cfg = str(REPO / "scripts/code_quality/ruff.toml")

@@ -23,16 +23,13 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from deskpet.tools import os_tools
-from deskpet.tools.os_tools import (
-    desktop_create_file,
-    edit_file,
-    list_directory,
-    read_file,
-    run_shell,
-    web_fetch,
-    write_file,
-)
+from deskpet.tools.os_tools.desktop_create_file import desktop_create_file
+from deskpet.tools.os_tools.edit_file import edit_file
+from deskpet.tools.os_tools.list_directory import list_directory
+from deskpet.tools.os_tools.read_file import read_file
+from deskpet.tools.os_tools.run_shell import run_shell
+from deskpet.tools.os_tools.web_fetch import web_fetch
+from deskpet.tools.os_tools.write_file import write_file
 
 
 def _decode(raw: Any) -> dict[str, Any]:
@@ -279,13 +276,13 @@ def test_all_os_tools_error_have_hint_field() -> None:
     """Iterate every tool exported by os_tools and confirm the hint
     contract is upheld for an obvious error trigger."""
     tools: list[tuple[str, Callable[[dict, str], str]]] = [
-        ("run_shell", os_tools.run_shell),
-        ("write_file", os_tools.write_file),
-        ("edit_file", os_tools.edit_file),
-        ("read_file", os_tools.read_file),
-        ("list_directory", os_tools.list_directory),
-        ("desktop_create_file", os_tools.desktop_create_file),
-        ("web_fetch", os_tools.web_fetch),
+        ("run_shell", run_shell),
+        ("write_file", write_file),
+        ("edit_file", edit_file),
+        ("read_file", read_file),
+        ("list_directory", list_directory),
+        ("desktop_create_file", desktop_create_file),
+        ("web_fetch", web_fetch),
     ]
     for name, fn in tools:
         raw = fn(_force_error_trigger(name), "")

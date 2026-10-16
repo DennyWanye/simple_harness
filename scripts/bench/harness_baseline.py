@@ -47,7 +47,8 @@ from deskpet.harness.router import (  # noqa: E402
     RegisteredRouter,
 )
 from deskpet.tools.registry import ToolRegistry  # noqa: E402
-from deskpet.workflows.store import NativeCheckpointStore, WorkflowRunStore  # noqa: E402
+from deskpet.workflows.store.checkpointer import NativeCheckpointStore  # noqa: E402
+from deskpet.workflows.store.run_store import WorkflowRunStore  # noqa: E402
 from deskpet.workflows.store.execution_uow import (  # noqa: E402
     SqliteExecutionUnitOfWork,
 )

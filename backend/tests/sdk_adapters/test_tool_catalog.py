@@ -603,24 +603,26 @@ def test_all_14_specialized_migrations_reach_equivalent_real_handlers(
                 "root_run_id": kwargs["root_run_id"],
             }
 
-    from deskpet.tools import window_use_tool
+    from deskpet.tools import resource_scopes, window_use_tool
     from deskpet.tools.os_tools import app_tools, process_tools
 
     service = ProcessService()
     monkeypatch.setattr(app_tools, "get_process_tool_service", lambda: service)
     monkeypatch.setattr(process_tools, "_PROCESS_SERVICE", service)
-    monkeypatch.setattr(
-        app_tools,
-        "discover_app",
-        lambda _query: [
+
+    def fake_discover_app(_query):
+        return [
             {
                 "source": "fixture",
                 "executable": "/bin/echo",
                 "discovered": True,
                 "launchable_probe": True,
             }
-        ],
-    )
+        ]
+
+    monkeypatch.setattr(app_tools, "discover_app", fake_discover_app)
+    # 资源范围解析在模块顶部导入了 discover_app（阶段 6E 解环），读取处一并替换
+    monkeypatch.setattr(resource_scopes, "discover_app", fake_discover_app)
 
     class ProcessProbe:
         def __init__(self, _pid):

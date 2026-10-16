@@ -20,15 +20,13 @@ from pathlib import Path
 
 import pytest
 from deskpet.tools.capabilities import ToolExecutionContext
-from deskpet.tools.os_tools import (
-    desktop_create_file,
-    edit_file,
-    list_directory,
-    read_file,
-    run_shell,
-    web_fetch,
-    write_file,
-)
+from deskpet.tools.os_tools.desktop_create_file import desktop_create_file
+from deskpet.tools.os_tools.edit_file import edit_file
+from deskpet.tools.os_tools.list_directory import list_directory
+from deskpet.tools.os_tools.read_file import read_file
+from deskpet.tools.os_tools.run_shell import run_shell
+from deskpet.tools.os_tools.web_fetch import web_fetch
+from deskpet.tools.os_tools.write_file import write_file
 
 
 @pytest.fixture
