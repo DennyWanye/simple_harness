@@ -189,12 +189,13 @@ def main() -> int:
 
     def retarget_class_refs(module: str, code: str) -> str:
         def sub(m: re.Match[str]) -> str:
-            target = owner.get(m.group(1))
+            # m 是 `原类名.方法`：第 2 组才是方法名（阶段 6 前误用第 1 组，改写从未生效）
+            target = owner.get(m.group(2))
             if target is None:
                 return m.group(0)
             if target != module:
                 extra_imports[module].add(target)
-            return f"{cls_of[target]}.{m.group(1)}"
+            return f"{cls_of[target]}.{m.group(2)}"
 
         # 只改代码里的 `原类名.方法`（按词法记号找），字符串与注释原样不动（如 writer="HtnStore.x" 会落库）
         toks = list(tokenize.generate_tokens(io.StringIO(code).readline))
