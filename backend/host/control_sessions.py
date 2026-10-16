@@ -216,9 +216,6 @@ async def _cc_session_messages_load(conn: _ControlConnection, raw: dict, msg_typ
     _companion_history_events: list[dict[str, Any]] = []
     if sdb is not None:
         try:
-            _history_gate = service_context.get("session_terminal_projection_gate")
-            if _history_gate is not None:
-                await _history_gate.ensure_current(target_sid)
             try:
                 _history_identity = host_state.companion_identity_gate.freeze()
                 await _bind_companion_inbox_route(
@@ -409,16 +406,12 @@ async def _cc_slash_command(conn: _ControlConnection, raw: dict, msg_type: str) 
         try:
             _slash_skill_loader = await _current_slash_skill_catalog()
             _slash_skill_catalog = _slash_skill_loader
-            _slash_goal_store = service_context.get("session_goal_store")
-            _slash_pref_mem = service_context.get("preference_memory")
             _slash_result = await dispatch_slash_command(
                 cmd_name,
                 cmd_args,
                 target_sid,
                 skill_loader=_slash_skill_loader,
                 skill_catalog=_slash_skill_catalog,
-                session_goal_store=_slash_goal_store,
-                session_pref_memory=_slash_pref_mem,
             )
         except Exception as _slash_exc:  # noqa: BLE001
             logger.warning(

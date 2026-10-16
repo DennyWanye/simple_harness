@@ -119,14 +119,11 @@ async def test_breakdown_reads_only_durable_public_snapshot_and_usage(monkeypatc
             raise AssertionError("dynamic history probe must be unreachable")
 
     previous_db = host_runtime.service_context.get("session_db")
-    previous_facts = host_runtime.service_context.get("facts_store")
     try:
         host_runtime.service_context.register("session_db", _SessionDB())
-        host_runtime.service_context.register("facts_store", object())
         result = await context_usage._read_context_breakdown_authority("session-a")
     finally:
         host_runtime.service_context.register("session_db", previous_db)
-        host_runtime.service_context.register("facts_store", previous_facts)
 
     assert calls == [("snapshot", "session-a"), ("usage", "session-a")]
     assert result["snapshot_id"] == "snapshot-7"

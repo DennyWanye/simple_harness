@@ -17,7 +17,6 @@ from pathlib import Path
 from textwrap import dedent
 
 from config import ProblemPipelineConfig, load_config
-from context import ServiceContext
 
 
 def test_problem_pipeline_defaults_factory_on() -> None:
@@ -118,20 +117,3 @@ def test_problem_pipeline_unknown_subkey_dropped(tmp_path: Path) -> None:
     pp = cfg.features.problem_pipeline
     assert pp.enabled is False
     assert not hasattr(pp, "future_unknown_knob")
-
-
-def test_service_context_pipeline_keys_register_and_get() -> None:
-    """B1：4 个 pipeline service key register/get(None 占位) 不抛 ValueError。"""
-    sc = ServiceContext()
-    for key in (
-        "problem_pipeline",
-        "pipeline_evidence_gate",
-        "pipeline_self_check_gate",
-        "pipeline_convergence_controller",
-    ):
-        sc.register(key, None)  # flag off 时的占位写法
-        assert sc.get(key) is None
-    # 注册真实对象也能取回
-    sentinel = object()
-    sc.register("problem_pipeline", sentinel)
-    assert sc.get("problem_pipeline") is sentinel

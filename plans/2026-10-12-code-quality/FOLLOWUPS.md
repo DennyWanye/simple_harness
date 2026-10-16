@@ -88,3 +88,16 @@
 - 影响：code_complex、durable_task 两个工作流重启后恢复时，走到这里抛 ImportError。注释标的"死代码待删"是误标：函数在用，导入坏了。
 - 关系：与 F-1（durable_task 节点引用不存在的属性）同属 durable_task 恢复链。
 - 下一步：先定恢复时工作区从哪里取（这是功能修复），写能复现的测试再修。不在代码质量整治范围内。
+
+## F-12 上下文尝试账本做好了但生产里从不构造（待接线或删除，2026-10-17 阶段 8K 登记）
+
+- 现状：`agent/context_report.py` 的 `ContextAttemptStore` 与 `set_context_attempt_store` 在生产里没有调用方；服务槽位 `context_attempt_store` 从不登记。所以阶段 8G 做的上下文尝试挂钩在生产里一直是直通，`host/context_usage.py`、`host/control_sessions.py`、`p4_ipc.py` 读这个槽位的分支恒走"没有"。
+- 同族槽位 `context_snapshot_store`、`context_segment_store`、`compression_model_resolver` 也从不登记。
+- 本阶段的处理：按"做好的功能都开启"规则不删，保留槽位与读取分支。
+- 下一步：由用户定——接线并默认开启（Context OS 上下文账本），还是整族删除。
+
+## F-13 v7 深度研究的恢复适配器每次都失败（归"删工作流线"第 2 片，2026-10-17 登记）
+
+- 位置：`backend/host/startup_workflows.py` 的 `_deep_v7_context_factory`。它读服务槽位 `subagent_scheduler`，该槽位从不登记，恢复 v7 运行时抛 `subagent_scheduler_unavailable`。
+- 生产不新开 v7 运行（深度研究工作流启动器恒为 None），只剩恢复入口。v7 定义是编解码钉死文件。
+- 本阶段不动：后端工作流引擎整条线在"删工作流线"第 2 片里统一处理（见记忆 workflow-line-removal-slices 与 CLAUDE.md"两套引擎"欠账）。

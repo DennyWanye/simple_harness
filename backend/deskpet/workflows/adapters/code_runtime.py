@@ -288,8 +288,6 @@ class ProposalPort:
         runtime_tool_state: DurableToolRuntimeState | None = None,
         dispatch_fence_acquirer: Callable[[str], Awaitable[Any]] | None = None,
         provider_invocation_coordinator: Any | None = None,
-        context_compressor: object | None = None,
-        compaction_trigger_tokens: int | None = None,
         output_contract: TaskOutputContractV1 | None = None,
     ) -> None:
         self.llm_registry = llm_registry
@@ -306,12 +304,6 @@ class ProposalPort:
         self.runtime_tool_state = runtime_tool_state
         self.dispatch_fence_acquirer = dispatch_fence_acquirer
         self.provider_invocation_coordinator = provider_invocation_coordinator
-        self.context_compressor = context_compressor
-        self.compaction_trigger_tokens = (
-            max(1, int(compaction_trigger_tokens))
-            if compaction_trigger_tokens is not None
-            else None
-        )
         self.output_contract = output_contract
         self.allowed_tools = (
             frozenset(str(name) for name in allowed_tools) if allowed_tools is not None else None
@@ -319,21 +311,8 @@ class ProposalPort:
         if self.context_os_v1 and self.prepared_tool_set is None:
             raise ValueError("context_os_code_proposal_requires_prepared_tool_set")
 
-    def _durable_compaction_trigger(self) -> int | None:
-        if self.context_compressor is None:
-            return None
-        if self.compaction_trigger_tokens is not None:
-            return self.compaction_trigger_tokens
-        window = int(getattr(self.context_compressor, "context_window", 0) or 0)
-        if window <= 0:
-            return None
-        # Durable workflows are intrinsically agentic.  Start rolling
-        # compaction no later than 70% of the selected model window, even
-        # when the model's conversational base threshold is higher.
-        return max(1, int(window * 0.70))
-
-    async def _compact_messages_for_proposal(
-        self,
+    @staticmethod
+    def _messages_for_proposal(
         state: ProposalStateV1,
     ) -> tuple[
         list[dict[str, Any]],
@@ -348,79 +327,7 @@ class ProposalPort:
         except Exception:  # noqa: BLE001
             logger.debug("compact_messages_for_proposal_int_failed", exc_info=True)
             token_estimate = max(0, int(state.token_estimate))
-        trigger = self._durable_compaction_trigger()
-        if self.context_compressor is None or trigger is None or token_estimate < trigger:
-            return messages, None, None, None, token_estimate
-
-        try:
-            resolved_provider = getattr(self.llm_registry, "provider", None)
-            result = await self.context_compressor.compress(
-                messages,
-                goal_text=state.original_request,
-                pending_tasks=list(state.active_todo_ids),
-                resolved_provider=resolved_provider,
-                resolved_model=(
-                    self.model_name or str(state.model_snapshot.get("model") or "") or None
-                ),
-                compaction_cycle_id=(
-                    f"{state.request_id}:{state.turn_id}:workflow:{state.iteration + 1}"
-                ),
-            )
-        except Exception as exc:  # noqa: BLE001
-            # Context compaction is a continuity optimization.  A summary
-            # failure must never turn a resumable workflow into a failed Run.
-            logger.warning(
-                "durable_workflow_compaction_failed request_id=%s iteration=%d error=%s",
-                state.request_id,
-                state.iteration,
-                str(exc)[:300],
-                exc_info=True,
-            )
-            return messages, None, None, None, token_estimate
-
-        if not bool(getattr(result, "compressed", False)):
-            error = str(getattr(result, "error", "") or "")
-            if error:
-                logger.warning(
-                    "durable_workflow_compaction_skipped request_id=%s iteration=%d error=%s",
-                    state.request_id,
-                    state.iteration,
-                    error[:300],
-                )
-            return messages, None, None, None, token_estimate
-
-        compacted = [
-            copy.deepcopy(dict(message)) for message in getattr(result, "messages", messages)
-        ]
-        try:
-            compacted_tokens = int(count_messages_tokens(compacted))
-        except Exception:  # noqa: BLE001
-            logger.debug("compact_messages_for_proposal_int_failed", exc_info=True)
-            compacted_tokens = max(
-                0,
-                int(getattr(result, "output_tokens", 0) or 0),
-            )
-        summary = str(getattr(result, "summary_preview", "") or "") or None
-        compaction_ref = (
-            "workflow-compaction:sha256:"
-            + hashlib.sha256(canonical_json(compacted).encode("ascii")).hexdigest()
-        )
-        logger.info(
-            "durable_workflow_context_compacted request_id=%s iteration=%d "
-            "tokens_before=%d tokens_after=%d trigger=%d",
-            state.request_id,
-            state.iteration,
-            token_estimate,
-            compacted_tokens,
-            trigger,
-        )
-        return (
-            compacted,
-            compacted,
-            summary,
-            compaction_ref,
-            compacted_tokens,
-        )
+        return messages, None, None, None, token_estimate
 
     @staticmethod
     def _activation_batches(
@@ -623,7 +530,7 @@ class ProposalPort:
             compaction_summary,
             compaction_ref,
             token_estimate,
-        ) = await self._compact_messages_for_proposal(state)
+        ) = self._messages_for_proposal(state)
         effective_prepared = None
         if self.context_os_v1:
             validator = getattr(self.tool_registry, "validate_prepared_tool_set", None)

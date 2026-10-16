@@ -19,7 +19,6 @@ from host.ppt_outline import _expire_ppt_outline_dangling_for_startup
 from host.runtime import config, logger, service_context
 from host.stores_bootstrap import (
     _fact_extractor,
-    _facts_store,
     _message_chunker,
     _provider_workload_maintenance_tasks,
 )
@@ -27,26 +26,8 @@ from host.tools_bootstrap import deskpet_tool_registry_v2
 
 
 async def _startup_restore_and_skill_prewarm() -> None:
-    """启动：PPT 大纲清理、目标与事实恢复、技能目录与匹配预热。"""
+    """启动：PPT 大纲清理、技能目录启动。"""
     _expire_ppt_outline_dangling_for_startup()
-    # R-T1：goal_store 启动恢复（重启仍在的核心路径）。
-    _gs_for_restore = service_context.get("session_goal_store")
-    if _gs_for_restore is not None:
-        try:
-            _n = await _gs_for_restore.load_persisted()
-            logger.info("goal_store_load_persisted restored=%d", _n)
-        except Exception as _lp_exc:  # noqa: BLE001
-            logger.warning("goal_store_load_persisted_failed: %s", _lp_exc, exc_info=True)
-    # FP-4 WI-3.3 ★ FIX BUG: FactsStore.daily_decay() was never called in prod.
-    # Apply once at startup (mirrors retriever's "run once at startup" convention).
-    # Pinned facts are skipped (WI-3.3). Failure is non-fatal — only logs.
-    _fs_for_decay = service_context.get("facts_store")
-    if _fs_for_decay is not None:
-        try:
-            _decay_n = await _fs_for_decay.daily_decay()
-            logger.info("p4_facts_daily_decay_startup", mutated=_decay_n)
-        except Exception as _dd_exc:  # noqa: BLE001
-            logger.warning("p4_facts_daily_decay_failed", error=str(_dd_exc), exc_info=True)
     _legacy_sl = service_context.get("skill_loader")
     _managed_sl = service_context.get("managed_skill_discovery_projection")
     for _skill_surface, _skill_surface_name in (
@@ -69,25 +50,6 @@ async def _startup_restore_and_skill_prewarm() -> None:
                 error=str(exc),
                 exc_info=True,
             )
-    # TC-5.1 修复 (2026-06-11)：SkillMatcher 缓存预热。module-level 的 sync
-    # build() 对 async 生产 embedder 是静默 no-op → 这里 loader 启动后台跑
-    # build_async（encode 内部自动 warmup embedder，不阻塞启动）。失败无害——
-    # match_async 仍会逐 turn 惰性建缓存。
-    _sm_for_prewarm = service_context.get("skill_matcher")
-    _managed_skills_for_prewarm = service_context.get("managed_skill_discovery_projection")
-    if _sm_for_prewarm is not None and _managed_skills_for_prewarm is not None:
-
-        async def _skill_matcher_prewarm_bg() -> None:
-            try:
-                _n = await _sm_for_prewarm.build_async(_managed_skills_for_prewarm.all())
-                logger.info("fp5_skill_matcher_prewarmed", cached=_n)
-            except Exception as _pw_exc:  # noqa: BLE001
-                logger.warning(
-                    "fp5_skill_matcher_prewarm_failed", error=str(_pw_exc), exc_info=True
-                )
-
-        # fire-and-forget; we deliberately don't await (same as embedder warmup)
-        asyncio.create_task(_skill_matcher_prewarm_bg())
 
 
 async def _startup_embedder_and_workload_audit() -> Any:
@@ -254,36 +216,7 @@ async def _startup_vector_worker(_sdb: Any, _vw: Any) -> None:
 
 
 async def _startup_curation_image_and_mcp() -> None:
-    """启动：整理提示、图片工作器、MCP 管理器。"""
-    # WI-OH-4: 记忆 self-curation nudge — flag memory.v2.curation_nudge 开 +
-    # facts store + LLM 可用 → 构造 MemoryCurator 存进 service_context，由
-    # build_agent 接电到 agent_loop（每 N 回合 fire-and-forget nudge）。
-    # flag 关 / 无 facts / 无 LLM → curator=None → agent_loop 不调 nudge（BC）。
-    # 2026-06-23 修生产死链：旧代码 flag=False 时**整个 if 不进、零日志** → 真测时
-    # 无法区分「flag 没开」vs「facts_store 没接上」vs「LLM 缺失」，曾误诊为接线 bug。
-    # 改成显式三分支 skip-log（reason=flag_off / no_facts_store / no_llm_provider），
-    # 任何「curator 没接上」都在启动日志留痕，杜绝静默死链复发。facts_store 用
-    # module-global 优先、service_context 兜底（两者在 startup 均已就绪，见
-    # p4_services_registered + memory_tools.bind 日志）。
-    _cur_facts = _facts_store if _facts_store is not None else service_context.get("facts_store")
-    if not config.memory.v2.curation_nudge:
-        logger.info("oh4_curation_skipped", reason="flag_off")
-    elif _cur_facts is None:
-        logger.info("oh4_curation_skipped", reason="no_facts_store")
-    # OpenSpec 2026-05-16-async-image-gen: start the ImageGenerationWorker
-    # unless async disabled (then generate_image runs legacy sync).
-    _iw = service_context.get("image_worker")
-    _img_async = bool(
-        ((config.raw.get("image") if hasattr(config, "raw") else None) or {}).get(
-            "async_enabled", True
-        )
-    )
-    if _iw is not None and _img_async:
-        try:
-            await _iw.start()
-            logger.info("image_worker_ready")
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("image_worker_start_failed", error=str(exc), exc_info=True)
+    """启动：MCP 管理器。"""
     # P4-S15: MCPManager — bootstrap from raw [mcp] section. start() is
     # tolerant: missing section / disabled servers / spawn failures are all
     # logged but don't raise. Only the manager handle is registered; the

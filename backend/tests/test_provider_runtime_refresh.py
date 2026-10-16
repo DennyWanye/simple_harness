@@ -99,7 +99,6 @@ def test_sdk_runtime_publications_are_declared_service_context_slots():
         "sdk_runtime_tool_inventory",
         "sdk_prepared_authorization_policy",
         "sdk_context_staging",
-        "conversation_memory",
         "sdk_context_source_repository",
         "memory_identity_resolver",
         "project_skill_install_service",
@@ -263,6 +262,3 @@ def test_foreground_no_longer_owns_manual_memory_prepare() -> None:
     assert "ConversationTurnInput" in source
     assert "ConversationContinuationInput" in continuation
     assert "context_source_snapshot_ref=source_ref" in continuation
-
-
-# 2026-09-10 removed with the Memory SDK: test_human_epoch_composition_registers_three_authorities

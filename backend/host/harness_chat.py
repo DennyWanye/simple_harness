@@ -10,7 +10,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from agent.nudge_queue import Hint
 from deskpet.agent.assembler.components.persona import _resolve_persona
 from deskpet.agent.product_domain_sink import LegacyProductDomainSink
 from deskpet.agent.run_presenter import RunPresentationContext
@@ -421,7 +420,6 @@ async def _run_product_harness_chat(
             _write_scope_root=st.workspace,
         )
     else:
-        st.session_context["_image_worker"] = service_context.get("image_worker")
         st.write_scope_root = st.host.write_scope_root
         if st.write_scope_root:
             st.session_context["_write_scope_root"] = st.write_scope_root
@@ -1118,22 +1116,3 @@ def _launch_product_harness_chat(*args, **kwargs) -> asyncio.Task:
 
     task.add_done_callback(report_failure)
     return task
-
-
-async def _enqueue_auto_resume_hint(sid: str, messages: list[dict]) -> None:
-    content = next(
-        (
-            str(item.get("content") or "")
-            for item in reversed(messages)
-            if item.get("_is_supervisor_hint")
-        ),
-        "",
-    )
-    text = content.removeprefix("[Supervisor Hint] ")
-    queue = service_context.get("nudge_queue")
-    if not text or queue is None:
-        return
-    try:
-        await queue.push(sid, Hint(text=text, alert_id="auto_resume", severity="yellow"))
-    except Exception as exc:  # noqa: BLE001
-        logger.debug("auto_resume_hint_push_failed sid=%s err=%s", sid, exc, exc_info=True)

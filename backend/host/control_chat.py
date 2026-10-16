@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import uuid
 
 from deskpet.agent.attachment_budget import (
@@ -294,36 +293,3 @@ async def _cc_chat(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
         str(_payload.get("request_id") or raw.get("request_id") or "") or None,
         str(_payload.get("turn_id") or raw.get("turn_id") or "") or None,
     )
-
-    def _make_followup_cb(target_sid: str, target_ws):
-        def _cb(_t):
-            async def _maybe_followup():
-                try:
-                    _nq_check = service_context.get("nudge_queue")
-                    if _nq_check is None or not await _nq_check.peek(target_sid):
-                        return
-                    new_task = _launch_product_harness_chat(
-                        target_ws, "<<supervisor_followup>>", target_sid
-                    )
-                    new_task.add_done_callback(_make_followup_cb(target_sid, target_ws))
-                    logger.info(
-                        "supervisor_followup_scheduled sid=%s",
-                        target_sid,
-                    )
-                except Exception as _exc:  # noqa: BLE001
-                    logger.debug(
-                        "supervisor_followup_failed sid=%s error=%s",
-                        target_sid,
-                        _exc,
-                        exc_info=True,
-                    )
-
-            try:
-                asyncio.create_task(_maybe_followup())
-            except RuntimeError:
-                # No running loop (shutdown); silently skip.
-                pass
-
-        return _cb
-
-    _chat_task.add_done_callback(_make_followup_cb(_msg_sid, ws))

@@ -7,11 +7,7 @@ from __future__ import annotations
 import pytest
 from context import _VALID_SERVICES, ServiceContext
 
-_NEW_SLOTS = (
-    "subagent_scheduler",
-    "team_store",
-    "task_graph_store",
-)
+_NEW_SLOTS = ("subagent_scheduler",)
 
 
 def test_register_get_new_slots():  # 0.4.1 / 0.4.2
@@ -34,7 +30,7 @@ def test_valid_services_superset():  # 0.4.4
     for slot in _NEW_SLOTS:
         assert slot in _VALID_SERVICES
     # 旧槽未丢
-    for slot in ("session_goal_store", "session_db", "vector_worker"):
+    for slot in ("session_db", "vector_worker"):
         assert slot in _VALID_SERVICES
 
 

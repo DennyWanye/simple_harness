@@ -1121,7 +1121,6 @@ async def _build_code_recovery_context(_workflow_service, row, start_payload):
             runtime_tool_state=runtime_tool_state,
             dispatch_fence_acquirer=service_context.get("run_execution_fence_acquirer"),
             provider_invocation_coordinator=service_context.get("provider_invocation_coordinator"),
-            context_compressor=service_context.get("context_compressor"),
             output_contract=output_contract,
         ),
         "tool": _RecoveryToolDispatchPort(

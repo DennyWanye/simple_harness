@@ -220,12 +220,6 @@ async def _shutdown_services() -> None:
             await _vw.stop()
         except Exception as exc:
             logger.warning("p4_vector_worker_stop_failed", error=str(exc), exc_info=True)
-    _iw = service_context.get("image_worker")
-    if _iw is not None:
-        try:
-            await _iw.stop()
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("image_worker_stop_failed", error=str(exc), exc_info=True)
     for _skill_surface in (
         service_context.get("managed_skill_discovery_projection"),
         service_context.get("skill_loader"),

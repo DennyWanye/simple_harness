@@ -3,7 +3,6 @@
 
 import pytest
 from context import ServiceContext
-from providers.base import LLMProvider
 
 
 class FakeLLM:
@@ -121,11 +120,7 @@ def test_companion_projection_and_action_services_are_registered(name: str):
     "name",
     [
         "context_assembler",
-        "context_compressor",
         "subagent_scheduler",
-        "pipeline_evidence_gate",
-        "pipeline_self_check_gate",
-        "pipeline_convergence_controller",
         "permission_gate",
     ],
 )

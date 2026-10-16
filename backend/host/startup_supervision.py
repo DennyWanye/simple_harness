@@ -7,7 +7,6 @@ import time as _t
 from agent.auto_resume import AutoResumeOrchestrator as _AROrch
 from agent.auto_resume import DeterministicResumePolicy as _DetPolicy
 from agent.circuit_breaker import ToolCircuitBreaker as _ToolBreaker
-from agent.nudge_queue import Hint as _Hint
 from agent.session_activity import default_store as _sa_default_store
 from agent.snapshot import build_snapshot as _build_snap_func
 from agent.supervisor import SupervisorAgent as _SupAgent
@@ -17,7 +16,7 @@ from llm import model_info
 from providers.openai_compatible import OpenAICompatibleProvider
 
 from host.connections import _control_connections
-from host.harness_chat import _enqueue_auto_resume_hint, _launch_product_harness_chat
+from host.harness_chat import _launch_product_harness_chat
 from host.llm_providers import _sanitize_cot_dsml
 from host.runtime import config, logger, service_context
 from host.state import host_state
@@ -89,22 +88,6 @@ async def _startup_supervisor() -> None:
                     action="cancel_coerced" if action.raw_action == "cancel" else action.action,
                     severity=action.severity,
                     diagnosis=action.diagnosis,
-                )
-
-            # Nudge push closure — wraps SupervisorAction → Hint and
-            # forwards to the queue.
-            async def _push_hint(sid: str, action):
-
-                _nq = service_context.get("nudge_queue")
-                if _nq is None:
-                    return
-                await _nq.push(
-                    sid,
-                    _Hint(
-                        text=action.hint_for_main_agent or action.user_message or "",
-                        alert_id=action.alert_id,
-                        severity=action.severity,
-                    ),
                 )
 
             # Broadcast closure — sends supervisor_alert to all control WS.
@@ -240,7 +223,6 @@ async def _startup_supervisor() -> None:
             _supervisor_agent = _SupAgent(
                 provider=_sup_provider,
                 snapshot_builder=_snap_builder,
-                nudge_queue_push=_push_hint,
                 broadcast=_broadcast_supervisor_alert,
                 audit=_audit_action,
                 auto_mode_check=_supervisor_auto_mode_check,
@@ -368,16 +350,9 @@ async def _startup_auto_resume_and_model_context(_heal_cfg: Any) -> None:
     try:
         # Dispatcher closure: orchestrator passes (sid, msgs)
         # where ``msgs`` ends in a system msg with the supervisor
-        # hint. Production trampoline:
-        #   1. Extract hint text from the injected system msg.
-        #   2. Push it to nudge_queue (pop_all picks it up at the
-        #      top of the next chat task — uniform with P5-S1
-        #      injection path).
-        #   3. Call the per-sid re-dispatcher (registered by chat
-        #      handler each user turn) with the synthetic trigger
-        #      ``<<auto_resume>>`` so a fresh AgentLoop runs.
+        # hint. Production trampoline: call the per-sid re-dispatcher with the
+        # synthetic trigger ``<<auto_resume>>`` so a fresh run starts.
         async def _resume_through_harness(_sid: str, _msgs: list[dict]) -> None:
-            await _enqueue_auto_resume_hint(_sid, _msgs)
             _ws_for_sid = _control_connections.get(_sid) or _control_connections.get("default")
             if _ws_for_sid is None:
                 logger.warning("auto_resume_no_transport sid=%s", _sid)
@@ -419,16 +394,6 @@ async def _startup_auto_resume_and_model_context(_heal_cfg: Any) -> None:
             except Exception as _ex:  # noqa: BLE001
                 logger.debug("auto_resume_audit_failed err=%s", _ex, exc_info=True)
 
-        # WI-1.5：resume 注入原 goal_text（窄版）。从 service_context
-        # 取活跃 goal store（goal_mode OFF → None → getter 返 None → BC）。
-        def _goal_text_getter_for_resume(_sid: str):
-            _gs = service_context.get("session_goal_store")
-            try:
-                return _gs.get_goal_text(_sid) if _gs is not None else None
-            except Exception:  # noqa: BLE001 - 读目标失败不阻断恢复
-                logger.debug("resume_goal_text_failed", exc_info=True)
-                return None
-
         # 监工开着就让监工模型给提示；关着用按失败原因的固定提示（不调模型）
 
         _resume_policy = service_context.get("supervisor") or _DetPolicy()
@@ -440,7 +405,6 @@ async def _startup_auto_resume_and_model_context(_heal_cfg: Any) -> None:
             enabled=bool(_heal_cfg.get("auto_resume_enabled", True)),
             ws_emitter=_auto_resume_emit,
             audit_writer=_auto_resume_audit,
-            goal_text_getter=_goal_text_getter_for_resume,
         )
         service_context.register("auto_resume", _orch)
         logger.info(

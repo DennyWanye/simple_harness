@@ -15,12 +15,8 @@ from host.runtime import logger, service_context
 async def _handle_memory_message(
     ws: WebSocket, session_id: str, msg_type: str, payload: dict
 ) -> None:
-    # SessionDB is the current production MemoryStore implementation.  The
-    # legacy ``memory_store`` service key disappeared during the P4 migration,
-    # but this user-facing IPC handler still looked up only that retired key,
-    # leaving MemoryPanel stuck in its loading state forever.  Prefer the
-    # compatibility key when present and otherwise use the authoritative DB.
-    store = service_context.get("memory_store") or service_context.get("session_db")
+    # SessionDB is the production MemoryStore implementation.
+    store = service_context.get("session_db")
     if store is None:
         await ws.send_json(
             {

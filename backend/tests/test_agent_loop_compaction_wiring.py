@@ -106,19 +106,6 @@ def test_config_has_no_dead_compaction_flag():
 
 
 # ---------------------------------------------------------------------------
-# build_agent: compressor wired when flag on, None when off
-# ---------------------------------------------------------------------------
-
-
-def test_context_compressor_in_valid_services():
-    """FP-5 WI-4.0 真机回归: main.py 无条件 register('context_compressor'),
-    缺白名单会致启动 register 失败 + chat get 抛 'Unknown service' → code-mode 全崩。"""
-    from context import _VALID_SERVICES
-
-    assert "context_compressor" in _VALID_SERVICES
-
-
-# ---------------------------------------------------------------------------
 # FP-2 TC-2.1 第 3 刀 — relay 真实 prompt_tokens 反馈回路。
 # 真机实测两轮系数校准后估算仍低估(real 32.9k 时 estimate <24k 不触发)。
 # 修法: compaction 判定用 max(estimate, 上一轮 response.usage.input_tokens)。
