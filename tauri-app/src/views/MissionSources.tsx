@@ -10,6 +10,7 @@
  */
 import React, { useEffect, useRef, useState } from "react";
 import { asText, newRequestKey, type MissionsChannel } from "../stores/missionsStore";
+import { useDepsChanged } from "../hooks/useDepsChanged";
 import { useLatestRef } from "../hooks/useLatestRef";
 import { dark } from "../theme/components";
 import { tokens } from "../theme/tokens";
@@ -218,13 +219,16 @@ export function MissionSources({
   const sourceRetry = useRef<{ fingerprint: string; key: string } | null>(null);
   const sourceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => {
+  // 换了任务：渲染期清空来源操作的草稿（幂等重试记录在 effect 里清）。
+  if (useDepsChanged([missionId])) {
     setOperation(null);
     setDrafts([]);
     setReason("");
     setExpected("");
     setSourceError(null);
     setSourceNotice(null);
+  }
+  useEffect(() => {
     sourceRetry.current = null;
   }, [missionId]);
 

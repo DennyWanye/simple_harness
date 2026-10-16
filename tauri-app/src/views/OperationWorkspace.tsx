@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: BUSL-1.1
 import { useEffect, useRef, useState } from "react";
+import { useDepsChanged } from "../hooks/useDepsChanged";
 import {
   asList,
   asRecord,
@@ -120,9 +121,10 @@ function Workspace({
   }, [onChanged]);
   // A lost response retries the same command body and identity, even after re-render.
   const commands = useRef(new Map<string, string>());
+  // 换了通道：旧通道上的请求不会再有回执，渲染期清掉"处理中"。
+  if (useDepsChanged([channel])) setPending(false);
   useEffect(() => {
     flight.current = null;
-    setPending(false);
     if (!channel) return;
     return channel.onMessage((incoming) => {
       const message = incoming as unknown as { type?: string; payload?: unknown };

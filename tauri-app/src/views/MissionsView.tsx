@@ -19,6 +19,7 @@
  * 改验收脚本。
  */
 import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useDepsChanged } from "../hooks/useDepsChanged";
 import { useShallow } from "zustand/react/shallow";
 
 import { tokens } from "../theme/tokens";
@@ -762,19 +763,30 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
     [fetchDetail, fetchEvents],
   );
 
+  // 订阅重建（比对项与下面订阅 effect 的依赖一致）：旧订阅上的请求不会再有回执，渲染期清掉对应画面状态。
+  const subscriptionChanged = useDepsChanged([
+    channel,
+    send,
+    flightOf,
+    fetchDetail,
+    fetchEvents,
+    refreshSelected,
+  ]);
+  if (subscriptionChanged && channel) {
+    setReviewPending({});
+    setArtifact(null);
+    setCreatePending(false);
+  }
   useEffect(() => {
     if (!channel) return undefined;
     // a new subscription: whatever was in flight on the old one will never answer
     flights.current = {};
     requests.current.clear();
     reviewDecisionRequests.current.clear();
-    setReviewPending({});
     artifactRequest.current = null;
-    setArtifact(null);
     if (createRequest.current)
       useMissionsStore.getState().setError("连接已变化，创建结果未知；可以使用原请求键重试");
     createRequest.current = null;
-    setCreatePending(false);
     useMissionsStore.getState().clearEventsLoading();
 
     const off = channel.onMessage((incoming: IncomingMessage) => {

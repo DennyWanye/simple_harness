@@ -17,6 +17,7 @@
  * 规格：openspec/specs/skill-marketplace/spec.md
  */
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useDepsChanged } from "../hooks/useDepsChanged";
 
 import { Icon, type IconName } from "./Icon";
 import type { ControlChannel } from "../ws/ControlChannel";
@@ -263,16 +264,17 @@ export const SkillStorePanel: React.FC<Props> = ({
   }, [open, channel]);
 
   // tab 切换 / 打开时刷新
+  // 渲染期：切换后清提示、按页签设加载中；effect 只发请求。
+  if (useDepsChanged([tab, open, channel]) && open && channel) {
+    setAlert(null);
+    setLoading(tab === "installed" || tab === "marketplace");
+  }
   useEffect(() => {
     if (!open || !channel) return;
-    setAlert(null);
-    setLoading(true);
     if (tab === "installed") {
       channel.send({ type: "skill_list_installed" });
     } else if (tab === "marketplace") {
       channel.send({ type: "skill_marketplace_list" });
-    } else {
-      setLoading(false);
     }
   }, [tab, open, channel]);
 

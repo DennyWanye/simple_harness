@@ -53,6 +53,7 @@ import { formatContextWindow, useSessionModelsStore } from "../code-panel/sessio
 import { effective_provider_model, useProvidersStore } from "../code-panel/providersStore";
 import { controlWS } from "../code-panel/controlWs";
 import { useControlWsState } from "../hooks/useControlWsState";
+import { useDepsChanged } from "../hooks/useDepsChanged";
 import { topicDisplayLabel } from "../chat/topicTitle";
 import { projectRequest } from "../chat/projectSessionProtocol";
 import { BACKEND_PORT } from "../backendPort";
@@ -551,9 +552,7 @@ export function ChatView({ activeSid, secret, onSwitchSid = () => {} }: ChatView
   }, [activeSid]);
 
   // A modal opened for one Session cannot survive an ownership switch.
-  useEffect(() => {
-    setContextModalOpen(false);
-  }, [activeSid]);
+  if (useDepsChanged([activeSid])) setContextModalOpen(false);
 
   // ── 工具轨迹 / 进度可见性（MessagePanelRoot 派生逻辑随迁）──────────
   const [hideTools, setHideTools] = useState(DEFAULT_HIDE_TOOL_TRACE);

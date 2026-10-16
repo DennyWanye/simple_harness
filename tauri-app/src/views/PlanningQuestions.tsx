@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: BUSL-1.1
 import { useEffect, useRef, useState } from "react";
+import { useDepsChanged } from "../hooks/useDepsChanged";
 import {
   asList,
   asRecord,
@@ -52,9 +53,10 @@ function PlanningQuestion({
   const flight = useRef<string | null>(null);
   // Keep the original nonce if a connection is lost after the server committed.
   const submission = useRef<{ answer: string; nonce: string } | null>(null);
+  // 订阅重建（比对项与订阅 effect 的依赖一致）：旧订阅上的请求不会再有回执，渲染期清掉"处理中"。
+  if (useDepsChanged([channel, onAnswered])) setPending(false);
   useEffect(() => {
     flight.current = null;
-    setPending(false);
     if (!channel) return;
     return channel.onMessage((incoming) => {
       const message = incoming as unknown as { type?: unknown; payload?: unknown };

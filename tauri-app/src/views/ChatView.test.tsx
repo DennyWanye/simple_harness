@@ -71,7 +71,8 @@ vi.mock("../chat/HarnessInspectorPanel", () => ({
     props.open ? <div data-testid="stub-harness-panel" /> : null,
 }));
 vi.mock("../components/ContextBreakdownModal", () => ({
-  ContextBreakdownModal: () => null,
+  ContextBreakdownModal: (props: { open: boolean; sessionId: string }) =>
+    props.open ? <div data-testid="stub-context-modal">{props.sessionId}</div> : null,
 }));
 
 let listeners: Array<(msg: unknown) => void> = [];
@@ -127,6 +128,16 @@ describe("ChatView（WB-4）", () => {
       .mock.calls.map(([m]) => (m as { type: string }).type)
       .filter((t) => t === "session_messages_load");
     expect(hydration).toEqual([]);
+  });
+
+  it("切换会话时关掉为上一个会话打开的上下文详情", () => {
+    const { rerender } = render(<ChatView activeSid="s-a" secret="s3cret" />);
+    fireEvent.click(screen.getByRole("button", { name: /Context usage/ }));
+    expect(screen.getByTestId("stub-context-modal").textContent).toBe("s-a");
+    rerender(<ChatView activeSid="s-a" secret="s3cret" />);
+    expect(screen.getByTestId("stub-context-modal")).toBeTruthy();
+    rerender(<ChatView activeSid="s-b" secret="s3cret" />);
+    expect(screen.queryByTestId("stub-context-modal")).toBeNull();
   });
 
   it("挂载即按会话发 hydration 四连发（消息/投影/上下文/provider）", () => {

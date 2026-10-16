@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useDepsChanged } from "../../hooks/useDepsChanged";
 
 import type {
   Message,
@@ -451,10 +452,11 @@ export function WorkflowProgressGroup({
   const hasDetails =
     timelineRows.length > 0 || v7Children.length > 0 || Boolean(capabilityOperation);
 
+  // 换了重试动作：渲染期把重试状态回到空闲（ref 在 effect 里清）。
+  if (useDepsChanged([actionId])) setRetryState({ status: "idle" });
   useEffect(() => {
     retryKeyRef.current = null;
     retryPendingRef.current = false;
-    setRetryState({ status: "idle" });
   }, [actionId]);
 
   const retry = () => {

@@ -21,6 +21,7 @@
  * (the backend echoes the raw picker dict back, so it round-trips).
  */
 import { useState, useEffect } from "react";
+import { useDepsChanged } from "../hooks/useDepsChanged";
 
 import { controlWS } from "./controlWs";
 import { buildSetModelMessage } from "../sessionModelMessages";
@@ -109,9 +110,7 @@ export function ChangeModelModal({
   }, []);
 
   // 切换模型 → 档位选择回到该模型当前值
-  useEffect(() => {
-    set_ctx_choice(null);
-  }, [model]);
+  if (useDepsChanged([model])) set_ctx_choice(null);
   // Preserve an already-saved supported tier.  A legacy/heuristic value such
   // as 400K is not one of the temporary user tiers, so present 256K as the
   // default choice and persist it when the user saves the dialog.

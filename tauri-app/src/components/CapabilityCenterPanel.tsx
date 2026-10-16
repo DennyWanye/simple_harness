@@ -186,13 +186,16 @@ export function CapabilityCenterPanel({
   // longer present in the visible list. Persist the fallback selection so the
   // list's aria state and the detail pane share one source of truth even when
   // the capability snapshot arrives asynchronously after the filter changes.
-  useEffect(() => {
+  // 渲染期按可见列表调整（含首次渲染，与原 effect 挂载即执行一致）；visibleCapabilities 已 useMemo。
+  const [selectionBase, setSelectionBase] = useState<typeof visibleCapabilities | null>(null);
+  if (selectionBase !== visibleCapabilities) {
+    setSelectionBase(visibleCapabilities);
     setSelectedId((current) =>
       current && visibleCapabilities.some((item) => item.capability_id === current)
         ? current
         : (visibleCapabilities[0]?.capability_id ?? null),
     );
-  }, [visibleCapabilities]);
+  }
 
   const selected = visibleCapabilities.find((item) => item.capability_id === selectedId) ?? null;
 

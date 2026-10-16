@@ -27,6 +27,7 @@
 import { ChatMissionCard } from "../views/ChatMissionCard";
 import { MISSION_CARD_TOOLS, missionIdFromToolResult } from "../views/chatMission";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useDepsChanged } from "../hooks/useDepsChanged";
 import { invoke } from "@tauri-apps/api/core";
 
 // 娑堟伅娴佹粴鍔ㄤ綅缃寔涔呴敭(杩涘叆娑堟伅鐣岄潰鎭㈠涓婃浣嶇疆,瑙佷笅 useLayoutEffect)銆?
@@ -1066,9 +1067,8 @@ export function ProjectDirectoryCard({
   const [busy, setBusy] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [pickerError, setPickerError] = useState<string | null>(null);
-  useEffect(() => {
-    if (error) setSubmitted(false);
-  }, [error]);
+  // 出错时解除"已提交"，允许改了再提交。
+  if (useDepsChanged([error]) && error) setSubmitted(false);
   const usesExistingProject = request.directory_mode === "use_existing";
   const trimmedParent = parent.trim();
   const displayParent =
