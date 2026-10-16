@@ -11,7 +11,9 @@ from pathlib import Path
 
 import pytest
 from context import ServiceContext
-from deskpet.capabilities.store import CapabilitySkillInstallVerificationAttempt
+from deskpet.capabilities.skill_install_verification_store import (
+    CapabilitySkillInstallVerificationAttempt,
+)
 from deskpet.sdk_adapters.composition import (
     OwnedResourceCloser,
     ProductionRuntimeBuild,

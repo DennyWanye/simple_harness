@@ -19,10 +19,10 @@ from deskpet.capabilities.contracts import (
     CapabilityScope,
     fingerprint_json,
 )
-from deskpet.capabilities.store import (
-    CapabilitySkillInstallMember,
+from deskpet.capabilities.skill_install_verification_store import (
     CapabilitySkillInstallVerificationAttempt,
 )
+from deskpet.capabilities.store import CapabilitySkillInstallMember
 from deskpet.tools.capabilities import PreparedToolSet
 
 from .capability_catalog import ProductCapabilityCatalogSourceAdapter
