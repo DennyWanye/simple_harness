@@ -250,7 +250,7 @@ def _render_image(slide, outline: SlideOutline, theme: Theme) -> None:
                 )
             return
         except Exception as exc:  # noqa: BLE001
-            log.debug("image insert failed (%s); falling back to bullet", exc)
+            log.debug("image insert failed (%s); falling back to bullet", exc, exc_info=True)
     # Fallback to bullet layout with caption + warning marker
     fallback_bullets = ([f"[image missing: {img}]"] if img else []) + (
         [outline.caption] if outline.caption else []
@@ -366,7 +366,7 @@ def _normalize_chart_axis_ids(chart) -> None:
             if raw < 0:
                 node.set("val", str(raw & 0xFFFFFFFF))
     except Exception as exc:  # noqa: BLE001
-        log.warning("chart axis id normalization failed: %s", exc)
+        log.warning("chart axis id normalization failed: %s", exc, exc_info=True)
 
 
 def _render_chart(slide, outline: SlideOutline, theme: Theme) -> None:
@@ -450,7 +450,7 @@ def _render_chart(slide, outline: SlideOutline, theme: Theme) -> None:
         chart.legend.position = XL_LEGEND_POSITION.BOTTOM
         chart.legend.include_in_layout = False
     except Exception as exc:  # noqa: BLE001 — degrade rather than abort
-        log.warning("chart render failed, degrading to bullets: %s", exc)
+        log.warning("chart render failed, degrading to bullets: %s", exc, exc_info=True)
         _add_bullet_text(
             slide,
             outline.bullets or [f"{s.get('name')}" for s in series],

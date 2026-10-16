@@ -355,6 +355,7 @@ async def _handle_inspector_snapshot(raw, *, session_id, ws) -> bool:
             run_id=run_id,
             error_type=type(exc).__name__,
             error=str(exc),
+            exc_info=True,
         )
         await ws.send_json(
             {
@@ -477,6 +478,7 @@ async def _handle_task_projection_message(raw, *, session_id, ws, msg_type) -> b
             request_type=msg_type,
             session_id=target_session_id,
             error=str(exc),
+            exc_info=True,
         )
         await ws.send_json(
             {
@@ -531,6 +533,7 @@ async def _handle_ppt_outline_decision(raw, *, session_id, msg_type) -> bool:
                 outline_id=oid,
                 session_id=target_session_id,
                 error=str(exc),
+                exc_info=True,
             )
             return True
         resolved = bool(

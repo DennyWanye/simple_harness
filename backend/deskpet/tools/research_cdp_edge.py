@@ -346,6 +346,7 @@ async def _render_once(url: str, timeout: float) -> str | None:
                 "cdp_edge Page.navigate slow/timeout, continue polling",
                 url=url,
                 error=str(exc)[:80],
+                exc_info=True,
             )
 
         # 先等主文档 readyState complete。
@@ -425,7 +426,11 @@ async def cdp_edge_render(url: str, *, timeout: float = 20.0) -> str | None:
             except Exception:  # noqa: BLE001
                 pass
         log.info(
-            "cdp_edge_render", url=url, ok=False, error=(str(exc) or exc.__class__.__name__)[:120]
+            "cdp_edge_render",
+            url=url,
+            ok=False,
+            error=(str(exc) or exc.__class__.__name__)[:120],
+            exc_info=True,
         )
         return None
 

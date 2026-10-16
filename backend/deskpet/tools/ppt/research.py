@@ -112,12 +112,12 @@ def _save_and_index_research(topic: str, report: Any):
                 try:
                     t.result()
                 except Exception as exc:  # noqa: BLE001
-                    log.debug("ppt_pro research index update skipped: %s", exc)
+                    log.debug("ppt_pro research index update skipped: %s", exc, exc_info=True)
 
             task.add_done_callback(_log_done)
         return saved
     except Exception as exc:  # noqa: BLE001
-        log.debug("ppt_pro research save skipped: %s", exc)
+        log.debug("ppt_pro research save skipped: %s", exc, exc_info=True)
         return None
 
 

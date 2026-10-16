@@ -71,6 +71,7 @@ async def _cc_models_list(conn: _ControlConnection, raw: dict, msg_type: str) ->
                             "provider_catalog_cache_refresh_failed provider=%s error=%s",
                             _pid0,
                             str(_cache_exc)[:200],
+                            exc_info=True,
                         )
                 elif _cfg_models:
                     _model_ids = _cfg_models
@@ -281,6 +282,7 @@ async def _cc_session_set_provider(conn: _ControlConnection, raw: dict, msg_type
                 "context_usage_binding_push_failed sid=%s err=%s",
                 target_sid,
                 exc,
+                exc_info=True,
             )
 
 
@@ -321,6 +323,7 @@ async def _cc_settings_providers_list_request(
                     "providers_changed_broadcast_failed sid=%s err=%s",
                     _sid_key,
                     _bex,
+                    exc_info=True,
                 )
 
     if msg_type == "settings_providers_list_request":

@@ -325,6 +325,7 @@ class MCPManager:
                     "mcp_initial_connect_failed",
                     server=name,
                     error=repr(exc),
+                    exc_info=True,
                 )
                 # Kick off reconnect in the background — don't block
                 # other servers.
@@ -645,6 +646,7 @@ class MCPManager:
                     "mcp_session_close_error",
                     server=runtime.name,
                     error=repr(exc),
+                    exc_info=True,
                 )
             runtime.exit_stack = None
 
@@ -661,6 +663,7 @@ class MCPManager:
                         "mcp_session_close_noop_error",
                         server=runtime.name,
                         error=repr(exc),
+                        exc_info=True,
                     )
             runtime.session = None
 
@@ -695,6 +698,7 @@ class MCPManager:
                     "mcp_tool_unregister_error",
                     tool=name,
                     error=repr(exc),
+                    exc_info=True,
                 )
         runtime.tool_names = []
         runtime.incarnation = ""
@@ -778,6 +782,7 @@ class MCPManager:
                     server=runtime.name,
                     attempt=attempt,
                     error=repr(exc),
+                    exc_info=True,
                 )
                 continue
             # success

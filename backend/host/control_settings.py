@@ -70,7 +70,7 @@ async def _cc_orchestration_publish_dir_get(
     except _publish_settings.PublishDirRefused as _refused:
         _reply.update(ok=False, error_code=_refused.code, error=str(_refused))
     except Exception as _exc:  # noqa: BLE001
-        logger.warning("orchestration_publish_dir_failed err=%s", _exc)
+        logger.warning("orchestration_publish_dir_failed err=%s", _exc, exc_info=True)
         _reply.update(ok=False, error_code="internal", error="发布目录设置失败，请查看日志")
     await ws.send_json({"type": msg_type + "_response", "payload": _reply})
 
@@ -132,7 +132,7 @@ async def _cc_budget_status(conn: _ControlConnection, raw: dict, msg_type: str) 
         status = await billing_ledger.status()
         await ws.send_json({"type": "budget_status", "payload": status})
     except Exception as exc:
-        logger.warning("budget_status_failed", error=str(exc))
+        logger.warning("budget_status_failed", error=str(exc), exc_info=True)
         await ws.send_json(
             {
                 "type": "error",
@@ -176,7 +176,7 @@ async def _cc_supervisor_user_choice(conn: _ControlConnection, raw: dict, msg_ty
                 user_button=_btn_text,
             )
         except Exception as _exc:
-            logger.debug("supervisor_user_choice_audit_failed error=%s", _exc)
+            logger.debug("supervisor_user_choice_audit_failed error=%s", _exc, exc_info=True)
 
     # Heuristic intent matching by button text. We accept
     # both Chinese and English labels since the LLM picks
@@ -215,6 +215,7 @@ async def _cc_supervisor_user_choice(conn: _ControlConnection, raw: dict, msg_ty
                 "supervisor_user_choice_followup_failed sid=%s error=%s",
                 _target_sid,
                 _ex_fu,
+                exc_info=True,
             )
 
 
@@ -310,6 +311,7 @@ async def _cc_debug_inject_supervisor_alert(
                 "debug_supervisor_alert_send_failed sid=%s error=%s",
                 _sid_key,
                 _bex,
+                exc_info=True,
             )
     logger.info(
         "__debug_inject_supervisor_alert dispatched payload=%s",

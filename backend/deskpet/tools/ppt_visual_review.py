@@ -91,7 +91,7 @@ def _b64_image(path: str, *, max_w: int = 768) -> str | None:
             im.save(buf, format="JPEG", quality=80)
         return base64.b64encode(buf.getvalue()).decode("ascii")
     except Exception as exc:  # noqa: BLE001
-        log.debug("b64 image failed %s: %s", path, exc)
+        log.debug("b64 image failed %s: %s", path, exc, exc_info=True)
         return None
 
 
@@ -165,7 +165,7 @@ def vision_chat(
             return ""
         return ((resp.json().get("choices") or [{}])[0].get("message", {}).get("content", "")) or ""
     except Exception as exc:  # noqa: BLE001
-        log.warning("vision_chat failed: %s", str(exc)[:200])
+        log.warning("vision_chat failed: %s", str(exc)[:200], exc_info=True)
         return ""
 
 
@@ -194,7 +194,7 @@ def _parse_review_json(text: str) -> list[dict[str, Any]]:
             )
         return out
     except Exception as exc:  # noqa: BLE001
-        log.debug("parse review json failed: %s", exc)
+        log.debug("parse review json failed: %s", exc, exc_info=True)
         return []
 
 
@@ -274,5 +274,5 @@ def review_slides(
         )
         return reviews
     except Exception as exc:  # noqa: BLE001
-        log.warning("visual review failed: %s", str(exc)[:200])
+        log.warning("visual review failed: %s", str(exc)[:200], exc_info=True)
         return []

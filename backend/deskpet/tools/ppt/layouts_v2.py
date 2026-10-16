@@ -317,7 +317,7 @@ def _render_image_v2(slide, outline: SlideOutline, theme: Theme) -> None:
                 width=frame_w - Inches(0.28),
             )
         except Exception as exc:  # noqa: BLE001
-            log.debug("image insert failed (%s); falling back to placeholder", exc)
+            log.debug("image insert failed (%s); falling back to placeholder", exc, exc_info=True)
             img = None
     if not img or not Path(str(img)).is_file():
         _add_icon_badge(
@@ -422,7 +422,7 @@ def _place_cover(slide, img: str, *, left: int, top: int, width: int, height: in
             pass  # PIL 不可用 → 保持铺满(退化)
         return True
     except Exception as exc:  # noqa: BLE001
-        log.debug("place cover failed: %s", exc)
+        log.debug("place cover failed: %s", exc, exc_info=True)
         return False
 
 
@@ -721,7 +721,9 @@ def _render_image_full_v2(slide, outline: SlideOutline, theme: Theme) -> None:
                 _render_var_cover(slide, outline, theme)
             return
         except Exception as exc:  # noqa: BLE001
-            log.debug("full image insert failed (%s); falling back to placeholder", exc)
+            log.debug(
+                "full image insert failed (%s); falling back to placeholder", exc, exc_info=True
+            )
 
     _fill_slide_bg(slide, theme)
     _add_title_block(slide, outline.title or "", outline.subtitle, theme)

@@ -90,7 +90,7 @@ def ensure_ppt_outline_table(conn: sqlite3.Connection) -> None:
         conn.executescript(PPT_OUTLINE_HISTORY_DDL)
         conn.commit()
     except Exception as exc:  # noqa: BLE001
-        log.warning("ppt outline table ensure failed: %s", exc)
+        log.warning("ppt outline table ensure failed: %s", exc, exc_info=True)
 
 
 def save_outline(
@@ -131,7 +131,7 @@ def save_outline(
             conn.commit()
         return True
     except Exception as exc:  # noqa: BLE001
-        log.warning("ppt outline save failed: %s", exc)
+        log.warning("ppt outline save failed: %s", exc, exc_info=True)
         return False
 
 
@@ -157,7 +157,7 @@ def mark_status(
             conn.commit()
             return (cur.rowcount or 0) > 0
     except Exception as exc:  # noqa: BLE001
-        log.warning("ppt outline status update failed: %s", exc)
+        log.warning("ppt outline status update failed: %s", exc, exc_info=True)
         return False
 
 
@@ -188,7 +188,7 @@ def list_history(
             rows = cur.fetchall()
         return [_row_to_dict(row) for row in rows]
     except Exception as exc:  # noqa: BLE001
-        log.warning("ppt outline history list failed: %s", exc)
+        log.warning("ppt outline history list failed: %s", exc, exc_info=True)
         return []
 
 
@@ -216,7 +216,7 @@ def get_outline(
             row = cur.fetchone()
         return _row_to_dict(row) if row is not None else None
     except Exception as exc:  # noqa: BLE001
-        log.warning("ppt outline get failed: %s", exc)
+        log.warning("ppt outline get failed: %s", exc, exc_info=True)
         return None
 
 
@@ -238,7 +238,7 @@ def expire_dangling_proposed(
             conn.commit()
             return int(cur.rowcount or 0)
     except Exception as exc:  # noqa: BLE001
-        log.warning("ppt outline expire failed: %s", exc)
+        log.warning("ppt outline expire failed: %s", exc, exc_info=True)
         return 0
 
 
@@ -340,7 +340,7 @@ def _default_state_db_path() -> Path:
         if memory_db:
             return Path(memory_db).resolve().parent / "state.db"
     except Exception as exc:  # noqa: BLE001
-        log.debug("ppt outline default state db config lookup failed: %s", exc)
+        log.debug("ppt outline default state db config lookup failed: %s", exc, exc_info=True)
 
     try:
         return _paths.user_data_dir() / "data" / "state.db"

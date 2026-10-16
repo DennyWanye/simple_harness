@@ -101,6 +101,7 @@ class CompanionProjectionVisibilityPort:
                     event_id,
                     type(exc).__name__,
                     getattr(exc, "code", ""),
+                    exc_info=True,
                 )
                 continue
             notification = dict(current["notification"])

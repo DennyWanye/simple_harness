@@ -287,7 +287,7 @@ async def _startup_workflow_services() -> Any:
             await st._sdb.initialize()
             logger.info("p4_session_db_ready", path=str(st._sdb._db_path))
         except Exception as exc:
-            logger.warning("p4_session_db_init_failed", error=str(exc))
+            logger.warning("p4_session_db_init_failed", error=str(exc), exc_info=True)
     try:
         _define_workflow_delivery(st)
 
@@ -400,7 +400,7 @@ async def _startup_workflow_services() -> Any:
             _workflow_research_tools.set_deepresearch_workflow_starter(None)
         except Exception:
             pass
-        logger.warning("workflow_service_init_failed", error=str(exc))
+        logger.warning("workflow_service_init_failed", error=str(exc), exc_info=True)
     return st._sdb
 
 
@@ -1575,7 +1575,7 @@ async def _startup_register_personal_runtime_adapter(_workflow_launcher, _workfl
         _configure_ppt_production(recover=False)
         logger.info("ppt_pro_services_wired")
     except Exception as exc:  # noqa: BLE001
-        logger.warning("ppt_pro_services_wire_failed", error=str(exc))
+        logger.warning("ppt_pro_services_wire_failed", error=str(exc), exc_info=True)
 
     _workflow_recovery = await activate_and_recover_workflows(
         project_bindings=_project_binding_service,

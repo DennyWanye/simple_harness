@@ -233,7 +233,9 @@ class CatalogViewMixin(ToolRegistryCore):
                 )
                 dangerous_allowlist = set(getattr(cfg, "dangerous_tools_allowlist", []) or [])
             except Exception as _exc:  # noqa: BLE001
-                logger.warning("tools_config_provider read failed in schemas: %s", _exc)
+                logger.warning(
+                    "tools_config_provider read failed in schemas: %s", _exc, exc_info=True
+                )
 
         with self._lock:
             specs = list(self._tools.values())
@@ -292,6 +294,7 @@ class CatalogViewMixin(ToolRegistryCore):
                     "tool %r check_fn raised %s; treating as not-ready",
                     name,
                     type(exc).__name__,
+                    exc_info=True,
                 )
                 ready = False
             if not ready:
@@ -315,7 +318,7 @@ class CatalogViewMixin(ToolRegistryCore):
         except Exception as exc:  # noqa: BLE001 — everything caught by design
             retriable = _classify_retriable(exc)
             err = f"{type(exc).__name__}: {exc}"
-            logger.info("tool %r raised (retriable=%s): %s", name, retriable, err)
+            logger.info("tool %r raised (retriable=%s): %s", name, retriable, err, exc_info=True)
             return json.dumps({"error": err, "retriable": retriable})
 
         if isinstance(result, str):

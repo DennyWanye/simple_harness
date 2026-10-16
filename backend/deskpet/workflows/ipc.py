@@ -453,6 +453,7 @@ def start_workflow_ipc_dispatch(
             logger.info(
                 "workflow_ipc_response_send_failed",
                 extra={"error": str(exc), "request_id": response.get("request_id")},
+                exc_info=True,
             )
 
     task = asyncio.create_task(dispatch_and_send())

@@ -272,7 +272,7 @@ async def _maybe_extract_general_plan(
         # no plan = plain ReAct loop — so this is an expected
         # degradation, not an actual failure. INFO so it doesn't
         # spam the warning channel.
-        log.info("p4s25_plan_call_skipped: %s", exc)
+        log.info("p4s25_plan_call_skipped: %s", exc, exc_info=True)
         return None
 
     content = raw.get("content") or ""

@@ -224,7 +224,7 @@ class ToolResultRefStore:
                 except OSError:
                     pass
         except Exception as exc:  # noqa: BLE001
-            logger.debug("tool_ref spill write failed: %s", exc)
+            logger.debug("tool_ref spill write failed: %s", exc, exc_info=True)
 
     @staticmethod
     def _spill_read(ref: str) -> str | None:
@@ -237,7 +237,7 @@ class ToolResultRefStore:
                 return None
             return f.read_text(encoding="utf-8")
         except Exception as exc:  # noqa: BLE001
-            logger.debug("tool_ref spill read failed: %s", exc)
+            logger.debug("tool_ref spill read failed: %s", exc, exc_info=True)
             return None
 
     def _new_ref_id(self) -> str:

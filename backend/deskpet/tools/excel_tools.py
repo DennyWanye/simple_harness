@@ -274,7 +274,7 @@ def _apply_merges(ws, merges: Any) -> None:
         try:
             ws.merge_cells(str(m))
         except Exception as exc:  # noqa: BLE001 — bad range is non-fatal
-            log.warning("excel merge skipped %r: %s", m, exc)
+            log.warning("excel merge skipped %r: %s", m, exc, exc_info=True)
 
 
 def _add_images(ws, images: Any) -> None:
@@ -299,7 +299,7 @@ def _add_images(ws, images: Any) -> None:
                 img.height = int(im["height"])
             ws.add_image(img, str(im.get("anchor") or "H2"))
         except Exception as exc:  # noqa: BLE001 — image is non-critical
-            log.warning("excel image skipped: %s", exc)
+            log.warning("excel image skipped: %s", exc, exc_info=True)
 
 
 def _build_sheet(wb, sheet_spec: dict[str, Any], first: bool) -> None:
@@ -354,7 +354,7 @@ def _build_sheet(wb, sheet_spec: dict[str, Any], first: bool) -> None:
         try:
             _add_chart(ws, chart)
         except Exception as exc:  # noqa: BLE001 — chart is non-critical
-            log.warning("excel chart skipped: %s", exc)
+            log.warning("excel chart skipped: %s", exc, exc_info=True)
     charts = sheet_spec.get("charts")
     if isinstance(charts, list):
         for cs in charts:
@@ -362,7 +362,7 @@ def _build_sheet(wb, sheet_spec: dict[str, Any], first: bool) -> None:
                 try:
                     _add_chart(ws, cs)
                 except Exception as exc:  # noqa: BLE001
-                    log.warning("excel chart skipped: %s", exc)
+                    log.warning("excel chart skipped: %s", exc, exc_info=True)
 
     _add_images(ws, sheet_spec.get("images"))
 

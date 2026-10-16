@@ -38,7 +38,7 @@ async def _shutdown_runtimes_and_tasks() -> None:
             await host_state.realtime_voice_service.close()
             logger.info("realtime_voice_stopped")
         except Exception:  # noqa: BLE001
-            logger.warning("realtime_voice_shutdown_failed")
+            logger.warning("realtime_voice_shutdown_failed", exc_info=True)
         finally:
             host_state.realtime_voice_service = None
 
@@ -52,13 +52,14 @@ async def _shutdown_runtimes_and_tasks() -> None:
             logger.warning(
                 "human_memory_foreground_runtime_shutdown_failed",
                 error=str(exc),
+                exc_info=True,
             )
     _terminal_audit = service_context.get("terminal_operation_audit")
     if _terminal_audit is not None:
         try:
             await _terminal_audit.close(timeout=5.0)
         except Exception:
-            logger.warning("terminal_operation_audit_shutdown_incomplete")
+            logger.warning("terminal_operation_audit_shutdown_incomplete", exc_info=True)
         finally:
             service_context.register("terminal_operation_audit", None)
     # 2026-09-10：记忆分析 lane 已移除；原先嵌在它 finally 里的两次前台调度槽位
@@ -96,7 +97,7 @@ async def _shutdown_runtimes_and_tasks() -> None:
                 child_count=0,
             )
         except Exception as exc:  # noqa: BLE001
-            logger.warning("companion_runtime_shutdown_failed", error=str(exc))
+            logger.warning("companion_runtime_shutdown_failed", error=str(exc), exc_info=True)
     _legacy_reflection_pending = tuple(_legacy_reflection_tasks)
     for _task in _legacy_reflection_pending:
         _task.cancel()
@@ -122,7 +123,7 @@ async def _shutdown_services() -> None:
         try:
             await host_state.sdk_desktop_bridge.close()
         except Exception as exc:  # noqa: BLE001
-            logger.warning("sdk_desktop_test_shutdown_failed", error=str(exc))
+            logger.warning("sdk_desktop_test_shutdown_failed", error=str(exc), exc_info=True)
         finally:
             host_state.sdk_desktop_bridge = None
             service_context.register("sdk_runtime_ready", None)
@@ -131,14 +132,14 @@ async def _shutdown_services() -> None:
     try:
         await deactivate_orchestration(service_context)
     except Exception as exc:  # noqa: BLE001
-        logger.warning("orchestration_shutdown_failed", error=str(exc))
+        logger.warning("orchestration_shutdown_failed", error=str(exc), exc_info=True)
     # Close SDK Runtime Stack (Slice C)
     if host_state.sdk_runtime_stack is not None:
         try:
             await host_state.sdk_runtime_stack.close()
             logger.info("product_sdk_runtime_stopped")
         except Exception as exc:  # noqa: BLE001
-            logger.warning("product_sdk_runtime_shutdown_failed", error=str(exc))
+            logger.warning("product_sdk_runtime_shutdown_failed", error=str(exc), exc_info=True)
         finally:
             host_state.sdk_runtime_stack = None
             host_state.sdk_ingress = None
@@ -163,7 +164,7 @@ async def _shutdown_services() -> None:
             )
             logger.info("product_memory_owner_stopped")
         except Exception as exc:  # noqa: BLE001
-            logger.warning("product_memory_owner_shutdown_failed", error=str(exc))
+            logger.warning("product_memory_owner_shutdown_failed", error=str(exc), exc_info=True)
         finally:
             service_context.register("session_db", None)
     _capability_platform = service_context.get("capability_platform")
@@ -172,7 +173,7 @@ async def _shutdown_services() -> None:
         try:
             await _capability_center.shutdown()
         except Exception as exc:  # noqa: BLE001
-            logger.warning("capability_center_shutdown_failed", error=str(exc))
+            logger.warning("capability_center_shutdown_failed", error=str(exc), exc_info=True)
         finally:
             service_context.register("capability_center", None)
     if _capability_platform is not None:
@@ -187,7 +188,7 @@ async def _shutdown_services() -> None:
                 ),
             )
         except Exception as exc:  # noqa: BLE001
-            logger.warning("capability_platform_shutdown_failed", error=str(exc))
+            logger.warning("capability_platform_shutdown_failed", error=str(exc), exc_info=True)
         finally:
             service_context.register("capability_platform", None)
     _workflow_service = service_context.get("workflow_service")
@@ -195,7 +196,7 @@ async def _shutdown_services() -> None:
         try:
             await asyncio.wait_for(_workflow_service.close(), timeout=5.0)
         except Exception as exc:  # noqa: BLE001
-            logger.warning("workflow_owner_shutdown_failed", error=str(exc))
+            logger.warning("workflow_owner_shutdown_failed", error=str(exc), exc_info=True)
     # P5-S1: stop the watchdog cleanly so its task doesn't dangle past
     # shutdown and produce "Task was destroyed but it is pending!" noise.
     _wd = service_context.get("watchdog")
@@ -203,7 +204,7 @@ async def _shutdown_services() -> None:
         try:
             await _wd.stop()
         except Exception as exc:
-            logger.warning("p5_supervisor_watchdog_stop_failed", error=str(exc))
+            logger.warning("p5_supervisor_watchdog_stop_failed", error=str(exc), exc_info=True)
     # P4-S15: stop in reverse-dependency order — MCP servers first (so they
     # don't keep firing tool_invoke writes), then VectorWorker (drain
     # outstanding embeds), then SkillLoader's watchdog thread.
@@ -212,19 +213,19 @@ async def _shutdown_services() -> None:
         try:
             await _mcp.stop()
         except Exception as exc:
-            logger.warning("p4_mcp_manager_stop_failed", error=str(exc))
+            logger.warning("p4_mcp_manager_stop_failed", error=str(exc), exc_info=True)
     _vw = service_context.get("vector_worker")
     if _vw is not None:
         try:
             await _vw.stop()
         except Exception as exc:
-            logger.warning("p4_vector_worker_stop_failed", error=str(exc))
+            logger.warning("p4_vector_worker_stop_failed", error=str(exc), exc_info=True)
     _iw = service_context.get("image_worker")
     if _iw is not None:
         try:
             await _iw.stop()
         except Exception as exc:  # noqa: BLE001
-            logger.warning("image_worker_stop_failed", error=str(exc))
+            logger.warning("image_worker_stop_failed", error=str(exc), exc_info=True)
     for _skill_surface in (
         service_context.get("managed_skill_discovery_projection"),
         service_context.get("skill_loader"),
@@ -233,7 +234,7 @@ async def _shutdown_services() -> None:
             try:
                 await _skill_surface.stop()
             except Exception as exc:
-                logger.warning("p4_skill_surface_stop_failed", error=str(exc))
+                logger.warning("p4_skill_surface_stop_failed", error=str(exc), exc_info=True)
 
     # Stage 2 / WI-S2.4 (D12 v2)：等所有 episodic fact 抽取 task 完成。
     # 防 "Task was destroyed but it is pending" warning + 数据丢失。
@@ -249,6 +250,7 @@ async def _shutdown_services() -> None:
             logger.warning(
                 "episodic_background_tasks_drain_failed: %s",
                 exc,
+                exc_info=True,
             )
 
     logger.info("shutting down")

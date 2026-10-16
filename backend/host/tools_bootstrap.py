@@ -146,7 +146,7 @@ try:
                 if deleted > 0:
                     logger.info("receipt_store: cleaned %d expired files", deleted)
             except Exception as _rs_exc:  # noqa: BLE001
-                logger.warning("ReceiptStore init failed: %s", _rs_exc)
+                logger.warning("ReceiptStore init failed: %s", _rs_exc, exc_info=True)
                 return None
         return _receipt_store_box[0]
 
@@ -205,14 +205,14 @@ try:
     try:
         service_context.register("permission_gate", permission_gate_v2)
     except Exception as _pg_reg_exc:  # noqa: BLE001 — non-fatal
-        logger.warning("permission_gate_register_failed", error=str(_pg_reg_exc))
+        logger.warning("permission_gate_register_failed", error=str(_pg_reg_exc), exc_info=True)
 
     logger.info(
         "p4_s20_tool_registry_v2_ready",
         os_tools=len(deskpet_tool_registry_v2.list_tools(source="builtin")),
     )
 except Exception as _v2_exc:  # noqa: BLE001 — non-fatal, log + degrade
-    logger.warning("p4_s20_v2_init_failed", error=str(_v2_exc))
+    logger.warning("p4_s20_v2_init_failed", error=str(_v2_exc), exc_info=True)
     deskpet_tool_registry_v2 = None
     permission_gate_v2 = None
     skill_registry_client = None

@@ -52,7 +52,9 @@ async def _ppt_workflow_outline_notify(payload: dict) -> None:
                 workflow_event_id=f"ppt-outline:{oid}",
             )
         except Exception as exc:  # noqa: BLE001
-            logger.warning("ppt_workflow_outline_persist_failed sid=%s err=%s", sid, exc)
+            logger.warning(
+                "ppt_workflow_outline_persist_failed sid=%s err=%s", sid, exc, exc_info=True
+            )
 
 
 async def _resume_workflow_ppt_outline(service, decision, response: dict, sid: str) -> None:
@@ -68,6 +70,7 @@ async def _resume_workflow_ppt_outline(service, decision, response: dict, sid: s
             "ppt_workflow_outline_resume_failed run_id=%s error=%s",
             decision.run_id,
             exc,
+            exc_info=True,
         )
         await _ppt_notify_chat_bubble(sid, f"PPT 大纲确认失败：{exc}")
 
@@ -121,7 +124,9 @@ async def _ppt_notify_chat_bubble(sid: str, text: str) -> None:
             if vw is not None and msg_id is not None:
                 await vw.enqueue(msg_id, str(text or ""))
         except Exception as exc:  # noqa: BLE001
-            logger.warning("ppt_notify_persist_failed sid=%s err=%s", target_sid, exc)
+            logger.warning(
+                "ppt_notify_persist_failed sid=%s err=%s", target_sid, exc, exc_info=True
+            )
 
     await _broadcast_control(msg)
 
@@ -133,7 +138,7 @@ def _expire_ppt_outline_dangling_for_startup() -> int:
             logger.info("ppt_outline_expired_dangling", count=expired)
         return expired
     except Exception as exc:  # noqa: BLE001
-        logger.warning("ppt_outline_expire_startup_failed", error=str(exc))
+        logger.warning("ppt_outline_expire_startup_failed", error=str(exc), exc_info=True)
         return 0
 
 

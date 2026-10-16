@@ -83,7 +83,7 @@ async def realtime_voice_channel(ws: WebSocket):
     except (EOFError, WebSocketDisconnect):
         logger.info("realtime_voice_local_closed")
     except Exception:  # noqa: BLE001
-        logger.warning("realtime_voice_local_failed", stable_code="internal")
+        logger.warning("realtime_voice_local_failed", stable_code="internal", exc_info=True)
 
 
 @voice_router.websocket("/ws/audio")

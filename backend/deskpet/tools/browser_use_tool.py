@@ -215,7 +215,7 @@ def _resolve_creds() -> dict[str, str]:
                 if data.get("api_key"):
                     api_key = str(data["api_key"])
     except Exception as exc:  # noqa: BLE001 — creds read must never break dispatch
-        logger.warning("browser_use: llm_runtime.json read failed: %s", exc)
+        logger.warning("browser_use: llm_runtime.json read failed: %s", exc, exc_info=True)
 
     if not api_key:
         api_key = os.environ.get("DESKPET_CLOUD_API_KEY") or os.environ.get("OPENAI_API_KEY") or ""
@@ -290,7 +290,7 @@ def _persist_job(job_id: str, state: dict[str, Any]) -> None:
             json.dumps(state, ensure_ascii=False), encoding="utf-8"
         )
     except Exception as exc:  # noqa: BLE001 — persistence is best-effort
-        logger.debug("browser_use: persist job %s failed: %s", job_id, exc)
+        logger.debug("browser_use: persist job %s failed: %s", job_id, exc, exc_info=True)
 
 
 def _load_job(job_id: str) -> dict[str, Any] | None:

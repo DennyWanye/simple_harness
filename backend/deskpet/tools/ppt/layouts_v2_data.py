@@ -220,7 +220,7 @@ def _render_chart_v2(slide, outline: SlideOutline, theme: Theme) -> None:
                 accent_color=theme.accent_rgb,
             )
     except Exception as exc:  # noqa: BLE001
-        log.warning("chart render failed, degrading to cards: %s", exc)
+        log.warning("chart render failed, degrading to cards: %s", exc, exc_info=True)
         _render_bullet_v2(slide, outline, theme)
 
 

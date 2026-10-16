@@ -160,7 +160,7 @@ def _parse_action(text: str, *, alert_id: str) -> SupervisorAction:
     try:
         obj = json.loads(raw)
     except Exception as exc:  # noqa: BLE001
-        logger.warning("supervisor_parse_failed error=%s raw=%s", exc, raw[:200])
+        logger.warning("supervisor_parse_failed error=%s raw=%s", exc, raw[:200], exc_info=True)
         return _parse_fallback(f"invalid_json: {str(exc)[:60]}")
     if not isinstance(obj, dict):
         return _parse_fallback("non_object_json")
@@ -266,7 +266,7 @@ class SupervisorAgent:
         try:
             snap = snapshot if snapshot is not None else await self._build_snapshot(sid)
         except Exception as exc:  # noqa: BLE001
-            logger.warning("supervisor_snapshot_failed sid=%s error=%s", sid, exc)
+            logger.warning("supervisor_snapshot_failed sid=%s error=%s", sid, exc, exc_info=True)
             return SupervisorAction(
                 action="wait", severity="green", diagnosis="snapshot_failed", alert_id=alert_id
             )
@@ -377,7 +377,12 @@ class SupervisorAgent:
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001
-            logger.warning("supervisor_llm_failed sid=%s error=%s", snapshot.get("session_id"), exc)
+            logger.warning(
+                "supervisor_llm_failed sid=%s error=%s",
+                snapshot.get("session_id"),
+                exc,
+                exc_info=True,
+            )
             # P5-S1 D fix: same as above — surface "supervisor saw it
             # but couldn't diagnose" instead of silent wait. Often the
             # main agent's failures are network/provider issues that
@@ -465,7 +470,7 @@ class SupervisorAgent:
             try:
                 await self._audit(action, sid)
             except Exception as exc:  # noqa: BLE001
-                logger.debug("supervisor_audit_failed sid=%s error=%s", sid, exc)
+                logger.debug("supervisor_audit_failed sid=%s error=%s", sid, exc, exc_info=True)
 
         # 2. nudge → push hint to queue
         if action.action == "nudge" and self._push_hint is not None and action.hint_for_main_agent:
@@ -474,7 +479,9 @@ class SupervisorAgent:
                 # action itself so the queue caller can read alert_id.
                 await self._push_hint(sid, action)
             except Exception as exc:  # noqa: BLE001
-                logger.warning("supervisor_push_hint_failed sid=%s error=%s", sid, exc)
+                logger.warning(
+                    "supervisor_push_hint_failed sid=%s error=%s", sid, exc, exc_info=True
+                )
 
         # 2b. P6 bugfix 2026-05-14 (live-test): if we converted ask_user
         # → nudge above (auto mode), proactively spawn a follow-up chat
@@ -504,6 +511,7 @@ class SupervisorAgent:
                         "supervisor_auto_followup_failed sid=%s error=%s",
                         sid,
                         exc,
+                        exc_info=True,
                     )
 
         # 3. Broadcast supervisor_alert
@@ -526,7 +534,9 @@ class SupervisorAgent:
             try:
                 await self._broadcast("supervisor_alert", payload)
             except Exception as exc:  # noqa: BLE001
-                logger.warning("supervisor_broadcast_failed sid=%s error=%s", sid, exc)
+                logger.warning(
+                    "supervisor_broadcast_failed sid=%s error=%s", sid, exc, exc_info=True
+                )
         elif _silent_for_auto_mode:
             logger.info(
                 "supervisor_alert_silenced_auto_mode sid=%s alert=%s severity=%s "

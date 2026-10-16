@@ -63,7 +63,12 @@ class LegacyProductDomainSink:
             try:
                 await self._db.append_message(session_id=session_id, role="assistant", content=text)
             except Exception as exc:
-                logger.warning("clarify_persist_assistant_failed", sid=session_id, error=str(exc))
+                logger.warning(
+                    "clarify_persist_assistant_failed",
+                    sid=session_id,
+                    error=str(exc),
+                    exc_info=True,
+                )
 
     async def store_plan(self, payload: Mapping[str, Any]) -> None:
         if self._db is None:
@@ -78,6 +83,7 @@ class LegacyProductDomainSink:
                         "session_plan_clear_stale_failed",
                         sid=session_id,
                         error=str(exc),
+                        exc_info=True,
                     )
             return
         try:
@@ -97,7 +103,10 @@ class LegacyProductDomainSink:
             )
         except Exception as exc:
             logger.warning(
-                "session_plan_upsert_failed", sid=str(payload["session_id"]), error=str(exc)
+                "session_plan_upsert_failed",
+                sid=str(payload["session_id"]),
+                error=str(exc),
+                exc_info=True,
             )
 
     async def await_plan(self, payload: Mapping[str, Any]) -> bool:
@@ -121,7 +130,9 @@ class LegacyProductDomainSink:
                 try:
                     await self._db.clear_session_plan_awaiting(sid)
                 except Exception as exc:
-                    logger.debug("session_plan_clear_failed", sid=sid, error=str(exc))
+                    logger.debug(
+                        "session_plan_clear_failed", sid=sid, error=str(exc), exc_info=True
+                    )
         return decision == "go"
 
     def _set_read_only(self, session_id: str, enabled: bool) -> None:
@@ -129,7 +140,11 @@ class LegacyProductDomainSink:
             self._tools.set_plan_read_only(session_id, enabled)
         except Exception as exc:
             logger.warning(
-                "plan_read_only_toggle_failed", sid=session_id, enabled=enabled, error=str(exc)
+                "plan_read_only_toggle_failed",
+                sid=session_id,
+                enabled=enabled,
+                error=str(exc),
+                exc_info=True,
             )
 
 

@@ -99,6 +99,7 @@ async def handle(
             msg_type=msg_type,
             error=str(exc),
             error_type=type(exc).__name__,
+            exc_info=True,
         )
         await _send_error(ws, f"p4 {msg_type} failed: {exc}")
 
@@ -119,7 +120,7 @@ async def _handle_skills_list(ws: Any, payload: dict[str, Any], sc: Any) -> None
     try:
         skills = loader.list_skills()
     except Exception as exc:
-        logger.warning("p4_ipc.skills_list_failed", error=str(exc))
+        logger.warning("p4_ipc.skills_list_failed", error=str(exc), exc_info=True)
         skills = []
     await ws.send_json(
         {
@@ -159,7 +160,7 @@ async def _handle_decisions_list(
     try:
         decisions = assembler.recent_decisions(n=limit)
     except Exception as exc:
-        logger.warning("p4_ipc.decisions_list_failed", error=str(exc))
+        logger.warning("p4_ipc.decisions_list_failed", error=str(exc), exc_info=True)
         decisions = []
     response_payload: dict[str, Any] = {"decisions": list(decisions)}
     if attempt_store is not None:
@@ -199,6 +200,7 @@ async def _handle_model_provision_status(ws: Any, payload: dict[str, Any], sc: A
             "p4_ipc.model_provision_status_failed",
             error=str(exc),
             error_type=type(exc).__name__,
+            exc_info=True,
         )
         status = {"state": "ready", "total": 0}
     await ws.send_json({"type": "model_provision_status_response", "payload": status})
@@ -245,7 +247,7 @@ async def _handle_permissions_pending_list(
     try:
         pending = gate.list_pending(session_id=sid)
     except Exception as exc:  # noqa: BLE001
-        logger.warning("p4_ipc.permissions_pending_list_failed", error=str(exc))
+        logger.warning("p4_ipc.permissions_pending_list_failed", error=str(exc), exc_info=True)
         pending = []
     await ws.send_json(
         {
@@ -465,7 +467,7 @@ def _provider_model_ids(service_context: Any) -> list[str]:
     try:
         providers = registry.list_providers()
     except Exception as exc:  # noqa: BLE001
-        logger.warning("p4_ipc.context_compaction_catalog_failed", error=str(exc))
+        logger.warning("p4_ipc.context_compaction_catalog_failed", error=str(exc), exc_info=True)
         return []
     found: set[str] = set()
     for provider in providers or []:

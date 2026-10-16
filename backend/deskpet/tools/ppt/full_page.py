@@ -55,7 +55,7 @@ def _crop_image_to_169(path: str) -> str:
             im.crop(box).save(out)
         return str(out)
     except Exception as exc:  # noqa: BLE001
-        log.debug("16:9 crop failed (%s); using original image", exc)
+        log.debug("16:9 crop failed (%s); using original image", exc, exc_info=True)
         return path
 
 

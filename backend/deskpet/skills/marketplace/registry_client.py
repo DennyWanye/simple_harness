@@ -64,7 +64,7 @@ class RegistryClient:
             self._cache_at = now
             return self._cache
         except Exception as exc:  # noqa: BLE001
-            logger.warning("registry_fetch_failed", error=str(exc))
+            logger.warning("registry_fetch_failed", error=str(exc), exc_info=True)
             return {"skills": [], "error": f"{type(exc).__name__}: {exc}"}
 
     def invalidate(self) -> None:

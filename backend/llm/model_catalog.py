@@ -59,7 +59,7 @@ async def fetch_models(
             return []
         data = resp.json()
     except Exception as exc:  # noqa: BLE001 — total: any failure → fallback
-        logger.info("model_catalog_fetch_failed url=%s err=%s", url, str(exc)[:160])
+        logger.info("model_catalog_fetch_failed url=%s err=%s", url, str(exc)[:160], exc_info=True)
         return []
     # OpenAI standard: {"data": [{"id": "..."}, ...]}. Tolerate a bare
     # list or {"models": [...]} that some relays emit.

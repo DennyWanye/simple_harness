@@ -77,6 +77,7 @@ async def _initialize_companion_projection_services() -> None:
                 str(durable_binding["status"]) if durable_binding is not None else None
             ),
             awaits="companion_profile_bind",
+            exc_info=True,
         )
     else:
         try:
@@ -85,6 +86,7 @@ async def _initialize_companion_projection_services() -> None:
             logger.warning(
                 "companion_projection_startup_drain_failed",
                 error=type(exc).__name__,
+                exc_info=True,
             )
 
 

@@ -155,7 +155,7 @@ def _log_cache_hit_rate(usage: dict | None, *, where: str) -> None:
             hit_rate=rate,
         )
     except Exception as exc:  # noqa: BLE001 — 日志埋点绝不能影响主流程
-        logger.debug("p4s25_prompt_cache_hit_log_failed err=%s", str(exc)[:120])
+        logger.debug("p4s25_prompt_cache_hit_log_failed err=%s", str(exc)[:120], exc_info=True)
 
 
 def _is_anthropic_endpoint(base_url: str) -> bool:

@@ -403,7 +403,7 @@ class RunPresenter:
             try:
                 context.assembler.feedback(context.bundle, final_response=state.final_text)
             except Exception as exc:
-                logger.warning("p4_assembler_feedback_failed", error=str(exc))
+                logger.warning("p4_assembler_feedback_failed", error=str(exc), exc_info=True)
         usage = getattr(context.provider, "last_usage", None)
         if usage and context.billing_ledger is not None:
             try:
@@ -417,7 +417,7 @@ class RunPresenter:
                     completion_tokens=int(usage.get("completion_tokens", 0)),
                 )
             except Exception as exc:
-                logger.warning("billing_record_failed", error=str(exc))
+                logger.warning("billing_record_failed", error=str(exc), exc_info=True)
             context.provider.last_usage = None
 
     async def _record_activity(self, event: AgentEvent, context: RunPresentationContext) -> None:
@@ -462,7 +462,7 @@ class RunPresenter:
                 )
                 await store.mark_error_pending(context.session_id)
         except Exception as exc:
-            logger.debug("session_activity_bump_failed", error=str(exc))
+            logger.debug("session_activity_bump_failed", error=str(exc), exc_info=True)
 
 
 def build_product_run_presenter() -> RunPresenter:
@@ -527,6 +527,7 @@ async def _send_both(context: RunPresentationContext, frame: dict[str, Any]) -> 
             request_id=context.request_id,
             frame_type=str(frame.get("type") or ""),
             error_type=type(exc).__name__,
+            exc_info=True,
         )
     try:
         await context.broadcast(context.websocket, frame)
@@ -538,6 +539,7 @@ async def _send_both(context: RunPresentationContext, frame: dict[str, Any]) -> 
             request_id=context.request_id,
             frame_type=str(frame.get("type") or ""),
             error_type=type(exc).__name__,
+            exc_info=True,
         )
 
 
@@ -703,7 +705,7 @@ async def _present_tool_call(
                 **_message_scope_kwargs(context),
             )
         except Exception as exc:
-            logger.warning("chat_persist_tool_call_failed", error=str(exc))
+            logger.warning("chat_persist_tool_call_failed", error=str(exc), exc_info=True)
 
 
 async def _present_tool_result(
@@ -791,7 +793,7 @@ async def _present_tool_result(
                 **_message_scope_kwargs(context),
             )
         except Exception as exc:
-            logger.warning("chat_persist_tool_result_failed", error=str(exc))
+            logger.warning("chat_persist_tool_result_failed", error=str(exc), exc_info=True)
 
 
 async def _present_handoff(
@@ -827,7 +829,7 @@ async def _present_final(
             if context.vector_worker is not None and message_id is not None and state.final_text:
                 await context.vector_worker.enqueue(message_id, state.final_text)
         except Exception as exc:
-            logger.warning("chat_persist_assistant_failed", error=str(exc))
+            logger.warning("chat_persist_assistant_failed", error=str(exc), exc_info=True)
     try:
         await context.send_final(
             context.websocket,
@@ -891,6 +893,7 @@ async def _present_final(
             run_id=context.run_id,
             request_id=context.request_id,
             error_type=type(exc).__name__,
+            exc_info=True,
         )
     try:
         activity = context.services.get("session_activity")
@@ -907,7 +910,9 @@ async def _present_final(
                     }
                 )
     except Exception as exc:
-        logger.debug("auto_resume_success_emit_failed", sid=context.session_id, error=str(exc))
+        logger.debug(
+            "auto_resume_success_emit_failed", sid=context.session_id, error=str(exc), exc_info=True
+        )
 
 
 async def _present_error(
@@ -932,7 +937,9 @@ async def _present_error(
                 )
                 handled = result.action in {"spawned", "exhausted"}
     except Exception as exc:
-        logger.debug("auto_resume_handle_failed", sid=context.session_id, error=str(exc))
+        logger.debug(
+            "auto_resume_handle_failed", sid=context.session_id, error=str(exc), exc_info=True
+        )
     if not handled:
         try:
             await _send_both(
@@ -1045,6 +1052,7 @@ async def _present_compacted(
                 "context_compaction_history_persist_failed",
                 sid=context.session_id,
                 error=str(exc),
+                exc_info=True,
             )
     try:
         await context.websocket.send_json(
@@ -1062,7 +1070,9 @@ async def _present_compacted(
             }
         )
     except Exception as exc:
-        logger.debug("context_compacted_ws_failed", sid=context.session_id, error=str(exc))
+        logger.debug(
+            "context_compacted_ws_failed", sid=context.session_id, error=str(exc), exc_info=True
+        )
 
 
 async def _present_pipeline(
@@ -1089,7 +1099,9 @@ async def _present_pipeline(
     try:
         await _send_both(context, frame)
     except Exception as exc:
-        logger.debug("pipeline_event_ws_failed", sid=context.session_id, error=str(exc))
+        logger.debug(
+            "pipeline_event_ws_failed", sid=context.session_id, error=str(exc), exc_info=True
+        )
 
 
 async def _present_provider_fallback(
@@ -1153,6 +1165,7 @@ async def _emit_reasoning_summary(
                 "reasoning_summary_persist_failed",
                 summary_id=summary_id,
                 error=str(exc),
+                exc_info=True,
             )
     await _send_both(
         context,

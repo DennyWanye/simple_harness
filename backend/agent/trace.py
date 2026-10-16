@@ -27,7 +27,9 @@ class IterationTracer:
         try:
             self.trace_dir.mkdir(parents=True, exist_ok=True)
         except Exception as exc:  # noqa: BLE001
-            logger.debug("trace_dir_create_failed path=%s err=%s", self.trace_dir, exc)
+            logger.debug(
+                "trace_dir_create_failed path=%s err=%s", self.trace_dir, exc, exc_info=True
+            )
 
     @property
     def path(self) -> Path:
@@ -45,4 +47,4 @@ class IterationTracer:
                 with self.path.open("a", encoding="utf-8") as fh:
                     fh.write(line + "\n")
         except Exception as exc:  # noqa: BLE001
-            logger.debug("trace_record_failed err=%s", exc)
+            logger.debug("trace_record_failed err=%s", exc, exc_info=True)

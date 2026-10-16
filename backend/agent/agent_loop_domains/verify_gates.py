@@ -264,6 +264,7 @@ class VerifyGateMixin(AgentLoopCore):
                 "verify_gate.check failed (sid=%s): %s — passing through",
                 state.session_id,
                 exc,
+                exc_info=True,
             )
             state.v_outcome = None
 
@@ -307,7 +308,7 @@ class VerifyGateMixin(AgentLoopCore):
                         ),
                     )
                 except Exception as exc:  # noqa: BLE001
-                    logger.warning("ephemeral consult failed: %s", exc)
+                    logger.warning("ephemeral consult failed: %s", exc, exc_info=True)
                 # WI-HM-1: emit ephemeral 救援判定到 metrics.jsonl
                 # （之前只 logger.info，未计数化 → 监控看不到救援率）.
                 try:

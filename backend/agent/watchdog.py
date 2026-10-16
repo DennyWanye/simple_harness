@@ -199,7 +199,7 @@ class WatchdogLoop:
         try:
             candidates = await self._activity.all_sids()
         except Exception as exc:  # noqa: BLE001
-            logger.warning("watchdog_activity_query_failed error=%s", exc)
+            logger.warning("watchdog_activity_query_failed error=%s", exc, exc_info=True)
             return
 
         now = self._clock()
@@ -296,6 +296,7 @@ class WatchdogLoop:
                     "watchdog_idle_todos_probe_failed sid=%s err=%s",
                     sid,
                     str(exc)[:200],
+                    exc_info=True,
                 )
                 incomplete = []
             if incomplete:

@@ -338,7 +338,7 @@ class TeamStore:
             if removed:
                 log.info("team_store cleanup removed=%d db files", removed)
         except Exception as exc:  # noqa: BLE001 — 清理失败不影响启动
-            log.debug("TeamStore.cleanup_old failed: %s", exc)
+            log.debug("TeamStore.cleanup_old failed: %s", exc, exc_info=True)
         return removed
 
     # ------------------------------------------------------------------

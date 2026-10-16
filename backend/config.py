@@ -1122,14 +1122,14 @@ def _merge_missing_feature_flags(user_target: Path, bundle_source: Path) -> bool
         # 按需导入：可选依赖
         import tomlkit
     except Exception as e:  # pragma: no cover - import guard
-        logger.warning("feature_flag_merge_skipped (no tomlkit): %s", e)
+        logger.warning("feature_flag_merge_skipped (no tomlkit): %s", e, exc_info=True)
         return False
 
     try:
         user_doc = tomlkit.parse(user_target.read_text(encoding="utf-8"))
         bundle_doc = tomlkit.parse(bundle_source.read_text(encoding="utf-8"))
     except Exception as e:
-        logger.warning("feature_flag_merge_parse_failed: %s", e)
+        logger.warning("feature_flag_merge_parse_failed: %s", e, exc_info=True)
         return False
 
     added: list[str] = []
@@ -1176,7 +1176,9 @@ def _merge_missing_feature_flags(user_target: Path, bundle_source: Path) -> bool
             try:
                 parent[path[-1]] = copy.deepcopy(bundle_tbl)  # type: ignore[index]
             except Exception as e:
-                logger.warning("feature_flag_merge_section_copy_failed %s: %s", path, e)
+                logger.warning(
+                    "feature_flag_merge_section_copy_failed %s: %s", path, e, exc_info=True
+                )
                 continue
             added.append(".".join(path) + " (section)")
             continue
@@ -1189,7 +1191,9 @@ def _merge_missing_feature_flags(user_target: Path, bundle_source: Path) -> bool
             try:
                 user_tbl[key] = copy.deepcopy(bval)  # type: ignore[index]
             except Exception as e:
-                logger.warning("feature_flag_merge_key_copy_failed %s.%s: %s", path, key, e)
+                logger.warning(
+                    "feature_flag_merge_key_copy_failed %s.%s: %s", path, key, e, exc_info=True
+                )
                 continue
             added.append(".".join(path) + "." + str(key))
 
@@ -1232,7 +1236,7 @@ def seed_user_config_if_missing() -> Path | None:
             with open(user_target, "rb") as f:
                 raw = tomli.load(f)
         except Exception as e:
-            logger.warning("legacy_check_parse_failed: %s", e)
+            logger.warning("legacy_check_parse_failed: %s", e, exc_info=True)
             return user_target
         if _is_legacy_llm_schema(raw):
             source = _bundle_default_config_path()
@@ -1267,7 +1271,7 @@ def seed_user_config_if_missing() -> Path | None:
             try:
                 _merge_missing_feature_flags(user_target, source)
             except Exception as e:  # pragma: no cover - defensive
-                logger.warning("feature_flag_merge_unexpected: %s", e)
+                logger.warning("feature_flag_merge_unexpected: %s", e, exc_info=True)
         return user_target
 
     source = _bundle_default_config_path()
@@ -1300,7 +1304,7 @@ def _recover_orphaned_endpoints(canonical_path: Path) -> bool:
         # 按需导入：可选依赖
         import tomlkit
     except Exception as e:  # pragma: no cover - import guard
-        logger.warning("endpoints_recover_failed: %s", e)
+        logger.warning("endpoints_recover_failed: %s", e, exc_info=True)
         return False
 
     def _endpoints(raw: object) -> list[dict]:
@@ -1409,7 +1413,7 @@ def _recover_orphaned_endpoints(canonical_path: Path) -> bool:
         )
         return True
     except Exception as e:
-        logger.warning("endpoints_recover_failed: %s", e)
+        logger.warning("endpoints_recover_failed: %s", e, exc_info=True)
         return False
 
 

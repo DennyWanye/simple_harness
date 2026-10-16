@@ -503,6 +503,7 @@ class ContextCompressor:
                 "context_compressor.llm_failed",
                 error=str(exc),
                 error_type=type(exc).__name__,
+                exc_info=True,
             )
             # safe-fail: 退回上一级 = microcompact 后的 work(保住占位收益),
             # 而非最原始 messages(否则 microcompact 白做)。与 no_middle/no_llm 一致。

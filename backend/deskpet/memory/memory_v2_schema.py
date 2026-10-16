@@ -607,6 +607,7 @@ async def ensure_memory_v2_tables(db_path: str | Path) -> None:
             log.warning(
                 "memory_v2 stage2 column migration failed: %s",
                 exc,
+                exc_info=True,
             )
         _ensured.add(key)
         log.debug("memory_v2 tables ensured for %s", key)

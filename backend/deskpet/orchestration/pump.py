@@ -148,7 +148,7 @@ class MissionChangePump:
                 try:
                     await self._broadcast({"type": "mission_changed", "payload": change})
                 except Exception as error:  # noqa: BLE001 - a dead socket must not stop pushes
-                    logger.debug("mission_changed broadcast failed: %s", error)
+                    logger.debug("mission_changed broadcast failed: %s", error, exc_info=True)
             try:
                 await asyncio.wait_for(self._wake.wait(), timeout=self._interval)
             except TimeoutError:

@@ -200,7 +200,7 @@ class GoalChecker:
                 else await self.llm_call(prompt)
             )
         except Exception as exc:  # noqa: BLE001
-            logger.warning("goal_checker llm_call failed: %s", exc)
+            logger.warning("goal_checker llm_call failed: %s", exc, exc_info=True)
             _emit_goal_check_skipped("llm_error")
             return (False, "goal_check=skipped")
 

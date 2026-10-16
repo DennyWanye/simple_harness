@@ -214,7 +214,7 @@ def _handle_help(skill_loader: Any) -> dict[str, Any]:
                     }
                 )
         except Exception as exc:  # noqa: BLE001
-            log.warning("list_skills failed: %s", exc)
+            log.warning("list_skills failed: %s", exc, exc_info=True)
     return {"type": "help", "builtins": builtins, "skills": skills}
 
 
@@ -327,7 +327,7 @@ def _handle_prefs(args: str, pref_memory: Any) -> dict[str, Any]:
         try:
             entries = pref_memory.list_entries()
         except Exception as exc:  # noqa: BLE001
-            log.warning("prefs list failed: %s", exc)
+            log.warning("prefs list failed: %s", exc, exc_info=True)
             entries = []
         norm = [
             {
@@ -353,7 +353,7 @@ def _handle_prefs(args: str, pref_memory: Any) -> dict[str, Any]:
         try:
             removed = pref_memory.clear(kind)
         except Exception as exc:  # noqa: BLE001
-            log.warning("prefs clear failed: %s", exc)
+            log.warning("prefs clear failed: %s", exc, exc_info=True)
             return {"type": "error", "message": f"清除失败: {exc}"}
         return {"type": "prefs_cleared", "removed": int(removed), "kind": kind}
 

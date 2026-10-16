@@ -292,7 +292,9 @@ class VoicePipeline:
                 },
             )
         except Exception as exc:  # noqa: BLE001
-            logger.warning("voice_broadcast_failed", msg_type=msg_type, error=str(exc))
+            logger.warning(
+                "voice_broadcast_failed", msg_type=msg_type, error=str(exc), exc_info=True
+            )
 
     async def process_audio_chunk(self, pcm_bytes: bytes, audio_ws: WebSocket) -> None:
         """
@@ -429,7 +431,10 @@ class VoicePipeline:
                         )
                     except Exception as exc:  # noqa: BLE001
                         logger.warning(
-                            "voice_session_ensure_failed sid=%s err=%s", effective_sid, exc
+                            "voice_session_ensure_failed sid=%s err=%s",
+                            effective_sid,
+                            exc,
+                            exc_info=True,
                         )
                 task_session_manager.remap_peer_group(self.session_id, effective_sid)
             text = decision.stripped_text
@@ -542,7 +547,7 @@ class VoicePipeline:
             logger.info("utterance_cancelled")
             raise
         except Exception as e:
-            logger.error("pipeline_error", error=str(e))
+            logger.error("pipeline_error", error=str(e), exc_info=True)
             try:
                 await audio_ws.send_json(
                     {
@@ -718,7 +723,9 @@ class VoicePipeline:
             try:
                 await handle.close()
             except Exception as exc:  # noqa: BLE001 - close is best-effort at transport edge
-                logger.warning("voice_run_close_failed", run_id=run_id, error=str(exc))
+                logger.warning(
+                    "voice_run_close_failed", run_id=run_id, error=str(exc), exc_info=True
+                )
             if self._current_run_id == run_id:
                 self._current_run_id = None
                 self._current_run_handle = None
@@ -732,7 +739,13 @@ class VoicePipeline:
         try:
             await handle.cancel(reason)
         except Exception as exc:  # noqa: BLE001 - preserve root transport error
-            logger.warning("voice_run_cancel_failed", run_id=run_id, reason=reason, error=str(exc))
+            logger.warning(
+                "voice_run_cancel_failed",
+                run_id=run_id,
+                reason=reason,
+                error=str(exc),
+                exc_info=True,
+            )
 
     async def _emit_run_event(
         self,

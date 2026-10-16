@@ -142,7 +142,7 @@ class RuntimeDriveMixin(OrchestrationServiceCore):
             try:
                 await client.aclose()
             except Exception:  # noqa: BLE001
-                logger.debug("provider http client close failed")
+                logger.debug("provider http client close failed", exc_info=True)
 
     async def close(self) -> None:
         """Test and orderly-shutdown path only; SIGKILL never reaches it."""
@@ -168,7 +168,7 @@ class RuntimeDriveMixin(OrchestrationServiceCore):
             try:
                 self.on_write()
             except Exception:  # noqa: BLE001
-                logger.debug("change pump poke failed")
+                logger.debug("change pump poke failed", exc_info=True)
 
     def _tick(self) -> float:
         try:

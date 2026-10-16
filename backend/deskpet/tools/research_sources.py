@@ -109,7 +109,7 @@ async def _reachable(host: str, *, timeout: float = 4.0) -> bool:
             resp = await cli.get(f"https://{host_s}/")
             ok = 200 <= resp.status_code < 400
     except Exception as exc:  # noqa: BLE001
-        log.debug("reachability probe failed host=%s: %s", host_s, exc)
+        log.debug("reachability probe failed host=%s: %s", host_s, exc, exc_info=True)
         ok = False
     _REACHABLE_CACHE[host_s] = (now, ok)
     return ok
@@ -380,7 +380,7 @@ def _html_main_text(html: str) -> str:
         if text and text.strip():
             return text
     except Exception as exc:  # noqa: BLE001
-        log.debug("trafilatura baike extract failed: %s", exc)
+        log.debug("trafilatura baike extract failed: %s", exc, exc_info=True)
     try:
         # 按需导入：重型包
         from selectolax.parser import HTMLParser  # type: ignore
@@ -588,7 +588,7 @@ async def _cninfo_resolve(candidate: str, cli: httpx.AsyncClient) -> tuple[str, 
         stock = f"{code},{org}" if code and org else ""
         return zwjc, stock
     except Exception as exc:  # noqa: BLE001
-        log.debug("cninfo topSearch failed for %r: %s", cand, exc)
+        log.debug("cninfo topSearch failed for %r: %s", cand, exc, exc_info=True)
         return cand, ""
 
 
@@ -608,7 +608,7 @@ def _extract_pdf_text(data: bytes, *, want_financials: bool = False) -> str:
     try:
         reader = pypdf.PdfReader(io.BytesIO(data))
     except Exception as exc:  # noqa: BLE001
-        log.debug("pypdf open failed: %s", exc)
+        log.debug("pypdf open failed: %s", exc, exc_info=True)
         return ""
     n = len(reader.pages)
     _cache: dict[int, str] = {}
@@ -692,7 +692,7 @@ async def cninfo_search(
             resp.raise_for_status()
             anns = (resp.json() or {}).get("announcements") or []
         except Exception as exc:  # noqa: BLE001
-            log.debug("cninfo query failed for %r: %s", candidate, exc)
+            log.debug("cninfo query failed for %r: %s", candidate, exc, exc_info=True)
             return []
         # 财报类(category 命中年报/季报等): 摘要排到正报前(摘要"主要会计数据"表集中,
         # pypdf 召回性价比最高),且抽取时定位财务表置顶。want_fin 控这两条增强。
@@ -714,7 +714,7 @@ async def cninfo_search(
                 if pr.status_code == 200 and pr.content:
                     text = _extract_pdf_text(pr.content, want_financials=want_fin)
             except Exception as exc:  # noqa: BLE001
-                log.debug("cninfo pdf fetch failed %s: %s", pdf_url, exc)
+                log.debug("cninfo pdf fetch failed %s: %s", pdf_url, exc, exc_info=True)
             # PDF 抽不到正文时退化为元数据(公司+标题仍是一手信号)
             if not text:
                 text = f"{full_title}（巨潮资讯公告，PDF：{pdf_url}）"
@@ -876,7 +876,7 @@ async def openstd_search(
             resp.raise_for_status()
             rows = parse_openstd(resp.text, max_results=max_results)
         except Exception as exc:  # noqa: BLE001
-            log.debug("openstd search failed for %r: %s", kw, exc)
+            log.debug("openstd search failed for %r: %s", kw, exc, exc_info=True)
             return []
         out: list[dict[str, Any]] = []
         for row in rows:
@@ -926,7 +926,7 @@ async def _baidu_baike_fetch(
             if item:
                 return [item][:max_results]
     except Exception as exc:  # noqa: BLE001
-        log.debug("baidu baike item fetch failed for %r: %s", kw, exc)
+        log.debug("baidu baike item fetch failed for %r: %s", kw, exc, exc_info=True)
 
     try:
         search_url = _BAIDU_BAIKE_SEARCH.format(keyword=quote(kw, safe=""))
@@ -946,11 +946,11 @@ async def _baidu_baike_fetch(
                     )
                     return [item][:max_results] if item else []
             except Exception as exc:  # noqa: BLE001
-                log.debug("baidu baike linked item fetch failed for %r: %s", kw, exc)
+                log.debug("baidu baike linked item fetch failed for %r: %s", kw, exc, exc_info=True)
         item = _baike_item("baidu_baike", url=str(resp.url), html=resp.text, fallback_title=kw)
         return [item][:max_results] if item else []
     except Exception as exc:  # noqa: BLE001
-        log.debug("baidu baike search failed for %r: %s", kw, exc)
+        log.debug("baidu baike search failed for %r: %s", kw, exc, exc_info=True)
         return []
 
 
@@ -967,7 +967,7 @@ async def baidu_baike_search(
         try:
             return await _baidu_baike_fetch(keyword, client, max_results)
         except Exception as exc:  # noqa: BLE001
-            log.debug("baidu baike injected client failed: %s", exc)
+            log.debug("baidu baike injected client failed: %s", exc, exc_info=True)
             return []
     for trust_env in (False, True):
         cli = _direct_client(trust_env=trust_env)
@@ -976,7 +976,7 @@ async def baidu_baike_search(
             if out:
                 return out
         except Exception as exc:  # noqa: BLE001
-            log.debug("baidu baike attempt trust_env=%s failed: %s", trust_env, exc)
+            log.debug("baidu baike attempt trust_env=%s failed: %s", trust_env, exc, exc_info=True)
         finally:
             await cli.aclose()
     return []
@@ -1008,11 +1008,11 @@ async def _sogou_baike_fetch(
                     )
                     return [item][:max_results] if item else []
             except Exception as exc:  # noqa: BLE001
-                log.debug("sogou baike linked item fetch failed for %r: %s", kw, exc)
+                log.debug("sogou baike linked item fetch failed for %r: %s", kw, exc, exc_info=True)
         item = _baike_item("sogou_baike", url=str(resp.url), html=resp.text, fallback_title=kw)
         return [item][:max_results] if item else []
     except Exception as exc:  # noqa: BLE001
-        log.debug("sogou baike search failed for %r: %s", kw, exc)
+        log.debug("sogou baike search failed for %r: %s", kw, exc, exc_info=True)
         return []
 
 
@@ -1029,7 +1029,7 @@ async def sogou_baike_search(
         try:
             return await _sogou_baike_fetch(keyword, client, max_results)
         except Exception as exc:  # noqa: BLE001
-            log.debug("sogou baike injected client failed: %s", exc)
+            log.debug("sogou baike injected client failed: %s", exc, exc_info=True)
             return []
     for trust_env in (False, True):
         cli = _direct_client(trust_env=trust_env)
@@ -1038,7 +1038,7 @@ async def sogou_baike_search(
             if out:
                 return out
         except Exception as exc:  # noqa: BLE001
-            log.debug("sogou baike attempt trust_env=%s failed: %s", trust_env, exc)
+            log.debug("sogou baike attempt trust_env=%s failed: %s", trust_env, exc, exc_info=True)
         finally:
             await cli.aclose()
     return []
@@ -1067,7 +1067,13 @@ async def _wikipedia_fetch(
             titles = data[1] if isinstance(data, list) and len(data) > 1 else []
             urls = data[3] if isinstance(data, list) and len(data) > 3 else []
         except Exception as exc:  # noqa: BLE001
-            log.debug("wikipedia opensearch failed lang=%s keyword=%r: %s", lang, keyword, exc)
+            log.debug(
+                "wikipedia opensearch failed lang=%s keyword=%r: %s",
+                lang,
+                keyword,
+                exc,
+                exc_info=True,
+            )
             continue
 
         out: list[dict[str, Any]] = []
@@ -1082,7 +1088,7 @@ async def _wikipedia_fetch(
                 sr.raise_for_status()
                 sj = sr.json()
             except Exception as exc:  # noqa: BLE001
-                log.debug("wikipedia summary failed title=%r: %s", title_s, exc)
+                log.debug("wikipedia summary failed title=%r: %s", title_s, exc, exc_info=True)
                 continue
             page_url = (
                 ((sj.get("content_urls") or {}).get("desktop") or {}).get("page")
@@ -1117,7 +1123,7 @@ async def wikipedia_search(
         try:
             return await _wikipedia_fetch(keyword, client, max_results)
         except Exception as exc:  # noqa: BLE001
-            log.debug("wikipedia injected client failed: %s", exc)
+            log.debug("wikipedia injected client failed: %s", exc, exc_info=True)
             return []
     for trust_env in (False, True):
         cli = _direct_client(trust_env=trust_env)
@@ -1126,7 +1132,7 @@ async def wikipedia_search(
             if out:
                 return out
         except Exception as exc:  # noqa: BLE001
-            log.debug("wikipedia attempt trust_env=%s failed: %s", trust_env, exc)
+            log.debug("wikipedia attempt trust_env=%s failed: %s", trust_env, exc, exc_info=True)
         finally:
             await cli.aclose()
     return []
@@ -1193,7 +1199,7 @@ async def arxiv_search(
         try:
             return await _arxiv_fetch(keyword, client, max_results)
         except Exception as exc:  # noqa: BLE001
-            log.debug("arxiv injected client failed: %s", exc)
+            log.debug("arxiv injected client failed: %s", exc, exc_info=True)
             return []
     for trust_env in (False, True):
         cli = _direct_client(trust_env=trust_env)
@@ -1202,7 +1208,7 @@ async def arxiv_search(
             if out:
                 return out
         except Exception as exc:  # noqa: BLE001
-            log.debug("arxiv attempt trust_env=%s failed: %s", trust_env, exc)
+            log.debug("arxiv attempt trust_env=%s failed: %s", trust_env, exc, exc_info=True)
         finally:
             await cli.aclose()
     return []
@@ -1266,13 +1272,13 @@ async def semantic_scholar_search(
         try:
             return await _semantic_scholar_fetch(keyword, client, max_results)
         except Exception as exc:  # noqa: BLE001
-            log.debug("semantic scholar injected client failed: %s", exc)
+            log.debug("semantic scholar injected client failed: %s", exc, exc_info=True)
             return []
     cli = _direct_client(trust_env=False)
     try:
         return await _semantic_scholar_fetch(keyword, cli, max_results)
     except Exception as exc:  # noqa: BLE001
-        log.debug("semantic scholar failed: %s", exc)
+        log.debug("semantic scholar failed: %s", exc, exc_info=True)
         return []
     finally:
         await cli.aclose()
@@ -1359,7 +1365,7 @@ async def wikidata_search(
         try:
             return await _wikidata_fetch(keyword, client, max_results)
         except Exception as exc:  # noqa: BLE001
-            log.debug("wikidata injected client failed: %s", exc)
+            log.debug("wikidata injected client failed: %s", exc, exc_info=True)
             return []
     for trust_env in (False, True):
         cli = _direct_client(trust_env=trust_env)
@@ -1368,7 +1374,7 @@ async def wikidata_search(
             if out:
                 return out
         except Exception as exc:  # noqa: BLE001
-            log.debug("wikidata attempt trust_env=%s failed: %s", trust_env, exc)
+            log.debug("wikidata attempt trust_env=%s failed: %s", trust_env, exc, exc_info=True)
         finally:
             await cli.aclose()
     return []
@@ -1567,7 +1573,7 @@ async def _edgar_fetch(
             company = company or str(j.get("entityName") or "")
             units = (j.get("units") or {}).get("USD") or []
         except Exception as exc:  # noqa: BLE001
-            log.debug("edgar concept %s failed: %s", concept, exc)
+            log.debug("edgar concept %s failed: %s", concept, exc, exc_info=True)
             continue
         recent = _edgar_recent_fys(units, n=3)
         if not recent:
@@ -1621,7 +1627,7 @@ async def edgar_search(
         try:
             return await _edgar_fetch(keyword, cli, max_results)
         except Exception as exc:  # noqa: BLE001 — ConnectError/403/超时 → 试下一种网络
-            log.debug("edgar attempt trust_env=%s failed: %s", trust_env, exc)
+            log.debug("edgar attempt trust_env=%s failed: %s", trust_env, exc, exc_info=True)
         finally:
             await cli.aclose()
     return []

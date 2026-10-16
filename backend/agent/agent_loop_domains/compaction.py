@@ -244,6 +244,7 @@ class CompactionMixin(AgentLoopCore):
                         state.session_id,
                         state.iteration,
                         str(_cmp_exc)[:200],
+                        exc_info=True,
                     )
 
     async def _run_compression(self, state: _RunState) -> AsyncGenerator[AgentEvent, None]:
@@ -373,6 +374,7 @@ class CompactionMixin(AgentLoopCore):
                     "wi4b_preflush_failed sid=%s err=%s",
                     state.session_id,
                     str(_pf_exc)[:120],
+                    exc_info=True,
                 )
 
     async def _apply_compression_result(self, state: _RunState) -> AsyncGenerator[AgentEvent, None]:

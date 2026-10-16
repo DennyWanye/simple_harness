@@ -129,6 +129,7 @@ async def _attach_companion_history_events(
         logger.warning(
             "companion_history_overlay_closed",
             error=type(exc).__name__,
+            exc_info=True,
         )
         return []
 
@@ -225,6 +226,7 @@ async def _settle_companion_bind_projection(
             "companion_projection_bind_drain_failed",
             error=type(exc).__name__,
             code=code,
+            exc_info=True,
         )
         return None, code
 

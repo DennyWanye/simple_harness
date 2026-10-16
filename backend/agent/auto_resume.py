@@ -238,7 +238,9 @@ class AutoResumeOrchestrator:
         try:
             sup_action = await self._supervisor.diagnose(sid, snapshot)
         except Exception as exc:  # noqa: BLE001
-            logger.warning("auto_resume_supervisor_call_failed sid=%s err=%s", sid, exc)
+            logger.warning(
+                "auto_resume_supervisor_call_failed sid=%s err=%s", sid, exc, exc_info=True
+            )
             return AutoResumeResult(
                 action="ask_user",
                 attempt=attempts_so_far,
@@ -316,7 +318,7 @@ class AutoResumeOrchestrator:
                     }
                 )
             except Exception as exc:  # noqa: BLE001
-                logger.debug("auto_resume_audit_failed sid=%s err=%s", sid, exc)
+                logger.debug("auto_resume_audit_failed sid=%s err=%s", sid, exc, exc_info=True)
 
         # ws event BEFORE dispatch — banner shows up immediately.
         if self._emit is not None:
@@ -330,7 +332,9 @@ class AutoResumeOrchestrator:
                     },
                 )
             except Exception as exc:  # noqa: BLE001
-                logger.debug("auto_resume_emit_started_failed sid=%s err=%s", sid, exc)
+                logger.debug(
+                    "auto_resume_emit_started_failed sid=%s err=%s", sid, exc, exc_info=True
+                )
 
         # Fire dispatcher. We await it so the caller knows spawn started,
         # but the dispatcher itself should be fire-and-forget internally
@@ -338,7 +342,7 @@ class AutoResumeOrchestrator:
         try:
             await self._dispatch(sid, new_msgs)
         except Exception as exc:  # noqa: BLE001
-            logger.warning("auto_resume_dispatch_failed sid=%s err=%s", sid, exc)
+            logger.warning("auto_resume_dispatch_failed sid=%s err=%s", sid, exc, exc_info=True)
             # Don't roll the counter back — it's already been bumped and
             # an attempt was made. User can still manually retry.
             return AutoResumeResult(
@@ -366,7 +370,7 @@ class AutoResumeOrchestrator:
         try:
             return await self._activity.get(sid)
         except Exception as exc:  # noqa: BLE001
-            logger.debug("auto_resume_activity_get_failed sid=%s err=%s", sid, exc)
+            logger.debug("auto_resume_activity_get_failed sid=%s err=%s", sid, exc, exc_info=True)
             return None
 
     async def _emit_exhausted(
@@ -403,7 +407,7 @@ class AutoResumeOrchestrator:
                 },
             )
         except Exception as exc:  # noqa: BLE001
-            logger.debug("auto_resume_emit_exhausted_failed sid=%s err=%s", sid, exc)
+            logger.debug("auto_resume_emit_exhausted_failed sid=%s err=%s", sid, exc, exc_info=True)
 
 
 __all__ = [

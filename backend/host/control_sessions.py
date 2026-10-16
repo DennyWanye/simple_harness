@@ -38,7 +38,7 @@ async def _cc_context_usage_request(conn: _ControlConnection, raw: dict, msg_typ
         authoritative = await _read_context_usage_authority(target_sid)
         await ws.send_json({"type": "context_usage", "payload": authoritative})
     except Exception as exc:  # noqa: BLE001
-        logger.debug("context_usage_request_failed err=%s", exc)
+        logger.debug("context_usage_request_failed err=%s", exc, exc_info=True)
 
 
 async def _cc_context_breakdown_request(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
@@ -53,7 +53,7 @@ async def _cc_context_breakdown_request(conn: _ControlConnection, raw: dict, msg
             owner_session_id=_resolve_chat_source_session(session_id, None),
         )
     except Exception as exc:  # noqa: BLE001
-        logger.debug("context_breakdown_send_failed err=%s", exc)
+        logger.debug("context_breakdown_send_failed err=%s", exc, exc_info=True)
 
 
 async def _cc_project_preview_register(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
@@ -124,6 +124,7 @@ async def _cc_session_delete(conn: _ControlConnection, raw: dict, msg_type: str)
                 "session_delete_failed",
                 error=str(_sd_exc),
                 session_id=_sd_sid,
+                exc_info=True,
             )
     await ws.send_json(
         {
@@ -160,6 +161,7 @@ async def _cc_session_rename(conn: _ControlConnection, raw: dict, msg_type: str)
                 "session_rename_failed",
                 error=str(_sr_exc),
                 session_id=_sr_sid,
+                exc_info=True,
             )
     await ws.send_json(
         {
@@ -229,6 +231,7 @@ async def _cc_session_messages_load(conn: _ControlConnection, raw: dict, msg_typ
                     "companion_history_route_unchanged sid=%s err=%s",
                     target_sid,
                     type(_history_route_exc).__name__,
+                    exc_info=True,
                 )
             rows = await sdb.get_messages(target_sid, limit=limit)
             # P6 bugfix 2026-05-14: 历史还原 — 之前过滤了
@@ -320,6 +323,7 @@ async def _cc_session_messages_load(conn: _ControlConnection, raw: dict, msg_typ
                 "session_messages_consistency_failed",
                 error=str(exc),
                 session_id=target_sid,
+                exc_info=True,
             )
             await ws.send_json(
                 {
@@ -353,6 +357,7 @@ async def _cc_session_messages_load(conn: _ControlConnection, raw: dict, msg_typ
                 "session_plan_load_failed sid=%s err=%s",
                 target_sid,
                 exc,
+                exc_info=True,
             )
     _msgs_payload: dict[str, Any] = {
         "session_id": target_sid,
@@ -418,6 +423,7 @@ async def _cc_slash_command(conn: _ControlConnection, raw: dict, msg_type: str) 
             logger.warning(
                 "slash_command dispatch failed: %s",
                 _slash_exc,
+                exc_info=True,
             )
             _slash_result = {
                 "type": "error",

@@ -189,7 +189,7 @@ async def _do_list(store: TaskGraphStore, goal_id: str) -> str:
     try:
         nodes = await store.list(goal_id)
     except Exception as exc:  # noqa: BLE001
-        log.warning("goal_task_list failed: %s", exc)
+        log.warning("goal_task_list failed: %s", exc, exc_info=True)
         return _err(f"list failed: {type(exc).__name__}")
     return _ok({"tasks": [_node_to_dict(n) for n in nodes]})
 
@@ -205,7 +205,7 @@ async def _do_update(store: TaskGraphStore, args: dict[str, Any]) -> str:
     try:
         node = await store.update(task_id, status=status, result=result)
     except Exception as exc:  # noqa: BLE001
-        log.warning("goal_task_update failed for %s: %s", task_id, exc)
+        log.warning("goal_task_update failed for %s: %s", task_id, exc, exc_info=True)
         return _err(f"update failed: {type(exc).__name__}")
     return _ok({"updated": True, "task_id": node.task_id, "status": node.status})
 
@@ -235,14 +235,14 @@ async def _do_create(
         # cycle detection — surface the message so the LLM can fix deps
         return _err(f"create rejected: {exc}")
     except Exception as exc:  # noqa: BLE001
-        log.warning("goal_task_create failed: %s", exc)
+        log.warning("goal_task_create failed: %s", exc, exc_info=True)
         return _err(f"create failed: {type(exc).__name__}")
     # Optional note → store as initial result without changing status.
     if isinstance(note, str) and note.strip():
         try:
             node = await store.update(node.task_id, status=node.status, result=note.strip())
         except Exception as exc:  # noqa: BLE001 — note is best-effort
-            log.warning("goal_task_create note attach failed: %s", exc)
+            log.warning("goal_task_create note attach failed: %s", exc, exc_info=True)
     return _ok(
         {
             "created": True,
@@ -261,7 +261,7 @@ async def _do_get(store: TaskGraphStore, args: dict[str, Any]) -> str:
     try:
         node = await store.get(task_id)
     except Exception as exc:  # noqa: BLE001
-        log.warning("goal_task_get failed for %s: %s", task_id, exc)
+        log.warning("goal_task_get failed for %s: %s", task_id, exc, exc_info=True)
         return _err(f"get failed: {type(exc).__name__}")
     if node is None:
         return _err(f"task not found: {task_id}")
@@ -324,7 +324,7 @@ def build_global_goal_task_tools(
         try:
             return goal_resolver()
         except Exception as exc:  # noqa: BLE001 — never break dispatch
-            log.warning("goal_resolver raised: %s", exc)
+            log.warning("goal_resolver raised: %s", exc, exc_info=True)
             return None
 
     async def _h_list(args: dict[str, Any], corr_id: str = "") -> str:

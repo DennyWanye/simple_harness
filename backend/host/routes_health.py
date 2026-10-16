@@ -79,7 +79,7 @@ async def post_metrics_event(request: Request):
 
         _metric_record(event, detail)
     except Exception as exc:  # noqa: BLE001
-        logger.warning("metrics event drop: %s", exc)
+        logger.warning("metrics event drop: %s", exc, exc_info=True)
         return Response(status_code=500, content="sink error")
     return Response(status_code=204)
 

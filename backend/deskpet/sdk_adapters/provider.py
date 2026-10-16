@@ -145,6 +145,7 @@ class _DiagnosticPostClient:
                         "product_provider_http_rejection_diagnostic_unavailable request_ref=%s status_code=%s",
                         _diagnostic_request_ref.get(),
                         response.status_code,
+                        exc_info=True,
                     )
                 except Exception:
                     pass
@@ -882,6 +883,7 @@ class _ProductOpenAICompatibleProvider(OpenAICompatibleProvider):
             logger.warning(
                 "product_provider_tool_arguments_normalization_unavailable request_ref=%s",
                 request_ref,
+                exc_info=True,
             )
         try:
             parsed = super()._parse_response(request, payload, response)

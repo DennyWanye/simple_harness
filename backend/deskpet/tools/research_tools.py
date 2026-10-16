@@ -500,7 +500,7 @@ async def _js_render_dispatch(url: str) -> str | None:
         log.debug("js_render engine=webview 本期未实现,跳过 (url=%s)", url)
         return None
     except Exception as exc:  # noqa: BLE001
-        log.debug("js_render dispatch failed engine=%s url=%s: %s", engine, url, exc)
+        log.debug("js_render dispatch failed engine=%s url=%s: %s", engine, url, exc, exc_info=True)
         return None
 
 
@@ -1151,7 +1151,7 @@ async def _jina_extract(url: str, *, client: httpx.AsyncClient) -> dict[str, str
         resp.raise_for_status()
         body = resp.text
     except Exception as exc:  # noqa: BLE001
-        log.debug("jina reader failed for %s: %s", url, exc)
+        log.debug("jina reader failed for %s: %s", url, exc, exc_info=True)
         return None
     if not body or len(body) < _JINA_MIN_CHARS:
         return None
@@ -1167,7 +1167,7 @@ def _scrapling_fetch_html(url: str, timeout: float = _DEFAULT_TIMEOUT) -> dict[s
     try:
         fetched = _scrapling_get_html(url, timeout=timeout)
     except Exception as exc:  # noqa: BLE001
-        log.debug("scrapling extract fetch unavailable for %s: %s", url, exc)
+        log.debug("scrapling extract fetch unavailable for %s: %s", url, exc, exc_info=True)
         return None
     if not fetched.get("ok"):
         log.debug("scrapling extract fetch failed for %s: %s", url, fetched.get("error"))
@@ -1516,7 +1516,7 @@ async def _diagnose_subreport_retry(
         if diagnosis and continuation:
             return diagnosis[:400], continuation[:800]
     except Exception as exc:  # noqa: BLE001 - deterministic fallback is required
-        log.debug("deepresearch child diagnosis fallback: %s", exc)
+        log.debug("deepresearch child diagnosis fallback: %s", exc, exc_info=True)
     return fallback
 
 
@@ -1646,6 +1646,7 @@ async def collect_subagent_research(
                     "deepresearch_child_progress_emit_failed parent=%s error=%s",
                     parent_sid,
                     type(exc).__name__,
+                    exc_info=True,
                 )
 
     await _publish_snapshot()
@@ -2440,7 +2441,7 @@ async def _update_deepresearch_index(
             tmp.write_text(updated, encoding="utf-8")
             os.replace(tmp, idx)
     except Exception as exc:  # noqa: BLE001
-        log.debug("deepresearch index update skipped: %s", exc)
+        log.debug("deepresearch index update skipped: %s", exc, exc_info=True)
 
 
 # ---------------------------------------------------------------------
@@ -2578,7 +2579,7 @@ async def _handle_deepresearch(
                     }
                 ]
         except Exception as exc:  # noqa: BLE001
-            log.debug("research report save skipped: %s", exc)
+            log.debug("research report save skipped: %s", exc, exc_info=True)
 
     return json.dumps(out, ensure_ascii=False)
 

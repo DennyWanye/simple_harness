@@ -153,6 +153,7 @@ async def _cc_chat(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
             # 只记异常类名会把所有属主围栏错误压成 'RuntimeError'，
             # 日志里看不出到底是身份没就绪还是会话属主坏了。
             detail=_identity_detail,
+            exc_info=True,
         )
         return
     if not _companion_route_bound:
@@ -280,7 +281,7 @@ async def _cc_chat(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
             try:
                 await _sa_for_reset.reset_auto_resume_attempts(_msg_sid)
             except Exception as _ex:  # noqa: BLE001
-                logger.debug("auto_resume_reset_failed sid=%s err=%s", _msg_sid, _ex)
+                logger.debug("auto_resume_reset_failed sid=%s err=%s", _msg_sid, _ex, exc_info=True)
 
     _chat_task = _launch_product_harness_chat(
         ws,
@@ -313,6 +314,7 @@ async def _cc_chat(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
                         "supervisor_followup_failed sid=%s error=%s",
                         target_sid,
                         _exc,
+                        exc_info=True,
                     )
 
             try:

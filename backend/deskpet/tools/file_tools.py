@@ -149,7 +149,7 @@ async def _record_workspace_action(
             content=content,
         )
     except Exception as exc:  # noqa: BLE001
-        logger.debug("workspace record_action failed: %s", exc)
+        logger.debug("workspace record_action failed: %s", exc, exc_info=True)
 
 
 def _workspace_root(override: str | Path | None = None) -> Path:

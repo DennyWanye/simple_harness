@@ -577,5 +577,5 @@ def save_global_window_override(model: str, context_window: int) -> bool:
         )
         return True
     except Exception as exc:  # noqa: BLE001
-        logger.warning("model_window_override_save_failed err=%s", str(exc)[:200])
+        logger.warning("model_window_override_save_failed err=%s", str(exc)[:200], exc_info=True)
         return False

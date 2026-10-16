@@ -238,7 +238,7 @@ async def sha256_file_async(
         )
         return None
     except Exception as exc:  # noqa: BLE001
-        logger.warning("sha256_file_async error: %s — %s", path, exc)
+        logger.warning("sha256_file_async error: %s — %s", path, exc, exc_info=True)
         return None
 
 

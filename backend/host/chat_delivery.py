@@ -17,7 +17,7 @@ async def _broadcast_control(msg: dict) -> None:
         try:
             await _ws.send_json(msg)
         except Exception as exc:  # noqa: BLE001
-            logger.debug("control_broadcast_failed sid=%s err=%s", _sid, exc)
+            logger.debug("control_broadcast_failed sid=%s err=%s", _sid, exc, exc_info=True)
 
 
 def _initial_chat_peer_group(transport_sid: str) -> str:
@@ -146,6 +146,7 @@ async def _broadcast_default_chat_peers(originator_ws: WebSocket | None, msg: di
                 "default_chat_peer_broadcast_failed sid=%s err=%s",
                 _peer_sid,
                 exc,
+                exc_info=True,
             )
 
 
@@ -201,6 +202,7 @@ async def _send_chat_final(
                 run_id,
                 exc,
                 type(exc).__name__,
+                exc_info=True,
             )
 
     await asyncio.gather(
@@ -247,6 +249,7 @@ async def _send_chat_error(
                 session_id,
                 request_id,
                 exc,
+                exc_info=True,
             )
 
     await asyncio.gather(
@@ -271,4 +274,4 @@ async def _send_new_session_origin_user_echo(
             }
         )
     except Exception as exc:  # noqa: BLE001
-        logger.debug("new_session_origin_echo_failed sid=%s err=%s", session_id, exc)
+        logger.debug("new_session_origin_echo_failed sid=%s err=%s", session_id, exc, exc_info=True)

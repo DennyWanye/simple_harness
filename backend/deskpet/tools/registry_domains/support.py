@@ -239,6 +239,7 @@ class ToolSpec:
                 "tool %r visible_when predicate raised, hiding: %s",
                 self.name,
                 exc,
+                exc_info=True,
             )
             return False
 

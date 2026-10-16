@@ -52,6 +52,7 @@ async def _project_open_sdk_authorizations(
             sdk_run_id=sdk_run_id,
             session_id=session_id,
             error_type=type(exc).__name__,
+            exc_info=True,
         )
         return 0
     count = 0
@@ -293,6 +294,7 @@ async def _watch_retained_sdk_run(
                         "sdk_context_source_terminal_cleanup_deferred",
                         sdk_run_id=sdk_run_id,
                         error=str(exc)[:200],
+                        exc_info=True,
                     )
             if host_state.sdk_provider_binding_resolver is not None:
                 try:

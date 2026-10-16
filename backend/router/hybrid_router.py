@@ -239,6 +239,7 @@ class HybridRouter:
                             "router_local_chat_failed_falling_back_cloud",
                             error=str(exc),
                             consecutive_failures=local_state.consecutive_failures,
+                            exc_info=True,
                         )
 
         # local skipped or local failed — try cloud
@@ -307,6 +308,7 @@ class HybridRouter:
                                 error=str(exc),
                                 attempt=attempt + 1,
                                 consecutive_failures=cloud_state.consecutive_failures,
+                                exc_info=True,
                             )
 
         # cloud skipped / budget-denied / failed — try local
@@ -331,6 +333,7 @@ class HybridRouter:
                             "router_local_chat_failed_in_cloud_first",
                             error=str(exc),
                             consecutive_failures=local_state.consecutive_failures,
+                            exc_info=True,
                         )
 
         # Both routes exhausted. Propagate cloud budget reason if we had
@@ -393,7 +396,7 @@ class HybridRouter:
         try:
             ok = await provider.health_check()
         except Exception as exc:
-            logger.warning("router_health_check_raised", error=str(exc))
+            logger.warning("router_health_check_raised", error=str(exc), exc_info=True)
             ok = False
         state.cache_health(ok)
         return ok

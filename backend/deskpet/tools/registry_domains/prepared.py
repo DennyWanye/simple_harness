@@ -78,6 +78,7 @@ class PreparedExecutionMixin(ToolRegistryCore):
                 "tools_config_provider raised in prepared artifact %r: %s",
                 spec.name,
                 exc,
+                exc_info=True,
             )
             return raw
         if not enabled:
@@ -118,7 +119,9 @@ class PreparedExecutionMixin(ToolRegistryCore):
                     artifact["path"] = str(resolved)
             return envelope if envelope.get("artifacts") else raw
         except Exception as exc:  # noqa: BLE001 - preserve the valid tool outcome
-            logger.warning("prepared artifact envelope failed for %r: %s", spec.name, exc)
+            logger.warning(
+                "prepared artifact envelope failed for %r: %s", spec.name, exc, exc_info=True
+            )
             return raw
 
     @staticmethod
@@ -351,7 +354,12 @@ class PreparedExecutionMixin(ToolRegistryCore):
                 }
             )
         except Exception as exc:  # noqa: BLE001 - observability cannot break dispatch
-            logger.warning("prepared receipt emission failed for %r: %s", prepared.tool_name, exc)
+            logger.warning(
+                "prepared receipt emission failed for %r: %s",
+                prepared.tool_name,
+                exc,
+                exc_info=True,
+            )
 
     def take_prepared_execution_metadata(self, effect_id: str) -> dict[str, Any]:
         return dict(self._prepared_execution_metadata.get(effect_id, {}))

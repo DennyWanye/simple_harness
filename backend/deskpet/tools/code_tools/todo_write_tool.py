@@ -142,7 +142,7 @@ def build_todo_write_tool(
                         }
                     )
                 except Exception as e:  # noqa: BLE001
-                    log.warning("todo_write broadcast failed: %s", e)
+                    log.warning("todo_write broadcast failed: %s", e, exc_info=True)
 
         try:
             loop = asyncio.get_running_loop()

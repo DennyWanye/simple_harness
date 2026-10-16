@@ -195,6 +195,7 @@ def _resolve_ephemeral_provider(base_provider, model_name: str):
             "ephemeral provider clone failed (model=%s): %s — falling back to base LLM",
             name,
             exc,
+            exc_info=True,
         )
         return base_provider
 
@@ -230,9 +231,9 @@ try:
                 _make_str_llm_call(_rerank_provider, max_tokens=2048, purpose="research")
             )
     except Exception as _exc2:  # noqa: BLE001 — 未注入则 research 跳过精排
-        logger.debug("research_rerank_wiring_skipped", error=str(_exc2))
+        logger.debug("research_rerank_wiring_skipped", error=str(_exc2), exc_info=True)
 except Exception as _exc:  # noqa: BLE001 — research 仍可回退 config 重建
-    logger.debug("research_live_llm_wiring_skipped", error=str(_exc))
+    logger.debug("research_live_llm_wiring_skipped", error=str(_exc), exc_info=True)
 
 
 # ─── superpowers Layer 1A/1B 决策2：plan-confirm 硬门 ────────────────
@@ -270,7 +271,7 @@ def _resolve_primary_registry_provider():
             sanitize_inline_cot_dsml=_sanitize_cot_dsml,
         )
     except Exception as _exc:  # noqa: BLE001
-        logger.debug("primary_provider_resolve_skipped", error=str(_exc))
+        logger.debug("primary_provider_resolve_skipped", error=str(_exc), exc_info=True)
     return None
 
 
@@ -290,7 +291,7 @@ def _refresh_image_endpoint_resolver() -> None:
         _image_tools.set_endpoint_resolver(_resolver)
         logger.info("image_endpoint_resolver_wired")
     except Exception as _exc:  # noqa: BLE001
-        logger.debug("image_endpoint_resolver_wiring_skipped", error=str(_exc))
+        logger.debug("image_endpoint_resolver_wiring_skipped", error=str(_exc), exc_info=True)
 
 
 def _refresh_research_live_llm(provider=None) -> None:
@@ -318,7 +319,7 @@ def _refresh_research_live_llm(provider=None) -> None:
                     _make_str_llm_call(_rerank_provider, max_tokens=2048, purpose="research")
                 )
         except Exception as _exc2:  # noqa: BLE001
-            logger.debug("research_rerank_wiring_skipped", error=str(_exc2))
+            logger.debug("research_rerank_wiring_skipped", error=str(_exc2), exc_info=True)
 
         logger.info(
             "research_live_llm_refreshed base_url=%s model=%s",
@@ -326,7 +327,7 @@ def _refresh_research_live_llm(provider=None) -> None:
             getattr(_provider, "model", ""),
         )
     except Exception as _exc:  # noqa: BLE001
-        logger.debug("research_live_llm_wiring_skipped", error=str(_exc))
+        logger.debug("research_live_llm_wiring_skipped", error=str(_exc), exc_info=True)
 
 
 _refresh_image_endpoint_resolver()

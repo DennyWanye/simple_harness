@@ -202,7 +202,7 @@ def build_agent(
     try:
         st.receipt_store = st.receipt_store_getter()
     except Exception as exc:  # noqa: BLE001
-        logger.warning("receipt_store getter failed: %s — verify_gate disabled", exc)
+        logger.warning("receipt_store getter failed: %s — verify_gate disabled", exc, exc_info=True)
         st.receipt_store = None
         st.verify_gate = None  # gate without ledger = blocks every end_turn
 
@@ -264,7 +264,7 @@ def _prepare_agent_flags_and_tracer(st: _AgentBuildState) -> None:
                 task_id=str(uuid.uuid4()),
             )
         except Exception as exc:  # noqa: BLE001
-            logger.warning("iteration_tracer_init_failed: %s", exc)
+            logger.warning("iteration_tracer_init_failed: %s", exc, exc_info=True)
             st._tracer = None
 
 
@@ -315,7 +315,7 @@ def _prepare_verify_gate(st: _AgentBuildState) -> None:
             except Exception:  # noqa: BLE001
                 pass
     except Exception as exc:  # noqa: BLE001
-        logger.warning("verify_gate init failed: %s — disabled", exc)
+        logger.warning("verify_gate init failed: %s — disabled", exc, exc_info=True)
         st.verify_gate = None
 
 
@@ -373,7 +373,7 @@ def _define_pipeline_builders(st: _AgentBuildState) -> None:
                 extractor=RegexExtractor(_patterns), mode="strict", ephemeral_subagent=_sub
             )
         except Exception as _e:  # noqa: BLE001
-            logger.warning("pipeline_build_verify_gate_failed err=%s", str(_e)[:200])
+            logger.warning("pipeline_build_verify_gate_failed err=%s", str(_e)[:200], exc_info=True)
             return None
 
     st._build_pipeline_verify_gate = _build_pipeline_verify_gate
@@ -386,7 +386,9 @@ def _define_pipeline_builders(st: _AgentBuildState) -> None:
             _evc = _make_session_aware_llm_call(max_tokens=512)
             return _EE(llm_call=_evc, conservative_on_error=True)
         except Exception as _e:  # noqa: BLE001
-            logger.warning("pipeline_build_external_evaluator_failed err=%s", str(_e)[:200])
+            logger.warning(
+                "pipeline_build_external_evaluator_failed err=%s", str(_e)[:200], exc_info=True
+            )
             return None
 
     st._build_pipeline_external_evaluator = _build_pipeline_external_evaluator
@@ -428,7 +430,7 @@ def _prepare_self_check_gate(st: _AgentBuildState) -> None:
                 heterogeneous_enabled=st._sc_hetero,
             )
         except Exception as _exc:  # noqa: BLE001
-            logger.warning("self_check_gate build failed: %s", _exc)
+            logger.warning("self_check_gate build failed: %s", _exc, exc_info=True)
             st._self_check_gate = None
 
 

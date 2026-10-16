@@ -114,4 +114,5 @@ class TTSPreNarrator:
                 phrase=phrase,
                 error=str(exc),
                 error_type=type(exc).__name__,
+                exc_info=True,
             )

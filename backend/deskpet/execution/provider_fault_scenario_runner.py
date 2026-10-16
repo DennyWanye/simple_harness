@@ -60,6 +60,7 @@ class ProviderFaultScenarioRunner:
                 context.request_id,
                 type(exc).__name__,
                 str(exc),
+                exc_info=True,
             )
 
 

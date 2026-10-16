@@ -117,7 +117,7 @@ def list_categories() -> list[dict[str, Any]]:
                 continue
             out.append({"key": _normalize_category(sub.name), "dir": sub, "count": count})
     except Exception as exc:  # noqa: BLE001
-        log.debug("list_categories failed: %s", exc)
+        log.debug("list_categories failed: %s", exc, exc_info=True)
     return out
 
 
@@ -249,7 +249,7 @@ def _build_contact_sheets(
             sheet_paths.append(cache)
         return sheet_paths
     except Exception as exc:  # noqa: BLE001
-        log.debug("build contact sheets failed: %s", exc)
+        log.debug("build contact sheets failed: %s", exc, exc_info=True)
         return []
 
 
@@ -377,7 +377,7 @@ def pick_template_by_preview(
         log.info("pick_template: vision unavailable/unparsable → random fallback")
         return rnd.choice([p for p, _ in chosen])
     except Exception as exc:  # noqa: BLE001
-        log.warning("pick_template_by_preview failed: %s", str(exc)[:200])
+        log.warning("pick_template_by_preview failed: %s", str(exc)[:200], exc_info=True)
         try:
             pptx_all = category_pptx(category_key)
             return rnd.choice(pptx_all) if pptx_all else None

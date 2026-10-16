@@ -186,6 +186,7 @@ class _ExemplarPool:
                 "classifier.exemplar_embed_failed",
                 error=str(exc),
                 error_type=type(exc).__name__,
+                exc_info=True,
             )
             return items
         for e, v in zip(pending, vectors):
@@ -314,6 +315,7 @@ class TaskClassifier:
                 "classifier.query_embed_failed",
                 error=str(exc),
                 error_type=type(exc).__name__,
+                exc_info=True,
             )
             return None
         if not query_vec_list:
@@ -370,6 +372,7 @@ class TaskClassifier:
                 "classifier.llm_failed",
                 error=str(exc),
                 error_type=type(exc).__name__,
+                exc_info=True,
             )
             return None
 

@@ -709,7 +709,7 @@ class WorkItemMixin(SessionDBCore):
                 updated_at=now,
             )
         except Exception as exc:  # noqa: BLE001
-            log.warning("goal progress backfill failed: %s", exc)
+            log.warning("goal progress backfill failed: %s", exc, exc_info=True)
 
     async def claim_ready_goal_task(
         self,

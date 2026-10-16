@@ -128,6 +128,7 @@ class CosyVoice2Provider:
             logger.info(
                 "cosyvoice2_package_unavailable",
                 error=str(exc),
+                exc_info=True,
             )
             return False
 
@@ -152,6 +153,7 @@ class CosyVoice2Provider:
                 "cosyvoice2_init_failed",
                 error=str(exc),
                 model_dir=str(self.model_dir),
+                exc_info=True,
             )
             self._cosy = None
             return False

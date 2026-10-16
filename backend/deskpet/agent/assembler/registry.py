@@ -195,6 +195,7 @@ class ComponentRegistry:
                     component=name,
                     error=str(exc),
                     error_type=type(exc).__name__,
+                    exc_info=True,
                 )
                 return _stamp(
                     Slice(

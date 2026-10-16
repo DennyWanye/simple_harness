@@ -95,6 +95,7 @@ async def _cancel_product_harness_run(
                 session_id=session_id,
                 run_id=run_id,
                 error=str(exc),
+                exc_info=True,
             )
     return True
 
@@ -233,6 +234,7 @@ async def _signal_product_harness_decision(
             logger.warning(
                 "foreground_runtime_wake_after_decision_failed error_type=%s",
                 type(exc).__name__,
+                exc_info=True,
             )
     return receipt
 
@@ -469,6 +471,7 @@ async def _run_product_harness_continuation(
             root_run_id=root_run_id,
             task_scope_id=task_scope_id,
             error=str(exc),
+            exc_info=True,
         )
     await _broadcast_default_chat_peers(
         websocket,

@@ -62,6 +62,7 @@ async def _cc_permission_response(conn: _ControlConnection, raw: dict, msg_type:
             decision_id=decision_id,
             error_type=type(exc).__name__,
             error=str(exc),
+            exc_info=True,
         )
         await ws.send_json(
             {

@@ -146,7 +146,7 @@ class PermissionGate:
             self.auto_mode = bool(data.get("enabled", False))
             return self.auto_mode
         except Exception as exc:  # noqa: BLE001
-            logger.warning("auto_mode_load_failed: %s", exc)
+            logger.warning("auto_mode_load_failed: %s", exc, exc_info=True)
             return False
 
     def set_auto_mode(self, enabled: bool) -> None:
@@ -166,7 +166,7 @@ class PermissionGate:
                 encoding="utf-8",
             )
         except Exception as exc:  # noqa: BLE001
-            logger.warning("auto_mode_save_failed: %s", exc)
+            logger.warning("auto_mode_save_failed: %s", exc, exc_info=True)
 
     def set_tts_engine(self, tts: Any) -> None:
         """Install a TTS engine used for voice-context prompt narration.

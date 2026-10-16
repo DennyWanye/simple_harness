@@ -501,6 +501,7 @@ class ExecutionMixin(ToolRegistryCore):
                         "dynamic_capability_admission_failed tool=%s error_type=%s",
                         name,
                         type(exc).__name__,
+                        exc_info=True,
                     )
                     dynamically_admitted = False
                 if not dynamically_admitted:
@@ -563,6 +564,7 @@ class ExecutionMixin(ToolRegistryCore):
                 logger.warning(
                     "tools_config_provider read failed in execute_tool: %s",
                     _exc,
+                    exc_info=True,
                 )
 
         # WI-CC-2 (plan mode 物理只读): 规划期对写/执行类工具硬拦。
@@ -695,7 +697,7 @@ class ExecutionMixin(ToolRegistryCore):
                 }
         except Exception as exc:  # noqa: BLE001 — uniform error envelope
             err = f"{type(exc).__name__}: {exc}"
-            logger.info("execute_tool %r raised: %s", name, err)
+            logger.info("execute_tool %r raised: %s", name, err, exc_info=True)
             if self._breaker is not None:
                 await self._breaker.record_call(session_id, name, ok=False)
             return {"ok": False, "result": None, "error": err}
@@ -774,6 +776,7 @@ class ExecutionMixin(ToolRegistryCore):
                     "tools_config_provider raised in execute_tool %r: %s",
                     name,
                     _exc,
+                    exc_info=True,
                 )
 
         # WI-T2.2 P0 修：emit receipt（PRD §3 D5 + 二轮 P0-1 接电）。
@@ -857,6 +860,7 @@ class ExecutionMixin(ToolRegistryCore):
                     "receipt_store_provider raised in execute_tool %r: %s",
                     name,
                     _exc,
+                    exc_info=True,
                 )
 
         # P5-S2 Phase 3: record success/failure to the breaker. The

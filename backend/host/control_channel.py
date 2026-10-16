@@ -340,6 +340,7 @@ async def _handle_privileged_companion_frame(
                     "companion_projection_bind_drain_failed",
                     error=type(_freeze_exc).__name__,
                     code=str(getattr(_freeze_exc, "code", None) or type(_freeze_exc).__name__),
+                    exc_info=True,
                 )
             else:
                 (
@@ -421,6 +422,7 @@ async def _handle_privileged_companion_frame(
             connection_id=(
                 companion_challenge.connection_id if companion_challenge is not None else None
             ),
+            exc_info=True,
         )
         await ws.send_json(
             {
@@ -452,6 +454,7 @@ async def _handle_privileged_companion_frame(
                 logger.warning(
                     "companion_rechallenge_failed",
                     error=type(challenge_error).__name__,
+                    exc_info=True,
                 )
     return companion_challenge
 
@@ -579,7 +582,7 @@ async def control_channel(ws: WebSocket):
             }
         )
     except Exception as _e:
-        logger.warning("startup_status_send_failed", error=str(_e))
+        logger.warning("startup_status_send_failed", error=str(_e), exc_info=True)
     if _sdk_desktop_test_enabled():
         await ws.send_json(
             {
@@ -635,7 +638,9 @@ async def control_channel(ws: WebSocket):
                         }
                     )
         except Exception as _e:  # noqa: BLE001
-            logger.warning("companion_control_challenge_failed", error=type(_e).__name__)
+            logger.warning(
+                "companion_control_challenge_failed", error=type(_e).__name__, exc_info=True
+            )
     try:
         while True:
             wire_text = await ws.receive_text()

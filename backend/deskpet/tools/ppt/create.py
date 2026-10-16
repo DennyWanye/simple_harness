@@ -605,7 +605,7 @@ def _visual_review_loop(
                 rounds_meta[-1]["issues"] if rounds_meta else -1,
             )
     except Exception as exc:  # noqa: BLE001
-        log.warning("visual review loop failed: %s", str(exc)[:200])
+        log.warning("visual review loop failed: %s", str(exc)[:200], exc_info=True)
 
 
 def _apply_review_actions_template(
@@ -724,7 +724,7 @@ def _visual_review_loop_template(
                 rounds_meta[-1]["issues"] if rounds_meta else -1,
             )
     except Exception as exc:  # noqa: BLE001
-        log.warning("template visual review loop failed: %s", str(exc)[:200])
+        log.warning("template visual review loop failed: %s", str(exc)[:200], exc_info=True)
 
 
 def _resolve_output_path(p: str | None) -> Path:

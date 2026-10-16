@@ -87,7 +87,7 @@ class PreferenceMemory:
                 if isinstance(data, list):
                     return [e for e in data if isinstance(e, dict)]
         except Exception as exc:  # noqa: BLE001
-            log.warning("preference_memory load failed: %s", exc)
+            log.warning("preference_memory load failed: %s", exc, exc_info=True)
         return []
 
     def _save(self) -> None:
@@ -98,7 +98,7 @@ class PreferenceMemory:
                 encoding="utf-8",
             )
         except Exception as exc:  # noqa: BLE001
-            log.warning("preference_memory save failed: %s", exc)
+            log.warning("preference_memory save failed: %s", exc, exc_info=True)
 
     # ---- embedding ------------------------------------------------------
     async def _vec(self, text: str) -> list[float] | None:
@@ -108,7 +108,7 @@ class PreferenceMemory:
         try:
             out = await self._embed([text])
         except Exception as exc:  # noqa: BLE001
-            log.warning("preference_memory embed failed: %s", exc)
+            log.warning("preference_memory embed failed: %s", exc, exc_info=True)
             return None
         if not out or not out[0]:
             return None

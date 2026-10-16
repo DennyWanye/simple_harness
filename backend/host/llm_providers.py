@@ -31,7 +31,7 @@ def _load_llm_runtime_overrides() -> dict:
     try:
         return _json.loads(LLM_RUNTIME_PATH.read_text(encoding="utf-8"))
     except Exception as exc:  # noqa: BLE001
-        logger.warning("llm_runtime_overrides_load_failed: %s", exc)
+        logger.warning("llm_runtime_overrides_load_failed: %s", exc, exc_info=True)
         return {}
 
 
@@ -46,7 +46,7 @@ def _save_llm_runtime_overrides(data: dict) -> None:
         )
         logger.info("llm_runtime_overrides_saved path=%s", LLM_RUNTIME_PATH)
     except Exception as exc:  # noqa: BLE001
-        logger.warning("llm_runtime_overrides_save_failed: %s", exc)
+        logger.warning("llm_runtime_overrides_save_failed: %s", exc, exc_info=True)
 
 
 # Agent 有效执行预算（默认 15 分钟，可在设置里调整）。等待用户确认、选择目录

@@ -1142,6 +1142,7 @@ class ProviderWorkloadRouter:
                     "provider_workload_audit_write_failed call_id=%s error=%s",
                     call_id,
                     type(audit_exc).__name__,
+                    exc_info=True,
                 )
 
     async def schedule(

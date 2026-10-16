@@ -147,7 +147,7 @@ def _resolve_endpoint() -> tuple[str, str | None]:
                 if r_base:
                     return str(r_base).rstrip("/"), (str(r_key) if r_key else None)
         except Exception as exc:  # noqa: BLE001
-            log.debug("image endpoint resolver failed: %s", exc)
+            log.debug("image endpoint resolver failed: %s", exc, exc_info=True)
 
     try:
         rt = paths.user_data_dir() / "llm_runtime.json"
@@ -208,7 +208,7 @@ def probe_image_reachable(*, timeout_s: float = 8.0) -> bool:
             resp = cli.get(_models_url_for_base(base_url), headers=headers)
         return resp.status_code < 500
     except Exception as exc:  # noqa: BLE001 - probe 从不向上抛
-        log.info("image probe unreachable: %s", exc)
+        log.info("image probe unreachable: %s", exc, exc_info=True)
         return False
 
 

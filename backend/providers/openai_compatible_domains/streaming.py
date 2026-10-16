@@ -488,6 +488,7 @@ class StreamingToolMixin(OpenAICompatibleCore):
                 logger.warning(
                     "p5s2_stream_fallback_to_nonstream_failed err=%s",
                     str(_fb_exc)[:200],
+                    exc_info=True,
                 )
 
     async def _stream_at_most_once(self, state: _StreamToolsCallState):

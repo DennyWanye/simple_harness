@@ -63,7 +63,7 @@ def _assign_image_layouts(slides: list[SlideOutline]) -> None:
                 so.image_variant = rotation[rot_i % len(rotation)]
                 rot_i += 1
     except Exception as exc:  # noqa: BLE001
-        log.debug("assign image layouts failed: %s", exc)
+        log.debug("assign image layouts failed: %s", exc, exc_info=True)
 
 
 def _autofill_image_prompts(slides: list[SlideOutline]) -> None:
@@ -83,7 +83,7 @@ def _autofill_image_prompts(slides: list[SlideOutline]) -> None:
             # 按需导入：测试替身（deskpet.tools.image_tools.generate_images）
             from ..image_tools import generate_images
         except Exception as exc:  # noqa: BLE001
-            log.warning("image prompt autofill unavailable: %s", exc)
+            log.warning("image prompt autofill unavailable: %s", exc, exc_info=True)
             return
 
         # 按版式选生成尺寸(最佳实践: 生成贴近槽位比例的图,cover 裁切损失
@@ -158,7 +158,7 @@ def _autofill_with_connectivity_gate(slides: list[SlideOutline]) -> tuple[bool, 
     try:
         first = generate_images([prompt0], size=size0)
     except Exception as exc:  # noqa: BLE001
-        log.warning("ppt_pro first image generation failed: %s", exc)
+        log.warning("ppt_pro first image generation failed: %s", exc, exc_info=True)
         return False, 0
     res0 = first[0] if first else {}
     n_ok = 0
@@ -174,7 +174,7 @@ def _autofill_with_connectivity_gate(slides: list[SlideOutline]) -> tuple[bool, 
         try:
             results = generate_images([prompt], size=size)
         except Exception as exc:  # noqa: BLE001
-            log.debug("ppt_pro image generation failed idx=%d err=%s", idx, exc)
+            log.debug("ppt_pro image generation failed idx=%d err=%s", idx, exc, exc_info=True)
             continue
         res = results[0] if results else {}
         path = res.get("path") if isinstance(res, dict) else None

@@ -289,6 +289,7 @@ async def update_cloud_config(body: CloudConfigRequest, request: Request):
                 "provider_registry_upsert_failed id=%s error=%s",
                 _pid,
                 str(_upsert_exc)[:200],
+                exc_info=True,
             )
 
     return {

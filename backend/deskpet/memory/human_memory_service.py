@@ -990,6 +990,7 @@ class HumanMemoryHostService:
                     "receipt_ref": receipt_ref,
                     "recovery_state": "durable_work_pending",
                 },
+                exc_info=True,
             )
 
     async def enqueue_turn(self, request: QueueTurnRequest) -> Mapping[str, object]:

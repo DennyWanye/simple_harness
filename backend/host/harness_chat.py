@@ -1014,6 +1014,7 @@ async def _release_chat_run(st: _HarnessChatState) -> None:
                 "project_run_admission_release_failed",
                 run_id=st.sdk_run_id,
                 error_type=type(exc).__name__,
+                exc_info=True,
             )
     if st.session is not None:
         await st.session.close()
@@ -1039,6 +1040,7 @@ async def _release_chat_run(st: _HarnessChatState) -> None:
                 session_id=st.session_id,
                 message_id=st.user_message_id,
                 error=str(exc),
+                exc_info=True,
             )
 
 
@@ -1135,4 +1137,4 @@ async def _enqueue_auto_resume_hint(sid: str, messages: list[dict]) -> None:
     try:
         await queue.push(sid, Hint(text=text, alert_id="auto_resume", severity="yellow"))
     except Exception as exc:  # noqa: BLE001
-        logger.debug("auto_resume_hint_push_failed sid=%s err=%s", sid, exc)
+        logger.debug("auto_resume_hint_push_failed sid=%s err=%s", sid, exc, exc_info=True)

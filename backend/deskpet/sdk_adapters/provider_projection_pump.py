@@ -238,6 +238,7 @@ class SdkProviderProjectionPump:
                 logger.warning(
                     "sdk_provider_projection_failed",
                     extra={"error_type": type(exc).__name__},
+                    exc_info=True,
                 )
             self._wake.clear()
             try:

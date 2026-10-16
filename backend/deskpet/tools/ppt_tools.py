@@ -331,7 +331,7 @@ def _handle_ppt_create(
                         sid, f"😿 PPT 没做成：{result.get('error') or '未知错误'}"
                     )
             except Exception as exc:  # noqa: BLE001
-                log.warning("ppt async notify failed: %s", exc)
+                log.warning("ppt async notify failed: %s", exc, exc_info=True)
 
         if worker.submit_background(lambda: _bg_job()):
             return json.dumps(

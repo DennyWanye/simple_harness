@@ -273,6 +273,7 @@ class SessionDBCore:
             log.warning(
                 "sqlite-vec init failed (%s); L3 disabled, L1+L2 still work",
                 exc,
+                exc_info=True,
             )
             return False
 

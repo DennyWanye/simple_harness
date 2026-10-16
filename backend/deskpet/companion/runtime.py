@@ -386,6 +386,7 @@ class CompanionRuntime:
                     owner.profile_id,
                     owner.profile_generation,
                     type(exc).__name__,
+                    exc_info=True,
                 )
         activity = await self.foreground_gate.snapshot()
         if activity.busy or activity.idle_for_seconds < self.policy.idle_window_seconds:

@@ -41,7 +41,7 @@ try:
 
     _session_db = SessionDB(db_path=_state_db_path)
 except Exception as _session_db_exc:  # noqa: BLE001
-    logger.warning("session_db_wiring_failed error=%s", str(_session_db_exc)[:200])
+    logger.warning("session_db_wiring_failed error=%s", str(_session_db_exc)[:200], exc_info=True)
     _session_db = None
 # 旧记忆装配块曾赋值、且 main.py 别处仍可能引用的全局变量统一置 None，避免 NameError。
 _file_memory = None
@@ -72,7 +72,7 @@ try:
         ),
     )
 except Exception as _skills_exc:  # noqa: BLE001
-    logger.warning("skills_wiring_failed error=%s", str(_skills_exc)[:200])
+    logger.warning("skills_wiring_failed error=%s", str(_skills_exc)[:200], exc_info=True)
     _managed_skill_projection = None
     _skill_loader = None
 _context_snapshot_store = None

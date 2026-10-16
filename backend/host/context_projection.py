@@ -48,7 +48,9 @@ def _live_context_compaction_model() -> str:
             return _read_context_compaction_model()
         return _configured_context_compaction_model(load_config(_CONFIG_PATH))
     except Exception as exc:  # noqa: BLE001 - preserve the last startup value
-        logger.warning("context_compaction_model_reload_failed err=%s", str(exc)[:160])
+        logger.warning(
+            "context_compaction_model_reload_failed err=%s", str(exc)[:160], exc_info=True
+        )
         return _configured_context_compaction_model(config)
 
 

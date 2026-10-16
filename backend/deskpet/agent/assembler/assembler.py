@@ -189,6 +189,7 @@ class ContextAssembler:
                     "assembler.classifier_crashed",
                     error=str(exc),
                     error_type=type(exc).__name__,
+                    exc_info=True,
                 )
                 classifier_result = ClassifierResult(
                     task_type="chat",
@@ -444,6 +445,7 @@ class ContextAssembler:
                     "assembler.legacy_mode_registry_error",
                     error=str(exc),
                     error_type=type(exc).__name__,
+                    exc_info=True,
                 )
         persona = config.get("agent", {}).get("persona") if isinstance(config, dict) else None
         bundle = ContextBundle(

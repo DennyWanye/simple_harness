@@ -220,7 +220,7 @@ def build_teammate_tools(
         try:
             task = await store.claim_task(team_id, teammate_id)
         except Exception as exc:  # noqa: BLE001
-            log.warning("team_task_claim failed: %s", exc)
+            log.warning("team_task_claim failed: %s", exc, exc_info=True)
             return _envelope_err(f"claim_task failed: {type(exc).__name__}")
         if task is None:
             return _envelope_ok({"task": None})
@@ -245,7 +245,7 @@ def build_teammate_tools(
         try:
             ok = await store.update_task(team_id, tid, status, result_str)
         except Exception as exc:  # noqa: BLE001
-            log.warning("team_task_update failed: %s", exc)
+            log.warning("team_task_update failed: %s", exc, exc_info=True)
             return _envelope_err(f"update_task failed: {type(exc).__name__}")
         if not ok:
             return _envelope_err(f"task_id {tid!r} not found (or invalid status transition)")
@@ -268,7 +268,7 @@ def build_teammate_tools(
         try:
             tasks = await store.list_tasks(team_id, status_filter)
         except Exception as exc:  # noqa: BLE001
-            log.warning("team_task_list failed: %s", exc)
+            log.warning("team_task_list failed: %s", exc, exc_info=True)
             return _envelope_err(f"list_tasks failed: {type(exc).__name__}")
         return _envelope_ok({"tasks": [t.to_dict() for t in tasks]})
 
@@ -282,7 +282,7 @@ def build_teammate_tools(
         try:
             ok = await store.send_message(team_id, teammate_id, to_id, content)
         except Exception as exc:  # noqa: BLE001
-            log.warning("team_send_message failed: %s", exc)
+            log.warning("team_send_message failed: %s", exc, exc_info=True)
             return _envelope_err(f"send_message failed: {type(exc).__name__}")
         if not ok:
             return _envelope_err("send_message returned False")

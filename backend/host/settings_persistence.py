@@ -48,5 +48,7 @@ def _persist_supervisor_enabled(enabled: bool) -> bool:
             pass
         return True
     except Exception as exc:  # noqa: BLE001
-        logger.warning("supervisor_toggle_persist_failed enabled=%s err=%s", enabled, exc)
+        logger.warning(
+            "supervisor_toggle_persist_failed enabled=%s err=%s", enabled, exc, exc_info=True
+        )
         return False

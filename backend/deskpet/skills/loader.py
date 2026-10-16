@@ -496,7 +496,7 @@ class SkillLoader:
                 self._observer.stop()
                 self._observer.join(timeout=2.0)
             except Exception as exc:  # noqa: BLE001
-                logger.warning("skill.observer_stop_error", error=str(exc))
+                logger.warning("skill.observer_stop_error", error=str(exc), exc_info=True)
             self._observer = None
 
     # ------------------------------------------------------------------
@@ -611,6 +611,7 @@ class SkillLoader:
                 "skill.freeze_snapshot_failed",
                 error=str(exc),
                 error_type=type(exc).__name__,
+                exc_info=True,
             )
             return
 
@@ -625,7 +626,7 @@ class SkillLoader:
         try:
             text = skill_md.read_text(encoding="utf-8")
         except Exception as exc:  # noqa: BLE001
-            logger.warning("skill.read_failed", path=str(skill_md), error=str(exc))
+            logger.warning("skill.read_failed", path=str(skill_md), error=str(exc), exc_info=True)
             return None
         try:
             fm, _body = _split_frontmatter(text)
@@ -889,14 +890,14 @@ class SkillLoader:
         try:
             user_dir.mkdir(parents=True, exist_ok=True)
         except Exception as exc:  # noqa: BLE001
-            logger.warning("skill.user_dir_mkdir_failed", error=str(exc))
+            logger.warning("skill.user_dir_mkdir_failed", error=str(exc), exc_info=True)
             return
         try:
             # 按需导入：重型包
             from watchdog.events import FileSystemEventHandler
             from watchdog.observers import Observer
         except Exception as exc:  # noqa: BLE001
-            logger.warning("skill.watchdog_unavailable", error=str(exc))
+            logger.warning("skill.watchdog_unavailable", error=str(exc), exc_info=True)
             return
 
         loader = self
@@ -914,7 +915,7 @@ class SkillLoader:
         try:
             observer.start()
         except Exception as exc:  # noqa: BLE001
-            logger.warning("skill.observer_start_failed", error=str(exc))
+            logger.warning("skill.observer_start_failed", error=str(exc), exc_info=True)
             return
         self._observer = observer
 

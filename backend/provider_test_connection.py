@@ -77,7 +77,9 @@ async def handle_provider_test_connection(ws: Any, payload: dict) -> None:
         # provider init or the GET /models both land here. Log + surface
         # the exception string so the UI can show something actionable
         # without exposing a stacktrace.
-        logger.warning("provider_test_failed", base_url=base_url, model=model, error=str(exc))
+        logger.warning(
+            "provider_test_failed", base_url=base_url, model=model, error=str(exc), exc_info=True
+        )
         await ws.send_json(
             {
                 "type": "provider_test_connection_result",

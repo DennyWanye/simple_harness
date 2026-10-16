@@ -213,6 +213,7 @@ class CompanionIngressMixin(SessionDBCore):
                     "on_message_written hook failed for msg_id=%s: %s",
                     msg_id,
                     exc,
+                    exc_info=True,
                 )
         return msg_id
 

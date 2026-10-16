@@ -1379,6 +1379,7 @@ class GlobalSkillInstallService:
                         intent.intent_id,
                         type(exc).__name__,
                         exc,
+                        exc_info=True,
                     )
                     break
 

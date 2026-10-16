@@ -180,6 +180,7 @@ async def compact_messages(
         logger.warning(
             "history_compactor: summarize_fn failed — keeping original history. err=%s",
             str(exc)[:200],
+            exc_info=True,
         )
         return list(messages)
 

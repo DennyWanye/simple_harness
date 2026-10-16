@@ -129,7 +129,7 @@ def _respect_robots(url: str) -> bool:
                     # mirroring urllib.robotparser's empty-file behaviour.
                     rp.parse([])
             except Exception as exc:  # noqa: BLE001 — robots shouldn't break fetches
-                logger.debug("robots fetch failed for %s: %s", host, exc)
+                logger.debug("robots fetch failed for %s: %s", host, exc, exc_info=True)
                 rp.parse([])
             _robots_cache[host] = rp
         else:
@@ -212,7 +212,7 @@ def _scrapling_fetch_html(url: str, timeout: float) -> dict[str, Any] | None:
     try:
         fetched = _scrapling_get_html(url, timeout=timeout)
     except Exception as exc:  # noqa: BLE001
-        logger.debug("scrapling fetch layer unavailable for %s: %s", url, exc)
+        logger.debug("scrapling fetch layer unavailable for %s: %s", url, exc, exc_info=True)
         return None
     if not fetched.get("ok"):
         logger.debug("scrapling fetch layer failed for %s: %s", url, fetched.get("error"))
@@ -365,7 +365,7 @@ def _selectolax_fallback(html: str) -> dict[str, Any]:
             # Collapse excessive blank lines.
             text = re.sub(r"\n{3,}", "\n\n", raw) or None
     except Exception as exc:  # noqa: BLE001
-        logger.debug("selectolax fallback failed: %s", exc)
+        logger.debug("selectolax fallback failed: %s", exc, exc_info=True)
     return {"title": title, "text": text}
 
 
@@ -434,7 +434,7 @@ async def _handle_web_extract_article(args: dict[str, Any], task_id: str) -> str
             if not payload["text"] and fb.get("text"):
                 payload["text"] = fb["text"]
     except Exception as exc:  # noqa: BLE001
-        logger.warning("trafilatura extract failed: %s", exc)
+        logger.warning("trafilatura extract failed: %s", exc, exc_info=True)
         payload = {
             "fetcher": fetcher,
             "source_url": source_url,
@@ -605,7 +605,7 @@ async def _handle_web_crawl(args: dict[str, Any], task_id: str) -> str:
             fetched = await _fetch_raw_async(url, timeout=10.0)
         except Exception as exc:  # noqa: BLE001 - one URL cannot abort crawl
             # Keep going — a single failed URL shouldn't kill the crawl.
-            logger.debug("crawl skip %s: %s", url, exc)
+            logger.debug("crawl skip %s: %s", url, exc, exc_info=True)
             continue
         content_type = fetched.get("content_type", "") or ""
         if "text/html" not in content_type and "text" not in content_type:

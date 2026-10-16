@@ -373,6 +373,7 @@ class ProposalPort:
                 state.request_id,
                 state.iteration,
                 str(exc)[:300],
+                exc_info=True,
             )
             return messages, None, None, None, token_estimate
 

@@ -942,6 +942,7 @@ class WorkspaceReadGate:
                 tool_name,
                 reason_code,
                 exc,
+                exc_info=True,
             )
 
 

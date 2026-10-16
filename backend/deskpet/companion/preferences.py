@@ -428,6 +428,7 @@ class ModelPreferenceTurnInterpreter:
                 "preference_turn_interpretation_failed error=%s fields=%s",
                 f"{type(exc).__name__}:{exc}",
                 canonical_json(diagnostic_fields),
+                exc_info=True,
             )
             return PreferenceTurnDecision(
                 decision="abstain",

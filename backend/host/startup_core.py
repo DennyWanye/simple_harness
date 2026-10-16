@@ -128,7 +128,9 @@ async def _startup_provider_routing(_provider_readiness: Any) -> None:
         try:
             await _seed_registry_from_runtime_overrides(host_state.provider_registry)
         except Exception as _seed_exc:  # noqa: BLE001 - 补种失败不阻断启动
-            logger.warning("provider_registry_seed_failed error=%s", str(_seed_exc)[:200])
+            logger.warning(
+                "provider_registry_seed_failed error=%s", str(_seed_exc)[:200], exc_info=True
+            )
         await _session_db.reconcile_provider_bindings(
             {
                 entry["id"]: (
@@ -204,7 +206,7 @@ async def _startup_search_and_voice() -> None:
         ok = _rebind_ws_loop()
         logger.info("p4_workspace_memory_loop_rebound", ok=ok)
     except Exception as _exc:  # noqa: BLE001
-        logger.debug("workspace loop rebind failed: %s", _exc)
+        logger.debug("workspace loop rebind failed: %s", _exc, exc_info=True)
     # P2-1-S8: billing DB must exist before the first chat call. Failure
     # here is logged but doesn't block startup — the ledger simply won't
     # record anything until the DB is reachable on a future boot.
@@ -212,7 +214,7 @@ async def _startup_search_and_voice() -> None:
         await billing_ledger.init()
         logger.info("billing_ledger_ready", db_path=str(config.billing.db_path))
     except Exception as exc:
-        logger.warning("billing_ledger_init_failed", error=str(exc))
+        logger.warning("billing_ledger_init_failed", error=str(exc), exc_info=True)
     for name in ("vad_engine", "asr_engine", "tts_engine"):
         engine = service_context.get(name)
         if engine and hasattr(engine, "load"):
@@ -220,7 +222,7 @@ async def _startup_search_and_voice() -> None:
                 await engine.load()
                 logger.info("loaded", engine=name)
             except Exception as exc:
-                logger.warning("failed_to_load", engine=name, error=str(exc))
+                logger.warning("failed_to_load", engine=name, error=str(exc), exc_info=True)
                 # P3-S2: persist structured error so /health + WS startup_status
                 # can surface "degraded" state instead of silently accepting
                 # requests that will later 500.

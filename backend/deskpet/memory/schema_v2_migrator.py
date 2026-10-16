@@ -89,6 +89,7 @@ async def ensure_memory_v2_columns(db_path: str | Path) -> dict[str, bool]:
                         table,
                         col_name,
                         exc,
+                        exc_info=True,
                     )
                     availability[col_name] = False
                     _ALTER_FAILURES[col_name] = True

@@ -55,7 +55,7 @@ def _notify_workspace(*, session_id: str, path: str, content: str | None) -> Non
             loop,
         )
     except Exception as exc:  # noqa: BLE001
-        logger.debug("os_tools.write_file workspace notify failed: %s", exc)
+        logger.debug("os_tools.write_file workspace notify failed: %s", exc, exc_info=True)
 
 
 _EXAMPLES = [

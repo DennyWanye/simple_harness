@@ -36,7 +36,7 @@ async def _startup_restore_and_skill_prewarm() -> None:
             _n = await _gs_for_restore.load_persisted()
             logger.info("goal_store_load_persisted restored=%d", _n)
         except Exception as _lp_exc:  # noqa: BLE001
-            logger.warning("goal_store_load_persisted_failed: %s", _lp_exc)
+            logger.warning("goal_store_load_persisted_failed: %s", _lp_exc, exc_info=True)
     # FP-4 WI-3.3 ★ FIX BUG: FactsStore.daily_decay() was never called in prod.
     # Apply once at startup (mirrors retriever's "run once at startup" convention).
     # Pinned facts are skipped (WI-3.3). Failure is non-fatal — only logs.
@@ -46,7 +46,7 @@ async def _startup_restore_and_skill_prewarm() -> None:
             _decay_n = await _fs_for_decay.daily_decay()
             logger.info("p4_facts_daily_decay_startup", mutated=_decay_n)
         except Exception as _dd_exc:  # noqa: BLE001
-            logger.warning("p4_facts_daily_decay_failed", error=str(_dd_exc))
+            logger.warning("p4_facts_daily_decay_failed", error=str(_dd_exc), exc_info=True)
     _legacy_sl = service_context.get("skill_loader")
     _managed_sl = service_context.get("managed_skill_discovery_projection")
     for _skill_surface, _skill_surface_name in (
@@ -67,6 +67,7 @@ async def _startup_restore_and_skill_prewarm() -> None:
                 "p4_skill_surface_start_failed",
                 surface=_skill_surface_name,
                 error=str(exc),
+                exc_info=True,
             )
     # TC-5.1 修复 (2026-06-11)：SkillMatcher 缓存预热。module-level 的 sync
     # build() 对 async 生产 embedder 是静默 no-op → 这里 loader 启动后台跑
@@ -81,7 +82,9 @@ async def _startup_restore_and_skill_prewarm() -> None:
                 _n = await _sm_for_prewarm.build_async(_managed_skills_for_prewarm.all())
                 logger.info("fp5_skill_matcher_prewarmed", cached=_n)
             except Exception as _pw_exc:  # noqa: BLE001
-                logger.warning("fp5_skill_matcher_prewarm_failed", error=str(_pw_exc))
+                logger.warning(
+                    "fp5_skill_matcher_prewarm_failed", error=str(_pw_exc), exc_info=True
+                )
 
         # fire-and-forget; we deliberately don't await (same as embedder warmup)
         asyncio.create_task(_skill_matcher_prewarm_bg())
@@ -99,7 +102,7 @@ async def _startup_embedder_and_workload_audit() -> Any:
                 await _emb.warmup()
                 logger.info("p4_embedder_ready", embedder_kind=getattr(_emb, "kind", None))
             except Exception as exc:
-                logger.warning("p4_embedder_warmup_failed", error=str(exc))
+                logger.warning("p4_embedder_warmup_failed", error=str(exc), exc_info=True)
 
         # fire-and-forget; we deliberately don't await
         asyncio.create_task(_embedder_warmup_bg())
@@ -113,7 +116,7 @@ async def _startup_embedder_and_workload_audit() -> Any:
         _provisioner.start_background()
         logger.info("model_provisioner_started")
     except Exception as exc:  # noqa: BLE001
-        logger.warning("model_provisioner_start_failed", error=str(exc))
+        logger.warning("model_provisioner_start_failed", error=str(exc), exc_info=True)
     # Task 13 retires the JSON PreferenceMemory writer. The existing
     # preference_memory.json file is imported once by the authority cutover
     # reader and remains read-only upgrade residue.
@@ -196,6 +199,7 @@ async def _startup_vector_worker(_sdb: Any, _vw: Any) -> None:
                                 "facts_extract_bg_failed mid=%s err=%s",
                                 _mid,
                                 _ex,
+                                exc_info=True,
                             )
 
                     if _root_run_id:
@@ -215,6 +219,7 @@ async def _startup_vector_worker(_sdb: Any, _vw: Any) -> None:
                                 "chunk_bg_failed mid=%s err=%s",
                                 _mid,
                                 _ex,
+                                exc_info=True,
                             )
 
                     asyncio.create_task(_chunk_bg(mid, text))
@@ -241,11 +246,11 @@ async def _startup_vector_worker(_sdb: Any, _vw: Any) -> None:
                     if _n:
                         logger.info("p4_vector_backfill_done", processed=_n)
                 except Exception as _bf_exc:  # noqa: BLE001
-                    logger.warning("p4_vector_backfill_failed", error=str(_bf_exc))
+                    logger.warning("p4_vector_backfill_failed", error=str(_bf_exc), exc_info=True)
 
             asyncio.create_task(_vector_backfill_bg())
         except Exception as exc:
-            logger.warning("p4_vector_worker_start_failed", error=str(exc))
+            logger.warning("p4_vector_worker_start_failed", error=str(exc), exc_info=True)
 
 
 async def _startup_curation_image_and_mcp() -> None:
@@ -278,7 +283,7 @@ async def _startup_curation_image_and_mcp() -> None:
             await _iw.start()
             logger.info("image_worker_ready")
         except Exception as exc:  # noqa: BLE001
-            logger.warning("image_worker_start_failed", error=str(exc))
+            logger.warning("image_worker_start_failed", error=str(exc), exc_info=True)
     # P4-S15: MCPManager — bootstrap from raw [mcp] section. start() is
     # tolerant: missing section / disabled servers / spawn failures are all
     # logged but don't raise. Only the manager handle is registered; the
@@ -294,7 +299,7 @@ async def _startup_curation_image_and_mcp() -> None:
             _ws_dir = _paths.user_data_dir() / "workspace"
             _ws_dir.mkdir(parents=True, exist_ok=True)
         except Exception as _ws_exc:  # pragma: no cover — best-effort
-            logger.warning("workspace_mkdir_failed", error=str(_ws_exc))
+            logger.warning("workspace_mkdir_failed", error=str(_ws_exc), exc_info=True)
 
         # P6 bugfix 2026-05-13: MCP manager 用的是 deskpet.tools.registry.ToolRegistry
         # 的 keyword API (register(name=..., toolset=..., schema=..., handler=...))，
@@ -339,4 +344,4 @@ async def _startup_curation_image_and_mcp() -> None:
         service_context.register("mcp_manager", _mcp_manager)
         logger.info("p4_mcp_manager_ready", states=_mcp_manager.server_state())
     except Exception as exc:
-        logger.warning("p4_mcp_manager_bootstrap_failed", error=str(exc))
+        logger.warning("p4_mcp_manager_bootstrap_failed", error=str(exc), exc_info=True)

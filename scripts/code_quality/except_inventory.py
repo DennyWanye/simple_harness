@@ -33,7 +33,10 @@ if __name__ == "__main__" and sys.version_info < (3, 12):
 
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from guard import CODEC_PINNED  # noqa: E402  编解码钉死文件（含工作流定义）不许改，不计入完成口径
+from guard import (  # noqa: E402  编解码钉死文件（含工作流定义）不许改，不计入完成口径
+    CODEC_PINNED,
+    FORBIDDEN_PY,
+)
 
 TREES = {"backend": REPO / "backend", "sdk": REPO / "sdk/simple-harness-sdk/src"}
 SKIP_DIRS = {
@@ -168,8 +171,12 @@ def reraises(h: ast.ExceptHandler) -> bool:
 
 
 def is_product(rel: str) -> bool:
-    """完成口径的范围：后端去掉脚本，SDK 源码；都去掉编解码钉死文件。"""
-    return not rel.startswith("backend/scripts/") and rel not in CODEC_PINNED
+    """完成口径的范围：后端去掉脚本，SDK 源码；都去掉编解码钉死文件与禁区（表结构、迁移）。"""
+    return (
+        not rel.startswith("backend/scripts/")
+        and rel not in CODEC_PINNED
+        and not FORBIDDEN_PY.search(rel)
+    )
 
 
 def unexplained(row: dict) -> bool:

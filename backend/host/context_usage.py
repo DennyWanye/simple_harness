@@ -343,6 +343,7 @@ async def _emit_context_usage(
                     "context_usage_history_persist_failed sid=%s err=%s",
                     session_id,
                     exc,
+                    exc_info=True,
                 )
                 try:
                     payload = await session_db.get_context_usage_state(session_id)
@@ -351,6 +352,7 @@ async def _emit_context_usage(
                         "context_usage_authority_read_failed sid=%s err=%s",
                         session_id,
                         read_exc,
+                        exc_info=True,
                     )
                     return
         payload = await _attach_context_snapshot_metadata(session_db, payload)
@@ -359,10 +361,10 @@ async def _emit_context_usage(
         try:
             await originator_ws.send_json(msg)
         except Exception as exc:  # noqa: BLE001
-            logger.debug("context_usage_send_originator_failed err=%s", exc)
+            logger.debug("context_usage_send_originator_failed err=%s", exc, exc_info=True)
         await _broadcast_default_chat_peers(originator_ws, msg)
     except Exception as exc:  # noqa: BLE001
-        logger.debug("context_usage_emit_failed sid=%s err=%s", session_id, exc)
+        logger.debug("context_usage_emit_failed sid=%s err=%s", session_id, exc, exc_info=True)
 
 
 def _approx_tokens(text: str | None) -> int:

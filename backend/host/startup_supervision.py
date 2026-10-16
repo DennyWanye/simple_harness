@@ -49,7 +49,7 @@ async def _startup_self_healing() -> Any:
                     float(_heal_cfg.get("circuit_breaker_cooldown_seconds", 60)),
                 )
         except Exception as _exc:  # noqa: BLE001
-            logger.warning("p5s2_circuit_breaker_wire_failed err=%s", _exc)
+            logger.warning("p5s2_circuit_breaker_wire_failed err=%s", _exc, exc_info=True)
 
     # 会话活动记录：自动续跑按会话计次（上限 max_auto_resume_attempts）、
     # 监工看门狗读会话状态都靠它；监工开关与它无关，总是注册。
@@ -119,7 +119,10 @@ async def _startup_supervisor() -> None:
                         await _ws_obj.send_json(msg)
                     except Exception as _bex:
                         logger.debug(
-                            "supervisor_alert_broadcast_failed sid=%s error=%s", _sid_key, _bex
+                            "supervisor_alert_broadcast_failed sid=%s error=%s",
+                            _sid_key,
+                            _bex,
+                            exc_info=True,
                         )
 
             # Build agent. Provider resolution (multi-provider-management):
@@ -175,6 +178,7 @@ async def _startup_supervisor() -> None:
                 logger.warning(
                     "supervisor_provider_resolve_failed err=%s — falling back to local_llm",
                     str(_exc)[:200],
+                    exc_info=True,
                 )
             if _sup_provider is None:
                 # Last-resort fallback: legacy single-provider mode.
@@ -228,6 +232,7 @@ async def _startup_supervisor() -> None:
                         "supervisor_auto_followup_dispatch_failed sid=%s err=%s",
                         sid,
                         _ex,
+                        exc_info=True,
                     )
 
             _supervisor_agent = _SupAgent(
@@ -305,6 +310,7 @@ async def _startup_supervisor() -> None:
                             "p6_watchdog_user_activity_probe_failed sid=%s err=%s",
                             _base_sid,
                             str(_ue)[:200],
+                            exc_info=True,
                         )
                     rows = await sdb_local.get_session_todos(_base_sid)
                     return [
@@ -317,6 +323,7 @@ async def _startup_supervisor() -> None:
                         "p5s2_watchdog_probe_lookup_failed sid=%s err=%s",
                         _base_sid,
                         str(_e)[:200],
+                        exc_info=True,
                     )
                     return []
 
@@ -343,7 +350,7 @@ async def _startup_supervisor() -> None:
         else:
             logger.info("p5_supervisor_disabled_via_config")
     except Exception as exc:  # noqa: BLE001
-        logger.warning("p5_supervisor_watchdog_start_failed", error=str(exc))
+        logger.warning("p5_supervisor_watchdog_start_failed", error=str(exc), exc_info=True)
 
 
 async def _startup_auto_resume_and_model_context(_heal_cfg: Any) -> None:
@@ -376,7 +383,9 @@ async def _startup_auto_resume_and_model_context(_heal_cfg: Any) -> None:
             try:
                 _launch_product_harness_chat(_ws_for_sid, "<<auto_resume>>", _sid)
             except Exception as _ex:  # noqa: BLE001
-                logger.warning("auto_resume_redispatch_failed sid=%s err=%s", _sid, _ex)
+                logger.warning(
+                    "auto_resume_redispatch_failed sid=%s err=%s", _sid, _ex, exc_info=True
+                )
 
         # ws emitter — broadcast auto_resume_* events to all control conns.
         async def _auto_resume_emit(_typ: str, _payload: dict) -> None:
@@ -387,7 +396,9 @@ async def _startup_auto_resume_and_model_context(_heal_cfg: Any) -> None:
                 try:
                     await _ws_obj.send_json(_msg)
                 except Exception as _bex:
-                    logger.debug("auto_resume_emit_failed sid=%s err=%s", _sid_key, _bex)
+                    logger.debug(
+                        "auto_resume_emit_failed sid=%s err=%s", _sid_key, _bex, exc_info=True
+                    )
 
         # Audit writer — bridge to SessionDB.append_supervisor_hint.
         async def _auto_resume_audit(_record: dict) -> None:
@@ -404,7 +415,7 @@ async def _startup_auto_resume_and_model_context(_heal_cfg: Any) -> None:
                     diagnosis=_record.get("diagnosis", ""),
                 )
             except Exception as _ex:  # noqa: BLE001
-                logger.debug("auto_resume_audit_failed err=%s", _ex)
+                logger.debug("auto_resume_audit_failed err=%s", _ex, exc_info=True)
 
         # WI-1.5：resume 注入原 goal_text（窄版）。从 service_context
         # 取活跃 goal store（goal_mode OFF → None → getter 返 None → BC）。
@@ -436,7 +447,7 @@ async def _startup_auto_resume_and_model_context(_heal_cfg: Any) -> None:
             type(_resume_policy).__name__,
         )
     except Exception as _exc:  # noqa: BLE001
-        logger.warning("p5s2_auto_resume_start_failed err=%s", _exc)
+        logger.warning("p5s2_auto_resume_start_failed err=%s", _exc, exc_info=True)
 
     # Phase 1.1.5 — 启动落一行 model_context_resolved，让用户/日志一眼
     # 看到当前默认模型解析出的有效窗口 + 来源链。每次 chat 会话另会按
@@ -454,4 +465,4 @@ async def _startup_auto_resume_and_model_context(_heal_cfg: Any) -> None:
                 config.llm.local.model,
             )
     except Exception as _mi_exc:  # noqa: BLE001
-        logger.warning("model_context_startup_resolve_failed err=%s", _mi_exc)
+        logger.warning("model_context_startup_resolve_failed err=%s", _mi_exc, exc_info=True)

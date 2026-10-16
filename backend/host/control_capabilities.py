@@ -61,7 +61,7 @@ async def _cc_capability_list(conn: _ControlConnection, raw: dict, msg_type: str
             }
         )
     except Exception as exc:  # noqa: BLE001
-        logger.warning("capability_center_list_failed", error=str(exc))
+        logger.warning("capability_center_list_failed", error=str(exc), exc_info=True)
         await ws.send_json(
             {
                 "type": "capability_list_response",
@@ -104,7 +104,7 @@ async def _cc_capability_operations_list(
             }
         )
     except Exception as exc:  # noqa: BLE001
-        logger.warning("capability_center_operations_failed", error=str(exc))
+        logger.warning("capability_center_operations_failed", error=str(exc), exc_info=True)
         await ws.send_json(
             {
                 "type": "capability_operations_response",
@@ -209,6 +209,7 @@ async def _cc_capability_install(conn: _ControlConnection, raw: dict, msg_type: 
             action=action,
             error_code=error_code,
             error=str(exc),
+            exc_info=True,
         )
         await ws.send_json(
             {
@@ -261,7 +262,7 @@ async def _cc_plugin_enable(conn: _ControlConnection, raw: dict, msg_type: str) 
         if loader is not None and hasattr(loader, "reload"):
             loader.reload()
     except Exception as exc:  # noqa: BLE001
-        logger.warning("skill_loader_reload_failed", error=str(exc))
+        logger.warning("skill_loader_reload_failed", error=str(exc), exc_info=True)
     await ws.send_json(
         {
             "type": "plugin_enable_response",
@@ -293,7 +294,7 @@ async def _cc_plugin_disable(conn: _ControlConnection, raw: dict, msg_type: str)
         if loader is not None and hasattr(loader, "reload"):
             loader.reload()
     except Exception as exc:  # noqa: BLE001
-        logger.warning("skill_loader_reload_failed", error=str(exc))
+        logger.warning("skill_loader_reload_failed", error=str(exc), exc_info=True)
     await ws.send_json(
         {
             "type": "plugin_disable_response",

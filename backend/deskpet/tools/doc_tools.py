@@ -155,7 +155,7 @@ def _add_image(document, el: dict[str, Any]) -> None:
     try:
         document.add_picture(str(p), **kw)
     except Exception as exc:  # noqa: BLE001 — image is non-critical
-        log.warning("doc image skipped: %s", exc)
+        log.warning("doc image skipped: %s", exc, exc_info=True)
         return
     align = _ALIGN.get(str(el.get("align", "")).lower())
     if align and document.paragraphs:

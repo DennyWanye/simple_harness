@@ -72,7 +72,7 @@ async def build_snapshot(
                     snap["user_goal"] = _truncate(str(m["content"]), 200)
                     break
         except Exception as exc:  # noqa: BLE001
-            logger.debug("snapshot_user_goal_failed sid=%s error=%s", sid, exc)
+            logger.debug("snapshot_user_goal_failed sid=%s error=%s", sid, exc, exc_info=True)
 
     # ─── todos_state ────────────────────────────────────────────────
     snap["todos_state"] = []
@@ -89,7 +89,7 @@ async def build_snapshot(
                 for t in (todos or [])
             ]
         except Exception as exc:  # noqa: BLE001
-            logger.debug("snapshot_todos_failed sid=%s error=%s", sid, exc)
+            logger.debug("snapshot_todos_failed sid=%s error=%s", sid, exc, exc_info=True)
 
     # ─── last_error (extract from recent_events ring buffer) ────────
     snap["last_error"] = ""
@@ -110,6 +110,6 @@ async def build_snapshot(
             est_tokens = total_chars / _CHARS_PER_TOKEN_ESTIMATE
             snap["context_token_pressure"] = min(1.0, est_tokens / max(1, context_window_tokens))
         except Exception as exc:  # noqa: BLE001
-            logger.debug("snapshot_token_pressure_failed sid=%s error=%s", sid, exc)
+            logger.debug("snapshot_token_pressure_failed sid=%s error=%s", sid, exc, exc_info=True)
 
     return snap

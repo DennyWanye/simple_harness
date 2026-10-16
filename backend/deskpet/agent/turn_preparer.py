@@ -515,7 +515,9 @@ class ProductTurnPreparer:
                     if latest:
                         self._insert_after_system(messages, summary_build_reinject_msg(latest))
             except Exception as exc:
-                logger.debug("wi1b4_summary_loop_skipped", sid=turn.session_id, error=str(exc))
+                logger.debug(
+                    "wi1b4_summary_loop_skipped", sid=turn.session_id, error=str(exc), exc_info=True
+                )
         return await self._finish_turn_context(
             assembler,
             bundle=bundle,
@@ -561,9 +563,13 @@ class ProductTurnPreparer:
                                     severity=hint.severity,
                                 )
                             except Exception as exc:
-                                logger.debug("supervisor_dispatched_audit_failed", error=str(exc))
+                                logger.debug(
+                                    "supervisor_dispatched_audit_failed",
+                                    error=str(exc),
+                                    exc_info=True,
+                                )
         except Exception as exc:
-            logger.debug("supervisor_hint_inject_failed", error=str(exc))
+            logger.debug("supervisor_hint_inject_failed", error=str(exc), exc_info=True)
 
     async def _assemble_turn_bundle(
         self,
@@ -710,7 +716,8 @@ class ProductTurnPreparer:
                         ),
                     )
             except Exception as exc:
-                logger.warning("p4_assembler_failed", error=str(exc), error_type=type(exc).__name__)
+                # 异常类型由日志配置从 exc_info 取（error_type 字段）
+                logger.warning("p4_assembler_failed", error=str(exc), exc_info=True)
                 bundle = None
         return assembler, bundle
 
@@ -954,7 +961,12 @@ class ProductTurnPreparer:
                 }
             result.commands = tuple(commands)
         except Exception as exc:
-            logger.warning("pipeline_pre_loop_failed", sid=prepared.turn.session_id, error=str(exc))
+            logger.warning(
+                "pipeline_pre_loop_failed",
+                sid=prepared.turn.session_id,
+                error=str(exc),
+                exc_info=True,
+            )
         finally:
             await self._settle_growth_intent(
                 prepared,
@@ -993,6 +1005,7 @@ class ProductTurnPreparer:
                 message_id=prepared.current_message_id,
                 growth_signal_kind=growth_signal_kind,
                 error=str(exc),
+                exc_info=True,
             )
 
     async def plan_decision(
@@ -1018,6 +1031,7 @@ class ProductTurnPreparer:
                     "authorization_policy_read_failed",
                     sid=turn.session_id,
                     error=str(exc),
+                    exc_info=True,
                 )
         try:
             pipeline_config = getattr(getattr(config, "features", None), "problem_pipeline", None)
@@ -1089,7 +1103,7 @@ class ProductTurnPreparer:
                 )
             result.commands = tuple(commands)
         except Exception as exc:
-            logger.debug("p4s25_plan_skipped", error=str(exc))
+            logger.debug("p4s25_plan_skipped", error=str(exc), exc_info=True)
         return result
 
     @staticmethod

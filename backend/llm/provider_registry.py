@@ -497,7 +497,9 @@ class LLMProviderRegistry:
         try:
             return keyring.get_password(KEYCHAIN_SERVICE, cls._keychain_account(provider_id))
         except Exception as exc:  # pragma: no cover — backend-specific
-            logger.warning("keyring.get_password failed for %s: %s", provider_id, exc)
+            logger.warning(
+                "keyring.get_password failed for %s: %s", provider_id, exc, exc_info=True
+            )
             return None
 
     @classmethod
@@ -507,7 +509,9 @@ class LLMProviderRegistry:
         try:
             keyring.delete_password(KEYCHAIN_SERVICE, cls._keychain_account(provider_id))
         except Exception as exc:  # pragma: no cover — backend-specific / entry already gone
-            logger.debug("keyring.delete_password for %s: %s (ignored)", provider_id, exc)
+            logger.debug(
+                "keyring.delete_password for %s: %s (ignored)", provider_id, exc, exc_info=True
+            )
 
     def resolve_api_key(self, provider_id: str) -> str | None:
         """Look up the real api_key for a provider. Returns None if not
@@ -525,7 +529,9 @@ class LLMProviderRegistry:
                 if value:
                     return value
             except Exception as exc:  # pragma: no cover - backend-specific
-                logger.warning("versioned keychain read failed for %s: %s", provider_id, exc)
+                logger.warning(
+                    "versioned keychain read failed for %s: %s", provider_id, exc, exc_info=True
+                )
         value = self._keychain_load(provider_id)
         if value:
             return value
@@ -547,6 +553,7 @@ class LLMProviderRegistry:
                         "legacy keychain read failed for %s: %s",
                         provider_id,
                         exc,
+                        exc_info=True,
                     )
                     break
                 if not legacy_value:
@@ -563,6 +570,7 @@ class LLMProviderRegistry:
                         "provider secret namespace migration failed for %s: %s",
                         provider_id,
                         exc,
+                        exc_info=True,
                     )
                 return legacy_value
         return None
@@ -604,7 +612,7 @@ class LLMProviderRegistry:
         try:
             cls._keychain_save(provider_id, api_key)
         except Exception as exc:  # pragma: no cover - backend-specific
-            logger.warning("legacy provider secret alias refresh failed: %s", exc)
+            logger.warning("legacy provider secret alias refresh failed: %s", exc, exc_info=True)
 
     @classmethod
     def _delete_versioned_secret(cls, entry: ProviderEntry) -> None:
@@ -613,7 +621,7 @@ class LLMProviderRegistry:
         try:
             keyring.delete_password(KEYCHAIN_SERVICE, cls._versioned_keychain_account(entry))
         except Exception as exc:  # pragma: no cover - best-effort GC
-            logger.debug("versioned keychain delete ignored: %s", exc)
+            logger.debug("versioned keychain delete ignored: %s", exc, exc_info=True)
 
     # ───────── public mutators ─────────
 
@@ -1199,7 +1207,7 @@ def _migrate_legacy_provider_config(config_path: Path | str) -> bool:
         try:
             existing_key = keyring.get_password(KEYCHAIN_SERVICE, "cloud_api_key")
         except Exception as exc:  # pragma: no cover — backend-specific
-            logger.warning("migration: keychain read failed: %s", exc)
+            logger.warning("migration: keychain read failed: %s", exc, exc_info=True)
             existing_key = None
 
     if not existing_key:

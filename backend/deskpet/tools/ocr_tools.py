@@ -56,7 +56,7 @@ def _get_engine() -> Any | None:
 
             _engine = RapidOCR()
         except Exception as exc:  # noqa: BLE001
-            log.warning("RapidOCR init failed: %s", exc)
+            log.warning("RapidOCR init failed: %s", exc, exc_info=True)
             _engine_failed = True
             return None
     return _engine

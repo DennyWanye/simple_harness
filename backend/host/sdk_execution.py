@@ -490,6 +490,7 @@ async def _present_final_assistant(st: _SdkRunState) -> None:
             logger.warning(
                 "sdk_assistant_presentation_failed",
                 error=str(_assistant_exc)[:200],
+                exc_info=True,
             )
 
 

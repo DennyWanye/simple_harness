@@ -219,7 +219,7 @@ def _insert_design_picture(slide, so: SlideOutline) -> None:
             try:
                 picture_ph[0].insert_picture(str(so.image_path))
             except Exception as exc:  # noqa: BLE001
-                log.debug("design picture insert failed: %s", exc)
+                log.debug("design picture insert failed: %s", exc, exc_info=True)
     except Exception:  # noqa: BLE001
         pass
 
@@ -285,7 +285,7 @@ def _swap_design_picture(slide, image_path: str) -> bool:
         image_part._blob = new_bytes
         return True
     except Exception as exc:  # noqa: BLE001
-        log.debug("design picture swap failed: %s", exc)
+        log.debug("design picture swap failed: %s", exc, exc_info=True)
         return False
 
 
@@ -685,7 +685,7 @@ def _render_with_template(
                     try:
                         picture_ph[0].insert_picture(str(so.image_path))
                     except Exception as exc:  # noqa: BLE001
-                        log.debug("template picture insert failed: %s", exc)
+                        log.debug("template picture insert failed: %s", exc, exc_info=True)
                 caption_targets = [
                     ph
                     for ph in body_ph

@@ -145,6 +145,7 @@ async def _review_final_response_quality(
             "response_quality_check_failed sid=%s err=%s — preserving original response",
             session_id,
             str(exc)[:200],
+            exc_info=True,
         )
         return final_content
 
@@ -392,6 +393,7 @@ class FinalGateMixin(AgentLoopCore):
                     "p5s2_completion_probe_failed sid=%s err=%s",
                     state.session_id,
                     str(exc)[:200],
+                    exc_info=True,
                 )
                 state.incomplete = []
             if state.incomplete:

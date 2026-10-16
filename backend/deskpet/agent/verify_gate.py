@@ -558,7 +558,7 @@ class VerifyGate:
                 )
             )
         except Exception as exc:  # noqa: BLE001
-            logger.warning("ephemeral_subagent raised: %s", exc)
+            logger.warning("ephemeral_subagent raised: %s", exc, exc_info=True)
             return False
 
 
@@ -656,7 +656,7 @@ def make_ephemeral_verifier(
             verdict = str(obj.get("verdict", "fail")).strip().lower()
             return verdict == "pass"
         except Exception as exc:  # noqa: BLE001
-            logger.warning("make_ephemeral_verifier: error: %s", exc)
+            logger.warning("make_ephemeral_verifier: error: %s", exc, exc_info=True)
             return False
 
     return _verifier

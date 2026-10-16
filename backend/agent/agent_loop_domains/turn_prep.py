@@ -368,7 +368,7 @@ class TurnPrepMixin(AgentLoopCore):
                 state._budget_warn_emitted = True
         except Exception as _b_exc:  # noqa: BLE001
             # Budget check is advisory — never fail the loop on it.
-            logger.debug("token_budget_check_failed err=%s", str(_b_exc)[:100])
+            logger.debug("token_budget_check_failed err=%s", str(_b_exc)[:100], exc_info=True)
 
         # Budget gate BEFORE the call — can't take back tokens after the fact.
         if self.budget_checker is not None and not self.budget_checker.check_allowed():

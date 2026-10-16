@@ -331,7 +331,7 @@ def _google_reachable() -> bool:
             resp = client.get(_GOOGLE_HOME_URL)
         reachable = int(getattr(resp, "status_code", 200)) < 500
     except Exception as exc:  # noqa: BLE001
-        log.debug("google reachability probe failed: %s", exc)
+        log.debug("google reachability probe failed: %s", exc, exc_info=True)
 
     _google_reachable_cache = (now + _GOOGLE_REACHABLE_TTL_SECONDS, reachable)
     return reachable
@@ -701,7 +701,7 @@ def search(
             last_err = f"{engine}: {exc}"
             _record_engine_failure(engine)
             _record_search_error(last_err)
-            log.debug("search engine %s failed for %r: %s", engine, q, exc)
+            log.debug("search engine %s failed for %r: %s", engine, q, exc, exc_info=True)
             continue
         if results:
             _record_engine_success(engine)
@@ -801,7 +801,9 @@ async def search_async(
                 except Exception as exc:  # noqa: BLE001
                     _record_engine_failure(engine)
                     _record_search_error(f"{engine}: {exc}")
-                    log.debug("async search engine %s failed for %r: %s", engine, q, exc)
+                    log.debug(
+                        "async search engine %s failed for %r: %s", engine, q, exc, exc_info=True
+                    )
                     continue
                 if results:
                     _record_engine_success(engine)
@@ -836,7 +838,9 @@ async def search_async(
                 except Exception as exc:  # noqa: BLE001
                     _record_engine_failure(engine)
                     _record_search_error(f"{engine}: {exc}")
-                    log.debug("async search engine %s failed for %r: %s", engine, q, exc)
+                    log.debug(
+                        "async search engine %s failed for %r: %s", engine, q, exc, exc_info=True
+                    )
                     continue
                 if results:
                     _record_engine_success(engine)
@@ -878,7 +882,9 @@ async def search_async(
                 except Exception as exc:  # noqa: BLE001
                     _record_engine_failure(engine)
                     _record_search_error(f"{engine}: {exc}")
-                    log.debug("async search engine %s failed for %r: %s", engine, q, exc)
+                    log.debug(
+                        "async search engine %s failed for %r: %s", engine, q, exc, exc_info=True
+                    )
                     continue
                 if results:
                     _record_engine_success(engine)
@@ -915,7 +921,7 @@ async def search_async(
             except Exception as exc:  # noqa: BLE001
                 _record_engine_failure(engine)
                 _record_search_error(f"{engine}: {exc}")
-                log.debug("async search engine %s failed for %r: %s", engine, q, exc)
+                log.debug("async search engine %s failed for %r: %s", engine, q, exc, exc_info=True)
                 continue
             if results:
                 _record_engine_success(engine)

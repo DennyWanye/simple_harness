@@ -122,7 +122,7 @@ class SelfCheckGate:
                 )
                 evaluator_revise = ev.get("verdict") == "revise" and ev.get("quality_score", 10) < 6
             except Exception as exc:  # noqa: BLE001
-                logger.warning("self_check.evaluator_failed", error=str(exc)[:200])
+                logger.warning("self_check.evaluator_failed", error=str(exc)[:200], exc_info=True)
 
         passed = verify_passed and not evaluator_revise
         instr = ""

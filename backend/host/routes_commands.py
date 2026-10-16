@@ -81,7 +81,7 @@ async def api_skills_list(session_id: str = ""):
                     }
                 )
         except Exception as exc:  # noqa: BLE001
-            logger.warning("/api/skills/list failed: %s", exc)
+            logger.warning("/api/skills/list failed: %s", exc, exc_info=True)
     return {
         "feature_enabled": True,
         "builtins": builtins,
@@ -183,7 +183,7 @@ async def api_commands_help(session_id: str = ""):
                     }
                 )
         except Exception as exc:  # noqa: BLE001
-            logger.warning("/api/commands/help failed: %s", exc)
+            logger.warning("/api/commands/help failed: %s", exc, exc_info=True)
 
     return {"feature_enabled": True, "commands": commands}
 
@@ -254,6 +254,6 @@ async def api_command_schema(name: str, session_id: str = ""):
                         "args_schema": arg_schema,
                     }
         except Exception as exc:  # noqa: BLE001
-            logger.warning("/api/commands/%s/schema failed: %s", name_lower, exc)
+            logger.warning("/api/commands/%s/schema failed: %s", name_lower, exc, exc_info=True)
 
     return Response(status_code=404, content=f"unknown command: {name_lower}")
