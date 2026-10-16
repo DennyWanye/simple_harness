@@ -325,7 +325,7 @@ export function usePermissionRequests(channel: PermissionChannel | null) {
       off();
       offState?.();
     };
-  }, [channel, completeCurrent, dismissRun, enqueue]);
+  }, [channel, completeCurrent, dismissRun, enqueue, showNext]);
 
   const resolve = useCallback(
     (decision: Decision) => {

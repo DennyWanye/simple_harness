@@ -23,6 +23,7 @@ import {
   newContextRequestId,
 } from "../context/contextAuthority";
 import { ringColor, ringPercent } from "./contextRingMath";
+import { useDepsChanged } from "../hooks/useDepsChanged";
 
 interface BreakdownSection {
   kind: string;
@@ -403,26 +404,37 @@ export function ContextBreakdownModal({
     onMessageRef.current = onMessage;
   }, [onMessage]);
 
-  useEffect(() => {
-    if (!open) {
-      setData(null);
-      setExpanded({});
-      return;
-    }
-    setLoading(true);
+  // 这次读取要对上的快照身份（渲染期算好，effect 与重置都按它们比对）。
+  const expectedSnapshotId = snapshot?.snapshot_id?.trim() || null;
+  const expectedSampleId = snapshot?.sample_id?.trim() || null;
+  const expectedUsageVersion =
+    Number.isInteger(snapshot?.version) && (snapshot?.version ?? -1) >= 0
+      ? snapshot!.version!
+      : null;
+  const expectedSnapshotVersion =
+    Number.isInteger(snapshot?.snapshot_version) && (snapshot?.snapshot_version ?? -1) >= 0
+      ? snapshot!.snapshot_version!
+      : null;
+
+  // 打开、换会话或换快照：渲染期重置画面（含挂载），effect 只订阅并发请求。
+  const requestDeps = [
+    open,
+    sessionId,
+    expectedSnapshotId,
+    expectedSampleId,
+    expectedUsageVersion,
+    expectedSnapshotVersion,
+  ];
+  if (useDepsChanged(requestDeps, { onMount: true })) {
     setData(null);
+    if (open) setLoading(true);
+    else setExpanded({});
+  }
+
+  useEffect(() => {
+    if (!open) return;
     acceptedRef.current = null;
     const requestId = newContextRequestId();
-    const expectedSnapshotId = snapshot?.snapshot_id?.trim() || null;
-    const expectedSampleId = snapshot?.sample_id?.trim() || null;
-    const expectedUsageVersion =
-      Number.isInteger(snapshot?.version) && (snapshot?.version ?? -1) >= 0
-        ? snapshot!.version!
-        : null;
-    const expectedSnapshotVersion =
-      Number.isInteger(snapshot?.snapshot_version) && (snapshot?.snapshot_version ?? -1) >= 0
-        ? snapshot!.snapshot_version!
-        : null;
     let active = true;
     const off = onMessageRef.current((msg) => {
       if (
@@ -461,8 +473,9 @@ export function ContextBreakdownModal({
           expected_snapshot_version: expectedSnapshotVersion,
         },
       });
-    } catch {
-      setLoading(false);
+    } catch (error) {
+      // 唯一的发送方（controlWS.send）自己吞掉异常、只返回成败，这里只留防御性日志。
+      console.warn("[context-breakdown] request send failed", error);
     }
     return () => {
       active = false;
@@ -471,10 +484,10 @@ export function ContextBreakdownModal({
   }, [
     open,
     sessionId,
-    snapshot?.snapshot_id,
-    snapshot?.snapshot_version,
-    snapshot?.sample_id,
-    snapshot?.version,
+    expectedSnapshotId,
+    expectedSampleId,
+    expectedUsageVersion,
+    expectedSnapshotVersion,
   ]);
 
   const displayState = contextDisplayState(snapshot);

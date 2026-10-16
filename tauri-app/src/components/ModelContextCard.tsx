@@ -50,7 +50,6 @@ export function ModelContextCard({ getChannel }: Props) {
   const selectedModel = useRef("");
   const userSelectedModel = useRef(false);
   // 编辑缓冲（字符串便于受控输入；保存时解析为数值）
-  const [windowEdit, setWindowEdit] = useState<string>("");
   const [compactEdit, setCompactEdit] = useState<string>("");
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
   const [compactionModel, setCompactionModel] = useState("follow_session");
@@ -95,7 +94,6 @@ export function ModelContextCard({ getChannel }: Props) {
         const resolved = p.resolved as ModelContextResolved;
         const models = Object.keys(p.builtin || {}).filter((k) => k !== "_default");
         setState({ kind: "ready", model: p.model, resolved, models });
-        setWindowEdit(String(resolved.context_window));
         setCompactEdit(String(resolved.compact_at_pct));
       } else if (msg.type === "model_context_set_ack") {
         const a = msg as ModelContextSetAck;
@@ -158,7 +156,7 @@ export function ModelContextCard({ getChannel }: Props) {
       setSaveMsg("控制通道未连接");
       return;
     }
-    // 只发压缩阈值(窗口只读;windowEdit 恒传 "" 忽略)
+    // 只发压缩阈值（窗口只读，窗口字段恒传 "" 忽略）
     const fields = parseModelContextEdits("", compactEdit);
     if (fields === null) {
       setSaveMsg("无有效改动（压缩阈值需在 0.50–0.95 之间，如 0.75）");
@@ -166,7 +164,7 @@ export function ModelContextCard({ getChannel }: Props) {
     }
     setSaveMsg("保存中…");
     ch.send(buildModelContextSetMessage("global", model, fields));
-  }, [getChannel, model, windowEdit, compactEdit]);
+  }, [getChannel, model, compactEdit]);
 
   const onCompactionModelSave = useCallback(() => {
     const ch = getChannel();

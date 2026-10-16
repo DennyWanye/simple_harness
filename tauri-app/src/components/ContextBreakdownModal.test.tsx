@@ -212,4 +212,44 @@ describe("ContextBreakdownModal authority fence", () => {
     );
     expect(screen.queryByText("System")).toBeNull();
   });
+
+  it("打开期间快照换了版本：清掉旧内容并按新版本重新请求", async () => {
+    let listener: ((message: unknown) => void) | undefined;
+    const send = vi.fn();
+    const props = {
+      onClose: vi.fn(),
+      sessionId: "session-1",
+      send,
+      onMessage: (next: (message: unknown) => void) => {
+        listener = next;
+        return () => {
+          listener = undefined;
+        };
+      },
+    };
+    const view = render(<ContextBreakdownModal open snapshot={measuredSnapshot} {...props} />);
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    const firstId = send.mock.calls[0][0].payload.request_id;
+    act(() =>
+      listener?.({
+        type: "context_breakdown_response",
+        payload: fixture({ correlation_id: firstId }),
+      }),
+    );
+    expect(screen.getByText("System")).toBeTruthy();
+
+    view.rerender(
+      <ContextBreakdownModal
+        open
+        snapshot={{ ...measuredSnapshot, version: 8, snapshot_version: 4 }}
+        {...props}
+      />,
+    );
+    expect(screen.queryByText("System")).toBeNull();
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(2));
+    expect(send.mock.calls[1][0].payload).toMatchObject({
+      expected_usage_version: 8,
+      expected_snapshot_version: 4,
+    });
+  });
 });
