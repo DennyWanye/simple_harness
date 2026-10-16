@@ -138,7 +138,15 @@ def segment_span(lines, body, i, j):
     return top, start, body[j - 1].end_lineno
 
 
-def analyse(fn, lines, target: int, max_size: int = 140, min_size: int = 25, max_params: int = 8):
+def analyse(
+    fn,
+    lines,
+    target: int,
+    max_size: int = 140,
+    min_size: int = 25,
+    max_params: int = 8,
+    max_outs: int = 3,
+):
     params = {x.arg for x in (*fn.args.posonlyargs, *fn.args.args, *fn.args.kwonlyargs)}
     if fn.args.vararg:
         params.add(fn.args.vararg.arg)
@@ -207,12 +215,20 @@ def analyse(fn, lines, target: int, max_size: int = 140, min_size: int = 25, max
                     continue
                 has_return = any(isinstance(n, ast.Return) for n in own)
                 tail = False
+                early = False
                 if has_return:
                     # 段走完原函数就结束；或段的最后一句就是 return/raise（段不会落空，后面的语句本来就走不到）
                     closes = isinstance(block[-1], (ast.Return, ast.Raise))
-                    if not (j == len(body) and (tail_ok or closes)):
-                        continue
-                    tail = True
+                    if j == len(body) and (tail_ok or closes):
+                        tail = True
+                    else:
+                        # 中途 return：新方法多返回"是否已返回"（裸 return 与带值 return 不混用）
+                        rets = [n for n in own if isinstance(n, ast.Return)]
+                        if any(r.value is None for r in rets) and not all(
+                            r.value is None for r in rets
+                        ):
+                            continue
+                        early = True
                 before = [s for s in all_stmts if s.end_lineno < start]
                 after = [s for s in all_stmts if s.lineno > end]
                 assigned_before = (
@@ -276,9 +292,11 @@ def analyse(fn, lines, target: int, max_size: int = 140, min_size: int = 25, max
                 # 参数在调用处必须一定已赋值，否则调用本身可能报 UnboundLocalError
                 if need_in - defined_before(fn, start):
                     continue
-                if len(need_in) > max_params or len(need_out) > 3:
+                if len(need_in) > max_params or len(need_out) > max_outs:
                     continue
                 score = size - 6 * len(need_in) - 12 * len(need_out)
+                if early:
+                    score -= 15  # 中途 return 的段读起来多一层，优先挑别的
                 cands.append(
                     dict(
                         top=top,
@@ -288,6 +306,7 @@ def analyse(fn, lines, target: int, max_size: int = 140, min_size: int = 25, max
                         params=sorted(need_in),
                         outs=sorted(need_out),
                         tail=tail,
+                        early=early,
                         score=score,
                     )
                 )
@@ -315,7 +334,7 @@ def cmd_plan(a) -> int:
     path = Path(a.file)
     lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
     fn = find_fn(ast.parse("".join(lines)), a.function, a.line)
-    chosen, _ann, est = analyse(fn, lines, a.target, a.max, a.min, a.max_params)
+    chosen, _ann, est = analyse(fn, lines, a.target, a.max, a.min, a.max_params, a.max_outs)
     print(
         f"{a.function}：{fn.end_lineno - fn.lineno + 1} 行 → 估计 {est} 行，挑出 {len(chosen)} 段"
     )
@@ -323,6 +342,7 @@ def cmd_plan(a) -> int:
         print(
             json.dumps(
                 {
+                    "early": c.get("early", False),
                     "span": f"{c['top']}-{c['end']}",
                     "size": c["size"],
                     "params": c["params"],
@@ -368,7 +388,11 @@ def cmd_apply(a) -> int:
             "--params",
             params,
         ]
-        if c["tail"]:
+        if c.get("early"):
+            cmd += ["--early-return"]
+            if c["outs"]:
+                cmd += ["--returns", ", ".join(c["outs"])]
+        elif c["tail"]:
             cmd += ["--tail"]
             if ret_ann:
                 cmd += ["--returns-type", ret_ann]
@@ -397,7 +421,7 @@ def cmd_apply(a) -> int:
 
 
 def analyse_all(fn, lines):
-    analyse(fn, lines, 0, 140, 8, 14)
+    analyse(fn, lines, 0, 140, 8, 14, 6)
     return analyse.all_candidates, None, None
 
 
@@ -412,6 +436,7 @@ def main() -> int:
     p.add_argument("--max", type=int, default=140)
     p.add_argument("--min", type=int, default=25)
     p.add_argument("--max-params", type=int, default=8)
+    p.add_argument("--max-outs", type=int, default=3)
     q = sub.add_parser("apply")
     q.add_argument("file")
     q.add_argument("function")

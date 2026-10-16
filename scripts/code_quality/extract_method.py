@@ -9,6 +9,9 @@
                           #（返回类型为 None 时写成调用后单独 `return`）
         [--sentinel 名字] # 这段要么提前 return 一个非空结果、要么走完不返回：新方法走完返回 None，
                           # 调用处写成 `名字 = self.新方法(...)` 加 `if 名字 is not None: return 名字`
+        [--early-return]  # 段里有中途 return（走完不一定结束原函数）：新方法多返回一个"是否已返回"，
+                          # 全是裸 return 时调用处写 `if self.新方法(...): return`；带值时写
+                          # `_returned, _result = self.新方法(...)` 加 `if _returned: return _result`
         [--static]        # 新方法不用 self：写成 @staticmethod
         [--after 方法名]  # 新方法插在哪个方法后面（默认紧跟原方法）
 
@@ -82,6 +85,7 @@ def main() -> int:
     ap.add_argument("--tail", action="store_true")
     ap.add_argument("--static", action="store_true")
     ap.add_argument("--sentinel")
+    ap.add_argument("--early-return", action="store_true")
     ap.add_argument("--after")
     a = ap.parse_args()
 
@@ -368,11 +372,65 @@ def main() -> int:
         ):
             sys.exit("--sentinel 的段里有返回 None 的 return，和'走完返回 None'分不开")
 
+    def _has_own_return(node: ast.AST) -> bool:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)):
+            return False
+        return isinstance(node, ast.Return) or any(
+            _has_own_return(c) for c in ast.iter_child_nodes(node)
+        )
+
+    if any(_has_own_return(s_) for s_ in block) and not (a.tail or a.sentinel or a.early_return):
+        sys.exit("段里有 return：要指定 --tail、--sentinel 或 --early-return")
+    early_mode = ""
+    seg_text = "".join(lines[start - 1 : end])
+    if a.early_return:
+        if a.tail or a.sentinel:
+            sys.exit("--early-return 不和 --tail、--sentinel 一起用")
+
+        def own_rets(node: ast.AST) -> list[ast.Return]:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)):
+                return []
+            found = [node] if isinstance(node, ast.Return) else []
+            return found + [r for c in ast.iter_child_nodes(node) for r in own_rets(c)]
+
+        rets = [r for s_ in block for r in own_rets(s_)]
+        if not rets:
+            sys.exit("--early-return 的段里没有 return")
+        bare = [r for r in rets if r.value is None]
+        if bare and len(bare) != len(rets):
+            sys.exit("--early-return 的段里裸 return 与带值 return 混用")
+        early_mode = "bool" if bare else "value"
+        host_names = names([fn], ast.Store) | names([fn], ast.Load)
+        if {"_returned", "_result"} & host_names:
+            sys.exit("原函数里已有 _returned/_result 这两个名字")
+        seg = [ln.encode("utf-8") for ln in lines[start - 1 : end]]
+        edits: list[tuple[int, int, int, bytes]] = []  # (行, 起列, 止列, 新内容)，行是段内下标
+        tail_none = b"".join(b", None" for _ in returns)
+        for r in rets:
+            ln = r.lineno - start
+            if early_mode == "bool":
+                edits.append((ln, r.col_offset, r.col_offset + 6, b"return True" + tail_none))
+            else:
+                v = r.value
+                edits.append(
+                    (
+                        v.end_lineno - start,
+                        v.end_col_offset,
+                        v.end_col_offset,
+                        b")" + tail_none + b")",
+                    )
+                )
+                edits.append((ln, r.col_offset, v.col_offset, b"return (True, ("))
+        for ln, c0, c1, new in sorted(edits, key=lambda e: (e[0], e[1]), reverse=True):
+            seg[ln] = seg[ln][:c0] + new + seg[ln][c1:]
+        seg_text = b"".join(seg).decode("utf-8")
     indent = " " * (block[0].col_offset)
     # 多行字符串内部的行原样保留（textwrap 会连字符串续行一起挪，字面量就变了）
     interior = string_interior_lines(text)
     method_indent = " " * fn.col_offset
     ret_ann = a.returns_type or ("None" if not returns and not a.tail else "")
+    if early_mode:
+        ret_ann = "bool" if early_mode == "bool" and not returns else ""
     # 参数多于 4 个时，第一个之后都写成仅限关键字，调用处按名字传，免得位置传错
     keyword = len(given_params) > 4
     shown = given_params[:1] + (["*"] + given_params[1:] if keyword else given_params[1:])
@@ -387,8 +445,12 @@ def main() -> int:
         + (f" -> {ret_ann}" if ret_ann else "")
         + ":\n"
     )
-    new_body = reindent("".join(lines[start - 1 : end]), method_indent + "    ", start, interior)
-    if returns and not a.tail:
+    new_body = reindent(seg_text, method_indent + "    ", start, interior)
+    if early_mode == "bool":
+        new_body += f"{method_indent}    return {', '.join(['False', *returns])}\n"
+    elif early_mode == "value":
+        new_body += f"{method_indent}    return {', '.join(['False', 'None', *returns])}\n"
+    elif returns and not a.tail:
         new_body += f"{method_indent}    return {', '.join(returns)}\n"
     if a.sentinel:
         new_body += f"{method_indent}    return None\n"
@@ -400,7 +462,19 @@ def main() -> int:
     )
     owner = "" if module_level else ("self." if not a.static else type_owner(tree, fn) + ".")
     call = f"{'await ' if is_async else ''}{owner}{a.new_name}({call_args})"
-    if a.sentinel:
+    if early_mode == "bool" and not returns:
+        call_line = f"{indent}if {call}:\n{indent}    return\n"
+    elif early_mode == "bool":
+        call_line = (
+            f"{indent}{', '.join(['_returned', *returns])} = {call}\n"
+            f"{indent}if _returned:\n{indent}    return\n"
+        )
+    elif early_mode == "value":
+        call_line = (
+            f"{indent}{', '.join(['_returned', '_result', *returns])} = {call}\n"
+            f"{indent}if _returned:\n{indent}    return _result\n"
+        )
+    elif a.sentinel:
         call_line = (
             f"{indent}{a.sentinel} = {call}\n{indent}if {a.sentinel} is not None:\n"
             f"{indent}    return {a.sentinel}\n"

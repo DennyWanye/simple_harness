@@ -83,6 +83,75 @@ def has_return(stmts) -> bool:
     return any(walk(s) for s in stmts)
 
 
+def _strip_early(body: list[ast.stmt], mode: str) -> list[ast.stmt]:
+    """--early-return 抽出的函数体还原：去掉末尾的 `return False...`，中途的
+    `return True[, None...]` 还原成裸 return，`return (True, (值), None...)` 还原成 `return 值`。"""
+    body = copy.deepcopy(body[:-1])
+
+    class Back(ast.NodeTransformer):
+        def visit_FunctionDef(self, node):
+            return node
+
+        visit_AsyncFunctionDef = visit_FunctionDef
+        visit_Lambda = visit_FunctionDef
+
+        def visit_Return(self, node):
+            v = node.value
+            if mode == "bool":
+                return ast.copy_location(ast.Return(value=None), node)
+            assert isinstance(v, ast.Tuple)
+            return ast.copy_location(ast.Return(value=v.elts[1]), node)
+
+    return [Back().visit(s) for s in body]
+
+
+def early_inline(stmts, i, key, fn, new):
+    """识别 --early-return 的调用处，返回（还原后的语句，下一条语句的下标）。"""
+    s = stmts[i]
+    last = fn.body[-1] if fn.body else None
+    if not isinstance(last, ast.Return) or last.value is None:
+        return None
+    first = last.value.elts[0] if isinstance(last.value, ast.Tuple) else last.value
+    if not (isinstance(first, ast.Constant) and first.value is False):
+        return None
+    # if self.新(...): return
+    if (
+        isinstance(s, ast.If)
+        and not s.orelse
+        and match_call(s.test, new) == key
+        and len(s.body) == 1
+        and isinstance(s.body[0], ast.Return)
+        and s.body[0].value is None
+    ):
+        return _strip_early(fn.body, "bool"), i + 1
+    if not (
+        isinstance(s, ast.Assign) and len(s.targets) == 1 and isinstance(s.targets[0], ast.Tuple)
+    ):
+        return None
+    if match_call(s.value, new) != key:
+        return None
+    names_ = [getattr(e, "id", None) for e in s.targets[0].elts]
+    nxt = stmts[i + 1] if i + 1 < len(stmts) else None
+    if not (
+        isinstance(nxt, ast.If) and isinstance(nxt.test, ast.Name) and nxt.test.id == "_returned"
+    ):
+        return None
+    if names_[:2] == ["_returned", "_result"]:
+        mode, outs = "value", names_[2:]
+    elif names_[:1] == ["_returned"]:
+        mode, outs = "bool", names_[1:]
+    else:
+        return None
+    tail = (
+        last.value.elts[(2 if mode == "value" else 1) :]
+        if isinstance(last.value, ast.Tuple)
+        else []
+    )
+    if [getattr(e, "id", None) for e in tail] != outs:
+        return None
+    return _strip_early(fn.body, mode), i + 2
+
+
 def inline(stmts: list[ast.stmt], key: str, fn, new) -> tuple[list[ast.stmt], int]:
     body = list(fn.body)
     out: list[ast.stmt] = []
@@ -91,6 +160,12 @@ def inline(stmts: list[ast.stmt], key: str, fn, new) -> tuple[list[ast.stmt], in
     while i < len(stmts):
         s = stmts[i]
         done = False
+        early = early_inline(stmts, i, key, fn, new)
+        if early is not None:
+            out.extend(early[0])
+            hits += 1
+            i = early[1]
+            continue
         if isinstance(s, ast.Assign) and len(s.targets) == 1 and match_call(s.value, new) == key:
             last = body[-1]
             want = ast.dump(s.targets[0], include_attributes=False)
@@ -168,7 +243,7 @@ def check(path: Path, ref: str) -> bool:
         for st in ast.walk(host):
             if not isinstance(st, ast.stmt):
                 continue
-            value = getattr(st, "value", None)
+            value = st.test if isinstance(st, ast.If) else getattr(st, "value", None)
             key = match_call(value, new) if value is not None else None
             if key is None:
                 continue
