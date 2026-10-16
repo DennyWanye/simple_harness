@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 import time
 from collections.abc import Awaitable, Callable
@@ -19,6 +20,9 @@ from ..storage.taskgraph_followups import (
     DurableFollowupReceipt,
     TaskGraphFollowupStore,
 )
+
+logger = logging.getLogger(__name__)
+
 
 FollowupHandler = Callable[[FollowupV1, str], Awaitable[DurableFollowupReceipt]]
 
@@ -98,6 +102,7 @@ class TaskGraphFollowupPump:
             self.notifications.ack_followup(claim, receipt)
             return FollowupDelivery(message_id=claim.message_id, state="ACKED")
         except Exception as error:
+            logger.warning("pump_once_require_execution_root_failed", exc_info=True)
             code = (
                 error.code
                 if isinstance(error, FollowupConsumerError)

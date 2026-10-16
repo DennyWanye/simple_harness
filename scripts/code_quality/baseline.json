@@ -28,7 +28,7 @@
  "funcs_over_150": 296,
  "inner_imports": 450,
  "except_broad": 1821,
- "except_broad_silent": 22,
+ "except_broad_silent": 10,
  "backend_imports_sdk_internal": 0,
  "backend_sdk_module_paths": [
   "agent_orchestrator.api",
@@ -211,7 +211,7 @@
  },
  "complexity_over_15_backend": 208,
  "complexity_over_25_backend": 32,
- "ruff_sdk_total": 1086,
+ "ruff_sdk_total": 1064,
  "ruff_sdk_by_rule": {
   "E501": 3426,
   "C901": 177,
@@ -366,6 +366,6 @@
  "legacy_lines": 2142,
  "cycle_imports_backend": 19,
  "cycle_imports_sdk": 40,
- "except_broad_unexplained": 50,
- "print_product_unexplained": 11
+ "except_broad_unexplained": 0,
+ "print_product_unexplained": 0
 }

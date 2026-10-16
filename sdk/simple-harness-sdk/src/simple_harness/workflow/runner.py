@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import copy
 import hashlib
+import logging
 import threading
 import time
 import uuid
@@ -75,6 +76,9 @@ from .recovery import (
     repair_head_projection,
 )
 from .trace import WorkflowTraceEvent, WorkflowTracePort
+
+logger = logging.getLogger(__name__)
+
 
 if TYPE_CHECKING:
     from .native import (
@@ -1367,6 +1371,7 @@ class WorkflowRunner:
                                 isolate, fault_label="workflow:heartbeat-isolate"
                             )
                         except BaseException as isolation_error:  # noqa: BLE001
+                            logger.debug("heartbeat_run_atomic_failed", exc_info=True)
                             lease_error.add_note(
                                 "workflow activation isolation also failed: "
                                 f"{type(isolation_error).__name__}"
@@ -1758,6 +1763,7 @@ class WorkflowRunner:
                 )
         except Exception as exc:
             # Checkpoint read or repair failed, quarantine
+            logger.warning("recover_cast_failed", exc_info=True)
             exception_name = exc.__class__.__name__
 
             async def quarantine_tx(tx: WorkflowTransaction):

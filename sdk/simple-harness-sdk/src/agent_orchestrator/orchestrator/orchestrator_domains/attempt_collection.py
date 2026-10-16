@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Any
 
 from simple_harness.agents import AgentTurnState
@@ -49,6 +50,9 @@ from ..assurance_review_import import carried_review_alive
 from ..commit_service import CommitRejected
 from ..completion_inputs import load_completion_result_inputs
 from ..operation_completion import OperationCompletionError
+
+logger = logging.getLogger(__name__)
+
 
 if TYPE_CHECKING:
     from ...graph.task_network import TaskNetworkSnapshot
@@ -191,6 +195,7 @@ class AttemptCollectionMixin(OrchestratorCore):
                 agent_id=intent.agent_id, turn_id=intent.expected_turn_id
             )
         except Exception:  # noqa: BLE001 - executor gone: nothing more to collect
+            logger.debug("collect_after_stop_result_failed", exc_info=True)
             result = None
             liveness = Liveness(False, None, False, None, None, False)
         else:
@@ -519,6 +524,7 @@ class AttemptCollectionMixin(OrchestratorCore):
                 }
             )
         except Exception as error:  # noqa: BLE001 - cancellation is advisory here
+            logger.debug("cancel_turn_failed", exc_info=True)
             self._note(f"cancel_turn for {intent.subject_id} not applied: {error}")
 
     async def _release_attempt(self, attempt_id: str, *, cancel: bool) -> None:
@@ -539,6 +545,7 @@ class AttemptCollectionMixin(OrchestratorCore):
                     agent_id=intent.agent_id, turn_id=intent.expected_turn_id
                 )
             except Exception:  # noqa: BLE001
+                logger.debug("release_attempt_liveness_failed", exc_info=True)
                 liveness = Liveness(False, None, False, None, None, False)
             if liveness.alive:
                 await self._cancel_turn(intent)

@@ -18,6 +18,7 @@ was isolated at all — no network, no reading outside a whitelist — is what t
 from __future__ import annotations
 
 import asyncio
+import logging
 import posixpath
 import re
 
@@ -25,6 +26,9 @@ from simple_harness.tools.reconciliation import ReconciliationObservation, Recon
 
 from ..contracts.models import SEARCH_TOOL_NAMES
 from .domain_tools import DomainTool
+
+logger = logging.getLogger(__name__)
+
 
 #: 执行者与审阅员共用的一轮作答余量（2026-09-29 第六局审阅员先例；推后第 3 批 R3-3 补裁并入 B 级 #52）：
 #: 交给 SDK 的单回合工具上限 = 网关上限 + 这个余量。网关是权威——到上限就拒绝并告知（审阅员"马上作答"、
@@ -1094,6 +1098,7 @@ class WorkspaceToolGateway:
             try:
                 self.before_execute(binding)
             except Exception:
+                logger.debug("refuse_stopped_handoff_before_execute_failed", exc_info=True)
                 return self._reject(
                     call,
                     record,

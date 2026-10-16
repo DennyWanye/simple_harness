@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import logging
 import math
 import warnings
 from collections.abc import Awaitable, Callable, Mapping
@@ -40,6 +41,8 @@ from .conversation_memory import (
     ConversationTurnInput,
 )
 from .ports import _ConversationMemoryQueryPort
+
+logger = logging.getLogger(__name__)
 
 
 def _preparation_bounds(
@@ -470,8 +473,8 @@ async def prepare_sdk_conversation_context(
                         result_hash=result.result_hash,
                         timeout_seconds=timeout_seconds,
                     )
-                except BaseException:
-                    pass
+                except BaseException:  # noqa: BLE001 - 释放召回失败时由后台补释放
+                    logger.debug("conversation_recall_release_failed", exc_info=True)
             raise
         return await _release_staged_result(memory, staged, timeout_seconds=timeout_seconds)
     for _ in range(max_waits):
@@ -553,8 +556,8 @@ async def prepare_consumer_conversation_context(
                         result_hash=release_candidate,
                         timeout_seconds=release_timeout_seconds,
                     )
-                except BaseException:
-                    pass
+                except BaseException:  # noqa: BLE001 - 释放召回失败时由后台补释放
+                    logger.debug("conversation_recall_release_failed", exc_info=True)
             raise
         if memory_result_id is not None and memory is None:
             raise TypeError("consumer prepared Memory lineage requires a conversation query port")
@@ -577,8 +580,8 @@ async def prepare_consumer_conversation_context(
                         result_hash=memory_result_hash,
                         timeout_seconds=release_timeout_seconds,
                     )
-                except BaseException:
-                    pass
+                except BaseException:  # noqa: BLE001 - 释放召回失败时由后台补释放
+                    logger.debug("conversation_recall_release_failed", exc_info=True)
             raise
         return await _release_consumer_staged_result(
             memory, staged, timeout_seconds=release_timeout_seconds

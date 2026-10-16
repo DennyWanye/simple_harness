@@ -9,11 +9,14 @@ import argparse
 import asyncio
 import importlib
 import json
+import logging
 import sys
 from pathlib import Path
 from typing import Any
 
 from .runner import PROTOCOL_VERSION, run_conformance, validate_suite_names
+
+logger = logging.getLogger(__name__)
 
 
 def parse_host_factory(spec: str) -> tuple[str, str]:
@@ -80,18 +83,19 @@ def run_conformance_cli(args: list[str] | None = None) -> int:
         validate_suites(list(suites))
         factory = load_host_factory(module_name, factory_name)
     except (ValueError, ImportError, AttributeError, TypeError) as error:
-        print(f"Error loading host factory: {error}", file=sys.stderr)
+        print(f"Error loading host factory: {error}", file=sys.stderr)  # noqa: T201 - 命令行工具输出
         return 2
 
-    print(f"Simple Harness SDK Conformance Testing (protocol {PROTOCOL_VERSION})")
-    print(f"Host: {parsed.host}")
-    print(f"Suites: {', '.join(suites)}")
+    print(f"Simple Harness SDK Conformance Testing (protocol {PROTOCOL_VERSION})")  # noqa: T201 - 命令行工具输出
+    print(f"Host: {parsed.host}")  # noqa: T201 - 命令行工具输出
+    print(f"Suites: {', '.join(suites)}")  # noqa: T201 - 命令行工具输出
     try:
         report = asyncio.run(
             run_conformance(factory, suites, artifact_sha256=parsed.artifact_sha256)
         )
     except Exception as error:
-        print(f"Conformance runner error: {type(error).__name__}", file=sys.stderr)
+        logger.debug("run_conformance_cli_failed", exc_info=True)
+        print(f"Conformance runner error: {type(error).__name__}", file=sys.stderr)  # noqa: T201 - 命令行工具输出
         return 2
 
     if parsed.json_output:
@@ -101,8 +105,8 @@ def run_conformance_cli(args: list[str] | None = None) -> int:
             json.dumps(report.to_json(), indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
-        print(f"Report written to {output_path}")
-    print(f"Result: {'PASS' if report.passed else 'FAIL'}")
+        print(f"Report written to {output_path}")  # noqa: T201 - 命令行工具输出
+    print(f"Result: {'PASS' if report.passed else 'FAIL'}")  # noqa: T201 - 命令行工具输出
     return 0 if report.passed else 1
 
 

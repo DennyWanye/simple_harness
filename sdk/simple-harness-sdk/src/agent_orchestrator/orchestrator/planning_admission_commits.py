@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, NoReturn
 
@@ -52,6 +53,9 @@ from ..storage.planning_decision_store import PlanningDecisionStore
 from ..storage.taskgraph_binding import require_bound
 from .plan_commits import CommitPlanCommand, PlanCommitRejected, PlanPrincipal
 from .taskgraph_plan_commit import TaskGraphPlanCommitParticipant
+
+logger = logging.getLogger(__name__)
+
 
 if TYPE_CHECKING:
     from .taskgraph_plan_commit import TaskGraphPlanCommitParticipant
@@ -226,6 +230,7 @@ def _check_planning_commit(
             now_ms=now_ms,
         )
     except Exception as error:  # pragma: no cover - producer wrapper is defensive
+        logger.debug("check_planning_commit_build_planning_authorization_failed", exc_info=True)
         _raise("SOURCE_UNAVAILABLE", f"planning authority read failed: {type(error).__name__}")
     if isinstance(authority, AuthoritySourceUnavailable):
         _raise(

@@ -12,6 +12,7 @@ native creation service so every root / batch / delegate creation goes through i
 
 from __future__ import annotations
 
+import logging
 from contextlib import nullcontext
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -54,6 +55,9 @@ from .skill_tools import ArpModelTools
 from .skill_use import SkillUseService
 from .skills import SkillImporter
 from .strict import digest
+
+logger = logging.getLogger(__name__)
+
 
 if TYPE_CHECKING:
     from simple_harness.agents.context.tokenizer import TokenizerPort
@@ -170,6 +174,7 @@ class ArpRuntime:
                 )
                 health.ok("tool_probe")
             except Exception as error:  # noqa: BLE001
+                logger.debug("tick_after_refresh_builtin_health_failed", exc_info=True)
                 health.fail("tool_probe", error)
         resumed = blocked = deferred = failed = 0
         connection = self.index.uow.database.connection
@@ -196,6 +201,7 @@ class ArpRuntime:
                     continue
                 blocked += 1  # the row itself carries the named BLOCKED/STALE code
             except Exception as error:  # noqa: BLE001
+                logger.debug("tick_after_resume_failed", exc_info=True)
                 failed += 1
                 health.fail("recall", error, item=row.recall_key)
                 continue

@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
@@ -71,6 +72,9 @@ from ..worker_context import parent_goal as read_parent_goal
 from ..worker_context import upstream_steps
 from .core import OrchestratorCore
 from .support import _under_source_root
+
+logger = logging.getLogger(__name__)
+
 
 if TYPE_CHECKING:
     from ...contracts.resolution import GoalResolution
@@ -659,8 +663,8 @@ class AttemptJudgmentMixin(OrchestratorCore):
                 previous_files = sorted(
                     set(self.assembled.workspaces.get(previous.id).list_files()) | source_paths
                 )
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception:  # noqa: BLE001 - 读不到上一轮工作区文件时只用本轮
+                logger.debug("previous_workspace_files_failed", exc_info=True)
         if source_binding:
             previous_files = [
                 path
@@ -962,6 +966,7 @@ class AttemptJudgmentMixin(OrchestratorCore):
                 )
                 test_runs[criterion] = {**test_run.to_json(), "passed": test_run.passed}
             except Exception as error:  # noqa: BLE001
+                logger.debug("evaluate_criteria_resolve_failed", exc_info=True)
                 test_runs[criterion] = {"passed": False, "error": str(error), "stdout": ""}
         # The free-text criteria were judged by the official MISSION_FINAL review and
         # restated, certified, on the adopted root resolution; the judgment restates
@@ -984,6 +989,7 @@ class AttemptJudgmentMixin(OrchestratorCore):
                 try:
                     met = copy.resolve(relative).is_file()
                 except Exception:  # noqa: BLE001
+                    logger.debug("evaluate_criteria_is_file_failed", exc_info=True)
                     met = False
                 judgments.append(
                     {

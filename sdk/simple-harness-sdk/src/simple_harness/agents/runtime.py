@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import logging
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Self, cast
@@ -76,6 +77,9 @@ from .ports import AgentRuntimePorts
 from .tool_registry import BaseAgentToolRegistry
 from .tools.delegate import AgentDelegateTool, AgentDelegationReconciliation
 from .wire import AgentProviderWire, continuation_capability_of, replays_reasoning
+
+logger = logging.getLogger(__name__)
+
 
 ROOT_PROFILE_KEY = "agent.general"
 CHILD_PROFILE_KEY = "agent.base"
@@ -385,6 +389,7 @@ class AgentRuntime:
                         settled = bool(outcome.get("jobs") or outcome.get("recalls"))
                         health.ok("index")
                     except Exception as error:  # noqa: BLE001 - a tick defect must not kill the pump
+                        logger.debug("index_pump_getattr_failed", exc_info=True)
                         book = getattr(arp, "health", health)
                         book.fail("index", error)
                 await asyncio.sleep(0.05 if settled else 0.25)

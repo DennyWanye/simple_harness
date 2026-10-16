@@ -404,6 +404,7 @@ class MemoryDispatcher:
         except asyncio.CancelledError:
             raise
         except Exception:
+            logger.debug("run_once_record_committed_turn_failed", exc_info=True)
             self._release_transient(claim, AgentMemoryErrorCode.TRANSIENT.value)
             return True
         if receipt.status is CommittedTurnStatus.CONFLICT:

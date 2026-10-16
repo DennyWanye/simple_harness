@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import logging
 import queue
 import threading
 import time
@@ -19,6 +20,8 @@ from .correlation import CorrelationContext
 from .redaction import SafeValue
 from .sinks import NoopSink, ObservabilitySink
 from .snapshot import DiagnosticsSnapshotV1
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,6 +125,7 @@ class SafeEmitter:
             try:
                 self._sink.emit(event)
             except BaseException:
+                logger.debug("run_emit_failed", exc_info=True)
                 with self._lock:
                     self._bump(sink_errors=1, dropped=1)
             else:
@@ -274,6 +278,7 @@ class ObservabilityRuntime:
                 attributes=cast(Mapping[str, SafeValue], {} if attributes is None else attributes),
             )
         except BaseException:
+            logger.debug("emit_transition_observability_event_v1_failed", exc_info=True)
             self._emitter.record_construction_drop()
             return False
         return self._emitter.emit(event)

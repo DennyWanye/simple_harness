@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 import math
 import os
 import sys
@@ -26,6 +27,9 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
+
 
 ARMS = ("S", "R", "D", "F")
 _TERMINAL = {"success", "failure", "deadline", "interrupted"}
@@ -335,6 +339,7 @@ async def _execute_one(
         record.update(status="interrupted", error=violation or "runner_cancelled")
         raise
     except Exception as error:
+        logger.debug("execute_one_report_failed", exc_info=True)
         record.update(status="failure", error=violation or type(error).__name__)
     finally:
         active = False

@@ -9,6 +9,7 @@ This module neither manufactures execution receipts nor marks official checks.
 from __future__ import annotations
 
 import hashlib
+import logging
 import time
 import uuid
 from collections.abc import Callable, Mapping
@@ -19,6 +20,8 @@ from typing import Any
 from .checks import Grade, grade
 from .codec import AssuranceError, array, canonical, digest, fields, integer, one_of, text
 from .refs import AssuranceRef
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,6 +134,7 @@ class LocalCheckRecorder:
         except Exception:
             # A failed/malformed checker is ERROR, not a semantic FAIL or a PASS.
             # Process death has no returned receipt, so consumers remain UNKNOWN.
+            logger.debug("record_run_failed", exc_info=True)
             state = "ERROR"
         body.update(
             finished_at_ms=integer(self.now_ms()),

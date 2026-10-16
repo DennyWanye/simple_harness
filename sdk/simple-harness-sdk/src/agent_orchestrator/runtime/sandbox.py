@@ -35,6 +35,7 @@ import ctypes
 import fcntl
 import hashlib
 import json
+import logging
 import os
 import pwd
 import resource
@@ -50,6 +51,9 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
+
+logger = logging.getLogger(__name__)
+
 
 SANDBOX_VERSION = "sandbox-v1"
 SANDBOX_EXEC = "/usr/bin/sandbox-exec"
@@ -552,8 +556,8 @@ class _Executor:
             return
         try:
             self.ledger.record_finish(execution_id, outcome)
-        except Exception:  # noqa: BLE001 - the run is over; an unfinished row is reclaimed at restart
-            pass
+        except Exception:  # noqa: BLE001 - 运行已结束，未完成的行在重启时回收
+            logger.debug("sandbox_record_finish_failed", exc_info=True)
 
     def _sample(self, run: _Run) -> tuple[set[int], int]:
         members = self._members(run)

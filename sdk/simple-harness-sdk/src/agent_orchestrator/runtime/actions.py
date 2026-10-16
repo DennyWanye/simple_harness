@@ -15,6 +15,7 @@ idempotency key and only a CONFIRMED_NOT_STARTED answer allows one more hand-off
 from __future__ import annotations
 
 import asyncio
+import logging
 import unicodedata
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
@@ -25,6 +26,9 @@ from ..storage.planning_admission_store import PlanningAdmissionStore
 from . import operation_reconciliation
 from .connectors import ConnectorRejected, Receipt
 from .operation_reconciliation import context, stored_negative_proof
+
+logger = logging.getLogger(__name__)
+
 
 if TYPE_CHECKING:
     from ..governance.policies import DeploymentPolicy
@@ -324,6 +328,7 @@ class ActionExecutor:
                             service_authority=runtime.service_authority,
                         )
                 except Exception:  # unavailable/incomplete protocol evidence stays unresolved
+                    logger.debug("reconcile_one_read_view_failed", exc_info=True)
                     if failed:
                         return self._commit.record_reconciliation_unavailable(key)
                     with store.transaction():

@@ -17,6 +17,7 @@ publishes the generation pointer on first use (``RuntimeIndexGenerationPublished
 from __future__ import annotations
 
 import asyncio
+import logging
 import sqlite3
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -34,6 +35,9 @@ from .pins import Pin
 from .ports import RootIdentity
 from .search import _text_of
 from .strict import digest
+
+logger = logging.getLogger(__name__)
+
 
 CHUNKER_VERSION = "arp-utf8-token-window:v1"
 VIEW_POLICY_ID = {"view": "context-visible-records:v1"}
@@ -334,8 +338,8 @@ class SessionIndexCoordinator:
                         cast(Any, self.embedding).embed,
                         list(texts),
                     )
-                except Exception:  # noqa: BLE001 - the recorded call below reports the failure
-                    pass
+                except Exception:  # noqa: BLE001 - 后面正式调用会报告失败
+                    logger.debug("arp_prefetch_embed_failed", exc_info=True)
             results.append(self._process_guarded(job, now_ms))
         return tuple(results)
 
@@ -354,7 +358,8 @@ class SessionIndexCoordinator:
             if generation.embedding_fingerprint == NO_EMBEDDING_FINGERPRINT:
                 return None
             chunks = self._chunks(job, session, generation)
-        except Exception:  # noqa: BLE001 - prefetch is an optimisation only
+        except Exception:  # noqa: BLE001 - 预取只是优化
+            logger.debug("arp_job_texts_failed", exc_info=True)
             return None
         return [str(c["text_view"]) for c in chunks] if chunks else None
 

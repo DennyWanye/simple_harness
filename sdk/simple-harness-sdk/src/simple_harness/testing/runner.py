@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import inspect
+import logging
 import platform as platform_module
 import re
 import time
@@ -27,6 +28,9 @@ from .contracts import (
 )
 from .suites import CASES_BY_SUITE
 from .verifiers import verify_observation
+
+logger = logging.getLogger(__name__)
+
 
 if TYPE_CHECKING:
     from simple_harness.contracts import JsonValue
@@ -231,6 +235,7 @@ async def run_conformance(
                         message = "SDK verifier rejected the Host observation."
                         evidence = MappingProxyType({})
                     except Exception as error:  # host failures are report facts
+                        logger.debug("run_conformance_getattr_failed", exc_info=True)
                         del error
                         status = CaseStatus.ERROR
                         message = "Host operation failed."
@@ -247,6 +252,7 @@ async def run_conformance(
                         )
                     )
         except Exception as error:  # context enter/exit must fail closed
+            logger.debug("run_conformance_open_suite_failed", exc_info=True)
             del error
             errors.append(
                 ConformanceError(

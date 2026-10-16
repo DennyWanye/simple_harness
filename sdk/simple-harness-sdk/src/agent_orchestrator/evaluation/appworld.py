@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import logging
 import subprocess
 import sys
 from collections.abc import Callable, Iterator, Mapping
@@ -33,6 +34,9 @@ from .appworld_api_observations import (
 )
 from .appworld_observations import AppWorldExecutionReceipt, AppWorldObservationLedger
 from .appworld_state_observations import AppWorldStatePolicy, AppWorldStateReceipt
+
+logger = logging.getLogger(__name__)
+
 
 # Unified AppWorld keeps task time and server state process-wide. Only one
 # episode may own that state; parallel episodes belong in separate processes.
@@ -319,6 +323,7 @@ class AppWorldEpisode:
                 if not isinstance(output, str):
                     raise TypeError("AppWorld execution output must be a string")
             except BaseException as error:
+                logger.debug("execute_failed", exc_info=True)
                 execution_error = error
                 output = None
             try:

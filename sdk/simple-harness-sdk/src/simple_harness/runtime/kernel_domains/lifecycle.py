@@ -66,6 +66,7 @@ class RuntimeLifecycleMixin(RuntimeCore):
             result["authorities"] = self._authority_diagnostics_snapshot()
             return result
         except BaseException:
+            logger.debug("diagnostics_snapshot_failed", exc_info=True)
             return {
                 "schema_version": 1,
                 "sdk_version": "unknown",
@@ -101,6 +102,7 @@ class RuntimeLifecycleMixin(RuntimeCore):
         try:
             database_connection = getattr(owner, "connection", None)
         except BaseException:
+            logger.debug("authority_diagnostics_snapshot_getattr_failed", exc_info=True)
             return self._degraded_authority_snapshot("authority_query_failed")
         command_rows = (
             []
@@ -191,6 +193,7 @@ class RuntimeLifecycleMixin(RuntimeCore):
                 "recent_error_codes": {str(row[0]): int(row[1]) for row in errors},
             }
         except BaseException:
+            logger.debug("authority_diagnostics_snapshot_failed", exc_info=True)
             return self._degraded_authority_snapshot("authority_query_failed")
 
     async def start(self) -> None:

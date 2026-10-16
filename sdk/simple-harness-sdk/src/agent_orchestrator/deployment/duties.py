@@ -109,7 +109,8 @@ class DeploymentDuties:
                 workspace = (self.control.snapshot(mission.id)["snapshot"] or {}).get(
                     "operation_workspace"
                 )
-            except Exception:  # noqa: BLE001 - retried next round
+            except Exception:  # noqa: BLE001 - 读快照失败时下一轮再试
+                logger.debug("auto_confirm_snapshot_failed", exc_info=True)
                 continue
             if (
                 not isinstance(workspace, Mapping)
@@ -325,7 +326,8 @@ class DeploymentDuties:
             try:
                 if AssuranceStore(store).lane(mid) != "ASSURANCE_1_1":
                     continue
-            except Exception:  # noqa: BLE001 - not assured
+            except Exception:  # noqa: BLE001 - 读不到保证通道时按未保证处理
+                logger.debug("assurance_lane_read_failed", exc_info=True)
                 continue
             root_scope = mission_final_scope_id(orchestrator, mid)
             if root_scope is not None:

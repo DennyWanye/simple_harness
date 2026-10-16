@@ -434,9 +434,9 @@ def main() -> int:
     try:
         result = run_core_gate()
     except Arm64CandidateGateError as error:
-        print(error.code)
+        print(error.code)  # noqa: T201 - 命令行门禁输出结果
         return 1
-    print(json.dumps(result, ensure_ascii=True, sort_keys=True))
+    print(json.dumps(result, ensure_ascii=True, sort_keys=True))  # noqa: T201 - 命令行门禁输出结果
     return 0
 
 

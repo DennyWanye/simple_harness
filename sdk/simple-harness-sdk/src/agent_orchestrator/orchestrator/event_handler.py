@@ -303,6 +303,7 @@ class Orchestrator(
             try:
                 await self.__aexit__(type(error), error, error.__traceback__)
             except BaseException as cleanup_error:
+                logger.debug("aenter_aexit_failed", exc_info=True)
                 error.add_note(f"Startup resource cleanup failed: {type(cleanup_error).__name__}")
             raise
 

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import logging
 import re
 import subprocess
 import sys
@@ -22,6 +23,8 @@ from ..backend_port import (
     PlanningLimits,
     PlanningProblemSnapshot,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class UpAriesPlanningBackend:
@@ -243,6 +246,7 @@ def _worker(root: Path, timeout: float) -> dict[str, Any]:
     except (UPUnsupportedProblemTypeError, NotImplementedError) as error:
         return {"status": "UNSUPPORTED_FEATURE", "detail": str(error)}
     except Exception as error:
+        logger.debug("worker_parse_problem_failed", exc_info=True)
         return {"status": "TOOL_ERROR", "detail": f"{type(error).__name__}: {error}"}
 
 

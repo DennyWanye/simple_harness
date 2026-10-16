@@ -90,6 +90,7 @@ class RuntimePumpMixin(RuntimeCore):
             except asyncio.CancelledError:
                 raise
             except Exception as error:
+                logger.warning("drain_commands_bounded_process_command_failed", exc_info=True)
                 try:
                     current = self._uow.get_command_receipt(claim.receipt.command_id)
                     if current.state.terminal:
@@ -123,6 +124,7 @@ class RuntimePumpMixin(RuntimeCore):
                                 "run_id": claim.receipt.run_id.value,
                                 "error_code": settlement_error.code.value,
                             },
+                            exc_info=True,
                         )
                 except Exception:
                     logger.warning(
@@ -132,6 +134,7 @@ class RuntimePumpMixin(RuntimeCore):
                             "run_id": claim.receipt.run_id.value,
                             "error_code": CommandErrorCode.TRANSIENT_FAILURE.value,
                         },
+                        exc_info=True,
                     )
             finally:
                 heartbeat.cancel()
@@ -148,7 +151,8 @@ class RuntimePumpMixin(RuntimeCore):
                     now=self._now(),
                     lease_seconds=self._ports.lease_ttl_seconds,
                 )
-        except (asyncio.CancelledError, Exception):
+        except (asyncio.CancelledError, Exception):  # noqa: BLE001 - 心跳停止时由租约过期接管
+            logger.debug("command_heartbeat_stopped", exc_info=True)
             return
 
     async def _command_pump(self) -> None:
@@ -390,6 +394,7 @@ class RuntimePumpMixin(RuntimeCore):
             try:
                 await asyncio.wait_for(memory.release_recall(request), timeout=1.0)
             except Exception:
+                logger.debug("drain_recall_releases_wait_for_failed", exc_info=True)
                 with staging.database.transaction() as connection:
                     settle_release(connection, str(row[0]), call, now=self._now(), returned=False)
             else:

@@ -16,6 +16,7 @@ produced by the router for layers the Task policy did not ask for.
 
 from __future__ import annotations
 
+import logging
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -27,6 +28,9 @@ from ..contracts.models import sha256_hex
 from ..governance.domains import DomainProfileV1
 from ..memory.verified_knowledge import KnowledgeIndex
 from ..runtime.tool_gateway import run_pytest
+
+logger = logging.getLogger(__name__)
+
 
 PASS = "PASS"
 FAIL = "FAIL"
@@ -101,6 +105,7 @@ def rule_check(
         try:
             actual = sha256_file(verification_copy.resolve(reference))
         except Exception as error:  # noqa: BLE001
+            logger.debug("rule_check_sha256_file_failed", exc_info=True)
             problems.append(
                 f"artifact {reference!r} is unreadable in the verification copy: {error}"
             )
@@ -118,6 +123,7 @@ def rule_check(
                 if not verification_copy.resolve(relative).is_file():
                     problems.append(f"success criterion {criterion!r} not met: file missing")
             except Exception as error:  # noqa: BLE001
+                logger.debug("rule_check_is_file_failed", exc_info=True)
                 problems.append(f"success criterion {criterion!r} unreadable: {error}")
         elif criterion.startswith("pytest:") and not local_code_execution:
             # review round 1 P1-1: a Task committed while execution was on keeps its
@@ -189,6 +195,7 @@ async def code_test(
             try:
                 verification_copy.resolve(target)
             except Exception as error:  # noqa: BLE001
+                logger.debug("code_test_resolve_failed", exc_info=True)
                 runs.append({"target": target, "error": str(error)})
                 failed = True
                 continue

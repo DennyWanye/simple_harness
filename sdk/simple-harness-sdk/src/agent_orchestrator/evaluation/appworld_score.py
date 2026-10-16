@@ -45,7 +45,7 @@ def main() -> None:
     )
     payload = result.to_dict()
     payload["declared_task_status"] = status
-    print(json.dumps(payload, allow_nan=False))
+    print(json.dumps(payload, allow_nan=False))  # noqa: T201 - 评分子进程用标准输出回传 JSON 结果
 
 
 if __name__ == "__main__":

@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import json
+import logging
 import math
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any, Protocol
+
+logger = logging.getLogger(__name__)
+
 
 if TYPE_CHECKING:
     from ...storage.htn_store import PlanCommitReceipt
@@ -175,6 +179,7 @@ class PandaPlanningBackend:
                 search_limit=max(1, int(limits.timeout_seconds)),
             )
         except Exception as error:  # pragma: no cover - defensive adapter boundary
+            logger.debug("solve_failed", exc_info=True)
             return PlanningBackendResult(
                 BackendStatus.TOOL_ERROR,
                 snapshot.digest,

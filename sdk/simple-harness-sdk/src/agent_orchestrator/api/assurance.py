@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import logging
 from collections.abc import Mapping
 from importlib import metadata
 from typing import Any, NoReturn
@@ -34,6 +35,9 @@ from ..orchestrator.requirements_amendment import EVENT as REQUIREMENTS_AMENDED
 from ..storage.assurance_reads import EpochSnapshot, read_epochs_locked
 from ..storage.assurance_store import AssuranceStore
 from ..storage.htn_store import HtnStore
+
+logger = logging.getLogger(__name__)
+
 
 SCHEMA_VERSION = 1
 MAX_ITEMS = 100
@@ -317,7 +321,8 @@ class AssuranceApi:
     def _official(self, htn: HtnStore, package_id: str) -> Any:
         try:
             return htn.official_review_record(package_id)
-        except Exception:  # noqa: BLE001 - an undecodable record is reported, not raised
+        except Exception:  # noqa: BLE001 - 解不开的记录上报为没有，不抛出
+            logger.debug("official_review_record_decode_failed", exc_info=True)
             return None
 
     def _manifest(self, mission_id: str, manifest_hash: str) -> dict[str, Any] | None:

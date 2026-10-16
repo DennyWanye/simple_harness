@@ -275,7 +275,7 @@ app.include_router(voice_router)
 
 def main():
     logger.info("starting backend", host=config.backend.host, port=config.backend.port)
-    print(f"SHARED_SECRET={SHARED_SECRET}", flush=True)
+    print(f"SHARED_SECRET={SHARED_SECRET}", flush=True)  # noqa: T201 - 外壳从标准输出读共享密钥，是握手协议
     uvicorn.run(
         app,
         host=config.backend.host,

@@ -279,10 +279,12 @@ class CycleMixin(OrchestratorCore):
                         },
                     )
             except Exception:  # noqa: BLE001
+                logger.debug("round_fault_transaction_failed", exc_info=True)
                 self._note(f"mission {mission_id}: round fault not recorded (store unwritable)")
         try:
             mission = self.store.get_mission(mission_id)
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 - 读不到任务时不记轮次故障
+            logger.debug("round_fault_mission_read_failed", exc_info=True)
             return False
         if mission is None or mission.status in TERMINAL_MISSION:
             # Nothing left to stop; the streak (and its single record) stays, so an
@@ -323,6 +325,7 @@ class CycleMixin(OrchestratorCore):
                         )
                         return True
                 except Exception:  # noqa: BLE001
+                    logger.debug("round_fault_get_intent_failed", exc_info=True)
                     self._note(
                         f"mission {mission_id}: failing intent {intent_id} could not be closed; waiting"
                     )
@@ -419,6 +422,7 @@ class CycleMixin(OrchestratorCore):
                 if await self.bridge_for(intent).close(agent_id=str(agent_id)):
                     closed += 1
             except Exception as error:  # noqa: BLE001 - housekeeping never stops the loop
+                logger.debug("close_finished_agents_failed", exc_info=True)
                 self._note(f"agent {agent_id}: close skipped ({type(error).__name__})")
             self._rounds.agents_closed.add(str(agent_id))
         return closed
