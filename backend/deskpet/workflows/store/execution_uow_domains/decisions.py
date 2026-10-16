@@ -385,146 +385,16 @@ class DecisionMixin(ExecutionUowCore):
                     "authorization_binding_mismatch",
                     "authorization commit differs from the durable decision fences",
                 )
-            if (
-                exact.expires_at > float(decision.request.expires_at or 0.0)
-                or exact.expires_at <= now
-            ):
-                raise DecisionConflict(
-                    "authorization_expiry_mismatch",
-                    "exact authorization expiry is outside the durable decision",
-                )
-            if (
-                task_grant.root_run_id != root_run_id
-                or actor.root_run_id not in {None, root_run_id}
-                or task_grant.principal_id != actor.principal_id
-            ):
-                raise DecisionConflict(
-                    "authorization_principal_mismatch",
-                    "TaskGrant principal or root differs from the authenticated run",
-                )
-            policy_row = await (
-                await db.execute(
-                    """SELECT mode,generation,updated_at
-                    FROM authorization_policy_state WHERE singleton_id=1"""
-                )
-            ).fetchone()
-            if policy_row is None:
-                raise DecisionConflict(
-                    "authorization_policy_missing",
-                    "authorization policy singleton is absent",
-                )
-            policy_state = AuthorizationPolicyState(
-                mode=str(policy_row["mode"]),  # type: ignore[arg-type]
-                generation=int(policy_row["generation"]),
-                updated_at=float(policy_row["updated_at"]),
-            )
-            if (
-                policy_state.mode != authorization_commit.expected_policy_mode
-                or policy_state.generation != authorization_commit.expected_policy_generation
-            ):
-                raise DecisionConflict(
-                    "authorization_policy_changed",
-                    "authorization policy changed after the decision was planned",
-                )
-            if authorization_commit.authorization_origin == "explicit_decision":
-                expected_ref = decision.request.prompt.get("confirm_only_snapshot_ref")
-                expected_hash = decision.request.prompt.get("confirm_only_snapshot_hash")
-                if (
-                    authorization_commit.decision_id != decision.decision_id
-                    or authorization_commit.decision_nonce != decision.request.nonce
-                    or expected_ref != authorization_commit.confirm_only_snapshot_ref
-                    or expected_hash != authorization_commit.confirm_only_snapshot_hash
-                    or decision.request.prompt.get("authorization_origin") != "explicit_decision"
-                ):
-                    raise DecisionConflict(
-                        "explicit_authorization_fence_mismatch",
-                        "explicit authorization differs from the durable confirm-only decision",
-                    )
-            grant_row = await (
-                await db.execute(
-                    "SELECT * FROM task_grants WHERE task_grant_id=?",
-                    (task_grant.task_grant_id,),
-                )
-            ).fetchone()
-            grant_json = canonical_json(task_grant.to_dict())
-            if authorization_commit.proposed_task_grant:
-                expected_source = (
-                    "user"
-                    if authorization_commit.authorization_origin == "explicit_decision"
-                    else "policy:auto"
-                    if policy_state.mode == "auto"
-                    else "user"
-                )
-                if task_grant.source != expected_source:
-                    raise DecisionConflict(
-                        "authorization_source_mismatch",
-                        "proposed TaskGrant source differs from the active policy mode",
-                    )
-                if grant_row is None:
-                    await db.execute(
-                        """INSERT INTO task_grants(
-                        task_grant_id,root_run_id,source,policy_generation,version,
-                        grant_fingerprint,grant_json,status,created_at,revoked_at
-                        ) VALUES(?,?,?,?,?,?,?,'active',?,NULL)""",
-                        (
-                            task_grant.task_grant_id,
-                            task_grant.root_run_id,
-                            task_grant.source,
-                            task_grant.policy_generation,
-                            task_grant.version,
-                            task_grant.fingerprint,
-                            grant_json,
-                            now,
-                        ),
-                    )
-                elif (
-                    str(grant_row["status"]) != "active"
-                    or str(grant_row["grant_fingerprint"]) != task_grant.fingerprint
-                    or str(grant_row["grant_json"]) != grant_json
-                ):
-                    raise DecisionConflict(
-                        "task_grant_conflict",
-                        "proposed TaskGrant identity belongs to another grant",
-                    )
-            elif (
-                grant_row is None
-                or str(grant_row["status"]) != "active"
-                or str(grant_row["grant_fingerprint"]) != task_grant.fingerprint
-                or str(grant_row["grant_json"]) != grant_json
-            ):
-                raise DecisionConflict(
-                    "task_grant_not_active",
-                    "referenced TaskGrant is missing, revoked, or changed",
-                )
-
-            policy_decision = AuthorizationPolicy().evaluate(
-                state=policy_state,
-                context=DecisionContext(
-                    1,
-                    "permission",
-                    str(decision.request.domain_kind or ""),
-                    str(decision.request.domain_id or ""),
-                    root_run_id,
-                ),
-                task_grant=task_grant,
-                exact_request=exact,
-                actual_root_run_id=root_run_id,
+            authorization_provenance, grant_row = await self._authorize_decision_grant(
+                actor,
+                authorization_commit=authorization_commit,
+                db=db,
+                decision=decision,
+                exact=exact,
                 now=now,
+                root_run_id=root_run_id,
+                task_grant=task_grant,
             )
-            if policy_decision.action != "allow" or policy_decision.exact_grant is None:
-                raise DecisionConflict(
-                    "authorization_policy_rejected",
-                    f"authorization policy rejected commit: {policy_decision.reason}",
-                )
-            authorization_provenance = {
-                "task_grant_id": task_grant.task_grant_id,
-                "task_grant_version": task_grant.version,
-                "authorization_source": task_grant.source,
-                "authorization_origin": authorization_commit.authorization_origin,
-                "policy_generation": policy_state.generation,
-                "exact_grant_id": policy_decision.exact_grant.grant_id,
-                "authorization_intent_fingerprint": exact.fingerprint,
-            }
             if authorization_commit.authorization_origin == "explicit_decision":
                 authorization_provenance.update(
                     {
@@ -537,6 +407,170 @@ class DecisionMixin(ExecutionUowCore):
                     }
                 )
 
+        return await self._record_decision_resolution(
+            authorization_provenance, db=db, decision=decision, now=now, signal=signal
+        )
+
+    async def _authorize_decision_grant(
+        self,
+        actor: ActorContext,
+        *,
+        authorization_commit: PreparedAuthorizationCommit | None,
+        db: aiosqlite.Connection,
+        decision,
+        exact,
+        now: float,
+        root_run_id,
+        task_grant,
+    ):
+        if exact.expires_at > float(decision.request.expires_at or 0.0) or exact.expires_at <= now:
+            raise DecisionConflict(
+                "authorization_expiry_mismatch",
+                "exact authorization expiry is outside the durable decision",
+            )
+        if (
+            task_grant.root_run_id != root_run_id
+            or actor.root_run_id not in {None, root_run_id}
+            or task_grant.principal_id != actor.principal_id
+        ):
+            raise DecisionConflict(
+                "authorization_principal_mismatch",
+                "TaskGrant principal or root differs from the authenticated run",
+            )
+        policy_row = await (
+            await db.execute(
+                """SELECT mode,generation,updated_at
+                    FROM authorization_policy_state WHERE singleton_id=1"""
+            )
+        ).fetchone()
+        if policy_row is None:
+            raise DecisionConflict(
+                "authorization_policy_missing",
+                "authorization policy singleton is absent",
+            )
+        policy_state = AuthorizationPolicyState(
+            mode=str(policy_row["mode"]),  # type: ignore[arg-type]
+            generation=int(policy_row["generation"]),
+            updated_at=float(policy_row["updated_at"]),
+        )
+        if (
+            policy_state.mode != authorization_commit.expected_policy_mode
+            or policy_state.generation != authorization_commit.expected_policy_generation
+        ):
+            raise DecisionConflict(
+                "authorization_policy_changed",
+                "authorization policy changed after the decision was planned",
+            )
+        if authorization_commit.authorization_origin == "explicit_decision":
+            expected_ref = decision.request.prompt.get("confirm_only_snapshot_ref")
+            expected_hash = decision.request.prompt.get("confirm_only_snapshot_hash")
+            if (
+                authorization_commit.decision_id != decision.decision_id
+                or authorization_commit.decision_nonce != decision.request.nonce
+                or expected_ref != authorization_commit.confirm_only_snapshot_ref
+                or expected_hash != authorization_commit.confirm_only_snapshot_hash
+                or decision.request.prompt.get("authorization_origin") != "explicit_decision"
+            ):
+                raise DecisionConflict(
+                    "explicit_authorization_fence_mismatch",
+                    "explicit authorization differs from the durable confirm-only decision",
+                )
+        grant_row = await (
+            await db.execute(
+                "SELECT * FROM task_grants WHERE task_grant_id=?",
+                (task_grant.task_grant_id,),
+            )
+        ).fetchone()
+        grant_json = canonical_json(task_grant.to_dict())
+        if authorization_commit.proposed_task_grant:
+            expected_source = (
+                "user"
+                if authorization_commit.authorization_origin == "explicit_decision"
+                else "policy:auto"
+                if policy_state.mode == "auto"
+                else "user"
+            )
+            if task_grant.source != expected_source:
+                raise DecisionConflict(
+                    "authorization_source_mismatch",
+                    "proposed TaskGrant source differs from the active policy mode",
+                )
+            if grant_row is None:
+                await db.execute(
+                    """INSERT INTO task_grants(
+                        task_grant_id,root_run_id,source,policy_generation,version,
+                        grant_fingerprint,grant_json,status,created_at,revoked_at
+                        ) VALUES(?,?,?,?,?,?,?,'active',?,NULL)""",
+                    (
+                        task_grant.task_grant_id,
+                        task_grant.root_run_id,
+                        task_grant.source,
+                        task_grant.policy_generation,
+                        task_grant.version,
+                        task_grant.fingerprint,
+                        grant_json,
+                        now,
+                    ),
+                )
+            elif (
+                str(grant_row["status"]) != "active"
+                or str(grant_row["grant_fingerprint"]) != task_grant.fingerprint
+                or str(grant_row["grant_json"]) != grant_json
+            ):
+                raise DecisionConflict(
+                    "task_grant_conflict",
+                    "proposed TaskGrant identity belongs to another grant",
+                )
+        elif (
+            grant_row is None
+            or str(grant_row["status"]) != "active"
+            or str(grant_row["grant_fingerprint"]) != task_grant.fingerprint
+            or str(grant_row["grant_json"]) != grant_json
+        ):
+            raise DecisionConflict(
+                "task_grant_not_active",
+                "referenced TaskGrant is missing, revoked, or changed",
+            )
+
+        policy_decision = AuthorizationPolicy().evaluate(
+            state=policy_state,
+            context=DecisionContext(
+                1,
+                "permission",
+                str(decision.request.domain_kind or ""),
+                str(decision.request.domain_id or ""),
+                root_run_id,
+            ),
+            task_grant=task_grant,
+            exact_request=exact,
+            actual_root_run_id=root_run_id,
+            now=now,
+        )
+        if policy_decision.action != "allow" or policy_decision.exact_grant is None:
+            raise DecisionConflict(
+                "authorization_policy_rejected",
+                f"authorization policy rejected commit: {policy_decision.reason}",
+            )
+        authorization_provenance = {
+            "task_grant_id": task_grant.task_grant_id,
+            "task_grant_version": task_grant.version,
+            "authorization_source": task_grant.source,
+            "authorization_origin": authorization_commit.authorization_origin,
+            "policy_generation": policy_state.generation,
+            "exact_grant_id": policy_decision.exact_grant.grant_id,
+            "authorization_intent_fingerprint": exact.fingerprint,
+        }
+        return authorization_provenance, grant_row
+
+    async def _record_decision_resolution(
+        self,
+        authorization_provenance: dict[str, object] | None,
+        *,
+        db: aiosqlite.Connection,
+        decision,
+        now: float,
+        signal: DecisionSignal,
+    ) -> tuple[DecisionRecord, DecisionAuthorization | None, DecisionConflict | None]:
         resolved_status = DecisionStatus.ALLOWED if signal.allow else DecisionStatus.DENIED
         response_payload = thaw_json(signal.response)
         if authorization_provenance is not None:

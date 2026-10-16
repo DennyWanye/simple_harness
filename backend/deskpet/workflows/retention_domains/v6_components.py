@@ -546,6 +546,31 @@ class V6ComponentCleanupMixin(RetentionCore):
                 f"DELETE FROM workflow_node_effects WHERE node_execution_id IN ({_placeholders(node_ids)})",
                 node_ids,
             )
+        await self._delete_v6_component_rows(
+            db,
+            delivery_ids=delivery_ids,
+            evaluation_ids=evaluation_ids,
+            event_ids=event_ids,
+            placeholders=placeholders,
+            run_ids=run_ids,
+            snapshots=snapshots,
+            trace_ids=trace_ids,
+        )
+
+        return await self._delete_v6_component_blobs(candidate_digests, db, placeholders, run_ids)
+
+    async def _delete_v6_component_rows(
+        self,
+        db: aiosqlite.Connection,
+        *,
+        delivery_ids,
+        evaluation_ids,
+        event_ids,
+        placeholders,
+        run_ids: tuple[str, ...],
+        snapshots,
+        trace_ids,
+    ) -> None:
         await db.execute(f"DELETE FROM workflow_effects WHERE run_id IN ({placeholders})", run_ids)
         await db.execute(f"DELETE FROM workflow_nodes WHERE run_id IN ({placeholders})", run_ids)
         await self._fault("retention.v6.after_checkpoint_data")
@@ -682,6 +707,13 @@ class V6ComponentCleanupMixin(RetentionCore):
             run_ids,
         )
 
+    async def _delete_v6_component_blobs(
+        self,
+        candidate_digests: set[str],
+        db: aiosqlite.Connection,
+        placeholders,
+        run_ids: tuple[str, ...],
+    ) -> tuple[Path, ...]:
         paths: list[Path] = []
         for digest in sorted(candidate_digests):
             row = await (

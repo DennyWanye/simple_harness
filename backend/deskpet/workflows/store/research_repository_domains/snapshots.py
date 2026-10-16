@@ -411,245 +411,333 @@ class SnapshotLineageMixin(ResearchRepositoryCore):
                 raise ResearchRepositoryError(
                     "parent_not_continuable", "parent is not a completed v5 run"
                 )
-            parent_capability = await (
-                await db.execute(
-                    "SELECT snapshot_json FROM workflow_capabilities WHERE capability_hash=?",
-                    (parent["capability_hash"],),
-                )
-            ).fetchone()
-            if parent_capability is None:
-                raise ResearchRepositoryError(
-                    "parent_start_snapshot_missing", "parent start snapshot was not found"
-                )
-            parent_snapshot = json.loads(str(parent_capability["snapshot_json"]))
-            parent_start = (
-                parent_snapshot.get("_workflow_start")
-                if isinstance(parent_snapshot, Mapping)
-                else None
+            child_capability_hash = await self._child_snapshot_capability(
+                child_request_id,
+                child_request_key=child_request_key,
+                child_turn_id=child_turn_id,
+                db=db,
+                now=now,
+                parent=parent,
+                parent_operation_id=parent_operation_id,
+                parent_report_ref=parent_report_ref,
+                parent_run_id=parent_run_id,
+                request_hash=request_hash,
+                snapshot_hash=snapshot_hash,
+                start_payload=start_payload,
             )
-            parent_identity = (
-                parent_start.get("identity") if isinstance(parent_start, Mapping) else None
+            await self._insert_snapshot_child_run(
+                child_capability_hash,
+                child_request_id=child_request_id,
+                child_request_key=child_request_key,
+                child_run_id=child_run_id,
+                child_thread_id=child_thread_id,
+                child_trace_id=child_trace_id,
+                child_turn_id=child_turn_id,
+                db=db,
+                now=now,
+                parent=parent,
+                parent_run_id=parent_run_id,
             )
-            if not isinstance(parent_snapshot, Mapping):
-                raise ResearchRepositoryError(
-                    "parent_start_snapshot_invalid", "parent start snapshot is invalid"
-                )
-            if not isinstance(parent_identity, Mapping):
-                parent_identity = {
-                    "venue": "chat",
-                    "base_session_id": str(parent["session_id"]),
-                    "code_session_id": "",
-                    "delivery_session_id": str(parent["session_id"]),
-                    "base_epoch": 0,
-                    "code_epoch": 0,
-                    "request_id": str(parent["request_id"]),
-                    "turn_id": str(parent["turn_id"]),
-                    "workflow_name": str(parent["workflow_name"]),
-                    "logical_slot": f"legacy:{parent_run_id}",
-                }
-            original_capabilities = {
-                str(key): copy.deepcopy(value)
-                for key, value in parent_snapshot.items()
-                if key != "_workflow_start"
-            }
-            child_identity = {
-                **copy.deepcopy(dict(parent_identity)),
-                "request_id": child_request_id,
-                "turn_id": child_turn_id,
-                "logical_slot": child_request_key,
-            }
-            capability_content_hash = hashlib.sha256(
-                _canonical(original_capabilities).encode("utf-8")
-            ).hexdigest()
-            args_hash = hashlib.sha256(_canonical(dict(start_payload)).encode("utf-8")).hexdigest()
-            child_start = {
-                **original_capabilities,
-                "_workflow_start": {
-                    "identity": child_identity,
-                    "identity_key": hashlib.sha256(
-                        _canonical(child_identity).encode("utf-8")
-                    ).hexdigest(),
-                    "request_hash": request_hash,
-                    "args_hash": args_hash,
-                    "capability_hash": capability_content_hash,
-                    "start_payload": copy.deepcopy(dict(start_payload)),
-                },
-            }
-            child_snapshot_json = _canonical(child_start)
-            child_capability_hash = hashlib.sha256(child_snapshot_json.encode("utf-8")).hexdigest()
-            parent_lineage = await (
-                await db.execute(
-                    "SELECT * FROM workflow_research_lineage WHERE operation_id=? AND run_id=?",
-                    (parent_operation_id, parent_run_id),
-                )
-            ).fetchone()
-            if parent_lineage is None:
-                raise ResearchRepositoryError(
-                    "parent_lineage_missing", "parent lineage was not found"
-                )
-            snapshot = await (
-                await db.execute(
-                    "SELECT * FROM workflow_research_snapshots WHERE snapshot_hash=? AND run_id=?",
-                    (snapshot_hash, parent_run_id),
-                )
-            ).fetchone()
-            pin = await (
-                await db.execute(
-                    """SELECT * FROM workflow_research_snapshot_pins
-                    WHERE snapshot_hash=? AND run_id=? AND pin_kind='continue_parent'
-                      AND (expires_at IS NULL OR expires_at>?)""",
-                    (snapshot_hash, parent_run_id, now),
-                )
-            ).fetchone()
-            if (
-                snapshot is None
-                or pin is None
-                or (snapshot["expires_at"] is not None and float(snapshot["expires_at"]) <= now)
-            ):
-                raise ResearchRepositoryError(
-                    "snapshot_expired", "continuation snapshot is missing or expired"
-                )
-            if snapshot["operation_id"] != parent_operation_id:
-                raise ResearchRepositoryError(
-                    "snapshot_operation_mismatch", "snapshot is not owned by the parent operation"
-                )
-            manifest_blob = await (
-                await db.execute(
-                    "SELECT 1 FROM workflow_blobs WHERE sha256=?", (snapshot["manifest_ref"],)
-                )
-            ).fetchone()
-            if manifest_blob is None:
-                raise ResearchRepositoryError(
-                    "snapshot_blob_missing", "snapshot manifest blob is missing"
-                )
-            events = await (
-                await db.execute(
-                    """SELECT payload_json FROM workflow_events
-                    WHERE run_id=? AND event_type='workflow.final' ORDER BY seq DESC""",
-                    (parent_run_id,),
-                )
-            ).fetchall()
-            final_payload: dict[str, Any] | None = None
-            for event in events:
-                payload = json.loads(str(event["payload_json"]))
-                if payload.get("delivery_status") in _CONTINUABLE_DELIVERY:
-                    final_payload = payload
-                    break
-            if final_payload is None:
-                raise ResearchRepositoryError(
-                    "parent_delivery_not_continuable", "parent delivery is not continuable"
-                )
-            persisted_report = final_payload.get("report_ref")
-            if persisted_report is not None and parent_report_ref != persisted_report:
-                raise ResearchRepositoryError(
-                    "parent_report_mismatch", "parent report reference changed"
-                )
-            await db.execute(
-                """INSERT OR IGNORE INTO workflow_capabilities(
-                capability_hash,snapshot_json,created_at
-                ) VALUES(?,?,?)""",
-                (child_capability_hash, child_snapshot_json, now),
+            return await self._insert_snapshot_lineage(
+                budget_lease_id,
+                child_operation_id=child_operation_id,
+                child_run_id=child_run_id,
+                db=db,
+                now=now,
+                parent_operation_id=parent_operation_id,
+                parent_report_ref=parent_report_ref,
+                parent_run_id=parent_run_id,
+                request_hash=request_hash,
+                snapshot_hash=snapshot_hash,
+                start_operation_id=start_operation_id,
+                start_payload=start_payload,
             )
-            await db.execute(
-                """INSERT INTO workflow_runs(
-                run_id,trace_id,thread_id,checkpoint_ns,head_checkpoint_ns,head_checkpoint_id,
-                parent_run_id,source_checkpoint_id,session_id,request_id,turn_id,
-                workflow_name,workflow_version,manifest_hash,implementation_hash,capability_hash,
-                state_schema_version,status,active_nodes_json,created_at,updated_at
-                ) VALUES(?,?,?,?,?,NULL,?,?,?,?,?,?,?,?,?,?,?,'created','[]',?,?)""",
-                (
-                    child_run_id,
-                    child_trace_id,
-                    child_thread_id,
-                    parent["checkpoint_ns"],
-                    parent["checkpoint_ns"],
-                    parent_run_id,
-                    parent["head_checkpoint_id"],
-                    parent["session_id"],
-                    child_request_id,
-                    child_turn_id,
-                    parent["workflow_name"],
-                    parent["workflow_version"],
-                    parent["manifest_hash"],
-                    parent["implementation_hash"],
-                    child_capability_hash,
-                    parent["state_schema_version"],
-                    now,
-                    now,
-                ),
-            )
-            await db.execute(
-                """INSERT INTO workflow_start_requests(
-                request_key,session_id,request_id,turn_id,workflow_name,capability_hash,run_id,created_at
-                ) VALUES(?,?,?,?,?,?,?,?)""",
-                (
-                    child_request_key,
-                    parent["session_id"],
-                    child_request_id,
-                    child_turn_id,
-                    parent["workflow_name"],
-                    parent["capability_hash"],
-                    child_run_id,
-                    now,
-                ),
-            )
-            await db.execute(
-                """INSERT INTO workflow_session_refs(
-                run_id,session_kind,session_id,session_epoch,deleted_at
-                ) SELECT ?,session_kind,session_id,session_epoch,NULL
-                FROM workflow_session_refs WHERE run_id=? AND deleted_at IS NULL""",
-                (child_run_id, parent_run_id),
-            )
-            await db.execute(
-                """INSERT INTO workflow_research_lineage(
-                operation_id,run_id,parent_run_id,parent_operation_id,snapshot_hash,
-                parent_report_ref,budget_lease_id,created_at
-                ) VALUES(?,?,?,?,?,?,?,?)""",
-                (
-                    child_operation_id,
-                    child_run_id,
-                    parent_run_id,
-                    parent_operation_id,
-                    snapshot_hash,
-                    parent_report_ref,
-                    budget_lease_id,
-                    now,
-                ),
-            )
-            child_pin_id = hashlib.sha256(
-                f"{snapshot_hash}|{child_run_id}|continue_child".encode()
-            ).hexdigest()
-            await db.execute(
-                """INSERT INTO workflow_research_snapshot_pins(
-                pin_id,snapshot_hash,run_id,pin_kind,expires_at,created_at
-                ) VALUES(?,?,?,'continue_child',NULL,?)""",
-                (child_pin_id, snapshot_hash, child_run_id, now),
-            )
-            start_result = {
-                "schema_version": 1,
-                "parent_run_id": parent_run_id,
-                "parent_operation_id": parent_operation_id,
-                "snapshot_hash": snapshot_hash,
-                "payload": copy.deepcopy(dict(start_payload)),
-            }
-            await db.execute(
-                """INSERT INTO workflow_operations(
-                operation_id,run_id,operation_kind,request_hash,result_json,created_at
-                ) VALUES(?,?,'research_continue_start',?,?,?)""",
-                (start_operation_id, child_run_id, request_hash, _canonical(start_result), now),
-            )
-            row = await (
-                await db.execute(
-                    "SELECT * FROM workflow_research_lineage WHERE operation_id=?",
-                    (child_operation_id,),
-                )
-            ).fetchone()
-            await db.commit()
-            assert row is not None
-            return dict(row), True
         except BaseException:
             if db.in_transaction:
                 await db.rollback()
             raise
         finally:
             await db.close()
+
+    async def _insert_snapshot_lineage(
+        self,
+        budget_lease_id: str,
+        *,
+        child_operation_id: str,
+        child_run_id: str,
+        db,
+        now,
+        parent_operation_id: str,
+        parent_report_ref: str | None,
+        parent_run_id: str,
+        request_hash,
+        snapshot_hash: str,
+        start_operation_id,
+        start_payload: Mapping[str, Any],
+    ) -> tuple[dict[str, Any], bool]:
+        await db.execute(
+            """INSERT INTO workflow_research_lineage(
+                operation_id,run_id,parent_run_id,parent_operation_id,snapshot_hash,
+                parent_report_ref,budget_lease_id,created_at
+                ) VALUES(?,?,?,?,?,?,?,?)""",
+            (
+                child_operation_id,
+                child_run_id,
+                parent_run_id,
+                parent_operation_id,
+                snapshot_hash,
+                parent_report_ref,
+                budget_lease_id,
+                now,
+            ),
+        )
+        child_pin_id = hashlib.sha256(
+            f"{snapshot_hash}|{child_run_id}|continue_child".encode()
+        ).hexdigest()
+        await db.execute(
+            """INSERT INTO workflow_research_snapshot_pins(
+                pin_id,snapshot_hash,run_id,pin_kind,expires_at,created_at
+                ) VALUES(?,?,?,'continue_child',NULL,?)""",
+            (child_pin_id, snapshot_hash, child_run_id, now),
+        )
+        start_result = {
+            "schema_version": 1,
+            "parent_run_id": parent_run_id,
+            "parent_operation_id": parent_operation_id,
+            "snapshot_hash": snapshot_hash,
+            "payload": copy.deepcopy(dict(start_payload)),
+        }
+        await db.execute(
+            """INSERT INTO workflow_operations(
+                operation_id,run_id,operation_kind,request_hash,result_json,created_at
+                ) VALUES(?,?,'research_continue_start',?,?,?)""",
+            (start_operation_id, child_run_id, request_hash, _canonical(start_result), now),
+        )
+        row = await (
+            await db.execute(
+                "SELECT * FROM workflow_research_lineage WHERE operation_id=?",
+                (child_operation_id,),
+            )
+        ).fetchone()
+        await db.commit()
+        assert row is not None
+        return dict(row), True
+
+    async def _child_snapshot_capability(
+        self,
+        child_request_id: str,
+        *,
+        child_request_key: str,
+        child_turn_id: str,
+        db,
+        now,
+        parent,
+        parent_operation_id: str,
+        parent_report_ref: str | None,
+        parent_run_id: str,
+        request_hash,
+        snapshot_hash: str,
+        start_payload: Mapping[str, Any],
+    ):
+        parent_capability = await (
+            await db.execute(
+                "SELECT snapshot_json FROM workflow_capabilities WHERE capability_hash=?",
+                (parent["capability_hash"],),
+            )
+        ).fetchone()
+        if parent_capability is None:
+            raise ResearchRepositoryError(
+                "parent_start_snapshot_missing", "parent start snapshot was not found"
+            )
+        parent_snapshot = json.loads(str(parent_capability["snapshot_json"]))
+        parent_start = (
+            parent_snapshot.get("_workflow_start") if isinstance(parent_snapshot, Mapping) else None
+        )
+        parent_identity = (
+            parent_start.get("identity") if isinstance(parent_start, Mapping) else None
+        )
+        if not isinstance(parent_snapshot, Mapping):
+            raise ResearchRepositoryError(
+                "parent_start_snapshot_invalid", "parent start snapshot is invalid"
+            )
+        if not isinstance(parent_identity, Mapping):
+            parent_identity = {
+                "venue": "chat",
+                "base_session_id": str(parent["session_id"]),
+                "code_session_id": "",
+                "delivery_session_id": str(parent["session_id"]),
+                "base_epoch": 0,
+                "code_epoch": 0,
+                "request_id": str(parent["request_id"]),
+                "turn_id": str(parent["turn_id"]),
+                "workflow_name": str(parent["workflow_name"]),
+                "logical_slot": f"legacy:{parent_run_id}",
+            }
+        original_capabilities = {
+            str(key): copy.deepcopy(value)
+            for key, value in parent_snapshot.items()
+            if key != "_workflow_start"
+        }
+        child_identity = {
+            **copy.deepcopy(dict(parent_identity)),
+            "request_id": child_request_id,
+            "turn_id": child_turn_id,
+            "logical_slot": child_request_key,
+        }
+        capability_content_hash = hashlib.sha256(
+            _canonical(original_capabilities).encode("utf-8")
+        ).hexdigest()
+        args_hash = hashlib.sha256(_canonical(dict(start_payload)).encode("utf-8")).hexdigest()
+        child_start = {
+            **original_capabilities,
+            "_workflow_start": {
+                "identity": child_identity,
+                "identity_key": hashlib.sha256(
+                    _canonical(child_identity).encode("utf-8")
+                ).hexdigest(),
+                "request_hash": request_hash,
+                "args_hash": args_hash,
+                "capability_hash": capability_content_hash,
+                "start_payload": copy.deepcopy(dict(start_payload)),
+            },
+        }
+        child_snapshot_json = _canonical(child_start)
+        child_capability_hash = hashlib.sha256(child_snapshot_json.encode("utf-8")).hexdigest()
+        parent_lineage = await (
+            await db.execute(
+                "SELECT * FROM workflow_research_lineage WHERE operation_id=? AND run_id=?",
+                (parent_operation_id, parent_run_id),
+            )
+        ).fetchone()
+        if parent_lineage is None:
+            raise ResearchRepositoryError("parent_lineage_missing", "parent lineage was not found")
+        snapshot = await (
+            await db.execute(
+                "SELECT * FROM workflow_research_snapshots WHERE snapshot_hash=? AND run_id=?",
+                (snapshot_hash, parent_run_id),
+            )
+        ).fetchone()
+        pin = await (
+            await db.execute(
+                """SELECT * FROM workflow_research_snapshot_pins
+                    WHERE snapshot_hash=? AND run_id=? AND pin_kind='continue_parent'
+                      AND (expires_at IS NULL OR expires_at>?)""",
+                (snapshot_hash, parent_run_id, now),
+            )
+        ).fetchone()
+        if (
+            snapshot is None
+            or pin is None
+            or (snapshot["expires_at"] is not None and float(snapshot["expires_at"]) <= now)
+        ):
+            raise ResearchRepositoryError(
+                "snapshot_expired", "continuation snapshot is missing or expired"
+            )
+        if snapshot["operation_id"] != parent_operation_id:
+            raise ResearchRepositoryError(
+                "snapshot_operation_mismatch", "snapshot is not owned by the parent operation"
+            )
+        manifest_blob = await (
+            await db.execute(
+                "SELECT 1 FROM workflow_blobs WHERE sha256=?", (snapshot["manifest_ref"],)
+            )
+        ).fetchone()
+        if manifest_blob is None:
+            raise ResearchRepositoryError(
+                "snapshot_blob_missing", "snapshot manifest blob is missing"
+            )
+        events = await (
+            await db.execute(
+                """SELECT payload_json FROM workflow_events
+                    WHERE run_id=? AND event_type='workflow.final' ORDER BY seq DESC""",
+                (parent_run_id,),
+            )
+        ).fetchall()
+        final_payload: dict[str, Any] | None = None
+        for event in events:
+            payload = json.loads(str(event["payload_json"]))
+            if payload.get("delivery_status") in _CONTINUABLE_DELIVERY:
+                final_payload = payload
+                break
+        if final_payload is None:
+            raise ResearchRepositoryError(
+                "parent_delivery_not_continuable", "parent delivery is not continuable"
+            )
+        persisted_report = final_payload.get("report_ref")
+        if persisted_report is not None and parent_report_ref != persisted_report:
+            raise ResearchRepositoryError(
+                "parent_report_mismatch", "parent report reference changed"
+            )
+        await db.execute(
+            """INSERT OR IGNORE INTO workflow_capabilities(
+                capability_hash,snapshot_json,created_at
+                ) VALUES(?,?,?)""",
+            (child_capability_hash, child_snapshot_json, now),
+        )
+        return child_capability_hash
+
+    async def _insert_snapshot_child_run(
+        self,
+        child_capability_hash,
+        *,
+        child_request_id: str,
+        child_request_key: str,
+        child_run_id: str,
+        child_thread_id: str,
+        child_trace_id: str,
+        child_turn_id: str,
+        db,
+        now,
+        parent,
+        parent_run_id: str,
+    ) -> None:
+        await db.execute(
+            """INSERT INTO workflow_runs(
+                run_id,trace_id,thread_id,checkpoint_ns,head_checkpoint_ns,head_checkpoint_id,
+                parent_run_id,source_checkpoint_id,session_id,request_id,turn_id,
+                workflow_name,workflow_version,manifest_hash,implementation_hash,capability_hash,
+                state_schema_version,status,active_nodes_json,created_at,updated_at
+                ) VALUES(?,?,?,?,?,NULL,?,?,?,?,?,?,?,?,?,?,?,'created','[]',?,?)""",
+            (
+                child_run_id,
+                child_trace_id,
+                child_thread_id,
+                parent["checkpoint_ns"],
+                parent["checkpoint_ns"],
+                parent_run_id,
+                parent["head_checkpoint_id"],
+                parent["session_id"],
+                child_request_id,
+                child_turn_id,
+                parent["workflow_name"],
+                parent["workflow_version"],
+                parent["manifest_hash"],
+                parent["implementation_hash"],
+                child_capability_hash,
+                parent["state_schema_version"],
+                now,
+                now,
+            ),
+        )
+        await db.execute(
+            """INSERT INTO workflow_start_requests(
+                request_key,session_id,request_id,turn_id,workflow_name,capability_hash,run_id,created_at
+                ) VALUES(?,?,?,?,?,?,?,?)""",
+            (
+                child_request_key,
+                parent["session_id"],
+                child_request_id,
+                child_turn_id,
+                parent["workflow_name"],
+                parent["capability_hash"],
+                child_run_id,
+                now,
+            ),
+        )
+        await db.execute(
+            """INSERT INTO workflow_session_refs(
+                run_id,session_kind,session_id,session_epoch,deleted_at
+                ) SELECT ?,session_kind,session_id,session_epoch,NULL
+                FROM workflow_session_refs WHERE run_id=? AND deleted_at IS NULL""",
+            (child_run_id, parent_run_id),
+        )

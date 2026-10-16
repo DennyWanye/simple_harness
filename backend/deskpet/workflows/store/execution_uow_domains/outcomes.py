@@ -136,40 +136,46 @@ class RunOutcomeMixin(ExecutionUowCore):
                     event=event,
                     deliveries=deliveries,
                 )
-                if idempotent:
-                    if (
-                        str(updated["status"]) != RunStatus.CANCEL_REQUESTED.value
-                        or str(updated["cancel_reason"] or "") != reason
-                    ):
-                        raise IdempotencyConflict(
-                            "cancel_intent_conflict",
-                            "cancel event exists without the same coarse cancel intent",
-                        )
-                else:
-                    cursor = await db.execute(
-                        """UPDATE execution_runs SET status='cancel_requested',cancel_reason=?,
-                        updated_at=? WHERE run_id=? AND version=?
-                        AND terminal_event_id IS NULL""",
-                        (reason, self._clock(), run_id, int(updated["version"])),
-                    )
-                    if cursor.rowcount != 1:
-                        raise VersionConflict(
-                            "stale_run_version", "run changed before cancel commit"
-                        )
-                    await db.execute(
-                        """UPDATE workflow_runs SET status='cancel_requested',cancel_reason=?,
-                        lease_owner=NULL,lease_expires_at=NULL,heartbeat_at=NULL,
-                        lease_epoch=lease_epoch+1,run_version=run_version+1,updated_at=?
-                        WHERE run_id=? AND status NOT IN ('completed','failed','cancelled')""",
-                        (reason, self._clock(), run_id),
-                    )
-                self._fault("cancel_before_commit")
+                await self._require_idempotent_cancel_outcome(
+                    db, idempotent=idempotent, reason=reason, run_id=run_id, updated=updated
+                )
                 result = await (
                     await db.execute("SELECT * FROM execution_runs WHERE run_id=?", (run_id,))
                 ).fetchone()
                 assert result is not None
                 await db.commit()
                 return self._row_to_record(result)
+        return await self._finalize_terminal_run(
+            admission_failure,
+            deliveries=deliveries,
+            delivery_fence=delivery_fence,
+            event=event,
+            expected_version=expected_version,
+            parent_signal_operation_id=parent_signal_operation_id,
+            parent_signal_value=parent_signal_value,
+            recovery_lease=recovery_lease,
+            release_receipt_kind=release_receipt_kind,
+            run_id=run_id,
+            terminal_commit_extensions=terminal_commit_extensions,
+            terminal_status=terminal_status,
+        )
+
+    async def _finalize_terminal_run(
+        self,
+        admission_failure: AdmissionLaunchUnknownFence | None,
+        *,
+        deliveries: Sequence[DeliverySpec],
+        delivery_fence: Mapping[str, Any] | None,
+        event: RunEventCandidate,
+        expected_version: int,
+        parent_signal_operation_id: str | None,
+        parent_signal_value: Any,
+        recovery_lease: RecoveryLease | None,
+        release_receipt_kind: str | None,
+        run_id: str,
+        terminal_commit_extensions: Sequence[Any],
+        terminal_status: RunStatus | None,
+    ) -> FinalizeRunResult | RunRecord:
         terminal_status = RunStatus(terminal_status)
         if terminal_status not in TERMINAL_RUN_STATUSES:
             raise TerminalConflict(
@@ -194,33 +200,15 @@ class RunOutcomeMixin(ExecutionUowCore):
             run = await (
                 await db.execute("SELECT * FROM execution_runs WHERE run_id=?", (run_id,))
             ).fetchone()
-            if run is None:
-                raise RunNotFound("run_not_found", f"execution run does not exist: {run_id}")
-            if run["parent_run_id"] is not None and any(
-                item.sink_kind in {"goal_projection", "session_projection"} for item in deliveries
-            ):
-                raise RunIdentityConflict(
-                    "child_terminal_projection", "child runs cannot project the root terminal"
-                )
-            child_command = await (
-                await db.execute(
-                    "SELECT operation_id FROM execution_child_commands WHERE child_run_id=?",
-                    (run_id,),
-                )
-            ).fetchone()
-            if child_command is not None:
-                operation_id = str(child_command["operation_id"])
-                if parent_signal_operation_id != operation_id:
-                    raise RunIdentityConflict(
-                        "child_terminal_requires_parent_signal",
-                        "child runs must use atomic terminal-to-parent signal finalization",
-                    )
-            if recovery_lease is not None:
-                await self._assert_recovery_fence_tx(db, recovery_lease, run_id=run_id)
-            if event.driver_kind != str(run["driver_kind"]):
-                raise RunIdentityConflict(
-                    "driver_event_conflict", "terminal event driver differs from run owner"
-                )
+            await self._require_outcome_run(
+                db,
+                deliveries=deliveries,
+                event=event,
+                parent_signal_operation_id=parent_signal_operation_id,
+                recovery_lease=recovery_lease,
+                run=run,
+                run_id=run_id,
+            )
             event_id = stable_event_id(run_id, event.event_key)
             if str(run["status"]) in {status.value for status in TERMINAL_RUN_STATUSES}:
                 existing = await (
@@ -278,165 +266,282 @@ class RunOutcomeMixin(ExecutionUowCore):
                     event=self._row_to_event(hydrated),
                     idempotent=True,
                 )
-            if int(run["version"]) != expected_version:
-                raise VersionConflict(
-                    "stale_run_version",
-                    f"expected run version {expected_version}, found {run['version']}",
+            await self._write_run_terminal_outcome(
+                admission_failure,
+                db=db,
+                deliveries=deliveries,
+                delivery_fence=delivery_fence,
+                event=event,
+                event_id=event_id,
+                expected_version=expected_version,
+                release_receipt_kind=release_receipt_kind,
+                run=run,
+                run_id=run_id,
+                terminal_commit_extensions=terminal_commit_extensions,
+                terminal_status=terminal_status,
+            )
+            return await self._finish_child_terminal_outcome(
+                db,
+                event_id=event_id,
+                parent_signal_operation_id=parent_signal_operation_id,
+                parent_signal_value=parent_signal_value,
+                run_id=run_id,
+                terminal_status=terminal_status,
+            )
+
+    async def _require_idempotent_cancel_outcome(
+        self, db, *, idempotent, reason, run_id: str, updated
+    ) -> None:
+        if idempotent:
+            if (
+                str(updated["status"]) != RunStatus.CANCEL_REQUESTED.value
+                or str(updated["cancel_reason"] or "") != reason
+            ):
+                raise IdempotencyConflict(
+                    "cancel_intent_conflict",
+                    "cancel event exists without the same coarse cancel intent",
                 )
-            now = float(self._clock())
-            durable_seq = int(run["durable_seq"]) + 1
-            payload = self._event_json(event)
-            extension_receipts: list[Mapping[str, Any]] = []
-            transaction = self.bind(db)
-            for extension in terminal_commit_extensions:
-                apply = getattr(extension, "apply_terminal_commit", None)
-                if not callable(apply):
-                    raise TypeError("terminal commit extension has no apply_terminal_commit")
-                receipt = apply(
-                    transaction,
-                    record=self._row_to_record(run),
-                    terminal_event=event,
+        else:
+            cursor = await db.execute(
+                """UPDATE execution_runs SET status='cancel_requested',cancel_reason=?,
+                        updated_at=? WHERE run_id=? AND version=?
+                        AND terminal_event_id IS NULL""",
+                (reason, self._clock(), run_id, int(updated["version"])),
+            )
+            if cursor.rowcount != 1:
+                raise VersionConflict("stale_run_version", "run changed before cancel commit")
+            await db.execute(
+                """UPDATE workflow_runs SET status='cancel_requested',cancel_reason=?,
+                        lease_owner=NULL,lease_expires_at=NULL,heartbeat_at=NULL,
+                        lease_epoch=lease_epoch+1,run_version=run_version+1,updated_at=?
+                        WHERE run_id=? AND status NOT IN ('completed','failed','cancelled')""",
+                (reason, self._clock(), run_id),
+            )
+        self._fault("cancel_before_commit")
+
+    async def _require_outcome_run(
+        self,
+        db,
+        *,
+        deliveries: Sequence[DeliverySpec],
+        event: RunEventCandidate,
+        parent_signal_operation_id: str | None,
+        recovery_lease: RecoveryLease | None,
+        run,
+        run_id: str,
+    ) -> None:
+        if run is None:
+            raise RunNotFound("run_not_found", f"execution run does not exist: {run_id}")
+        if run["parent_run_id"] is not None and any(
+            item.sink_kind in {"goal_projection", "session_projection"} for item in deliveries
+        ):
+            raise RunIdentityConflict(
+                "child_terminal_projection", "child runs cannot project the root terminal"
+            )
+        child_command = await (
+            await db.execute(
+                "SELECT operation_id FROM execution_child_commands WHERE child_run_id=?",
+                (run_id,),
+            )
+        ).fetchone()
+        if child_command is not None:
+            operation_id = str(child_command["operation_id"])
+            if parent_signal_operation_id != operation_id:
+                raise RunIdentityConflict(
+                    "child_terminal_requires_parent_signal",
+                    "child runs must use atomic terminal-to-parent signal finalization",
                 )
-                if inspect.isawaitable(receipt):
-                    receipt = await receipt
-                if hasattr(receipt, "to_dict"):
-                    receipt = receipt.to_dict()
-                if not isinstance(receipt, Mapping) or set(receipt) != {
-                    "kind",
-                    "ref",
-                    "content_hash",
-                }:
-                    raise TypeError("terminal extension must return kind/ref/content_hash")
-                content_hash = str(receipt["content_hash"])
-                if len(content_hash) != 64 or any(
-                    ch not in "0123456789abcdef" for ch in content_hash
-                ):
-                    raise TypeError("terminal extension receipt hash must be lowercase SHA-256")
-                extension_receipts.append(dict(receipt))
-            release_receipt = None
-            if release_receipt_kind is not None:
-                matches = [
-                    receipt
-                    for receipt in extension_receipts
-                    if str(receipt["kind"]) == release_receipt_kind
-                ]
-                if len(matches) != 1:
-                    raise TerminalConflict(
-                        "terminal_release_receipt_missing",
-                        "terminal delivery requires exactly one release receipt",
-                    )
-                release_receipt = matches[0]
-            if delivery_fence is not None and release_receipt_kind is None:
+        if recovery_lease is not None:
+            await self._assert_recovery_fence_tx(db, recovery_lease, run_id=run_id)
+        if event.driver_kind != str(run["driver_kind"]):
+            raise RunIdentityConflict(
+                "driver_event_conflict", "terminal event driver differs from run owner"
+            )
+
+    async def _write_run_terminal_outcome(
+        self,
+        admission_failure: AdmissionLaunchUnknownFence | None,
+        *,
+        db,
+        deliveries: Sequence[DeliverySpec],
+        delivery_fence: Mapping[str, Any] | None,
+        event: RunEventCandidate,
+        event_id,
+        expected_version: int,
+        release_receipt_kind: str | None,
+        run,
+        run_id: str,
+        terminal_commit_extensions: Sequence[Any],
+        terminal_status: RunStatus | None,
+    ) -> None:
+        if int(run["version"]) != expected_version:
+            raise VersionConflict(
+                "stale_run_version",
+                f"expected run version {expected_version}, found {run['version']}",
+            )
+        now = float(self._clock())
+        durable_seq = int(run["durable_seq"]) + 1
+        payload = self._event_json(event)
+        extension_receipts: list[Mapping[str, Any]] = []
+        transaction = self.bind(db)
+        for extension in terminal_commit_extensions:
+            apply = getattr(extension, "apply_terminal_commit", None)
+            if not callable(apply):
+                raise TypeError("terminal commit extension has no apply_terminal_commit")
+            receipt = apply(
+                transaction,
+                record=self._row_to_record(run),
+                terminal_event=event,
+            )
+            if inspect.isawaitable(receipt):
+                receipt = await receipt
+            if hasattr(receipt, "to_dict"):
+                receipt = receipt.to_dict()
+            if not isinstance(receipt, Mapping) or set(receipt) != {
+                "kind",
+                "ref",
+                "content_hash",
+            }:
+                raise TypeError("terminal extension must return kind/ref/content_hash")
+            content_hash = str(receipt["content_hash"])
+            if len(content_hash) != 64 or any(ch not in "0123456789abcdef" for ch in content_hash):
+                raise TypeError("terminal extension receipt hash must be lowercase SHA-256")
+            extension_receipts.append(dict(receipt))
+        release_receipt = None
+        if release_receipt_kind is not None:
+            matches = [
+                receipt
+                for receipt in extension_receipts
+                if str(receipt["kind"]) == release_receipt_kind
+            ]
+            if len(matches) != 1:
                 raise TerminalConflict(
                     "terminal_release_receipt_missing",
-                    "fenced terminal deliveries require a release receipt kind",
+                    "terminal delivery requires exactly one release receipt",
                 )
-            await db.execute(
-                """INSERT INTO execution_events(
+            release_receipt = matches[0]
+        if delivery_fence is not None and release_receipt_kind is None:
+            raise TerminalConflict(
+                "terminal_release_receipt_missing",
+                "fenced terminal deliveries require a release receipt kind",
+            )
+        await db.execute(
+            """INSERT INTO execution_events(
                 event_id,schema_version,event_key,run_id,durable_seq,kind,status,driver_kind,
                 correlation_json,payload_json,error_json,artifact_refs_json,created_at
                 ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (
+                event_id,
+                event.schema_version,
+                event.event_key,
+                run_id,
+                durable_seq,
+                event.kind,
+                event.status.value,
+                event.driver_kind,
+                payload["correlation_json"],
+                payload["payload_json"],
+                payload["error_json"],
+                payload["artifact_refs_json"],
+                now,
+            ),
+        )
+        for receipt_order, receipt in enumerate(extension_receipts):
+            await db.execute(
+                """INSERT INTO execution_terminal_extension_receipts(
+                    run_id,event_id,receipt_order,kind,ref,content_hash,created_at
+                    ) VALUES(?,?,?,?,?,?,?)""",
                 (
-                    event_id,
-                    event.schema_version,
-                    event.event_key,
                     run_id,
-                    durable_seq,
-                    event.kind,
-                    event.status.value,
-                    event.driver_kind,
-                    payload["correlation_json"],
-                    payload["payload_json"],
-                    payload["error_json"],
-                    payload["artifact_refs_json"],
+                    event_id,
+                    receipt_order,
+                    str(receipt["kind"]),
+                    str(receipt["ref"]),
+                    str(receipt["content_hash"]),
                     now,
                 ),
             )
-            for receipt_order, receipt in enumerate(extension_receipts):
-                await db.execute(
-                    """INSERT INTO execution_terminal_extension_receipts(
-                    run_id,event_id,receipt_order,kind,ref,content_hash,created_at
-                    ) VALUES(?,?,?,?,?,?,?)""",
-                    (
-                        run_id,
-                        event_id,
-                        receipt_order,
-                        str(receipt["kind"]),
-                        str(receipt["ref"]),
-                        str(receipt["content_hash"]),
-                        now,
-                    ),
-                )
-            await self._insert_deliveries_tx(
-                db,
-                run_id=run_id,
-                event_id=event_id,
-                deliveries=deliveries,
-                now=now,
-                delivery_fence=delivery_fence,
-                release_receipt=release_receipt,
-            )
-            self._fault("finalize_after_outbox")
-            if admission_failure is not None:
-                await self._consume_admission_failure_tx(db, admission_failure)
-            cursor = await db.execute(
-                """UPDATE execution_runs SET status=?,terminal_event_id=?,durable_seq=?,
+        await self._insert_deliveries_tx(
+            db,
+            run_id=run_id,
+            event_id=event_id,
+            deliveries=deliveries,
+            now=now,
+            delivery_fence=delivery_fence,
+            release_receipt=release_receipt,
+        )
+        self._fault("finalize_after_outbox")
+        if admission_failure is not None:
+            await self._consume_admission_failure_tx(db, admission_failure)
+        cursor = await db.execute(
+            """UPDATE execution_runs SET status=?,terminal_event_id=?,durable_seq=?,
                 version=version+1,updated_at=?,ended_at=?
                 WHERE run_id=? AND version=? AND terminal_event_id IS NULL
                   AND status NOT IN ('completed','failed','cancelled')""",
-                (
-                    terminal_status.value,
-                    event_id,
-                    durable_seq,
-                    now,
-                    now,
-                    run_id,
-                    expected_version,
-                ),
-            )
-            if cursor.rowcount != 1:
-                raise TerminalConflict("terminal_conflict", "another terminal intent already won")
-            workflow = await (
-                await db.execute("SELECT status FROM workflow_runs WHERE run_id=?", (run_id,))
-            ).fetchone()
-            if workflow is not None and str(workflow["status"]) not in {
-                "completed",
-                "failed",
-                "cancelled",
-            }:
-                await db.execute(
-                    """UPDATE workflow_runs SET status=?,lease_owner=NULL,
+            (
+                terminal_status.value,
+                event_id,
+                durable_seq,
+                now,
+                now,
+                run_id,
+                expected_version,
+            ),
+        )
+        if cursor.rowcount != 1:
+            raise TerminalConflict("terminal_conflict", "another terminal intent already won")
+        workflow = await (
+            await db.execute("SELECT status FROM workflow_runs WHERE run_id=?", (run_id,))
+        ).fetchone()
+        if workflow is not None and str(workflow["status"]) not in {
+            "completed",
+            "failed",
+            "cancelled",
+        }:
+            await db.execute(
+                """UPDATE workflow_runs SET status=?,lease_owner=NULL,
                     lease_expires_at=NULL,heartbeat_at=NULL,run_version=run_version+1,
                     updated_at=?,ended_at=COALESCE(ended_at,?) WHERE run_id=?""",
-                    (terminal_status.value, now, now, run_id),
-                )
-            if parent_signal_operation_id is not None:
-                self._fault("child_finalize_after_terminal")
-                await self._enqueue_child_terminal_signal_tx(
-                    db,
-                    parent_signal_operation_id,
-                    terminal_status=terminal_status.value,
-                    value=parent_signal_value,
-                )
-                self._fault("child_finalize_after_parent_signal")
-                self._fault("child_terminal_before_commit")
-            self._fault("finalize_before_commit")
-            updated = await (
-                await db.execute("SELECT * FROM execution_runs WHERE run_id=?", (run_id,))
-            ).fetchone()
-            stored = await (
-                await db.execute("SELECT * FROM execution_events WHERE event_id=?", (event_id,))
-            ).fetchone()
-            assert updated is not None and stored is not None
-            await db.commit()
-            hydrated = dict(stored)
-            hydrated["root_run_id"] = updated["root_run_id"]
-            hydrated["session_id"] = updated["session_id"]
-            return FinalizeRunResult(
-                record=self._row_to_record(updated),
-                event=self._row_to_event(hydrated),
-                idempotent=False,
+                (terminal_status.value, now, now, run_id),
             )
+
+    async def _finish_child_terminal_outcome(
+        self,
+        db,
+        *,
+        event_id,
+        parent_signal_operation_id: str | None,
+        parent_signal_value: Any,
+        run_id: str,
+        terminal_status: RunStatus | None,
+    ) -> FinalizeRunResult | RunRecord:
+        if parent_signal_operation_id is not None:
+            self._fault("child_finalize_after_terminal")
+            await self._enqueue_child_terminal_signal_tx(
+                db,
+                parent_signal_operation_id,
+                terminal_status=terminal_status.value,
+                value=parent_signal_value,
+            )
+            self._fault("child_finalize_after_parent_signal")
+            self._fault("child_terminal_before_commit")
+        self._fault("finalize_before_commit")
+        updated = await (
+            await db.execute("SELECT * FROM execution_runs WHERE run_id=?", (run_id,))
+        ).fetchone()
+        stored = await (
+            await db.execute("SELECT * FROM execution_events WHERE event_id=?", (event_id,))
+        ).fetchone()
+        assert updated is not None and stored is not None
+        await db.commit()
+        hydrated = dict(stored)
+        hydrated["root_run_id"] = updated["root_run_id"]
+        hydrated["session_id"] = updated["session_id"]
+        return FinalizeRunResult(
+            record=self._row_to_record(updated),
+            event=self._row_to_event(hydrated),
+            idempotent=False,
+        )
 
     async def start_blocked_root(
         self,

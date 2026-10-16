@@ -231,37 +231,7 @@ class V6SnapshotMixin(ResearchRepositoryCore):
     ) -> None:
         """Decode and recompute the exact registered v6 continuation graph."""
 
-        if set(value) != _V6_SNAPSHOT_KEYS:
-            raise ResearchRepositoryError(
-                "v6_snapshot_keys_invalid", "v6 snapshot exact keys differ"
-            )
-        if (
-            value.get("schema_version") != 1
-            or value.get("run_id") != parent_run_id
-            or value.get("workflow_name") != "deep_research"
-            or value.get("workflow_version") != "v6"
-        ):
-            raise ResearchRepositoryError(
-                "v6_snapshot_identity_invalid", "v6 snapshot identity differs"
-            )
-        semantic = dict(value)
-        snapshot_id = semantic.pop("snapshot_id", None)
-        snapshot_hash = semantic.pop("snapshot_hash", None)
-        expected = _sha256_text(_canonical(semantic))
-        if snapshot_hash != expected or snapshot_id != "rcs_" + expected[:24]:
-            raise ResearchRepositoryError(
-                "v6_snapshot_hash_invalid", "v6 snapshot semantic hash differs"
-            )
-        policies = value.get("policy_refs")
-        if not isinstance(policies, dict) or set(policies) != _V6_POLICY_KEYS:
-            raise ResearchRepositoryError(
-                "v6_snapshot_policy_invalid", "v6 snapshot policy refs differ"
-            )
-        lists = ("fact_batch_refs", "provenance_refs", "closure_refs")
-        if any(not isinstance(value.get(name), list) for name in lists):
-            raise ResearchRepositoryError(
-                "v6_snapshot_refs_invalid", "v6 snapshot refs are not arrays"
-            )
+        policies = self._v6_snapshot_policies(parent_run_id, value)
         batches_raw = [str(item) for item in value["fact_batch_refs"]]
         provenance = [str(item) for item in value["provenance_refs"]]
         if not batches_raw or len(batches_raw) != len(set(batches_raw)):
@@ -318,127 +288,41 @@ class V6SnapshotMixin(ResearchRepositoryCore):
                 "v6_snapshot_object_invalid", "v6 snapshot top-level object is invalid"
             ) from exc
 
-        policy_objects: dict[str, dict[str, Any]] = {}
-        for policy_name, policy_ref in policies.items():
-            policy = await read_json(policy_ref, f"{policy_name}_policy_ref")
-            # Production v6 route-policy-v1 predates the generic policy
-            # ``schema_version`` field and encodes its version in the immutable
-            # policy_id.  Those content-addressed bytes may already be reachable
-            # from completed runs, so restart recovery must recognize that one
-            # exact historical shape.  Every other policy remains strict v1.
-            legacy_route_v1 = (
-                policy_name == "route"
-                and set(policy) == _V6_ROUTE_POLICY_V1_KEYS
-                and policy.get("policy_id") == "deep-research-v6-official-retrieval-v1"
-                and all(
-                    isinstance(policy.get(name), int)
-                    and not isinstance(policy.get(name), bool)
-                    and int(policy[name]) > 0
-                    for name in (
-                        "parent_deadline_ms",
-                        "page_deadline_ms",
-                        "max_queries",
-                        "max_fetches",
-                        "max_fetch_concurrency",
-                        "max_lanes",
-                    )
-                )
-                and isinstance(policy.get("official_source_policy_hash"), str)
-                and len(str(policy["official_source_policy_hash"])) == 64
-                and not set(str(policy["official_source_policy_hash"])) - set("0123456789abcdef")
-            )
-            if policy.get("schema_version") != 1 and not legacy_route_v1:
-                raise ResearchRepositoryError(
-                    "v6_snapshot_policy_invalid", f"{policy_name} policy version differs"
-                )
-            policy_objects[str(policy_name)] = policy
-
-        batches: list[Any] = []
-        previous_head = GENESIS_EVIDENCE_HEAD
-        ordered_fact_refs: list[str] = []
-        ordered_inference_refs: list[str] = []
-        expected_kinds: dict[str, str] = {}
-
-        def expect(ref: object, kind: str) -> None:
-            wire = str(ref)
-            _wire_digest(wire, f"{kind}_ref")
-            existing = expected_kinds.get(wire)
-            if existing is not None and existing != kind:
-                raise ResearchRepositoryError(
-                    "v6_snapshot_ref_class_invalid",
-                    f"one v6 ref is classified as both {existing} and {kind}",
-                )
-            expected_kinds[wire] = kind
-
-        for ordinal, batch_ref in enumerate(batches_raw):
-            try:
-                batch = EvidenceFactBatchV1.from_json(
-                    await read_json(batch_ref, f"fact_batch_refs[{ordinal}]")
-                )
-            except (TypeError, ValueError) as exc:
-                raise ResearchRepositoryError(
-                    "v6_snapshot_batch_invalid", "v6 evidence batch is invalid"
-                ) from exc
-            if (
-                batch.ordinal != ordinal
-                or batch.previous_head_hash != previous_head
-                or batch.spec_hash != value["spec_hash"]
-                or batch.policy_refs != policies
-            ):
-                raise ResearchRepositoryError(
-                    "v6_snapshot_batch_chain_invalid", "v6 evidence batch chain differs"
-                )
-            previous_head = batch.head_hash
-            batches.append(batch)
-            ordered_fact_refs.extend(batch.admitted_fact_refs)
-            ordered_inference_refs.extend(batch.registered_inference_refs)
-            for ref in batch.page_result_refs:
-                expect(ref, "page")
-            for ref in batch.admitted_fact_refs:
-                expect(ref, "fact")
-            for ref in batch.registered_inference_refs:
-                expect(ref, "inference")
-            for slot in batch.candidate_slot_results:
-                expect(slot["producer_outcome_ref"], "producer")
-                if slot["bundle_ref"] is not None:
-                    expect(slot["bundle_ref"], "candidate_bundle")
-            for slot in batch.inference_slot_results:
-                expect(slot["effect_outcome_ref"], "llm_outcome")
-                if slot["proposal_bundle_ref"] is not None:
-                    expect(slot["proposal_bundle_ref"], "inference_bundle")
-
-        if batches[-1].run_id != parent_run_id or previous_head != value["evidence_head_hash"]:
-            raise ResearchRepositoryError(
-                "v6_snapshot_batch_chain_invalid", "v6 final evidence head differs"
-            )
-        assessment_policy_hash = _wire_digest(policies["assessment"], "assessment_policy_ref")
-        expected_input_hash = derive_assessment_input_hash(
-            spec_hash=str(value["spec_hash"]),
-            evidence_head_hash=str(value["evidence_head_hash"]),
-            ordered_fact_refs=ordered_fact_refs,
-            ordered_inference_refs=ordered_inference_refs,
-            assessment_policy_hash=assessment_policy_hash,
+        expected_kinds, ref = await self._validate_v6_snapshot_batches(
+            assessment,
+            batches_raw=batches_raw,
+            claim=claim,
+            parent_run_id=parent_run_id,
+            policies=policies,
+            read_json=read_json,
+            ref=ref,
+            spec=spec,
+            value=value,
         )
-        if any(
-            (
-                spec.spec_hash != value["spec_hash"],
-                assessment.spec_hash != value["spec_hash"],
-                assessment.evidence_head_hash != value["evidence_head_hash"],
-                assessment.assessment_hash != value["assessment_hash"],
-                assessment.assessment_input_hash != value["assessment_input_hash"],
-                assessment.assessment_input_hash != expected_input_hash,
-                assessment.policy_hash != assessment_policy_hash,
-                claim.run_id != parent_run_id,
-                claim.spec_hash != value["spec_hash"],
-                claim.evidence_head_hash != value["evidence_head_hash"],
-                claim.assessment_hash != value["assessment_hash"],
-                claim.claim_policy_hash != _wire_digest(policies["claim"], "claim_policy_ref"),
-            )
-        ):
-            raise ResearchRepositoryError(
-                "v6_snapshot_cross_hash_invalid", "v6 snapshot semantic cross-hash differs"
-            )
 
+        await self._validate_v6_snapshot_items(
+            assessment_value,
+            claim_value=claim_value,
+            db=db,
+            expected_kinds=expected_kinds,
+            policy_values=policy_values,
+            provenance=provenance,
+            read_json=read_json,
+            top_level=top_level,
+        )
+
+    async def _validate_v6_snapshot_items(
+        self,
+        assessment_value,
+        *,
+        claim_value,
+        db: aiosqlite.Connection,
+        expected_kinds,
+        policy_values,
+        provenance,
+        read_json,
+        top_level,
+    ) -> None:
         async def decode_expected(ref: str, kind: str, item: Mapping[str, Any]) -> None:
             if kind == "page":
                 PageExtractionResultV1.from_json(item)
@@ -533,6 +417,178 @@ class V6SnapshotMixin(ResearchRepositoryCore):
                 "v6_snapshot_provenance_invalid",
                 "v6 provenance is not the exact transitive closure",
             )
+
+    async def _validate_v6_snapshot_batches(
+        self,
+        assessment,
+        *,
+        batches_raw,
+        claim,
+        parent_run_id: str,
+        policies,
+        read_json,
+        ref,
+        spec,
+        value: Mapping[str, Any],
+    ):
+        await self._validate_v6_snapshot_policies(policies, read_json)
+
+        batches: list[Any] = []
+        previous_head = GENESIS_EVIDENCE_HEAD
+        ordered_fact_refs: list[str] = []
+        ordered_inference_refs: list[str] = []
+        expected_kinds: dict[str, str] = {}
+
+        def expect(ref: object, kind: str) -> None:
+            wire = str(ref)
+            _wire_digest(wire, f"{kind}_ref")
+            existing = expected_kinds.get(wire)
+            if existing is not None and existing != kind:
+                raise ResearchRepositoryError(
+                    "v6_snapshot_ref_class_invalid",
+                    f"one v6 ref is classified as both {existing} and {kind}",
+                )
+            expected_kinds[wire] = kind
+
+        for ordinal, batch_ref in enumerate(batches_raw):
+            try:
+                batch = EvidenceFactBatchV1.from_json(
+                    await read_json(batch_ref, f"fact_batch_refs[{ordinal}]")
+                )
+            except (TypeError, ValueError) as exc:
+                raise ResearchRepositoryError(
+                    "v6_snapshot_batch_invalid", "v6 evidence batch is invalid"
+                ) from exc
+            if (
+                batch.ordinal != ordinal
+                or batch.previous_head_hash != previous_head
+                or batch.spec_hash != value["spec_hash"]
+                or batch.policy_refs != policies
+            ):
+                raise ResearchRepositoryError(
+                    "v6_snapshot_batch_chain_invalid", "v6 evidence batch chain differs"
+                )
+            previous_head = batch.head_hash
+            batches.append(batch)
+            ordered_fact_refs.extend(batch.admitted_fact_refs)
+            ordered_inference_refs.extend(batch.registered_inference_refs)
+            for ref in batch.page_result_refs:
+                expect(ref, "page")
+            for ref in batch.admitted_fact_refs:
+                expect(ref, "fact")
+            for ref in batch.registered_inference_refs:
+                expect(ref, "inference")
+            for slot in batch.candidate_slot_results:
+                expect(slot["producer_outcome_ref"], "producer")
+                if slot["bundle_ref"] is not None:
+                    expect(slot["bundle_ref"], "candidate_bundle")
+            for slot in batch.inference_slot_results:
+                expect(slot["effect_outcome_ref"], "llm_outcome")
+                if slot["proposal_bundle_ref"] is not None:
+                    expect(slot["proposal_bundle_ref"], "inference_bundle")
+
+        if batches[-1].run_id != parent_run_id or previous_head != value["evidence_head_hash"]:
+            raise ResearchRepositoryError(
+                "v6_snapshot_batch_chain_invalid", "v6 final evidence head differs"
+            )
+        assessment_policy_hash = _wire_digest(policies["assessment"], "assessment_policy_ref")
+        expected_input_hash = derive_assessment_input_hash(
+            spec_hash=str(value["spec_hash"]),
+            evidence_head_hash=str(value["evidence_head_hash"]),
+            ordered_fact_refs=ordered_fact_refs,
+            ordered_inference_refs=ordered_inference_refs,
+            assessment_policy_hash=assessment_policy_hash,
+        )
+        if any(
+            (
+                spec.spec_hash != value["spec_hash"],
+                assessment.spec_hash != value["spec_hash"],
+                assessment.evidence_head_hash != value["evidence_head_hash"],
+                assessment.assessment_hash != value["assessment_hash"],
+                assessment.assessment_input_hash != value["assessment_input_hash"],
+                assessment.assessment_input_hash != expected_input_hash,
+                assessment.policy_hash != assessment_policy_hash,
+                claim.run_id != parent_run_id,
+                claim.spec_hash != value["spec_hash"],
+                claim.evidence_head_hash != value["evidence_head_hash"],
+                claim.assessment_hash != value["assessment_hash"],
+                claim.claim_policy_hash != _wire_digest(policies["claim"], "claim_policy_ref"),
+            )
+        ):
+            raise ResearchRepositoryError(
+                "v6_snapshot_cross_hash_invalid", "v6 snapshot semantic cross-hash differs"
+            )
+        return expected_kinds, ref
+
+    def _v6_snapshot_policies(self, parent_run_id: str, value: Mapping[str, Any]):
+        if set(value) != _V6_SNAPSHOT_KEYS:
+            raise ResearchRepositoryError(
+                "v6_snapshot_keys_invalid", "v6 snapshot exact keys differ"
+            )
+        if (
+            value.get("schema_version") != 1
+            or value.get("run_id") != parent_run_id
+            or value.get("workflow_name") != "deep_research"
+            or value.get("workflow_version") != "v6"
+        ):
+            raise ResearchRepositoryError(
+                "v6_snapshot_identity_invalid", "v6 snapshot identity differs"
+            )
+        semantic = dict(value)
+        snapshot_id = semantic.pop("snapshot_id", None)
+        snapshot_hash = semantic.pop("snapshot_hash", None)
+        expected = _sha256_text(_canonical(semantic))
+        if snapshot_hash != expected or snapshot_id != "rcs_" + expected[:24]:
+            raise ResearchRepositoryError(
+                "v6_snapshot_hash_invalid", "v6 snapshot semantic hash differs"
+            )
+        policies = value.get("policy_refs")
+        if not isinstance(policies, dict) or set(policies) != _V6_POLICY_KEYS:
+            raise ResearchRepositoryError(
+                "v6_snapshot_policy_invalid", "v6 snapshot policy refs differ"
+            )
+        lists = ("fact_batch_refs", "provenance_refs", "closure_refs")
+        if any(not isinstance(value.get(name), list) for name in lists):
+            raise ResearchRepositoryError(
+                "v6_snapshot_refs_invalid", "v6 snapshot refs are not arrays"
+            )
+        return policies
+
+    async def _validate_v6_snapshot_policies(self, policies, read_json) -> None:
+        policy_objects: dict[str, dict[str, Any]] = {}
+        for policy_name, policy_ref in policies.items():
+            policy = await read_json(policy_ref, f"{policy_name}_policy_ref")
+            # Production v6 route-policy-v1 predates the generic policy
+            # ``schema_version`` field and encodes its version in the immutable
+            # policy_id.  Those content-addressed bytes may already be reachable
+            # from completed runs, so restart recovery must recognize that one
+            # exact historical shape.  Every other policy remains strict v1.
+            legacy_route_v1 = (
+                policy_name == "route"
+                and set(policy) == _V6_ROUTE_POLICY_V1_KEYS
+                and policy.get("policy_id") == "deep-research-v6-official-retrieval-v1"
+                and all(
+                    isinstance(policy.get(name), int)
+                    and not isinstance(policy.get(name), bool)
+                    and int(policy[name]) > 0
+                    for name in (
+                        "parent_deadline_ms",
+                        "page_deadline_ms",
+                        "max_queries",
+                        "max_fetches",
+                        "max_fetch_concurrency",
+                        "max_lanes",
+                    )
+                )
+                and isinstance(policy.get("official_source_policy_hash"), str)
+                and len(str(policy["official_source_policy_hash"])) == 64
+                and not set(str(policy["official_source_policy_hash"])) - set("0123456789abcdef")
+            )
+            if policy.get("schema_version") != 1 and not legacy_route_v1:
+                raise ResearchRepositoryError(
+                    "v6_snapshot_policy_invalid", f"{policy_name} policy version differs"
+                )
+            policy_objects[str(policy_name)] = policy
 
     async def persist_v6_continuation_snapshot(
         self,

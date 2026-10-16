@@ -292,275 +292,27 @@ class V6ContinuationMixin(ResearchRepositoryCore):
                     "SELECT * FROM workflow_research_lineage WHERE run_id=?", (parent_run_id,)
                 )
             ).fetchone()
-            if parent_lineage is None:
-                raise ResearchRepositoryError("parent_lineage_missing", "parent lineage is missing")
-            events = await (
-                await db.execute(
-                    """SELECT payload_json FROM workflow_events
-                    WHERE run_id=? AND event_type='workflow.final' ORDER BY seq DESC""",
-                    (parent_run_id,),
-                )
-            ).fetchall()
-            terminal_payload: dict[str, Any] | None = None
-            for event in events:
-                try:
-                    candidate = json.loads(str(event["payload_json"]))
-                except json.JSONDecodeError:
-                    continue
-                if isinstance(candidate, dict) and candidate.get("manifest_ref"):
-                    terminal_payload = candidate
-                    break
-            if terminal_payload is None:
-                raise ResearchRepositoryError(
-                    "v6_terminal_event_missing", "parent terminal manifest event is missing"
-                )
-            manifest_digest, manifest = await self._read_registered_json_v6(
-                db, terminal_payload["manifest_ref"], field="terminal_manifest_ref"
+            snapshot, snapshot_hash, spec_digest = await self._load_v6_continuation_snapshot(
+                db,
+                now=now,
+                parent=parent,
+                parent_lineage=parent_lineage,
+                parent_run_id=parent_run_id,
             )
 
-            try:
-                decoded_manifest = TerminalDeliveryManifestV1.from_json(manifest)
-            except (TypeError, ValueError) as exc:
-                raise ResearchRepositoryError(
-                    "v6_manifest_invalid", "terminal manifest is invalid"
-                ) from exc
-            if (
-                decoded_manifest.manifest_hash != manifest_digest
-                or manifest.get("run_id") != parent_run_id
-                or manifest.get("workflow_name") != "deep_research"
-                or manifest.get("workflow_version") != "v6"
-                or manifest.get("engine_terminal")
-                != {"status": "completed", "error_code": None, "recovery_action": None}
-            ):
-                raise ResearchRepositoryError(
-                    "v6_manifest_identity_invalid", "terminal manifest identity differs"
-                )
-            if manifest.get("answer_status") not in _CONTINUABLE_DELIVERY:
-                raise ResearchRepositoryError(
-                    "parent_delivery_not_continuable",
-                    "parent answer status does not admit a continuation",
-                )
-            snapshot_digest, snapshot = await self._read_registered_json_v6(
-                db, manifest.get("continuation_snapshot_ref"), field="continuation_snapshot_ref"
+            (
+                child_capability_hash,
+                start_hash,
+                start_payload,
+            ) = await self._v6_continuation_start_payload(
+                child_run_id,
+                db=db,
+                identity=identity,
+                now=now,
+                parent=parent,
+                parent_run_id=parent_run_id,
+                snapshot_hash=snapshot_hash,
             )
-            await self._validate_v6_snapshot_graph(db, snapshot, parent_run_id=parent_run_id)
-            snapshot_hash = str(snapshot["snapshot_hash"])
-            if manifest.get("continuation_snapshot_hash") != snapshot_hash:
-                raise ResearchRepositoryError(
-                    "v6_snapshot_manifest_mismatch", "manifest snapshot pointer differs"
-                )
-            snapshot_row = await (
-                await db.execute(
-                    """SELECT * FROM workflow_research_snapshots
-                    WHERE snapshot_hash=? AND run_id=? AND operation_id=?""",
-                    (snapshot_hash, parent_run_id, str(parent_lineage["operation_id"])),
-                )
-            ).fetchone()
-            if (
-                snapshot_row is None
-                or snapshot_row["manifest_ref"] != snapshot_digest
-                or snapshot_row["expires_at"] is None
-                or float(snapshot_row["expires_at"]) <= now
-            ):
-                raise ResearchRepositoryError(
-                    "snapshot_expired", "v6 continuation snapshot row is missing or expired"
-                )
-            refs_to_validate = {
-                f"sha256:{manifest_digest}",
-                f"sha256:{snapshot_digest}",
-                *[str(ref) for ref in snapshot["closure_refs"]],
-            }
-            terminal_checkpoint_id = str(parent["head_checkpoint_id"])
-            for wire_ref in sorted(refs_to_validate):
-                digest, _ = await self._read_registered_bytes_v6(
-                    db, wire_ref, field="snapshot_closure_ref"
-                )
-                owner = await (
-                    await db.execute(
-                        """SELECT 1 FROM workflow_blob_refs r
-                        JOIN workflow_checkpoint_owners o ON o.checkpoint_id=r.owner_id
-                        WHERE r.sha256=? AND r.owner_kind='checkpoint' AND r.owner_id=?
-                          AND o.run_id=? AND o.checkpoint_ns=? LIMIT 1""",
-                        (
-                            digest,
-                            terminal_checkpoint_id,
-                            parent_run_id,
-                            str(parent["head_checkpoint_ns"]),
-                        ),
-                    )
-                ).fetchone()
-                if owner is None:
-                    raise ResearchRepositoryError(
-                        "v6_closure_owner_invalid",
-                        "snapshot ref lacks parent terminal checkpoint owner",
-                    )
-            spec_digest, spec = await self._read_registered_json_v6(
-                db, snapshot["spec_ref"], field="spec_ref"
-            )
-            _, assessment = await self._read_registered_json_v6(
-                db, snapshot["assessment_ref"], field="assessment_ref"
-            )
-            _, claim = await self._read_registered_json_v6(
-                db, snapshot["claim_batch_ref"], field="claim_batch_ref"
-            )
-            batches = list(snapshot["fact_batch_refs"])
-            if not batches:
-                raise ResearchRepositoryError(
-                    "v6_fact_head_missing", "snapshot has no evidence batches"
-                )
-            _, final_batch = await self._read_registered_json_v6(
-                db, batches[-1], field="fact_batch_ref"
-            )
-            if any(
-                (
-                    spec.get("spec_hash") != snapshot["spec_hash"],
-                    manifest.get("spec_hash") != snapshot["spec_hash"],
-                    final_batch.get("head_hash") != snapshot["evidence_head_hash"],
-                    assessment.get("spec_hash") != snapshot["spec_hash"],
-                    assessment.get("evidence_head_hash") != snapshot["evidence_head_hash"],
-                    assessment.get("assessment_hash") != snapshot["assessment_hash"],
-                    assessment.get("assessment_input_hash") != snapshot["assessment_input_hash"],
-                    manifest.get("assessment_hash") != snapshot["assessment_hash"],
-                    claim.get("assessment_hash") != snapshot["assessment_hash"],
-                )
-            ):
-                raise ResearchRepositoryError(
-                    "v6_snapshot_cross_hash_invalid", "snapshot semantic cross-hash differs"
-                )
-            for policy_name, manifest_field in (
-                ("claim", "claim_policy_hash"),
-                ("quality", "quality_policy_hash"),
-            ):
-                _, policy = await self._read_registered_json_v6(
-                    db, snapshot["policy_refs"][policy_name], field=f"{policy_name}_policy_ref"
-                )
-                if _sha256_text(_canonical(policy)) != manifest.get(manifest_field):
-                    raise ResearchRepositoryError(
-                        "v6_snapshot_policy_hash_invalid", "snapshot policy hash differs"
-                    )
-            pin = await (
-                await db.execute(
-                    """SELECT 1 FROM workflow_research_snapshot_pins
-                    WHERE snapshot_hash=? AND run_id=? AND pin_kind='continue_parent'
-                      AND expires_at>?""",
-                    (snapshot_hash, parent_run_id, now),
-                )
-            ).fetchone()
-            if pin is None:
-                raise ResearchRepositoryError(
-                    "snapshot_expired", "v6 continuation parent pin is missing or expired"
-                )
-
-            parent_capability = await (
-                await db.execute(
-                    "SELECT snapshot_json FROM workflow_capabilities WHERE capability_hash=?",
-                    (parent["capability_hash"],),
-                )
-            ).fetchone()
-            if parent_capability is None:
-                raise ResearchRepositoryError(
-                    "parent_start_snapshot_missing", "parent capability is missing"
-                )
-            try:
-                parent_capability_value = json.loads(str(parent_capability["snapshot_json"]))
-            except json.JSONDecodeError as exc:
-                raise ResearchRepositoryError(
-                    "parent_start_snapshot_invalid", "parent capability is invalid"
-                ) from exc
-            if not isinstance(parent_capability_value, dict):
-                raise ResearchRepositoryError(
-                    "parent_start_snapshot_invalid", "parent capability is invalid"
-                )
-            original_capabilities = {
-                str(key): copy.deepcopy(value)
-                for key, value in parent_capability_value.items()
-                if key != "_workflow_start"
-            }
-            parent_start = parent_capability_value.get("_workflow_start")
-            parent_identity = (
-                parent_start.get("identity") if isinstance(parent_start, dict) else None
-            )
-            if not isinstance(parent_identity, dict):
-                parent_identity = {
-                    "venue": "chat",
-                    "base_session_id": str(parent["session_id"]),
-                    "code_session_id": "",
-                    "delivery_session_id": str(parent["session_id"]),
-                    "base_epoch": 0,
-                    "code_epoch": 0,
-                    "workflow_name": "deep_research",
-                }
-            child_identity = {
-                **copy.deepcopy(parent_identity),
-                "request_id": identity["child_request_id"],
-                "turn_id": identity["child_turn_id"],
-                "logical_slot": identity["child_request_key"],
-                "workflow_name": "deep_research",
-            }
-            start_payload = {
-                "schema_version": 1,
-                "parent_run_id": parent_run_id,
-                "source_snapshot_hash": snapshot_hash,
-            }
-            start_hash = _sha256_text(_canonical(start_payload))
-            capabilities_hash = _sha256_text(_canonical(original_capabilities))
-            child_capability = {
-                **original_capabilities,
-                "_workflow_start": {
-                    "identity": child_identity,
-                    "identity_key": _sha256_text(_canonical(child_identity)),
-                    "request_hash": start_hash,
-                    "args_hash": start_hash,
-                    "capability_hash": capabilities_hash,
-                    "start_payload": copy.deepcopy(start_payload),
-                },
-            }
-            child_capability_json = _canonical(child_capability)
-            child_capability_hash = _sha256_text(child_capability_json)
-            await db.execute(
-                """INSERT OR IGNORE INTO workflow_capabilities(
-                capability_hash,snapshot_json,created_at) VALUES(?,?,?)""",
-                (child_capability_hash, child_capability_json, now),
-            )
-            capability_row = await (
-                await db.execute(
-                    "SELECT snapshot_json FROM workflow_capabilities WHERE capability_hash=?",
-                    (child_capability_hash,),
-                )
-            ).fetchone()
-            if capability_row is None or capability_row["snapshot_json"] != child_capability_json:
-                raise ResearchRepositoryError(
-                    "continuation_capability_conflict", "child capability conflicts"
-                )
-            await self._fault("after_capability_insert")
-            await db.execute(
-                """INSERT INTO workflow_runs(
-                run_id,trace_id,thread_id,checkpoint_ns,head_checkpoint_ns,head_checkpoint_id,
-                parent_run_id,source_checkpoint_id,session_id,request_id,turn_id,
-                workflow_name,workflow_version,manifest_hash,implementation_hash,capability_hash,
-                state_schema_version,status,active_nodes_json,created_at,updated_at
-                ) VALUES(?,?,?,?,?,NULL,?,?,?,?,?,'deep_research','v6',?,?,?,?,
-                'created','[]',?,?)""",
-                (
-                    child_run_id,
-                    identity["child_trace_id"],
-                    identity["child_thread_id"],
-                    parent["checkpoint_ns"],
-                    parent["checkpoint_ns"],
-                    parent_run_id,
-                    parent["head_checkpoint_id"],
-                    parent["session_id"],
-                    identity["child_request_id"],
-                    identity["child_turn_id"],
-                    parent["manifest_hash"],
-                    parent["implementation_hash"],
-                    child_capability_hash,
-                    parent["state_schema_version"],
-                    now,
-                    now,
-                ),
-            )
-            await self._fault("after_run_insert")
             audit_id, stored_created = await self._v6_audit_result(
                 db,
                 parent_run_id=parent_run_id,
@@ -586,87 +338,20 @@ class V6ContinuationMixin(ResearchRepositoryCore):
                     now,
                 ),
             )
-            await self._fault("after_start_request_insert")
-            await db.execute(
-                """INSERT INTO workflow_session_refs(
-                run_id,session_kind,session_id,session_epoch,deleted_at)
-                SELECT ?,session_kind,session_id,session_epoch,NULL FROM workflow_session_refs
-                WHERE run_id=? AND deleted_at IS NULL""",
-                (child_run_id, parent_run_id),
+            await self._record_v6_continuation_refs(
+                child_operation_id,
+                child_run_id=child_run_id,
+                db=db,
+                identity=identity,
+                now=now,
+                parent_lineage=parent_lineage,
+                parent_run_id=parent_run_id,
+                snapshot=snapshot,
+                snapshot_hash=snapshot_hash,
+                spec_digest=spec_digest,
+                start_hash=start_hash,
+                start_payload=start_payload,
             )
-            child_ref_count = await (
-                await db.execute(
-                    "SELECT COUNT(*) FROM workflow_session_refs WHERE run_id=?", (child_run_id,)
-                )
-            ).fetchone()
-            if child_ref_count is None or int(child_ref_count[0]) == 0:
-                raise ResearchRepositoryError(
-                    "continuation_session_refs_invalid", "parent has no live session refs"
-                )
-            await self._fault("after_session_refs_insert")
-            await db.execute(
-                """INSERT INTO workflow_research_lineage(
-                operation_id,run_id,parent_run_id,parent_operation_id,snapshot_hash,
-                parent_report_ref,budget_lease_id,created_at) VALUES(?,?,?,?,?,NULL,?,?)""",
-                (
-                    child_operation_id,
-                    child_run_id,
-                    parent_run_id,
-                    parent_lineage["operation_id"],
-                    snapshot_hash,
-                    identity["budget_lease_id"],
-                    now,
-                ),
-            )
-            await self._fault("after_lineage_insert")
-            child_pin_id = _sha256_text(f"{snapshot_hash}|{child_run_id}|continue_child")
-            await db.execute(
-                """INSERT INTO workflow_research_snapshot_pins(
-                pin_id,snapshot_hash,run_id,pin_kind,expires_at,created_at
-                ) VALUES(?,?,?,'continue_child',NULL,?)""",
-                (child_pin_id, snapshot_hash, child_run_id, now),
-            )
-            await self._fault("after_snapshot_pin_insert")
-            await db.execute(
-                """INSERT INTO workflow_operations(
-                operation_id,run_id,operation_kind,request_hash,result_json,created_at
-                ) VALUES(?,?,'research_continue_start_v1',?,?,?)""",
-                (
-                    identity["child_start_operation_id"],
-                    child_run_id,
-                    start_hash,
-                    _canonical(start_payload),
-                    now,
-                ),
-            )
-            await self._fault("after_start_operation_insert")
-            for wire_ref in snapshot["closure_refs"]:
-                await db.execute(
-                    """INSERT INTO workflow_blob_refs(
-                    sha256,owner_kind,owner_id,created_at) VALUES(?,'run_staging',?,?)""",
-                    (_wire_digest(wire_ref, "closure_ref"), child_run_id, now),
-                )
-            await self._fault("after_inherited_staging_owners_insert")
-            await db.execute(
-                """INSERT INTO workflow_research_continuation_heads(
-                parent_run_id,child_run_id,parent_operation_id,child_operation_id,
-                source_snapshot_hash,spec_hash,spec_blob_digest,evidence_head_hash,
-                policy_version,claimed_at) VALUES(?,?,?,?,?,?,?,?,1,?)""",
-                (
-                    parent_run_id,
-                    child_run_id,
-                    parent_lineage["operation_id"],
-                    child_operation_id,
-                    snapshot_hash,
-                    snapshot["spec_hash"],
-                    spec_digest,
-                    snapshot["evidence_head_hash"],
-                    now,
-                ),
-            )
-            await self._fault("after_continuation_head_insert")
-            await self._fault("before_commit")
-            await db.commit()
             return ContinuationCreateResultV1(
                 1,
                 parent_run_id,
@@ -683,6 +368,405 @@ class V6ContinuationMixin(ResearchRepositoryCore):
             raise
         finally:
             await db.close()
+
+    async def _load_v6_continuation_snapshot(
+        self, db, *, now, parent, parent_lineage, parent_run_id: str
+    ):
+        if parent_lineage is None:
+            raise ResearchRepositoryError("parent_lineage_missing", "parent lineage is missing")
+        events = await (
+            await db.execute(
+                """SELECT payload_json FROM workflow_events
+                    WHERE run_id=? AND event_type='workflow.final' ORDER BY seq DESC""",
+                (parent_run_id,),
+            )
+        ).fetchall()
+        terminal_payload: dict[str, Any] | None = None
+        for event in events:
+            try:
+                candidate = json.loads(str(event["payload_json"]))
+            except json.JSONDecodeError:
+                continue
+            if isinstance(candidate, dict) and candidate.get("manifest_ref"):
+                terminal_payload = candidate
+                break
+        if terminal_payload is None:
+            raise ResearchRepositoryError(
+                "v6_terminal_event_missing", "parent terminal manifest event is missing"
+            )
+        manifest_digest, manifest = await self._read_registered_json_v6(
+            db, terminal_payload["manifest_ref"], field="terminal_manifest_ref"
+        )
+
+        try:
+            decoded_manifest = TerminalDeliveryManifestV1.from_json(manifest)
+        except (TypeError, ValueError) as exc:
+            raise ResearchRepositoryError(
+                "v6_manifest_invalid", "terminal manifest is invalid"
+            ) from exc
+        if (
+            decoded_manifest.manifest_hash != manifest_digest
+            or manifest.get("run_id") != parent_run_id
+            or manifest.get("workflow_name") != "deep_research"
+            or manifest.get("workflow_version") != "v6"
+            or manifest.get("engine_terminal")
+            != {"status": "completed", "error_code": None, "recovery_action": None}
+        ):
+            raise ResearchRepositoryError(
+                "v6_manifest_identity_invalid", "terminal manifest identity differs"
+            )
+        if manifest.get("answer_status") not in _CONTINUABLE_DELIVERY:
+            raise ResearchRepositoryError(
+                "parent_delivery_not_continuable",
+                "parent answer status does not admit a continuation",
+            )
+        snapshot_digest, snapshot = await self._read_registered_json_v6(
+            db, manifest.get("continuation_snapshot_ref"), field="continuation_snapshot_ref"
+        )
+        await self._validate_v6_snapshot_graph(db, snapshot, parent_run_id=parent_run_id)
+        snapshot_hash = str(snapshot["snapshot_hash"])
+        if manifest.get("continuation_snapshot_hash") != snapshot_hash:
+            raise ResearchRepositoryError(
+                "v6_snapshot_manifest_mismatch", "manifest snapshot pointer differs"
+            )
+        snapshot_row = await (
+            await db.execute(
+                """SELECT * FROM workflow_research_snapshots
+                    WHERE snapshot_hash=? AND run_id=? AND operation_id=?""",
+                (snapshot_hash, parent_run_id, str(parent_lineage["operation_id"])),
+            )
+        ).fetchone()
+        if (
+            snapshot_row is None
+            or snapshot_row["manifest_ref"] != snapshot_digest
+            or snapshot_row["expires_at"] is None
+            or float(snapshot_row["expires_at"]) <= now
+        ):
+            raise ResearchRepositoryError(
+                "snapshot_expired", "v6 continuation snapshot row is missing or expired"
+            )
+        await self._validate_v6_continuation_refs(
+            db,
+            manifest_digest=manifest_digest,
+            parent=parent,
+            parent_run_id=parent_run_id,
+            snapshot=snapshot,
+            snapshot_digest=snapshot_digest,
+        )
+        spec_digest, spec = await self._read_registered_json_v6(
+            db, snapshot["spec_ref"], field="spec_ref"
+        )
+        _, assessment = await self._read_registered_json_v6(
+            db, snapshot["assessment_ref"], field="assessment_ref"
+        )
+        _, claim = await self._read_registered_json_v6(
+            db, snapshot["claim_batch_ref"], field="claim_batch_ref"
+        )
+        batches = list(snapshot["fact_batch_refs"])
+        if not batches:
+            raise ResearchRepositoryError(
+                "v6_fact_head_missing", "snapshot has no evidence batches"
+            )
+        _, final_batch = await self._read_registered_json_v6(
+            db, batches[-1], field="fact_batch_ref"
+        )
+        if any(
+            (
+                spec.get("spec_hash") != snapshot["spec_hash"],
+                manifest.get("spec_hash") != snapshot["spec_hash"],
+                final_batch.get("head_hash") != snapshot["evidence_head_hash"],
+                assessment.get("spec_hash") != snapshot["spec_hash"],
+                assessment.get("evidence_head_hash") != snapshot["evidence_head_hash"],
+                assessment.get("assessment_hash") != snapshot["assessment_hash"],
+                assessment.get("assessment_input_hash") != snapshot["assessment_input_hash"],
+                manifest.get("assessment_hash") != snapshot["assessment_hash"],
+                claim.get("assessment_hash") != snapshot["assessment_hash"],
+            )
+        ):
+            raise ResearchRepositoryError(
+                "v6_snapshot_cross_hash_invalid", "snapshot semantic cross-hash differs"
+            )
+        for policy_name, manifest_field in (
+            ("claim", "claim_policy_hash"),
+            ("quality", "quality_policy_hash"),
+        ):
+            _, policy = await self._read_registered_json_v6(
+                db, snapshot["policy_refs"][policy_name], field=f"{policy_name}_policy_ref"
+            )
+            if _sha256_text(_canonical(policy)) != manifest.get(manifest_field):
+                raise ResearchRepositoryError(
+                    "v6_snapshot_policy_hash_invalid", "snapshot policy hash differs"
+                )
+        pin = await (
+            await db.execute(
+                """SELECT 1 FROM workflow_research_snapshot_pins
+                    WHERE snapshot_hash=? AND run_id=? AND pin_kind='continue_parent'
+                      AND expires_at>?""",
+                (snapshot_hash, parent_run_id, now),
+            )
+        ).fetchone()
+        if pin is None:
+            raise ResearchRepositoryError(
+                "snapshot_expired", "v6 continuation parent pin is missing or expired"
+            )
+        return snapshot, snapshot_hash, spec_digest
+
+    async def _v6_continuation_start_payload(
+        self, child_run_id, *, db, identity, now, parent, parent_run_id: str, snapshot_hash
+    ):
+        parent_capability = await (
+            await db.execute(
+                "SELECT snapshot_json FROM workflow_capabilities WHERE capability_hash=?",
+                (parent["capability_hash"],),
+            )
+        ).fetchone()
+        if parent_capability is None:
+            raise ResearchRepositoryError(
+                "parent_start_snapshot_missing", "parent capability is missing"
+            )
+        try:
+            parent_capability_value = json.loads(str(parent_capability["snapshot_json"]))
+        except json.JSONDecodeError as exc:
+            raise ResearchRepositoryError(
+                "parent_start_snapshot_invalid", "parent capability is invalid"
+            ) from exc
+        if not isinstance(parent_capability_value, dict):
+            raise ResearchRepositoryError(
+                "parent_start_snapshot_invalid", "parent capability is invalid"
+            )
+        original_capabilities = {
+            str(key): copy.deepcopy(value)
+            for key, value in parent_capability_value.items()
+            if key != "_workflow_start"
+        }
+        parent_start = parent_capability_value.get("_workflow_start")
+        parent_identity = parent_start.get("identity") if isinstance(parent_start, dict) else None
+        if not isinstance(parent_identity, dict):
+            parent_identity = {
+                "venue": "chat",
+                "base_session_id": str(parent["session_id"]),
+                "code_session_id": "",
+                "delivery_session_id": str(parent["session_id"]),
+                "base_epoch": 0,
+                "code_epoch": 0,
+                "workflow_name": "deep_research",
+            }
+        child_identity = {
+            **copy.deepcopy(parent_identity),
+            "request_id": identity["child_request_id"],
+            "turn_id": identity["child_turn_id"],
+            "logical_slot": identity["child_request_key"],
+            "workflow_name": "deep_research",
+        }
+        start_payload = {
+            "schema_version": 1,
+            "parent_run_id": parent_run_id,
+            "source_snapshot_hash": snapshot_hash,
+        }
+        start_hash = _sha256_text(_canonical(start_payload))
+        capabilities_hash = _sha256_text(_canonical(original_capabilities))
+        child_capability = {
+            **original_capabilities,
+            "_workflow_start": {
+                "identity": child_identity,
+                "identity_key": _sha256_text(_canonical(child_identity)),
+                "request_hash": start_hash,
+                "args_hash": start_hash,
+                "capability_hash": capabilities_hash,
+                "start_payload": copy.deepcopy(start_payload),
+            },
+        }
+        child_capability_json = _canonical(child_capability)
+        child_capability_hash = _sha256_text(child_capability_json)
+        await db.execute(
+            """INSERT OR IGNORE INTO workflow_capabilities(
+                capability_hash,snapshot_json,created_at) VALUES(?,?,?)""",
+            (child_capability_hash, child_capability_json, now),
+        )
+        capability_row = await (
+            await db.execute(
+                "SELECT snapshot_json FROM workflow_capabilities WHERE capability_hash=?",
+                (child_capability_hash,),
+            )
+        ).fetchone()
+        if capability_row is None or capability_row["snapshot_json"] != child_capability_json:
+            raise ResearchRepositoryError(
+                "continuation_capability_conflict", "child capability conflicts"
+            )
+        await self._fault("after_capability_insert")
+        await self._insert_v6_continuation_run(
+            child_capability_hash,
+            child_run_id=child_run_id,
+            db=db,
+            identity=identity,
+            now=now,
+            parent=parent,
+            parent_run_id=parent_run_id,
+        )
+        return child_capability_hash, start_hash, start_payload
+
+    async def _validate_v6_continuation_refs(
+        self, db, *, manifest_digest, parent, parent_run_id: str, snapshot, snapshot_digest
+    ) -> None:
+        refs_to_validate = {
+            f"sha256:{manifest_digest}",
+            f"sha256:{snapshot_digest}",
+            *[str(ref) for ref in snapshot["closure_refs"]],
+        }
+        terminal_checkpoint_id = str(parent["head_checkpoint_id"])
+        for wire_ref in sorted(refs_to_validate):
+            digest, _ = await self._read_registered_bytes_v6(
+                db, wire_ref, field="snapshot_closure_ref"
+            )
+            owner = await (
+                await db.execute(
+                    """SELECT 1 FROM workflow_blob_refs r
+                        JOIN workflow_checkpoint_owners o ON o.checkpoint_id=r.owner_id
+                        WHERE r.sha256=? AND r.owner_kind='checkpoint' AND r.owner_id=?
+                          AND o.run_id=? AND o.checkpoint_ns=? LIMIT 1""",
+                    (
+                        digest,
+                        terminal_checkpoint_id,
+                        parent_run_id,
+                        str(parent["head_checkpoint_ns"]),
+                    ),
+                )
+            ).fetchone()
+            if owner is None:
+                raise ResearchRepositoryError(
+                    "v6_closure_owner_invalid",
+                    "snapshot ref lacks parent terminal checkpoint owner",
+                )
+
+    async def _insert_v6_continuation_run(
+        self, child_capability_hash, *, child_run_id, db, identity, now, parent, parent_run_id: str
+    ) -> None:
+        await db.execute(
+            """INSERT INTO workflow_runs(
+                run_id,trace_id,thread_id,checkpoint_ns,head_checkpoint_ns,head_checkpoint_id,
+                parent_run_id,source_checkpoint_id,session_id,request_id,turn_id,
+                workflow_name,workflow_version,manifest_hash,implementation_hash,capability_hash,
+                state_schema_version,status,active_nodes_json,created_at,updated_at
+                ) VALUES(?,?,?,?,?,NULL,?,?,?,?,?,'deep_research','v6',?,?,?,?,
+                'created','[]',?,?)""",
+            (
+                child_run_id,
+                identity["child_trace_id"],
+                identity["child_thread_id"],
+                parent["checkpoint_ns"],
+                parent["checkpoint_ns"],
+                parent_run_id,
+                parent["head_checkpoint_id"],
+                parent["session_id"],
+                identity["child_request_id"],
+                identity["child_turn_id"],
+                parent["manifest_hash"],
+                parent["implementation_hash"],
+                child_capability_hash,
+                parent["state_schema_version"],
+                now,
+                now,
+            ),
+        )
+        await self._fault("after_run_insert")
+
+    async def _record_v6_continuation_refs(
+        self,
+        child_operation_id,
+        *,
+        child_run_id,
+        db,
+        identity,
+        now,
+        parent_lineage,
+        parent_run_id: str,
+        snapshot,
+        snapshot_hash,
+        spec_digest,
+        start_hash,
+        start_payload,
+    ) -> None:
+        await self._fault("after_start_request_insert")
+        await db.execute(
+            """INSERT INTO workflow_session_refs(
+                run_id,session_kind,session_id,session_epoch,deleted_at)
+                SELECT ?,session_kind,session_id,session_epoch,NULL FROM workflow_session_refs
+                WHERE run_id=? AND deleted_at IS NULL""",
+            (child_run_id, parent_run_id),
+        )
+        child_ref_count = await (
+            await db.execute(
+                "SELECT COUNT(*) FROM workflow_session_refs WHERE run_id=?", (child_run_id,)
+            )
+        ).fetchone()
+        if child_ref_count is None or int(child_ref_count[0]) == 0:
+            raise ResearchRepositoryError(
+                "continuation_session_refs_invalid", "parent has no live session refs"
+            )
+        await self._fault("after_session_refs_insert")
+        await db.execute(
+            """INSERT INTO workflow_research_lineage(
+                operation_id,run_id,parent_run_id,parent_operation_id,snapshot_hash,
+                parent_report_ref,budget_lease_id,created_at) VALUES(?,?,?,?,?,NULL,?,?)""",
+            (
+                child_operation_id,
+                child_run_id,
+                parent_run_id,
+                parent_lineage["operation_id"],
+                snapshot_hash,
+                identity["budget_lease_id"],
+                now,
+            ),
+        )
+        await self._fault("after_lineage_insert")
+        child_pin_id = _sha256_text(f"{snapshot_hash}|{child_run_id}|continue_child")
+        await db.execute(
+            """INSERT INTO workflow_research_snapshot_pins(
+                pin_id,snapshot_hash,run_id,pin_kind,expires_at,created_at
+                ) VALUES(?,?,?,'continue_child',NULL,?)""",
+            (child_pin_id, snapshot_hash, child_run_id, now),
+        )
+        await self._fault("after_snapshot_pin_insert")
+        await db.execute(
+            """INSERT INTO workflow_operations(
+                operation_id,run_id,operation_kind,request_hash,result_json,created_at
+                ) VALUES(?,?,'research_continue_start_v1',?,?,?)""",
+            (
+                identity["child_start_operation_id"],
+                child_run_id,
+                start_hash,
+                _canonical(start_payload),
+                now,
+            ),
+        )
+        await self._fault("after_start_operation_insert")
+        for wire_ref in snapshot["closure_refs"]:
+            await db.execute(
+                """INSERT INTO workflow_blob_refs(
+                    sha256,owner_kind,owner_id,created_at) VALUES(?,'run_staging',?,?)""",
+                (_wire_digest(wire_ref, "closure_ref"), child_run_id, now),
+            )
+        await self._fault("after_inherited_staging_owners_insert")
+        await db.execute(
+            """INSERT INTO workflow_research_continuation_heads(
+                parent_run_id,child_run_id,parent_operation_id,child_operation_id,
+                source_snapshot_hash,spec_hash,spec_blob_digest,evidence_head_hash,
+                policy_version,claimed_at) VALUES(?,?,?,?,?,?,?,?,1,?)""",
+            (
+                parent_run_id,
+                child_run_id,
+                parent_lineage["operation_id"],
+                child_operation_id,
+                snapshot_hash,
+                snapshot["spec_hash"],
+                spec_digest,
+                snapshot["evidence_head_hash"],
+                now,
+            ),
+        )
+        await self._fault("after_continuation_head_insert")
+        await self._fault("before_commit")
+        await db.commit()
 
     async def load_continuation_snapshot_v6(self, child_run_id: str) -> dict[str, Any]:
         """Hydrate an existing child strictly through its claimed head and inherited owners."""
