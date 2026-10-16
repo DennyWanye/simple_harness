@@ -152,6 +152,18 @@ def early_inline(stmts, i, key, fn, new):
     return _strip_early(fn.body, mode), i + 2
 
 
+def strip_doc_body(fn) -> list[ast.stmt]:
+    body = list(fn.body)
+    if (
+        body
+        and isinstance(body[0], ast.Expr)
+        and isinstance(body[0].value, ast.Constant)
+        and isinstance(body[0].value.value, str)
+    ):
+        body = body[1:]
+    return body
+
+
 def inline(stmts: list[ast.stmt], key: str, fn, new) -> tuple[list[ast.stmt], int]:
     body = list(fn.body)
     out: list[ast.stmt] = []
@@ -270,6 +282,47 @@ def check(path: Path, ref: str) -> bool:
                 found.add(k)
         return found
 
+    # 表达式抽取（extract_expr）：函数体只有一句 return 的新函数，调用处直接换回表达式
+    expr_fns = {
+        k: v
+        for k, v in new.items()
+        if len(strip_doc_body(v)) == 1
+        and isinstance(strip_doc_body(v)[0], ast.Return)
+        and strip_doc_body(v)[0].value is not None
+    }
+
+    class ExprBack(ast.NodeTransformer):
+        def __init__(self):
+            self.hits = 0
+
+        def visit_Await(self, node):
+            inner = node.value
+            if isinstance(inner, ast.Call) and match_call(inner, expr_fns):
+                return self.visit(inner)
+            self.generic_visit(node)
+            return node
+
+        def visit_Call(self, node):
+            self.generic_visit(node)
+            key = match_call(node, expr_fns)
+            if key is None:
+                return node
+            self.hits += 1
+            return copy.deepcopy(strip_doc_body(expr_fns[key])[0].value)
+
+    for _ in range(len(expr_fns) + 1):  # 表达式函数之间可能互相调用，多走几遍
+        changed = 0
+        for k in list(hosts):
+            if k in expr_fns:
+                continue
+            back = ExprBack()
+            hosts[k] = back.visit(hosts[k])
+            changed += back.hits
+        if not changed:
+            break
+    for k in expr_fns:
+        hosts.pop(k, None)
+        left.discard(k)
     while left:
         leaf = next((k for k in sorted(left) if not (calls_new(hosts[k]) - {k}) & left), None)
         if leaf is None:
