@@ -16,7 +16,8 @@ import json
 import json as _json
 import logging
 import time
-from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
+from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable, Mapping
+from contextlib import aclosing
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import (
@@ -2077,573 +2078,36 @@ class AgentLoop(ToolContextPersistenceMixin):
             llm_kwargs=llm_kwargs,
         )
         state.flow = None
-        async for _event in self._begin_run(state):
-            yield _event
+        async with aclosing(self._begin_run(state)) as _phase:
+            async for _event in _phase:
+                yield _event
         if state.flow == "stop":
             return
 
         state.flow = None
-        async for _event in self._plan_chain_budget(state):
-            yield _event
+        async with aclosing(self._plan_chain_budget(state)) as _phase:
+            async for _event in _phase:
+                yield _event
         if state.flow == "stop":
             return
 
         await self._init_turn_state(state)
 
         state.flow = None
-        async for _event in self._run_initial_coverage(state):
-            yield _event
+        async with aclosing(self._run_initial_coverage(state)) as _phase:
+            async for _event in _phase:
+                yield _event
         if state.flow == "stop":
             return
 
         state.iteration_offset = max(0, int(state.external_feedback.get("iteration", 0)))
         for state.iteration in range(state.iteration_offset + 1, self.max_iterations + 1):
-            if state.current_tool_set is not None:
-                state._scope_store = getattr(self.tools, "capability_scope_store", None)
-                if state._scope_store is None or not hasattr(
-                    self.tools, "validate_prepared_tool_set"
-                ):
-                    yield ErrorEvent(
-                        type="error",
-                        task_id=state.tid,
-                        iteration=state.iteration,
-                        reason="tool_capability_runtime_unavailable",
-                        detail="Context OS requires a capability-aware registry",
-                    )
-                    return
-                state._record = state._scope_store.get(
-                    state.current_tool_set.scope_id,
-                    session_id=state.session_id,
-                    request_id=state.context_request_id or state.tid,
-                )
-                if state._record is None:
-                    yield ErrorEvent(
-                        type="error",
-                        task_id=state.tid,
-                        iteration=state.iteration,
-                        reason="tool_capability_scope_expired",
-                        detail="Context OS capability scope is missing or expired",
-                    )
-                    return
-                try:
-                    self.tools.validate_prepared_tool_set(
-                        state.current_tool_set,
-                        eligibility=state._record.eligibility,
-                    )
-                except Exception as _stale_exc:  # noqa: BLE001
-                    yield ErrorEvent(
-                        type="error",
-                        task_id=state.tid,
-                        iteration=state.iteration,
-                        reason=(
-                            "tool_policy_unavailable"
-                            if "tool_policy_unavailable" in str(_stale_exc)
-                            else "tool_catalog_stale"
-                        ),
-                        detail=str(_stale_exc),
-                    )
-                    return
-            state._force_finish_next = False
-            if state._force_finish_queued:
-                state._force_finish_next = True
-                state._force_finish_queued = False
-            # Context OS requests reserve the last loop iteration for an
-            # honest, tool-free final response once at least one tool has
-            # already run.  Without this reservation, a tool-using model can
-            # consume the final iteration with another tool call and the loop
-            # exits through max_iterations without ever getting a chance to
-            # summarize the completed work.  Keep the legacy path byte-for-byte
-            # compatible: callers that do not provide PreparedContext retain
-            # the historical max_iterations error/stop-loss behavior.
-            if (
-                not state._force_finish_next
-                and state.prepared_context is not None
-                and self.force_finish_via_tool_choice
-                and state.tools_used_count > 0
-                and state.iteration == self.max_iterations
-            ):
-                state._force_finish_next = True
-                logger.info(
-                    "context_os_final_iteration_force_finish sid=%s tid=%s iter=%d tools_used=%d",
-                    state.session_id,
-                    state.tid,
-                    state.iteration,
-                    state.tools_used_count,
-                )
-            if self._tracer:
-                self._tracer.record(
-                    {
-                        "kind": "iter_start",
-                        "iter": state.iteration,
-                        "msg_count": len(state.working_messages),
-                    }
-                )
-            # P6 Phase 6 — TerminationGate.allows_call() is always run.
-            # Checks hard limits (turns, wall-clock, cost) BEFORE we burn
-            # another LLM call. The gate is the single source of truth
-            # for "should this loop keep going?".
-            state._ok, state._reason = await traced_call(
-                name="termination_gate.allows_call",
-                kind=SpanKind.GATE,
-                lifecycle_stage="gate",
-                attributes={"iteration": state.iteration, "gate": "termination"},
-                invoke=self._gate.allows_call,
-            )
-            if not state._ok:
-                # ─── Step7 止损（闸③，plans/2026-06-24-...）：硬上限/资源触顶 → 不硬撑，
-                # 产出诚实止损报告（桌宠交代"卡在哪+建议"，而非只发 error）。
-                # pipeline off 时 self._convergence_controller=None → 走原 ErrorEvent return（字节级 BC）。
-                if self._convergence_controller is not None:
-                    # ⚠️ allows_call() 返回 (False, reason) 但**不调 terminate()**（已核实 termination.py:142）
-                    # → 此刻 gate.summary()["reason"] 仍是合成 "running"。真实触顶 reason 在 _reason 里，
-                    # 必须用它覆盖 summary 的 reason，否则 resource_capped 判 False → 止损永不触发。
-                    state._cap_summary = dict(self._gate.summary())
-                    if state._reason is not None:
-                        state._cap_summary["reason"] = state._reason.value
-                    state._verdict = self._convergence_controller.evaluate(
-                        principal_resolved=False,  # 触顶即未收敛
-                        unverified_claims=0,
-                        gate_summary=state._cap_summary,
-                    )
-                    if self._pipeline_observability:
-                        yield self._pipeline_event(
-                            "chat_v2_convergence",
-                            state.iteration,
-                            {
-                                "converged": state._verdict.converged,
-                                "principal_resolved": state._verdict.principal_resolved,
-                                "stop_reason": state._verdict.stop_reason,
-                                "report": state._verdict.report,
-                            },
-                        )
-                    if state._verdict.should_stop_loss and state._verdict.report:
-                        self._gate.record_final_answer()
-                        yield FinalEvent(
-                            type="final",
-                            task_id=state.tid,
-                            iteration=state.iteration,
-                            content=state._verdict.report,
-                            stop_reason="stop_loss",
-                        )
-                        return
-                yield ErrorEvent(
-                    type="error",
-                    task_id=state.tid,
-                    iteration=state.iteration,
-                    reason=(state._reason.value if state._reason is not None else "unknown"),
-                    detail="Termination gate blocked LLM call",
-                )
+            state.flow = None
+            async with aclosing(self._prepare_turn(state)) as _phase:
+                async for _event in _phase:
+                    yield _event
+            if state.flow == "stop":
                 return
-
-            # P5-S2 B3: token budget guard. Runs BEFORE the LLM call so
-            # we can surface an actionable error (BLOCK) or pre-emptive
-            # warning (WARN) instead of waiting for the model to choke
-            # on context_length_exceeded.
-            #
-            # P6 Phase 6 — always delegate to self._ctx.check_budget so
-            # chat handler + AgentLoop share one budget evaluator.
-            state._budget_block_pending = state._chain_budget_rescue_pending
-            state._chain_budget_rescue_pending = False
-            try:
-                # Use the FIRST provider's model as the context-window
-                # reference (chain mode). In single-provider mode fall
-                # back to default_model.
-                state._budget_model = state.use_model
-                if state.chain_mode and state.provider_chain:
-                    state._first = state.provider_chain[0]
-                    state._budget_model = getattr(state._first, "model", None) or state.use_model
-                state._resolved_model = state._budget_model or "unknown"
-                # Risk-2 fix: floor the estimate with the last real prompt
-                # size (response.usage.input_tokens) so the gate accounts for
-                # the fixed system/tool-schema base that estimate_tokens(
-                # working_messages) misses — otherwise a genuinely over-window
-                # prompt (real 113%) reads as ~16% and never BLOCKs. Default
-                # floor 0 on iter-0 → BC. Mirrors the compaction trigger.
-                state._budget = self._ctx.check_budget(
-                    state.working_messages,
-                    model=state._resolved_model,
-                    real_prompt_tokens_floor=state._last_real_prompt_tokens,
-                )
-                if state._budget.verdict is _BudgetCheck.BLOCK:
-                    logger.error(
-                        "p5s2_token_budget_block sid=%s tid=%s iter=%d "
-                        "tokens=%d window=%d ratio=%.2f",
-                        state.session_id,
-                        state.tid,
-                        state.iteration,
-                        state._budget.estimated_tokens,
-                        state._budget.context_window,
-                        state._budget.ratio,
-                    )
-                    if self.compressor is not None and (
-                        state.context_metadata_enabled or state._budget_block_pending
-                    ):
-                        # Context OS owns the only lossy recovery path.  Defer
-                        # the terminal BLOCK until snapshot flush + compact +
-                        # re-estimate have had one chance to recover.
-                        state._budget_block_pending = True
-                    else:
-                        # Legacy/OFF behavior remains byte-for-byte identical.
-                        self._gate.record_error(TerminationReason.CONTEXT_BUDGET_BLOCK)
-                        yield ErrorEvent(
-                            type="error",
-                            task_id=state.tid,
-                            iteration=state.iteration,
-                            reason="context_budget_block",
-                            detail=state._budget.advice,
-                        )
-                        return
-                elif state._budget.verdict is _BudgetCheck.WARN and not state._budget_warn_emitted:
-                    logger.warning(
-                        "p5s2_token_budget_warn sid=%s tid=%s iter=%d "
-                        "tokens=%d window=%d ratio=%.2f",
-                        state.session_id,
-                        state.tid,
-                        state.iteration,
-                        state._budget.estimated_tokens,
-                        state._budget.context_window,
-                        state._budget.ratio,
-                    )
-                    state._budget_warn_emitted = True
-            except Exception as _b_exc:  # noqa: BLE001
-                # Budget check is advisory — never fail the loop on it.
-                logger.debug("token_budget_check_failed err=%s", str(_b_exc)[:100])
-
-            # Budget gate BEFORE the call — can't take back tokens after the fact.
-            if self.budget_checker is not None and not self.budget_checker.check_allowed():
-                yield ErrorEvent(
-                    type="error",
-                    task_id=state.tid,
-                    iteration=state.iteration,
-                    reason="budget_exceeded",
-                    detail=f"daily budget cap reached (${self.budget_checker.cap_usd:.2f})",
-                )
-                return
-
-            # WI-4.0 compaction: after budget guard, before LLM call.
-            # Reuses _budget.estimated_tokens (just computed above).
-            # compressor=None (flag off) → short-circuit, zero overhead.
-            # Operates in-place on working_messages (not assemble — BC).
-            # System messages (skill_prelude/persona/frozen) are kept verbatim
-            # by _partition inside compress() — "不绕 assemble" constraint met.
-            if self.compressor is not None:
-                # The compressor service is process-wide, while ContextManager
-                # is frozen per Run from the selected model.  Use an isolated
-                # routed view so concurrent Sessions cannot bleed limits.
-                state._active_compressor = self.compressor
-                try:
-                    state._ctx_cfg_for_compression = getattr(self._ctx, "config", None)
-                    state._model_info_for_compression = getattr(
-                        state._ctx_cfg_for_compression, "model_info", None
-                    )
-                    state._for_context = getattr(self.compressor, "for_context", None)
-                    if (
-                        callable(state._for_context)
-                        and state._model_info_for_compression is not None
-                    ):
-                        state._active_compressor = state._for_context(
-                            context_window=int(state._model_info_for_compression.context_window),
-                            threshold_percent=min(
-                                float(state._model_info_for_compression.compact_at_pct),
-                                0.70,
-                            ),
-                            effective_pct=float(state._model_info_for_compression.effective_pct),
-                        )
-                except Exception:  # noqa: BLE001 -- legacy fake/BC compressor
-                    state._active_compressor = self.compressor
-                try:
-                    state._ctoken_est = getattr(state._budget, "estimated_tokens", 0)
-                except Exception:  # noqa: BLE001
-                    state._ctoken_est = 0
-                # 第 3 刀: real usage 兜底(见 _last_real_prompt_tokens 注释)。
-                if state._last_real_prompt_tokens > state._ctoken_est:
-                    state._ctoken_est = state._last_real_prompt_tokens
-                # ★ 第 4 刀(真机测压缩发现的核心 bug 修复): 直接数【即将发送的
-                # working_messages】的 token。原来只用 _budget.estimated_tokens(被
-                # BudgetAllocator 压到 window×0.6,低于压缩阈值 window×0.8)+
-                # _last_real_prompt_tokens(每条消息开头重置 0、且单轮聊天不迭代第二次
-                # 拿不到真值) → 两路都够不到阈值 → 压缩**永不触发**(实测 12 消息/
-                # 1746 真 token 仍不压)。直接数 working_messages 调用前可得、不受
-                # allocator 截断、不延迟,是最可靠的触发信号(复用统一计数,优化 #1+#3)。
-                try:
-                    state._wm_tokens = _cmt(state.working_messages)
-                    if state._wm_tokens > state._ctoken_est:
-                        state._ctoken_est = state._wm_tokens
-                except Exception:  # noqa: BLE001
-                    pass
-                state._ctx_should_compress = False
-                try:
-                    state._ctx_cfg = getattr(self._ctx, "config", None)
-                    # WI-1B-3: adaptive_compact_pct ON → 按本 run 是否 agentic
-                    # (工具调用计数 ≥ 阈值) 取微调后的触发线;OFF → for() 直接
-                    # 返回原 compact_at_tokens 属性(字节级 BC,等价旧分支)。
-                    state._ctx_compact_at = None
-                    state._for_fn = getattr(state._ctx_cfg, "compact_at_tokens_for", None)
-                    if callable(state._for_fn):
-                        state._agentic = state._run_tool_calls >= state._AGENTIC_TOOL_THRESHOLD
-                        state._ctx_compact_at = state._for_fn(state._agentic)
-                    else:
-                        state._ctx_compact_at = getattr(state._ctx_cfg, "compact_at_tokens", None)
-                    if state._ctx_compact_at is not None:
-                        state._ctx_should_compress = (
-                            state._ctoken_est >= int(state._ctx_compact_at) > 0
-                        )
-                except Exception:  # noqa: BLE001
-                    state._ctx_should_compress = False
-                if (
-                    state._budget_block_pending
-                    or state._active_compressor.should_compress(state._ctoken_est)
-                    or state._ctx_should_compress
-                ):
-                    try:
-                        state._gt = None
-                        if self.session_goal_store is not None:
-                            state._gt_fn = getattr(self.session_goal_store, "get_goal_text", None)
-                            if callable(state._gt_fn):
-                                state._gt = state._gt_fn(state.session_id)
-                        state._compression_resolution = None
-                        state._compaction_cycle_id = None
-                        state._requested_compression_model = self._requested_compression_model()
-                        if state.context_metadata_enabled:
-                            state._compaction_cycle_index += 1
-                            state._compaction_cycle_id = f"{state.context_request_id or state.tid}:compaction:{state._compaction_cycle_index}"
-                            await self._flush_context_snapshot(
-                                cycle_id=state._compaction_cycle_id,
-                                session_id=state.session_id,
-                                request_id=state.context_request_id or state.tid,
-                                working_messages=state.working_messages,
-                                prepared_context=state.prepared_context,
-                                current_tool_set=state.current_tool_set,
-                            )
-                            state._compression_resolution = self._resolve_compression_model(
-                                state.provider_chain,
-                                requested_model=state._requested_compression_model,
-                            )
-
-                            if context_os_e2e_hooks.consume_context_os_e2e_fault(
-                                "compactor_model_error"
-                            ):
-                                raise RuntimeError("compactor_model_error")
-                            await self._execute_coverage_compaction_jobs(
-                                cycle_id=state._compaction_cycle_id,
-                                prepared_context=state.prepared_context,
-                                resolution=state._compression_resolution,
-                            )
-                        # WI-4b pre-flush: 摘掉中段前把任务态写进 L1(跨 session 记任务)。
-                        # best-effort + 每 run 限一次(latch),失败绝不阻断压缩。
-                        if (
-                            not state.context_metadata_enabled
-                            and self.file_memory is not None
-                            and not state._preflush_done
-                        ):
-                            state._preflush_done = True
-                            try:
-                                state._last_user = ""
-                                for state._m in reversed(state.working_messages):
-                                    if state._m.get("role") == "user":
-                                        state._last_user = str(state._m.get("content") or "")[:500]
-                                        break
-                                state._flush_parts = []
-                                if state._gt:
-                                    state._flush_parts.append(f"目标: {state._gt}")
-                                if state._last_user:
-                                    state._flush_parts.append(f"最近请求: {state._last_user}")
-                                if state._flush_parts:
-                                    state._flush_body = "[任务态快照/task-state] " + "; ".join(
-                                        state._flush_parts
-                                    )
-                                    await self.file_memory.append(
-                                        "memory", state._flush_body, salience=0.6
-                                    )
-                                    logger.info(
-                                        "wi4b_preflush_l1 sid=%s tid=%s chars=%d",
-                                        state.session_id,
-                                        state.tid,
-                                        len(state._flush_body),
-                                    )
-                            except Exception as _pf_exc:  # noqa: BLE001
-                                logger.debug(
-                                    "wi4b_preflush_failed sid=%s err=%s",
-                                    state.session_id,
-                                    str(_pf_exc)[:120],
-                                )
-                        state._compress_kwargs: dict[str, Any] = {"goal_text": state._gt}
-                        if state._compression_resolution is not None:
-                            state._candidate = state._compression_resolution.candidates[0]
-                            state._compress_kwargs.update(
-                                resolved_provider=state._candidate.provider,
-                                resolved_model=state._candidate.model_id,
-                                compaction_cycle_id=state._compaction_cycle_id,
-                            )
-                        if self._provider_workload_context_factory is not None:
-                            state._compress_kwargs["workload_context"] = (
-                                self._provider_workload_context_factory("agent.context_compaction")
-                            )
-                        state._context_remount = (
-                            _capture_context_remount(state.working_messages)
-                            if state.context_metadata_enabled
-                            else None
-                        )
-                        if not state.context_metadata_enabled:
-                            if context_os_e2e_hooks.consume_context_os_e2e_fault(
-                                "compactor_model_error"
-                            ):
-                                raise RuntimeError("compactor_model_error")
-                        state._cresult = await state._active_compressor.compress(
-                            state.working_messages, **state._compress_kwargs
-                        )
-                        state._resolved_candidate = (
-                            state._compression_resolution.candidates[0]
-                            if state._compression_resolution is not None
-                            else None
-                        )
-                        state._latest_compression_report = {
-                            "requested_model": state._requested_compression_model,
-                            "resolved_model": (
-                                state._resolved_candidate.model_id
-                                if state._resolved_candidate is not None
-                                else str(getattr(self.compressor, "model", "") or "")
-                            ),
-                            "actual_model": (
-                                state._resolved_candidate.model_id
-                                if state._resolved_candidate is not None
-                                else str(getattr(self.compressor, "model", "") or "")
-                            ),
-                            "provider": (
-                                state._resolved_candidate.provider_id
-                                if state._resolved_candidate is not None
-                                else ""
-                            ),
-                            "source": (
-                                state._compression_resolution.source
-                                if state._compression_resolution is not None
-                                else "legacy"
-                            ),
-                            "failure": str(getattr(state._cresult, "error", "") or "")[:200],
-                        }
-                        if getattr(state._cresult, "compressed", False):
-                            state._skill_compaction_happened = True
-                            state.working_messages = state._cresult.messages
-                            if state._context_remount is not None:
-                                state.working_messages = _remount_context_after_compaction(
-                                    state.working_messages,
-                                    state._context_remount,
-                                )
-                            # WI-4.2: re-inline skill bodies after compaction so
-                            # the LLM doesn't lose skill step details that were
-                            # in the compressed "middle" messages.
-                            state.working_messages = self._remount_skills(
-                                state.working_messages,
-                                state.session_id,
-                                prepared_context=state.prepared_context,
-                            )
-                            if not state._compaction_warn_logged:
-                                logger.info(
-                                    "p1_4_compaction_fired sid=%s tid=%s iter=%d reduction=%s",
-                                    state.session_id,
-                                    state.tid,
-                                    state.iteration,
-                                    getattr(state._cresult, "reduction_ratio", "?"),
-                                )
-                                state._compaction_warn_logged = True
-                            # WI-1B-2 压缩可观测: flag ON 时额外 emit metrics +
-                            # yield 轻量事件。flag OFF → 整块 short-circuit(BC,
-                            # 既不 record 也不构造/yield ContextCompactedEvent)。
-                            if self.ctx_observability:
-                                state._ctx_in = int(getattr(state._cresult, "input_tokens", 0) or 0)
-                                state._ctx_out = int(
-                                    getattr(state._cresult, "output_tokens", 0) or 0
-                                )
-                                state._ctx_ratio = float(
-                                    getattr(state._cresult, "reduction_ratio", 0.0) or 0.0
-                                )
-                                try:
-                                    # 按需导入：测试替身（observability.metrics_sink）
-                                    from observability.metrics_sink import (
-                                        record as _ctx_metric,
-                                    )
-
-                                    _ctx_metric(
-                                        "context_compacted",
-                                        {
-                                            "ratio": round(state._ctx_ratio, 3),
-                                            "model": getattr(self.compressor, "model", "") or "",
-                                            "count": state._ctx_in - state._ctx_out,
-                                        },
-                                    )
-                                except Exception:  # noqa: BLE001
-                                    pass
-                                state._actual_compaction_model = (
-                                    state._resolved_candidate.model_id
-                                    if state._resolved_candidate is not None
-                                    else str(getattr(self.compressor, "model", "") or "")
-                                )
-                                state._compaction_source_event_id = f"context-compaction:{state.session_id}:{state.tid}:{state.iteration}"
-                                yield ContextCompactedEvent(
-                                    task_id=state.tid,
-                                    iteration=state.iteration,
-                                    reduction=round(state._ctx_ratio, 3),
-                                    tokens_in=state._ctx_in,
-                                    tokens_out=state._ctx_out,
-                                    model=state._actual_compaction_model,
-                                    source_event_id=(state._compaction_source_event_id),
-                                    based_on_sample_id=str(
-                                        getattr(
-                                            self,
-                                            "_context_usage_basis_sample_id",
-                                            "",
-                                        )
-                                        or ""
-                                    ),
-                                    occurred_at=time.time(),
-                                )
-
-                                self._context_usage_basis_sample_id = context_usage_sample_id(
-                                    state.session_id,
-                                    state._compaction_source_event_id,
-                                )
-                    except Exception as _cmp_exc:  # noqa: BLE001
-                        # Compaction is advisory — never abort the loop on it.
-                        state._latest_compression_report = {
-                            "requested_model": self._requested_compression_model(),
-                            "failure": str(_cmp_exc)[:200],
-                        }
-                        logger.debug(
-                            "p1_4_compaction_failed sid=%s iter=%d err=%s",
-                            state.session_id,
-                            state.iteration,
-                            str(_cmp_exc)[:200],
-                        )
-
-            if state._budget_block_pending:
-                try:
-                    state._post_budget = self._ctx.check_budget(
-                        state.working_messages,
-                        model=state._resolved_model,
-                        real_prompt_tokens_floor=0,
-                    )
-                    state._still_blocked = state._post_budget.verdict is _BudgetCheck.BLOCK
-                    state._block_detail = state._post_budget.advice
-                except Exception as _post_exc:  # noqa: BLE001
-                    state._still_blocked = True
-                    state._block_detail = f"context re-budget failed: {_post_exc}"
-                if state._still_blocked:
-                    self._gate.record_error(TerminationReason.CONTEXT_BUDGET_BLOCK)
-                    yield ErrorEvent(
-                        type="error",
-                        task_id=state.tid,
-                        iteration=state.iteration,
-                        reason="context_budget_block",
-                        detail=state._block_detail,
-                    )
-                    return
-
-            if state._skill_compaction_happened and self._skills_used_this_run:
-                state.working_messages = self._remount_skills(
-                    state.working_messages,
-                    state.session_id,
-                    prepared_context=state.prepared_context,
-                )
 
             # P6 Phase 6: escalating in-loop self-check (soft nudge).
             # The legacy _TOOL_BUDGET_HARD_MSG soft cap is GONE — the
@@ -2652,892 +2116,2465 @@ class AgentLoop(ToolContextPersistenceMixin):
             # tier injection below is complementary (gentle reflection
             # nudge to coax stop_reason=end_turn earlier).
 
-            # Count tools used so far in this loop run (tracked at each
-            # tool dispatch). `tools_used` mirrors gate.state.tools_used.
-            state.tools_used = state.tools_used_count
+            state.flow = None
+            async with aclosing(self._model_turn(state)) as _phase:
+                async for _event in _phase:
+                    yield _event
+            if state.flow == "continue":
+                continue
+            if state.flow == "stop":
+                return
 
-            if state.iteration > 0 and state.iteration % _SELFCHECK_EVERY == 0:
-                state.budget_left = self.max_iterations - state.iteration
-                state.msg = _build_selfcheck_message(
-                    state.iteration, self.max_iterations, state.tools_used
-                )
-                # WI-2.1: append reflection instruction at tier2/tier3 only
-                # (zero overhead on normal tier1 path; flag off = BC).
-                if self.structured_reflection and state.iteration >= _SELFCHECK_TIER2_AT:
-                    state.msg = state.msg + _REFLECTION_INSTRUCTION
-                _append_loop_control(
-                    state.working_messages,
-                    {"role": "system", "content": state.msg},
-                    metadata_enabled=state.context_metadata_enabled,
-                    source="agent_loop.self_check",
-                    anchor_after=_latest_context_anchor(
-                        state.working_messages,
-                        fallback=f"agent-loop:{state.tid}:iteration:{state.iteration}:start",
-                    ),
-                    fragment_id=(f"agent-loop:{state.tid}:iteration:{state.iteration}:self-check"),
-                )
-                state.tier = (
-                    3
-                    if state.iteration >= _SELFCHECK_TIER3_AT
-                    else 2
-                    if state.iteration >= _SELFCHECK_TIER2_AT
-                    else 1
-                )
-                logger.info(
-                    "p5s2_selfcheck_injected sid=%s tid=%s iter=%d budget=%d "
-                    "tier=%d tools_used=%d structured_reflection=%s",
-                    state.session_id,
-                    state.tid,
-                    state.iteration,
-                    state.budget_left,
-                    state.tier,
-                    state.tools_used,
-                    self.structured_reflection,
-                )
-                if self.force_finish_via_tool_choice and state.iteration >= _SELFCHECK_TIER3_AT:
-                    state._force_finish_next = True
+        state.flow = None
+        async with aclosing(self._finish_max_iterations(state)) as _phase:
+            async for _event in _phase:
+                yield _event
+        if state.flow == "stop":
+            return
 
-            if (
-                self.session_todo_getter is not None
-                and state.iteration % _TODO_SYNC_EVERY == 0
-                and state.iteration < _SELFCHECK_TIER3_AT
-            ):
-                try:
-                    state.todos = await self.session_todo_getter(state.session_id)
-                except Exception:
-                    state.todos = []
-                if state.todos:
-                    state.lines = []
-                    for state.t in state.todos:
-                        state.content = (state.t.get("content") or "")[:80]
-                        state.status = (state.t.get("status") or "").lower()
-                        state.mark = {"completed": "✓", "in_progress": "🔄"}.get(state.status, "⏳")
-                        state.lines.append(f"  {state.mark} {state.content}")
-                    _append_loop_control(
-                        state.working_messages,
-                        {
-                            "role": "system",
-                            "content": _TODO_SYNC_MSG.format(body="\n".join(state.lines)),
-                        },
-                        metadata_enabled=state.context_metadata_enabled,
-                        source="agent_loop.todo_sync",
-                        anchor_after=_latest_context_anchor(
-                            state.working_messages,
-                            fallback=(f"agent-loop:{state.tid}:iteration:{state.iteration}:start"),
-                        ),
-                        fragment_id=(
-                            f"agent-loop:{state.tid}:iteration:{state.iteration}:todo-sync"
-                        ),
-                    )
-                    logger.info(
-                        "wi4_todo_sync sid=%s iter=%d n=%d",
-                        state.session_id,
-                        state.iteration,
-                        len(state.todos),
-                    )
+    async def _prepare_turn(self, state: _RunState) -> AsyncGenerator[AgentEvent, None]:
+        """本轮准备：开头标记、终止闸门、预算检查、上下文压缩与压缩后补救。"""
 
-            # WI-4a: 周期性 [目标锚定] 注入已删除 —— 改由循环前的 always-on 单点注入
-            # (见上方 wi4a_goal_anchor_always_on)。always-on 那条 role=system 常驻、
-            # 不被压、整轮恒 ≤1 条,周期重注是冗余且会堆多条同文 system。防 drift 由
-            # always-on 常驻 + WI-3 结构化摘要保任务共同覆盖,能力不丢。
+        state.flow = None
+        async with aclosing(self._prepare_iteration(state)) as _phase:
+            async for _event in _phase:
+                yield _event
+        if state.flow == "stop":
+            state.flow = "stop"
+            return
+        state.flow = None
+        async with aclosing(self._termination_gate(state)) as _phase:
+            async for _event in _phase:
+                yield _event
+        if state.flow == "stop":
+            state.flow = "stop"
+            return
 
-            try:
-                if state.chain_mode:
-                    # ─── Phase 3: walk the chain ───
-                    # On transient LLMProviderError, yield a
-                    # ProviderChainFallbackEvent and try the next
-                    # provider. On success, accept the response and
-                    # break. If every provider fails, emit
-                    # ErrorEvent(reason="all_providers_failed").
+        state.flow = None
+        async with aclosing(self._check_budget(state)) as _phase:
+            async for _event in _phase:
+                yield _event
+        if state.flow == "stop":
+            state.flow = "stop"
+            return
 
-                    state.response = None  # type: ignore[assignment]
-                    state.last_exc: Exception | None = None
-                    for state.idx, state.prov in enumerate(state.provider_chain):  # type: ignore[arg-type]
-                        try:
-                            state._attempt_tools = (
-                                None if state._force_finish_next else (state.tool_schemas or None)
-                            )
-                            state._attempt_purpose = (
-                                "force_finish" if state._force_finish_next else "agent_response"
-                            )
-                            state.raw = await self._run_context_attempt(
-                                provider=state.prov,
-                                session_id=state.session_id,
-                                request_id=state.context_request_id or state.tid,
-                                attempt_id=(
-                                    f"{state.context_request_id or state.tid}:iter:{state.iteration}:provider:{state.idx}"
-                                ),
-                                purpose=state._attempt_purpose,
-                                messages=state.working_messages,
-                                tools=state._attempt_tools,
-                                fallback_model=state.use_model or "",
-                                prepared_context=state.prepared_context,
-                                current_tool_set=state.current_tool_set,
-                                compression=state._latest_compression_report,
-                                invoke=lambda prov=state.prov: traced_call(
-                                    name="llm.chat_with_tools",
-                                    kind=SpanKind.LLM,
-                                    lifecycle_stage="llm",
-                                    attributes={
-                                        "iteration": state.iteration,
-                                        "provider": str(
-                                            getattr(prov, "id", f"provider_{state.idx}")
-                                        ),
-                                        "stream": False,
-                                        "message_count": len(state.working_messages),
-                                        "tool_schema_count": len(state.tool_schemas),
-                                    },
-                                    invoke=lambda: prov.chat_with_tools(
-                                        state.working_messages,
-                                        tools=state._attempt_tools,
-                                        max_tokens=int(state.llm_kwargs.get("max_tokens", 8192)),
-                                        temperature=state.llm_kwargs.get("temperature"),
-                                        response_format=state.llm_kwargs.get("response_format"),
-                                        tool_choice=("none" if state._force_finish_next else None),
-                                        **state.launch_call_kwargs,
-                                    ),
-                                ),
-                            )
-                        except (LLMProviderError, RuntimeError) as exc:
-                            state._authority_error = _non_fallback_provider_error(exc)
-                            if _should_raise_provider_runtime_error(exc, state._authority_error):
-                                raise
-                            if state._authority_error is not None:
-                                if state._authority_error == "tool_catalog_stale":
-                                    _invalidate_stale_mcp_catalog(
-                                        self.tools, state.current_tool_set
-                                    )
-                                yield ErrorEvent(
-                                    type="error",
-                                    task_id=state.tid,
-                                    iteration=state.iteration,
-                                    reason=state._authority_error,
-                                    detail=str(exc),
-                                    error_class=state._authority_error,
-                                )
-                                return
-                            if state.launch_call_kwargs:
-                                raise
-                            state.last_exc = exc
-                            state.prov_id = getattr(state.prov, "id", f"provider_{state.idx}")
-                            state.next_idx = state.idx + 1
-                            if state.next_idx < len(state.provider_chain):  # type: ignore[arg-type]
-                                state.next_prov = state.provider_chain[state.next_idx]  # type: ignore[index]
-                                state.next_id = getattr(
-                                    state.next_prov, "id", f"provider_{state.next_idx}"
-                                )
-                                state.reason = str(exc) or type(exc).__name__
-                                logger.warning(
-                                    "provider_chain_fallback from=%s to=%s reason=%s sid=%s tid=%s",
-                                    state.prov_id,
-                                    state.next_id,
-                                    state.reason[:200],
-                                    state.session_id,
-                                    state.tid,
-                                )
-                                yield ProviderChainFallbackEvent(
-                                    type="provider_chain_fallback",
-                                    task_id=state.tid,
-                                    iteration=state.iteration,
-                                    session_id=state.session_id,
-                                    from_=state.prov_id,
-                                    to=state.next_id,
-                                    reason=state.reason,
-                                )
-                            else:
-                                logger.warning(
-                                    "provider_chain_last_provider_failed id=%s reason=%s sid=%s",
-                                    state.prov_id,
-                                    str(exc)[:200],
-                                    state.session_id,
-                                )
-                            continue
-                        else:
-                            state.response = _raw_to_response(state.raw)
-                            break
+        async with aclosing(self._compact_context(state)) as _phase:
+            async for _event in _phase:
+                yield _event
 
-                    if state.response is None:
-                        # All providers in the chain raised.
-                        state.tried = len(state.provider_chain)  # type: ignore[arg-type]
-                        state.last_text = str(state.last_exc) if state.last_exc else "unknown"
-                        if isinstance(state.last_exc, RuntimeError) and str(
-                            state.last_exc
-                        ).startswith("provider_context_budget_exceeded"):
-                            yield ErrorEvent(
-                                type="error",
-                                task_id=state.tid,
-                                iteration=state.iteration,
-                                reason="provider_context_budget_exceeded",
-                                detail=state.last_text,
-                            )
-                            return
-                        # P6 Phase 6 — record terminal error reason on the
-                        # gate so callers reading summary() see the real
-                        # cause (otherwise the gate would stay "running").
-                        self._gate.record_error(TerminationReason.ALL_PROVIDERS_FAILED)
-                        yield ErrorEvent(
-                            type="error",
-                            task_id=state.tid,
-                            iteration=state.iteration,
-                            reason="all_providers_failed",
-                            detail=(f"tried {state.tried}, last_error: {state.last_text}"),
-                            # 把最后一个 provider 的结构化 error_class 透传给前端，
-                            # 让 chain 全失败路径也能 surface 友好分类（如
-                            # empty_api_key→"请重新登录" / relay 402→充值），而不是
-                            # 退化成无分类的通用错误。
-                            error_class=getattr(state.last_exc, "error_class", "") or "",
-                        )
-                        return
-                elif state.stream_capable:
-                    # Streaming path: forward delta events, accumulate
-                    # the final dict, then build the same ChatResponse
-                    # the non-streaming path would have produced.
-                    state.final_dict: dict | None = None
-                    state.delta_count = 0
-                    state.stream_failed_with: Exception | None = None
-                    state.call_llm_kwargs = (
-                        {**state.llm_kwargs, "tool_choice": "none"}
-                        if state._force_finish_next
-                        else state.llm_kwargs
-                    )
-                    state.call_llm_kwargs = {**state.launch_call_kwargs, **state.call_llm_kwargs}
-                    state._attempt_tools = (
-                        None if state._force_finish_next else (state.tool_schemas or None)
-                    )
-                    state._attempt_provider = getattr(
-                        self.llm, "_provider", getattr(self.llm, "_active_provider", self.llm)
-                    )
-                    state._attempt_purpose = (
-                        "force_finish" if state._force_finish_next else "agent_response"
-                    )
-                    try:
-                        async for state.ev in self._iterate_context_attempt(
-                            provider=state._attempt_provider,
-                            session_id=state.session_id,
-                            request_id=state.context_request_id or state.tid,
-                            attempt_id=f"{state.context_request_id or state.tid}:iter:{state.iteration}:stream",
-                            purpose=state._attempt_purpose,
-                            messages=state.working_messages,
-                            tools=state._attempt_tools,
-                            fallback_model=state.use_model or "",
-                            prepared_context=state.prepared_context,
-                            current_tool_set=state.current_tool_set,
-                            compression=state._latest_compression_report,
-                            iterator=lambda: traced_iterate(
-                                name="llm.chat_with_fallback_stream",
-                                kind=SpanKind.LLM,
-                                lifecycle_stage="llm",
-                                attributes={
-                                    "iteration": state.iteration,
-                                    "model": str(state.use_model or ""),
-                                    "stream": True,
-                                    "message_count": len(state.working_messages),
-                                    "tool_schema_count": len(state.tool_schemas),
-                                },
-                                iterator=lambda: self.llm.chat_with_fallback_stream(  # type: ignore[attr-defined]
-                                    state.working_messages,
-                                    tools=state._attempt_tools,
-                                    model=state.use_model,
-                                    **state.call_llm_kwargs,
-                                ),
-                            ),
-                        ):
-                            state.ev_type = state.ev.get("type")
-                            if state.ev_type == "delta":
-                                state.delta_count += 1
-                                yield AssistantDeltaEvent(
-                                    type="assistant_delta",
-                                    task_id=state.tid,
-                                    iteration=state.iteration,
-                                    content=state.ev.get("content", ""),
-                                    kind="content",
-                                    invocation_id=state.ev.get("invocation_id"),
-                                    stream_epoch=state.ev.get("stream_epoch"),
-                                    provisional=bool(state.ev.get("provisional", False)),
-                                )
-                            elif state.ev_type == "delta_reasoning":
-                                state.delta_count += 1
-                                yield AssistantDeltaEvent(
-                                    type="assistant_delta",
-                                    task_id=state.tid,
-                                    iteration=state.iteration,
-                                    content=state.ev.get("content", ""),
-                                    kind="reasoning",
-                                    invocation_id=state.ev.get("invocation_id"),
-                                    stream_epoch=state.ev.get("stream_epoch"),
-                                    provisional=bool(state.ev.get("provisional", False)),
-                                )
-                            elif state.ev_type == "retract":
-                                yield AssistantDeltaEvent(
-                                    type="assistant_delta",
-                                    task_id=state.tid,
-                                    iteration=state.iteration,
-                                    invocation_id=state.ev.get("invocation_id"),
-                                    stream_epoch=state.ev.get("stream_epoch"),
-                                    provisional=True,
-                                    retract_provisional=True,
-                                )
-                            elif state.ev_type == "final":
-                                state.final_dict = state.ev
-                    except LLMProviderError as stream_exc:
-                        # P4-S25 fix: streaming raised after exhausting its
-                        # own retry budget (typically RemoteProtocolError
-                        # 3-in-a-row from the relay). Fall back to the non-
-                        # streaming path instead of bubbling the error
-                        # to the user — non-stream is more reliable on
-                        # the relay in our observed traffic, AND it has its
-                        # own independent retry budget so we effectively
-                        # double the resilience without hard-coding 6
-                        # retries.
-                        state.stream_failed_with = stream_exc
-                        logger.warning(
-                            "agent_loop_stream_failed_falling_back error=%s",
-                            str(stream_exc)[:200],
-                        )
+        state.flow = None
+        async with aclosing(self._after_compaction(state)) as _phase:
+            async for _event in _phase:
+                yield _event
+        if state.flow == "stop":
+            state.flow = "stop"
+            return
 
-                    state.needs_nonstream_fallback = (
-                        state.stream_failed_with is not None
-                        or state.final_dict is None
-                        or (
-                            state.delta_count == 0
-                            and not state.final_dict.get("content")
-                            and not state.final_dict.get("tool_calls")
-                        )
-                    )
-                    if (
-                        state.launch_call_kwargs
-                        and not state.provider_launch_snapshot.supports_idempotent_launch
-                    ):
-                        state.needs_nonstream_fallback = False
-                        if state.stream_failed_with is not None:
-                            raise state.stream_failed_with
-                    if state.needs_nonstream_fallback:
-                        if state.stream_failed_with is None:
-                            # Empty-stream case (the relay didn't actually stream).
-                            logger.warning(
-                                "agent_loop_stream_fallback_to_nonstream delta_count=%d",
-                                state.delta_count,
-                            )
-                        state.response = await self._run_context_attempt(
-                            provider=state._attempt_provider,
-                            session_id=state.session_id,
-                            request_id=state.context_request_id or state.tid,
-                            attempt_id=f"{state.context_request_id or state.tid}:iter:{state.iteration}:nonstream-fallback",
-                            purpose=state._attempt_purpose,
-                            messages=state.working_messages,
-                            tools=state._attempt_tools,
-                            fallback_model=state.use_model or "",
-                            prepared_context=state.prepared_context,
-                            current_tool_set=state.current_tool_set,
-                            compression=state._latest_compression_report,
-                            invoke=lambda: traced_call(
-                                name="llm.chat_with_fallback",
-                                kind=SpanKind.LLM,
-                                lifecycle_stage="llm",
-                                attributes={
-                                    "iteration": state.iteration,
-                                    "model": str(state.use_model or ""),
-                                    "stream": False,
-                                    "stream_fallback": True,
-                                    "message_count": len(state.working_messages),
-                                    "tool_schema_count": len(state.tool_schemas),
-                                },
-                                invoke=lambda: self.llm.chat_with_fallback(
-                                    state.working_messages,
-                                    tools=state._attempt_tools,
-                                    model=state.use_model,
-                                    **state.call_llm_kwargs,
-                                ),
-                            ),
-                        )
-                    else:
-                        # Convert to ChatResponse to share the rest of the
-                        # iteration code with the non-streaming path.
+    async def _model_turn(self, state: _RunState) -> AsyncGenerator[AgentEvent, None]:
+        """定期检查、调用模型、处理回复。"""
 
-                        state.response = _raw_to_response(state.final_dict)
-                else:
-                    state.call_llm_kwargs = (
-                        {**state.llm_kwargs, "tool_choice": "none"}
-                        if state._force_finish_next
-                        else state.llm_kwargs
-                    )
-                    state.call_llm_kwargs = {**state.launch_call_kwargs, **state.call_llm_kwargs}
-                    state._attempt_tools = (
-                        None if state._force_finish_next else (state.tool_schemas or None)
-                    )
-                    state._attempt_provider = getattr(
-                        self.llm, "_provider", getattr(self.llm, "_active_provider", self.llm)
-                    )
-                    state._attempt_purpose = (
-                        "force_finish" if state._force_finish_next else "agent_response"
-                    )
-                    state.response = await self._run_context_attempt(
-                        provider=state._attempt_provider,
-                        session_id=state.session_id,
-                        request_id=state.context_request_id or state.tid,
-                        attempt_id=f"{state.context_request_id or state.tid}:iter:{state.iteration}:nonstream",
-                        purpose=state._attempt_purpose,
-                        messages=state.working_messages,
-                        tools=state._attempt_tools,
-                        fallback_model=state.use_model or "",
-                        prepared_context=state.prepared_context,
-                        current_tool_set=state.current_tool_set,
-                        compression=state._latest_compression_report,
-                        invoke=lambda: traced_call(
-                            name="llm.chat_with_fallback",
-                            kind=SpanKind.LLM,
-                            lifecycle_stage="llm",
-                            attributes={
-                                "iteration": state.iteration,
-                                "model": str(state.use_model or ""),
-                                "stream": False,
-                                "message_count": len(state.working_messages),
-                                "tool_schema_count": len(state.tool_schemas),
-                            },
-                            invoke=lambda: self.llm.chat_with_fallback(
-                                state.working_messages,
-                                tools=state._attempt_tools,
-                                model=state.use_model,
-                                **state.call_llm_kwargs,
-                            ),
-                        ),
-                    )
-            except LLMBudgetExceededError as exc:
+        # Count tools used so far in this loop run (tracked at each
+        # tool dispatch). `tools_used` mirrors gate.state.tools_used.
+        state.tools_used = state.tools_used_count
+
+        await self._periodic_checks(state)
+
+        # WI-4a: 周期性 [目标锚定] 注入已删除 —— 改由循环前的 always-on 单点注入
+        # (见上方 wi4a_goal_anchor_always_on)。always-on 那条 role=system 常驻、
+        # 不被压、整轮恒 ≤1 条,周期重注是冗余且会堆多条同文 system。防 drift 由
+        # always-on 常驻 + WI-3 结构化摘要保任务共同覆盖,能力不丢。
+
+        state.flow = None
+        async with aclosing(self._call_provider(state)) as _phase:
+            async for _event in _phase:
+                yield _event
+        if state.flow == "stop":
+            state.flow = "stop"
+            return
+
+        state.flow = None
+        async with aclosing(self._handle_model_reply(state)) as _phase:
+            async for _event in _phase:
+                yield _event
+        if state.flow == "continue":
+            state.flow = "continue"
+            return
+        if state.flow == "stop":
+            state.flow = "stop"
+            return
+
+    async def _handle_model_reply(self, state: _RunState) -> AsyncGenerator[AgentEvent, None]:
+        """记用量、处理空回复、交出助手消息，再按有无工具调用走收尾闸门或工具批。"""
+
+        self._record_usage(state)
+
+        state.flow = None
+        async with aclosing(self._repair_empty_response(state)) as _phase:
+            async for _event in _phase:
+                yield _event
+        if state.flow == "continue":
+            state.flow = "continue"
+            return
+        if state.flow == "stop":
+            state.flow = "stop"
+            return
+
+        # The guard is intentionally consecutive. A real tool call or
+        # user-visible answer proves that the provider recovered, so a
+        # later isolated reasoning-only turn starts a fresh recovery
+        # window instead of inheriting old nudges from earlier work.
+        state.reasoning_only_nudges_used = 0
+        yield AssistantMessageEvent(
+            type="assistant_message",
+            task_id=state.tid,
+            iteration=state.iteration,
+            content=state.response.content,
+            reasoning_content=state.response.reasoning_content,
+            tool_calls=list(state.response.tool_calls),
+            stop_reason=state.response.stop_reason,
+            model=state.response.model,
+        )
+
+        state.flow = None
+        async with aclosing(self._handle_final_response(state)) as _phase:
+            async for _event in _phase:
+                yield _event
+        if state.flow == "continue":
+            state.flow = "continue"
+            return
+        if state.flow == "stop":
+            state.flow = "stop"
+            return
+
+        state.flow = None
+        async with aclosing(self._dispatch_tool_batch(state)) as _phase:
+            async for _event in _phase:
+                yield _event
+        if state.flow == "continue":
+            state.flow = "continue"
+            return
+        if state.flow == "stop":
+            state.flow = "stop"
+            return
+        state.flow = "stop"
+        return
+
+    async def _prepare_iteration(self, state: _RunState) -> AsyncGenerator[AgentEvent, None]:
+        """本轮开头：工具集、强制收尾标记与追踪。"""
+
+        if state.current_tool_set is not None:
+            state._scope_store = getattr(self.tools, "capability_scope_store", None)
+            if state._scope_store is None or not hasattr(self.tools, "validate_prepared_tool_set"):
                 yield ErrorEvent(
                     type="error",
                     task_id=state.tid,
                     iteration=state.iteration,
-                    reason="budget_exceeded",
-                    detail=str(exc),
+                    reason="tool_capability_runtime_unavailable",
+                    detail="Context OS requires a capability-aware registry",
                 )
+                state.flow = "stop"
                 return
-            except RuntimeError as exc:
-                if not str(exc).startswith(
-                    ("tool_context_persist_failed", "provider_context_budget_exceeded")
-                ):
-                    raise
+            state._record = state._scope_store.get(
+                state.current_tool_set.scope_id,
+                session_id=state.session_id,
+                request_id=state.context_request_id or state.tid,
+            )
+            if state._record is None:
+                yield ErrorEvent(
+                    type="error",
+                    task_id=state.tid,
+                    iteration=state.iteration,
+                    reason="tool_capability_scope_expired",
+                    detail="Context OS capability scope is missing or expired",
+                )
+                state.flow = "stop"
+                return
+            try:
+                self.tools.validate_prepared_tool_set(
+                    state.current_tool_set,
+                    eligibility=state._record.eligibility,
+                )
+            except Exception as _stale_exc:  # noqa: BLE001
                 yield ErrorEvent(
                     type="error",
                     task_id=state.tid,
                     iteration=state.iteration,
                     reason=(
-                        "provider_context_budget_exceeded"
-                        if str(exc).startswith("provider_context_budget_exceeded")
-                        else "tool_context_persist_failed"
+                        "tool_policy_unavailable"
+                        if "tool_policy_unavailable" in str(_stale_exc)
+                        else "tool_catalog_stale"
                     ),
-                    detail=str(exc),
+                    detail=str(_stale_exc),
                 )
+                state.flow = "stop"
                 return
-            except LLMProviderError as exc:
-                yield ErrorEvent(
-                    type="error",
-                    task_id=state.tid,
-                    iteration=state.iteration,
-                    reason="llm_error",
-                    detail=str(exc),
-                    # WI-R5: carry the relay error code so the frontend
-                    # can show 余额不足 / key 失效 friendly messages.
-                    error_class=getattr(exc, "error_class", "") or "",
-                )
-                return
+        state._force_finish_next = False
+        if state._force_finish_queued:
+            state._force_finish_next = True
+            state._force_finish_queued = False
+        # Context OS requests reserve the last loop iteration for an
+        # honest, tool-free final response once at least one tool has
+        # already run.  Without this reservation, a tool-using model can
+        # consume the final iteration with another tool call and the loop
+        # exits through max_iterations without ever getting a chance to
+        # summarize the completed work.  Keep the legacy path byte-for-byte
+        # compatible: callers that do not provide PreparedContext retain
+        # the historical max_iterations error/stop-loss behavior.
+        if (
+            not state._force_finish_next
+            and state.prepared_context is not None
+            and self.force_finish_via_tool_choice
+            and state.tools_used_count > 0
+            and state.iteration == self.max_iterations
+        ):
+            state._force_finish_next = True
+            logger.info(
+                "context_os_final_iteration_force_finish sid=%s tid=%s iter=%d tools_used=%d",
+                state.session_id,
+                state.tid,
+                state.iteration,
+                state.tools_used_count,
+            )
+        if self._tracer:
+            self._tracer.record(
+                {
+                    "kind": "iter_start",
+                    "iter": state.iteration,
+                    "msg_count": len(state.working_messages),
+                }
+            )
 
-            state.launch_call_kwargs = {}
-            state.totals["input"] += state.response.usage.input_tokens
-            state.totals["output"] += state.response.usage.output_tokens
-            state.totals["cache_read"] += state.response.usage.cache_read_tokens
-            state.totals["cache_write"] += state.response.usage.cache_write_tokens
-            # 第 3 刀: 记录 relay 真实 prompt 大小,喂下一轮 compaction 判定。
-            if state.response.usage.input_tokens > state._last_real_prompt_tokens:
-                state._last_real_prompt_tokens = state.response.usage.input_tokens
-            if self._tracer:
-                self._tracer.record(
-                    {
-                        "kind": "llm_out",
-                        "iter": state.iteration,
-                        "stop_reason": state.response.stop_reason,
-                        "content_preview": (state.response.content or "")[:200],
-                        "tool_calls": [
-                            {"name": tc.name, "args": tc.arguments}
-                            for tc in state.response.tool_calls
-                        ],
-                        "usage": (
-                            state.response.usage.model_dump()
-                            if hasattr(state.response.usage, "model_dump")
-                            else {}
-                        ),
-                    }
-                )
+    async def _termination_gate(self, state: _RunState) -> AsyncGenerator[AgentEvent, None]:
+        """终止闸门：不放行就收尾。"""
 
-            # P6 Phase 6 — record the turn (advances turns_used and
-            # optionally adds to cost_usd if the response carries a
-            # cost_usd extra; ChatUsage has no such field today so we
-            # pass 0.0). The gate's allows_call check at top of next
-            # iteration uses turns_used to decide whether to keep going.
-            state._cost_delta = 0.0
-            state._usage = getattr(state.response, "usage", None)
-            if state._usage is not None:
-                state._maybe_cost = getattr(state._usage, "cost_usd", None)
-                if isinstance(state._maybe_cost, (int, float)):
-                    state._cost_delta = float(state._maybe_cost)
-            self._gate.record_turn(cost_delta_usd=state._cost_delta)
-
-            if not (state.response.content or "").strip() and not state.response.tool_calls:
-                state.has_hidden_reasoning = bool((state.response.reasoning_content or "").strip())
-                state.empty_reason = (
-                    "model_reasoning_only_response"
-                    if state.has_hidden_reasoning
-                    else "model_empty_response"
+        # P6 Phase 6 — TerminationGate.allows_call() is always run.
+        # Checks hard limits (turns, wall-clock, cost) BEFORE we burn
+        # another LLM call. The gate is the single source of truth
+        # for "should this loop keep going?".
+        state._ok, state._reason = await traced_call(
+            name="termination_gate.allows_call",
+            kind=SpanKind.GATE,
+            lifecycle_stage="gate",
+            attributes={"iteration": state.iteration, "gate": "termination"},
+            invoke=self._gate.allows_call,
+        )
+        if not state._ok:
+            # ─── Step7 止损（闸③，plans/2026-06-24-...）：硬上限/资源触顶 → 不硬撑，
+            # 产出诚实止损报告（桌宠交代"卡在哪+建议"，而非只发 error）。
+            # pipeline off 时 self._convergence_controller=None → 走原 ErrorEvent return（字节级 BC）。
+            if self._convergence_controller is not None:
+                # ⚠️ allows_call() 返回 (False, reason) 但**不调 terminate()**（已核实 termination.py:142）
+                # → 此刻 gate.summary()["reason"] 仍是合成 "running"。真实触顶 reason 在 _reason 里，
+                # 必须用它覆盖 summary 的 reason，否则 resource_capped 判 False → 止损永不触发。
+                state._cap_summary = dict(self._gate.summary())
+                if state._reason is not None:
+                    state._cap_summary["reason"] = state._reason.value
+                state._verdict = self._convergence_controller.evaluate(
+                    principal_resolved=False,  # 触顶即未收敛
+                    unverified_claims=0,
+                    gate_summary=state._cap_summary,
                 )
-                state.max_reasoning_only_nudges = 3
-                if state.reasoning_only_nudges_used >= state.max_reasoning_only_nudges:
-                    logger.warning(
-                        "model_non_actionable_response_exhausted "
-                        "sid=%s tid=%s iteration=%d reason=%s",
-                        state.session_id,
-                        state.tid,
+                if self._pipeline_observability:
+                    yield self._pipeline_event(
+                        "chat_v2_convergence",
                         state.iteration,
-                        state.empty_reason,
+                        {
+                            "converged": state._verdict.converged,
+                            "principal_resolved": state._verdict.principal_resolved,
+                            "stop_reason": state._verdict.stop_reason,
+                            "report": state._verdict.report,
+                        },
                     )
+                if state._verdict.should_stop_loss and state._verdict.report:
+                    self._gate.record_final_answer()
+                    yield FinalEvent(
+                        type="final",
+                        task_id=state.tid,
+                        iteration=state.iteration,
+                        content=state._verdict.report,
+                        stop_reason="stop_loss",
+                    )
+                    state.flow = "stop"
+                    return
+            yield ErrorEvent(
+                type="error",
+                task_id=state.tid,
+                iteration=state.iteration,
+                reason=(state._reason.value if state._reason is not None else "unknown"),
+                detail="Termination gate blocked LLM call",
+            )
+            state.flow = "stop"
+            return
+
+    async def _check_budget(self, state: _RunState) -> AsyncGenerator[AgentEvent, None]:
+        """预算补救标记与预算检查。"""
+
+        # P5-S2 B3: token budget guard. Runs BEFORE the LLM call so
+        # we can surface an actionable error (BLOCK) or pre-emptive
+        # warning (WARN) instead of waiting for the model to choke
+        # on context_length_exceeded.
+        #
+        # P6 Phase 6 — always delegate to self._ctx.check_budget so
+        # chat handler + AgentLoop share one budget evaluator.
+        state._budget_block_pending = state._chain_budget_rescue_pending
+        state._chain_budget_rescue_pending = False
+        try:
+            # Use the FIRST provider's model as the context-window
+            # reference (chain mode). In single-provider mode fall
+            # back to default_model.
+            state._budget_model = state.use_model
+            if state.chain_mode and state.provider_chain:
+                state._first = state.provider_chain[0]
+                state._budget_model = getattr(state._first, "model", None) or state.use_model
+            state._resolved_model = state._budget_model or "unknown"
+            # Risk-2 fix: floor the estimate with the last real prompt
+            # size (response.usage.input_tokens) so the gate accounts for
+            # the fixed system/tool-schema base that estimate_tokens(
+            # working_messages) misses — otherwise a genuinely over-window
+            # prompt (real 113%) reads as ~16% and never BLOCKs. Default
+            # floor 0 on iter-0 → BC. Mirrors the compaction trigger.
+            state._budget = self._ctx.check_budget(
+                state.working_messages,
+                model=state._resolved_model,
+                real_prompt_tokens_floor=state._last_real_prompt_tokens,
+            )
+            if state._budget.verdict is _BudgetCheck.BLOCK:
+                logger.error(
+                    "p5s2_token_budget_block sid=%s tid=%s iter=%d tokens=%d window=%d ratio=%.2f",
+                    state.session_id,
+                    state.tid,
+                    state.iteration,
+                    state._budget.estimated_tokens,
+                    state._budget.context_window,
+                    state._budget.ratio,
+                )
+                if self.compressor is not None and (
+                    state.context_metadata_enabled or state._budget_block_pending
+                ):
+                    # Context OS owns the only lossy recovery path.  Defer
+                    # the terminal BLOCK until snapshot flush + compact +
+                    # re-estimate have had one chance to recover.
+                    state._budget_block_pending = True
+                else:
+                    # Legacy/OFF behavior remains byte-for-byte identical.
+                    self._gate.record_error(TerminationReason.CONTEXT_BUDGET_BLOCK)
                     yield ErrorEvent(
                         type="error",
                         task_id=state.tid,
                         iteration=state.iteration,
-                        reason=state.empty_reason,
-                        detail=(
-                            "The model exhausted three recovery nudges after "
-                            "ending turns with no tool call or user-visible "
-                            "answer."
-                        ),
+                        reason="context_budget_block",
+                        detail=state._budget.advice,
                     )
+                    state.flow = "stop"
                     return
-
-                state.reasoning_only_nudges_used += 1
-                state.reasoning_reply = _append_loop_transcript(
-                    state.working_messages,
-                    {
-                        "role": "assistant",
-                        "content": "",
-                        "reasoning_content": state.response.reasoning_content,
-                    },
-                    metadata_enabled=state.context_metadata_enabled,
-                    source="agent_loop.reasoning_only.trigger",
-                    role="assistant",
-                    fragment_id=(
-                        f"agent-loop:{state.tid}:iteration:{state.iteration}:reasoning-only-trigger"
-                    ),
+            elif state._budget.verdict is _BudgetCheck.WARN and not state._budget_warn_emitted:
+                logger.warning(
+                    "p5s2_token_budget_warn sid=%s tid=%s iter=%d tokens=%d window=%d ratio=%.2f",
+                    state.session_id,
+                    state.tid,
+                    state.iteration,
+                    state._budget.estimated_tokens,
+                    state._budget.context_window,
+                    state._budget.ratio,
                 )
+                state._budget_warn_emitted = True
+        except Exception as _b_exc:  # noqa: BLE001
+            # Budget check is advisory — never fail the loop on it.
+            logger.debug("token_budget_check_failed err=%s", str(_b_exc)[:100])
+
+        # Budget gate BEFORE the call — can't take back tokens after the fact.
+        if self.budget_checker is not None and not self.budget_checker.check_allowed():
+            yield ErrorEvent(
+                type="error",
+                task_id=state.tid,
+                iteration=state.iteration,
+                reason="budget_exceeded",
+                detail=f"daily budget cap reached (${self.budget_checker.cap_usd:.2f})",
+            )
+            state.flow = "stop"
+            return
+
+    async def _compact_context(self, state: _RunState) -> AsyncGenerator[AgentEvent, None]:
+        """上下文超限时压缩。"""
+
+        # WI-4.0 compaction: after budget guard, before LLM call.
+        # Reuses _budget.estimated_tokens (just computed above).
+        # compressor=None (flag off) → short-circuit, zero overhead.
+        # Operates in-place on working_messages (not assemble — BC).
+        # System messages (skill_prelude/persona/frozen) are kept verbatim
+        # by _partition inside compress() — "不绕 assemble" constraint met.
+        if self.compressor is not None:
+            # The compressor service is process-wide, while ContextManager
+            # is frozen per Run from the selected model.  Use an isolated
+            # routed view so concurrent Sessions cannot bleed limits.
+            state._active_compressor = self.compressor
+            try:
+                state._ctx_cfg_for_compression = getattr(self._ctx, "config", None)
+                state._model_info_for_compression = getattr(
+                    state._ctx_cfg_for_compression, "model_info", None
+                )
+                state._for_context = getattr(self.compressor, "for_context", None)
+                if callable(state._for_context) and state._model_info_for_compression is not None:
+                    state._active_compressor = state._for_context(
+                        context_window=int(state._model_info_for_compression.context_window),
+                        threshold_percent=min(
+                            float(state._model_info_for_compression.compact_at_pct),
+                            0.70,
+                        ),
+                        effective_pct=float(state._model_info_for_compression.effective_pct),
+                    )
+            except Exception:  # noqa: BLE001 -- legacy fake/BC compressor
+                state._active_compressor = self.compressor
+            try:
+                state._ctoken_est = getattr(state._budget, "estimated_tokens", 0)
+            except Exception:  # noqa: BLE001
+                state._ctoken_est = 0
+            # 第 3 刀: real usage 兜底(见 _last_real_prompt_tokens 注释)。
+            if state._last_real_prompt_tokens > state._ctoken_est:
+                state._ctoken_est = state._last_real_prompt_tokens
+            # ★ 第 4 刀(真机测压缩发现的核心 bug 修复): 直接数【即将发送的
+            # working_messages】的 token。原来只用 _budget.estimated_tokens(被
+            # BudgetAllocator 压到 window×0.6,低于压缩阈值 window×0.8)+
+            # _last_real_prompt_tokens(每条消息开头重置 0、且单轮聊天不迭代第二次
+            # 拿不到真值) → 两路都够不到阈值 → 压缩**永不触发**(实测 12 消息/
+            # 1746 真 token 仍不压)。直接数 working_messages 调用前可得、不受
+            # allocator 截断、不延迟,是最可靠的触发信号(复用统一计数,优化 #1+#3)。
+            try:
+                state._wm_tokens = _cmt(state.working_messages)
+                if state._wm_tokens > state._ctoken_est:
+                    state._ctoken_est = state._wm_tokens
+            except Exception:  # noqa: BLE001
+                pass
+            state._ctx_should_compress = False
+            try:
+                state._ctx_cfg = getattr(self._ctx, "config", None)
+                # WI-1B-3: adaptive_compact_pct ON → 按本 run 是否 agentic
+                # (工具调用计数 ≥ 阈值) 取微调后的触发线;OFF → for() 直接
+                # 返回原 compact_at_tokens 属性(字节级 BC,等价旧分支)。
+                state._ctx_compact_at = None
+                state._for_fn = getattr(state._ctx_cfg, "compact_at_tokens_for", None)
+                if callable(state._for_fn):
+                    state._agentic = state._run_tool_calls >= state._AGENTIC_TOOL_THRESHOLD
+                    state._ctx_compact_at = state._for_fn(state._agentic)
+                else:
+                    state._ctx_compact_at = getattr(state._ctx_cfg, "compact_at_tokens", None)
+                if state._ctx_compact_at is not None:
+                    state._ctx_should_compress = state._ctoken_est >= int(state._ctx_compact_at) > 0
+            except Exception:  # noqa: BLE001
+                state._ctx_should_compress = False
+            if (
+                state._budget_block_pending
+                or state._active_compressor.should_compress(state._ctoken_est)
+                or state._ctx_should_compress
+            ):
+                try:
+                    async with aclosing(self._run_compression(state)) as _phase:
+                        async for _event in _phase:
+                            yield _event
+                except Exception as _cmp_exc:  # noqa: BLE001
+                    # Compaction is advisory — never abort the loop on it.
+                    state._latest_compression_report = {
+                        "requested_model": self._requested_compression_model(),
+                        "failure": str(_cmp_exc)[:200],
+                    }
+                    logger.debug(
+                        "p1_4_compaction_failed sid=%s iter=%d err=%s",
+                        state.session_id,
+                        state.iteration,
+                        str(_cmp_exc)[:200],
+                    )
+
+    async def _run_compression(self, state: _RunState) -> AsyncGenerator[AgentEvent, None]:
+        """执行一次压缩：取压缩模型、调用压缩器、处理结果。"""
+
+        state._gt = None
+        if self.session_goal_store is not None:
+            state._gt_fn = getattr(self.session_goal_store, "get_goal_text", None)
+            if callable(state._gt_fn):
+                state._gt = state._gt_fn(state.session_id)
+        state._compression_resolution = None
+        state._compaction_cycle_id = None
+        state._requested_compression_model = self._requested_compression_model()
+        if state.context_metadata_enabled:
+            state._compaction_cycle_index += 1
+            state._compaction_cycle_id = f"{state.context_request_id or state.tid}:compaction:{state._compaction_cycle_index}"
+            await self._flush_context_snapshot(
+                cycle_id=state._compaction_cycle_id,
+                session_id=state.session_id,
+                request_id=state.context_request_id or state.tid,
+                working_messages=state.working_messages,
+                prepared_context=state.prepared_context,
+                current_tool_set=state.current_tool_set,
+            )
+            state._compression_resolution = self._resolve_compression_model(
+                state.provider_chain,
+                requested_model=state._requested_compression_model,
+            )
+
+            if context_os_e2e_hooks.consume_context_os_e2e_fault("compactor_model_error"):
+                raise RuntimeError("compactor_model_error")
+            await self._execute_coverage_compaction_jobs(
+                cycle_id=state._compaction_cycle_id,
+                prepared_context=state.prepared_context,
+                resolution=state._compression_resolution,
+            )
+        await self._preflush_task_state(state)
+        state._compress_kwargs: dict[str, Any] = {"goal_text": state._gt}
+        if state._compression_resolution is not None:
+            state._candidate = state._compression_resolution.candidates[0]
+            state._compress_kwargs.update(
+                resolved_provider=state._candidate.provider,
+                resolved_model=state._candidate.model_id,
+                compaction_cycle_id=state._compaction_cycle_id,
+            )
+        if self._provider_workload_context_factory is not None:
+            state._compress_kwargs["workload_context"] = self._provider_workload_context_factory(
+                "agent.context_compaction"
+            )
+        state._context_remount = (
+            _capture_context_remount(state.working_messages)
+            if state.context_metadata_enabled
+            else None
+        )
+        if not state.context_metadata_enabled:
+            if context_os_e2e_hooks.consume_context_os_e2e_fault("compactor_model_error"):
+                raise RuntimeError("compactor_model_error")
+        state._cresult = await state._active_compressor.compress(
+            state.working_messages, **state._compress_kwargs
+        )
+        state._resolved_candidate = (
+            state._compression_resolution.candidates[0]
+            if state._compression_resolution is not None
+            else None
+        )
+        state._latest_compression_report = {
+            "requested_model": state._requested_compression_model,
+            "resolved_model": (
+                state._resolved_candidate.model_id
+                if state._resolved_candidate is not None
+                else str(getattr(self.compressor, "model", "") or "")
+            ),
+            "actual_model": (
+                state._resolved_candidate.model_id
+                if state._resolved_candidate is not None
+                else str(getattr(self.compressor, "model", "") or "")
+            ),
+            "provider": (
+                state._resolved_candidate.provider_id
+                if state._resolved_candidate is not None
+                else ""
+            ),
+            "source": (
+                state._compression_resolution.source
+                if state._compression_resolution is not None
+                else "legacy"
+            ),
+            "failure": str(getattr(state._cresult, "error", "") or "")[:200],
+        }
+        async with aclosing(self._apply_compression_result(state)) as _phase:
+            async for _event in _phase:
+                yield _event
+
+    async def _preflush_task_state(self, state: _RunState) -> None:
+        """压缩前把任务态写进文件记忆（每轮运行最多一次，失败不阻断压缩）。"""
+
+        # WI-4b pre-flush: 摘掉中段前把任务态写进 L1(跨 session 记任务)。
+        # best-effort + 每 run 限一次(latch),失败绝不阻断压缩。
+        if (
+            not state.context_metadata_enabled
+            and self.file_memory is not None
+            and not state._preflush_done
+        ):
+            state._preflush_done = True
+            try:
+                state._last_user = ""
+                for state._m in reversed(state.working_messages):
+                    if state._m.get("role") == "user":
+                        state._last_user = str(state._m.get("content") or "")[:500]
+                        break
+                state._flush_parts = []
+                if state._gt:
+                    state._flush_parts.append(f"目标: {state._gt}")
+                if state._last_user:
+                    state._flush_parts.append(f"最近请求: {state._last_user}")
+                if state._flush_parts:
+                    state._flush_body = "[任务态快照/task-state] " + "; ".join(state._flush_parts)
+                    await self.file_memory.append("memory", state._flush_body, salience=0.6)
+                    logger.info(
+                        "wi4b_preflush_l1 sid=%s tid=%s chars=%d",
+                        state.session_id,
+                        state.tid,
+                        len(state._flush_body),
+                    )
+            except Exception as _pf_exc:  # noqa: BLE001
+                logger.debug(
+                    "wi4b_preflush_failed sid=%s err=%s",
+                    state.session_id,
+                    str(_pf_exc)[:120],
+                )
+
+    async def _apply_compression_result(self, state: _RunState) -> AsyncGenerator[AgentEvent, None]:
+        """压缩成功后替换工作消息并记录报告。"""
+
+        if getattr(state._cresult, "compressed", False):
+            state._skill_compaction_happened = True
+            state.working_messages = state._cresult.messages
+            if state._context_remount is not None:
+                state.working_messages = _remount_context_after_compaction(
+                    state.working_messages,
+                    state._context_remount,
+                )
+            # WI-4.2: re-inline skill bodies after compaction so
+            # the LLM doesn't lose skill step details that were
+            # in the compressed "middle" messages.
+            state.working_messages = self._remount_skills(
+                state.working_messages,
+                state.session_id,
+                prepared_context=state.prepared_context,
+            )
+            if not state._compaction_warn_logged:
+                logger.info(
+                    "p1_4_compaction_fired sid=%s tid=%s iter=%d reduction=%s",
+                    state.session_id,
+                    state.tid,
+                    state.iteration,
+                    getattr(state._cresult, "reduction_ratio", "?"),
+                )
+                state._compaction_warn_logged = True
+            # WI-1B-2 压缩可观测: flag ON 时额外 emit metrics +
+            # yield 轻量事件。flag OFF → 整块 short-circuit(BC,
+            # 既不 record 也不构造/yield ContextCompactedEvent)。
+            if self.ctx_observability:
+                state._ctx_in = int(getattr(state._cresult, "input_tokens", 0) or 0)
+                state._ctx_out = int(getattr(state._cresult, "output_tokens", 0) or 0)
+                state._ctx_ratio = float(getattr(state._cresult, "reduction_ratio", 0.0) or 0.0)
+                try:
+                    # 按需导入：测试替身（observability.metrics_sink）
+                    from observability.metrics_sink import (
+                        record as _ctx_metric,
+                    )
+
+                    _ctx_metric(
+                        "context_compacted",
+                        {
+                            "ratio": round(state._ctx_ratio, 3),
+                            "model": getattr(self.compressor, "model", "") or "",
+                            "count": state._ctx_in - state._ctx_out,
+                        },
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
+                state._actual_compaction_model = (
+                    state._resolved_candidate.model_id
+                    if state._resolved_candidate is not None
+                    else str(getattr(self.compressor, "model", "") or "")
+                )
+                state._compaction_source_event_id = (
+                    f"context-compaction:{state.session_id}:{state.tid}:{state.iteration}"
+                )
+                yield ContextCompactedEvent(
+                    task_id=state.tid,
+                    iteration=state.iteration,
+                    reduction=round(state._ctx_ratio, 3),
+                    tokens_in=state._ctx_in,
+                    tokens_out=state._ctx_out,
+                    model=state._actual_compaction_model,
+                    source_event_id=(state._compaction_source_event_id),
+                    based_on_sample_id=str(
+                        getattr(
+                            self,
+                            "_context_usage_basis_sample_id",
+                            "",
+                        )
+                        or ""
+                    ),
+                    occurred_at=time.time(),
+                )
+
+                self._context_usage_basis_sample_id = context_usage_sample_id(
+                    state.session_id,
+                    state._compaction_source_event_id,
+                )
+
+    async def _after_compaction(self, state: _RunState) -> AsyncGenerator[AgentEvent, None]:
+        """预算拦截后的补救与压缩后重新挂载已用技能。"""
+
+        if state._budget_block_pending:
+            try:
+                state._post_budget = self._ctx.check_budget(
+                    state.working_messages,
+                    model=state._resolved_model,
+                    real_prompt_tokens_floor=0,
+                )
+                state._still_blocked = state._post_budget.verdict is _BudgetCheck.BLOCK
+                state._block_detail = state._post_budget.advice
+            except Exception as _post_exc:  # noqa: BLE001
+                state._still_blocked = True
+                state._block_detail = f"context re-budget failed: {_post_exc}"
+            if state._still_blocked:
+                self._gate.record_error(TerminationReason.CONTEXT_BUDGET_BLOCK)
+                yield ErrorEvent(
+                    type="error",
+                    task_id=state.tid,
+                    iteration=state.iteration,
+                    reason="context_budget_block",
+                    detail=state._block_detail,
+                )
+                state.flow = "stop"
+                return
+
+        if state._skill_compaction_happened and self._skills_used_this_run:
+            state.working_messages = self._remount_skills(
+                state.working_messages,
+                state.session_id,
+                prepared_context=state.prepared_context,
+            )
+
+    async def _periodic_checks(self, state: _RunState) -> None:
+        """定期自检提示与会话待办同步。"""
+
+        if state.iteration > 0 and state.iteration % _SELFCHECK_EVERY == 0:
+            state.budget_left = self.max_iterations - state.iteration
+            state.msg = _build_selfcheck_message(
+                state.iteration, self.max_iterations, state.tools_used
+            )
+            # WI-2.1: append reflection instruction at tier2/tier3 only
+            # (zero overhead on normal tier1 path; flag off = BC).
+            if self.structured_reflection and state.iteration >= _SELFCHECK_TIER2_AT:
+                state.msg = state.msg + _REFLECTION_INSTRUCTION
+            _append_loop_control(
+                state.working_messages,
+                {"role": "system", "content": state.msg},
+                metadata_enabled=state.context_metadata_enabled,
+                source="agent_loop.self_check",
+                anchor_after=_latest_context_anchor(
+                    state.working_messages,
+                    fallback=f"agent-loop:{state.tid}:iteration:{state.iteration}:start",
+                ),
+                fragment_id=(f"agent-loop:{state.tid}:iteration:{state.iteration}:self-check"),
+            )
+            state.tier = (
+                3
+                if state.iteration >= _SELFCHECK_TIER3_AT
+                else 2
+                if state.iteration >= _SELFCHECK_TIER2_AT
+                else 1
+            )
+            logger.info(
+                "p5s2_selfcheck_injected sid=%s tid=%s iter=%d budget=%d "
+                "tier=%d tools_used=%d structured_reflection=%s",
+                state.session_id,
+                state.tid,
+                state.iteration,
+                state.budget_left,
+                state.tier,
+                state.tools_used,
+                self.structured_reflection,
+            )
+            if self.force_finish_via_tool_choice and state.iteration >= _SELFCHECK_TIER3_AT:
+                state._force_finish_next = True
+
+        if (
+            self.session_todo_getter is not None
+            and state.iteration % _TODO_SYNC_EVERY == 0
+            and state.iteration < _SELFCHECK_TIER3_AT
+        ):
+            try:
+                state.todos = await self.session_todo_getter(state.session_id)
+            except Exception:
+                state.todos = []
+            if state.todos:
+                state.lines = []
+                for state.t in state.todos:
+                    state.content = (state.t.get("content") or "")[:80]
+                    state.status = (state.t.get("status") or "").lower()
+                    state.mark = {"completed": "✓", "in_progress": "🔄"}.get(state.status, "⏳")
+                    state.lines.append(f"  {state.mark} {state.content}")
                 _append_loop_control(
                     state.working_messages,
                     {
                         "role": "system",
-                        "content": (
-                            f"Recovery attempt {state.reasoning_only_nudges_used} of "
-                            f"{state.max_reasoning_only_nudges}. "
-                            "Your previous turn contained "
-                            + (
-                                "only internal reasoning"
-                                if state.has_hidden_reasoning
-                                else "no output"
-                            )
-                            + " and no user-visible answer or tool call. "
-                            "Do not end a turn this way. If your reasoning "
-                            "selected an available tool, emit the actual "
-                            "structured tool call now. Otherwise provide a "
-                            "concise user-facing answer."
-                        ),
+                        "content": _TODO_SYNC_MSG.format(body="\n".join(state.lines)),
                     },
                     metadata_enabled=state.context_metadata_enabled,
-                    source="agent_loop.reasoning_only.nudge",
-                    anchor_after=(
-                        _context_fragment_id(state.reasoning_reply)
-                        or _latest_context_anchor(
-                            state.working_messages,
-                            fallback=(
-                                f"agent-loop:{state.tid}:iteration:{state.iteration}:reasoning-only-trigger"
-                            ),
-                        )
+                    source="agent_loop.todo_sync",
+                    anchor_after=_latest_context_anchor(
+                        state.working_messages,
+                        fallback=(f"agent-loop:{state.tid}:iteration:{state.iteration}:start"),
                     ),
-                    fragment_id=(
-                        f"agent-loop:{state.tid}:iteration:{state.iteration}:reasoning-only-nudge"
-                    ),
+                    fragment_id=(f"agent-loop:{state.tid}:iteration:{state.iteration}:todo-sync"),
                 )
                 logger.info(
-                    "model_non_actionable_response_retried sid=%s tid=%s iteration=%d reason=%s",
+                    "wi4_todo_sync sid=%s iter=%d n=%d",
+                    state.session_id,
+                    state.iteration,
+                    len(state.todos),
+                )
+
+    async def _call_provider(self, state: _RunState) -> AsyncGenerator[AgentEvent, None]:
+        """调用模型（含流式、超时、重试与回落）。"""
+
+        try:
+            if state.chain_mode:
+                # ─── Phase 3: walk the chain ───
+                # On transient LLMProviderError, yield a
+                # ProviderChainFallbackEvent and try the next
+                # provider. On success, accept the response and
+                # break. If every provider fails, emit
+                # ErrorEvent(reason="all_providers_failed").
+
+                state.flow = None
+                async with aclosing(self._call_provider_chain(state)) as _phase:
+                    async for _event in _phase:
+                        yield _event
+                if state.flow is not None:
+                    return
+            elif state.stream_capable:
+                async with aclosing(self._call_provider_streaming(state)) as _phase:
+                    async for _event in _phase:
+                        yield _event
+            else:
+                state.call_llm_kwargs = (
+                    {**state.llm_kwargs, "tool_choice": "none"}
+                    if state._force_finish_next
+                    else state.llm_kwargs
+                )
+                state.call_llm_kwargs = {**state.launch_call_kwargs, **state.call_llm_kwargs}
+                state._attempt_tools = (
+                    None if state._force_finish_next else (state.tool_schemas or None)
+                )
+                state._attempt_provider = getattr(
+                    self.llm, "_provider", getattr(self.llm, "_active_provider", self.llm)
+                )
+                state._attempt_purpose = (
+                    "force_finish" if state._force_finish_next else "agent_response"
+                )
+                state.response = await self._run_context_attempt(
+                    provider=state._attempt_provider,
+                    session_id=state.session_id,
+                    request_id=state.context_request_id or state.tid,
+                    attempt_id=f"{state.context_request_id or state.tid}:iter:{state.iteration}:nonstream",
+                    purpose=state._attempt_purpose,
+                    messages=state.working_messages,
+                    tools=state._attempt_tools,
+                    fallback_model=state.use_model or "",
+                    prepared_context=state.prepared_context,
+                    current_tool_set=state.current_tool_set,
+                    compression=state._latest_compression_report,
+                    invoke=lambda: traced_call(
+                        name="llm.chat_with_fallback",
+                        kind=SpanKind.LLM,
+                        lifecycle_stage="llm",
+                        attributes={
+                            "iteration": state.iteration,
+                            "model": str(state.use_model or ""),
+                            "stream": False,
+                            "message_count": len(state.working_messages),
+                            "tool_schema_count": len(state.tool_schemas),
+                        },
+                        invoke=lambda: self.llm.chat_with_fallback(
+                            state.working_messages,
+                            tools=state._attempt_tools,
+                            model=state.use_model,
+                            **state.call_llm_kwargs,
+                        ),
+                    ),
+                )
+        except LLMBudgetExceededError as exc:
+            yield ErrorEvent(
+                type="error",
+                task_id=state.tid,
+                iteration=state.iteration,
+                reason="budget_exceeded",
+                detail=str(exc),
+            )
+            state.flow = "stop"
+            return
+        except RuntimeError as exc:
+            if not str(exc).startswith(
+                ("tool_context_persist_failed", "provider_context_budget_exceeded")
+            ):
+                raise
+            yield ErrorEvent(
+                type="error",
+                task_id=state.tid,
+                iteration=state.iteration,
+                reason=(
+                    "provider_context_budget_exceeded"
+                    if str(exc).startswith("provider_context_budget_exceeded")
+                    else "tool_context_persist_failed"
+                ),
+                detail=str(exc),
+            )
+            state.flow = "stop"
+            return
+        except LLMProviderError as exc:
+            yield ErrorEvent(
+                type="error",
+                task_id=state.tid,
+                iteration=state.iteration,
+                reason="llm_error",
+                detail=str(exc),
+                # WI-R5: carry the relay error code so the frontend
+                # can show 余额不足 / key 失效 friendly messages.
+                error_class=getattr(exc, "error_class", "") or "",
+            )
+            state.flow = "stop"
+            return
+
+    async def _call_provider_chain(self, state: _RunState) -> AsyncGenerator[AgentEvent, None]:
+        """链式模式：按提供方链逐个尝试，直到拿到回复。"""
+
+        state.response = None  # type: ignore[assignment]
+        state.last_exc: Exception | None = None
+        for state.idx, state.prov in enumerate(state.provider_chain):  # type: ignore[arg-type]
+            try:
+                state._attempt_tools = (
+                    None if state._force_finish_next else (state.tool_schemas or None)
+                )
+                state._attempt_purpose = (
+                    "force_finish" if state._force_finish_next else "agent_response"
+                )
+                state.raw = await self._run_context_attempt(
+                    provider=state.prov,
+                    session_id=state.session_id,
+                    request_id=state.context_request_id or state.tid,
+                    attempt_id=(
+                        f"{state.context_request_id or state.tid}:iter:{state.iteration}:provider:{state.idx}"
+                    ),
+                    purpose=state._attempt_purpose,
+                    messages=state.working_messages,
+                    tools=state._attempt_tools,
+                    fallback_model=state.use_model or "",
+                    prepared_context=state.prepared_context,
+                    current_tool_set=state.current_tool_set,
+                    compression=state._latest_compression_report,
+                    invoke=lambda prov=state.prov: traced_call(
+                        name="llm.chat_with_tools",
+                        kind=SpanKind.LLM,
+                        lifecycle_stage="llm",
+                        attributes={
+                            "iteration": state.iteration,
+                            "provider": str(getattr(prov, "id", f"provider_{state.idx}")),
+                            "stream": False,
+                            "message_count": len(state.working_messages),
+                            "tool_schema_count": len(state.tool_schemas),
+                        },
+                        invoke=lambda: prov.chat_with_tools(
+                            state.working_messages,
+                            tools=state._attempt_tools,
+                            max_tokens=int(state.llm_kwargs.get("max_tokens", 8192)),
+                            temperature=state.llm_kwargs.get("temperature"),
+                            response_format=state.llm_kwargs.get("response_format"),
+                            tool_choice=("none" if state._force_finish_next else None),
+                            **state.launch_call_kwargs,
+                        ),
+                    ),
+                )
+            except (LLMProviderError, RuntimeError) as exc:
+                state._authority_error = _non_fallback_provider_error(exc)
+                if _should_raise_provider_runtime_error(exc, state._authority_error):
+                    raise
+                if state._authority_error is not None:
+                    if state._authority_error == "tool_catalog_stale":
+                        _invalidate_stale_mcp_catalog(self.tools, state.current_tool_set)
+                    yield ErrorEvent(
+                        type="error",
+                        task_id=state.tid,
+                        iteration=state.iteration,
+                        reason=state._authority_error,
+                        detail=str(exc),
+                        error_class=state._authority_error,
+                    )
+                    state.flow = "stop"
+                    return
+                if state.launch_call_kwargs:
+                    raise
+                state.last_exc = exc
+                state.prov_id = getattr(state.prov, "id", f"provider_{state.idx}")
+                state.next_idx = state.idx + 1
+                if state.next_idx < len(state.provider_chain):  # type: ignore[arg-type]
+                    state.next_prov = state.provider_chain[state.next_idx]  # type: ignore[index]
+                    state.next_id = getattr(state.next_prov, "id", f"provider_{state.next_idx}")
+                    state.reason = str(exc) or type(exc).__name__
+                    logger.warning(
+                        "provider_chain_fallback from=%s to=%s reason=%s sid=%s tid=%s",
+                        state.prov_id,
+                        state.next_id,
+                        state.reason[:200],
+                        state.session_id,
+                        state.tid,
+                    )
+                    yield ProviderChainFallbackEvent(
+                        type="provider_chain_fallback",
+                        task_id=state.tid,
+                        iteration=state.iteration,
+                        session_id=state.session_id,
+                        from_=state.prov_id,
+                        to=state.next_id,
+                        reason=state.reason,
+                    )
+                else:
+                    logger.warning(
+                        "provider_chain_last_provider_failed id=%s reason=%s sid=%s",
+                        state.prov_id,
+                        str(exc)[:200],
+                        state.session_id,
+                    )
+                continue
+            else:
+                state.response = _raw_to_response(state.raw)
+                break
+
+        if state.response is None:
+            # All providers in the chain raised.
+            state.tried = len(state.provider_chain)  # type: ignore[arg-type]
+            state.last_text = str(state.last_exc) if state.last_exc else "unknown"
+            if isinstance(state.last_exc, RuntimeError) and str(state.last_exc).startswith(
+                "provider_context_budget_exceeded"
+            ):
+                yield ErrorEvent(
+                    type="error",
+                    task_id=state.tid,
+                    iteration=state.iteration,
+                    reason="provider_context_budget_exceeded",
+                    detail=state.last_text,
+                )
+                state.flow = "stop"
+                return
+            # P6 Phase 6 — record terminal error reason on the
+            # gate so callers reading summary() see the real
+            # cause (otherwise the gate would stay "running").
+            self._gate.record_error(TerminationReason.ALL_PROVIDERS_FAILED)
+            yield ErrorEvent(
+                type="error",
+                task_id=state.tid,
+                iteration=state.iteration,
+                reason="all_providers_failed",
+                detail=(f"tried {state.tried}, last_error: {state.last_text}"),
+                # 把最后一个 provider 的结构化 error_class 透传给前端，
+                # 让 chain 全失败路径也能 surface 友好分类（如
+                # empty_api_key→"请重新登录" / relay 402→充值），而不是
+                # 退化成无分类的通用错误。
+                error_class=getattr(state.last_exc, "error_class", "") or "",
+            )
+            state.flow = "stop"
+            return
+
+    async def _call_provider_streaming(self, state: _RunState) -> AsyncGenerator[AgentEvent, None]:
+        """单个提供方的流式调用；流式失败时回落到非流式。"""
+
+        # Streaming path: forward delta events, accumulate
+        # the final dict, then build the same ChatResponse
+        # the non-streaming path would have produced.
+        state.final_dict: dict | None = None
+        state.delta_count = 0
+        state.stream_failed_with: Exception | None = None
+        state.call_llm_kwargs = (
+            {**state.llm_kwargs, "tool_choice": "none"}
+            if state._force_finish_next
+            else state.llm_kwargs
+        )
+        state.call_llm_kwargs = {**state.launch_call_kwargs, **state.call_llm_kwargs}
+        state._attempt_tools = None if state._force_finish_next else (state.tool_schemas or None)
+        state._attempt_provider = getattr(
+            self.llm, "_provider", getattr(self.llm, "_active_provider", self.llm)
+        )
+        state._attempt_purpose = "force_finish" if state._force_finish_next else "agent_response"
+        async with aclosing(self._stream_provider_reply(state)) as _phase:
+            async for _event in _phase:
+                yield _event
+
+        state.needs_nonstream_fallback = (
+            state.stream_failed_with is not None
+            or state.final_dict is None
+            or (
+                state.delta_count == 0
+                and not state.final_dict.get("content")
+                and not state.final_dict.get("tool_calls")
+            )
+        )
+        if (
+            state.launch_call_kwargs
+            and not state.provider_launch_snapshot.supports_idempotent_launch
+        ):
+            state.needs_nonstream_fallback = False
+            if state.stream_failed_with is not None:
+                raise state.stream_failed_with
+        if state.needs_nonstream_fallback:
+            if state.stream_failed_with is None:
+                # Empty-stream case (the relay didn't actually stream).
+                logger.warning(
+                    "agent_loop_stream_fallback_to_nonstream delta_count=%d",
+                    state.delta_count,
+                )
+            state.response = await self._run_context_attempt(
+                provider=state._attempt_provider,
+                session_id=state.session_id,
+                request_id=state.context_request_id or state.tid,
+                attempt_id=f"{state.context_request_id or state.tid}:iter:{state.iteration}:nonstream-fallback",
+                purpose=state._attempt_purpose,
+                messages=state.working_messages,
+                tools=state._attempt_tools,
+                fallback_model=state.use_model or "",
+                prepared_context=state.prepared_context,
+                current_tool_set=state.current_tool_set,
+                compression=state._latest_compression_report,
+                invoke=lambda: traced_call(
+                    name="llm.chat_with_fallback",
+                    kind=SpanKind.LLM,
+                    lifecycle_stage="llm",
+                    attributes={
+                        "iteration": state.iteration,
+                        "model": str(state.use_model or ""),
+                        "stream": False,
+                        "stream_fallback": True,
+                        "message_count": len(state.working_messages),
+                        "tool_schema_count": len(state.tool_schemas),
+                    },
+                    invoke=lambda: self.llm.chat_with_fallback(
+                        state.working_messages,
+                        tools=state._attempt_tools,
+                        model=state.use_model,
+                        **state.call_llm_kwargs,
+                    ),
+                ),
+            )
+        else:
+            # Convert to ChatResponse to share the rest of the
+            # iteration code with the non-streaming path.
+
+            state.response = _raw_to_response(state.final_dict)
+
+    async def _stream_provider_reply(self, state: _RunState) -> AsyncGenerator[AgentEvent, None]:
+        """流式调用：转发增量事件并累积最终回复。"""
+
+        try:
+            async for state.ev in self._iterate_context_attempt(
+                provider=state._attempt_provider,
+                session_id=state.session_id,
+                request_id=state.context_request_id or state.tid,
+                attempt_id=f"{state.context_request_id or state.tid}:iter:{state.iteration}:stream",
+                purpose=state._attempt_purpose,
+                messages=state.working_messages,
+                tools=state._attempt_tools,
+                fallback_model=state.use_model or "",
+                prepared_context=state.prepared_context,
+                current_tool_set=state.current_tool_set,
+                compression=state._latest_compression_report,
+                iterator=lambda: traced_iterate(
+                    name="llm.chat_with_fallback_stream",
+                    kind=SpanKind.LLM,
+                    lifecycle_stage="llm",
+                    attributes={
+                        "iteration": state.iteration,
+                        "model": str(state.use_model or ""),
+                        "stream": True,
+                        "message_count": len(state.working_messages),
+                        "tool_schema_count": len(state.tool_schemas),
+                    },
+                    iterator=lambda: self.llm.chat_with_fallback_stream(  # type: ignore[attr-defined]
+                        state.working_messages,
+                        tools=state._attempt_tools,
+                        model=state.use_model,
+                        **state.call_llm_kwargs,
+                    ),
+                ),
+            ):
+                state.ev_type = state.ev.get("type")
+                if state.ev_type == "delta":
+                    state.delta_count += 1
+                    yield AssistantDeltaEvent(
+                        type="assistant_delta",
+                        task_id=state.tid,
+                        iteration=state.iteration,
+                        content=state.ev.get("content", ""),
+                        kind="content",
+                        invocation_id=state.ev.get("invocation_id"),
+                        stream_epoch=state.ev.get("stream_epoch"),
+                        provisional=bool(state.ev.get("provisional", False)),
+                    )
+                elif state.ev_type == "delta_reasoning":
+                    state.delta_count += 1
+                    yield AssistantDeltaEvent(
+                        type="assistant_delta",
+                        task_id=state.tid,
+                        iteration=state.iteration,
+                        content=state.ev.get("content", ""),
+                        kind="reasoning",
+                        invocation_id=state.ev.get("invocation_id"),
+                        stream_epoch=state.ev.get("stream_epoch"),
+                        provisional=bool(state.ev.get("provisional", False)),
+                    )
+                elif state.ev_type == "retract":
+                    yield AssistantDeltaEvent(
+                        type="assistant_delta",
+                        task_id=state.tid,
+                        iteration=state.iteration,
+                        invocation_id=state.ev.get("invocation_id"),
+                        stream_epoch=state.ev.get("stream_epoch"),
+                        provisional=True,
+                        retract_provisional=True,
+                    )
+                elif state.ev_type == "final":
+                    state.final_dict = state.ev
+        except LLMProviderError as stream_exc:
+            # P4-S25 fix: streaming raised after exhausting its
+            # own retry budget (typically RemoteProtocolError
+            # 3-in-a-row from the relay). Fall back to the non-
+            # streaming path instead of bubbling the error
+            # to the user — non-stream is more reliable on
+            # the relay in our observed traffic, AND it has its
+            # own independent retry budget so we effectively
+            # double the resilience without hard-coding 6
+            # retries.
+            state.stream_failed_with = stream_exc
+            logger.warning(
+                "agent_loop_stream_failed_falling_back error=%s",
+                str(stream_exc)[:200],
+            )
+
+    def _record_usage(self, state: _RunState) -> None:
+        """累计本轮用量、记录追踪与费用。"""
+
+        state.launch_call_kwargs = {}
+        state.totals["input"] += state.response.usage.input_tokens
+        state.totals["output"] += state.response.usage.output_tokens
+        state.totals["cache_read"] += state.response.usage.cache_read_tokens
+        state.totals["cache_write"] += state.response.usage.cache_write_tokens
+        # 第 3 刀: 记录 relay 真实 prompt 大小,喂下一轮 compaction 判定。
+        if state.response.usage.input_tokens > state._last_real_prompt_tokens:
+            state._last_real_prompt_tokens = state.response.usage.input_tokens
+        if self._tracer:
+            self._tracer.record(
+                {
+                    "kind": "llm_out",
+                    "iter": state.iteration,
+                    "stop_reason": state.response.stop_reason,
+                    "content_preview": (state.response.content or "")[:200],
+                    "tool_calls": [
+                        {"name": tc.name, "args": tc.arguments} for tc in state.response.tool_calls
+                    ],
+                    "usage": (
+                        state.response.usage.model_dump()
+                        if hasattr(state.response.usage, "model_dump")
+                        else {}
+                    ),
+                }
+            )
+
+        # P6 Phase 6 — record the turn (advances turns_used and
+        # optionally adds to cost_usd if the response carries a
+        # cost_usd extra; ChatUsage has no such field today so we
+        # pass 0.0). The gate's allows_call check at top of next
+        # iteration uses turns_used to decide whether to keep going.
+        state._cost_delta = 0.0
+        state._usage = getattr(state.response, "usage", None)
+        if state._usage is not None:
+            state._maybe_cost = getattr(state._usage, "cost_usd", None)
+            if isinstance(state._maybe_cost, (int, float)):
+                state._cost_delta = float(state._maybe_cost)
+        self._gate.record_turn(cost_delta_usd=state._cost_delta)
+
+    async def _repair_empty_response(self, state: _RunState) -> AsyncGenerator[AgentEvent, None]:
+        """模型回复为空：按次数上限补提示重来。"""
+
+        if not (state.response.content or "").strip() and not state.response.tool_calls:
+            state.has_hidden_reasoning = bool((state.response.reasoning_content or "").strip())
+            state.empty_reason = (
+                "model_reasoning_only_response"
+                if state.has_hidden_reasoning
+                else "model_empty_response"
+            )
+            state.max_reasoning_only_nudges = 3
+            if state.reasoning_only_nudges_used >= state.max_reasoning_only_nudges:
+                logger.warning(
+                    "model_non_actionable_response_exhausted sid=%s tid=%s iteration=%d reason=%s",
                     state.session_id,
                     state.tid,
                     state.iteration,
                     state.empty_reason,
                 )
-                continue
+                yield ErrorEvent(
+                    type="error",
+                    task_id=state.tid,
+                    iteration=state.iteration,
+                    reason=state.empty_reason,
+                    detail=(
+                        "The model exhausted three recovery nudges after "
+                        "ending turns with no tool call or user-visible "
+                        "answer."
+                    ),
+                )
+                state.flow = "stop"
+                return
 
-            # The guard is intentionally consecutive. A real tool call or
-            # user-visible answer proves that the provider recovered, so a
-            # later isolated reasoning-only turn starts a fresh recovery
-            # window instead of inheriting old nudges from earlier work.
-            state.reasoning_only_nudges_used = 0
-            yield AssistantMessageEvent(
-                type="assistant_message",
-                task_id=state.tid,
-                iteration=state.iteration,
-                content=state.response.content,
-                reasoning_content=state.response.reasoning_content,
-                tool_calls=list(state.response.tool_calls),
-                stop_reason=state.response.stop_reason,
-                model=state.response.model,
+            state.reasoning_only_nudges_used += 1
+            state.reasoning_reply = _append_loop_transcript(
+                state.working_messages,
+                {
+                    "role": "assistant",
+                    "content": "",
+                    "reasoning_content": state.response.reasoning_content,
+                },
+                metadata_enabled=state.context_metadata_enabled,
+                source="agent_loop.reasoning_only.trigger",
+                role="assistant",
+                fragment_id=(
+                    f"agent-loop:{state.tid}:iteration:{state.iteration}:reasoning-only-trigger"
+                ),
             )
-
-            # End of conversation — emit final and stop.
-            if state.response.stop_reason != "tool_use" or not state.response.tool_calls:
-                if state.host_validated_zero_tool_terminal:
-                    yield _host_validated_terminal_event(
-                        self, state.response, state.tid, state.iteration, state.totals
-                    )
-                    return
-                # WI-1 §17.6 — verify_exhausted final-summary turn: when this
-                # is the single forced "summarize then stop" turn granted after
-                # verify-gate exhaustion (_verify_final_done set + force_finish
-                # consumed this iteration), the model has now produced its
-                # plain-text summary. Surface it as the terminal
-                # ErrorEvent(verify_exhausted) (summary carried in detail) so the
-                # failure is still reported while the user gets the summary.
-                # Without this, the verify block's own entry guard
-                # (verify_nudges_used < max) skips re-entry on this turn and the
-                # run would silently end as a FinalEvent, hiding the failure.
-                if state._verify_final_done and state._force_finish_next:
-                    if self._tracer:
-                        self._tracer.record(
-                            {
-                                "kind": "end",
-                                "iter": state.iteration,
-                                "reason": "verify_exhausted",
-                                "gate_summary": self._gate.summary(),
-                            }
-                        )
-                    yield ErrorEvent(
-                        type="error",
-                        task_id=state.tid,
-                        iteration=state.iteration,
-                        reason="verify_exhausted",
-                        detail=(state.response.content or "verify-gate: all retries exhausted"),
-                    )
-                    return
-                # ─── Step2 EvidenceGate（取证门控，核心闸①，plans/2026-06-24-...）。
-                # needs_investigation 且本 run 尚未取证就想 end_turn → 拦截注入 <调查> nudge。
-                # flag off 时 self._evidence_gate=None → 跳过整段（BC）。判定走 self._evidence_gathered
-                # 布尔（dispatch 时按白名单+history 快照置位），对 compaction 整体替换 working_messages 免疫（R1）。
-                if (
-                    state.iteration < _SELFCHECK_TIER3_AT
-                    and self._evidence_gate is not None
-                    and self._pipeline_needs_investigation
-                ):
-                    state._ev_dec = await traced_call(
-                        name="evidence_gate.check",
-                        kind=SpanKind.GATE,
-                        lifecycle_stage="gate",
-                        attributes={"iteration": state.iteration, "gate": "evidence"},
-                        invoke=lambda: self._evidence_gate.check(
-                            needs_investigation=self._pipeline_needs_investigation,
-                            evidence_gathered=self._evidence_gathered,
-                            nudges_used=self._evidence_nudges_used,
+            _append_loop_control(
+                state.working_messages,
+                {
+                    "role": "system",
+                    "content": (
+                        f"Recovery attempt {state.reasoning_only_nudges_used} of "
+                        f"{state.max_reasoning_only_nudges}. "
+                        "Your previous turn contained "
+                        + ("only internal reasoning" if state.has_hidden_reasoning else "no output")
+                        + " and no user-visible answer or tool call. "
+                        "Do not end a turn this way. If your reasoning "
+                        "selected an available tool, emit the actual "
+                        "structured tool call now. Otherwise provide a "
+                        "concise user-facing answer."
+                    ),
+                },
+                metadata_enabled=state.context_metadata_enabled,
+                source="agent_loop.reasoning_only.nudge",
+                anchor_after=(
+                    _context_fragment_id(state.reasoning_reply)
+                    or _latest_context_anchor(
+                        state.working_messages,
+                        fallback=(
+                            f"agent-loop:{state.tid}:iteration:{state.iteration}:reasoning-only-trigger"
                         ),
                     )
-                    if self._pipeline_observability:
-                        yield self._pipeline_event(
-                            "chat_v2_evidence_gate",
-                            state.iteration,
+                ),
+                fragment_id=(
+                    f"agent-loop:{state.tid}:iteration:{state.iteration}:reasoning-only-nudge"
+                ),
+            )
+            logger.info(
+                "model_non_actionable_response_retried sid=%s tid=%s iteration=%d reason=%s",
+                state.session_id,
+                state.tid,
+                state.iteration,
+                state.empty_reason,
+            )
+            state.flow = "continue"
+            return
+
+    async def _handle_final_response(self, state: _RunState) -> AsyncGenerator[AgentEvent, None]:
+        """模型没有发起工具调用（或停止原因不是工具调用）：逐个过收尾闸门，决定收尾还是再来一轮。"""
+
+        # End of conversation — emit final and stop.
+        if state.response.stop_reason != "tool_use" or not state.response.tool_calls:
+            if state.host_validated_zero_tool_terminal:
+                yield _host_validated_terminal_event(
+                    self, state.response, state.tid, state.iteration, state.totals
+                )
+                state.flow = "stop"
+                return
+            # WI-1 §17.6 — verify_exhausted final-summary turn: when this
+            # is the single forced "summarize then stop" turn granted after
+            # verify-gate exhaustion (_verify_final_done set + force_finish
+            # consumed this iteration), the model has now produced its
+            # plain-text summary. Surface it as the terminal
+            # ErrorEvent(verify_exhausted) (summary carried in detail) so the
+            # failure is still reported while the user gets the summary.
+            # Without this, the verify block's own entry guard
+            # (verify_nudges_used < max) skips re-entry on this turn and the
+            # run would silently end as a FinalEvent, hiding the failure.
+            if state._verify_final_done and state._force_finish_next:
+                if self._tracer:
+                    self._tracer.record(
+                        {
+                            "kind": "end",
+                            "iter": state.iteration,
+                            "reason": "verify_exhausted",
+                            "gate_summary": self._gate.summary(),
+                        }
+                    )
+                yield ErrorEvent(
+                    type="error",
+                    task_id=state.tid,
+                    iteration=state.iteration,
+                    reason="verify_exhausted",
+                    detail=(state.response.content or "verify-gate: all retries exhausted"),
+                )
+                state.flow = "stop"
+                return
+            state.flow = None
+            async with aclosing(self._evidence_gate_step(state)) as _phase:
+                async for _event in _phase:
+                    yield _event
+            if state.flow is not None:
+                return
+
+            state.flow = None
+            await self._completion_probe_gate(state)
+            if state.flow is not None:
+                return
+
+            state.flow = None
+            async with aclosing(self._self_check_gate_step(state)) as _phase:
+                async for _event in _phase:
+                    yield _event
+            if state.flow is not None:
+                return
+
+            state.flow = None
+            await self._session_goal_gate(state)
+            if state.flow is not None:
+                return
+
+            state.flow = None
+            async with aclosing(self._external_evaluation_gate(state)) as _phase:
+                async for _event in _phase:
+                    yield _event
+            if state.flow is not None:
+                return
+            state._final_content = await _review_final_response_quality(
+                self,
+                state.response,
+                user_request=state.loop_user_request,
+                session_id=state.session_id,
+                request_id=state.context_request_id or state.tid,
+                iteration=state.iteration,
+                model=state.use_model or "",
+                prepared_context=state.prepared_context,
+                current_tool_set=state.current_tool_set,
+                totals=state.totals,
+            )
+            # ─── Step7 收敛标记（自然收尾路径，仅观测；止损在循环顶部 2d-① 处理）。
+            # plans/2026-06-24-...：模型自己 end_turn 正常收尾时 gate 尚未 terminate
+            # （reason="running"），此处只发 converged 观测事件，**不触发止损**（止损只在触顶分支）。
+            if self._convergence_controller is not None and self._pipeline_observability:
+                state._v = self._convergence_controller.evaluate(
+                    principal_resolved=True,
+                    unverified_claims=0,
+                    gate_summary=self._gate.summary(),
+                )
+                yield self._pipeline_event(
+                    "chat_v2_convergence",
+                    state.iteration,
+                    {
+                        "converged": state._v.converged,
+                        "principal_resolved": state._v.principal_resolved,
+                        "stop_reason": state._v.stop_reason,
+                        "report": "",
+                    },
+                )
+
+            # P6 Phase 6 — gate records the natural terminal state
+            # before we emit the FinalEvent so consumers reading
+            # gate.summary() after a run see SUCCESS / matching reason.
+            self._gate.record_final_answer()
+            if self._tracer:
+                self._tracer.record(
+                    {
+                        "kind": "end",
+                        "iter": state.iteration,
+                        "reason": state.response.stop_reason or "end_turn",
+                        "gate_summary": self._gate.summary(),
+                    }
+                )
+
+            # WI-OH-4: 记忆 self-curation nudge — 在 FinalEvent 之后周期性
+            # fire-and-forget 触发（curator None → BC，跳过整段；非 None 时
+            # 每 _curation_every 回合调一次，异步不挡主回合）。
+            self._maybe_fire_curation_nudge(state.session_id, state.working_messages)
+
+            yield FinalEvent(
+                type="final",
+                task_id=state.tid,
+                iteration=state.iteration,
+                content=state._final_content,
+                reasoning_content=state.response.reasoning_content,
+                stop_reason=state.response.stop_reason or "end_turn",
+                total_input_tokens=state.totals["input"],
+                total_output_tokens=state.totals["output"],
+                total_cache_read_tokens=state.totals["cache_read"],
+                total_cache_write_tokens=state.totals["cache_write"],
+            )
+            state.flow = "stop"
+            return
+
+    async def _evidence_gate_step(self, state: _RunState) -> AsyncGenerator[AgentEvent, None]:
+        """取证闸门：需要调查却没取证就拦下。"""
+
+        # ─── Step2 EvidenceGate（取证门控，核心闸①，plans/2026-06-24-...）。
+        # needs_investigation 且本 run 尚未取证就想 end_turn → 拦截注入 <调查> nudge。
+        # flag off 时 self._evidence_gate=None → 跳过整段（BC）。判定走 self._evidence_gathered
+        # 布尔（dispatch 时按白名单+history 快照置位），对 compaction 整体替换 working_messages 免疫（R1）。
+        if (
+            state.iteration < _SELFCHECK_TIER3_AT
+            and self._evidence_gate is not None
+            and self._pipeline_needs_investigation
+        ):
+            state._ev_dec = await traced_call(
+                name="evidence_gate.check",
+                kind=SpanKind.GATE,
+                lifecycle_stage="gate",
+                attributes={"iteration": state.iteration, "gate": "evidence"},
+                invoke=lambda: self._evidence_gate.check(
+                    needs_investigation=self._pipeline_needs_investigation,
+                    evidence_gathered=self._evidence_gathered,
+                    nudges_used=self._evidence_nudges_used,
+                ),
+            )
+            if self._pipeline_observability:
+                yield self._pipeline_event(
+                    "chat_v2_evidence_gate",
+                    state.iteration,
+                    {
+                        "blocked": state._ev_dec.blocked,
+                        "reason": state._ev_dec.reason,
+                        "nudge_count": state._ev_dec.nudge_count,
+                    },
+                )
+            if state._ev_dec.blocked:
+                self._evidence_nudges_used = state._ev_dec.nudge_count
+                state._evidence_anchor = _latest_context_anchor(
+                    state.working_messages,
+                    fallback=f"agent-loop:{state.tid}:iteration:{state.iteration}:response",
+                )
+                if state.response.content:
+                    state._evidence_reply = _append_loop_transcript(
+                        state.working_messages,
+                        {"role": "assistant", "content": state.response.content},
+                        metadata_enabled=state.context_metadata_enabled,
+                        source="agent_loop.evidence_gate.trigger",
+                        role="assistant",
+                        fragment_id=(
+                            f"agent-loop:{state.tid}:iteration:{state.iteration}:evidence-trigger"
+                        ),
+                    )
+                    state._evidence_anchor = (
+                        _context_fragment_id(state._evidence_reply) or state._evidence_anchor
+                    )
+                _append_loop_control(
+                    state.working_messages,
+                    {"role": "system", "content": state._ev_dec.nudge},
+                    metadata_enabled=state.context_metadata_enabled,
+                    source="agent_loop.evidence_nudge",
+                    anchor_after=state._evidence_anchor,
+                    fragment_id=(
+                        f"agent-loop:{state.tid}:iteration:{state.iteration}:"
+                        f"evidence-nudge:{state._ev_dec.nudge_count}"
+                    ),
+                )
+                logger.info(
+                    "evidence_gate_nudge_injected sid=%s nudge=%d",
+                    state.session_id,
+                    state._ev_dec.nudge_count,
+                )
+                state.flow = "continue"
+                return
+
+    async def _completion_probe_gate(self, state: _RunState) -> None:
+        """待办完成度探测闸门：还有没做完的待办就补提示。"""
+
+        # P5-S2 Hook A: completion guard. Before truly finalizing,
+        # ask the caller (via ``completion_probe``) whether session-
+        # level work (todos) is actually finished. If the LLM said
+        # "I'm done" but the SessionDB still has incomplete todos,
+        # rebound with a system message reminding it to either
+        # finish them or explicitly mark them cancelled. Capped at
+        # ``max_completion_nudges`` so we can't loop forever when
+        # the LLM digs in.
+        if (
+            state.iteration < _SELFCHECK_TIER3_AT
+            and self.completion_probe is not None
+            and self.max_completion_nudges > 0
+            and state.completion_nudges_used < self.max_completion_nudges
+        ):
+            try:
+                state.incomplete = await traced_call(
+                    name="completion_probe.check",
+                    kind=SpanKind.GATE,
+                    lifecycle_stage="gate",
+                    attributes={"iteration": state.iteration, "gate": "completion"},
+                    invoke=lambda: self.completion_probe(state.session_id),
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "p5s2_completion_probe_failed sid=%s err=%s",
+                    state.session_id,
+                    str(exc)[:200],
+                )
+                state.incomplete = []
+            if state.incomplete:
+                if self._tracer:
+                    self._tracer.record(
+                        {
+                            "kind": "gate",
+                            "iter": state.iteration,
+                            "which": "completion",
+                            "passed": False,
+                            "reason": "incomplete_todos",
+                        }
+                    )
+                state.completion_nudges_used += 1
+                # Build the rebound system message. Keep it brief
+                # — long prompts crowd the context window.
+                state.bullet_list = "\n".join(
+                    f"  - {(t.get('content') or '').strip()[:120]}" for t in state.incomplete[:8]
+                )
+                state.rebound = (
+                    f"你声明已完成（stop_reason={state.response.stop_reason or 'end_turn'}），"
+                    f"但 todos 里还有 {len(state.incomplete)} 项未完成：\n"
+                    f"{state.bullet_list}\n\n"
+                    "请继续执行剩余 todos。如果某项确实做不了 / 不该做，"
+                    "请用 todo_write 把它标成 completed 并简述原因（或者改文案明确说明放弃理由）。"
+                    "不要再次空口说『我做完了』。"
+                )
+                # Append the assistant message that triggered this
+                # so the LLM sees its own prior end_turn output —
+                # otherwise the rebound system message has no
+                # context for "what did I just stop on".
+                state._completion_anchor = _latest_context_anchor(
+                    state.working_messages,
+                    fallback=f"agent-loop:{state.tid}:iteration:{state.iteration}:response",
+                )
+                if state.response.content:
+                    state._completion_reply = _append_loop_transcript(
+                        state.working_messages,
+                        {
+                            "role": "assistant",
+                            "content": state.response.content,
+                        },
+                        metadata_enabled=state.context_metadata_enabled,
+                        source="agent_loop.completion_probe.trigger",
+                        role="assistant",
+                        fragment_id=(
+                            f"agent-loop:{state.tid}:iteration:{state.iteration}:completion-trigger"
+                        ),
+                    )
+                    state._completion_anchor = (
+                        _context_fragment_id(state._completion_reply) or state._completion_anchor
+                    )
+                _append_loop_control(
+                    state.working_messages,
+                    {"role": "system", "content": state.rebound},
+                    metadata_enabled=state.context_metadata_enabled,
+                    source="agent_loop.completion_nudge",
+                    anchor_after=state._completion_anchor,
+                    fragment_id=(
+                        f"agent-loop:{state.tid}:iteration:{state.iteration}:"
+                        f"completion-nudge:{state.completion_nudges_used}"
+                    ),
+                )
+                logger.info(
+                    "p5s2_completion_nudge_injected sid=%s nudge=%d/%d incomplete=%d",
+                    state.session_id,
+                    state.completion_nudges_used,
+                    self.max_completion_nudges,
+                    len(state.incomplete),
+                )
+                # Skip the final emission and re-iterate. The
+                # next LLM call sees the nudge.
+                state.flow = "continue"
+                return
+            if self._tracer:
+                self._tracer.record(
+                    {
+                        "kind": "gate",
+                        "iter": state.iteration,
+                        "which": "completion",
+                        "passed": True,
+                        "reason": "",
+                    }
+                )
+
+    async def _self_check_gate_step(self, state: _RunState) -> AsyncGenerator[AgentEvent, None]:
+        """自检编排闸门（核验、反思、异体评分；未开编排时走原核验闸门）。"""
+
+        # ─── Step6 SelfCheckGate（整合 verify_gate + reflection + 异体评分，
+        # plans/2026-06-24-...）。pipeline on 时走编排；off 时落到下方 elif 原 verify_gate 块（BC）。
+        # ⚠️ R2：补 `and response.content` 守卫，与原 verify_gate 块准入对齐。
+        if (
+            state.iteration < _SELFCHECK_TIER3_AT
+            and self._self_check_gate is not None
+            and self._pipeline_problem_type is not None
+            and state.response.content
+        ):
+            state._ledger = (
+                self.receipt_store.load_session(state.session_id)
+                if self.receipt_store is not None
+                else []
+            )
+            if state.scoped_evidence is not None:
+                state._ledger = list(state.scoped_evidence.records)
+            state._sc = await traced_call(
+                name="self_check_gate.check",
+                kind=SpanKind.GATE,
+                lifecycle_stage="gate",
+                attributes={"iteration": state.iteration, "gate": "self_check"},
+                invoke=lambda: self._self_check_gate.check(
+                    problem_type=self._pipeline_problem_type,
+                    assistant_text=state.response.content or "",
+                    ledger=state._ledger,
+                    goal_text=self._extract_goal_text(state.working_messages),
+                    failure_count=state.verify_nudges_used,
+                    produced_artifacts=[getattr(r, "tool_name", "?") for r in state._ledger],
+                    objective_evidence=[
+                        f"receipt ok: tool={getattr(r, 'tool_name', '?')}"
+                        for r in state._ledger
+                        if getattr(r, "ok", True)
+                    ],
+                    workload_context=(
+                        self._provider_workload_context_factory("agent.external_evaluator")
+                        if self._provider_workload_context_factory is not None
+                        else None
+                    ),
+                ),
+            )
+            if self._pipeline_observability:
+                yield self._pipeline_event(
+                    "chat_v2_selfcheck",
+                    state.iteration,
+                    {
+                        "passed": state._sc.passed,
+                        "mode": state._sc.mode,
+                        "heterogeneous": state._sc.heterogeneous,
+                        "claims_unverified": state._sc.claims_unverified,
+                    },
+                )
+            state.flow = None
+            async with aclosing(self._on_self_check_failed(state)) as _phase:
+                async for _event in _phase:
+                    yield _event
+            if state.flow is not None:
+                return
+            # passed → 落到下面（不再走旧 verify_gate 块）
+
+        # WI-T2.6 last-mile P0-3: VerifyGate end_turn 守门（PRD §3 D6）。
+        # 同 completion_probe 模式 — 守门返回 outcome.passed=False 时
+        # 回灌 D8 schema system message + continue；max_verify_nudges
+        # 控制重试上限（PRD: failure_count==3 时调度 ephemeral → 仍
+        # fail 才强退）。flag-off 时 verify_gate=None 跳过整段（BC）。
+        # ⚠️ pipeline on 时上方 SelfCheckGate if 已处理 → 此 elif 跳过；off 时走原块（BC）。
+        elif (
+            state.iteration < _SELFCHECK_TIER3_AT
+            and self.verify_gate is not None
+            and getattr(self.verify_gate, "mode", "off") != "off"
+            and state.verify_nudges_used < self.max_verify_nudges
+            and state.response.content
+        ):
+            state.flow = None
+            async with aclosing(self._verify_gate_step(state)) as _phase:
+                async for _event in _phase:
+                    yield _event
+            if state.flow is not None:
+                return
+
+    async def _on_self_check_failed(self, state: _RunState) -> AsyncGenerator[AgentEvent, None]:
+        """自检没通过：按剩余次数补提示，或强制收尾。"""
+
+        if not state._sc.passed and state.verify_nudges_used < self.max_verify_nudges:
+            state.verify_nudges_used += 1
+            state._self_check_anchor = _latest_context_anchor(
+                state.working_messages,
+                fallback=f"agent-loop:{state.tid}:iteration:{state.iteration}:response",
+            )
+            if state.response.content:
+                state._self_check_reply = _append_loop_transcript(
+                    state.working_messages,
+                    {"role": "assistant", "content": state.response.content},
+                    metadata_enabled=state.context_metadata_enabled,
+                    source="agent_loop.self_check_gate.trigger",
+                    role="assistant",
+                    fragment_id=(
+                        f"agent-loop:{state.tid}:iteration:{state.iteration}:self-check-trigger"
+                    ),
+                )
+                state._self_check_anchor = (
+                    _context_fragment_id(state._self_check_reply) or state._self_check_anchor
+                )
+            _append_loop_control(
+                state.working_messages,
+                {
+                    "role": "system",
+                    "content": (
+                        "<自检> 自检未通过：声明与凭据不符。" + state._sc.reflection_instruction
+                    ),
+                },
+                metadata_enabled=state.context_metadata_enabled,
+                source="agent_loop.self_check_nudge",
+                anchor_after=state._self_check_anchor,
+                fragment_id=(
+                    f"agent-loop:{state.tid}:iteration:{state.iteration}:"
+                    f"self-check-nudge:{state.verify_nudges_used}"
+                ),
+            )
+            logger.info(
+                "self_check_nudge_injected sid=%s mode=%s nudge=%d",
+                state.session_id,
+                state._sc.mode,
+                state.verify_nudges_used,
+            )
+            state.flow = "continue"
+            return
+        # ─── 耗尽分支（MINOR①：复用 verify-exhausted 终态，勿静默放过）。
+        if (
+            not state._sc.passed
+            and state.verify_nudges_used >= self.max_verify_nudges
+            and self.force_finish_via_tool_choice
+            and not state._verify_final_done
+        ):
+            state._verify_final_done = True
+            state._force_finish_queued = True
+            _append_loop_control(
+                state.working_messages,
+                {
+                    "role": "system",
+                    "content": (
+                        "自检多次未通过（声明与凭据不符），本轮必须 end_turn："
+                        "向用户如实总结做了什么、哪些未能验证、建议下一步。不要再调用任何工具。"
+                    ),
+                },
+                metadata_enabled=state.context_metadata_enabled,
+                source="agent_loop.self_check_exhausted",
+                anchor_after=_latest_context_anchor(
+                    state.working_messages,
+                    fallback=(f"agent-loop:{state.tid}:iteration:{state.iteration}:response"),
+                ),
+                fragment_id=(
+                    f"agent-loop:{state.tid}:iteration:{state.iteration}:self-check-exhausted"
+                ),
+                protected=True,
+            )
+            logger.warning(
+                "self_check_exhausted sid=%s nudge=%d/%d → force_finish",
+                state.session_id,
+                state.verify_nudges_used,
+                self.max_verify_nudges,
+            )
+            state.flow = "continue"
+            return
+        # force_finish_via_tool_choice=False 时无强制总结轮 → 直发 verify_exhausted 终态。
+        if not state._sc.passed and state.verify_nudges_used >= self.max_verify_nudges:
+            if self._tracer:
+                self._tracer.record(
+                    {
+                        "kind": "end",
+                        "iter": state.iteration,
+                        "reason": "verify_exhausted",
+                        "gate_summary": self._gate.summary(),
+                    }
+                )
+            yield ErrorEvent(
+                type="error",
+                task_id=state.tid,
+                iteration=state.iteration,
+                reason="verify_exhausted",
+                detail=(
+                    state.response.content
+                    or f"self-check: all retries exhausted after "
+                    f"{state.verify_nudges_used} nudge(s)"
+                ),
+            )
+            state.flow = "stop"
+            return
+
+    async def _verify_gate_step(self, state: _RunState) -> AsyncGenerator[AgentEvent, None]:
+        """原核验闸门（未开自检编排时）：核验不过就补提示，次数用完强制收尾。"""
+
+        try:
+            # 拉取本 session 的 sig-filtered ledger（N1 信任面已在
+            # ReceiptStore.load_session 内强制 hmac_verify）
+            state.ledger = (
+                self.receipt_store.load_session(state.session_id)
+                if self.receipt_store is not None
+                else []
+            )
+            # WI-2.3: thread goal_text into verify_gate.check so
+            # GoalAlignment is populated when an active goal exists.
+            # BC: goal_text=None (no store / no active goal) → byte-identical
+            # to pre-WI-2.3 (check ignores None goal_text).
+            state._vg_goal_text: str | None = None
+            if self.session_goal_store is not None:
+                state._gt_fn = getattr(self.session_goal_store, "get_goal_text", None)
+                if callable(state._gt_fn):
+                    state._vg_goal_text = state._gt_fn(state.session_id)
+            state.v_outcome = await traced_call(
+                name="verify_gate.check",
+                kind=SpanKind.GATE,
+                lifecycle_stage="gate",
+                attributes={"iteration": state.iteration, "gate": "verify"},
+                invoke=lambda: self.verify_gate.check(
+                    assistant_text=state.response.content,
+                    ledger=state.ledger,
+                    goal_text=state._vg_goal_text,
+                    **(
+                        {"scoped_evidence": state.scoped_evidence}
+                        if state.scoped_evidence is not None
+                        else {}
+                    ),
+                ),
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "verify_gate.check failed (sid=%s): %s — passing through",
+                state.session_id,
+                exc,
+            )
+            state.v_outcome = None
+
+        if (
+            state.v_outcome is not None
+            and not state.v_outcome.passed
+            and state.v_outcome.unmatched_claims
+        ):
+            if self._tracer:
+                self._tracer.record(
+                    {
+                        "kind": "gate",
+                        "iter": state.iteration,
+                        "which": "verify",
+                        "passed": False,
+                        "reason": "unmatched_claims",
+                    }
+                )
+            state.verify_nudges_used += 1
+
+            # WI-2.2: stagnation detection — if 2nd+ rebound and
+            # task_replanning text is nearly identical to previous
+            # round (difflib ratio > 0.85), the LLM is stuck in
+            # copy-paste instead of genuinely replanning. Skip to
+            # ephemeral immediately (don't waste the 2nd nudge).
+            state._stagnant = False
+            self._verify_structured_reflection(state)
+
+            # 失败计数达 max 或 stagnation → 调 ephemeral 救援
+            state.ephemeral_pass = False
+            if state._stagnant or state.verify_nudges_used >= self.max_verify_nudges:
+                try:
+                    state.ephemeral_pass = await self.verify_gate.consult_ephemeral_subagent(
+                        ledger=state.ledger,
+                        failed_claims=state.v_outcome.unmatched_claims,
+                        assistant_text=state.response.content,
+                        workload_context=(
+                            self._provider_workload_context_factory("agent.verify_ephemeral")
+                            if self._provider_workload_context_factory is not None
+                            else None
+                        ),
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("ephemeral consult failed: %s", exc)
+                # WI-HM-1: emit ephemeral 救援判定到 metrics.jsonl
+                # （之前只 logger.info，未计数化 → 监控看不到救援率）.
+                try:
+                    from observability.metrics_sink import (  # noqa: PLC0415
+                        record as _eph_metric,
+                    )
+
+                    _eph_metric(
+                        "ephemeral_rescued" if state.ephemeral_pass else "ephemeral_pass",
+                        {
+                            "nudge_count": int(state.verify_nudges_used),
+                            "ok": bool(state.ephemeral_pass),
+                        },
+                    )
+                except Exception:  # noqa: BLE001 — metric 失败不阻 dispatch
+                    pass
+
+            state.flow = None
+            async with aclosing(self._verify_gate_exhausted(state)) as _phase:
+                async for _event in _phase:
+                    yield _event
+            if state.flow is not None:
+                return
+        elif self._tracer and state.v_outcome is not None:
+            self._tracer.record(
+                {
+                    "kind": "gate",
+                    "iter": state.iteration,
+                    "which": "verify",
+                    "passed": True,
+                    "reason": "",
+                }
+            )
+
+    def _verify_structured_reflection(self, state: _RunState) -> None:
+        """核验连续不过时的结构化反思提示。"""
+
+        if state.verify_nudges_used >= 2 and self.structured_reflection:
+            try:
+                state._refl = parse_reflection(state.response.content or "")
+                state._cur_replan = str(state._refl.task_replanning) if state._refl else ""
+                if (
+                    state._prev_task_replanning
+                    and state._cur_replan
+                    and _difflib.SequenceMatcher(
+                        None, state._prev_task_replanning, state._cur_replan
+                    ).ratio()
+                    > 0.85
+                ):
+                    state._stagnant = True
+                    logger.info(
+                        "verify_replan_stagnant sid=%s nudge=%d "
+                        "ratio=%.2f — escalating to ephemeral",
+                        state.session_id,
+                        state.verify_nudges_used,
+                        _difflib.SequenceMatcher(
+                            None, state._prev_task_replanning, state._cur_replan
+                        ).ratio(),
+                    )
+                    try:
+                        # 按需导入：测试替身（observability.metrics_sink）
+                        from observability.metrics_sink import (
+                            record as _vg_metric,
+                        )
+
+                        _vg_metric(
+                            "verify_replan_stagnant",
                             {
-                                "blocked": state._ev_dec.blocked,
-                                "reason": state._ev_dec.reason,
-                                "nudge_count": state._ev_dec.nudge_count,
+                                "nudge_count": int(state.verify_nudges_used),
                             },
                         )
-                    if state._ev_dec.blocked:
-                        self._evidence_nudges_used = state._ev_dec.nudge_count
-                        state._evidence_anchor = _latest_context_anchor(
-                            state.working_messages,
-                            fallback=f"agent-loop:{state.tid}:iteration:{state.iteration}:response",
-                        )
-                        if state.response.content:
-                            state._evidence_reply = _append_loop_transcript(
-                                state.working_messages,
-                                {"role": "assistant", "content": state.response.content},
-                                metadata_enabled=state.context_metadata_enabled,
-                                source="agent_loop.evidence_gate.trigger",
-                                role="assistant",
-                                fragment_id=(
-                                    f"agent-loop:{state.tid}:iteration:{state.iteration}:evidence-trigger"
-                                ),
-                            )
-                            state._evidence_anchor = (
-                                _context_fragment_id(state._evidence_reply)
-                                or state._evidence_anchor
-                            )
-                        _append_loop_control(
-                            state.working_messages,
-                            {"role": "system", "content": state._ev_dec.nudge},
-                            metadata_enabled=state.context_metadata_enabled,
-                            source="agent_loop.evidence_nudge",
-                            anchor_after=state._evidence_anchor,
-                            fragment_id=(
-                                f"agent-loop:{state.tid}:iteration:{state.iteration}:"
-                                f"evidence-nudge:{state._ev_dec.nudge_count}"
-                            ),
-                        )
-                        logger.info(
-                            "evidence_gate_nudge_injected sid=%s nudge=%d",
-                            state.session_id,
-                            state._ev_dec.nudge_count,
-                        )
-                        continue
+                    except Exception:  # noqa: BLE001
+                        pass
+                if state._refl:
+                    state._prev_task_replanning = state._cur_replan
+            except Exception:  # noqa: BLE001 — safe-fail
+                pass
 
-                # P5-S2 Hook A: completion guard. Before truly finalizing,
-                # ask the caller (via ``completion_probe``) whether session-
-                # level work (todos) is actually finished. If the LLM said
-                # "I'm done" but the SessionDB still has incomplete todos,
-                # rebound with a system message reminding it to either
-                # finish them or explicitly mark them cancelled. Capped at
-                # ``max_completion_nudges`` so we can't loop forever when
-                # the LLM digs in.
-                if (
-                    state.iteration < _SELFCHECK_TIER3_AT
-                    and self.completion_probe is not None
-                    and self.max_completion_nudges > 0
-                    and state.completion_nudges_used < self.max_completion_nudges
-                ):
-                    try:
-                        state.incomplete = await traced_call(
-                            name="completion_probe.check",
-                            kind=SpanKind.GATE,
-                            lifecycle_stage="gate",
-                            attributes={"iteration": state.iteration, "gate": "completion"},
-                            invoke=lambda: self.completion_probe(state.session_id),
-                        )
-                    except Exception as exc:  # noqa: BLE001
-                        logger.warning(
-                            "p5s2_completion_probe_failed sid=%s err=%s",
-                            state.session_id,
-                            str(exc)[:200],
-                        )
-                        state.incomplete = []
-                    if state.incomplete:
-                        if self._tracer:
-                            self._tracer.record(
-                                {
-                                    "kind": "gate",
-                                    "iter": state.iteration,
-                                    "which": "completion",
-                                    "passed": False,
-                                    "reason": "incomplete_todos",
-                                }
-                            )
-                        state.completion_nudges_used += 1
-                        # Build the rebound system message. Keep it brief
-                        # — long prompts crowd the context window.
-                        state.bullet_list = "\n".join(
-                            f"  - {(t.get('content') or '').strip()[:120]}"
-                            for t in state.incomplete[:8]
-                        )
-                        state.rebound = (
-                            f"你声明已完成（stop_reason={state.response.stop_reason or 'end_turn'}），"
-                            f"但 todos 里还有 {len(state.incomplete)} 项未完成：\n"
-                            f"{state.bullet_list}\n\n"
-                            "请继续执行剩余 todos。如果某项确实做不了 / 不该做，"
-                            "请用 todo_write 把它标成 completed 并简述原因（或者改文案明确说明放弃理由）。"
-                            "不要再次空口说『我做完了』。"
-                        )
-                        # Append the assistant message that triggered this
-                        # so the LLM sees its own prior end_turn output —
-                        # otherwise the rebound system message has no
-                        # context for "what did I just stop on".
-                        state._completion_anchor = _latest_context_anchor(
-                            state.working_messages,
-                            fallback=f"agent-loop:{state.tid}:iteration:{state.iteration}:response",
-                        )
-                        if state.response.content:
-                            state._completion_reply = _append_loop_transcript(
-                                state.working_messages,
-                                {
-                                    "role": "assistant",
-                                    "content": state.response.content,
-                                },
-                                metadata_enabled=state.context_metadata_enabled,
-                                source="agent_loop.completion_probe.trigger",
-                                role="assistant",
-                                fragment_id=(
-                                    f"agent-loop:{state.tid}:iteration:{state.iteration}:completion-trigger"
-                                ),
-                            )
-                            state._completion_anchor = (
-                                _context_fragment_id(state._completion_reply)
-                                or state._completion_anchor
-                            )
-                        _append_loop_control(
-                            state.working_messages,
-                            {"role": "system", "content": state.rebound},
-                            metadata_enabled=state.context_metadata_enabled,
-                            source="agent_loop.completion_nudge",
-                            anchor_after=state._completion_anchor,
-                            fragment_id=(
-                                f"agent-loop:{state.tid}:iteration:{state.iteration}:"
-                                f"completion-nudge:{state.completion_nudges_used}"
-                            ),
-                        )
-                        logger.info(
-                            "p5s2_completion_nudge_injected sid=%s nudge=%d/%d incomplete=%d",
-                            state.session_id,
-                            state.completion_nudges_used,
-                            self.max_completion_nudges,
-                            len(state.incomplete),
-                        )
-                        # Skip the final emission and re-iterate. The
-                        # next LLM call sees the nudge.
-                        continue
-                    if self._tracer:
-                        self._tracer.record(
-                            {
-                                "kind": "gate",
-                                "iter": state.iteration,
-                                "which": "completion",
-                                "passed": True,
-                                "reason": "",
-                            }
-                        )
+    async def _verify_gate_exhausted(self, state: _RunState) -> AsyncGenerator[AgentEvent, None]:
+        """核验补提示次数用完：临时会话再核验一次，仍不过就强制收尾。"""
 
-                # ─── Step6 SelfCheckGate（整合 verify_gate + reflection + 异体评分，
-                # plans/2026-06-24-...）。pipeline on 时走编排；off 时落到下方 elif 原 verify_gate 块（BC）。
-                # ⚠️ R2：补 `and response.content` 守卫，与原 verify_gate 块准入对齐。
-                if (
-                    state.iteration < _SELFCHECK_TIER3_AT
-                    and self._self_check_gate is not None
-                    and self._pipeline_problem_type is not None
-                    and state.response.content
-                ):
-                    state._ledger = (
-                        self.receipt_store.load_session(state.session_id)
-                        if self.receipt_store is not None
-                        else []
-                    )
-                    if state.scoped_evidence is not None:
-                        state._ledger = list(state.scoped_evidence.records)
-                    state._sc = await traced_call(
-                        name="self_check_gate.check",
+        if not state.ephemeral_pass:
+            state.flow = None
+            async with aclosing(self._verify_force_finish(state)) as _phase:
+                async for _event in _phase:
+                    yield _event
+            if state.flow is not None:
+                return
+
+            # Still have nudges: inject rebound + 回灌 D8 schema
+            state.unmatched_lines = "\n".join(
+                f"  {i + 1}. [unmatched_claim] {c.raw_text!r} — no receipt matched ({c.reason})"
+                for i, c in enumerate(state.v_outcome.unmatched_claims[:5])
+            )
+            state.rebound = (
+                f"[verify-gate] iteration={state.iteration} blocked end_turn.\n"
+                f"Failures:\n{state.unmatched_lines}\n"
+                f"Classification: unmatched_claim\n"
+                f"Next: please call the missing tool to actually "
+                f"perform the action you claimed, then end_turn again."
+            )
+            # WI-2.3: append goal alignment context to rebound
+            # when goal_text was provided and GoalAlignment is
+            # populated. goal_text=None → rebound unchanged (BC).
+            if (
+                state.v_outcome.goal_alignment is not None
+                and not state.v_outcome.goal_alignment.aligned
+            ):
+                state.ga = state.v_outcome.goal_alignment
+                state._evidence_str = (
+                    "\n".join(f"  - {e}" for e in state.ga.objective_evidence[:5])
+                    or "  (无客观证据)"
+                )
+                state.rebound = (
+                    state.rebound
+                    + f"\n原始目标: {state.ga.goal_text}\n"
+                    + f"客观证据: {state._evidence_str}\n"
+                    + f"缺口: {state.ga.gap}\n"
+                    + "→ 请重规划（结构化反思）后补齐，"
+                    + "使产物真满足原目标，而非换个说法过关。"
+                )
+            # WI-2.1: append reflection instruction when flag on.
+            # Flag off (default) → rebound string unchanged (BC).
+            if self.structured_reflection:
+                state.rebound = state.rebound + _REFLECTION_INSTRUCTION
+            state._verify_anchor = _latest_context_anchor(
+                state.working_messages,
+                fallback=(f"agent-loop:{state.tid}:iteration:{state.iteration}:response"),
+            )
+            if state.response.content:
+                state._verify_reply = _append_loop_transcript(
+                    state.working_messages,
+                    {
+                        "role": "assistant",
+                        "content": state.response.content,
+                    },
+                    metadata_enabled=state.context_metadata_enabled,
+                    source="agent_loop.verify_gate.trigger",
+                    role="assistant",
+                    fragment_id=(
+                        f"agent-loop:{state.tid}:iteration:{state.iteration}:verify-trigger"
+                    ),
+                )
+                state._verify_anchor = (
+                    _context_fragment_id(state._verify_reply) or state._verify_anchor
+                )
+            _append_loop_control(
+                state.working_messages,
+                {"role": "system", "content": state.rebound},
+                metadata_enabled=state.context_metadata_enabled,
+                source="agent_loop.verify_nudge",
+                anchor_after=state._verify_anchor,
+                fragment_id=(
+                    f"agent-loop:{state.tid}:iteration:{state.iteration}:"
+                    f"verify-nudge:{state.verify_nudges_used}"
+                ),
+            )
+            logger.info(
+                "verify_gate_nudge_injected sid=%s nudge=%d/%d unmatched=%d ephemeral_pass=%s",
+                state.session_id,
+                state.verify_nudges_used,
+                self.max_verify_nudges,
+                len(state.v_outcome.unmatched_claims),
+                state.ephemeral_pass,
+            )
+            # WI-T2.1 v3：真 emit 到 metrics.jsonl（MR-T-8 拦截
+            # 硬证据 — 用户 goal "verify_* event in metrics.jsonl"
+            # 把 fake-completion 拦截事件计数化，供监控面板看健康率）
+            try:
+                # 按需导入：测试替身（observability.metrics_sink）
+                from observability.metrics_sink import (
+                    record as _verify_metric,
+                )
+
+                _verify_metric(
+                    "verify_gate_nudge_injected",
+                    {
+                        "nudge_count": int(state.verify_nudges_used),
+                        "count": int(len(state.v_outcome.unmatched_claims)),
+                        "ok": bool(state.ephemeral_pass),
+                    },
+                )
+            except Exception:  # noqa: BLE001 — metric 失败不阻 dispatch
+                pass
+            state.flow = "continue"
+            return
+        else:
+            logger.info(
+                "verify_gate.ephemeral_rescued sid=%s",
+                state.session_id,
+            )
+
+    async def _verify_force_finish(self, state: _RunState) -> AsyncGenerator[AgentEvent, None]:
+        """核验停滞或次数用完：强制收尾。"""
+
+        # WI-2.2: verify_exhausted — all layers (nudges +
+        # ephemeral) exhausted → emit terminal error + return.
+        # Only when we've either stagnated or used all nudges
+        # AND ephemeral failed.
+        if state._stagnant or state.verify_nudges_used >= self.max_verify_nudges:
+            logger.warning(
+                "verify_exhausted sid=%s nudge=%d/%d stagnant=%s",
+                state.session_id,
+                state.verify_nudges_used,
+                self.max_verify_nudges,
+                state._stagnant,
+            )
+            try:
+                # 按需导入：测试替身（observability.metrics_sink）
+                from observability.metrics_sink import (
+                    record as _vg_metric,
+                )
+
+                _vg_metric(
+                    "verify_exhausted",
+                    {
+                        "nudge_count": int(state.verify_nudges_used),
+                        "stagnant": bool(state._stagnant),
+                    },
+                )
+            except Exception:  # noqa: BLE001
+                pass
+            if self.force_finish_via_tool_choice and not state._verify_final_done:
+                state._verify_final_done = True
+                state._force_finish_queued = True
+                _append_loop_control(
+                    state.working_messages,
+                    {
+                        "role": "system",
+                        "content": (
+                            "verify 多次未对齐 ledger，本轮必须 end_turn："
+                            "向用户如实总结做了什么、哪些未能验证、建议下一步。"
+                            "不要再调用任何工具。"
+                        ),
+                    },
+                    metadata_enabled=state.context_metadata_enabled,
+                    source="agent_loop.verify_exhausted",
+                    anchor_after=_latest_context_anchor(
+                        state.working_messages,
+                        fallback=(f"agent-loop:{state.tid}:iteration:{state.iteration}:response"),
+                    ),
+                    fragment_id=(
+                        f"agent-loop:{state.tid}:iteration:{state.iteration}:verify-exhausted"
+                    ),
+                    protected=True,
+                )
+                state.flow = "continue"
+                return
+            if self._tracer:
+                self._tracer.record(
+                    {
+                        "kind": "end",
+                        "iter": state.iteration,
+                        "reason": "verify_exhausted",
+                        "gate_summary": self._gate.summary(),
+                    }
+                )
+            yield ErrorEvent(
+                type="error",
+                task_id=state.tid,
+                iteration=state.iteration,
+                reason="verify_exhausted",
+                detail=(
+                    f"verify-gate: all retries exhausted after "
+                    f"{state.verify_nudges_used} nudge(s). "
+                    f"stagnant={state._stagnant}"
+                ),
+            )
+            state.flow = "stop"
+            return
+
+    async def _session_goal_gate(self, state: _RunState) -> None:
+        """会话目标闸门：目标没完成就补提示再来一轮。"""
+
+        # WI-B3 Companion+Code v1 — /goal end_turn rebound. Same
+        # safe-fail pattern as completion_probe / verify_gate:
+        # checker exception or done=False → inject a system
+        # message and ``continue`` the loop so the next LLM call
+        # sees the hint. Cap at ``goal.max_iterations`` so the
+        # checker can't loop forever. flag-off (store / checker
+        # = None, or no active goal, or goal.done already) →
+        # skip the block entirely (BC).
+        if (
+            state.iteration < _SELFCHECK_TIER3_AT
+            and self.session_goal_store is not None
+            and self.goal_checker is not None
+        ):
+            state._goal = self.session_goal_store.get(state.session_id)
+            if (
+                state._goal is not None
+                and not state._goal.done
+                and state._goal.iterations_used < state._goal.max_iterations
+            ):
+                try:
+                    state._done, state._hint = await traced_call(
+                        name="goal_checker.check",
                         kind=SpanKind.GATE,
                         lifecycle_stage="gate",
-                        attributes={"iteration": state.iteration, "gate": "self_check"},
-                        invoke=lambda: self._self_check_gate.check(
-                            problem_type=self._pipeline_problem_type,
-                            assistant_text=state.response.content or "",
-                            ledger=state._ledger,
-                            goal_text=self._extract_goal_text(state.working_messages),
-                            failure_count=state.verify_nudges_used,
+                        attributes={"iteration": state.iteration, "gate": "goal"},
+                        invoke=lambda: self.goal_checker.check(
+                            state._goal.text,
+                            state.working_messages,
+                            **(
+                                {
+                                    "workload_context": self._provider_workload_context_factory(
+                                        "agent.goal_check"
+                                    )
+                                }
+                                if self._provider_workload_context_factory is not None
+                                else {}
+                            ),
+                        ),
+                    )
+                except Exception as exc:  # noqa: BLE001 — safe-fail
+                    logger.warning(
+                        "goal_checker raised (sid=%s): %s — skipping check",
+                        state.session_id,
+                        exc,
+                    )
+                    # R-T3 §15.4: 兜底也用 skipped 语义（check() 内已 safe-fail，
+                    # 这里只作双重防护）。不默认 done=True。
+                    state._done, state._hint = False, "goal_check=skipped"
+                # metric emit (best-effort, not blocking)
+                try:
+                    from observability.metrics_sink import (  # noqa: PLC0415
+                        record as _goal_metric,
+                    )
+
+                    _goal_metric(
+                        "goal_checker_invoked",
+                        {
+                            "ok": bool(state._done),
+                            "count": int(state._goal.iterations_used),
+                        },
+                    )
+                except Exception:  # noqa: BLE001 — metric 失败不阻
+                    pass
+                state.flow = None
+                await self._apply_goal_check(state)
+                if state.flow is not None:
+                    return
+
+    async def _apply_goal_check(self, state: _RunState) -> None:
+        """按目标核对结果补提示或放行。"""
+
+        # R-T3 §15.4: goal_check=skipped → checker 降级，
+        # 无法正向确认 → 不 mark_done，但也不注入"未达成"nudge
+        # （我们不知道目标是否真达成，不能给 LLM 假信号）。
+        # 直接 fall-through 到 FinalEvent / evaluator gate。
+        if state._hint == "goal_check=skipped":
+            logger.info(
+                "goal_checker.skipped sid=%s — "
+                "checker degraded, proceeding without goal confirmation",
+                state.session_id,
+            )
+            # 不 continue，让正常 FinalEvent 流程继续
+        elif not state._done:
+            if self._tracer:
+                self._tracer.record(
+                    {
+                        "kind": "gate",
+                        "iter": state.iteration,
+                        "which": "goal",
+                        "passed": False,
+                        "reason": str(state._hint or "")[:200],
+                    }
+                )
+            self.session_goal_store.increment_iteration(state.session_id)
+            # T1：落库 iterations_used，重启不归零。safe-fail
+            # 内置于 persist_iteration；getattr 兜底旧 store。
+            state._pit = getattr(
+                self.session_goal_store,
+                "persist_iteration",
+                None,
+            )
+            if state._pit is not None:
+                await state._pit(state.session_id)
+            # Append the assistant message that triggered
+            # this so the LLM sees its own prior end_turn
+            # output — symmetric with completion_probe /
+            # verify_gate rebound shape.
+            state._goal_anchor = _latest_context_anchor(
+                state.working_messages,
+                fallback=(f"agent-loop:{state.tid}:iteration:{state.iteration}:response"),
+            )
+            if state.response.content:
+                state._goal_reply = _append_loop_transcript(
+                    state.working_messages,
+                    {
+                        "role": "assistant",
+                        "content": state.response.content,
+                    },
+                    metadata_enabled=state.context_metadata_enabled,
+                    source="agent_loop.goal_checker.trigger",
+                    role="assistant",
+                    fragment_id=(
+                        f"agent-loop:{state.tid}:iteration:{state.iteration}:goal-trigger"
+                    ),
+                )
+                state._goal_anchor = _context_fragment_id(state._goal_reply) or state._goal_anchor
+            _append_loop_control(
+                state.working_messages,
+                {
+                    "role": "system",
+                    "content": (
+                        f"[goal] 未达成 "
+                        f"({state._goal.iterations_used}/{state._goal.max_iterations}): "
+                        f"{state._hint}\n继续工作直到目标完成。"
+                    ),
+                },
+                metadata_enabled=state.context_metadata_enabled,
+                source="agent_loop.goal_nudge",
+                anchor_after=state._goal_anchor,
+                fragment_id=(
+                    f"agent-loop:{state.tid}:iteration:{state.iteration}:"
+                    f"goal-nudge:{state._goal.iterations_used}"
+                ),
+            )
+            logger.info(
+                "goal_checker_nudge_injected sid=%s iter=%d/%d",
+                state.session_id,
+                state._goal.iterations_used,
+                state._goal.max_iterations,
+            )
+            state.flow = "continue"
+            return
+        else:
+            if self._tracer:
+                self._tracer.record(
+                    {
+                        "kind": "gate",
+                        "iter": state.iteration,
+                        "which": "goal",
+                        "passed": True,
+                        "reason": "",
+                    }
+                )
+            self.session_goal_store.mark_done(state.session_id)
+            # 落库 done 终态（与 increment 落库对称）：否则
+            # load_persisted 只召回 status='active'，已完成目标
+            # 重启会复活成 active。getattr 兜底旧 store。
+            state._pd = getattr(
+                self.session_goal_store,
+                "persist_done",
+                None,
+            )
+            if state._pd is not None:
+                await state._pd(state.session_id)
+            logger.info(
+                "goal_checker.marked_done sid=%s",
+                state.session_id,
+            )
+
+    async def _external_evaluation_gate(self, state: _RunState) -> AsyncGenerator[AgentEvent, None]:
+        """异体评分闸门（没有自检编排时）。"""
+
+        # WI-2.4: external evaluator gate — BEFORE FinalEvent.
+        # Only fires when:
+        #   a) external_evaluator is wired (flag on), AND
+        #   b) is_high_consequence_goal() returns True.
+        # If evaluator returns verdict=revise → emit ErrorEvent
+        # ("evaluator_revise") instead of FinalEvent so auto_resume
+        # can spawn a replan. Runs at most ONCE per goal (here,
+        # before FinalEvent — revise → replan → new run, no loop).
+        # flag off (external_evaluator=None) → skip entirely (BC, 0 calls).
+        # ⚠️ plans/2026-06-24-...：pipeline on（self._self_check_gate 非 None）时
+        # 异体评分已由 Step6 SelfCheckGate 编排 → 此处跳过避免双重评分。
+        if self.external_evaluator is not None and self._self_check_gate is None:
+            try:
+                from deskpet.agent.external_evaluator import (  # noqa: PLC0415
+                    is_high_consequence_goal as _is_hcg,
+                )
+
+                state._eval_ledger = (
+                    self.receipt_store.load_session(state.session_id)
+                    if self.receipt_store is not None
+                    else []
+                )
+                # Extract goal_text from session_goal_store if wired,
+                # else fall back to first user message text.
+                state._eval_goal_text = ""
+                if self.session_goal_store is not None:
+                    state._gt_fn = getattr(self.session_goal_store, "get_goal_text", None)
+                    if callable(state._gt_fn):
+                        state._eval_goal_text = state._gt_fn(state.session_id) or ""
+                if not state._eval_goal_text:
+                    # BC fallback: use first user message content
+                    for state._m in state.working_messages:
+                        if state._m.get("role") == "user":
+                            state._eval_goal_text = str(state._m.get("content") or "")
+                            break
+                if _is_hcg(state._eval_goal_text, state._eval_ledger, []):
+                    state._ev_result = await traced_call(
+                        name="external_evaluator.evaluate",
+                        kind=SpanKind.GATE,
+                        lifecycle_stage="gate",
+                        attributes={
+                            "iteration": state.iteration,
+                            "gate": "external_evaluator",
+                        },
+                        invoke=lambda: self.external_evaluator.evaluate(
+                            original_goal=state._eval_goal_text,
                             produced_artifacts=[
-                                getattr(r, "tool_name", "?") for r in state._ledger
+                                getattr(r, "tool_name", "unknown") for r in state._eval_ledger
                             ],
                             objective_evidence=[
                                 f"receipt ok: tool={getattr(r, 'tool_name', '?')}"
-                                for r in state._ledger
+                                for r in state._eval_ledger
                                 if getattr(r, "ok", True)
                             ],
+                            conversation_summary=str(state.response.content or "")[:512],
                             workload_context=(
                                 self._provider_workload_context_factory("agent.external_evaluator")
                                 if self._provider_workload_context_factory is not None
@@ -3545,949 +4582,164 @@ class AgentLoop(ToolContextPersistenceMixin):
                             ),
                         ),
                     )
-                    if self._pipeline_observability:
-                        yield self._pipeline_event(
-                            "chat_v2_selfcheck",
-                            state.iteration,
-                            {
-                                "passed": state._sc.passed,
-                                "mode": state._sc.mode,
-                                "heterogeneous": state._sc.heterogeneous,
-                                "claims_unverified": state._sc.claims_unverified,
-                            },
-                        )
-                    if not state._sc.passed and state.verify_nudges_used < self.max_verify_nudges:
-                        state.verify_nudges_used += 1
-                        state._self_check_anchor = _latest_context_anchor(
-                            state.working_messages,
-                            fallback=f"agent-loop:{state.tid}:iteration:{state.iteration}:response",
-                        )
-                        if state.response.content:
-                            state._self_check_reply = _append_loop_transcript(
-                                state.working_messages,
-                                {"role": "assistant", "content": state.response.content},
-                                metadata_enabled=state.context_metadata_enabled,
-                                source="agent_loop.self_check_gate.trigger",
-                                role="assistant",
-                                fragment_id=(
-                                    f"agent-loop:{state.tid}:iteration:{state.iteration}:self-check-trigger"
-                                ),
-                            )
-                            state._self_check_anchor = (
-                                _context_fragment_id(state._self_check_reply)
-                                or state._self_check_anchor
-                            )
-                        _append_loop_control(
-                            state.working_messages,
-                            {
-                                "role": "system",
-                                "content": (
-                                    "<自检> 自检未通过：声明与凭据不符。"
-                                    + state._sc.reflection_instruction
-                                ),
-                            },
-                            metadata_enabled=state.context_metadata_enabled,
-                            source="agent_loop.self_check_nudge",
-                            anchor_after=state._self_check_anchor,
-                            fragment_id=(
-                                f"agent-loop:{state.tid}:iteration:{state.iteration}:"
-                                f"self-check-nudge:{state.verify_nudges_used}"
-                            ),
-                        )
+                    if (
+                        state._ev_result.get("verdict") == "revise"
+                        and state._ev_result.get("quality_score", 10) < 6
+                    ):
                         logger.info(
-                            "self_check_nudge_injected sid=%s mode=%s nudge=%d",
+                            "external_evaluator verdict=revise sid=%s "
+                            "quality_score=%d issues=%d → emit evaluator_revise",
                             state.session_id,
-                            state._sc.mode,
-                            state.verify_nudges_used,
+                            state._ev_result["quality_score"],
+                            len(state._ev_result.get("issues", [])),
                         )
-                        continue
-                    # ─── 耗尽分支（MINOR①：复用 verify-exhausted 终态，勿静默放过）。
-                    if (
-                        not state._sc.passed
-                        and state.verify_nudges_used >= self.max_verify_nudges
-                        and self.force_finish_via_tool_choice
-                        and not state._verify_final_done
-                    ):
-                        state._verify_final_done = True
-                        state._force_finish_queued = True
-                        _append_loop_control(
-                            state.working_messages,
-                            {
-                                "role": "system",
-                                "content": (
-                                    "自检多次未通过（声明与凭据不符），本轮必须 end_turn："
-                                    "向用户如实总结做了什么、哪些未能验证、建议下一步。不要再调用任何工具。"
-                                ),
-                            },
-                            metadata_enabled=state.context_metadata_enabled,
-                            source="agent_loop.self_check_exhausted",
-                            anchor_after=_latest_context_anchor(
-                                state.working_messages,
-                                fallback=(
-                                    f"agent-loop:{state.tid}:iteration:{state.iteration}:response"
-                                ),
-                            ),
-                            fragment_id=(
-                                f"agent-loop:{state.tid}:iteration:{state.iteration}:self-check-exhausted"
-                            ),
-                            protected=True,
-                        )
-                        logger.warning(
-                            "self_check_exhausted sid=%s nudge=%d/%d → force_finish",
-                            state.session_id,
-                            state.verify_nudges_used,
-                            self.max_verify_nudges,
-                        )
-                        continue
-                    # force_finish_via_tool_choice=False 时无强制总结轮 → 直发 verify_exhausted 终态。
-                    if not state._sc.passed and state.verify_nudges_used >= self.max_verify_nudges:
-                        if self._tracer:
-                            self._tracer.record(
-                                {
-                                    "kind": "end",
-                                    "iter": state.iteration,
-                                    "reason": "verify_exhausted",
-                                    "gate_summary": self._gate.summary(),
-                                }
-                            )
-                        yield ErrorEvent(
-                            type="error",
-                            task_id=state.tid,
-                            iteration=state.iteration,
-                            reason="verify_exhausted",
-                            detail=(
-                                state.response.content
-                                or f"self-check: all retries exhausted after "
-                                f"{state.verify_nudges_used} nudge(s)"
-                            ),
-                        )
-                        return
-                    # passed → 落到下面（不再走旧 verify_gate 块）
-
-                # WI-T2.6 last-mile P0-3: VerifyGate end_turn 守门（PRD §3 D6）。
-                # 同 completion_probe 模式 — 守门返回 outcome.passed=False 时
-                # 回灌 D8 schema system message + continue；max_verify_nudges
-                # 控制重试上限（PRD: failure_count==3 时调度 ephemeral → 仍
-                # fail 才强退）。flag-off 时 verify_gate=None 跳过整段（BC）。
-                # ⚠️ pipeline on 时上方 SelfCheckGate if 已处理 → 此 elif 跳过；off 时走原块（BC）。
-                elif (
-                    state.iteration < _SELFCHECK_TIER3_AT
-                    and self.verify_gate is not None
-                    and getattr(self.verify_gate, "mode", "off") != "off"
-                    and state.verify_nudges_used < self.max_verify_nudges
-                    and state.response.content
-                ):
-                    try:
-                        # 拉取本 session 的 sig-filtered ledger（N1 信任面已在
-                        # ReceiptStore.load_session 内强制 hmac_verify）
-                        state.ledger = (
-                            self.receipt_store.load_session(state.session_id)
-                            if self.receipt_store is not None
-                            else []
-                        )
-                        # WI-2.3: thread goal_text into verify_gate.check so
-                        # GoalAlignment is populated when an active goal exists.
-                        # BC: goal_text=None (no store / no active goal) → byte-identical
-                        # to pre-WI-2.3 (check ignores None goal_text).
-                        state._vg_goal_text: str | None = None
-                        if self.session_goal_store is not None:
-                            state._gt_fn = getattr(self.session_goal_store, "get_goal_text", None)
-                            if callable(state._gt_fn):
-                                state._vg_goal_text = state._gt_fn(state.session_id)
-                        state.v_outcome = await traced_call(
-                            name="verify_gate.check",
-                            kind=SpanKind.GATE,
-                            lifecycle_stage="gate",
-                            attributes={"iteration": state.iteration, "gate": "verify"},
-                            invoke=lambda: self.verify_gate.check(
-                                assistant_text=state.response.content,
-                                ledger=state.ledger,
-                                goal_text=state._vg_goal_text,
-                                **(
-                                    {"scoped_evidence": state.scoped_evidence}
-                                    if state.scoped_evidence is not None
-                                    else {}
-                                ),
-                            ),
-                        )
-                    except Exception as exc:  # noqa: BLE001
-                        logger.warning(
-                            "verify_gate.check failed (sid=%s): %s — passing through",
-                            state.session_id,
-                            exc,
-                        )
-                        state.v_outcome = None
-
-                    if (
-                        state.v_outcome is not None
-                        and not state.v_outcome.passed
-                        and state.v_outcome.unmatched_claims
-                    ):
-                        if self._tracer:
-                            self._tracer.record(
-                                {
-                                    "kind": "gate",
-                                    "iter": state.iteration,
-                                    "which": "verify",
-                                    "passed": False,
-                                    "reason": "unmatched_claims",
-                                }
-                            )
-                        state.verify_nudges_used += 1
-
-                        # WI-2.2: stagnation detection — if 2nd+ rebound and
-                        # task_replanning text is nearly identical to previous
-                        # round (difflib ratio > 0.85), the LLM is stuck in
-                        # copy-paste instead of genuinely replanning. Skip to
-                        # ephemeral immediately (don't waste the 2nd nudge).
-                        state._stagnant = False
-                        if state.verify_nudges_used >= 2 and self.structured_reflection:
-                            try:
-                                state._refl = parse_reflection(state.response.content or "")
-                                state._cur_replan = (
-                                    str(state._refl.task_replanning) if state._refl else ""
-                                )
-                                if (
-                                    state._prev_task_replanning
-                                    and state._cur_replan
-                                    and _difflib.SequenceMatcher(
-                                        None, state._prev_task_replanning, state._cur_replan
-                                    ).ratio()
-                                    > 0.85
-                                ):
-                                    state._stagnant = True
-                                    logger.info(
-                                        "verify_replan_stagnant sid=%s nudge=%d "
-                                        "ratio=%.2f — escalating to ephemeral",
-                                        state.session_id,
-                                        state.verify_nudges_used,
-                                        _difflib.SequenceMatcher(
-                                            None, state._prev_task_replanning, state._cur_replan
-                                        ).ratio(),
-                                    )
-                                    try:
-                                        # 按需导入：测试替身（observability.metrics_sink）
-                                        from observability.metrics_sink import (
-                                            record as _vg_metric,
-                                        )
-
-                                        _vg_metric(
-                                            "verify_replan_stagnant",
-                                            {
-                                                "nudge_count": int(state.verify_nudges_used),
-                                            },
-                                        )
-                                    except Exception:  # noqa: BLE001
-                                        pass
-                                if state._refl:
-                                    state._prev_task_replanning = state._cur_replan
-                            except Exception:  # noqa: BLE001 — safe-fail
-                                pass
-
-                        # 失败计数达 max 或 stagnation → 调 ephemeral 救援
-                        state.ephemeral_pass = False
-                        if state._stagnant or state.verify_nudges_used >= self.max_verify_nudges:
-                            try:
-                                state.ephemeral_pass = (
-                                    await self.verify_gate.consult_ephemeral_subagent(
-                                        ledger=state.ledger,
-                                        failed_claims=state.v_outcome.unmatched_claims,
-                                        assistant_text=state.response.content,
-                                        workload_context=(
-                                            self._provider_workload_context_factory(
-                                                "agent.verify_ephemeral"
-                                            )
-                                            if self._provider_workload_context_factory is not None
-                                            else None
-                                        ),
-                                    )
-                                )
-                            except Exception as exc:  # noqa: BLE001
-                                logger.warning("ephemeral consult failed: %s", exc)
-                            # WI-HM-1: emit ephemeral 救援判定到 metrics.jsonl
-                            # （之前只 logger.info，未计数化 → 监控看不到救援率）.
-                            try:
-                                from observability.metrics_sink import (  # noqa: PLC0415
-                                    record as _eph_metric,
-                                )
-
-                                _eph_metric(
-                                    "ephemeral_rescued"
-                                    if state.ephemeral_pass
-                                    else "ephemeral_pass",
-                                    {
-                                        "nudge_count": int(state.verify_nudges_used),
-                                        "ok": bool(state.ephemeral_pass),
-                                    },
-                                )
-                            except Exception:  # noqa: BLE001 — metric 失败不阻 dispatch
-                                pass
-
-                        if not state.ephemeral_pass:
-                            # WI-2.2: verify_exhausted — all layers (nudges +
-                            # ephemeral) exhausted → emit terminal error + return.
-                            # Only when we've either stagnated or used all nudges
-                            # AND ephemeral failed.
-                            if (
-                                state._stagnant
-                                or state.verify_nudges_used >= self.max_verify_nudges
-                            ):
-                                logger.warning(
-                                    "verify_exhausted sid=%s nudge=%d/%d stagnant=%s",
-                                    state.session_id,
-                                    state.verify_nudges_used,
-                                    self.max_verify_nudges,
-                                    state._stagnant,
-                                )
-                                try:
-                                    # 按需导入：测试替身（observability.metrics_sink）
-                                    from observability.metrics_sink import (
-                                        record as _vg_metric,
-                                    )
-
-                                    _vg_metric(
-                                        "verify_exhausted",
-                                        {
-                                            "nudge_count": int(state.verify_nudges_used),
-                                            "stagnant": bool(state._stagnant),
-                                        },
-                                    )
-                                except Exception:  # noqa: BLE001
-                                    pass
-                                if (
-                                    self.force_finish_via_tool_choice
-                                    and not state._verify_final_done
-                                ):
-                                    state._verify_final_done = True
-                                    state._force_finish_queued = True
-                                    _append_loop_control(
-                                        state.working_messages,
-                                        {
-                                            "role": "system",
-                                            "content": (
-                                                "verify 多次未对齐 ledger，本轮必须 end_turn："
-                                                "向用户如实总结做了什么、哪些未能验证、建议下一步。"
-                                                "不要再调用任何工具。"
-                                            ),
-                                        },
-                                        metadata_enabled=state.context_metadata_enabled,
-                                        source="agent_loop.verify_exhausted",
-                                        anchor_after=_latest_context_anchor(
-                                            state.working_messages,
-                                            fallback=(
-                                                f"agent-loop:{state.tid}:iteration:{state.iteration}:response"
-                                            ),
-                                        ),
-                                        fragment_id=(
-                                            f"agent-loop:{state.tid}:iteration:{state.iteration}:"
-                                            "verify-exhausted"
-                                        ),
-                                        protected=True,
-                                    )
-                                    continue
-                                if self._tracer:
-                                    self._tracer.record(
-                                        {
-                                            "kind": "end",
-                                            "iter": state.iteration,
-                                            "reason": "verify_exhausted",
-                                            "gate_summary": self._gate.summary(),
-                                        }
-                                    )
-                                yield ErrorEvent(
-                                    type="error",
-                                    task_id=state.tid,
-                                    iteration=state.iteration,
-                                    reason="verify_exhausted",
-                                    detail=(
-                                        f"verify-gate: all retries exhausted after "
-                                        f"{state.verify_nudges_used} nudge(s). "
-                                        f"stagnant={state._stagnant}"
-                                    ),
-                                )
-                                return
-
-                            # Still have nudges: inject rebound + 回灌 D8 schema
-                            state.unmatched_lines = "\n".join(
-                                f"  {i + 1}. [unmatched_claim] {c.raw_text!r} — "
-                                f"no receipt matched ({c.reason})"
-                                for i, c in enumerate(state.v_outcome.unmatched_claims[:5])
-                            )
-                            state.rebound = (
-                                f"[verify-gate] iteration={state.iteration} blocked end_turn.\n"
-                                f"Failures:\n{state.unmatched_lines}\n"
-                                f"Classification: unmatched_claim\n"
-                                f"Next: please call the missing tool to actually "
-                                f"perform the action you claimed, then end_turn again."
-                            )
-                            # WI-2.3: append goal alignment context to rebound
-                            # when goal_text was provided and GoalAlignment is
-                            # populated. goal_text=None → rebound unchanged (BC).
-                            if (
-                                state.v_outcome.goal_alignment is not None
-                                and not state.v_outcome.goal_alignment.aligned
-                            ):
-                                state.ga = state.v_outcome.goal_alignment
-                                state._evidence_str = (
-                                    "\n".join(f"  - {e}" for e in state.ga.objective_evidence[:5])
-                                    or "  (无客观证据)"
-                                )
-                                state.rebound = (
-                                    state.rebound
-                                    + f"\n原始目标: {state.ga.goal_text}\n"
-                                    + f"客观证据: {state._evidence_str}\n"
-                                    + f"缺口: {state.ga.gap}\n"
-                                    + "→ 请重规划（结构化反思）后补齐，"
-                                    + "使产物真满足原目标，而非换个说法过关。"
-                                )
-                            # WI-2.1: append reflection instruction when flag on.
-                            # Flag off (default) → rebound string unchanged (BC).
-                            if self.structured_reflection:
-                                state.rebound = state.rebound + _REFLECTION_INSTRUCTION
-                            state._verify_anchor = _latest_context_anchor(
-                                state.working_messages,
-                                fallback=(
-                                    f"agent-loop:{state.tid}:iteration:{state.iteration}:response"
-                                ),
-                            )
-                            if state.response.content:
-                                state._verify_reply = _append_loop_transcript(
-                                    state.working_messages,
-                                    {
-                                        "role": "assistant",
-                                        "content": state.response.content,
-                                    },
-                                    metadata_enabled=state.context_metadata_enabled,
-                                    source="agent_loop.verify_gate.trigger",
-                                    role="assistant",
-                                    fragment_id=(
-                                        f"agent-loop:{state.tid}:iteration:{state.iteration}:verify-trigger"
-                                    ),
-                                )
-                                state._verify_anchor = (
-                                    _context_fragment_id(state._verify_reply)
-                                    or state._verify_anchor
-                                )
-                            _append_loop_control(
-                                state.working_messages,
-                                {"role": "system", "content": state.rebound},
-                                metadata_enabled=state.context_metadata_enabled,
-                                source="agent_loop.verify_nudge",
-                                anchor_after=state._verify_anchor,
-                                fragment_id=(
-                                    f"agent-loop:{state.tid}:iteration:{state.iteration}:"
-                                    f"verify-nudge:{state.verify_nudges_used}"
-                                ),
-                            )
-                            logger.info(
-                                "verify_gate_nudge_injected sid=%s nudge=%d/%d "
-                                "unmatched=%d ephemeral_pass=%s",
-                                state.session_id,
-                                state.verify_nudges_used,
-                                self.max_verify_nudges,
-                                len(state.v_outcome.unmatched_claims),
-                                state.ephemeral_pass,
-                            )
-                            # WI-T2.1 v3：真 emit 到 metrics.jsonl（MR-T-8 拦截
-                            # 硬证据 — 用户 goal "verify_* event in metrics.jsonl"
-                            # 把 fake-completion 拦截事件计数化，供监控面板看健康率）
-                            try:
-                                # 按需导入：测试替身（observability.metrics_sink）
-                                from observability.metrics_sink import (
-                                    record as _verify_metric,
-                                )
-
-                                _verify_metric(
-                                    "verify_gate_nudge_injected",
-                                    {
-                                        "nudge_count": int(state.verify_nudges_used),
-                                        "count": int(len(state.v_outcome.unmatched_claims)),
-                                        "ok": bool(state.ephemeral_pass),
-                                    },
-                                )
-                            except Exception:  # noqa: BLE001 — metric 失败不阻 dispatch
-                                pass
-                            continue
-                        else:
-                            logger.info(
-                                "verify_gate.ephemeral_rescued sid=%s",
-                                state.session_id,
-                            )
-                    elif self._tracer and state.v_outcome is not None:
-                        self._tracer.record(
-                            {
-                                "kind": "gate",
-                                "iter": state.iteration,
-                                "which": "verify",
-                                "passed": True,
-                                "reason": "",
-                            }
-                        )
-
-                # WI-B3 Companion+Code v1 — /goal end_turn rebound. Same
-                # safe-fail pattern as completion_probe / verify_gate:
-                # checker exception or done=False → inject a system
-                # message and ``continue`` the loop so the next LLM call
-                # sees the hint. Cap at ``goal.max_iterations`` so the
-                # checker can't loop forever. flag-off (store / checker
-                # = None, or no active goal, or goal.done already) →
-                # skip the block entirely (BC).
-                if (
-                    state.iteration < _SELFCHECK_TIER3_AT
-                    and self.session_goal_store is not None
-                    and self.goal_checker is not None
-                ):
-                    state._goal = self.session_goal_store.get(state.session_id)
-                    if (
-                        state._goal is not None
-                        and not state._goal.done
-                        and state._goal.iterations_used < state._goal.max_iterations
-                    ):
-                        try:
-                            state._done, state._hint = await traced_call(
-                                name="goal_checker.check",
-                                kind=SpanKind.GATE,
-                                lifecycle_stage="gate",
-                                attributes={"iteration": state.iteration, "gate": "goal"},
-                                invoke=lambda: self.goal_checker.check(
-                                    state._goal.text,
-                                    state.working_messages,
-                                    **(
-                                        {
-                                            "workload_context": self._provider_workload_context_factory(
-                                                "agent.goal_check"
-                                            )
-                                        }
-                                        if self._provider_workload_context_factory is not None
-                                        else {}
-                                    ),
-                                ),
-                            )
-                        except Exception as exc:  # noqa: BLE001 — safe-fail
-                            logger.warning(
-                                "goal_checker raised (sid=%s): %s — skipping check",
-                                state.session_id,
-                                exc,
-                            )
-                            # R-T3 §15.4: 兜底也用 skipped 语义（check() 内已 safe-fail，
-                            # 这里只作双重防护）。不默认 done=True。
-                            state._done, state._hint = False, "goal_check=skipped"
-                        # metric emit (best-effort, not blocking)
                         try:
                             from observability.metrics_sink import (  # noqa: PLC0415
-                                record as _goal_metric,
+                                record as _eval_metric,
                             )
 
-                            _goal_metric(
-                                "goal_checker_invoked",
+                            _eval_metric(
+                                "evaluator_revise_triggered",
                                 {
-                                    "ok": bool(state._done),
-                                    "count": int(state._goal.iterations_used),
+                                    "quality_score": state._ev_result["quality_score"],
+                                    "issues_count": len(state._ev_result.get("issues", [])),
                                 },
                             )
                         except Exception:  # noqa: BLE001 — metric 失败不阻
                             pass
-                        # R-T3 §15.4: goal_check=skipped → checker 降级，
-                        # 无法正向确认 → 不 mark_done，但也不注入"未达成"nudge
-                        # （我们不知道目标是否真达成，不能给 LLM 假信号）。
-                        # 直接 fall-through 到 FinalEvent / evaluator gate。
-                        if state._hint == "goal_check=skipped":
-                            logger.info(
-                                "goal_checker.skipped sid=%s — "
-                                "checker degraded, proceeding without goal confirmation",
-                                state.session_id,
-                            )
-                            # 不 continue，让正常 FinalEvent 流程继续
-                        elif not state._done:
-                            if self._tracer:
-                                self._tracer.record(
-                                    {
-                                        "kind": "gate",
-                                        "iter": state.iteration,
-                                        "which": "goal",
-                                        "passed": False,
-                                        "reason": str(state._hint or "")[:200],
-                                    }
-                                )
-                            self.session_goal_store.increment_iteration(state.session_id)
-                            # T1：落库 iterations_used，重启不归零。safe-fail
-                            # 内置于 persist_iteration；getattr 兜底旧 store。
-                            state._pit = getattr(
-                                self.session_goal_store,
-                                "persist_iteration",
-                                None,
-                            )
-                            if state._pit is not None:
-                                await state._pit(state.session_id)
-                            # Append the assistant message that triggered
-                            # this so the LLM sees its own prior end_turn
-                            # output — symmetric with completion_probe /
-                            # verify_gate rebound shape.
-                            state._goal_anchor = _latest_context_anchor(
-                                state.working_messages,
-                                fallback=(
-                                    f"agent-loop:{state.tid}:iteration:{state.iteration}:response"
-                                ),
-                            )
-                            if state.response.content:
-                                state._goal_reply = _append_loop_transcript(
-                                    state.working_messages,
-                                    {
-                                        "role": "assistant",
-                                        "content": state.response.content,
-                                    },
-                                    metadata_enabled=state.context_metadata_enabled,
-                                    source="agent_loop.goal_checker.trigger",
-                                    role="assistant",
-                                    fragment_id=(
-                                        f"agent-loop:{state.tid}:iteration:{state.iteration}:goal-trigger"
-                                    ),
-                                )
-                                state._goal_anchor = (
-                                    _context_fragment_id(state._goal_reply) or state._goal_anchor
-                                )
-                            _append_loop_control(
-                                state.working_messages,
-                                {
-                                    "role": "system",
-                                    "content": (
-                                        f"[goal] 未达成 "
-                                        f"({state._goal.iterations_used}/{state._goal.max_iterations}): "
-                                        f"{state._hint}\n继续工作直到目标完成。"
-                                    ),
-                                },
-                                metadata_enabled=state.context_metadata_enabled,
-                                source="agent_loop.goal_nudge",
-                                anchor_after=state._goal_anchor,
-                                fragment_id=(
-                                    f"agent-loop:{state.tid}:iteration:{state.iteration}:"
-                                    f"goal-nudge:{state._goal.iterations_used}"
-                                ),
-                            )
-                            logger.info(
-                                "goal_checker_nudge_injected sid=%s iter=%d/%d",
-                                state.session_id,
-                                state._goal.iterations_used,
-                                state._goal.max_iterations,
-                            )
-                            continue
-                        else:
-                            if self._tracer:
-                                self._tracer.record(
-                                    {
-                                        "kind": "gate",
-                                        "iter": state.iteration,
-                                        "which": "goal",
-                                        "passed": True,
-                                        "reason": "",
-                                    }
-                                )
-                            self.session_goal_store.mark_done(state.session_id)
-                            # 落库 done 终态（与 increment 落库对称）：否则
-                            # load_persisted 只召回 status='active'，已完成目标
-                            # 重启会复活成 active。getattr 兜底旧 store。
-                            state._pd = getattr(
-                                self.session_goal_store,
-                                "persist_done",
-                                None,
-                            )
-                            if state._pd is not None:
-                                await state._pd(state.session_id)
-                            logger.info(
-                                "goal_checker.marked_done sid=%s",
-                                state.session_id,
-                            )
-
-                # WI-2.4: external evaluator gate — BEFORE FinalEvent.
-                # Only fires when:
-                #   a) external_evaluator is wired (flag on), AND
-                #   b) is_high_consequence_goal() returns True.
-                # If evaluator returns verdict=revise → emit ErrorEvent
-                # ("evaluator_revise") instead of FinalEvent so auto_resume
-                # can spawn a replan. Runs at most ONCE per goal (here,
-                # before FinalEvent — revise → replan → new run, no loop).
-                # flag off (external_evaluator=None) → skip entirely (BC, 0 calls).
-                # ⚠️ plans/2026-06-24-...：pipeline on（self._self_check_gate 非 None）时
-                # 异体评分已由 Step6 SelfCheckGate 编排 → 此处跳过避免双重评分。
-                if self.external_evaluator is not None and self._self_check_gate is None:
-                    try:
-                        from deskpet.agent.external_evaluator import (  # noqa: PLC0415
-                            is_high_consequence_goal as _is_hcg,
-                        )
-
-                        state._eval_ledger = (
-                            self.receipt_store.load_session(state.session_id)
-                            if self.receipt_store is not None
-                            else []
-                        )
-                        # Extract goal_text from session_goal_store if wired,
-                        # else fall back to first user message text.
-                        state._eval_goal_text = ""
-                        if self.session_goal_store is not None:
-                            state._gt_fn = getattr(self.session_goal_store, "get_goal_text", None)
-                            if callable(state._gt_fn):
-                                state._eval_goal_text = state._gt_fn(state.session_id) or ""
-                        if not state._eval_goal_text:
-                            # BC fallback: use first user message content
-                            for state._m in state.working_messages:
-                                if state._m.get("role") == "user":
-                                    state._eval_goal_text = str(state._m.get("content") or "")
-                                    break
-                        if _is_hcg(state._eval_goal_text, state._eval_ledger, []):
-                            state._ev_result = await traced_call(
-                                name="external_evaluator.evaluate",
-                                kind=SpanKind.GATE,
-                                lifecycle_stage="gate",
-                                attributes={
-                                    "iteration": state.iteration,
-                                    "gate": "external_evaluator",
-                                },
-                                invoke=lambda: self.external_evaluator.evaluate(
-                                    original_goal=state._eval_goal_text,
-                                    produced_artifacts=[
-                                        getattr(r, "tool_name", "unknown")
-                                        for r in state._eval_ledger
-                                    ],
-                                    objective_evidence=[
-                                        f"receipt ok: tool={getattr(r, 'tool_name', '?')}"
-                                        for r in state._eval_ledger
-                                        if getattr(r, "ok", True)
-                                    ],
-                                    conversation_summary=str(state.response.content or "")[:512],
-                                    workload_context=(
-                                        self._provider_workload_context_factory(
-                                            "agent.external_evaluator"
-                                        )
-                                        if self._provider_workload_context_factory is not None
-                                        else None
-                                    ),
-                                ),
-                            )
-                            if (
-                                state._ev_result.get("verdict") == "revise"
-                                and state._ev_result.get("quality_score", 10) < 6
-                            ):
-                                logger.info(
-                                    "external_evaluator verdict=revise sid=%s "
-                                    "quality_score=%d issues=%d → emit evaluator_revise",
-                                    state.session_id,
-                                    state._ev_result["quality_score"],
-                                    len(state._ev_result.get("issues", [])),
-                                )
-                                try:
-                                    from observability.metrics_sink import (  # noqa: PLC0415
-                                        record as _eval_metric,
-                                    )
-
-                                    _eval_metric(
-                                        "evaluator_revise_triggered",
-                                        {
-                                            "quality_score": state._ev_result["quality_score"],
-                                            "issues_count": len(state._ev_result.get("issues", [])),
-                                        },
-                                    )
-                                except Exception:  # noqa: BLE001 — metric 失败不阻
-                                    pass
-                                yield ErrorEvent(
-                                    type="error",
-                                    task_id=state.tid,
-                                    iteration=state.iteration,
-                                    reason="evaluator_revise",
-                                    detail=(
-                                        f"[external_evaluator] 质量不足 "
-                                        f"(score={state._ev_result['quality_score']}/10): "
-                                        + "; ".join(state._ev_result.get("issues", []))
-                                    ),
-                                )
-                                return
-                    except Exception as exc:  # noqa: BLE001 — safe-fail
-                        logger.warning(
-                            "external_evaluator gate failed (sid=%s): %s — passing through",
-                            state.session_id,
-                            exc,
-                        )
-                state._final_content = await _review_final_response_quality(
-                    self,
-                    state.response,
-                    user_request=state.loop_user_request,
-                    session_id=state.session_id,
-                    request_id=state.context_request_id or state.tid,
-                    iteration=state.iteration,
-                    model=state.use_model or "",
-                    prepared_context=state.prepared_context,
-                    current_tool_set=state.current_tool_set,
-                    totals=state.totals,
-                )
-                # ─── Step7 收敛标记（自然收尾路径，仅观测；止损在循环顶部 2d-① 处理）。
-                # plans/2026-06-24-...：模型自己 end_turn 正常收尾时 gate 尚未 terminate
-                # （reason="running"），此处只发 converged 观测事件，**不触发止损**（止损只在触顶分支）。
-                if self._convergence_controller is not None and self._pipeline_observability:
-                    state._v = self._convergence_controller.evaluate(
-                        principal_resolved=True,
-                        unverified_claims=0,
-                        gate_summary=self._gate.summary(),
-                    )
-                    yield self._pipeline_event(
-                        "chat_v2_convergence",
-                        state.iteration,
-                        {
-                            "converged": state._v.converged,
-                            "principal_resolved": state._v.principal_resolved,
-                            "stop_reason": state._v.stop_reason,
-                            "report": "",
-                        },
-                    )
-
-                # P6 Phase 6 — gate records the natural terminal state
-                # before we emit the FinalEvent so consumers reading
-                # gate.summary() after a run see SUCCESS / matching reason.
-                self._gate.record_final_answer()
-                if self._tracer:
-                    self._tracer.record(
-                        {
-                            "kind": "end",
-                            "iter": state.iteration,
-                            "reason": state.response.stop_reason or "end_turn",
-                            "gate_summary": self._gate.summary(),
-                        }
-                    )
-
-                # WI-OH-4: 记忆 self-curation nudge — 在 FinalEvent 之后周期性
-                # fire-and-forget 触发（curator None → BC，跳过整段；非 None 时
-                # 每 _curation_every 回合调一次，异步不挡主回合）。
-                self._maybe_fire_curation_nudge(state.session_id, state.working_messages)
-
-                yield FinalEvent(
-                    type="final",
-                    task_id=state.tid,
-                    iteration=state.iteration,
-                    content=state._final_content,
-                    reasoning_content=state.response.reasoning_content,
-                    stop_reason=state.response.stop_reason or "end_turn",
-                    total_input_tokens=state.totals["input"],
-                    total_output_tokens=state.totals["output"],
-                    total_cache_read_tokens=state.totals["cache_read"],
-                    total_cache_write_tokens=state.totals["cache_write"],
-                )
-                return
-
-            for state.tool_call in state.response.tool_calls:
-                _inject_loop_user_request(
-                    state.tool_call, state.tool_schemas, loop_user_request=state.loop_user_request
-                )
-            if state.is_sentinel_run and any(
-                call.name == "deepresearch" for call in state.response.tool_calls
-            ):
-                yield FinalEvent(
-                    type="final",
-                    task_id=state.tid,
-                    iteration=state.iteration,
-                    content=(
-                        "Auto-resume sentinel cannot start deepresearch. "
-                        "Please explicitly send a research request."
-                    ),
-                    total_input_tokens=state.totals["input"],
-                    total_output_tokens=state.totals["output"],
-                    total_cache_read_tokens=state.totals["cache_read"],
-                    total_cache_write_tokens=state.totals["cache_write"],
-                )
-                return
-            if await _suppress_repeated_tool_batch(
-                self,
-                state.response.tool_calls,
-                state.working_messages,
-                session_id=state.session_id,
-                task_id=state.tid,
-                iteration=state.iteration,
-                metadata_enabled=state.context_metadata_enabled,
-            ):
-                continue
-            state.group_id = _append_tool_batch_message(
-                state.response,
-                state.working_messages,
-                task_id=state.tid,
-                iteration=state.iteration,
-                metadata_enabled=state.context_metadata_enabled,
-            )
-            state.exclusive_call = next(
-                (
-                    call
-                    for call in state.response.tool_calls
-                    if (
-                        _tool_completion_semantics(self.tools, call.name) == "accepted_async"
-                        or call.name == "tool_activate"
-                    )
-                ),
-                None,
-            )
-            state.selected_calls = list(state.response.tool_calls)
-            if state.exclusive_call is not None and len(state.response.tool_calls) != 1:
-                # accepted_async and tool_activate hand control to another
-                # durable boundary.  A model can still return one of them in a
-                # larger parallel batch.  Rejecting the whole batch asks the
-                # model to repair its own wire format and can loop forever when
-                # the provider repeats the same batch.  Execute the first
-                # exclusive call deterministically and mark every sibling as
-                # not executed; the next model turn receives the real
-                # exclusive result and can retry only the siblings it still
-                # needs.
-                state.selected_calls = [state.exclusive_call]
-                for state.call in state.response.tool_calls:
-                    if state.call.id == state.exclusive_call.id:
-                        continue
-                    state.rejection = json.dumps(
-                        {
-                            "ok": False,
-                            "error": "deferred_by_exclusive_tool",
-                            "executed": False,
-                            "exclusive_tool_call_id": state.exclusive_call.id,
-                            "exclusive_tool_name": state.exclusive_call.name,
-                            "hint": (
-                                "This sibling call was not executed. Retry it only "
-                                "if it is still needed after the exclusive result."
+                        yield ErrorEvent(
+                            type="error",
+                            task_id=state.tid,
+                            iteration=state.iteration,
+                            reason="evaluator_revise",
+                            detail=(
+                                f"[external_evaluator] 质量不足 "
+                                f"(score={state._ev_result['quality_score']}/10): "
+                                + "; ".join(state._ev_result.get("issues", []))
                             ),
-                        },
-                        ensure_ascii=False,
-                    )
-                    _append_loop_transcript(
-                        state.working_messages,
-                        {
-                            "role": "tool",
-                            "tool_call_id": state.call.id,
-                            "name": state.call.name,
-                            "content": state.rejection,
-                        },
-                        metadata_enabled=state.context_metadata_enabled,
-                        source="agent_loop.tool_result",
-                        role="tool",
-                        fragment_id=f"{state.group_id}:tool:{state.call.id}",
-                        causal_group_id=state.group_id,
-                    )
-            yield ToolBatchEvent(
+                        )
+                        state.flow = "stop"
+                        return
+            except Exception as exc:  # noqa: BLE001 — safe-fail
+                logger.warning(
+                    "external_evaluator gate failed (sid=%s): %s — passing through",
+                    state.session_id,
+                    exc,
+                )
+
+    async def _dispatch_tool_batch(self, state: _RunState) -> AsyncGenerator[AgentEvent, None]:
+        """本轮有工具调用：去重、排他调用分批，交出工具批事件。"""
+
+        for state.tool_call in state.response.tool_calls:
+            _inject_loop_user_request(
+                state.tool_call, state.tool_schemas, loop_user_request=state.loop_user_request
+            )
+        if state.is_sentinel_run and any(
+            call.name == "deepresearch" for call in state.response.tool_calls
+        ):
+            yield FinalEvent(
+                type="final",
                 task_id=state.tid,
                 iteration=state.iteration,
-                tool_calls=tuple(state.selected_calls),
-                canonical_messages=tuple(
-                    copy.deepcopy(message) for message in state.working_messages
+                content=(
+                    "Auto-resume sentinel cannot start deepresearch. "
+                    "Please explicitly send a research request."
                 ),
-                feedback_state={
-                    "iteration": state.iteration,
-                    "evidence_gathered": self._evidence_gathered,
-                    "evidence_nudges_used": self._evidence_nudges_used,
-                    "tools_used_count": state.tools_used_count,
-                    "skills_used_order": list(self._skills_used_order),
-                    "force_finish_queued": state._force_finish_queued,
-                },
+                total_input_tokens=state.totals["input"],
+                total_output_tokens=state.totals["output"],
+                total_cache_read_tokens=state.totals["cache_read"],
+                total_cache_write_tokens=state.totals["cache_write"],
             )
+            state.flow = "stop"
             return
-
-        state.flow = None
-        async for _event in self._finish_max_iterations(state):
-            yield _event
-        if state.flow == "stop":
+        if await _suppress_repeated_tool_batch(
+            self,
+            state.response.tool_calls,
+            state.working_messages,
+            session_id=state.session_id,
+            task_id=state.tid,
+            iteration=state.iteration,
+            metadata_enabled=state.context_metadata_enabled,
+        ):
+            state.flow = "continue"
             return
+        state.group_id = _append_tool_batch_message(
+            state.response,
+            state.working_messages,
+            task_id=state.tid,
+            iteration=state.iteration,
+            metadata_enabled=state.context_metadata_enabled,
+        )
+        state.exclusive_call = next(
+            (
+                call
+                for call in state.response.tool_calls
+                if (
+                    _tool_completion_semantics(self.tools, call.name) == "accepted_async"
+                    or call.name == "tool_activate"
+                )
+            ),
+            None,
+        )
+        state.selected_calls = list(state.response.tool_calls)
+        if state.exclusive_call is not None and len(state.response.tool_calls) != 1:
+            # accepted_async and tool_activate hand control to another
+            # durable boundary.  A model can still return one of them in a
+            # larger parallel batch.  Rejecting the whole batch asks the
+            # model to repair its own wire format and can loop forever when
+            # the provider repeats the same batch.  Execute the first
+            # exclusive call deterministically and mark every sibling as
+            # not executed; the next model turn receives the real
+            # exclusive result and can retry only the siblings it still
+            # needs.
+            state.selected_calls = [state.exclusive_call]
+            for state.call in state.response.tool_calls:
+                if state.call.id == state.exclusive_call.id:
+                    continue
+                state.rejection = json.dumps(
+                    {
+                        "ok": False,
+                        "error": "deferred_by_exclusive_tool",
+                        "executed": False,
+                        "exclusive_tool_call_id": state.exclusive_call.id,
+                        "exclusive_tool_name": state.exclusive_call.name,
+                        "hint": (
+                            "This sibling call was not executed. Retry it only "
+                            "if it is still needed after the exclusive result."
+                        ),
+                    },
+                    ensure_ascii=False,
+                )
+                _append_loop_transcript(
+                    state.working_messages,
+                    {
+                        "role": "tool",
+                        "tool_call_id": state.call.id,
+                        "name": state.call.name,
+                        "content": state.rejection,
+                    },
+                    metadata_enabled=state.context_metadata_enabled,
+                    source="agent_loop.tool_result",
+                    role="tool",
+                    fragment_id=f"{state.group_id}:tool:{state.call.id}",
+                    causal_group_id=state.group_id,
+                )
+        yield ToolBatchEvent(
+            task_id=state.tid,
+            iteration=state.iteration,
+            tool_calls=tuple(state.selected_calls),
+            canonical_messages=tuple(copy.deepcopy(message) for message in state.working_messages),
+            feedback_state={
+                "iteration": state.iteration,
+                "evidence_gathered": self._evidence_gathered,
+                "evidence_nudges_used": self._evidence_nudges_used,
+                "tools_used_count": state.tools_used_count,
+                "skills_used_order": list(self._skills_used_order),
+                "force_finish_queued": state._force_finish_queued,
+            },
+        )
 
-    async def _begin_run(self, state: _RunState) -> AsyncIterator[AgentEvent]:
+    async def _begin_run(self, state: _RunState) -> AsyncGenerator[AgentEvent, None]:
         """整理入参：启动参数配对、外部反馈、工作消息、工具清单与提供方链检查（空链直接报错停下）。"""
 
         state.host_validated_zero_tool_terminal = bool(
@@ -4574,7 +4826,7 @@ class AgentLoop(ToolContextPersistenceMixin):
             getattr(self.llm, "chat_with_fallback_stream", None)
         )
 
-    async def _plan_chain_budget(self, state: _RunState) -> AsyncIterator[AgentEvent]:
+    async def _plan_chain_budget(self, state: _RunState) -> AsyncGenerator[AgentEvent, None]:
         """提供方链模式：按链上最小窗口统一规划一次上下文（必要时先做覆盖压缩），放不下就停。"""
 
         # Context OS plans one common transcript against the smallest usable
@@ -4611,67 +4863,7 @@ class AgentLoop(ToolContextPersistenceMixin):
             try:
                 state.replan_for_budget = getattr(state.prepared_context, "replan_for_budget", None)
                 state.used_common_replan = callable(state.replan_for_budget)
-                if callable(state.replan_for_budget):
-                    state.replanned = await asyncio.wait_for(
-                        state.replan_for_budget(
-                            context_window=state.safe_budget.context_window,
-                            effective_pct=state.safe_budget.effective_pct,
-                            generation_reserve=state.safe_budget.generation_reserve,
-                        ),
-                        timeout=10.0,
-                    )
-                    state.prepared_context = getattr(
-                        state.replanned, "prepared_context", state.replanned
-                    )
-                    if tuple(getattr(state.prepared_context, "coverage_compaction_jobs", ()) or ()):
-                        if self.compressor is None:
-                            raise RuntimeError("coverage_compaction_owner_unavailable")
-                        state.chain_cycle_id = (
-                            f"{state.context_request_id or state.tid}:chain-safe:1"
-                        )
-                        state.resolution = self._resolve_compression_model(
-                            state.provider_chain,
-                            requested_model=self._requested_compression_model(),
-                        )
-                        await self._flush_context_snapshot(
-                            cycle_id=state.chain_cycle_id,
-                            session_id=state.session_id,
-                            request_id=state.context_request_id or state.tid,
-                            working_messages=_tag_run_input_messages(
-                                list(state.prepared_context.messages), task_id=state.tid
-                            ),
-                            prepared_context=state.prepared_context,
-                            current_tool_set=getattr(state.prepared_context, "tool_set", None),
-                        )
-                        await self._execute_coverage_compaction_jobs(
-                            cycle_id=state.chain_cycle_id,
-                            prepared_context=state.prepared_context,
-                            resolution=state.resolution,
-                        )
-                        logger.info(
-                            "coverage_replan_started sid=%s request_id=%s phase=chain_safe",
-                            state.session_id,
-                            state.context_request_id or state.tid,
-                        )
-                        state.replanned = await asyncio.wait_for(
-                            state.replan_for_budget(
-                                context_window=state.safe_budget.context_window,
-                                effective_pct=state.safe_budget.effective_pct,
-                                generation_reserve=state.safe_budget.generation_reserve,
-                            ),
-                            timeout=10.0,
-                        )
-                        logger.info(
-                            "coverage_replan_completed sid=%s request_id=%s phase=chain_safe",
-                            state.session_id,
-                            state.context_request_id or state.tid,
-                        )
-                        state.prepared_context = getattr(
-                            state.replanned, "prepared_context", state.replanned
-                        )
-                    state.working_messages = _tag_run_input_messages(
-                        list(state.prepared_context.messages), task_id=state.tid
-                    )
+                await self._replan_chain_for_budget(state)
                 state.current_tool_set = getattr(state.prepared_context, "tool_set", None)
                 if state.current_tool_set is not None:
                     state.tool_schemas = list(state.current_tool_set.logical_schemas())
@@ -4738,6 +4930,67 @@ class AgentLoop(ToolContextPersistenceMixin):
                 )
                 state.flow = "stop"
                 return
+
+    async def _replan_chain_for_budget(self, state: _RunState) -> None:
+        """链式预算不够时让上层重排计划。"""
+
+        if callable(state.replan_for_budget):
+            state.replanned = await asyncio.wait_for(
+                state.replan_for_budget(
+                    context_window=state.safe_budget.context_window,
+                    effective_pct=state.safe_budget.effective_pct,
+                    generation_reserve=state.safe_budget.generation_reserve,
+                ),
+                timeout=10.0,
+            )
+            state.prepared_context = getattr(state.replanned, "prepared_context", state.replanned)
+            if tuple(getattr(state.prepared_context, "coverage_compaction_jobs", ()) or ()):
+                if self.compressor is None:
+                    raise RuntimeError("coverage_compaction_owner_unavailable")
+                state.chain_cycle_id = f"{state.context_request_id or state.tid}:chain-safe:1"
+                state.resolution = self._resolve_compression_model(
+                    state.provider_chain,
+                    requested_model=self._requested_compression_model(),
+                )
+                await self._flush_context_snapshot(
+                    cycle_id=state.chain_cycle_id,
+                    session_id=state.session_id,
+                    request_id=state.context_request_id or state.tid,
+                    working_messages=_tag_run_input_messages(
+                        list(state.prepared_context.messages), task_id=state.tid
+                    ),
+                    prepared_context=state.prepared_context,
+                    current_tool_set=getattr(state.prepared_context, "tool_set", None),
+                )
+                await self._execute_coverage_compaction_jobs(
+                    cycle_id=state.chain_cycle_id,
+                    prepared_context=state.prepared_context,
+                    resolution=state.resolution,
+                )
+                logger.info(
+                    "coverage_replan_started sid=%s request_id=%s phase=chain_safe",
+                    state.session_id,
+                    state.context_request_id or state.tid,
+                )
+                state.replanned = await asyncio.wait_for(
+                    state.replan_for_budget(
+                        context_window=state.safe_budget.context_window,
+                        effective_pct=state.safe_budget.effective_pct,
+                        generation_reserve=state.safe_budget.generation_reserve,
+                    ),
+                    timeout=10.0,
+                )
+                logger.info(
+                    "coverage_replan_completed sid=%s request_id=%s phase=chain_safe",
+                    state.session_id,
+                    state.context_request_id or state.tid,
+                )
+                state.prepared_context = getattr(
+                    state.replanned, "prepared_context", state.replanned
+                )
+            state.working_messages = _tag_run_input_messages(
+                list(state.prepared_context.messages), task_id=state.tid
+            )
 
     async def _init_turn_state(self, state: _RunState) -> None:
         """本轮的计数器与闸门开关清零；目标锚定注入一次；准备冻结技能的重挂载。"""
@@ -4830,7 +5083,7 @@ class AgentLoop(ToolContextPersistenceMixin):
         )
         state._skill_compaction_happened = False
 
-    async def _run_initial_coverage(self, state: _RunState) -> AsyncIterator[AgentEvent]:
+    async def _run_initial_coverage(self, state: _RunState) -> AsyncGenerator[AgentEvent, None]:
         """上下文规划带着覆盖压缩任务：先压缩、再按压缩结果重规划；覆盖不完整或预算不够就停（fail closed）。"""
 
         state.initial_coverage_jobs = tuple(
@@ -4925,7 +5178,7 @@ class AgentLoop(ToolContextPersistenceMixin):
                 state.flow = "stop"
                 return
 
-    async def _finish_max_iterations(self, state: _RunState) -> AsyncIterator[AgentEvent]:
+    async def _finish_max_iterations(self, state: _RunState) -> AsyncGenerator[AgentEvent, None]:
         """轮次用完：记警告；有收敛控制器时产出诚实止损报告，否则发 max_iterations 错误。"""
 
         # Hit max_iterations — spec §11.4 says emit warning + final.
