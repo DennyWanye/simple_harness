@@ -35,7 +35,6 @@ import { AddProviderModal } from "./AddProviderModal";
 import { type ProviderDraft } from "./providerDraft";
 import { ConfirmDialog } from "../code-panel/ConfirmDialog";
 import type { ControlChannel } from "../ws/ControlChannel";
-import type { IncomingMessage } from "../types/messages";
 import { dark } from "../theme/components";
 import {
   displayApiKey,
@@ -51,7 +50,6 @@ import type { Provider, ProviderEventMessage } from "./providersStore";
 
 interface SettingsProvidersProps {
   getChannel: () => ControlChannel | null;
-  lastMessage: IncomingMessage | null;
 }
 interface SortableRowProps {
   provider: Provider;
@@ -199,7 +197,7 @@ function SortableRow({
     </li>
   );
 }
-export function SettingsProviders({ getChannel, lastMessage }: SettingsProvidersProps) {
+export function SettingsProviders({ getChannel }: SettingsProvidersProps) {
   const [providers, setProviders] = useState<Provider[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
@@ -227,19 +225,6 @@ export function SettingsProviders({ getChannel, lastMessage }: SettingsProviders
       setEditTarget(null);
     }
   }, []);
-  // Re-entrancy guard independent of React state (button-disable already
-  // prevents double-clicks; this also blocks programmatic / racy re-entry).
-  // Auto-clear timers per provider; cleared on unmount so we never setState
-  // after the component is gone.
-  const resetTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
-  const mountedRef = useRef(true);
-  useEffect(() => {
-    return () => {
-      mountedRef.current = false;
-      Object.values(resetTimersRef.current).forEach((t) => clearTimeout(t));
-    };
-  }, []);
-
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
@@ -250,6 +235,7 @@ export function SettingsProviders({ getChannel, lastMessage }: SettingsProviders
   // mount (and the `lastMessage` single slot can drop the reply when other
   // control traffic lands in the same React batch). Request on mount AND on
   // every (re)connect, and read the reply off the channel directly.
+  // 服务商事件只走这条订阅（不再另读 lastMessage，同一条消息只处理一次）。
   useEffect(() => {
     const ch = getChannel();
     if (!ch) return;
@@ -263,6 +249,10 @@ export function SettingsProviders({ getChannel, lastMessage }: SettingsProviders
     const offMsg = ch.onMessage?.((incoming) => {
       const msg = incoming as unknown as ProviderEventMessage;
       observeSaveResult(msg);
+      if (msg.type === "settings_providers_error") {
+        setError(String(msg.payload?.detail || msg.payload?.reason || "未知错误"));
+        return;
+      }
       if (
         msg.type !== "settings_providers_list_response" &&
         msg.type !== "providers_changed" &&
@@ -270,8 +260,7 @@ export function SettingsProviders({ getChannel, lastMessage }: SettingsProviders
       ) {
         return;
       }
-      if (!Array.isArray(msg.payload?.providers)) return;
-      setProviders(msg.payload.providers as Provider[]);
+      setProviders(Array.isArray(msg.payload?.providers) ? msg.payload.providers : []);
       setError(null);
     });
     return () => {
@@ -279,29 +268,6 @@ export function SettingsProviders({ getChannel, lastMessage }: SettingsProviders
       offMsg?.();
     };
   }, [getChannel, observeSaveResult]);
-
-  // Listen for inbound provider events on the shared lastMessage prop.
-  useEffect(() => {
-    if (!lastMessage) return;
-    const msg = lastMessage as ProviderEventMessage;
-    observeSaveResult(msg);
-    switch (msg.type) {
-      case "settings_providers_list_response":
-      case "providers_changed":
-      case "settings_providers_reordered": {
-        const list: Provider[] = Array.isArray(msg.payload?.providers) ? msg.payload.providers : [];
-        setProviders(list);
-        setError(null);
-        break;
-      }
-      case "settings_providers_error": {
-        setError(String(msg.payload?.detail || msg.payload?.reason || "未知错误"));
-        break;
-      }
-      default:
-        break;
-    }
-  }, [lastMessage, observeSaveResult]);
 
   // 2026-08-09: relay 虚拟项已移除 — 列表只来自 backend registry。
   const ordered = useMemo(() => sortProvidersForDisplay(providers), [providers]);
@@ -452,22 +418,25 @@ export function SettingsProviders({ getChannel, lastMessage }: SettingsProviders
 
   useEffect(() => clearProbeTimeout, [clearProbeTimeout]);
 
-  // Watch for the backend's probe response on the shared ws inbox.
+  // Watch for the backend's probe response on the control channel.
   useEffect(() => {
-    if (!lastMessage) return;
-    const msg = lastMessage as ProviderEventMessage;
-    if (msg.type !== "settings_providers_probe_models_response") return;
-    clearProbeTimeout();
-    setProbing(false);
-    if (msg.payload?.ok) {
-      const list: string[] = Array.isArray(msg.payload.models) ? msg.payload.models : [];
-      setProbedModels(list);
-      setProbeError(null);
-    } else {
-      setProbedModels([]);
-      setProbeError(String(msg.payload?.detail || "未知错误"));
-    }
-  }, [clearProbeTimeout, lastMessage]);
+    const ch = getChannel();
+    if (!ch) return;
+    return ch.onMessage?.((incoming) => {
+      const msg = incoming as unknown as ProviderEventMessage;
+      if (msg.type !== "settings_providers_probe_models_response") return;
+      clearProbeTimeout();
+      setProbing(false);
+      if (msg.payload?.ok) {
+        const list: string[] = Array.isArray(msg.payload.models) ? msg.payload.models : [];
+        setProbedModels(list);
+        setProbeError(null);
+      } else {
+        setProbedModels([]);
+        setProbeError(String(msg.payload?.detail || "未知错误"));
+      }
+    });
+  }, [getChannel, clearProbeTimeout]);
 
   const handleProbeModels = useCallback(
     (base_url: string, api_key: string, provider_id?: string) => {

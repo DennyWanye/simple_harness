@@ -51,7 +51,6 @@ interface SettingsPanelProps {
   /** The most recent incoming control message — we narrow to our reply
    * type inside an effect. Piggybacking the existing App-level state
    * avoids an extra onMessage listener that'd need manual teardown. */
-  lastMessage: IncomingMessage | null;
   secret: string;
   onConfigChanged?: () => void;
   /** T11 (workbench-ui, D5 宿主模式)：
@@ -71,7 +70,6 @@ export function SettingsPanel({
   open,
   onClose,
   getChannel,
-  lastMessage,
   variant = "overlay",
   autostart,
 }: SettingsPanelProps) {
@@ -132,7 +130,7 @@ export function SettingsPanel({
       {/* ================ LLM Providers (P5-S2 Phase 4) ================ */}
       <section style={sectionStyle}>
         <h3 style={h3Style}>LLM Providers</h3>
-        <SettingsProviders getChannel={getChannel} lastMessage={lastMessage} />
+        <SettingsProviders getChannel={getChannel} />
       </section>
 
       {/* ================ 模型状态 (P4-S16) ================ */}

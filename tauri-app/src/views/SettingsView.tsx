@@ -7,21 +7,19 @@
  * 六项 props 合同（T6 冻结；App :SettingsPanel 原浮层 props 原样下传 +
  * 第 7 轮补第六项 autostart —— useAutostart 状态下传，自启开关自
  * Toolbar 移入设置页，B12 保留换位置）：
- *   getChannel / lastMessage / secret / onConfigChanged /
+ *   getChannel / secret / onConfigChanged /
  *   autostart。
  *
- * lastMessage/getChannel/secret 由 App 的 ControlChannel 继续下传
+ * getChannel/secret 由 App 的 ControlChannel 继续下传（2026-10-17 起设置页消息全走通道订阅，不再下传 lastMessage）
  * （顺风车不断）；页面无关闭动作（侧栏导航切走即离开）。
  */
 import React from "react";
 
 import { SettingsPanel } from "../components/SettingsPanel";
 import type { ControlChannel } from "../ws/ControlChannel";
-import type { IncomingMessage } from "../types/messages";
 
 export interface SettingsViewProps {
   getChannel: () => ControlChannel | null;
-  lastMessage: IncomingMessage | null;
   secret: string;
   onConfigChanged?: () => void;
   /** useAutostart 状态（App 层持有），自启开关落位设置页。 */
@@ -34,7 +32,6 @@ export interface SettingsViewProps {
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
   getChannel,
-  lastMessage,
   secret,
   onConfigChanged,
   autostart,
@@ -58,7 +55,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         // page 模式无关闭按钮；onClose 仅满足合同（浮层遗留 API）。
         onClose={() => undefined}
         getChannel={getChannel}
-        lastMessage={lastMessage}
         secret={secret}
         onConfigChanged={onConfigChanged}
         autostart={autostart}

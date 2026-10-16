@@ -9,13 +9,7 @@ import { SettingsPanel } from "./SettingsPanel";
 describe("SettingsPanel retired supervisor UI", () => {
   it("does not expose the removed supervisor controls", () => {
     const html = renderToStaticMarkup(
-      <SettingsPanel
-        open
-        onClose={() => undefined}
-        getChannel={() => null}
-        lastMessage={null}
-        secret=""
-      />,
+      <SettingsPanel open onClose={() => undefined} getChannel={() => null} secret="" />,
     );
 
     expect(html).not.toContain("supervisor");
@@ -32,7 +26,6 @@ describe("SettingsPanel page variant（T11，WB-8）", () => {
         variant="page"
         onClose={() => undefined}
         getChannel={() => null}
-        lastMessage={null}
         secret=""
         autostart={{ ready: true, enabled: false, toggle: () => undefined }}
       />,
@@ -61,13 +54,7 @@ describe("SettingsPanel page variant（T11，WB-8）", () => {
 
   it("overlay variant（默认）保持浮层结构与关闭按钮", () => {
     const html = renderToStaticMarkup(
-      <SettingsPanel
-        open
-        onClose={() => undefined}
-        getChannel={() => null}
-        lastMessage={null}
-        secret=""
-      />,
+      <SettingsPanel open onClose={() => undefined} getChannel={() => null} secret="" />,
     );
     expect(html).toContain("aria-modal");
     expect(html).toContain("关闭设置");

@@ -900,7 +900,6 @@ function App() {
           missionsProps={{ channel: permissionChannel }}
           settingsProps={{
             getChannel: getControlChannel,
-            lastMessage,
             secret,
             onConfigChanged: () => setRouteKind(null),
             autostart: {

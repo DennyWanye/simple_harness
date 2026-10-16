@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { SettingsProviders } from "./SettingsProviders";
 import { type Provider } from "./providersStore";
-import type { ControlMessage, IncomingMessage } from "../types/messages";
+import type { ControlMessage } from "../types/messages";
 import type { ControlChannel, ConnectionState } from "../ws/ControlChannel";
 
 afterEach(cleanup);
@@ -17,8 +17,13 @@ class FakeProviderChannel {
     this.sent.push(message);
     return true;
   }
-  onMessage() {
-    return () => undefined;
+  listeners = new Set<(message: unknown) => void>();
+  onMessage(listener: (message: unknown) => void) {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+  emit(message: unknown) {
+    act(() => this.listeners.forEach((listener) => listener(message)));
   }
   onStateChange() {
     return () => undefined;
@@ -39,17 +44,8 @@ const provider: Provider = {
 describe("SettingsProviders delete confirmation", () => {
   it("requires the in-app dialog before sending the remove mutation", async () => {
     const channel = new FakeProviderChannel();
-    render(
-      <SettingsProviders
-        getChannel={() => channel as unknown as ControlChannel}
-        lastMessage={
-          {
-            type: "providers_changed",
-            payload: { providers: [provider] },
-          } as unknown as IncomingMessage
-        }
-      />,
-    );
+    render(<SettingsProviders getChannel={() => channel as unknown as ControlChannel} />);
+    channel.emit({ type: "providers_changed", payload: { providers: [provider] } });
 
     fireEvent.click(await screen.findByTestId("provider-delete-btn-delete-fixture"));
     const dialog = screen.getByRole("dialog", { name: "删除 Provider" });
@@ -81,12 +77,7 @@ describe("SettingsProviders delete confirmation", () => {
   it("keeps the add dialog open when the control channel is disconnected", async () => {
     const channel = new FakeProviderChannel();
     channel.state = "disconnected";
-    render(
-      <SettingsProviders
-        getChannel={() => channel as unknown as ControlChannel}
-        lastMessage={null}
-      />,
-    );
+    render(<SettingsProviders getChannel={() => channel as unknown as ControlChannel} />);
 
     fireEvent.click(screen.getByTestId("provider-add-button"));
     const dialog = screen.getByRole("dialog", { name: "添加 provider" });
@@ -112,17 +103,8 @@ describe("SettingsProviders delete confirmation", () => {
 
   it("probes an edited provider by id without exposing its saved key", async () => {
     const channel = new FakeProviderChannel();
-    render(
-      <SettingsProviders
-        getChannel={() => channel as unknown as ControlChannel}
-        lastMessage={
-          {
-            type: "providers_changed",
-            payload: { providers: [provider] },
-          } as unknown as IncomingMessage
-        }
-      />,
-    );
+    render(<SettingsProviders getChannel={() => channel as unknown as ControlChannel} />);
+    channel.emit({ type: "providers_changed", payload: { providers: [provider] } });
 
     fireEvent.click(await screen.findByTestId("provider-edit-btn-delete-fixture"));
     const dialog = screen.getByRole("dialog", { name: "编辑 provider" });
@@ -140,16 +122,8 @@ describe("SettingsProviders delete confirmation", () => {
 
   it("keeps the dialog open until the backend acknowledges the save", async () => {
     const channel = new FakeProviderChannel();
-    const initial = {
-      type: "providers_changed",
-      payload: { providers: [provider] },
-    } as unknown as IncomingMessage;
-    const view = render(
-      <SettingsProviders
-        getChannel={() => channel as unknown as ControlChannel}
-        lastMessage={initial}
-      />,
-    );
+    render(<SettingsProviders getChannel={() => channel as unknown as ControlChannel} />);
+    channel.emit({ type: "providers_changed", payload: { providers: [provider] } });
 
     fireEvent.click(await screen.findByTestId("provider-edit-btn-delete-fixture"));
     const dialog = screen.getByRole("dialog", { name: "编辑 provider" });
@@ -159,17 +133,28 @@ describe("SettingsProviders delete confirmation", () => {
       (within(dialog).getByRole("button", { name: "保存中…" }) as HTMLButtonElement).disabled,
     ).toBe(true);
 
-    view.rerender(
-      <SettingsProviders
-        getChannel={() => channel as unknown as ControlChannel}
-        lastMessage={
-          {
-            type: "settings_providers_updated",
-            payload: { provider },
-          } as unknown as IncomingMessage
-        }
-      />,
-    );
+    channel.emit({ type: "settings_providers_updated", payload: { provider } });
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "编辑 provider" })).toBeNull());
+  });
+
+  it("探测回执与错误都从控制通道读到：模型并入编辑框，错误显示出来", async () => {
+    const channel = new FakeProviderChannel();
+    render(<SettingsProviders getChannel={() => channel as unknown as ControlChannel} />);
+    channel.emit({ type: "providers_changed", payload: { providers: [provider] } });
+
+    fireEvent.click(await screen.findByTestId("provider-edit-btn-delete-fixture"));
+    const dialog = screen.getByRole("dialog", { name: "编辑 provider" });
+    fireEvent.click(within(dialog).getByTestId("provider-probe-models-button"));
+    channel.emit({
+      type: "settings_providers_probe_models_response",
+      payload: { ok: true, models: ["probed-model"] },
+    });
+    expect(within(dialog).getByText("probed-model")).toBeTruthy();
+
+    channel.emit({
+      type: "settings_providers_error",
+      payload: { reason: "invalid", detail: "名称重复" },
+    });
+    expect(screen.getAllByText("名称重复").length).toBeGreaterThan(0);
   });
 });

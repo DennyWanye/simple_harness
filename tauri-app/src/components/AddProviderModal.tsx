@@ -16,7 +16,8 @@
  * Pure helpers exported for vitest — matches the no-DOM testing
  * convention.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import { useDepsChanged } from "../hooks/useDepsChanged";
 import type { Provider } from "./providersStore";
 import { dark } from "../theme/components";
 import { tokens } from "../theme/tokens";
@@ -71,27 +72,31 @@ export function AddProviderModal({
   const [showModels, setShowModels] = useState(true);
 
   // If the editing target changes (rare; UI usually re-mounts), reset draft.
-  useEffect(() => {
+  // 渲染期按上一次比对（不在 effect 里 setState）。
+  if (useDepsChanged([editing])) {
     setDraft(editing ? prefillFromProvider(editing) : createBlankDraft());
     setSubmitted(false);
     setNewModel("");
-  }, [editing]);
+  }
 
   // Merge probed models into the draft (idempotent — only adds new ones).
-  useEffect(() => {
-    if (!probedModels || probedModels.length === 0) return;
-    setDraft((cur) => {
-      const merged = [...cur.models];
-      for (const m of probedModels) {
-        if (m && !merged.includes(m)) merged.push(m);
-      }
-      const default_model =
-        cur.default_model && merged.includes(cur.default_model)
-          ? cur.default_model
-          : merged[0] || "";
-      return { ...cur, models: merged, default_model };
-    });
-  }, [probedModels]);
+  // 首次渲染也要并入（与原 effect 挂载即执行一致），所以初值用 null 哨兵。
+  const [mergedProbe, setMergedProbe] = useState<string[] | undefined | null>(null);
+  if (mergedProbe !== probedModels) {
+    setMergedProbe(probedModels);
+    if (probedModels && probedModels.length > 0)
+      setDraft((cur) => {
+        const merged = [...cur.models];
+        for (const m of probedModels) {
+          if (m && !merged.includes(m)) merged.push(m);
+        }
+        const default_model =
+          cur.default_model && merged.includes(cur.default_model)
+            ? cur.default_model
+            : merged[0] || "";
+        return { ...cur, models: merged, default_model };
+      });
+  }
 
   const isEditing = editing !== null;
   const validation = useMemo(
