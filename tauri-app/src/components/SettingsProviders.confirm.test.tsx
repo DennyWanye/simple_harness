@@ -157,4 +157,18 @@ describe("SettingsProviders delete confirmation", () => {
     });
     expect(screen.getAllByText("名称重复").length).toBeGreaterThan(0);
   });
+
+  it("通道换成新对象后，服务商事件从新通道读到", async () => {
+    const first = new FakeProviderChannel();
+    const second = new FakeProviderChannel();
+    const view = render(
+      <SettingsProviders getChannel={() => first as unknown as ControlChannel} />,
+    );
+    view.rerender(<SettingsProviders getChannel={() => second as unknown as ControlChannel} />);
+    expect(first.listeners.size).toBe(0);
+    second.emit({ type: "providers_changed", payload: { providers: [provider] } });
+    expect(await screen.findByTestId("provider-edit-btn-delete-fixture")).toBeTruthy();
+    second.emit({ type: "settings_providers_error", payload: { detail: "新通道上的错误" } });
+    expect(screen.getAllByText("新通道上的错误").length).toBeGreaterThan(0);
+  });
 });

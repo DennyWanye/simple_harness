@@ -1488,7 +1488,7 @@ export function SkillCatalogueSection({ getChannel }: { getChannel: () => Contro
     </section>
   );
 }
-function DataDirSection() {
+export function DataDirSection() {
   const [confirmDialog, ask] = useConfirm();
   const [setting, setSetting] = useState<DataDirSetting | null>(null);
   const [loadErr, setLoadErr] = useState<string | null>(null);

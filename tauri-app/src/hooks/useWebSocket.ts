@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 DennyWanye
 // SPDX-License-Identifier: BUSL-1.1
 
-import { useEffect, useEffectEvent, useRef, useState, useCallback } from "react";
+import { useCallback, useEffect, useEffectEvent, useMemo, useState } from "react";
 import { ControlChannel, type ConnectionState } from "../ws/ControlChannel";
 import type { IncomingMessage } from "../types/messages";
 
@@ -14,14 +14,13 @@ export function useControlChannel(
   secret: string = "",
   onMessage?: (message: IncomingMessage) => void,
 ) {
-  const channelRef = useRef<ControlChannel | null>(null);
+  // 端口或密钥变了就换一个通道对象（构造不连网；连接与断开在 effect 里）。
+  // getChannel 随通道变：按 getChannel 订阅的面板会跟着换到新通道上。
+  const channel = useMemo(() => new ControlChannel(port, secret), [port, secret]);
   const [state, setState] = useState<ConnectionState>("disconnected");
   const handleMessage = useEffectEvent((message: IncomingMessage) => onMessage?.(message));
 
   useEffect(() => {
-    const channel = new ControlChannel(port, secret);
-    channelRef.current = channel;
-
     const unsubState = channel.onStateChange(setState);
     const unsubMsg = channel.onMessage((message) => handleMessage(message));
 
@@ -31,26 +30,31 @@ export function useControlChannel(
       unsubState();
       unsubMsg();
       channel.disconnect();
-      channelRef.current = null;
     };
-  }, [port, secret]);
+  }, [channel]);
 
-  const sendChat = useCallback((text: string) => {
-    channelRef.current?.sendChat(text);
-  }, []);
+  const sendChat = useCallback(
+    (text: string) => {
+      channel.sendChat(text);
+    },
+    [channel],
+  );
 
-  const sendChatV2 = useCallback((text: string) => {
-    channelRef.current?.sendChatV2(text);
-  }, []);
+  const sendChatV2 = useCallback(
+    (text: string) => {
+      channel.sendChatV2(text);
+    },
+    [channel],
+  );
 
   const sendInterrupt = useCallback(() => {
-    channelRef.current?.sendInterrupt();
-  }, []);
+    channel.sendInterrupt();
+  }, [channel]);
 
   // Expose the underlying channel so feature panels (memory management, etc.)
   // can attach their own listeners / send custom messages without reaching
   // into the control-channel transport directly.
-  const getChannel = useCallback(() => channelRef.current, []);
+  const getChannel = useCallback(() => channel, [channel]);
 
   return { state, sendChat, sendChatV2, sendInterrupt, getChannel };
 }

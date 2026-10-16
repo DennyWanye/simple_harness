@@ -57,4 +57,28 @@ describe("设置页读取类区块的连接时机", () => {
     render(<GlobalBudgetSection getChannel={() => null} />);
     expect(screen.getByTestId("global-budget-status").textContent).toBe("连接不可用");
   });
+
+  it("通道换成新对象并连上后，两个读取区块各自动读一次", () => {
+    const dead = new WaitingChannel();
+    const live = new WaitingChannel();
+    const storage = render(
+      <StorageUsageSection getChannel={() => dead as unknown as ControlChannel} />,
+    );
+    storage.rerender(<StorageUsageSection getChannel={() => live as unknown as ControlChannel} />);
+    live.connect();
+    expect(live.sent.map((m) => m.type)).toEqual(["orchestration_storage_get"]);
+    cleanup();
+
+    const deadBudget = new WaitingChannel();
+    const liveBudget = new WaitingChannel();
+    const budget = render(
+      <GlobalBudgetSection getChannel={() => deadBudget as unknown as ControlChannel} />,
+    );
+    budget.rerender(
+      <GlobalBudgetSection getChannel={() => liveBudget as unknown as ControlChannel} />,
+    );
+    liveBudget.connect();
+    expect(liveBudget.sent.map((m) => m.type)).toEqual(["orchestration_status"]);
+    expect(deadBudget.sent).toHaveLength(0);
+  });
 });

@@ -20,8 +20,14 @@ class FakeChannel {
   onStateChange() {
     return () => undefined;
   }
-  connect() {}
-  disconnect() {}
+  connected = 0;
+  disconnected = 0;
+  connect() {
+    this.connected += 1;
+  }
+  disconnect() {
+    this.disconnected += 1;
+  }
   emit(message: IncomingMessage) {
     this.listeners.forEach((fn) => fn(message));
   }
@@ -59,5 +65,21 @@ describe("useControlChannel", () => {
     expect(first).not.toHaveBeenCalled();
     expect(second).toHaveBeenCalledTimes(1);
     expect(channels).toHaveLength(1);
+  });
+
+  it("密钥变了换新通道：getChannel 跟着变，旧通道断开，新通道连接", () => {
+    const { result, rerender } = renderHook(({ secret }) => useControlChannel(8100, secret), {
+      initialProps: { secret: "" },
+    });
+    const firstGetter = result.current.getChannel;
+    const first = firstGetter();
+    rerender({ secret: "s3cret" });
+    // 订阅方按 getChannel 的身份重订阅，所以它必须跟着变。
+    expect(result.current.getChannel).not.toBe(firstGetter);
+    const second = result.current.getChannel();
+    expect(second).not.toBe(first);
+    expect(channels.indexOf(first as unknown as FakeChannel)).toBeGreaterThanOrEqual(0);
+    expect((first as unknown as FakeChannel).disconnected).toBe(1);
+    expect((second as unknown as FakeChannel).connected).toBe(1);
   });
 });
