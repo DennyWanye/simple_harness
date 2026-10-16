@@ -12,6 +12,11 @@ from .store_domains.candidate_builds import CandidateBuildMixin
 from .store_domains.candidates import CandidateMixin
 from .store_domains.capability_activation import CapabilityActivationMixin
 from .store_domains.capability_mutations import CapabilityMutationMixin
+
+# 拆分前从本模块导入的名字照旧可用（同名别名表示有意转出）
+from .store_domains.evaluation_admission import (
+    SAFE_STATIC_RUNNER_POLICY_HASH as SAFE_STATIC_RUNNER_POLICY_HASH,
+)
 from .store_domains.evaluation_admission import EvaluationAdmissionMixin
 from .store_domains.evaluation_cases import EvaluationCaseMixin
 from .store_domains.evaluation_results import EvaluationResultMixin
@@ -23,6 +28,8 @@ from .store_domains.outbox import OutboxNotificationMixin
 from .store_domains.profiles import ProfileControlMixin
 from .store_domains.reminders import ReminderMixin
 from .store_domains.runs import RunBindingMixin
+from .store_domains.support import canonical_hash as canonical_hash
+from .store_domains.support import canonical_json as canonical_json
 
 
 class CompanionStore(
