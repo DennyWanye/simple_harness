@@ -51,7 +51,7 @@ raise NotImplementedError(
 )
 ```
 
-**Old Implementation (RETAINED AS DEAD CODE)**:
+**Old Implementation（2026-10-17 代码质量阶段 8 已删除：`ProductVenueRunAdapter`、`ProductTurnPreparer`、`product_turn_open.py`；venues.py 只留 companion 用的 `KernelRunClient`）**:
 ```python
 # 注意：以下代码文件仍存在于 backend/deskpet/harness/adapters/venues.py
 # 但不再被任何 ingress 调用（死代码）。Commit 71f3a6e2 保留了 25 个 harness

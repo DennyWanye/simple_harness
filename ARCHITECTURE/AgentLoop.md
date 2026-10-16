@@ -7,6 +7,8 @@
 >
 > 配套实施记录见 [`plans/2026-06-20-agent-loop-optimization/00-PLAN.md`](../plans/2026-06-20-agent-loop-optimization/00-PLAN.md)（缺陷审计、落地路线与验证结果）。
 
+> **2026-10-17 更新（代码质量整治阶段 8）**：后端 `AgentLoop` 类与 `backend/agent/agent_loop_domains/` 已删除——生产里唯一构造它的 `host/agent_factory.py` 只被测试导入，SDK 有自己的 ReAct 循环（`simple_harness/runtime/drivers/react_loop.py`），不导入后端。生产仍在用的事件类型（FinalEvent、ErrorEvent、PipelineEvent 等 11 个）在 `backend/agent/agent_events.py`。本档下文是历史调研，代码引用多已失效。
+>
 > **当前边界**：`AgentLoop` 已不再是产品入口或工具/子代理 runtime；它只是 ReAct Driver 内部的 LLM、上下文与完成判断引擎。Text/Voice 统一进入 Product Venue → `RunKernel`；顶层固定 `agent.general + react`；模型面的 `workflow_spawn` 工具已于 2026-09-09 下线（删 workflow 线 Slice 1，见 `plans/2026-09-09-remove-workflow-line/`），生产装配从未注册 Workflow Driver，图引擎与启动装配待 Slice 2 清理。当前没有 Code/普通模式之分，多任务只是同一主 Session 下并行的多个顶层 Run。工具批次由 ReAct Driver 的 `EffectBatchExecutor` 执行。下文第 2～6 节保留 AgentLoop 内部算法说明，第 7 节是当前生产装配。
 
 ---
