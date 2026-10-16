@@ -20,6 +20,7 @@ import {
   type IdentityChallenge,
 } from "./auth/companionIdentityBridge";
 import { useControlChannel } from "./hooks/useWebSocket";
+import { useDepsChanged } from "./hooks/useDepsChanged";
 import { useExternalWaitRequests } from "./hooks/useExternalWaitRequests";
 import { useClarificationRequests } from "./hooks/useClarificationRequests";
 import { useMissionsFeed } from "./stores/useMissionsFeed";
@@ -40,7 +41,7 @@ import { useBackendLifecycle, type Lifecycle } from "./hooks/useBackendLifecycle
 import { useSessionsStore } from "./stores/sessionsStore";
 import { BACKEND_PORT } from "./backendPort";
 import { chatErrorMessage } from "./chatErrorMessage";
-import type { ChatResponse, ContextUsageSnapshot } from "./types/messages";
+import type { ChatResponse, ContextUsageSnapshot, IncomingMessage } from "./types/messages";
 // 2026-08-09：relay（托管账号登录）整套移除。产品只有手动 provider
 // 一条路径（baseUrl + apiKey），身份走本地 profile。
 
@@ -107,11 +108,11 @@ function App() {
   // owns a running backend. A slower, stale bootstrap rejection must never
   // leave the full-screen failure overlay above an already-connected message
   // panel (observed during dev/HMR when the port precheck loses that race).
-  useEffect(() => {
-    if (!secret) return;
+  // 渲染期按上一次比对（不在 effect 里 setState）。初值是空串，挂载时不触发，与原 effect 一致。
+  if (useDepsChanged([secret]) && secret) {
     setBootError(null);
     setBootState("ready");
-  }, [secret]);
+  }
 
   // Poll the Rust side for the shared secret. Pure polling — no side
   // effects on the backend process. Safe to replay on HMR, F5, and the
@@ -393,12 +394,182 @@ function App() {
   // 持久化已由 Rust 端 ResizeDebouncer（lib.rs WindowEvent::Resized 钩子）
   // 独家负责，不需要前端冗余写盘。
 
+  // 2026-05-19 — pet-window error banner. chat_v2_error used to be
+  // pushed as a "⚠ ..." assistant bubble, which then dominated the
+  // bottom DialogBar and visually blocked the pet until the next
+  // message. Now errors surface in a dedicated dismissible banner
+  // pinned to the TOP of the pet column, ABOVE the toolbar — never
+  // over the character. User-dismissed only (no auto-clear: an error
+  // shouldn't silently vanish before the user notices it).
+  const [petError, setPetError] = useState<string | null>(null);
+
+  // Handle control channel messages (text chat + emotion/action drive).
+  // 由 useControlChannel 在通道回调里逐条调用（读最新一次渲染的这个函数），不经 lastMessage 状态。
+  const handleControlMessage = (message: IncomingMessage) => {
+    const t = (message as { type?: string }).type;
+    const payloadSid = (message as AppControlMessage).payload?.session_id;
+    const isActivePayload = !payloadSid || payloadSid === activeSidRef.current;
+    switch (t) {
+      case "session_switched":
+      case "task_session_started": {
+        const nextSid = (message as AppControlMessage).payload?.new_sid;
+        if (typeof nextSid === "string" && nextSid) {
+          switchActiveSid(nextSid);
+        }
+        break;
+      }
+      case "chat_response":
+        if (!isActivePayload) break;
+        // T8：消息气泡渲染归 ChatView（sessionsStore 读模型）；此处仅
+        // 保留路由指示灯（云端/本地）刷新。
+        if ((message as ChatResponse).payload.provider) {
+          // 上一行已判非空。
+          setRouteKind((message as { payload: { provider: "cloud" | "local" } }).payload.provider);
+        }
+        break;
+      // T8：tool_use_event / chat_v2_user_echo / workflow_event /
+      // slash_command_result / session_messages_response 分支删除 ——
+      // 全部只喂 App 自建 messages 数组（已废）；对应能力由
+      // sessionsStore（controlWs dispatch 权威写入）→ ChatView 呈现。
+      case "context_usage": {
+        // 2026-05-31 restore — context-usage ring update from backend.
+        const cu = (message as { payload?: ContextUsageSnapshot }).payload;
+        if (cu?.session_id) {
+          useSessionsStore.getState().ensure(cu.session_id);
+          useSessionsStore.getState().upsert_context_usage(cu);
+        }
+        break;
+      }
+      case "chat_v2_run_reserved":
+      case "chat_v2_run_started": {
+        const p = (message as AppControlMessage).payload || {};
+        const sid = String(p.session_id || activeSidRef.current);
+        const runId = String(p.run_id || "").trim();
+        if (runId) {
+          useSessionsStore.getState().ensure(sid);
+          const session = useSessionsStore.getState().sessions[sid];
+          const selectedRunId = session?.selected_run_id;
+          const requestId = String(p.request_id || "").trim();
+          const locallyOriginated = Boolean(
+            requestId &&
+              session?.messages.some(
+                (message) =>
+                  message.role === "user" &&
+                  message.request_id === requestId &&
+                  (!message.run_id || message.run_id === runId),
+              ),
+          );
+          const selectedProjection = selectedRunId
+            ? session?.run_projections[selectedRunId]
+            : undefined;
+          const shouldSelect =
+            locallyOriginated ||
+            !selectedRunId ||
+            selectedRunId === runId ||
+            Boolean(
+              selectedProjection &&
+                ["completed", "failed", "cancelled"].includes(selectedProjection.status),
+            );
+          useSessionsStore.getState().upsert_run_projection(sid, runId, {
+            task_scope_id: String(p.task_scope_id || ""),
+            request_id: requestId || undefined,
+            turn_id: String(p.turn_id || "") || undefined,
+            conversation_boundary_ref: String(p.conversation_boundary_ref || "") || undefined,
+            conversation_boundary_version:
+              typeof p.conversation_boundary_version === "number"
+                ? p.conversation_boundary_version
+                : undefined,
+            version: typeof p.projection_version === "number" ? p.projection_version : 0,
+            status:
+              (message as AppControlMessage).type === "chat_v2_run_reserved"
+                ? "starting"
+                : "running",
+            inflight: true,
+            ui_state: shouldSelect ? "open" : "background",
+          });
+          if (shouldSelect) {
+            useSessionsStore.getState().select_run_projection(sid, runId);
+          }
+        }
+        break;
+      }
+      case "chat_v2_final": {
+        if (!isActivePayload) break;
+        const finalPayload = (message as AppControlMessage).payload || {};
+        const finalSid = String(finalPayload.session_id || activeSidRef.current);
+        const finalRunId = String(finalPayload.run_id || "").trim();
+        if (finalRunId) {
+          useSessionsStore.getState().upsert_run_projection(finalSid, finalRunId, {
+            task_scope_id: String(finalPayload.task_scope_id || ""),
+            status: "completed",
+            inflight: false,
+          });
+        }
+        break;
+      }
+      case "session_messages_error": {
+        const p = (message as AppControlMessage).payload || {};
+        if (p.session_id && String(p.session_id) !== activeSidRef.current) break;
+        // Keep the last known view instead of replacing it with stale or
+        // empty data. The user can retry once the projection gate recovers.
+        setPetError(String(p.error || "会话记录暂时无法确认是最新状态，请稍后重试。"));
+        break;
+      }
+      case "chat_v2_error": {
+        if (!isActivePayload) break;
+        const p = (message as AppControlMessage).payload || {};
+        const errorSid = String(p.session_id || activeSidRef.current);
+        const errorRunId = String(p.run_id || "").trim();
+        if (errorRunId) {
+          useSessionsStore.getState().upsert_run_projection(errorSid, errorRunId, {
+            task_scope_id: String(p.task_scope_id || ""),
+            status: "failed",
+            inflight: false,
+          });
+        }
+        // P4-S22 fix: render whatever the backend sent — `error`
+        // (catch-all path), `detail` (AgentLoop ErrorEvent), or `reason`.
+        // 2026-08-09：relay error_class 的中文翻译层随 relay 移除；
+        // 手动 provider 的错误直接呈现后端原文（用户自己配的 baseUrl，
+        // 原始错误比任何转译都更有助于定位）。
+        const msg = chatErrorMessage(p);
+        // Surface in the top error banner（T4 起以 WorkbenchShell 顶部
+        // 横幅形态渲染，bannerStyle("error")）。
+        setPetError(msg);
+        break;
+      }
+      case "supervisor_alert": {
+        // P5-S2/S3 — supervisor pushed a diagnosis. Cache it on the
+        // session store（消息面板/后续视图消费）。T4：桌宠气泡与
+        // PetStateMachine 已删，仅保留 store 缓存链路。
+        const p = (message as AppControlMessage).payload || {};
+        if (p.session_id) {
+          // Make sure the session exists in the store (supervisor may
+          // alert on a panel-only sid this window hasn't seen yet).
+          ensureSession(p.session_id);
+          applySupervisorAlert(p.session_id, {
+            alert_id: String(p.alert_id || ""),
+            severity: (p.severity as "green" | "yellow" | "red") || "yellow",
+            action: (p.action as "nudge" | "ask_user") || "nudge",
+            diagnosis: String(p.diagnosis || ""),
+            user_message: String(p.user_message || ""),
+            suggested_buttons: Array.isArray(p.suggested_buttons)
+              ? p.suggested_buttons.map((b: unknown) => String(b)).slice(0, 2)
+              : [],
+            received_at: Date.now(),
+          });
+        }
+        break;
+      }
+    }
+  };
+
   // Control channel (text chat + interrupt)
-  const {
-    state,
-    lastMessage,
-    getChannel: getControlChannel,
-  } = useControlChannel(BACKEND_PORT, secret);
+  const { state, getChannel: getControlChannel } = useControlChannel(
+    BACKEND_PORT,
+    secret,
+    handleControlMessage,
+  );
 
   // The main Tauri window is the only renderer allowed to bind the current
   // human identity. The shared secret opens the socket; the first privileged
@@ -546,10 +717,8 @@ function App() {
   // P4-S21 #14: 删掉 useToolUseLoop 状态 + Toolbar toggle。前端永远走
   // chat_v2 路径（即 sendChatV2）。
 
-  // Reset route kind when disconnected.
-  useEffect(() => {
-    if (state !== "connected") setRouteKind(null);
-  }, [state]);
+  // Reset route kind when disconnected.（初值 null，挂载时无需重置）
+  if (useDepsChanged([state]) && state !== "connected") setRouteKind(null);
 
   // S14 — memory management panel toggle.
   // T13：contextModalOpen 删除 —— 上下文钻取模态与其环形入口都在
@@ -582,15 +751,6 @@ function App() {
 
   // WI-02 (beta-100): in-app feedback panel visibility.
   const [feedbackOpen, setFeedbackOpen] = useState(false);
-
-  // 2026-05-19 — pet-window error banner. chat_v2_error used to be
-  // pushed as a "⚠ ..." assistant bubble, which then dominated the
-  // bottom DialogBar and visually blocked the pet until the next
-  // message. Now errors surface in a dedicated dismissible banner
-  // pinned to the TOP of the pet column, ABOVE the toolbar — never
-  // over the character. User-dismissed only (no auto-clear: an error
-  // shouldn't silently vanish before the user notices it).
-  const [petError, setPetError] = useState<string | null>(null);
 
   // P2-1-S8 — budget-exceeded toast. Auto-clears after 6s.
   const [budgetToast, setBudgetToast] = useState<string | null>(null);
@@ -634,169 +794,6 @@ function App() {
 
   // T6：能力中心 / SkillStore 浮层 open state 已拆除 —— 二者页面化为
   // SkillsView（T10 实装，互跳 state 本地化在视图内部）。
-
-  // Handle control channel messages (text chat + emotion/action drive)
-  useEffect(() => {
-    if (!lastMessage) return;
-    const t = (lastMessage as { type?: string }).type;
-    const payloadSid = (lastMessage as AppControlMessage).payload?.session_id;
-    const isActivePayload = !payloadSid || payloadSid === activeSidRef.current;
-    switch (t) {
-      case "session_switched":
-      case "task_session_started": {
-        const nextSid = (lastMessage as AppControlMessage).payload?.new_sid;
-        if (typeof nextSid === "string" && nextSid) {
-          switchActiveSid(nextSid);
-        }
-        break;
-      }
-      case "chat_response":
-        if (!isActivePayload) break;
-        // T8：消息气泡渲染归 ChatView（sessionsStore 读模型）；此处仅
-        // 保留路由指示灯（云端/本地）刷新。
-        if ((lastMessage as ChatResponse).payload.provider) {
-          // 上一行已判非空。
-          setRouteKind(
-            (lastMessage as { payload: { provider: "cloud" | "local" } }).payload.provider,
-          );
-        }
-        break;
-      // T8：tool_use_event / chat_v2_user_echo / workflow_event /
-      // slash_command_result / session_messages_response 分支删除 ——
-      // 全部只喂 App 自建 messages 数组（已废）；对应能力由
-      // sessionsStore（controlWs dispatch 权威写入）→ ChatView 呈现。
-      case "context_usage": {
-        // 2026-05-31 restore — context-usage ring update from backend.
-        const cu = (lastMessage as { payload?: ContextUsageSnapshot }).payload;
-        if (cu?.session_id) {
-          useSessionsStore.getState().ensure(cu.session_id);
-          useSessionsStore.getState().upsert_context_usage(cu);
-        }
-        break;
-      }
-      case "chat_v2_run_reserved":
-      case "chat_v2_run_started": {
-        const p = (lastMessage as AppControlMessage).payload || {};
-        const sid = String(p.session_id || activeSidRef.current);
-        const runId = String(p.run_id || "").trim();
-        if (runId) {
-          useSessionsStore.getState().ensure(sid);
-          const session = useSessionsStore.getState().sessions[sid];
-          const selectedRunId = session?.selected_run_id;
-          const requestId = String(p.request_id || "").trim();
-          const locallyOriginated = Boolean(
-            requestId &&
-              session?.messages.some(
-                (message) =>
-                  message.role === "user" &&
-                  message.request_id === requestId &&
-                  (!message.run_id || message.run_id === runId),
-              ),
-          );
-          const selectedProjection = selectedRunId
-            ? session?.run_projections[selectedRunId]
-            : undefined;
-          const shouldSelect =
-            locallyOriginated ||
-            !selectedRunId ||
-            selectedRunId === runId ||
-            Boolean(
-              selectedProjection &&
-                ["completed", "failed", "cancelled"].includes(selectedProjection.status),
-            );
-          useSessionsStore.getState().upsert_run_projection(sid, runId, {
-            task_scope_id: String(p.task_scope_id || ""),
-            request_id: requestId || undefined,
-            turn_id: String(p.turn_id || "") || undefined,
-            conversation_boundary_ref: String(p.conversation_boundary_ref || "") || undefined,
-            conversation_boundary_version:
-              typeof p.conversation_boundary_version === "number"
-                ? p.conversation_boundary_version
-                : undefined,
-            version: typeof p.projection_version === "number" ? p.projection_version : 0,
-            status:
-              (lastMessage as AppControlMessage).type === "chat_v2_run_reserved"
-                ? "starting"
-                : "running",
-            inflight: true,
-            ui_state: shouldSelect ? "open" : "background",
-          });
-          if (shouldSelect) {
-            useSessionsStore.getState().select_run_projection(sid, runId);
-          }
-        }
-        break;
-      }
-      case "chat_v2_final": {
-        if (!isActivePayload) break;
-        const finalPayload = (lastMessage as AppControlMessage).payload || {};
-        const finalSid = String(finalPayload.session_id || activeSidRef.current);
-        const finalRunId = String(finalPayload.run_id || "").trim();
-        if (finalRunId) {
-          useSessionsStore.getState().upsert_run_projection(finalSid, finalRunId, {
-            task_scope_id: String(finalPayload.task_scope_id || ""),
-            status: "completed",
-            inflight: false,
-          });
-        }
-        break;
-      }
-      case "session_messages_error": {
-        const p = (lastMessage as AppControlMessage).payload || {};
-        if (p.session_id && String(p.session_id) !== activeSidRef.current) break;
-        // Keep the last known view instead of replacing it with stale or
-        // empty data. The user can retry once the projection gate recovers.
-        setPetError(String(p.error || "会话记录暂时无法确认是最新状态，请稍后重试。"));
-        break;
-      }
-      case "chat_v2_error": {
-        if (!isActivePayload) break;
-        const p = (lastMessage as AppControlMessage).payload || {};
-        const errorSid = String(p.session_id || activeSidRef.current);
-        const errorRunId = String(p.run_id || "").trim();
-        if (errorRunId) {
-          useSessionsStore.getState().upsert_run_projection(errorSid, errorRunId, {
-            task_scope_id: String(p.task_scope_id || ""),
-            status: "failed",
-            inflight: false,
-          });
-        }
-        // P4-S22 fix: render whatever the backend sent — `error`
-        // (catch-all path), `detail` (AgentLoop ErrorEvent), or `reason`.
-        // 2026-08-09：relay error_class 的中文翻译层随 relay 移除；
-        // 手动 provider 的错误直接呈现后端原文（用户自己配的 baseUrl，
-        // 原始错误比任何转译都更有助于定位）。
-        const msg = chatErrorMessage(p);
-        // Surface in the top error banner（T4 起以 WorkbenchShell 顶部
-        // 横幅形态渲染，bannerStyle("error")）。
-        setPetError(msg);
-        break;
-      }
-      case "supervisor_alert": {
-        // P5-S2/S3 — supervisor pushed a diagnosis. Cache it on the
-        // session store（消息面板/后续视图消费）。T4：桌宠气泡与
-        // PetStateMachine 已删，仅保留 store 缓存链路。
-        const p = (lastMessage as AppControlMessage).payload || {};
-        if (p.session_id) {
-          // Make sure the session exists in the store (supervisor may
-          // alert on a panel-only sid this window hasn't seen yet).
-          ensureSession(p.session_id);
-          applySupervisorAlert(p.session_id, {
-            alert_id: String(p.alert_id || ""),
-            severity: (p.severity as "green" | "yellow" | "red") || "yellow",
-            action: (p.action as "nudge" | "ask_user") || "nudge",
-            diagnosis: String(p.diagnosis || ""),
-            user_message: String(p.user_message || ""),
-            suggested_buttons: Array.isArray(p.suggested_buttons)
-              ? p.suggested_buttons.map((b: unknown) => String(b)).slice(0, 2)
-              : [],
-            received_at: Date.now(),
-          });
-        }
-        break;
-      }
-    }
-  }, [lastMessage, applySupervisorAlert, ensureSession, switchActiveSid]);
 
   // T8：handleSend / handleSwitchDefault / slash 命令面板
   // （loadSlashCommands/slashCandidates/acceptSlash/handleKeyDown）删除
