@@ -636,6 +636,8 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
   const [createPending, setCreatePending] = useState(false);
   const createRequest = useRef<string | null>(null);
   const createRetry = useRef<{ fingerprint: string; key: string } | null>(null);
+  // 渲染只需要知道"有没有一次结果未明的创建"；幂等键本身留在 ref 里供提交时同步读取。
+  const [hasCreateRetry, setHasCreateRetry] = useState(false);
   const createTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [maxTokens, setMaxTokens] = useState("");
   const [maxAttempts, setMaxAttempts] = useState("");
@@ -910,6 +912,7 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
             setSources([]);
             setStrictQuotes(false);
             createRetry.current = null;
+            setHasCreateRetry(false);
             setContextProfile(null);
             state.setError(null);
             send("mission_list");
@@ -986,7 +989,7 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
   const proposedContextId = contextProfile ?? status?.default_context_profile_id ?? "";
   const contextOffered = status?.context_profiles ?? [];
   const selectedContextId =
-    createRetry.current || contextOffered.some((p) => p.profile_id === proposedContextId)
+    hasCreateRetry || contextOffered.some((p) => p.profile_id === proposedContextId)
       ? proposedContextId
       : (status?.default_context_profile_id ?? "");
   const selectedContext = status?.context_profiles?.find((p) => p.profile_id === selectedContextId);
@@ -1075,9 +1078,13 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
     });
     const withSources = sourcesOut.length > 0;
     const fingerprint = JSON.stringify([spec, withSources ? sourcesOut : []]);
-    if (createRetry.current?.fingerprint !== fingerprint)
-      createRetry.current = { fingerprint, key: newKey() };
-    const missionSpec = { ...spec, idempotency_key: createRetry.current.key };
+    const retry =
+      createRetry.current?.fingerprint === fingerprint
+        ? createRetry.current
+        : { fingerprint, key: newKey() };
+    createRetry.current = retry;
+    setHasCreateRetry(true);
+    const missionSpec = { ...spec, idempotency_key: retry.key };
     const requestId = newKey();
     createRequest.current = requestId;
     setCreatePending(true);
@@ -1090,6 +1097,7 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
     if (!accepted) {
       // No new request left the client. Preserve an earlier uncertain request, if any.
       createRetry.current = previousRetry;
+      setHasCreateRetry(previousRetry !== null);
       setContextProfile(previousContext);
       createRequest.current = null;
       setCreatePending(false);

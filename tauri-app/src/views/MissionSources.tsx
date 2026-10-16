@@ -10,6 +10,7 @@
  */
 import React, { useEffect, useRef, useState } from "react";
 import { asText, newRequestKey, type MissionsChannel } from "../stores/missionsStore";
+import { useLatestRef } from "../hooks/useLatestRef";
 import { dark } from "../theme/components";
 import { tokens } from "../theme/tokens";
 
@@ -66,16 +67,14 @@ export function SourceDrafts({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const generation = useRef(0);
-  const latest = useRef(sources);
-  const busyCallback = useRef(onBusy);
-  busyCallback.current = onBusy;
-  latest.current = sources;
+  const latest = useLatestRef(sources);
+  const busyCallback = useLatestRef(onBusy);
   useEffect(
     () => () => {
       generation.current += 1;
       busyCallback.current?.(false);
     },
-    [],
+    [busyCallback],
   );
   const update = (index: number, patch: Partial<SourceDraft>) =>
     onChange(sources.map((item, i) => (i === index ? { ...item, ...patch } : item)));
@@ -206,8 +205,7 @@ export function MissionSources({
   channel: Channel;
   onChanged: () => void;
 }) {
-  const changed = useRef(onChanged);
-  changed.current = onChanged;
+  const changed = useLatestRef(onChanged);
   const [operation, setOperation] = useState<"register" | "supersede" | "revoke" | null>(null);
   const [drafts, setDrafts] = useState<SourceDraft[]>([]);
   const [expected, setExpected] = useState("");
@@ -269,7 +267,7 @@ export function MissionSources({
       offState?.();
       if (sourceTimer.current) clearTimeout(sourceTimer.current);
     };
-  }, [channel, missionId]);
+  }, [channel, missionId, changed]);
 
   const startSource = (op: "register" | "supersede" | "revoke", source?: Json) => {
     setOperation(op);

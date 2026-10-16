@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 import { useEffect, useRef, useState } from "react";
 import { asRecord, newRequestKey, type MissionsChannel } from "../stores/missionsStore";
+import { useLatestRef } from "../hooks/useLatestRef";
 import {
   errorMessage,
   KIND_LABELS,
@@ -54,10 +55,8 @@ function AssuranceSession({ missionId, channel }: Props) {
   const [subjectHash, setSubjectHash] = useState("");
   const pending = useRef<Pending | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const shownItems = useRef(items);
-  shownItems.current = items;
-  const shownPage = useRef(page);
-  shownPage.current = page;
+  const shownItems = useLatestRef(items);
+  const shownPage = useLatestRef(page);
   const clear = () => {
     pending.current = null;
     setBusy(false);

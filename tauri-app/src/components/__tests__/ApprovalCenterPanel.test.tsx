@@ -15,8 +15,10 @@
  *   5. 实时 permission_request 推送规整 + merge
  *   6. 决议后从列表移除
  */
-import { describe, it, expect } from "vitest";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, it, expect, vi } from "vitest";
 
+import { ApprovalCenterPanel } from "../ApprovalCenterPanel";
 import {
   buildPendingListMessage,
   buildDecisionMessage,
@@ -25,7 +27,8 @@ import {
   pendingFromRequest,
   type ApprovalDecision,
 } from "../approvalMessages";
-import type { PendingPermissionItem } from "../../types/messages";
+import type { IncomingMessage, PendingPermissionItem } from "../../types/messages";
+import type { ControlChannel } from "../../ws/ControlChannel";
 
 function mkPending(
   over: Partial<PendingPermissionItem> & { request_id: string },
@@ -173,5 +176,48 @@ describe("WI-TG-2 · pendingFromRequest", () => {
     expect(item.category).toBe("network");
     expect(item.params).toEqual({ url: "http://x" });
     expect(item.session_id).toBe("s9");
+  });
+});
+
+// ======================================================================
+// 7) 面板：全部批准对当前列表里的每条各发一次 allow，然后清空
+// ======================================================================
+describe("ApprovalCenterPanel 面板", () => {
+  afterEach(() => cleanup());
+
+  it("全部批准作用于最新收到的待处理列表", () => {
+    let push: (msg: IncomingMessage) => void = () => {};
+    const send = vi.fn();
+    const channel = {
+      send,
+      onMessage: (fn: (msg: IncomingMessage) => void) => {
+        push = fn;
+        return () => {};
+      },
+    } as unknown as ControlChannel;
+    render(<ApprovalCenterPanel channel={channel} enabled />);
+    act(() =>
+      push({
+        type: "permissions_pending_list_response",
+        payload: { pending: [mkPending({ request_id: "r1" })] },
+      } as unknown as IncomingMessage),
+    );
+    act(() =>
+      push({
+        type: "permission_request",
+        payload: mkPending({ request_id: "r2" }),
+      } as unknown as IncomingMessage),
+    );
+    expect(screen.getByText(/2 待处理/)).toBeTruthy();
+    send.mockClear();
+
+    fireEvent.click(screen.getByText("全部批准"));
+
+    expect(send.mock.calls.map(([m]) => [m.payload.request_id, m.payload.decision])).toEqual([
+      ["r1", "allow"],
+      ["r2", "allow"],
+    ]);
+    // 清空后面板不渲染。
+    expect(screen.queryByRole("region", { name: "审批中心" })).toBeNull();
   });
 });

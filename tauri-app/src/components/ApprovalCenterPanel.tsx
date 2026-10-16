@@ -24,7 +24,7 @@
  * 逻辑（消息构造 + 列表 reducer + 批量决策构造）拆成纯函数导出，测试直接 import
  * 断言，不 mount React 树。
  */
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import type { ControlChannel } from "../ws/ControlChannel";
 import type { IncomingMessage, PendingPermissionItem } from "../types/messages";
 import { buttonStyle, dark, surfaceModal } from "../theme/components";
@@ -63,8 +63,6 @@ const CATEGORY_ACCENT: Record<string, string> = {
 };
 export const ApprovalCenterPanel: React.FC<Props> = ({ channel, enabled = false, sessionId }) => {
   const [pending, setPending] = useState<PendingPermissionItem[]>([]);
-  const pendingRef = useRef<PendingPermissionItem[]>([]);
-  pendingRef.current = pending;
 
   // Subscribe to backend snapshots + live permission_request pushes.
   useEffect(() => {
@@ -96,13 +94,13 @@ export const ApprovalCenterPanel: React.FC<Props> = ({ channel, enabled = false,
   const decideAll = useCallback(
     (decision: ApprovalDecision) => {
       if (!channel) return;
-      const ids = pendingRef.current.map((p) => p.request_id);
+      const ids = pending.map((p) => p.request_id);
       for (const id of ids) {
         channel.send(buildDecisionMessage(id, decision) as never);
       }
       setPending((cur) => removeResolved(cur, ids));
     },
-    [channel],
+    [channel, pending],
   );
 
   const decideOne = useCallback(
