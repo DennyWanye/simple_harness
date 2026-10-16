@@ -1327,6 +1327,151 @@ class DurableResearchCallEffectAdapter:
         execution_identity: NodeExecutionIdentity,
         logical_effect_id: str | None = None,
     ) -> DurableResearchLLMCallEnvelope:
+        self._require_research_identity(
+            execution_identity,
+            logical_effect_id=logical_effect_id,
+            max_output_tokens=max_output_tokens,
+            role=role,
+            stable_call_id=stable_call_id,
+        )
+        context = await self._context(execution_identity)
+        payload_digest = _blob_digest(payload_ref)
+        response_format = (
+            self.response_format if self.profile is not None else _response_format_for_role(role)
+        )
+        begun, payload = await self._begin_research_effect(
+            context,
+            execution_identity=execution_identity,
+            logical_effect_id=logical_effect_id,
+            max_output_tokens=max_output_tokens,
+            payload_digest=payload_digest,
+            response_format=response_format,
+            role=role,
+            stable_call_id=stable_call_id,
+        )
+        effect_id = begun.effect.effect_id
+        effect_input_refs = [f"sha256:{payload_digest}"]
+        if self.profile is not None:
+            effect_input_refs.append(self.profile.profile_ref)
+        effect_input_refs_tuple = tuple(effect_input_refs)
+        if begun.action is EffectAction.REUSE:
+            return await self._envelope_from_outcome(
+                effect_id=effect_id,
+                prompt_ref=f"sha256:{payload_digest}",
+                outcome=begun.effect.outcome,
+            )
+        if begun.action is EffectAction.RECONCILE:
+            await self._settle_unknown(
+                context,
+                effect_id,
+                begun.effect.outcome
+                or NormalizedToolOutcome.malformed(
+                    "opaque research call requires conservative reconciliation"
+                ),
+                artifact_refs=effect_input_refs_tuple,
+            )
+            if self.profile is not None:
+                return DurableResearchLLMCallEnvelope(
+                    result=None,
+                    effect_id=effect_id,
+                    result_ref=None,
+                    prompt_ref=f"sha256:{payload_digest}",
+                    profile_ref=self.profile.profile_ref,
+                    status="opaque_uncertain",
+                )
+            raise ResearchEffectAdapterError(
+                "opaque research call is uncertain and will not be sent again"
+            )
+        if begun.action is EffectAction.FAILED and self.profile is not None:
+            outcome = begun.effect.outcome
+            error_code = (
+                str(outcome.error.get("code"))
+                if outcome is not None and isinstance(outcome.error, Mapping)
+                else "effect_failed"
+            )
+            terminal_status = {
+                "budget_denied": "budget_denied",
+                "deadline": "deadline",
+            }.get(error_code, "opaque_uncertain")
+            return DurableResearchLLMCallEnvelope(
+                result=None,
+                effect_id=effect_id,
+                result_ref=None,
+                prompt_ref=f"sha256:{payload_digest}",
+                profile_ref=self.profile.profile_ref,
+                status=terminal_status,
+            )
+        if begun.action is not EffectAction.EXECUTE:
+            raise ResearchEffectAdapterError(
+                f"research effect is {begun.action.value}; transport is blocked"
+            )
+
+        prompt = await self._research_prompt(context, effect_id, effect_input_refs_tuple, payload)
+
+        if self.deadline_observer is not None:
+            allowed = self.deadline_observer(execution_identity)
+            if inspect.isawaitable(allowed):
+                allowed = await allowed
+            if not isinstance(allowed, bool):
+                raise TypeError("v6 deadline observer must return bool")
+            if not allowed:
+                await self._settle_unknown(
+                    context,
+                    effect_id,
+                    NormalizedToolOutcome.failure(
+                        "deadline",
+                        "durable automatic deadline expired before provider dispatch",
+                    ),
+                    artifact_refs=effect_input_refs_tuple,
+                )
+                return DurableResearchLLMCallEnvelope(
+                    result=None,
+                    effect_id=effect_id,
+                    result_ref=None,
+                    prompt_ref=f"sha256:{payload_digest}",
+                    profile_ref=(self.profile.profile_ref if self.profile is not None else None),
+                    status="deadline",
+                )
+
+        await self.journal.mark_upstream_started(context.fence, effect_id)
+        provider_task = asyncio.create_task(
+            coordinate_provider_call(
+                coordinator=self.provider_invocation_coordinator,
+                acquire_fence=self.dispatch_fence_acquirer,
+                run_id=context.fence.run_id,
+                provider=self.llm,
+                attempt_id=stable_call_id,
+                purpose="workflow.research.llm",
+                messages=[{"role": "user", "content": prompt}],
+                tools=None,
+                fallback_model=(self.profile.profile_ref if self.profile is not None else ""),
+                invoke=lambda: self.llm.complete(
+                    prompt,
+                    max_output_tokens=max_output_tokens,
+                    stable_call_id=stable_call_id,
+                    **({"response_format": response_format} if response_format is not None else {}),
+                ),
+            )
+        )
+        return await self._run_research_call(
+            context,
+            effect_id=effect_id,
+            effect_input_refs_tuple=effect_input_refs_tuple,
+            execution_identity=execution_identity,
+            payload_digest=payload_digest,
+            provider_task=provider_task,
+            role=role,
+        )
+
+    def _require_research_identity(
+        self,
+        execution_identity: NodeExecutionIdentity,
+        *,
+        logical_effect_id: str | None,
+        max_output_tokens: int,
+        role: str,
+        stable_call_id: str,
+    ) -> None:
         if not isinstance(execution_identity, NodeExecutionIdentity):
             raise TypeError("research effect adapter requires NodeExecutionIdentity")
         if role not in RESEARCH_LLM_ROLES:
@@ -1352,11 +1497,19 @@ class DurableResearchCallEffectAdapter:
                 raise ValueError("v6 stable_call_id must be SHA-256(logical_effect_id)")
         elif logical_effect_id is not None:
             raise ValueError("legacy research LLM calls cannot override logical identity")
-        context = await self._context(execution_identity)
-        payload_digest = _blob_digest(payload_ref)
-        response_format = (
-            self.response_format if self.profile is not None else _response_format_for_role(role)
-        )
+
+    async def _begin_research_effect(
+        self,
+        context,
+        *,
+        execution_identity: NodeExecutionIdentity,
+        logical_effect_id: str | None,
+        max_output_tokens: int,
+        payload_digest,
+        response_format,
+        role: str,
+        stable_call_id: str,
+    ):
         prepared = self._prepared(
             role=role,
             payload_ref=f"sha256:{payload_digest}",
@@ -1416,63 +1569,9 @@ class DurableResearchCallEffectAdapter:
             ),
             resource_budget_kind=self.route_resource_budget_kind,
         )
-        effect_id = begun.effect.effect_id
-        effect_input_refs = [f"sha256:{payload_digest}"]
-        if self.profile is not None:
-            effect_input_refs.append(self.profile.profile_ref)
-        effect_input_refs_tuple = tuple(effect_input_refs)
-        if begun.action is EffectAction.REUSE:
-            return await self._envelope_from_outcome(
-                effect_id=effect_id,
-                prompt_ref=f"sha256:{payload_digest}",
-                outcome=begun.effect.outcome,
-            )
-        if begun.action is EffectAction.RECONCILE:
-            await self._settle_unknown(
-                context,
-                effect_id,
-                begun.effect.outcome
-                or NormalizedToolOutcome.malformed(
-                    "opaque research call requires conservative reconciliation"
-                ),
-                artifact_refs=effect_input_refs_tuple,
-            )
-            if self.profile is not None:
-                return DurableResearchLLMCallEnvelope(
-                    result=None,
-                    effect_id=effect_id,
-                    result_ref=None,
-                    prompt_ref=f"sha256:{payload_digest}",
-                    profile_ref=self.profile.profile_ref,
-                    status="opaque_uncertain",
-                )
-            raise ResearchEffectAdapterError(
-                "opaque research call is uncertain and will not be sent again"
-            )
-        if begun.action is EffectAction.FAILED and self.profile is not None:
-            outcome = begun.effect.outcome
-            error_code = (
-                str(outcome.error.get("code"))
-                if outcome is not None and isinstance(outcome.error, Mapping)
-                else "effect_failed"
-            )
-            terminal_status = {
-                "budget_denied": "budget_denied",
-                "deadline": "deadline",
-            }.get(error_code, "opaque_uncertain")
-            return DurableResearchLLMCallEnvelope(
-                result=None,
-                effect_id=effect_id,
-                result_ref=None,
-                prompt_ref=f"sha256:{payload_digest}",
-                profile_ref=self.profile.profile_ref,
-                status=terminal_status,
-            )
-        if begun.action is not EffectAction.EXECUTE:
-            raise ResearchEffectAdapterError(
-                f"research effect is {begun.action.value}; transport is blocked"
-            )
+        return begun, payload
 
+    async def _research_prompt(self, context, effect_id, effect_input_refs_tuple, payload):
         await self._fault("research_llm.after_begin_before_upstream")
         try:
             # Payload decoding happens after reservation. Any failure here is a
@@ -1500,52 +1599,19 @@ class DurableResearchCallEffectAdapter:
                 artifact_refs=effect_input_refs_tuple,
             )
             raise ResearchEffectCancelled("research effect cancelled before provider transport")
+        return prompt
 
-        if self.deadline_observer is not None:
-            allowed = self.deadline_observer(execution_identity)
-            if inspect.isawaitable(allowed):
-                allowed = await allowed
-            if not isinstance(allowed, bool):
-                raise TypeError("v6 deadline observer must return bool")
-            if not allowed:
-                await self._settle_unknown(
-                    context,
-                    effect_id,
-                    NormalizedToolOutcome.failure(
-                        "deadline",
-                        "durable automatic deadline expired before provider dispatch",
-                    ),
-                    artifact_refs=effect_input_refs_tuple,
-                )
-                return DurableResearchLLMCallEnvelope(
-                    result=None,
-                    effect_id=effect_id,
-                    result_ref=None,
-                    prompt_ref=f"sha256:{payload_digest}",
-                    profile_ref=(self.profile.profile_ref if self.profile is not None else None),
-                    status="deadline",
-                )
-
-        await self.journal.mark_upstream_started(context.fence, effect_id)
-        provider_task = asyncio.create_task(
-            coordinate_provider_call(
-                coordinator=self.provider_invocation_coordinator,
-                acquire_fence=self.dispatch_fence_acquirer,
-                run_id=context.fence.run_id,
-                provider=self.llm,
-                attempt_id=stable_call_id,
-                purpose="workflow.research.llm",
-                messages=[{"role": "user", "content": prompt}],
-                tools=None,
-                fallback_model=(self.profile.profile_ref if self.profile is not None else ""),
-                invoke=lambda: self.llm.complete(
-                    prompt,
-                    max_output_tokens=max_output_tokens,
-                    stable_call_id=stable_call_id,
-                    **({"response_format": response_format} if response_format is not None else {}),
-                ),
-            )
-        )
+    async def _run_research_call(
+        self,
+        context,
+        *,
+        effect_id,
+        effect_input_refs_tuple,
+        execution_identity: NodeExecutionIdentity,
+        payload_digest,
+        provider_task,
+        role: str,
+    ) -> DurableResearchLLMCallEnvelope:
         cancel_task = (
             asyncio.create_task(self.control_signals.wait_cancelled(context.fence.run_id))
             if self.control_signals is not None

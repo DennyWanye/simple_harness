@@ -541,95 +541,39 @@ class GlobalSkillInstallService:
         assert authority is not None
         owner_scope_key = authority.owner_scope_key
         principal_id = authority.principal_id
-        is_global = owner is not None
-        retry_claim: CapabilitySkillInstallIntent | None = None
-        await self.store.initialize()
-        await self._reconcile_failed_manager_handoffs()
-        await self.reconcile_expired()
-        identity = {
-            "schema": "skill-install-preflight-v1",
-            "run_id": run_id,
-            "call_id": call_id,
-            "effect_id": effect_id,
-            "url": url,
-            "requested_ref": requested_ref,
-            **({"requested_subpath": requested_subpath} if requested_subpath else {}),
-            ("owner_scope_key" if is_global else "project_scope_key"): owner_scope_key,
-        }
+        identity, is_global, retry_claim = await self._stage_retry_claim(
+            call_id,
+            effect_id=effect_id,
+            owner=owner,
+            owner_scope_key=owner_scope_key,
+            requested_ref=requested_ref,
+            requested_subpath=requested_subpath,
+            run_id=run_id,
+            url=url,
+        )
         intent_id = f"skill-install:{fingerprint_json(identity)}"
         if not is_global:
             existing = await self.store.get_skill_install_intent(intent_id)
             if existing is not None:
                 return await self._outcome_for_existing(existing)
         else:
-            normalized_names = tuple(
-                sorted({str(name).strip().casefold() for name in visible_skill_names})
+            existing_failure, failure_identity, intent_id = await self._stage_failure_identity(
+                owner_scope_key,
+                requested_ref=requested_ref,
+                requested_subpath=requested_subpath,
+                url=url,
+                visible_skill_names=visible_skill_names,
             )
-            try:
-                normalized_url = normalize_github_repo_url(url)[0]
-            except CapabilitySourceError:
-                normalized_url = "invalid-input:" + fingerprint_json({"url": str(url).strip()})
-            failure_identity = {
-                "schema": "global-skill-stage-failure-v1",
-                "owner_scope_key": owner_scope_key,
-                "normalized_url": normalized_url,
-                "requested_ref": str(requested_ref).strip(),
-                **({"requested_subpath": requested_subpath} if requested_subpath else {}),
-                "visible_skill_names": list(normalized_names),
-                "input_digest": fingerprint_json(
-                    {
-                        "normalized_url": normalized_url,
-                        "requested_ref": str(requested_ref).strip(),
-                        **({"requested_subpath": requested_subpath} if requested_subpath else {}),
-                        "visible_skill_names": list(normalized_names),
-                    }
-                ),
-            }
-            intent_id = "skill-install-global-failure:" + fingerprint_json(failure_identity)
-            existing_failure = await self.store.get_skill_install_intent(intent_id)
             if existing_failure is not None and existing_failure.status == "stage_failed":
-                failure_error = dict(existing_failure.error or {})
-                if (
-                    str(retry_command_id or "").strip()
-                    and failure_error.get("retry_command_id") == str(retry_command_id).strip()
-                    and int(failure_error.get("attempt_generation") or 0)
-                    == int(retry_attempt_generation or 0) + 1
-                ):
-                    success_intent_id = str(failure_error.get("success_intent_id") or "").strip()
-                    if success_intent_id:
-                        success = await self.store.get_skill_install_intent(success_intent_id)
-                        if success is not None:
-                            return await self._outcome_for_existing(success)
-                    return await self._outcome_for_existing(existing_failure)
-                if not bool(failure_error.get("retryable", False)):
-                    return await self._outcome_for_existing(existing_failure)
-                retry_identity = (
-                    str(retry_failure_receipt_ref or "").strip(),
-                    retry_attempt_generation,
-                    str(retry_command_id or "").strip(),
+                _returned, _result, retry_claim = await self._retry_failed_stage(
+                    existing_failure,
+                    intent_id=intent_id,
+                    retry_attempt_generation=retry_attempt_generation,
+                    retry_command_id=retry_command_id,
+                    retry_failure_receipt_ref=retry_failure_receipt_ref,
                 )
-                if not all(value not in {None, ""} for value in retry_identity):
-                    return await self._outcome_for_existing(existing_failure)
-                try:
-                    retry_claim, claimed = await self.store.claim_skill_install_retry(
-                        intent_id,
-                        failure_receipt_ref=str(retry_failure_receipt_ref),
-                        expected_attempt_generation=int(retry_attempt_generation),
-                        retry_command_id=str(retry_command_id),
-                    )
-                except CapabilityStoreConflict:
-                    current = await self.store.get_skill_install_intent(intent_id)
-                    if current is not None:
-                        return await self._outcome_for_existing(current)
-                    raise
-                if not claimed:
-                    claimed_error = dict(retry_claim.error or {})
-                    success_intent_id = str(claimed_error.get("success_intent_id") or "").strip()
-                    if success_intent_id:
-                        success = await self.store.get_skill_install_intent(success_intent_id)
-                        if success is not None:
-                            return await self._outcome_for_existing(success)
-                    return await self._outcome_for_existing(retry_claim)
+                if _returned:
+                    return _result
             identity = failure_identity
         try:
             batch = await self.source.resolve(
@@ -640,32 +584,7 @@ class GlobalSkillInstallService:
             )
         except CapabilitySourceError as exc:
             if retry_claim is not None:
-                attempt_generation = int(
-                    dict(retry_claim.error or {}).get("attempt_generation") or 1
-                )
-                receipt = fingerprint_json(
-                    {
-                        "schema": "global-skill-stage-retry-failure-v1",
-                        "intent_id": retry_claim.intent_id,
-                        "attempt_generation": attempt_generation,
-                        "retry_command_id": str(retry_command_id),
-                        "code": exc.code,
-                    }
-                )
-                settled = await self.store.settle_skill_install_retry(
-                    retry_claim.intent_id,
-                    expected_state_version=retry_claim.state_version,
-                    retry_command_id=str(retry_command_id),
-                    attempt_generation=attempt_generation,
-                    retry_state="failed",
-                    failure_receipt_ref=receipt,
-                    error={
-                        "code": exc.code,
-                        "message": str(exc),
-                        "retryable": self._retryable(exc.code),
-                    },
-                )
-                return await self._outcome_for_existing(settled)
+                return await self._retry_stage_attempt(exc, retry_claim, retry_command_id)
             return await self._record_stage_failure(
                 intent_id=intent_id,
                 identity=identity,
@@ -714,22 +633,7 @@ class GlobalSkillInstallService:
                         error={"retryable": False},
                     )
                 return await self._outcome_for_existing(existing)
-            prior_effect = await self.store.get_skill_install_intent_for_effect(effect_id, call_id)
-            if prior_effect is not None and prior_effect.intent_id != intent_id:
-                if prior_effect.status not in _REOPENABLE_INTENT_STATES:
-                    raise ProjectSkillInstallError(
-                        "skill_install_intent_conflict",
-                        "A non-terminal install already owns this request identity",
-                    )
-                retry_suffix = fingerprint_json(
-                    {
-                        "schema": "global-skill-install-retry-v2",
-                        "failed_intent_id": prior_effect.intent_id,
-                        "resolved_intent_id": intent_id,
-                    }
-                )
-                effect_id = f"{effect_id}:resolved:{retry_suffix}"
-                call_id = f"{call_id}:resolved:{retry_suffix}"
+            call_id, effect_id = await self._stage_prior_effect(call_id, effect_id, intent_id)
         stage = self._stage_path(intent_id)
         if stage.exists():
             shutil.rmtree(stage)
@@ -737,41 +641,9 @@ class GlobalSkillInstallService:
         members: list[CapabilitySkillInstallMember] = []
         permissions: set[str] = set()
         try:
-            for ordinal, pack in enumerate(batch.packs):
-                manifest = self._manifest(pack.archive_bytes)
-                archive_name = f"{ordinal:04d}-{pack.archive_hash}.zip"
-                temporary = stage / f".{archive_name}.tmp"
-                target = stage / archive_name
-                temporary.write_bytes(pack.archive_bytes)
-                os.replace(temporary, target)
-                allowed = tuple(
-                    sorted(
-                        str(item)
-                        for entry in manifest["entries"]["skills"]
-                        for item in entry.get("allowed_tools", ())
-                    )
-                )
-                permissions.update(allowed)
-                members.append(
-                    CapabilitySkillInstallMember(
-                        intent_id=intent_id,
-                        ordinal=ordinal,
-                        normalized_name=pack.skill_name.casefold(),
-                        pack_id=str(manifest["id"]),
-                        version=str(manifest["version"]),
-                        manifest_hash=pack.manifest_hash,
-                        content_hash=pack.content_digest,
-                        source_digest=batch.evidence.evidence_hash,
-                        member={
-                            "skill_name": pack.skill_name,
-                            "selected_subdirectory": pack.selected_subdirectory,
-                            "archive_ref": archive_name,
-                            "archive_hash": pack.archive_hash,
-                            "validated_ref": pack.validated_ref.to_evidence(),
-                            "allowed_tools": list(allowed),
-                        },
-                    )
-                )
+            self._stage_batch_manifests(
+                batch, intent_id=intent_id, members=members, permissions=permissions, stage=stage
+            )
             now = float(self.clock())
             nonce = fingerprint_json(
                 {
@@ -828,25 +700,244 @@ class GlobalSkillInstallService:
                 updated_at=now,
             )
             await self.store.create_skill_install_intent(intent, members)
-            ready = await self.store.cas_skill_install_intent(
-                intent_id, expected_state_version=1, status="awaiting_confirmation"
-            )
-            if retry_claim is not None:
-                await self.store.settle_skill_install_retry(
-                    retry_claim.intent_id,
-                    expected_state_version=retry_claim.state_version,
-                    retry_command_id=str(retry_command_id),
-                    attempt_generation=int(
-                        dict(retry_claim.error or {}).get("attempt_generation") or 1
-                    ),
-                    retry_state="succeeded",
-                    success_intent_id=ready.intent_id,
-                    error={"retryable": False},
-                )
-            return self._ready(ready, members)
+            return await self._mark_stage_ready(intent_id, members, retry_claim, retry_command_id)
         except BaseException:
             await self._remove_stage(intent_id)
             raise
+
+    async def _retry_failed_stage(
+        self,
+        existing_failure,
+        *,
+        intent_id,
+        retry_attempt_generation: int | None,
+        retry_command_id: str | None,
+        retry_failure_receipt_ref: str | None,
+    ):
+        failure_error = dict(existing_failure.error or {})
+        if (
+            str(retry_command_id or "").strip()
+            and failure_error.get("retry_command_id") == str(retry_command_id).strip()
+            and int(failure_error.get("attempt_generation") or 0)
+            == int(retry_attempt_generation or 0) + 1
+        ):
+            success_intent_id = str(failure_error.get("success_intent_id") or "").strip()
+            if success_intent_id:
+                success = await self.store.get_skill_install_intent(success_intent_id)
+                if success is not None:
+                    return (True, (await self._outcome_for_existing(success)), None)
+            return (True, (await self._outcome_for_existing(existing_failure)), None)
+        if not bool(failure_error.get("retryable", False)):
+            return (True, (await self._outcome_for_existing(existing_failure)), None)
+        retry_identity = (
+            str(retry_failure_receipt_ref or "").strip(),
+            retry_attempt_generation,
+            str(retry_command_id or "").strip(),
+        )
+        if not all(value not in {None, ""} for value in retry_identity):
+            return (True, (await self._outcome_for_existing(existing_failure)), None)
+        try:
+            retry_claim, claimed = await self.store.claim_skill_install_retry(
+                intent_id,
+                failure_receipt_ref=str(retry_failure_receipt_ref),
+                expected_attempt_generation=int(retry_attempt_generation),
+                retry_command_id=str(retry_command_id),
+            )
+        except CapabilityStoreConflict:
+            current = await self.store.get_skill_install_intent(intent_id)
+            if current is not None:
+                return (True, (await self._outcome_for_existing(current)), None)
+            raise
+        if not claimed:
+            claimed_error = dict(retry_claim.error or {})
+            success_intent_id = str(claimed_error.get("success_intent_id") or "").strip()
+            if success_intent_id:
+                success = await self.store.get_skill_install_intent(success_intent_id)
+                if success is not None:
+                    return (True, (await self._outcome_for_existing(success)), None)
+            return (True, (await self._outcome_for_existing(retry_claim)), None)
+        return False, None, retry_claim
+
+    async def _stage_retry_claim(
+        self,
+        call_id: str,
+        *,
+        effect_id: str,
+        owner: GlobalSkillInstallAuthority | None,
+        owner_scope_key,
+        requested_ref: str,
+        requested_subpath: str,
+        run_id: str,
+        url: str,
+    ):
+        is_global = owner is not None
+        retry_claim: CapabilitySkillInstallIntent | None = None
+        await self.store.initialize()
+        await self._reconcile_failed_manager_handoffs()
+        await self.reconcile_expired()
+        identity = {
+            "schema": "skill-install-preflight-v1",
+            "run_id": run_id,
+            "call_id": call_id,
+            "effect_id": effect_id,
+            "url": url,
+            "requested_ref": requested_ref,
+            **({"requested_subpath": requested_subpath} if requested_subpath else {}),
+            ("owner_scope_key" if is_global else "project_scope_key"): owner_scope_key,
+        }
+        return identity, is_global, retry_claim
+
+    async def _stage_prior_effect(self, call_id: str, effect_id: str, intent_id):
+        prior_effect = await self.store.get_skill_install_intent_for_effect(effect_id, call_id)
+        if prior_effect is not None and prior_effect.intent_id != intent_id:
+            if prior_effect.status not in _REOPENABLE_INTENT_STATES:
+                raise ProjectSkillInstallError(
+                    "skill_install_intent_conflict",
+                    "A non-terminal install already owns this request identity",
+                )
+            retry_suffix = fingerprint_json(
+                {
+                    "schema": "global-skill-install-retry-v2",
+                    "failed_intent_id": prior_effect.intent_id,
+                    "resolved_intent_id": intent_id,
+                }
+            )
+            effect_id = f"{effect_id}:resolved:{retry_suffix}"
+            call_id = f"{call_id}:resolved:{retry_suffix}"
+        return call_id, effect_id
+
+    async def _mark_stage_ready(
+        self,
+        intent_id,
+        members: list[CapabilitySkillInstallMember],
+        retry_claim: CapabilitySkillInstallIntent | None,
+        retry_command_id: str | None,
+    ) -> SkillInstallPreflightReady | SkillInstallPreflightRejected:
+        ready = await self.store.cas_skill_install_intent(
+            intent_id, expected_state_version=1, status="awaiting_confirmation"
+        )
+        if retry_claim is not None:
+            await self.store.settle_skill_install_retry(
+                retry_claim.intent_id,
+                expected_state_version=retry_claim.state_version,
+                retry_command_id=str(retry_command_id),
+                attempt_generation=int(
+                    dict(retry_claim.error or {}).get("attempt_generation") or 1
+                ),
+                retry_state="succeeded",
+                success_intent_id=ready.intent_id,
+                error={"retryable": False},
+            )
+        return self._ready(ready, members)
+
+    async def _stage_failure_identity(
+        self,
+        owner_scope_key,
+        *,
+        requested_ref: str,
+        requested_subpath: str,
+        url: str,
+        visible_skill_names: Sequence[str],
+    ):
+        normalized_names = tuple(
+            sorted({str(name).strip().casefold() for name in visible_skill_names})
+        )
+        try:
+            normalized_url = normalize_github_repo_url(url)[0]
+        except CapabilitySourceError:
+            normalized_url = "invalid-input:" + fingerprint_json({"url": str(url).strip()})
+        failure_identity = {
+            "schema": "global-skill-stage-failure-v1",
+            "owner_scope_key": owner_scope_key,
+            "normalized_url": normalized_url,
+            "requested_ref": str(requested_ref).strip(),
+            **({"requested_subpath": requested_subpath} if requested_subpath else {}),
+            "visible_skill_names": list(normalized_names),
+            "input_digest": fingerprint_json(
+                {
+                    "normalized_url": normalized_url,
+                    "requested_ref": str(requested_ref).strip(),
+                    **({"requested_subpath": requested_subpath} if requested_subpath else {}),
+                    "visible_skill_names": list(normalized_names),
+                }
+            ),
+        }
+        intent_id = "skill-install-global-failure:" + fingerprint_json(failure_identity)
+        existing_failure = await self.store.get_skill_install_intent(intent_id)
+        return existing_failure, failure_identity, intent_id
+
+    async def _retry_stage_attempt(
+        self, exc, retry_claim: CapabilitySkillInstallIntent | None, retry_command_id: str | None
+    ) -> SkillInstallPreflightReady | SkillInstallPreflightRejected:
+        attempt_generation = int(dict(retry_claim.error or {}).get("attempt_generation") or 1)
+        receipt = fingerprint_json(
+            {
+                "schema": "global-skill-stage-retry-failure-v1",
+                "intent_id": retry_claim.intent_id,
+                "attempt_generation": attempt_generation,
+                "retry_command_id": str(retry_command_id),
+                "code": exc.code,
+            }
+        )
+        settled = await self.store.settle_skill_install_retry(
+            retry_claim.intent_id,
+            expected_state_version=retry_claim.state_version,
+            retry_command_id=str(retry_command_id),
+            attempt_generation=attempt_generation,
+            retry_state="failed",
+            failure_receipt_ref=receipt,
+            error={
+                "code": exc.code,
+                "message": str(exc),
+                "retryable": self._retryable(exc.code),
+            },
+        )
+        return await self._outcome_for_existing(settled)
+
+    def _stage_batch_manifests(
+        self,
+        batch,
+        *,
+        intent_id,
+        members: list[CapabilitySkillInstallMember],
+        permissions: set[str],
+        stage,
+    ) -> None:
+        for ordinal, pack in enumerate(batch.packs):
+            manifest = self._manifest(pack.archive_bytes)
+            archive_name = f"{ordinal:04d}-{pack.archive_hash}.zip"
+            temporary = stage / f".{archive_name}.tmp"
+            target = stage / archive_name
+            temporary.write_bytes(pack.archive_bytes)
+            os.replace(temporary, target)
+            allowed = tuple(
+                sorted(
+                    str(item)
+                    for entry in manifest["entries"]["skills"]
+                    for item in entry.get("allowed_tools", ())
+                )
+            )
+            permissions.update(allowed)
+            members.append(
+                CapabilitySkillInstallMember(
+                    intent_id=intent_id,
+                    ordinal=ordinal,
+                    normalized_name=pack.skill_name.casefold(),
+                    pack_id=str(manifest["id"]),
+                    version=str(manifest["version"]),
+                    manifest_hash=pack.manifest_hash,
+                    content_hash=pack.content_digest,
+                    source_digest=batch.evidence.evidence_hash,
+                    member={
+                        "skill_name": pack.skill_name,
+                        "selected_subdirectory": pack.selected_subdirectory,
+                        "archive_ref": archive_name,
+                        "archive_hash": pack.archive_hash,
+                        "validated_ref": pack.validated_ref.to_evidence(),
+                        "allowed_tools": list(allowed),
+                    },
+                )
+            )
 
     async def stage_authorization_preflight(
         self,

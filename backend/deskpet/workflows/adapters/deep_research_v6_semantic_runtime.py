@@ -717,67 +717,27 @@ class DeepResearchV6SemanticRuntime:
                 outcome_reason_codes: tuple[str, ...] = ()
                 status = "validated"
                 if research_spec.intent_type == "official_exact_fact":
-                    requests = self._exact_requests(research_spec, set(group["requirement_ids"]))
-                    extracted = extract_scalar_evidence(
-                        body=page.body_bytes.decode("utf-8"),
-                        body_ref=page.page.body_ref,
-                        page_id=page.page.page_id,
-                        requests=requests,
-                    )
-                    candidates = tuple(
-                        self._candidate_from_exact(
-                            item,
-                            requirement=requirements[item.requirement_id],
-                            work_group_id=group_id,
-                            page=page,
-                            candidate_ordinal=ordinal,
-                        )
-                        for ordinal, item in enumerate(extracted)
-                    )
-                    bundle = EvidenceCandidateBundleV1.create(
-                        run_id=native_identity.run_id,
-                        spec_hash=research_spec.spec_hash,
-                        work_group_id=group_id,
-                        logical_page_id=page.page.page_id,
-                        page_plan_ordinal=page.ordinal,
-                        page_result_ref=page.page_result_ref,
-                        route_decision_ref=page.route_decision_ref,
-                        route_policy_ref=page.route_policy_ref,
-                        extraction_policy_ref=policies["extraction"],
-                        repair_round=0,
-                        candidates=candidates,
-                        bundle_reason_codes=(),
+                    bundle = self._extract_candidate_bundle(
+                        group,
+                        group_id=group_id,
+                        native_identity=native_identity,
+                        page=page,
+                        policies=policies,
+                        requirements=requirements,
+                        research_spec=research_spec,
                     )
                     selected_profile_ref = policies["extraction"]
                     origin = "deterministic"
                 else:
                     origin = "llm"
-                    prompt: dict[str, JsonValue] = {
-                        "schema_version": 1,
-                        "spec": research_spec.to_json(),
-                        "route_decision": route.to_json(),
-                        "work_group": copy.deepcopy(group),
-                        "page_result_ref": page.page_result_ref,
-                        "logical_page_id": page.page.page_id,
-                        "page_plan_ordinal": page.ordinal,
-                        "body": page.body_bytes.decode("utf-8"),
-                        "route_decision_ref": page.route_decision_ref,
-                        "route_policy_ref": page.route_policy_ref,
-                        "extraction_policy_ref": policies["extraction"],
-                    }
-                    prompt["logical_effect_id"] = self._logical_effect_id(
-                        native_identity,
-                        kind="extract",
-                        work_group_id=group_id,
-                        logical_page_or_head=page.page.page_id,
-                        repair_round=0,
-                    )
-                    first = await self._stage(
-                        self.llm_extract,
-                        stage="evidence_candidate_extract",
-                        payload=prompt,
-                        identity=native_identity,
-                        expected_profile_ref=policies["llm_extract"],
+                    first, prompt = await self._candidate_prompt(
+                        group,
+                        group_id=group_id,
+                        native_identity=native_identity,
+                        page=page,
+                        policies=policies,
+                        research_spec=research_spec,
+                        route=route,
                     )
                     if first is None:
                         semantic_fenced = True
@@ -805,58 +765,21 @@ class DeepResearchV6SemanticRuntime:
                         first.status == "validated" and bundle is None
                     ):
                         status = "malformed"
-                        outcome_reason_codes = ("candidate_bundle_invalid",)
-                        prior_outcome_ref = await self._register_outcome(
-                            first,
-                            native_identity,
-                            logical_effect_id=self._logical_effect_id(
-                                native_identity,
-                                kind="extract",
-                                work_group_id=group_id,
-                                logical_page_or_head=page.page.page_id,
-                                repair_round=0,
-                            ),
-                            result_kind="candidate_bundle",
-                            status="malformed",
-                            canonical_result_ref=None,
-                            reason_codes=("candidate_bundle_invalid",),
+                        (
+                            outcome_reason_codes,
+                            prior_outcome_ref,
+                        ) = await self._register_invalid_outcome(
+                            first, group_id, native_identity, page
                         )
                         if not await self._generate_now_fenced(native_identity.run_id):
-                            repair_request_ref = await self._register_repair_request(
-                                native_identity,
-                                result_kind="candidate_bundle",
-                                original=first,
-                                repair_profile_ref=policies["llm_repair"],
+                            repair_request_ref, repaired = await self._repair_candidate(
+                                first,
+                                group_id=group_id,
+                                native_identity=native_identity,
+                                page=page,
+                                policies=policies,
                                 prior_outcome_ref=prior_outcome_ref,
-                                logical_page_id=page.page.page_id,
-                                work_group_id=group_id,
-                                reason_codes=("candidate_bundle_invalid",),
-                            )
-                            repair_payload: dict[str, JsonValue] = {
-                                **prompt,
-                                "repair_round": 1,
-                                "prior_effect_outcome_ref": prior_outcome_ref,
-                                "repair_request_ref": repair_request_ref,
-                                "raw_result_ref": first.result_ref,
-                                "invalid_content": (
-                                    copy.deepcopy(dict(first.content))
-                                    if isinstance(first.content, Mapping)
-                                    else first.content
-                                ),
-                            }
-                            repair_payload["logical_effect_id"] = self._logical_effect_id(
-                                native_identity,
-                                kind="repair",
-                                work_group_id=group_id,
-                                logical_page_or_head=page.page.page_id,
-                                repair_round=1,
-                            )
-                            repaired = await self._stage(
-                                self.llm_repair,
-                                stage="evidence_structured_repair",
-                                payload=repair_payload,
-                                identity=native_identity,
-                                expected_profile_ref=policies["llm_repair"],
+                                prompt=prompt,
                             )
                             if repaired is None:
                                 selected_outcome_ref = prior_outcome_ref
@@ -865,24 +788,15 @@ class DeepResearchV6SemanticRuntime:
                                 selected_repair_round = 1
                                 if repaired.status == "validated":
                                     try:
-                                        candidate_bundle = EvidenceCandidateBundleV1.from_json(
-                                            self._decode_repair_content(
-                                                repaired.content,
-                                                expected_kind="candidate_bundle",
-                                            ),
-                                            body_bytes=page.body_bytes,
-                                        )
-                                        self._validate_candidate_bundle(
-                                            candidate_bundle,
-                                            spec=research_spec,
-                                            route=route,
-                                            group=group,
+                                        bundle, candidate_bundle = self._decode_repaired_bundle(
+                                            group,
+                                            native_identity=native_identity,
                                             page=page,
-                                            extraction_policy_ref=policies["extraction"],
-                                            repair_round=1,
-                                            identity=native_identity,
+                                            policies=policies,
+                                            repaired=repaired,
+                                            research_spec=research_spec,
+                                            route=route,
                                         )
-                                        bundle = candidate_bundle
                                     except (TypeError, ValueError, json.JSONDecodeError):
                                         bundle = None
                                         status = "malformed"
@@ -907,63 +821,31 @@ class DeepResearchV6SemanticRuntime:
                         )
                         if ref is not None
                     )
-                bundle_ref: str | None = None
-                if bundle is not None:
-                    bundle_ref = await self._put_json(
-                        bundle.to_json(),
-                        native_identity,
-                        media_type="application/vnd.deskpet.evidence-candidate-bundle.v1+json",
-                    )
-                    new_refs.add(bundle_ref)
-                    status = "validated"
-                if selected_envelope is not None and selected_outcome_ref is None:
-                    selected_outcome_ref = await self._register_outcome(
-                        selected_envelope,
-                        native_identity,
-                        logical_effect_id=self._logical_effect_id(
-                            native_identity,
-                            kind="repair" if selected_repair_round else "extract",
-                            work_group_id=group_id,
-                            logical_page_or_head=page.page.page_id,
-                            repair_round=selected_repair_round,
-                        ),
-                        result_kind="candidate_bundle",
-                        status=status,
-                        canonical_result_ref=bundle_ref,
-                        repair_request_ref=repair_request_ref,
-                        prior_outcome_ref=prior_outcome_ref,
-                        repair_round=selected_repair_round,
-                        reason_codes=outcome_reason_codes,
-                    )
-                    new_refs.add(selected_outcome_ref)
-                dependencies = {page.page_result_ref, selected_profile_ref}
-                if bundle_ref is not None:
-                    dependencies.add(bundle_ref)
-                if selected_outcome_ref is not None:
-                    dependencies.add(selected_outcome_ref)
-                producer = CandidateProducerOutcomeV1.create(
-                    origin=origin,
+                bundle_ref, selected_outcome_ref, status = await self._store_candidate_outcome(
+                    bundle,
+                    group_id=group_id,
+                    native_identity=native_identity,
+                    new_refs=new_refs,
+                    outcome_reason_codes=outcome_reason_codes,
+                    page=page,
+                    prior_outcome_ref=prior_outcome_ref,
+                    repair_request_ref=repair_request_ref,
+                    selected_envelope=selected_envelope,
+                    selected_outcome_ref=selected_outcome_ref,
+                    selected_repair_round=selected_repair_round,
                     status=status,
-                    logical_page_id=page.page.page_id,
-                    work_group_id=group_id,
-                    bundle_ref=bundle_ref,
-                    llm_effect_outcome_ref=selected_outcome_ref,
-                    policy_ref=selected_profile_ref,
-                    dependency_refs=tuple(dependencies),
                 )
-                producer_ref = await self._put_json(
-                    producer.to_json(),
-                    native_identity,
-                    media_type="application/vnd.deskpet.candidate-producer-outcome.v1+json",
-                )
-                new_refs.update({page.page_result_ref, producer_ref, *dependencies})
-                slots.append(
-                    {
-                        "logical_page_id": page.page.page_id,
-                        "work_group_id": group_id,
-                        "producer_outcome_ref": producer_ref,
-                        "bundle_ref": bundle_ref,
-                    }
+                await self._record_candidate_dependencies(
+                    bundle_ref,
+                    group_id=group_id,
+                    native_identity=native_identity,
+                    new_refs=new_refs,
+                    origin=origin,
+                    page=page,
+                    selected_outcome_ref=selected_outcome_ref,
+                    selected_profile_ref=selected_profile_ref,
+                    slots=slots,
+                    status=status,
                 )
             if semantic_fenced:
                 break
@@ -975,6 +857,256 @@ class DeepResearchV6SemanticRuntime:
             },
             "blob_refs": _blob_items(tuple(new_refs)),
         }
+
+    async def _register_invalid_outcome(self, first, group_id, native_identity, page):
+        outcome_reason_codes = ("candidate_bundle_invalid",)
+        prior_outcome_ref = await self._register_outcome(
+            first,
+            native_identity,
+            logical_effect_id=self._logical_effect_id(
+                native_identity,
+                kind="extract",
+                work_group_id=group_id,
+                logical_page_or_head=page.page.page_id,
+                repair_round=0,
+            ),
+            result_kind="candidate_bundle",
+            status="malformed",
+            canonical_result_ref=None,
+            reason_codes=("candidate_bundle_invalid",),
+        )
+        return outcome_reason_codes, prior_outcome_ref
+
+    def _decode_repaired_bundle(
+        self, group, *, native_identity, page, policies, repaired, research_spec, route
+    ):
+        candidate_bundle = EvidenceCandidateBundleV1.from_json(
+            self._decode_repair_content(
+                repaired.content,
+                expected_kind="candidate_bundle",
+            ),
+            body_bytes=page.body_bytes,
+        )
+        self._validate_candidate_bundle(
+            candidate_bundle,
+            spec=research_spec,
+            route=route,
+            group=group,
+            page=page,
+            extraction_policy_ref=policies["extraction"],
+            repair_round=1,
+            identity=native_identity,
+        )
+        bundle = candidate_bundle
+        return bundle, candidate_bundle
+
+    def _extract_candidate_bundle(
+        self, group, *, group_id, native_identity, page, policies, requirements, research_spec
+    ) -> EvidenceCandidateBundleV1 | None:
+        requests = self._exact_requests(research_spec, set(group["requirement_ids"]))
+        extracted = extract_scalar_evidence(
+            body=page.body_bytes.decode("utf-8"),
+            body_ref=page.page.body_ref,
+            page_id=page.page.page_id,
+            requests=requests,
+        )
+        candidates = tuple(
+            self._candidate_from_exact(
+                item,
+                requirement=requirements[item.requirement_id],
+                work_group_id=group_id,
+                page=page,
+                candidate_ordinal=ordinal,
+            )
+            for ordinal, item in enumerate(extracted)
+        )
+        bundle = EvidenceCandidateBundleV1.create(
+            run_id=native_identity.run_id,
+            spec_hash=research_spec.spec_hash,
+            work_group_id=group_id,
+            logical_page_id=page.page.page_id,
+            page_plan_ordinal=page.ordinal,
+            page_result_ref=page.page_result_ref,
+            route_decision_ref=page.route_decision_ref,
+            route_policy_ref=page.route_policy_ref,
+            extraction_policy_ref=policies["extraction"],
+            repair_round=0,
+            candidates=candidates,
+            bundle_reason_codes=(),
+        )
+        return bundle
+
+    async def _candidate_prompt(
+        self, group, *, group_id, native_identity, page, policies, research_spec, route
+    ):
+        prompt: dict[str, JsonValue] = {
+            "schema_version": 1,
+            "spec": research_spec.to_json(),
+            "route_decision": route.to_json(),
+            "work_group": copy.deepcopy(group),
+            "page_result_ref": page.page_result_ref,
+            "logical_page_id": page.page.page_id,
+            "page_plan_ordinal": page.ordinal,
+            "body": page.body_bytes.decode("utf-8"),
+            "route_decision_ref": page.route_decision_ref,
+            "route_policy_ref": page.route_policy_ref,
+            "extraction_policy_ref": policies["extraction"],
+        }
+        prompt["logical_effect_id"] = self._logical_effect_id(
+            native_identity,
+            kind="extract",
+            work_group_id=group_id,
+            logical_page_or_head=page.page.page_id,
+            repair_round=0,
+        )
+        first = await self._stage(
+            self.llm_extract,
+            stage="evidence_candidate_extract",
+            payload=prompt,
+            identity=native_identity,
+            expected_profile_ref=policies["llm_extract"],
+        )
+        return first, prompt
+
+    async def _repair_candidate(
+        self,
+        first,
+        *,
+        group_id,
+        native_identity,
+        page,
+        policies,
+        prior_outcome_ref: str | None,
+        prompt: dict[str, JsonValue],
+    ):
+        repair_request_ref = await self._register_repair_request(
+            native_identity,
+            result_kind="candidate_bundle",
+            original=first,
+            repair_profile_ref=policies["llm_repair"],
+            prior_outcome_ref=prior_outcome_ref,
+            logical_page_id=page.page.page_id,
+            work_group_id=group_id,
+            reason_codes=("candidate_bundle_invalid",),
+        )
+        repair_payload: dict[str, JsonValue] = {
+            **prompt,
+            "repair_round": 1,
+            "prior_effect_outcome_ref": prior_outcome_ref,
+            "repair_request_ref": repair_request_ref,
+            "raw_result_ref": first.result_ref,
+            "invalid_content": (
+                copy.deepcopy(dict(first.content))
+                if isinstance(first.content, Mapping)
+                else first.content
+            ),
+        }
+        repair_payload["logical_effect_id"] = self._logical_effect_id(
+            native_identity,
+            kind="repair",
+            work_group_id=group_id,
+            logical_page_or_head=page.page.page_id,
+            repair_round=1,
+        )
+        repaired = await self._stage(
+            self.llm_repair,
+            stage="evidence_structured_repair",
+            payload=repair_payload,
+            identity=native_identity,
+            expected_profile_ref=policies["llm_repair"],
+        )
+        return repair_request_ref, repaired
+
+    async def _store_candidate_outcome(
+        self,
+        bundle: EvidenceCandidateBundleV1 | None,
+        *,
+        group_id,
+        native_identity,
+        new_refs: set[str],
+        outcome_reason_codes: tuple[str, ...],
+        page,
+        prior_outcome_ref: str | None,
+        repair_request_ref: str | None,
+        selected_envelope: _StageEnvelope | None,
+        selected_outcome_ref: str | None,
+        selected_repair_round,
+        status,
+    ):
+        bundle_ref: str | None = None
+        if bundle is not None:
+            bundle_ref = await self._put_json(
+                bundle.to_json(),
+                native_identity,
+                media_type="application/vnd.deskpet.evidence-candidate-bundle.v1+json",
+            )
+            new_refs.add(bundle_ref)
+            status = "validated"
+        if selected_envelope is not None and selected_outcome_ref is None:
+            selected_outcome_ref = await self._register_outcome(
+                selected_envelope,
+                native_identity,
+                logical_effect_id=self._logical_effect_id(
+                    native_identity,
+                    kind="repair" if selected_repair_round else "extract",
+                    work_group_id=group_id,
+                    logical_page_or_head=page.page.page_id,
+                    repair_round=selected_repair_round,
+                ),
+                result_kind="candidate_bundle",
+                status=status,
+                canonical_result_ref=bundle_ref,
+                repair_request_ref=repair_request_ref,
+                prior_outcome_ref=prior_outcome_ref,
+                repair_round=selected_repair_round,
+                reason_codes=outcome_reason_codes,
+            )
+            new_refs.add(selected_outcome_ref)
+        return bundle_ref, selected_outcome_ref, status
+
+    async def _record_candidate_dependencies(
+        self,
+        bundle_ref: str | None,
+        *,
+        group_id,
+        native_identity,
+        new_refs: set[str],
+        origin,
+        page,
+        selected_outcome_ref: str | None,
+        selected_profile_ref: str,
+        slots: list[dict[str, JsonValue]],
+        status,
+    ) -> None:
+        dependencies = {page.page_result_ref, selected_profile_ref}
+        if bundle_ref is not None:
+            dependencies.add(bundle_ref)
+        if selected_outcome_ref is not None:
+            dependencies.add(selected_outcome_ref)
+        producer = CandidateProducerOutcomeV1.create(
+            origin=origin,
+            status=status,
+            logical_page_id=page.page.page_id,
+            work_group_id=group_id,
+            bundle_ref=bundle_ref,
+            llm_effect_outcome_ref=selected_outcome_ref,
+            policy_ref=selected_profile_ref,
+            dependency_refs=tuple(dependencies),
+        )
+        producer_ref = await self._put_json(
+            producer.to_json(),
+            native_identity,
+            media_type="application/vnd.deskpet.candidate-producer-outcome.v1+json",
+        )
+        new_refs.update({page.page_result_ref, producer_ref, *dependencies})
+        slots.append(
+            {
+                "logical_page_id": page.page.page_id,
+                "work_group_id": group_id,
+                "producer_outcome_ref": producer_ref,
+                "bundle_ref": bundle_ref,
+            }
+        )
 
     @staticmethod
     def _validate_inference_bundle(

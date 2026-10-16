@@ -156,47 +156,19 @@ class FetchExtractService:
     async def _fetch_uncached(self, request: FetchRequest, url: str) -> EvidenceDocument:
 
         render_budget = request.render_budget or FetchRenderBudget()
-        raw: dict | None = None
-        static_error: FetchExtractError | None = None
-        if await render_budget.claim("static"):
-            try:
-                raw = await self.fetch_raw(request)
-            except FetchExtractError as exc:
-                if request.render_policy == "never" or exc.code in {
-                    "invalid_url",
-                    "blocked_by_robots",
-                    "unsupported_content_type",
-                    "response_too_large",
-                }:
-                    raise
-                static_error = exc
-        else:
-            static_error = FetchExtractError("static_budget_exhausted")
-
-        raw = raw or {
-            "content": "",
-            "content_type": "text/html",
-            "fetcher": "static-failed",
-            "url_final": url,
-        }
+        raw, static_error = await self._static_fetch(render_budget, request, url)
         html = str(raw.get("content") or "")
         content_type = str(raw.get("content_type") or "")
         extract_started = time.perf_counter()
         title, text, published, extractor = self._extract(html)
-        fetcher = str(raw.get("fetcher") or "httpx")
-        _timing_metric(
-            request,
-            stage="extract",
-            started_at=extract_started,
-            status="succeeded",
-            fetcher=fetcher,
+        fetcher, should_render = self._render_decision(
+            extract_started,
             extractor=extractor,
-            count=len(text),
-        )
-
-        should_render = request.render_policy == "always" or (
-            request.render_policy == "auto"
-            and (static_error is not None or looks_like_app_shell(html, text))
+            html=html,
+            raw=raw,
+            request=request,
+            static_error=static_error,
+            text=text,
         )
         invalid_render = False
         playwright_valid = False
@@ -341,35 +313,7 @@ class FetchExtractService:
             and await render_budget.claim("edge")
             and (request.request_budget is None or await request.request_budget.claim_cdp())
         ):
-            render_call = self.render_call
-            if render_call is None:
-                render_call = research_cdp_edge.cdp_edge_render
-            edge_started = time.perf_counter()
-            try:
-                try:
-                    rendered = await render_call(url, timeout=min(request.timeout, 10.0))
-                except TypeError:
-                    # Legacy injected renderers accepted only the URL.
-                    rendered = await render_call(url)
-            except asyncio.CancelledError:
-                _timing_metric(
-                    request,
-                    stage="cdp",
-                    started_at=edge_started,
-                    status="cancelled",
-                    fetcher="cdp-edge",
-                )
-                raise
-            except Exception as exc:
-                _timing_metric(
-                    request,
-                    stage="cdp",
-                    started_at=edge_started,
-                    status="failed",
-                    fetcher="cdp-edge",
-                    error_code=type(exc).__name__,
-                )
-                raise
+            edge_started, rendered = await self._render_with_edge(request, url)
             if rendered:
                 if len(rendered.encode("utf-8", errors="replace")) <= _MAX_RESPONSE_BYTES:
                     r_title, r_text, r_published, r_extractor = self._extract(rendered)
@@ -423,9 +367,151 @@ class FetchExtractService:
                     fetcher="cdp-edge",
                 )
 
+        return await self._finish_fetch(
+            content_type,
+            extractor=extractor,
+            fetcher=fetcher,
+            html=html,
+            published=published,
+            raw=raw,
+            request=request,
+            static_error=static_error,
+            text=text,
+            title=title,
+            url=url,
+        )
+
+    async def _static_fetch(self, render_budget, request: FetchRequest, url: str):
+        raw: dict | None = None
+        static_error: FetchExtractError | None = None
+        if await render_budget.claim("static"):
+            try:
+                raw = await self.fetch_raw(request)
+            except FetchExtractError as exc:
+                if request.render_policy == "never" or exc.code in {
+                    "invalid_url",
+                    "blocked_by_robots",
+                    "unsupported_content_type",
+                    "response_too_large",
+                }:
+                    raise
+                static_error = exc
+        else:
+            static_error = FetchExtractError("static_budget_exhausted")
+
+        raw = raw or {
+            "content": "",
+            "content_type": "text/html",
+            "fetcher": "static-failed",
+            "url_final": url,
+        }
+        return raw, static_error
+
+    def _render_decision(
+        self,
+        extract_started,
+        *,
+        extractor,
+        html,
+        raw: dict | None,
+        request: FetchRequest,
+        static_error: FetchExtractError | None,
+        text,
+    ):
+        fetcher = str(raw.get("fetcher") or "httpx")
+        _timing_metric(
+            request,
+            stage="extract",
+            started_at=extract_started,
+            status="succeeded",
+            fetcher=fetcher,
+            extractor=extractor,
+            count=len(text),
+        )
+
+        should_render = request.render_policy == "always" or (
+            request.render_policy == "auto"
+            and (static_error is not None or looks_like_app_shell(html, text))
+        )
+        return fetcher, should_render
+
+    async def _finish_fetch(
+        self,
+        content_type,
+        *,
+        extractor,
+        fetcher,
+        html,
+        published,
+        raw: dict | None,
+        request: FetchRequest,
+        static_error: FetchExtractError | None,
+        text,
+        title,
+        url: str,
+    ) -> EvidenceDocument:
         if static_error is not None and not text.strip():
             raise FetchExtractError("render_fallback_failed") from static_error
 
+        return await self._finish_with_jina_fallback(
+            content_type,
+            extractor=extractor,
+            fetcher=fetcher,
+            html=html,
+            published=published,
+            raw=raw,
+            request=request,
+            text=text,
+            title=title,
+            url=url,
+        )
+
+    async def _render_with_edge(self, request: FetchRequest, url: str):
+        render_call = self.render_call
+        if render_call is None:
+            render_call = research_cdp_edge.cdp_edge_render
+        edge_started = time.perf_counter()
+        try:
+            try:
+                rendered = await render_call(url, timeout=min(request.timeout, 10.0))
+            except TypeError:
+                # Legacy injected renderers accepted only the URL.
+                rendered = await render_call(url)
+        except asyncio.CancelledError:
+            _timing_metric(
+                request,
+                stage="cdp",
+                started_at=edge_started,
+                status="cancelled",
+                fetcher="cdp-edge",
+            )
+            raise
+        except Exception as exc:
+            _timing_metric(
+                request,
+                stage="cdp",
+                started_at=edge_started,
+                status="failed",
+                fetcher="cdp-edge",
+                error_code=type(exc).__name__,
+            )
+            raise
+        return edge_started, rendered
+
+    async def _finish_with_jina_fallback(
+        self,
+        content_type,
+        *,
+        extractor,
+        fetcher,
+        html,
+        published,
+        raw: dict | None,
+        request: FetchRequest,
+        text,
+        title,
+        url: str,
+    ) -> EvidenceDocument:
         if len(text) < 300 and request.allow_jina and self.allow_jina:
             jina_started = time.perf_counter()
             jina = await self._jina(url, min(request.timeout, 8.0))

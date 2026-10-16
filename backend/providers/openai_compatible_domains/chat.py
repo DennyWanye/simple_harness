@@ -381,37 +381,15 @@ class ChatMixin(OpenAICompatibleCore):
             preview = content[:300] if isinstance(content, str) else str(content)[:300]
             logger.info(f"[DEBUG_PERSONA] Message {idx} ({role}): {preview}")
 
-        payload: dict = {
-            "model": self.model,
-            "messages": messages,
-            "stream": False,
-            "temperature": temp,
-            "max_tokens": max_tokens,
-        }
-        payload = _merge_code_params(payload, self.code_params)
-        if tools:
-            payload["tools"] = tools
-            payload["tool_choice"] = tool_choice or "auto"
-        # P4-S25: structured output. OpenAI / the relay / DashScope use
-        # `response_format`; Ollama ignores that and reads `format`.
-        # We pass the OpenAI-shape through and ALSO emit Ollama's
-        # `format` so users can switch endpoints without code changes.
-        if response_format is not None:
-            payload["response_format"] = response_format
-            rf_type = response_format.get("type") if isinstance(response_format, dict) else None
-            if rf_type in ("json_object", "json_schema"):
-                payload["format"] = "json"
-        # P4-S25 A4: prompt caching — Anthropic-style cache_control
-        # marker only fires for Anthropic-native endpoints. the relay and
-        # some sealos proxies treat unknown message fields strictly
-        # and respond with empty content; OpenAI gpt-4o auto-caches
-        # without the marker. So gate on URL keyword.
-        if (
-            messages
-            and any(m.get("role") == "system" for m in messages)
-            and _is_anthropic_endpoint(self.base_url)
-        ):
-            payload["messages"] = _stamp_cache_control(messages, boundary_index=_cache_boundary)
+        payload = self._nonstream_payload(
+            _cache_boundary,
+            max_tokens=max_tokens,
+            messages=messages,
+            response_format=response_format,
+            temp=temp,
+            tool_choice=tool_choice,
+            tools=tools,
+        )
         # P4-S22 fix: wrap httpx errors so AgentLoop's existing
         # `except LLMProviderError` catches them and emits a clean
         # ErrorEvent instead of the bare ConnectError bubbling all the
@@ -628,6 +606,53 @@ class ChatMixin(OpenAICompatibleCore):
             # Catch-all for any other transport / parsing httpx error.
             human = str(exc) or type(exc).__name__
             raise LLMProviderError(f"LLM 调用失败 ({human})。") from exc
+        return self._nonstream_result(data, messages)
+
+    def _nonstream_payload(
+        self,
+        _cache_boundary,
+        *,
+        max_tokens: int,
+        messages: list[dict],
+        response_format: dict | None,
+        temp,
+        tool_choice: str | None,
+        tools: list[dict] | None,
+    ) -> dict:
+        payload: dict = {
+            "model": self.model,
+            "messages": messages,
+            "stream": False,
+            "temperature": temp,
+            "max_tokens": max_tokens,
+        }
+        payload = _merge_code_params(payload, self.code_params)
+        if tools:
+            payload["tools"] = tools
+            payload["tool_choice"] = tool_choice or "auto"
+        # P4-S25: structured output. OpenAI / the relay / DashScope use
+        # `response_format`; Ollama ignores that and reads `format`.
+        # We pass the OpenAI-shape through and ALSO emit Ollama's
+        # `format` so users can switch endpoints without code changes.
+        if response_format is not None:
+            payload["response_format"] = response_format
+            rf_type = response_format.get("type") if isinstance(response_format, dict) else None
+            if rf_type in ("json_object", "json_schema"):
+                payload["format"] = "json"
+        # P4-S25 A4: prompt caching — Anthropic-style cache_control
+        # marker only fires for Anthropic-native endpoints. the relay and
+        # some sealos proxies treat unknown message fields strictly
+        # and respond with empty content; OpenAI gpt-4o auto-caches
+        # without the marker. So gate on URL keyword.
+        if (
+            messages
+            and any(m.get("role") == "system" for m in messages)
+            and _is_anthropic_endpoint(self.base_url)
+        ):
+            payload["messages"] = _stamp_cache_control(messages, boundary_index=_cache_boundary)
+        return payload
+
+    def _nonstream_result(self, data, messages: list[dict]) -> dict:
         choices = data.get("choices") or []
         if not choices:
             return {

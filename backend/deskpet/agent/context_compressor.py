@@ -400,6 +400,31 @@ class ContextCompressor:
         # Normalize previous compaction formats before choosing new cut points.
         # A summary may have moved into the preserved head/tail, so extracting
         # only the middle can create nested summaries on the next pass.
+        return await self._compress_middle(
+            goal_text,
+            messages=messages,
+            n_micro=n_micro,
+            pending_tasks=pending_tasks,
+            resolved_model=resolved_model,
+            resolved_provider=resolved_provider,
+            start=start,
+            work=work,
+            workload_context=workload_context,
+        )
+
+    async def _compress_middle(
+        self,
+        goal_text: str | None,
+        *,
+        messages: list[dict[str, Any]],
+        n_micro,
+        pending_tasks: list[str] | None,
+        resolved_model: str | None,
+        resolved_provider: Any,
+        start,
+        work,
+        workload_context: ProviderWorkloadContext | None,
+    ) -> CompressionResult:
         partition_work = [message for message in work if not _is_compaction_handoff(message)]
         prior_summary, partition_work = _extract_prior_summary(partition_work)
         system_msgs, first_chunk, middle_chunk, last_chunk = _partition(
@@ -407,30 +432,14 @@ class ContextCompressor:
         )
 
         if not middle_chunk:
-            if prior_summary:
-                summary_message = _summary_message(prior_summary, source_messages=work)
-                new_messages = _sanitize_tool_pairs(
-                    list(system_msgs) + list(first_chunk) + [summary_message] + list(last_chunk)
-                )
-                if _compression_preserves_request_boundary(work, new_messages):
-                    return CompressionResult(
-                        messages=new_messages,
-                        compressed=True,
-                        latency_ms=(time.monotonic() - start) * 1000.0,
-                        meta={
-                            "reason": "prior_summary_passthrough",
-                            "tool_results_pruned": n_micro,
-                        },
-                    )
-            # Nothing to compress — window is too short.
-            return CompressionResult(
-                messages=_sanitize_tool_pairs(work) if n_micro > 0 else list(work),
-                compressed=n_micro > 0,
-                latency_ms=(time.monotonic() - start) * 1000.0,
-                meta={
-                    "reason": "no_middle_to_summarize",
-                    "tool_results_pruned": n_micro,
-                },
+            return self._finish_with_prior_summary(
+                first_chunk,
+                last_chunk=last_chunk,
+                n_micro=n_micro,
+                prior_summary=prior_summary,
+                start=start,
+                system_msgs=system_msgs,
+                work=work,
             )
 
         if self._llm is None and resolved_provider is None:
@@ -452,49 +461,17 @@ class ContextCompressor:
         # 边界: 中段去掉旧摘要后为空(只剩旧摘要+噪声) → 透传 prior,不丢(不调模型)。
         middle_text = _render_transcript(middle_for_summary)
         if not middle_text.strip():
-            if prior_summary:
-                summary_message = _summary_message(prior_summary, source_messages=work)
-                has_anchor = any(
-                    m.get("role") == "system"
-                    and str(m.get("content") or "").startswith("[目标锚定]")
-                    for m in system_msgs
-                )
-                anchor_msgs = (
-                    []
-                    if has_anchor
-                    else _build_goal_anchor(
-                        goal_text,
-                        pending_tasks,
-                        metadata_enabled=_metadata_enabled(work),
-                        anchor_after=_latest_fragment_id(system_msgs),
-                    )
-                )
-                new_messages = _sanitize_tool_pairs(
-                    list(system_msgs)
-                    + anchor_msgs
-                    + list(first_chunk)
-                    + [summary_message]
-                    + list(last_chunk)
-                )
-                if not _compression_preserves_request_boundary(work, new_messages):
-                    return CompressionResult(
-                        messages=(_sanitize_tool_pairs(work) if n_micro > 0 else list(messages)),
-                        compressed=n_micro > 0,
-                        latency_ms=(time.monotonic() - start) * 1000.0,
-                        error="request_boundary_changed",
-                        meta={"tool_results_pruned": n_micro},
-                    )
-                return CompressionResult(
-                    messages=new_messages,
-                    compressed=True,
-                    latency_ms=(time.monotonic() - start) * 1000.0,
-                    meta={"reason": "prior_summary_passthrough", "tool_results_pruned": n_micro},
-                )
-            return CompressionResult(
-                messages=_sanitize_tool_pairs(work) if n_micro > 0 else list(work),
-                compressed=n_micro > 0,
-                latency_ms=(time.monotonic() - start) * 1000.0,
-                meta={"reason": "empty_middle_after_microcompact", "tool_results_pruned": n_micro},
+            return self._finish_short_circuit(
+                first_chunk,
+                goal_text=goal_text,
+                last_chunk=last_chunk,
+                messages=messages,
+                n_micro=n_micro,
+                pending_tasks=pending_tasks,
+                prior_summary=prior_summary,
+                start=start,
+                system_msgs=system_msgs,
+                work=work,
             )
 
         input_tokens = _approx_tokens(middle_text)
@@ -553,6 +530,32 @@ class ContextCompressor:
         # 任务)→ 不让它落地。优先回退到上一条**干净** prior(_extract_prior_summary
         # 已保证 prior 非反射);无干净 prior 时只能保留并告警(WI-4a 目标 always-on
         # system 段仍护任务连续性,反射只是让本条摘要质量差,不致命)。
+        output_tokens, summary_text = self._guard_reflected_summary(prior_summary, summary_text)
+        new_messages = self._merged_messages(
+            first_chunk,
+            goal_text=goal_text,
+            last_chunk=last_chunk,
+            pending_tasks=pending_tasks,
+            summary_text=summary_text,
+            system_msgs=system_msgs,
+            work=work,
+        )
+        return self._finish_bounded_compression(
+            first_chunk,
+            input_tokens=input_tokens,
+            last_chunk=last_chunk,
+            messages=messages,
+            middle_chunk=middle_chunk,
+            n_micro=n_micro,
+            new_messages=new_messages,
+            output_tokens=output_tokens,
+            resolved_model=resolved_model,
+            start=start,
+            summary_text=summary_text,
+            work=work,
+        )
+
+    def _guard_reflected_summary(self, prior_summary, summary_text):
         reflective = _looks_reflective(summary_text)
         if reflective:
             logger.warning(
@@ -564,6 +567,151 @@ class ContextCompressor:
                 summary_text = prior_summary
 
         output_tokens = _approx_tokens(summary_text)
+        return output_tokens, summary_text
+
+    def _finish_bounded_compression(
+        self,
+        first_chunk,
+        *,
+        input_tokens,
+        last_chunk,
+        messages: list[dict[str, Any]],
+        middle_chunk,
+        n_micro,
+        new_messages,
+        output_tokens,
+        resolved_model: str | None,
+        start,
+        summary_text,
+        work,
+    ) -> CompressionResult:
+        if not _compression_preserves_request_boundary(work, new_messages):
+            logger.error(
+                "context_compressor.request_boundary_guard_failed",
+                summarized_msgs=len(middle_chunk),
+            )
+            fallback = _sanitize_tool_pairs(work) if n_micro > 0 else list(messages)
+            return CompressionResult(
+                messages=fallback,
+                compressed=n_micro > 0,
+                input_tokens=input_tokens,
+                latency_ms=(time.monotonic() - start) * 1000.0,
+                error="request_boundary_changed",
+                meta={"tool_results_pruned": n_micro},
+            )
+
+        # Reduction ratio is measured on the rolled-up middle only —
+        # preserves the "40% reduction" post-condition in §13.5.
+        return self._finish_compression(
+            first_chunk,
+            input_tokens=input_tokens,
+            last_chunk=last_chunk,
+            middle_chunk=middle_chunk,
+            new_messages=new_messages,
+            output_tokens=output_tokens,
+            resolved_model=resolved_model,
+            start=start,
+            summary_text=summary_text,
+        )
+
+    def _finish_with_prior_summary(
+        self, first_chunk, *, last_chunk, n_micro, prior_summary, start, system_msgs, work
+    ) -> CompressionResult:
+        if prior_summary:
+            summary_message = _summary_message(prior_summary, source_messages=work)
+            new_messages = _sanitize_tool_pairs(
+                list(system_msgs) + list(first_chunk) + [summary_message] + list(last_chunk)
+            )
+            if _compression_preserves_request_boundary(work, new_messages):
+                return CompressionResult(
+                    messages=new_messages,
+                    compressed=True,
+                    latency_ms=(time.monotonic() - start) * 1000.0,
+                    meta={
+                        "reason": "prior_summary_passthrough",
+                        "tool_results_pruned": n_micro,
+                    },
+                )
+        # Nothing to compress — window is too short.
+        return CompressionResult(
+            messages=_sanitize_tool_pairs(work) if n_micro > 0 else list(work),
+            compressed=n_micro > 0,
+            latency_ms=(time.monotonic() - start) * 1000.0,
+            meta={
+                "reason": "no_middle_to_summarize",
+                "tool_results_pruned": n_micro,
+            },
+        )
+
+    def _finish_short_circuit(
+        self,
+        first_chunk,
+        *,
+        goal_text: str | None,
+        last_chunk,
+        messages: list[dict[str, Any]],
+        n_micro,
+        pending_tasks: list[str] | None,
+        prior_summary,
+        start,
+        system_msgs,
+        work,
+    ) -> CompressionResult:
+        if prior_summary:
+            summary_message = _summary_message(prior_summary, source_messages=work)
+            has_anchor = any(
+                m.get("role") == "system" and str(m.get("content") or "").startswith("[目标锚定]")
+                for m in system_msgs
+            )
+            anchor_msgs = (
+                []
+                if has_anchor
+                else _build_goal_anchor(
+                    goal_text,
+                    pending_tasks,
+                    metadata_enabled=_metadata_enabled(work),
+                    anchor_after=_latest_fragment_id(system_msgs),
+                )
+            )
+            new_messages = _sanitize_tool_pairs(
+                list(system_msgs)
+                + anchor_msgs
+                + list(first_chunk)
+                + [summary_message]
+                + list(last_chunk)
+            )
+            if not _compression_preserves_request_boundary(work, new_messages):
+                return CompressionResult(
+                    messages=(_sanitize_tool_pairs(work) if n_micro > 0 else list(messages)),
+                    compressed=n_micro > 0,
+                    latency_ms=(time.monotonic() - start) * 1000.0,
+                    error="request_boundary_changed",
+                    meta={"tool_results_pruned": n_micro},
+                )
+            return CompressionResult(
+                messages=new_messages,
+                compressed=True,
+                latency_ms=(time.monotonic() - start) * 1000.0,
+                meta={"reason": "prior_summary_passthrough", "tool_results_pruned": n_micro},
+            )
+        return CompressionResult(
+            messages=_sanitize_tool_pairs(work) if n_micro > 0 else list(work),
+            compressed=n_micro > 0,
+            latency_ms=(time.monotonic() - start) * 1000.0,
+            meta={"reason": "empty_middle_after_microcompact", "tool_results_pruned": n_micro},
+        )
+
+    def _merged_messages(
+        self,
+        first_chunk,
+        *,
+        goal_text: str | None,
+        last_chunk,
+        pending_tasks: list[str] | None,
+        summary_text,
+        system_msgs,
+        work,
+    ):
         summary_message = _summary_message(summary_text, source_messages=work)
 
         # WI-4a 去重: 整合路径里 agent_loop 已注入 always-on [目标锚定] system,
@@ -591,23 +739,21 @@ class ContextCompressor:
             + [summary_message]
             + list(last_chunk)
         )
-        if not _compression_preserves_request_boundary(work, new_messages):
-            logger.error(
-                "context_compressor.request_boundary_guard_failed",
-                summarized_msgs=len(middle_chunk),
-            )
-            fallback = _sanitize_tool_pairs(work) if n_micro > 0 else list(messages)
-            return CompressionResult(
-                messages=fallback,
-                compressed=n_micro > 0,
-                input_tokens=input_tokens,
-                latency_ms=(time.monotonic() - start) * 1000.0,
-                error="request_boundary_changed",
-                meta={"tool_results_pruned": n_micro},
-            )
+        return new_messages
 
-        # Reduction ratio is measured on the rolled-up middle only —
-        # preserves the "40% reduction" post-condition in §13.5.
+    def _finish_compression(
+        self,
+        first_chunk,
+        *,
+        input_tokens,
+        last_chunk,
+        middle_chunk,
+        new_messages,
+        output_tokens,
+        resolved_model: str | None,
+        start,
+        summary_text,
+    ) -> CompressionResult:
         reduction = 0.0
         if input_tokens > 0:
             reduction = max(0.0, 1.0 - (output_tokens / input_tokens))

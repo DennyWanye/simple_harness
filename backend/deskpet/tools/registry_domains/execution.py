@@ -571,6 +571,27 @@ class ExecutionMixin(ToolRegistryCore):
         # **不执行** —— 把「流程提示」升级为「物理只读」。只读工具放行。
         # 默认无 session 处于只读（features.plan_read_only OFF → main.py 永不置
         # 位）→ 此分支 short-circuit → 字节级 BC。
+        return await self._execute_tool_checked(
+            active_policy,
+            execution_context=execution_context,
+            name=name,
+            params=params,
+            session_id=session_id,
+            spec=spec,
+            task_id=task_id,
+        )
+
+    async def _execute_tool_checked(
+        self,
+        active_policy: ToolPolicySnapshot | None,
+        *,
+        execution_context: ToolExecutionContext | None,
+        name: str,
+        params: dict[str, Any],
+        session_id: str,
+        spec,
+        task_id: str,
+    ) -> dict[str, Any]:
         if (
             session_id in self._plan_read_only_sessions
             and spec.permission_category in _WRITE_PERMISSION_CATEGORIES
@@ -623,28 +644,7 @@ class ExecutionMixin(ToolRegistryCore):
         # for local handlers and must never be forwarded to a remote MCP
         # process. MCP handlers receive only the arguments exposed in their
         # schema and explicitly supplied by the model.
-        if not spec.source.startswith("mcp:"):
-            merged_params.update(self._session_context.get(session_id, {}))
-        merged_params.update(dict(params or {}))
-
-        # P4-S22: run sync handlers in a thread executor. Some new
-        # Code-mode tools (todo_write, agent) need to bridge sync→async
-        # via ``asyncio.run_coroutine_threadsafe``, which deadlocks when
-        # called from the main event-loop thread (the handler blocks
-        # waiting for a coro that can't dispatch because the thread is
-        # blocked). Running every sync handler in a worker thread is
-        # cheap and uniformly safe; handlers that are already async
-        # (rare) get awaited directly.
-        # P5-S1: tool-level hard timeout. Default 60s; specific tools may
-        # override via ``ToolSpec.timeout_seconds`` (e.g. bash_run = 300s).
-        # On timeout: return a uniform ``tool_timeout`` error envelope so
-        # the agent loop carries on instead of dying with TimeoutError.
-        #
-        # WI-T2.3 v3 P0 修：dispatch 真实开始时间。原 emit_receipt 处用了两次
-        # datetime.now() → duration_ms 永远 ~0μs（last-mile round2 P0-3）。
-        # 这里捕真 started_at，emit_receipt 时用它对账 ended_at。
-
-        _started_at = _dt.now(UTC)
+        _started_at = self._sanitize_mcp_arguments(merged_params, params, session_id, spec)
         try:
             # WI-T5.1 v3 default_timeout_seconds：cfg 兜底 ToolSpec 未配 timeout
             # 时的默认值。ToolSpec.timeout_seconds 默认 60.0，cfg 60.0 → 与
@@ -700,6 +700,44 @@ class ExecutionMixin(ToolRegistryCore):
                 await self._breaker.record_call(session_id, name, ok=False)
             return {"ok": False, "result": None, "error": err}
 
+        return await self._finish_tool_result(
+            _started_at,
+            merged_params=merged_params,
+            name=name,
+            result=result,
+            session_id=session_id,
+        )
+
+    def _sanitize_mcp_arguments(
+        self, merged_params: dict[str, Any], params: dict[str, Any], session_id: str, spec
+    ):
+        if not spec.source.startswith("mcp:"):
+            merged_params.update(self._session_context.get(session_id, {}))
+        merged_params.update(dict(params or {}))
+
+        # P4-S22: run sync handlers in a thread executor. Some new
+        # Code-mode tools (todo_write, agent) need to bridge sync→async
+        # via ``asyncio.run_coroutine_threadsafe``, which deadlocks when
+        # called from the main event-loop thread (the handler blocks
+        # waiting for a coro that can't dispatch because the thread is
+        # blocked). Running every sync handler in a worker thread is
+        # cheap and uniformly safe; handlers that are already async
+        # (rare) get awaited directly.
+        # P5-S1: tool-level hard timeout. Default 60s; specific tools may
+        # override via ``ToolSpec.timeout_seconds`` (e.g. bash_run = 300s).
+        # On timeout: return a uniform ``tool_timeout`` error envelope so
+        # the agent loop carries on instead of dying with TimeoutError.
+        #
+        # WI-T2.3 v3 P0 修：dispatch 真实开始时间。原 emit_receipt 处用了两次
+        # datetime.now() → duration_ms 永远 ~0μs（last-mile round2 P0-3）。
+        # 这里捕真 started_at，emit_receipt 时用它对账 ended_at。
+
+        _started_at = _dt.now(UTC)
+        return _started_at
+
+    async def _finish_tool_result(
+        self, _started_at, *, merged_params: dict[str, Any], name: str, result, session_id: str
+    ) -> dict[str, Any]:
         if not isinstance(result, str):
             try:
                 result = json.dumps(result, ensure_ascii=False)

@@ -39,93 +39,7 @@ class RecoveryMixin(CapabilityPackManagerCore):
             )
 
         if operation.phase == "bound" and intent.status == "committed":
-            if operation.kind == "uninstall":
-                try:
-                    old_binding = self._binding_from_intent_payload(intent.old_binding)
-                    if old_binding is None:
-                        raise CapabilityManagerError(
-                            "publish_binding_projection_invalid",
-                            "uninstall recovery is missing the old binding",
-                        )
-                    await self.publisher.stop_binding(old_binding)
-                except Exception as exc:
-                    return await self.store.fail_operation(
-                        operation.operation_id,
-                        status="unknown",
-                        error={
-                            "code": str(
-                                getattr(
-                                    exc,
-                                    "code",
-                                    "runtime_stop_reconciliation_failed",
-                                )
-                            ),
-                            "message": str(exc),
-                            "phase": operation.phase,
-                        },
-                    )
-            new_payload = intent.new_binding
-            new_binding = await self.store.get_binding(
-                str(new_payload.get("scope") or ""),
-                str(new_payload.get("scope_key") or ""),
-                str(new_payload.get("capability_id") or ""),
-                owner_key=(
-                    None if new_payload.get("owner_key") is None else str(new_payload["owner_key"])
-                ),
-            )
-            if (
-                new_binding is None
-                or new_binding.version != new_payload.get("version")
-                or new_binding.manifest_hash != new_payload.get("manifest_hash")
-                or new_binding.active != bool(new_payload.get("active", True))
-            ):
-                return await self.store.fail_operation(
-                    operation.operation_id,
-                    status="unknown",
-                    error={
-                        "code": "publish_binding_projection_invalid",
-                        "phase": operation.phase,
-                    },
-                )
-            version = await self.store.get_version(
-                new_binding.capability_id,
-                new_binding.version,
-                new_binding.manifest_hash,
-            )
-            if version is None:
-                return await self.store.fail_operation(
-                    operation.operation_id,
-                    status="unknown",
-                    error={
-                        "code": "completed_version_missing",
-                        "phase": operation.phase,
-                    },
-                )
-            catalog_evidence = dict(
-                await self.store.get_phase_evidence(
-                    operation.operation_id,
-                    "catalog_swapped",
-                )
-                or {}
-            )
-            receipt_evidence = await self._manager_receipt_evidence(
-                operation_id=operation.operation_id,
-                action=operation.kind,
-                binding=new_binding,
-                registry_revision=int(
-                    catalog_evidence.get("registry_revision") or intent.expected_registry_revision
-                ),
-                tool_spec_fingerprints=(version.expected_tool_fingerprints),
-            )
-            return await self.store.commit_phase(
-                operation.operation_id,
-                "published",
-                evidence={
-                    "recovered": True,
-                    "intent_id": intent.intent_id,
-                    **receipt_evidence,
-                },
-            )
+            return await self._recover_uninstall_operation(intent, operation)
 
         try:
             reconciliation = await self.publisher.reconcile(intent)
@@ -139,6 +53,11 @@ class RecoveryMixin(CapabilityPackManagerCore):
                     "phase": operation.phase,
                 },
             )
+        return await self._recover_after_reconciliation(intent, operation, reconciliation)
+
+    async def _recover_after_reconciliation(
+        self, intent, operation: CapabilityOperationRecord, reconciliation
+    ) -> CapabilityOperationRecord:
         if reconciliation.status == "rolled_back":
             await self.store.advance_publish_intent(
                 intent.intent_id,
@@ -252,38 +171,16 @@ class RecoveryMixin(CapabilityPackManagerCore):
             expected_generation = 0 if old_binding is None else old_binding.generation
             enabled = bool(new_binding.get("active", True))
             try:
-                async with self.store.write_transaction() as db:
-                    tx = self.store.bind(db)
-                    binding = await tx.set_binding(
-                        scope=scope,
-                        scope_key=scope_key,
-                        pack_id=capability_id,
-                        version=str(new_binding["version"]),
-                        manifest_hash=str(new_binding["manifest_hash"]),
-                        expected_generation=expected_generation,
-                        enabled=enabled,
-                        owner_key=(
-                            None
-                            if new_binding.get("owner_key") is None
-                            else str(new_binding["owner_key"])
-                        ),
-                        management_policy=(
-                            None
-                            if new_binding.get("management_policy") is None
-                            else str(new_binding["management_policy"])
-                        ),
-                    )
-                    await tx.advance_publish_intent(
-                        intent.intent_id, phase="bound", status="committed"
-                    )
-                    await tx.commit_phase(
-                        operation.operation_id,
-                        "bound",
-                        evidence={
-                            "binding_id": binding.binding_id,
-                            "recovered": True,
-                        },
-                    )
+                await self._recover_bind_publication(
+                    capability_id,
+                    enabled=enabled,
+                    expected_generation=expected_generation,
+                    intent=intent,
+                    new_binding=new_binding,
+                    operation=operation,
+                    scope=scope,
+                    scope_key=scope_key,
+                )
             except CapabilityStoreConflict as exc:
                 return await self.store.fail_operation(
                     operation.operation_id,
@@ -296,6 +193,143 @@ class RecoveryMixin(CapabilityPackManagerCore):
                 )
             operation = await self.store.get_operation(operation.operation_id) or operation
 
+        return await self._recover_unbound_operation(intent, new_binding, operation)
+
+    async def _recover_uninstall_operation(
+        self, intent, operation: CapabilityOperationRecord
+    ) -> CapabilityOperationRecord:
+        if operation.kind == "uninstall":
+            try:
+                old_binding = self._binding_from_intent_payload(intent.old_binding)
+                if old_binding is None:
+                    raise CapabilityManagerError(
+                        "publish_binding_projection_invalid",
+                        "uninstall recovery is missing the old binding",
+                    )
+                await self.publisher.stop_binding(old_binding)
+            except Exception as exc:
+                return await self.store.fail_operation(
+                    operation.operation_id,
+                    status="unknown",
+                    error={
+                        "code": str(
+                            getattr(
+                                exc,
+                                "code",
+                                "runtime_stop_reconciliation_failed",
+                            )
+                        ),
+                        "message": str(exc),
+                        "phase": operation.phase,
+                    },
+                )
+        new_payload = intent.new_binding
+        new_binding = await self.store.get_binding(
+            str(new_payload.get("scope") or ""),
+            str(new_payload.get("scope_key") or ""),
+            str(new_payload.get("capability_id") or ""),
+            owner_key=(
+                None if new_payload.get("owner_key") is None else str(new_payload["owner_key"])
+            ),
+        )
+        if (
+            new_binding is None
+            or new_binding.version != new_payload.get("version")
+            or new_binding.manifest_hash != new_payload.get("manifest_hash")
+            or new_binding.active != bool(new_payload.get("active", True))
+        ):
+            return await self.store.fail_operation(
+                operation.operation_id,
+                status="unknown",
+                error={
+                    "code": "publish_binding_projection_invalid",
+                    "phase": operation.phase,
+                },
+            )
+        version = await self.store.get_version(
+            new_binding.capability_id,
+            new_binding.version,
+            new_binding.manifest_hash,
+        )
+        if version is None:
+            return await self.store.fail_operation(
+                operation.operation_id,
+                status="unknown",
+                error={
+                    "code": "completed_version_missing",
+                    "phase": operation.phase,
+                },
+            )
+        catalog_evidence = dict(
+            await self.store.get_phase_evidence(
+                operation.operation_id,
+                "catalog_swapped",
+            )
+            or {}
+        )
+        receipt_evidence = await self._manager_receipt_evidence(
+            operation_id=operation.operation_id,
+            action=operation.kind,
+            binding=new_binding,
+            registry_revision=int(
+                catalog_evidence.get("registry_revision") or intent.expected_registry_revision
+            ),
+            tool_spec_fingerprints=(version.expected_tool_fingerprints),
+        )
+        return await self.store.commit_phase(
+            operation.operation_id,
+            "published",
+            evidence={
+                "recovered": True,
+                "intent_id": intent.intent_id,
+                **receipt_evidence,
+            },
+        )
+
+    async def _recover_bind_publication(
+        self,
+        capability_id,
+        *,
+        enabled,
+        expected_generation,
+        intent,
+        new_binding,
+        operation: CapabilityOperationRecord,
+        scope,
+        scope_key,
+    ) -> None:
+        async with self.store.write_transaction() as db:
+            tx = self.store.bind(db)
+            binding = await tx.set_binding(
+                scope=scope,
+                scope_key=scope_key,
+                pack_id=capability_id,
+                version=str(new_binding["version"]),
+                manifest_hash=str(new_binding["manifest_hash"]),
+                expected_generation=expected_generation,
+                enabled=enabled,
+                owner_key=(
+                    None if new_binding.get("owner_key") is None else str(new_binding["owner_key"])
+                ),
+                management_policy=(
+                    None
+                    if new_binding.get("management_policy") is None
+                    else str(new_binding["management_policy"])
+                ),
+            )
+            await tx.advance_publish_intent(intent.intent_id, phase="bound", status="committed")
+            await tx.commit_phase(
+                operation.operation_id,
+                "bound",
+                evidence={
+                    "binding_id": binding.binding_id,
+                    "recovered": True,
+                },
+            )
+
+    async def _recover_unbound_operation(
+        self, intent, new_binding, operation: CapabilityOperationRecord
+    ) -> CapabilityOperationRecord:
         if operation.phase != "bound":
             return await self.store.fail_operation(
                 operation.operation_id,

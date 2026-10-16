@@ -507,41 +507,47 @@ class ProductVenueRunAdapter:
         admission = None
 
         request_payload = preparation.request_payload
-        if turn.active_execution_budget_seconds is not None:
-            request_payload["active_execution_budget_seconds"] = float(
-                turn.active_execution_budget_seconds
-            )
-        request_payload.update(
-            {
-                "root_run_id": root_ref.run_id,
-                "task_scope_id": task_scope_id,
-                "task_work_context": {
-                    "session_id": work_context.session_id,
-                    "root_run_id": work_context.root_run_id,
-                    "task_scope_id": work_context.task_scope_id,
-                    "workspace_root": work_context.workspace_root,
-                    "workspace_source": work_context.workspace_source,
-                    "binding_version": work_context.binding_version,
-                },
-                "conversation_boundary": {
-                    "boundary_ref": conversation.boundary_ref,
-                    "session_id": conversation.session_id,
-                    "root_run_id": conversation.root_run_id,
-                    "task_scope_id": conversation.task_scope_id,
-                    "seed_message_refs": list(conversation.seed_message_refs),
-                    "continuation_message_refs": list(conversation.continuation_message_refs),
-                    "version": conversation.version,
-                },
-                "task_run_projection": {
-                    "projection_id": projection.projection_id,
-                    "session_id": projection.session_id,
-                    "root_run_id": projection.root_run_id,
-                    "task_scope_id": projection.task_scope_id,
-                    "ui_state": projection.ui_state,
-                    "version": projection.version,
-                },
-            }
+        self._apply_turn_budgets(
+            conversation,
+            projection=projection,
+            request_payload=request_payload,
+            root_ref=root_ref,
+            task_scope_id=task_scope_id,
+            turn=turn,
+            work_context=work_context,
         )
+        handle = await self._open_prepared_run(
+            admission,
+            effective_host=effective_host,
+            host=host,
+            prepared=prepared,
+            proposed_tools=proposed_tools,
+            provider_launch_snapshot=provider_launch_snapshot,
+            request_payload=request_payload,
+            root_ref=root_ref,
+            services=services,
+            tool_registry=tool_registry,
+            turn=turn,
+        )
+        if admission is not None:
+            await domain_sink.store_plan({**dict(admission.presentation), "run_id": handle.run_id})
+        return self._session(handle, presentation_context)
+
+    async def _open_prepared_run(
+        self,
+        admission,
+        *,
+        effective_host,
+        host: HostContext,
+        prepared,
+        proposed_tools: Sequence[str],
+        provider_launch_snapshot: ProviderLaunchSnapshot | None,
+        request_payload,
+        root_ref,
+        services: Mapping[str, Any],
+        tool_registry: Any,
+        turn: TurnInput,
+    ):
         proposed_tool_names = tuple(str(name) for name in proposed_tools)
         prepared_catalog_lease: Any | None = None
         companion_state = prepared.companion_authority_state
@@ -589,64 +595,32 @@ class ProductVenueRunAdapter:
                 project_identity=host.project_identity or None,
                 user_key=str(getattr(platform, "global_capability_scope_key", owner_key)),
             )
-            prepared_catalog_lease = await platform.prepare_run_catalog_lease(
-                scope=scope,
+            (
+                base_run_context,
+                exact_tools,
+                prepared_catalog_lease,
+            ) = await self._prepare_catalog_lease(
+                context_ref,
                 owner_key=owner_key,
+                platform=platform,
+                prepared=prepared,
                 prepared_tool_set=prepared_tool_set,
-                prepared_tool_set_fingerprint=context_ref,
-                run_id=root_ref.run_id,
-                root_run_id=root_ref.run_id,
-                request_id=turn.request_id,
-                turn_id=turn.turn_id,
-                owner_operation_id=f"run-start:{root_ref.run_id}:1",
+                root_ref=root_ref,
+                scope=scope,
+                turn=turn,
             )
-            base_run_context = prepared.run_prepared_context or PreparedRunContextV1(
-                persistence_required=True
-            )
-            capture_envelope = dict(prepared_catalog_lease.prepared_tool_set_envelope)
-            if (
-                fingerprint_json(capture_envelope)
-                != prepared_catalog_lease.prepared_tool_set_capture_hash
-                or capture_envelope.get("external_ref") != context_ref
-            ):
-                raise RuntimeError("prepared ToolSet capture envelope is inconsistent")
-            exact_tools = capture_envelope.get("exact_tools")
-            if (
-                isinstance(exact_tools, (str, bytes))
-                or not isinstance(exact_tools, (list, tuple))
-                or any(not isinstance(item, Mapping) for item in exact_tools)
-            ):
-                raise RuntimeError("prepared ToolSet exact capture is unavailable")
             lease_descriptor = prepared_catalog_lease.descriptor
             if companion_state is not None:
-                capture = CompanionCatalogLeaseCaptureV1(
-                    run_catalog_content_stamp=(prepared_catalog_lease.run_catalog_content_stamp),
-                    process_catalog_stamp=(prepared_catalog_lease.process_catalog_stamp),
-                    catalog_snapshot_ref=(prepared_catalog_lease.snapshot_ref),
-                    capability_lease_intent_ref=(prepared_catalog_lease.lease_intent_id),
-                    exact_tools=tuple(copy.deepcopy(dict(item)) for item in exact_tools),
-                    lease_entries=_companion_catalog_lease_entries(
-                        prepared_catalog_lease.lease_entries
-                    ),
-                )
-                finalized = await companion_finalizer.finalize_after_catalog(
-                    companion_state,
-                    capture,
-                    run_id=root_ref.run_id,
-                )
-                if not isinstance(finalized, FinalizedCompanionTurnV1):
-                    raise RuntimeError("companion turn authority finalization is invalid")
-                if (
-                    finalized.preparation_id != companion_state.preparation_id
-                    or finalized.owner_key != owner_key
-                    or finalized.profile_generation != profile_generation
-                    or finalized.binding_epoch != binding_epoch
-                ):
-                    raise RuntimeError("companion turn authority identity drifted")
-                base_run_context = replace(
+                base_run_context, finalized = await self._finalize_catalog_lease(
                     base_run_context,
-                    product_snapshot_ref=finalized.product_snapshot_ref,
-                    product_snapshot_hash=finalized.product_snapshot_hash,
+                    binding_epoch=binding_epoch,
+                    companion_finalizer=companion_finalizer,
+                    companion_state=companion_state,
+                    exact_tools=exact_tools,
+                    owner_key=owner_key,
+                    prepared_catalog_lease=prepared_catalog_lease,
+                    profile_generation=profile_generation,
+                    root_ref=root_ref,
                 )
                 prepared = replace(
                     prepared,
@@ -658,110 +632,19 @@ class ProductVenueRunAdapter:
                 )
             else:
                 finalized_selection = None
-            host_extensions = dict(base_run_context.host_extensions)
-            host_extensions[lease_descriptor.kind] = lease_descriptor
-            host_extension_payloads = dict(base_run_context.host_extension_payloads)
-            prepared_tool_names = tuple(
-                capability.ref.name
-                for capability in (
-                    *prepared_tool_set.direct,
-                    *prepared_tool_set.activated,
-                )
-            )
-
-            presentation_policies = tuple(
-                compile_tool_presentation_policy(tool_spec)
-                for tool_name in sorted(set(prepared_tool_names))
-                if (tool_spec := tool_registry.get(tool_name)) is not None
-            )
-            presentation_extension = (
-                ToolPresentationSnapshotExtension(presentation_policies)
-                if presentation_policies
-                else None
-            )
-            selection_kind = "deskpet.companion.selection.v1"
-            selection_payload = (
-                finalized_selection
-                if finalized_selection is not None
-                else base_run_context.host_extension_payloads.get(selection_kind)
-            )
-            if selection_payload is not None:
-                if finalized_selection is None:
-                    selection_payload = _enrich_companion_selection_exact_tools(
-                        selection_payload,
-                        exact_tools,
-                    )
-                selection_hash = fingerprint_json(selection_payload)
-                host_extensions[selection_kind] = HostExtensionRefV1(
-                    kind=selection_kind,
-                    ref=f"companion-selection:{selection_hash}",
-                    content_hash=selection_hash,
-                )
-                host_extension_payloads[selection_kind] = selection_payload
-            snapshot_extensions = (
-                {} if selection_payload is None else {selection_kind: dict(selection_payload)}
-            )
-            global_skill_entries = tuple(
-                copy.deepcopy(dict(item))
-                for item in prepared_catalog_lease.lease_entries
-                if isinstance(item.get("selected_binding"), Mapping)
-                and str(item["selected_binding"].get("scope") or "") == "user"
-                and str(item["selected_binding"].get("scope_key") or "").startswith("user:v2:")
-            )
-            if global_skill_entries:
-                global_skill_payload = {
-                    "schema": "global-skill-run-lease-v2",
-                    "entries": list(global_skill_entries),
-                }
-                global_skill_hash = fingerprint_json(global_skill_payload)
-                global_skill_kind = "global_skill_catalog"
-                host_extensions[global_skill_kind] = HostExtensionRefV1(
-                    kind=global_skill_kind,
-                    ref=f"global-skill-lease:{global_skill_hash}",
-                    content_hash=global_skill_hash,
-                )
-                host_extension_payloads[global_skill_kind] = global_skill_payload
-            capability_snapshot = {
-                "run_catalog_content_stamp": (prepared_catalog_lease.run_catalog_content_stamp),
-                "process_catalog_stamp": (prepared_catalog_lease.process_catalog_stamp),
-                "catalog_snapshot_ref": prepared_catalog_lease.snapshot_ref,
-                "capability_lease_intent_ref": (prepared_catalog_lease.lease_intent_id),
-                "prepared_tool_set_ref": context_ref,
-                "capability_hash": effective_host.capability_hash,
-                "product_snapshot_ref": (base_run_context.product_snapshot_ref),
-                "host_extensions": snapshot_extensions,
-            }
-            run_prepared_context = replace(
+            run_prepared_context = self._run_prepared_context(
                 base_run_context,
-                persistence_required=True,
-                prepared_tool_ref=context_ref,
-                prepared_tool_hash=context_ref,
-                capability_lease_intent_ref=(prepared_catalog_lease.lease_intent_id),
-                capability_lease_intent_hash=(prepared_catalog_lease.lease_intent_hash),
-                owner_key=owner_key,
-                profile_generation=profile_generation,
                 binding_epoch=binding_epoch,
-                prepared_tool_names=prepared_tool_names,
-                capability_snapshot=capability_snapshot,
-                host_extensions=host_extensions,
-                host_extension_payloads=host_extension_payloads,
-                start_commit_extensions=(
-                    *base_run_context.start_commit_extensions,
-                    prepared_catalog_lease.start_commit_extension,
-                    *((presentation_extension,) if presentation_extension is not None else ()),
-                ),
-                after_start_commit_handshakes=(
-                    *base_run_context.after_start_commit_handshakes,
-                    prepared_catalog_lease.after_start_handshake,
-                ),
-                terminal_commit_extensions=(
-                    *base_run_context.terminal_commit_extensions,
-                    prepared_catalog_lease.terminal_commit_extension,
-                ),
-                after_terminal_commit_cleanup=(
-                    *base_run_context.after_terminal_commit_cleanup,
-                    prepared_catalog_lease.after_terminal_cleanup,
-                ),
+                context_ref=context_ref,
+                effective_host=effective_host,
+                exact_tools=exact_tools,
+                finalized_selection=finalized_selection,
+                lease_descriptor=lease_descriptor,
+                owner_key=owner_key,
+                prepared_catalog_lease=prepared_catalog_lease,
+                prepared_tool_set=prepared_tool_set,
+                profile_generation=profile_generation,
+                tool_registry=tool_registry,
             )
             prepared = replace(
                 prepared,
@@ -783,6 +666,286 @@ class ProductVenueRunAdapter:
             proposed_tool_names = tuple(run_prepared_context.prepared_tool_names)
         elif services.get("capability_platform") is not None:
             raise RuntimeError("new durable run requires an exact prepared tool-set capture")
+        handle = await self._start_run_handle(
+            admission,
+            effective_host=effective_host,
+            prepared=prepared,
+            prepared_catalog_lease=prepared_catalog_lease,
+            proposed_tool_names=proposed_tool_names,
+            provider_launch_snapshot=provider_launch_snapshot,
+            request_payload=request_payload,
+            turn=turn,
+        )
+        if prepared_catalog_lease is not None:
+            await platform.require_run_catalog_ready(handle.run_id)
+        return handle
+
+    def _apply_turn_budgets(
+        self,
+        conversation,
+        *,
+        projection,
+        request_payload,
+        root_ref,
+        task_scope_id,
+        turn: TurnInput,
+        work_context,
+    ) -> None:
+        if turn.active_execution_budget_seconds is not None:
+            request_payload["active_execution_budget_seconds"] = float(
+                turn.active_execution_budget_seconds
+            )
+        request_payload.update(
+            {
+                "root_run_id": root_ref.run_id,
+                "task_scope_id": task_scope_id,
+                "task_work_context": {
+                    "session_id": work_context.session_id,
+                    "root_run_id": work_context.root_run_id,
+                    "task_scope_id": work_context.task_scope_id,
+                    "workspace_root": work_context.workspace_root,
+                    "workspace_source": work_context.workspace_source,
+                    "binding_version": work_context.binding_version,
+                },
+                "conversation_boundary": {
+                    "boundary_ref": conversation.boundary_ref,
+                    "session_id": conversation.session_id,
+                    "root_run_id": conversation.root_run_id,
+                    "task_scope_id": conversation.task_scope_id,
+                    "seed_message_refs": list(conversation.seed_message_refs),
+                    "continuation_message_refs": list(conversation.continuation_message_refs),
+                    "version": conversation.version,
+                },
+                "task_run_projection": {
+                    "projection_id": projection.projection_id,
+                    "session_id": projection.session_id,
+                    "root_run_id": projection.root_run_id,
+                    "task_scope_id": projection.task_scope_id,
+                    "ui_state": projection.ui_state,
+                    "version": projection.version,
+                },
+            }
+        )
+
+    async def _prepare_catalog_lease(
+        self,
+        context_ref,
+        *,
+        owner_key,
+        platform,
+        prepared,
+        prepared_tool_set,
+        root_ref,
+        scope,
+        turn: TurnInput,
+    ):
+        prepared_catalog_lease = await platform.prepare_run_catalog_lease(
+            scope=scope,
+            owner_key=owner_key,
+            prepared_tool_set=prepared_tool_set,
+            prepared_tool_set_fingerprint=context_ref,
+            run_id=root_ref.run_id,
+            root_run_id=root_ref.run_id,
+            request_id=turn.request_id,
+            turn_id=turn.turn_id,
+            owner_operation_id=f"run-start:{root_ref.run_id}:1",
+        )
+        base_run_context = prepared.run_prepared_context or PreparedRunContextV1(
+            persistence_required=True
+        )
+        capture_envelope = dict(prepared_catalog_lease.prepared_tool_set_envelope)
+        if (
+            fingerprint_json(capture_envelope)
+            != prepared_catalog_lease.prepared_tool_set_capture_hash
+            or capture_envelope.get("external_ref") != context_ref
+        ):
+            raise RuntimeError("prepared ToolSet capture envelope is inconsistent")
+        exact_tools = capture_envelope.get("exact_tools")
+        if (
+            isinstance(exact_tools, (str, bytes))
+            or not isinstance(exact_tools, (list, tuple))
+            or any(not isinstance(item, Mapping) for item in exact_tools)
+        ):
+            raise RuntimeError("prepared ToolSet exact capture is unavailable")
+        return base_run_context, exact_tools, prepared_catalog_lease
+
+    async def _finalize_catalog_lease(
+        self,
+        base_run_context,
+        *,
+        binding_epoch,
+        companion_finalizer,
+        companion_state,
+        exact_tools,
+        owner_key,
+        prepared_catalog_lease: Any | None,
+        profile_generation,
+        root_ref,
+    ):
+        capture = CompanionCatalogLeaseCaptureV1(
+            run_catalog_content_stamp=(prepared_catalog_lease.run_catalog_content_stamp),
+            process_catalog_stamp=(prepared_catalog_lease.process_catalog_stamp),
+            catalog_snapshot_ref=(prepared_catalog_lease.snapshot_ref),
+            capability_lease_intent_ref=(prepared_catalog_lease.lease_intent_id),
+            exact_tools=tuple(copy.deepcopy(dict(item)) for item in exact_tools),
+            lease_entries=_companion_catalog_lease_entries(prepared_catalog_lease.lease_entries),
+        )
+        finalized = await companion_finalizer.finalize_after_catalog(
+            companion_state,
+            capture,
+            run_id=root_ref.run_id,
+        )
+        if not isinstance(finalized, FinalizedCompanionTurnV1):
+            raise RuntimeError("companion turn authority finalization is invalid")
+        if (
+            finalized.preparation_id != companion_state.preparation_id
+            or finalized.owner_key != owner_key
+            or finalized.profile_generation != profile_generation
+            or finalized.binding_epoch != binding_epoch
+        ):
+            raise RuntimeError("companion turn authority identity drifted")
+        base_run_context = replace(
+            base_run_context,
+            product_snapshot_ref=finalized.product_snapshot_ref,
+            product_snapshot_hash=finalized.product_snapshot_hash,
+        )
+        return base_run_context, finalized
+
+    def _run_prepared_context(
+        self,
+        base_run_context,
+        *,
+        binding_epoch,
+        context_ref,
+        effective_host,
+        exact_tools,
+        finalized_selection,
+        lease_descriptor,
+        owner_key,
+        prepared_catalog_lease: Any | None,
+        prepared_tool_set,
+        profile_generation,
+        tool_registry: Any,
+    ):
+        host_extensions = dict(base_run_context.host_extensions)
+        host_extensions[lease_descriptor.kind] = lease_descriptor
+        host_extension_payloads = dict(base_run_context.host_extension_payloads)
+        prepared_tool_names = tuple(
+            capability.ref.name
+            for capability in (
+                *prepared_tool_set.direct,
+                *prepared_tool_set.activated,
+            )
+        )
+
+        presentation_policies = tuple(
+            compile_tool_presentation_policy(tool_spec)
+            for tool_name in sorted(set(prepared_tool_names))
+            if (tool_spec := tool_registry.get(tool_name)) is not None
+        )
+        presentation_extension = (
+            ToolPresentationSnapshotExtension(presentation_policies)
+            if presentation_policies
+            else None
+        )
+        selection_kind = "deskpet.companion.selection.v1"
+        selection_payload = (
+            finalized_selection
+            if finalized_selection is not None
+            else base_run_context.host_extension_payloads.get(selection_kind)
+        )
+        if selection_payload is not None:
+            if finalized_selection is None:
+                selection_payload = _enrich_companion_selection_exact_tools(
+                    selection_payload,
+                    exact_tools,
+                )
+            selection_hash = fingerprint_json(selection_payload)
+            host_extensions[selection_kind] = HostExtensionRefV1(
+                kind=selection_kind,
+                ref=f"companion-selection:{selection_hash}",
+                content_hash=selection_hash,
+            )
+            host_extension_payloads[selection_kind] = selection_payload
+        snapshot_extensions = (
+            {} if selection_payload is None else {selection_kind: dict(selection_payload)}
+        )
+        global_skill_entries = tuple(
+            copy.deepcopy(dict(item))
+            for item in prepared_catalog_lease.lease_entries
+            if isinstance(item.get("selected_binding"), Mapping)
+            and str(item["selected_binding"].get("scope") or "") == "user"
+            and str(item["selected_binding"].get("scope_key") or "").startswith("user:v2:")
+        )
+        if global_skill_entries:
+            global_skill_payload = {
+                "schema": "global-skill-run-lease-v2",
+                "entries": list(global_skill_entries),
+            }
+            global_skill_hash = fingerprint_json(global_skill_payload)
+            global_skill_kind = "global_skill_catalog"
+            host_extensions[global_skill_kind] = HostExtensionRefV1(
+                kind=global_skill_kind,
+                ref=f"global-skill-lease:{global_skill_hash}",
+                content_hash=global_skill_hash,
+            )
+            host_extension_payloads[global_skill_kind] = global_skill_payload
+        capability_snapshot = {
+            "run_catalog_content_stamp": (prepared_catalog_lease.run_catalog_content_stamp),
+            "process_catalog_stamp": (prepared_catalog_lease.process_catalog_stamp),
+            "catalog_snapshot_ref": prepared_catalog_lease.snapshot_ref,
+            "capability_lease_intent_ref": (prepared_catalog_lease.lease_intent_id),
+            "prepared_tool_set_ref": context_ref,
+            "capability_hash": effective_host.capability_hash,
+            "product_snapshot_ref": (base_run_context.product_snapshot_ref),
+            "host_extensions": snapshot_extensions,
+        }
+        run_prepared_context = replace(
+            base_run_context,
+            persistence_required=True,
+            prepared_tool_ref=context_ref,
+            prepared_tool_hash=context_ref,
+            capability_lease_intent_ref=(prepared_catalog_lease.lease_intent_id),
+            capability_lease_intent_hash=(prepared_catalog_lease.lease_intent_hash),
+            owner_key=owner_key,
+            profile_generation=profile_generation,
+            binding_epoch=binding_epoch,
+            prepared_tool_names=prepared_tool_names,
+            capability_snapshot=capability_snapshot,
+            host_extensions=host_extensions,
+            host_extension_payloads=host_extension_payloads,
+            start_commit_extensions=(
+                *base_run_context.start_commit_extensions,
+                prepared_catalog_lease.start_commit_extension,
+                *((presentation_extension,) if presentation_extension is not None else ()),
+            ),
+            after_start_commit_handshakes=(
+                *base_run_context.after_start_commit_handshakes,
+                prepared_catalog_lease.after_start_handshake,
+            ),
+            terminal_commit_extensions=(
+                *base_run_context.terminal_commit_extensions,
+                prepared_catalog_lease.terminal_commit_extension,
+            ),
+            after_terminal_commit_cleanup=(
+                *base_run_context.after_terminal_commit_cleanup,
+                prepared_catalog_lease.after_terminal_cleanup,
+            ),
+        )
+        return run_prepared_context
+
+    async def _start_run_handle(
+        self,
+        admission,
+        *,
+        effective_host,
+        prepared,
+        prepared_catalog_lease: Any | None,
+        proposed_tool_names,
+        provider_launch_snapshot: ProviderLaunchSnapshot | None,
+        request_payload,
+        turn: TurnInput,
+    ):
         try:
             handle = await self._run_client.start(
                 {
@@ -808,11 +971,7 @@ class ProductVenueRunAdapter:
                     if str(cleanup_error) != ("run_catalog_lease_commit_outcome_unknown"):
                         raise
             raise
-        if prepared_catalog_lease is not None:
-            await platform.require_run_catalog_ready(handle.run_id)
-        if admission is not None:
-            await domain_sink.store_plan({**dict(admission.presentation), "run_id": handle.run_id})
-        return self._session(handle, presentation_context)
+        return handle
 
     def _session(
         self, handle: VenueRunHandle, context: RunPresentationContext

@@ -562,6 +562,100 @@ def audit_report_quality(
     ]
     key_claims = [item for item in claims if item.kind == "key_judgment"]
 
+    coverage_score, relevance = _coverage_and_relevance(
+        analysis_by_id,
+        applicable_core=applicable_core,
+        brief=brief,
+        coverage_by_id=coverage_by_id,
+        key_claims=key_claims,
+    )
+
+    source_quality, synthesis_reasoning, timeliness_uncertainty = _source_synthesis_timeliness(
+        analysis_by_id,
+        applicable_core=applicable_core,
+        claims=claims,
+        coverage_by_id=coverage_by_id,
+        covered=covered,
+        covered_or_partial=covered_or_partial,
+        source_by_id=source_by_id,
+        sources=sources,
+    )
+
+    readability = _component(
+        (
+            (2, Decimal(int(render_lint.section_order_correct))),
+            (2, Decimal(int(render_lint.first_screen_ok))),
+            (1, Decimal(int(render_lint.clean_copy_ok))),
+        ),
+        5,
+    )
+
+    components = (
+        relevance,
+        coverage_score,
+        source_quality,
+        synthesis_reasoning,
+        timeliness_uncertainty,
+        readability,
+    )
+    total = _round_tenth(sum(components, Decimal("0")), 100)
+
+    hard_failures: list[str] = []
+    if any(coverage_by_id[item.dimension_id].status == "uncovered" for item in applicable_core):
+        hard_failures.append("completed_core_uncovered")
+
+    delivery_status, reason_codes = _delivery_status(
+        applicable_core,
+        claims=claims,
+        covered=covered,
+        covered_or_partial=covered_or_partial,
+        hard_failures=hard_failures,
+        key_claims=key_claims,
+        render_lint=render_lint,
+        source_by_id=source_by_id,
+        total=total,
+    )
+
+    defects: list[str] = list(hard_failures)
+    allowed_repairs: list[str] = []
+    if synthesis_reasoning < Decimal("15"):
+        allowed_repairs.append("complete_dimension_analysis")
+    if "secondary_replaces_available_official" in hard_failures:
+        allowed_repairs.append("replace_secondary_citation")
+    if "unsupported_key_claim" in hard_failures:
+        allowed_repairs.append("narrow_unsupported_claim")
+    if timeliness_uncertainty < Decimal("10"):
+        allowed_repairs.append("add_uncertainty")
+    if readability < Decimal("5"):
+        allowed_repairs.append("rewrite_readability")
+
+    timestamp = audited_at or datetime.now(UTC).isoformat()
+    audit = ReportQualityAudit(
+        audit_id=audit_id,
+        rubric_version="ReportQualityRubricV1",
+        relevance=float(relevance),
+        coverage=float(coverage_score),
+        source_quality=float(source_quality),
+        synthesis_reasoning=float(synthesis_reasoning),
+        timeliness_uncertainty=float(timeliness_uncertainty),
+        readability=float(readability),
+        total_score=float(total),
+        hard_failures=tuple(hard_failures),
+        defects=tuple(defects),
+        allowed_repairs=tuple(dict.fromkeys(allowed_repairs)),
+        passed=delivery_status == "completed",
+        audited_at=timestamp,
+    )
+    return ReportQualityResult(
+        audit=audit,
+        delivery_status=delivery_status,
+        reason_codes=reason_codes,
+    )
+
+
+def _coverage_and_relevance(
+    analysis_by_id, *, applicable_core, brief: ResearchBrief, coverage_by_id, key_claims
+):
     direct_answer_ratio = _ratio(
         applicable_core,
         lambda item: (
@@ -622,7 +716,20 @@ def audit_report_quality(
         ),
     )
     coverage_score = _component(((20, weighted_coverage), (5, conclusion_evidence_ratio)), 25)
+    return coverage_score, relevance
 
+
+def _source_synthesis_timeliness(
+    analysis_by_id,
+    *,
+    applicable_core,
+    claims: Sequence[ReportClaim],
+    coverage_by_id,
+    covered,
+    covered_or_partial,
+    source_by_id,
+    sources: Sequence[ReportSource],
+):
     first_party_ratio = _ratio(
         applicable_core,
         lambda item: (
@@ -742,30 +849,21 @@ def audit_report_quality(
     else:
         uncertainty_ratio = Decimal("1")
     timeliness_uncertainty = _component(((5, temporal_ratio), (5, uncertainty_ratio)), 10)
+    return source_quality, synthesis_reasoning, timeliness_uncertainty
 
-    readability = _component(
-        (
-            (2, Decimal(int(render_lint.section_order_correct))),
-            (2, Decimal(int(render_lint.first_screen_ok))),
-            (1, Decimal(int(render_lint.clean_copy_ok))),
-        ),
-        5,
-    )
 
-    components = (
-        relevance,
-        coverage_score,
-        source_quality,
-        synthesis_reasoning,
-        timeliness_uncertainty,
-        readability,
-    )
-    total = _round_tenth(sum(components, Decimal("0")), 100)
-
-    hard_failures: list[str] = []
-    if any(coverage_by_id[item.dimension_id].status == "uncovered" for item in applicable_core):
-        hard_failures.append("completed_core_uncovered")
-
+def _delivery_status(
+    applicable_core,
+    *,
+    claims: Sequence[ReportClaim],
+    covered,
+    covered_or_partial,
+    hard_failures: list[str],
+    key_claims,
+    render_lint: ReportRenderLint,
+    source_by_id,
+    total,
+):
     def key_claim_supported(claim: ReportClaim) -> bool:
         return (
             bool(claim.supported_fact_refs)
@@ -820,42 +918,7 @@ def audit_report_quality(
     else:
         delivery_status = "insufficient_evidence"
         reason_codes = ("quality_gate_insufficient",)
-
-    defects: list[str] = list(hard_failures)
-    allowed_repairs: list[str] = []
-    if synthesis_reasoning < Decimal("15"):
-        allowed_repairs.append("complete_dimension_analysis")
-    if "secondary_replaces_available_official" in hard_failures:
-        allowed_repairs.append("replace_secondary_citation")
-    if "unsupported_key_claim" in hard_failures:
-        allowed_repairs.append("narrow_unsupported_claim")
-    if timeliness_uncertainty < Decimal("10"):
-        allowed_repairs.append("add_uncertainty")
-    if readability < Decimal("5"):
-        allowed_repairs.append("rewrite_readability")
-
-    timestamp = audited_at or datetime.now(UTC).isoformat()
-    audit = ReportQualityAudit(
-        audit_id=audit_id,
-        rubric_version="ReportQualityRubricV1",
-        relevance=float(relevance),
-        coverage=float(coverage_score),
-        source_quality=float(source_quality),
-        synthesis_reasoning=float(synthesis_reasoning),
-        timeliness_uncertainty=float(timeliness_uncertainty),
-        readability=float(readability),
-        total_score=float(total),
-        hard_failures=tuple(hard_failures),
-        defects=tuple(defects),
-        allowed_repairs=tuple(dict.fromkeys(allowed_repairs)),
-        passed=delivery_status == "completed",
-        audited_at=timestamp,
-    )
-    return ReportQualityResult(
-        audit=audit,
-        delivery_status=delivery_status,
-        reason_codes=reason_codes,
-    )
+    return delivery_status, reason_codes
 
 
 class ReportQualityRubricV1:

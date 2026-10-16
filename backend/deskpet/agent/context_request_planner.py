@@ -79,22 +79,8 @@ class ContextRequestPlanner:
         attachment_tokens: int = 0,
         current_message_id: int | None = None,
     ) -> PlannedContextRequest:
-        normalized_attachment_tokens = max(
-            max(0, int(attachment_tokens)),
-            sum(max(0, int(ref.estimated_tokens)) for ref in attachment_refs),
-        )
-        # Freeze the DB compare-and-swap base before any catalog, history, or
-        # budget work. Re-reading the latest revision immediately before the
-        # write would let a concurrent activation commit and then be
-        # overwritten by this older base toolset with a valid CAS.
-        snapshot_start = None
-        if active_snapshot is not None and self._snapshot_store is not None:
-            snapshot_start = await self._snapshot_store.get(
-                active_snapshot.session_id,
-                active_snapshot.task_scope_id,
-            )
-        intent = bundle.tool_exposure_intent or ToolExposureIntent(
-            direct_selectors=tuple(_schema_names(bundle.tool_schemas))
+        intent, normalized_attachment_tokens, snapshot_start = await self._initial_intent(
+            active_snapshot, attachment_refs, attachment_tokens, bundle
         )
         explicit_tool_names = _explicit_tool_name_candidates(user_message)
         conditional_direct_names = tuple(
@@ -170,24 +156,15 @@ class ContextRequestPlanner:
             # SessionDB is authoritative even when the assembler's prebuilt L2
             # tail happens to fit.  Never let a fixed top-k shortcut masquerade
             # as complete Session coverage.
-            history_plan = await _plan_history(selected_payload)
-            _validate_history_plan(history_plan, allow_compaction_jobs=True)
-            required_names.update(history_plan.required_direct_tools)
-            if history_plan.compaction_jobs:
-                required_names.add("session_history_page_in")
-            required = tuple(name for name in conditional_canonical_names if name in required_names)
-            if required and set(required) != {
-                cap.ref.name
-                for cap in selected_set.direct
-                if cap.ref.name in conditional_canonical_names
-            }:
-                selected_set = draft.finalize(
-                    required_conditional_names=required,
-                    scope_id=base_set.scope_id,
-                )
-                selected_payload = prepare_openai_tool_payload(selected_set)
-                history_plan = await _plan_history(selected_payload)
-                _validate_history_plan(history_plan, allow_compaction_jobs=True)
+            history_plan, selected_payload, selected_set = await self._selected_history_plan(
+                _plan_history,
+                base_set=base_set,
+                conditional_canonical_names=conditional_canonical_names,
+                draft=draft,
+                required_names=required_names,
+                selected_payload=selected_payload,
+                selected_set=selected_set,
+            )
             selected_history = _wire_history_messages(history_plan.messages)
             selected_messages = [
                 *prefix_messages,
@@ -207,6 +184,150 @@ class ContextRequestPlanner:
                 current_message,
             ]
 
+        page_in_refs, selected_budget = self._selected_budget_and_pages(
+            context_window,
+            effective_pct=effective_pct,
+            eligibility=eligibility,
+            generation_reserve=generation_reserve,
+            normalized_attachment_tokens=normalized_attachment_tokens,
+            page_in_candidates=page_in_candidates,
+            selected_messages=selected_messages,
+            selected_payload=selected_payload,
+            selected_set=selected_set,
+        )
+        if not selected_budget.fits:
+            prefix, decisions, stable_boundary, stable_fingerprint = _render_prefix(
+                bundle,
+                base_system,
+                page_in_refs={ref.fragment_id: ref for ref in page_in_refs},
+            )
+            prefix_messages, post_history_messages, current_message = _fixed_message_parts(
+                prefix=prefix,
+                prebuilt_messages=prebuilt_messages,
+                late_system_nudge=bundle.late_system_nudge,
+                user_message=user_message,
+            )
+            selected_budget, selected_messages = self._rebudget_selected_messages(
+                context_window,
+                current_message=current_message,
+                effective_pct=effective_pct,
+                generation_reserve=generation_reserve,
+                history=history,
+                history_plan=history_plan,
+                normalized_attachment_tokens=normalized_attachment_tokens,
+                post_history_messages=post_history_messages,
+                prefix_messages=prefix_messages,
+                selected_payload=selected_payload,
+            )
+        prepared = self._require_selected_budget(
+            attachment_refs,
+            decisions=decisions,
+            history_plan=history_plan,
+            normalized_attachment_tokens=normalized_attachment_tokens,
+            page_in_refs=page_in_refs,
+            selected_budget=selected_budget,
+            selected_messages=selected_messages,
+            selected_set=selected_set,
+            stable_boundary=stable_boundary,
+            stable_fingerprint=stable_fingerprint,
+        )
+        await self._prepare_with_history_plan(
+            _plan_history,
+            context_window=context_window,
+            current_message=current_message,
+            effective_pct=effective_pct,
+            generation_reserve=generation_reserve,
+            history_plan=history_plan,
+            normalized_attachment_tokens=normalized_attachment_tokens,
+            post_history_messages=post_history_messages,
+            prefix_messages=prefix_messages,
+            prepared=prepared,
+            selected_payload=selected_payload,
+            selected_set=selected_set,
+        )
+        if active_snapshot is not None and self._snapshot_store is not None:
+            summary = _tool_summary(selected_set, selected_payload)
+            expected_row_revision = (
+                int(snapshot_start.handle.row_revision) if snapshot_start is not None else 0
+            )
+            receipt = await self._snapshot_store.persist_projection_with_tool_context_cas(
+                active_snapshot,
+                expected_row_revision=expected_row_revision,
+                prepared_toolset_summary=summary,
+            )
+            prepared.active_snapshot_handle = receipt.new_handle
+        return PlannedContextRequest(prepared, selected_payload, selected_budget)
+
+    async def _initial_intent(
+        self,
+        active_snapshot: Any,
+        attachment_refs: tuple[AttachmentRef, ...],
+        attachment_tokens: int,
+        bundle: ContextBundle,
+    ):
+        normalized_attachment_tokens = max(
+            max(0, int(attachment_tokens)),
+            sum(max(0, int(ref.estimated_tokens)) for ref in attachment_refs),
+        )
+        # Freeze the DB compare-and-swap base before any catalog, history, or
+        # budget work. Re-reading the latest revision immediately before the
+        # write would let a concurrent activation commit and then be
+        # overwritten by this older base toolset with a valid CAS.
+        snapshot_start = None
+        if active_snapshot is not None and self._snapshot_store is not None:
+            snapshot_start = await self._snapshot_store.get(
+                active_snapshot.session_id,
+                active_snapshot.task_scope_id,
+            )
+        intent = bundle.tool_exposure_intent or ToolExposureIntent(
+            direct_selectors=tuple(_schema_names(bundle.tool_schemas))
+        )
+        return intent, normalized_attachment_tokens, snapshot_start
+
+    async def _selected_history_plan(
+        self,
+        _plan_history,
+        *,
+        base_set,
+        conditional_canonical_names,
+        draft,
+        required_names: set[str],
+        selected_payload,
+        selected_set,
+    ):
+        history_plan = await _plan_history(selected_payload)
+        _validate_history_plan(history_plan, allow_compaction_jobs=True)
+        required_names.update(history_plan.required_direct_tools)
+        if history_plan.compaction_jobs:
+            required_names.add("session_history_page_in")
+        required = tuple(name for name in conditional_canonical_names if name in required_names)
+        if required and set(required) != {
+            cap.ref.name
+            for cap in selected_set.direct
+            if cap.ref.name in conditional_canonical_names
+        }:
+            selected_set = draft.finalize(
+                required_conditional_names=required,
+                scope_id=base_set.scope_id,
+            )
+            selected_payload = prepare_openai_tool_payload(selected_set)
+            history_plan = await _plan_history(selected_payload)
+            _validate_history_plan(history_plan, allow_compaction_jobs=True)
+        return history_plan, selected_payload, selected_set
+
+    def _selected_budget_and_pages(
+        self,
+        context_window: int,
+        *,
+        effective_pct: float,
+        eligibility: ToolEligibilityContext,
+        generation_reserve: int,
+        normalized_attachment_tokens,
+        page_in_candidates,
+        selected_messages,
+        selected_payload,
+        selected_set,
+    ):
         selected_budget = estimate_request_budget(
             selected_messages,
             selected_payload,
@@ -228,36 +349,56 @@ class ContextRequestPlanner:
                 )
                 for candidate in page_in_candidates
             )
-        if not selected_budget.fits:
-            prefix, decisions, stable_boundary, stable_fingerprint = _render_prefix(
-                bundle,
-                base_system,
-                page_in_refs={ref.fragment_id: ref for ref in page_in_refs},
-            )
-            prefix_messages, post_history_messages, current_message = _fixed_message_parts(
-                prefix=prefix,
-                prebuilt_messages=prebuilt_messages,
-                late_system_nudge=bundle.late_system_nudge,
-                user_message=user_message,
-            )
-            selected_messages = [
-                *prefix_messages,
-                *(
-                    _wire_history_messages(history_plan.messages)
-                    if history_plan is not None
-                    else history
-                ),
-                *post_history_messages,
-                current_message,
-            ]
-            selected_budget = estimate_request_budget(
-                selected_messages,
-                selected_payload,
-                context_window=context_window,
-                effective_pct=effective_pct,
-                generation_reserve=generation_reserve,
-                attachment_tokens=normalized_attachment_tokens,
-            )
+        return page_in_refs, selected_budget
+
+    def _rebudget_selected_messages(
+        self,
+        context_window: int,
+        *,
+        current_message,
+        effective_pct: float,
+        generation_reserve: int,
+        history: list[dict[str, Any]],
+        history_plan,
+        normalized_attachment_tokens,
+        post_history_messages,
+        prefix_messages,
+        selected_payload,
+    ):
+        selected_messages = [
+            *prefix_messages,
+            *(
+                _wire_history_messages(history_plan.messages)
+                if history_plan is not None
+                else history
+            ),
+            *post_history_messages,
+            current_message,
+        ]
+        selected_budget = estimate_request_budget(
+            selected_messages,
+            selected_payload,
+            context_window=context_window,
+            effective_pct=effective_pct,
+            generation_reserve=generation_reserve,
+            attachment_tokens=normalized_attachment_tokens,
+        )
+        return selected_budget, selected_messages
+
+    def _require_selected_budget(
+        self,
+        attachment_refs: tuple[AttachmentRef, ...],
+        *,
+        decisions,
+        history_plan,
+        normalized_attachment_tokens,
+        page_in_refs: tuple[PageInRef, ...],
+        selected_budget,
+        selected_messages,
+        selected_set,
+        stable_boundary,
+        stable_fingerprint,
+    ):
         if not selected_budget.fits:
             raise ContextBudgetExceeded(
                 "context_budget_exceeded "
@@ -284,6 +425,24 @@ class ContextRequestPlanner:
             page_in_refs=page_in_refs,
             page_in_store=self._page_in_store,
         )
+        return prepared
+
+    async def _prepare_with_history_plan(
+        self,
+        _plan_history,
+        *,
+        context_window: int,
+        current_message,
+        effective_pct: float,
+        generation_reserve: int,
+        history_plan,
+        normalized_attachment_tokens,
+        post_history_messages,
+        prefix_messages,
+        prepared,
+        selected_payload,
+        selected_set,
+    ) -> None:
         if history_plan is not None:
 
             async def _replan_for_budget(
@@ -368,18 +527,6 @@ class ContextRequestPlanner:
                 )
 
             prepared.replan_after_compaction = _replan_after_compaction
-        if active_snapshot is not None and self._snapshot_store is not None:
-            summary = _tool_summary(selected_set, selected_payload)
-            expected_row_revision = (
-                int(snapshot_start.handle.row_revision) if snapshot_start is not None else 0
-            )
-            receipt = await self._snapshot_store.persist_projection_with_tool_context_cas(
-                active_snapshot,
-                expected_row_revision=expected_row_revision,
-                prepared_toolset_summary=summary,
-            )
-            prepared.active_snapshot_handle = receipt.new_handle
-        return PlannedContextRequest(prepared, selected_payload, selected_budget)
 
     def replan(
         self,

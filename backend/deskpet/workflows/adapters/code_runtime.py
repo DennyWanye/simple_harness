@@ -663,6 +663,106 @@ class ProposalPort:
             else {}
         )
 
+        response = await self._propose_response(
+            context_messages, execution_identity, state, tool_schemas
+        )
+
+        checkpoint_key = f"{state.request_id}:{state.turn_id}"
+        raw_proposals: list[dict[str, JsonValue]] = []
+        prepared_calls: list[PreparedToolCall] = []
+        truncated_without_tool_call = (
+            str(response.stop_reason or "") == "length" and not response.tool_calls
+        )
+        proposal_error: ProposalErrorV1 | None = (
+            ProposalErrorV1(
+                code="proposal_truncated_without_tool_call",
+                message_ref="proposal:truncated_without_tool_call",
+                retryable=True,
+                details={
+                    "instruction": (
+                        "The prior response reached its output limit without "
+                        "executing any tool. Do not continue code or file "
+                        "content as prose. Call file_write directly using a "
+                        "compact payload or overwrite followed by append "
+                        "chunks of at most 2500 characters."
+                    )
+                },
+            )
+            if truncated_without_tool_call
+            else None
+        )
+        for index, tool_call in enumerate(response.tool_calls):
+            raw_args = copy.deepcopy(dict(tool_call.arguments or {}))
+            validate_json_value(raw_args)
+            stable_call_id = derive_stable_call_id(
+                checkpoint_key=checkpoint_key,
+                iteration=state.iteration,
+                index=index,
+                tool_name=tool_call.name,
+                raw_args=raw_args,
+            )
+            spec = self.tool_registry.get(tool_call.name)
+            policy = getattr(spec, "effect_policy", None) if spec is not None else None
+            policy_kind = getattr(getattr(policy, "kind", ""), "value", getattr(policy, "kind", ""))
+            proposal_error, raw = self._proposal_raw(
+                deferred_by_name,
+                dynamically_activated=dynamically_activated,
+                effective_allowed=effective_allowed,
+                effective_prepared=effective_prepared,
+                policy_kind=policy_kind,
+                prepared_calls=prepared_calls,
+                proposal_error=proposal_error,
+                raw_args=raw_args,
+                spec=spec,
+                stable_call_id=stable_call_id,
+                tool_call=tool_call,
+            )
+            raw_proposals.append(raw)
+
+        reasoning_ref = None
+        if response.reasoning_content:
+            digest = hashlib.sha256(response.reasoning_content.encode("utf-8")).hexdigest()
+            reasoning_ref = f"reasoning:sha256:{digest}"
+        provider = str(
+            getattr(self.llm_registry, "name", "")
+            or self.provider_name
+            or state.provider_snapshot.get("provider")
+            or "runtime"
+        )
+        model = str(
+            response.model
+            or getattr(self.llm_registry, "model", "")
+            or self.model_name
+            or state.model_snapshot.get("model")
+            or ""
+        )
+        return ProposalOutcomeV1(
+            # Unexecuted truncated prose is neither a receipt nor useful
+            # continuation context.  Persist only the host's structured
+            # recovery instruction below so the next provider turn converges
+            # on a bounded tool call instead of extending the same code dump.
+            assistant_content=("" if truncated_without_tool_call else response.content),
+            reasoning_summary_ref=reasoning_ref,
+            raw_tool_proposals=raw_proposals,
+            prepared_calls=prepared_calls,
+            stop_reason=response.stop_reason,
+            usage=_model_dump(response.usage),
+            provider=provider,
+            model=model,
+            compacted_messages=compacted_messages,
+            compaction_summary=compaction_summary,
+            compaction_ref=compaction_ref,
+            token_estimate=token_estimate,
+            error=proposal_error,
+        )
+
+    async def _propose_response(
+        self,
+        context_messages,
+        execution_identity: NodeExecutionIdentity | None,
+        state: ProposalStateV1,
+        tool_schemas,
+    ):
         with provider_purpose_scope(
             "workflow",
             session_id=(
@@ -707,222 +807,162 @@ class ProposalPort:
             )
         if not isinstance(response, ChatResponse):
             raise TypeError("code proposal provider must return ChatResponse")
+        return response
 
-        checkpoint_key = f"{state.request_id}:{state.turn_id}"
-        raw_proposals: list[dict[str, JsonValue]] = []
-        prepared_calls: list[PreparedToolCall] = []
-        truncated_without_tool_call = (
-            str(response.stop_reason or "") == "length" and not response.tool_calls
-        )
-        proposal_error: ProposalErrorV1 | None = (
-            ProposalErrorV1(
-                code="proposal_truncated_without_tool_call",
-                message_ref="proposal:truncated_without_tool_call",
+    def _proposal_raw(
+        self,
+        deferred_by_name,
+        *,
+        dynamically_activated,
+        effective_allowed,
+        effective_prepared,
+        policy_kind,
+        prepared_calls: list[PreparedToolCall],
+        proposal_error: ProposalErrorV1 | None,
+        raw_args,
+        spec,
+        stable_call_id,
+        tool_call,
+    ):
+        raw: dict[str, JsonValue] = {
+            "stable_call_id": stable_call_id,
+            "provider_call_id": str(tool_call.id or ""),
+            "tool_name": str(tool_call.name),
+            "raw_params": raw_args,
+            "source": _source_kind(getattr(spec, "source", "unknown")),
+            "access": (
+                "read"
+                if str(policy_kind) in {"idempotent_read", "deterministic_reusable"}
+                else "write"
+            ),
+        }
+        if str(tool_call.name) in dynamically_activated:
+            # The graph's frozen capability snapshot intentionally omits
+            # deferred schemas.  Preserve the Context OS admission proof
+            # so the graph does not reject a tool that was activated and
+            # validated after the workflow started.
+            raw["capability_admission"] = "context_os_activated"
+        if tool_call.args_parse_error:
+            raw["args_parse_error"] = str(tool_call.args_parse_error)
+            proposal_error = proposal_error or ProposalErrorV1(
+                code="tool_call_args_malformed_json",
+                message_ref=f"proposal:{stable_call_id}:malformed_args",
                 retryable=True,
-                details={
-                    "instruction": (
-                        "The prior response reached its output limit without "
-                        "executing any tool. Do not continue code or file "
-                        "content as prose. Call file_write directly using a "
-                        "compact payload or overwrite followed by append "
-                        "chunks of at most 2500 characters."
-                    )
-                },
             )
-            if truncated_without_tool_call
-            else None
-        )
-        for index, tool_call in enumerate(response.tool_calls):
-            raw_args = copy.deepcopy(dict(tool_call.arguments or {}))
-            validate_json_value(raw_args)
-            stable_call_id = derive_stable_call_id(
-                checkpoint_key=checkpoint_key,
-                iteration=state.iteration,
-                index=index,
-                tool_name=tool_call.name,
-                raw_args=raw_args,
-            )
-            spec = self.tool_registry.get(tool_call.name)
-            policy = getattr(spec, "effect_policy", None) if spec is not None else None
-            policy_kind = getattr(getattr(policy, "kind", ""), "value", getattr(policy, "kind", ""))
-            raw: dict[str, JsonValue] = {
-                "stable_call_id": stable_call_id,
-                "provider_call_id": str(tool_call.id or ""),
-                "tool_name": str(tool_call.name),
-                "raw_params": raw_args,
-                "source": _source_kind(getattr(spec, "source", "unknown")),
-                "access": (
-                    "read"
-                    if str(policy_kind) in {"idempotent_read", "deterministic_reusable"}
-                    else "write"
-                ),
-            }
-            if str(tool_call.name) in dynamically_activated:
-                # The graph's frozen capability snapshot intentionally omits
-                # deferred schemas.  Preserve the Context OS admission proof
-                # so the graph does not reject a tool that was activated and
-                # validated after the workflow started.
-                raw["capability_admission"] = "context_os_activated"
-            if tool_call.args_parse_error:
-                raw["args_parse_error"] = str(tool_call.args_parse_error)
+        elif effective_allowed is not None and str(tool_call.name) not in effective_allowed:
+            deferred_ref = deferred_by_name.get(str(tool_call.name))
+            if deferred_ref is not None:
                 proposal_error = proposal_error or ProposalErrorV1(
-                    code="tool_call_args_malformed_json",
-                    message_ref=f"proposal:{stable_call_id}:malformed_args",
+                    code="tool_requires_activation",
+                    message_ref=(f"proposal:{stable_call_id}:activation_required"),
                     retryable=True,
-                )
-            elif effective_allowed is not None and str(tool_call.name) not in effective_allowed:
-                deferred_ref = deferred_by_name.get(str(tool_call.name))
-                if deferred_ref is not None:
-                    proposal_error = proposal_error or ProposalErrorV1(
-                        code="tool_requires_activation",
-                        message_ref=(f"proposal:{stable_call_id}:activation_required"),
-                        retryable=True,
-                        details={
-                            "tool_name": str(tool_call.name),
-                            "capability_id": str(deferred_ref.capability_id),
-                            "recovery": [
-                                "tool_search",
-                                "tool_describe",
-                                "tool_activate",
-                            ],
-                            "instruction": (
-                                "Do not repeat this tool call yet. Search the "
-                                "request-scoped deferred tools with tool_search, "
-                                "copy its exact capability_id into tool_describe, "
-                                "then call tool_activate with the returned "
-                                "schema_hash and describe_nonce."
-                            ),
-                        },
-                    )
-                else:
-                    proposal_error = proposal_error or ProposalErrorV1(
-                        code="tool_outside_capability_snapshot",
-                        message_ref=f"proposal:{stable_call_id}:capability_mismatch",
-                        retryable=False,
-                        details={"tool_name": str(tool_call.name)},
-                    )
-            elif spec is None:
-                proposal_error = proposal_error or ProposalErrorV1(
-                    code="unknown_tool",
-                    message_ref=f"proposal:{stable_call_id}:unknown_tool",
-                    retryable=True,
-                    details={"tool_name": str(tool_call.name)},
+                    details={
+                        "tool_name": str(tool_call.name),
+                        "capability_id": str(deferred_ref.capability_id),
+                        "recovery": [
+                            "tool_search",
+                            "tool_describe",
+                            "tool_activate",
+                        ],
+                        "instruction": (
+                            "Do not repeat this tool call yet. Search the "
+                            "request-scoped deferred tools with tool_search, "
+                            "copy its exact capability_id into tool_describe, "
+                            "then call tool_activate with the returned "
+                            "schema_hash and describe_nonce."
+                        ),
+                    },
                 )
             else:
-                execution_context = self.execution_context
-                if execution_context is not None and hasattr(
-                    execution_context, "__dataclass_fields__"
-                ):
-                    execution_context = replace(
-                        execution_context,
-                        call_id=stable_call_id,
-                        effect_id="",
-                        capability_hash=(
-                            str(effective_prepared.schema_fingerprint)
-                            if effective_prepared is not None
-                            else execution_context.capability_hash
-                        ),
-                    )
-                prepare_call = self.tool_registry.prepare_call
-                execution_kwargs = (
-                    {"execution_context": execution_context}
-                    if execution_context is not None
-                    and "execution_context" in inspect.signature(prepare_call).parameters
-                    else {}
+                proposal_error = proposal_error or ProposalErrorV1(
+                    code="tool_outside_capability_snapshot",
+                    message_ref=f"proposal:{stable_call_id}:capability_mismatch",
+                    retryable=False,
+                    details={"tool_name": str(tool_call.name)},
                 )
+        elif spec is None:
+            proposal_error = proposal_error or ProposalErrorV1(
+                code="unknown_tool",
+                message_ref=f"proposal:{stable_call_id}:unknown_tool",
+                retryable=True,
+                details={"tool_name": str(tool_call.name)},
+            )
+        else:
+            execution_context = self.execution_context
+            if execution_context is not None and hasattr(execution_context, "__dataclass_fields__"):
+                execution_context = replace(
+                    execution_context,
+                    call_id=stable_call_id,
+                    effect_id="",
+                    capability_hash=(
+                        str(effective_prepared.schema_fingerprint)
+                        if effective_prepared is not None
+                        else execution_context.capability_hash
+                    ),
+                )
+            prepare_call = self.tool_registry.prepare_call
+            execution_kwargs = (
+                {"execution_context": execution_context}
+                if execution_context is not None
+                and "execution_context" in inspect.signature(prepare_call).parameters
+                else {}
+            )
+            try:
+                prepared_call = prepare_call(
+                    tool_call.name,
+                    raw_args,
+                    self.session_id,
+                    stable_call_id,
+                    **execution_kwargs,
+                )
+            except ValueError as exc:
+                # Model-supplied arguments can be rejected while the
+                # registry resolves deterministic resource selectors
+                # (for example a desktop filename containing a path
+                # separator).  That is a recoverable proposal rejection,
+                # not a permanent workflow-node failure.
+                reason = str(exc)
+                raw["prepare_error"] = reason
+                proposal_error = proposal_error or ProposalErrorV1(
+                    code="tool_prepare_rejected",
+                    message_ref=f"proposal:{stable_call_id}:prepare_rejected",
+                    retryable=True,
+                    details={
+                        "tool_name": str(tool_call.name),
+                        "reason": reason,
+                        "instruction": (
+                            "Correct the tool arguments or choose a more "
+                            "appropriate capability, then continue the "
+                            "existing task."
+                        ),
+                    },
+                )
+            else:
                 try:
-                    prepared_call = prepare_call(
-                        tool_call.name,
-                        raw_args,
-                        self.session_id,
-                        stable_call_id,
-                        **execution_kwargs,
-                    )
+                    if self.output_contract is not None:
+                        self.output_contract.validate_prepared_call(prepared_call)
                 except ValueError as exc:
-                    # Model-supplied arguments can be rejected while the
-                    # registry resolves deterministic resource selectors
-                    # (for example a desktop filename containing a path
-                    # separator).  That is a recoverable proposal rejection,
-                    # not a permanent workflow-node failure.
                     reason = str(exc)
                     raw["prepare_error"] = reason
                     proposal_error = proposal_error or ProposalErrorV1(
-                        code="tool_prepare_rejected",
-                        message_ref=f"proposal:{stable_call_id}:prepare_rejected",
+                        code="tool_output_contract_violation",
+                        message_ref=(f"proposal:{stable_call_id}:output_contract"),
                         retryable=True,
                         details={
                             "tool_name": str(tool_call.name),
                             "reason": reason,
+                            "output_refs": list(self.output_contract.output_refs),
+                            "scratch_refs": list(self.output_contract.scratch_refs),
                             "instruction": (
-                                "Correct the tool arguments or choose a more "
-                                "appropriate capability, then continue the "
-                                "existing task."
+                                "Use only a declared output_ref or "
+                                "scratch_ref. Do not create helper files "
+                                "outside the frozen task output contract."
                             ),
                         },
                     )
                 else:
-                    try:
-                        if self.output_contract is not None:
-                            self.output_contract.validate_prepared_call(prepared_call)
-                    except ValueError as exc:
-                        reason = str(exc)
-                        raw["prepare_error"] = reason
-                        proposal_error = proposal_error or ProposalErrorV1(
-                            code="tool_output_contract_violation",
-                            message_ref=(f"proposal:{stable_call_id}:output_contract"),
-                            retryable=True,
-                            details={
-                                "tool_name": str(tool_call.name),
-                                "reason": reason,
-                                "output_refs": list(self.output_contract.output_refs),
-                                "scratch_refs": list(self.output_contract.scratch_refs),
-                                "instruction": (
-                                    "Use only a declared output_ref or "
-                                    "scratch_ref. Do not create helper files "
-                                    "outside the frozen task output contract."
-                                ),
-                            },
-                        )
-                    else:
-                        prepared_calls.append(prepared_call)
-            raw_proposals.append(raw)
-
-        reasoning_ref = None
-        if response.reasoning_content:
-            digest = hashlib.sha256(response.reasoning_content.encode("utf-8")).hexdigest()
-            reasoning_ref = f"reasoning:sha256:{digest}"
-        provider = str(
-            getattr(self.llm_registry, "name", "")
-            or self.provider_name
-            or state.provider_snapshot.get("provider")
-            or "runtime"
-        )
-        model = str(
-            response.model
-            or getattr(self.llm_registry, "model", "")
-            or self.model_name
-            or state.model_snapshot.get("model")
-            or ""
-        )
-        return ProposalOutcomeV1(
-            # Unexecuted truncated prose is neither a receipt nor useful
-            # continuation context.  Persist only the host's structured
-            # recovery instruction below so the next provider turn converges
-            # on a bounded tool call instead of extending the same code dump.
-            assistant_content=("" if truncated_without_tool_call else response.content),
-            reasoning_summary_ref=reasoning_ref,
-            raw_tool_proposals=raw_proposals,
-            prepared_calls=prepared_calls,
-            stop_reason=response.stop_reason,
-            usage=_model_dump(response.usage),
-            provider=provider,
-            model=model,
-            compacted_messages=compacted_messages,
-            compaction_summary=compaction_summary,
-            compaction_ref=compaction_ref,
-            token_estimate=token_estimate,
-            error=proposal_error,
-        )
+                    prepared_calls.append(prepared_call)
+        return proposal_error, raw
 
 
 def derive_effect_id(workflow_step_id: str, prepared: PreparedToolCall) -> str:

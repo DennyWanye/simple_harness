@@ -524,41 +524,7 @@ class VersionBindingMixin(CapabilityStoreCore):
         )
         results: list[Mapping[str, JsonValue]] = []
         async with self.write_transaction() as db:
-            rows = await (
-                await db.execute(
-                    f"""SELECT b.binding_id,b.owner_key,b.scope_key,b.pack_id,
-                           b.active_version AS version,
-                           b.active_manifest_hash AS manifest_hash,b.generation,
-                           i.intent_id,i.status,i.settlement_ref,i.verification_ref,
-                           i.member_set_stamp,m.ordinal,m.content_hash,
-                           h.operation_id,o.kind AS operation_kind,
-                           o.phase AS operation_phase,o.status AS operation_status,
-                           o.request_json,h.member_set_stamp AS handoff_member_set_stamp,
-                           pe.status AS evidence_status,pe.evidence_json,
-                           om.committed_version,om.committed_manifest_hash,
-                           om.committed_set_stamp
-                    FROM capability_bindings b
-                    JOIN capability_skill_install_members m
-                      ON m.pack_id=b.pack_id AND m.version=b.active_version
-                     AND m.manifest_hash=b.active_manifest_hash
-                    JOIN capability_skill_install_intents i
-                      ON i.intent_id=m.intent_id AND i.project_scope_key=b.scope_key
-                    LEFT JOIN capability_skill_install_handoffs h
-                      ON h.intent_id=i.intent_id
-                    LEFT JOIN capability_operations o
-                      ON o.operation_id=h.operation_id
-                    LEFT JOIN capability_operation_phase_evidence pe
-                      ON pe.operation_id=h.operation_id AND pe.phase='batch_committed'
-                    LEFT JOIN capability_operation_members om
-                      ON om.operation_id=h.operation_id AND om.ordinal=m.ordinal
-                    WHERE b.scope='project' AND b.enabled=1
-                      AND i.source_json NOT LIKE '%global-skill-install-source-v2%'
-                      AND i.status IN ({",".join("?" for _ in active_statuses)})
-                    ORDER BY b.pack_id,b.owner_key,b.scope_key,b.binding_id,i.intent_id""",
-                    active_statuses,
-                )
-            ).fetchall()
-            by_pack: dict[str, list[Mapping[str, Any]]] = {}
+            by_pack, rows = await self._project_bindings_by_pack(active_statuses, db)
             for row in rows:
                 by_pack.setdefault(str(row["pack_id"]), []).append(row)
             for pack_id, candidates in sorted(by_pack.items()):
@@ -570,145 +536,7 @@ class VersionBindingMixin(CapabilityStoreCore):
                         )
                         or {}
                     )
-                    evidence_members = tuple(
-                        item for item in evidence.get("members", ()) if isinstance(item, Mapping)
-                    )
-                    operation_member_rows = await (
-                        await db.execute(
-                            """SELECT ordinal,normalized_name,pack_id,version,
-                                  manifest_hash,content_hash,source_digest,
-                                  committed_version,committed_manifest_hash,
-                                  committed_set_stamp
-                           FROM capability_operation_members
-                           WHERE operation_id=? ORDER BY ordinal""",
-                            (str(row["operation_id"] or ""),),
-                        )
-                    ).fetchall()
-                    intent_member_rows = await (
-                        await db.execute(
-                            """SELECT ordinal,normalized_name,pack_id,version,
-                                  manifest_hash,content_hash,source_digest
-                           FROM capability_skill_install_members
-                           WHERE intent_id=? ORDER BY ordinal""",
-                            (str(row["intent_id"]),),
-                        )
-                    ).fetchall()
-                    rebuilt_members = [
-                        {
-                            "pack_id": str(item["pack_id"]),
-                            "version": str(item["version"]),
-                            "manifest_hash": str(item["manifest_hash"]),
-                            "content_hash": str(item["content_hash"]),
-                        }
-                        for item in operation_member_rows
-                    ]
-                    intended_members = [
-                        {
-                            "pack_id": str(item["pack_id"]),
-                            "version": str(item["version"]),
-                            "manifest_hash": str(item["manifest_hash"]),
-                            "content_hash": str(item["content_hash"]),
-                        }
-                        for item in intent_member_rows
-                    ]
-                    receipt_member_identities = [
-                        {
-                            "pack_id": str(item.get("pack_id") or ""),
-                            "version": str(item.get("version") or ""),
-                            "manifest_hash": str(item.get("manifest_hash") or ""),
-                            "content_hash": str(item.get("content_hash") or ""),
-                        }
-                        for item in evidence_members
-                    ]
-                    full_member_set_valid = (
-                        rebuilt_members == intended_members == receipt_member_identities
-                        and tuple(int(item["ordinal"]) for item in operation_member_rows)
-                        == tuple(range(len(operation_member_rows)))
-                        and all(
-                            str(item["committed_version"] or "") == str(item["version"])
-                            and str(item["committed_manifest_hash"] or "")
-                            == str(item["manifest_hash"])
-                            and str(item["committed_set_stamp"] or "")
-                            == str(row["member_set_stamp"])
-                            for item in operation_member_rows
-                        )
-                    )
-                    expected_member = {
-                        "pack_id": str(row["pack_id"]),
-                        "version": str(row["version"]),
-                        "manifest_hash": str(row["manifest_hash"]),
-                        "content_hash": str(row["content_hash"]),
-                    }
-                    matching_members = [
-                        item
-                        for item in evidence_members
-                        if all(
-                            str(item.get(key) or "") == value
-                            for key, value in expected_member.items()
-                        )
-                    ]
-                    receipt_payload = {
-                        key: value
-                        for key, value in evidence.items()
-                        if key not in {"manager_receipt_hash", "install_root"}
-                    }
-                    receipt_hash = str(evidence.get("manager_receipt_hash") or "")
-                    operation_request = (
-                        _json_object(
-                            None if row["request_json"] is None else str(row["request_json"])
-                        )
-                        or {}
-                    )
-                    evidence_valid = all(
-                        (
-                            str(row["status"]) == "succeeded",
-                            str(row["operation_kind"] or "") == "skill_install_batch",
-                            str(row["operation_phase"] or "") == "batch_committed",
-                            str(row["operation_status"] or "") == "succeeded",
-                            str(row["evidence_status"] or "") == "committed",
-                            str(evidence.get("schema") or "")
-                            == "capability-batch-manager-receipt-v1",
-                            str(evidence.get("operation_id") or "")
-                            == str(row["operation_id"] or ""),
-                            str(evidence.get("scope") or "") == "project",
-                            str(evidence.get("scope_key") or "") == str(row["scope_key"]),
-                            str(evidence.get("project_scope_key") or "") == str(row["scope_key"]),
-                            str(evidence.get("owner_key") or "") == str(row["owner_key"]),
-                            str(evidence.get("committed_set_stamp") or "")
-                            == str(row["member_set_stamp"]),
-                            str(row["handoff_member_set_stamp"] or "")
-                            == str(row["member_set_stamp"]),
-                            str(operation_request.get("member_set_stamp") or "")
-                            == str(row["member_set_stamp"]),
-                            str(evidence.get("publication_state") or "") == "active",
-                            len(matching_members) == 1,
-                            full_member_set_valid,
-                            str(row["committed_version"] or "") == str(row["version"]),
-                            str(row["committed_manifest_hash"] or "") == str(row["manifest_hash"]),
-                            str(row["committed_set_stamp"] or "") == str(row["member_set_stamp"]),
-                            len(receipt_hash) == 64,
-                            receipt_hash == fingerprint_json(receipt_payload),
-                            str(row["settlement_ref"] or "") == receipt_hash,
-                            bool(str(row["verification_ref"] or "")),
-                        )
-                    )
-                    frozen.append(
-                        {
-                            "binding_id": str(row["binding_id"]),
-                            "owner_key": str(row["owner_key"]),
-                            "scope_key": str(row["scope_key"]),
-                            "generation": int(row["generation"]),
-                            "intent_id": str(row["intent_id"]),
-                            "intent_status": str(row["status"]),
-                            "version": str(row["version"]),
-                            "manifest_hash": str(row["manifest_hash"]),
-                            "content_hash": str(row["content_hash"]),
-                            "manager_receipt_hash": receipt_hash,
-                            "runtime_verification_ref": str(row["verification_ref"] or ""),
-                            "manager_evidence_valid": evidence_valid,
-                            "ordered_member_set_hash": fingerprint_json(rebuilt_members),
-                        }
-                    )
+                    await self._converge_project_pack(db, evidence, frozen, row)
                 source_stamp = fingerprint_json(frozen)
                 prior = await (
                     await db.execute(
@@ -787,66 +615,256 @@ class VersionBindingMixin(CapabilityStoreCore):
                         }
                     )
                     continue
-                assert selected is not None
-                await self._set_binding_tx(
+                await self._bind_converged_user_skill(
                     db,
-                    scope="user",
-                    scope_key=owner_key,
-                    pack_id=pack_id,
-                    version=selected[0],
-                    manifest_hash=selected[1],
-                    expected_generation=(0 if existing is None else int(existing["generation"])),
+                    existing=existing,
+                    frozen=frozen,
                     owner_key=owner_key,
-                    management_policy="user_managed",
+                    pack_id=pack_id,
+                    results=results,
+                    selected=selected,
+                    source_stamp=source_stamp,
                 )
-                retired_binding_ids: set[str] = set()
-                for item in frozen:
-                    if item["binding_id"] in retired_binding_ids:
-                        continue
-                    cursor = await db.execute(
-                        """DELETE FROM capability_bindings
+        return tuple(results)
+
+    async def _project_bindings_by_pack(self, active_statuses, db):
+        rows = await (
+            await db.execute(
+                f"""SELECT b.binding_id,b.owner_key,b.scope_key,b.pack_id,
+                           b.active_version AS version,
+                           b.active_manifest_hash AS manifest_hash,b.generation,
+                           i.intent_id,i.status,i.settlement_ref,i.verification_ref,
+                           i.member_set_stamp,m.ordinal,m.content_hash,
+                           h.operation_id,o.kind AS operation_kind,
+                           o.phase AS operation_phase,o.status AS operation_status,
+                           o.request_json,h.member_set_stamp AS handoff_member_set_stamp,
+                           pe.status AS evidence_status,pe.evidence_json,
+                           om.committed_version,om.committed_manifest_hash,
+                           om.committed_set_stamp
+                    FROM capability_bindings b
+                    JOIN capability_skill_install_members m
+                      ON m.pack_id=b.pack_id AND m.version=b.active_version
+                     AND m.manifest_hash=b.active_manifest_hash
+                    JOIN capability_skill_install_intents i
+                      ON i.intent_id=m.intent_id AND i.project_scope_key=b.scope_key
+                    LEFT JOIN capability_skill_install_handoffs h
+                      ON h.intent_id=i.intent_id
+                    LEFT JOIN capability_operations o
+                      ON o.operation_id=h.operation_id
+                    LEFT JOIN capability_operation_phase_evidence pe
+                      ON pe.operation_id=h.operation_id AND pe.phase='batch_committed'
+                    LEFT JOIN capability_operation_members om
+                      ON om.operation_id=h.operation_id AND om.ordinal=m.ordinal
+                    WHERE b.scope='project' AND b.enabled=1
+                      AND i.source_json NOT LIKE '%global-skill-install-source-v2%'
+                      AND i.status IN ({",".join("?" for _ in active_statuses)})
+                    ORDER BY b.pack_id,b.owner_key,b.scope_key,b.binding_id,i.intent_id""",
+                active_statuses,
+            )
+        ).fetchall()
+        by_pack: dict[str, list[Mapping[str, Any]]] = {}
+        return by_pack, rows
+
+    async def _converge_project_pack(self, db, evidence, frozen, row) -> None:
+        evidence_members = tuple(
+            item for item in evidence.get("members", ()) if isinstance(item, Mapping)
+        )
+        operation_member_rows = await (
+            await db.execute(
+                """SELECT ordinal,normalized_name,pack_id,version,
+                                  manifest_hash,content_hash,source_digest,
+                                  committed_version,committed_manifest_hash,
+                                  committed_set_stamp
+                           FROM capability_operation_members
+                           WHERE operation_id=? ORDER BY ordinal""",
+                (str(row["operation_id"] or ""),),
+            )
+        ).fetchall()
+        intent_member_rows = await (
+            await db.execute(
+                """SELECT ordinal,normalized_name,pack_id,version,
+                                  manifest_hash,content_hash,source_digest
+                           FROM capability_skill_install_members
+                           WHERE intent_id=? ORDER BY ordinal""",
+                (str(row["intent_id"]),),
+            )
+        ).fetchall()
+        rebuilt_members = [
+            {
+                "pack_id": str(item["pack_id"]),
+                "version": str(item["version"]),
+                "manifest_hash": str(item["manifest_hash"]),
+                "content_hash": str(item["content_hash"]),
+            }
+            for item in operation_member_rows
+        ]
+        intended_members = [
+            {
+                "pack_id": str(item["pack_id"]),
+                "version": str(item["version"]),
+                "manifest_hash": str(item["manifest_hash"]),
+                "content_hash": str(item["content_hash"]),
+            }
+            for item in intent_member_rows
+        ]
+        receipt_member_identities = [
+            {
+                "pack_id": str(item.get("pack_id") or ""),
+                "version": str(item.get("version") or ""),
+                "manifest_hash": str(item.get("manifest_hash") or ""),
+                "content_hash": str(item.get("content_hash") or ""),
+            }
+            for item in evidence_members
+        ]
+        full_member_set_valid = (
+            rebuilt_members == intended_members == receipt_member_identities
+            and tuple(int(item["ordinal"]) for item in operation_member_rows)
+            == tuple(range(len(operation_member_rows)))
+            and all(
+                str(item["committed_version"] or "") == str(item["version"])
+                and str(item["committed_manifest_hash"] or "") == str(item["manifest_hash"])
+                and str(item["committed_set_stamp"] or "") == str(row["member_set_stamp"])
+                for item in operation_member_rows
+            )
+        )
+        expected_member = {
+            "pack_id": str(row["pack_id"]),
+            "version": str(row["version"]),
+            "manifest_hash": str(row["manifest_hash"]),
+            "content_hash": str(row["content_hash"]),
+        }
+        matching_members = [
+            item
+            for item in evidence_members
+            if all(str(item.get(key) or "") == value for key, value in expected_member.items())
+        ]
+        receipt_payload = {
+            key: value
+            for key, value in evidence.items()
+            if key not in {"manager_receipt_hash", "install_root"}
+        }
+        receipt_hash = str(evidence.get("manager_receipt_hash") or "")
+        operation_request = (
+            _json_object(None if row["request_json"] is None else str(row["request_json"])) or {}
+        )
+        evidence_valid = all(
+            (
+                str(row["status"]) == "succeeded",
+                str(row["operation_kind"] or "") == "skill_install_batch",
+                str(row["operation_phase"] or "") == "batch_committed",
+                str(row["operation_status"] or "") == "succeeded",
+                str(row["evidence_status"] or "") == "committed",
+                str(evidence.get("schema") or "") == "capability-batch-manager-receipt-v1",
+                str(evidence.get("operation_id") or "") == str(row["operation_id"] or ""),
+                str(evidence.get("scope") or "") == "project",
+                str(evidence.get("scope_key") or "") == str(row["scope_key"]),
+                str(evidence.get("project_scope_key") or "") == str(row["scope_key"]),
+                str(evidence.get("owner_key") or "") == str(row["owner_key"]),
+                str(evidence.get("committed_set_stamp") or "") == str(row["member_set_stamp"]),
+                str(row["handoff_member_set_stamp"] or "") == str(row["member_set_stamp"]),
+                str(operation_request.get("member_set_stamp") or "")
+                == str(row["member_set_stamp"]),
+                str(evidence.get("publication_state") or "") == "active",
+                len(matching_members) == 1,
+                full_member_set_valid,
+                str(row["committed_version"] or "") == str(row["version"]),
+                str(row["committed_manifest_hash"] or "") == str(row["manifest_hash"]),
+                str(row["committed_set_stamp"] or "") == str(row["member_set_stamp"]),
+                len(receipt_hash) == 64,
+                receipt_hash == fingerprint_json(receipt_payload),
+                str(row["settlement_ref"] or "") == receipt_hash,
+                bool(str(row["verification_ref"] or "")),
+            )
+        )
+        frozen.append(
+            {
+                "binding_id": str(row["binding_id"]),
+                "owner_key": str(row["owner_key"]),
+                "scope_key": str(row["scope_key"]),
+                "generation": int(row["generation"]),
+                "intent_id": str(row["intent_id"]),
+                "intent_status": str(row["status"]),
+                "version": str(row["version"]),
+                "manifest_hash": str(row["manifest_hash"]),
+                "content_hash": str(row["content_hash"]),
+                "manager_receipt_hash": receipt_hash,
+                "runtime_verification_ref": str(row["verification_ref"] or ""),
+                "manager_evidence_valid": evidence_valid,
+                "ordered_member_set_hash": fingerprint_json(rebuilt_members),
+            }
+        )
+
+    async def _bind_converged_user_skill(
+        self,
+        db,
+        *,
+        existing,
+        frozen,
+        owner_key,
+        pack_id,
+        results: list[Mapping[str, JsonValue]],
+        selected,
+        source_stamp,
+    ) -> None:
+        assert selected is not None
+        await self._set_binding_tx(
+            db,
+            scope="user",
+            scope_key=owner_key,
+            pack_id=pack_id,
+            version=selected[0],
+            manifest_hash=selected[1],
+            expected_generation=(0 if existing is None else int(existing["generation"])),
+            owner_key=owner_key,
+            management_policy="user_managed",
+        )
+        retired_binding_ids: set[str] = set()
+        for item in frozen:
+            if item["binding_id"] in retired_binding_ids:
+                continue
+            cursor = await db.execute(
+                """DELETE FROM capability_bindings
                            WHERE binding_id=? AND generation=?""",
-                        (item["binding_id"], item["generation"]),
-                    )
-                    if cursor.rowcount != 1:
-                        raise CapabilityStoreConflict(
-                            "legacy_project_retirement_cas_conflict",
-                            f"legacy Project binding changed for {pack_id}",
-                        )
-                    retired_binding_ids.add(item["binding_id"])
-                    await self._touch_owner_detail_tx(
-                        db, OwnerScopeKey(item["owner_key"], "project", item["scope_key"])
-                    )
-                await self._bump_generation_tx(db, catalog=True, binding=True)
-                selected_json = {
-                    "version": selected[0],
-                    "manifest_hash": selected[1],
-                    "content_hash": selected[2],
-                    "manager_receipt_set_hash": fingerprint_json(
-                        sorted(str(item["manager_receipt_hash"]) for item in frozen)
-                    ),
-                }
-                await db.execute(
-                    """INSERT INTO capability_legacy_global_convergence(
+                (item["binding_id"], item["generation"]),
+            )
+            if cursor.rowcount != 1:
+                raise CapabilityStoreConflict(
+                    "legacy_project_retirement_cas_conflict",
+                    f"legacy Project binding changed for {pack_id}",
+                )
+            retired_binding_ids.add(item["binding_id"])
+            await self._touch_owner_detail_tx(
+                db, OwnerScopeKey(item["owner_key"], "project", item["scope_key"])
+            )
+        await self._bump_generation_tx(db, catalog=True, binding=True)
+        selected_json = {
+            "version": selected[0],
+            "manifest_hash": selected[1],
+            "content_hash": selected[2],
+            "manager_receipt_set_hash": fingerprint_json(
+                sorted(str(item["manager_receipt_hash"]) for item in frozen)
+            ),
+        }
+        await db.execute(
+            """INSERT INTO capability_legacy_global_convergence(
                        global_owner_key,pack_id,source_binding_set_stamp,outcome,
                        selected_identity_json,conflict_json,created_at
                        ) VALUES(?,?,?,'promoted',?,NULL,?)""",
-                    (
-                        owner_key,
-                        pack_id,
-                        source_stamp,
-                        canonical_json(selected_json),
-                        self._clock(),
-                    ),
-                )
-                results.append(
-                    {
-                        "pack_id": pack_id,
-                        "outcome": "promoted",
-                        "source_binding_set_stamp": source_stamp,
-                    }
-                )
-        return tuple(results)
+            (
+                owner_key,
+                pack_id,
+                source_stamp,
+                canonical_json(selected_json),
+                self._clock(),
+            ),
+        )
+        results.append(
+            {
+                "pack_id": pack_id,
+                "outcome": "promoted",
+                "source_binding_set_stamp": source_stamp,
+            }
+        )
 
     async def get_binding(
         self,

@@ -449,36 +449,9 @@ class RunBoundInvoker:
                     reason_code=f"{purpose}_attempt_unknown",
                     unknown_class=latest.unknown_class,
                 )
-            if latest.status == "unknown" and latest.unknown_class == "sent_confirmed":
-                return InvocationOutcome(
-                    "blocked",
-                    latest.attempt_id,
-                    latest.attempt_ordinal,
-                    reason_code=f"{purpose}_attempt_confirmed",
-                )
-            if latest.status == "reserved":
-                # A sender can hand off after the recovery read. Only winning
-                # the reserved CAS proves nothing was sent and permits retry.
-                moved = await self._settle_failed(
-                    latest.attempt_id,
-                    unknown_class="not_sent",
-                    reason="reserved_abandoned",
-                    expected_status="reserved",
-                )
-                if moved != 1:
-                    return InvocationOutcome(
-                        "blocked",
-                        latest.attempt_id,
-                        latest.attempt_ordinal,
-                        reason_code=f"{purpose}_attempt_unknown",
-                    )
-            elif latest.status == "failed" and latest.unknown_class != "not_sent":
-                return InvocationOutcome(
-                    "blocked",
-                    latest.attempt_id,
-                    latest.attempt_ordinal,
-                    reason_code=f"{purpose}_attempt_failed",
-                )
+            _returned, _result = await self._claim_existing_attempt(latest, purpose)
+            if _returned:
+                return _result
         if open_member is not None:
             observed = await self._observe(open_member)
             if observed is None:
@@ -534,24 +507,18 @@ class RunBoundInvoker:
             "reserved_at": self._clock(),
         }
         # reserved row + lease validation in one store transaction (owner only).
-        if prepare_attempt is not None and reuse_response is None and adapter is not None:
-            # Existing success/UNKNOWN/reconciled results above never need a new
-            # carrier. Only a genuinely new physical attempt prepares sources.
-            members, observer = await prepare_attempt(row)
-            await self._fence.reserve_attempt_with_input(row, members, observer)
-        else:
-            await self._fence.reserve_attempt(row, members)
-        self._fault("attempt-reserved")
-        if adapter is None:
-            await self._settle_failed(
-                attempt_id,
-                unknown_class="not_sent",
-                reason=str(adapter_error),
-                expected_status="reserved",
-            )
-            return InvocationOutcome(
-                "failed", attempt_id, ordinal, reason_code=adapter_error, unknown_class="not_sent"
-            )
+        _returned, _result = await self._reserve_attempt(
+            adapter,
+            adapter_error=adapter_error,
+            attempt_id=attempt_id,
+            members=members,
+            ordinal=ordinal,
+            prepare_attempt=prepare_attempt,
+            reuse_response=reuse_response,
+            row=row,
+        )
+        if _returned:
+            return _result
         attempt = AttemptRow(
             attempt_id,
             purpose,
@@ -576,29 +543,144 @@ class RunBoundInvoker:
         if reuse_response is not None:
             # Zero-call replay: the row still walks reserved → handed_off so the
             # caller settles it (with its durable result) exactly like a fresh call.
-            moved = await self._update(
-                attempt_id,
-                "UPDATE post_turn_invocation_attempts SET status='handed_off',handed_off_at=?,reason_code=? "
-                "WHERE attempt_id=? AND status='reserved'",
-                (self._clock(), f"reused:{reuse_source}"),
+            return await self._replay_zero_call(attempt_id, ordinal, reuse_response, reuse_source)
+        request = build_request(attempt)
+        return await self._finish_post_turn_attempt(
+            adapter,
+            attempt_id=attempt_id,
+            deadline_seconds=deadline_seconds,
+            ordinal=ordinal,
+            plan_id=plan_id,
+            purpose=purpose,
+            request=request,
+        )
+
+    async def _claim_existing_attempt(self, latest, purpose: str):
+        if latest.status == "unknown" and latest.unknown_class == "sent_confirmed":
+            return (
+                True,
+                (
+                    InvocationOutcome(
+                        "blocked",
+                        latest.attempt_id,
+                        latest.attempt_ordinal,
+                        reason_code=f"{purpose}_attempt_confirmed",
+                    )
+                ),
+            )
+        if latest.status == "reserved":
+            # A sender can hand off after the recovery read. Only winning
+            # the reserved CAS proves nothing was sent and permits retry.
+            moved = await self._settle_failed(
+                latest.attempt_id,
+                unknown_class="not_sent",
+                reason="reserved_abandoned",
+                expected_status="reserved",
             )
             if moved != 1:
-                return InvocationOutcome(
-                    "lease_lost",
-                    attempt_id,
-                    ordinal,
-                    reason_code="attempt_reserved_row_lost",
-                    provider_calls=0,
+                return (
+                    True,
+                    (
+                        InvocationOutcome(
+                            "blocked",
+                            latest.attempt_id,
+                            latest.attempt_ordinal,
+                            reason_code=f"{purpose}_attempt_unknown",
+                        )
+                    ),
                 )
+        elif latest.status == "failed" and latest.unknown_class != "not_sent":
+            return (
+                True,
+                (
+                    InvocationOutcome(
+                        "blocked",
+                        latest.attempt_id,
+                        latest.attempt_ordinal,
+                        reason_code=f"{purpose}_attempt_failed",
+                    )
+                ),
+            )
+        return False, None
+
+    async def _reserve_attempt(
+        self,
+        adapter,
+        *,
+        adapter_error: str | None,
+        attempt_id,
+        members: Sequence[tuple[str, str, str]],
+        ordinal,
+        prepare_attempt,
+        reuse_response: Any,
+        row,
+    ):
+        if prepare_attempt is not None and reuse_response is None and adapter is not None:
+            # Existing success/UNKNOWN/reconciled results above never need a new
+            # carrier. Only a genuinely new physical attempt prepares sources.
+            members, observer = await prepare_attempt(row)
+            await self._fence.reserve_attempt_with_input(row, members, observer)
+        else:
+            await self._fence.reserve_attempt(row, members)
+        self._fault("attempt-reserved")
+        if adapter is None:
+            await self._settle_failed(
+                attempt_id,
+                unknown_class="not_sent",
+                reason=str(adapter_error),
+                expected_status="reserved",
+            )
+            return (
+                True,
+                (
+                    InvocationOutcome(
+                        "failed",
+                        attempt_id,
+                        ordinal,
+                        reason_code=adapter_error,
+                        unknown_class="not_sent",
+                    )
+                ),
+            )
+        return False, None
+
+    async def _replay_zero_call(
+        self, attempt_id, ordinal, reuse_response: Any, reuse_source: str | None
+    ) -> InvocationOutcome:
+        moved = await self._update(
+            attempt_id,
+            "UPDATE post_turn_invocation_attempts SET status='handed_off',handed_off_at=?,reason_code=? "
+            "WHERE attempt_id=? AND status='reserved'",
+            (self._clock(), f"reused:{reuse_source}"),
+        )
+        if moved != 1:
             return InvocationOutcome(
-                "succeeded",
+                "lease_lost",
                 attempt_id,
                 ordinal,
-                response=reuse_response,
-                reason_code=f"reused:{reuse_source}",
+                reason_code="attempt_reserved_row_lost",
                 provider_calls=0,
             )
-        request = build_request(attempt)
+        return InvocationOutcome(
+            "succeeded",
+            attempt_id,
+            ordinal,
+            response=reuse_response,
+            reason_code=f"reused:{reuse_source}",
+            provider_calls=0,
+        )
+
+    async def _finish_post_turn_attempt(
+        self,
+        adapter,
+        *,
+        attempt_id,
+        deadline_seconds: float | None,
+        ordinal,
+        plan_id: str | None,
+        purpose: str,
+        request,
+    ) -> InvocationOutcome:
         moved = await self._update(
             attempt_id,
             "UPDATE post_turn_invocation_attempts SET status='handed_off',handed_off_at=? WHERE attempt_id=? AND status='reserved'",

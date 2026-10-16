@@ -207,93 +207,7 @@ def inspect_rendered_deck(
     elif candidate is None or candidate.suffix.casefold() != ".pptx" or candidate_size <= 0:
         failures.append({"code": "ppt_file_invalid"})
     else:
-        try:
-            with zipfile.ZipFile(candidate) as archive:
-                corrupt_member = archive.testzip()
-                if corrupt_member:
-                    failures.append(
-                        {
-                            "code": "ppt_zip_corrupt",
-                            "member": str(corrupt_member),
-                        }
-                    )
-                presentation = ElementTree.fromstring(archive.read("ppt/presentation.xml"))
-                namespace = {"p": "http://schemas.openxmlformats.org/presentationml/2006/main"}
-                slide_ids = presentation.findall(".//p:sldIdLst/p:sldId", namespace)
-                actual_slide_count = len(slide_ids)
-                required_members = {
-                    "[Content_Types].xml",
-                    "_rels/.rels",
-                    "ppt/presentation.xml",
-                    "ppt/_rels/presentation.xml.rels",
-                }
-                missing_members = sorted(required_members.difference(archive.namelist()))
-                if missing_members:
-                    failures.append(
-                        {
-                            "code": "ppt_package_parts_missing",
-                            "members": missing_members,
-                        }
-                    )
-                member_names = set(archive.namelist())
-                slide_parts = sorted(
-                    name
-                    for name in member_names
-                    if name.startswith("ppt/slides/slide")
-                    and name.endswith(".xml")
-                    and "/_rels/" not in name
-                )
-                missing_slide_rels = [
-                    (f"{posixpath.dirname(name)}/_rels/{posixpath.basename(name)}.rels")
-                    for name in slide_parts
-                    if (f"{posixpath.dirname(name)}/_rels/{posixpath.basename(name)}.rels")
-                    not in member_names
-                ]
-                if missing_slide_rels:
-                    failures.append(
-                        {
-                            "code": "ppt_slide_relationships_missing",
-                            "members": missing_slide_rels,
-                        }
-                    )
-                relationship_namespace = {
-                    "r": ("http://schemas.openxmlformats.org/package/2006/relationships")
-                }
-                missing_targets: list[str] = []
-                for rels_name in sorted(name for name in member_names if name.endswith(".rels")):
-                    rels = ElementTree.fromstring(archive.read(rels_name))
-                    if "/_rels/" in rels_name:
-                        source_dir = rels_name.rsplit("/_rels/", 1)[0]
-                    elif rels_name == "_rels/.rels":
-                        source_dir = ""
-                    else:
-                        source_dir = posixpath.dirname(rels_name)
-                    for relation in rels.findall("r:Relationship", relationship_namespace):
-                        if str(relation.get("TargetMode") or "").casefold() == "external":
-                            continue
-                        target = unquote(str(relation.get("Target") or "")).split("#", 1)[0]
-                        if not target:
-                            missing_targets.append(f"{rels_name}:<empty>")
-                            continue
-                        normalized = posixpath.normpath(
-                            posixpath.join(source_dir, target.lstrip("/"))
-                        )
-                        if normalized not in member_names:
-                            missing_targets.append(f"{rels_name}:{normalized}")
-                if missing_targets:
-                    failures.append(
-                        {
-                            "code": "ppt_relationship_target_missing",
-                            "targets": missing_targets,
-                        }
-                    )
-        except (KeyError, OSError, ElementTree.ParseError, zipfile.BadZipFile) as exc:
-            failures.append(
-                {
-                    "code": "ppt_package_invalid",
-                    "detail": exc.__class__.__name__,
-                }
-            )
+        actual_slide_count = _inspect_deck_archive(actual_slide_count, candidate, failures)
         if not failures:
             try:
                 # 按需导入：重型包
@@ -332,146 +246,16 @@ def inspect_rendered_deck(
                         }
                     )
                 for page, slide in enumerate(loaded.slides, start=1):
-                    pictures = 0
-                    text_shapes = 0
-                    visible_text_shapes = 0
-                    visible_text_entries: list[tuple[int, int, str]] = []
-                    native_object_text: list[str] = []
-                    tables = 0
-                    charts = 0
-                    chart_types: list[str] = []
-                    for shape in slide.shapes:
-                        try:
-                            if int(shape.shape_type) == 13:
-                                pictures += 1
-                        except (TypeError, ValueError):
-                            pass
-                        if bool(getattr(shape, "has_text_frame", False)):
-                            shape_text = str(getattr(shape, "text", "") or "").strip()
-                            if shape_text:
-                                text_shapes += 1
-                                normalized_text = _normalized_ppt_text(shape_text)
-                                left = int(getattr(shape, "left", 0) or 0)
-                                top = int(getattr(shape, "top", 0) or 0)
-                                right = left + int(getattr(shape, "width", 0) or 0)
-                                bottom = top + int(getattr(shape, "height", 0) or 0)
-                                visible_width = max(
-                                    0, min(right, loaded.slide_width) - max(left, 0)
-                                )
-                                visible_height = max(
-                                    0, min(bottom, loaded.slide_height) - max(top, 0)
-                                )
-                                visible_area = visible_width * visible_height
-                                slide_area = loaded.slide_width * loaded.slide_height
-                                if (
-                                    (
-                                        len(normalized_text) >= 2
-                                        or bool(
-                                            _EDITABLE_CALLOUT_METRIC_RE.fullmatch(normalized_text)
-                                        )
-                                    )
-                                    and visible_width >= loaded.slide_width * 0.01
-                                    and visible_height >= loaded.slide_height * 0.01
-                                    and visible_area >= slide_area * 0.0005
-                                ):
-                                    visible_text_shapes += 1
-                                    visible_text_entries.append((top, left, normalized_text))
-                        if bool(getattr(shape, "has_table", False)):
-                            tables += 1
-                            for row in shape.table.rows:
-                                for cell in row.cells:
-                                    normalized_cell = _normalized_ppt_text(cell.text)
-                                    if normalized_cell:
-                                        native_object_text.append(normalized_cell)
-                        if bool(getattr(shape, "has_chart", False)):
-                            charts += 1
-                            chart = shape.chart
-                            chart_types.append(str(chart.chart_type).casefold())
-                            for series in chart.series:
-                                normalized_name = _normalized_ppt_text(series.name)
-                                if normalized_name:
-                                    native_object_text.append(normalized_name)
-                            for plot in chart.plots:
-                                for category in plot.categories:
-                                    normalized_category = _normalized_ppt_text(
-                                        getattr(category, "label", category)
-                                    )
-                                    if normalized_category:
-                                        native_object_text.append(normalized_category)
-                    visible_text = [
-                        item[2]
-                        for item in sorted(
-                            visible_text_entries,
-                            key=lambda item: (item[0], item[1]),
-                        )
-                    ]
-                    inventory: dict[str, JsonValue] = {
-                        "page": page,
-                        "pictures": pictures,
-                        "text_shapes": text_shapes,
-                        "visible_text_shapes": visible_text_shapes,
-                        "tables": tables,
-                        "charts": charts,
-                        "chart_types": chart_types,
-                    }
-                    shape_inventory.append(inventory)
-                    if editable_required and visible_text_shapes == 0:
-                        failures.append(
-                            {
-                                "code": (
-                                    "ppt_flattened_slide_forbidden"
-                                    if pictures
-                                    else "ppt_editable_content_missing"
-                                ),
-                                "page": page,
-                            }
-                        )
-                    expected_record = (
-                        expected_slides[page - 1]
-                        if expected_slides and page <= len(expected_slides)
-                        else {}
+                    chart_types, charts, required = _inspect_deck_shapes(
+                        editable_required,
+                        expected_slides=expected_slides,
+                        failures=failures,
+                        loaded=loaded,
+                        page=page,
+                        requirements=requirements,
+                        shape_inventory=shape_inventory,
+                        slide=slide,
                     )
-                    if editable_required and expected_record:
-                        expected_payload = expected_record.get("slide")
-                        expected_slide = (
-                            expected_payload
-                            if isinstance(expected_payload, Mapping)
-                            else expected_record
-                        )
-                        if str(expected_slide.get("layout") or "") == "image_full":
-                            failures.append(
-                                {
-                                    "code": "ppt_editable_layout_forbidden",
-                                    "page": page,
-                                    "layout": "image_full",
-                                }
-                            )
-                        actual_native_text = [*visible_text, *native_object_text]
-                        for field, expected_text in _expected_editable_copy(expected_record):
-                            if not _editable_copy_present(
-                                expected_text,
-                                actual_native_text,
-                            ):
-                                failures.append(
-                                    {
-                                        "code": (
-                                            "ppt_expected_editable_title_missing"
-                                            if field == "title"
-                                            else "ppt_expected_editable_text_missing"
-                                        ),
-                                        "page": page,
-                                        "field": field,
-                                    }
-                                )
-                    raw_required = requirements.get(str(page), ())
-                    required = (
-                        tuple(str(item) for item in raw_required)
-                        if isinstance(raw_required, Sequence)
-                        and not isinstance(raw_required, (str, bytes))
-                        else ()
-                    )
-                    if "table" in required and tables < 1:
-                        failures.append({"code": "ppt_required_table_missing", "page": page})
                     chart_requirements = [
                         item for item in required if item == "chart" or item.startswith("chart:")
                     ]
@@ -522,6 +306,236 @@ def inspect_rendered_deck(
     }
     validate_json_value(result)
     return result
+
+
+def _inspect_deck_archive(
+    actual_slide_count: int | None, candidate, failures: list[dict[str, JsonValue]]
+) -> int | None:
+    try:
+        with zipfile.ZipFile(candidate) as archive:
+            corrupt_member = archive.testzip()
+            if corrupt_member:
+                failures.append(
+                    {
+                        "code": "ppt_zip_corrupt",
+                        "member": str(corrupt_member),
+                    }
+                )
+            presentation = ElementTree.fromstring(archive.read("ppt/presentation.xml"))
+            namespace = {"p": "http://schemas.openxmlformats.org/presentationml/2006/main"}
+            slide_ids = presentation.findall(".//p:sldIdLst/p:sldId", namespace)
+            actual_slide_count = len(slide_ids)
+            required_members = {
+                "[Content_Types].xml",
+                "_rels/.rels",
+                "ppt/presentation.xml",
+                "ppt/_rels/presentation.xml.rels",
+            }
+            missing_members = sorted(required_members.difference(archive.namelist()))
+            if missing_members:
+                failures.append(
+                    {
+                        "code": "ppt_package_parts_missing",
+                        "members": missing_members,
+                    }
+                )
+            member_names = set(archive.namelist())
+            slide_parts = sorted(
+                name
+                for name in member_names
+                if name.startswith("ppt/slides/slide")
+                and name.endswith(".xml")
+                and "/_rels/" not in name
+            )
+            missing_slide_rels = [
+                (f"{posixpath.dirname(name)}/_rels/{posixpath.basename(name)}.rels")
+                for name in slide_parts
+                if (f"{posixpath.dirname(name)}/_rels/{posixpath.basename(name)}.rels")
+                not in member_names
+            ]
+            if missing_slide_rels:
+                failures.append(
+                    {
+                        "code": "ppt_slide_relationships_missing",
+                        "members": missing_slide_rels,
+                    }
+                )
+            relationship_namespace = {
+                "r": ("http://schemas.openxmlformats.org/package/2006/relationships")
+            }
+            missing_targets: list[str] = []
+            for rels_name in sorted(name for name in member_names if name.endswith(".rels")):
+                rels = ElementTree.fromstring(archive.read(rels_name))
+                if "/_rels/" in rels_name:
+                    source_dir = rels_name.rsplit("/_rels/", 1)[0]
+                elif rels_name == "_rels/.rels":
+                    source_dir = ""
+                else:
+                    source_dir = posixpath.dirname(rels_name)
+                for relation in rels.findall("r:Relationship", relationship_namespace):
+                    if str(relation.get("TargetMode") or "").casefold() == "external":
+                        continue
+                    target = unquote(str(relation.get("Target") or "")).split("#", 1)[0]
+                    if not target:
+                        missing_targets.append(f"{rels_name}:<empty>")
+                        continue
+                    normalized = posixpath.normpath(posixpath.join(source_dir, target.lstrip("/")))
+                    if normalized not in member_names:
+                        missing_targets.append(f"{rels_name}:{normalized}")
+            if missing_targets:
+                failures.append(
+                    {
+                        "code": "ppt_relationship_target_missing",
+                        "targets": missing_targets,
+                    }
+                )
+    except (KeyError, OSError, ElementTree.ParseError, zipfile.BadZipFile) as exc:
+        failures.append(
+            {
+                "code": "ppt_package_invalid",
+                "detail": exc.__class__.__name__,
+            }
+        )
+    return actual_slide_count
+
+
+def _inspect_deck_shapes(
+    editable_required: bool,
+    *,
+    expected_slides: Sequence[Mapping[str, Any]] | None,
+    failures: list[dict[str, JsonValue]],
+    loaded,
+    page,
+    requirements,
+    shape_inventory: list[dict[str, JsonValue]],
+    slide,
+):
+    pictures = 0
+    text_shapes = 0
+    visible_text_shapes = 0
+    visible_text_entries: list[tuple[int, int, str]] = []
+    native_object_text: list[str] = []
+    tables = 0
+    charts = 0
+    chart_types: list[str] = []
+    for shape in slide.shapes:
+        try:
+            if int(shape.shape_type) == 13:
+                pictures += 1
+        except (TypeError, ValueError):
+            pass
+        if bool(getattr(shape, "has_text_frame", False)):
+            shape_text = str(getattr(shape, "text", "") or "").strip()
+            if shape_text:
+                text_shapes += 1
+                normalized_text = _normalized_ppt_text(shape_text)
+                left = int(getattr(shape, "left", 0) or 0)
+                top = int(getattr(shape, "top", 0) or 0)
+                right = left + int(getattr(shape, "width", 0) or 0)
+                bottom = top + int(getattr(shape, "height", 0) or 0)
+                visible_width = max(0, min(right, loaded.slide_width) - max(left, 0))
+                visible_height = max(0, min(bottom, loaded.slide_height) - max(top, 0))
+                visible_area = visible_width * visible_height
+                slide_area = loaded.slide_width * loaded.slide_height
+                if (
+                    (
+                        len(normalized_text) >= 2
+                        or bool(_EDITABLE_CALLOUT_METRIC_RE.fullmatch(normalized_text))
+                    )
+                    and visible_width >= loaded.slide_width * 0.01
+                    and visible_height >= loaded.slide_height * 0.01
+                    and visible_area >= slide_area * 0.0005
+                ):
+                    visible_text_shapes += 1
+                    visible_text_entries.append((top, left, normalized_text))
+        if bool(getattr(shape, "has_table", False)):
+            tables += 1
+            for row in shape.table.rows:
+                for cell in row.cells:
+                    normalized_cell = _normalized_ppt_text(cell.text)
+                    if normalized_cell:
+                        native_object_text.append(normalized_cell)
+        if bool(getattr(shape, "has_chart", False)):
+            charts += 1
+            chart = shape.chart
+            chart_types.append(str(chart.chart_type).casefold())
+            for series in chart.series:
+                normalized_name = _normalized_ppt_text(series.name)
+                if normalized_name:
+                    native_object_text.append(normalized_name)
+            for plot in chart.plots:
+                for category in plot.categories:
+                    normalized_category = _normalized_ppt_text(getattr(category, "label", category))
+                    if normalized_category:
+                        native_object_text.append(normalized_category)
+    visible_text = [
+        item[2]
+        for item in sorted(
+            visible_text_entries,
+            key=lambda item: (item[0], item[1]),
+        )
+    ]
+    inventory: dict[str, JsonValue] = {
+        "page": page,
+        "pictures": pictures,
+        "text_shapes": text_shapes,
+        "visible_text_shapes": visible_text_shapes,
+        "tables": tables,
+        "charts": charts,
+        "chart_types": chart_types,
+    }
+    shape_inventory.append(inventory)
+    if editable_required and visible_text_shapes == 0:
+        failures.append(
+            {
+                "code": (
+                    "ppt_flattened_slide_forbidden" if pictures else "ppt_editable_content_missing"
+                ),
+                "page": page,
+            }
+        )
+    expected_record = (
+        expected_slides[page - 1] if expected_slides and page <= len(expected_slides) else {}
+    )
+    if editable_required and expected_record:
+        expected_payload = expected_record.get("slide")
+        expected_slide = (
+            expected_payload if isinstance(expected_payload, Mapping) else expected_record
+        )
+        if str(expected_slide.get("layout") or "") == "image_full":
+            failures.append(
+                {
+                    "code": "ppt_editable_layout_forbidden",
+                    "page": page,
+                    "layout": "image_full",
+                }
+            )
+        actual_native_text = [*visible_text, *native_object_text]
+        for field, expected_text in _expected_editable_copy(expected_record):
+            if not _editable_copy_present(
+                expected_text,
+                actual_native_text,
+            ):
+                failures.append(
+                    {
+                        "code": (
+                            "ppt_expected_editable_title_missing"
+                            if field == "title"
+                            else "ppt_expected_editable_text_missing"
+                        ),
+                        "page": page,
+                        "field": field,
+                    }
+                )
+    raw_required = requirements.get(str(page), ())
+    required = (
+        tuple(str(item) for item in raw_required)
+        if isinstance(raw_required, Sequence) and not isinstance(raw_required, (str, bytes))
+        else ()
+    )
+    if "table" in required and tables < 1:
+        failures.append({"code": "ppt_required_table_missing", "page": page})
+    return chart_types, charts, required
 
 
 def _preview_quality_gate(

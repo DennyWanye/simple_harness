@@ -90,185 +90,23 @@ class RunInspectionMixin(ExecutionUowCore):
                     (run_key, session_key),
                 )
             ).fetchone()
-            if run is None:
-                return None
-
-            snapshot = await (
-                await db.execute(
-                    """SELECT * FROM execution_run_start_snapshots
-                    WHERE run_id=?""",
-                    (run_key,),
-                )
-            ).fetchone()
-            continuation = await (
-                await db.execute(
-                    """SELECT iteration,continuation_version,
-                    pending_decision_id,pending_prepared_call_json,updated_at
-                    FROM execution_continuations WHERE run_id=?""",
-                    (run_key,),
-                )
-            ).fetchone()
-            projection = await (
-                await db.execute(
-                    """SELECT task_scope_id,ui_state,projection_version,
-                    created_at,updated_at
-                    FROM execution_task_run_projections
-                    WHERE root_run_id=?""",
-                    (run_key,),
-                )
-            ).fetchone()
-            goal = await (
-                await db.execute(
-                    """SELECT goal_id,task_scope_id,status,goal_version,
-                    created_at,updated_at,ended_at
-                    FROM execution_task_goals WHERE root_run_id=?""",
-                    (run_key,),
-                )
-            ).fetchone()
-            latest_plan = await (
-                await db.execute(
-                    """SELECT plan_version,trigger_failure_set_id,created_at
-                    FROM execution_plan_versions WHERE root_run_id=?
-                    ORDER BY plan_version DESC LIMIT 1""",
-                    (run_key,),
-                )
-            ).fetchone()
-
-            lineage_rows = await (
-                await db.execute(
-                    """SELECT run_id,parent_run_id,driver_kind,profile_key,
-                    status,version,created_at,started_at,updated_at,ended_at
-                    FROM execution_runs WHERE root_run_id=?
-                    ORDER BY created_at,run_id LIMIT 200""",
-                    (run_key,),
-                )
-            ).fetchall()
-            provider_rows = await (
-                await db.execute(
-                    """SELECT i.run_id,i.invocation_id,i.provider_id,i.model_id,
-                    i.adapter_id,i.idempotency_group_id,i.attempt_ordinal,
-                    i.status,i.claimed_at,i.dispatch_started_at,i.updated_at,
-                    i.outcome_ref,i.request_hash,i.policy_snapshot_json,
-                    p.payload_json AS input_payload_json,
-                    o.payload_json AS outcome_payload_json,
-                    a.reason AS audit_reason,
-                    a.error_type AS audit_error_type,
-                    a.error_message AS audit_error_message
-                    FROM execution_provider_invocations AS i
-                    JOIN execution_runs AS r ON r.run_id=i.run_id
-                    LEFT JOIN execution_provider_invocation_inputs AS p
-                      ON p.run_id=i.run_id
-                     AND p.invocation_id=i.invocation_id
-                    LEFT JOIN execution_provider_invocation_outcomes AS o
-                      ON o.run_id=i.run_id
-                     AND o.invocation_id=i.invocation_id
-                    LEFT JOIN execution_provider_invocation_audits AS a
-                      ON a.run_id=i.run_id
-                     AND a.invocation_id=i.invocation_id
-                    WHERE r.root_run_id=?
-                    ORDER BY i.claimed_at,i.invocation_id LIMIT 200""",
-                    (run_key,),
-                )
-            ).fetchall()
-            batch_rows = await (
-                await db.execute(
-                    """SELECT provider_batch_id,provider_turn_id,
-                    pending_call_count,failure_set_id,status,batch_version,
-                    created_at,updated_at,settled_at
-                    FROM execution_provider_action_batches
-                    WHERE root_run_id=?
-                    ORDER BY created_at,provider_batch_id LIMIT 200""",
-                    (run_key,),
-                )
-            ).fetchall()
-            call_rows = await (
-                await db.execute(
-                    """SELECT call_record_id,provider_batch_id,call_order,
-                    provider_call_id,raw_tool_name,admission_state,
-                    raw_arguments_ref,raw_arguments_hash,
-                    parsed_arguments_hash,prepared_call_ref,
-                    terminal_outcome_ref,call_version,created_at,updated_at
-                    FROM execution_provider_action_calls
-                    WHERE root_run_id=?
-                    ORDER BY created_at,provider_batch_id,call_order LIMIT 400""",
-                    (run_key,),
-                )
-            ).fetchall()
-            effect_rows = await (
-                await db.execute(
-                    """SELECT e.effect_id,e.run_id,e.call_id,e.tool_name,
-                    e.effect_type,e.status,e.handoff_state,
-                    e.completion_disposition,e.receipt_ref,e.policy_json,
-                    e.prepared_json,e.outcome_json,e.artifact_refs_json,
-                    e.created_at,e.updated_at,e.ended_at
-                    FROM execution_effects AS e
-                    JOIN execution_runs AS r ON r.run_id=e.run_id
-                    WHERE r.root_run_id=?
-                    ORDER BY e.created_at,e.effect_id LIMIT 400""",
-                    (run_key,),
-                )
-            ).fetchall()
-            workflow_effect_rows = await (
-                await db.execute(
-                    """SELECT e.effect_id,e.run_id,e.status,e.prepared_json,
-                    e.outcome_json,e.receipt_ref,e.artifact_refs_json,
-                    e.started_at,e.updated_at,e.ended_at
-                    FROM workflow_effects AS e
-                    JOIN execution_runs AS r ON r.run_id=e.run_id
-                    WHERE r.root_run_id=?
-                    ORDER BY e.started_at,e.effect_id LIMIT 400""",
-                    (run_key,),
-                )
-            ).fetchall()
-            workflow_checkpoint_rows = await (
-                await db.execute(
-                    """SELECT wr.run_id,wc.checkpoint_blob
-                    FROM workflow_runs AS wr
-                    JOIN execution_runs AS er ON er.run_id=wr.run_id
-                    LEFT JOIN workflow_checkpoints AS wc
-                      ON wc.thread_id=wr.thread_id
-                     AND wc.checkpoint_ns=wr.head_checkpoint_ns
-                     AND wc.checkpoint_id=wr.head_checkpoint_id
-                    WHERE er.root_run_id=?
-                      AND wr.workflow_name='durable_task'
-                    ORDER BY er.created_at,wr.run_id LIMIT 100""",
-                    (run_key,),
-                )
-            ).fetchall()
-            attempt_rows = await (
-                await db.execute(
-                    """SELECT attempt_id,run_id,provider_turn_id,
-                    provider_batch_id,plan_version,trigger_failure_set_id,
-                    supersedes_attempt_id,status,attempt_version,created_at,
-                    updated_at,ended_at
-                    FROM execution_attempt_records WHERE root_run_id=?
-                    ORDER BY created_at,attempt_id LIMIT 200""",
-                    (run_key,),
-                )
-            ).fetchall()
-            failure_rows = await (
-                await db.execute(
-                    """SELECT report_ref,run_id,attempt_id,plan_version,
-                    provider_call_id,child_run_id,failed_call_id,
-                    failed_effect_id,failed_step,error_class,error_code,
-                    source_kind,source_identity,created_at
-                    FROM execution_task_failure_reports WHERE root_run_id=?
-                    ORDER BY created_at,report_ref LIMIT 400""",
-                    (run_key,),
-                )
-            ).fetchall()
-            event_rows = await (
-                await db.execute(
-                    """SELECT e.event_id,e.run_id,e.durable_seq,e.kind,
-                    e.status,e.driver_kind,e.correlation_json,e.payload_json,
-                    e.error_json,e.created_at
-                    FROM execution_events AS e
-                    JOIN execution_runs AS r ON r.run_id=e.run_id
-                    WHERE r.root_run_id=?
-                    ORDER BY e.created_at,e.run_id,e.durable_seq LIMIT 400""",
-                    (run_key,),
-                )
-            ).fetchall()
+            (
+                _returned,
+                _result,
+                continuation,
+                projection,
+                snapshot,
+            ) = await self._inspect_start_snapshot(db, run, run_key)
+            if _returned:
+                return _result
+            goal, latest_plan, lineage_rows = await self._inspect_goal_rows(db, run_key)
+            batch_rows, call_rows, provider_rows = await self._inspect_provider_rows(db, run_key)
+            (
+                effect_rows,
+                workflow_checkpoint_rows,
+                workflow_effect_rows,
+            ) = await self._inspect_effect_rows(db, run_key)
+            attempt_rows, event_rows, failure_rows = await self._inspect_attempt_rows(db, run_key)
 
             pending = (
                 _json(continuation["pending_prepared_call_json"], {})
@@ -351,239 +189,29 @@ class RunInspectionMixin(ExecutionUowCore):
                 for call_id, observation in tool_observations_by_call.items()
                 if observation.get("status")
             }
-            pending_outcome_statuses = (
-                pending.get("outcome_statuses", []) if isinstance(pending, Mapping) else []
+            observed_batch_status, pending_current_attempt, providers = self._inspect_batch_status(
+                _iteration,
+                _json=_json,
+                _optional_float=_optional_float,
+                call_rows=call_rows,
+                completion_state=completion_state,
+                pending=pending,
+                pending_calls=pending_calls,
+                pending_outcome_status_by_call=pending_outcome_status_by_call,
+                provider_rows=provider_rows,
             )
-            if isinstance(pending_outcome_statuses, list):
-                for index, call in enumerate(pending_calls):
-                    if not isinstance(call, Mapping) or index >= len(pending_outcome_statuses):
-                        continue
-                    call_id = str(call.get("stable_call_id") or "").strip()
-                    outcome_status = str(pending_outcome_statuses[index] or "").strip()
-                    if call_id and outcome_status:
-                        pending_outcome_status_by_call[call_id] = outcome_status
-            observed_statuses_by_batch: dict[str, list[str | None]] = {}
-            for item in call_rows:
-                batch_id = str(item["provider_batch_id"])
-                call_id = str(item["provider_call_id"])
-                observed_statuses_by_batch.setdefault(batch_id, []).append(
-                    pending_outcome_status_by_call.get(call_id)
-                )
-            observed_batch_status: dict[str, str] = {}
-            terminal_tool_statuses = {
-                "succeeded",
-                "failed",
-                "cancelled",
-                "unknown",
-                "rejected",
-                "skipped",
-            }
-            for batch_id, statuses in observed_statuses_by_batch.items():
-                concrete = [status for status in statuses if status]
-                if len(concrete) != len(statuses) or any(
-                    status not in terminal_tool_statuses for status in concrete
-                ):
-                    continue
-                if any(status in {"failed", "unknown", "rejected"} for status in concrete):
-                    observed_batch_status[batch_id] = "failed"
-                elif any(status == "cancelled" for status in concrete):
-                    observed_batch_status[batch_id] = "cancelled"
-                else:
-                    observed_batch_status[batch_id] = "succeeded"
-            pending_current_attempt = None
-            if isinstance(completion_state, Mapping):
-                current_attempt = completion_state.get("current_attempt")
-                if isinstance(current_attempt, Mapping):
-                    pending_current_attempt = current_attempt
-            providers = []
-            for item in provider_rows:
-                started_at = _optional_float(item["dispatch_started_at"])
-                updated_at = float(item["updated_at"])
-                status = str(item["status"])
-                audit_reason = None if item["audit_reason"] is None else str(item["audit_reason"])
-                if status == "unknown" and audit_reason is None:
-                    audit_reason = "legacy_unknown_reason_not_recorded"
-                providers.append(
-                    {
-                        "run_id": str(item["run_id"]),
-                        "invocation_id": str(item["invocation_id"]),
-                        "provider_id": str(item["provider_id"]),
-                        "model_id": str(item["model_id"]),
-                        "adapter_id": str(item["adapter_id"]),
-                        "iteration": _iteration(str(item["idempotency_group_id"])),
-                        "attempt_ordinal": int(item["attempt_ordinal"]),
-                        "status": status,
-                        "claimed_at": float(item["claimed_at"]),
-                        "dispatch_started_at": started_at,
-                        "updated_at": updated_at,
-                        "duration_ms": max(
-                            0.0,
-                            (
-                                updated_at
-                                - (
-                                    started_at
-                                    if started_at is not None
-                                    else float(item["claimed_at"])
-                                )
-                            )
-                            * 1000.0,
-                        ),
-                        "audit_reason": audit_reason,
-                        "request_hash": str(item["request_hash"]),
-                        "policy": _json(item["policy_snapshot_json"], {}),
-                        "input": _json(item["input_payload_json"], None),
-                        "output": _json(item["outcome_payload_json"], None),
-                        "error_type": (
-                            None
-                            if item["audit_error_type"] is None
-                            else str(item["audit_error_type"])
-                        ),
-                        "error_message": (
-                            None
-                            if item["audit_error_message"] is None
-                            else str(item["audit_error_message"])
-                        ),
-                    }
-                )
 
             workflow_step_by_call: dict[tuple[str, str], str] = {}
             workflow_plans = []
-            for item in workflow_checkpoint_rows:
-                workflow_run_id = str(item["run_id"])
-                checkpoint = _checkpoint_payload(item["checkpoint_blob"])
-                state = checkpoint.get("state")
-                values = state.get("values") if isinstance(state, Mapping) else None
-                if not isinstance(values, Mapping):
-                    continue
-                proposal = values.get("proposal_state")
-                proposal = proposal if isinstance(proposal, Mapping) else {}
-                committed = proposal.get("committed_tool_results")
-                current_results = values.get("tool_results")
-                for raw_results in (committed, current_results):
-                    if not isinstance(raw_results, Mapping):
-                        continue
-                    for raw_call_id, raw_result in raw_results.items():
-                        if not isinstance(raw_result, Mapping):
-                            continue
-                        call_id = str(raw_result.get("stable_call_id") or raw_call_id or "").strip()
-                        step_id = str(raw_result.get("workflow_step_id") or "").strip()
-                        if call_id and step_id:
-                            workflow_step_by_call[(workflow_run_id, call_id)] = step_id
-
-                raw_todos = values.get("todos")
-                steps = []
-                if isinstance(raw_todos, list):
-                    for index, raw_todo in enumerate(raw_todos):
-                        if not isinstance(raw_todo, Mapping):
-                            continue
-                        step_id = str(raw_todo.get("workflow_step_id") or "").strip()
-                        title = str(raw_todo.get("title") or "").strip()
-                        if not step_id or not title:
-                            continue
-                        steps.append(
-                            {
-                                "workflow_step_id": step_id,
-                                "index": int(raw_todo.get("index", index)),
-                                "title": title[:4000],
-                                "status": str(raw_todo.get("status") or "pending"),
-                            }
-                        )
-
-                messages = []
-                raw_messages = proposal.get("messages")
-                if isinstance(raw_messages, list):
-                    for index, raw_message in enumerate(raw_messages):
-                        if (
-                            not isinstance(raw_message, Mapping)
-                            or str(raw_message.get("role") or "") != "assistant"
-                        ):
-                            continue
-                        text = _public_message(raw_message.get("content"))
-                        raw_calls = raw_message.get("tool_calls")
-                        call_ids = []
-                        if isinstance(raw_calls, list):
-                            call_ids = [
-                                str(call.get("id") or "").strip()
-                                for call in raw_calls
-                                if isinstance(call, Mapping) and str(call.get("id") or "").strip()
-                            ]
-                        if not text and not call_ids:
-                            continue
-                        step_id = next(
-                            (
-                                workflow_step_by_call.get((workflow_run_id, call_id))
-                                for call_id in call_ids
-                                if workflow_step_by_call.get((workflow_run_id, call_id))
-                            ),
-                            None,
-                        )
-                        messages.append(
-                            {
-                                "message_id": str(
-                                    raw_message.get("message_id") or f"assistant-{index}"
-                                ),
-                                "text": text,
-                                "tool_call_ids": call_ids,
-                                "workflow_step_id": step_id,
-                            }
-                        )
-                workflow_plans.append(
-                    {
-                        "run_id": workflow_run_id,
-                        "plan_id": (
-                            str(proposal.get("active_plan_id"))
-                            if proposal.get("active_plan_id")
-                            else None
-                        ),
-                        "active_step_id": (
-                            str(proposal.get("active_step_id"))
-                            if proposal.get("active_step_id")
-                            else None
-                        ),
-                        "steps": steps,
-                        "public_messages": messages,
-                    }
-                )
-
-            events = []
-            for item in event_rows:
-                error = _json(item["error_json"], {})
-                correlation = _json(item["correlation_json"], {})
-                events.append(
-                    {
-                        "event_id": str(item["event_id"]),
-                        "run_id": str(item["run_id"]),
-                        "seq": int(item["durable_seq"]),
-                        "kind": str(item["kind"]),
-                        "status": str(item["status"]),
-                        "driver_kind": str(item["driver_kind"]),
-                        "failure_layer": (
-                            str(correlation.get("failure_layer"))
-                            if isinstance(correlation, Mapping)
-                            and correlation.get("failure_layer") is not None
-                            else None
-                        ),
-                        "failure_code": (
-                            str(correlation.get("failure_code"))
-                            if isinstance(correlation, Mapping)
-                            and correlation.get("failure_code") is not None
-                            else None
-                        ),
-                        "error_code": (
-                            str(error.get("code"))
-                            if isinstance(error, Mapping) and error.get("code") is not None
-                            else None
-                        ),
-                        "error_message": (
-                            str(error.get("message"))[:1000]
-                            if isinstance(error, Mapping) and error.get("message") is not None
-                            else None
-                        ),
-                        "payload": _json(item["payload_json"], {}),
-                        "correlation": correlation,
-                        "created_at": float(item["created_at"]),
-                    }
-                )
+            events = self._inspect_workflow_checkpoint_events(
+                _checkpoint_payload,
+                _json=_json,
+                _public_message=_public_message,
+                event_rows=event_rows,
+                workflow_checkpoint_rows=workflow_checkpoint_rows,
+                workflow_plans=workflow_plans,
+                workflow_step_by_call=workflow_step_by_call,
+            )
 
             snapshot_request = (
                 {} if snapshot is None else _json(snapshot["sanitized_request_json"], {})
@@ -626,97 +254,26 @@ class RunInspectionMixin(ExecutionUowCore):
             waiting_reason = None
             summary = "Agent 正在规划下一步"
             terminal_statuses = {"completed", "failed", "cancelled"}
-            if run_status in terminal_statuses:
-                phase = "terminal"
-                summary = {
-                    "completed": "任务已完成",
-                    "failed": "任务已失败",
-                    "cancelled": "任务已取消",
-                }[run_status]
-            elif continuation is not None and continuation["pending_decision_id"] is not None:
-                phase = "authorization"
-                waiting_reason = "user_decision"
-                summary = "正在等待你的授权或选择"
-            elif (
-                latest_provider is not None
-                and str(latest_provider["status"]).split(".")[-1].lower() == "claimed"
-            ):
-                phase = "provider"
-                waiting_reason = "provider_response"
-                summary = f"正在等待模型 {latest_provider['model_id']} 返回结果"
-            elif latest_effect is not None and str(latest_effect["status"]).split(".")[
-                -1
-            ].lower() not in terminal_statuses | {
-                "succeeded",
-                "rejected",
-                "unknown",
-            }:
-                phase = "tool"
-                waiting_reason = "tool_execution"
-                summary = f"正在执行工具 {latest_effect['tool_name']}"
-            elif active_children:
-                phase = "delegated_workflow"
-                waiting_reason = "child_run"
-                child_profile = str(active_children[-1]["profile_key"])
-                child_label = {
-                    "workflow.durable_task": "多步骤任务",
-                    "workflow.capability_build": "新能力构建任务",
-                    "workflow.deep_research": "深度调研任务",
-                    "workflow.presentation": "演示文稿任务",
-                    "workflow.personal_v1": "个人工作流",
-                }.get(child_profile, "委派任务")
-                summary = f"正在处理{child_label}，完成后会自动回到当前对话"
-            elif run_status == "waiting":
-                phase = "waiting"
-                waiting_reason = "no_active_operation"
-                summary = "任务处于等待状态，但当前没有可见的执行动作"
+            phase, summary, waiting_reason = self._inspect_phase_summary(
+                active_children,
+                continuation=continuation,
+                latest_effect=latest_effect,
+                latest_provider=latest_provider,
+                phase=phase,
+                run_status=run_status,
+                summary=summary,
+                terminal_statuses=terminal_statuses,
+                waiting_reason=waiting_reason,
+            )
 
             error_candidates: list[tuple[float, dict[str, Any]]] = []
-            for provider_item in providers:
-                if (
-                    provider_item.get("error_type")
-                    or provider_item.get("error_message")
-                    or provider_item.get("audit_reason")
-                ):
-                    error_candidates.append(
-                        (
-                            float(provider_item["updated_at"]),
-                            {
-                                "source": "provider",
-                                "code": provider_item.get("audit_reason"),
-                                "type": provider_item.get("error_type"),
-                                "message": provider_item.get("error_message"),
-                            },
-                        )
-                    )
-            for failure_item in failure_rows:
-                error_candidates.append(
-                    (
-                        float(failure_item["created_at"]),
-                        {
-                            "source": "task_failure",
-                            "code": str(failure_item["error_code"]),
-                            "type": str(failure_item["error_class"]),
-                            "message": tool_observations_by_call.get(
-                                str(failure_item["provider_call_id"] or ""),
-                                {},
-                            ).get("error_message"),
-                        },
-                    )
-                )
-            for event_item in events:
-                if event_item.get("error_code") or event_item.get("error_message"):
-                    error_candidates.append(
-                        (
-                            float(event_item["created_at"]),
-                            {
-                                "source": "event",
-                                "code": event_item.get("error_code"),
-                                "type": event_item.get("failure_layer"),
-                                "message": event_item.get("error_message"),
-                            },
-                        )
-                    )
+            self._inspect_provider_failures(
+                error_candidates,
+                events=events,
+                failure_rows=failure_rows,
+                providers=providers,
+                tool_observations_by_call=tool_observations_by_call,
+            )
             last_error = (
                 None if not error_candidates else max(error_candidates, key=lambda item: item[0])[1]
             )
@@ -1069,3 +626,585 @@ class RunInspectionMixin(ExecutionUowCore):
                 ],
                 "events": events,
             }
+
+    async def _inspect_start_snapshot(self, db, run, run_key):
+        if run is None:
+            return (True, (None), None, None, None)
+
+        snapshot = await (
+            await db.execute(
+                """SELECT * FROM execution_run_start_snapshots
+                    WHERE run_id=?""",
+                (run_key,),
+            )
+        ).fetchone()
+        continuation = await (
+            await db.execute(
+                """SELECT iteration,continuation_version,
+                    pending_decision_id,pending_prepared_call_json,updated_at
+                    FROM execution_continuations WHERE run_id=?""",
+                (run_key,),
+            )
+        ).fetchone()
+        projection = await (
+            await db.execute(
+                """SELECT task_scope_id,ui_state,projection_version,
+                    created_at,updated_at
+                    FROM execution_task_run_projections
+                    WHERE root_run_id=?""",
+                (run_key,),
+            )
+        ).fetchone()
+        return False, None, continuation, projection, snapshot
+
+    def _inspect_batch_status(
+        self,
+        _iteration,
+        *,
+        _json,
+        _optional_float,
+        call_rows,
+        completion_state,
+        pending,
+        pending_calls,
+        pending_outcome_status_by_call: dict[str, str],
+        provider_rows,
+    ):
+        pending_outcome_statuses = (
+            pending.get("outcome_statuses", []) if isinstance(pending, Mapping) else []
+        )
+        if isinstance(pending_outcome_statuses, list):
+            for index, call in enumerate(pending_calls):
+                if not isinstance(call, Mapping) or index >= len(pending_outcome_statuses):
+                    continue
+                call_id = str(call.get("stable_call_id") or "").strip()
+                outcome_status = str(pending_outcome_statuses[index] or "").strip()
+                if call_id and outcome_status:
+                    pending_outcome_status_by_call[call_id] = outcome_status
+        observed_statuses_by_batch: dict[str, list[str | None]] = {}
+        for item in call_rows:
+            batch_id = str(item["provider_batch_id"])
+            call_id = str(item["provider_call_id"])
+            observed_statuses_by_batch.setdefault(batch_id, []).append(
+                pending_outcome_status_by_call.get(call_id)
+            )
+        observed_batch_status: dict[str, str] = {}
+        pending_current_attempt = self._pending_current_attempt(
+            completion_state, observed_batch_status, observed_statuses_by_batch
+        )
+        providers = []
+        for item in provider_rows:
+            self._inspect_tool_dispatch_item(
+                _iteration,
+                _json=_json,
+                _optional_float=_optional_float,
+                item=item,
+                providers=providers,
+            )
+        return observed_batch_status, pending_current_attempt, providers
+
+    async def _inspect_goal_rows(self, db, run_key):
+        goal = await (
+            await db.execute(
+                """SELECT goal_id,task_scope_id,status,goal_version,
+                    created_at,updated_at,ended_at
+                    FROM execution_task_goals WHERE root_run_id=?""",
+                (run_key,),
+            )
+        ).fetchone()
+        latest_plan = await (
+            await db.execute(
+                """SELECT plan_version,trigger_failure_set_id,created_at
+                    FROM execution_plan_versions WHERE root_run_id=?
+                    ORDER BY plan_version DESC LIMIT 1""",
+                (run_key,),
+            )
+        ).fetchone()
+
+        lineage_rows = await (
+            await db.execute(
+                """SELECT run_id,parent_run_id,driver_kind,profile_key,
+                    status,version,created_at,started_at,updated_at,ended_at
+                    FROM execution_runs WHERE root_run_id=?
+                    ORDER BY created_at,run_id LIMIT 200""",
+                (run_key,),
+            )
+        ).fetchall()
+        return goal, latest_plan, lineage_rows
+
+    async def _inspect_provider_rows(self, db, run_key):
+        provider_rows = await (
+            await db.execute(
+                """SELECT i.run_id,i.invocation_id,i.provider_id,i.model_id,
+                    i.adapter_id,i.idempotency_group_id,i.attempt_ordinal,
+                    i.status,i.claimed_at,i.dispatch_started_at,i.updated_at,
+                    i.outcome_ref,i.request_hash,i.policy_snapshot_json,
+                    p.payload_json AS input_payload_json,
+                    o.payload_json AS outcome_payload_json,
+                    a.reason AS audit_reason,
+                    a.error_type AS audit_error_type,
+                    a.error_message AS audit_error_message
+                    FROM execution_provider_invocations AS i
+                    JOIN execution_runs AS r ON r.run_id=i.run_id
+                    LEFT JOIN execution_provider_invocation_inputs AS p
+                      ON p.run_id=i.run_id
+                     AND p.invocation_id=i.invocation_id
+                    LEFT JOIN execution_provider_invocation_outcomes AS o
+                      ON o.run_id=i.run_id
+                     AND o.invocation_id=i.invocation_id
+                    LEFT JOIN execution_provider_invocation_audits AS a
+                      ON a.run_id=i.run_id
+                     AND a.invocation_id=i.invocation_id
+                    WHERE r.root_run_id=?
+                    ORDER BY i.claimed_at,i.invocation_id LIMIT 200""",
+                (run_key,),
+            )
+        ).fetchall()
+        batch_rows = await (
+            await db.execute(
+                """SELECT provider_batch_id,provider_turn_id,
+                    pending_call_count,failure_set_id,status,batch_version,
+                    created_at,updated_at,settled_at
+                    FROM execution_provider_action_batches
+                    WHERE root_run_id=?
+                    ORDER BY created_at,provider_batch_id LIMIT 200""",
+                (run_key,),
+            )
+        ).fetchall()
+        call_rows = await (
+            await db.execute(
+                """SELECT call_record_id,provider_batch_id,call_order,
+                    provider_call_id,raw_tool_name,admission_state,
+                    raw_arguments_ref,raw_arguments_hash,
+                    parsed_arguments_hash,prepared_call_ref,
+                    terminal_outcome_ref,call_version,created_at,updated_at
+                    FROM execution_provider_action_calls
+                    WHERE root_run_id=?
+                    ORDER BY created_at,provider_batch_id,call_order LIMIT 400""",
+                (run_key,),
+            )
+        ).fetchall()
+        return batch_rows, call_rows, provider_rows
+
+    async def _inspect_effect_rows(self, db, run_key):
+        effect_rows = await (
+            await db.execute(
+                """SELECT e.effect_id,e.run_id,e.call_id,e.tool_name,
+                    e.effect_type,e.status,e.handoff_state,
+                    e.completion_disposition,e.receipt_ref,e.policy_json,
+                    e.prepared_json,e.outcome_json,e.artifact_refs_json,
+                    e.created_at,e.updated_at,e.ended_at
+                    FROM execution_effects AS e
+                    JOIN execution_runs AS r ON r.run_id=e.run_id
+                    WHERE r.root_run_id=?
+                    ORDER BY e.created_at,e.effect_id LIMIT 400""",
+                (run_key,),
+            )
+        ).fetchall()
+        workflow_effect_rows = await (
+            await db.execute(
+                """SELECT e.effect_id,e.run_id,e.status,e.prepared_json,
+                    e.outcome_json,e.receipt_ref,e.artifact_refs_json,
+                    e.started_at,e.updated_at,e.ended_at
+                    FROM workflow_effects AS e
+                    JOIN execution_runs AS r ON r.run_id=e.run_id
+                    WHERE r.root_run_id=?
+                    ORDER BY e.started_at,e.effect_id LIMIT 400""",
+                (run_key,),
+            )
+        ).fetchall()
+        workflow_checkpoint_rows = await (
+            await db.execute(
+                """SELECT wr.run_id,wc.checkpoint_blob
+                    FROM workflow_runs AS wr
+                    JOIN execution_runs AS er ON er.run_id=wr.run_id
+                    LEFT JOIN workflow_checkpoints AS wc
+                      ON wc.thread_id=wr.thread_id
+                     AND wc.checkpoint_ns=wr.head_checkpoint_ns
+                     AND wc.checkpoint_id=wr.head_checkpoint_id
+                    WHERE er.root_run_id=?
+                      AND wr.workflow_name='durable_task'
+                    ORDER BY er.created_at,wr.run_id LIMIT 100""",
+                (run_key,),
+            )
+        ).fetchall()
+        return effect_rows, workflow_checkpoint_rows, workflow_effect_rows
+
+    async def _inspect_attempt_rows(self, db, run_key):
+        attempt_rows = await (
+            await db.execute(
+                """SELECT attempt_id,run_id,provider_turn_id,
+                    provider_batch_id,plan_version,trigger_failure_set_id,
+                    supersedes_attempt_id,status,attempt_version,created_at,
+                    updated_at,ended_at
+                    FROM execution_attempt_records WHERE root_run_id=?
+                    ORDER BY created_at,attempt_id LIMIT 200""",
+                (run_key,),
+            )
+        ).fetchall()
+        failure_rows = await (
+            await db.execute(
+                """SELECT report_ref,run_id,attempt_id,plan_version,
+                    provider_call_id,child_run_id,failed_call_id,
+                    failed_effect_id,failed_step,error_class,error_code,
+                    source_kind,source_identity,created_at
+                    FROM execution_task_failure_reports WHERE root_run_id=?
+                    ORDER BY created_at,report_ref LIMIT 400""",
+                (run_key,),
+            )
+        ).fetchall()
+        event_rows = await (
+            await db.execute(
+                """SELECT e.event_id,e.run_id,e.durable_seq,e.kind,
+                    e.status,e.driver_kind,e.correlation_json,e.payload_json,
+                    e.error_json,e.created_at
+                    FROM execution_events AS e
+                    JOIN execution_runs AS r ON r.run_id=e.run_id
+                    WHERE r.root_run_id=?
+                    ORDER BY e.created_at,e.run_id,e.durable_seq LIMIT 400""",
+                (run_key,),
+            )
+        ).fetchall()
+        return attempt_rows, event_rows, failure_rows
+
+    def _pending_current_attempt(
+        self,
+        completion_state,
+        observed_batch_status: dict[str, str],
+        observed_statuses_by_batch: dict[str, list[str | None]],
+    ):
+        terminal_tool_statuses = {
+            "succeeded",
+            "failed",
+            "cancelled",
+            "unknown",
+            "rejected",
+            "skipped",
+        }
+        for batch_id, statuses in observed_statuses_by_batch.items():
+            concrete = [status for status in statuses if status]
+            if len(concrete) != len(statuses) or any(
+                status not in terminal_tool_statuses for status in concrete
+            ):
+                continue
+            if any(status in {"failed", "unknown", "rejected"} for status in concrete):
+                observed_batch_status[batch_id] = "failed"
+            elif any(status == "cancelled" for status in concrete):
+                observed_batch_status[batch_id] = "cancelled"
+            else:
+                observed_batch_status[batch_id] = "succeeded"
+        pending_current_attempt = None
+        if isinstance(completion_state, Mapping):
+            current_attempt = completion_state.get("current_attempt")
+            if isinstance(current_attempt, Mapping):
+                pending_current_attempt = current_attempt
+        return pending_current_attempt
+
+    def _inspect_tool_dispatch_item(
+        self, _iteration, *, _json, _optional_float, item, providers
+    ) -> None:
+        started_at = _optional_float(item["dispatch_started_at"])
+        updated_at = float(item["updated_at"])
+        status = str(item["status"])
+        audit_reason = None if item["audit_reason"] is None else str(item["audit_reason"])
+        if status == "unknown" and audit_reason is None:
+            audit_reason = "legacy_unknown_reason_not_recorded"
+        providers.append(
+            {
+                "run_id": str(item["run_id"]),
+                "invocation_id": str(item["invocation_id"]),
+                "provider_id": str(item["provider_id"]),
+                "model_id": str(item["model_id"]),
+                "adapter_id": str(item["adapter_id"]),
+                "iteration": _iteration(str(item["idempotency_group_id"])),
+                "attempt_ordinal": int(item["attempt_ordinal"]),
+                "status": status,
+                "claimed_at": float(item["claimed_at"]),
+                "dispatch_started_at": started_at,
+                "updated_at": updated_at,
+                "duration_ms": max(
+                    0.0,
+                    (
+                        updated_at
+                        - (started_at if started_at is not None else float(item["claimed_at"]))
+                    )
+                    * 1000.0,
+                ),
+                "audit_reason": audit_reason,
+                "request_hash": str(item["request_hash"]),
+                "policy": _json(item["policy_snapshot_json"], {}),
+                "input": _json(item["input_payload_json"], None),
+                "output": _json(item["outcome_payload_json"], None),
+                "error_type": (
+                    None if item["audit_error_type"] is None else str(item["audit_error_type"])
+                ),
+                "error_message": (
+                    None
+                    if item["audit_error_message"] is None
+                    else str(item["audit_error_message"])
+                ),
+            }
+        )
+
+    def _inspect_workflow_checkpoint_events(
+        self,
+        _checkpoint_payload,
+        *,
+        _json,
+        _public_message,
+        event_rows,
+        workflow_checkpoint_rows,
+        workflow_plans,
+        workflow_step_by_call: dict[tuple[str, str], str],
+    ):
+        for item in workflow_checkpoint_rows:
+            workflow_run_id = str(item["run_id"])
+            checkpoint = _checkpoint_payload(item["checkpoint_blob"])
+            state = checkpoint.get("state")
+            values = state.get("values") if isinstance(state, Mapping) else None
+            if not isinstance(values, Mapping):
+                continue
+            proposal = values.get("proposal_state")
+            proposal = proposal if isinstance(proposal, Mapping) else {}
+            committed = proposal.get("committed_tool_results")
+            current_results = values.get("tool_results")
+            for raw_results in (committed, current_results):
+                if not isinstance(raw_results, Mapping):
+                    continue
+                for raw_call_id, raw_result in raw_results.items():
+                    if not isinstance(raw_result, Mapping):
+                        continue
+                    call_id = str(raw_result.get("stable_call_id") or raw_call_id or "").strip()
+                    step_id = str(raw_result.get("workflow_step_id") or "").strip()
+                    if call_id and step_id:
+                        workflow_step_by_call[(workflow_run_id, call_id)] = step_id
+
+            raw_todos = values.get("todos")
+            steps = []
+            if isinstance(raw_todos, list):
+                for index, raw_todo in enumerate(raw_todos):
+                    if not isinstance(raw_todo, Mapping):
+                        continue
+                    step_id = str(raw_todo.get("workflow_step_id") or "").strip()
+                    title = str(raw_todo.get("title") or "").strip()
+                    if not step_id or not title:
+                        continue
+                    steps.append(
+                        {
+                            "workflow_step_id": step_id,
+                            "index": int(raw_todo.get("index", index)),
+                            "title": title[:4000],
+                            "status": str(raw_todo.get("status") or "pending"),
+                        }
+                    )
+
+            messages = []
+            raw_messages = proposal.get("messages")
+            if isinstance(raw_messages, list):
+                for index, raw_message in enumerate(raw_messages):
+                    if (
+                        not isinstance(raw_message, Mapping)
+                        or str(raw_message.get("role") or "") != "assistant"
+                    ):
+                        continue
+                    text = _public_message(raw_message.get("content"))
+                    raw_calls = raw_message.get("tool_calls")
+                    call_ids = []
+                    if isinstance(raw_calls, list):
+                        call_ids = [
+                            str(call.get("id") or "").strip()
+                            for call in raw_calls
+                            if isinstance(call, Mapping) and str(call.get("id") or "").strip()
+                        ]
+                    if not text and not call_ids:
+                        continue
+                    step_id = next(
+                        (
+                            workflow_step_by_call.get((workflow_run_id, call_id))
+                            for call_id in call_ids
+                            if workflow_step_by_call.get((workflow_run_id, call_id))
+                        ),
+                        None,
+                    )
+                    messages.append(
+                        {
+                            "message_id": str(
+                                raw_message.get("message_id") or f"assistant-{index}"
+                            ),
+                            "text": text,
+                            "tool_call_ids": call_ids,
+                            "workflow_step_id": step_id,
+                        }
+                    )
+            workflow_plans.append(
+                {
+                    "run_id": workflow_run_id,
+                    "plan_id": (
+                        str(proposal.get("active_plan_id"))
+                        if proposal.get("active_plan_id")
+                        else None
+                    ),
+                    "active_step_id": (
+                        str(proposal.get("active_step_id"))
+                        if proposal.get("active_step_id")
+                        else None
+                    ),
+                    "steps": steps,
+                    "public_messages": messages,
+                }
+            )
+
+        events = []
+        for item in event_rows:
+            error = _json(item["error_json"], {})
+            correlation = _json(item["correlation_json"], {})
+            events.append(
+                {
+                    "event_id": str(item["event_id"]),
+                    "run_id": str(item["run_id"]),
+                    "seq": int(item["durable_seq"]),
+                    "kind": str(item["kind"]),
+                    "status": str(item["status"]),
+                    "driver_kind": str(item["driver_kind"]),
+                    "failure_layer": (
+                        str(correlation.get("failure_layer"))
+                        if isinstance(correlation, Mapping)
+                        and correlation.get("failure_layer") is not None
+                        else None
+                    ),
+                    "failure_code": (
+                        str(correlation.get("failure_code"))
+                        if isinstance(correlation, Mapping)
+                        and correlation.get("failure_code") is not None
+                        else None
+                    ),
+                    "error_code": (
+                        str(error.get("code"))
+                        if isinstance(error, Mapping) and error.get("code") is not None
+                        else None
+                    ),
+                    "error_message": (
+                        str(error.get("message"))[:1000]
+                        if isinstance(error, Mapping) and error.get("message") is not None
+                        else None
+                    ),
+                    "payload": _json(item["payload_json"], {}),
+                    "correlation": correlation,
+                    "created_at": float(item["created_at"]),
+                }
+            )
+        return events
+
+    def _inspect_phase_summary(
+        self,
+        active_children,
+        *,
+        continuation,
+        latest_effect,
+        latest_provider,
+        phase,
+        run_status,
+        summary,
+        terminal_statuses,
+        waiting_reason,
+    ):
+        if run_status in terminal_statuses:
+            phase = "terminal"
+            summary = {
+                "completed": "任务已完成",
+                "failed": "任务已失败",
+                "cancelled": "任务已取消",
+            }[run_status]
+        elif continuation is not None and continuation["pending_decision_id"] is not None:
+            phase = "authorization"
+            waiting_reason = "user_decision"
+            summary = "正在等待你的授权或选择"
+        elif (
+            latest_provider is not None
+            and str(latest_provider["status"]).split(".")[-1].lower() == "claimed"
+        ):
+            phase = "provider"
+            waiting_reason = "provider_response"
+            summary = f"正在等待模型 {latest_provider['model_id']} 返回结果"
+        elif latest_effect is not None and str(latest_effect["status"]).split(".")[
+            -1
+        ].lower() not in terminal_statuses | {
+            "succeeded",
+            "rejected",
+            "unknown",
+        }:
+            phase = "tool"
+            waiting_reason = "tool_execution"
+            summary = f"正在执行工具 {latest_effect['tool_name']}"
+        elif active_children:
+            phase = "delegated_workflow"
+            waiting_reason = "child_run"
+            child_profile = str(active_children[-1]["profile_key"])
+            child_label = {
+                "workflow.durable_task": "多步骤任务",
+                "workflow.capability_build": "新能力构建任务",
+                "workflow.deep_research": "深度调研任务",
+                "workflow.presentation": "演示文稿任务",
+                "workflow.personal_v1": "个人工作流",
+            }.get(child_profile, "委派任务")
+            summary = f"正在处理{child_label}，完成后会自动回到当前对话"
+        elif run_status == "waiting":
+            phase = "waiting"
+            waiting_reason = "no_active_operation"
+            summary = "任务处于等待状态，但当前没有可见的执行动作"
+        return phase, summary, waiting_reason
+
+    def _inspect_provider_failures(
+        self,
+        error_candidates: list[tuple[float, dict[str, Any]]],
+        *,
+        events,
+        failure_rows,
+        providers,
+        tool_observations_by_call: dict[str, dict[str, str | None]],
+    ) -> None:
+        for provider_item in providers:
+            if (
+                provider_item.get("error_type")
+                or provider_item.get("error_message")
+                or provider_item.get("audit_reason")
+            ):
+                error_candidates.append(
+                    (
+                        float(provider_item["updated_at"]),
+                        {
+                            "source": "provider",
+                            "code": provider_item.get("audit_reason"),
+                            "type": provider_item.get("error_type"),
+                            "message": provider_item.get("error_message"),
+                        },
+                    )
+                )
+        for failure_item in failure_rows:
+            error_candidates.append(
+                (
+                    float(failure_item["created_at"]),
+                    {
+                        "source": "task_failure",
+                        "code": str(failure_item["error_code"]),
+                        "type": str(failure_item["error_class"]),
+                        "message": tool_observations_by_call.get(
+                            str(failure_item["provider_call_id"] or ""),
+                            {},
+                        ).get("error_message"),
+                    },
+                )
+            )
+        for event_item in events:
+            if event_item.get("error_code") or event_item.get("error_message"):
+                error_candidates.append(
+                    (
+                        float(event_item["created_at"]),
+                        {
+                            "source": "event",
+                            "code": event_item.get("error_code"),
+                            "type": event_item.get("failure_layer"),
+                            "message": event_item.get("error_message"),
+                        },
+                    )
+                )
