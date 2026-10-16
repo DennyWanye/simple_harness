@@ -21,6 +21,7 @@ import sys
 from pathlib import Path
 
 SCOPES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)
+STATE = "state"  # 状态对象的名字（--state 可改）
 
 
 def methods(tree: ast.Module, cls_name: str | None) -> dict[str, ast.AST]:
@@ -38,7 +39,7 @@ def is_result_assign(s: ast.stmt) -> bool:
         and len(s.targets) == 1
         and isinstance(s.targets[0], ast.Attribute)
         and isinstance(s.targets[0].value, ast.Name)
-        and s.targets[0].value.id == "state"
+        and s.targets[0].value.id == STATE
         and s.targets[0].attr == "result"
     )
 
@@ -49,7 +50,7 @@ def is_flow_assign(s: ast.stmt, value=None) -> str | None:
         and len(s.targets) == 1
         and isinstance(s.targets[0], ast.Attribute)
         and isinstance(s.targets[0].value, ast.Name)
-        and s.targets[0].value.id == "state"
+        and s.targets[0].value.id == STATE
         and s.targets[0].attr == "flow"
         and isinstance(s.value, ast.Constant)
     ):
@@ -63,7 +64,7 @@ def called_phase(s: ast.stmt, phases: set[str]) -> str | None:
     def self_call(e: ast.AST) -> str | None:
         if not (
             isinstance(e, ast.Call)
-            and [ast.dump(a) for a in e.args] == [ast.dump(ast.Name("state", ast.Load()))]
+            and [ast.dump(a) for a in e.args] == [ast.dump(ast.Name(STATE, ast.Load()))]
             and not e.keywords
         ):
             return None
@@ -94,21 +95,21 @@ def flow_check(s: ast.stmt) -> str | None:
     src = ast.unparse(s.test)
     # 再切一次时，前一次留下的 `return state.result` 被改写成了 result 赋值 + flow 赋值 + return
     if len(s.body) == 3 and is_result_assign(s.body[0]) and isinstance(s.body[2], ast.Return):
-        if is_flow_assign(s.body[1]) == "stop" and src == "state.flow == 'stop'":
+        if is_flow_assign(s.body[1]) == "stop" and src == f"{STATE}.flow == 'stop'":
             return "stop"
         return None
     # 再切一次时，前一次留下的检查本身被改写成了一对 flow 赋值 + return
     if len(s.body) == 2 and isinstance(s.body[1], ast.Return):
         kind = is_flow_assign(s.body[0])
-        if kind in ("stop", "continue", "break") and src == f"state.flow == '{kind}'":
+        if kind in ("stop", "continue", "break") and src == f"{STATE}.flow == '{kind}'":
             return kind
         return None
     if len(s.body) != 1:
         return None
-    if src == "state.flow is not None" and isinstance(s.body[0], ast.Return):
+    if src == f"{STATE}.flow is not None" and isinstance(s.body[0], ast.Return):
         return "nested"
     for kind, node in (("stop", ast.Return), ("continue", ast.Continue), ("break", ast.Break)):
-        if src == f"state.flow == '{kind}'" and isinstance(s.body[0], node):
+        if src == f"{STATE}.flow == '{kind}'" and isinstance(s.body[0], node):
             return kind
     return None
 
@@ -214,7 +215,10 @@ def strip_doc(fn) -> list[ast.stmt]:
 
 
 def main() -> int:
-    path, qual, ref = Path(sys.argv[1]), sys.argv[2], sys.argv[3]  # 可加 --renamed
+    global STATE
+    path, qual, ref = Path(sys.argv[1]), sys.argv[2], sys.argv[3]  # 可加 --renamed、--state 名字
+    if "--state" in sys.argv:
+        STATE = sys.argv[sys.argv.index("--state") + 1]
     cls_name, _, target = qual.partition(".") if "." in qual else (None, "", qual)
     cur = methods(ast.parse(path.read_text()), cls_name)
     old_src = subprocess.run(
@@ -259,7 +263,7 @@ def main() -> int:
         import state_rename as sr
 
         rn, _, _, _ = sr.collect(old[target])
-        pending[target] = sr.reverse(pending[target], rn, "state")
+        pending[target] = sr.reverse(pending[target], rn, STATE)
         old[target] = sr.strip_nonlocals(old[target], rn)
     same = ast.dump(pending[target]) == ast.dump(old[target])
     others = [n for n in old if n != target and ast.dump(cur[n]) != ast.dump(old[n])]

@@ -6,12 +6,70 @@ import copy
 import hashlib
 import json
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from typing import Any
 
 from ...contracts import JsonValue, canonical_json
 from ..run_store import RunFence, StaleRunFence
 from .core import NativeCheckpointCore
 from .support import NATIVE_ENGINE_KIND, NativeCheckpointError, _native_mapping
+
+
+@dataclass
+class _FrontierCommit:
+    """FrontierRetryMixin.commit_frontier 的运行状态：原函数的局部变量与参数（切段用）。"""
+
+    flow: Any = None
+    NativeCommitResult: Any = None
+    blob_refs: Any = None
+    checkpoint_id: Any = None
+    completed_activations: Any = None
+    completed_task_ids: Any = None
+    configurable: Any = None
+    consumed: Any = None
+    consumed_interrupt_ids: Any = None
+    current: Any = None
+    cursor: Any = None
+    db: Any = None
+    decision_ids: Any = None
+    effect_links: Any = None
+    error_json: Any = None
+    event_ids: Any = None
+    execution_adapter: Any = None
+    execution_id: Any = None
+    execution_ids: Any = None
+    existing: Any = None
+    exists: Any = None
+    expected_head: Any = None
+    expected_task_ids: Any = None
+    fence: Any = None
+    frontier: Any = None
+    frontier_data: Any = None
+    head_row: Any = None
+    head_snapshot: Any = None
+    intents: Any = None
+    join_firings: Any = None
+    metadata: Any = None
+    node_writes: Any = None
+    now: Any = None
+    op_id: Any = None
+    operation_id: Any = None
+    pending_owner_ids: Any = None
+    pending_rows: Any = None
+    pending_write_items: Any = None
+    protocol_call: Any = None
+    recovery_action: Any = None
+    request_hash: Any = None
+    resolved_decisions: Any = None
+    result: Any = None
+    run: Any = None
+    sha256: Any = None
+    snapshot: Any = None
+    state: Any = None
+    step: Any = None
+    terminal_error: Any = None
+    terminal_event_id: Any = None
+    terminal_status: Any = None
 
 
 class FrontierRetryMixin(NativeCheckpointCore):
@@ -41,336 +99,406 @@ class FrontierRetryMixin(NativeCheckpointCore):
         recovery_action: str | None = None,
         configurable: Mapping[str, JsonValue] | None = None,
     ) -> dict[str, Any] | object:
-        protocol_call = configurable is not None
-        if protocol_call:
-            fence = self._fence_from_config(configurable or {})
-        if fence is None or expected_head is None:
+        st = _FrontierCommit(
+            fence=fence,
+            expected_head=expected_head,
+            state=state,
+            frontier=frontier,
+            step=step,
+            completed_activations=completed_activations,
+            join_firings=join_firings,
+            operation_id=operation_id,
+            decision_ids=decision_ids,
+            consumed_interrupt_ids=consumed_interrupt_ids,
+            intents=intents,
+            effect_links=effect_links,
+            blob_refs=blob_refs,
+            metadata=metadata,
+            terminal_status=terminal_status,
+            terminal_error=terminal_error,
+            recovery_action=recovery_action,
+            configurable=configurable,
+        )
+        st.protocol_call = st.configurable is not None
+        if st.protocol_call:
+            st.fence = self._fence_from_config(st.configurable or {})
+        if st.fence is None or st.expected_head is None:
             raise TypeError("commit_frontier requires a fence and expected head")
-        frontier_data = [_native_mapping(item, name="frontier task") for item in frontier]
-        if step is None:
-            current = await self.load_head(fence.run_id)
-            if current is None or str(current["checkpoint_id"]) != expected_head:
+        st.frontier_data = [_native_mapping(item, name="frontier task") for item in st.frontier]
+        if st.step is None:
+            st.current = await self.load_head(st.fence.run_id)
+            if st.current is None or str(st.current["checkpoint_id"]) != st.expected_head:
                 raise NativeCheckpointError(
                     "stale_checkpoint_head", "workflow checkpoint head changed"
                 )
-            step = int(current["step"]) + 1
-        resolved_decisions: Sequence[str | Mapping[str, Any]] = tuple(decision_ids) + tuple(
-            consumed_interrupt_ids
+            st.step = int(st.current["step"]) + 1
+        st.resolved_decisions: Sequence[str | Mapping[str, Any]] = tuple(st.decision_ids) + tuple(
+            st.consumed_interrupt_ids
         )
-        op_id = operation_id or self._stable_id(
-            fence.run_id,
-            expected_head,
+        st.op_id = st.operation_id or self._stable_id(
+            st.fence.run_id,
+            st.expected_head,
             "frontier",
-            step,
-            hashlib.sha256(canonical_json(dict(state)).encode("utf-8")).hexdigest(),
+            st.step,
+            hashlib.sha256(canonical_json(dict(st.state)).encode("utf-8")).hexdigest(),
         )
-        checkpoint_id = self._stable_id(fence.run_id, expected_head, "frontier", op_id)
-        request_hash = self._request_hash(
+        st.checkpoint_id = self._stable_id(st.fence.run_id, st.expected_head, "frontier", st.op_id)
+        st.request_hash = self._request_hash(
             {
-                "state": dict(state),
-                "frontier": frontier_data,
-                "step": step,
+                "state": dict(st.state),
+                "frontier": st.frontier_data,
+                "step": st.step,
                 "completed_activations": (
-                    {key: list(value) for key, value in completed_activations.items()}
-                    if isinstance(completed_activations, Mapping)
-                    else list(completed_activations)
+                    {key: list(value) for key, value in st.completed_activations.items()}
+                    if isinstance(st.completed_activations, Mapping)
+                    else list(st.completed_activations)
                 ),
                 "join_firings": (
-                    dict(join_firings) if isinstance(join_firings, Mapping) else list(join_firings)
+                    dict(st.join_firings)
+                    if isinstance(st.join_firings, Mapping)
+                    else list(st.join_firings)
                 ),
                 "decision_ids": [
-                    item if isinstance(item, str) else dict(item) for item in resolved_decisions
+                    item if isinstance(item, str) else dict(item) for item in st.resolved_decisions
                 ],
-                "intents": [dict(item) for item in intents],
-                "effect_links": [dict(item) for item in effect_links],
-                "blob_refs": list(blob_refs),
-                "metadata": dict(metadata or {}),
-                "terminal_status": terminal_status,
-                "terminal_error": dict(terminal_error) if terminal_error is not None else None,
-                "recovery_action": recovery_action,
+                "intents": [dict(item) for item in st.intents],
+                "effect_links": [dict(item) for item in st.effect_links],
+                "blob_refs": list(st.blob_refs),
+                "metadata": dict(st.metadata or {}),
+                "terminal_status": st.terminal_status,
+                "terminal_error": dict(st.terminal_error)
+                if st.terminal_error is not None
+                else None,
+                "recovery_action": st.recovery_action,
             }
         )
-        if terminal_status is not None and (
-            frontier_data or terminal_status not in {"completed", "failed", "cancelled"}
+        if st.terminal_status is not None and (
+            st.frontier_data or st.terminal_status not in {"completed", "failed", "cancelled"}
         ):
             raise NativeCheckpointError(
                 "invalid_terminal_frontier",
                 "terminal status requires an empty frontier and an allowed status",
             )
-        now = self._clock()
-        db = await self._connect()
+        st.now = self._clock()
+        st.db = await self._connect()
         try:
-            await db.execute("BEGIN IMMEDIATE")
-            existing = await self._operation(
-                db,
-                operation_id=op_id,
-                run_id=fence.run_id,
+            await st.db.execute("BEGIN IMMEDIATE")
+            st.existing = await self._operation(
+                st.db,
+                operation_id=st.op_id,
+                run_id=st.fence.run_id,
                 operation_kind="frontier",
-                request_hash=request_hash,
+                request_hash=st.request_hash,
             )
-            if existing is not None:
-                await db.commit()
-                if protocol_call:
-                    # 按需导入：循环依赖（checkpointer ↔ native）
-                    from ...native import NativeCommitResult
+            st.flow = None
+            await self._replay_existing_frontier(st)
+            if st.flow == "stop":
+                return st.result
+            await self._load_frontier_inputs(st)
+            await self._commit_frontier_writes(st)
+            await self._advance_frontier_head(st)
+            if st.cursor.rowcount != 1:
+                raise StaleRunFence(f"native frontier head changed: {st.fence.run_id}")
+            await self._finish_frontier_operation(st)
+            await st.db.commit()
+        except BaseException:
+            if st.db.in_transaction:
+                await st.db.rollback()
+            raise
+        finally:
+            await st.db.close()
+        await self._fault("frontier.after_db_commit_before_return")
+        if st.protocol_call:
+            # 按需导入：循环依赖（checkpointer ↔ native）
+            from ...native import NativeCommitResult
 
-                    return NativeCommitResult(
-                        self._snapshot_object(existing["snapshot"]),
-                        tuple(existing.get("event_ids") or ()),
-                    )
-                return existing
-            run = await self._run_row(db, fence.run_id)
-            execution_adapter = await self._execution_adapter_for(db, fence.run_id)
-            self._assert_fence_row(run, fence)
-            self._assert_head(run, expected_head)
-            pending_rows = await (
-                await db.execute(
-                    """SELECT task_id,write_index,write_kind,payload_json,node_execution_id
+            st.NativeCommitResult = NativeCommitResult
+
+            return st.NativeCommitResult(
+                self._snapshot_object(st.result["snapshot"]), tuple(st.result["event_ids"])
+            )
+        return st.result
+
+    async def _load_frontier_inputs(self, st: _FrontierCommit) -> None:
+        """读运行、执行适配器、待写记录与检查点头，核对任务集合，生成快照并消费决定。"""
+
+        st.run = await self._run_row(st.db, st.fence.run_id)
+        st.execution_adapter = await self._execution_adapter_for(st.db, st.fence.run_id)
+        self._assert_fence_row(st.run, st.fence)
+        self._assert_head(st.run, st.expected_head)
+        st.pending_rows = await (
+            await st.db.execute(
+                """SELECT task_id,write_index,write_kind,payload_json,node_execution_id
                     FROM workflow_pending_writes WHERE thread_id=? AND checkpoint_ns=?
                     AND base_checkpoint_id=? AND write_kind IS NOT NULL
                     ORDER BY task_id,write_index""",
-                    (run["thread_id"], run["checkpoint_ns"], expected_head),
-                )
-            ).fetchall()
-            head_row = await (
-                await db.execute(
-                    """SELECT checkpoint_blob,engine_kind FROM workflow_checkpoints
+                (st.run["thread_id"], st.run["checkpoint_ns"], st.expected_head),
+            )
+        ).fetchall()
+        st.head_row = await (
+            await st.db.execute(
+                """SELECT checkpoint_blob,engine_kind FROM workflow_checkpoints
                     WHERE thread_id=? AND checkpoint_ns=? AND checkpoint_id=?""",
-                    (run["thread_id"], run["checkpoint_ns"], expected_head),
-                )
-            ).fetchone()
-            if head_row is None or str(head_row["engine_kind"]) != NATIVE_ENGINE_KIND:
-                raise NativeCheckpointError(
-                    "legacy_checkpoint_read_only", "native frontier requires a native JSON head"
-                )
-            head_snapshot = json.loads(bytes(head_row["checkpoint_blob"]).decode("utf-8"))
-            expected_task_ids = {
-                str(item.get("task_id") or "") for item in list(head_snapshot.get("frontier") or [])
-            }
-            expected_task_ids.discard("")
-            completed_task_ids = {
-                str(row["task_id"])
-                for row in pending_rows
-                if str(row["write_kind"]) == "state_patch"
-            }
-            if completed_task_ids != expected_task_ids:
-                raise NativeCheckpointError(
-                    "frontier_results_incomplete",
-                    "frontier checkpoint requires exactly one result for every task",
-                    details={
-                        "expected_task_ids": sorted(expected_task_ids),
-                        "completed_task_ids": sorted(completed_task_ids),
-                    },
-                )
-            pending_write_items: list[dict[str, JsonValue]] = [
-                {
-                    "task_id": str(row["task_id"]),
-                    "write_index": int(row["write_index"]),
-                    "write_kind": str(row["write_kind"]),
-                    "payload": json.loads(str(row["payload_json"])),
-                    "node_execution_id": row["node_execution_id"],
-                }
-                for row in pending_rows
-            ]
-            node_writes: Any = pending_write_items
-            if protocol_call:
-                node_writes = {
-                    str(item["task_id"]): copy.deepcopy(dict(item["payload"]))
-                    for item in pending_write_items
-                    if item["write_kind"] == "state_patch"
-                }
-            snapshot = self._snapshot_payload(
-                run=run,
-                checkpoint_id=checkpoint_id,
-                parent_checkpoint_id=expected_head,
-                step=step,
-                state=state,
-                frontier=frontier_data,
-                completed_activations=completed_activations,
-                join_firings=join_firings,
-                node_writes=node_writes,
-                metadata={
-                    **dict(metadata or {}),
-                    "operation_id": op_id,
-                    "operation_kind": "frontier",
+                (st.run["thread_id"], st.run["checkpoint_ns"], st.expected_head),
+            )
+        ).fetchone()
+        if st.head_row is None or str(st.head_row["engine_kind"]) != NATIVE_ENGINE_KIND:
+            raise NativeCheckpointError(
+                "legacy_checkpoint_read_only", "native frontier requires a native JSON head"
+            )
+        st.head_snapshot = json.loads(bytes(st.head_row["checkpoint_blob"]).decode("utf-8"))
+        st.expected_task_ids = {
+            str(item.get("task_id") or "") for item in list(st.head_snapshot.get("frontier") or [])
+        }
+        st.expected_task_ids.discard("")
+        st.completed_task_ids = {
+            str(row["task_id"])
+            for row in st.pending_rows
+            if str(row["write_kind"]) == "state_patch"
+        }
+        if st.completed_task_ids != st.expected_task_ids:
+            raise NativeCheckpointError(
+                "frontier_results_incomplete",
+                "frontier checkpoint requires exactly one result for every task",
+                details={
+                    "expected_task_ids": sorted(st.expected_task_ids),
+                    "completed_task_ids": sorted(st.completed_task_ids),
                 },
             )
-            await self._insert_checkpoint(db, run=run, snapshot=snapshot, now=now)
-            consumed = await (
-                execution_adapter.consume_decisions(
-                    db,
-                    run_id=fence.run_id,
-                    decisions=resolved_decisions,
-                    checkpoint_id=checkpoint_id,
-                    now=now,
-                )
-                if execution_adapter is not None
-                else self._consume_decisions(
-                    db,
-                    run_id=fence.run_id,
-                    decisions=resolved_decisions,
-                    checkpoint_id=checkpoint_id,
-                    now=now,
-                )
+        st.pending_write_items: list[dict[str, JsonValue]] = [
+            {
+                "task_id": str(row["task_id"]),
+                "write_index": int(row["write_index"]),
+                "write_kind": str(row["write_kind"]),
+                "payload": json.loads(str(row["payload_json"])),
+                "node_execution_id": row["node_execution_id"],
+            }
+            for row in st.pending_rows
+        ]
+        st.node_writes: Any = st.pending_write_items
+        if st.protocol_call:
+            st.node_writes = {
+                str(item["task_id"]): copy.deepcopy(dict(item["payload"]))
+                for item in st.pending_write_items
+                if item["write_kind"] == "state_patch"
+            }
+        st.snapshot = self._snapshot_payload(
+            run=st.run,
+            checkpoint_id=st.checkpoint_id,
+            parent_checkpoint_id=st.expected_head,
+            step=st.step,
+            state=st.state,
+            frontier=st.frontier_data,
+            completed_activations=st.completed_activations,
+            join_firings=st.join_firings,
+            node_writes=st.node_writes,
+            metadata={
+                **dict(st.metadata or {}),
+                "operation_id": st.op_id,
+                "operation_kind": "frontier",
+            },
+        )
+        await self._insert_checkpoint(st.db, run=st.run, snapshot=st.snapshot, now=st.now)
+        st.consumed = await (
+            st.execution_adapter.consume_decisions(
+                st.db,
+                run_id=st.fence.run_id,
+                decisions=st.resolved_decisions,
+                checkpoint_id=st.checkpoint_id,
+                now=st.now,
             )
-            execution_ids = [
-                str(row["node_execution_id"])
-                for row in pending_rows
-                if row["write_kind"] == "state_patch" and row["node_execution_id"] is not None
-            ]
-            for execution_id in execution_ids:
-                await db.execute(
-                    "UPDATE workflow_nodes SET latest_status='succeeded',updated_at=? "
-                    "WHERE node_execution_id=? AND latest_status='succeeded_pending'",
-                    (now, execution_id),
+            if st.execution_adapter is not None
+            else self._consume_decisions(
+                st.db,
+                run_id=st.fence.run_id,
+                decisions=st.resolved_decisions,
+                checkpoint_id=st.checkpoint_id,
+                now=st.now,
+            )
+        )
+
+    async def _replay_existing_frontier(self, st: _FrontierCommit) -> None:
+        """同一操作已经提交过：原样返回上次的结果。"""
+
+        if st.existing is not None:
+            await st.db.commit()
+            if st.protocol_call:
+                # 按需导入：循环依赖（checkpointer ↔ native）
+                from ...native import NativeCommitResult
+
+                st.NativeCommitResult = NativeCommitResult
+
+                st.result = st.NativeCommitResult(
+                    self._snapshot_object(st.existing["snapshot"]),
+                    tuple(st.existing.get("event_ids") or ()),
                 )
-                await db.execute(
-                    "UPDATE workflow_node_attempts SET status='succeeded' "
-                    "WHERE node_execution_id=? AND status='succeeded_pending'",
-                    (execution_id,),
-                )
-                if execution_adapter is None:
-                    await db.execute(
-                        """INSERT OR IGNORE INTO workflow_checkpoint_effects(
+                st.flow = "stop"
+                return
+            st.result = st.existing
+            st.flow = "stop"
+            return
+
+    async def _commit_frontier_writes(self, st: _FrontierCommit) -> None:
+        """写节点执行、登记数据块引用、清掉待办任务的引用、物化意图事件。"""
+
+        st.execution_ids = [
+            str(row["node_execution_id"])
+            for row in st.pending_rows
+            if row["write_kind"] == "state_patch" and row["node_execution_id"] is not None
+        ]
+        for st.execution_id in st.execution_ids:
+            await st.db.execute(
+                "UPDATE workflow_nodes SET latest_status='succeeded',updated_at=? "
+                "WHERE node_execution_id=? AND latest_status='succeeded_pending'",
+                (st.now, st.execution_id),
+            )
+            await st.db.execute(
+                "UPDATE workflow_node_attempts SET status='succeeded' "
+                "WHERE node_execution_id=? AND status='succeeded_pending'",
+                (st.execution_id,),
+            )
+            if st.execution_adapter is None:
+                await st.db.execute(
+                    """INSERT OR IGNORE INTO workflow_checkpoint_effects(
                             thread_id,checkpoint_ns,checkpoint_id,effect_id,node_execution_id
                         ) SELECT ?,?,?,effect_id,node_execution_id FROM workflow_node_effects
                         WHERE node_execution_id=?""",
-                        (run["thread_id"], run["checkpoint_ns"], checkpoint_id, execution_id),
-                    )
-            if execution_adapter is not None:
-                await execution_adapter.link_effects(
-                    db,
-                    run_id=fence.run_id,
-                    checkpoint_ns=str(run["checkpoint_ns"]),
-                    checkpoint_id=checkpoint_id,
-                    links=effect_links,
-                    now=now,
+                    (
+                        st.run["thread_id"],
+                        st.run["checkpoint_ns"],
+                        st.checkpoint_id,
+                        st.execution_id,
+                    ),
                 )
-            for sha256 in blob_refs:
-                exists = await (
-                    await db.execute("SELECT 1 FROM workflow_blobs WHERE sha256=?", (str(sha256),))
-                ).fetchone()
-                if exists is None:
-                    raise NativeCheckpointError(
-                        "blob_not_found", f"unknown blob reference: {sha256}"
-                    )
-                await db.execute(
-                    """INSERT OR IGNORE INTO workflow_blob_refs(
+        if st.execution_adapter is not None:
+            await st.execution_adapter.link_effects(
+                st.db,
+                run_id=st.fence.run_id,
+                checkpoint_ns=str(st.run["checkpoint_ns"]),
+                checkpoint_id=st.checkpoint_id,
+                links=st.effect_links,
+                now=st.now,
+            )
+        for st.sha256 in st.blob_refs:
+            st.exists = await (
+                await st.db.execute(
+                    "SELECT 1 FROM workflow_blobs WHERE sha256=?", (str(st.sha256),)
+                )
+            ).fetchone()
+            if st.exists is None:
+                raise NativeCheckpointError(
+                    "blob_not_found", f"unknown blob reference: {st.sha256}"
+                )
+            await st.db.execute(
+                """INSERT OR IGNORE INTO workflow_blob_refs(
                         sha256,owner_kind,owner_id,created_at
                     ) VALUES(?,'checkpoint',?,?)""",
-                    (str(sha256), checkpoint_id, now),
-                )
-            pending_owner_ids = tuple(
-                f"{fence.run_id}:{expected_head}:{task_id}" for task_id in sorted(expected_task_ids)
+                (str(st.sha256), st.checkpoint_id, st.now),
             )
-            if pending_owner_ids:
-                await db.execute(
-                    f"""DELETE FROM workflow_blob_refs WHERE owner_kind='pending_task'
-                    AND owner_id IN ({",".join("?" for _ in pending_owner_ids)})""",
-                    pending_owner_ids,
+        st.pending_owner_ids = tuple(
+            f"{st.fence.run_id}:{st.expected_head}:{task_id}"
+            for task_id in sorted(st.expected_task_ids)
+        )
+        if st.pending_owner_ids:
+            await st.db.execute(
+                f"""DELETE FROM workflow_blob_refs WHERE owner_kind='pending_task'
+                    AND owner_id IN ({",".join("?" for _ in st.pending_owner_ids)})""",
+                st.pending_owner_ids,
+            )
+        st.event_ids = [
+            await (
+                st.execution_adapter.materialize_intent(
+                    st.db, run=st.run, intent=intent, now=st.now
                 )
-            event_ids = [
-                await (
-                    execution_adapter.materialize_intent(db, run=run, intent=intent, now=now)
-                    if execution_adapter is not None
-                    else self._materialize_intent(db, run=run, intent=intent, now=now)
-                )
-                for intent in intents
-            ]
-            if terminal_status is None:
-                cursor = await db.execute(
-                    """UPDATE workflow_runs SET head_checkpoint_ns=checkpoint_ns,
+                if st.execution_adapter is not None
+                else self._materialize_intent(st.db, run=st.run, intent=intent, now=st.now)
+            )
+            for intent in st.intents
+        ]
+
+    async def _advance_frontier_head(self, st: _FrontierCommit) -> None:
+        """推进运行的检查点头（终态时连带写终态）。"""
+
+        if st.terminal_status is None:
+            st.cursor = await st.db.execute(
+                """UPDATE workflow_runs SET head_checkpoint_ns=checkpoint_ns,
                     head_checkpoint_id=?,active_nodes_json=?,updated_at=?
                     WHERE run_id=? AND head_checkpoint_id=? AND status='running'
                     AND lease_owner=? AND lease_epoch=? AND run_version=?""",
-                    (
-                        checkpoint_id,
-                        canonical_json([str(item.get("node_id", "")) for item in frontier_data]),
-                        now,
-                        fence.run_id,
-                        expected_head,
-                        fence.owner,
-                        fence.lease_epoch,
-                        fence.run_version,
-                    ),
-                )
-            else:
-                error_json = (
-                    canonical_json(dict(terminal_error)) if terminal_error is not None else None
-                )
-                cursor = await db.execute(
-                    """UPDATE workflow_runs SET head_checkpoint_ns=checkpoint_ns,
+                (
+                    st.checkpoint_id,
+                    canonical_json([str(item.get("node_id", "")) for item in st.frontier_data]),
+                    st.now,
+                    st.fence.run_id,
+                    st.expected_head,
+                    st.fence.owner,
+                    st.fence.lease_epoch,
+                    st.fence.run_version,
+                ),
+            )
+        else:
+            st.error_json = (
+                canonical_json(dict(st.terminal_error)) if st.terminal_error is not None else None
+            )
+            st.cursor = await st.db.execute(
+                """UPDATE workflow_runs SET head_checkpoint_ns=checkpoint_ns,
                     head_checkpoint_id=?,active_nodes_json='[]',status=?,error_json=?,
                     recovery_action=?,ended_at=COALESCE(ended_at,?),lease_owner=NULL,
                     lease_expires_at=NULL,heartbeat_at=NULL,run_version=run_version+1,updated_at=?
                     WHERE run_id=? AND head_checkpoint_id=? AND status='running'
                     AND lease_owner=? AND lease_epoch=? AND run_version=?""",
-                    (
-                        checkpoint_id,
-                        terminal_status,
-                        error_json,
-                        recovery_action,
-                        now,
-                        now,
-                        fence.run_id,
-                        expected_head,
-                        fence.owner,
-                        fence.lease_epoch,
-                        fence.run_version,
-                    ),
-                )
-            if cursor.rowcount != 1:
-                raise StaleRunFence(f"native frontier head changed: {fence.run_id}")
-            if execution_adapter is not None and terminal_status is not None:
-                terminal_event_id = await execution_adapter.finalize_run(
-                    db,
-                    run=run,
-                    terminal_status=terminal_status,
-                    terminal_error=terminal_error,
-                    recovery_action=recovery_action,
-                    event_ids=event_ids,
-                    now=now,
-                )
-                if terminal_event_id not in event_ids:
-                    event_ids.append(terminal_event_id)
-            await db.execute(
-                """DELETE FROM workflow_pending_writes WHERE thread_id=? AND checkpoint_ns=?
-                AND base_checkpoint_id=? AND write_kind IS NOT NULL""",
-                (run["thread_id"], run["checkpoint_ns"], expected_head),
+                (
+                    st.checkpoint_id,
+                    st.terminal_status,
+                    st.error_json,
+                    st.recovery_action,
+                    st.now,
+                    st.now,
+                    st.fence.run_id,
+                    st.expected_head,
+                    st.fence.owner,
+                    st.fence.lease_epoch,
+                    st.fence.run_version,
+                ),
             )
-            result: dict[str, JsonValue] = {
-                "run_id": fence.run_id,
-                "checkpoint_id": checkpoint_id,
-                "operation_id": op_id,
-                "consumed_decision_ids": consumed,
-                "event_ids": event_ids,
-                "snapshot": snapshot,
-            }
-            await self._record_operation(
-                db,
-                operation_id=op_id,
-                run_id=fence.run_id,
-                operation_kind="frontier",
-                request_hash=request_hash,
-                result=result,
-                now=now,
-            )
-            await db.commit()
-        except BaseException:
-            if db.in_transaction:
-                await db.rollback()
-            raise
-        finally:
-            await db.close()
-        await self._fault("frontier.after_db_commit_before_return")
-        if protocol_call:
-            # 按需导入：循环依赖（checkpointer ↔ native）
-            from ...native import NativeCommitResult
 
-            return NativeCommitResult(
-                self._snapshot_object(result["snapshot"]), tuple(result["event_ids"])
+    async def _finish_frontier_operation(self, st: _FrontierCommit) -> None:
+        """终态收尾、删掉已消费的待写记录、记录操作结果。"""
+
+        if st.execution_adapter is not None and st.terminal_status is not None:
+            st.terminal_event_id = await st.execution_adapter.finalize_run(
+                st.db,
+                run=st.run,
+                terminal_status=st.terminal_status,
+                terminal_error=st.terminal_error,
+                recovery_action=st.recovery_action,
+                event_ids=st.event_ids,
+                now=st.now,
             )
-        return result
+            if st.terminal_event_id not in st.event_ids:
+                st.event_ids.append(st.terminal_event_id)
+        await st.db.execute(
+            """DELETE FROM workflow_pending_writes WHERE thread_id=? AND checkpoint_ns=?
+                AND base_checkpoint_id=? AND write_kind IS NOT NULL""",
+            (st.run["thread_id"], st.run["checkpoint_ns"], st.expected_head),
+        )
+        st.result: dict[str, JsonValue] = {
+            "run_id": st.fence.run_id,
+            "checkpoint_id": st.checkpoint_id,
+            "operation_id": st.op_id,
+            "consumed_decision_ids": st.consumed,
+            "event_ids": st.event_ids,
+            "snapshot": st.snapshot,
+        }
+        await self._record_operation(
+            st.db,
+            operation_id=st.op_id,
+            run_id=st.fence.run_id,
+            operation_kind="frontier",
+            request_hash=st.request_hash,
+            result=st.result,
+            now=st.now,
+        )
 
     async def commit_retry(
         self,
