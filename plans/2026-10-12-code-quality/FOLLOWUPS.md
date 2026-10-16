@@ -44,3 +44,16 @@
 - 现象：生产代码里没有任何地方构造它，也没有注册 `context_request_planner` 服务（`context.py` 只声明了字段，`turn_preparer.py` 读取时恒为空）；测试也不覆盖它。
 - 6D 对它的拆分由 extract_check 内联核对证明逐字等价，但没有运行期测试能观察到。
 - 下一步：阶段 8 查死代码时确认无调用方后删除整个模块与 `turn_preparer` 里的读取分支。
+
+## F-6 工具注册表超时路径引用未定义的 future（潜在缺陷）
+
+- 登记：2026-10-16，阶段 6D 审计全分支未定义名字时查出；拆分前的 `deskpet/tools/registry.py` 原样存在，不是整治引入。
+- 位置：`backend/deskpet/tools/registry_domains/prepared.py` 约 729 行，`except TimeoutError:` 分支里 `future.add_done_callback(...)`；该函数里没有 `future` 这个名字。
+- 影响：预备调用超时、标记为晚到挂起、且注册了就绪回调和执行上下文时，会抛 NameError，晚到结果的回调接不上。
+- 下一步：单独修（补上被等待的 future 或改用已有的任务句柄），配一条超时路径的测试。
+
+## F-7 能力存储事务视图里三个方法定义了两次（归阶段 8）
+
+- 登记：2026-10-16，同上审计；拆分前的 `capabilities/store.py` 原样存在。
+- 位置：`backend/deskpet/capabilities/store_domains/core.py` 的 `create_skill_install_intent` / `cas_skill_install_intent` / `handoff_skill_install_intent`，类里前后各一份，后者覆盖前者。
+- 下一步：阶段 8 确认哪份生效后删掉另一份。
