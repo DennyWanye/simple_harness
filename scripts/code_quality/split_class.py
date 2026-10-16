@@ -266,6 +266,8 @@ def main() -> int:
         return {n.id for n in ast.walk(tree) if isinstance(n, ast.Name) and id(n) not in skip}
 
     def place(name: str) -> str:
+        if name in spec.get("place", {}):  # 分组 JSON 的 "place": {名字: 模块}，手工指定（如避免公共基类反向导入领域模块）
+            return spec["place"][name]
         if records:
             # 运行期要用原类本身的定义（如构造它的 build_runtime）留在门面：搬进子包就只能在类型检查块里导入原类
             return MAIN if args.class_name in runtime_names(helper_text[name]) else records
