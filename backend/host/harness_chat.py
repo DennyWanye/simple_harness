@@ -717,9 +717,8 @@ async def _persist_user_message(st: _HarnessChatState) -> None:
                 "owner_kind": "companion_profile",
             },
         )
-        # Semantic growth intent is interpreted by the active model inside
-        # ProductTurnPreparer.  Ingress scheduling must not recreate a second
-        # keyword/regex classifier.
+        # Semantic growth intent is interpreted by the active model.  Ingress
+        # scheduling must not recreate a second keyword/regex classifier.
         st.priority = "normal"
         st.user_message_id = await st.session_db.append_user_message_with_growth_outbox(
             st.session_id,

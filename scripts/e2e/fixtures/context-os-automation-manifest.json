@@ -77,11 +77,6 @@
           "name": "typescript-build",
           "scope": "full tauri-app typecheck",
           "command": ["C:/Users/Administrator/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node.exe", "tauri-app/node_modules/typescript/bin/tsc", "-b", "tauri-app"]
-        },
-        {
-          "name": "context-os-benchmark",
-          "scope": "provider-free ON compare with 500 deferred capabilities",
-          "command": ["backend/.venv/Scripts/python.exe", "scripts/perf/context_os_bench.py", "--mode", "on", "--compare", "plans/2026-07-13-context-os-v1/context-perf-baseline.json"]
         }
       ]
     }

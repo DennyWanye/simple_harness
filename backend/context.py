@@ -179,19 +179,13 @@ _VALID_SERVICES = frozenset(
         # --- Context OS V1 ------------------------------------------------------
         "tool_capability_scope_store",
         "tool_capability_resolver",
-        "context_request_planner",
         "context_snapshot_store",
         "context_segment_store",
         "context_page_in_store",
         "context_attempt_store",
         "compression_model_resolver",
-        # Host-owned Context OS task projection hooks used by ProductTurnPreparer.
-        # Omitting either slot aborts the P4 bootstrap block and leaves the
-        # assembler unavailable while context_os_v1 remains enabled.
-        "project_initial_context_snapshot",
         "project_binding_service",
         "session_creation_service",
-        "attach_task_snapshot_to_request",
         # Companion Task 2: host-owned gate; absent/unready means retryable chat
         # rejection rather than guessing a previously active human identity.
         "companion_identity_gate",
@@ -338,16 +332,13 @@ class ServiceContext:
     search_gateway: Any | None = None
     tool_capability_scope_store: Any | None = None
     tool_capability_resolver: Any | None = None
-    context_request_planner: Any | None = None
     context_snapshot_store: Any | None = None
     context_segment_store: Any | None = None
     context_page_in_store: Any | None = None
     context_attempt_store: Any | None = None
     compression_model_resolver: Any | None = None
-    project_initial_context_snapshot: Any | None = None
     project_binding_service: Any | None = None
     session_creation_service: Any | None = None
-    attach_task_snapshot_to_request: Any | None = None
     companion_identity_gate: Any | None = None
     companion_profile_coordinator: Any | None = None
     companion_preference_resolver_dormant: Any | None = None

@@ -424,8 +424,7 @@ class ContextBundle:
     ) -> PreparedContext:
         """Compatibility bridge to the typed request contract.
 
-        Until the ContextRequestPlanner takes ownership, the message bytes are
-        intentionally identical to :meth:`build_messages`.
+        The message bytes are intentionally identical to :meth:`build_messages`.
         """
         messages = self.build_messages(
             base_system,

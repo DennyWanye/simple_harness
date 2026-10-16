@@ -37,13 +37,14 @@
 - 为什么登记：它断言的是隔离完整性（被隔离任务不该被任何后台步骤碰到）。偶发失败可能是负载下的计时问题，也可能是真实竞争。
 - 下一步：后续全量回归再出现时，用 `-vv` 拿到完整差异，看是哪张表变了、谁写的。
 
-## F-5 上下文请求规划器疑似死代码（归阶段 8）
+## F-5 上下文请求规划器疑似死代码（归阶段 8）——2026-10-17 阶段 8 已删
 
 - 登记：2026-10-16，阶段 6D 拆 `prepare_initial` 时查出。
 - 位置：`backend/deskpet/agent/context_request_planner.py` 的 `ContextRequestPlanner`。
 - 现象：生产代码里没有任何地方构造它，也没有注册 `context_request_planner` 服务（`context.py` 只声明了字段，`turn_preparer.py` 读取时恒为空）；测试也不覆盖它。
 - 6D 对它的拆分由 extract_check 内联核对证明逐字等价，但没有运行期测试能观察到。
 - 下一步：阶段 8 查死代码时确认无调用方后删除整个模块与 `turn_preparer` 里的读取分支。
+- **已删（阶段 8）**：查清调用链。读取分支所在的 `ProductTurnPreparer.prepare_context` 只被 `ProductTurnPreparationService` 调，后者只被 `ProductVenueRunAdapter` 用；`ProductVenueRunAdapter` 的文档串写明"休眠、不在生产链上"，`host/sdk_execution.py` 写明它已被 SDK 执行路径取代；生产代码里没有任何地方构造 `ProductTurnPreparer` 或 `ProductVenueRunAdapter`。所以"开关默认开、规划器没注册、主对话照常能用"的疑问有了答案：生产根本不走这条链。整条休眠链一起删：context_request_planner.py、product_turn_open.py 整个文件；turn_preparer.py 只留 `TurnInput`、`ProductDomainCommand`、`PRODUCT_ROUTE_OWNED_TOOL_NAMES`；venues.py 只留 `KernelRunClient` 与 `VenueRunHandle`；服务登记表删掉只被这条链读的 3 个槽位；只测这条链的测试与性能脚本一起删。属行为变更（删除），单独提交，阶段末交独立核验签字。
 
 ## F-6 工具注册表超时路径引用未定义的 future（潜在缺陷）——2026-10-16 阶段 8 已修
 
@@ -53,11 +54,12 @@
 - 下一步：单独修（补上被等待的 future 或改用已有的任务句柄），配一条超时路径的测试。
 - **已修（阶段 8）**：改用登记进 `_late_prepared_calls[effect_id]` 的那个 future；用例 backend/tests/test_prepared_late_timeout.py 修复前报 NameError、修复后通过。属行为变更，阶段末交独立核验签字。
 
-## F-7 能力存储事务视图里三个方法定义了两次（归阶段 8）
+## F-7 能力存储事务视图里三个方法定义了两次（归阶段 8）——2026-10-17 阶段 8 已删
 
 - 登记：2026-10-16，同上审计；拆分前的 `capabilities/store.py` 原样存在。
 - 位置：`backend/deskpet/capabilities/store_domains/core.py` 的 `create_skill_install_intent` / `cas_skill_install_intent` / `handoff_skill_install_intent`，类里前后各一份，后者覆盖前者。
 - 下一步：阶段 8 确认哪份生效后删掉另一份。
+- **已删（阶段 8）**：类体里后定义的覆盖先定义的，前一份（转交给仓库的 `_..._tx(self._db, …)` 版）从来调不到；仓库类 `CapabilityStore` 经 setattr 转绑的也是后一份（自持事务版）。删掉前一份，行为不变。用例 backend/tests/capabilities/test_store_tx_install_methods.py 删前删后都通过（锁住"事务视图与仓库类上是同一个自持事务版函数"）。
 
 ## F-8 工作流派发循环出错时可能原地空转（潜在缺陷，阶段 7 核验发现）
 
@@ -65,3 +67,10 @@
 - 现象：`dispatch_due_work()` 一直抛异常、而下一个截止时间已经过去时，等待超时算出来是 0，循环原地反复转。原来异常被静默吞掉，看不出来。
 - 阶段 7 给这处补的日志先用 debug，避免每圈一条带堆栈的警告刷满日志。
 - 建议：出错后按次数退避（例如 1、2、4 秒，封顶 30 秒），修好后把日志改回 warning。配一条"派发持续失败不空转"的用例。
+
+## F-9 只被测试使用的产品接口（160 个，阶段 8C-3 登记）
+
+- 登记：2026-10-17。8C-3 用语法树重新分类后，160 个符号在产品代码里没有调用方，但测试借它们驱动或核对在用代码（例：`get_command` 16 个测试、`claim_job` 11 个测试）。
+- 清单：阶段8-删除清单-8C3.md 的"保留"一节。
+- 不删的原因：连测试一起删会丢掉对在用代码的覆盖。
+- 建议：以后逐个判断。确实只为测试存在的，挪到测试辅助模块（如 `agent_orchestrator/testing/`）；接口本身该给产品用而没接上的，查清是不是漏接。

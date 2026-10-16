@@ -82,22 +82,16 @@ def test_service_context_accepts_legacy_frozen_skill_fallback():
     assert ctx.get("legacy_frozen_skill_instruction_resolver") is resolver
 
 
-def test_context_os_task_projection_hooks_are_registered_services():
+def test_project_binding_and_session_creation_are_registered_services():
     ctx = ServiceContext()
-    project = object()
     bindings = object()
     creation = object()
-    attach = object()
 
-    ctx.register("project_initial_context_snapshot", project)
     ctx.register("project_binding_service", bindings)
     ctx.register("session_creation_service", creation)
-    ctx.register("attach_task_snapshot_to_request", attach)
 
-    assert ctx.get("project_initial_context_snapshot") is project
     assert ctx.get("project_binding_service") is bindings
     assert ctx.get("session_creation_service") is creation
-    assert ctx.get("attach_task_snapshot_to_request") is attach
 
 
 @pytest.mark.parametrize(

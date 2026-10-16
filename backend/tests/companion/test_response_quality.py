@@ -1,11 +1,9 @@
 from __future__ import annotations
 
 import json
-from types import SimpleNamespace
 
 import pytest
 from agent.agent_loop import AgentLoop, FinalEvent
-from deskpet.agent.turn_preparer import ProductTurnPreparer, TurnInput
 from deskpet.companion.response_quality import (
     ModelResponseCompletenessGate,
 )
@@ -102,46 +100,6 @@ def test_response_quality_gate_fails_open_on_invalid_model_output() -> None:
     assert decision.checked is False
     assert decision.revised is False
     assert decision.text == "保留原回答"
-
-
-def test_turn_payload_freezes_quality_gate_only_for_brief_preference() -> None:
-    resolution = SimpleNamespace(
-        snapshot_hash="snapshot-brief",
-        items=(
-            SimpleNamespace(
-                preference_key="response.detail",
-                value="brief",
-            ),
-        ),
-    )
-    routed = SimpleNamespace(
-        pre_loop=None,
-        problem_type=None,
-        prepared=SimpleNamespace(preference_resolution=resolution),
-    )
-    config = SimpleNamespace(features=None, raw={})
-
-    payload = ProductTurnPreparer.prepare_workflow_request_payload(
-        routed,
-        TurnInput(
-            text="请概括项目记录",
-            session_id="session-1",
-            request_id="request-1",
-            turn_id="turn-1",
-            venue="text",
-            context_usage_basis_sample_id="sample-before",
-        ),
-        config,
-    )
-
-    assert payload["loop"]["response_quality"] == {
-        "schema_version": 1,
-        "mode": "semantic_completeness",
-        "preference_key": "response.detail",
-        "preference_value": "brief",
-        "snapshot_hash": "snapshot-brief",
-    }
-    assert payload["context_usage_basis_sample_id"] == "sample-before"
 
 
 @pytest.mark.asyncio

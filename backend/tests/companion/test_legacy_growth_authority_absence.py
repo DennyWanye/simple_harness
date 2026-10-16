@@ -105,41 +105,6 @@ def test_legacy_writer_modules_are_physically_absent() -> None:
     ] == []
 
 
-def test_turn_preparer_has_no_legacy_preference_composition_surface() -> None:
-    path = BACKEND / "deskpet" / "agent" / "turn_preparer.py"
-    source = _source(path)
-    tree = ast.parse(source, filename=str(path))
-    constructor = next(
-        node
-        for node in ast.walk(tree)
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-        and node.name == "__init__"
-        and any(
-            isinstance(parent, ast.ClassDef)
-            and parent.name == "ProductTurnPreparer"
-            and node in parent.body
-            for parent in ast.walk(tree)
-        )
-    )
-    names = {
-        argument.arg
-        for argument in (
-            *constructor.args.args,
-            *constructor.args.kwonlyargs,
-        )
-    }
-    assert {
-        "preference_resolver",
-        "preference_owner_provider",
-        "request_preference_override_provider",
-        "relevant_preference_keys_provider",
-        "owner_memory_read_scope_provider",
-        "companion_selection_provider",
-    }.isdisjoint(names)
-    assert "_preference_resolver" not in source
-    assert "_preference_owner_provider" not in source
-
-
 def test_legacy_skill_loader_has_no_implicit_production_source() -> None:
     source = _source(BACKEND / "deskpet" / "skills" / "loader.py")
     assert "_default_skill_dirs" not in source
