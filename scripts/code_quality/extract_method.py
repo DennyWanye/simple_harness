@@ -38,6 +38,7 @@ if sys.version_info < (3, 12):
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from reindent import reindent, string_interior_lines  # noqa: E402
+from scope_names import first_seen, names  # noqa: E402
 
 
 def header_bindings(fn: ast.AST, start: int, end: int) -> set[str]:
@@ -66,25 +67,6 @@ def header_bindings(fn: ast.AST, start: int, end: int) -> set[str]:
                         for x in ast.walk(case.pattern)
                         if isinstance(x, ast.MatchMapping) and x.rest
                     }
-    return out
-
-
-def names(nodes: list[ast.AST], ctx: type) -> set[str]:
-    out: set[str] = set()
-    for node in nodes:
-        for n in ast.walk(node):
-            if isinstance(n, ast.Name) and isinstance(n.ctx, ctx):
-                out.add(n.id)
-            elif ctx is ast.Store and isinstance(n, ast.ExceptHandler) and n.name:
-                out.add(n.name)
-            elif ctx is ast.Store and isinstance(
-                n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
-            ):
-                out.add(n.name)  # 函数里定义的内层函数与类：名字是局部绑定
-            elif ctx is ast.Store and isinstance(n, (ast.Import, ast.ImportFrom)):
-                out |= {
-                    (a.asname or a.name).split(".")[0] for a in n.names
-                }  # 函数里的导入也是局部绑定
     return out
 
 
@@ -196,7 +178,11 @@ def main() -> int:
             if isinstance(n, ast.Name) and n.id == name and isinstance(n.ctx, ast.Load)
         )
     }
-    need_out = names(block, ast.Store) & names(after, ast.Load)
+    # except ... as 名字：出了处理块就解绑，不算段的输出
+    block_handlers = {
+        h.name for s in block for h in ast.walk(s) if isinstance(h, ast.ExceptHandler) and h.name
+    }
+    need_out = (names(block, ast.Store) - block_handlers) & names(after, ast.Load)
     # 段在循环里：下一轮循环还会读到段内赋的值（block_flow 只看段后面的语句，看不到下一轮）
     loops = [
         n
@@ -219,7 +205,7 @@ def main() -> int:
             loop_reads |= names([loop.iter], ast.Load)
         elif isinstance(loop, ast.While):
             loop_reads |= names([loop.test], ast.Load)
-    loop_carried = (names(block, ast.Store) & loop_reads) - need_out
+    loop_carried = ((names(block, ast.Store) - block_handlers) & loop_reads) - need_out
     need_out |= loop_carried
 
     # 段里作用于外层循环的 break / continue 抽不出去
@@ -242,6 +228,11 @@ def main() -> int:
     given_params = split_top(a.params)
     param_names = {p.split(":")[0].strip() for p in given_params}
     returns = [r.strip() for r in a.returns.split(",") if r.strip()]
+    handler_names = {
+        h.name for s in block for h in ast.walk(s) if isinstance(h, ast.ExceptHandler) and h.name
+    }
+    if set(returns) & handler_names:
+        sys.exit(f"返回值里有异常名 {sorted(set(returns) & handler_names)}（出了 except 块就解绑）")
     missing_in = (
         need_in
         - param_names
@@ -270,31 +261,10 @@ def main() -> int:
     shadowed = missing_in & names(block, ast.Store)
     if missing_in - shadowed:
         sys.exit(f"参数缺：{sorted(missing_in - shadowed)}（段内读到、段前赋过值）")
-    # 赋值语句先求右边再写左边：左边目标的写入时刻算在整条语句末尾（右边跨行时按行号比会误判）
-    target_at: dict[int, tuple[int, int]] = {}
-    for s in block:
-        for st in ast.walk(s):
-            if isinstance(st, (ast.Assign, ast.AugAssign, ast.AnnAssign)):
-                targets = st.targets if isinstance(st, ast.Assign) else [st.target]
-                for tg in targets:
-                    for n in ast.walk(tg):
-                        target_at[id(n)] = (st.end_lineno, 10**6)  # type: ignore[assignment]
 
+    # 先读还是先写按作用域判断（推导式、lambda、内层函数自己的名字不算），赋值目标的写入算在整条语句末尾
     def first(name: str, ctx: type) -> tuple[int, int]:
-        spots = [
-            target_at.get(id(n), (n.lineno, n.col_offset))
-            for s in block
-            for n in ast.walk(s)
-            if isinstance(n, ast.Name) and n.id == name and isinstance(n.ctx, ctx)
-        ]
-        if ctx is ast.Store:  # except ... as 名字
-            spots += [
-                (h.lineno, h.col_offset)
-                for s in block
-                for h in ast.walk(s)
-                if isinstance(h, ast.ExceptHandler) and h.name == name
-            ]
-        return min(spots) if spots else (10**9, 0)
+        return first_seen(block, name, ctx)
 
     # 推导式里绑定的名字只在推导式内有效，不算段外传入
     comp_bound = {

@@ -38,6 +38,7 @@ if sys.version_info < (3, 12):
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from extract_method import header_bindings  # noqa: E402
+from scope_names import first_seen, names  # noqa: E402
 
 SCOPES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)
 LOOPS = (ast.For, ast.AsyncFor, ast.While)
@@ -71,80 +72,6 @@ def walk_own(node: ast.AST):
         if isinstance(c, ast.Lambda):
             continue
         yield from walk_own(c)
-
-
-COMPS = (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)
-
-
-def names(nodes, ctx) -> set[str]:
-    """按作用域取名字：推导式的循环变量只在推导式里有效，不算外层的读写；
-    推导式第一个 for 的可迭代对象在外层求值，照常算。不进内层函数、lambda、类。"""
-    out: set[str] = set()
-
-    def visit(node, hidden: frozenset[str]) -> None:
-        if isinstance(node, ast.Name):
-            if isinstance(node.ctx, ctx) and node.id not in hidden:
-                out.add(node.id)
-            return
-        if ctx is ast.Store and isinstance(node, ast.ExceptHandler) and node.name:
-            out.add(node.name)
-        if isinstance(node, COMPS):
-            bound = frozenset(
-                t.id for g in node.generators for t in ast.walk(g.target) if isinstance(t, ast.Name)
-            )
-            visit(node.generators[0].iter, hidden)
-            inner = hidden | bound
-            for i, g in enumerate(node.generators):
-                if i:
-                    visit(g.iter, inner)
-                for cond in g.ifs:
-                    visit(cond, inner)
-            for part in ("elt", "key", "value"):
-                if getattr(node, part, None) is not None:
-                    visit(getattr(node, part), inner)
-            return
-        if isinstance(node, ast.Lambda):
-            bound = frozenset(
-                a.arg for a in (*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs)
-            )
-            for d in (*node.args.defaults, *[d for d in node.args.kw_defaults if d]):
-                visit(d, hidden)
-            visit(node.body, hidden | bound)
-            return
-        if ctx is ast.Store and isinstance(node, (ast.Import, ast.ImportFrom)):
-            out.update((a.asname or a.name).split(".")[0] for a in node.names)
-            return
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            # 内层函数：名字本身在外层绑定；默认值与装饰器在外层求值；函数体里的读算外层读（闭包）
-            if ctx is ast.Store:
-                out.add(node.name)
-                return
-            for d in getattr(node, "decorator_list", []):
-                visit(d, hidden)
-            args = getattr(node, "args", None)
-            own = set()
-            if args is not None:
-                own = {a.arg for a in (*args.posonlyargs, *args.args, *args.kwonlyargs)}
-                own |= {a.arg for a in (args.vararg, args.kwarg) if a}
-                for d in (*args.defaults, *[d for d in args.kw_defaults if d]):
-                    visit(d, hidden)
-            for n in ast.walk(node):
-                if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Store):
-                    own.add(n.id)
-            for n in ast.walk(node):
-                if (
-                    isinstance(n, ast.Name)
-                    and isinstance(n.ctx, ast.Load)
-                    and n.id not in hidden | own
-                ):
-                    out.add(n.id)
-            return
-        for c in ast.iter_child_nodes(node):
-            visit(c, hidden)
-
-    for node in nodes:
-        visit(node, frozenset())
-    return out
 
 
 def escapes(node: ast.AST, inside_loop: bool) -> bool:
@@ -250,6 +177,17 @@ def analyse(fn, lines, target: int, max_size: int = 140, min_size: int = 25, max
                 if size < min_size:
                     continue
                 block = body[i:j]
+
+                # 只包一两句调用的段（多半是已抽出方法的调用处）再抽一层没有意义
+                def bare_call(st):
+                    v = getattr(st, "value", None)
+                    v = v.value if isinstance(v, ast.Await) else v
+                    return isinstance(
+                        st, (ast.Assign, ast.AnnAssign, ast.Expr, ast.Return)
+                    ) and isinstance(v, ast.Call)
+
+                if len(block) <= 2 and all(bare_call(st) for st in block):
+                    continue
                 own = [n for s in block for n in walk_own(s)]
                 if any(isinstance(n, (ast.Yield, ast.YieldFrom)) for n in own):
                     continue
@@ -270,7 +208,9 @@ def analyse(fn, lines, target: int, max_size: int = 140, min_size: int = 25, max
                 has_return = any(isinstance(n, ast.Return) for n in own)
                 tail = False
                 if has_return:
-                    if not (tail_ok and j == len(body)):
+                    # 段走完原函数就结束；或段的最后一句就是 return/raise（段不会落空，后面的语句本来就走不到）
+                    closes = isinstance(block[-1], (ast.Return, ast.Raise))
+                    if not (j == len(body) and (tail_ok or closes)):
                         continue
                     tail = True
                 before = [s for s in all_stmts if s.end_lineno < start]
@@ -292,21 +232,24 @@ def analyse(fn, lines, target: int, max_size: int = 140, min_size: int = 25, max
                 stores = names(block, ast.Store)
 
                 # 段内先赋值再读的名字不算参数（粗判：段内第一次出现是写）
-                def first(name, ctx):
-                    spots = [
-                        (n.lineno, n.col_offset)
-                        for s in block
-                        for n in ast.walk(s)
-                        if isinstance(n, ast.Name) and n.id == name and isinstance(n.ctx, ctx)
-                    ]
-                    return min(spots) if spots else (10**9, 0)
 
                 need_in = {
                     n
                     for n in need_in
-                    if not (n in stores and first(n, ast.Store) < first(n, ast.Load))
+                    if not (
+                        n in stores
+                        and first_seen(block, n, ast.Store) < first_seen(block, n, ast.Load)
+                    )
                 }
-                need_out = set() if tail else (stores & names(after, ast.Load))
+                # except ... as 名字：出了处理块就解绑，不能当返回值
+                handler_names = {
+                    h.name
+                    for s in block
+                    for h in ast.walk(s)
+                    if isinstance(h, ast.ExceptHandler) and h.name
+                }
+                stores_out = stores - handler_names
+                need_out = set() if tail else (stores_out & names(after, ast.Load))
                 loops = [
                     n
                     for n in walk_own(fn)
@@ -320,7 +263,7 @@ def analyse(fn, lines, target: int, max_size: int = 140, min_size: int = 25, max
                         and s is not loop
                         and (s.end_lineno < start or s.lineno > end)
                     ]
-                    need_out |= stores & names(outside, ast.Load)
+                    need_out |= stores_out & names(outside, ast.Load)
                 if len(need_in) > max_params or len(need_out) > 3:
                     continue
                 score = size - 6 * len(need_in) - 12 * len(need_out)
