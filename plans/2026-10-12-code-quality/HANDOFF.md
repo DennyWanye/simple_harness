@@ -1,7 +1,7 @@
 # 代码质量整治 交接
 
-最后更新：2026-10-15（阶段 5 进行中，分支 cq-phase5；阶段 4 已合并：SDK opt.188，Host 钉版 66936ff62）（用户说"继续"，阶段 1～4 暂停功能开发）
-当前计划：代码质量整治计划-v2.md（2.5 修订）
+最后更新：2026-10-16（阶段 6 完成，分支 cq-phase6 待合并主分支；阶段 5 已合并：SDK opt.190）（用户说"继续"，5 做完继续后续阶段）
+当前计划：代码质量整治计划-v2.md（2.7 修订）
 用户授权：2026-10-12 说"好的，请你开始吧"，按四条建议执行：现在开工；全量回归一次授权 7 次（另加阶段 0 基线一次）；证据目录移出 git 不重写历史；阶段 1～4 暂停功能开发。
 
 ## 进度
@@ -13,16 +13,24 @@
 | 2 拆主入口 | **完成并合并主分支（19dbb3aa2，2026-10-13）**：main.py 17311→288 行；后端全量回归新失败 5 个已修；独立核验两轮通过；架构文档 HOST_ENTRY.md | 阶段2-实施记录.md、阶段2-独立核验.md |
 | 4 后端与 SDK 边界收口 | **完成**：SDK 公开接口清单与 `__all__`；产品代码引用 SDK 内部归零；6 个叶子模块下沉；import-linter 分层与 SDK 公开边界进 CI；**SDK opt.188 已发（Host 钉版 66936ff62）**；第 3 次全量回归无新失败（后端 1 个外部语音服务 403）；数据副本启动通过；独立核验通过 | 阶段4-切片设计.md、阶段4-实施记录.md、阶段4-SDK发版独立核验.md |
 | 3 函数内导入与循环依赖 | **完成**：函数内导入 3818→575，剩余每处有原因注释；循环依赖后端 79、SDK 87 移交阶段 6、5；3.4 推到阶段 8；SDK 改动待阶段 4 发版 | 阶段3-实施记录.md、阶段3-偏差单-剩余函数内导入.md、阶段3-移交-循环依赖清单.md |
-| 5 SDK 巨型类拆分 | **进行中（分支 cq-phase5，工作树 simple_harness-cq）**：5A 完成（执行存储类 20 个领域 mixin＋公共基类，四个超 300 行函数拆开，核验 PASS）；5B.2 完成（编排器 16 个领域 mixin＋公共基类）；5B 拆函数：规划决策收集 1342→274（核验 PASS）、选下一次尝试 506→270、尝试结果收集 429→268、分层准入上下文 303→203（核验 PASS，测试中）；下一步 5B.1 字段分组（设计已写，脚本 scripts/code_quality/group_orchestrator_state.py） | 阶段5-切片设计.md、阶段5-实施记录.md、阶段5A-独立核验.md、阶段5B-*核验.md |
+| 5 SDK 巨型类拆分 | **完成并合并主分支**：SDK opt.189/opt.190；第 4 次全量回归无新增（F-4 偶发观察）；循环依赖 SDK 87→40 | 阶段5-切片设计.md、阶段5-实施记录.md |
+| 6 后端巨型类与超长函数 | **完成（分支 cq-phase6）**：超 1500 行的类 16→0；56 个原超 300 行函数全部 ≤150；后端循环依赖 79→19；第 5 次全量回归新增 43 条已修（os_tools 包根）；独立核验复核 PASS；大文件指标偏差裁决（计划 2.7） | 阶段6-切片设计.md、阶段6-实施记录.md、阶段6-偏差单-*.md |
 
-全量回归授权 7 次，已用：阶段 0 基线（不计）、阶段 1 第 1 次、阶段 2 第 2 次（只跑后端）、阶段 4 第 3 次。
+全量回归授权 7 次，已用：阶段 0 基线（不计）、阶段 1 第 1 次、阶段 2 第 2 次（只跑后端）、阶段 4 第 3 次、阶段 5 第 4 次、阶段 6 第 5 次（只跑主机）。
 
 ## 接着做
 
-2. 阶段 5 剩余：5B.1 字段分组 → 5B.3 协作对象（只读写单一状态对象的方法组）→ 5C（分层分发、提交服务、运行时内核、记忆协议、Store、HtnStore）→ 5D 其余超长函数 → 5G 解环（SDK 循环依赖 87→≤30）→ 5E mypy 清零（SDK 全 src 514）→ 5F 发版、钉版、第 4 次全量回归。5F 钉版时还要改后端测试：test_layered_scripted_lane.py 两处打桩（服务阻塞上限搬到 orchestrator_domains/service_turns.py）；test_recovery_isolated_host.py、test_assurance_host_api.py 读编排器私有字段（改为 `_rounds.recovery_isolated`、`_wiring.assurance_reviews`）。
-   - 阶段 5 每片：`CQ_TESTS=清单 LOG=日志 bash scripts/code_quality/slice_check.sh sdk`；自动挑测试超 150 个文件时自己挑（裁决口径）；一次只跑一组测试（并行会让时间敏感用例超时）。
-3. 阶段 6：import-linter 三条例外、deskpet 与旧 agent 互相引用、后端循环依赖（阶段末 ≤ 20）。
-4. 阶段 8：删 backend/main.py.bak2～4；死代码待删 7 处；sys.path 修改 26 处（grok_build_runtime 白名单）；阶段 2 记下的死代码。
+1. 阶段 6 收尾：合并 cq-phase6 到主分支（合并前查 `git diff --summary main..cq-phase6 | grep 120000`），更新 ARCHITECTURE（PROJECT_STATUS 里程碑）。
+2. 阶段 7 异常收窄与日志（计划第 3 节）。
+3. 阶段 8：查重与死代码，含新增 8.6（后端 5 个超 2500 行文件拆到 2000 以下，move_defs.py）；删 backend/main.py.bak2～4；FOLLOWUPS F-3、F-5、F-7；死代码待删 7 处；sys.path 修改 26 处。第 6 次全量回归覆盖阶段 6 回归后补拆（309f06c7d）。
+4. FOLLOWUPS F-6（工具注册表超时路径引用未定义的 future）单独修，配超时路径测试。
+
+## 阶段 6 新工具（scripts/code_quality/）
+
+- 拆长函数：state_rename.py + cut_phase.py（状态对象切段，inline_check.py 核对）；extract_method.py / plan_extract.py（显式参数，extract_check.py 核对）；closure_body_out.py、closure_to_method.py、lift_closures.py、split_dispatch.py、extract_expr.py。
+- 解环：cycle_sim.py（模拟去边）、unroot_package.py（包根不再转出）、move_defs.py（定义下沉或挪出，全仓导入方改到新位置）、lift_tagged.py（上提）。
+- 上提或搬家后必查：测试在原模块打桩是否还管得到读取方；读宿主源码文字的测试（tests/host_source.py）改宿主代码时必须一起跑。
+- 调格式化一律带 --force-exclude（显式传路径时 ruff 不认排除名单）；导入排序在仓库根目录跑。
 
 ## 每片工具
 

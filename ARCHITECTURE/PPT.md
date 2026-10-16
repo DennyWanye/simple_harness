@@ -117,7 +117,7 @@ else:
 | 文件 | 职责 |
 |---|---|
 | `backend/deskpet/skills/builtin/ppt-generate/SKILL.md` | **大纲生成指导**(LLM 怎么把主题变 outline + 视觉模式判定 + 内容质量要求) |
-| `backend/deskpet/tools/ppt_tools.py` (~3850 行) | 渲染引擎:三路径 + 分派 + 配图接线 + 视觉闭环编排 + schema |
+| `backend/deskpet/tools/ppt_tools.py`（门面：处理函数、schema、注册）+ `backend/deskpet/tools/ppt/`（13 个模块：配置、大纲、调研、绘图、两代版式、整页图、专业版配图、模板填充与适配等；2026-10-16 代码质量整治阶段 6C 按工具组拆分） | 渲染引擎:三路径 + 分派 + 配图接线 + 视觉闭环编排 + schema |
 | `backend/deskpet/tools/ppt_template_picker.py` | 模板库结构原语 + 预览图视觉选模板 + 兜底 |
 | `backend/deskpet/tools/ppt_visual_review.py` | 多模态看图评审 + 共享 `vision_chat` 原语 |
 | `backend/deskpet/tools/ppt_render.py` | WPS COM 渲 pptx→PNG(给视觉闭环 + 预览) |

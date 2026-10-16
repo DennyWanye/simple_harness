@@ -122,10 +122,10 @@ R6 新请求不再调用 legacy `dispatch()`。ReAct/Workflow Driver 都经 Effe
 
 | 守门 | 代码位置 | LLM 调用 | 输入 → 判定 | 不过怎么办 | 预算 |
 |---|---|---|---|---|---|
-| **completion_probe** | agent_loop.py:1325 | ✗ 纯规则 | 查 SessionDB code todos，status ∉ {completed,cancelled} 即未完成 | 注入「还剩 N 项 todo」system | 2 次 nudge |
-| **VerifyGate** | agent_loop.py:1402 | ✓ 仅 ephemeral 救援 | regex 从 assistant_text 抽 claim → 对 receipt ledger 严格对账 | 注入 D8-schema rebound；2 次失败/stagnation→ephemeral 子代理；再不过 `verify_exhausted` 强退 | 2 nudge + 1 ephemeral |
-| **goal_checker** | agent_loop.py（goal 块） | ✓ 每次 1 调 | LLM-as-judge：goal_text + 最近 5 轮 assistant 摘要 → `{done, hint}` | 注入 hint system | SessionGoal.max_iterations(默认10) |
-| **external_evaluator** | agent_loop.py:1775 | ✓ 高后果 1 调 | 仅 high-consequence goal 触发；跨人格 QA 评质量分 0-10 + verdict | verify_exhausted 前最后救援；revise 则拦 | 成本护栏（<10% 目标触发） |
+| **completion_probe** | agent_loop_domains/final_gates.py | ✗ 纯规则 | 查 SessionDB code todos，status ∉ {completed,cancelled} 即未完成 | 注入「还剩 N 项 todo」system | 2 次 nudge |
+| **VerifyGate** | agent_loop_domains/verify_gates.py | ✓ 仅 ephemeral 救援 | regex 从 assistant_text 抽 claim → 对 receipt ledger 严格对账 | 注入 D8-schema rebound；2 次失败/stagnation→ephemeral 子代理；再不过 `verify_exhausted` 强退 | 2 nudge + 1 ephemeral |
+| **goal_checker** | agent_loop_domains/final_gates.py（goal 块） | ✓ 每次 1 调 | LLM-as-judge：goal_text + 最近 5 轮 assistant 摘要 → `{done, hint}` | 注入 hint system | SessionGoal.max_iterations(默认10) |
+| **external_evaluator** | agent_loop_domains/final_gates.py | ✓ 高后果 1 调 | 仅 high-consequence goal 触发；跨人格 QA 评质量分 0-10 + verdict | verify_exhausted 前最后救援；revise 则拦 | 成本护栏（<10% 目标触发） |
 
 补充细节：
 
