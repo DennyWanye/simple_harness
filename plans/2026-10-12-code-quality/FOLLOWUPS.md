@@ -1,0 +1,31 @@
+# 代码质量整治：后续事项（followup）
+
+整治只改形状、不改行为。整治中查出、但属于功能修复或另一阶段的事，登记在这里，不在当前切片里修。
+
+## F-1 持久任务工作流引用了不存在的两个属性（缺陷，待修）
+
+- **登记**：2026-10-16，阶段 5 类型检查清零时查出（偏差单：阶段5-偏差单-类型清零.md 第二件，独立裁决选"本阶段不修，转交"）。
+- **位置**：SDK `simple_harness/workflows/durable_task/nodes.py`。
+  - 批准后发放授权时读 `call.effect_type`；
+  - 整理工具结果时读 `call.args_hash`。
+- **问题**：`PreparedToolCall`（同目录 state.py）是只有 4 个字段的冻结数据类：stable_call_id、tool_name、arguments、raw_arguments。没有这两个属性，走到就抛 AttributeError。
+- **复现路径**：
+  - 批准状态为 approved 且有一个以上工具调用时，走到 `effect_type` 那一行就崩；
+  - 有一个以上工具结果时，走到 `args_hash` 那一行就崩。
+  - 现有测试没有覆盖这两条路径。
+- **影响**：直接抛错，不会悄悄写坏数据。durable_task 已在 Host 产品里注册（backend/host/startup_workflows.py 注册了 "durable_task"），是在用的产品代码。
+- **现状**：两行各挂一个只针对该行的 `# type: ignore[attr-defined]`，注释指向本条。
+- **修之前先确认**：
+  1. "删工作流线"第 3 片会不会整体删掉 durable_task。会删就关掉本条，不修。
+  2. 定语义：效果类型从工具目录取还是从提案取；参数哈希按哪种规范化算。这是功能修复，按功能开发流程走（先写能复现的测试）。
+- **不许做**：为了让测试过而写固化错误行为的测试。
+- 另有一张同内容的任务卡片已开出，可以从卡片直接起一个会话处理。
+
+## F-2 WorkflowProviderAdapter.invoke 多传一个参数（死代码，归阶段 8）
+
+- 位置：SDK `simple_harness/workflow/adapters.py`。调用会 TypeError；该类产品代码不用。
+- 现状：挂 `# type: ignore[call-arg]` 加原因注释。阶段 8 查死代码时证明无调用方后删除。
+
+## F-3 LeafAcceptanceAssembly.accept 的 producer_agent_ids 参数不生效（死参数，归阶段 8）
+
+- 参数在函数内被覆盖，调用方传了也不生效。阶段 8 处理。
