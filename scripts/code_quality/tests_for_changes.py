@@ -40,6 +40,8 @@ def main() -> int:
     if not mods:
         return 0
     pats = [re.compile(rf"(?<![\w.]){re.escape(m)}(?![\w])") for m in mods]
+    # 按路径读源码文本的测试（"providers/openai_compatible.py"）也算相关（阶段 6 漏挑过两份）
+    pats += [re.compile(re.escape(m.replace(".", "/") + ".py")) for m in mods]
     # host 包与主入口经 main 被大量测试间接使用：改到它们时，引用 main 或 host 的测试都算相关
     if any(m == "main" or m.startswith("host.") for m in mods):
         pats.append(re.compile(r"^\s*(import main\b|from main import|from host[ .]|import host\b)|import main as", re.M))
