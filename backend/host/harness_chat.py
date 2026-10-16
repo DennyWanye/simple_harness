@@ -6,7 +6,9 @@ import asyncio
 import inspect
 import traceback
 import uuid
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from agent.nudge_queue import Hint
 from deskpet.agent.assembler.components.persona import _resolve_persona
@@ -269,6 +271,87 @@ async def _run_sdk_desktop_chat(
     )
 
 
+@dataclass
+class _HarnessChatState:
+    """_run_product_harness_chat 的运行状态：原函数的局部变量与参数（切段用）。"""
+
+    flow: Any = None
+    _global_entries: Any = None
+    _provider: Any = None
+    _provider_snapshot: Any = None
+    _providers: Any = None
+    activity: Any = None
+    binding_service: Any = None
+    capability_platform: Any = None
+    client_request_id: Any = None
+    client_turn_id: Any = None
+    context: Any = None
+    context_binding_id: Any = None
+    context_run: Any = None
+    context_run_state: Any = None
+    context_sources: Any = None
+    conversation: Any = None
+    creation_service: Any = None
+    current_content: Any = None
+    deferred_tool_names: Any = None
+    direct_tool_names: Any = None
+    frozen_context_usage_basis_sample_id: Any = None
+    frozen_owner: Any = None
+    frozen_session_binding: Any = None
+    global_owner_key: Any = None
+    global_scope: Any = None
+    global_skill_records: Any = None
+    global_skill_service: Any = None
+    global_snapshot: Any = None
+    host: Any = None
+    identity: Any = None
+    identity_authority: Any = None
+    is_sentinel: Any = None
+    memory_policy_override: Any = None
+    persona_text: Any = None
+    prepared_skill_scope: Any = None
+    prepared_snapshot: Any = None
+    priority: Any = None
+    provider: Any = None
+    provider_authority: Any = None
+    provider_chain: Any = None
+    provider_snapshot: Any = None
+    public_snapshot: Any = None
+    request_id: Any = None
+    reserved: Any = None
+    reserved_send: Any = None
+    retry_handle: Any = None
+    root_ref: Any = None
+    run_binding: Any = None
+    run_tool_catalog: Any = None
+    run_tool_inventory: Any = None
+    sdk_run_id: Any = None
+    session: Any = None
+    session_context: Any = None
+    session_db: Any = None
+    session_id: Any = None
+    sink: Any = None
+    skill_arguments: Any = None
+    source_ref: Any = None
+    task_scope_explicit_new: Any = None
+    task_scope_id: Any = None
+    text: Any = None
+    turn: Any = None
+    turn_id: Any = None
+    user_attachment_blocks: Any = None
+    user_message_id: Any = None
+    vector_worker: Any = None
+    venue: Any = None
+    visible_tool_names: Any = None
+    websocket: Any = None
+    workspace: Any = None
+    workspace_admission_retained: Any = None
+    workspace_admitted: Any = None
+    workspace_binding: Any = None
+    workspace_resolution: Any = None
+    write_scope_root: Any = None
+
+
 async def _run_product_harness_chat(
     websocket,
     text: str,
@@ -283,497 +366,86 @@ async def _run_product_harness_chat(
 ) -> None:
     """The single production chat ingress into ProductVenue/RunKernel."""
 
+    st = _HarnessChatState(
+        websocket=websocket,
+        text=text,
+        session_id=session_id,
+        memory_policy_override=memory_policy_override,
+        task_scope_explicit_new=task_scope_explicit_new,
+        user_attachment_blocks=user_attachment_blocks,
+        client_request_id=client_request_id,
+        client_turn_id=client_turn_id,
+        prepared_skill_scope=prepared_skill_scope,
+        skill_arguments=skill_arguments,
+    )
     if _sdk_desktop_test_enabled():
         await _run_sdk_desktop_chat(
-            websocket,
-            text,
-            session_id,
-            client_request_id=client_request_id,
-            client_turn_id=client_turn_id,
+            st.websocket,
+            st.text,
+            st.session_id,
+            client_request_id=st.client_request_id,
+            client_turn_id=st.client_turn_id,
         )
         return
 
     if host_state.sdk_ingress is None or not host_state.sdk_ingress.accepting:
         raise RuntimeError("SDK Runtime ingress is closed")
-    session_db = service_context.get("session_db")
-    vector_worker = service_context.get("vector_worker")
-    user_message_id = None
-    frozen_owner = None
-    is_sentinel = (text or "").startswith("<<") and (text or "").endswith(">>")
-    request_id = str(client_request_id or "").strip() or uuid.uuid4().hex
-    turn_id = str(client_turn_id or client_request_id or "").strip() or uuid.uuid4().hex
+    await _init_turn_identity(st)
+    _resolve_workspace(st)
 
-    root_ref = RunRef(
-        uuid.uuid5(
-            uuid.NAMESPACE_URL, f"deskpet:{root_idempotency_key(session_id, request_id, turn_id)}"
-        ).hex,
-        session_id,
-    )
-    task_scope_id = TaskWorkContextResolver.task_scope_id(session_id, request_id, turn_id)
-    binding_service = service_context.get("project_binding_service")
-    if binding_service is None:
-        raise RuntimeError("project_binding_service_unavailable")
-    creation_service = service_context.get("session_creation_service")
-    if creation_service is None:
-        raise RuntimeError("session_creation_service_unavailable")
-    # Admission is the migration fence for legacy projectless Sessions. Any
-    # allocation/persistence error propagates and prevents a projectless Tool
-    # catalog from being constructed for this Run.
-    await creation_service.migrate_projectless_session(session_id)
-    workspace_binding = await binding_service.resolve_session(session_id)
-    if workspace_binding.kind == "project":
-        workspace = workspace_binding.effective_root
-        workspace_resolution = {
-            "kind": "project_bound",
-            "session_id": workspace_binding.session_id,
-            "project_id": workspace_binding.project_id,
-            "project_name": workspace_binding.project_name,
-            "project_root": workspace_binding.project_root,
-            "execution_kind": workspace_binding.execution_kind,
-            "effective_root": workspace_binding.effective_root,
-            "project_identity": workspace_binding.project_identity,
-            "execution_identity": workspace_binding.execution_identity,
-            "project_revision": workspace_binding.project_revision,
-            "binding_version": workspace_binding.binding_version,
-            "handoff": None,
-        }
-    elif workspace_binding.kind == "projectless":
-        workspace = None
-        workspace_resolution = {
-            "kind": "projectless",
-            "session_id": workspace_binding.session_id,
-            "effective_root": None,
-            "binding_version": 1,
-        }
-    else:
-        workspace = None
-        workspace_resolution = {
-            "kind": "missing",
-            "session_id": workspace_binding.session_id,
-            "project_id": workspace_binding.project_id,
-            "project_name": workspace_binding.project_name,
-            "project_root": workspace_binding.project_root,
-            "execution_kind": workspace_binding.execution_kind,
-            "effective_root": workspace_binding.effective_root,
-            "project_revision": workspace_binding.project_revision,
-            "binding_version": workspace_binding.binding_version,
-            "error_code": workspace_binding.error_code,
-        }
+    await _announce_run_reserved(st)
 
-    # Bind the client turn to its deterministic root Run before provider,
-    # host, or Context preparation can block. The UI uses this reservation
-    # to keep the new task visible and queues later steering until the
-    # conversation boundary is ready.
-    reserved = {
-        "type": "chat_v2_run_reserved",
-        "payload": {
-            "session_id": session_id,
-            "run_id": root_ref.run_id,
-            "request_id": request_id,
-            "turn_id": turn_id,
-            "task_scope_id": task_scope_id,
-            "projection_version": 0,
-        },
-    }
-    reserved_send = websocket.send_json(reserved)
-    if inspect.isawaitable(reserved_send):
-        await reserved_send
-    await _broadcast_default_chat_peers(websocket, reserved)
-
-    venue = "text"
-    if workspace_resolution["kind"] == "missing":
-        host, _provider, _providers, _provider_snapshot = await _issue_product_harness_host(
-            session_id=session_id,
-            workspace=None,
-            allow_provider_unavailable=True,
-            allow_workspace_unavailable=True,
-            projectless=True,
-        )
-        await _commit_product_preflight_block(
-            websocket=websocket,
-            text=text,
-            session_id=session_id,
-            request_id=request_id,
-            turn_id=turn_id,
-            task_scope_id=task_scope_id,
-            host=host,
-            block=PreflightBlocked(
-                RootBlockReasonV1.WORKSPACE_UNAVAILABLE,
-                ("workspace-binding:" + str(workspace_resolution["error_code"]),),
-            ),
-        )
+    st.venue = "text"
+    st.flow = None
+    await _block_missing_workspace(st)
+    if st.flow == "stop":
         return
-    try:
-        host, _provider, _providers, _provider_snapshot = await _issue_product_harness_host(
-            session_id=session_id,
-            workspace=workspace,
-            projectless=workspace_resolution["kind"] == "projectless",
-            project_id=str(workspace_resolution.get("project_id") or ""),
-            project_revision=int(workspace_resolution.get("project_revision") or 0),
-            project_identity=str(workspace_resolution.get("project_identity") or ""),
-        )
-        provider = _provider
-        provider_chain = _providers
-        provider_snapshot = _provider_snapshot
-    except Exception as exc:
-        if isinstance(exc, PreflightBlocked):
-            host, _provider, _providers, _provider_snapshot = await _issue_product_harness_host(
-                session_id=session_id,
-                workspace=workspace,
-                allow_workspace_unavailable=True,
-                projectless=workspace_resolution["kind"] == "projectless",
-                project_id=str(workspace_resolution.get("project_id") or ""),
-                project_revision=int(workspace_resolution.get("project_revision") or 0),
-                project_identity=str(workspace_resolution.get("project_identity") or ""),
-            )
-            await _commit_product_preflight_block(
-                websocket=websocket,
-                text=text,
-                session_id=session_id,
-                request_id=request_id,
-                turn_id=turn_id,
-                task_scope_id=task_scope_id,
-                host=host,
-                block=exc,
-            )
-            return
-        if not isinstance(exc, SessionProviderUnavailable):
-            raise
-        host, _provider, _providers, _provider_snapshot = await _issue_product_harness_host(
-            session_id=session_id,
-            workspace=workspace,
-            allow_provider_unavailable=True,
-            projectless=workspace_resolution["kind"] == "projectless",
-            project_id=str(workspace_resolution.get("project_id") or ""),
-            project_revision=int(workspace_resolution.get("project_revision") or 0),
-            project_identity=str(workspace_resolution.get("project_identity") or ""),
-        )
-        await _commit_product_preflight_block(
-            websocket=websocket,
-            text=text,
-            session_id=session_id,
-            request_id=request_id,
-            turn_id=turn_id,
-            task_scope_id=task_scope_id,
-            host=host,
-            block=PreflightBlocked(
-                RootBlockReasonV1.PROVIDER_BINDING_UNAVAILABLE,
-                ("provider-binding:" + str(getattr(exc, "reason", type(exc).__name__)),),
-            ),
-        )
+    st.flow = None
+    await _issue_host_or_block(st)
+    if st.flow == "stop":
         return
-    frozen_session_binding = _snapshot_context_usage_binding_for_run(host)
+    st.frozen_session_binding = _snapshot_context_usage_binding_for_run(st.host)
     # TODO: SDK Runtime client.resume() method not yet implemented
     # This is only needed for retry/resume scenarios (when turn_id is provided)
-    retry_handle = None  # await _sdk_ingress.require_ready().client.resume(request_id, turn_id, host) if turn_id else None
-    frozen_context_usage_basis_sample_id = (
+    st.retry_handle = None  # await _sdk_ingress.require_ready().client.resume(request_id, turn_id, host) if turn_id else None
+    st.frozen_context_usage_basis_sample_id = (
         None
-        if retry_handle is not None
-        else await _snapshot_context_usage_basis_for_run(session_db, session_id)
+        if st.retry_handle is not None
+        else await _snapshot_context_usage_basis_for_run(st.session_db, st.session_id)
     )
-    if retry_handle is None and session_db is not None and not is_sentinel:
-        frozen_owner = host_state.companion_identity_gate.freeze()
-        # New Sessions are bound atomically during creation. This idempotent
-        # admission also claims older empty ownerless Sessions created before
-        # the dynamic identity resolver fix; messageful or mismatched Sessions
-        # remain fail-closed inside SessionDB.
-        await session_db.bind_session_owner_if_absent(
-            session_id,
-            {
-                "profile_id": frozen_owner.owner.profile_id,
-                "profile_generation": frozen_owner.owner.profile_generation,
-                "binding_epoch": frozen_owner.binding_epoch,
-                "owner_kind": "companion_profile",
-            },
-        )
-        # Semantic growth intent is interpreted by the active model inside
-        # ProductTurnPreparer.  Ingress scheduling must not recreate a second
-        # keyword/regex classifier.
-        priority = "normal"
-        user_message_id = await session_db.append_user_message_with_growth_outbox(
-            session_id,
-            text,
-            trusted_owner={
-                "profile_id": frozen_owner.owner.profile_id,
-                "profile_generation": (frozen_owner.owner.profile_generation),
-                "binding_epoch": frozen_owner.binding_epoch,
-                "owner_kind": "companion_profile",
-            },
-            request_id=request_id,
-            turn_id=turn_id,
-            run_id=root_ref.run_id,
-            priority=priority,
-        )
-        if host_state.companion_ingress_dispatcher is None:
-            raise RuntimeError("Companion ingress dispatcher is unavailable")
-        if vector_worker is not None:
-            await vector_worker.enqueue(user_message_id, text)
-        await _broadcast_default_chat_peers(
-            websocket,
-            {
-                "type": "chat_v2_user_echo",
-                "payload": {
-                    "session_id": session_id,
-                    "text": text,
-                    "request_id": request_id,
-                    "turn_id": turn_id,
-                    "run_id": root_ref.run_id,
-                    "task_scope_id": task_scope_id,
-                },
-            },
-        )
-    session_context: dict[str, Any] = {"_session_id": session_id}
-    if workspace is not None:
-        session_context.update(
-            _project_root=workspace,
-            _write_scope_root=workspace,
+    await _persist_user_message(st)
+    st.session_context: dict[str, Any] = {"_session_id": st.session_id}
+    if st.workspace is not None:
+        st.session_context.update(
+            _project_root=st.workspace,
+            _write_scope_root=st.workspace,
         )
     else:
-        session_context["_image_worker"] = service_context.get("image_worker")
-        write_scope_root = host.write_scope_root
-        if write_scope_root:
-            session_context["_write_scope_root"] = write_scope_root
-    deskpet_tool_registry_v2.set_session_context(session_id, session_context)
+        st.session_context["_image_worker"] = service_context.get("image_worker")
+        st.write_scope_root = st.host.write_scope_root
+        if st.write_scope_root:
+            st.session_context["_write_scope_root"] = st.write_scope_root
+    deskpet_tool_registry_v2.set_session_context(st.session_id, st.session_context)
 
-    turn = TurnInput(
-        text=text,
-        session_id=session_id,
-        request_id=request_id,
-        turn_id=turn_id,
-        venue=venue,
-        memory_policy=memory_policy_override,
-        explicit_new=bool(task_scope_explicit_new),
-        attachment_blocks=tuple(user_attachment_blocks),
-        provider_ref=str(getattr(provider, "model", "") or "") or None,
-        capability_ref=f"catalog:{deskpet_tool_registry_v2.catalog_snapshot().revision}",
-        # This value comes only from the immutable Session binding resolution;
-        # the frontend cannot override it.  Passing the verified root lets
-        # ProjectRules and TaskWorkContext consume the same Run authority.
-        workspace_ref=workspace,
-        root_run_id=root_ref.run_id,
-        task_scope_id=task_scope_id,
-        active_execution_budget_seconds=_chat_turn_timeout_s(),
-        context_usage_basis_sample_id=(frozen_context_usage_basis_sample_id),
-    )
-
-    activity = None
-    context = RunPresentationContext(
-        session_id=session_id,
-        text=text,
-        websocket=websocket,
-        services=service_context,
-        config=config,
-        messages=[],
-        session_db=session_db,
-        vector_worker=vector_worker,
-        activity_store=activity,
-        provider_chain=provider_chain,
-        fallback_provider=provider,
-        request_id=request_id,
-        max_iterations=50,
-        is_sentinel=is_sentinel,
-        broadcast=_broadcast_default_chat_peers,
-        send_final=_send_chat_final,
-        emit_context_usage=_sdk_context_usage_from_projection_only,
-        intent_label_from_turn=_intent_label_from_turn,
-        billing_ledger=billing_ledger,
-        provider=provider,
-        run_id=root_ref.run_id,
-        task_scope_id=task_scope_id,
-        provider_binding_epoch=int(frozen_session_binding.get("binding_epoch") or 0),
-        provider_binding_provider_id=(str(frozen_session_binding.get("provider_id") or "") or None),
-        provider_binding_model_id=(
-            str(frozen_session_binding.get("preferred_model") or "") or None
-        ),
-    )
-    sink = LegacyProductDomainSink(
-        websocket=websocket,
-        services=service_context,
-        session_db=session_db,
-        broadcast=_broadcast_default_chat_peers,
-        plan_waiters={},
-        tool_registry=deskpet_tool_registry_v2,
-    )
-    session = None
-    workspace_admitted = False
-    workspace_admission_retained = False
+    _build_turn_presentation(st)
+    st.session = None
+    st.workspace_admitted = False
+    st.workspace_admission_retained = False
     try:
-        if (
-            host_state.sdk_provider_binding_resolver is None
-            or host_state.sdk_runtime_catalog is None
-            or host_state.sdk_tool_authority_registry is None
-            or host_state.sdk_runtime_tool_inventory is None
-        ):
-            raise RuntimeError("SDK per-Run authority is unavailable")
-        sdk_run_id = SdkRuntimeIngress._compute_run_id(  # noqa: SLF001
-            session_id, request_id, str(turn_id)
-        ).value
-        if workspace_resolution["kind"] == "project_bound":
-            await binding_service.admit_run(workspace_resolution, sdk_run_id)
-            workspace_admitted = True
-            workspace_resolution["handoff"] = await binding_service.claim_handoff(
-                session_id, sdk_run_id
-            )
-        if sdk_run_id in _sdk_unavailable_tool_authority_runs:
-            raise RuntimeError("sdk_tool_authority_unavailable")
-        provider_authority = await _freeze_sdk_provider_authority(session_db, session_id, host)
+        await _prepare_run_context(st)
 
-        run_tool_catalog, run_tool_inventory = filter_sdk_catalog_for_workspace(
-            host_state.sdk_runtime_catalog,
-            host_state.sdk_runtime_tool_inventory,
-            workspace_resolution_kind=str(workspace_resolution["kind"]),
-        )
-
-        current_content: Any = text
-        if user_attachment_blocks:
-            current_content = (
-                ContentBlock.from_dict({"type": "text", "text": text}),
-                *tuple(ContentBlock.from_dict(dict(block)) for block in user_attachment_blocks),
-            )
-        identity_authority = service_context.get("memory_identity_authority")
-        if identity_authority is None:
-            raise RuntimeError("validated Memory identity authority is unavailable")
-        identity = await identity_authority.bind(session_id=session_id)
-        persona_text = _resolve_persona(dict(config.raw))
-        prepared_snapshot = await _prepare_sdk_context_snapshot(
-            session_db=session_db,
-            session_id=session_id,
-            request_id=request_id,
-            root_run_id=root_ref.run_id,
-            sdk_run_id=sdk_run_id,
-            turn_id=str(turn_id),
-            text=text,
-            provider_binding=provider_authority,
-            catalog=run_tool_catalog,
-            attachment_blocks=tuple(user_attachment_blocks),
-            project=workspace_resolution,
-            task_scope_id=task_scope_id,
-            persona_text=persona_text,
-            memory_items=None,
-            prepared_skill_scope=prepared_skill_scope,
-            skill_arguments=skill_arguments,
-            skill_instruction_resolver=service_context.get("frozen_skill_instruction_resolver"),
-        )
-        context_sources = service_context.get("sdk_context_source_repository")
-        if context_sources is None:
-            raise RuntimeError("SDK context source repository is unavailable")
-        context_binding_id, source_ref = await context_sources.put_pending(
-            root_run_id=sdk_run_id,
-            continuation_id=None,
-            payload=prepared_snapshot.private_record(),
-        )
-        conversation = ConversationTurnInput(
-            identity=identity,
-            message=Message(MessageRole.USER, current_content),
-            memory_text=text,
-            context_source_snapshot_ref=source_ref,
-        )
-
-        public_snapshot = DefaultDenySnapshotRedactor().redact(prepared_snapshot)
-        if session_db is not None:
-            await session_db.put_sdk_context_public_snapshot(public_snapshot)
-        run_binding = host_state.sdk_provider_binding_resolver.create_binding(
-            run_id=sdk_run_id,
-            session_id=session_id,
-            request_id=request_id,
-            snapshot_id=prepared_snapshot.snapshot_id,
-            provider_id=provider_authority["provider_id"],
-            provider_incarnation_id=provider_authority["provider_incarnation_id"],
-            provider_config_revision=provider_authority["provider_config_revision"],
-            binding_epoch=provider_authority["binding_epoch"],
-            model_id=provider_authority["model_id"],
-            model_params=provider_authority["model_params"],
-            context_window=provider_authority["context_window"],
-            catalog_generation=int(run_tool_catalog["generation"]),
-            catalog_fingerprint=str(run_tool_catalog["content_fingerprint"]),
-        )
-
-        visible_tool_names = frozenset(str(name) for name in run_tool_catalog["tool_names"])
-        direct_tool_names = visible_tool_names & SDK_DIRECT_TOOL_KERNEL
-        deferred_tool_names = visible_tool_names - direct_tool_names
-        if not {"tool_search", "tool_describe", "tool_activate"} <= direct_tool_names:
-            raise RuntimeError("SDK direct Tool kernel is incomplete")
-
-        global_skill_records = ()
-        capability_platform = service_context.get("capability_platform")
-        global_skill_service = service_context.get("project_skill_install_service")
-        if capability_platform is not None and global_skill_service is not None:
-            global_owner_key = str(global_skill_service.global_owner_key)
-            global_scope = CapabilityScope(user_key=global_owner_key)
-            async with capability_platform.publish_lock:
-                (
-                    global_snapshot,
-                    _global_entries,
-                ) = await capability_platform.hub.snapshot_for_atomic_lease(global_scope)
-                global_skill_records = await ProductCapabilityCatalogSourceAdapter().sdk_global_resource_records_from_snapshot(
-                    store=capability_platform.store,
-                    snapshot=global_snapshot,
-                    owner_key=global_owner_key,
-                    user_scope_key=global_owner_key,
-                )
-            logger.info(
-                "sdk_global_skill_catalog_captured count=%s skills=%s",
-                len(global_skill_records),
-                [record.skill_locator for record in global_skill_records],
-            )
-
-        try:
-            host_state.sdk_tool_authority_registry.prepare_run(
-                run_id=sdk_run_id,
-                session_id=session_id,
-                request_id=request_id,
-                root_run_id=root_ref.run_id,
-                task_scope_id=task_scope_id,
-                workspace_root=workspace,
-                catalog=run_tool_catalog,
-                inventory=run_tool_inventory,
-                deferred_names=deferred_tool_names,
-                disclosure_policy=SDK_EXPLICIT_DEFERRED_DISCLOSURE_POLICY,
-                binding_version=int(workspace_resolution.get("binding_version", 1)),
-                workspace_resolution=workspace_resolution,
-                resource_records=global_skill_records,
-            )
-        except BaseException:
-            host_state.sdk_provider_binding_resolver.mark_terminal(sdk_run_id, "failed")
-            raise
-        # Execute Agent via SDK Runtime. Concurrent Sessions resolve their own
-        # immutable binding; no global stack mutation or full-Run lock occurs.
-        await _execute_sdk_run(
-            session_id=session_id,
-            request_id=request_id,
-            turn_id=turn_id,
-            task_scope_id=task_scope_id,
-            prepared_snapshot=prepared_snapshot,
-            run_binding=run_binding,
-            context=context,
-            websocket=websocket,
-            root_run_id=root_ref.run_id,
-            conversation=conversation,
-            context_stage=None,
-            context_binding_id=context_binding_id,
-        )
-        context_run = host_state.sdk_ingress.query(sdk_run_id)
-        context_run_state = str(
-            getattr(
-                getattr(context_run, "state", None),
-                "value",
-                getattr(context_run, "state", ""),
-            )
-        ).lower()
-        if context_run_state in {"completed", "failed", "cancelled"}:
-            await context_sources.consume(context_binding_id)
-        else:
-            workspace_admission_retained = context_run_state == "waiting"
-            await context_sources.mark_staged(context_binding_id)
+        st.public_snapshot = DefaultDenySnapshotRedactor().redact(st.prepared_snapshot)
+        await _bind_run_and_skills(st)
+        await _execute_and_settle_context(st)
     except PreflightBlocked as block:
         await _commit_product_preflight_block(
-            websocket=websocket,
-            text=text,
-            session_id=session_id,
-            request_id=request_id,
-            turn_id=turn_id,
-            task_scope_id=task_scope_id,
-            host=host,
+            websocket=st.websocket,
+            text=st.text,
+            session_id=st.session_id,
+            request_id=st.request_id,
+            turn_id=st.turn_id,
+            task_scope_id=st.task_scope_id,
+            host=st.host,
             block=block,
         )
         return
@@ -784,65 +456,590 @@ async def _run_product_harness_chat(
     except Exception as exc:  # noqa: BLE001
         logger.warning(
             "product_harness_chat_failed sid=%s error=%s",
-            session_id,
+            st.session_id,
             str(exc),
             exc_info=True,
             traceback=traceback.format_exc(),
         )
         try:
             await _send_chat_error(
-                websocket,
+                st.websocket,
                 {
                     "type": "chat_v2_error",
                     "payload": {
                         "error": str(exc) or type(exc).__name__,
                         "detail": type(exc).__name__,
-                        "session_id": session_id,
-                        "run_id": root_ref.run_id,
-                        "task_scope_id": task_scope_id,
-                        "request_id": request_id,
+                        "session_id": st.session_id,
+                        "run_id": st.root_ref.run_id,
+                        "task_scope_id": st.task_scope_id,
+                        "request_id": st.request_id,
                     },
                 },
-                session_id=session_id,
-                request_id=request_id,
+                session_id=st.session_id,
+                request_id=st.request_id,
             )
         except Exception:
             pass
     finally:
-        if workspace_admitted and not workspace_admission_retained:
-            try:
-                await binding_service.release_run(sdk_run_id)
-            except Exception as exc:  # noqa: BLE001
-                logger.warning(
-                    "project_run_admission_release_failed",
-                    run_id=sdk_run_id,
-                    error_type=type(exc).__name__,
-                )
-        if session is not None:
-            await session.close()
-        if (
-            user_message_id is not None
-            and frozen_owner is not None
-            and host_state.companion_ingress_dispatcher is not None
-        ):
-            try:
-                # Idempotent failure fallback. A prior model promotion is
-                # monotonic and cannot be downgraded by this "none" settle.
-                await host_state.companion_ingress_dispatcher.settle_semantic_intent(
-                    session_id=session_id,
-                    message_id=user_message_id,
-                    request_id=request_id,
-                    turn_id=turn_id,
-                    owner=frozen_owner,
-                    growth_signal_kind="none",
-                )
-            except Exception as exc:
-                logger.warning(
-                    "companion_ingress_fallback_settle_failed",
-                    session_id=session_id,
-                    message_id=user_message_id,
-                    error=str(exc),
-                )
+        await _release_chat_run(st)
+
+
+async def _init_turn_identity(st: _HarnessChatState) -> None:
+    """取会话服务、生成请求与轮次标识，迁移无项目会话并读工作区绑定。"""
+
+    st.session_db = service_context.get("session_db")
+    st.vector_worker = service_context.get("vector_worker")
+    st.user_message_id = None
+    st.frozen_owner = None
+    st.is_sentinel = (st.text or "").startswith("<<") and (st.text or "").endswith(">>")
+    st.request_id = str(st.client_request_id or "").strip() or uuid.uuid4().hex
+    st.turn_id = str(st.client_turn_id or st.client_request_id or "").strip() or uuid.uuid4().hex
+
+    st.root_ref = RunRef(
+        uuid.uuid5(
+            uuid.NAMESPACE_URL,
+            f"deskpet:{root_idempotency_key(st.session_id, st.request_id, st.turn_id)}",
+        ).hex,
+        st.session_id,
+    )
+    st.task_scope_id = TaskWorkContextResolver.task_scope_id(
+        st.session_id, st.request_id, st.turn_id
+    )
+    st.binding_service = service_context.get("project_binding_service")
+    if st.binding_service is None:
+        raise RuntimeError("project_binding_service_unavailable")
+    st.creation_service = service_context.get("session_creation_service")
+    if st.creation_service is None:
+        raise RuntimeError("session_creation_service_unavailable")
+    # Admission is the migration fence for legacy projectless Sessions. Any
+    # allocation/persistence error propagates and prevents a projectless Tool
+    # catalog from being constructed for this Run.
+    await st.creation_service.migrate_projectless_session(st.session_id)
+    st.workspace_binding = await st.binding_service.resolve_session(st.session_id)
+
+
+def _resolve_workspace(st: _HarnessChatState) -> None:
+    """解析会话的工作区绑定。"""
+
+    if st.workspace_binding.kind == "project":
+        st.workspace = st.workspace_binding.effective_root
+        st.workspace_resolution = {
+            "kind": "project_bound",
+            "session_id": st.workspace_binding.session_id,
+            "project_id": st.workspace_binding.project_id,
+            "project_name": st.workspace_binding.project_name,
+            "project_root": st.workspace_binding.project_root,
+            "execution_kind": st.workspace_binding.execution_kind,
+            "effective_root": st.workspace_binding.effective_root,
+            "project_identity": st.workspace_binding.project_identity,
+            "execution_identity": st.workspace_binding.execution_identity,
+            "project_revision": st.workspace_binding.project_revision,
+            "binding_version": st.workspace_binding.binding_version,
+            "handoff": None,
+        }
+    elif st.workspace_binding.kind == "projectless":
+        st.workspace = None
+        st.workspace_resolution = {
+            "kind": "projectless",
+            "session_id": st.workspace_binding.session_id,
+            "effective_root": None,
+            "binding_version": 1,
+        }
+    else:
+        st.workspace = None
+        st.workspace_resolution = {
+            "kind": "missing",
+            "session_id": st.workspace_binding.session_id,
+            "project_id": st.workspace_binding.project_id,
+            "project_name": st.workspace_binding.project_name,
+            "project_root": st.workspace_binding.project_root,
+            "execution_kind": st.workspace_binding.execution_kind,
+            "effective_root": st.workspace_binding.effective_root,
+            "project_revision": st.workspace_binding.project_revision,
+            "binding_version": st.workspace_binding.binding_version,
+            "error_code": st.workspace_binding.error_code,
+        }
+
+
+async def _announce_run_reserved(st: _HarnessChatState) -> None:
+    """通知前端与同会话其他连接：运行已预留。"""
+
+    # Bind the client turn to its deterministic root Run before provider,
+    # host, or Context preparation can block. The UI uses this reservation
+    # to keep the new task visible and queues later steering until the
+    # conversation boundary is ready.
+    st.reserved = {
+        "type": "chat_v2_run_reserved",
+        "payload": {
+            "session_id": st.session_id,
+            "run_id": st.root_ref.run_id,
+            "request_id": st.request_id,
+            "turn_id": st.turn_id,
+            "task_scope_id": st.task_scope_id,
+            "projection_version": 0,
+        },
+    }
+    st.reserved_send = st.websocket.send_json(st.reserved)
+    if inspect.isawaitable(st.reserved_send):
+        await st.reserved_send
+    await _broadcast_default_chat_peers(st.websocket, st.reserved)
+
+
+async def _block_missing_workspace(st: _HarnessChatState) -> None:
+    """工作区缺失：提交拦截记录并结束。"""
+
+    if st.workspace_resolution["kind"] == "missing":
+        (
+            st.host,
+            st._provider,
+            st._providers,
+            st._provider_snapshot,
+        ) = await _issue_product_harness_host(
+            session_id=st.session_id,
+            workspace=None,
+            allow_provider_unavailable=True,
+            allow_workspace_unavailable=True,
+            projectless=True,
+        )
+        await _commit_product_preflight_block(
+            websocket=st.websocket,
+            text=st.text,
+            session_id=st.session_id,
+            request_id=st.request_id,
+            turn_id=st.turn_id,
+            task_scope_id=st.task_scope_id,
+            host=st.host,
+            block=PreflightBlocked(
+                RootBlockReasonV1.WORKSPACE_UNAVAILABLE,
+                ("workspace-binding:" + str(st.workspace_resolution["error_code"]),),
+            ),
+        )
+        st.flow = "stop"
+        return
+
+
+async def _issue_host_or_block(st: _HarnessChatState) -> None:
+    """签发 Harness 宿主；预检拦截时提交拦截记录并结束。"""
+
+    try:
+        (
+            st.host,
+            st._provider,
+            st._providers,
+            st._provider_snapshot,
+        ) = await _issue_product_harness_host(
+            session_id=st.session_id,
+            workspace=st.workspace,
+            projectless=st.workspace_resolution["kind"] == "projectless",
+            project_id=str(st.workspace_resolution.get("project_id") or ""),
+            project_revision=int(st.workspace_resolution.get("project_revision") or 0),
+            project_identity=str(st.workspace_resolution.get("project_identity") or ""),
+        )
+        st.provider = st._provider
+        st.provider_chain = st._providers
+        st.provider_snapshot = st._provider_snapshot
+    except Exception as exc:
+        if isinstance(exc, PreflightBlocked):
+            (
+                st.host,
+                st._provider,
+                st._providers,
+                st._provider_snapshot,
+            ) = await _issue_product_harness_host(
+                session_id=st.session_id,
+                workspace=st.workspace,
+                allow_workspace_unavailable=True,
+                projectless=st.workspace_resolution["kind"] == "projectless",
+                project_id=str(st.workspace_resolution.get("project_id") or ""),
+                project_revision=int(st.workspace_resolution.get("project_revision") or 0),
+                project_identity=str(st.workspace_resolution.get("project_identity") or ""),
+            )
+            await _commit_product_preflight_block(
+                websocket=st.websocket,
+                text=st.text,
+                session_id=st.session_id,
+                request_id=st.request_id,
+                turn_id=st.turn_id,
+                task_scope_id=st.task_scope_id,
+                host=st.host,
+                block=exc,
+            )
+            st.flow = "stop"
+            return
+        if not isinstance(exc, SessionProviderUnavailable):
+            raise
+        (
+            st.host,
+            st._provider,
+            st._providers,
+            st._provider_snapshot,
+        ) = await _issue_product_harness_host(
+            session_id=st.session_id,
+            workspace=st.workspace,
+            allow_provider_unavailable=True,
+            projectless=st.workspace_resolution["kind"] == "projectless",
+            project_id=str(st.workspace_resolution.get("project_id") or ""),
+            project_revision=int(st.workspace_resolution.get("project_revision") or 0),
+            project_identity=str(st.workspace_resolution.get("project_identity") or ""),
+        )
+        await _commit_product_preflight_block(
+            websocket=st.websocket,
+            text=st.text,
+            session_id=st.session_id,
+            request_id=st.request_id,
+            turn_id=st.turn_id,
+            task_scope_id=st.task_scope_id,
+            host=st.host,
+            block=PreflightBlocked(
+                RootBlockReasonV1.PROVIDER_BINDING_UNAVAILABLE,
+                ("provider-binding:" + str(getattr(exc, "reason", type(exc).__name__)),),
+            ),
+        )
+        st.flow = "stop"
+        return
+
+
+async def _persist_user_message(st: _HarnessChatState) -> None:
+    """保存用户消息并投递回显与成长信号。"""
+
+    if st.retry_handle is None and st.session_db is not None and not st.is_sentinel:
+        st.frozen_owner = host_state.companion_identity_gate.freeze()
+        # New Sessions are bound atomically during creation. This idempotent
+        # admission also claims older empty ownerless Sessions created before
+        # the dynamic identity resolver fix; messageful or mismatched Sessions
+        # remain fail-closed inside SessionDB.
+        await st.session_db.bind_session_owner_if_absent(
+            st.session_id,
+            {
+                "profile_id": st.frozen_owner.owner.profile_id,
+                "profile_generation": st.frozen_owner.owner.profile_generation,
+                "binding_epoch": st.frozen_owner.binding_epoch,
+                "owner_kind": "companion_profile",
+            },
+        )
+        # Semantic growth intent is interpreted by the active model inside
+        # ProductTurnPreparer.  Ingress scheduling must not recreate a second
+        # keyword/regex classifier.
+        st.priority = "normal"
+        st.user_message_id = await st.session_db.append_user_message_with_growth_outbox(
+            st.session_id,
+            st.text,
+            trusted_owner={
+                "profile_id": st.frozen_owner.owner.profile_id,
+                "profile_generation": (st.frozen_owner.owner.profile_generation),
+                "binding_epoch": st.frozen_owner.binding_epoch,
+                "owner_kind": "companion_profile",
+            },
+            request_id=st.request_id,
+            turn_id=st.turn_id,
+            run_id=st.root_ref.run_id,
+            priority=st.priority,
+        )
+        if host_state.companion_ingress_dispatcher is None:
+            raise RuntimeError("Companion ingress dispatcher is unavailable")
+        if st.vector_worker is not None:
+            await st.vector_worker.enqueue(st.user_message_id, st.text)
+        await _broadcast_default_chat_peers(
+            st.websocket,
+            {
+                "type": "chat_v2_user_echo",
+                "payload": {
+                    "session_id": st.session_id,
+                    "text": st.text,
+                    "request_id": st.request_id,
+                    "turn_id": st.turn_id,
+                    "run_id": st.root_ref.run_id,
+                    "task_scope_id": st.task_scope_id,
+                },
+            },
+        )
+
+
+def _build_turn_presentation(st: _HarnessChatState) -> None:
+    """建本轮输入、展示上下文与产品域输出。"""
+
+    st.turn = TurnInput(
+        text=st.text,
+        session_id=st.session_id,
+        request_id=st.request_id,
+        turn_id=st.turn_id,
+        venue=st.venue,
+        memory_policy=st.memory_policy_override,
+        explicit_new=bool(st.task_scope_explicit_new),
+        attachment_blocks=tuple(st.user_attachment_blocks),
+        provider_ref=str(getattr(st.provider, "model", "") or "") or None,
+        capability_ref=f"catalog:{deskpet_tool_registry_v2.catalog_snapshot().revision}",
+        # This value comes only from the immutable Session binding resolution;
+        # the frontend cannot override it.  Passing the verified root lets
+        # ProjectRules and TaskWorkContext consume the same Run authority.
+        workspace_ref=st.workspace,
+        root_run_id=st.root_ref.run_id,
+        task_scope_id=st.task_scope_id,
+        active_execution_budget_seconds=_chat_turn_timeout_s(),
+        context_usage_basis_sample_id=(st.frozen_context_usage_basis_sample_id),
+    )
+
+    st.activity = None
+    st.context = RunPresentationContext(
+        session_id=st.session_id,
+        text=st.text,
+        websocket=st.websocket,
+        services=service_context,
+        config=config,
+        messages=[],
+        session_db=st.session_db,
+        vector_worker=st.vector_worker,
+        activity_store=st.activity,
+        provider_chain=st.provider_chain,
+        fallback_provider=st.provider,
+        request_id=st.request_id,
+        max_iterations=50,
+        is_sentinel=st.is_sentinel,
+        broadcast=_broadcast_default_chat_peers,
+        send_final=_send_chat_final,
+        emit_context_usage=_sdk_context_usage_from_projection_only,
+        intent_label_from_turn=_intent_label_from_turn,
+        billing_ledger=billing_ledger,
+        provider=st.provider,
+        run_id=st.root_ref.run_id,
+        task_scope_id=st.task_scope_id,
+        provider_binding_epoch=int(st.frozen_session_binding.get("binding_epoch") or 0),
+        provider_binding_provider_id=(
+            str(st.frozen_session_binding.get("provider_id") or "") or None
+        ),
+        provider_binding_model_id=(
+            str(st.frozen_session_binding.get("preferred_model") or "") or None
+        ),
+    )
+    st.sink = LegacyProductDomainSink(
+        websocket=st.websocket,
+        services=service_context,
+        session_db=st.session_db,
+        broadcast=_broadcast_default_chat_peers,
+        plan_waiters={},
+        tool_registry=deskpet_tool_registry_v2,
+    )
+
+
+async def _prepare_run_context(st: _HarnessChatState) -> None:
+    """准备运行：工作区准入、工具目录、身份与上下文快照。"""
+
+    if (
+        host_state.sdk_provider_binding_resolver is None
+        or host_state.sdk_runtime_catalog is None
+        or host_state.sdk_tool_authority_registry is None
+        or host_state.sdk_runtime_tool_inventory is None
+    ):
+        raise RuntimeError("SDK per-Run authority is unavailable")
+    st.sdk_run_id = SdkRuntimeIngress._compute_run_id(  # noqa: SLF001
+        st.session_id, st.request_id, str(st.turn_id)
+    ).value
+    if st.workspace_resolution["kind"] == "project_bound":
+        await st.binding_service.admit_run(st.workspace_resolution, st.sdk_run_id)
+        st.workspace_admitted = True
+        st.workspace_resolution["handoff"] = await st.binding_service.claim_handoff(
+            st.session_id, st.sdk_run_id
+        )
+    if st.sdk_run_id in _sdk_unavailable_tool_authority_runs:
+        raise RuntimeError("sdk_tool_authority_unavailable")
+    st.provider_authority = await _freeze_sdk_provider_authority(
+        st.session_db, st.session_id, st.host
+    )
+
+    st.run_tool_catalog, st.run_tool_inventory = filter_sdk_catalog_for_workspace(
+        host_state.sdk_runtime_catalog,
+        host_state.sdk_runtime_tool_inventory,
+        workspace_resolution_kind=str(st.workspace_resolution["kind"]),
+    )
+
+    st.current_content: Any = st.text
+    if st.user_attachment_blocks:
+        st.current_content = (
+            ContentBlock.from_dict({"type": "text", "text": st.text}),
+            *tuple(ContentBlock.from_dict(dict(block)) for block in st.user_attachment_blocks),
+        )
+    st.identity_authority = service_context.get("memory_identity_authority")
+    if st.identity_authority is None:
+        raise RuntimeError("validated Memory identity authority is unavailable")
+    st.identity = await st.identity_authority.bind(session_id=st.session_id)
+    st.persona_text = _resolve_persona(dict(config.raw))
+    st.prepared_snapshot = await _prepare_sdk_context_snapshot(
+        session_db=st.session_db,
+        session_id=st.session_id,
+        request_id=st.request_id,
+        root_run_id=st.root_ref.run_id,
+        sdk_run_id=st.sdk_run_id,
+        turn_id=str(st.turn_id),
+        text=st.text,
+        provider_binding=st.provider_authority,
+        catalog=st.run_tool_catalog,
+        attachment_blocks=tuple(st.user_attachment_blocks),
+        project=st.workspace_resolution,
+        task_scope_id=st.task_scope_id,
+        persona_text=st.persona_text,
+        memory_items=None,
+        prepared_skill_scope=st.prepared_skill_scope,
+        skill_arguments=st.skill_arguments,
+        skill_instruction_resolver=service_context.get("frozen_skill_instruction_resolver"),
+    )
+    st.context_sources = service_context.get("sdk_context_source_repository")
+    if st.context_sources is None:
+        raise RuntimeError("SDK context source repository is unavailable")
+    st.context_binding_id, st.source_ref = await st.context_sources.put_pending(
+        root_run_id=st.sdk_run_id,
+        continuation_id=None,
+        payload=st.prepared_snapshot.private_record(),
+    )
+    st.conversation = ConversationTurnInput(
+        identity=st.identity,
+        message=Message(MessageRole.USER, st.current_content),
+        memory_text=st.text,
+        context_source_snapshot_ref=st.source_ref,
+    )
+
+
+async def _bind_run_and_skills(st: _HarnessChatState) -> None:
+    """建运行绑定、核对直连工具、收集全局技能并登记工具授权。"""
+
+    if st.session_db is not None:
+        await st.session_db.put_sdk_context_public_snapshot(st.public_snapshot)
+    st.run_binding = host_state.sdk_provider_binding_resolver.create_binding(
+        run_id=st.sdk_run_id,
+        session_id=st.session_id,
+        request_id=st.request_id,
+        snapshot_id=st.prepared_snapshot.snapshot_id,
+        provider_id=st.provider_authority["provider_id"],
+        provider_incarnation_id=st.provider_authority["provider_incarnation_id"],
+        provider_config_revision=st.provider_authority["provider_config_revision"],
+        binding_epoch=st.provider_authority["binding_epoch"],
+        model_id=st.provider_authority["model_id"],
+        model_params=st.provider_authority["model_params"],
+        context_window=st.provider_authority["context_window"],
+        catalog_generation=int(st.run_tool_catalog["generation"]),
+        catalog_fingerprint=str(st.run_tool_catalog["content_fingerprint"]),
+    )
+
+    st.visible_tool_names = frozenset(str(name) for name in st.run_tool_catalog["tool_names"])
+    st.direct_tool_names = st.visible_tool_names & SDK_DIRECT_TOOL_KERNEL
+    st.deferred_tool_names = st.visible_tool_names - st.direct_tool_names
+    if not {"tool_search", "tool_describe", "tool_activate"} <= st.direct_tool_names:
+        raise RuntimeError("SDK direct Tool kernel is incomplete")
+
+    st.global_skill_records = ()
+    st.capability_platform = service_context.get("capability_platform")
+    st.global_skill_service = service_context.get("project_skill_install_service")
+    if st.capability_platform is not None and st.global_skill_service is not None:
+        st.global_owner_key = str(st.global_skill_service.global_owner_key)
+        st.global_scope = CapabilityScope(user_key=st.global_owner_key)
+        async with st.capability_platform.publish_lock:
+            (
+                st.global_snapshot,
+                st._global_entries,
+            ) = await st.capability_platform.hub.snapshot_for_atomic_lease(st.global_scope)
+            st.global_skill_records = await ProductCapabilityCatalogSourceAdapter().sdk_global_resource_records_from_snapshot(
+                store=st.capability_platform.store,
+                snapshot=st.global_snapshot,
+                owner_key=st.global_owner_key,
+                user_scope_key=st.global_owner_key,
+            )
+        logger.info(
+            "sdk_global_skill_catalog_captured count=%s skills=%s",
+            len(st.global_skill_records),
+            [record.skill_locator for record in st.global_skill_records],
+        )
+
+    try:
+        host_state.sdk_tool_authority_registry.prepare_run(
+            run_id=st.sdk_run_id,
+            session_id=st.session_id,
+            request_id=st.request_id,
+            root_run_id=st.root_ref.run_id,
+            task_scope_id=st.task_scope_id,
+            workspace_root=st.workspace,
+            catalog=st.run_tool_catalog,
+            inventory=st.run_tool_inventory,
+            deferred_names=st.deferred_tool_names,
+            disclosure_policy=SDK_EXPLICIT_DEFERRED_DISCLOSURE_POLICY,
+            binding_version=int(st.workspace_resolution.get("binding_version", 1)),
+            workspace_resolution=st.workspace_resolution,
+            resource_records=st.global_skill_records,
+        )
+    except BaseException:
+        host_state.sdk_provider_binding_resolver.mark_terminal(st.sdk_run_id, "failed")
+        raise
+
+
+async def _execute_and_settle_context(st: _HarnessChatState) -> None:
+    """执行 SDK 运行，按终态消费或暂存上下文绑定。"""
+
+    # Execute Agent via SDK Runtime. Concurrent Sessions resolve their own
+    # immutable binding; no global stack mutation or full-Run lock occurs.
+    await _execute_sdk_run(
+        session_id=st.session_id,
+        request_id=st.request_id,
+        turn_id=st.turn_id,
+        task_scope_id=st.task_scope_id,
+        prepared_snapshot=st.prepared_snapshot,
+        run_binding=st.run_binding,
+        context=st.context,
+        websocket=st.websocket,
+        root_run_id=st.root_ref.run_id,
+        conversation=st.conversation,
+        context_stage=None,
+        context_binding_id=st.context_binding_id,
+    )
+    st.context_run = host_state.sdk_ingress.query(st.sdk_run_id)
+    st.context_run_state = str(
+        getattr(
+            getattr(st.context_run, "state", None),
+            "value",
+            getattr(st.context_run, "state", ""),
+        )
+    ).lower()
+    if st.context_run_state in {"completed", "failed", "cancelled"}:
+        await st.context_sources.consume(st.context_binding_id)
+    else:
+        st.workspace_admission_retained = st.context_run_state == "waiting"
+        await st.context_sources.mark_staged(st.context_binding_id)
+
+
+async def _release_chat_run(st: _HarnessChatState) -> None:
+    """收尾：释放工作区准入、关会话、按需投递成长信号。"""
+
+    if st.workspace_admitted and not st.workspace_admission_retained:
+        try:
+            await st.binding_service.release_run(st.sdk_run_id)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "project_run_admission_release_failed",
+                run_id=st.sdk_run_id,
+                error_type=type(exc).__name__,
+            )
+    if st.session is not None:
+        await st.session.close()
+    if (
+        st.user_message_id is not None
+        and st.frozen_owner is not None
+        and host_state.companion_ingress_dispatcher is not None
+    ):
+        try:
+            # Idempotent failure fallback. A prior model promotion is
+            # monotonic and cannot be downgraded by this "none" settle.
+            await host_state.companion_ingress_dispatcher.settle_semantic_intent(
+                session_id=st.session_id,
+                message_id=st.user_message_id,
+                request_id=st.request_id,
+                turn_id=st.turn_id,
+                owner=st.frozen_owner,
+                growth_signal_kind="none",
+            )
+        except Exception as exc:
+            logger.warning(
+                "companion_ingress_fallback_settle_failed",
+                session_id=st.session_id,
+                message_id=st.user_message_id,
+                error=str(exc),
+            )
 
 
 async def _run_product_harness_chat_with_timeout(*args, **kwargs) -> None:

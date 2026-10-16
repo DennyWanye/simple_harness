@@ -1371,7 +1371,18 @@ def test_main_routes_code_through_the_single_product_harness_ingress() -> None:
         for node in tree.body
         if isinstance(node, ast.AsyncFunctionDef) and node.name == "_run_product_harness_chat"
     )
-    calls = [node for node in ast.walk(ingress) if isinstance(node, ast.Call)]
+    # 入口函数切段后，段函数以 _HarnessChatState 为唯一参数；入口加这些段函数一起看
+    phases = [
+        node
+        for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.args.args
+        and isinstance(node.args.args[0].annotation, ast.Name)
+        and node.args.args[0].annotation.id == "_HarnessChatState"
+    ]
+    calls = [
+        node for fn in (ingress, *phases) for node in ast.walk(fn) if isinstance(node, ast.Call)
+    ]
     assert any(
         isinstance(node.func, ast.Name) and node.func.id == "_execute_sdk_run" for node in calls
     )

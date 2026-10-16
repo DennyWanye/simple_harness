@@ -33,6 +33,7 @@ SCOPES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from reindent import string_interior_lines  # noqa: E402
+from scope_names import names  # noqa: E402
 
 
 def find_func(tree: ast.Module, qual: str, line: int | None = None):
@@ -175,6 +176,15 @@ def main() -> int:
     cls, fn = find_func(tree, a.qual, a.line)
     gen_host = host_is_generator(fn)
     stmts, in_loop_body = container(fn, start, end)
+    # except 子句绑定的异常名不能改成状态字段：段在 except 体里、又读到段外绑定的异常名，就不能切
+    outer_exc = {
+        h.name
+        for h in ast.walk(fn)
+        if isinstance(h, ast.ExceptHandler) and h.name and h.lineno < start <= end <= h.end_lineno
+    }
+    leaked = sorted(outer_exc & names(stmts, ast.Load))
+    if leaked:
+        sys.exit(f"段里读到外层 except 绑定的异常名 {leaked}，不能切")
     # 段的真实起点包括紧贴在第一条语句上方的注释
     lines = src.splitlines(keepends=True)
     top = start
