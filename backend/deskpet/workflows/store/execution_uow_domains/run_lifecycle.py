@@ -52,7 +52,7 @@ class RunLifecycleMixin(ExecutionUowCore):
 
     @staticmethod
     def _assert_idempotent_intent(row: Mapping[str, Any], spec: RunCreate) -> None:
-        existing = SqliteExecutionUnitOfWork._row_to_record(row).spec
+        existing = ExecutionUowCore._row_to_record(row).spec
         assert_idempotent_run_intent(existing, spec)
 
     async def _existing_for_spec(

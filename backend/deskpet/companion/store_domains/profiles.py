@@ -383,7 +383,7 @@ class ProfileControlMixin(CompanionStoreCore):
             "control_epoch": control_epoch,
             "challenge_hash": challenge_hash,
         }
-        if not CompanionStore._same(lease, expected):
+        if not CompanionStoreCore._same(lease, expected):
             raise CompanionLeaseError("control_lease_facts_mismatch")
         if (lease["status"] == "challenged" and lease["expires_at"] <= now) or lease["status"] in {
             "revoked",
@@ -409,7 +409,7 @@ class ProfileControlMixin(CompanionStoreCore):
             "binding_epoch": binding_epoch,
         }
         if existing is not None:
-            if not CompanionStore._same(existing, immutable):
+            if not CompanionStoreCore._same(existing, immutable):
                 raise CompanionConflictError("control_command_replay_drift")
             return dict(existing)
         if request_seq != int(lease["last_seq"]) + 1:
