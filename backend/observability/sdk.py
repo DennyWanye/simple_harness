@@ -19,7 +19,7 @@ from typing import Any
 
 from simple_harness.observability import CorrelationContext
 
-logger = logging.getLogger(__name__)
+_logger = logging.getLogger(__name__)
 
 
 SDK_EVENTS_FILENAME = "sdk-observability-events.jsonl"
@@ -110,7 +110,7 @@ class HostSdkObservability:
                 ),
             )
         except BaseException:
-            logger.debug("init_insert_failed", exc_info=True)
+            _logger.debug("sdk_jsonl_sink_unavailable", exc_info=True)
             self._degraded_codes.add("sdk_jsonl_sink_unavailable")
         self.sink = CompositeSink(children, child_capacity=256, close_timeout=1.0)
 
@@ -149,7 +149,7 @@ class HostSdkObservability:
                 else:
                     snapshots[name] = dict(value)
             except Exception:
-                logger.debug("export_source_failed", exc_info=True)
+                _logger.debug("export_source_failed", exc_info=True)
                 snapshots[name] = {"health": "degraded", "error_code": "snapshot_unavailable"}
                 degraded.add(f"{name}_snapshot_unavailable")
         return self._export_snapshots(snapshots, degraded)
@@ -170,7 +170,7 @@ class HostSdkObservability:
                     value = await asyncio.wait_for(value, timeout=0.5)
                 snapshots[name] = dict(value)
             except Exception:
-                logger.debug("export_async_source_failed", exc_info=True)
+                _logger.debug("export_async_source_failed", exc_info=True)
                 snapshots[name] = {"health": "degraded", "error_code": "snapshot_unavailable"}
                 degraded.add(f"{name}_snapshot_unavailable")
         return self._export_snapshots(snapshots, degraded)
@@ -233,7 +233,7 @@ class HostSdkObservability:
                     pass
             return "ok"
         except BaseException:
-            logger.debug("write_bounded_json_encode_failed", exc_info=True)
+            _logger.debug("write_bounded_json_encode_failed", exc_info=True)
             return "degraded:export_failed"
 
 

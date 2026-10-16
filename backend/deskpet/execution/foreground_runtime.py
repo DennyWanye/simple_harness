@@ -435,7 +435,8 @@ class ForegroundRuntimeExecutionAuthority(ClaimedDriveMixin):
                 # Reconnection reads SQLite; this hint is neither ledger nor ACK.
                 # Never publish callback errors, which may contain private data.
                 logger.debug(
-                    "foreground_state_changed_hint_failed", error_type=type(swallowed_exc).__name__
+                    "foreground_state_changed_hint_failed",
+                    extra={"error_type": type(swallowed_exc).__name__},
                 )
 
     @property

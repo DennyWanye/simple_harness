@@ -35,6 +35,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from add_exc_info import module_loggers  # noqa: E402
+from except_inventory import stdlib_loggers  # noqa: E402
 
 PREFERRED = ("logger", "log", "_log", "_logger", "LOGGER", "_LOG", "LOG")
 NOQA = re.compile(r"#\s*noqa:\s*BLE001\b[^#]*")
@@ -118,6 +119,7 @@ def _log_or_reason(
     arg: str,
     reason: str,
     logger: str,
+    stdlib: bool,
 ) -> bool:
     """except 行写原因；log / logtype 再在处理体里加日志调用。返回是否用到了记录器。"""
     line = h.lineno
@@ -148,7 +150,9 @@ def _log_or_reason(
             lines[line - 1] = re.sub(
                 r":(\s*#|\s*$)", r" as swallowed_exc:\1", lines[line - 1], count=1
             )
-        extra = f"error_type=type({h.name or 'swallowed_exc'}).__name__"
+        type_expr = f"type({h.name or 'swallowed_exc'}).__name__"
+        # 标准库记录器不认 error_type= 关键字（调到该级别时抛 TypeError），要放进 extra
+        extra = f'extra={{"error_type": {type_expr}}}' if stdlib else f"error_type={type_expr}"
     call = f'{indent}{logger}.{level}("{event}", {extra})'
     if pass_only:
         lines[body0.lineno - 1] = call
@@ -200,7 +204,8 @@ def apply_file(path: Path, items: list[tuple[int, str, str, str]], dry: bool) ->
         elif action in ("log", "logtype", "reason"):
             if action != "reason" and not need_logger:
                 _check_module_level_order(path, tree, parents, h, logger)
-            used_logger |= _log_or_reason(path, lines, h, action, arg, reason, logger)
+            stdlib = need_logger or logger in stdlib_loggers(tree)
+            used_logger |= _log_or_reason(path, lines, h, action, arg, reason, logger, stdlib)
         elif action == "deltry":
             t = parents[h]
             if not isinstance(t, ast.Try) or len(t.handlers) != 1 or t.orelse or t.finalbody:

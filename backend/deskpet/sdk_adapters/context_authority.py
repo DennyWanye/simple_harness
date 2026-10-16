@@ -459,7 +459,6 @@ class ContextRouteLedgerStore:
             try:
                 cleanup.result()
             except BaseException:
-                _LOG.debug("connect_result_failed", exc_info=True)
                 _LOG.warning("context_route_connection_cleanup_unavailable", exc_info=True)
             raise
 

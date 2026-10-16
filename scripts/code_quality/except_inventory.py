@@ -151,18 +151,42 @@ def logs(h: ast.ExceptHandler) -> bool:
     return False
 
 
-def logs_exc(h: ast.ExceptHandler) -> bool:
-    """处理体里的日志调用带异常信息：exc_info=... 关键字、.exception(...)，或 error_type=...
-    （只记异常类型，用于异常消息可能含隐私数据的地方）。"""
-    for n in ast.walk(ast.Module(body=h.body, type_ignores=[])):
+def stdlib_loggers(tree: ast.Module) -> set[str]:
+    """模块顶层由 logging.getLogger 赋值的名字，加上 logging 模块本身（标准库记录器）。"""
+    names = {"logging"}
+    for stmt in tree.body:
         if (
-            isinstance(n, ast.Call)
-            and isinstance(n.func, ast.Attribute)
-            and (
-                n.func.attr == "exception"
-                or any(k.arg in ("exc_info", "error_type") for k in n.keywords)
-            )
+            isinstance(stmt, ast.Assign)
+            and isinstance(stmt.value, ast.Call)
+            and ast.unparse(stmt.value.func) == "logging.getLogger"
         ):
+            names |= {t.id for t in stmt.targets if isinstance(t, ast.Name)}
+    return names
+
+
+def _extra_has_error_type(call: ast.Call) -> bool:
+    for k in call.keywords:
+        if k.arg == "extra" and isinstance(k.value, ast.Dict):
+            return any(
+                isinstance(key, ast.Constant) and key.value == "error_type" for key in k.value.keys
+            )
+    return False
+
+
+def logs_exc(h: ast.ExceptHandler, stdlib: frozenset[str] | set[str] = frozenset()) -> bool:
+    """处理体里的日志调用带异常信息：exc_info=... 关键字、.exception(...)，或只记异常类型
+    （用于异常消息可能含隐私数据的地方）：structlog 写 error_type=...，标准库写
+    extra={"error_type": ...}。标准库记录器不认 error_type= 关键字
+    （调到该级别时抛 TypeError），不算数。"""
+    for n in ast.walk(ast.Module(body=h.body, type_ignores=[])):
+        if not (isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)):
+            continue
+        recv = n.func.value
+        is_std = isinstance(recv, ast.Name) and recv.id in stdlib
+        kws = {k.arg for k in n.keywords}
+        if n.func.attr == "exception" or "exc_info" in kws or _extra_has_error_type(n):
+            return True
+        if "error_type" in kws and not is_std:
             return True
     return False
 
@@ -175,7 +199,8 @@ def reraises(h: ast.ExceptHandler) -> bool:
 
 
 def is_product(rel: str) -> bool:
-    """完成口径的范围：后端去掉脚本，SDK 源码；都去掉编解码钉死文件与禁区（表结构、迁移、能力包模板）。"""
+    """完成口径的范围：后端去掉脚本，SDK 源码；
+    都去掉编解码钉死文件与禁区（表结构、迁移、能力包模板）。"""
     return (
         not rel.startswith("backend/scripts/")
         and rel not in CODEC_PINNED
@@ -211,6 +236,7 @@ def file_rows(rel: str, src: str, tree: ast.Module) -> list[dict]:
     """一个文件里每处宽捕获一行。"""
     out: list[dict] = []
     lines = src.splitlines()
+    std = stdlib_loggers(tree)
     parents: dict[int, ast.AST] = {}
     for p in ast.walk(tree):
         for c in ast.iter_child_nodes(p):
@@ -263,7 +289,7 @@ def file_rows(rel: str, src: str, tree: ast.Module) -> list[dict]:
         else:
             cls = "丙"
         reason = bool(REASON.search(lines[n.lineno - 1]))
-        explained = reraises(n) or logs_exc(n) or reason  # 旧口径，只作参考
+        explained = reraises(n) or logs_exc(n, std) or reason  # 旧口径，只作参考
         row = {
             "file": rel,
             "line": n.lineno,
@@ -277,7 +303,7 @@ def file_rows(rel: str, src: str, tree: ast.Module) -> list[dict]:
             "in_loop": in_loop,
             "cleanup_func": any(w in fname.lower() for w in CLEANUP_WORDS),
             "try_first": first,
-            "logs_exc": logs_exc(n),
+            "logs_exc": logs_exc(n, std),
             "reason": reason,
             "explained": explained,
             "product": is_product(rel),

@@ -57,3 +57,10 @@
 - 登记：2026-10-16，同上审计；拆分前的 `capabilities/store.py` 原样存在。
 - 位置：`backend/deskpet/capabilities/store_domains/core.py` 的 `create_skill_install_intent` / `cas_skill_install_intent` / `handoff_skill_install_intent`，类里前后各一份，后者覆盖前者。
 - 下一步：阶段 8 确认哪份生效后删掉另一份。
+
+## F-8 工作流派发循环出错时可能原地空转（潜在缺陷，阶段 7 核验发现）
+
+- 位置：backend/deskpet/workflows/launcher.py 的 `_dispatcher_loop`（约 975～990 行）。
+- 现象：`dispatch_due_work()` 一直抛异常、而下一个截止时间已经过去时，等待超时算出来是 0，循环原地反复转。原来异常被静默吞掉，看不出来。
+- 阶段 7 给这处补的日志先用 debug，避免每圈一条带堆栈的警告刷满日志。
+- 建议：出错后按次数退避（例如 1、2、4 秒，封顶 30 秒），修好后把日志改回 warning。配一条"派发持续失败不空转"的用例。

@@ -979,7 +979,7 @@ class WorkflowLauncher:
             except asyncio.CancelledError:
                 raise
             except Exception:  # noqa: BLE001 - 一轮派发出错时等下一轮再派
-                logger.warning("workflow_dispatch_due_work_failed", exc_info=True)
+                logger.debug("workflow_dispatch_due_work_failed", exc_info=True)
             timeout = self._dispatcher_interval
             if self._next_deadline is not None:
                 timeout = min(timeout, max(0.0, self._next_deadline - time.time()))

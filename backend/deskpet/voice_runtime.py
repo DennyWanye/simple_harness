@@ -11,15 +11,11 @@ ordinary text-only startup does not import or construct voice providers.
 
 from __future__ import annotations
 
-import logging
 import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-
-logger = logging.getLogger(__name__)
-
 
 VOICE_DISABLED_CODE = "voice_temporarily_disabled"
 VOICE_DISABLED_MESSAGE = "语音功能暂时关闭，后续将接入 Realtime。"
@@ -83,7 +79,6 @@ def configure_legacy_voice_runtime(
                 os.add_dll_directory(str(ct2_dir))
                 logger.info("cuda_dll_dir_registered", path=str(ct2_dir))
         except Exception as exc:  # pragma: no cover - best effort
-            logger.debug("voice_runtime_path_setup_failed", exc_info=True)
             logger.warning("cuda_dll_dir_register_failed", error=str(exc), exc_info=True)
 
     # Heavy dependencies stay below the switch.  In particular, importing
