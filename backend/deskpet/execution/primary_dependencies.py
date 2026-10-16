@@ -211,31 +211,9 @@ async def read_run_dependencies(
             "SELECT * FROM primary_effect_identities WHERE sdk_run_id=? AND effect_id=?",
             (sdk_run_id, before_effect_id),
         )
-        target = await cursor.fetchone()
-        await cursor.close()
-        if target is None:
-            raise ValueError("primary_effect_index_prefix_missing")
-        identity = dict(
-            host_run_id=run["host_run_id"],
-            sdk_run_id=sdk_run_id,
-            effect_id=before_effect_id,
-            tool_name=target["tool_name"],
+        cutoff, identity = await _dependency_cutoff(
+            before_effect_id, cursor=cursor, run=run, sdk_run_id=sdk_run_id, stack=stack
         )
-        if (
-            target["host_run_id"] != run["host_run_id"]
-            or target["identity_json"] != canonical_json(identity)
-            or target["identity_hash"] != canonical_hash(identity)
-        ):
-            raise ValueError("primary_effect_index_identity_mismatch")
-        _, (target_fact,) = stack.read_primary_dependency_facts(sdk_run_id, (before_effect_id,))
-        if (
-            target_fact is None
-            or target_fact.run_id.value != sdk_run_id
-            or target_fact.effect_id.value != before_effect_id
-            or target_fact.tool_name != target["tool_name"]
-        ):
-            raise ValueError("primary_effect_index_prefix_unverified")
-        cutoff = target["sequence"]
     cursor = await db.execute(
         "SELECT receipt_json,origin,provider_turn_ordinal FROM context_route_decisions WHERE sdk_run_id=? ORDER BY rowid",
         (sdk_run_id,),
@@ -387,43 +365,15 @@ async def read_run_dependencies(
             drafts.extend(scope_proof.get("procedure_drafts", ()))
         if raw["route"] != "memory_standalone":
             continue
-        if not isinstance(value.get("fragments"), (list, tuple)):
-            raise ValueError("primary_dependencies_route_mismatch")
-        fragments = value["fragments"]
-        if tuple(dict.fromkeys(f["ref"] for f in fragments)) != tuple(route.recall_refs):
-            raise ValueError("primary_dependencies_recall_refs_mismatch")
-        for fragment in fragments:
-            if fragment.get("lane") == "short_horizon":
-                binding = dependencies(short_horizon=[fragment.get("history_binding")])[
-                    "short_horizon"
-                ][0]
-                payload = fragment.get("payload")
-                if (
-                    not isinstance(payload, str)
-                    or binding["chunk_ref"] != fragment["ref"]
-                    or hashlib.sha256(payload.encode("utf-8")).hexdigest()
-                    != binding["content_hash"]
-                    or fragment.get("payload_hash") != binding["content_hash"]
-                ):
-                    raise ValueError("primary_dependencies_short_bytes_mismatch")
-                # Host registration sources must accompany the exact selection;
-                # the SDK triple alone cannot supply missing Host causal closure.
-                sources = parse_dependencies(fragment.get("history_source_dependencies"))
-                if not sources["evidence"]:
-                    raise ValueError("primary_dependencies_short_sources_missing")
-                evidence.extend(sources["evidence"])
-                recall.extend(sources["recall"])
-                short.extend(sources.get("short_horizon", ()))
-                drafts.extend(sources.get("procedure_drafts", ()))
-                short.append(binding)
-                continue
-            append_typed_fragment_dependencies(
-                fragment,
-                evidence=evidence,
-                recall=recall,
-                procedure_drafts=drafts,
-                consumed=(route.effect_id, fragment.get("ref")) in consumed_occurrences,
-            )
+        _require_route_fragments(
+            consumed_occurrences,
+            drafts=drafts,
+            evidence=evidence,
+            recall=recall,
+            route=route,
+            short=short,
+            value=value,
+        )
     # Every actual primary handler records its exact SDK identity, including
     # unscoped search/page-in. TaskScope reservations are not a complete index.
     if metadata.get("primary_effect_index_version") != 1:
@@ -478,73 +428,9 @@ async def read_run_dependencies(
             # passing a typed recall item id as reference_id must not make the
             # whole Run unverifiable.)
             # 按需导入：循环依赖（primary_dependencies ↔ current_tool_pages）
-            from deskpet.execution.current_tool_pages import PREFIX as CURRENT_PAGE_PREFIX
-
-            # 按需导入：循环依赖（primary_dependencies ↔ current_tool_pages）
-            from deskpet.execution.current_tool_pages import admitted_current_page
-
-            # 按需导入：循环依赖（primary_dependencies ↔ primary_context_pages）
-            from deskpet.execution.primary_context_pages import PREFIX as HISTORY_PAGE_PREFIX
-
-            # 按需导入：循环依赖（primary_dependencies ↔ primary_context_pages）
-            from deskpet.execution.primary_context_pages import (
-                PrimaryContextPageUnavailable,
-                admitted_page,
+            admitted_current_page, admitted_page = await _replayed_rejection_page(
+                db, fact=fact, run=run, sdk_run_id=sdk_run_id, stack=stack, start=start
             )
-
-            arguments = thaw_json(fact.arguments)
-            reference = arguments.get("reference_id") if isinstance(arguments, Mapping) else None
-            # Only the primary page handler publishes a stable rejection code;
-            # every other reference lands in the request-scoped store, whose
-            # rejection the wrapper collapses into an opaque ``tool_failed``.
-            primary_reference = isinstance(reference, str) and reference.startswith(
-                (HISTORY_PAGE_PREFIX, CURRENT_PAGE_PREFIX)
-            )
-            if primary_reference:
-                # 事件 AF：公共消息现在是「固定前缀 + 可执行的下一步」。前缀逐字
-                # 不变，所以升级前只有前缀本身的记录照样通过；改成前缀判定只是
-                # 允许同一条拒绝多讲一句该拿什么 offset。
-
-                if not str(fact.result.public_message or "").startswith(
-                    PRIMARY_PAGE_PUBLIC_MESSAGE
-                ):
-                    raise ValueError("scope_search_result_unverified")
-            elif fact.result.error_code != "tool_failed":
-                raise ValueError("scope_search_result_unverified")
-            try:
-                if isinstance(reference, str) and reference.startswith(CURRENT_PAGE_PREFIX):
-                    await admitted_current_page(
-                        db=db,
-                        stack=stack,
-                        run=run,
-                        sdk_run_id=sdk_run_id,
-                        page_effect=fact,
-                        arguments=arguments,
-                    )
-                else:
-                    await admitted_page(
-                        db=db,
-                        stack=stack,
-                        run=run,
-                        sdk_run_id=sdk_run_id,
-                        start=start,
-                        arguments=arguments,
-                    )
-            except PrimaryContextPageUnavailable as exc:
-                # 事件 AF：一次纯措辞升级不得把还在飞的 Run 判成重放不一致。
-                # ``rejection_code_matches`` 只认冻结的「新码 → 它取代的旧码」这
-                # 一个方向，语义没有放宽（review M1 同款理由，见 legacy_summary）。
-                # 按需导入：循环依赖（primary_dependencies ↔ current_tool_pages）
-                from deskpet.execution.current_tool_pages import rejection_code_matches
-
-                if primary_reference and not rejection_code_matches(
-                    fact.result.error_code, str(exc)
-                ):
-                    raise ValueError("primary_page_rejection_mismatch") from exc
-            else:
-                # A replay that succeeds means the recorded failure was not
-                # deterministic, so admitted content may have been read.
-                raise ValueError("scope_search_result_unverified")
             continue
         if isinstance(value, str):
             value = json.loads(value)
@@ -627,37 +513,17 @@ async def read_run_dependencies(
             if initial_package is None or value.get("content") != canonical_json(initial_package):
                 raise ValueError("scope_page_in_sources_missing")
             continue  # exact initial projection already contributes all sources
-        candidates = value.get("candidates")
-        if not isinstance(candidates, (list, tuple)):
-            raise ValueError("scope_search_candidates_missing")
-        for item in candidates:
-            package = item.get("scope_disclosure")
-            # MM-D3: ``is_active`` is the Host's own route-ledger cursor, not
-            # scope content. It carries no disclosure and is deliberately NOT
-            # re-derived here — the active cursor moves independently of the
-            # package, so a later re-read is a different fact, not a check.
-            # Admit exactly one boolean annotation; every content field below
-            # stays an exact re-derivation of the verified package.
-            content = {key: value_ for key, value_ in item.items() if key != "is_active"}
-            if (
-                not isinstance(package, Mapping)
-                or not isinstance(item.get("is_active", False), bool)
-                or content
-                != {
-                    "task_scope_id": package["task_scope_id"],
-                    "source_id": package["source_id"],
-                    "source_hash": package["source_hash"],
-                    "scope_disclosure": package,
-                }
-            ):
-                raise ValueError("scope_search_candidate_unverified")
-            scope_proof = await verify_scope_disclosure(
-                db_path=host_path, package=package, subject=run["subject"], stack=stack
-            )
-            evidence.extend(scope_proof["evidence"])
-            recall.extend(scope_proof["recall"])
-            short.extend(scope_proof.get("short_horizon", ()))
-            drafts.extend(scope_proof.get("procedure_drafts", ()))
+        await _require_scope_candidates(
+            drafts,
+            evidence=evidence,
+            host_path=host_path,
+            recall=recall,
+            run=run,
+            short=short,
+            stack=stack,
+            value=value,
+            verify_scope_disclosure=verify_scope_disclosure,
+        )
     return run, dependencies(
         evidence,
         recall,
@@ -665,6 +531,179 @@ async def read_run_dependencies(
         schema_version=3 if drafts else 2 if short else proof["schema_version"],
         procedure_drafts=drafts,
     )
+
+
+async def _dependency_cutoff(before_effect_id, *, cursor, run, sdk_run_id, stack):
+    target = await cursor.fetchone()
+    await cursor.close()
+    if target is None:
+        raise ValueError("primary_effect_index_prefix_missing")
+    identity = dict(
+        host_run_id=run["host_run_id"],
+        sdk_run_id=sdk_run_id,
+        effect_id=before_effect_id,
+        tool_name=target["tool_name"],
+    )
+    if (
+        target["host_run_id"] != run["host_run_id"]
+        or target["identity_json"] != canonical_json(identity)
+        or target["identity_hash"] != canonical_hash(identity)
+    ):
+        raise ValueError("primary_effect_index_identity_mismatch")
+    _, (target_fact,) = stack.read_primary_dependency_facts(sdk_run_id, (before_effect_id,))
+    if (
+        target_fact is None
+        or target_fact.run_id.value != sdk_run_id
+        or target_fact.effect_id.value != before_effect_id
+        or target_fact.tool_name != target["tool_name"]
+    ):
+        raise ValueError("primary_effect_index_prefix_unverified")
+    cutoff = target["sequence"]
+    return cutoff, identity
+
+
+def _require_route_fragments(
+    consumed_occurrences, *, drafts, evidence, recall, route, short, value
+) -> None:
+    if not isinstance(value.get("fragments"), (list, tuple)):
+        raise ValueError("primary_dependencies_route_mismatch")
+    fragments = value["fragments"]
+    if tuple(dict.fromkeys(f["ref"] for f in fragments)) != tuple(route.recall_refs):
+        raise ValueError("primary_dependencies_recall_refs_mismatch")
+    for fragment in fragments:
+        if fragment.get("lane") == "short_horizon":
+            binding = dependencies(short_horizon=[fragment.get("history_binding")])[
+                "short_horizon"
+            ][0]
+            payload = fragment.get("payload")
+            if (
+                not isinstance(payload, str)
+                or binding["chunk_ref"] != fragment["ref"]
+                or hashlib.sha256(payload.encode("utf-8")).hexdigest() != binding["content_hash"]
+                or fragment.get("payload_hash") != binding["content_hash"]
+            ):
+                raise ValueError("primary_dependencies_short_bytes_mismatch")
+            # Host registration sources must accompany the exact selection;
+            # the SDK triple alone cannot supply missing Host causal closure.
+            sources = parse_dependencies(fragment.get("history_source_dependencies"))
+            if not sources["evidence"]:
+                raise ValueError("primary_dependencies_short_sources_missing")
+            evidence.extend(sources["evidence"])
+            recall.extend(sources["recall"])
+            short.extend(sources.get("short_horizon", ()))
+            drafts.extend(sources.get("procedure_drafts", ()))
+            short.append(binding)
+            continue
+        append_typed_fragment_dependencies(
+            fragment,
+            evidence=evidence,
+            recall=recall,
+            procedure_drafts=drafts,
+            consumed=(route.effect_id, fragment.get("ref")) in consumed_occurrences,
+        )
+
+
+async def _replayed_rejection_page(db, *, fact, run, sdk_run_id, stack, start):
+    from deskpet.execution.current_tool_pages import PREFIX as CURRENT_PAGE_PREFIX
+
+    # 按需导入：循环依赖（primary_dependencies ↔ current_tool_pages）
+    from deskpet.execution.current_tool_pages import admitted_current_page
+
+    # 按需导入：循环依赖（primary_dependencies ↔ primary_context_pages）
+    from deskpet.execution.primary_context_pages import PREFIX as HISTORY_PAGE_PREFIX
+
+    # 按需导入：循环依赖（primary_dependencies ↔ primary_context_pages）
+    from deskpet.execution.primary_context_pages import (
+        PrimaryContextPageUnavailable,
+        admitted_page,
+    )
+
+    arguments = thaw_json(fact.arguments)
+    reference = arguments.get("reference_id") if isinstance(arguments, Mapping) else None
+    # Only the primary page handler publishes a stable rejection code;
+    # every other reference lands in the request-scoped store, whose
+    # rejection the wrapper collapses into an opaque ``tool_failed``.
+    primary_reference = isinstance(reference, str) and reference.startswith(
+        (HISTORY_PAGE_PREFIX, CURRENT_PAGE_PREFIX)
+    )
+    if primary_reference:
+        # 事件 AF：公共消息现在是「固定前缀 + 可执行的下一步」。前缀逐字
+        # 不变，所以升级前只有前缀本身的记录照样通过；改成前缀判定只是
+        # 允许同一条拒绝多讲一句该拿什么 offset。
+
+        if not str(fact.result.public_message or "").startswith(PRIMARY_PAGE_PUBLIC_MESSAGE):
+            raise ValueError("scope_search_result_unverified")
+    elif fact.result.error_code != "tool_failed":
+        raise ValueError("scope_search_result_unverified")
+    try:
+        if isinstance(reference, str) and reference.startswith(CURRENT_PAGE_PREFIX):
+            await admitted_current_page(
+                db=db,
+                stack=stack,
+                run=run,
+                sdk_run_id=sdk_run_id,
+                page_effect=fact,
+                arguments=arguments,
+            )
+        else:
+            await admitted_page(
+                db=db,
+                stack=stack,
+                run=run,
+                sdk_run_id=sdk_run_id,
+                start=start,
+                arguments=arguments,
+            )
+    except PrimaryContextPageUnavailable as exc:
+        # 事件 AF：一次纯措辞升级不得把还在飞的 Run 判成重放不一致。
+        # ``rejection_code_matches`` 只认冻结的「新码 → 它取代的旧码」这
+        # 一个方向，语义没有放宽（review M1 同款理由，见 legacy_summary）。
+        # 按需导入：循环依赖（primary_dependencies ↔ current_tool_pages）
+        from deskpet.execution.current_tool_pages import rejection_code_matches
+
+        if primary_reference and not rejection_code_matches(fact.result.error_code, str(exc)):
+            raise ValueError("primary_page_rejection_mismatch") from exc
+    else:
+        # A replay that succeeds means the recorded failure was not
+        # deterministic, so admitted content may have been read.
+        raise ValueError("scope_search_result_unverified")
+    return admitted_current_page, admitted_page
+
+
+async def _require_scope_candidates(
+    drafts, *, evidence, host_path, recall, run, short, stack, value, verify_scope_disclosure
+) -> None:
+    candidates = value.get("candidates")
+    if not isinstance(candidates, (list, tuple)):
+        raise ValueError("scope_search_candidates_missing")
+    for item in candidates:
+        package = item.get("scope_disclosure")
+        # MM-D3: ``is_active`` is the Host's own route-ledger cursor, not
+        # scope content. It carries no disclosure and is deliberately NOT
+        # re-derived here — the active cursor moves independently of the
+        # package, so a later re-read is a different fact, not a check.
+        # Admit exactly one boolean annotation; every content field below
+        # stays an exact re-derivation of the verified package.
+        content = {key: value_ for key, value_ in item.items() if key != "is_active"}
+        if (
+            not isinstance(package, Mapping)
+            or not isinstance(item.get("is_active", False), bool)
+            or content
+            != {
+                "task_scope_id": package["task_scope_id"],
+                "source_id": package["source_id"],
+                "source_hash": package["source_hash"],
+                "scope_disclosure": package,
+            }
+        ):
+            raise ValueError("scope_search_candidate_unverified")
+        scope_proof = await verify_scope_disclosure(
+            db_path=host_path, package=package, subject=run["subject"], stack=stack
+        )
+        evidence.extend(scope_proof["evidence"])
+        recall.extend(scope_proof["recall"])
+        short.extend(scope_proof.get("short_horizon", ()))
+        drafts.extend(scope_proof.get("procedure_drafts", ()))
 
 
 def append_typed_fragment_dependencies(

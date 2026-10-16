@@ -384,32 +384,7 @@ def parse_pack_manifest(
     if not isinstance(value, dict):
         raise PackManifestError("invalid_manifest", "manifest must be an object")
     schema_version = value.get("schema_version")
-    if isinstance(schema_version, bool) or not isinstance(schema_version, int):
-        raise PackManifestError("invalid_schema_version", "schema_version must be an integer")
-    if schema_version not in SUPPORTED_PACK_SCHEMA_VERSIONS:
-        raise PackManifestError(
-            "unsupported_schema",
-            f"unsupported schema_version: {schema_version}",
-        )
-
-    raw = _mapping(
-        value,
-        name="manifest",
-        required={
-            "schema_version",
-            "id",
-            "name",
-            "version",
-            "source",
-            "compatibility",
-            "entries",
-            "permissions",
-            "effects",
-            "dependencies",
-            "files",
-            "uninstall",
-        },
-    )
+    raw = _manifest_schema_raw(schema_version, value)
     pack_id = _text(raw["id"], "id")
     # Reuse the deterministic provider contract to validate the pack ID.
     try:
@@ -462,43 +437,37 @@ def parse_pack_manifest(
         required = {"id", "path", "allowed_tools"} if schema_version == 2 else {"path"}
         row = _mapping(item, name=f"entries.skills[{index}]", required=required)
         path = _relative_path(row["path"], f"entries.skills[{index}].path")
-        skill_id = (
-            _text(row["id"], f"entries.skills[{index}].id")
-            if schema_version == 2
-            else PurePosixPath(path).parent.name
+        _parse_skill_entry(
+            index,
+            path=path,
+            row=row,
+            schema_version=schema_version,
+            skill_ids=skill_ids,
+            skills=skills,
         )
-        if schema_version == 2 and not re.fullmatch(
-            r"[A-Za-z0-9](?:[A-Za-z0-9_-]{0,62}[A-Za-z0-9])?",
-            skill_id,
-        ):
-            raise PackManifestError(
-                "invalid_skill_id",
-                f"entries.skills[{index}].id is not canonical",
-            )
-        if skill_id in skill_ids:
-            raise PackManifestError("duplicate_skill_id", f"duplicate Skill id: {skill_id}")
-        skill_ids.add(skill_id)
-        allowed_tools = (
-            _string_list(
-                row["allowed_tools"],
-                f"entries.skills[{index}].allowed_tools",
-            )
-            if schema_version == 2
-            else ()
-        )
-        if allowed_tools != tuple(sorted(allowed_tools)):
-            raise PackManifestError(
-                "noncanonical_allowed_tools",
-                f"entries.skills[{index}].allowed_tools must be sorted",
-            )
-        if any(not re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]{0,63}", item) for item in allowed_tools):
-            raise PackManifestError(
-                "invalid_tool_name",
-                f"entries.skills[{index}].allowed_tools contains an invalid tool name",
-            )
-        skills.append(SkillEntry(id=skill_id, path=path, allowed_tools=allowed_tools))
 
     workflows: list[WorkflowEntry] = []
+    mcp_servers, tools = _parse_workflow_and_tool_entries(
+        entries_raw, pack_id, reserved_tool_names, workflows
+    )
+
+    return _build_pack_manifest(
+        compatibility,
+        mcp_servers=mcp_servers,
+        pack_id=pack_id,
+        raw=raw,
+        schema_version=schema_version,
+        skills=skills,
+        source=source,
+        tools=tools,
+        version=version,
+        workflows=workflows,
+    )
+
+
+def _parse_workflow_and_tool_entries(
+    entries_raw, pack_id, reserved_tool_names: Iterable[str], workflows: list[WorkflowEntry]
+):
     workflow_ids: set[str] = set()
     for index, item in enumerate(_objects(entries_raw.get("workflows", []), "entries.workflows")):
         row = _mapping(
@@ -532,58 +501,14 @@ def parse_pack_manifest(
     provider_names: set[str] = set()
     logical_ids: set[str] = set()
     for index, item in enumerate(_objects(entries_raw.get("tools", []), "entries.tools")):
-        row = _mapping(
-            item,
-            name=f"entries.tools[{index}]",
-            required={
-                "id",
-                "provider_name",
-                "runtime",
-                "execution_profile",
-                "input_views",
-                "entry",
-                "schema",
-                "healthcheck",
-            },
-        )
-        logical_id = _text(row["id"], f"entries.tools[{index}].id")
-        try:
-            expected_name = provider_tool_name(pack_id, logical_id)
-        except CapabilityContractError as exc:
-            raise PackManifestError(exc.code, str(exc)) from exc
-        actual_name = _text(row["provider_name"], f"entries.tools[{index}].provider_name")
-        if actual_name != expected_name:
-            raise PackManifestError(
-                "provider_name_mismatch",
-                f"{actual_name!r} must equal deterministic name {expected_name!r}",
-            )
-        if actual_name in reserved:
-            raise PackManifestError(
-                "reserved_tool_name", f"{actual_name!r} is a core reserved name"
-            )
-        if logical_id in logical_ids or actual_name in provider_names:
-            raise PackManifestError("tool_name_collision", "logical or provider tool name collides")
-        logical_ids.add(logical_id)
-        provider_names.add(actual_name)
-        runtime = _text(row["runtime"], f"entries.tools[{index}].runtime")
-        profile = _text(row["execution_profile"], f"entries.tools[{index}].execution_profile")
-        if runtime not in _RUNTIMES:
-            raise PackManifestError("invalid_runtime", f"unsupported runtime: {runtime}")
-        if profile not in _EXECUTION_PROFILES:
-            raise PackManifestError(
-                "invalid_execution_profile", f"unsupported execution profile: {profile}"
-            )
-        tools.append(
-            ToolEntry(
-                id=logical_id,
-                provider_name=actual_name,
-                runtime=runtime,
-                execution_profile=profile,
-                input_views=_string_list(row["input_views"], f"entries.tools[{index}].input_views"),
-                entry=_relative_path(row["entry"], f"entries.tools[{index}].entry"),
-                schema=_relative_path(row["schema"], f"entries.tools[{index}].schema"),
-                healthcheck=_text(row["healthcheck"], f"entries.tools[{index}].healthcheck"),
-            )
+        row = _parse_tool_entry_row(
+            index,
+            item=item,
+            logical_ids=logical_ids,
+            pack_id=pack_id,
+            provider_names=provider_names,
+            reserved=reserved,
+            tools=tools,
         )
 
     mcp_servers: list[McpServerEntry] = []
@@ -608,7 +533,156 @@ def parse_pack_manifest(
                 ),
             )
         )
+    return mcp_servers, tools
 
+
+def _manifest_schema_raw(schema_version, value: object):
+    if isinstance(schema_version, bool) or not isinstance(schema_version, int):
+        raise PackManifestError("invalid_schema_version", "schema_version must be an integer")
+    if schema_version not in SUPPORTED_PACK_SCHEMA_VERSIONS:
+        raise PackManifestError(
+            "unsupported_schema",
+            f"unsupported schema_version: {schema_version}",
+        )
+
+    raw = _mapping(
+        value,
+        name="manifest",
+        required={
+            "schema_version",
+            "id",
+            "name",
+            "version",
+            "source",
+            "compatibility",
+            "entries",
+            "permissions",
+            "effects",
+            "dependencies",
+            "files",
+            "uninstall",
+        },
+    )
+    return raw
+
+
+def _parse_skill_entry(
+    index, *, path, row, schema_version, skill_ids: set[str], skills: list[SkillEntry]
+) -> None:
+    skill_id = (
+        _text(row["id"], f"entries.skills[{index}].id")
+        if schema_version == 2
+        else PurePosixPath(path).parent.name
+    )
+    if schema_version == 2 and not re.fullmatch(
+        r"[A-Za-z0-9](?:[A-Za-z0-9_-]{0,62}[A-Za-z0-9])?",
+        skill_id,
+    ):
+        raise PackManifestError(
+            "invalid_skill_id",
+            f"entries.skills[{index}].id is not canonical",
+        )
+    if skill_id in skill_ids:
+        raise PackManifestError("duplicate_skill_id", f"duplicate Skill id: {skill_id}")
+    skill_ids.add(skill_id)
+    allowed_tools = (
+        _string_list(
+            row["allowed_tools"],
+            f"entries.skills[{index}].allowed_tools",
+        )
+        if schema_version == 2
+        else ()
+    )
+    if allowed_tools != tuple(sorted(allowed_tools)):
+        raise PackManifestError(
+            "noncanonical_allowed_tools",
+            f"entries.skills[{index}].allowed_tools must be sorted",
+        )
+    if any(not re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]{0,63}", item) for item in allowed_tools):
+        raise PackManifestError(
+            "invalid_tool_name",
+            f"entries.skills[{index}].allowed_tools contains an invalid tool name",
+        )
+    skills.append(SkillEntry(id=skill_id, path=path, allowed_tools=allowed_tools))
+
+
+def _parse_tool_entry_row(
+    index,
+    *,
+    item,
+    logical_ids: set[str],
+    pack_id,
+    provider_names: set[str],
+    reserved,
+    tools: list[ToolEntry],
+):
+    row = _mapping(
+        item,
+        name=f"entries.tools[{index}]",
+        required={
+            "id",
+            "provider_name",
+            "runtime",
+            "execution_profile",
+            "input_views",
+            "entry",
+            "schema",
+            "healthcheck",
+        },
+    )
+    logical_id = _text(row["id"], f"entries.tools[{index}].id")
+    try:
+        expected_name = provider_tool_name(pack_id, logical_id)
+    except CapabilityContractError as exc:
+        raise PackManifestError(exc.code, str(exc)) from exc
+    actual_name = _text(row["provider_name"], f"entries.tools[{index}].provider_name")
+    if actual_name != expected_name:
+        raise PackManifestError(
+            "provider_name_mismatch",
+            f"{actual_name!r} must equal deterministic name {expected_name!r}",
+        )
+    if actual_name in reserved:
+        raise PackManifestError("reserved_tool_name", f"{actual_name!r} is a core reserved name")
+    if logical_id in logical_ids or actual_name in provider_names:
+        raise PackManifestError("tool_name_collision", "logical or provider tool name collides")
+    logical_ids.add(logical_id)
+    provider_names.add(actual_name)
+    runtime = _text(row["runtime"], f"entries.tools[{index}].runtime")
+    profile = _text(row["execution_profile"], f"entries.tools[{index}].execution_profile")
+    if runtime not in _RUNTIMES:
+        raise PackManifestError("invalid_runtime", f"unsupported runtime: {runtime}")
+    if profile not in _EXECUTION_PROFILES:
+        raise PackManifestError(
+            "invalid_execution_profile", f"unsupported execution profile: {profile}"
+        )
+    tools.append(
+        ToolEntry(
+            id=logical_id,
+            provider_name=actual_name,
+            runtime=runtime,
+            execution_profile=profile,
+            input_views=_string_list(row["input_views"], f"entries.tools[{index}].input_views"),
+            entry=_relative_path(row["entry"], f"entries.tools[{index}].entry"),
+            schema=_relative_path(row["schema"], f"entries.tools[{index}].schema"),
+            healthcheck=_text(row["healthcheck"], f"entries.tools[{index}].healthcheck"),
+        )
+    )
+    return row
+
+
+def _build_pack_manifest(
+    compatibility,
+    *,
+    mcp_servers: list[McpServerEntry],
+    pack_id,
+    raw,
+    schema_version,
+    skills: list[SkillEntry],
+    source,
+    tools: list[ToolEntry],
+    version,
+    workflows: list[WorkflowEntry],
+) -> PackManifest:
     if not (skills or workflows or tools or mcp_servers):
         raise PackManifestError(
             "empty_pack", "entries must declare at least one skill, tool or MCP server"

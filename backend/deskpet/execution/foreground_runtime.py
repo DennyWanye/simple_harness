@@ -974,47 +974,13 @@ class ForegroundRuntimeExecutionAuthority:
                 getattr(record, "request_id", None),
             ) != (sdk_run_id, execution_session_id, request_id):
                 raise ForegroundRuntimeError("foreground_runtime_sdk_binding_drift")
-            await self._store.bind_sdk_run(
+            await self._bind_claimed_sdk_run(
+                claimed,
                 host_run_id=host_run_id,
+                record=record,
                 sdk_run_id=sdk_run_id,
-                owner_id=self._owner_id,
-                generation=claimed.generation,
-                idempotency_key=f"runtime-sdk-bind:{host_run_id}",
+                snapshot=snapshot,
             )
-            await self._store.record_start_observation(
-                host_run_id=host_run_id,
-                sdk_run_id=sdk_run_id,
-                owner_id=self._owner_id,
-                generation=claimed.generation,
-                outcome="QUERY_FOUND",
-                result_ref=f"sdk-run:{sdk_run_id}:v{getattr(record, 'version', 0)}",
-                result_hash=canonical_hash(
-                    {
-                        "run_id": sdk_run_id,
-                        "state": str(getattr(getattr(record, "state", None), "value", "")),
-                        "version": int(getattr(record, "version", 0)),
-                    }
-                ),
-                idempotency_key=f"runtime-recovery-query:{host_run_id}:g{claimed.generation}:v{getattr(record, 'version', 0)}",
-            )
-            if snapshot.state is RunState.CLAIMED:
-                await self._store.record_sdk_started(
-                    host_run_id=host_run_id,
-                    sdk_run_id=sdk_run_id,
-                    owner_id=self._owner_id,
-                    generation=claimed.generation,
-                    sdk_event_id=f"sdk-query:{sdk_run_id}:v{getattr(record, 'version', 0)}",
-                    idempotency_key=f"runtime-recovered-running:{host_run_id}:g{claimed.generation}",
-                )
-            if self._effect_gate is not None:
-                self._effect_gate.register(
-                    store=self._store,
-                    host_run_id=host_run_id,
-                    sdk_run_id=sdk_run_id,
-                    owner_id=self._owner_id,
-                    generation=claimed.generation,
-                )
-            await self._finish_bound(claimed, sdk_run_id)
             return
 
         def _check_identity(authority: object) -> None:
@@ -1056,26 +1022,7 @@ class ForegroundRuntimeExecutionAuthority:
                 tools=tools,
             )
         except PreparationDisclosureRejected as exc:
-            rejection = exc.rejection
-            candidate = claimed.candidate
-            if (
-                rejection.host_run_id != host_run_id
-                or rejection.subject != candidate.subject
-                or rejection.turn_id != candidate.turn_id
-                or rejection.turn_hash != candidate.turn_hash
-                or rejection.candidate_hash != candidate.candidate_hash
-                or rejection.evidence_id != candidate.evidence_id
-                or rejection.evidence_hash != candidate.evidence_hash
-            ):
-                raise ForegroundRuntimeError(
-                    "foreground_preparation_rejection_identity_mismatch"
-                ) from exc
-            await self._store.settle_preparation_rejection(
-                rejection=exc.rejection,
-                owner_id=claimed.owner_id,
-                generation=claimed.generation,
-            )
-            self._notify_state_changed()
+            await self._raise_claimed_rejection(claimed, exc, host_run_id)
             return
         _check_identity(context)
         bound_provider = await self._provider.bind(
@@ -1088,6 +1035,178 @@ class ForegroundRuntimeExecutionAuthority:
         )
         _check_identity(bound_provider)
         candidate = claimed.candidate
+        route = await self._claimed_route(
+            candidate,
+            claimed=claimed,
+            context=context,
+            host_run_id=host_run_id,
+            sdk_run_id=sdk_run_id,
+        )
+        await self._freeze_claimed_turn(
+            bound_provider,
+            candidate=candidate,
+            claimed=claimed,
+            context=context,
+            execution_session_id=execution_session_id,
+            host_run_id=host_run_id,
+            previously_bound_sdk_run_id=previously_bound_sdk_run_id,
+            request_id=request_id,
+            route=route,
+            sdk_run_id=sdk_run_id,
+            tools=tools,
+        )
+
+    async def _raise_claimed_rejection(self, claimed, exc, host_run_id: str) -> None:
+        rejection = exc.rejection
+        candidate = claimed.candidate
+        if (
+            rejection.host_run_id != host_run_id
+            or rejection.subject != candidate.subject
+            or rejection.turn_id != candidate.turn_id
+            or rejection.turn_hash != candidate.turn_hash
+            or rejection.candidate_hash != candidate.candidate_hash
+            or rejection.evidence_id != candidate.evidence_id
+            or rejection.evidence_hash != candidate.evidence_hash
+        ):
+            raise ForegroundRuntimeError(
+                "foreground_preparation_rejection_identity_mismatch"
+            ) from exc
+        await self._store.settle_preparation_rejection(
+            rejection=exc.rejection,
+            owner_id=claimed.owner_id,
+            generation=claimed.generation,
+        )
+        self._notify_state_changed()
+        return
+
+    async def _freeze_claimed_turn(
+        self,
+        bound_provider,
+        *,
+        candidate,
+        claimed,
+        context,
+        execution_session_id,
+        host_run_id: str,
+        previously_bound_sdk_run_id: str | None,
+        request_id,
+        route,
+        sdk_run_id,
+        tools,
+    ) -> None:
+        turn_payload = _candidate_turn_payload(candidate)
+        run_binding = bound_provider.binding
+        catalog_generation = int(run_binding.catalog_generation)
+        catalog_fingerprint = str(run_binding.catalog_fingerprint)
+        budget_fingerprint = str(run_binding.budget_fingerprint)
+        start_payload = self._claimed_start_payload(
+            bound_provider,
+            candidate=candidate,
+            context=context,
+            execution_session_id=execution_session_id,
+            host_run_id=host_run_id,
+            request_id=request_id,
+            route=route,
+            run_binding=run_binding,
+            tools=tools,
+            turn_payload=turn_payload,
+        )
+        execution_request_hash = canonical_hash(start_payload)
+        await self._store.record_execution_preparation(
+            host_run_id=host_run_id,
+            owner_id=self._owner_id,
+            generation=claimed.generation,
+            context_ref=context.authority_ref,
+            context_hash=context.authority_hash,
+            provider_ref=bound_provider.authority_ref,
+            provider_hash=bound_provider.authority_hash,
+            tool_ref=tools.authority_ref,
+            tool_hash=tools.authority_hash,
+            execution_request_hash=execution_request_hash,
+            idempotency_key=f"runtime-preparation:{host_run_id}",
+        )
+        should_start, tool_start_ready = await self._prepare_claimed_start(
+            claimed,
+            execution_request_hash=execution_request_hash,
+            host_run_id=host_run_id,
+            previously_bound_sdk_run_id=previously_bound_sdk_run_id,
+            route=route,
+            sdk_run_id=sdk_run_id,
+        )
+        if should_start:
+            await self._authorize_and_start_claimed(
+                budget_fingerprint,
+                candidate=candidate,
+                catalog_fingerprint=catalog_fingerprint,
+                catalog_generation=catalog_generation,
+                claimed=claimed,
+                context=context,
+                execution_session_id=execution_session_id,
+                host_run_id=host_run_id,
+                request_id=request_id,
+                route=route,
+                sdk_run_id=sdk_run_id,
+                start_payload=start_payload,
+            )
+        tool_start_ready.set()
+        self._notify_state_changed()
+        self._record_audit(
+            "foreground.runtime.bound",
+            host_run_id=host_run_id,
+            sdk_run_id=sdk_run_id,
+            generation=claimed.generation,
+            route_receipt_id=None if route is None else route.receipt_id,
+            route_receipt_hash=None if route is None else route.receipt_hash,
+        )
+        await self._finish_bound(claimed, sdk_run_id)
+
+    async def _bind_claimed_sdk_run(
+        self, claimed, *, host_run_id: str, record, sdk_run_id, snapshot
+    ) -> None:
+        await self._store.bind_sdk_run(
+            host_run_id=host_run_id,
+            sdk_run_id=sdk_run_id,
+            owner_id=self._owner_id,
+            generation=claimed.generation,
+            idempotency_key=f"runtime-sdk-bind:{host_run_id}",
+        )
+        await self._store.record_start_observation(
+            host_run_id=host_run_id,
+            sdk_run_id=sdk_run_id,
+            owner_id=self._owner_id,
+            generation=claimed.generation,
+            outcome="QUERY_FOUND",
+            result_ref=f"sdk-run:{sdk_run_id}:v{getattr(record, 'version', 0)}",
+            result_hash=canonical_hash(
+                {
+                    "run_id": sdk_run_id,
+                    "state": str(getattr(getattr(record, "state", None), "value", "")),
+                    "version": int(getattr(record, "version", 0)),
+                }
+            ),
+            idempotency_key=f"runtime-recovery-query:{host_run_id}:g{claimed.generation}:v{getattr(record, 'version', 0)}",
+        )
+        if snapshot.state is RunState.CLAIMED:
+            await self._store.record_sdk_started(
+                host_run_id=host_run_id,
+                sdk_run_id=sdk_run_id,
+                owner_id=self._owner_id,
+                generation=claimed.generation,
+                sdk_event_id=f"sdk-query:{sdk_run_id}:v{getattr(record, 'version', 0)}",
+                idempotency_key=f"runtime-recovered-running:{host_run_id}:g{claimed.generation}",
+            )
+        if self._effect_gate is not None:
+            self._effect_gate.register(
+                store=self._store,
+                host_run_id=host_run_id,
+                sdk_run_id=sdk_run_id,
+                owner_id=self._owner_id,
+                generation=claimed.generation,
+            )
+        await self._finish_bound(claimed, sdk_run_id)
+        return
+
+    async def _claimed_route(self, candidate, *, claimed, context, host_run_id: str, sdk_run_id):
         if candidate.task_scope_id is not None and (
             candidate.binding_set_revision < 1
             or candidate.binding_set_receipt_id is None
@@ -1120,11 +1239,22 @@ class ForegroundRuntimeExecutionAuthority:
                 host_authority_hash=host_hash,
             )
             await self._context.verify_initial_route(route)
-        turn_payload = _candidate_turn_payload(candidate)
-        run_binding = bound_provider.binding
-        catalog_generation = int(run_binding.catalog_generation)
-        catalog_fingerprint = str(run_binding.catalog_fingerprint)
-        budget_fingerprint = str(run_binding.budget_fingerprint)
+        return route
+
+    def _claimed_start_payload(
+        self,
+        bound_provider,
+        *,
+        candidate,
+        context,
+        execution_session_id,
+        host_run_id: str,
+        request_id,
+        route,
+        run_binding,
+        tools,
+        turn_payload,
+    ):
         tool_names = tools.catalog.get("tool_names")
         if not isinstance(tool_names, (list, tuple)):
             raise ForegroundRuntimeError("foreground_runtime_tool_catalog_invalid")
@@ -1155,20 +1285,18 @@ class ForegroundRuntimeExecutionAuthority:
             },
             "turn": turn_payload,
         }
-        execution_request_hash = canonical_hash(start_payload)
-        await self._store.record_execution_preparation(
-            host_run_id=host_run_id,
-            owner_id=self._owner_id,
-            generation=claimed.generation,
-            context_ref=context.authority_ref,
-            context_hash=context.authority_hash,
-            provider_ref=bound_provider.authority_ref,
-            provider_hash=bound_provider.authority_hash,
-            tool_ref=tools.authority_ref,
-            tool_hash=tools.authority_hash,
-            execution_request_hash=execution_request_hash,
-            idempotency_key=f"runtime-preparation:{host_run_id}",
-        )
+        return start_payload
+
+    async def _prepare_claimed_start(
+        self,
+        claimed,
+        *,
+        execution_request_hash,
+        host_run_id: str,
+        previously_bound_sdk_run_id: str | None,
+        route,
+        sdk_run_id,
+    ):
         start_request_hash = canonical_hash(
             {
                 "sdk_run_id": sdk_run_id,
@@ -1278,136 +1406,141 @@ class ForegroundRuntimeExecutionAuthority:
                         sdk_event_id=(f"sdk-query:{sdk_run_id}:v{getattr(record, 'version', 0)}"),
                         idempotency_key=f"runtime-running:{host_run_id}",
                     )
-        if should_start:
-            await self._store.authorize_effect(
-                host_run_id=host_run_id,
-                sdk_run_id=sdk_run_id,
-                owner_id=self._owner_id,
-                generation=claimed.generation,
-                boundary=EffectBoundary.SDK_START,
-            )
-            start_returned = True
-            try:
-                conversation = None
-                if self._conversation_entrypoint is not None:
-                    conversation = await self._conversation_entrypoint(
-                        session_id=execution_session_id,
-                        sdk_run_id=sdk_run_id,
-                        text=context.current_text,
-                        context_snapshot_id=context.snapshot_id,
-                        provider_messages=context.provider_messages,
-                    )
-                receipt = await self._ingress.start(
-                    session_id=execution_session_id,
-                    request_id=request_id,
-                    turn_id=candidate.turn_id,
-                    payload=start_payload,
-                    session_generation=catalog_generation,
-                    tool_catalog_fingerprint=catalog_fingerprint,
-                    provider_budget_fingerprint=budget_fingerprint,
-                    conversation=conversation,
-                    initial_route_receipt=route,
-                    initial_route_receipt_hash=None if route is None else route.receipt_hash,
-                )
-            except Exception as exc:
-                await self._store.record_start_observation(
-                    host_run_id=host_run_id,
-                    sdk_run_id=sdk_run_id,
-                    owner_id=self._owner_id,
-                    generation=claimed.generation,
-                    outcome="RAISED",
-                    error_code=str(getattr(exc, "code", type(exc).__name__)),
-                    idempotency_key=f"runtime-start-raised:{host_run_id}",
-                )
-                discovered = self._ingress.query(sdk_run_id)
-                if discovered is None:
-                    await self._store.record_start_observation(
-                        host_run_id=host_run_id,
-                        sdk_run_id=sdk_run_id,
-                        owner_id=self._owner_id,
-                        generation=claimed.generation,
-                        outcome="QUERY_MISSING",
-                        error_code="foreground_runtime_start_not_committed",
-                        idempotency_key=f"runtime-start-query:{host_run_id}:missing",
-                    )
-                    await self._store.record_reconciliation(
-                        host_run_id=host_run_id,
-                        sdk_run_id=sdk_run_id,
-                        owner_id=self._owner_id,
-                        generation=claimed.generation,
-                        observed_state="UNBOUND_RETRY",
-                        idempotency_key=(
-                            f"runtime-reconcile:{host_run_id}:g{claimed.generation}:start-missing"
-                        ),
-                    )
-                    raise
-                await self._store.record_start_observation(
-                    host_run_id=host_run_id,
-                    sdk_run_id=sdk_run_id,
-                    owner_id=self._owner_id,
-                    generation=claimed.generation,
-                    outcome="QUERY_FOUND",
-                    result_ref=(f"sdk-run:{sdk_run_id}:v{getattr(discovered, 'version', 0)}"),
-                    result_hash=canonical_hash(
-                        {
-                            "run_id": sdk_run_id,
-                            "state": str(getattr(getattr(discovered, "state", None), "value", "")),
-                            "version": int(getattr(discovered, "version", 0)),
-                        }
-                    ),
-                    # 幂等键必须含 Run 版本：驱动可能被多次唤醒（授权决策后
-                    # `after_control` 会重入），每次 query 到的 record.version 不同，
-                    # 用同一把键写不同内容会撞
-                    # ``foreground_execution_start_observation_idempotency_conflict``
-                    # （实测 .local-test-evidence/real-ui-channel/final-ui）。
-                    idempotency_key=(
-                        f"runtime-start-query:{host_run_id}:found:"
-                        f"v{getattr(discovered, 'version', 0)}"
-                    ),
-                )
-                start_returned = False
-                result_ref = f"sdk-query:{sdk_run_id}:v{getattr(discovered, 'version', 0)}"
-            if start_returned:
-                if receipt.run_id != sdk_run_id:
-                    raise ForegroundRuntimeError("foreground_runtime_ingress_identity_drift")
-                result_ref = f"sdk-start:{sdk_run_id}:g{receipt.generation}"
-                result_hash = canonical_hash(
-                    {
-                        "run_id": receipt.run_id,
-                        "generation": receipt.generation,
-                        "session_id": receipt.session_id,
-                        "request_id": receipt.request_id,
-                    }
-                )
-                await self._store.record_start_observation(
-                    host_run_id=host_run_id,
-                    sdk_run_id=sdk_run_id,
-                    owner_id=self._owner_id,
-                    generation=claimed.generation,
-                    outcome="RETURNED",
-                    result_ref=result_ref,
-                    result_hash=result_hash,
-                    idempotency_key=f"runtime-start-returned:{host_run_id}",
-                )
-            await self._store.record_sdk_started(
-                host_run_id=host_run_id,
-                sdk_run_id=sdk_run_id,
-                owner_id=self._owner_id,
-                generation=claimed.generation,
-                sdk_event_id=result_ref,
-                idempotency_key=f"runtime-running:{host_run_id}",
-            )
-        tool_start_ready.set()
-        self._notify_state_changed()
-        self._record_audit(
-            "foreground.runtime.bound",
+        return should_start, tool_start_ready
+
+    async def _authorize_and_start_claimed(
+        self,
+        budget_fingerprint,
+        *,
+        candidate,
+        catalog_fingerprint,
+        catalog_generation,
+        claimed,
+        context,
+        execution_session_id,
+        host_run_id: str,
+        request_id,
+        route,
+        sdk_run_id,
+        start_payload,
+    ) -> None:
+        await self._store.authorize_effect(
             host_run_id=host_run_id,
             sdk_run_id=sdk_run_id,
+            owner_id=self._owner_id,
             generation=claimed.generation,
-            route_receipt_id=None if route is None else route.receipt_id,
-            route_receipt_hash=None if route is None else route.receipt_hash,
+            boundary=EffectBoundary.SDK_START,
         )
-        await self._finish_bound(claimed, sdk_run_id)
+        start_returned = True
+        try:
+            conversation = None
+            if self._conversation_entrypoint is not None:
+                conversation = await self._conversation_entrypoint(
+                    session_id=execution_session_id,
+                    sdk_run_id=sdk_run_id,
+                    text=context.current_text,
+                    context_snapshot_id=context.snapshot_id,
+                    provider_messages=context.provider_messages,
+                )
+            receipt = await self._ingress.start(
+                session_id=execution_session_id,
+                request_id=request_id,
+                turn_id=candidate.turn_id,
+                payload=start_payload,
+                session_generation=catalog_generation,
+                tool_catalog_fingerprint=catalog_fingerprint,
+                provider_budget_fingerprint=budget_fingerprint,
+                conversation=conversation,
+                initial_route_receipt=route,
+                initial_route_receipt_hash=None if route is None else route.receipt_hash,
+            )
+        except Exception as exc:
+            await self._store.record_start_observation(
+                host_run_id=host_run_id,
+                sdk_run_id=sdk_run_id,
+                owner_id=self._owner_id,
+                generation=claimed.generation,
+                outcome="RAISED",
+                error_code=str(getattr(exc, "code", type(exc).__name__)),
+                idempotency_key=f"runtime-start-raised:{host_run_id}",
+            )
+            discovered = self._ingress.query(sdk_run_id)
+            if discovered is None:
+                await self._store.record_start_observation(
+                    host_run_id=host_run_id,
+                    sdk_run_id=sdk_run_id,
+                    owner_id=self._owner_id,
+                    generation=claimed.generation,
+                    outcome="QUERY_MISSING",
+                    error_code="foreground_runtime_start_not_committed",
+                    idempotency_key=f"runtime-start-query:{host_run_id}:missing",
+                )
+                await self._store.record_reconciliation(
+                    host_run_id=host_run_id,
+                    sdk_run_id=sdk_run_id,
+                    owner_id=self._owner_id,
+                    generation=claimed.generation,
+                    observed_state="UNBOUND_RETRY",
+                    idempotency_key=(
+                        f"runtime-reconcile:{host_run_id}:g{claimed.generation}:start-missing"
+                    ),
+                )
+                raise
+            await self._store.record_start_observation(
+                host_run_id=host_run_id,
+                sdk_run_id=sdk_run_id,
+                owner_id=self._owner_id,
+                generation=claimed.generation,
+                outcome="QUERY_FOUND",
+                result_ref=(f"sdk-run:{sdk_run_id}:v{getattr(discovered, 'version', 0)}"),
+                result_hash=canonical_hash(
+                    {
+                        "run_id": sdk_run_id,
+                        "state": str(getattr(getattr(discovered, "state", None), "value", "")),
+                        "version": int(getattr(discovered, "version", 0)),
+                    }
+                ),
+                # 幂等键必须含 Run 版本：驱动可能被多次唤醒（授权决策后
+                # `after_control` 会重入），每次 query 到的 record.version 不同，
+                # 用同一把键写不同内容会撞
+                # ``foreground_execution_start_observation_idempotency_conflict``
+                # （实测 .local-test-evidence/real-ui-channel/final-ui）。
+                idempotency_key=(
+                    f"runtime-start-query:{host_run_id}:found:v{getattr(discovered, 'version', 0)}"
+                ),
+            )
+            start_returned = False
+            result_ref = f"sdk-query:{sdk_run_id}:v{getattr(discovered, 'version', 0)}"
+        if start_returned:
+            if receipt.run_id != sdk_run_id:
+                raise ForegroundRuntimeError("foreground_runtime_ingress_identity_drift")
+            result_ref = f"sdk-start:{sdk_run_id}:g{receipt.generation}"
+            result_hash = canonical_hash(
+                {
+                    "run_id": receipt.run_id,
+                    "generation": receipt.generation,
+                    "session_id": receipt.session_id,
+                    "request_id": receipt.request_id,
+                }
+            )
+            await self._store.record_start_observation(
+                host_run_id=host_run_id,
+                sdk_run_id=sdk_run_id,
+                owner_id=self._owner_id,
+                generation=claimed.generation,
+                outcome="RETURNED",
+                result_ref=result_ref,
+                result_hash=result_hash,
+                idempotency_key=f"runtime-start-returned:{host_run_id}",
+            )
+        await self._store.record_sdk_started(
+            host_run_id=host_run_id,
+            sdk_run_id=sdk_run_id,
+            owner_id=self._owner_id,
+            generation=claimed.generation,
+            sdk_event_id=result_ref,
+            idempotency_key=f"runtime-running:{host_run_id}",
+        )
 
     async def _reconcile_waiting_run(
         self, *, host_run_id: str, sdk_run_id: str, generation: int, round_ordinal: int
@@ -1882,116 +2015,15 @@ class SqliteSdkTerminalObserver:
         effective_scope = await evidence_ingress.resolve_run_scope(sdk_run_id)
         read_messages = getattr(self._runtime_stack, "read_primary_run_messages", None)
         if callable(read_messages):
-            async with aiosqlite.connect(self._db_path) as source_db:
-                cursor = await source_db.execute(
-                    "SELECT t.turn_json FROM foreground_runs r "
-                    "JOIN foreground_turns t ON t.turn_id=r.turn_id "
-                    "JOIN foreground_run_sdk_bindings b ON b.host_run_id=r.host_run_id "
-                    "WHERE r.host_run_id=? AND b.sdk_run_id=? AND r.subject=?",
-                    (host_run_id, sdk_run_id, subject),
-                )
-                turn = await cursor.fetchone()
-            if turn is None:
-                raise ForegroundRuntimeError("foreground_terminal_run_binding_missing")
-            text = json.loads(turn[0])["payload"]["text"]
-            messages = read_messages(sdk_run_id, current_text=text)
-
-            proof = None
-            if callable(getattr(self._runtime_stack, "read_primary_dependency_facts", None)):
-                async with aiosqlite.connect(self._db_path) as dependency_db:
-                    dependency_db.row_factory = aiosqlite.Row
-                    try:
-                        source = await read_run_dependencies(
-                            db=dependency_db, stack=self._runtime_stack, sdk_run_id=sdk_run_id
-                        )
-                        proof = None if source is None else source[1]
-                    except (ValueError, TypeError, KeyError):
-                        # Unverifiable/old source stays archived; never fabricate
-                        # an empty complete proof to make generated history visible.
-                        proof = None
-            # 按需导入：循环依赖（foreground_runtime ↔ primary_history）
-            from deskpet.execution.primary_history import record_terminal_observation
-
-            occurrence_sources = None
-            coordinator = self._occurrence_coordinator
-            if coordinator is not None and coordinator.source_dependencies is not None:
-                try:
-                    occurrence_sources = await coordinator.source_dependencies.for_run(
-                        coordinator, sdk_run_id
-                    )
-                    if proof is not None:
-                        proof = thaw_json(proof)
-                        bindings = {
-                            item["evidence_id"]: item["envelope_hash"] for item in proof["evidence"]
-                        }
-                        for snapshot in occurrence_sources:
-                            for item in snapshot["evidence"]:
-                                previous = bindings.setdefault(
-                                    item["evidence_id"], item["envelope_hash"]
-                                )
-                                if previous != item["envelope_hash"]:
-                                    raise ValueError("s5c_occurrence_source_hash_conflict")
-                        proof["evidence"] = [
-                            dict(evidence_id=key, envelope_hash=value)
-                            for key, value in sorted(bindings.items())
-                        ]
-                except (ValueError, TypeError, KeyError):
-                    # Archive the actual terminal even if source closure is no
-                    # longer available. A7 physical preflight already rejects a
-                    # missing source, and ordinary history requires this proof.
-                    proof, occurrence_sources = None, None
-            tool_sources, assistant_tool_calls = None, None
-            # 2026-09-08 HM-TO-A6 F-K1: the combined reader also yields the
-            # assistant's own tool calls (name + arguments) from the same
-            # verified provider records; an older stack without it keeps the
-            # sources-only path and archives no side record.
-            read_tool_causality = getattr(self._runtime_stack, "read_primary_tool_causality", None)
-            read_tool_sources = getattr(
-                self._runtime_stack, "read_primary_tool_causal_sources", None
-            )
-            if terminal is RunState.COMPLETED and any(
-                message.get("role") == "tool" for message in messages
-            ):
-                try:
-                    if callable(read_tool_causality):
-                        tool_sources, assistant_tool_calls = await read_tool_causality(
-                            db_path=self._db_path,
-                            host_run_id=host_run_id,
-                            run_id=sdk_run_id,
-                            subject=subject,
-                            current_text=text,
-                            messages=messages,
-                        )
-                    elif callable(read_tool_sources):
-                        tool_sources = await read_tool_sources(
-                            db_path=self._db_path,
-                            host_run_id=host_run_id,
-                            run_id=sdk_run_id,
-                            subject=subject,
-                            current_text=text,
-                            messages=messages,
-                        )
-                except PrimaryToolCausalityUnavailable:
-                    # Archive the complete original terminal. A missing or
-                    # incomplete tool source never permits partial indexing.
-                    tool_sources, assistant_tool_calls = None, None
-            primary_event_id, primary_event_hash = await record_terminal_observation(
-                self._db_path,
+            cursor, primary_event_hash, primary_event_id = await self._observe_primary_event(
+                generation,
                 host_run_id=host_run_id,
+                owner_id=owner_id,
+                read_messages=read_messages,
+                sdk_evidence=sdk_evidence,
                 sdk_run_id=sdk_run_id,
                 subject=subject,
-                owner_id=owner_id,
-                generation=generation,
                 terminal=terminal,
-                sdk_evidence=sdk_evidence,
-                messages=messages,
-                visibility_dependencies=proof,
-                occurrence_sources=occurrence_sources,
-                tool_causal_sources=tool_sources,
-                assistant_tool_calls=assistant_tool_calls,
-                error_code=self._terminal_error_code(sdk_run_id, sdk_evidence)
-                if terminal is RunState.FAILED
-                else None,
             )
             if effective_scope is None:
                 if self._fault_inject is not None:
@@ -2037,6 +2069,154 @@ class SqliteSdkTerminalObserver:
             else:
                 authority = None
         # 按需导入：循环依赖（foreground_runtime ↔ evidence_ingress）
+        return await self._ingest_observed_evidence(
+            authority,
+            effective_scope=effective_scope,
+            gate_receipt=gate_receipt,
+            generation=generation,
+            row=row,
+            sdk_evidence=sdk_evidence,
+            sdk_run_id=sdk_run_id,
+            subject=subject,
+            terminal=terminal,
+        )
+
+    async def _observe_primary_event(
+        self,
+        generation: int,
+        *,
+        host_run_id: str,
+        owner_id: str,
+        read_messages,
+        sdk_evidence,
+        sdk_run_id: str,
+        subject: str,
+        terminal,
+    ):
+        async with aiosqlite.connect(self._db_path) as source_db:
+            cursor = await source_db.execute(
+                "SELECT t.turn_json FROM foreground_runs r "
+                "JOIN foreground_turns t ON t.turn_id=r.turn_id "
+                "JOIN foreground_run_sdk_bindings b ON b.host_run_id=r.host_run_id "
+                "WHERE r.host_run_id=? AND b.sdk_run_id=? AND r.subject=?",
+                (host_run_id, sdk_run_id, subject),
+            )
+            turn = await cursor.fetchone()
+        if turn is None:
+            raise ForegroundRuntimeError("foreground_terminal_run_binding_missing")
+        text = json.loads(turn[0])["payload"]["text"]
+        messages = read_messages(sdk_run_id, current_text=text)
+
+        proof = None
+        if callable(getattr(self._runtime_stack, "read_primary_dependency_facts", None)):
+            async with aiosqlite.connect(self._db_path) as dependency_db:
+                dependency_db.row_factory = aiosqlite.Row
+                try:
+                    source = await read_run_dependencies(
+                        db=dependency_db, stack=self._runtime_stack, sdk_run_id=sdk_run_id
+                    )
+                    proof = None if source is None else source[1]
+                except (ValueError, TypeError, KeyError):
+                    # Unverifiable/old source stays archived; never fabricate
+                    # an empty complete proof to make generated history visible.
+                    proof = None
+        # 按需导入：循环依赖（foreground_runtime ↔ primary_history）
+        from deskpet.execution.primary_history import record_terminal_observation
+
+        occurrence_sources = None
+        coordinator = self._occurrence_coordinator
+        if coordinator is not None and coordinator.source_dependencies is not None:
+            try:
+                occurrence_sources = await coordinator.source_dependencies.for_run(
+                    coordinator, sdk_run_id
+                )
+                if proof is not None:
+                    proof = thaw_json(proof)
+                    bindings = {
+                        item["evidence_id"]: item["envelope_hash"] for item in proof["evidence"]
+                    }
+                    for snapshot in occurrence_sources:
+                        for item in snapshot["evidence"]:
+                            previous = bindings.setdefault(
+                                item["evidence_id"], item["envelope_hash"]
+                            )
+                            if previous != item["envelope_hash"]:
+                                raise ValueError("s5c_occurrence_source_hash_conflict")
+                    proof["evidence"] = [
+                        dict(evidence_id=key, envelope_hash=value)
+                        for key, value in sorted(bindings.items())
+                    ]
+            except (ValueError, TypeError, KeyError):
+                # Archive the actual terminal even if source closure is no
+                # longer available. A7 physical preflight already rejects a
+                # missing source, and ordinary history requires this proof.
+                proof, occurrence_sources = None, None
+        tool_sources, assistant_tool_calls = None, None
+        # 2026-09-08 HM-TO-A6 F-K1: the combined reader also yields the
+        # assistant's own tool calls (name + arguments) from the same
+        # verified provider records; an older stack without it keeps the
+        # sources-only path and archives no side record.
+        read_tool_causality = getattr(self._runtime_stack, "read_primary_tool_causality", None)
+        read_tool_sources = getattr(self._runtime_stack, "read_primary_tool_causal_sources", None)
+        if terminal is RunState.COMPLETED and any(
+            message.get("role") == "tool" for message in messages
+        ):
+            try:
+                if callable(read_tool_causality):
+                    tool_sources, assistant_tool_calls = await read_tool_causality(
+                        db_path=self._db_path,
+                        host_run_id=host_run_id,
+                        run_id=sdk_run_id,
+                        subject=subject,
+                        current_text=text,
+                        messages=messages,
+                    )
+                elif callable(read_tool_sources):
+                    tool_sources = await read_tool_sources(
+                        db_path=self._db_path,
+                        host_run_id=host_run_id,
+                        run_id=sdk_run_id,
+                        subject=subject,
+                        current_text=text,
+                        messages=messages,
+                    )
+            except PrimaryToolCausalityUnavailable:
+                # Archive the complete original terminal. A missing or
+                # incomplete tool source never permits partial indexing.
+                tool_sources, assistant_tool_calls = None, None
+        primary_event_id, primary_event_hash = await record_terminal_observation(
+            self._db_path,
+            host_run_id=host_run_id,
+            sdk_run_id=sdk_run_id,
+            subject=subject,
+            owner_id=owner_id,
+            generation=generation,
+            terminal=terminal,
+            sdk_evidence=sdk_evidence,
+            messages=messages,
+            visibility_dependencies=proof,
+            occurrence_sources=occurrence_sources,
+            tool_causal_sources=tool_sources,
+            assistant_tool_calls=assistant_tool_calls,
+            error_code=self._terminal_error_code(sdk_run_id, sdk_evidence)
+            if terminal is RunState.FAILED
+            else None,
+        )
+        return cursor, primary_event_hash, primary_event_id
+
+    async def _ingest_observed_evidence(
+        self,
+        authority,
+        *,
+        effective_scope,
+        gate_receipt,
+        generation: int,
+        row,
+        sdk_evidence,
+        sdk_run_id: str,
+        subject: str,
+        terminal,
+    ) -> AuthenticatedTerminalObservation | None:
         from deskpet.execution.evidence_ingress import ExecutionEvidenceIngress
 
         evidence_ingress = ExecutionEvidenceIngress(self._db_path, fault_inject=self._fault_inject)

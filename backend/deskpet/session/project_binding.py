@@ -1383,40 +1383,13 @@ class SessionCreationService:
         execution_root: str | None = None,
     ) -> dict[str, Any]:
         request = str(request_id or "").strip()
-        if not request:
-            raise ProjectSessionError("invalid_request", "request_id is required")
-        if execution_kind not in ("project_root", "explicit"):
-            raise ProjectSessionError("invalid_request")
-        if project_id is None and execution_kind == "explicit":
-            raise ProjectSessionError("invalid_request")
-
-        try:
-            await assert_not_primary_authority(self._bindings._db_path, source_session_id)
-        except PrimaryAuthorityImmutableError as exc:
-            raise ProjectSessionError(exc.code) from exc
-        requested_execution_root = (
-            os.path.abspath(os.path.expanduser(str(execution_root)))
-            if execution_kind == "explicit" and execution_root
-            else None
+        intent_hash, receipt = await self._session_request_intent(
+            execution_kind,
+            execution_root=execution_root,
+            project_id=project_id,
+            request=request,
+            source_session_id=source_session_id,
         )
-        intent = {
-            "schema_version": 1,
-            "project_id": project_id,
-            "source_session_id": source_session_id,
-            "execution_kind": execution_kind,
-            "execution_root": requested_execution_root,
-        }
-        intent_hash = hashlib.sha256(_canonical_json(intent).encode("utf-8")).hexdigest()
-        # Lost-ACK replay must not touch a path that may have moved since the
-        # original commit, nor depend on a later owner binding epoch.
-        async with aiosqlite.connect(self._bindings._db_path) as replay_db:
-            receipt = await (
-                await replay_db.execute(
-                    "SELECT intent_hash,result_json,lifecycle FROM session_creation_receipts "
-                    "WHERE request_id=?",
-                    (request,),
-                )
-            ).fetchone()
         if receipt is not None:
             if str(receipt[0]) != intent_hash:
                 raise ProjectSessionError("request_id_conflict")
@@ -1481,270 +1454,18 @@ class SessionCreationService:
                     result["replayed"] = True
                     await db.rollback()
                     return result
-                project = None
-                if project_id:
-                    row = await (
-                        await db.execute(
-                            "SELECT project_id,display_name,canonical_root,root_kind,filesystem_identity,"
-                            "project_revision,created_at,updated_at,last_opened_at FROM projects WHERE project_id=?",
-                            (project_id,),
-                        )
-                    ).fetchone()
-                    if row is None:
-                        raise ProjectSessionError("project_not_found")
-                    project = self._bindings._project_from_row(row)
-                elif automatic_workspace is not None:
-                    sid, automatic_root, automatic_identity = automatic_workspace
-                    automatic_project_id = str(
-                        uuid.uuid5(uuid.NAMESPACE_URL, f"simple-harness-project:{request}")
-                    )
-                    now = time.time()
-                    await db.execute(
-                        "INSERT INTO projects(project_id,display_name,canonical_root,root_kind,filesystem_identity,"
-                        "project_revision,created_at,updated_at,last_opened_at) "
-                        "VALUES(?,?,?,?,?,1,?,?,?)",
-                        (
-                            automatic_project_id,
-                            f"Session {sid[:8]}",
-                            automatic_root,
-                            "folder",
-                            automatic_identity,
-                            now,
-                            now,
-                            now,
-                        ),
-                    )
-                    await db.execute(
-                        "INSERT INTO project_origins(project_id,project_origin) VALUES(?,'automatic_session_workspace')",
-                        (automatic_project_id,),
-                    )
-                    project = ProjectRecord(
-                        automatic_project_id,
-                        f"Session {sid[:8]}",
-                        automatic_root,
-                        "folder",
-                        automatic_identity,
-                        1,
-                        now,
-                        now,
-                        now,
-                    )
-                    project_id = automatic_project_id
-                sid = (
-                    automatic_workspace[0] if automatic_workspace is not None else str(uuid.uuid4())
+                return await self._create_session_with_project(
+                    automatic_workspace,
+                    db=db,
+                    execution_kind=execution_kind,
+                    explicit_identity=explicit_identity,
+                    explicit_path=explicit_path,
+                    intent_hash=intent_hash,
+                    owner_snapshot=owner_snapshot,
+                    project_id=project_id,
+                    request=request,
+                    source_session_id=source_session_id,
                 )
-                try:
-                    await assert_not_primary_authority_tx(db, (source_session_id, sid))
-                except PrimaryAuthorityImmutableError as exc:
-                    raise ProjectSessionError(exc.code) from exc
-                handoff = (
-                    await self._build_handoff(db, source_session_id) if source_session_id else None
-                )
-                now = time.time()
-                await db.execute(
-                    "INSERT INTO sessions(id,created_at,metadata) VALUES(?,?,?)",
-                    (sid, now, _canonical_json({"origin": "project_session_v1"})),
-                )
-                await db.execute(
-                    "INSERT INTO session_catalog_entries(session_id,product_kind,created_at) VALUES(?, 'conversation', ?)",
-                    (sid, now),
-                )
-                await db.execute(
-                    "INSERT INTO session_delivery_state(session_id,epoch,deleted_at,reason) VALUES(?,0,NULL,NULL)",
-                    (sid,),
-                )
-                if self._session_db is not None:
-                    await self._session_db._ensure_memory_binding_in_transaction(
-                        db, session_id=sid, user_id="deskpet-local-owner-v1"
-                    )
-                await self._fault("after_session_core")
-                if owner_snapshot is not None:
-                    await db.execute(
-                        "INSERT INTO companion_session_owners(session_id,owner_kind,profile_id,"
-                        "profile_generation,binding_epoch,status,scope_version,created_at,updated_at) "
-                        "VALUES(?,?,?,?,?,'active',1,?,?)",
-                        (
-                            sid,
-                            owner_snapshot["owner_kind"],
-                            owner_snapshot["profile_id"],
-                            owner_snapshot["profile_generation"],
-                            owner_snapshot["binding_epoch"],
-                            now,
-                            now,
-                        ),
-                    )
-                    await db.execute(
-                        "INSERT INTO companion_owner_scope_versions(profile_id,profile_generation,scope_version,updated_at) "
-                        "VALUES(?,?,1,?) ON CONFLICT(profile_id,profile_generation) DO UPDATE SET "
-                        "scope_version=scope_version+1,updated_at=excluded.updated_at",
-                        (
-                            owner_snapshot["profile_id"],
-                            owner_snapshot["profile_generation"],
-                            now,
-                        ),
-                    )
-                    route_row = await (
-                        await db.execute(
-                            "SELECT route_version FROM companion_projection_routes "
-                            "WHERE profile_id=? AND profile_generation=?",
-                            (
-                                owner_snapshot["profile_id"],
-                                owner_snapshot["profile_generation"],
-                            ),
-                        )
-                    ).fetchone()
-                    route_version = int(route_row[0]) + 1 if route_row else 1
-                    await db.execute(
-                        "INSERT INTO companion_projection_routes(profile_id,profile_generation,binding_epoch,"
-                        "target_session_id,target_epoch,route_version,status,created_at,updated_at) "
-                        "VALUES(?,?,?,?,0,?,'active',?,?) ON CONFLICT(profile_id,profile_generation) DO UPDATE SET "
-                        "binding_epoch=excluded.binding_epoch,target_session_id=excluded.target_session_id,"
-                        "target_epoch=excluded.target_epoch,route_version=excluded.route_version,status='active',"
-                        "updated_at=excluded.updated_at",
-                        (
-                            owner_snapshot["profile_id"],
-                            owner_snapshot["profile_generation"],
-                            owner_snapshot["binding_epoch"],
-                            sid,
-                            route_version,
-                            now,
-                            now,
-                        ),
-                    )
-                    if self._session_db is not None:
-                        await self._session_db._insert_companion_route_outbox(
-                            db,
-                            profile_id=owner_snapshot["profile_id"],
-                            profile_generation=owner_snapshot["profile_generation"],
-                            route_version=route_version,
-                            event_kind="route_changed",
-                            target_session_id=sid,
-                            target_epoch=0,
-                            now=now,
-                        )
-                await self._fault("after_owner_route")
-                if project is not None:
-                    await db.execute(
-                        "INSERT INTO session_project_bindings(session_id,project_id,execution_kind,"
-                        "execution_root,execution_identity,source_session_id,handoff_json,binding_version,created_at) "
-                        "VALUES(?,?,?,?,?,?,?,1,?)",
-                        (
-                            sid,
-                            project.project_id,
-                            execution_kind,
-                            explicit_path,
-                            explicit_identity,
-                            source_session_id,
-                            _canonical_json(handoff) if handoff else None,
-                            now,
-                        ),
-                    )
-                is_automatic = automatic_workspace is not None
-                descriptor = {
-                    "session_id": sid,
-                    "project_id": None if is_automatic else project_id,
-                    "session_kind": "projectless" if is_automatic or not project_id else "project",
-                    "workspace_kind": "automatic"
-                    if is_automatic
-                    else ("selected" if project_id else "none"),
-                    "execution_kind": execution_kind if project_id else None,
-                    "execution_root": (
-                        project.canonical_root
-                        if project and execution_kind == "project_root"
-                        else explicit_path
-                    ),
-                    "source_session_id": source_session_id,
-                    "title": "",
-                    "preview": "",
-                    "turn_count": 0,
-                    "activity_at": now,
-                    "created_at": now,
-                    "availability": "available" if project_id else "projectless",
-                }
-                result = {"session": descriptor, "replayed": False}
-                provider_row = None
-                if source_session_id:
-                    provider_row = await (
-                        await db.execute(
-                            "SELECT provider_id,preferred_model,model_params,provider_incarnation_id,"
-                            "provider_config_revision FROM code_session_provider WHERE base_session_id=?",
-                            (source_session_id,),
-                        )
-                    ).fetchone()
-                frozen_provider = tuple(provider_row) if provider_row is not None else (None,) * 5
-                if (
-                    provider_row is not None
-                    and provider_row[0] is not None
-                    and self._provider_binding_validator is not None
-                ):
-                    try:
-                        self._provider_binding_validator(
-                            str(provider_row[0]),
-                            str(provider_row[3]),
-                            int(provider_row[4]),
-                        )
-                    except Exception as exc:
-                        raise ProjectSessionError("provider_binding_stale") from exc
-                await db.execute(
-                    "INSERT INTO code_session_provider(base_session_id,provider_id,preferred_model,model_params,"
-                    "provider_incarnation_id,provider_config_revision,binding_epoch,updated_at) "
-                    "VALUES(?,?,?,?,?,?,1,?)",
-                    (sid, *frozen_provider, now),
-                )
-                if self._session_db is not None:
-                    await self._session_db.advance_context_usage_binding_state_tx(
-                        db,
-                        session_id=sid,
-                        binding_epoch=1,
-                        provider_id=frozen_provider[0],
-                        model_id=frozen_provider[1],
-                    )
-                await self._fault("after_binding_provider")
-                if source_session_id:
-                    owner_row = await (
-                        await db.execute(
-                            "SELECT owner_kind,profile_id,profile_generation,binding_epoch "
-                            "FROM companion_session_owners WHERE session_id=? AND status='active'",
-                            (source_session_id,),
-                        )
-                    ).fetchone()
-                    if owner_snapshot is None and owner_row is not None:
-                        await db.execute(
-                            "INSERT INTO companion_session_owners(session_id,owner_kind,profile_id,profile_generation,"
-                            "binding_epoch,status,scope_version,created_at,updated_at) "
-                            "VALUES(?,?,?,?,?,'active',1,?,?)",
-                            (sid, *tuple(owner_row), now, now),
-                        )
-                        await db.execute(
-                            "INSERT INTO companion_owner_scope_versions(profile_id,profile_generation,scope_version,updated_at) "
-                            "VALUES(?,?,1,?) ON CONFLICT(profile_id,profile_generation) DO UPDATE SET "
-                            "scope_version=scope_version+1,updated_at=excluded.updated_at",
-                            (owner_row[1], owner_row[2], now),
-                        )
-                await self._fault("before_receipt")
-                await db.execute(
-                    "INSERT INTO session_creation_receipts(request_id,intent_hash,session_id,result_json,lifecycle,created_at) "
-                    "VALUES(?,?,?,?, 'active', ?)",
-                    (request, intent_hash, sid, _canonical_json(result), now),
-                )
-                await self._fault("after_receipt")
-                await self._fault("before_commit")
-                if automatic_workspace is not None:
-                    await db.execute(
-                        "UPDATE workspace_allocations SET project_id=?,state='completed',updated_at=?,completed_at=? "
-                        "WHERE request_id=? AND state='directory_created'",
-                        (project_id, now, now, request),
-                    )
-                await db.commit()
-                await self._fault("after_commit")
-                if automatic_workspace is not None:
-                    try:
-                        (Path(automatic_workspace[1]) / ".simple-harness-workspace.json").unlink(
-                            missing_ok=True
-                        )
-                    except OSError:
-                        pass
-                return result
             except Exception as exc:
                 await db.rollback()
                 transaction_failure = exc
@@ -1752,6 +1473,373 @@ class SessionCreationService:
             if automatic_workspace is not None:
                 await self._reconcile_workspace_allocation(request)
             raise transaction_failure
+
+    async def _create_session_with_project(
+        self,
+        automatic_workspace: tuple[str, str, str] | None,
+        *,
+        db,
+        execution_kind: Literal["project_root", "explicit"],
+        explicit_identity: str | None,
+        explicit_path: str | None,
+        intent_hash,
+        owner_snapshot,
+        project_id: str | None,
+        request,
+        source_session_id: str | None,
+    ) -> dict[str, Any]:
+        project = None
+        if project_id:
+            row = await (
+                await db.execute(
+                    "SELECT project_id,display_name,canonical_root,root_kind,filesystem_identity,"
+                    "project_revision,created_at,updated_at,last_opened_at FROM projects WHERE project_id=?",
+                    (project_id,),
+                )
+            ).fetchone()
+            if row is None:
+                raise ProjectSessionError("project_not_found")
+            project = self._bindings._project_from_row(row)
+        elif automatic_workspace is not None:
+            sid, automatic_root, automatic_identity = automatic_workspace
+            automatic_project_id = str(
+                uuid.uuid5(uuid.NAMESPACE_URL, f"simple-harness-project:{request}")
+            )
+            now = time.time()
+            project = await self._insert_session_project(
+                automatic_identity,
+                automatic_project_id=automatic_project_id,
+                automatic_root=automatic_root,
+                db=db,
+                now=now,
+                sid=sid,
+            )
+            project_id = automatic_project_id
+        sid = automatic_workspace[0] if automatic_workspace is not None else str(uuid.uuid4())
+        try:
+            await assert_not_primary_authority_tx(db, (source_session_id, sid))
+        except PrimaryAuthorityImmutableError as exc:
+            raise ProjectSessionError(exc.code) from exc
+        handoff = await self._build_handoff(db, source_session_id) if source_session_id else None
+        now = time.time()
+        await self._insert_session_rows(db, now, owner_snapshot, sid)
+        if project is not None:
+            await db.execute(
+                "INSERT INTO session_project_bindings(session_id,project_id,execution_kind,"
+                "execution_root,execution_identity,source_session_id,handoff_json,binding_version,created_at) "
+                "VALUES(?,?,?,?,?,?,?,1,?)",
+                (
+                    sid,
+                    project.project_id,
+                    execution_kind,
+                    explicit_path,
+                    explicit_identity,
+                    source_session_id,
+                    _canonical_json(handoff) if handoff else None,
+                    now,
+                ),
+            )
+        return await self._session_binding_result(
+            automatic_workspace,
+            db=db,
+            execution_kind=execution_kind,
+            explicit_path=explicit_path,
+            intent_hash=intent_hash,
+            now=now,
+            owner_snapshot=owner_snapshot,
+            project=project,
+            project_id=project_id,
+            request=request,
+            sid=sid,
+            source_session_id=source_session_id,
+        )
+
+    async def _session_request_intent(
+        self,
+        execution_kind: Literal["project_root", "explicit"],
+        *,
+        execution_root: str | None,
+        project_id: str | None,
+        request,
+        source_session_id: str | None,
+    ):
+        if not request:
+            raise ProjectSessionError("invalid_request", "request_id is required")
+        if execution_kind not in ("project_root", "explicit"):
+            raise ProjectSessionError("invalid_request")
+        if project_id is None and execution_kind == "explicit":
+            raise ProjectSessionError("invalid_request")
+
+        try:
+            await assert_not_primary_authority(self._bindings._db_path, source_session_id)
+        except PrimaryAuthorityImmutableError as exc:
+            raise ProjectSessionError(exc.code) from exc
+        requested_execution_root = (
+            os.path.abspath(os.path.expanduser(str(execution_root)))
+            if execution_kind == "explicit" and execution_root
+            else None
+        )
+        intent = {
+            "schema_version": 1,
+            "project_id": project_id,
+            "source_session_id": source_session_id,
+            "execution_kind": execution_kind,
+            "execution_root": requested_execution_root,
+        }
+        intent_hash = hashlib.sha256(_canonical_json(intent).encode("utf-8")).hexdigest()
+        # Lost-ACK replay must not touch a path that may have moved since the
+        # original commit, nor depend on a later owner binding epoch.
+        async with aiosqlite.connect(self._bindings._db_path) as replay_db:
+            receipt = await (
+                await replay_db.execute(
+                    "SELECT intent_hash,result_json,lifecycle FROM session_creation_receipts "
+                    "WHERE request_id=?",
+                    (request,),
+                )
+            ).fetchone()
+        return intent_hash, receipt
+
+    async def _insert_session_project(
+        self, automatic_identity, *, automatic_project_id, automatic_root, db, now, sid
+    ):
+        await db.execute(
+            "INSERT INTO projects(project_id,display_name,canonical_root,root_kind,filesystem_identity,"
+            "project_revision,created_at,updated_at,last_opened_at) "
+            "VALUES(?,?,?,?,?,1,?,?,?)",
+            (
+                automatic_project_id,
+                f"Session {sid[:8]}",
+                automatic_root,
+                "folder",
+                automatic_identity,
+                now,
+                now,
+                now,
+            ),
+        )
+        await db.execute(
+            "INSERT INTO project_origins(project_id,project_origin) VALUES(?,'automatic_session_workspace')",
+            (automatic_project_id,),
+        )
+        project = ProjectRecord(
+            automatic_project_id,
+            f"Session {sid[:8]}",
+            automatic_root,
+            "folder",
+            automatic_identity,
+            1,
+            now,
+            now,
+            now,
+        )
+        return project
+
+    async def _insert_session_rows(self, db, now, owner_snapshot, sid) -> None:
+        await db.execute(
+            "INSERT INTO sessions(id,created_at,metadata) VALUES(?,?,?)",
+            (sid, now, _canonical_json({"origin": "project_session_v1"})),
+        )
+        await db.execute(
+            "INSERT INTO session_catalog_entries(session_id,product_kind,created_at) VALUES(?, 'conversation', ?)",
+            (sid, now),
+        )
+        await db.execute(
+            "INSERT INTO session_delivery_state(session_id,epoch,deleted_at,reason) VALUES(?,0,NULL,NULL)",
+            (sid,),
+        )
+        if self._session_db is not None:
+            await self._session_db._ensure_memory_binding_in_transaction(
+                db, session_id=sid, user_id="deskpet-local-owner-v1"
+            )
+        await self._fault("after_session_core")
+        if owner_snapshot is not None:
+            await db.execute(
+                "INSERT INTO companion_session_owners(session_id,owner_kind,profile_id,"
+                "profile_generation,binding_epoch,status,scope_version,created_at,updated_at) "
+                "VALUES(?,?,?,?,?,'active',1,?,?)",
+                (
+                    sid,
+                    owner_snapshot["owner_kind"],
+                    owner_snapshot["profile_id"],
+                    owner_snapshot["profile_generation"],
+                    owner_snapshot["binding_epoch"],
+                    now,
+                    now,
+                ),
+            )
+            await db.execute(
+                "INSERT INTO companion_owner_scope_versions(profile_id,profile_generation,scope_version,updated_at) "
+                "VALUES(?,?,1,?) ON CONFLICT(profile_id,profile_generation) DO UPDATE SET "
+                "scope_version=scope_version+1,updated_at=excluded.updated_at",
+                (
+                    owner_snapshot["profile_id"],
+                    owner_snapshot["profile_generation"],
+                    now,
+                ),
+            )
+            route_row = await (
+                await db.execute(
+                    "SELECT route_version FROM companion_projection_routes "
+                    "WHERE profile_id=? AND profile_generation=?",
+                    (
+                        owner_snapshot["profile_id"],
+                        owner_snapshot["profile_generation"],
+                    ),
+                )
+            ).fetchone()
+            route_version = int(route_row[0]) + 1 if route_row else 1
+            await db.execute(
+                "INSERT INTO companion_projection_routes(profile_id,profile_generation,binding_epoch,"
+                "target_session_id,target_epoch,route_version,status,created_at,updated_at) "
+                "VALUES(?,?,?,?,0,?,'active',?,?) ON CONFLICT(profile_id,profile_generation) DO UPDATE SET "
+                "binding_epoch=excluded.binding_epoch,target_session_id=excluded.target_session_id,"
+                "target_epoch=excluded.target_epoch,route_version=excluded.route_version,status='active',"
+                "updated_at=excluded.updated_at",
+                (
+                    owner_snapshot["profile_id"],
+                    owner_snapshot["profile_generation"],
+                    owner_snapshot["binding_epoch"],
+                    sid,
+                    route_version,
+                    now,
+                    now,
+                ),
+            )
+            if self._session_db is not None:
+                await self._session_db._insert_companion_route_outbox(
+                    db,
+                    profile_id=owner_snapshot["profile_id"],
+                    profile_generation=owner_snapshot["profile_generation"],
+                    route_version=route_version,
+                    event_kind="route_changed",
+                    target_session_id=sid,
+                    target_epoch=0,
+                    now=now,
+                )
+        await self._fault("after_owner_route")
+
+    async def _session_binding_result(
+        self,
+        automatic_workspace: tuple[str, str, str] | None,
+        *,
+        db,
+        execution_kind: Literal["project_root", "explicit"],
+        explicit_path: str | None,
+        intent_hash,
+        now,
+        owner_snapshot,
+        project,
+        project_id: str | None,
+        request,
+        sid,
+        source_session_id: str | None,
+    ) -> dict[str, Any]:
+        is_automatic = automatic_workspace is not None
+        descriptor = {
+            "session_id": sid,
+            "project_id": None if is_automatic else project_id,
+            "session_kind": "projectless" if is_automatic or not project_id else "project",
+            "workspace_kind": "automatic"
+            if is_automatic
+            else ("selected" if project_id else "none"),
+            "execution_kind": execution_kind if project_id else None,
+            "execution_root": (
+                project.canonical_root
+                if project and execution_kind == "project_root"
+                else explicit_path
+            ),
+            "source_session_id": source_session_id,
+            "title": "",
+            "preview": "",
+            "turn_count": 0,
+            "activity_at": now,
+            "created_at": now,
+            "availability": "available" if project_id else "projectless",
+        }
+        result = {"session": descriptor, "replayed": False}
+        provider_row = None
+        if source_session_id:
+            provider_row = await (
+                await db.execute(
+                    "SELECT provider_id,preferred_model,model_params,provider_incarnation_id,"
+                    "provider_config_revision FROM code_session_provider WHERE base_session_id=?",
+                    (source_session_id,),
+                )
+            ).fetchone()
+        frozen_provider = tuple(provider_row) if provider_row is not None else (None,) * 5
+        if (
+            provider_row is not None
+            and provider_row[0] is not None
+            and self._provider_binding_validator is not None
+        ):
+            try:
+                self._provider_binding_validator(
+                    str(provider_row[0]),
+                    str(provider_row[3]),
+                    int(provider_row[4]),
+                )
+            except Exception as exc:
+                raise ProjectSessionError("provider_binding_stale") from exc
+        await db.execute(
+            "INSERT INTO code_session_provider(base_session_id,provider_id,preferred_model,model_params,"
+            "provider_incarnation_id,provider_config_revision,binding_epoch,updated_at) "
+            "VALUES(?,?,?,?,?,?,1,?)",
+            (sid, *frozen_provider, now),
+        )
+        if self._session_db is not None:
+            await self._session_db.advance_context_usage_binding_state_tx(
+                db,
+                session_id=sid,
+                binding_epoch=1,
+                provider_id=frozen_provider[0],
+                model_id=frozen_provider[1],
+            )
+        await self._fault("after_binding_provider")
+        if source_session_id:
+            owner_row = await (
+                await db.execute(
+                    "SELECT owner_kind,profile_id,profile_generation,binding_epoch "
+                    "FROM companion_session_owners WHERE session_id=? AND status='active'",
+                    (source_session_id,),
+                )
+            ).fetchone()
+            if owner_snapshot is None and owner_row is not None:
+                await db.execute(
+                    "INSERT INTO companion_session_owners(session_id,owner_kind,profile_id,profile_generation,"
+                    "binding_epoch,status,scope_version,created_at,updated_at) "
+                    "VALUES(?,?,?,?,?,'active',1,?,?)",
+                    (sid, *tuple(owner_row), now, now),
+                )
+                await db.execute(
+                    "INSERT INTO companion_owner_scope_versions(profile_id,profile_generation,scope_version,updated_at) "
+                    "VALUES(?,?,1,?) ON CONFLICT(profile_id,profile_generation) DO UPDATE SET "
+                    "scope_version=scope_version+1,updated_at=excluded.updated_at",
+                    (owner_row[1], owner_row[2], now),
+                )
+        await self._fault("before_receipt")
+        await db.execute(
+            "INSERT INTO session_creation_receipts(request_id,intent_hash,session_id,result_json,lifecycle,created_at) "
+            "VALUES(?,?,?,?, 'active', ?)",
+            (request, intent_hash, sid, _canonical_json(result), now),
+        )
+        await self._fault("after_receipt")
+        await self._fault("before_commit")
+        if automatic_workspace is not None:
+            await db.execute(
+                "UPDATE workspace_allocations SET project_id=?,state='completed',updated_at=?,completed_at=? "
+                "WHERE request_id=? AND state='directory_created'",
+                (project_id, now, now, request),
+            )
+        await db.commit()
+        await self._fault("after_commit")
+        if automatic_workspace is not None:
+            try:
+                (Path(automatic_workspace[1]) / ".simple-harness-workspace.json").unlink(
+                    missing_ok=True
+                )
+            except OSError:
+                pass
+        return result
 
     async def mark_deleted(self, session_id: str) -> None:
         sid, now = str(session_id or "").strip(), time.time()

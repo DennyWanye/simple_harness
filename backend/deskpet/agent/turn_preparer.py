@@ -414,6 +414,168 @@ class ProductTurnPreparer:
         provider: Any = None,
         companion_ingress_owner: Any = None,
     ) -> PreparedTurnContext:
+        assembler, bundle = await self._assemble_turn_bundle(
+            config,
+            current_message_id=current_message_id,
+            local_llm=local_llm,
+            provider=provider,
+            services=services,
+            tool_registry=tool_registry,
+            turn=turn,
+        )
+        if bundle is not None:
+            messages = bundle.build_messages(
+                user_message=turn.text,
+                history=bundle.history,
+                late_system_nudge=bundle.late_system_nudge,
+            )
+        else:
+            messages = [{"role": "user", "content": turn.text}]
+        if turn.attachment_blocks:
+            messages = append_user_attachment_blocks(messages, turn.attachment_blocks)
+        prepared_context = None
+        eligibility = None
+        if bool(getattr(getattr(config, "features", None), "context_os_v1", False)):
+            if bundle is None:
+                raise PreflightBlocked(
+                    RootBlockReasonV1.CAPABILITY_UNAVAILABLE,
+                    ("capability-context:bundle-unavailable",),
+                )
+            planner = services.get("context_request_planner")
+            scope_store = services.get("tool_capability_scope_store")
+            if planner is None or scope_store is None:
+                raise PreflightBlocked(
+                    RootBlockReasonV1.CAPABILITY_UNAVAILABLE,
+                    ("capability-context:tool-runtime-unavailable",),
+                )
+            # 按需导入：测试替身（llm.model_info.resolve）
+            from llm.model_info import resolve as resolve_model_info
+
+            eligibility = ToolEligibilityContext(
+                session_id=turn.session_id,
+                request_id=str(turn.request_id or ""),
+                task_type="chat",
+                mode="general",
+            )
+            if not eligibility.request_id:
+                raise PreflightBlocked(
+                    RootBlockReasonV1.CAPABILITY_UNAVAILABLE,
+                    ("capability-context:request-identity-unavailable",),
+                )
+            selected_provider = provider or local_llm
+            model_info = resolve_model_info(
+                str(getattr(selected_provider, "model", "") or turn.provider_ref or "_default")
+            )
+            active_snapshot = None
+            project_snapshot = services.get("project_initial_context_snapshot")
+            if callable(project_snapshot):
+                active_snapshot = await project_snapshot(
+                    session_id=turn.session_id,
+                    request_id=eligibility.request_id,
+                    task_scope_id=str(turn.task_scope_id or ""),
+                    user_text=turn.text,
+                    explicit_new=turn.explicit_new,
+                )
+            attach_snapshot = services.get("attach_task_snapshot_to_request")
+            if callable(attach_snapshot):
+                attach_snapshot(bundle, messages, active_snapshot)
+            attachment_refs, attachment_tokens = collect_attachment_budget(messages)
+            planned_request = await planner.prepare_initial(
+                bundle,
+                base_system="",
+                history=bundle.history,
+                user_message=turn.text,
+                eligibility=eligibility,
+                context_window=model_info.context_window,
+                effective_pct=model_info.effective_pct,
+                generation_reserve=min(8192, max(512, int(model_info.context_window) // 8)),
+                active_snapshot=active_snapshot,
+                prebuilt_messages=messages,
+                current_message_id=current_message_id,
+                attachment_refs=attachment_refs,
+                attachment_tokens=attachment_tokens,
+            )
+            prepared_context = planned_request.prepared_context
+            prepared_context.request_budget = planned_request.budget
+            scope_store.open(
+                prepared_context.tool_set,
+                eligibility,
+                snapshot_handle=prepared_context.active_snapshot_handle,
+            )
+            messages = prepared_context.messages
+        await self._sentinel_directive(messages, services, turn)
+        summary_enabled = bool(
+            getattr(getattr(config, "features", None), "summary_quality_loop", False)
+        )
+        if summary_enabled and (not turn.is_sentinel) and summary_user_is_confused(turn.text):
+            try:
+                file_memory = services.get("file_memory")
+                if file_memory is not None:
+                    latest = summary_latest_task_snapshot(await file_memory.list_entries("memory"))
+                    if latest:
+                        self._insert_after_system(messages, summary_build_reinject_msg(latest))
+            except Exception as exc:
+                logger.debug("wi1b4_summary_loop_skipped", sid=turn.session_id, error=str(exc))
+        return await self._finish_turn_context(
+            assembler,
+            bundle=bundle,
+            companion_ingress_owner=companion_ingress_owner,
+            current_message_id=current_message_id,
+            eligibility=eligibility,
+            messages=messages,
+            prepared_context=prepared_context,
+            services=services,
+            turn=turn,
+        )
+
+    async def _sentinel_directive(
+        self, messages, services: Mapping[str, Any], turn: TurnInput
+    ) -> None:
+        if turn.is_sentinel:
+            directive = "\uff08\u7cfb\u7edf\u81ea\u52a8\u7eed\u8dd1\uff1a\u4f60\u4e0a\u4e00\u8f6e\u8fd8\u6ca1\u628a\u7528\u6237\u8bf7\u6c42\u7684\u4efb\u52a1\u505a\u5b8c\u5c31\u8fbe\u5230\u4e86\u8fed\u4ee3\u4e0a\u9650\u3002**\u4e0d\u8981\u91cd\u65b0\u81ea\u6211\u4ecb\u7ecd\u3001\u4e0d\u8981\u53cd\u95ee\u7528\u6237\u60f3\u505a\u4ec0\u4e48**\u2014\u2014\u56de\u987e\u4e0a\u9762\u7684\u5bf9\u8bdd\u5386\u53f2\u4e0e\u5de5\u5177\u7ed3\u679c\uff0c\u627e\u51fa\u7528\u6237\u6700\u521d\u8bf7\u6c42\u7684\u90a3\u4e2a\u4efb\u52a1\u8fd8\u5dee\u54ea\u4e9b\u6b65\u9aa4\uff0c\u76f4\u63a5\u7ee7\u7eed\u628a\u5b83\u505a\u5b8c\u3002\uff09"
+            for index in range(len(messages) - 1, -1, -1):
+                if messages[index].get("role") == "user":
+                    messages[index] = {**messages[index], "content": directive}
+                    break
+            else:
+                messages.append({"role": "user", "content": directive})
+        try:
+            nudge_queue = services.get("nudge_queue")
+            if nudge_queue is not None:
+                hints = await nudge_queue.pop_all(turn.session_id)
+                hint_text = format_hints_for_injection(hints) if hints else ""
+                if hint_text:
+                    self._insert_after_system(
+                        messages,
+                        {"role": "system", "content": hint_text, "_is_supervisor_hint": True},
+                    )
+                    session_db = services.get("session_db")
+                    if session_db is not None:
+                        for hint in hints:
+                            try:
+                                await session_db.append_supervisor_hint(
+                                    session_id=turn.session_id,
+                                    alert_id=hint.alert_id or "",
+                                    hint_text=hint.text,
+                                    action="dispatched",
+                                    severity=hint.severity,
+                                )
+                            except Exception as exc:
+                                logger.debug("supervisor_dispatched_audit_failed", error=str(exc))
+        except Exception as exc:
+            logger.debug("supervisor_hint_inject_failed", error=str(exc))
+
+    async def _assemble_turn_bundle(
+        self,
+        config: Any,
+        *,
+        current_message_id: int | None,
+        local_llm: Any,
+        provider: Any,
+        services: Mapping[str, Any],
+        tool_registry: Any,
+        turn: TurnInput,
+    ):
         projection_gate = services.get("session_terminal_projection_gate")
         if projection_gate is not None:
             # Product context must never be assembled from a view known to be
@@ -550,131 +712,21 @@ class ProductTurnPreparer:
             except Exception as exc:
                 logger.warning("p4_assembler_failed", error=str(exc), error_type=type(exc).__name__)
                 bundle = None
-        if bundle is not None:
-            messages = bundle.build_messages(
-                user_message=turn.text,
-                history=bundle.history,
-                late_system_nudge=bundle.late_system_nudge,
-            )
-        else:
-            messages = [{"role": "user", "content": turn.text}]
-        if turn.attachment_blocks:
-            messages = append_user_attachment_blocks(messages, turn.attachment_blocks)
-        prepared_context = None
-        eligibility = None
-        if bool(getattr(getattr(config, "features", None), "context_os_v1", False)):
-            if bundle is None:
-                raise PreflightBlocked(
-                    RootBlockReasonV1.CAPABILITY_UNAVAILABLE,
-                    ("capability-context:bundle-unavailable",),
-                )
-            planner = services.get("context_request_planner")
-            scope_store = services.get("tool_capability_scope_store")
-            if planner is None or scope_store is None:
-                raise PreflightBlocked(
-                    RootBlockReasonV1.CAPABILITY_UNAVAILABLE,
-                    ("capability-context:tool-runtime-unavailable",),
-                )
-            # 按需导入：测试替身（llm.model_info.resolve）
-            from llm.model_info import resolve as resolve_model_info
+        return assembler, bundle
 
-            eligibility = ToolEligibilityContext(
-                session_id=turn.session_id,
-                request_id=str(turn.request_id or ""),
-                task_type="chat",
-                mode="general",
-            )
-            if not eligibility.request_id:
-                raise PreflightBlocked(
-                    RootBlockReasonV1.CAPABILITY_UNAVAILABLE,
-                    ("capability-context:request-identity-unavailable",),
-                )
-            selected_provider = provider or local_llm
-            model_info = resolve_model_info(
-                str(getattr(selected_provider, "model", "") or turn.provider_ref or "_default")
-            )
-            active_snapshot = None
-            project_snapshot = services.get("project_initial_context_snapshot")
-            if callable(project_snapshot):
-                active_snapshot = await project_snapshot(
-                    session_id=turn.session_id,
-                    request_id=eligibility.request_id,
-                    task_scope_id=str(turn.task_scope_id or ""),
-                    user_text=turn.text,
-                    explicit_new=turn.explicit_new,
-                )
-            attach_snapshot = services.get("attach_task_snapshot_to_request")
-            if callable(attach_snapshot):
-                attach_snapshot(bundle, messages, active_snapshot)
-            attachment_refs, attachment_tokens = collect_attachment_budget(messages)
-            planned_request = await planner.prepare_initial(
-                bundle,
-                base_system="",
-                history=bundle.history,
-                user_message=turn.text,
-                eligibility=eligibility,
-                context_window=model_info.context_window,
-                effective_pct=model_info.effective_pct,
-                generation_reserve=min(8192, max(512, int(model_info.context_window) // 8)),
-                active_snapshot=active_snapshot,
-                prebuilt_messages=messages,
-                current_message_id=current_message_id,
-                attachment_refs=attachment_refs,
-                attachment_tokens=attachment_tokens,
-            )
-            prepared_context = planned_request.prepared_context
-            prepared_context.request_budget = planned_request.budget
-            scope_store.open(
-                prepared_context.tool_set,
-                eligibility,
-                snapshot_handle=prepared_context.active_snapshot_handle,
-            )
-            messages = prepared_context.messages
-        if turn.is_sentinel:
-            directive = "\uff08\u7cfb\u7edf\u81ea\u52a8\u7eed\u8dd1\uff1a\u4f60\u4e0a\u4e00\u8f6e\u8fd8\u6ca1\u628a\u7528\u6237\u8bf7\u6c42\u7684\u4efb\u52a1\u505a\u5b8c\u5c31\u8fbe\u5230\u4e86\u8fed\u4ee3\u4e0a\u9650\u3002**\u4e0d\u8981\u91cd\u65b0\u81ea\u6211\u4ecb\u7ecd\u3001\u4e0d\u8981\u53cd\u95ee\u7528\u6237\u60f3\u505a\u4ec0\u4e48**\u2014\u2014\u56de\u987e\u4e0a\u9762\u7684\u5bf9\u8bdd\u5386\u53f2\u4e0e\u5de5\u5177\u7ed3\u679c\uff0c\u627e\u51fa\u7528\u6237\u6700\u521d\u8bf7\u6c42\u7684\u90a3\u4e2a\u4efb\u52a1\u8fd8\u5dee\u54ea\u4e9b\u6b65\u9aa4\uff0c\u76f4\u63a5\u7ee7\u7eed\u628a\u5b83\u505a\u5b8c\u3002\uff09"
-            for index in range(len(messages) - 1, -1, -1):
-                if messages[index].get("role") == "user":
-                    messages[index] = {**messages[index], "content": directive}
-                    break
-            else:
-                messages.append({"role": "user", "content": directive})
-        try:
-            nudge_queue = services.get("nudge_queue")
-            if nudge_queue is not None:
-                hints = await nudge_queue.pop_all(turn.session_id)
-                hint_text = format_hints_for_injection(hints) if hints else ""
-                if hint_text:
-                    self._insert_after_system(
-                        messages,
-                        {"role": "system", "content": hint_text, "_is_supervisor_hint": True},
-                    )
-                    session_db = services.get("session_db")
-                    if session_db is not None:
-                        for hint in hints:
-                            try:
-                                await session_db.append_supervisor_hint(
-                                    session_id=turn.session_id,
-                                    alert_id=hint.alert_id or "",
-                                    hint_text=hint.text,
-                                    action="dispatched",
-                                    severity=hint.severity,
-                                )
-                            except Exception as exc:
-                                logger.debug("supervisor_dispatched_audit_failed", error=str(exc))
-        except Exception as exc:
-            logger.debug("supervisor_hint_inject_failed", error=str(exc))
-        summary_enabled = bool(
-            getattr(getattr(config, "features", None), "summary_quality_loop", False)
-        )
-        if summary_enabled and (not turn.is_sentinel) and summary_user_is_confused(turn.text):
-            try:
-                file_memory = services.get("file_memory")
-                if file_memory is not None:
-                    latest = summary_latest_task_snapshot(await file_memory.list_entries("memory"))
-                    if latest:
-                        self._insert_after_system(messages, summary_build_reinject_msg(latest))
-            except Exception as exc:
-                logger.debug("wi1b4_summary_loop_skipped", sid=turn.session_id, error=str(exc))
+    async def _finish_turn_context(
+        self,
+        assembler,
+        *,
+        bundle,
+        companion_ingress_owner: Any,
+        current_message_id: int | None,
+        eligibility,
+        messages,
+        prepared_context,
+        services: Mapping[str, Any],
+        turn: TurnInput,
+    ) -> PreparedTurnContext:
         preference_resolution = None
         owner_memory_read_scope = None
         growth_dependencies: tuple[Any, ...] = ()

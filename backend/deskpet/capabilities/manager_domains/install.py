@@ -118,35 +118,9 @@ class InstallMixin(CapabilityPackManagerCore):
             for ordinal, (frozen, durable) in enumerate(
                 zip(batch.packs, durable_members, strict=True)
             ):
-                if (
-                    frozen.skill_name != durable.normalized_name
-                    or frozen.manifest_hash != durable.manifest_hash
-                    or frozen.content_digest != durable.content_hash
-                ):
-                    raise CapabilityManagerError(
-                        "batch_member_identity_mismatch",
-                        f"member {ordinal} differs from confirmation",
-                    )
-                member_root = staging_root / f"{ordinal:04d}-{durable.normalized_name}"
-                issued = await asyncio.to_thread(
-                    self.package_validator.materialize_zip,
-                    frozen.archive_bytes,
-                    member_root,
-                    source_kind=frozen.validated_ref.source_kind,
+                member_root, validation = await self._batch_member_root(
+                    durable, frozen, ordinal, staging_root
                 )
-                if issued != frozen.validated_ref:
-                    raise CapabilityManagerError(
-                        "batch_validated_ref_mismatch", durable.normalized_name
-                    )
-                validation = load_and_validate_pack(member_root, environment=self.environment)
-                if (
-                    validation.manifest.id != durable.pack_id
-                    or validation.manifest.version != durable.version
-                    or validation.manifest.manifest_hash != durable.manifest_hash
-                ):
-                    raise CapabilityManagerError(
-                        "batch_manifest_identity_mismatch", durable.normalized_name
-                    )
                 candidate = await self.publisher.prepare_candidate(
                     validation, install_root=member_root, operation_id=operation_id
                 )
@@ -155,19 +129,7 @@ class InstallMixin(CapabilityPackManagerCore):
                 validations.append(validation)
                 candidates.append(candidate)
                 await self._fault(f"after:batch_member_prepared:{ordinal}")
-            for validation in validations:
-                existing_version = await self.store.get_version(
-                    validation.manifest.id,
-                    validation.manifest.version,
-                )
-                if existing_version is not None and (
-                    existing_version.descriptor.manifest_hash != validation.manifest.manifest_hash
-                    or existing_version.descriptor.fingerprint != validation.descriptor.fingerprint
-                ):
-                    raise CapabilityStoreConflict(
-                        "capability_version_conflict",
-                        "same capability version already exists with different immutable data",
-                    )
+            await self._require_batch_versions_absent(validations)
             operation = await self._commit_phase(
                 operation_id,
                 "batch_prepared",
@@ -178,6 +140,104 @@ class InstallMixin(CapabilityPackManagerCore):
             await self._record_operation_failure(operation_id, exc)
             raise
 
+        batch_root, combined = self._batch_publish_root(candidates, committed_set_stamp)
+        generations = dict(expected_binding_generations or {})
+        binding_scope = "user" if project_scope_key.startswith("user:v2:") else "project"
+        async with self.publish_lock:
+            old_bindings: list[CapabilityBinding | None] = []
+            for member in durable_members:
+                binding = await self.store.get_binding(
+                    binding_scope, project_scope_key, member.pack_id, owner_key=owner_key
+                )
+                actual = 0 if binding is None else binding.generation
+                if generations.get(member.pack_id, actual) != actual:
+                    raise CapabilityStoreConflict("binding_generation_conflict", member.pack_id)
+                generations[member.pack_id] = actual
+                old_bindings.append(binding)
+            intent_id = _intent_id(operation_id)
+            db, publication, tx = await self._batch_publish_envelope(
+                batch_root,
+                binding_scope=binding_scope,
+                combined=combined,
+                committed_set_stamp=committed_set_stamp,
+                durable_members=durable_members,
+                generations=generations,
+                intent_id=intent_id,
+                old_bindings=old_bindings,
+                operation_id=operation_id,
+                owner_key=owner_key,
+                project_scope_key=project_scope_key,
+                staging_root=staging_root,
+            )
+            bindings, operation, receipt_hash = await self._batch_publish_commit(
+                batch_root,
+                binding_scope=binding_scope,
+                candidates=candidates,
+                committed_set_stamp=committed_set_stamp,
+                durable_members=durable_members,
+                generations=generations,
+                intent_id=intent_id,
+                operation_id=operation_id,
+                owner_key=owner_key,
+                project_scope_key=project_scope_key,
+                publication=publication,
+                validations=validations,
+            )
+        return CapabilityBatchInstallResult(
+            operation,
+            tuple(bindings),
+            batch_root,
+            publication.registry_revision,
+            receipt_hash,
+            committed_set_stamp,
+        )
+
+    async def _require_batch_versions_absent(self, validations: list[PackValidationResult]) -> None:
+        for validation in validations:
+            existing_version = await self.store.get_version(
+                validation.manifest.id,
+                validation.manifest.version,
+            )
+            if existing_version is not None and (
+                existing_version.descriptor.manifest_hash != validation.manifest.manifest_hash
+                or existing_version.descriptor.fingerprint != validation.descriptor.fingerprint
+            ):
+                raise CapabilityStoreConflict(
+                    "capability_version_conflict",
+                    "same capability version already exists with different immutable data",
+                )
+
+    async def _batch_member_root(self, durable, frozen, ordinal, staging_root):
+        if (
+            frozen.skill_name != durable.normalized_name
+            or frozen.manifest_hash != durable.manifest_hash
+            or frozen.content_digest != durable.content_hash
+        ):
+            raise CapabilityManagerError(
+                "batch_member_identity_mismatch",
+                f"member {ordinal} differs from confirmation",
+            )
+        member_root = staging_root / f"{ordinal:04d}-{durable.normalized_name}"
+        issued = await asyncio.to_thread(
+            self.package_validator.materialize_zip,
+            frozen.archive_bytes,
+            member_root,
+            source_kind=frozen.validated_ref.source_kind,
+        )
+        if issued != frozen.validated_ref:
+            raise CapabilityManagerError("batch_validated_ref_mismatch", durable.normalized_name)
+        validation = load_and_validate_pack(member_root, environment=self.environment)
+        if (
+            validation.manifest.id != durable.pack_id
+            or validation.manifest.version != durable.version
+            or validation.manifest.manifest_hash != durable.manifest_hash
+        ):
+            raise CapabilityManagerError(
+                "batch_manifest_identity_mismatch", durable.normalized_name
+            )
+        return member_root, validation
+
+    def _batch_publish_root(self, candidates: list[CapabilityCandidate], committed_set_stamp: str):
         expected_revisions = {candidate.expected_registry_revision for candidate in candidates}
         if len(expected_revisions) != 1:
             raise CapabilityManagerError(
@@ -203,217 +263,226 @@ class InstallMixin(CapabilityPackManagerCore):
             runtime_payload=runtime_payload,
         )
         batch_root = (self.layout.packs / "batches" / committed_set_stamp).resolve(strict=False)
-        generations = dict(expected_binding_generations or {})
-        binding_scope = "user" if project_scope_key.startswith("user:v2:") else "project"
-        async with self.publish_lock:
-            old_bindings: list[CapabilityBinding | None] = []
-            for member in durable_members:
-                binding = await self.store.get_binding(
-                    binding_scope, project_scope_key, member.pack_id, owner_key=owner_key
-                )
-                actual = 0 if binding is None else binding.generation
-                if generations.get(member.pack_id, actual) != actual:
-                    raise CapabilityStoreConflict("binding_generation_conflict", member.pack_id)
-                generations[member.pack_id] = actual
-                old_bindings.append(binding)
-            intent_id = _intent_id(operation_id)
-            envelope: Mapping[str, JsonValue] = {
-                "schema": (
-                    "capability-batch-binding-v2"
-                    if binding_scope == "user"
-                    else "capability-batch-binding-v1"
+        return batch_root, combined
+
+    async def _batch_publish_envelope(
+        self,
+        batch_root,
+        *,
+        binding_scope,
+        combined,
+        committed_set_stamp: str,
+        durable_members,
+        generations,
+        intent_id,
+        old_bindings: list[CapabilityBinding | None],
+        operation_id: str,
+        owner_key: str,
+        project_scope_key: str,
+        staging_root,
+    ):
+        envelope: Mapping[str, JsonValue] = {
+            "schema": (
+                "capability-batch-binding-v2"
+                if binding_scope == "user"
+                else "capability-batch-binding-v1"
+            ),
+            "project_scope_key": project_scope_key,
+            "scope": binding_scope,
+            "scope_key": project_scope_key,
+            "owner_key": owner_key,
+            "member_set_digest": committed_set_stamp,
+            "expected_binding_generations": generations,
+        }
+        async with self.store.write_transaction() as db:
+            tx = self.store.bind(db)
+            await tx.create_publish_intent(
+                intent_id=intent_id,
+                operation_id=operation_id,
+                expected_registry_revision=combined.expected_registry_revision,
+                old_specs=combined.old_specs,
+                new_specs=combined.new_specs,
+                old_binding=None,
+                new_binding=envelope,
+            )
+            await tx.put_publish_intent_members_in_transaction(
+                intent_id,
+                tuple(
+                    CapabilityPublishIntentMember(
+                        intent_id,
+                        operation_id,
+                        member.ordinal,
+                        None if old is None else old.to_dict(),
+                        {
+                            "scope": binding_scope,
+                            "scope_key": project_scope_key,
+                            "owner_key": owner_key,
+                            "capability_id": member.pack_id,
+                            "version": member.version,
+                            "manifest_hash": member.manifest_hash,
+                            "active": True,
+                            "expected_generation": generations[member.pack_id],
+                        },
+                    )
+                    for member, old in zip(durable_members, old_bindings, strict=True)
                 ),
+            )
+            await tx.commit_phase(
+                operation_id, "batch_publish_intent", evidence={"intent_id": intent_id}
+            )
+        await self._fault("after:batch_publish_intent")
+        batch_root.parent.mkdir(parents=True, exist_ok=True)
+        if batch_root.exists():
+            await self._remove_batch_root(batch_root)
+        await asyncio.to_thread(os.replace, staging_root, batch_root)
+        async with self.store.write_transaction() as db:
+            tx = self.store.bind(db)
+            await tx.advance_publish_intent(intent_id, phase="batch_files_materialized")
+            await tx.commit_phase(
+                operation_id,
+                "batch_files_materialized",
+                evidence={"batch_root": str(batch_root)},
+            )
+        await self._fault("after:batch_files_materialized")
+        if binding_scope == "user":
+            # User-global candidates remain private until the fresh-Run
+            # verifier accepts the exact installed versions.  In
+            # particular, do not mutate the process-wide executable Tool
+            # registry merely because the binding is still invisible.
+            publication = CapabilityPublication(
+                registry_revision=combined.expected_registry_revision,
+                tool_spec_fingerprints=combined.tool_spec_fingerprints,
+                evidence={"publication_state": "deferred_pending_verification"},
+            )
+        else:
+            publication = await self.publisher.publish(combined, operation_id=operation_id)
+            if tuple(publication.tool_spec_fingerprints) != combined.tool_spec_fingerprints:
+                raise CapabilityManagerError(
+                    "publisher_fingerprint_mismatch", "batch ToolSpecs differ"
+                )
+        return db, publication, tx
+
+    async def _batch_publish_commit(
+        self,
+        batch_root,
+        *,
+        binding_scope,
+        candidates: list[CapabilityCandidate],
+        committed_set_stamp: str,
+        durable_members,
+        generations,
+        intent_id,
+        operation_id: str,
+        owner_key: str,
+        project_scope_key: str,
+        publication,
+        validations: list[PackValidationResult],
+    ):
+        async with self.store.write_transaction() as db:
+            tx = self.store.bind(db)
+            await tx.advance_publish_intent(intent_id, phase="batch_catalog_swapped")
+            await tx.commit_phase(
+                operation_id,
+                "batch_catalog_swapped",
+                evidence={
+                    "registry_revision": publication.registry_revision,
+                    "publication_state": (
+                        "deferred_pending_verification" if binding_scope == "user" else "active"
+                    ),
+                },
+            )
+        await self._fault("after:batch_catalog_swapped")
+        bindings: list[CapabilityBinding] = []
+        async with self.store.write_transaction() as db:
+            tx = self.store.bind(db)
+            for durable, validation, candidate in zip(
+                durable_members, validations, candidates, strict=True
+            ):
+                install_path = batch_root / f"{durable.ordinal:04d}-{durable.normalized_name}"
+                await tx.record_version(
+                    CapabilityVersionRecord(
+                        validation.descriptor,
+                        install_path,
+                        "healthy",
+                        candidate.tool_spec_fingerprints,
+                        None,
+                        None,
+                        None,
+                        self.store.now(),
+                    )
+                )
+                if binding_scope == "project":
+                    binding = await tx.set_binding(
+                        scope=binding_scope,
+                        scope_key=project_scope_key,
+                        pack_id=durable.pack_id,
+                        version=durable.version,
+                        manifest_hash=durable.manifest_hash,
+                        expected_generation=generations[durable.pack_id],
+                        enabled=True,
+                        owner_key=owner_key,
+                        management_policy="user_managed",
+                    )
+                    bindings.append(binding)
+                await db.execute(
+                    """UPDATE capability_operation_members SET committed_version=?,
+                           committed_manifest_hash=?,committed_set_stamp=?
+                           WHERE operation_id=? AND ordinal=?""",
+                    (
+                        durable.version,
+                        durable.manifest_hash,
+                        committed_set_stamp,
+                        operation_id,
+                        durable.ordinal,
+                    ),
+                )
+            receipt_payload = {
+                "schema": (
+                    "capability-batch-manager-receipt-v2"
+                    if binding_scope == "user"
+                    else "capability-batch-manager-receipt-v1"
+                ),
+                "operation_id": operation_id,
                 "project_scope_key": project_scope_key,
                 "scope": binding_scope,
                 "scope_key": project_scope_key,
                 "owner_key": owner_key,
-                "member_set_digest": committed_set_stamp,
-                "expected_binding_generations": generations,
-            }
-            async with self.store.write_transaction() as db:
-                tx = self.store.bind(db)
-                await tx.create_publish_intent(
-                    intent_id=intent_id,
-                    operation_id=operation_id,
-                    expected_registry_revision=combined.expected_registry_revision,
-                    old_specs=combined.old_specs,
-                    new_specs=combined.new_specs,
-                    old_binding=None,
-                    new_binding=envelope,
-                )
-                await tx.put_publish_intent_members_in_transaction(
-                    intent_id,
-                    tuple(
-                        CapabilityPublishIntentMember(
-                            intent_id,
-                            operation_id,
-                            member.ordinal,
-                            None if old is None else old.to_dict(),
-                            {
-                                "scope": binding_scope,
-                                "scope_key": project_scope_key,
-                                "owner_key": owner_key,
-                                "capability_id": member.pack_id,
-                                "version": member.version,
-                                "manifest_hash": member.manifest_hash,
-                                "active": True,
-                                "expected_generation": generations[member.pack_id],
-                            },
-                        )
-                        for member, old in zip(durable_members, old_bindings, strict=True)
-                    ),
-                )
-                await tx.commit_phase(
-                    operation_id, "batch_publish_intent", evidence={"intent_id": intent_id}
-                )
-            await self._fault("after:batch_publish_intent")
-            batch_root.parent.mkdir(parents=True, exist_ok=True)
-            if batch_root.exists():
-                await self._remove_batch_root(batch_root)
-            await asyncio.to_thread(os.replace, staging_root, batch_root)
-            async with self.store.write_transaction() as db:
-                tx = self.store.bind(db)
-                await tx.advance_publish_intent(intent_id, phase="batch_files_materialized")
-                await tx.commit_phase(
-                    operation_id,
-                    "batch_files_materialized",
-                    evidence={"batch_root": str(batch_root)},
-                )
-            await self._fault("after:batch_files_materialized")
-            if binding_scope == "user":
-                # User-global candidates remain private until the fresh-Run
-                # verifier accepts the exact installed versions.  In
-                # particular, do not mutate the process-wide executable Tool
-                # registry merely because the binding is still invisible.
-                publication = CapabilityPublication(
-                    registry_revision=combined.expected_registry_revision,
-                    tool_spec_fingerprints=combined.tool_spec_fingerprints,
-                    evidence={"publication_state": "deferred_pending_verification"},
-                )
-            else:
-                publication = await self.publisher.publish(combined, operation_id=operation_id)
-                if tuple(publication.tool_spec_fingerprints) != combined.tool_spec_fingerprints:
-                    raise CapabilityManagerError(
-                        "publisher_fingerprint_mismatch", "batch ToolSpecs differ"
-                    )
-            async with self.store.write_transaction() as db:
-                tx = self.store.bind(db)
-                await tx.advance_publish_intent(intent_id, phase="batch_catalog_swapped")
-                await tx.commit_phase(
-                    operation_id,
-                    "batch_catalog_swapped",
-                    evidence={
-                        "registry_revision": publication.registry_revision,
-                        "publication_state": (
-                            "deferred_pending_verification" if binding_scope == "user" else "active"
-                        ),
-                    },
-                )
-            await self._fault("after:batch_catalog_swapped")
-            bindings: list[CapabilityBinding] = []
-            async with self.store.write_transaction() as db:
-                tx = self.store.bind(db)
-                for durable, validation, candidate in zip(
-                    durable_members, validations, candidates, strict=True
-                ):
-                    install_path = batch_root / f"{durable.ordinal:04d}-{durable.normalized_name}"
-                    await tx.record_version(
-                        CapabilityVersionRecord(
-                            validation.descriptor,
-                            install_path,
-                            "healthy",
-                            candidate.tool_spec_fingerprints,
-                            None,
-                            None,
-                            None,
-                            self.store.now(),
-                        )
-                    )
-                    if binding_scope == "project":
-                        binding = await tx.set_binding(
-                            scope=binding_scope,
-                            scope_key=project_scope_key,
-                            pack_id=durable.pack_id,
-                            version=durable.version,
-                            manifest_hash=durable.manifest_hash,
-                            expected_generation=generations[durable.pack_id],
-                            enabled=True,
-                            owner_key=owner_key,
-                            management_policy="user_managed",
-                        )
-                        bindings.append(binding)
-                    await db.execute(
-                        """UPDATE capability_operation_members SET committed_version=?,
-                           committed_manifest_hash=?,committed_set_stamp=?
-                           WHERE operation_id=? AND ordinal=?""",
-                        (
-                            durable.version,
-                            durable.manifest_hash,
-                            committed_set_stamp,
-                            operation_id,
-                            durable.ordinal,
-                        ),
-                    )
-                receipt_payload = {
-                    "schema": (
-                        "capability-batch-manager-receipt-v2"
-                        if binding_scope == "user"
-                        else "capability-batch-manager-receipt-v1"
-                    ),
-                    "operation_id": operation_id,
-                    "project_scope_key": project_scope_key,
-                    "scope": binding_scope,
-                    "scope_key": project_scope_key,
-                    "owner_key": owner_key,
-                    "committed_set_stamp": committed_set_stamp,
-                    "registry_revision": publication.registry_revision,
-                    "publication_state": (
-                        "pending_invisible" if binding_scope == "user" else "active"
-                    ),
-                    "members": [
-                        {
-                            "pack_id": m.pack_id,
-                            "version": m.version,
-                            "manifest_hash": m.manifest_hash,
-                            "content_hash": m.content_hash,
-                            "expected_binding_generation": generations[m.pack_id],
-                            **(
-                                {"binding_generation": b.generation}
-                                if binding_scope == "project"
-                                else {}
-                            ),
-                        }
-                        for m, b in zip(
-                            durable_members,
-                            bindings
+                "committed_set_stamp": committed_set_stamp,
+                "registry_revision": publication.registry_revision,
+                "publication_state": ("pending_invisible" if binding_scope == "user" else "active"),
+                "members": [
+                    {
+                        "pack_id": m.pack_id,
+                        "version": m.version,
+                        "manifest_hash": m.manifest_hash,
+                        "content_hash": m.content_hash,
+                        "expected_binding_generation": generations[m.pack_id],
+                        **(
+                            {"binding_generation": b.generation}
                             if binding_scope == "project"
-                            else [None] * len(durable_members),
-                            strict=True,
-                        )
-                    ],
-                }
-                receipt_hash = fingerprint_json(receipt_payload)
-                await tx.advance_publish_intent(
-                    intent_id, phase="batch_committed", status="committed"
-                )
-                operation = await tx.commit_phase(
-                    operation_id,
-                    "batch_committed",
-                    evidence={
-                        **receipt_payload,
-                        "manager_receipt_hash": receipt_hash,
-                        "install_root": str(batch_root),
-                    },
-                )
-            await self._fault("after:batch_committed")
-        return CapabilityBatchInstallResult(
-            operation,
-            tuple(bindings),
-            batch_root,
-            publication.registry_revision,
-            receipt_hash,
-            committed_set_stamp,
-        )
+                            else {}
+                        ),
+                    }
+                    for m, b in zip(
+                        durable_members,
+                        bindings if binding_scope == "project" else [None] * len(durable_members),
+                        strict=True,
+                    )
+                ],
+            }
+            receipt_hash = fingerprint_json(receipt_payload)
+            await tx.advance_publish_intent(intent_id, phase="batch_committed", status="committed")
+            operation = await tx.commit_phase(
+                operation_id,
+                "batch_committed",
+                evidence={
+                    **receipt_payload,
+                    "manager_receipt_hash": receipt_hash,
+                    "install_root": str(batch_root),
+                },
+            )
+        await self._fault("after:batch_committed")
+        return bindings, operation, receipt_hash
 
     async def _remove_batch_root(self, target: Path) -> None:
         target = target.resolve(strict=False)
@@ -443,16 +512,9 @@ class InstallMixin(CapabilityPackManagerCore):
         expected_binding_generation: int | None = None,
         management_policy: str | None = None,
     ) -> CapabilityInstallResult:
-        if kind not in {"install", "update", "repair"}:
-            raise CapabilityManagerError("invalid_install_kind", kind)
-        if kind == "repair" and not (
-            parent_version and parent_manifest_hash and derived_from_receipt_ref
-        ):
-            raise CapabilityManagerError(
-                "repair_lineage_required",
-                "repair requires parent version/hash and trusted failure receipt",
-            )
-        await self.initialize()
+        await self._require_install_kind(
+            derived_from_receipt_ref, kind, parent_manifest_hash, parent_version
+        )
         resolved_source = self.source_resolver.resolve_declared_source(source)
         operation_id = _operation_id(idempotency_key)
         request: Mapping[str, JsonValue] = {
@@ -475,11 +537,9 @@ class InstallMixin(CapabilityPackManagerCore):
         # Companion-owned mutations; serializing them as explicit nulls would
         # turn a valid replay of an older first-party install into an
         # idempotency conflict at startup.
-        lifecycle_request_fields: dict[str, JsonValue] = {}
-        if owner_key is not None:
-            lifecycle_request_fields["owner_key"] = owner_key
-        if expected_binding_generation is not None:
-            lifecycle_request_fields["expected_binding_generation"] = expected_binding_generation
+        lifecycle_request_fields = self._lifecycle_request_fields(
+            expected_binding_generation, owner_key
+        )
         if management_policy is not None:
             lifecycle_request_fields["management_policy"] = management_policy
         request = {**request, **lifecycle_request_fields}
@@ -507,186 +567,46 @@ class InstallMixin(CapabilityPackManagerCore):
         staging_path = self.layout.staging_path(operation_id)
         validated_ref: ValidatedCapabilityPackageRefV1 | None = None
         try:
-            if operation.phase == "planned":
-                await self._commit_phase(operation_id, "planned", {"source": source.uri})
-                # A crash while copying has no durable staged evidence.  The
-                # exact operation staging tree is disposable and may be
-                # rebuilt safely.
-                if staging_path.exists():
-                    await self._remove_exact_tree(staging_path)
-                staged = await self.source_resolver.stage(source, staging_path)
-                validated_ref = self._require_staged_validated_ref(
-                    staged,
-                    resolved_source=resolved_source,
-                )
-                operation = await self._commit_phase(
-                    operation_id,
-                    "staged",
-                    {
-                        "path": str(staged.root),
-                        "validated_ref": dict(self._validated_ref_evidence(validated_ref)),
-                    },
-                )
-            if operation.phase == "staged":
-                if not staging_path.exists():
-                    raise CapabilityManagerError(
-                        "staging_missing",
-                        "operation says staged but its exact staging directory is absent",
-                    )
-                if validated_ref is None:
-                    validated_ref = self._validated_ref_from_evidence(
-                        await self.store.get_phase_evidence(operation_id, "staged")
-                    )
-                if validated_ref.source_kind != resolved_source.source_type:
-                    raise CapabilityManagerError(
-                        "validated_package_source_mismatch",
-                        "durable validated package source differs from the resolved source",
-                    )
-                validation_root = staging_path
-            else:
-                verified_evidence = await self.store.get_phase_evidence(operation_id, "verified")
-                install_path_value = (
-                    None if verified_evidence is None else verified_evidence.get("install_path")
-                )
-                if not isinstance(install_path_value, str):
-                    raise CapabilityManagerError(
-                        "verified_projection_missing",
-                        "verified operation lacks its immutable install path",
-                    )
-                validation_root = Path(install_path_value)
-
-            validation = load_and_validate_pack(validation_root, environment=self.environment)
+            operation, validated_ref, validation = await self._install_validate_source(
+                operation,
+                operation_id=operation_id,
+                resolved_source=resolved_source,
+                source=source,
+                staging_path=staging_path,
+                validated_ref=validated_ref,
+            )
             manifest = validation.manifest
             if expected_pack_id is not None and manifest.id != expected_pack_id:
                 raise CapabilityManagerError(
                     "unexpected_pack_id",
                     f"expected {expected_pack_id}, staged pack is {manifest.id}",
                 )
-            if not _manifest_source_matches(
-                requested_source_type=resolved_source.source_type,
-                manifest_source_type=manifest.source.type,
-            ):
-                raise CapabilityManagerError(
-                    "source_identity_mismatch",
-                    "manifest source type differs from the staged source",
-                )
-            if manifest.source.revision != resolved_source.revision:
-                raise CapabilityManagerError(
-                    "source_revision_mismatch",
-                    "manifest source revision differs from the requested revision",
-                )
-            if generated and any(
-                tool.execution_profile != "brokered-effect-v1" for tool in manifest.tools
-            ):
-                raise CapabilityManagerError(
-                    "generated_native_adapter_forbidden",
-                    "generated packs may only use brokered-effect-v1",
-                )
-            operation = await self.store.bind_operation_pack_id(operation_id, manifest.id)
-            await self.store.record_validation_result(
-                operation_id,
-                "manifest_and_integrity",
-                status="passed",
-                detail={"manifest_hash": manifest.manifest_hash},
+            install_path, operation, validation = await self._install_stage_payload(
+                generated,
+                manifest=manifest,
+                operation_id=operation_id,
+                resolved_source=resolved_source,
+                staging_path=staging_path,
+                validated_ref=validated_ref,
+                validation=validation,
             )
-
-            install_path = self.layout.pack_path(
-                manifest.id, manifest.version, manifest.manifest_hash
-            ).resolve(strict=False)
-            install_io_path = windows_extended_path(install_path)
-            if operation.phase == "staged":
-                if validated_ref is None:
-                    raise CapabilityManagerError(
-                        "validated_package_ref_missing",
-                        "staged operation lacks its validated package ref",
-                    )
-                if install_io_path.exists():
-                    await self._validate_materialized_tree(
-                        install_io_path,
-                        expected_ref=validated_ref,
-                    )
-                    installed_validation = load_and_validate_pack(
-                        install_io_path, environment=self.environment
-                    )
-                    if installed_validation.manifest.manifest_hash != manifest.manifest_hash:
-                        raise CapabilityManagerError(
-                            "immutable_version_conflict",
-                            "immutable version path contains another manifest",
-                        )
-                    await self._remove_exact_tree(staging_path)
-                    validation = installed_validation
-                else:
-                    install_path.parent.mkdir(parents=True, exist_ok=True)
-                    await self._fault("before:install_replace")
-                    await self._validate_materialized_tree(
-                        staging_path,
-                        expected_ref=validated_ref,
-                    )
-                    await asyncio.to_thread(
-                        os.replace,
-                        windows_extended_path(staging_path),
-                        install_io_path,
-                    )
-                    validation = load_and_validate_pack(
-                        install_io_path, environment=self.environment
-                    )
-                operation = await self._commit_phase(
-                    operation_id,
-                    "verified",
-                    {
-                        "manifest_hash": manifest.manifest_hash,
-                        "install_path": str(install_path),
-                    },
-                )
-
-            environment_path = self.layout.environment_path(
-                manifest.id, manifest.version, manifest.manifest_hash
-            )
-            if operation.phase == "verified":
-                environment_evidence = await self.environment_preparer.prepare(
-                    validation,
-                    environment_root=environment_path,
-                    operation_id=operation_id,
-                )
-                operation = await self._commit_phase(
-                    operation_id,
-                    "environment_ready",
-                    dict(environment_evidence),
-                )
 
             candidate = await self.publisher.prepare_candidate(
                 validation,
                 install_root=install_path,
                 operation_id=operation_id,
             )
-            if len(candidate.tool_spec_fingerprints) != len(manifest.tools):
-                raise CapabilityManagerError(
-                    "candidate_tool_mismatch",
-                    "candidate must provide one ToolSpec fingerprint per declared tool",
-                )
-            if operation.phase == "environment_ready":
-                version_record = CapabilityVersionRecord(
-                    descriptor=validation.descriptor,
-                    install_path=install_path,
-                    validation_status="healthy",
-                    expected_tool_fingerprints=candidate.tool_spec_fingerprints,
-                    parent_version=parent_version,
-                    parent_manifest_hash=parent_manifest_hash,
-                    derived_from_receipt_ref=derived_from_receipt_ref,
-                    created_at=self.store.now(),
-                )
-                await self.store.record_version(version_record)
-                operation = await self._commit_phase(
-                    operation_id,
-                    "candidate_ready",
-                    {"tool_spec_fingerprints": list(candidate.tool_spec_fingerprints)},
-                )
-
-            if operation.phase in {"publish_intent", "catalog_swapped", "bound"}:
-                raise CapabilityManagerError(
-                    "publish_reconciliation_required",
-                    f"operation at {operation.phase} must be reconciled before resume",
-                )
+            operation = await self._install_check_candidate(
+                candidate,
+                derived_from_receipt_ref=derived_from_receipt_ref,
+                install_path=install_path,
+                manifest=manifest,
+                operation=operation,
+                operation_id=operation_id,
+                parent_manifest_hash=parent_manifest_hash,
+                parent_version=parent_version,
+                validation=validation,
+            )
 
             current_binding = await self.store.get_binding(
                 scope,
@@ -712,36 +632,13 @@ class InstallMixin(CapabilityPackManagerCore):
                 owner_key=owner_key,
                 management_policy=management_policy,
             )
-            receipt_evidence = await self._manager_receipt_evidence(
-                operation_id=operation_id,
-                action=kind,
-                binding=binding,
-                registry_revision=publication.registry_revision,
-                tool_spec_fingerprints=publication.tool_spec_fingerprints,
-            )
-            operation = await self._commit_phase(
-                operation_id,
-                "published",
-                {
-                    "binding_id": binding.binding_id,
-                    "registry_revision": publication.registry_revision,
-                    **receipt_evidence,
-                },
-            )
-            return CapabilityInstallResult(
-                operation=operation,
-                validation=validation,
-                binding=binding,
+            return await self._install_finish(
+                binding,
                 install_path=install_path,
-                registry_revision=publication.registry_revision,
-                tool_spec_fingerprints=publication.tool_spec_fingerprints,
-                manager_receipt_hash=str(receipt_evidence["manager_receipt_hash"]),
-                committed_owner_binding_set_stamp=str(
-                    receipt_evidence["committed_owner_binding_set_stamp"]
-                ),
-                process_projection_fingerprint=str(
-                    receipt_evidence["process_projection_fingerprint"]
-                ),
+                kind=kind,
+                operation_id=operation_id,
+                publication=publication,
+                validation=validation,
             )
         except asyncio.CancelledError:
             await self._cancel_operation(operation_id)
@@ -749,6 +646,273 @@ class InstallMixin(CapabilityPackManagerCore):
         except Exception as exc:
             await self._record_operation_failure(operation_id, exc)
             raise
+
+    async def _require_install_kind(
+        self,
+        derived_from_receipt_ref: str | None,
+        kind: str,
+        parent_manifest_hash: str | None,
+        parent_version: str | None,
+    ) -> None:
+        if kind not in {"install", "update", "repair"}:
+            raise CapabilityManagerError("invalid_install_kind", kind)
+        if kind == "repair" and not (
+            parent_version and parent_manifest_hash and derived_from_receipt_ref
+        ):
+            raise CapabilityManagerError(
+                "repair_lineage_required",
+                "repair requires parent version/hash and trusted failure receipt",
+            )
+        await self.initialize()
+
+    def _lifecycle_request_fields(
+        self, expected_binding_generation: int | None, owner_key: str | None
+    ) -> dict[str, JsonValue]:
+        lifecycle_request_fields: dict[str, JsonValue] = {}
+        if owner_key is not None:
+            lifecycle_request_fields["owner_key"] = owner_key
+        if expected_binding_generation is not None:
+            lifecycle_request_fields["expected_binding_generation"] = expected_binding_generation
+        return lifecycle_request_fields
+
+    async def _install_validate_source(
+        self,
+        operation,
+        *,
+        operation_id,
+        resolved_source,
+        source: PackSourceRequest,
+        staging_path,
+        validated_ref: ValidatedCapabilityPackageRefV1 | None,
+    ):
+        if operation.phase == "planned":
+            await self._commit_phase(operation_id, "planned", {"source": source.uri})
+            # A crash while copying has no durable staged evidence.  The
+            # exact operation staging tree is disposable and may be
+            # rebuilt safely.
+            if staging_path.exists():
+                await self._remove_exact_tree(staging_path)
+            staged = await self.source_resolver.stage(source, staging_path)
+            validated_ref = self._require_staged_validated_ref(
+                staged,
+                resolved_source=resolved_source,
+            )
+            operation = await self._commit_phase(
+                operation_id,
+                "staged",
+                {
+                    "path": str(staged.root),
+                    "validated_ref": dict(self._validated_ref_evidence(validated_ref)),
+                },
+            )
+        if operation.phase == "staged":
+            if not staging_path.exists():
+                raise CapabilityManagerError(
+                    "staging_missing",
+                    "operation says staged but its exact staging directory is absent",
+                )
+            if validated_ref is None:
+                validated_ref = self._validated_ref_from_evidence(
+                    await self.store.get_phase_evidence(operation_id, "staged")
+                )
+            if validated_ref.source_kind != resolved_source.source_type:
+                raise CapabilityManagerError(
+                    "validated_package_source_mismatch",
+                    "durable validated package source differs from the resolved source",
+                )
+            validation_root = staging_path
+        else:
+            verified_evidence = await self.store.get_phase_evidence(operation_id, "verified")
+            install_path_value = (
+                None if verified_evidence is None else verified_evidence.get("install_path")
+            )
+            if not isinstance(install_path_value, str):
+                raise CapabilityManagerError(
+                    "verified_projection_missing",
+                    "verified operation lacks its immutable install path",
+                )
+            validation_root = Path(install_path_value)
+
+        validation = load_and_validate_pack(validation_root, environment=self.environment)
+        return operation, validated_ref, validation
+
+    async def _install_stage_payload(
+        self,
+        generated: bool,
+        *,
+        manifest,
+        operation_id,
+        resolved_source,
+        staging_path,
+        validated_ref: ValidatedCapabilityPackageRefV1 | None,
+        validation,
+    ):
+        if not _manifest_source_matches(
+            requested_source_type=resolved_source.source_type,
+            manifest_source_type=manifest.source.type,
+        ):
+            raise CapabilityManagerError(
+                "source_identity_mismatch",
+                "manifest source type differs from the staged source",
+            )
+        if manifest.source.revision != resolved_source.revision:
+            raise CapabilityManagerError(
+                "source_revision_mismatch",
+                "manifest source revision differs from the requested revision",
+            )
+        if generated and any(
+            tool.execution_profile != "brokered-effect-v1" for tool in manifest.tools
+        ):
+            raise CapabilityManagerError(
+                "generated_native_adapter_forbidden",
+                "generated packs may only use brokered-effect-v1",
+            )
+        operation = await self.store.bind_operation_pack_id(operation_id, manifest.id)
+        await self.store.record_validation_result(
+            operation_id,
+            "manifest_and_integrity",
+            status="passed",
+            detail={"manifest_hash": manifest.manifest_hash},
+        )
+
+        install_path = self.layout.pack_path(
+            manifest.id, manifest.version, manifest.manifest_hash
+        ).resolve(strict=False)
+        install_io_path = windows_extended_path(install_path)
+        if operation.phase == "staged":
+            if validated_ref is None:
+                raise CapabilityManagerError(
+                    "validated_package_ref_missing",
+                    "staged operation lacks its validated package ref",
+                )
+            if install_io_path.exists():
+                await self._validate_materialized_tree(
+                    install_io_path,
+                    expected_ref=validated_ref,
+                )
+                installed_validation = load_and_validate_pack(
+                    install_io_path, environment=self.environment
+                )
+                if installed_validation.manifest.manifest_hash != manifest.manifest_hash:
+                    raise CapabilityManagerError(
+                        "immutable_version_conflict",
+                        "immutable version path contains another manifest",
+                    )
+                await self._remove_exact_tree(staging_path)
+                validation = installed_validation
+            else:
+                install_path.parent.mkdir(parents=True, exist_ok=True)
+                await self._fault("before:install_replace")
+                await self._validate_materialized_tree(
+                    staging_path,
+                    expected_ref=validated_ref,
+                )
+                await asyncio.to_thread(
+                    os.replace,
+                    windows_extended_path(staging_path),
+                    install_io_path,
+                )
+                validation = load_and_validate_pack(install_io_path, environment=self.environment)
+            operation = await self._commit_phase(
+                operation_id,
+                "verified",
+                {
+                    "manifest_hash": manifest.manifest_hash,
+                    "install_path": str(install_path),
+                },
+            )
+
+        environment_path = self.layout.environment_path(
+            manifest.id, manifest.version, manifest.manifest_hash
+        )
+        if operation.phase == "verified":
+            environment_evidence = await self.environment_preparer.prepare(
+                validation,
+                environment_root=environment_path,
+                operation_id=operation_id,
+            )
+            operation = await self._commit_phase(
+                operation_id,
+                "environment_ready",
+                dict(environment_evidence),
+            )
+        return install_path, operation, validation
+
+    async def _install_check_candidate(
+        self,
+        candidate,
+        *,
+        derived_from_receipt_ref: str | None,
+        install_path,
+        manifest,
+        operation,
+        operation_id,
+        parent_manifest_hash: str | None,
+        parent_version: str | None,
+        validation,
+    ):
+        if len(candidate.tool_spec_fingerprints) != len(manifest.tools):
+            raise CapabilityManagerError(
+                "candidate_tool_mismatch",
+                "candidate must provide one ToolSpec fingerprint per declared tool",
+            )
+        if operation.phase == "environment_ready":
+            version_record = CapabilityVersionRecord(
+                descriptor=validation.descriptor,
+                install_path=install_path,
+                validation_status="healthy",
+                expected_tool_fingerprints=candidate.tool_spec_fingerprints,
+                parent_version=parent_version,
+                parent_manifest_hash=parent_manifest_hash,
+                derived_from_receipt_ref=derived_from_receipt_ref,
+                created_at=self.store.now(),
+            )
+            await self.store.record_version(version_record)
+            operation = await self._commit_phase(
+                operation_id,
+                "candidate_ready",
+                {"tool_spec_fingerprints": list(candidate.tool_spec_fingerprints)},
+            )
+
+        if operation.phase in {"publish_intent", "catalog_swapped", "bound"}:
+            raise CapabilityManagerError(
+                "publish_reconciliation_required",
+                f"operation at {operation.phase} must be reconciled before resume",
+            )
+        return operation
+
+    async def _install_finish(
+        self, binding, *, install_path, kind: str, operation_id, publication, validation
+    ) -> CapabilityInstallResult:
+        receipt_evidence = await self._manager_receipt_evidence(
+            operation_id=operation_id,
+            action=kind,
+            binding=binding,
+            registry_revision=publication.registry_revision,
+            tool_spec_fingerprints=publication.tool_spec_fingerprints,
+        )
+        operation = await self._commit_phase(
+            operation_id,
+            "published",
+            {
+                "binding_id": binding.binding_id,
+                "registry_revision": publication.registry_revision,
+                **receipt_evidence,
+            },
+        )
+        return CapabilityInstallResult(
+            operation=operation,
+            validation=validation,
+            binding=binding,
+            install_path=install_path,
+            registry_revision=publication.registry_revision,
+            tool_spec_fingerprints=publication.tool_spec_fingerprints,
+            manager_receipt_hash=str(receipt_evidence["manager_receipt_hash"]),
+            committed_owner_binding_set_stamp=str(
+                receipt_evidence["committed_owner_binding_set_stamp"]
+            ),
+            process_projection_fingerprint=str(receipt_evidence["process_projection_fingerprint"]),
+        )
 
     async def update(self, source: PackSourceRequest, **kwargs: Any) -> CapabilityInstallResult:
         return await self.install(source, kind="update", **kwargs)

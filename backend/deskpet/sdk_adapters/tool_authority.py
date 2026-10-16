@@ -578,206 +578,45 @@ class SdkRunToolAuthorityRegistry:
         session_id = _required(session_id, "session_id")
         request_id = _required(request_id, "request_id")
         root_run_id = _required(root_run_id, "root_run_id")
-        if task_scope_id is not None:
-            task_scope_id = _required(task_scope_id, "task_scope_id")
-        elif (
-            workspace_root is not None
-            or type(binding_version) is not int
-            or binding_version != 0
-            or not isinstance(workspace_resolution, Mapping)
-            or workspace_resolution.get("kind") != "projectless"
-        ):
-            raise ValueError("unscoped primary Tool authority must be projectless")
+        task_scope_id = self._normalized_task_scope_id(
+            binding_version, task_scope_id, workspace_resolution, workspace_root
+        )
         principal_id = _required(principal_id, "principal_id")
-        if workspace_resolution is None:
-            normalized_workspace_resolution: dict[str, Any] = {
-                "kind": "legacy",
-                "effective_root": workspace_root,
-                "binding_version": binding_version,
-            }
-        else:
-            normalized_workspace_resolution = {
-                str(key): value for key, value in workspace_resolution.items()
-            }
-            kind = _required(
-                normalized_workspace_resolution.get("kind"),
-                "workspace_resolution.kind",
-            )
-            if kind not in {"project_bound", "projectless", "missing", "legacy"}:
-                raise ValueError("unsupported workspace resolution kind")
-            effective_root = normalized_workspace_resolution.get("effective_root")
-            if effective_root != workspace_root:
-                raise ValueError("workspace resolution differs from effective root")
-            if kind == "projectless" and workspace_root is not None:
-                raise ValueError("projectless workspace cannot carry a root")
-            if kind == "missing":
-                raise RuntimeError("workspace_unavailable")
-            if kind == "project_bound":
-                for field in (
-                    "project_id",
-                    "execution_kind",
-                    "project_identity",
-                    "execution_identity",
-                ):
-                    _required(
-                        normalized_workspace_resolution.get(field),
-                        f"workspace_resolution.{field}",
-                    )
-                if int(normalized_workspace_resolution.get("project_revision", 0)) < 1:
-                    raise ValueError("workspace project revision must be positive")
-                if self._workspace_identity_validator is None:
-                    raise RuntimeError("workspace_identity_validator_unavailable")
-            normalized_workspace_resolution["binding_version"] = binding_version
+        normalized_workspace_resolution = self._normalized_workspace_resolution(
+            binding_version, workspace_resolution, workspace_root
+        )
         catalog_fingerprint = _required(catalog.get("content_fingerprint"), "catalog_fingerprint")
         generation = int(catalog.get("generation", -1))
         if generation < 0:
             raise ValueError("catalog_generation must be non-negative")
 
         raw_specs = catalog.get("specs")
-        if not isinstance(raw_specs, list) or not raw_specs:
-            raise ValueError("frozen SDK catalog must contain complete specs")
-        inventory_by_name = {
-            _required(_field(item, "name"), "inventory.name"): item for item in inventory
-        }
-        names = tuple(_required(item.get("name"), "spec.name") for item in raw_specs)
-        if len(names) != len(set(names)) or not set(names).issubset(inventory_by_name):
-            raise ValueError("SDK catalog and product inventory differ")
-        unavailable_inventory = {
-            name: item for name, item in inventory_by_name.items() if name not in names
-        }
-        if any(
-            not str(_field(item, "availability_reason", "") or "").strip()
-            for item in unavailable_inventory.values()
-        ):
-            raise ValueError("non-executable Tool descriptor lacks availability reason")
-
-        deferred = frozenset(str(item) for item in deferred_names)
-        unknown_deferred = deferred - set(names)
-        if unknown_deferred:
-            raise ValueError(f"unknown deferred SDK capabilities: {sorted(unknown_deferred)!r}")
-        if disclosure_policy is None:
-            disclosure_policy = (
-                SDK_EXPLICIT_DEFERRED_DISCLOSURE_POLICY
-                if deferred
-                else SDK_FULL_CATALOG_DISCLOSURE_POLICY
-            )
-        if disclosure_policy not in {
-            SDK_FULL_CATALOG_DISCLOSURE_POLICY,
-            SDK_EXPLICIT_DEFERRED_DISCLOSURE_POLICY,
-        }:
-            raise ValueError("unsupported SDK catalog disclosure policy")
-        if disclosure_policy == SDK_FULL_CATALOG_DISCLOSURE_POLICY and deferred:
-            raise ValueError("full-direct disclosure cannot contain deferred tools")
-        if disclosure_policy == SDK_EXPLICIT_DEFERRED_DISCLOSURE_POLICY and not deferred:
-            raise ValueError("explicit-deferred disclosure requires deferred tools")
+        inventory_by_name, names, unavailable_inventory = self._catalog_inventory(
+            inventory, raw_specs
+        )
+        deferred, disclosure_policy = self._deferred_disclosure_policy(
+            deferred_names, disclosure_policy, names, unavailable_inventory
+        )
         capabilities: list[PreparedToolCapability] = []
         deferred_refs: list[ToolCapabilityRef] = []
         frozen_specs: dict[str, _FrozenCapabilitySpec] = {}
         decisions: list[ToolSelectionDecision] = []
         permissions: dict[str, str] = {}
         dispatch_kinds: dict[str, str] = {}
-        catalog_schema_hashes = catalog.get("schema_fingerprints")
-        if catalog_schema_hashes is not None and not isinstance(catalog_schema_hashes, Mapping):
-            raise TypeError("catalog schema_fingerprints must be an object")
-        for raw in raw_specs:
-            name = str(raw["name"])
-            description = _required(raw.get("description"), f"{name}.description")
-            input_schema = raw.get("input_schema")
-            if not isinstance(input_schema, Mapping):
-                raise TypeError(f"{name}.input_schema must be an object")
-            inventory_item = inventory_by_name[name]
-            permission = _required(
-                _field(inventory_item, "permission_category"),
-                f"{name}.permission_category",
-            )
-            dispatch = _required(_field(inventory_item, "dispatch_kind"), f"{name}.dispatch_kind")
-            source = _required(_field(inventory_item, "source"), f"{name}.source")
-            version = _required(_field(inventory_item, "version"), f"{name}.version")
-            execution_identity = _required(
-                _field(inventory_item, "execution_identity"),
-                f"{name}.execution_identity",
-            )
-            permission_policy_version = _required(
-                _field(
-                    inventory_item,
-                    "permission_policy_version",
-                    SDK_PERMISSION_POLICY_VERSION,
-                ),
-                f"{name}.permission_policy_version",
-            )
-            dangerous = _field(
-                inventory_item,
-                "dangerous",
-                dispatch in {"staged", "control"},
-            )
-            if not isinstance(dangerous, bool):
-                raise TypeError(f"{name}.dangerous must be a boolean")
-            projectless_admission = str(
-                _field(inventory_item, "projectless_admission", "requires_project")
-            )
-            if projectless_admission not in {"safe", "requires_project"}:
-                raise ValueError(f"{name}.projectless_admission is invalid")
-            effect_class, manifest_dangerous = frozen_tool_effect(name, inventory_item)
-            # ``task_scope_id is None`` is the frozen ``primary_route_capable``
-            # fact.  Such a Run may carry the two call-gated families and
-            # nothing else: PROJECT_EFFECT (react barrier + envelope +
-            # EffectGate) and the F-Z1 read family (WorkspaceReadGate).
-            if (
-                normalized_workspace_resolution["kind"] == "projectless"
-                and projectless_admission != "safe"
-                and not (task_scope_id is None and name in _PROJECTLESS_ROUTE_CAPABLE_TOOL_NAMES)
-            ):
-                raise RuntimeError("projectless_catalog_contains_project_tool")
-            function_schema = {
-                "name": name,
-                "description": description,
-                "parameters": dict(input_schema),
-            }
-            schema_hash = canonical_hash(dict(input_schema))
-            if (
-                catalog_schema_hashes is not None
-                and str(catalog_schema_hashes.get(name) or "") != schema_hash
-            ):
-                raise ValueError(f"{name} schema fingerprint differs from catalog")
-            ref = ToolCapabilityRef(
-                capability_id=f"{source}:{name}:{schema_hash[:16]}",
-                name=name,
-                toolset=dispatch,
-                source=source,
-                description=description,
-                schema_hash=schema_hash,
-                spec_version=version,
-                permission_policy_version=permission_policy_version,
-                permission_category=permission,
-                dangerous=dangerous,
-            )
-            capability = PreparedToolCapability(
-                ref,
-                {"type": "function", "function": function_schema},
-            )
-            if name in deferred:
-                deferred_refs.append(ref)
-                decisions.append(ToolSelectionDecision(name, "deferred", "frozen_run_scope"))
-            else:
-                capabilities.append(capability)
-                decisions.append(ToolSelectionDecision(name, "direct", "frozen_run_scope"))
-            frozen_specs[name] = _FrozenCapabilitySpec(
-                name=name,
-                schema=function_schema,
-                schema_hash=schema_hash,
-                spec_version=version,
-                permission_policy_version=permission_policy_version,
-                permission_category=permission,
-                source=source,
-                toolset=dispatch,
-                execution_identity=execution_identity,
-                projectless_admission=projectless_admission,
-                dangerous=dangerous,
-                effect_class=effect_class,
-                manifest_dangerous=manifest_dangerous,
-            )
-            permissions[name] = permission
-            dispatch_kinds[name] = dispatch
+        self._require_catalog_fingerprints(
+            capabilities,
+            catalog=catalog,
+            decisions=decisions,
+            deferred=deferred,
+            deferred_refs=deferred_refs,
+            dispatch_kinds=dispatch_kinds,
+            frozen_specs=frozen_specs,
+            inventory_by_name=inventory_by_name,
+            normalized_workspace_resolution=normalized_workspace_resolution,
+            permissions=permissions,
+            raw_specs=raw_specs,
+            task_scope_id=task_scope_id,
+        )
 
         scope_seed = {
             "run_id": run_id,
@@ -788,42 +627,23 @@ class SdkRunToolAuthorityRegistry:
             "catalog_generation": generation,
             "catalog_fingerprint": catalog_fingerprint,
         }
-        scope_id = f"sdk-tool-scope:{_canonical_sha256(scope_seed)}"
-        policy_fingerprint = str(catalog.get("policy_fingerprint") or "").strip()
-        if not policy_fingerprint:
-            # Compatibility for historical durable records and isolated unit
-            # fixtures created before the physical policy fingerprint became
-            # part of RunStart authority.
-            policy_fingerprint = _canonical_sha256(
-                {
-                    "kind": "sdk-frozen-product-catalog",
-                    "catalog_fingerprint": catalog_fingerprint,
-                    "direct": sorted(set(names) - deferred),
-                    "deferred": sorted(deferred),
-                }
-            )
-        prepared = PreparedToolSet.create(
-            scope_id=scope_id,
-            revision=1,
-            registry_revision=generation,
-            direct=capabilities,
-            deferred=deferred_refs,
-            activated=(),
-            denied_names=(),
-            policy_fingerprint=policy_fingerprint,
+        prepared = self._prepared_tool_scope(
+            capabilities,
+            catalog=catalog,
+            catalog_fingerprint=catalog_fingerprint,
             decisions=decisions,
+            deferred=deferred,
+            deferred_refs=deferred_refs,
+            generation=generation,
+            names=names,
+            scope_seed=scope_seed,
         )
-        work_context = (
-            PrimaryRunWorkContext(session_id, root_run_id)
-            if task_scope_id is None
-            else TaskWorkContext(
-                session_id=session_id,
-                root_run_id=root_run_id,
-                task_scope_id=task_scope_id,
-                workspace_root=workspace_root,
-                workspace_source="existing" if workspace_root else "none",
-                binding_version=binding_version,
-            )
+        work_context = self._run_work_context(
+            binding_version,
+            root_run_id=root_run_id,
+            session_id=session_id,
+            task_scope_id=task_scope_id,
+            workspace_root=workspace_root,
         )
         authority_fingerprint = _canonical_sha256(
             {
@@ -896,7 +716,393 @@ class SdkRunToolAuthorityRegistry:
         ):
             self.scope_store.purge(prepared.scope_id)
             raise RuntimeError("sdk_tool_scope_pin_failed")
+        return self._store_prepared_run(
+            catalog,
+            catalog_fingerprint=catalog_fingerprint,
+            deferred=deferred,
+            frozen_specs=frozen_specs,
+            generation=generation,
+            raw_specs=raw_specs,
+            record=record,
+            resource_records=resource_records,
+            run_id=run_id,
+            unavailable_inventory=unavailable_inventory,
+        )
+
+    def _normalized_task_scope_id(
+        self,
+        binding_version: int,
+        task_scope_id: str | None,
+        workspace_resolution: Mapping[str, Any] | None,
+        workspace_root: str | None,
+    ) -> str | None:
+        if task_scope_id is not None:
+            task_scope_id = _required(task_scope_id, "task_scope_id")
+        elif (
+            workspace_root is not None
+            or type(binding_version) is not int
+            or binding_version != 0
+            or not isinstance(workspace_resolution, Mapping)
+            or workspace_resolution.get("kind") != "projectless"
+        ):
+            raise ValueError("unscoped primary Tool authority must be projectless")
+        return task_scope_id
+
+    def _normalized_workspace_resolution(
+        self,
+        binding_version: int,
+        workspace_resolution: Mapping[str, Any] | None,
+        workspace_root: str | None,
+    ) -> dict[str, Any]:
+        if workspace_resolution is None:
+            normalized_workspace_resolution: dict[str, Any] = {
+                "kind": "legacy",
+                "effective_root": workspace_root,
+                "binding_version": binding_version,
+            }
+        else:
+            normalized_workspace_resolution = {
+                str(key): value for key, value in workspace_resolution.items()
+            }
+            self._require_workspace_resolution(normalized_workspace_resolution, workspace_root)
+            normalized_workspace_resolution["binding_version"] = binding_version
+        return normalized_workspace_resolution
+
+    def _catalog_inventory(self, inventory: Sequence[object], raw_specs):
+        if not isinstance(raw_specs, list) or not raw_specs:
+            raise ValueError("frozen SDK catalog must contain complete specs")
+        inventory_by_name = {
+            _required(_field(item, "name"), "inventory.name"): item for item in inventory
+        }
+        names = tuple(_required(item.get("name"), "spec.name") for item in raw_specs)
+        if len(names) != len(set(names)) or not set(names).issubset(inventory_by_name):
+            raise ValueError("SDK catalog and product inventory differ")
+        unavailable_inventory = {
+            name: item for name, item in inventory_by_name.items() if name not in names
+        }
+        return inventory_by_name, names, unavailable_inventory
+
+    def _require_catalog_fingerprints(
+        self,
+        capabilities: list[PreparedToolCapability],
+        *,
+        catalog: Mapping[str, Any],
+        decisions: list[ToolSelectionDecision],
+        deferred,
+        deferred_refs: list[ToolCapabilityRef],
+        dispatch_kinds: dict[str, str],
+        frozen_specs: dict[str, _FrozenCapabilitySpec],
+        inventory_by_name,
+        normalized_workspace_resolution: dict[str, Any],
+        permissions: dict[str, str],
+        raw_specs,
+        task_scope_id: str | None,
+    ) -> None:
+        catalog_schema_hashes = catalog.get("schema_fingerprints")
+        if catalog_schema_hashes is not None and not isinstance(catalog_schema_hashes, Mapping):
+            raise TypeError("catalog schema_fingerprints must be an object")
+        for raw in raw_specs:
+            inventory_item, name, source = self._prepared_inventory_item(
+                capabilities,
+                catalog_schema_hashes=catalog_schema_hashes,
+                decisions=decisions,
+                deferred=deferred,
+                deferred_refs=deferred_refs,
+                dispatch_kinds=dispatch_kinds,
+                frozen_specs=frozen_specs,
+                inventory_by_name=inventory_by_name,
+                normalized_workspace_resolution=normalized_workspace_resolution,
+                permissions=permissions,
+                raw=raw,
+                task_scope_id=task_scope_id,
+            )
+
+    def _run_work_context(
+        self,
+        binding_version: int,
+        *,
+        root_run_id: str,
+        session_id: str,
+        task_scope_id: str | None,
+        workspace_root: str | None,
+    ):
+        work_context = (
+            PrimaryRunWorkContext(session_id, root_run_id)
+            if task_scope_id is None
+            else TaskWorkContext(
+                session_id=session_id,
+                root_run_id=root_run_id,
+                task_scope_id=task_scope_id,
+                workspace_root=workspace_root,
+                workspace_source="existing" if workspace_root else "none",
+                binding_version=binding_version,
+            )
+        )
+        return work_context
+
+    def _store_prepared_run(
+        self,
+        catalog: Mapping[str, Any],
+        *,
+        catalog_fingerprint,
+        deferred,
+        frozen_specs: dict[str, _FrozenCapabilitySpec],
+        generation,
+        raw_specs,
+        record,
+        resource_records: Sequence[RuntimeCapabilityRecord] | None,
+        run_id: str,
+        unavailable_inventory,
+    ) -> SdkRunToolAuthorityV1:
         self._records[run_id] = record
+        self._runtime_tool_records(
+            catalog,
+            catalog_fingerprint=catalog_fingerprint,
+            deferred=deferred,
+            frozen_specs=frozen_specs,
+            generation=generation,
+            raw_specs=raw_specs,
+            resource_records=resource_records,
+            run_id=run_id,
+            unavailable_inventory=unavailable_inventory,
+        )
+        return record
+
+    def _require_workspace_resolution(
+        self, normalized_workspace_resolution: dict[str, Any], workspace_root: str | None
+    ) -> None:
+        kind = _required(
+            normalized_workspace_resolution.get("kind"),
+            "workspace_resolution.kind",
+        )
+        if kind not in {"project_bound", "projectless", "missing", "legacy"}:
+            raise ValueError("unsupported workspace resolution kind")
+        effective_root = normalized_workspace_resolution.get("effective_root")
+        if effective_root != workspace_root:
+            raise ValueError("workspace resolution differs from effective root")
+        if kind == "projectless" and workspace_root is not None:
+            raise ValueError("projectless workspace cannot carry a root")
+        if kind == "missing":
+            raise RuntimeError("workspace_unavailable")
+        if kind == "project_bound":
+            for field in (
+                "project_id",
+                "execution_kind",
+                "project_identity",
+                "execution_identity",
+            ):
+                _required(
+                    normalized_workspace_resolution.get(field),
+                    f"workspace_resolution.{field}",
+                )
+            if int(normalized_workspace_resolution.get("project_revision", 0)) < 1:
+                raise ValueError("workspace project revision must be positive")
+            if self._workspace_identity_validator is None:
+                raise RuntimeError("workspace_identity_validator_unavailable")
+
+    def _deferred_disclosure_policy(
+        self,
+        deferred_names: Iterable[str],
+        disclosure_policy: str | None,
+        names,
+        unavailable_inventory,
+    ):
+        if any(
+            not str(_field(item, "availability_reason", "") or "").strip()
+            for item in unavailable_inventory.values()
+        ):
+            raise ValueError("non-executable Tool descriptor lacks availability reason")
+
+        deferred = frozenset(str(item) for item in deferred_names)
+        unknown_deferred = deferred - set(names)
+        if unknown_deferred:
+            raise ValueError(f"unknown deferred SDK capabilities: {sorted(unknown_deferred)!r}")
+        if disclosure_policy is None:
+            disclosure_policy = (
+                SDK_EXPLICIT_DEFERRED_DISCLOSURE_POLICY
+                if deferred
+                else SDK_FULL_CATALOG_DISCLOSURE_POLICY
+            )
+        if disclosure_policy not in {
+            SDK_FULL_CATALOG_DISCLOSURE_POLICY,
+            SDK_EXPLICIT_DEFERRED_DISCLOSURE_POLICY,
+        }:
+            raise ValueError("unsupported SDK catalog disclosure policy")
+        if disclosure_policy == SDK_FULL_CATALOG_DISCLOSURE_POLICY and deferred:
+            raise ValueError("full-direct disclosure cannot contain deferred tools")
+        if disclosure_policy == SDK_EXPLICIT_DEFERRED_DISCLOSURE_POLICY and not deferred:
+            raise ValueError("explicit-deferred disclosure requires deferred tools")
+        return deferred, disclosure_policy
+
+    def _prepared_inventory_item(
+        self,
+        capabilities: list[PreparedToolCapability],
+        *,
+        catalog_schema_hashes,
+        decisions: list[ToolSelectionDecision],
+        deferred,
+        deferred_refs: list[ToolCapabilityRef],
+        dispatch_kinds: dict[str, str],
+        frozen_specs: dict[str, _FrozenCapabilitySpec],
+        inventory_by_name,
+        normalized_workspace_resolution: dict[str, Any],
+        permissions: dict[str, str],
+        raw,
+        task_scope_id: str | None,
+    ):
+        name = str(raw["name"])
+        description = _required(raw.get("description"), f"{name}.description")
+        input_schema = raw.get("input_schema")
+        if not isinstance(input_schema, Mapping):
+            raise TypeError(f"{name}.input_schema must be an object")
+        inventory_item = inventory_by_name[name]
+        permission = _required(
+            _field(inventory_item, "permission_category"),
+            f"{name}.permission_category",
+        )
+        dispatch = _required(_field(inventory_item, "dispatch_kind"), f"{name}.dispatch_kind")
+        source = _required(_field(inventory_item, "source"), f"{name}.source")
+        version = _required(_field(inventory_item, "version"), f"{name}.version")
+        execution_identity = _required(
+            _field(inventory_item, "execution_identity"),
+            f"{name}.execution_identity",
+        )
+        permission_policy_version = _required(
+            _field(
+                inventory_item,
+                "permission_policy_version",
+                SDK_PERMISSION_POLICY_VERSION,
+            ),
+            f"{name}.permission_policy_version",
+        )
+        dangerous = _field(
+            inventory_item,
+            "dangerous",
+            dispatch in {"staged", "control"},
+        )
+        if not isinstance(dangerous, bool):
+            raise TypeError(f"{name}.dangerous must be a boolean")
+        projectless_admission = str(
+            _field(inventory_item, "projectless_admission", "requires_project")
+        )
+        if projectless_admission not in {"safe", "requires_project"}:
+            raise ValueError(f"{name}.projectless_admission is invalid")
+        effect_class, manifest_dangerous = frozen_tool_effect(name, inventory_item)
+        # ``task_scope_id is None`` is the frozen ``primary_route_capable``
+        # fact.  Such a Run may carry the two call-gated families and
+        # nothing else: PROJECT_EFFECT (react barrier + envelope +
+        # EffectGate) and the F-Z1 read family (WorkspaceReadGate).
+        if (
+            normalized_workspace_resolution["kind"] == "projectless"
+            and projectless_admission != "safe"
+            and not (task_scope_id is None and name in _PROJECTLESS_ROUTE_CAPABLE_TOOL_NAMES)
+        ):
+            raise RuntimeError("projectless_catalog_contains_project_tool")
+        function_schema = {
+            "name": name,
+            "description": description,
+            "parameters": dict(input_schema),
+        }
+        schema_hash = canonical_hash(dict(input_schema))
+        if (
+            catalog_schema_hashes is not None
+            and str(catalog_schema_hashes.get(name) or "") != schema_hash
+        ):
+            raise ValueError(f"{name} schema fingerprint differs from catalog")
+        ref = ToolCapabilityRef(
+            capability_id=f"{source}:{name}:{schema_hash[:16]}",
+            name=name,
+            toolset=dispatch,
+            source=source,
+            description=description,
+            schema_hash=schema_hash,
+            spec_version=version,
+            permission_policy_version=permission_policy_version,
+            permission_category=permission,
+            dangerous=dangerous,
+        )
+        capability = PreparedToolCapability(
+            ref,
+            {"type": "function", "function": function_schema},
+        )
+        if name in deferred:
+            deferred_refs.append(ref)
+            decisions.append(ToolSelectionDecision(name, "deferred", "frozen_run_scope"))
+        else:
+            capabilities.append(capability)
+            decisions.append(ToolSelectionDecision(name, "direct", "frozen_run_scope"))
+        frozen_specs[name] = _FrozenCapabilitySpec(
+            name=name,
+            schema=function_schema,
+            schema_hash=schema_hash,
+            spec_version=version,
+            permission_policy_version=permission_policy_version,
+            permission_category=permission,
+            source=source,
+            toolset=dispatch,
+            execution_identity=execution_identity,
+            projectless_admission=projectless_admission,
+            dangerous=dangerous,
+            effect_class=effect_class,
+            manifest_dangerous=manifest_dangerous,
+        )
+        permissions[name] = permission
+        dispatch_kinds[name] = dispatch
+        return inventory_item, name, source
+
+    def _prepared_tool_scope(
+        self,
+        capabilities: list[PreparedToolCapability],
+        *,
+        catalog: Mapping[str, Any],
+        catalog_fingerprint,
+        decisions: list[ToolSelectionDecision],
+        deferred,
+        deferred_refs: list[ToolCapabilityRef],
+        generation,
+        names,
+        scope_seed,
+    ):
+        scope_id = f"sdk-tool-scope:{_canonical_sha256(scope_seed)}"
+        policy_fingerprint = str(catalog.get("policy_fingerprint") or "").strip()
+        if not policy_fingerprint:
+            # Compatibility for historical durable records and isolated unit
+            # fixtures created before the physical policy fingerprint became
+            # part of RunStart authority.
+            policy_fingerprint = _canonical_sha256(
+                {
+                    "kind": "sdk-frozen-product-catalog",
+                    "catalog_fingerprint": catalog_fingerprint,
+                    "direct": sorted(set(names) - deferred),
+                    "deferred": sorted(deferred),
+                }
+            )
+        prepared = PreparedToolSet.create(
+            scope_id=scope_id,
+            revision=1,
+            registry_revision=generation,
+            direct=capabilities,
+            deferred=deferred_refs,
+            activated=(),
+            denied_names=(),
+            policy_fingerprint=policy_fingerprint,
+            decisions=decisions,
+        )
+        return prepared
+
+    def _runtime_tool_records(
+        self,
+        catalog: Mapping[str, Any],
+        *,
+        catalog_fingerprint,
+        deferred,
+        frozen_specs: dict[str, _FrozenCapabilitySpec],
+        generation,
+        raw_specs,
+        resource_records: Sequence[RuntimeCapabilityRecord] | None,
+        run_id: str,
+        unavailable_inventory,
+    ) -> None:
         runtime_records = []
         for raw in raw_specs:
             name = str(raw["name"])
@@ -984,7 +1190,6 @@ class SdkRunToolAuthorityRegistry:
             ),
             run_fault_sink=self._run_fault_sink,
         )
-        return record
 
     def resolve_exposure(self, run_id: object) -> CatalogRunToolExposure:
         key = run_id.value if isinstance(run_id, RunId) else str(run_id)

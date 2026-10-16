@@ -270,81 +270,98 @@ class ProfileTicketMixin(ExecutionUowCore):
         assert isinstance(frozen_request, dict)
         async with self._write_transaction() as db:
             await self._assert_optional_recovery_fence_tx(db, recovery_lease, intent.parent_run_id)
-            ticket_row = await (
-                await db.execute(
-                    """SELECT * FROM execution_profile_launch_tickets
-                    WHERE ticket_ref=?""",
-                    (ticket_ref,),
-                )
-            ).fetchone()
-            if ticket_row is None:
-                raise IdempotencyConflict(
-                    "profile_ticket_missing",
-                    "profile launch ticket does not exist",
-                )
-            ticket = self._row_to_profile_ticket(ticket_row)
-            if fingerprint_json(frozen_request) != ticket.request_fingerprint:
-                raise IdempotencyConflict(
-                    "profile_ticket_fingerprint_conflict",
-                    "launch request fingerprint differs from the issued ticket",
-                )
-            expected_launch = {
-                "profile_key": ticket.profile_key,
-                "parent_run_id": ticket.parent_run_id,
-                "root_run_id": ticket.root_run_id,
-                "task_scope_id": ticket.task_scope_id,
-                "trigger_failure_set_id": ticket.trigger_failure_set_id,
-                "profile_catalog_generation": ticket.profile_catalog_generation,
-            }
-            if any(
-                frozen_request.get(field_name) != expected
-                for field_name, expected in expected_launch.items()
-            ):
-                raise IdempotencyConflict(
-                    "profile_ticket_request_binding_conflict",
-                    "launch request identity differs from the durable ticket",
-                )
-            if (
-                intent.parent_run_id != ticket.parent_run_id
-                or intent.command_id != ticket.child_command_id
-                and ticket.child_command_id is not None
-                or intent.child_run_id != ticket.child_run_id
-                and ticket.child_run_id is not None
-                or intent.child_spec.context.root_run_id != ticket.root_run_id
-                or intent.child_spec.profile_key != ticket.profile_key
-                or intent.child_spec.driver_kind != ticket.driver_kind
-                or intent.capability_snapshot_ref != ticket.capability_snapshot_ref
-            ):
-                raise IdempotencyConflict(
-                    "profile_ticket_child_binding_conflict",
-                    "child command differs from the durable profile ticket",
-                )
-            if ticket.profile_key == "workflow.personal_v1":
-                selection = intent.child_request.get("personal_workflow_selection")
-                if not isinstance(selection, Mapping) or (
-                    str(selection.get("selection_id") or "") != str(ticket.personal_selection_id)
-                    or str(selection.get("selection_fingerprint") or "")
-                    != str(ticket.personal_selection_fingerprint)
-                ):
-                    raise IdempotencyConflict(
-                        "personal_selection_child_binding_conflict",
-                        "child start does not contain the ticket's frozen selection",
-                    )
-
-            parent = await (
-                await db.execute(
-                    "SELECT * FROM execution_runs WHERE run_id=?",
-                    (ticket.parent_run_id,),
-                )
-            ).fetchone()
-            cursor, existing_command, now = await self._claim_profile_launch_command(
-                db,
-                expected_ticket_version=expected_ticket_version,
-                intent=intent,
-                parent=parent,
-                ticket=ticket,
-                ticket_ref=ticket_ref,
+            existing_command, parent, ticket = await self._claim_profile_launch_command(
+                db, frozen_request, intent, ticket_ref
             )
+            if ticket.state is ProfileLaunchTicketState.ISSUED:
+                goal = await (
+                    await db.execute(
+                        "SELECT status FROM execution_task_goals WHERE root_run_id=?",
+                        (ticket.root_run_id,),
+                    )
+                ).fetchone()
+                attempt = await (
+                    await db.execute(
+                        "SELECT status FROM execution_attempt_records WHERE attempt_id=?",
+                        (ticket.attempt_id,),
+                    )
+                ).fetchone()
+                call = await (
+                    await db.execute(
+                        """SELECT admission_state
+                        FROM execution_provider_action_calls
+                        WHERE root_run_id=? AND provider_call_id=?""",
+                        (ticket.root_run_id, ticket.spawn_call_id),
+                    )
+                ).fetchone()
+                if (
+                    goal is None
+                    or attempt is None
+                    or call is None
+                    or str(parent["status"])
+                    in {
+                        RunStatus.COMPLETED.value,
+                        RunStatus.FAILED.value,
+                        RunStatus.CANCELLED.value,
+                    }
+                    or str(goal["status"])
+                    not in {
+                        TaskGoalStatus.ACTIVE.value,
+                        TaskGoalStatus.WAITING_EXTERNAL.value,
+                    }
+                    or str(attempt["status"])
+                    not in {
+                        AttemptStatus.RUNNING.value,
+                        AttemptStatus.WAITING_EXTERNAL.value,
+                    }
+                    or str(call["admission_state"])
+                    not in {
+                        ProviderActionAdmissionState.ADMITTED.value,
+                        ProviderActionAdmissionState.PREPARED.value,
+                        ProviderActionAdmissionState.WAITING_EXTERNAL.value,
+                    }
+                ):
+                    raise TerminalConflict(
+                        "profile_ticket_parent_terminal",
+                        "launch ticket parent boundary is no longer live",
+                    )
+                now = float(self._clock())
+                try:
+                    cursor = await db.execute(
+                        """UPDATE execution_profile_launch_tickets
+                        SET state='consumed',child_command_id=?,child_run_id=?,
+                            ticket_version=ticket_version+1,updated_at=?,
+                            consumed_at=?
+                        WHERE ticket_ref=? AND state='issued'
+                          AND ticket_version=?""",
+                        (
+                            intent.command_id,
+                            intent.child_run_id,
+                            now,
+                            now,
+                            ticket_ref,
+                            expected_ticket_version,
+                        ),
+                    )
+                except aiosqlite.IntegrityError as exc:
+                    raise IdempotencyConflict(
+                        "profile_ticket_child_unique_conflict",
+                        "child identity is already bound to another launch ticket",
+                    ) from exc
+                if cursor.rowcount != 1:
+                    raise VersionConflict(
+                        "profile_ticket_cas_conflict",
+                        "launch ticket consume compare-and-set lost",
+                    )
+                self._fault("profile_ticket_claim_after_ticket_cas")
+            elif (
+                ticket.child_command_id,
+                ticket.child_run_id,
+            ) != (intent.command_id, intent.child_run_id):
+                raise IdempotencyConflict(
+                    "profile_ticket_child_conflict",
+                    "launch ticket already names another child",
+                )
 
             return await self._commit_profile_child_run(
                 db,
@@ -358,15 +375,75 @@ class ProfileTicketMixin(ExecutionUowCore):
             )
 
     async def _claim_profile_launch_command(
-        self,
-        db,
-        *,
-        expected_ticket_version: int,
-        intent: ChildCommandIntent,
-        parent,
-        ticket,
-        ticket_ref: str,
+        self, db, frozen_request, intent: ChildCommandIntent, ticket_ref: str
     ):
+        ticket_row = await (
+            await db.execute(
+                """SELECT * FROM execution_profile_launch_tickets
+                    WHERE ticket_ref=?""",
+                (ticket_ref,),
+            )
+        ).fetchone()
+        if ticket_row is None:
+            raise IdempotencyConflict(
+                "profile_ticket_missing",
+                "profile launch ticket does not exist",
+            )
+        ticket = self._row_to_profile_ticket(ticket_row)
+        if fingerprint_json(frozen_request) != ticket.request_fingerprint:
+            raise IdempotencyConflict(
+                "profile_ticket_fingerprint_conflict",
+                "launch request fingerprint differs from the issued ticket",
+            )
+        expected_launch = {
+            "profile_key": ticket.profile_key,
+            "parent_run_id": ticket.parent_run_id,
+            "root_run_id": ticket.root_run_id,
+            "task_scope_id": ticket.task_scope_id,
+            "trigger_failure_set_id": ticket.trigger_failure_set_id,
+            "profile_catalog_generation": ticket.profile_catalog_generation,
+        }
+        if any(
+            frozen_request.get(field_name) != expected
+            for field_name, expected in expected_launch.items()
+        ):
+            raise IdempotencyConflict(
+                "profile_ticket_request_binding_conflict",
+                "launch request identity differs from the durable ticket",
+            )
+        if (
+            intent.parent_run_id != ticket.parent_run_id
+            or intent.command_id != ticket.child_command_id
+            and ticket.child_command_id is not None
+            or intent.child_run_id != ticket.child_run_id
+            and ticket.child_run_id is not None
+            or intent.child_spec.context.root_run_id != ticket.root_run_id
+            or intent.child_spec.profile_key != ticket.profile_key
+            or intent.child_spec.driver_kind != ticket.driver_kind
+            or intent.capability_snapshot_ref != ticket.capability_snapshot_ref
+        ):
+            raise IdempotencyConflict(
+                "profile_ticket_child_binding_conflict",
+                "child command differs from the durable profile ticket",
+            )
+        if ticket.profile_key == "workflow.personal_v1":
+            selection = intent.child_request.get("personal_workflow_selection")
+            if not isinstance(selection, Mapping) or (
+                str(selection.get("selection_id") or "") != str(ticket.personal_selection_id)
+                or str(selection.get("selection_fingerprint") or "")
+                != str(ticket.personal_selection_fingerprint)
+            ):
+                raise IdempotencyConflict(
+                    "personal_selection_child_binding_conflict",
+                    "child start does not contain the ticket's frozen selection",
+                )
+
+        parent = await (
+            await db.execute(
+                "SELECT * FROM execution_runs WHERE run_id=?",
+                (ticket.parent_run_id,),
+            )
+        ).fetchone()
         if parent is None:
             raise RunNotFound("parent_not_found", "delegate parent must already be durable")
         existing_command = await (
@@ -397,96 +474,7 @@ class ProfileTicketMixin(ExecutionUowCore):
                 "profile_ticket_cancelled",
                 "cancelled profile launch ticket cannot create a child",
             )
-        if ticket.state is ProfileLaunchTicketState.ISSUED:
-            goal = await (
-                await db.execute(
-                    "SELECT status FROM execution_task_goals WHERE root_run_id=?",
-                    (ticket.root_run_id,),
-                )
-            ).fetchone()
-            attempt = await (
-                await db.execute(
-                    "SELECT status FROM execution_attempt_records WHERE attempt_id=?",
-                    (ticket.attempt_id,),
-                )
-            ).fetchone()
-            call = await (
-                await db.execute(
-                    """SELECT admission_state
-                        FROM execution_provider_action_calls
-                        WHERE root_run_id=? AND provider_call_id=?""",
-                    (ticket.root_run_id, ticket.spawn_call_id),
-                )
-            ).fetchone()
-            if (
-                goal is None
-                or attempt is None
-                or call is None
-                or str(parent["status"])
-                in {
-                    RunStatus.COMPLETED.value,
-                    RunStatus.FAILED.value,
-                    RunStatus.CANCELLED.value,
-                }
-                or str(goal["status"])
-                not in {
-                    TaskGoalStatus.ACTIVE.value,
-                    TaskGoalStatus.WAITING_EXTERNAL.value,
-                }
-                or str(attempt["status"])
-                not in {
-                    AttemptStatus.RUNNING.value,
-                    AttemptStatus.WAITING_EXTERNAL.value,
-                }
-                or str(call["admission_state"])
-                not in {
-                    ProviderActionAdmissionState.ADMITTED.value,
-                    ProviderActionAdmissionState.PREPARED.value,
-                    ProviderActionAdmissionState.WAITING_EXTERNAL.value,
-                }
-            ):
-                raise TerminalConflict(
-                    "profile_ticket_parent_terminal",
-                    "launch ticket parent boundary is no longer live",
-                )
-            now = float(self._clock())
-            try:
-                cursor = await db.execute(
-                    """UPDATE execution_profile_launch_tickets
-                        SET state='consumed',child_command_id=?,child_run_id=?,
-                            ticket_version=ticket_version+1,updated_at=?,
-                            consumed_at=?
-                        WHERE ticket_ref=? AND state='issued'
-                          AND ticket_version=?""",
-                    (
-                        intent.command_id,
-                        intent.child_run_id,
-                        now,
-                        now,
-                        ticket_ref,
-                        expected_ticket_version,
-                    ),
-                )
-            except aiosqlite.IntegrityError as exc:
-                raise IdempotencyConflict(
-                    "profile_ticket_child_unique_conflict",
-                    "child identity is already bound to another launch ticket",
-                ) from exc
-            if cursor.rowcount != 1:
-                raise VersionConflict(
-                    "profile_ticket_cas_conflict",
-                    "launch ticket consume compare-and-set lost",
-                )
-            self._fault("profile_ticket_claim_after_ticket_cas")
-        elif (
-            ticket.child_command_id,
-            ticket.child_run_id,
-        ) != (intent.command_id, intent.child_run_id):
-            raise IdempotencyConflict(
-                "profile_ticket_child_conflict",
-                "launch ticket already names another child",
-            )
-        return cursor, existing_command, now
+        return existing_command, parent, ticket
 
     async def _commit_profile_child_run(
         self,

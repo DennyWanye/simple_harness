@@ -288,14 +288,13 @@ class V6SnapshotMixin(ResearchRepositoryCore):
                 "v6_snapshot_object_invalid", "v6 snapshot top-level object is invalid"
             ) from exc
 
-        expected_kinds, ref = await self._validate_v6_snapshot_batches(
+        expected_kinds = await self._validate_v6_snapshot_batches(
             assessment,
             batches_raw=batches_raw,
             claim=claim,
             parent_run_id=parent_run_id,
             policies=policies,
             read_json=read_json,
-            ref=ref,
             spec=spec,
             value=value,
         )
@@ -427,7 +426,6 @@ class V6SnapshotMixin(ResearchRepositoryCore):
         parent_run_id: str,
         policies,
         read_json,
-        ref,
         spec,
         value: Mapping[str, Any],
     ):
@@ -518,7 +516,7 @@ class V6SnapshotMixin(ResearchRepositoryCore):
             raise ResearchRepositoryError(
                 "v6_snapshot_cross_hash_invalid", "v6 snapshot semantic cross-hash differs"
             )
-        return expected_kinds, ref
+        return expected_kinds
 
     def _v6_snapshot_policies(self, parent_run_id: str, value: Mapping[str, Any]):
         if set(value) != _V6_SNAPSHOT_KEYS:

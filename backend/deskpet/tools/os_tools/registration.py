@@ -62,6 +62,150 @@ def register_os_tools(registry) -> None:  # type: ignore[no-untyped-def]
     Idempotent — re-registration replaces (with the existing warning
     log). Safe to call from main.py at startup.
     """
+    _register_file_read_tools(registry)
+
+    registry.register(
+        name="run_shell",
+        toolset="os",
+        schema=_schema(
+            "run_shell",
+            (
+                "Execute a shell command. On Windows the runtime auto-picks the "
+                "best shell available: Git Bash (preferred) → bundled busybox sh "
+                "→ PowerShell → cmd. Use Linux-style commands (ls / grep / sed / "
+                "awk / find / cat / curl all work via Git Bash or busybox); "
+                "forward-slash paths are accepted. Captures stdout/stderr/"
+                "exit_code. Default timeout 30s. For a long-lived GUI app or "
+                "server, prefer process_start (or app_launch) so this call can "
+                "return immediately; a trailing POSIX '&' is detached from "
+                "run_shell's stdio as a compatibility fallback. Asks user "
+                "permission first."
+            ),
+            {
+                "command": {
+                    "type": "string",
+                    "maxLength": 2000,
+                    "description": "Shell command, maximum 2000 characters. Never embed whole file bodies or heredocs here; use write_file with mode=append in chunks.",
+                },
+                "cwd": {"type": "string"},
+                "timeout": {"type": "integer", "default": 30},
+            },
+            ["command"],
+        ),
+        handler=run_shell,
+        context_handler=bind_context_handler(run_shell),
+        permission_category="shell",
+        resource_scope_resolver=run_shell_scope,
+        resource_scope_resolver_id="builtin:os:run_shell",
+        dangerous=True,
+        # P5-S1: shell commands can legitimately take a while (pip install,
+        # cargo build). 5 minutes is the operative wall — the supervisor
+        # watchdog still sits one level above this and will catch true
+        # hangs at the 15-minute session-inactivity threshold.
+        timeout_seconds=300.0,
+        concurrency_safe=False,  # G3: arbitrary shell side effects — serialize
+    )
+
+    # NOTE: ``web_fetch`` is intentionally NOT registered here — the
+    # full-featured implementation lives in ``deskpet/tools/web_tools.py``
+    # (with robots.txt, rate-limiting, and 429 block-cache). We patch
+    # *that* spec to set the network permission_category instead of
+    # overwriting it with our minimal version.
+    existing = registry.get("web_fetch")
+    if existing is not None and existing.permission_category != "network":
+        # Re-register through the public API so the warning appears
+        # once per startup (matches the existing convention).
+        # WI-T4.1 v3 (MR-T-11-6): 这是一次「显式覆盖」（patch 既有 spec
+        # 的 permission_category），双方必须有一方 opt-in replace_allowed
+        # 否则 register 会抛 ToolNameConflictError → 整个 v2 init 失败
+        # → plugin/permission gate 一并降级（main.py:508-516 except 分支）。
+        registry.register(
+            name="web_fetch",
+            toolset=existing.toolset,
+            schema=existing.schema,
+            handler=existing.handler,
+            context_handler=existing.context_handler,
+            check_fn=existing.check_fn,
+            requires_env=list(existing.requires_env),
+            permission_category="network",
+            source=existing.source,
+            dangerous=existing.dangerous,
+            resource_scope_resolver=web_fetch_scope,
+            resource_scope_resolver_id="builtin:os:web_fetch",
+            replace_allowed=True,
+        )
+
+    _register_desktop_file_tools(registry)
+
+    registry.register(
+        name="app_discover",
+        toolset="os",
+        schema=_schema(
+            "app_discover",
+            "Discover launch candidates and report a separate launchability probe.",
+            {"query": {"type": "string"}},
+            ["query"],
+        ),
+        handler=app_discover,
+        context_handler=bind_context_handler(app_discover),
+        permission_category="read_file",
+    )
+
+    registry.register(
+        name="app_launch",
+        toolset="os",
+        schema=_schema(
+            "app_launch",
+            "Launch a discovered application with argv and verify the PID identity afterward.",
+            {
+                "app": {"type": "string"},
+                "argv": {"type": "array", "items": {"type": "string"}, "default": []},
+                "cwd": {"type": "string"},
+                "environment": {
+                    "type": "object",
+                    "additionalProperties": {"type": "string"},
+                },
+            },
+            ["app", "argv"],
+        ),
+        handler=app_launch,
+        context_handler=bind_context_handler(app_launch),
+        permission_category="shell",
+        resource_scope_resolver=app_launch_scope,
+        resource_scope_resolver_id="builtin:os:app_launch",
+        dangerous=True,
+        concurrency_safe=False,
+    )
+
+    registry.register(
+        name="download_file",
+        toolset="os",
+        schema=_schema(
+            "download_file",
+            "Download one http/https URL with a hard byte cap, optional SHA-256, and atomic publish.",
+            {
+                "url": {"type": "string"},
+                "destination": {"type": "string"},
+                "expected_sha256": {
+                    "type": "string",
+                    "pattern": "^[0-9a-fA-F]{64}$",
+                },
+                "max_bytes": {"type": "integer", "minimum": 1},
+                "require_hash": {"type": "boolean", "default": False},
+                "overwrite": {"type": "boolean", "default": False},
+            },
+            ["url", "destination", "max_bytes"],
+        ),
+        handler=download_file,
+        context_handler=bind_context_handler(download_file),
+        permission_category="network",
+        resource_scope_resolver=download_file_scope,
+        resource_scope_resolver_id="builtin:os:download_file",
+        concurrency_safe=False,
+    )
+
+
+def _register_file_read_tools(registry) -> None:
     registry.register(
         name="read_file",
         toolset="os",
@@ -188,77 +332,8 @@ def register_os_tools(registry) -> None:  # type: ignore[no-untyped-def]
         resource_scope_resolver_id="builtin:os:register_artifacts",
     )
 
-    registry.register(
-        name="run_shell",
-        toolset="os",
-        schema=_schema(
-            "run_shell",
-            (
-                "Execute a shell command. On Windows the runtime auto-picks the "
-                "best shell available: Git Bash (preferred) → bundled busybox sh "
-                "→ PowerShell → cmd. Use Linux-style commands (ls / grep / sed / "
-                "awk / find / cat / curl all work via Git Bash or busybox); "
-                "forward-slash paths are accepted. Captures stdout/stderr/"
-                "exit_code. Default timeout 30s. For a long-lived GUI app or "
-                "server, prefer process_start (or app_launch) so this call can "
-                "return immediately; a trailing POSIX '&' is detached from "
-                "run_shell's stdio as a compatibility fallback. Asks user "
-                "permission first."
-            ),
-            {
-                "command": {
-                    "type": "string",
-                    "maxLength": 2000,
-                    "description": "Shell command, maximum 2000 characters. Never embed whole file bodies or heredocs here; use write_file with mode=append in chunks.",
-                },
-                "cwd": {"type": "string"},
-                "timeout": {"type": "integer", "default": 30},
-            },
-            ["command"],
-        ),
-        handler=run_shell,
-        context_handler=bind_context_handler(run_shell),
-        permission_category="shell",
-        resource_scope_resolver=run_shell_scope,
-        resource_scope_resolver_id="builtin:os:run_shell",
-        dangerous=True,
-        # P5-S1: shell commands can legitimately take a while (pip install,
-        # cargo build). 5 minutes is the operative wall — the supervisor
-        # watchdog still sits one level above this and will catch true
-        # hangs at the 15-minute session-inactivity threshold.
-        timeout_seconds=300.0,
-        concurrency_safe=False,  # G3: arbitrary shell side effects — serialize
-    )
 
-    # NOTE: ``web_fetch`` is intentionally NOT registered here — the
-    # full-featured implementation lives in ``deskpet/tools/web_tools.py``
-    # (with robots.txt, rate-limiting, and 429 block-cache). We patch
-    # *that* spec to set the network permission_category instead of
-    # overwriting it with our minimal version.
-    existing = registry.get("web_fetch")
-    if existing is not None and existing.permission_category != "network":
-        # Re-register through the public API so the warning appears
-        # once per startup (matches the existing convention).
-        # WI-T4.1 v3 (MR-T-11-6): 这是一次「显式覆盖」（patch 既有 spec
-        # 的 permission_category），双方必须有一方 opt-in replace_allowed
-        # 否则 register 会抛 ToolNameConflictError → 整个 v2 init 失败
-        # → plugin/permission gate 一并降级（main.py:508-516 except 分支）。
-        registry.register(
-            name="web_fetch",
-            toolset=existing.toolset,
-            schema=existing.schema,
-            handler=existing.handler,
-            context_handler=existing.context_handler,
-            check_fn=existing.check_fn,
-            requires_env=list(existing.requires_env),
-            permission_category="network",
-            source=existing.source,
-            dangerous=existing.dangerous,
-            resource_scope_resolver=web_fetch_scope,
-            resource_scope_resolver_id="builtin:os:web_fetch",
-            replace_allowed=True,
-        )
-
+def _register_desktop_file_tools(registry) -> None:
     registry.register(
         name="desktop_create_file",
         toolset="os",
@@ -394,72 +469,5 @@ def register_os_tools(registry) -> None:  # type: ignore[no-untyped-def]
         resource_scope_resolver=process_stop_scope,
         resource_scope_resolver_id="builtin:os:process_stop",
         dangerous=True,
-        concurrency_safe=False,
-    )
-
-    registry.register(
-        name="app_discover",
-        toolset="os",
-        schema=_schema(
-            "app_discover",
-            "Discover launch candidates and report a separate launchability probe.",
-            {"query": {"type": "string"}},
-            ["query"],
-        ),
-        handler=app_discover,
-        context_handler=bind_context_handler(app_discover),
-        permission_category="read_file",
-    )
-
-    registry.register(
-        name="app_launch",
-        toolset="os",
-        schema=_schema(
-            "app_launch",
-            "Launch a discovered application with argv and verify the PID identity afterward.",
-            {
-                "app": {"type": "string"},
-                "argv": {"type": "array", "items": {"type": "string"}, "default": []},
-                "cwd": {"type": "string"},
-                "environment": {
-                    "type": "object",
-                    "additionalProperties": {"type": "string"},
-                },
-            },
-            ["app", "argv"],
-        ),
-        handler=app_launch,
-        context_handler=bind_context_handler(app_launch),
-        permission_category="shell",
-        resource_scope_resolver=app_launch_scope,
-        resource_scope_resolver_id="builtin:os:app_launch",
-        dangerous=True,
-        concurrency_safe=False,
-    )
-
-    registry.register(
-        name="download_file",
-        toolset="os",
-        schema=_schema(
-            "download_file",
-            "Download one http/https URL with a hard byte cap, optional SHA-256, and atomic publish.",
-            {
-                "url": {"type": "string"},
-                "destination": {"type": "string"},
-                "expected_sha256": {
-                    "type": "string",
-                    "pattern": "^[0-9a-fA-F]{64}$",
-                },
-                "max_bytes": {"type": "integer", "minimum": 1},
-                "require_hash": {"type": "boolean", "default": False},
-                "overwrite": {"type": "boolean", "default": False},
-            },
-            ["url", "destination", "max_bytes"],
-        ),
-        handler=download_file,
-        context_handler=bind_context_handler(download_file),
-        permission_category="network",
-        resource_scope_resolver=download_file_scope,
-        resource_scope_resolver_id="builtin:os:download_file",
         concurrency_safe=False,
     )

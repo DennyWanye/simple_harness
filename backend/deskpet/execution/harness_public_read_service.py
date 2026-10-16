@@ -749,85 +749,7 @@ class HarnessPublicReadService:
                 )
             )
 
-        table_specs = (
-            (
-                "execution_attempt_records",
-                "attempt_id",
-                "created_at",
-                "attempt",
-                (
-                    "run_id",
-                    "status",
-                    "plan_version",
-                    "provider_turn_id",
-                    "provider_batch_id",
-                    "trigger_failure_set_id",
-                    "supersedes_attempt_id",
-                ),
-            ),
-            (
-                "execution_provider_action_batches",
-                "provider_batch_id",
-                "created_at",
-                "provider",
-                ("status", "failure_set_id", "provider_turn_id"),
-            ),
-            (
-                "execution_provider_action_calls",
-                "call_record_id",
-                "created_at",
-                "tool",
-                (
-                    "provider_batch_id",
-                    "provider_call_id",
-                    "raw_tool_name",
-                    "admission_state",
-                    "terminal_outcome_ref",
-                ),
-            ),
-            (
-                "execution_task_failure_reports",
-                "report_ref",
-                "created_at",
-                "failure_report",
-                (
-                    "run_id",
-                    "attempt_id",
-                    "plan_version",
-                    "failure_set_id",
-                    "child_run_id",
-                    "reason_code",
-                    "evidence_refs_json",
-                ),
-            ),
-            (
-                "execution_attempt_failure_sets",
-                "failure_set_id",
-                "created_at",
-                "failure_set",
-                ("failed_attempt_id", "primary_report_ref", "provider_resume_state"),
-            ),
-            (
-                "execution_task_external_waits",
-                "wait_ref",
-                "created_at",
-                "boundary",
-                ("attempt_id", "wait_kind", "state", "evidence_refs_json"),
-            ),
-            (
-                "execution_run_block_signals",
-                "signal_id",
-                "created_at",
-                "block_signal",
-                (
-                    "root_run_id",
-                    "reason_code",
-                    "evidence_refs_json",
-                    "producer",
-                    "created_event_id",
-                ),
-            ),
-        )
+        table_specs = self._workflow_fact_table_specs()
         for table, identity, created, kind, fields in table_specs:
             if not await self._table_exists(db, table):
                 continue
@@ -902,6 +824,19 @@ class HarnessPublicReadService:
                     )
                 facts.append(self._fact(kind, row[identity], root_run_id, row[created], payload))
 
+        return await self._decision_effect_and_provider_facts(
+            db, facts=facts, placeholders=placeholders, root_run_id=root_run_id, run_ids=run_ids
+        )
+
+    async def _decision_effect_and_provider_facts(
+        self,
+        db: aiosqlite.Connection,
+        *,
+        facts: list[PublicFactEnvelope],
+        placeholders: str,
+        root_run_id: str,
+        run_ids: tuple[str, ...],
+    ) -> list[PublicFactEnvelope]:
         if await self._table_exists(db, "execution_decisions"):
             rows = await (
                 await db.execute(
@@ -999,6 +934,101 @@ class HarnessPublicReadService:
                 projection["parent_refs"] = node_refs
             facts.append(self._fact("tool", effect_id, root_run_id, row["created_at"], projection))
 
+        return await self._provider_invocation_facts(
+            db, facts=facts, placeholders=placeholders, root_run_id=root_run_id, run_ids=run_ids
+        )
+
+    def _workflow_fact_table_specs(self):
+        table_specs = (
+            (
+                "execution_attempt_records",
+                "attempt_id",
+                "created_at",
+                "attempt",
+                (
+                    "run_id",
+                    "status",
+                    "plan_version",
+                    "provider_turn_id",
+                    "provider_batch_id",
+                    "trigger_failure_set_id",
+                    "supersedes_attempt_id",
+                ),
+            ),
+            (
+                "execution_provider_action_batches",
+                "provider_batch_id",
+                "created_at",
+                "provider",
+                ("status", "failure_set_id", "provider_turn_id"),
+            ),
+            (
+                "execution_provider_action_calls",
+                "call_record_id",
+                "created_at",
+                "tool",
+                (
+                    "provider_batch_id",
+                    "provider_call_id",
+                    "raw_tool_name",
+                    "admission_state",
+                    "terminal_outcome_ref",
+                ),
+            ),
+            (
+                "execution_task_failure_reports",
+                "report_ref",
+                "created_at",
+                "failure_report",
+                (
+                    "run_id",
+                    "attempt_id",
+                    "plan_version",
+                    "failure_set_id",
+                    "child_run_id",
+                    "reason_code",
+                    "evidence_refs_json",
+                ),
+            ),
+            (
+                "execution_attempt_failure_sets",
+                "failure_set_id",
+                "created_at",
+                "failure_set",
+                ("failed_attempt_id", "primary_report_ref", "provider_resume_state"),
+            ),
+            (
+                "execution_task_external_waits",
+                "wait_ref",
+                "created_at",
+                "boundary",
+                ("attempt_id", "wait_kind", "state", "evidence_refs_json"),
+            ),
+            (
+                "execution_run_block_signals",
+                "signal_id",
+                "created_at",
+                "block_signal",
+                (
+                    "root_run_id",
+                    "reason_code",
+                    "evidence_refs_json",
+                    "producer",
+                    "created_event_id",
+                ),
+            ),
+        )
+        return table_specs
+
+    async def _provider_invocation_facts(
+        self,
+        db: aiosqlite.Connection,
+        *,
+        facts: list[PublicFactEnvelope],
+        placeholders: str,
+        root_run_id: str,
+        run_ids: tuple[str, ...],
+    ) -> list[PublicFactEnvelope]:
         rows = await (
             await db.execute(
                 f"SELECT * FROM execution_provider_invocations WHERE run_id IN ({placeholders}) ORDER BY updated_at,invocation_id",
