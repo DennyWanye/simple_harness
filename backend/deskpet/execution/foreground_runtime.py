@@ -59,9 +59,9 @@ from deskpet.execution.preparation_rejection import PreparationDisclosureRejecte
 from deskpet.execution.primary_dependencies import read_run_dependencies
 from deskpet.execution.primary_dependency_proof import parse_dependencies
 from deskpet.execution.primary_history import record_terminal_observation
+from deskpet.memory.disclosure_records import TrustedDisclosureError
 from deskpet.memory.primary_tool_causality import PrimaryToolCausalityUnavailable
 from deskpet.memory.primary_visibility import cause_fields
-from deskpet.memory.trusted_disclosure import TrustedDisclosureError
 from deskpet.sdk_adapters.ingress import SdkRuntimeIngress
 from deskpet.task_scope.protocol import canonical_hash, redact_credential_shapes
 
@@ -2069,7 +2069,6 @@ class SqliteSdkTerminalObserver:
                 await authority_cursor.close()
             else:
                 authority = None
-        # 按需导入：循环依赖（foreground_runtime ↔ evidence_ingress）
         return await self._ingest_observed_evidence(
             authority,
             effective_scope=effective_scope,

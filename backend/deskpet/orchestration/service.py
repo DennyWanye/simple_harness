@@ -18,7 +18,10 @@ be taken over).
 
 from __future__ import annotations
 
-from .service_domains.commands import RECOVERY_ISOLATED_NOTE as RECOVERY_ISOLATED_NOTE
+from deskpet.orchestration.service_domains.support import (
+    RECOVERY_ISOLATED_NOTE as RECOVERY_ISOLATED_NOTE,
+)
+
 from .service_domains.commands import CommandMixin
 from .service_domains.commands import _with_publish_sources as _with_publish_sources
 from .service_domains.core import TENANT

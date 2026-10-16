@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
-from deskpet.execution.foreground_queue import ForegroundQueueError, _clock_value
+from deskpet.execution.foreground_queue_domains.support import ForegroundQueueError, _clock_value
 from deskpet.memory.primary_visibility import read_evidence_pair
 from deskpet.memory.writer_fence import assert_human_memory_ingress_open_tx
 from deskpet.task_scope.protocol import (

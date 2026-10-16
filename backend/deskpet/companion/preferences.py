@@ -19,7 +19,7 @@ from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from deskpet.execution.provider_workloads import (
     ProviderWorkloadContext,
@@ -36,7 +36,10 @@ from .contracts import (
     OwnerRef,
     RunGrowthSnapshot,
 )
-from .store import CompanionStore, canonical_hash, canonical_json
+from .store_domains.support import canonical_hash, canonical_json
+
+if TYPE_CHECKING:
+    from .store import CompanionStore
 
 logger = logging.getLogger(__name__)
 

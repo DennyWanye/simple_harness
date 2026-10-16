@@ -8,7 +8,7 @@ import json
 from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
-from deskpet.memory import trusted_disclosure
+from deskpet.memory import disclosure_records, trusted_disclosure
 from deskpet.memory.current_input_source import build_input_use, validate_input_use
 from deskpet.memory.human_memory_program import HumanMemoryProgramStore
 from deskpet.memory.writer_fence import (
@@ -116,7 +116,7 @@ class EnqueueMixin(ForegroundQueueCore):
                     None if existing is None else json.loads(str(existing["turn_json"]))
                 )
                 if existing_request is not None and "disclosure_binding" in existing_request:
-                    current = await trusted_disclosure.current_record_tx(db, subject)
+                    current = await disclosure_records.current_record_tx(db, subject)
                     selected_ref = disclosure_binding_ref or (
                         None if current is None else current["binding_ref"]
                     )
@@ -127,7 +127,7 @@ class EnqueueMixin(ForegroundQueueCore):
                 input_use = None
                 if input_declaration is not None:
                     require_authenticated_host_snapshot(input_auth)
-                    current = await trusted_disclosure.current_record_tx(db, subject)
+                    current = await disclosure_records.current_record_tx(db, subject)
                     if (
                         current is None
                         or disclosure_binding_ref != current["binding_ref"]

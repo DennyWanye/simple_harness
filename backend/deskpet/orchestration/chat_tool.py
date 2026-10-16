@@ -19,7 +19,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from typing import Any
 
-from .service import RECOVERY_ISOLATED_NOTE, OrchestrationRequestError
+from .service_domains.support import _STATUS_ZH, RECOVERY_ISOLATED_NOTE, OrchestrationRequestError
 
 MISSION_START_TOOL_NAME = "mission_start"
 MAX_CRITERIA = 12
@@ -220,14 +220,6 @@ MISSION_STATUS_SCHEMA: dict[str, Any] = {
     "additionalProperties": False,
 }
 
-_STATUS_ZH = {
-    "CREATED": "已创建，等确认",
-    "PLANNING": "规划中",
-    "ACTIVE": "进行中",
-    "COMPLETED": "已完成",
-    "FAILED": "未完成（已停止）",
-    "CANCELLED": "已取消",
-}
 _DONE_TASKS = frozenset({"COMPLETED", "SUCCEEDED", "ACCEPTED"})
 
 

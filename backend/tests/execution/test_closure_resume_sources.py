@@ -118,7 +118,7 @@ async def test_nonempty_resume_actual_producer_to_next_closure(tmp_path, monkeyp
     try:
         if producer == "fallback_commit_fault":
             from deskpet.memory.human_memory_program import HumanMemoryProgramStore
-            from deskpet.task_scope.mutation_disclosure import RESULT_POLICY
+            from deskpet.task_scope.closure_result_source import RESULT_POLICY
 
             append = HumanMemoryProgramStore.append_evidence_tx
 

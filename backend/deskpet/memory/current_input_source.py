@@ -12,8 +12,8 @@ from base64 import b64decode, urlsafe_b64encode
 
 import aiosqlite
 
+from deskpet.memory.disclosure_records import binding_token, current_record_tx
 from deskpet.memory.primary_visibility import read_evidence_pair
-from deskpet.memory.trusted_disclosure import binding_token, current_record_tx
 from deskpet.memory.writer_fence import require_authenticated_host_snapshot
 from deskpet.task_scope.protocol import canonical_hash, digest, identifier
 

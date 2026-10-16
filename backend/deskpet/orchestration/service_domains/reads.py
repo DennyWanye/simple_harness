@@ -11,8 +11,10 @@ from typing import Any
 from agent_orchestrator.orchestrator import planning_selection
 from agent_orchestrator.storage import planning_decision_store, planning_human_store
 
+from ..assurance import read_assurance
 from ..diagnostics import taskgraph_history
 from ..projection import project_approval, project_detail, project_events, ui_state
+from ..taskgraph import operate_taskgraph, read_taskgraph
 from .core import OrchestrationServiceCore
 from .support import TERMINAL, OrchestrationRequestError
 
@@ -143,20 +145,14 @@ class ReadMixin(OrchestrationServiceCore):
             return detail
 
     def taskgraph_read(self, operation: str, request: Mapping[str, Any]) -> dict[str, Any]:
-        # 按需导入：循环依赖（service ↔ taskgraph）
-        from ..taskgraph import read_taskgraph
 
         return read_taskgraph(self, operation, request)
 
     def taskgraph_operate(self, verb: str, request: Mapping[str, Any]) -> dict[str, Any]:
-        # 按需导入：循环依赖（service ↔ taskgraph）
-        from ..taskgraph import operate_taskgraph
 
         return operate_taskgraph(self, verb, request)
 
     def assurance_read(self, verb: str, request: Mapping[str, Any]) -> dict[str, Any]:
-        # 按需导入：循环依赖（service ↔ assurance）
-        from ..assurance import read_assurance
 
         return read_assurance(self, verb, request)
 

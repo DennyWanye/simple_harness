@@ -23,7 +23,7 @@ from agent_orchestrator.api.facade import FacadeError
 from deskpet.sdk_adapters.sdk_candidate import SDK_VERSION, SDK_WHEEL_SHA256
 
 from .manifest import _host_commit, _host_dirty
-from .service import OrchestrationRequestError
+from .service_domains.support import OrchestrationRequestError
 
 logger = logging.getLogger(__name__)
 

@@ -10,6 +10,7 @@ from typing import Any
 
 from ..contracts import CompanionConflictError, CompanionStateError, GrowthEvent, OwnerRef
 from ..growth import GrowthEvidenceV1
+from ..preferences import apply_preference_event_db
 from .core import CompanionStoreCore
 from .support import canonical_hash, canonical_json
 
@@ -186,9 +187,6 @@ class GrowthEventMixin(CompanionStoreCore):
         method owns the only write transaction and exposes no connection or
         private mutation primitive to the resolver.
         """
-
-        # 按需导入：循环依赖（store ↔ preferences）
-        from ..preferences import apply_preference_event_db
 
         now = self._now()
         with self._write() as db:

@@ -2,8 +2,9 @@
 
 import json
 
-from deskpet.execution.foreground_queue import ForegroundQueueError, _clock_value
-from deskpet.memory.trusted_disclosure import binding_token, bound_record_tx, current_record_tx
+from deskpet.execution.foreground_queue_domains.support import ForegroundQueueError, _clock_value
+from deskpet.memory.disclosure_records import binding_token, current_record_tx
+from deskpet.memory.trusted_disclosure import bound_record_tx
 from deskpet.memory.writer_fence import assert_human_memory_ingress_open_tx
 from deskpet.task_scope.protocol import canonical_hash, canonical_json, digest
 

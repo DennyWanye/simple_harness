@@ -21,3 +21,18 @@ class OrchestrationRequestError(RuntimeError):
     def __init__(self, code: str, message: str) -> None:
         super().__init__(message)
         self.code = code
+
+
+#: 重启恢复第 3 步把"库与自己历史对不上"的任务单独隔离（SDK ``recovery_status().isolated_missions``）；
+#: 列表、详情、主对话都用这一句告诉人（第 2 批车道 R）。
+RECOVERY_ISOLATED_NOTE = "重启核对没通过，已隔离，不再推进；可以取消"
+
+
+_STATUS_ZH = {
+    "CREATED": "已创建，等确认",
+    "PLANNING": "规划中",
+    "ACTIVE": "进行中",
+    "COMPLETED": "已完成",
+    "FAILED": "未完成（已停止）",
+    "CANCELLED": "已取消",
+}

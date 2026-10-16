@@ -13,13 +13,12 @@ from agent_orchestrator.api.facade import FacadeError
 from agent_orchestrator.observability.secrets import find_secrets
 from agent_orchestrator.orchestrator.event_handler import ACTION_SETTLED_AFTER_STOP
 
+from deskpet.orchestration.service_domains.support import _STATUS_ZH, RECOVERY_ISOLATED_NOTE
+
 from ..notices import NoticeNotFound
 from .core import OrchestrationServiceCore
 from .support import OrchestrationRequestError
 
-#: 重启恢复第 3 步把"库与自己历史对不上"的任务单独隔离（SDK ``recovery_status().isolated_missions``）；
-#: 列表、详情、主对话都用这一句告诉人（第 2 批车道 R）。
-RECOVERY_ISOLATED_NOTE = "重启核对没通过，已隔离，不再推进；可以取消"
 FACADE_CODES = {
     "invalid_request": "invalid_request",
     "conflict": "conflict",
@@ -414,9 +413,6 @@ class CommandMixin(OrchestrationServiceCore):
     def pending_notices(self, _body: Mapping[str, Any] | None = None) -> list[dict[str, Any]]:
         """Notices the person has not acknowledged yet, newest last, with the Mission's
         current status (a notice names the final event; the status is read now)."""
-
-        # 按需导入：循环依赖（service ↔ chat_tool）
-        from ..chat_tool import _STATUS_ZH
 
         # 第 2 批 U04：每次拉列表（前端重连后会重新拉）先从已读序号续读，断线期间丢的推送补回来
         self._notices.catch_up(self._orchestrator.store)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from ..contracts import CompanionStateError, OwnerRef
+from ..preferences import recompute_preferences_after_forget_db
 from .core import CompanionStoreCore
 from .support import canonical_hash, canonical_json
 
@@ -57,8 +58,6 @@ class GrowthForgettingMixin(CompanionStoreCore):
             # transaction with the event tombstone.  A second async writer
             # would leave a crash window where a forgotten preference still
             # influences a new Run.
-            # 按需导入：循环依赖（store ↔ preferences）
-            from ..preferences import recompute_preferences_after_forget_db
 
             recompute_preferences_after_forget_db(
                 db,

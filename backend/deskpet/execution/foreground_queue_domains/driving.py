@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+from deskpet.execution.preparation_rejection import settle_preparation_rejection
 from deskpet.memory.recovery_work_items import is_human_memory_work_item_parked_tx
 from deskpet.memory.writer_fence import assert_human_memory_ingress_open_tx
 from deskpet.task_scope.protocol import canonical_hash, canonical_json, identifier
@@ -682,8 +683,6 @@ class DrivingMixin(ForegroundQueueCore):
         return snapshot
 
     async def settle_preparation_rejection(self, *, rejection, owner_id, generation):
-        # 按需导入：循环依赖（foreground_queue ↔ preparation_rejection）
-        from deskpet.execution.preparation_rejection import settle_preparation_rejection
 
         return await settle_preparation_rejection(
             self,

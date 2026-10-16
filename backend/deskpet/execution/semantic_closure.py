@@ -77,7 +77,7 @@ from deskpet.sdk_adapters.task_scope_mutation import (
     _disclosure,
 )
 from deskpet.sdk_adapters.tool_authority import PROJECT_EFFECT_TOOL_NAMES
-from deskpet.task_scope.mutation_disclosure import record_closure_result_tx
+from deskpet.task_scope.closure_result_source import record_closure_result_tx
 from deskpet.task_scope.projection_sources import append_projection_source_tx
 from deskpet.task_scope.protocol import canonical_hash, canonical_json
 from deskpet.task_scope.store import CanonicalTaskScopeStore

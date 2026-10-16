@@ -207,6 +207,10 @@ async def _legacy_v45_with_run(tmp_path: Path, monkeypatch, *, waiting: bool):  
 
     monkeypatch.setattr(trusted_disclosure, "enqueue_binding_tx", _absent_in_v45)
     monkeypatch.setattr(admission_rejection, "read_admission_rejection_tx", _absent_in_v45)
+    # 前台队列在模块顶部导入了这个函数（阶段 6E 解环），读取处在那里，一并替换
+    from deskpet.execution.foreground_queue_domains import core as queue_core
+
+    monkeypatch.setattr(queue_core, "read_admission_rejection_tx", _absent_in_v45)
     queue_db, primary_id, clock = await fq._ready(tmp_path / "queue")
     assert _user_version(queue_db) == 45
     store = ForegroundQueueStore(queue_db, clock=clock)

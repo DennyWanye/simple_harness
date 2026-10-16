@@ -10,7 +10,7 @@ from typing import Any
 
 from agent_orchestrator.storage.store import StoreError
 
-from .service import OrchestrationRequestError
+from .service_domains.support import OrchestrationRequestError
 
 logger = logging.getLogger(__name__)
 

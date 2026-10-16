@@ -21,6 +21,7 @@ from simple_harness import (
 from simple_harness.execution.provider_invocations import provider_request_json
 from simple_harness.providers import ProviderRequestRejectedError
 
+from deskpet.execution.closure_evidence_ids import input_id
 from deskpet.execution.evidence_ingress import ExecutionEvidenceIngress
 from deskpet.execution.foreground_queue import _EFFECT_BOUNDARY_ALLOWED_STATES, EffectBoundary
 from deskpet.execution.primary_dependencies import read_run_dependencies
@@ -34,13 +35,10 @@ from deskpet.execution.semantic_closure import (
     evidence_set_key,
     message_hash,
 )
+from deskpet.memory.disclosure_records import binding_token, current_record_tx
 from deskpet.memory.human_memory_program import HumanMemoryProgramStore
 from deskpet.memory.primary_visibility import read_evidence_pair
-from deskpet.memory.trusted_disclosure import (
-    binding_token,
-    current_record_tx,
-    resolve_current_disclosure,
-)
+from deskpet.memory.trusted_disclosure import resolve_current_disclosure
 from deskpet.sdk_adapters.run_bindings import SdkRunBindingV1
 from deskpet.task_scope.disclosure import render_scope_disclosure
 from deskpet.task_scope.projections import ProjectionIntegrityError
@@ -81,10 +79,6 @@ async def rows(db, sql, args=()):
         return await cursor.fetchall()
     finally:
         await cursor.close()
-
-
-def input_id(attempt_id):
-    return "closure-attempt-input:" + attempt_id
 
 
 class ClosureRequestAuthority:

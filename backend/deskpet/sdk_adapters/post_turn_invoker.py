@@ -30,7 +30,6 @@ helper so the caller commits it in the same transaction as the apply.
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import json
 import time
 import uuid
@@ -40,7 +39,6 @@ from pathlib import Path
 from typing import Any, Protocol
 
 import aiosqlite
-from simple_harness import thaw_json
 from simple_harness.execution.provider_invocations import (
     provider_response_from_json,
     provider_response_json,
@@ -53,6 +51,7 @@ from simple_harness.providers.errors import (
     ProviderTransportError,
 )
 
+from deskpet.execution.closure_evidence_ids import _response_hash
 from deskpet.execution.closure_request_guard import ClosurePhysicalRequestRejected
 from deskpet.execution.foreground_queue import EffectBoundary, ForegroundQueueStore
 from deskpet.memory.analysis_lineage import binding_model_config_hash
@@ -920,25 +919,6 @@ def durable_envelope_json(raw: object) -> Mapping[str, Any] | None:
         return None
     envelope = payload.get("envelope")
     return envelope if isinstance(envelope, Mapping) else None
-
-
-def _response_hash(response: Any) -> str:
-    message = getattr(response, "message", None)
-    calls = tuple(getattr(response, "tool_calls", ()) or ())
-    payload = {
-        "content": str(getattr(message, "content", "")),
-        "tool_calls": [
-            {"name": call.name, "arguments": json.loads(canonical_json(_thaw(call.arguments)))}
-            for call in calls
-        ],
-        "finish_reason": getattr(response, "finish_reason", None),
-    }
-    return hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()
-
-
-def _thaw(value: Any) -> Any:
-
-    return thaw_json(value)
 
 
 def _root_cause(exc: BaseException) -> BaseException:

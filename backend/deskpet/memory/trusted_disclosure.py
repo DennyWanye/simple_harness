@@ -22,76 +22,22 @@ from simple_harness import (
     IntendedAudience,
 )
 
+from deskpet.memory.current_input_source import input_context_ref, read_input_use_tx
+from deskpet.memory.disclosure_records import (
+    POLICY,
+    POLICY_HASH,
+    _decode,
+    _one,
+    _reject,
+    binding_token,
+    current_record_tx,
+)
 from deskpet.memory.writer_fence import (
     assert_human_memory_ingress_open_tx,
     human_memory_connection,
     require_authenticated_host_snapshot,
 )
 from deskpet.task_scope.protocol import canonical_hash, canonical_json, digest, identifier
-
-POLICY = {
-    "policy_id": "host-local-disclosure/v1",
-    "minimum_necessary": True,
-    "chat_grants_authority": False,
-    "configuration_grants_input_permit": False,
-}
-POLICY_HASH = canonical_hash(POLICY)
-
-
-class TrustedDisclosureError(RuntimeError):
-    def __init__(self, code):
-        self.code = code
-        super().__init__(code)
-
-
-def _reject(code):
-    raise TrustedDisclosureError("host_disclosure_" + code)
-
-
-async def _one(db, sql, args=()):
-    cursor = await db.execute(sql, args)
-    try:
-        return await cursor.fetchone()
-    finally:
-        await cursor.close()
-
-
-def _decode(row, subject):
-    if row is None:
-        _reject("binding_missing")
-    raw = json.loads(row["binding_json"])
-    if (
-        type(raw["policy_generation"]) is not int
-        or row["subject"] != subject
-        or raw["subject"] != subject
-        or raw["binding_ref"] != row["binding_ref"]
-        or raw["source_ref"] != row["binding_ref"]
-        or raw["policy_generation"] != row["policy_generation"]
-        or canonical_hash(raw) != row["binding_hash"]
-        or raw["policy_hash"] != POLICY_HASH
-        or raw["policy_id"] != POLICY["policy_id"]
-        or raw["source_origin"] not in {"host_default", "authenticated_control"}
-    ):
-        _reject("binding_mismatch")
-    return raw
-
-
-async def current_record_tx(db, subject):
-    row = await _one(
-        db,
-        "SELECT c.* FROM human_memory_disclosure_heads h "
-        "JOIN human_memory_disclosure_configs c ON c.binding_ref=h.binding_ref WHERE h.subject=?",
-        (subject,),
-    )
-    return None if row is None else _decode(row, subject)
-
-
-def binding_token(raw):
-    return {
-        "binding_ref": raw["binding_ref"],
-        "binding_hash": canonical_hash(raw),
-        "policy_generation": raw["policy_generation"],
-    }
 
 
 async def bound_record_tx(db, *, subject, token):
@@ -351,9 +297,6 @@ async def resolve_current_disclosure(*, db_path, subject, run_id, request_id, tu
             _reject("binding_stale")
         input_use = None
         if "input_use" in turn:
-            # 按需导入：循环依赖（trusted_disclosure ↔ current_input_source）
-            from deskpet.memory.current_input_source import read_input_use_tx
-
             _, _, input_use = await read_input_use_tx(db, turn=row, config=current)
         assert_executable(current, input_use=input_use)
         authority_ref = (
@@ -362,9 +305,6 @@ async def resolve_current_disclosure(*, db_path, subject, run_id, request_id, tu
             + canonical_hash({"binding": token, "request_id": request_id})
         )
         if input_use is not None:
-            # 按需导入：循环依赖（trusted_disclosure ↔ current_input_source）
-            from deskpet.memory.current_input_source import input_context_ref
-
             authority_ref = input_context_ref(current["source_ref"], token, request_id)
         return DisclosureContext(
             run_id,

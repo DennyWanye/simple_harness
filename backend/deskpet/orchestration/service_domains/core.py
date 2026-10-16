@@ -24,6 +24,7 @@ from agent_orchestrator.orchestrator.taskgraph_deployment import InstalledHtnWir
 from agent_orchestrator.runtime.assembly import OrchestratorConfig
 from agent_orchestrator.runtime.planning_operations import SourceUnavailable
 
+from ..assurance import host_fingerprint
 from ..hierarchical import ROOT_DUTY_PREFIX, ROOT_TASK_PREFIX, ROOT_TYPE, planning_world
 from ..lock import InstanceLock
 from ..manifest import MANIFEST_SCHEMA, build_manifest, distributions, write_manifest
@@ -149,9 +150,6 @@ class OrchestrationServiceCore:
         self._permission_mode_reader = permission_mode_reader
         # 用户任务的部署（安装、建任务、每轮职责）在 SDK 里只有一份（HTN 补齐阶段 A′）；Host 交出
         # 桌面规划世界、认证身份、通知去处与构建指纹，并告诉它"现在是不是自动模式"。
-
-        # 按需导入：循环依赖（service ↔ assurance）
-        from ..assurance import host_fingerprint
 
         def notify(payload: Mapping[str, Any]) -> None:
             # At-least-once local status transport: the notice is kept (de-duplicated by

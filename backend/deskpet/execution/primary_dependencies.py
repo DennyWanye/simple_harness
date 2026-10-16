@@ -501,7 +501,6 @@ async def _verify_search_dependencies(state: _RunDependencyRead) -> None:
             # claimed error code as a successful content read. (F07: the model
             # passing a typed recall item id as reference_id must not make the
             # whole Run unverifiable.)
-            # 按需导入：循环依赖（primary_dependencies ↔ current_tool_pages）
             state.admitted_current_page, state.admitted_page = await _replayed_rejection_page(
                 state.db,
                 fact=state.fact,

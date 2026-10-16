@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 
 import aiosqlite
 
+from deskpet.execution.admission_rejection import read_admission_rejection_tx
 from deskpet.memory.recovery_work_items import is_human_memory_work_item_parked_tx
 from deskpet.memory.writer_fence import assert_human_memory_ingress_open_tx, human_memory_connection
 from deskpet.task_scope.protocol import canonical_hash, canonical_json, digest, identifier
@@ -108,8 +109,6 @@ class ForegroundQueueCore:
         )
         if turn is None:
             return None
-        # 按需导入：循环依赖（foreground_queue ↔ admission_rejection）
-        from deskpet.execution.admission_rejection import read_admission_rejection_tx
 
         while turn is not None:
             rejected = await read_admission_rejection_tx(
