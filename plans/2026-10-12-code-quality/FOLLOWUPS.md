@@ -117,3 +117,23 @@
 - 位置：`backend/host/control_memory.py` 的 `_cc_memory_summarize_now`、`_cc_memory_thumbs_up`。
 - 现象：检查通过（已初始化、开关开）以后函数直接结束，不发回执；前端等不到 `memory_summarize_response` / `memory_thumbs_up_response`。原实现随认知记忆 SDK（2026-09-10）移除，只剩前面的拒绝分支。阶段 2 记录里写的"记忆整理消息在初始化完成时什么也不做"就是这处。
 - 下一步：定产品行为——随记忆 SDK 一起删掉这两条消息与前端入口，或明确回"不支持"。涉及前端，不在代码质量整治范围内。
+
+## F-16 主对话的任务范围面板没有入口（待用户定：接入或整条下线，2026-10-17 阶段 9K 登记）
+
+- 前端：`tauri-app/src/components/PrimaryTaskPanel.tsx` 与请求层 `src/primary/taskScopeRequests.ts`（连测试夹具 `src/primary/testing/taskScopeFixture.ts`、`graphFixture.ts`）。唯一挂载点是记忆抽屉的「任务」页签，2026-09-10 删记忆面板（4087be659）时一起断开，之后从 `src/main.tsx` 不可达；当时提交写"保留并保证可用"，但没给新入口。
+- 后端：`task_scope.search / list / open_exact` 仍在服务（`backend/deskpet/memory/human_memory_api.py` 约 248～270 行）。
+- 本阶段的处理：按"做好的功能不删"保留，不改。
+- 下一步：由用户定——给它一个新入口（例如主对话侧栏），还是前后端整条下线。
+
+## F-17 自愈横幅没有挂上（待用户定：挂到会话视图或连状态字段下线，2026-10-17 阶段 9K 登记）
+
+- 前端：`tauri-app/src/code-panel/AutoResumeBanner.tsx` 与 `autoResumeBannerText.ts`，fork 起从未挂载。`controlWs.ts` 收到 `auto_resume_started / succeeded / exhausted` 时写会话状态 `auto_resume_attempts`，产品里没有任何读端。
+- 后端：AutoResumeOrchestrator 默认开启（`config.toml` 的 `auto_resume_enabled = true`；`backend/host/startup_supervision.py`），仍发 `auto_resume_*` 事件。
+- 本阶段的处理：保留，不改。
+- 下一步：由用户定——把横幅挂到会话视图，还是连同 `auto_resume_attempts` 状态字段一起下线。
+
+## F-18 后端旧音频通道还在（2026-10-17 阶段 9K 登记）
+
+- 前端旧音频路径（`ws/AudioChannel.ts`、`hooks/useAudioChannel.ts`）已在 9K 删除：Realtime 是唯一语音路径（`hooks/useRealtimeVoice.ts`，`voiceAvailability.ts` 注释写明旧路径关闭）。
+- 后端 `backend/host/routes_voice.py` 的 `/ws/audio` 与 `backend/pipeline/voice_pipeline.py` 仍在，前端已无调用方。
+- 下一步：确认没有其他客户端后另行删除（后端改动，不在 9K 范围）。

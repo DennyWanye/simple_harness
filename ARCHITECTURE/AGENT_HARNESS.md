@@ -2148,6 +2148,10 @@ backend/.venv/bin/python scripts/acceptance/harness_reliability_gate.py
 `PRAGMA integrity_check=ok`，且外部写、terminal signal、event/delivery 均保持唯一。当前结果为
 后端 `58 passed`、前端 `14 passed`，最终 `HARNESS_RELIABILITY: PASS`。
 
+2026-10-17 更正（代码质量整治 9K）：上面"前端断线重连去重/旧 epoch 丢弃"的覆盖来自
+`runEventReducer.test.ts`，它测的 `runEventReducer.ts` 从未接入产品（产品重连走 `controlWs.ts`
+自己的路径）。两者已随前端不可达模块一起删除；门禁前端只剩 `usePermissionRequests.test.tsx`。
+
 同日又用真实 macOS Tauri Workbench 做了 supervisor 终测：在 UI 点击一次“允许一次”后，
 `run_shell` 写入 START 并等待 45 秒期间对 backend 发送真实 `SIGKILL`，Tauri 主进程保持存活并在
 约 2 秒内拉起新 backend。原 Run `efb4a75a2d5759b99b492ed77748278c` 没有重建或重复执行，外部

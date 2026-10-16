@@ -54,7 +54,6 @@ BACKEND_SELECTORS = (
 
 FRONTEND_SELECTORS = (
     "src/hooks/usePermissionRequests.test.tsx",
-    "src/code-panel/runEventReducer.test.ts",
 )
 
 
