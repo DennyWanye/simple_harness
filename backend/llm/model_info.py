@@ -483,6 +483,7 @@ def resolve_reasoning_mode(model: str, project_root: Path | None = None) -> str:
     try:
         mode = str(resolve(model, project_root).reasoning_mode or "").strip().lower()
     except Exception:  # noqa: BLE001 — 元数据永远不该打断 provider 构造
+        logger.debug("resolve_reasoning_mode_lower_failed", exc_info=True)
         return "default"
     return mode if mode in REASONING_MODES else "default"
 

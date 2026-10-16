@@ -139,6 +139,7 @@ def _pick_template_layout(prs, deskpet_layout: str):
     try:
         return layouts[idx]
     except Exception:  # noqa: BLE001
+        logger.debug("pick_template_layout_failed", exc_info=True)
         return layouts[0]
 
 
@@ -217,6 +218,7 @@ def _shape_text_max_pt(shape) -> float:
                     continue
         return max_pt or 18.0
     except Exception:  # noqa: BLE001
+        logger.debug("shape_text_max_pt_failed", exc_info=True)
         return 18.0
 
 
@@ -232,6 +234,7 @@ def _shape_reading_key(shape) -> tuple[int, int]:
     try:
         return (int(shape.top), int(shape.left))
     except Exception:  # noqa: BLE001
+        logger.debug("shape_reading_key_int_failed", exc_info=True)
         return (0, 0)
 
 
@@ -250,6 +253,7 @@ def _shape_mostly_in_canvas(shape, slide_w: int, slide_h: int) -> bool:
             return False
         return (vis_w * vis_h) >= 0.7 * (w * h)
     except Exception:  # noqa: BLE001
+        logger.debug("shape_mostly_in_canvas_int_failed", exc_info=True)
         return True
 
 
@@ -281,6 +285,7 @@ def _fit_font_pt(shape, lines: list[str], orig_pt: float) -> float:
             pt *= 0.9
         return 24.0
     except Exception:  # noqa: BLE001
+        logger.debug("fit_font_pt_int_failed", exc_info=True)
         return orig_pt
 
 
@@ -358,6 +363,7 @@ def _analyze_design_page(slide, slide_w: int = 0, slide_h: int = 0) -> dict[str,
             try:
                 _txt = (item["shape"].text_frame.text or "").strip()
             except Exception:  # noqa: BLE001
+                logger.debug("analyze_design_page_strip_failed", exc_info=True)
                 _txt = ""
             if len(_txt) <= 2 or _txt.isdigit():
                 decor_nums.append(item["shape"])
@@ -385,6 +391,7 @@ def _analyze_design_page(slide, slide_w: int = 0, slide_h: int = 0) -> dict[str,
             "slide_h": slide_h,
         }
     except Exception:  # noqa: BLE001
+        logger.debug("analyze_design_page_failed", exc_info=True)
         return {
             "title": None,
             "subtitle": None,
@@ -471,6 +478,7 @@ def _shapes_v_overlap(a, b) -> bool:
         inter = min(bot_a, bot_b) - max(top_a, top_b)
         return inter > 0.5 * min(bot_a - top_a, bot_b - top_b)
     except Exception:  # noqa: BLE001
+        logger.debug("shapes_v_overlap_int_failed", exc_info=True)
         return True
 
 

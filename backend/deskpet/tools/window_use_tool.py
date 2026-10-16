@@ -8,6 +8,7 @@ from __future__ import annotations
 import base64
 import ctypes
 import json
+import logging
 import os
 import threading
 import time
@@ -31,6 +32,9 @@ from .computer_use_tool import (
     _ok,
     _workspace_root,
 )
+
+logger = logging.getLogger(__name__)
+
 
 _MAX_WINDOWS = 100
 _MAX_HOLD_MS = 10_000
@@ -361,6 +365,7 @@ def _window_list(args: dict[str, Any], _task_id: str = "") -> str:
     try:
         windows = _load_window_backend().list_windows()
     except Exception as exc:  # noqa: BLE001
+        logger.debug("window_list_list_windows_failed", exc_info=True)
         return _err(
             f"window backend unavailable: {exc}",
             "Window discovery requires an interactive Windows desktop.",
@@ -381,6 +386,7 @@ def _window_focus(args: dict[str, Any], _task_id: str = "") -> str:
         window = _find_target(args)
         focused = _load_window_backend().focus(window.hwnd)
     except Exception as exc:  # noqa: BLE001 - normalized tool envelope
+        logger.debug("window_focus_find_target_failed", exc_info=True)
         return _err(str(exc), "Call window_list again and use its exact identity.")
     if not focused:
         return _err(
@@ -456,6 +462,7 @@ def _capture_target(
         to_png(shot.rgb, shot.size, output=str(target))
         raw = target.read_bytes()
     except Exception as exc:  # noqa: BLE001
+        logger.debug("capture_target_mss_failed", exc_info=True)
         capture_error = exc
     finally:
         close = getattr(sct, "close", None)
@@ -463,6 +470,7 @@ def _capture_target(
             try:
                 close()
             except Exception as exc:  # noqa: BLE001
+                logger.debug("capture_target_close_failed", exc_info=True)
                 close_error = exc
     if capture_error is not None:
         suffix = f"; backend close also failed: {close_error}" if close_error is not None else ""
@@ -520,6 +528,7 @@ def _execute_key_press(args: dict[str, Any], parts: tuple[str, ...], hold_ms: in
         )
         pg = None if use_native_keys else _load_pyautogui()
     except Exception as exc:  # noqa: BLE001 - normalized tool envelope
+        logger.debug("execute_key_press_find_target_failed", exc_info=True)
         return _err(
             str(exc),
             "Call window_list again and use its exact identity.",
@@ -540,6 +549,7 @@ def _execute_key_press(args: dict[str, Any], parts: tuple[str, ...], hold_ms: in
         if hold_ms:
             time.sleep(hold_ms / 1000.0)
     except Exception as exc:  # noqa: BLE001
+        logger.debug("execute_key_press_append_failed", exc_info=True)
         input_error = exc
     finally:
         for part in reversed(release_candidates):
@@ -549,6 +559,7 @@ def _execute_key_press(args: dict[str, Any], parts: tuple[str, ...], hold_ms: in
                 else:
                     pg.keyUp(part)
             except Exception as exc:  # noqa: BLE001
+                logger.debug("execute_key_press_key_up_failed", exc_info=True)
                 release_errors.append(f"{part}: {exc}")
     if input_error is not None:
         suffix = f"; key release errors: {', '.join(release_errors)}" if release_errors else ""

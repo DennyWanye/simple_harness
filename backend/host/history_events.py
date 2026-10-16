@@ -116,6 +116,7 @@ async def _attach_companion_history_events(
     try:
         frozen = host_state.companion_identity_gate.freeze()
     except Exception:
+        logger.debug("attach_companion_history_events_freeze_failed", exc_info=True)
         return []
     try:
         if not host_state.companion_notification_service.history_ready(frozen):

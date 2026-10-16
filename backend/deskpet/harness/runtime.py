@@ -321,11 +321,13 @@ class DriverRuntime:
                 try:
                     await candidates.aclose()
                 except BaseException as exc:
+                    logger.debug("consume_fenced_aclose_failed", exc_info=True)
                     cleanup_error = exc
             if release:
                 try:
                     await self._uow.recovery_scope(current, lease_seconds=None)
                 except BaseException as exc:
+                    logger.debug("consume_fenced_recovery_scope_failed", exc_info=True)
                     cleanup_error = cleanup_error or exc
             if failure is None and cleanup_error is not None:
                 raise cleanup_error

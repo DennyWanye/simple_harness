@@ -99,6 +99,7 @@ def web_fetch(args: dict[str, Any], task_id: str = "") -> str:
         else:
             text = body_bytes.decode("utf-8", errors="replace")
     except Exception as exc:  # noqa: BLE001
+        logger.debug("web_fetch_client_failed", exc_info=True)
         return _err(
             f"{type(exc).__name__}: {exc}",
             f"请求 {url} 失败。"

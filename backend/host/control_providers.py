@@ -29,6 +29,7 @@ async def _cc_models_list(conn: _ControlConnection, raw: dict, msg_type: str) ->
         try:
             _chain = _reg.get_chain()
         except Exception:
+            logger.debug("cc_models_list_get_chain_failed", exc_info=True)
             _chain = []
         if _chain:
             _first = _chain[0]
@@ -43,6 +44,7 @@ async def _cc_models_list(conn: _ControlConnection, raw: dict, msg_type: str) ->
                 try:
                     _live = await model_catalog.fetch_models(_base_url, _api_key, timeout=8.0)
                 except Exception:
+                    logger.debug("cc_models_list_fetch_models_failed", exc_info=True)
                     _live = []
                 if _live:
                     _model_ids = _live
@@ -91,6 +93,7 @@ async def _cc_models_list(conn: _ControlConnection, raw: dict, msg_type: str) ->
             try:
                 _live_ll = await model_catalog.fetch_models(_ll_base, _ll_key, timeout=8.0)
             except Exception:
+                logger.debug("cc_models_list_fetch_models_failed", exc_info=True)
                 _live_ll = []
             if _live_ll:
                 _model_ids = _live_ll
@@ -135,6 +138,7 @@ async def _cc_session_provider_get(conn: _ControlConnection, raw: dict, msg_type
     try:
         readiness.require_ready()
     except Exception:
+        logger.debug("cc_session_provider_get_require_ready_failed", exc_info=True)
         await ws.send_json(
             {
                 "type": "settings_providers_error",
@@ -196,6 +200,7 @@ async def _cc_session_set_provider(conn: _ControlConnection, raw: dict, msg_type
     try:
         readiness.require_ready()
     except Exception:
+        logger.debug("cc_session_set_provider_require_ready_failed", exc_info=True)
         await ws.send_json(
             {
                 "type": "settings_providers_error",
@@ -239,6 +244,7 @@ async def _cc_session_set_provider(conn: _ControlConnection, raw: dict, msg_type
             ),
         )
     except Exception as exc:  # noqa: BLE001
+        logger.warning("cc_session_set_provider_value_error_failed", exc_info=True)
         authoritative = await session_db.get_session_provider_binding_authority(target_sid)
         await ws.send_json(
             {
@@ -357,6 +363,7 @@ async def _cc_settings_providers_list_request(
                 }
             )
         except Exception as exc:  # noqa: BLE001
+            logger.warning("cc_settings_providers_list_request_add_provider_failed", exc_info=True)
             await ws.send_json(
                 {
                     "type": "settings_providers_error",
@@ -426,6 +433,9 @@ async def _cc_settings_providers_list_request(
                 }
             )
         except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "cc_settings_providers_list_request_assert_sdk_prov_failed", exc_info=True
+            )
             await ws.send_json(
                 {
                     "type": "settings_providers_error",
@@ -487,6 +497,9 @@ async def _cc_settings_providers_list_request(
                 }
             )
         except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "cc_settings_providers_list_request_assert_sdk_prov_failed", exc_info=True
+            )
             await ws.send_json(
                 {
                     "type": "settings_providers_error",
@@ -541,6 +554,9 @@ async def _cc_settings_providers_list_request(
                 }
             )
         except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "cc_settings_providers_list_request_assert_sdk_prov_failed", exc_info=True
+            )
             await ws.send_json(
                 {
                     "type": "settings_providers_error",
@@ -679,6 +695,7 @@ async def _cc_settings_providers_probe_models(
                 }
             )
     except Exception as _probe_exc:  # noqa: BLE001
+        logger.warning("cc_settings_providers_probe_models_import_failed", exc_info=True)
         await ws.send_json(
             {
                 "type": "settings_providers_probe_models_response",

@@ -357,6 +357,7 @@ def _render_full_page_images(
             with Image.open(path) as image:
                 width, height = image.size
         except Exception as exc:  # noqa: BLE001
+            log.debug("render_full_page_images_open_failed", exc_info=True)
             return {
                 "ok": False,
                 "error_kind": "invalid_page_image",
@@ -498,6 +499,7 @@ def _ppt_visual_review_enabled() -> bool:
     try:
         return _cfg_bool(_ppt_config_section(), "visual_review", True)
     except Exception:  # noqa: BLE001
+        log.debug("ppt_visual_review_enabled_cfg_bool_failed", exc_info=True)
         return True
 
 
@@ -741,4 +743,5 @@ def _resolve_output_path(p: str | None) -> Path:
     try:
         return output_dir("PPT") / fname
     except Exception:  # noqa: BLE001
+        log.debug("resolve_output_path_output_dir_failed", exc_info=True)
         return Path(tempfile.gettempdir()) / fname

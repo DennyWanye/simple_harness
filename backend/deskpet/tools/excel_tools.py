@@ -56,6 +56,7 @@ try:  # openpyxl is a hard dep for this skill, but degrade gracefully.
 
     _HAS_OPENPYXL = True
 except Exception:  # noqa: BLE001
+    log.debug("excel_tools_import_failed", exc_info=True)
     _HAS_OPENPYXL = False
 
 try:  # image embedding needs Pillow under the hood; degrade if absent.
@@ -63,6 +64,7 @@ try:  # image embedding needs Pillow under the hood; degrade if absent.
 
     _HAS_XLIMAGE = True
 except Exception:  # noqa: BLE001
+    log.debug("excel_tools_import_failed", exc_info=True)
     _HAS_XLIMAGE = False
 
 

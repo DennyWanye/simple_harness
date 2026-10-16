@@ -319,6 +319,7 @@ def _research_raw() -> dict:
                 cfg = _cfg.load_config(_cfg.resolve_config_path())
                 raw = cfg.raw.get("research") or {}
         except Exception:  # noqa: BLE001
+            log.debug("research_raw_import_failed", exc_info=True)
             raw = {}
         _RESEARCH_RAW_CACHE = raw if isinstance(raw, dict) else {}
     return _RESEARCH_RAW_CACHE
@@ -384,6 +385,7 @@ def _fanout_concurrency() -> int:
         glob, lanes = _cfg.get_subagent_concurrency(obj)
         return max(1, min(int(glob), int((lanes or {}).get("research", 2))))
     except Exception:  # noqa: BLE001
+        log.debug("fanout_concurrency_import_failed", exc_info=True)
         return 2
 
 
@@ -537,6 +539,7 @@ async def _expand_queries(
     try:
         raw = await llm_call(_EXPAND_PROMPT.format(topic=topic, subqs=subqs))
     except Exception as exc:  # noqa: BLE001
+        log.debug("expand_queries_llm_call_failed", exc_info=True)
         errors.append(f"query_expansion: {exc}")
         return []
     qs = parse_sub_questions(raw, max_questions=max_extra)
@@ -638,6 +641,7 @@ async def _llm_rerank(
         errors.append("rerank_timeout")
         return False
     except Exception as exc:  # noqa: BLE001
+        log.debug("llm_rerank_wait_for_failed", exc_info=True)
         errors.append(f"rerank_llm: {exc}")
         return False
     scores = _parse_rerank_scores(raw)
@@ -1259,6 +1263,7 @@ def _norm_url(u: str) -> str:
         p = urllib.parse.urlsplit(u)
         return f"{p.scheme}://{p.netloc}{p.path.rstrip('/')}".lower()
     except Exception:  # noqa: BLE001
+        log.debug("norm_url_urlsplit_failed", exc_info=True)
         return (u or "").rstrip("/").lower()
 
 
@@ -1447,6 +1452,7 @@ async def _fanout_synthesize(
             )
         )
     except Exception as exc:  # noqa: BLE001
+        log.debug("fanout_synthesize_llm_call_failed", exc_info=True)
         errors.append(f"fanout_synth_llm: {exc}")
         report_md = f"# {request_topic}\n\n" + sub_report_block
 
@@ -1884,6 +1890,7 @@ async def _research_subdirection(
     try:
         hits = await search(query, max_results=max(1, int(max_urls)))
     except Exception as exc:  # noqa: BLE001
+        log.debug("research_subdirection_failed", exc_info=True)
         errors.append(f"search:{type(exc).__name__}: {exc}")
         hits = []
     urls: list[str] = []
@@ -1914,6 +1921,7 @@ async def _research_subdirection(
                 "per line. Do not explain and do not invent tracking parameters."
             )
         except Exception as exc:  # noqa: BLE001
+            log.debug("research_subdirection_llm_call_failed", exc_info=True)
             errors.append(f"source_plan:{type(exc).__name__}: {exc}")
             raw_urls = ""
         for match in re.findall(r"https?://[^\s<>\"'\]\)]+", raw_urls or ""):
@@ -2010,6 +2018,7 @@ async def _research_subdirection(
             )
         )
     except Exception as exc:  # noqa: BLE001
+        log.debug("research_subdirection_llm_call_failed", exc_info=True)
         errors.append(f"focused_synth:{type(exc).__name__}: {exc}")
         report_md = _passages_only_fallback(request_topic, numbered)
     report_md = (report_md or "").strip() or _passages_only_fallback(request_topic, numbered)
@@ -2240,6 +2249,7 @@ async def _gap_followup_queries(
     try:
         raw = await llm_call(_GAP_PROMPT.format(topic=topic, titles=titles, subqs=subqs))
     except Exception as exc:  # noqa: BLE001
+        log.debug("gap_followup_queries_llm_call_failed", exc_info=True)
         errors.append(f"reflect_llm: {exc}")
         return []
     qs = parse_sub_questions(raw, max_questions=max_followups)
@@ -2537,6 +2547,7 @@ async def _handle_deepresearch(
     try:
         llm_call = await _resolve_default_llm_call()
     except Exception as exc:  # noqa: BLE001
+        log.debug("handle_deepresearch_resolve_default_llm_call_failed", exc_info=True)
         return json.dumps(
             {"ok": False, "error": f"no LLM available: {exc}"},
             ensure_ascii=False,
@@ -2604,6 +2615,7 @@ def _save_report(topic: str, report: ResearchReport) -> Path | None:
     try:
         slug = title_slug(topic, max_grapheme=40)
     except Exception:  # noqa: BLE001
+        log.debug("save_report_title_slug_failed", exc_info=True)
         slug = "report"
     path = base / f"{slug}-{ts}.md"
     path.write_text(body, encoding="utf-8")

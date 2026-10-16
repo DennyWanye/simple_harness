@@ -167,6 +167,7 @@ async def provider_workload_audit_retention_loop(
         except asyncio.CancelledError:
             raise
         except Exception as exc:
+            logger.debug("provider_workload_audit_retention_loop_enforce_ret_failed", exc_info=True)
             await store.record_maintenance_error(exc)
         await asyncio.sleep(interval_s)
 

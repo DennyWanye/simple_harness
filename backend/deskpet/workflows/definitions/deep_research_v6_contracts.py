@@ -8,12 +8,16 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import logging
 import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any, ClassVar, TypeAlias
 
 from ..contracts import JsonValue, canonical_json, validate_json_value
+
+logger = logging.getLogger(__name__)
+
 
 _HEX64 = re.compile(r"^[0-9a-f]{64}$")
 
@@ -47,6 +51,7 @@ def _object(value: object, keys: set[str], path: str, *, versioned: bool = True)
     try:
         validate_json_value(raw, path=path)
     except Exception as exc:
+        logger.debug("object_validate_json_value_failed", exc_info=True)
         _fail("spec_keys_differ", path, str(exc))
     return raw
 

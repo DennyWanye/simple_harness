@@ -658,6 +658,7 @@ async def _handle_workspace_recall(
             limit=limit,
         )
     except Exception as exc:  # noqa: BLE001
+        logger.debug("handle_workspace_recall_failed", exc_info=True)
         return _err(f"workspace_recall failed: {exc}", retriable=True)
     matches = [
         {

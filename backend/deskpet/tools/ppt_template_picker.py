@@ -147,6 +147,7 @@ def category_pptx(category_key: str) -> list[Path]:
     try:
         return sorted(cat_dir.glob("*.pptx"))
     except Exception:  # noqa: BLE001
+        log.debug("category_pptx_sorted_failed", exc_info=True)
         return []
 
 

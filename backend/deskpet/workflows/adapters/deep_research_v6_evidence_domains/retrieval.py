@@ -6,6 +6,7 @@ import asyncio
 import copy
 import hashlib
 import json
+import logging
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -46,6 +47,8 @@ from .support import (
     _SourceTarget,
     _stable_id,
 )
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -942,6 +945,7 @@ class RetrievalMixin(EvidenceRuntimeCore):
         except Exception:
             # Search failures are evidence gaps.  Other frozen dimensions
             # can still return useful pages under the same parent budget.
+            logger.debug("search_plan_wait_for_failed", exc_info=True)
             await self._finish_child_span(sp.search_span, SpanStatus.ERROR, outcome="error")
             sp.response = None
         else:
@@ -1020,6 +1024,7 @@ class RetrievalMixin(EvidenceRuntimeCore):
                     deadline_id=attempt.deadline_id,
                 )
             except Exception:
+                logger.debug("transport_failed", exc_info=True)
                 return OfficialSearchResultV1.create(
                     logical_effect_id=attempt.logical_effect_id,
                     attempt_no=attempt.attempt_no,

@@ -133,6 +133,7 @@ def _provider_display_name(base_url: str, fallback: str) -> str:
     try:
         return urlsplit(base_url).hostname or fallback
     except Exception:  # noqa: BLE001 - 显示名不值得让配置写入失败
+        logger.debug("provider_display_name_urlsplit_failed", exc_info=True)
         return fallback
 
 

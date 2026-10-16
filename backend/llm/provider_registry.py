@@ -74,6 +74,7 @@ try:
     keyring = _keyring_mod
     _KEYRING_AVAILABLE = True
 except Exception:  # pragma: no cover — depends on host env
+    logger.debug("provider_registry_import_failed", exc_info=True)
     keyring = None  # type: ignore[assignment]
     _KEYRING_AVAILABLE = False
 

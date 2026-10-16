@@ -47,7 +47,7 @@ def args_hash(args: Any) -> str:
     """
     try:
         canon = json.dumps(args, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-    except Exception:
+    except (TypeError, ValueError):
         canon = str(args)
     return hashlib.sha1(canon.encode("utf-8")).hexdigest()[:12]
 

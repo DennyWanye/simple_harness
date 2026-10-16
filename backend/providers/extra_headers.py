@@ -96,6 +96,7 @@ def load_extra_headers_map(path: Path | str | None = None) -> dict[str, dict[str
     try:
         raw = json.loads(p.read_text(encoding="utf-8"))
     except Exception:  # noqa: BLE001 - malformed file → behave as "no extra headers"
+        logger.warning("load_extra_headers_map_loads_failed", exc_info=True)
         raw = {}
     result: dict[str, dict[str, str]] = {}
     if isinstance(raw, dict):

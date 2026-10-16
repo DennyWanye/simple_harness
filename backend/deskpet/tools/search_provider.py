@@ -157,6 +157,7 @@ def _research_raw() -> dict[str, Any]:
             raw = cfg.raw.get("research") or {}
         return raw if isinstance(raw, dict) else {}
     except Exception:  # noqa: BLE001
+        log.debug("research_raw_import_failed", exc_info=True)
         return {}
 
 
@@ -426,6 +427,7 @@ def _clean_google_url(url: str) -> str:
             if target:
                 return urllib.parse.unquote(target)
     except Exception:  # noqa: BLE001
+        log.debug("clean_google_url_urlparse_failed", exc_info=True)
         return url
     return url
 

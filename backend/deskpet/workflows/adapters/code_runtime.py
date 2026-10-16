@@ -346,6 +346,7 @@ class ProposalPort:
         try:
             token_estimate = int(count_messages_tokens(messages))
         except Exception:  # noqa: BLE001
+            logger.debug("compact_messages_for_proposal_int_failed", exc_info=True)
             token_estimate = max(0, int(state.token_estimate))
         trigger = self._durable_compaction_trigger()
         if self.context_compressor is None or trigger is None or token_estimate < trigger:
@@ -394,6 +395,7 @@ class ProposalPort:
         try:
             compacted_tokens = int(count_messages_tokens(compacted))
         except Exception:  # noqa: BLE001
+            logger.debug("compact_messages_for_proposal_int_failed", exc_info=True)
             compacted_tokens = max(
                 0,
                 int(getattr(result, "output_tokens", 0) or 0),

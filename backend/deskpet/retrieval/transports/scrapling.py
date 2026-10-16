@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 class ScraplingTransport:
@@ -30,4 +33,5 @@ class ScraplingTransport:
         except ModuleNotFoundError:
             return {"ok": False, "error": "scrapling_unavailable", "retriable": True}
         except Exception:
+            logger.debug("fetch_import_failed", exc_info=True)
             return {"ok": False, "error": "scrapling_failed", "retriable": True}

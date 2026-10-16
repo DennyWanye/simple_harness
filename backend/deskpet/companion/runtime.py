@@ -56,6 +56,7 @@ class ForegroundActivityGate:
         try:
             records = await self._execution_state.list_recoverable()
         except Exception:
+            logger.debug("snapshot_list_recoverable_failed", exc_info=True)
             return ForegroundActivity(True, 0, 0.0, "execution_state_unavailable")
         foreground_roots: set[str] = set()
         for record in records:

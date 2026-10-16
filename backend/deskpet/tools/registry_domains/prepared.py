@@ -391,6 +391,7 @@ class PreparedExecutionMixin(ToolRegistryCore):
                 else self._normalize_result(spec, raw)
             )
         except Exception as exc:  # noqa: BLE001
+            logger.warning("observe_late_prepared_result_failed", exc_info=True)
             outcome = NormalizedToolOutcome.failure(
                 "tool_handler_error", f"{type(exc).__name__}: {exc}"
             )
@@ -600,6 +601,7 @@ class PreparedExecutionMixin(ToolRegistryCore):
                 if spec.toolset in set(getattr(cfg, "disabled_toolsets", []) or []):
                     return NormalizedToolOutcome.failure("tool_disabled", "toolset is disabled")
             except Exception as exc:  # noqa: BLE001
+                logger.debug("execute_prepared_tools_config_provider_failed", exc_info=True)
                 return NormalizedToolOutcome.failure(
                     "policy_recheck_failed", f"tools config unavailable: {type(exc).__name__}"
                 )
@@ -621,6 +623,7 @@ class PreparedExecutionMixin(ToolRegistryCore):
                         "tool_not_ready", "dynamic tool check failed"
                     )
             except Exception as exc:  # noqa: BLE001
+                logger.debug("execute_prepared_bool_failed", exc_info=True)
                 return NormalizedToolOutcome.failure(
                     "tool_not_ready", f"dynamic tool check raised {type(exc).__name__}"
                 )
@@ -750,6 +753,7 @@ class PreparedExecutionMixin(ToolRegistryCore):
                     "tool_timeout", "read-only tool execution timed out"
                 )
         except Exception as exc:  # noqa: BLE001
+            logger.warning("execute_prepared_now_failed", exc_info=True)
             outcome = NormalizedToolOutcome.failure(
                 "tool_handler_error", f"{type(exc).__name__}: {exc}"
             )

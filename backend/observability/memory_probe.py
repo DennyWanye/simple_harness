@@ -375,6 +375,7 @@ class MemoryProbe:
             try:
                 return int(process.memory_info().rss // 1024)
             except Exception:
+                logger.debug("rss_kb_int_failed", exc_info=True)
                 return _max_rss_kb()
         return _max_rss_kb()
 

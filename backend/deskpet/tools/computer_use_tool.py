@@ -272,6 +272,7 @@ def _capture_screen(args: dict[str, Any], root: Path) -> str:
     try:
         sct = _load_mss().mss()
     except Exception as exc:  # noqa: BLE001 — headless / no display / missing dep
+        logger.debug("capture_screen_mss_failed", exc_info=True)
         return _err(
             f"screen capture backend unavailable: {exc}",
             "Likely headless (no display) or mss not installed.",
@@ -290,6 +291,7 @@ def _capture_screen(args: dict[str, Any], root: Path) -> str:
         to_png(shot.rgb, shot.size, output=str(target))
         raw = target.read_bytes()
     except Exception as exc:  # noqa: BLE001 — uniform JSON envelope
+        logger.debug("capture_screen_mkdir_failed", exc_info=True)
         return _err(f"capture failed: {exc}", "", retriable=True)
     finally:
         close = getattr(sct, "close", None)
@@ -413,6 +415,7 @@ def _handle_screen_click(args: dict[str, Any], task_id: str) -> str:
         sw, sh = _screen_size()
         pg = _load_pyautogui()
     except Exception as exc:  # noqa: BLE001 — headless / missing dep
+        logger.debug("handle_screen_click_screen_size_failed", exc_info=True)
         return _err(
             f"input backend unavailable: {exc}",
             "Likely headless or pyautogui/mss not installed.",
@@ -431,6 +434,7 @@ def _handle_screen_click(args: dict[str, Any], task_id: str) -> str:
             button=button,
         )
     except Exception as exc:  # noqa: BLE001 — uniform JSON envelope
+        logger.debug("handle_screen_click_failed", exc_info=True)
         return _err(f"click failed: {exc}", "", retriable=True)
 
     return _ok(
@@ -480,6 +484,7 @@ def _handle_screen_move(args: dict[str, Any], task_id: str) -> str:
         sw, sh = _screen_size()
         pg = _load_pyautogui()
     except Exception as exc:  # noqa: BLE001
+        logger.debug("handle_screen_move_screen_size_failed", exc_info=True)
         return _err(
             f"input backend unavailable: {exc}",
             "Likely headless or pyautogui/mss not installed.",
@@ -491,6 +496,7 @@ def _handle_screen_move(args: dict[str, Any], task_id: str) -> str:
     try:
         pg.moveTo(cx, cy)
     except Exception as exc:  # noqa: BLE001
+        logger.debug("handle_screen_move_move_to_failed", exc_info=True)
         return _err(f"move failed: {exc}", "", retriable=True)
     return _ok(
         x=cx,
@@ -538,6 +544,7 @@ def _handle_screen_type(args: dict[str, Any], task_id: str) -> str:
     try:
         pg = _load_pyautogui()
     except Exception as exc:  # noqa: BLE001
+        logger.debug("handle_screen_type_load_pyautogui_failed", exc_info=True)
         return _err(
             f"input backend unavailable: {exc}",
             "Likely headless or pyautogui not installed.",
@@ -546,6 +553,7 @@ def _handle_screen_type(args: dict[str, Any], task_id: str) -> str:
     try:
         pg.typewrite(text, interval=interval)
     except Exception as exc:  # noqa: BLE001
+        logger.debug("handle_screen_type_typewrite_failed", exc_info=True)
         return _err(f"type failed: {exc}", "", retriable=True)
     return _ok(typed_chars=len(text))
 
@@ -587,6 +595,7 @@ def _handle_screen_key(args: dict[str, Any], task_id: str) -> str:
     try:
         pg = _load_pyautogui()
     except Exception as exc:  # noqa: BLE001
+        logger.debug("handle_screen_key_load_pyautogui_failed", exc_info=True)
         return _err(
             f"input backend unavailable: {exc}",
             "Likely headless or pyautogui not installed.",
@@ -598,6 +607,7 @@ def _handle_screen_key(args: dict[str, Any], task_id: str) -> str:
         else:
             pg.hotkey(*parts)
     except Exception as exc:  # noqa: BLE001
+        logger.debug("handle_screen_key_len_failed", exc_info=True)
         return _err(f"key press failed: {exc}", "", retriable=True)
     return _ok(keys=parts)
 
@@ -638,6 +648,7 @@ def _handle_screen_scroll(args: dict[str, Any], task_id: str) -> str:
     try:
         pg = _load_pyautogui()
     except Exception as exc:  # noqa: BLE001
+        logger.debug("handle_screen_scroll_load_pyautogui_failed", exc_info=True)
         return _err(
             f"input backend unavailable: {exc}",
             "Likely headless or pyautogui not installed.",
@@ -646,6 +657,7 @@ def _handle_screen_scroll(args: dict[str, Any], task_id: str) -> str:
     try:
         pg.scroll(capped)
     except Exception as exc:  # noqa: BLE001
+        logger.debug("handle_screen_scroll_failed", exc_info=True)
         return _err(f"scroll failed: {exc}", "", retriable=True)
     return _ok(amount=capped, requested=amount, capped=capped != amount)
 

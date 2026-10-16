@@ -48,6 +48,7 @@ try:
 
     _HAS_DOCX = True
 except Exception:  # noqa: BLE001
+    log.debug("doc_tools_import_failed", exc_info=True)
     _HAS_DOCX = False
 
 
@@ -399,6 +400,7 @@ def doc_read(file_path: str) -> dict[str, Any]:
     try:
         document = Document(str(resolved))
     except Exception as exc:  # noqa: BLE001
+        log.debug("doc_read_document_failed", exc_info=True)
         return {"ok": False, "error": f"cannot open document: {exc}", "retriable": False}
 
     paragraphs = []
@@ -556,6 +558,7 @@ def doc_edit(file_path: str, ops: Any) -> dict[str, Any]:
     try:
         document = Document(str(resolved))
     except Exception as exc:  # noqa: BLE001
+        log.debug("doc_edit_document_failed", exc_info=True)
         return {"ok": False, "error": f"cannot open document: {exc}", "retriable": False}
 
     results = []
@@ -566,6 +569,7 @@ def doc_edit(file_path: str, ops: Any) -> dict[str, Any]:
         try:
             results.append(_apply_op(document, op))
         except Exception as exc:  # noqa: BLE001 — one bad op never aborts the rest
+            log.debug("doc_edit_append_failed", exc_info=True)
             results.append({"op": op.get("op", "?"), "status": "skipped", "reason": str(exc)})
 
     applied = sum(1 for r in results if r.get("status") == "ok")
@@ -573,6 +577,7 @@ def doc_edit(file_path: str, ops: Any) -> dict[str, Any]:
         try:
             document.save(str(resolved))
         except Exception as exc:  # noqa: BLE001
+            log.debug("doc_edit_save_failed", exc_info=True)
             return {"ok": False, "error": f"save failed: {exc}", "retriable": True}
 
     return {

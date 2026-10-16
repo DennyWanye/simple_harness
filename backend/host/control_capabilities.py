@@ -406,6 +406,7 @@ async def _cc_skill_install_from_url(conn: _ControlConnection, raw: dict, msg_ty
             }
         )
     except Exception as exc:  # noqa: BLE001
+        logger.warning("cc_skill_install_from_url_settings_skill_install_a_failed", exc_info=True)
         await ws.send_json(
             {
                 "type": "skill_install_pending",
@@ -439,6 +440,7 @@ async def _cc_skill_install_confirm(conn: _ControlConnection, raw: dict, msg_typ
             }
         )
     except Exception as exc:  # noqa: BLE001
+        logger.warning("cc_skill_install_confirm_settings_skill_install_ad_failed", exc_info=True)
         await ws.send_json(
             {
                 "type": "skill_install_confirm_response",
@@ -466,6 +468,7 @@ async def _cc_skill_install_status(conn: _ControlConnection, raw: dict, msg_type
             }
         )
     except Exception as exc:  # noqa: BLE001
+        logger.warning("cc_skill_install_status_settings_skill_install_ada_failed", exc_info=True)
         await ws.send_json(
             {
                 "type": "skill_install_status_response",
@@ -518,6 +521,7 @@ async def _cc_skill_uninstall(conn: _ControlConnection, raw: dict, msg_type: str
             }
         )
     except Exception as exc:  # noqa: BLE001
+        logger.warning("cc_skill_uninstall_request_uninstall_failed", exc_info=True)
         await ws.send_json(
             {
                 "type": "skill_uninstall_response",

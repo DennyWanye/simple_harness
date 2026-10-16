@@ -389,6 +389,7 @@ def _handle_skill(
         try:
             known = bool(skill_catalog.contains(name))
         except Exception:
+            log.debug("handle_skill_bool_failed", exc_info=True)
             known = False
     if not known:
         return {

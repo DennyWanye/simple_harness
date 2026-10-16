@@ -144,6 +144,7 @@ class SkillMatcher:
         try:
             query_vec = _normalise(self._embedder.encode(query))
         except Exception:  # noqa: BLE001
+            logger.debug("match_normalise_failed", exc_info=True)
             return []
 
         results: list[tuple[str, float]] = []

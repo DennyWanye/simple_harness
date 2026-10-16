@@ -153,6 +153,7 @@ async def _startup_supervisor() -> None:
                         try:
                             _chain = _reg_for_sup.get_chain()
                         except Exception:
+                            logger.debug("startup_supervisor_get_chain_failed", exc_info=True)
                             _chain = []
                         if _chain:
                             _sup_entry = _reg_for_sup.get_entry(_chain[0]["id"])

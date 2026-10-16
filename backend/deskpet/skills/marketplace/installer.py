@@ -338,6 +338,7 @@ class SkillInstaller:
                     }
                 )
             except Exception as exc:  # noqa: BLE001
+                logger.debug("stage_recursive_github_spec_failed", exc_info=True)
                 result.errors.append(
                     {
                         "path": str(sub_dir.relative_to(full_staging)).replace(os.sep, "/"),
@@ -457,6 +458,7 @@ class SkillInstaller:
                 final_path = self.finalize(staged, cleanup_repo=False)
                 installed.append({"name": staged.name, "path": str(final_path)})
             except Exception as exc:  # noqa: BLE001
+                logger.debug("finalize_batch_failed", exc_info=True)
                 errors.append(
                     {
                         "name": staged.name,

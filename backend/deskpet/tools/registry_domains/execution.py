@@ -375,6 +375,7 @@ def _target_path_for_call(
     try:
         generated_root = output_dir(kind_by_tool[name])
     except Exception:
+        logger.debug("target_path_for_call_output_dir_failed", exc_info=True)
         generated_root = Path.cwd() / "outputs"
     generated = generated_root / f"{name}-{safe_session}-{safe_call}{suffix}"
     params[key] = str(generated)
@@ -1140,6 +1141,7 @@ class ExecutionMixin(ToolRegistryCore):
                 else _normalize_with_parser(spec.outcome_parser_id, raw)
             )
         except Exception as exc:  # noqa: BLE001 - parser failures fail closed
+            logger.warning("normalize_result_outcome_parser_failed", exc_info=True)
             return NormalizedToolOutcome.malformed(
                 f"outcome parser {spec.outcome_parser_id} raised {type(exc).__name__}"
             )

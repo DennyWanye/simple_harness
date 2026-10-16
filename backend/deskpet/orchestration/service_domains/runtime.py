@@ -175,6 +175,7 @@ class RuntimeDriveMixin(OrchestrationServiceCore):
             store = self._orchestrator.store
             active = [m for m in store.list_missions() if str(m.status) not in TERMINAL]
         except Exception:  # noqa: BLE001
+            logger.debug("tick_failed", exc_info=True)
             return self.settings.tick_active_seconds
         if not active:
             return self.settings.tick_idle_seconds

@@ -210,6 +210,7 @@ class OpenAICompatibleCore:
                 if isinstance(parsed, dict):
                     body = parsed
             except Exception:  # noqa: BLE001
+                logger.debug("relay_error_class_json_failed", exc_info=True)
                 body = None
         error = body.get("error") if isinstance(body, dict) else None
         upstream_code = str(error.get("code") or "") if isinstance(error, dict) else ""

@@ -249,6 +249,7 @@ def _swap_design_picture(slide, image_path: str) -> bool:
                 try:
                     area = int(sh.width) * int(sh.height)
                 except Exception:  # noqa: BLE001
+                    log.debug("swap_design_picture_int_failed", exc_info=True)
                     area = 0
                 if area > best_area:
                     best_area, best = area, sh
@@ -416,6 +417,7 @@ def _fill_design_page(slide, so: SlideOutline, info: dict[str, Any]) -> None:
         try:
             txt = (shape.text_frame.text or "").strip()
         except Exception:  # noqa: BLE001
+            log.debug("fill_design_page_strip_failed", exc_info=True)
             txt = ""
         if txt and _is_english_semantic_label(txt):
             _set_text_keep_style(shape, [])
@@ -431,6 +433,7 @@ def _fill_design_page(slide, so: SlideOutline, info: dict[str, Any]) -> None:
         try:
             t = (shape.text_frame.text or "").strip().lower()
         except Exception:  # noqa: BLE001
+            log.debug("fill_design_page_lower_failed", exc_info=True)
             t = ""
         if t in _DECOR_WORDS or (t and (t.isdigit() or len(t) <= 2)):
             _candidates.append(shape)

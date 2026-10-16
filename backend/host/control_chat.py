@@ -88,6 +88,7 @@ async def _cc_chat(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
             )
             _msg_sid = str(_legacy_created["session"]["session_id"])
         except Exception as _legacy_create_exc:  # noqa: BLE001
+            logger.warning("cc_chat_create_conversation_session_failed", exc_info=True)
             await ws.send_json(
                 {
                     "type": "chat_v2_error",

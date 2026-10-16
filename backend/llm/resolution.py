@@ -302,6 +302,7 @@ def _attach_model_params(entries: list[Any], model_params: Any) -> None:
         # 按需导入：可选依赖
         from llm.model_catalog import model_param_caps as _caps
     except Exception:  # noqa: BLE001 — never let an import break resolution
+        logger.debug("attach_model_params_import_failed", exc_info=True)
         _caps = None
     for e in entries:
         frag = dict(base)

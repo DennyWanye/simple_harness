@@ -116,7 +116,7 @@ def _content_block_size(block: Mapping[str, Any]) -> int:
         )
         try:
             return len(base64.b64decode(encoded, validate=True))
-        except Exception:
+        except ValueError:
             if candidate.startswith(("http://", "https://")):
                 continue
             return len(candidate.encode("utf-8"))

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from dataclasses import replace
 
@@ -17,6 +18,9 @@ from ..contracts import (
     SearchRequest,
 )
 from ..providers.base import ProviderFailure
+
+logger = logging.getLogger(__name__)
+
 
 _FAILURE_STATUS = {
     PublicErrorCode.TIMEOUT: AttemptStatus.TIMEOUT,
@@ -68,6 +72,7 @@ class ProviderSlotMixin:
             except asyncio.CancelledError:
                 raise
             except Exception:
+                logger.debug("run_provider_in_slot_bool_failed", exc_info=True)
                 available = False
         if not available:
             permit = CircuitPermit("closed", 0)
@@ -285,6 +290,7 @@ class ProviderSlotMixin:
                 started=started,
             )
         except Exception:
+            logger.debug("call_provider_in_slot_wait_for_failed", exc_info=True)
             return await self._finish_slot_unexpected_error(
                 commit_transport,
                 health=health,

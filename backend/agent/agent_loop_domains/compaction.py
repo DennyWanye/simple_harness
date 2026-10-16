@@ -190,6 +190,7 @@ class CompactionMixin(AgentLoopCore):
             try:
                 state._ctoken_est = getattr(state._budget, "estimated_tokens", 0)
             except Exception:  # noqa: BLE001
+                logger.debug("compact_context_getattr_failed", exc_info=True)
                 state._ctoken_est = 0
             # 第 3 刀: real usage 兜底(见 _last_real_prompt_tokens 注释)。
             if state._last_real_prompt_tokens > state._ctoken_est:
@@ -223,6 +224,7 @@ class CompactionMixin(AgentLoopCore):
                 if state._ctx_compact_at is not None:
                     state._ctx_should_compress = state._ctoken_est >= int(state._ctx_compact_at) > 0
             except Exception:  # noqa: BLE001
+                logger.debug("compact_context_getattr_failed", exc_info=True)
                 state._ctx_should_compress = False
             if (
                 state._budget_block_pending

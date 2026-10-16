@@ -127,6 +127,7 @@ def _activation_rejection(
             try:
                 next_action = str(run_aware(capability_id, reason or ""))
             except Exception:  # noqa: BLE001 - guidance never fails the refusal
+                logger.debug("activation_rejection_str_failed", exc_info=True)
                 next_action = None
         if not next_action:
             next_action = unavailable_capability_next_action(
@@ -396,6 +397,7 @@ def register_capability_bridge_tools(
             )
             return json.dumps(result, ensure_ascii=False)
         except Exception as exc:  # noqa: BLE001
+            logger.debug("search_handler_failed", exc_info=True)
             return json.dumps({"error": str(exc), "retriable": False})
 
     def describe_handler(args: dict[str, Any], _task_id: str) -> str:
@@ -415,6 +417,7 @@ def register_capability_bridge_tools(
                 ensure_ascii=False,
             )
         except Exception as exc:  # noqa: BLE001
+            logger.debug("describe_handler_dumps_failed", exc_info=True)
             error = str(exc)
             payload: dict[str, Any] = {
                 "error": error,
@@ -429,6 +432,7 @@ def register_capability_bridge_tools(
                 try:
                     suggestions = service.suggestions(requested)
                 except Exception:  # noqa: BLE001
+                    logger.debug("describe_handler_suggestions_failed", exc_info=True)
                     suggestions = []
                 next_action = (
                     "Do not retry guessed capability ids. Call tool_search "
@@ -494,6 +498,7 @@ def register_capability_bridge_tools(
             # Host log, so the model retried the identical call until the
             # repeated-tool limit failed the whole Run.  Return a stable code
             # plus one actionable next step and log the rejection.
+            logger.debug("activate_handler_failed", exc_info=True)
             return json.dumps(_activation_rejection(exc, requested, service), ensure_ascii=False)
 
     search_schema = {

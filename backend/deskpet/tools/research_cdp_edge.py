@@ -127,6 +127,7 @@ async def _wait_for_ws_url(port: int, timeout: float) -> str:
             if isinstance(ws_url, str) and ws_url:
                 return ws_url
         except Exception as exc:  # noqa: BLE001
+            log.debug("wait_for_ws_url_to_thread_failed", exc_info=True)
             last_error = str(exc)
         await asyncio.sleep(0.25)
     raise RuntimeError(f"edge cdp websocket unavailable: {last_error}")
@@ -151,6 +152,7 @@ async def _recv_loop() -> None:
     except asyncio.CancelledError:
         raise
     except Exception as exc:  # noqa: BLE001
+        log.debug("recv_loop_loads_failed", exc_info=True)
         for fut in list(_pending.values()):
             if not fut.done():
                 fut.set_exception(exc)
@@ -294,6 +296,7 @@ async def _eval(
             )
             return (result.get("result") or {}).get("value")
         except Exception as exc:  # noqa: BLE001 — 含 wait_for 超时,导航中重试
+            log.debug("eval_cdp_call_failed", exc_info=True)
             last_exc = exc
             await asyncio.sleep(min(0.4, _remaining(deadline)))
     if last_exc is not None:

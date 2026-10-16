@@ -459,6 +459,7 @@ class SearchGateway(ProviderSlotMixin):
                     except asyncio.CancelledError:
                         raise
                     except Exception:
+                        logger.debug("execute_query_failed", exc_info=True)
                         self._google_reachable = False
                     if (
                         self._google_reachable
@@ -694,6 +695,7 @@ class SearchGateway(ProviderSlotMixin):
             except asyncio.CancelledError:
                 raise
             except Exception:
+                logger.debug("provider_availability_bool_failed", exc_info=True)
                 result[name] = False
         return result
 
@@ -733,6 +735,7 @@ class SearchGateway(ProviderSlotMixin):
         except asyncio.CancelledError:
             raise
         except Exception:
+            logger.debug("ensure_google_reachable_bool_failed", exc_info=True)
             result = False
         async with self._google_probe_lock:
             if self._google_probe_task is task:
@@ -926,6 +929,7 @@ class SearchGateway(ProviderSlotMixin):
                 )
                 hydrated.append(replace(item, text=document.text[:4000]))
             except Exception:
+                logger.debug("hydrate_fetch_failed", exc_info=True)
                 hydrated.append(replace(item, hydration_error=PublicErrorCode.FETCH_FAILED.value))
         _metric(
             "search_gateway_hydrate",

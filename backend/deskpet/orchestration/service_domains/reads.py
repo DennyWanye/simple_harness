@@ -72,6 +72,7 @@ class ReadMixin(OrchestrationServiceCore):
         try:
             return [str(t.status) for t in self._orchestrator.store.list_tasks(mission_id)]
         except Exception:  # noqa: BLE001
+            logger.debug("task_statuses_str_failed", exc_info=True)
             return []
 
     def _attempt_statuses(self, mission_id: str) -> list[str]:
@@ -83,6 +84,7 @@ class ReadMixin(OrchestrationServiceCore):
                 for a in store.list_attempts(t.id)
             ]
         except Exception:  # noqa: BLE001
+            logger.debug("attempt_statuses_failed", exc_info=True)
             return []
 
     def _planning_waits(self) -> set[str]:
@@ -272,6 +274,7 @@ class ReadMixin(OrchestrationServiceCore):
         try:
             active = self._orchestrator.store.active_policy()
         except Exception:  # noqa: BLE001
+            logger.debug("policy_drift_active_policy_failed", exc_info=True)
             return []
         params = dict((active or {}).get("params") or {})
         configured = int(self.settings.max_concurrency)
@@ -293,6 +296,7 @@ class ReadMixin(OrchestrationServiceCore):
             store = self._orchestrator.store
             events = store.list_events(mission_id)
         except Exception:  # noqa: BLE001
+            logger.debug("blocked_failed", exc_info=True)
             return []
         last: dict[str, Mapping[str, Any]] = {}
         for event in events:

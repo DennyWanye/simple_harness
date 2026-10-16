@@ -363,6 +363,7 @@ def _parse_failure_diagnostic(
             # accepts NaN/Infinity, the SDK's JSON contract does not.
             validate_json_value(thaw_json(arguments))
         except Exception:
+            logger.debug("parse_failure_diagnostic_validate_json_value_failed", exc_info=True)
             detail["check"] = "tool_call_arguments_json_value_invalid"
             return detail
     detail.pop("call_index", None)
@@ -381,6 +382,7 @@ def _parse_failure_diagnostic(
             # below prompt+completion, and non-int cache/reasoning details.
             _sdk_provider_usage(usage)
         except Exception:
+            logger.debug("parse_failure_diagnostic_sdk_provider_usage_failed", exc_info=True)
             detail["check"] = "usage_values_rejected"
             return detail
     fields: list[tuple[str, object]] = [("model", payload.get("model"))]
@@ -899,6 +901,7 @@ class _ProductOpenAICompatibleProvider(OpenAICompatibleProvider):
                 )
             except Exception:
                 # Diagnostics must never replace the original Provider error.
+                logger.debug("parse_response_parse_failure_diagnostic_failed", exc_info=True)
                 detail = {"check": "diagnostic_unavailable"}
                 diagnostic = '{"check":"diagnostic_unavailable"}'
             logger.warning(

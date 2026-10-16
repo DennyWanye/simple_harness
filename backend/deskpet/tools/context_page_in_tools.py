@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import time
 import uuid
 from collections.abc import Callable
@@ -13,6 +14,9 @@ from typing import Any
 
 from deskpet.execution.current_tool_pages import PREFIX as CURRENT_PREFIX
 from deskpet.execution.primary_context_pages import PREFIX, PrimaryContextPageUnavailable
+
+logger = logging.getLogger(__name__)
+
 
 # 事件 AF：主页面引用被拒时公共消息的固定前缀。``primary_dependencies`` 用它
 # 认出"这是主页面的确定性拒绝"，因此它必须是**前缀**而不是全等——升级后同一条
@@ -340,6 +344,7 @@ def build_context_page_in_handler(
                 try:
                     content = str(skill_body_getter(ref.source))
                 except Exception:
+                    logger.debug("handle_str_failed", exc_info=True)
                     outcome = "reference_stale"
                 else:
                     if hashlib.sha256(content.encode("utf-8")).hexdigest() != ref.source_hash:

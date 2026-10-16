@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -26,6 +27,8 @@ from .manager import CapabilityPackManager
 from .refresh_contracts import CapabilityOperationReceipt
 from .search import CapabilitySearch
 from .source import PackSourceRequest
+
+logger = logging.getLogger(__name__)
 
 
 def _json(value: Mapping[str, Any]) -> str:
@@ -524,18 +527,21 @@ def register_capability_tools(registry: Any, service: CapabilityToolService) -> 
         try:
             return _json(await service.list_visible(context))
         except Exception as exc:  # noqa: BLE001
+            logger.debug("list_handler_json_failed", exc_info=True)
             return _error(getattr(exc, "code", type(exc).__name__), str(exc))
 
     async def search_handler(args: dict[str, Any], context: ToolExecutionContext | None) -> str:
         try:
             return _json(await service.search_visible(args, context))
         except Exception as exc:  # noqa: BLE001
+            logger.debug("search_handler_json_failed", exc_info=True)
             return _error(getattr(exc, "code", type(exc).__name__), str(exc))
 
     async def refresh_handler(_args: dict[str, Any], context: ToolExecutionContext | None) -> str:
         try:
             return _json(await service.refresh(context))
         except Exception as exc:  # noqa: BLE001
+            logger.debug("refresh_handler_json_failed", exc_info=True)
             return _error(getattr(exc, "code", type(exc).__name__), str(exc))
 
     def lifecycle_handler(kind: str):
@@ -543,6 +549,7 @@ def register_capability_tools(registry: Any, service: CapabilityToolService) -> 
             try:
                 return _json(await service.install(args, context, kind=kind))
             except Exception as exc:  # noqa: BLE001
+                logger.debug("invoke_json_failed", exc_info=True)
                 return _error(getattr(exc, "code", type(exc).__name__), str(exc))
 
         return invoke
@@ -551,12 +558,14 @@ def register_capability_tools(registry: Any, service: CapabilityToolService) -> 
         try:
             return _json(await service.uninstall(args, context))
         except Exception as exc:  # noqa: BLE001
+            logger.debug("uninstall_handler_json_failed", exc_info=True)
             return _error(getattr(exc, "code", type(exc).__name__), str(exc))
 
     async def rollback_handler(args: dict[str, Any], context: ToolExecutionContext | None) -> str:
         try:
             return _json(await service.rollback(args, context))
         except Exception as exc:  # noqa: BLE001
+            logger.debug("rollback_handler_json_failed", exc_info=True)
             return _error(getattr(exc, "code", type(exc).__name__), str(exc))
 
     registrations = (

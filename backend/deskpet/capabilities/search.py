@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import logging
 import math
 import re
 import time
@@ -23,6 +24,8 @@ from .contracts import (
     CatalogStamp,
 )
 from .store import CapabilityStore
+
+logger = logging.getLogger(__name__)
 
 
 class CapabilitySearchError(ValueError):
@@ -191,6 +194,7 @@ class CapabilitySearch:
         except Exception:
             # Semantic recall is additive.  An unavailable model must not block
             # ordinary capability discovery.
+            logger.debug("semantic_scores_get_failed", exc_info=True)
             return tuple(0.0 for _ in documents), False
 
     async def search(

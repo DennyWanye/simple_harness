@@ -160,6 +160,7 @@ def _resolve_ppt_image_model() -> str:
     try:
         return str(image_tools._image_model())  # type: ignore[attr-defined]
     except Exception:  # noqa: BLE001
+        log.debug("resolve_ppt_image_model_str_failed", exc_info=True)
         return "doubao-seedream-4.0"
 
 

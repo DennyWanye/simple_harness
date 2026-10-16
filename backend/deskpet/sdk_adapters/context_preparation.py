@@ -143,7 +143,7 @@ def _attachment_payload_size(block: Mapping[str, Any]) -> int:
         encoded = value.split(",", 1)[1] if value.startswith("data:") and "," in value else value
         try:
             return len(base64.b64decode(encoded, validate=True))
-        except Exception:
+        except ValueError:
             if value.startswith(("http://", "https://")):
                 continue
             return len(value.encode("utf-8"))

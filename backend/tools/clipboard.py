@@ -18,9 +18,12 @@ Implementation notes:
 
 from __future__ import annotations
 
+import logging
 import sys
 
 from tools.base import Tool, ToolSpec
+
+logger = logging.getLogger(__name__)
 
 
 class ReadClipboardTool:
@@ -36,6 +39,7 @@ class ReadClipboardTool:
             # Cross-platform fallback via tkinter (stdlib on macOS/Linux).
             return _read_clipboard_tk()
         except Exception as exc:
+            logger.debug("invoke_startswith_failed", exc_info=True)
             return f"<clipboard read failed: {exc}>"
 
 

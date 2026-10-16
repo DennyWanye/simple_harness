@@ -390,6 +390,7 @@ def get_default_sink() -> MetricsSink:
     try:
         base = paths.user_data_dir()
     except Exception:  # noqa: BLE001
+        log.debug("get_default_sink_user_data_dir_failed", exc_info=True)
         base = Path(tempfile.gettempdir()) / "deskpet"
     _default_sink = MetricsSink(Path(base) / "metrics.jsonl")
     return _default_sink

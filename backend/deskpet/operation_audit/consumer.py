@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
 import uuid
 from collections.abc import Callable
@@ -15,6 +16,9 @@ from deskpet.operation_audit.store import (
     ReadClaim,
     canonical,
 )
+
+logger = logging.getLogger(__name__)
+
 
 if TYPE_CHECKING:
     from deskpet.operation_audit.preparation_sources import PreparationAuditConsumer
@@ -274,6 +278,7 @@ class TerminalAuditConsumer:
             except AuditStoreError:
                 self.last_code, worked = "audit_store_unavailable", 0
             except Exception:  # noqa: BLE001 - background audit failure cannot dispatch/retry business
+                logger.warning("loop_tick_failed", exc_info=True)
                 self.last_code, worked = "audit_consumer_unavailable", 0
             if worked:
                 await asyncio.sleep(0)

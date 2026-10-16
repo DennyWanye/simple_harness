@@ -34,6 +34,7 @@ def _persist_supervisor_enabled(enabled: bool) -> bool:
             text = path.read_text(encoding="utf-8") if path.exists() else ""
             doc = tomlkit.parse(text) if text.strip() else tomlkit.document()
         except Exception:
+            logger.warning("persist_supervisor_enabled_exists_failed", exc_info=True)
             doc = tomlkit.document()
         sup = doc.get("supervisor")
         if not hasattr(sup, "__setitem__"):

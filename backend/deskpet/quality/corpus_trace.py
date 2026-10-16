@@ -2,12 +2,15 @@
 
 import hashlib
 import json
+import logging
 from collections.abc import Mapping
 from dataclasses import fields, is_dataclass
 from enum import Enum
 
 from simple_harness.contracts import thaw_json
 from simple_harness.execution.audit import audit_hash, audit_reference
+
+logger = logging.getLogger(__name__)
 
 
 def wire(value):
@@ -116,10 +119,12 @@ def read_public_trace(uow, run_id):
             terminal_status="NONTERMINAL" if terminal is None else "TERMINAL",
         )
     except Exception as exc:
+        logger.debug("read_public_trace_read_run_terminal_record_failed", exc_info=True)
         result["observation_errors"]["terminal"] = type(exc).__name__
     try:
         _read_providers(uow, run_id, result["providers"])
     except Exception as exc:
+        logger.debug("read_public_trace_read_providers_failed", exc_info=True)
         result["observation_errors"]["providers"] = type(exc).__name__
     try:
         audit = uow.read_run_operation_audit(RunId(run_id), limit=4096)
@@ -139,6 +144,7 @@ def read_public_trace(uow, run_id):
         if expected != observed:
             raise ValueError("corpus_provider_audit_projection_incomplete")
     except Exception as exc:
+        logger.debug("read_public_trace_read_run_operation_audit_failed", exc_info=True)
         result["observation_errors"]["operation_audit"] = type(exc).__name__
     result["trace_status"] = "PARTIAL" if result["observation_errors"] else "COMPLETE"
     result["provider_observation_complete"] = not any(
@@ -157,16 +163,19 @@ async def collect_bound_observations(*, stack, run_id, text, route_reader, queue
         if trace["observation_errors"]:
             result["observation_errors"]["trace"] = "partial_public_trace"
     except Exception as exc:
+        logger.debug("collect_bound_observations_read_corpus_scoring_tra_failed", exc_info=True)
         result["observation_errors"]["trace"] = type(exc).__name__
     try:
         result["transcript"] = wire(stack.read_primary_run_messages(run_id, current_text=text))
         persist("transcript", result["transcript"])
     except Exception as exc:
+        logger.debug("collect_bound_observations_wire_failed", exc_info=True)
         result["observation_errors"]["transcript"] = type(exc).__name__
     try:
         result["route_audit"] = route_reader()
         persist("route_audit", result["route_audit"])
     except Exception as exc:
+        logger.debug("collect_bound_observations_route_reader_failed", exc_info=True)
         result["observation_errors"]["route_audit"] = type(exc).__name__
     if "route_audit" in result:
         try:
@@ -176,10 +185,12 @@ async def collect_bound_observations(*, stack, run_id, text, route_reader, queue
             result["route_effects"] = wire(effects)
             persist("route_effects", result["route_effects"])
         except Exception as exc:
+            logger.debug("collect_bound_observations_read_primary_dependency_failed", exc_info=True)
             result["observation_errors"]["route_effects"] = type(exc).__name__
     try:
         result["queue_snapshot"] = await queue_reader()
         persist("queue_snapshot", result["queue_snapshot"])
     except Exception as exc:
+        logger.debug("collect_bound_observations_queue_reader_failed", exc_info=True)
         result["observation_errors"]["queue_snapshot"] = type(exc).__name__
     return result

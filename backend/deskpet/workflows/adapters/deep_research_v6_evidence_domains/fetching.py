@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from html.parser import HTMLParser
@@ -38,6 +39,8 @@ from .support import (
     _stable_id,
     _VerifiedPage,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class _AnchorCollector(HTMLParser):
@@ -85,6 +88,7 @@ def _archive_links(
     try:
         parser.feed(html)
     except Exception:
+        logger.debug("archive_links_feed_failed", exc_info=True)
         return ()
     selected: list[str] = []
     seen: set[str] = set()
@@ -288,6 +292,7 @@ class FetchMixin(EvidenceRuntimeCore):
             except TimeoutError:
                 return await _done(_SeedDiscoveryOutcome("timeout", True))
             except Exception:
+                logger.debug("discover_seed_format_blob_ref_failed", exc_info=True)
                 return await _done(_SeedDiscoveryOutcome("failed", True))
             if not isinstance(document, EvidenceDocument):
                 return await _done(_SeedDiscoveryOutcome("failed", True))
@@ -376,6 +381,7 @@ class FetchMixin(EvidenceRuntimeCore):
                 )
                 raise
             except Exception:
+                logger.debug("fetch_one_persist_locator_failed", exc_info=True)
                 return await _done(_FetchOutcome(candidate.ordinal, "failed", False))
             try:
                 logical_page_key = (
@@ -495,6 +501,7 @@ class FetchMixin(EvidenceRuntimeCore):
             except TimeoutError:
                 return await _done(_FetchOutcome(candidate.ordinal, "timeout", True))
             except Exception:
+                logger.debug("fetch_one_format_blob_ref_failed", exc_info=True)
                 return await _done(_FetchOutcome(candidate.ordinal, "failed", True))
             if not isinstance(document, EvidenceDocument):
                 return await _done(_FetchOutcome(candidate.ordinal, "failed", True))
@@ -523,6 +530,7 @@ class FetchMixin(EvidenceRuntimeCore):
                 )
                 raise
             except Exception:
+                logger.debug("fetch_one_persist_locator_failed", exc_info=True)
                 return await _done(_FetchOutcome(candidate.ordinal, "failed", True))
             if not matched or authority_id is None:
                 return await _done(_FetchOutcome(candidate.ordinal, "rejected", True))
@@ -547,6 +555,7 @@ class FetchMixin(EvidenceRuntimeCore):
                 )
                 raise
             except Exception:
+                logger.debug("fetch_one_put_blob_failed", exc_info=True)
                 return await _done(_FetchOutcome(candidate.ordinal, "failed", True))
             if body_blob.sha256 != body_hash:
                 return await _done(_FetchOutcome(candidate.ordinal, "failed", True))
@@ -623,6 +632,7 @@ class FetchMixin(EvidenceRuntimeCore):
                     error_code="deadline_expired",
                 )
             except Exception:
+                logger.debug("transport_failed", exc_info=True)
                 return PageExtractionResultV1.create(
                     **common,
                     source_locator_ref=input_locator["source_locator_ref"],

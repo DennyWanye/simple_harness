@@ -1209,6 +1209,7 @@ class NativeWorkflowExecutable:
         except WorkflowNodeError as exc:
             return NodeTaskOutcome(task, None, tuple(control.consumed_interrupt_ids), exc, identity)
         except Exception:
+            logger.warning("run_task_worker_bind_execution_control_failed", exc_info=True)
             error = WorkflowNodeError(
                 code=WorkflowErrorCode.PERMANENT,
                 message_ref="workflow_engine:unexpected_node_failure",

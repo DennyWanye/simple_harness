@@ -210,6 +210,7 @@ def build_agent(
     try:
         st.nudges = int(getattr(st.verifier_cfg, "max_verify_nudges", 2)) if st.verifier_cfg else 2
     except Exception:  # noqa: BLE001
+        logger.debug("build_agent_int_failed", exc_info=True)
         st.nudges = 2
 
     # WI-2.1: read structured_reflection flag from verifier config (default False = BC)

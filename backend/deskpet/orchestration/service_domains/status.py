@@ -289,6 +289,7 @@ class StatusMixin(OrchestrationServiceCore):
                     if str(m.status) not in TERMINAL
                 )
             except Exception:  # noqa: BLE001
+                logger.debug("status_sum_failed", exc_info=True)
                 active = 0
         return {
             "available": self._state == "available",

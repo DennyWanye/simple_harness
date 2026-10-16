@@ -18,6 +18,8 @@ from ..store import CapabilityOperationRecord, CapabilityStoreConflict, Capabili
 from .core import CapabilityPackManagerCore
 from .support import CapabilityManagerError, CapabilityPublication, CapabilityRehydrateFailure
 
+logger = logging.getLogger(__name__)
+
 
 class RecoveryMixin(CapabilityPackManagerCore):
     """Publish recovery, pending global activations and binding rehydration."""
@@ -44,6 +46,7 @@ class RecoveryMixin(CapabilityPackManagerCore):
         try:
             reconciliation = await self.publisher.reconcile(intent)
         except Exception as exc:
+            logger.warning("recover_publish_operation_reconcile_failed", exc_info=True)
             return await self.store.fail_operation(
                 operation.operation_id,
                 status="unknown",
@@ -141,6 +144,9 @@ class RecoveryMixin(CapabilityPackManagerCore):
             try:
                 old_binding = self._binding_from_intent_payload(intent.old_binding)
             except Exception as exc:
+                logger.warning(
+                    "recover_after_reconciliation_binding_from_intent_p_failed", exc_info=True
+                )
                 return await self.store.fail_operation(
                     operation.operation_id,
                     status="unknown",
@@ -208,6 +214,9 @@ class RecoveryMixin(CapabilityPackManagerCore):
                     )
                 await self.publisher.stop_binding(old_binding)
             except Exception as exc:
+                logger.warning(
+                    "recover_uninstall_operation_binding_from_intent_pa_failed", exc_info=True
+                )
                 return await self.store.fail_operation(
                     operation.operation_id,
                     status="unknown",
@@ -349,6 +358,9 @@ class RecoveryMixin(CapabilityPackManagerCore):
                     )
                 await self.publisher.stop_binding(old_binding)
             except Exception as exc:
+                logger.warning(
+                    "recover_unbound_operation_binding_from_intent_payl_failed", exc_info=True
+                )
                 return await self.store.fail_operation(
                     operation.operation_id,
                     status="unknown",
@@ -571,6 +583,7 @@ class RecoveryMixin(CapabilityPackManagerCore):
         try:
             reconciliation = await self.publisher.reconcile(intent)
         except Exception as exc:
+            logger.warning("recover_skill_install_batch_reconcile_failed", exc_info=True)
             return await self.store.fail_operation(
                 operation.operation_id,
                 status="unknown",

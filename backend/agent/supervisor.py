@@ -330,7 +330,8 @@ class SupervisorAgent:
         """One LLM round-trip with hard timeout. Errors → wait/green."""
         try:
             user_payload = json.dumps(snapshot, ensure_ascii=False, indent=2)
-        except Exception:
+        except Exception:  # noqa: BLE001 - 快照转不成 JSON 时用文字形式
+            logger.debug("supervisor_snapshot_json_failed", exc_info=True)
             user_payload = str(snapshot)
         messages = [
             {"role": "system", "content": _SYSTEM_PROMPT},
@@ -429,6 +430,7 @@ class SupervisorAgent:
             try:
                 _is_auto = bool(self._auto_mode_check())
             except Exception:
+                logger.debug("dispatch_bool_failed", exc_info=True)
                 _is_auto = False
             if _is_auto:
                 logger.info(
@@ -497,6 +499,7 @@ class SupervisorAgent:
             try:
                 _is_auto2 = bool(self._auto_mode_check())
             except Exception:
+                logger.debug("dispatch_bool_failed", exc_info=True)
                 _is_auto2 = False
             if _is_auto2:
                 try:

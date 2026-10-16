@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -79,6 +82,7 @@ class ProviderLimiter:
                 try:
                     acquired = bool(waiter.result())
                 except Exception:
+                    logger.debug("abandon_bool_failed", exc_info=True)
                     acquired = False
                 if acquired:
                     slot.release()

@@ -130,6 +130,7 @@ def _ppt_preview_render_enabled() -> bool:
     try:
         return _cfg_bool(_ppt_config_section(), "preview_render", True)
     except Exception:  # noqa: BLE001
+        log.debug("ppt_preview_render_enabled_cfg_bool_failed", exc_info=True)
         return True
 
 

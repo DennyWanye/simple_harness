@@ -94,6 +94,7 @@ async def _cc_chat_turn_timeout_set(conn: _ControlConnection, raw: dict, msg_typ
     try:
         _mins = int(round(float(payload.get("minutes", 15))))
     except Exception:  # noqa: BLE001
+        logger.debug("cc_chat_turn_timeout_set_int_failed", exc_info=True)
         _mins = 15
     _mins = max(1, min(60, _mins))
     _ov = _load_llm_runtime_overrides()
@@ -115,6 +116,7 @@ async def _cc_chat_turn_timeout_get(conn: _ControlConnection, raw: dict, msg_typ
     try:
         _cur = int(round(float(_load_llm_runtime_overrides().get("chat_turn_timeout_minutes", 15))))
     except Exception:  # noqa: BLE001
+        logger.debug("cc_chat_turn_timeout_get_int_failed", exc_info=True)
         _cur = 15
     await ws.send_json(
         {

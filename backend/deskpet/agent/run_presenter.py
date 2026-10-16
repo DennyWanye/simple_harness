@@ -714,7 +714,8 @@ async def _present_tool_result(
     assert isinstance(event, ToolResultEvent)
     try:
         parsed = json.loads(event.result)
-    except Exception:
+    except Exception:  # noqa: BLE001 - 结果不是 JSON 时按原文展示
+        logger.debug("tool_result_json_parse_failed", exc_info=True)
         parsed = event.result
     public_result = project_public_tool_result(
         event.tool_name,

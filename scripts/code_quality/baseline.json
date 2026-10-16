@@ -27,7 +27,7 @@
  "funcs_over_300_sdk": [],
  "funcs_over_150": 296,
  "inner_imports": 450,
- "except_broad": 1824,
+ "except_broad": 1821,
  "except_broad_silent": 22,
  "backend_imports_sdk_internal": 0,
  "backend_sdk_module_paths": [
@@ -127,7 +127,7 @@
  "main_py_lines": 289,
  "ts_explicit_any": 62,
  "ts_inline_styles": 850,
- "ruff_backend_total": 2224,
+ "ruff_backend_total": 2126,
  "ruff_backend_by_rule": {
   "E501": 3993,
   "UP045": 590,
@@ -366,6 +366,6 @@
  "legacy_lines": 2142,
  "cycle_imports_backend": 19,
  "cycle_imports_sdk": 40,
- "except_broad_unexplained": 346,
+ "except_broad_unexplained": 50,
  "print_product_unexplained": 11
 }

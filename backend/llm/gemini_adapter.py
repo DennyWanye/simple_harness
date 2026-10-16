@@ -360,6 +360,7 @@ class GeminiAdapter(BaseLLMAdapter):
                     try:
                         args_dict = dict(args) if not isinstance(args, dict) else args
                     except Exception:  # noqa: BLE001
+                        logger.debug("build_response_dict_failed", exc_info=True)
                         args_dict = {}
                     tool_calls.append(
                         ToolCall(
@@ -410,6 +411,7 @@ class GeminiAdapter(BaseLLMAdapter):
                             try:
                                 args_dict = dict(args) if not isinstance(args, dict) else args
                             except Exception:  # noqa: BLE001
+                                logger.debug("stream_dict_failed", exc_info=True)
                                 args_dict = {}
                             emitted_tool_calls = True
                             yield ChatChunk(

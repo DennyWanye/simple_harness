@@ -297,6 +297,7 @@ async def _try_resolve_execution_workflow_decision(
             normalized_response,
         )
     except Exception as exc:  # noqa: BLE001
+        logger.warning("try_resolve_execution_workflow_decision_signal_pro_failed", exc_info=True)
         await ws.send_json(
             {
                 "type": "workflow_ipc_error",

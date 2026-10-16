@@ -134,6 +134,7 @@ def _default_workspace() -> Path:
     try:
         return resolve_workspace_root()
     except Exception:  # noqa: BLE001
+        logger.debug("default_workspace_resolve_workspace_root_failed", exc_info=True)
         return Path(tempfile.gettempdir())
 
 

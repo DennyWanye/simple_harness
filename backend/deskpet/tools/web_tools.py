@@ -517,6 +517,7 @@ def _score_page(html: str, keywords: list[str]) -> tuple[float, str, str]:
                     node.decompose()
             text = (body.text(separator=" ") or "").strip()
     except Exception:  # noqa: BLE001
+        logger.debug("score_page_import_failed", exc_info=True)
         text = re.sub(r"<[^>]+>", " ", html)
 
     haystack = (title + " " + text).lower()

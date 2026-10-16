@@ -193,6 +193,7 @@ def _drive_free_bytes(path: Path) -> int | None:
         try:
             return shutil.disk_usage(str(p)).free
         except Exception:  # noqa: BLE001
+            log.debug("drive_free_bytes_disk_usage_failed", exc_info=True)
             if p.parent == p:
                 return None
             p = p.parent
@@ -223,6 +224,7 @@ def _disk_preflight(*, image_mode: bool, pages: int) -> str | None:
     try:
         drive = base.anchor or str(base)
     except Exception:  # noqa: BLE001
+        log.debug("disk_preflight_str_failed", exc_info=True)
         drive = str(base)
     return (
         f"磁盘空间不足：{drive} 仅剩 {free_mb}MB，生成这份 PPT 约需 {need_mb}MB，请清理磁盘后重试。"

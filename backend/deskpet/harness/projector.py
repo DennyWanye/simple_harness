@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import math
 import time
 from collections.abc import Callable, Sequence
@@ -22,6 +23,9 @@ from deskpet.execution.fences import (
     UnboundTerminalDeliveryFence,
 )
 from deskpet.execution.uow_ports import HarnessDeliveryUnitOfWork
+
+logger = logging.getLogger(__name__)
+
 
 _BOUND_POLICIES = frozenset({DeliveryPolicy.RETRY_WHILE_BOUND, DeliveryPolicy.BEST_EFFORT})
 
@@ -192,6 +196,7 @@ class ExecutionDeliveryDispatcher:
         except DeliveryDiscarded as exc:
             error, discard = f"{type(exc).__name__}: {exc}", True
         except Exception as exc:
+            logger.debug("run_once_failed", exc_info=True)
             discard = claim.policy is DeliveryPolicy.BEST_EFFORT
             error = f"{type(exc).__name__}: {exc}"
             retry_at = None if discard else self._retry_at(claim.attempts)

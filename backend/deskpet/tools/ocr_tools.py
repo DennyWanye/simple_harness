@@ -106,6 +106,7 @@ def image_ocr(image_path: str) -> dict[str, Any]:
     try:
         result, _elapse = engine(str(resolved))
     except Exception as exc:  # noqa: BLE001
+        log.debug("image_ocr_engine_failed", exc_info=True)
         return {"ok": False, "error": f"ocr failed: {exc}", "retriable": True}
 
     lines: list[str] = []

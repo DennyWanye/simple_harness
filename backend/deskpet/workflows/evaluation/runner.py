@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import inspect
 import json
+import logging
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -19,6 +20,8 @@ from .models import (
     ExperimentResult,
 )
 from .store import EvaluationStore
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -163,6 +166,7 @@ class LocalEvaluationRunner:
             )
             return degraded
         except Exception as error:
+            logger.debug("run_example_resolve_failed", exc_info=True)
             latency_ms = max(0.0, (self._monotonic() - started) * 1000.0)
             outcome = adapt_exception(
                 error,

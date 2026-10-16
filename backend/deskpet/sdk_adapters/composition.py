@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import inspect
 import json
+import logging
 import time
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
@@ -55,6 +56,9 @@ from .runtime_paths import (
     verify_runtime_identity,
 )
 
+logger = logging.getLogger(__name__)
+
+
 PortsFactory: TypeAlias = Callable[[Database, SqliteExecutionUnitOfWork], RuntimePorts]
 
 
@@ -99,6 +103,7 @@ async def _close_owned_resources(
             if inspect.isawaitable(closed):
                 await closed
         except BaseException as exc:
+            logger.debug("close_owned_resources_failed", exc_info=True)
             errors.append(exc)
     if errors:
         raise BaseExceptionGroup("owned resource cleanup failed", errors)
@@ -346,15 +351,18 @@ class ProductSdkRuntimeStack:
             try:
                 await runtime.close()
             except BaseException as exc:  # cleanup must continue in reverse order
+                logger.debug("cleanup_close_failed", exc_info=True)
                 errors.append(exc)
         try:
             await _close_owned_resources(owned_resources)
         except BaseException as exc:  # cleanup must continue to the database
+            logger.debug("cleanup_close_owned_resources_failed", exc_info=True)
             errors.append(exc)
         if database is not None:
             try:
                 database.close()
             except BaseException as exc:
+                logger.debug("cleanup_close_failed", exc_info=True)
                 errors.append(exc)
         if errors:
             raise BaseExceptionGroup("SDK Runtime resource cleanup failed", errors)
@@ -457,6 +465,7 @@ class ProductSdkRuntimeStack:
                 try:
                     await self._cleanup(runtime, owned_resources, database)
                 except BaseException as cleanup_error:
+                    logger.debug("start_cleanup_failed", exc_info=True)
                     startup_error.add_note(
                         f"resource cleanup also failed: {type(cleanup_error).__name__}"
                     )

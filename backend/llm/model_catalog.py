@@ -249,6 +249,7 @@ def build_catalog(model_ids: list[str]) -> list[dict[str, Any]]:
                 _mi.user_selectable_windows_for(mid) if model_param_caps(mid)["context"] else []
             )
         except Exception:  # noqa: BLE001
+            logger.debug("build_catalog_import_failed", exc_info=True)
             _supported = []
         out.append(
             {

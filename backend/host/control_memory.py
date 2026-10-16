@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from deskpet.memory.human_memory_api import handle_human_memory_command, send_human_memory_response
 
 from host.control_connection import _ControlConnection
@@ -9,6 +11,8 @@ from host.memory_messages import _handle_memory_message
 from host.runtime import config, service_context
 from host.state import host_state
 from host.stores_bootstrap import _summarizer_state_db_path
+
+logger = logging.getLogger(__name__)
 
 
 async def _cc_memory_summarize_now(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
@@ -106,6 +110,7 @@ async def _cc_memory_archive_list(conn: _ControlConnection, raw: dict, msg_type:
             }
         )
     except Exception as exc:  # noqa: BLE001
+        logger.warning("cc_memory_archive_list_import_failed", exc_info=True)
         await ws.send_json(
             {
                 "type": "memory_archive_list_response",
@@ -125,6 +130,7 @@ async def _cc_human_memory_request(conn: _ControlConnection, raw: dict, msg_type
             host_state.companion_control_ingress, companion_challenge
         )
     except Exception as exc:
+        logger.debug("cc_human_memory_request_authenticate_failed", exc_info=True)
         await ws.send_json(
             {
                 "type": "human_memory_response",

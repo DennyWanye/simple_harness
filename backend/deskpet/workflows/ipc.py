@@ -243,6 +243,7 @@ class WorkflowIPCDispatcher:
         except asyncio.CancelledError:
             raise
         except Exception as exc:
+            logger.debug("dispatch_isinstance_failed", exc_info=True)
             error = self._error(exc)
             return {
                 "type": "workflow_ipc_error",

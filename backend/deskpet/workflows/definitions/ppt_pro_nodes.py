@@ -8,6 +8,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import inspect
+import logging
 import posixpath
 import re
 import zipfile
@@ -21,6 +22,9 @@ from xml.etree import ElementTree
 
 from ...tools import ppt_tools
 from ..contracts import JsonValue, canonical_json, validate_json_value
+
+logger = logging.getLogger(__name__)
+
 
 FULL_PAGE_RENDER_MODE = "full_page_images"
 _FULL_PAGE_REVISION_CODES = frozenset(
@@ -282,6 +286,7 @@ def inspect_rendered_deck(
                                 }
                             )
             except Exception as exc:  # library boundary must fail closed
+                logger.debug("inspect_rendered_deck_import_failed", exc_info=True)
                 failures.append(
                     {
                         "code": "ppt_openxml_invalid",
@@ -1053,6 +1058,7 @@ async def generate_slide_image(
             path = ppt_tools._compose_full_page_image(path, updated["slide"])
             result["path"] = path
         except Exception as exc:  # noqa: BLE001
+            logger.debug("generate_slide_image_compose_full_page_image_failed", exc_info=True)
             result = {
                 "path": None,
                 "error": f"full-page normalization failed: {exc}",

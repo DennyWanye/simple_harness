@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 class DeliveryDisposition(str, Enum):
@@ -107,6 +110,7 @@ async def broadcast_websocket_best_effort(
     except TimeoutError:
         return DeliveryAttemptResultV1.retryable_failure("websocket_send_timeout")
     except Exception:
+        logger.debug("broadcast_websocket_best_effort_id_failed", exc_info=True)
         return DeliveryAttemptResultV1.retryable_failure("websocket_send_failed")
     return DeliveryAttemptResultV1.delivered("websocket_best_effort")
 

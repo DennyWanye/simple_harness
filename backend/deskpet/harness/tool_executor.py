@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -42,6 +43,8 @@ from deskpet.tools.registry import ToolRegistry
 from deskpet.workflows.effects import NormalizedToolOutcome, PreparedToolCall
 
 from .ports import ExecuteTools, ToolOutcomesSignal
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -620,6 +623,9 @@ class EffectBatchExecutor:
                             expected_epoch=dispatch_fence_epoch,
                         )
                     except Exception:
+                        logger.debug(
+                            "execute_at_validate_run_execution_epoch_failed", exc_info=True
+                        )
                         effect_metadata[index]["late_pending"] = True
                         results[index] = NormalizedToolOutcome.malformed(
                             "completion suppressed by run execution fence"
@@ -712,6 +718,9 @@ class EffectBatchExecutor:
                         # Cancellation remains the caller-visible result.  The
                         # detached completion is retained for a later durable
                         # reconciliation attempt even if this read/CAS failed.
+                        logger.debug(
+                            "execute_at_converge_cancelled_started_dispatch_failed", exc_info=True
+                        )
                         effect_metadata[index]["late_pending"] = True
                     detach = getattr(dispatch, "detach_completion", None)
                     if callable(detach):
@@ -720,6 +729,7 @@ class EffectBatchExecutor:
             except StaleRecoveryLease:
                 raise
             except Exception as exc:  # one bad sibling must not cancel the batch
+                logger.warning("execute_at_failed", exc_info=True)
                 dispatch = prepared_dispatches[index]
                 if dispatch is not None:
                     await dispatch.abort_unstarted()

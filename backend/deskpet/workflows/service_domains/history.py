@@ -279,6 +279,7 @@ class HistoryDeliveryMixin(WorkflowServiceCore):
                             logger.warning("workflow_delivery_mark_failed_failed", exc_info=True)
                     raise
                 except Exception as exc:
+                    logger.warning("deliver_event_once_handler_failed", exc_info=True)
                     failed = await self.outbox.mutate_delivery(
                         current["delivery_id"],
                         action="failed",

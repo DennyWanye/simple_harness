@@ -67,6 +67,7 @@ async def _initialize_companion_projection_services() -> None:
         try:
             durable_binding = host_state.companion_store.get_profile_binding(device_scope="desktop")
         except Exception:  # noqa: BLE001 - observability must never fail startup
+            logger.debug("initialize_companion_projection_services_get_profi_failed", exc_info=True)
             durable_binding = None
         logger.info(
             "companion_projection_history_closed_identity_unready",

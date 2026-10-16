@@ -86,6 +86,7 @@ class AgentReachPort:
             from agent_reach.channels import get_all_channels
             from agent_reach.config import Config
         except Exception:
+            logger.debug("doctor_import_failed", exc_info=True)
             return {
                 "agent_reach": {
                     "status": "off",
@@ -125,6 +126,7 @@ class AgentReachPort:
                         else None,
                     }
                 except Exception:  # noqa: BLE001 - one channel cannot break doctor
+                    logger.debug("doctor_safe_message_failed", exc_info=True)
                     fallback = _safe_message(getattr(channel, "name", "unknown"), limit=50)
                     results[fallback or "unknown"] = {
                         "status": "error",
@@ -176,6 +178,7 @@ class AgentReachPort:
             # 按需导入：重型包
             from agent_reach.channels import get_channel
         except Exception:
+            logger.debug("read_url_import_failed", exc_info=True)
             return AgentReachEvidence(
                 False,
                 "web",
@@ -206,6 +209,7 @@ class AgentReachPort:
             try:
                 text = str(executor.read(target) or "").strip()
             except Exception as exc:  # noqa: BLE001
+                logger.debug("read_url_strip_failed", exc_info=True)
                 return AgentReachEvidence(
                     False,
                     requested_name,

@@ -14,6 +14,7 @@ before a process adapter is called.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from typing import Any, Literal, Protocol
@@ -26,6 +27,8 @@ from deskpet.capabilities.process_job import (
 from .authority import RevocationBarrier, SharedRevocationLease
 from .contracts import EvaluationCaseLaunch, EvaluationExecutionPermit, OwnerRef
 from .store import canonical_hash
+
+logger = logging.getLogger(__name__)
 
 
 class EvaluationExecutionError(RuntimeError):
@@ -563,6 +566,7 @@ class FenceAwareEvaluationCaseExecutor:
                 result_hash=completion.result_hash,
             )
         except BaseException as exc:
+            logger.debug("execute_case_await_health_failed", exc_info=True)
             reason_code = (
                 exc.reason_code
                 if isinstance(exc, EvaluationExecutionError)

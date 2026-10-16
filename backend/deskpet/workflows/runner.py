@@ -1058,6 +1058,7 @@ class WorkflowRunner:
                 raise ValueError("checkpoint head is missing")
             return None
         except Exception:
+            logger.warning("validate_head_checkpoint_get_checkpoint_failed", exc_info=True)
             db = await self.store._connect()
             try:
                 checkpoint = await (

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 import time
 from collections.abc import Awaitable, Callable, Iterator, Mapping
 from contextlib import contextmanager
@@ -14,6 +15,8 @@ from typing import (
     TypeAlias,
     runtime_checkable,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _required(value: str, name: str) -> str:
@@ -277,6 +280,7 @@ class FunctionPreparedToolDispatch:
             self._completion_observation_armed = True
             return self._started_ack
         except Exception:
+            logger.debug("start_create_task_failed", exc_info=True)
             if self._completion is not None:
                 return PreparedToolDispatchStartUnknown(self.identity, "dispatch_start_ack_failed")
             return PreparedToolDispatchNotStarted(self.identity, "dispatch_task_not_created")

@@ -206,6 +206,7 @@ async def _handle_inspector_snapshot_request(raw, *, session_id, ws) -> bool:
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001
+            logger.warning("create_public_snapshot_public_read_error_failed", exc_info=True)
             await ws.send_json(
                 {
                     "type": "harness_inspector_error",
@@ -269,6 +270,7 @@ async def _handle_inspector_details_request(raw, *, session_id, ws) -> bool:
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001
+            logger.warning("query_public_details_runtime_error_failed", exc_info=True)
             await ws.send_json(
                 {
                     "type": "harness_inspector_error",

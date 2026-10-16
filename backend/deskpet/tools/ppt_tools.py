@@ -216,6 +216,7 @@ def _build_template_description() -> str:
     try:
         cats = _tpl.list_categories()
     except Exception:  # noqa: BLE001
+        log.debug("build_template_description_list_categories_failed", exc_info=True)
         cats = []
     if not cats:
         return "Optional .pptx absolute path. 当前模板库不可用,要模板填充请传一个 .pptx 绝对路径。"
@@ -226,6 +227,7 @@ def _build_template_description() -> str:
         try:
             hint = _tpl.CATEGORY_STYLE_HINTS.get(key, "")
         except Exception:  # noqa: BLE001
+            log.debug("build_template_description_get_failed", exc_info=True)
             hint = ""
         lines.append(f"「{key}」{hint}(约 {cat.get('count', '?')} 套)".rstrip())
     listing = "；".join(lines)
@@ -263,6 +265,7 @@ def _ppt_async_enabled() -> bool:
     try:
         return _cfg_bool(_ppt_config_section(), "async_enabled", True)
     except Exception:  # noqa: BLE001
+        log.debug("ppt_async_enabled_cfg_bool_failed", exc_info=True)
         return True
 
 
@@ -316,6 +319,7 @@ def _handle_ppt_create(
             try:
                 result = await loop.run_in_executor(None, lambda: ppt_create(outline, **kwargs))
             except Exception as exc:  # noqa: BLE001
+                log.debug("bg_job_run_in_executor_failed", exc_info=True)
                 result = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
             try:
                 path = result.get("path")

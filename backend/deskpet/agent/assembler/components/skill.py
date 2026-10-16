@@ -128,6 +128,7 @@ class SkillComponent:
             else:
                 skills = []
         except Exception as exc:
+            logger.warning("provide_hasattr_failed", exc_info=True)
             return Slice(
                 component_name=self.name,
                 priority=70,
@@ -216,6 +217,7 @@ class SkillComponent:
         try:
             ranked: list[tuple[str, float]] = await self._matcher.match_async(query, skills)
         except Exception:  # noqa: BLE001
+            logger.debug("provide_match_async_failed", exc_info=True)
             ranked = []
 
         # Filter to strong matches; skip disable_model_invocation skills.

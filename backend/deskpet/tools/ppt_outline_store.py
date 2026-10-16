@@ -308,6 +308,7 @@ def _outline_history_enabled() -> bool:
         raw = standalone_config_section("ppt") or {}
         return bool(raw.get("pro_outline_history", True))
     except Exception:  # noqa: BLE001
+        log.debug("outline_history_enabled_import_failed", exc_info=True)
         return True
 
 
@@ -345,6 +346,7 @@ def _default_state_db_path() -> Path:
     try:
         return _paths.user_data_dir() / "data" / "state.db"
     except Exception:
+        log.debug("default_state_db_path_user_data_dir_failed", exc_info=True)
         return Path("data") / "state.db"
 
 

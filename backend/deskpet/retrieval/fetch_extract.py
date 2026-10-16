@@ -914,6 +914,7 @@ class FetchExtractService:
                 response = await self.client.get(robots_url, timeout=min(timeout, 3.0))
                 parser.parse(response.text.splitlines() if response.status_code == 200 else [])
             except Exception:
+                logger.debug("allowed_by_robots_get_failed", exc_info=True)
                 parser.parse([])
             async with self._robots_lock:
                 self._robots[host] = parser
@@ -964,6 +965,7 @@ class FetchExtractService:
                     r"\s+", " ", tree.body.text(separator=" ") if tree.body else ""
                 ).strip()
             except Exception:
+                logger.debug("extract_import_failed", exc_info=True)
                 text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", html)).strip()
         return title, text, published, "trafilatura" if text else "none"
 

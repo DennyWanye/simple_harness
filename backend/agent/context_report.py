@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 import time
 import uuid
 from collections import defaultdict, deque
@@ -30,6 +31,9 @@ from llm.context_messages import (
     normalize_provider_purpose,
     split_wire_messages,
 )
+
+logger = logging.getLogger(__name__)
+
 
 _TERMINAL = {"succeeded", "failed", "cancelled", "cancelled_before_send"}
 
@@ -69,6 +73,7 @@ def estimate_selected_attempt_budget(
             context_window = context_window or int(info.context_window)
             effective_pct = effective_pct or float(info.effective_pct)
         except Exception:
+            logger.debug("estimate_selected_attempt_budget_resolve_failed", exc_info=True)
             context_window = context_window or 32_000
             effective_pct = effective_pct or 0.95
     wire_tools = list(tools or ())

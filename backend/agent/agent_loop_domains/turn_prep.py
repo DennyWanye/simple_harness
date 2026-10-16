@@ -183,6 +183,7 @@ class TurnPrepMixin(AgentLoopCore):
                     eligibility=state._record.eligibility,
                 )
             except Exception as _stale_exc:  # noqa: BLE001
+                logger.debug("prepare_iteration_validate_prepared_tool_set_failed", exc_info=True)
                 yield ErrorEvent(
                     type="error",
                     task_id=state.tid,
@@ -395,6 +396,7 @@ class TurnPrepMixin(AgentLoopCore):
                 state._still_blocked = state._post_budget.verdict is _BudgetCheck.BLOCK
                 state._block_detail = state._post_budget.advice
             except Exception as _post_exc:  # noqa: BLE001
+                logger.debug("after_compaction_check_budget_failed", exc_info=True)
                 state._still_blocked = True
                 state._block_detail = f"context re-budget failed: {_post_exc}"
             if state._still_blocked:
@@ -468,6 +470,7 @@ class TurnPrepMixin(AgentLoopCore):
             try:
                 state.todos = await self.session_todo_getter(state.session_id)
             except Exception:
+                logger.debug("periodic_checks_session_todo_getter_failed", exc_info=True)
                 state.todos = []
             if state.todos:
                 state.lines = []

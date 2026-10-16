@@ -24,6 +24,7 @@ try:  # pragma: no cover - host-dependent import probe
 
     _COM_IMPORT_OK = True
 except Exception:  # noqa: BLE001
+    logger.debug("ppt_render_import_failed", exc_info=True)
     pythoncom = None  # type: ignore
     win32com = None  # type: ignore
     _COM_IMPORT_OK = False
@@ -56,6 +57,7 @@ def com_render_available() -> bool:
         app = win32com.client.Dispatch("Kwpp.Application")
         _AVAILABLE = True
     except Exception:  # noqa: BLE001
+        logger.debug("com_render_available_co_initialize_failed", exc_info=True)
         _AVAILABLE = False
     finally:
         if app is not None:
@@ -132,6 +134,7 @@ def render_pptx_to_pngs_safe(
             str(p) for p in dest.glob("slide*.png") if p.is_file() and p.stat().st_size > 1024
         )
     except Exception:  # noqa: BLE001
+        logger.debug("render_pptx_to_pngs_safe_com_render_available_failed", exc_info=True)
         return []
 
 
@@ -177,6 +180,7 @@ def render_pptx_to_pngs(
                 continue
         return exported
     except Exception:  # noqa: BLE001
+        logger.debug("render_pptx_to_pngs_resolve_failed", exc_info=True)
         return []
     finally:
         if pres is not None:

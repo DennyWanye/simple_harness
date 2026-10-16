@@ -20,6 +20,7 @@ when the registry hasn't caught up to a new policy yet.
 
 from __future__ import annotations
 
+import logging
 import time
 from typing import Any
 
@@ -28,6 +29,8 @@ from providers.context_os_e2e_hooks import trusted_context_os_e2e_case
 from deskpet.agent.assembler.bundle import Slice
 from deskpet.agent.assembler.components.base import Component, ComponentContext
 from deskpet.tools.capabilities import ToolExposureIntent, ToolExposurePolicy
+
+logger = logging.getLogger(__name__)
 
 
 class ToolComponent:
@@ -117,6 +120,7 @@ class ToolComponent:
         try:
             all_schemas = registry.schemas()
         except Exception as exc:  # defensive
+            logger.warning("provide_schemas_failed", exc_info=True)
             return Slice(
                 component_name=self.name,
                 priority=60,

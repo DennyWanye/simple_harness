@@ -491,6 +491,7 @@ async def _cc_companion_detail_get(conn: _ControlConnection, raw: dict, msg_type
             }
         )
     except Exception as _detail_exc:  # noqa: BLE001
+        logger.warning("cc_companion_detail_get_companion_detail_query_err_failed", exc_info=True)
         _detail_code = getattr(_detail_exc, "code", "unavailable")
         if _detail_code not in {
             "unavailable",
@@ -628,6 +629,7 @@ async def control_channel(ws: WebSocket):
                         }
                     )
                 except Exception:  # noqa: BLE001
+                    logger.debug("control_channel_freeze_failed", exc_info=True)
                     await ws.send_json(
                         {
                             "type": "companion_identity_status",

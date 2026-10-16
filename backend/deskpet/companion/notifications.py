@@ -79,6 +79,7 @@ class CompanionProjectionVisibilityPort:
                 for item in self._service.store.list_projectable_notifications(owner)
             }
         except Exception:
+            logger.debug("project_history_str_failed", exc_info=True)
             return []
         events: list[dict[str, Any]] = []
         for row in rows:

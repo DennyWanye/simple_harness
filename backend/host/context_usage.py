@@ -140,6 +140,7 @@ def _snapshot_context_usage_event(
         # 按需导入：测试替身（llm.model_info.resolve）
         from llm.model_info import resolve as _resolve_model
     except Exception:  # noqa: BLE001
+        logger.debug("snapshot_context_usage_event_import_failed", exc_info=True)
         _resolve_model = None  # type: ignore[assignment]
 
     # Read Context OS attempts before inspecting legacy provider state.  Some
@@ -149,6 +150,7 @@ def _snapshot_context_usage_event(
     try:
         _attempt_store = service_context.get("context_attempt_store")
     except Exception:
+        logger.debug("snapshot_context_usage_event_get_failed", exc_info=True)
         _attempt_store = None
     _attempts: list[dict[str, Any]] = []
     _latest_attempt: dict[str, Any] | None = None
@@ -165,6 +167,7 @@ def _snapshot_context_usage_event(
                 None,
             )
         except Exception:  # noqa: BLE001
+            logger.debug("snapshot_context_usage_event_public_for_session_failed", exc_info=True)
             _attempts = []
             _latest_attempt = None
 

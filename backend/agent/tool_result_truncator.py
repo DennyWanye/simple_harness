@@ -272,6 +272,7 @@ def maybe_truncate_tool_result(
         try:
             content = str(content)
         except Exception:
+            logger.debug("maybe_truncate_tool_result_str_failed", exc_info=True)
             return ("<unserializable tool_result>", None)
 
     if len(content) <= threshold:

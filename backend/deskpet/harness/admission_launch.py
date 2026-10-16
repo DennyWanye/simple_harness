@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from typing import Any
@@ -32,6 +33,8 @@ from .contracts import PreparedRunContextV1, RegisteredDriver
 from .ports import DriverStart, DriverTerminalCandidate
 from .runtime import DriverRuntime
 from .user_continuations import UserContinuationCoordinator
+
+logger = logging.getLogger(__name__)
 
 
 def _run_identity(spec: RunCreate) -> tuple[object, ...]:
@@ -242,6 +245,7 @@ class AdmissionLauncher:
         except asyncio.CancelledError:
             raise
         except BaseException as exc:
+            logger.warning("consume_consume_fenced_failed", exc_info=True)
             current = admission_from(await self.uow.load_continuation(record.run_id))
             if current is None or (
                 current.consumed and current.phase is not AdmissionPhase.LAUNCHED

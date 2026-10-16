@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import logging
 import re
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
@@ -16,6 +17,9 @@ from typing import Any
 
 from ..contracts import JsonValue, canonical_json, validate_json_value
 from .deep_research_v6_contracts import format_blob_ref, parse_blob_ref, sha256_json
+
+logger = logging.getLogger(__name__)
+
 
 _HEX64 = re.compile(r"^[0-9a-f]{64}$")
 _CLAIM_KINDS = {
@@ -148,6 +152,7 @@ def _object(value: object, keys: set[str], path: str) -> dict[str, Any]:
     try:
         validate_json_value(raw, path=path)
     except Exception as exc:  # pragma: no cover - defensive normalization boundary
+        logger.debug("object_validate_json_value_failed", exc_info=True)
         _fail("integrity_keys_differ", path, str(exc))
     return raw
 
@@ -200,6 +205,7 @@ def _canonical_strings(value: object, path: str, *, refs: bool = False) -> tuple
             try:
                 parse_blob_ref(item)
             except Exception as exc:
+                logger.debug("canonical_strings_parse_blob_ref_failed", exc_info=True)
                 _fail("integrity_reference_invalid", f"{path}[{index}]", str(exc))
     return tuple(value)
 
@@ -226,6 +232,7 @@ class ClaimRecordV1:
             try:
                 parse_blob_ref(inference_ref)
             except Exception as exc:
+                logger.debug("post_init_parse_blob_ref_failed", exc_info=True)
                 _fail("integrity_reference_invalid", "$.inference_ref", str(exc))
         _enum(raw["support_status"], _CLAIM_SUPPORT, "$.support_status")
         _enum(raw["visibility"], _VISIBILITIES, "$.visibility")
@@ -373,6 +380,7 @@ class QualityAuditV1:
         try:
             parse_blob_ref(raw["claim_batch_ref"])
         except Exception as exc:
+            logger.debug("post_init_parse_blob_ref_failed", exc_info=True)
             _fail("integrity_reference_invalid", "$.claim_batch_ref", str(exc))
         hard_status = _enum(raw["hard_gate_status"], {"passed", "failed"}, "$.hard_gate_status")
         codes = _canonical_strings(raw["hard_failure_codes"], "$.hard_failure_codes")
@@ -534,6 +542,7 @@ def _object_unversioned(value: object, keys: set[str], path: str) -> dict[str, A
     try:
         validate_json_value(raw, path=path)
     except Exception as exc:  # pragma: no cover - defensive normalization boundary
+        logger.debug("object_unversioned_validate_json_value_failed", exc_info=True)
         _fail("integrity_keys_differ", path, str(exc))
     return raw
 
@@ -576,6 +585,7 @@ def _admitted_bindings(
         try:
             parse_blob_ref(raw["page_result_ref"])
         except Exception as exc:
+            logger.debug("admitted_bindings_parse_blob_ref_failed", exc_info=True)
             _fail("integrity_reference_invalid", f"{path}.page_result_ref", str(exc))
         admitted_ids = _canonical_strings(
             raw["admitted_binding_ids"], f"{path}.admitted_binding_ids"

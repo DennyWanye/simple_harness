@@ -294,6 +294,9 @@ class LLMRegistry:
                     last_exc = exc
                     break
                 except Exception as exc:  # noqa: BLE001 — unknown SDK surface
+                    logger.warning(
+                        "chat_with_fallback_auto_context_attempt_call_failed", exc_info=True
+                    )
                     errors.append(f"{provider_name}: unexpected {type(exc).__name__}: {exc}")
                     last_exc = exc
                     break

@@ -12,11 +12,14 @@ send.
 from __future__ import annotations
 
 import json
+import logging
 import threading
 from collections.abc import Mapping
 from typing import Any, Protocol
 
 from deskpet.types.task_grants import ResourceSelector
+
+logger = logging.getLogger(__name__)
 
 
 class ProjectGroupTransport(Protocol):
@@ -96,6 +99,7 @@ def _handle_project_group_send(args: dict[str, Any], task_id: str) -> str:
             idempotency_key=str(task_id or ""),
         )
     except Exception as exc:  # noqa: BLE001 - transport failure is a typed outcome
+        logger.debug("handle_project_group_send_send_all_project_groups_failed", exc_info=True)
         return json.dumps(
             {
                 "ok": False,

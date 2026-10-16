@@ -9,6 +9,7 @@ import asyncio
 import contextvars
 import hashlib
 import inspect
+import logging
 import math
 import os
 from collections.abc import Awaitable, Callable, Mapping, Sequence
@@ -29,6 +30,9 @@ from ..effects import (
     NormalizedToolOutcome,
     PreparedToolCall,
 )
+
+logger = logging.getLogger(__name__)
+
 
 _T = TypeVar("_T")
 
@@ -300,6 +304,7 @@ class PptRuntime:
                     path = ppt_tools._compose_full_page_image(path, slide or {})
                     payload["path"] = path
                 except Exception as exc:  # noqa: BLE001
+                    logger.debug("generate_compose_full_page_image_failed", exc_info=True)
                     payload.update(
                         {
                             "path": None,

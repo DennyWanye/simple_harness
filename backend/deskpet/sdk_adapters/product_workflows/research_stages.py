@@ -13,6 +13,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import logging
 import re
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
@@ -23,6 +24,9 @@ from simple_harness.workflow import StatePatch, WorkflowContext
 
 from .payloads import bounded_report_envelope, report_sha256
 from .research_ports import ResearchPorts
+
+logger = logging.getLogger(__name__)
+
 
 PLAN_PROMPT = """\
 You are planning a deep research project from the original user request below.
@@ -376,6 +380,7 @@ async def search_handler(state, context: WorkflowContext) -> StatePatch:
                         )
                     ).strip()[:1024]
                 except Exception as exc:  # noqa: BLE001
+                    logger.debug("search_handler_strip_failed", exc_info=True)
                     errors.append(f"continuation:{index}:{type(exc).__name__}")
                     continuation = f"{question} official primary source"
         record = (
@@ -425,6 +430,7 @@ async def synth_handler(state, context: WorkflowContext) -> StatePatch:
                 operation_key=operation_key(state, "synth"),
             )
         except Exception as exc:  # noqa: BLE001
+            logger.debug("synth_handler_complete_failed", exc_info=True)
             errors.append(f"synth_llm:{type(exc).__name__}")
             report = ""
         if not report.strip():

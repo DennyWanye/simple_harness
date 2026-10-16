@@ -385,8 +385,10 @@ def _run_browser_job(
                 from browser_use.llm import ChatOpenAI  # type: ignore
             except Exception:  # noqa: BLE001
                 # 按需导入：重型包
+                logger.debug("run_browser_job_import_failed", exc_info=True)
                 from langchain_openai import ChatOpenAI  # type: ignore
         except Exception as exc:  # noqa: BLE001 — dependency / import failure
+            logger.debug("run_browser_job_import_failed", exc_info=True)
             _set_job(
                 job_id,
                 status="error",
@@ -417,6 +419,7 @@ def _run_browser_job(
         try:
             final = result.final_result()  # type: ignore[attr-defined]
         except Exception:  # noqa: BLE001
+            logger.debug("run_browser_job_final_result_failed", exc_info=True)
             final = str(result)
         _set_job(
             job_id,

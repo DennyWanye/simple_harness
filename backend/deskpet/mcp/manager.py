@@ -59,6 +59,8 @@ try:  # pragma: no cover — SDK may be absent in minimal test envs
     from mcp import ClientSession
     from mcp.client.stdio import StdioServerParameters, stdio_client
 except Exception:  # pragma: no cover
+    # 模块记录器在下面才定义，这里就地取一个同名记录器
+    structlog.get_logger(__name__).debug("mcp_sdk_import_failed", exc_info=True)
     ClientSession = None  # type: ignore[assignment]
     StdioServerParameters = None  # type: ignore[assignment]
     stdio_client = None  # type: ignore[assignment]
@@ -483,6 +485,7 @@ class MCPManager:
         except Exception as exc:  # noqa: BLE001
             # Session presumably dead — kick off reconnect but don't
             # block this call on it.
+            logger.warning("mcp_call_call_tool_failed", exc_info=True)
             self._mark_disconnected(runtime, reason=repr(exc))
             return {
                 "error": "mcp_call_failed",
@@ -504,6 +507,7 @@ class MCPManager:
         try:
             result = await runtime.session.list_resources()
         except Exception as exc:  # noqa: BLE001
+            logger.debug("list_resources_failed", exc_info=True)
             return {"error": "mcp_list_resources_failed", "detail": repr(exc)}
         return _safe_model_dump(result)
 
@@ -514,6 +518,7 @@ class MCPManager:
         try:
             result = await runtime.session.read_resource(uri)  # type: ignore[arg-type]
         except Exception as exc:  # noqa: BLE001
+            logger.debug("read_resource_failed", exc_info=True)
             return {"error": "mcp_read_resource_failed", "detail": repr(exc)}
         return _safe_model_dump(result)
 
@@ -524,6 +529,7 @@ class MCPManager:
         try:
             result = await runtime.session.list_prompts()
         except Exception as exc:  # noqa: BLE001
+            logger.debug("list_prompts_failed", exc_info=True)
             return {"error": "mcp_list_prompts_failed", "detail": repr(exc)}
         return _safe_model_dump(result)
 
@@ -539,6 +545,7 @@ class MCPManager:
         try:
             result = await runtime.session.get_prompt(prompt_name, args or {})
         except Exception as exc:  # noqa: BLE001
+            logger.debug("get_prompt_failed", exc_info=True)
             return {"error": "mcp_get_prompt_failed", "detail": repr(exc)}
         return _safe_model_dump(result)
 

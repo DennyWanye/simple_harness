@@ -13,6 +13,7 @@ import asyncio
 import base64
 import hashlib
 import json
+import logging
 import os
 import platform
 import re
@@ -33,6 +34,9 @@ from deskpet.memory.primary_authority import (
     assert_not_primary_authority,
     assert_not_primary_authority_tx,
 )
+
+logger = logging.getLogger(__name__)
+
 
 CATALOG_SCHEMA_VERSION = 1
 DEFAULT_PAGE_SIZE = 50
@@ -1467,6 +1471,9 @@ class SessionCreationService:
                     source_session_id=source_session_id,
                 )
             except Exception as exc:
+                logger.debug(
+                    "create_conversation_session_assert_not_primary_aut_failed", exc_info=True
+                )
                 await db.rollback()
                 transaction_failure = exc
         if transaction_failure is not None:

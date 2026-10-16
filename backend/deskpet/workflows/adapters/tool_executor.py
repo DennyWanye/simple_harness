@@ -93,6 +93,7 @@ async def execute_sync_handler(
                 raw_result = completed.result()
                 outcome = _normalize(normalizer, raw_result)
             except BaseException as handler_error:
+                logger.debug("finish_late_result_failed", exc_info=True)
                 outcome = NormalizedToolOutcome.failure(
                     "sync_handler_error", type(handler_error).__name__
                 )
@@ -115,6 +116,7 @@ async def execute_sync_handler(
         future.add_done_callback(finish_late)
         raise SyncHandlerTimedOut(effect_id, timeout_seconds) from exc
     except BaseException as exc:
+        logger.debug("execute_sync_handler_wait_for_failed", exc_info=True)
         return NormalizedToolOutcome.failure("sync_handler_error", type(exc).__name__)
     return _normalize(normalizer, raw)
 

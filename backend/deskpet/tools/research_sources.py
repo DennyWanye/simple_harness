@@ -256,6 +256,7 @@ def _research_raw() -> dict[str, Any]:
                 cfg = _cfg.load_config(_cfg.resolve_config_path())
                 raw = cfg.raw.get("research") or {}
         except Exception:  # noqa: BLE001
+            log.debug("research_raw_import_failed", exc_info=True)
             raw = {}
         _RESEARCH_RAW_CACHE = raw if isinstance(raw, dict) else {}
     return _RESEARCH_RAW_CACHE
@@ -391,6 +392,7 @@ def _html_main_text(html: str) -> str:
         body = tree.body
         return (body.text(separator=" ") if body else tree.text(separator=" ")).strip()
     except Exception:  # noqa: BLE001
+        log.debug("html_main_text_import_failed", exc_info=True)
         return _strip_tags(html or "")
 
 
@@ -618,6 +620,7 @@ def _extract_pdf_text(data: bytes, *, want_financials: bool = False) -> str:
             try:
                 _cache[i] = reader.pages[i].extract_text() or ""
             except Exception:  # noqa: BLE001
+                log.debug("pg_extract_text_failed", exc_info=True)
                 _cache[i] = ""
         return _cache[i]
 

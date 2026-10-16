@@ -55,6 +55,7 @@ def _chat_turn_timeout_s() -> float:
     try:
         m = float(_load_llm_runtime_overrides().get("chat_turn_timeout_minutes", 15))
     except Exception:  # noqa: BLE001
+        logger.debug("chat_turn_timeout_s_float_failed", exc_info=True)
         m = 15.0
     return max(60.0, min(3600.0, m * 60.0))
 

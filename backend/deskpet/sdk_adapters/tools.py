@@ -517,6 +517,7 @@ class ProductToolsAdapter(ToolRegistry):
                 if delivery_adapter is not None:
                     await delivery_adapter.present_tool_call(call)
             except Exception:
+                logger.debug("invoke_import_failed", exc_info=True)
                 delivery_adapter = None
             result = await super().invoke(
                 call, context, accepted_result_call_id=accepted_result_call_id

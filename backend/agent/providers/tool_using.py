@@ -28,6 +28,7 @@ deliberate step.
 
 from __future__ import annotations
 
+import logging
 import re
 from collections.abc import AsyncIterator, Awaitable, Callable
 
@@ -35,6 +36,9 @@ from observability.metrics import stage_timer
 from tools.registry import ToolRegistry
 
 from agent.providers.base import AgentProvider
+
+logger = logging.getLogger(__name__)
+
 
 _TOOL_TAG = re.compile(r"<tool>\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*</tool>")
 
@@ -119,6 +123,7 @@ class ToolUsingAgent:
             async with stage_timer("tool_invoke", tool_name=name, session_id=session_id):
                 result = await tool.invoke()
         except Exception as exc:
+            logger.debug("chat_stream_stage_timer_failed", exc_info=True)
             yield f"\n[tool error: {name}: {exc}]\n"
             return
 

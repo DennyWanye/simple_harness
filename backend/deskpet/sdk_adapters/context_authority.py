@@ -454,11 +454,13 @@ class ContextRouteLedgerStore:
                 except asyncio.CancelledError:
                     continue
                 except Exception:
+                    _LOG.debug("connect_shield_failed", exc_info=True)
                     break
             try:
                 cleanup.result()
             except BaseException:
-                _LOG.warning("context_route_connection_cleanup_unavailable")
+                _LOG.debug("connect_result_failed", exc_info=True)
+                _LOG.warning("context_route_connection_cleanup_unavailable", exc_info=True)
             raise
 
     async def record_snapshot_receipt(

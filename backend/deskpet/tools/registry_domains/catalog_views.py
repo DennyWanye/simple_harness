@@ -452,6 +452,7 @@ class CatalogViewMixin(ToolRegistryCore):
                     session_id, name
                 )
             except Exception:  # noqa: BLE001 — never break dispatch over this
+                logger.debug("build_circuit_open_envelope_cooldown_remaining_failed", exc_info=True)
                 cooldown_left = None
 
         # Find sibling tools (same toolset, different name). Skip env-

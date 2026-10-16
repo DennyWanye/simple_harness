@@ -66,6 +66,7 @@ async def post_metrics_event(request: Request):
     try:
         body = await request.json()
     except Exception:
+        logger.debug("post_metrics_event_json_failed", exc_info=True)
         return Response(status_code=400, content="invalid json")
     event = body.get("event")
     detail = body.get("detail") or {}

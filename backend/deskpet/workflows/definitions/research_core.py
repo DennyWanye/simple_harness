@@ -439,6 +439,7 @@ async def plan_stage(
                 )
             )
         except Exception as exc:  # noqa: BLE001
+            logger.debug("plan_stage_complete_failed", exc_info=True)
             state.errors.append(f"plan_llm: {exc}")
             raw = ""
         state.sub_questions = legacy.parse_sub_questions(
@@ -754,6 +755,7 @@ async def direct_stage(
         try:
             return await ports.search.direct(question, source)
         except Exception as exc:  # noqa: BLE001
+            logger.debug("run_direct_failed", exc_info=True)
             state.errors.append(f"direct:{source}:{question!r}: {exc}")
             return DirectOutcome(source, [], "degraded", reason_code="adapter_error")
 
@@ -779,6 +781,7 @@ async def direct_stage(
                 timeout=config.direct_timeout,
             )
         except Exception as exc:  # noqa: BLE001
+            logger.debug("direct_stage_wait_for_failed", exc_info=True)
             state.errors.append(f"direct_stage: {exc}")
             results = []
     else:
@@ -917,6 +920,7 @@ async def score_rerank_stage(
                 )
             )
         except Exception as exc:  # noqa: BLE001
+            logger.debug("score_rerank_stage_maybe_await_failed", exc_info=True)
             similarities = None
             legacy.log.debug("semantic relevance skipped: %s", exc)
         if similarities and len(similarities) == len(state.passages):
@@ -1045,6 +1049,7 @@ async def synth_stage(
             )
         )
     except Exception as exc:  # noqa: BLE001
+        logger.debug("synth_stage_complete_failed", exc_info=True)
         state.errors.append(f"synth_llm: {exc}")
         report_md = legacy._passages_only_fallback(state.request_topic, state.passages)
     state.report_md = (report_md or "").strip()
@@ -1138,6 +1143,7 @@ def _legacy_search_observation() -> Mapping[str, Any]:
             "errors": search_provider.get_last_search_errors(),
         }
     except Exception:  # noqa: BLE001
+        logger.debug("search_observation_read_failed", exc_info=True)
         return {}
 
 

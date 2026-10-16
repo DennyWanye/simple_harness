@@ -15,7 +15,11 @@ Key lookup order:
 
 from __future__ import annotations
 
+import logging
 import os
+
+logger = logging.getLogger(__name__)
+
 
 # keyring is an optional dependency: CI environments don't ship a
 # keyring backend, and import-time failures here would block all LLM
@@ -25,6 +29,7 @@ try:
 
     _KEYRING_AVAILABLE = True
 except Exception:  # pragma: no cover - depends on host env
+    logger.debug("keys_import_failed", exc_info=True)
     keyring = None  # type: ignore[assignment]
     _KEYRING_AVAILABLE = False
 
@@ -54,6 +59,7 @@ def get_api_key(provider: str) -> str | None:
         try:
             keyring_value = keyring.get_password("deskpet", f"{key_name}_api_key")
         except Exception:  # keyring backend can throw on locked session
+            logger.debug("get_api_key_get_password_failed", exc_info=True)
             keyring_value = None
         if keyring_value:
             return keyring_value

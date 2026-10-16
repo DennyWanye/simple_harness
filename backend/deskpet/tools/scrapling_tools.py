@@ -171,6 +171,7 @@ async def _handle_gold_price_lookup(args: dict[str, Any], task_id: str) -> str:
             FetchRequest(_INVESTING_XAU_USD, timeout=timeout, extract=False, include_html=True)
         )
     except Exception as exc:  # noqa: BLE001
+        log.debug("handle_gold_price_lookup_fetch_raw_failed", exc_info=True)
         return _json({"ok": False, "error": str(exc), "source": _INVESTING_XAU_USD})
     xau_usd = _extract_investing_last(str(xau_page.get("content") or ""))
     if xau_usd is None:
@@ -191,6 +192,7 @@ async def _handle_gold_price_lookup(args: dict[str, Any], task_id: str) -> str:
         )
         usd_cny = _extract_investing_last(str(cny_page.get("content") or ""))
     except Exception as exc:  # noqa: BLE001
+        log.debug("handle_gold_price_lookup_fetch_raw_failed", exc_info=True)
         cny_page = {"error": str(exc)}
 
     out: dict[str, Any] = {

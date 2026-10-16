@@ -165,6 +165,7 @@ def _resolve_endpoint() -> tuple[str, str | None]:
 
             base_url = str((standalone_config_section("llm") or {}).get("base_url", ""))
         except Exception:  # noqa: BLE001
+            log.debug("resolve_endpoint_import_failed", exc_info=True)
             base_url = ""
     if not api_key:
         try:
@@ -173,6 +174,7 @@ def _resolve_endpoint() -> tuple[str, str | None]:
 
             api_key = resolve_cloud_api_key()
         except Exception:  # noqa: BLE001
+            log.debug("resolve_endpoint_import_failed", exc_info=True)
             api_key = None
 
     return base_url.rstrip("/"), api_key
@@ -219,6 +221,7 @@ def _image_model() -> str:
 
         return str((standalone_config_section("image") or {}).get("model") or _DEFAULT_MODEL)
     except Exception:  # noqa: BLE001
+        log.debug("image_model_import_failed", exc_info=True)
         return _DEFAULT_MODEL
 
 
@@ -253,6 +256,7 @@ def _image_quality() -> str:
 
         return str((standalone_config_section("image") or {}).get("quality") or _DEFAULT_QUALITY)
     except Exception:  # noqa: BLE001
+        log.debug("image_quality_import_failed", exc_info=True)
         return _DEFAULT_QUALITY
 
 
@@ -275,6 +279,7 @@ def _collect_error_texts(body: dict[str, Any] | str | None) -> list[str]:
         try:
             parsed = json.loads(body)
         except Exception:  # noqa: BLE001
+            log.debug("collect_error_texts_loads_failed", exc_info=True)
             return [body]
         if isinstance(parsed, dict):
             return _collect_error_texts(parsed)
@@ -442,6 +447,7 @@ def _generate_png(prompt: str, size: str, model: str) -> tuple[bytes | None, str
                     body = resp.json()
                     detail = json.dumps(body, ensure_ascii=False)[:300]
                 except Exception:  # noqa: BLE001
+                    log.debug("generate_png_json_failed", exc_info=True)
                     detail = ""
                     body = None
                 _set_image_error_context(resp.status_code, body, None)
@@ -493,6 +499,7 @@ def _generate_png(prompt: str, size: str, model: str) -> tuple[bytes | None, str
             _set_image_error_context(None, None, exc)
             last_transient = f"{type(exc).__name__}: {exc}"
         except Exception as exc:  # noqa: BLE001 — never raise
+            log.debug("generate_png_client_failed", exc_info=True)
             _set_image_error_context(None, None, exc)
             return None, f"未预期错误：{type(exc).__name__}: {exc}"
         if _attempt < _MAX_ATTEMPTS:
@@ -534,6 +541,7 @@ def generate_images(prompts, *, size=_DEFAULT_SIZE, model=None):
     try:
         resolved_model = model or _image_model()
     except Exception:  # noqa: BLE001
+        log.debug("generate_images_image_model_failed", exc_info=True)
         resolved_model = _DEFAULT_MODEL
     results = []
     if not isinstance(prompts, list):
@@ -573,6 +581,7 @@ def generate_images(prompts, *, size=_DEFAULT_SIZE, model=None):
             try:
                 out = _save_image(png)
             except Exception as exc:  # noqa: BLE001
+                log.debug("generate_images_save_image_failed", exc_info=True)
                 results.append(
                     {
                         "prompt": prompt,
@@ -584,6 +593,7 @@ def generate_images(prompts, *, size=_DEFAULT_SIZE, model=None):
                 continue
             results.append({"prompt": prompt, "path": str(out), "error": None})
         except Exception as exc:  # noqa: BLE001
+            log.debug("generate_images_set_image_error_context_failed", exc_info=True)
             results.append(
                 {
                     "prompt": prompt,
@@ -625,6 +635,7 @@ def _handle_generate_image_sync(args: dict[str, Any], task_id: str = "") -> str:
     try:
         out = _save_image(png)
     except Exception as exc:  # noqa: BLE001
+        log.debug("handle_generate_image_sync_save_image_failed", exc_info=True)
         return _err("save failed", f"写入 workspace 失败：{exc}", error_kind="unknown")
     opened = _open_file(out)
     # WI-T1.2 D1：显式 emit artifacts[]（kind=image 用于前端区分文件 vs 图像）
@@ -661,6 +672,7 @@ def _async_enabled() -> bool:
 
         return bool((standalone_config_section("image") or {}).get("async_enabled", True))
     except Exception:  # noqa: BLE001
+        log.debug("async_enabled_import_failed", exc_info=True)
         return True
 
 
