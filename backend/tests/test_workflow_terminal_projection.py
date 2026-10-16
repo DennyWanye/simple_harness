@@ -3,6 +3,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
+
 from deskpet.workflows.contracts import WorkflowContext
 from deskpet.workflows.errors import InvalidStatePatch
 from deskpet.workflows.native import InMemoryNativeCheckpointStore, NativeWorkflowExecutable
@@ -264,7 +265,7 @@ class _Repository:
 @pytest.mark.asyncio
 async def test_service_generate_now_uses_repository_run_head_and_brief_cas(monkeypatch) -> None:
     monkeypatch.setattr(
-        "deskpet.workflows.service.NativeCheckpointStore",
+        "deskpet.workflows.service_domains.run_actions.NativeCheckpointStore",
         _CheckpointStore,
     )
     repository = _Repository()

@@ -12,11 +12,12 @@ from __future__ import annotations
 
 import json
 
-import deskpet.orchestration.service as service_module
 import pytest
 from agent_orchestrator.testing.word_counter import FixtureWordCounter
+
 from deskpet.orchestration.manifest import MANIFEST_NAME, MANIFEST_SCHEMA
 from deskpet.orchestration.service import OrchestrationService, OrchestrationSettings
+from deskpet.orchestration.service_domains import core as service_core
 from deskpet.sdk_adapters.sdk_candidate import SDK_VERSION, SDK_WHEEL_SHA256
 
 from ._support import notes_provider
@@ -64,13 +65,13 @@ async def test_manifest_records_the_imported_sdk_and_the_fixed_policy(
 async def test_a_version_that_differs_from_the_pin_never_opens_the_library(
     orchestration_root, principal, monkeypatch
 ):
-    real = service_module.distributions
+    real = service_core.distributions
 
     def mismatched():  # type: ignore[no-untyped-def]
         imported = real()
         return {**imported, "consistent": False}
 
-    monkeypatch.setattr(service_module, "distributions", mismatched)
+    monkeypatch.setattr(service_core, "distributions", mismatched)
     service = OrchestrationService(
         orchestration_root,
         OrchestrationSettings(),

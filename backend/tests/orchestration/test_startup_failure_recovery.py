@@ -8,13 +8,15 @@ from unittest.mock import AsyncMock
 import pytest
 from agent_orchestrator.artifacts.workspace import WorkspaceCleanupIncomplete
 from agent_orchestrator.orchestrator import event_handler
-from deskpet.orchestration import service as service_module
+
 from deskpet.orchestration.lock import InstanceLock
 from deskpet.orchestration.service import (
     OrchestrationRequestError,
     OrchestrationService,
     OrchestrationSettings,
 )
+from deskpet.orchestration.service_domains import core as service_core
+from deskpet.orchestration.service_domains import status as service_status
 
 
 def _service(tmp_path, principal, **kwargs):
@@ -64,11 +66,13 @@ def _wire_candidates(monkeypatch, candidates):
     pending = iter(candidates)
     monkeypatch.setattr(event_handler, "Orchestrator", lambda *args, **kwargs: next(pending))
     # One (stub) native pool: an empty pool set is the "only DeepSeek" refusal.
-    monkeypatch.setattr(
-        service_module,
-        "source_runtime_options",
-        lambda *args, **kwargs: {"profiles": {"deepseek-native-256k-v1": object()}},
-    )
+    # 读它的方法在编排服务拆分后分在 core（启动）与 status（重建）两个子模块：两处都打桩
+    for module in (service_core, service_status):
+        monkeypatch.setattr(
+            module,
+            "source_runtime_options",
+            lambda *args, **kwargs: {"profiles": {"deepseek-native-256k-v1": object()}},
+        )
     monkeypatch.setattr(
         facade, "MissionControlV1", lambda candidate, **kwargs: _Control(("control", candidate))
     )
@@ -168,7 +172,7 @@ async def test_initial_failure_releases_lock_and_requires_fresh_service_client(
 
     open_failed = AsyncMock(side_effect=fail_open)
     monkeypatch.setattr(service, "_open", open_failed)
-    monkeypatch.setattr(service_module, "distributions", lambda: {"consistent": True})
+    monkeypatch.setattr(service_core, "distributions", lambda: {"consistent": True})
     await asyncio.wait_for(service.start(), 5)
     assert service._state == "unavailable" and "WorkspaceCleanupIncomplete" in service._reason
     assert service._driver is None and service._orchestrator is None
@@ -194,8 +198,8 @@ async def test_initial_failure_releases_lock_and_requires_fresh_service_client(
         fresh._orchestrator = healthy
 
     monkeypatch.setattr(fresh, "_open", AsyncMock(side_effect=open_fresh))
-    monkeypatch.setattr(service_module, "build_manifest", lambda **kwargs: {})
-    monkeypatch.setattr(service_module, "write_manifest", lambda *args: None)
+    monkeypatch.setattr(service_core, "build_manifest", lambda **kwargs: {})
+    monkeypatch.setattr(service_core, "write_manifest", lambda *args: None)
     try:
         await asyncio.wait_for(fresh.start(), 5)
         assert fresh._state == "available"
