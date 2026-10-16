@@ -38,7 +38,13 @@ if sys.version_info < (3, 12):
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from extract_method import header_bindings  # noqa: E402
-from scope_names import defined_before, definitely_assigned, locally_bound, names  # noqa: E402
+from scope_names import (
+    closure_factory_problem,
+    defined_before,
+    definitely_assigned,
+    locally_bound,
+    names,
+)  # noqa: E402
 
 SCOPES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)
 LOOPS = (ast.For, ast.AsyncFor, ast.While)
@@ -281,14 +287,24 @@ def analyse(
                             need_in.add(v)
                     if need_out - definitely_assigned(block, set(need_in)):
                         continue
-                # 段里定义的内层函数被段后用到：返回闭包不好读，不抽（这类闭包另行提成模块级函数）
-                if need_out & {
+                # 段里定义的内层函数被段后用到：只接受"段就是这一句 def"（抽成返回闭包的工厂函数），
+                # 且外层在定义之后不改写闭包读的变量、定义不在循环里
+                def_names = {
                     x.name
                     for top in block
                     for x in ast.walk(top)
                     if isinstance(x, (ast.FunctionDef, ast.AsyncFunctionDef))
-                }:
-                    continue
+                }
+                if need_out & def_names:
+                    single = len(block) == 1 and isinstance(
+                        block[0], (ast.FunctionDef, ast.AsyncFunctionDef)
+                    )
+                    if (
+                        not single
+                        or need_out != {block[0].name}
+                        or closure_factory_problem(fn, block, end)
+                    ):
+                        continue
                 # 参数在调用处必须一定已赋值，否则调用本身可能报 UnboundLocalError
                 if need_in - defined_before(fn, start):
                     continue

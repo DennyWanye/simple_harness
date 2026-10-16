@@ -23,9 +23,24 @@ from pathlib import Path
 SCOPES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)
 
 
-def methods(tree: ast.Module, cls_name: str) -> dict[str, ast.AST]:
-    cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == cls_name)
-    return {n.name: n for n in cls.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+def methods(tree: ast.Module, cls_name: str | None) -> dict[str, ast.AST]:
+    """类里的方法；cls_name 为 None 时是模块级函数。"""
+    if cls_name is None:
+        body = tree.body
+    else:
+        body = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == cls_name).body
+    return {n.name: n for n in body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+
+
+def is_result_assign(s: ast.stmt) -> bool:
+    return (
+        isinstance(s, ast.Assign)
+        and len(s.targets) == 1
+        and isinstance(s.targets[0], ast.Attribute)
+        and isinstance(s.targets[0].value, ast.Name)
+        and s.targets[0].value.id == "state"
+        and s.targets[0].attr == "result"
+    )
 
 
 def is_flow_assign(s: ast.stmt, value=None) -> str | None:
@@ -46,16 +61,17 @@ def called_phase(s: ast.stmt, phases: set[str]) -> str | None:
     """语句是不是阶段方法的调用块（三种形状之一），是就返回方法名。"""
 
     def self_call(e: ast.AST) -> str | None:
-        if (
+        if not (
             isinstance(e, ast.Call)
-            and isinstance(e.func, ast.Attribute)
-            and isinstance(e.func.value, ast.Name)
-            and e.func.value.id == "self"
-            and e.func.attr in phases
             and [ast.dump(a) for a in e.args] == [ast.dump(ast.Name("state", ast.Load()))]
             and not e.keywords
         ):
-            return e.func.attr
+            return None
+        f = e.func
+        if isinstance(f, ast.Attribute) and isinstance(f.value, ast.Name) and f.value.id == "self":
+            return f.attr if f.attr in phases else None
+        if isinstance(f, ast.Name):  # 模块级函数切出的阶段函数
+            return f.id if f.id in phases else None
         return None
 
     if isinstance(s, ast.Expr):
@@ -76,6 +92,11 @@ def flow_check(s: ast.stmt) -> str | None:
     if not (isinstance(s, ast.If) and not s.orelse):
         return None
     src = ast.unparse(s.test)
+    # 再切一次时，前一次留下的 `return state.result` 被改写成了 result 赋值 + flow 赋值 + return
+    if len(s.body) == 3 and is_result_assign(s.body[0]) and isinstance(s.body[2], ast.Return):
+        if is_flow_assign(s.body[1]) == "stop" and src == "state.flow == 'stop'":
+            return "stop"
+        return None
     # 再切一次时，前一次留下的检查本身被改写成了一对 flow 赋值 + return
     if len(s.body) == 2 and isinstance(s.body[1], ast.Return):
         kind = is_flow_assign(s.body[0])
@@ -97,6 +118,17 @@ def restore_pairs(stmts: list[ast.stmt]) -> list[ast.stmt]:
     i = 0
     while i < len(stmts):
         s = stmts[i]
+        # 带值 return 切出后是三句：state.result = 值；state.flow = "stop"；return
+        if (
+            is_result_assign(s)
+            and i + 2 < len(stmts)
+            and is_flow_assign(stmts[i + 1]) == "stop"
+            and isinstance(stmts[i + 2], ast.Return)
+            and stmts[i + 2].value is None
+        ):
+            out.append(ast.Return(value=s.value))
+            i += 3
+            continue
         kind = is_flow_assign(s)
         if (
             kind in ("stop", "continue", "break")
@@ -183,7 +215,7 @@ def strip_doc(fn) -> list[ast.stmt]:
 
 def main() -> int:
     path, qual, ref = Path(sys.argv[1]), sys.argv[2], sys.argv[3]
-    cls_name, _, target = qual.partition(".")
+    cls_name, _, target = qual.partition(".") if "." in qual else (None, "", qual)
     cur = methods(ast.parse(path.read_text()), cls_name)
     old_src = subprocess.run(
         ["git", "show", f"{ref}:./{path.name}"], cwd=path.parent, capture_output=True, text=True

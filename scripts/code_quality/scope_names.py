@@ -376,3 +376,32 @@ def defined_before(fn: ast.AST, start: int) -> set[str]:
         return None
 
     return descend(fn.body, have) or set()  # type: ignore[attr-defined]
+
+
+def closure_factory_problem(fn: ast.AST, block: list[ast.stmt], end: int) -> str | None:
+    """段里定义、段后还要用的内层函数（闭包）抽出后变成"工厂函数返回闭包"，闭包读的外层变量从
+    "调用时读外层"变成"工厂调用那一刻的参数值"。只有外层在定义之后不再改写这些变量时才等价。
+    有问题时返回原因，没问题返回 None。"""
+    defs = [s for s in block if isinstance(s, (ast.FunctionDef, ast.AsyncFunctionDef))]
+    if not defs:
+        return None
+    start = block[0].lineno
+    for loop in ast.walk(fn):
+        if (
+            isinstance(loop, (ast.For, ast.AsyncFor, ast.While))
+            and loop.lineno < start <= loop.end_lineno
+        ):
+            return "闭包定义在循环里（每轮一个闭包，晚绑定语义会变）"
+    host_locals = names([fn], ast.Store) | {
+        a.arg
+        for a in (*fn.args.posonlyargs, *fn.args.args, *fn.args.kwonlyargs)  # type: ignore[attr-defined]
+    }
+    free = names(defs, ast.Load) & host_locals
+    after = [s for s in ast.walk(fn) if isinstance(s, ast.stmt) and s.lineno > end]
+    rebound = sorted(free & names(after, ast.Store))
+    if rebound:
+        return f"闭包读的 {rebound} 在定义之后还会被改写"
+    later = sorted(free - defined_before(fn, start) - {d.name for d in defs})
+    if later:
+        return f"闭包读的 {later} 在定义处不一定已赋值"
+    return None

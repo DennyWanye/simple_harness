@@ -35,15 +35,28 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from reindent import string_interior_lines  # noqa: E402
 
 
-def find_func(tree: ast.Module, qual: str):
-    cls_name, _, fn_name = qual.partition(".")
-    cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == cls_name)
-    fn = next(
-        n
-        for n in cls.body
-        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name == fn_name
-    )
-    return cls, fn
+def find_func(tree: ast.Module, qual: str, line: int | None = None):
+    """返回（所在类或 None，函数）。qual 写 "函数名" 或 "类名.方法名"。"""
+    if "." in qual:
+        cls_name, _, fn_name = qual.partition(".")
+        cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == cls_name)
+        cands = [
+            n
+            for n in cls.body
+            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name == fn_name
+        ]
+    else:
+        cls = None
+        cands = [
+            n
+            for n in tree.body
+            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name == qual
+        ]
+    if line is not None:
+        cands = [n for n in cands if n.lineno == line]
+    if len(cands) != 1:
+        sys.exit(f"找不到唯一的函数 {qual}")
+    return cls, cands[0]
 
 
 def container(fn, start: int, end: int):
@@ -78,8 +91,8 @@ def container(fn, start: int, end: int):
     return found
 
 
-def flow_edits(stmts, in_loop_body: bool):
-    """段内需要改写的流程语句：[(行号, 种类)]，种类为 stop / continue / break。"""
+def flow_edits(stmts, in_loop_body: bool, allow_value: bool = False):
+    """段内需要改写的流程语句：[(行号, 种类, return 节点或 None)]，种类为 stop / continue / break。"""
     edits = []
 
     def walk(node, loop_depth):
@@ -87,16 +100,16 @@ def flow_edits(stmts, in_loop_body: bool):
             if isinstance(child, SCOPES):
                 continue
             if isinstance(child, ast.Return):
-                if child.value is not None:
+                if child.value is not None and not allow_value:
                     sys.exit(f"第 {child.lineno} 行 return 带值，异步生成器里不该出现")
-                edits.append((child.lineno, "stop"))
+                edits.append((child.lineno, "stop", child))
             elif isinstance(child, (ast.Continue, ast.Break)) and loop_depth == 0:
                 if not in_loop_body:
                     sys.exit(
                         f"第 {child.lineno} 行 {type(child).__name__} 指向段外的循环，但段不在循环体里"
                     )
                 edits.append(
-                    (child.lineno, "continue" if isinstance(child, ast.Continue) else "break")
+                    (child.lineno, "continue" if isinstance(child, ast.Continue) else "break", None)
                 )
             elif isinstance(child, LOOPS):
                 walk_loop(child, loop_depth)
@@ -120,16 +133,27 @@ def flow_edits(stmts, in_loop_body: bool):
 
 
 def kinds(stmts):
+    """段里自己（不含段内的内层函数）有没有 yield、await。"""
     has_yield = has_await = False
-    for s in stmts:
-        for n in ast.walk(s):
-            if isinstance(n, SCOPES):
+
+    def walk(node):
+        nonlocal has_yield, has_await
+        for c in ast.iter_child_nodes(node):
+            if isinstance(c, SCOPES):
                 continue
-            if isinstance(n, (ast.Yield, ast.YieldFrom)):
+            if isinstance(c, (ast.Yield, ast.YieldFrom)):
                 has_yield = True
-            if isinstance(n, (ast.Await, ast.AsyncFor, ast.AsyncWith)):
+            if isinstance(c, (ast.Await, ast.AsyncFor, ast.AsyncWith)):
                 has_await = True
+            walk(c)
+
+    for s_ in stmts:
+        walk(ast.Module(body=[s_], type_ignores=[]))
     return has_yield, has_await
+
+
+def host_is_generator(fn) -> bool:
+    return kinds(fn.body)[0]
 
 
 def main() -> int:
@@ -140,13 +164,16 @@ def main() -> int:
     ap.add_argument("name")
     ap.add_argument("--doc", default="")
     ap.add_argument("--state", default="state")
+    ap.add_argument("--cls", default="_RunState")
+    ap.add_argument("--line", type=int)
     ap.add_argument("--nested", action="store_true")
     a = ap.parse_args()
     path = Path(a.file)
     start, end = (int(x) for x in a.span.split("-"))
     src = path.read_text()
     tree = ast.parse(src)
-    cls, fn = find_func(tree, a.qual)
+    cls, fn = find_func(tree, a.qual, a.line)
+    gen_host = host_is_generator(fn)
     stmts, in_loop_body = container(fn, start, end)
     # 段的真实起点包括紧贴在第一条语句上方的注释
     lines = src.splitlines(keepends=True)
@@ -154,9 +181,11 @@ def main() -> int:
     while top > 1 and lines[top - 2].strip().startswith("#"):
         top -= 1
     indent = len(lines[start - 1]) - len(lines[start - 1].lstrip())
-    edits = dict(flow_edits(stmts, in_loop_body))
+    raw = flow_edits(stmts, in_loop_body, allow_value=not gen_host)
+    edits = {ln: (kind, node) for ln, kind, node in raw}
+    nested_returns = False
     if a.nested:
-        for ln, kind in edits.items():
+        for ln, (kind, _node) in edits.items():
             prev = lines[ln - 2].strip()
             if kind != "stop" or not re.fullmatch(
                 rf'{a.state}\.flow = "(stop|continue|break)"', prev
@@ -164,52 +193,85 @@ def main() -> int:
                 sys.exit(f"--nested：第 {ln} 行的 {kind} 前面没有 state.flow 赋值")
         nested_returns = bool(edits)
         edits = {}
+    used_result = False
     block = lines[top - 1 : end]
     # 多行字符串内部的行原样保留（只挪代码行的缩进，字面量内容不变）
     interior = string_interior_lines(src)
     out: list[tuple[str, bool]] = []
+    pending_after: dict[
+        int, list[tuple[str, bool]]
+    ] = {}  # 带值 return 跨行时：在它最后一行之后补 flow 与 return
     for i, line in enumerate(block, start=top):
         if i in edits:
+            kind, node = edits[i]
+            pad = line[: len(line) - len(line.lstrip())]
+            if node is not None and node.value is not None:
+                if node.col_offset != len(pad) or not line.lstrip().startswith("return "):
+                    sys.exit(f"第 {i} 行的 return 不是独占一行开头")
+                used_result = True
+                out.append((pad + f"{a.state}.result = " + line.lstrip()[len("return ") :], False))
+                tail = [(f'{pad}{a.state}.flow = "stop"\n', False), (f"{pad}return\n", False)]
+                if node.end_lineno == i:
+                    out.extend(tail)
+                else:
+                    pending_after[node.end_lineno] = tail
+                continue
             body = line.strip()
             if body not in ("return", "continue", "break"):
                 sys.exit(f"第 {i} 行流程语句不是单独一行：{body}")
-            pad = line[: len(line) - len(line.lstrip())]
-            out.append((f'{pad}{a.state}.flow = "{edits[i]}"\n', False))
+            out.append((f'{pad}{a.state}.flow = "{kind}"\n', False))
             out.append((f"{pad}return\n", False))
         else:
             out.append((line, i in interior))
+            if i in pending_after:
+                out.extend(pending_after.pop(i))
+    module_level = cls is None
+    body_indent = 4 if module_level else 8
     common = min(
         (len(ln) - len(ln.lstrip(" ")) for ln, inner in out if not inner and ln.strip()), default=0
     )
     body_text = "".join(
-        ln if inner else (" " * 8 + ln[common:] if ln.strip() else "\n") for ln, inner in out
+        ln if inner else (" " * body_indent + ln[common:] if ln.strip() else "\n")
+        for ln, inner in out
     )
     has_yield, has_await = kinds(stmts)
-    flows = sorted(set(edits.values()))
+    flows = sorted({kind for kind, _ in edits.values()})
     if a.nested and nested_returns:
         flows = ["nested"]
+    head_pad = "" if module_level else "    "
+    self_arg = "" if module_level else "self, "
+    owner = "" if module_level else "self."
     if has_yield:
-        head = f"    async def {a.name}(self, {a.state}: _RunState) -> AsyncGenerator[AgentEvent, None]:\n"
+        gen_type = ast.unparse(fn.returns) if fn.returns is not None else ""
+        if gen_type.startswith("AsyncIterator"):
+            gen_type = "AsyncGenerator" + gen_type[len("AsyncIterator") :].rstrip("]") + ", None]"
+        ann = f" -> {gen_type}" if gen_type else ""
+        head = f"{head_pad}async def {a.name}({self_arg}{a.state}: {a.cls}){ann}:\n"
         # aclosing：调用方中途关掉外层生成器时，段内的 finally 立刻跑（与切之前一致）
         call = (
-            f"async with aclosing(self.{a.name}({a.state})) as _phase:\n"
+            f"async with aclosing({owner}{a.name}({a.state})) as _phase:\n"
             + " " * 4
             + "async for _event in _phase:\n"
             + " " * 8
             + "yield _event\n"
         )
     elif has_await:
-        head = f"    async def {a.name}(self, {a.state}: _RunState) -> None:\n"
-        call = f"await self.{a.name}({a.state})\n"
+        head = f"{head_pad}async def {a.name}({self_arg}{a.state}: {a.cls}) -> None:\n"
+        call = f"await {owner}{a.name}({a.state})\n"
     else:
-        head = f"    def {a.name}(self, {a.state}: _RunState) -> None:\n"
-        call = f"self.{a.name}({a.state})\n"
-    doc = f'        """{a.doc}"""\n\n' if a.doc else ""
-    method = "\n" + head + doc + body_text
+        head = f"{head_pad}def {a.name}({self_arg}{a.state}: {a.cls}) -> None:\n"
+        call = f"{owner}{a.name}({a.state})\n"
+    doc = f'{" " * body_indent}"""{a.doc}"""\n\n' if a.doc else ""
+    method = ("\n\n" if module_level else "\n") + head + doc + body_text
     pad = " " * indent
     call_lines = [f"{pad}{a.state}.flow = None\n"] if flows else []
     call_lines += [pad + c + "\n" for c in call.rstrip("\n").split("\n")]
-    action = {"stop": "return", "continue": "continue", "break": "break"}
+    stop_action = (
+        "return"
+        if gen_host or (fn.returns is not None and ast.unparse(fn.returns) == "None")
+        else f"return {a.state}.result"
+    )
+    action = {"stop": stop_action, "continue": "continue", "break": "break"}
     for f in flows:
         if f == "nested":
             call_lines.append(f"{pad}if {a.state}.flow is not None:\n{pad}    return\n")
@@ -220,13 +282,22 @@ def main() -> int:
     fn_end = fn.end_lineno - (end - top + 1) + len(call_lines)
     new_lines.insert(fn_end, method)
     text = "".join(new_lines)
-    if "flow: Any = None" not in text and flows:
+    head_re = rf"(class {re.escape(a.cls)}:\n    \"\"\".*?\"\"\"\n\n)"
+    if flows and not re.search(
+        rf"class {re.escape(a.cls)}:.*?\n    flow: Any = None\n", text, re.S
+    ):
+        text = re.sub(head_re, r"\1    flow: Any = None\n", text, count=1, flags=re.S)
+    if used_result and not re.search(
+        rf"class {re.escape(a.cls)}:.*?\n    result: Any = None\n", text, re.S
+    ):
+        text = re.sub(head_re, r"\1    result: Any = None\n", text, count=1, flags=re.S)
+    if has_yield and not re.search(r"^from contextlib import .*\baclosing\b", text, re.M):
         text = re.sub(
-            r"(class _RunState:\n    \"\"\".*?\"\"\"\n\n)",
-            r"\1    flow: Any = None\n",
+            r"^(from __future__ import annotations\n)",
+            r"\1\nfrom contextlib import aclosing\n",
             text,
             count=1,
-            flags=re.S,
+            flags=re.M,
         )
     ast.parse(text)
     path.write_text(text)
@@ -244,8 +315,9 @@ def main() -> int:
         ],
         check=False,
     )
+    kind_text = "异步生成器" if has_yield else "异步" if has_await else "普通"
     print(
-        f"切出 {a.name}：{end - top + 1} 行，流程 {flows or '无'}，{'异步生成器' if has_yield else '异步' if has_await else '普通'}方法"
+        f"切出 {a.name}：{end - top + 1} 行，流程 {flows or '无'}，{kind_text}{'函数' if module_level else '方法'}"
     )
     return 0
 

@@ -41,7 +41,14 @@ if sys.version_info < (3, 12):
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from reindent import reindent, string_interior_lines  # noqa: E402
-from scope_names import defined_before, definitely_assigned, first_seen, locally_bound, names  # noqa: E402
+from scope_names import (
+    closure_factory_problem,
+    defined_before,
+    definitely_assigned,
+    first_seen,
+    locally_bound,
+    names,
+)  # noqa: E402
 
 
 def header_bindings(fn: ast.AST, start: int, end: int) -> set[str]:
@@ -149,7 +156,8 @@ def main() -> int:
     block = block_in(fn.body)
     if block is None:
         sys.exit("行范围不是同一层的完整语句")
-    all_stmts = [n for n in ast.walk(fn) if isinstance(n, ast.stmt) and n is not fn]
+    # 只看本函数自己的语句（不进内层函数：别的闭包里的赋值、导入不是本函数的局部变量）
+    all_stmts = [n for n in _walk_no_defs_keep(fn) if isinstance(n, ast.stmt) and n is not fn]
     before = [s for s in all_stmts if s.end_lineno < start]
     after = [s for s in all_stmts if s.lineno > end]
     params = {x.arg for x in (*fn.args.posonlyargs, *fn.args.args, *fn.args.kwonlyargs)}
@@ -350,7 +358,14 @@ def main() -> int:
         if name not in returns or readers & called:
             sys.exit(f"段内给闭包 {sorted(readers)} 读的 {name} 赋值，抽出后闭包读不到新值")
         print(f"提示：{name} 被闭包 {sorted(readers)} 读；段内不调这些闭包，调用处赋回后再用")
-    is_async = any(isinstance(n, ast.Await) for s in block for n in ast.walk(s))
+    if set(returns) & {
+        s_.name for s_ in block if isinstance(s_, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }:
+        problem = closure_factory_problem(fn, block, end)
+        if problem:
+            sys.exit(f"闭包抽成工厂函数不等价：{problem}")
+    # 新方法自己是否 async：只看段里自己的 await（段里定义的 async 闭包内部的 await 不算）
+    is_async = any(isinstance(n, ast.Await) for s in block for n in _walk_no_defs(s))
     if a.sentinel:
         if a.tail or returns:
             sys.exit("--sentinel 不和 --tail、--returns 一起用")
@@ -518,6 +533,26 @@ def main() -> int:
         f"抽出 {a.new_name}：{end - start + 1} 行，{'async ' if is_async else ''}参数 {len(given_params)} 个"
     )
     return 0
+
+
+def _walk_no_defs_keep(root: ast.AST):
+    """遍历 root 自己的语句：内层函数、类只产出节点本身（名字是外层的绑定），不进内部。"""
+    yield root
+    stack = list(ast.iter_child_nodes(root))
+    while stack:
+        n = stack.pop()
+        yield n
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)):
+            continue
+        stack.extend(ast.iter_child_nodes(n))
+
+
+def _walk_no_defs(node: ast.AST):
+    yield node
+    for c in ast.iter_child_nodes(node):
+        if isinstance(c, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)):
+            continue
+        yield from _walk_no_defs(c)
 
 
 def split_top(s: str) -> list[str]:
