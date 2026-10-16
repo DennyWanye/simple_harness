@@ -7,6 +7,8 @@ import json
 import re
 import uuid
 from collections.abc import Mapping
+from dataclasses import dataclass
+from typing import Any
 
 import aiosqlite
 from simple_harness import (
@@ -174,6 +176,64 @@ def current_disclosure(*, run_id, subject, request_id):
     )
 
 
+@dataclass
+class _RunDependencyRead:
+    """read_run_dependencies 的运行状态：原函数的局部变量与参数（切段用）。"""
+
+    flow: Any = None
+    LEGACY_PAGE_BYTES: Any = None
+    LEGACY_PAGE_SIZE: Any = None
+    _: Any = None
+    actual_messages: Any = None
+    admitted_current_page: Any = None
+    admitted_page: Any = None
+    before_effect_id: Any = None
+    consumed_occurrences: Any = None
+    current: Any = None
+    cursor: Any = None
+    cutoff: Any = None
+    db: Any = None
+    decisions: Any = None
+    drafts: Any = None
+    effect_id: Any = None
+    effects: Any = None
+    evidence: Any = None
+    expected: Any = None
+    expected_message: Any = None
+    fact: Any = None
+    failed_carrier: Any = None
+    host_path: Any = None
+    identity: Any = None
+    indexed: Any = None
+    initial_package: Any = None
+    legacy: Any = None
+    marker: Any = None
+    metadata: Any = None
+    ordinal: Any = None
+    origin: Any = None
+    owned_run: Any = None
+    package: Any = None
+    prefix: Any = None
+    proof: Any = None
+    raw: Any = None
+    recall: Any = None
+    route: Any = None
+    routes: Any = None
+    row: Any = None
+    run: Any = None
+    scope_proof: Any = None
+    sdk_run_id: Any = None
+    searches: Any = None
+    short: Any = None
+    snapshots: Any = None
+    source: Any = None
+    stack: Any = None
+    start: Any = None
+    value: Any = None
+    verify_history_projections: Any = None
+    verify_scope_disclosure: Any = None
+
+
 async def read_run_dependencies(
     *, db, stack, sdk_run_id, before_effect_id=None, consumed_occurrences=frozenset()
 ):
@@ -182,237 +242,315 @@ async def read_run_dependencies(
     Host SQL supplies only Host identities; start/effects come from the SDK's
     public ports. This reader never enumerates SDK private tables.
     """
-    cursor = await db.execute(
+    state = _RunDependencyRead(
+        db=db,
+        stack=stack,
+        sdk_run_id=sdk_run_id,
+        before_effect_id=before_effect_id,
+        consumed_occurrences=consumed_occurrences,
+    )
+    state.cursor = await state.db.execute(
         "SELECT r.host_run_id,r.subject,r.primary_conversation_id,t.evidence_id,t.evidence_hash "
         "FROM foreground_runs r JOIN foreground_run_sdk_bindings b ON b.host_run_id=r.host_run_id "
         "JOIN foreground_turns t ON t.turn_id=r.turn_id AND t.subject=r.subject WHERE b.sdk_run_id=?",
-        (sdk_run_id,),
+        (state.sdk_run_id,),
     )
-    run = await cursor.fetchone()
-    await cursor.close()
-    if run is None:
-        start, _ = stack.read_primary_dependency_facts(sdk_run_id)
-        metadata = start.get("input", {}).get("context_metadata", {})
-        cursor = await db.execute(
-            "SELECT 1 FROM foreground_runs WHERE host_run_id=?", (metadata.get("root_run_id"),)
+    state.run = await state.cursor.fetchone()
+    await state.cursor.close()
+    if state.run is None:
+        state.start, state._ = state.stack.read_primary_dependency_facts(state.sdk_run_id)
+        state.metadata = state.start.get("input", {}).get("context_metadata", {})
+        state.cursor = await state.db.execute(
+            "SELECT 1 FROM foreground_runs WHERE host_run_id=?",
+            (state.metadata.get("root_run_id"),),
         )
-        owned_run = await cursor.fetchone()
-        await cursor.close()
-        if "visibility_dependencies" in metadata or owned_run is not None:
+        state.owned_run = await state.cursor.fetchone()
+        await state.cursor.close()
+        if "visibility_dependencies" in state.metadata or state.owned_run is not None:
             raise ValueError("primary_dependencies_host_binding_missing")
         return None
-    cutoff = None
-    if before_effect_id is not None:
-        # The producer need not itself be context_route (e.g. a successful
-        # task_scope_update). Use the real append-only primary effect order,
-        # never the position of an unrelated subset of route receipts.
-
-        cursor = await db.execute(
-            "SELECT * FROM primary_effect_identities WHERE sdk_run_id=? AND effect_id=?",
-            (sdk_run_id, before_effect_id),
-        )
-        cutoff, identity = await _dependency_cutoff(
-            before_effect_id, cursor=cursor, run=run, sdk_run_id=sdk_run_id, stack=stack
-        )
-    cursor = await db.execute(
+    state.cutoff = None
+    await _resolve_dependency_cutoff(state)
+    state.cursor = await state.db.execute(
         "SELECT receipt_json,origin,provider_turn_ordinal FROM context_route_decisions WHERE sdk_run_id=? ORDER BY rowid",
-        (sdk_run_id,),
+        (state.sdk_run_id,),
     )
-    decisions = [(json.loads(row[0]), row[1], row[2]) for row in await cursor.fetchall()]
-    await cursor.close()
-    if before_effect_id is not None:
-        prefix = []
-        for raw, origin, ordinal in decisions:
-            if origin == "context_tool":
-                cursor = await db.execute(
-                    "SELECT * FROM primary_effect_identities WHERE sdk_run_id=? AND effect_id=?",
-                    (sdk_run_id, raw.get("effect_id")),
-                )
-                indexed = await cursor.fetchone()
-                await cursor.close()
-                if indexed is None:
-                    raise ValueError("primary_effect_index_route_missing")
-                identity = dict(
-                    host_run_id=run["host_run_id"],
-                    sdk_run_id=sdk_run_id,
-                    effect_id=raw["effect_id"],
-                    tool_name="context_route",
-                )
-                if (
-                    indexed["host_run_id"] != run["host_run_id"]
-                    or indexed["tool_name"] != "context_route"
-                    or indexed["identity_json"] != canonical_json(identity)
-                    or indexed["identity_hash"] != canonical_hash(identity)
-                ):
-                    raise ValueError("primary_effect_index_identity_mismatch")
-                if indexed["sequence"] >= cutoff:
-                    continue
-            # Initial scope and no-recall identity markers retain their exact
-            # validations below; they don't add a later tool source payload.
-            prefix.append((raw, origin, ordinal))
-        decisions = prefix
-    routes = [raw for raw, origin, _ in decisions if origin == "context_tool"]
-    start, effects = stack.read_primary_dependency_facts(
-        sdk_run_id, tuple(r["effect_id"] for r in routes)
+    state.decisions = [
+        (json.loads(row[0]), row[1], row[2]) for row in await state.cursor.fetchall()
+    ]
+    await state.cursor.close()
+    await _verify_context_tool_cutoff(state)
+    state.routes = [raw for raw, origin, _ in state.decisions if origin == "context_tool"]
+    state.start, state.effects = state.stack.read_primary_dependency_facts(
+        state.sdk_run_id, tuple(r["effect_id"] for r in state.routes)
     )
-    metadata = start.get("input", {}).get("context_metadata", {})
-    if metadata.get("root_run_id") != run["host_run_id"]:
+    state.metadata = state.start.get("input", {}).get("context_metadata", {})
+    if state.metadata.get("root_run_id") != state.run["host_run_id"]:
         raise ValueError("primary_dependencies_run_mismatch")
-    proof = parse_dependencies(metadata.get("visibility_dependencies"))
-    current = {"evidence_id": run["evidence_id"], "envelope_hash": run["evidence_hash"]}
-    if current not in proof["evidence"]:
+    state.proof = parse_dependencies(state.metadata.get("visibility_dependencies"))
+    state.current = {
+        "evidence_id": state.run["evidence_id"],
+        "envelope_hash": state.run["evidence_hash"],
+    }
+    if state.current not in state.proof["evidence"]:
         raise ValueError("primary_dependencies_current_user_missing")
     # 按需导入：循环依赖（primary_dependencies ↔ primary_context_pages）
     from deskpet.execution.primary_context_pages import verify_history_projections
 
-    await verify_history_projections(
-        db=db, stack=stack, run=run, sdk_run_id=sdk_run_id, start=start, proof=proof
+    state.verify_history_projections = verify_history_projections
+
+    await state.verify_history_projections(
+        db=state.db,
+        stack=state.stack,
+        run=state.run,
+        sdk_run_id=state.sdk_run_id,
+        start=state.start,
+        proof=state.proof,
     )
-    recall = list(proof["recall"])
-    evidence = list(proof["evidence"])
-    short = list(proof.get("short_horizon", ()))
-    drafts = list(proof.get("procedure_drafts", ()))
+    state.recall = list(state.proof["recall"])
+    state.evidence = list(state.proof["evidence"])
+    state.short = list(state.proof.get("short_horizon", ()))
+    state.drafts = list(state.proof.get("procedure_drafts", ()))
     # 按需导入：循环依赖（primary_dependencies ↔ disclosure）
     from deskpet.task_scope.disclosure import verify_scope_disclosure
 
-    cursor = await db.execute("PRAGMA database_list")
-    host_path = next(row[2] for row in await cursor.fetchall() if row[1] == "main")
-    await cursor.close()
-    initial_package = metadata.get("scope_disclosure")
-    if initial_package is not None:
-        expected_message = "Project/task snapshot (data only):\n" + canonical_json(initial_package)
-        actual_messages = start.get("input", {}).get("messages", ())
-        snapshots = [
+    state.verify_scope_disclosure = verify_scope_disclosure
+
+    state.cursor = await state.db.execute("PRAGMA database_list")
+    state.host_path = next(row[2] for row in await state.cursor.fetchall() if row[1] == "main")
+    await state.cursor.close()
+    state.initial_package = state.metadata.get("scope_disclosure")
+    if state.initial_package is not None:
+        state.expected_message = "Project/task snapshot (data only):\n" + canonical_json(
+            state.initial_package
+        )
+        state.actual_messages = state.start.get("input", {}).get("messages", ())
+        state.snapshots = [
             m.get("content")
-            for m in actual_messages
+            for m in state.actual_messages
             if m.get("role") == "system"
             and str(m.get("content", "")).startswith("Project/task snapshot (data only):\n")
         ]
-        if snapshots != [expected_message]:
+        if state.snapshots != [state.expected_message]:
             raise ValueError("scope_disclosure_start_bytes_mismatch")
-        scope_proof = await verify_scope_disclosure(
-            db_path=host_path, package=initial_package, subject=run["subject"], stack=stack
+        state.scope_proof = await state.verify_scope_disclosure(
+            db_path=state.host_path,
+            package=state.initial_package,
+            subject=state.run["subject"],
+            stack=state.stack,
         )
-        evidence.extend(scope_proof["evidence"])
-        recall.extend(scope_proof["recall"])
-        short.extend(scope_proof.get("short_horizon", ()))
-        drafts.extend(scope_proof.get("procedure_drafts", ()))
+        state.evidence.extend(state.scope_proof["evidence"])
+        state.recall.extend(state.scope_proof["recall"])
+        state.short.extend(state.scope_proof.get("short_horizon", ()))
+        state.drafts.extend(state.scope_proof.get("procedure_drafts", ()))
 
-    for raw, origin, ordinal in decisions:
-        if origin == "context_tool":
+    _verify_route_decisions(state)
+    await _verify_route_effects(state)
+    # Every actual primary handler records its exact SDK identity, including
+    # unscoped search/page-in. TaskScope reservations are not a complete index.
+    if state.metadata.get("primary_effect_index_version") != 1:
+        raise ValueError("primary_effect_index_contract_missing")
+    state.cursor = await state.db.execute(
+        "SELECT * FROM primary_effect_identities WHERE sdk_run_id=? "
+        "AND tool_name IN ('task_scope_search','context_page_in','procedure_discover') AND (? IS NULL OR sequence<?) ORDER BY sequence LIMIT 257",
+        (state.sdk_run_id, state.cutoff, state.cutoff),
+    )
+    state.searches = await state.cursor.fetchall()
+    await state.cursor.close()
+    if len(state.searches) > 256:
+        raise ValueError("scope_disclosure_limit")
+    await _verify_search_dependencies(state)
+    return state.run, dependencies(
+        state.evidence,
+        state.recall,
+        state.short,
+        schema_version=3 if state.drafts else 2 if state.short else state.proof["schema_version"],
+        procedure_drafts=state.drafts,
+    )
+
+
+async def _resolve_dependency_cutoff(state: _RunDependencyRead) -> None:
+    """按主效果索引找到截止效果的顺序位置。"""
+
+    if state.before_effect_id is not None:
+        # The producer need not itself be context_route (e.g. a successful
+        # task_scope_update). Use the real append-only primary effect order,
+        # never the position of an unrelated subset of route receipts.
+
+        state.cursor = await state.db.execute(
+            "SELECT * FROM primary_effect_identities WHERE sdk_run_id=? AND effect_id=?",
+            (state.sdk_run_id, state.before_effect_id),
+        )
+        state.cutoff, state.identity = await _dependency_cutoff(
+            state.before_effect_id,
+            cursor=state.cursor,
+            run=state.run,
+            sdk_run_id=state.sdk_run_id,
+            stack=state.stack,
+        )
+
+
+async def _verify_context_tool_cutoff(state: _RunDependencyRead) -> None:
+    """有截止效果时，只保留截止之前的上下文工具路由决定。"""
+
+    if state.before_effect_id is not None:
+        state.prefix = []
+        for state.raw, state.origin, state.ordinal in state.decisions:
+            if state.origin == "context_tool":
+                state.cursor = await state.db.execute(
+                    "SELECT * FROM primary_effect_identities WHERE sdk_run_id=? AND effect_id=?",
+                    (state.sdk_run_id, state.raw.get("effect_id")),
+                )
+                state.indexed = await state.cursor.fetchone()
+                await state.cursor.close()
+                if state.indexed is None:
+                    raise ValueError("primary_effect_index_route_missing")
+                state.identity = dict(
+                    host_run_id=state.run["host_run_id"],
+                    sdk_run_id=state.sdk_run_id,
+                    effect_id=state.raw["effect_id"],
+                    tool_name="context_route",
+                )
+                if (
+                    state.indexed["host_run_id"] != state.run["host_run_id"]
+                    or state.indexed["tool_name"] != "context_route"
+                    or state.indexed["identity_json"] != canonical_json(state.identity)
+                    or state.indexed["identity_hash"] != canonical_hash(state.identity)
+                ):
+                    raise ValueError("primary_effect_index_identity_mismatch")
+                if state.indexed["sequence"] >= state.cutoff:
+                    continue
+            # Initial scope and no-recall identity markers retain their exact
+            # validations below; they don't add a later tool source payload.
+            state.prefix.append((state.raw, state.origin, state.ordinal))
+        state.decisions = state.prefix
+
+
+def _verify_route_decisions(state: _RunDependencyRead) -> None:
+    """核对每条路由决定（无召回、主机初始）与重算的收据一致。"""
+
+    for state.raw, state.origin, state.ordinal in state.decisions:
+        if state.origin == "context_tool":
             continue
-        if origin == "no_recall":
+        if state.origin == "no_recall":
             # ProductRuntimeDecisionSink records an exact Host synthetic marker,
             # not a tool effect. It carries no historical content or scope.
-            marker = f"no-recall:{sdk_run_id}:{ordinal}"
-            expected = ContextRouteReceipt(
-                receipt_id=str(uuid.uuid5(uuid.NAMESPACE_URL, f"simple-harness:{marker}")),
-                run_id=sdk_run_id,
-                raw_call_id=marker,
-                effect_id=marker,
+            state.marker = f"no-recall:{state.sdk_run_id}:{state.ordinal}"
+            state.expected = ContextRouteReceipt(
+                receipt_id=str(uuid.uuid5(uuid.NAMESPACE_URL, f"simple-harness:{state.marker}")),
+                run_id=state.sdk_run_id,
+                raw_call_id=state.marker,
+                effect_id=state.marker,
                 route=TaskScopeRoute.DIRECT_STANDALONE,
                 task_scope_id=None,
                 binding_set_revision=None,
             )
-            if raw != expected.to_json():
+            if state.raw != state.expected.to_json():
                 raise ValueError("primary_dependencies_no_recall_mismatch")
-        elif origin == "host_initial":
+        elif state.origin == "host_initial":
             # Bind the Host-initial receipt to the actual SDK start and the
             # verified ordinary projection, never to a synthetic tool effect.
             if (
-                initial_package is None
-                or raw.get("receipt_id") != metadata.get("initial_route_receipt_id")
-                or ContextRouteReceipt.from_json(raw).receipt_hash
-                != metadata.get("initial_route_receipt_hash")
-                or raw.get("task_scope_id") != initial_package["task_scope_id"]
+                state.initial_package is None
+                or state.raw.get("receipt_id") != state.metadata.get("initial_route_receipt_id")
+                or ContextRouteReceipt.from_json(state.raw).receipt_hash
+                != state.metadata.get("initial_route_receipt_hash")
+                or state.raw.get("task_scope_id") != state.initial_package["task_scope_id"]
             ):
                 raise ValueError("primary_dependencies_initial_scope_sources_missing")
         else:
             raise ValueError("primary_dependencies_origin_invalid")
-    for raw, fact in zip(routes, effects, strict=True):
-        route = ContextRouteReceipt.from_json(raw)
+
+
+async def _verify_route_effects(state: _RunDependencyRead) -> None:
+    """逐个核对上下文路由效果与它的作用域包。"""
+
+    for state.raw, state.fact in zip(state.routes, state.effects, strict=True):
+        state.route = ContextRouteReceipt.from_json(state.raw)
         if (
-            fact is None
-            or not fact.terminal
-            or fact.result is None
-            or fact.run_id.value != sdk_run_id
-            or fact.effect_id.value != route.effect_id
-            or fact.raw_call_id != route.raw_call_id
-            or fact.tool_name != "context_route"
+            state.fact is None
+            or not state.fact.terminal
+            or state.fact.result is None
+            or state.fact.run_id.value != state.sdk_run_id
+            or state.fact.effect_id.value != state.route.effect_id
+            or state.fact.raw_call_id != state.route.raw_call_id
+            or state.fact.tool_name != "context_route"
         ):
             raise ValueError("primary_dependencies_tool_unverified")
-        value = thaw_json(fact.result.value)
-        if not isinstance(value, Mapping) or value.get("context_route_receipt") != route.to_json():
+        state.value = thaw_json(state.fact.result.value)
+        if (
+            not isinstance(state.value, Mapping)
+            or state.value.get("context_route_receipt") != state.route.to_json()
+        ):
             raise ValueError("primary_dependencies_route_mismatch")
         # A successful exact route authorizes task effects; it does not prove
         # visibility of the historical ResumePackage returned with that route.
         # Verify its actual retained manifest before the next delegate call.
         # Inspect every durable route, so a later continue_active cannot hide an
         # earlier consumed package, even if public Context is subsequently pruned.
-        if raw["route"] == "resume_existing" or "resume_package" in value:
-            package = value.get("resume_package")
+        if state.raw["route"] == "resume_existing" or "resume_package" in state.value:
+            state.package = state.value.get("resume_package")
             if (
-                not isinstance(package, Mapping)
-                or package.get("task_scope_id") != raw["task_scope_id"]
+                not isinstance(state.package, Mapping)
+                or state.package.get("task_scope_id") != state.raw["task_scope_id"]
             ):
                 raise ValueError("primary_dependencies_resume_sources_missing")
-            scope_proof = await verify_scope_disclosure(
-                db_path=host_path, package=package, subject=run["subject"], stack=stack
+            state.scope_proof = await state.verify_scope_disclosure(
+                db_path=state.host_path,
+                package=state.package,
+                subject=state.run["subject"],
+                stack=state.stack,
             )
-            evidence.extend(scope_proof["evidence"])
-            recall.extend(scope_proof["recall"])
-            short.extend(scope_proof.get("short_horizon", ()))
-            drafts.extend(scope_proof.get("procedure_drafts", ()))
-        if raw["route"] != "memory_standalone":
+            state.evidence.extend(state.scope_proof["evidence"])
+            state.recall.extend(state.scope_proof["recall"])
+            state.short.extend(state.scope_proof.get("short_horizon", ()))
+            state.drafts.extend(state.scope_proof.get("procedure_drafts", ()))
+        if state.raw["route"] != "memory_standalone":
             continue
         _require_route_fragments(
-            consumed_occurrences,
-            drafts=drafts,
-            evidence=evidence,
-            recall=recall,
-            route=route,
-            short=short,
-            value=value,
+            state.consumed_occurrences,
+            drafts=state.drafts,
+            evidence=state.evidence,
+            recall=state.recall,
+            route=state.route,
+            short=state.short,
+            value=state.value,
         )
-    # Every actual primary handler records its exact SDK identity, including
-    # unscoped search/page-in. TaskScope reservations are not a complete index.
-    if metadata.get("primary_effect_index_version") != 1:
-        raise ValueError("primary_effect_index_contract_missing")
-    cursor = await db.execute(
-        "SELECT * FROM primary_effect_identities WHERE sdk_run_id=? "
-        "AND tool_name IN ('task_scope_search','context_page_in','procedure_discover') AND (? IS NULL OR sequence<?) ORDER BY sequence LIMIT 257",
-        (sdk_run_id, cutoff, cutoff),
-    )
-    searches = await cursor.fetchall()
-    await cursor.close()
-    if len(searches) > 256:
-        raise ValueError("scope_disclosure_limit")
-    for row in searches:
-        identity = dict(
-            host_run_id=run["host_run_id"],
-            sdk_run_id=sdk_run_id,
-            effect_id=row["effect_id"],
-            tool_name=row["tool_name"],
+
+
+async def _verify_search_dependencies(state: _RunDependencyRead) -> None:
+    """逐个核对检索、翻页类主工具调用的来源依赖。"""
+
+    for state.row in state.searches:
+        state.identity = dict(
+            host_run_id=state.run["host_run_id"],
+            sdk_run_id=state.sdk_run_id,
+            effect_id=state.row["effect_id"],
+            tool_name=state.row["tool_name"],
         )
-        if row["identity_json"] != canonical_json(identity) or row[
+        if state.row["identity_json"] != canonical_json(state.identity) or state.row[
             "identity_hash"
-        ] != canonical_hash(identity):
+        ] != canonical_hash(state.identity):
             raise ValueError("primary_effect_index_identity_mismatch")
-        effect_id = row["effect_id"]
-        _, (fact,) = stack.read_primary_dependency_facts(sdk_run_id, (effect_id,))
+        state.effect_id = state.row["effect_id"]
+        state._, (state.fact,) = state.stack.read_primary_dependency_facts(
+            state.sdk_run_id, (state.effect_id,)
+        )
         if (
-            fact is None
-            or not fact.terminal
-            or fact.result is None
-            or fact.tool_name != row["tool_name"]
-            or fact.run_id.value != sdk_run_id
+            state.fact is None
+            or not state.fact.terminal
+            or state.fact.result is None
+            or state.fact.tool_name != state.row["tool_name"]
+            or state.fact.run_id.value != state.sdk_run_id
         ):
             raise ValueError("scope_search_effect_unverified")
-        value = thaw_json(fact.result.value)
-        failed_carrier = (
-            fact.state.value == "failed" and fact.result.outcome.value == "failed" and value is None
+        state.value = thaw_json(state.fact.result.value)
+        state.failed_carrier = (
+            state.fact.state.value == "failed"
+            and state.fact.result.outcome.value == "failed"
+            and state.value is None
         )
-        if failed_carrier and fact.result.error_code in (
+        if state.failed_carrier and state.fact.result.error_code in (
             "missing_required_argument",
             "invalid_tool_arguments",
         ):
@@ -420,7 +558,7 @@ async def read_run_dependencies(
             # no candidate content was ever read; there is nothing to verify.
             # (r10: an omitted first-page cursor must not make the Run unverifiable.)
             continue
-        if row["tool_name"] == "context_page_in" and failed_carrier:
+        if state.row["tool_name"] == "context_page_in" and state.failed_carrier:
             # The SDK failure carrier has no value. Independently reconstruct
             # this deterministic rejection by replaying the exact same
             # arguments; never interpret an arbitrary failed effect or a
@@ -428,109 +566,131 @@ async def read_run_dependencies(
             # passing a typed recall item id as reference_id must not make the
             # whole Run unverifiable.)
             # 按需导入：循环依赖（primary_dependencies ↔ current_tool_pages）
-            admitted_current_page, admitted_page = await _replayed_rejection_page(
-                db, fact=fact, run=run, sdk_run_id=sdk_run_id, stack=stack, start=start
+            state.admitted_current_page, state.admitted_page = await _replayed_rejection_page(
+                state.db,
+                fact=state.fact,
+                run=state.run,
+                sdk_run_id=state.sdk_run_id,
+                stack=state.stack,
+                start=state.start,
             )
             continue
-        if isinstance(value, str):
-            value = json.loads(value)
-        if not isinstance(value, Mapping):
+        if isinstance(state.value, str):
+            state.value = json.loads(state.value)
+        if not isinstance(state.value, Mapping):
             raise ValueError("scope_search_result_unverified")
-        if "error" in value:
+        if "error" in state.value:
             continue  # errors contain no candidate content
-        # 2026-09-10：``procedure_discover`` 随认知记忆 SDK 一并下线，
-        # 这条重放校验分支不会再有对应的工具调用记录。
-        if row["tool_name"] == "context_page_in":
-            if value.get("kind") == "primary_current_tool_page_v1":
-                # 按需导入：循环依赖（primary_dependencies ↔ current_tool_pages）
-                from deskpet.execution.current_tool_pages import (
-                    LEGACY_PAGE_SIZE,
-                    admitted_current_page,
-                )
-
-                expected = await admitted_current_page(
-                    db=db,
-                    stack=stack,
-                    run=run,
-                    sdk_run_id=sdk_run_id,
-                    page_effect=fact,
-                    arguments=thaw_json(fact.arguments),
-                )
-                if value != expected:
-                    # 2026-09-09 事件 AG：页大小 1024 -> 4096 是一次纯容量升级。准入
-                    # 身份（``canonical_hash(descriptor)`` + 字节 offset）一个字没变，
-                    # 变的只有一页返回多少字节，所以升级瞬间还在飞的 Run 里已记录的
-                    # 1 KiB 页必须仍然按旧页大小重算得一模一样——否则一次扩容会把它们
-                    # 永久判死（理由与 ``legacy_summary`` 完全一致）。只在新页大小对不
-                    # 上时才多算这一次，稳态零成本。
-                    legacy = await admitted_current_page(
-                        db=db,
-                        stack=stack,
-                        run=run,
-                        sdk_run_id=sdk_run_id,
-                        page_effect=fact,
-                        arguments=thaw_json(fact.arguments),
-                        page_bytes=LEGACY_PAGE_SIZE,
-                    )
-                    if value != legacy:
-                        raise ValueError("primary_current_page_effect_result_mismatch")
-                # Original start and every earlier output source are already
-                # included by this ordered reader; never assert a fake S1.
-                continue
-            if value.get("kind") == "primary_tool_history_page_v1":
-                # 按需导入：循环依赖（primary_dependencies ↔ primary_context_pages）
-                from deskpet.execution.primary_context_pages import LEGACY_PAGE_BYTES, admitted_page
-
-                expected = await admitted_page(
-                    db=db,
-                    stack=stack,
-                    run=run,
-                    sdk_run_id=sdk_run_id,
-                    start=start,
-                    arguments=thaw_json(fact.arguments),
-                )
-                if value != expected:
-                    # 事件 AG，同上：历史页也只是"一页多少字节"变了。
-                    legacy = await admitted_page(
-                        db=db,
-                        stack=stack,
-                        run=run,
-                        sdk_run_id=sdk_run_id,
-                        start=start,
-                        arguments=thaw_json(fact.arguments),
-                        page_bytes=LEGACY_PAGE_BYTES,
-                    )
-                    if value != legacy:
-                        raise ValueError("primary_page_effect_result_mismatch")
-                    expected = legacy
-                source = expected["source"]
-                evidence.append(
-                    dict(evidence_id=source["evidence_id"], envelope_hash=source["envelope_hash"])
-                )
-                continue
-            if value.get("kind") == "skill":
-                continue  # configuration/tool instructions, not scope history
-            if initial_package is None or value.get("content") != canonical_json(initial_package):
-                raise ValueError("scope_page_in_sources_missing")
-            continue  # exact initial projection already contributes all sources
+        state.flow = None
+        await _verify_page_in_dependency(state)
+        if state.flow == "continue":
+            continue
         await _require_scope_candidates(
-            drafts,
-            evidence=evidence,
-            host_path=host_path,
-            recall=recall,
-            run=run,
-            short=short,
-            stack=stack,
-            value=value,
-            verify_scope_disclosure=verify_scope_disclosure,
+            state.drafts,
+            evidence=state.evidence,
+            host_path=state.host_path,
+            recall=state.recall,
+            run=state.run,
+            short=state.short,
+            stack=state.stack,
+            value=state.value,
+            verify_scope_disclosure=state.verify_scope_disclosure,
         )
-    return run, dependencies(
-        evidence,
-        recall,
-        short,
-        schema_version=3 if drafts else 2 if short else proof["schema_version"],
-        procedure_drafts=drafts,
-    )
+
+
+async def _verify_page_in_dependency(state: _RunDependencyRead) -> None:
+    """翻页调用：按页的种类重算准入页并比对，补记证据。"""
+
+    # 2026-09-10：``procedure_discover`` 随认知记忆 SDK 一并下线，
+    # 这条重放校验分支不会再有对应的工具调用记录。
+    if state.row["tool_name"] == "context_page_in":
+        if state.value.get("kind") == "primary_current_tool_page_v1":
+            # 按需导入：循环依赖（primary_dependencies ↔ current_tool_pages）
+            from deskpet.execution.current_tool_pages import (
+                LEGACY_PAGE_SIZE,
+                admitted_current_page,
+            )
+
+            state.LEGACY_PAGE_SIZE = LEGACY_PAGE_SIZE
+            state.admitted_current_page = admitted_current_page
+
+            state.expected = await state.admitted_current_page(
+                db=state.db,
+                stack=state.stack,
+                run=state.run,
+                sdk_run_id=state.sdk_run_id,
+                page_effect=state.fact,
+                arguments=thaw_json(state.fact.arguments),
+            )
+            if state.value != state.expected:
+                # 2026-09-09 事件 AG：页大小 1024 -> 4096 是一次纯容量升级。准入
+                # 身份（``canonical_hash(descriptor)`` + 字节 offset）一个字没变，
+                # 变的只有一页返回多少字节，所以升级瞬间还在飞的 Run 里已记录的
+                # 1 KiB 页必须仍然按旧页大小重算得一模一样——否则一次扩容会把它们
+                # 永久判死（理由与 ``legacy_summary`` 完全一致）。只在新页大小对不
+                # 上时才多算这一次，稳态零成本。
+                state.legacy = await state.admitted_current_page(
+                    db=state.db,
+                    stack=state.stack,
+                    run=state.run,
+                    sdk_run_id=state.sdk_run_id,
+                    page_effect=state.fact,
+                    arguments=thaw_json(state.fact.arguments),
+                    page_bytes=state.LEGACY_PAGE_SIZE,
+                )
+                if state.value != state.legacy:
+                    raise ValueError("primary_current_page_effect_result_mismatch")
+            # Original start and every earlier output source are already
+            # included by this ordered reader; never assert a fake S1.
+            state.flow = "continue"
+            return
+        if state.value.get("kind") == "primary_tool_history_page_v1":
+            # 按需导入：循环依赖（primary_dependencies ↔ primary_context_pages）
+            from deskpet.execution.primary_context_pages import LEGACY_PAGE_BYTES, admitted_page
+
+            state.LEGACY_PAGE_BYTES = LEGACY_PAGE_BYTES
+            state.admitted_page = admitted_page
+
+            state.expected = await state.admitted_page(
+                db=state.db,
+                stack=state.stack,
+                run=state.run,
+                sdk_run_id=state.sdk_run_id,
+                start=state.start,
+                arguments=thaw_json(state.fact.arguments),
+            )
+            if state.value != state.expected:
+                # 事件 AG，同上：历史页也只是"一页多少字节"变了。
+                state.legacy = await state.admitted_page(
+                    db=state.db,
+                    stack=state.stack,
+                    run=state.run,
+                    sdk_run_id=state.sdk_run_id,
+                    start=state.start,
+                    arguments=thaw_json(state.fact.arguments),
+                    page_bytes=state.LEGACY_PAGE_BYTES,
+                )
+                if state.value != state.legacy:
+                    raise ValueError("primary_page_effect_result_mismatch")
+                state.expected = state.legacy
+            state.source = state.expected["source"]
+            state.evidence.append(
+                dict(
+                    evidence_id=state.source["evidence_id"],
+                    envelope_hash=state.source["envelope_hash"],
+                )
+            )
+            state.flow = "continue"
+            return
+        if state.value.get("kind") == "skill":
+            state.flow = "continue"  # configuration/tool instructions, not scope history
+            return
+        if state.initial_package is None or state.value.get("content") != canonical_json(
+            state.initial_package
+        ):
+            raise ValueError("scope_page_in_sources_missing")
+        state.flow = "continue"  # exact initial projection already contributes all sources
+        return
 
 
 async def _dependency_cutoff(before_effect_id, *, cursor, run, sdk_run_id, stack):
