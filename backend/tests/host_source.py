@@ -10,14 +10,27 @@
 from __future__ import annotations
 
 import ast
+import re
 from pathlib import Path
 
 BACKEND = Path(__file__).resolve().parents[1]
 
 
+_STATE_PREFIX = re.compile(r"(?<![\w.])(?:pp\.st|pp|st)\.(?=[A-Za-z_])")
+
+
+def strip_state_prefix(text: str) -> str:
+    """去掉状态对象前缀 ``st.`` / ``pp.`` / ``pp.st.``。
+
+    阶段 6D 把超长宿主函数的局部变量收进状态对象（``x`` 写成 ``st.x``）再切段；
+    按原局部变量名写的接线文字断言经此归一后照旧成立。
+    """
+    return _STATE_PREFIX.sub("", text)
+
+
 def host_source_text() -> str:
-    """返回 main.py 与 host/*.py 的源码，按文件名顺序拼接。"""
-    return "\n".join(path.read_text(encoding="utf-8") for path in _host_files())
+    """返回 main.py 与 host/*.py 的源码（去掉状态对象前缀），按文件名顺序拼接。"""
+    return strip_state_prefix("\n".join(path.read_text(encoding="utf-8") for path in _host_files()))
 
 
 def _host_files() -> list[Path]:
@@ -44,7 +57,7 @@ def host_function_source(name: str) -> str:
         text = path.read_text(encoding="utf-8")
         for node in ast.parse(text).body:
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == name:
-                return ast.get_source_segment(text, node) or ""
+                return strip_state_prefix(ast.get_source_segment(text, node) or "")
     raise LookupError(f"main 与 host 模块里都没有函数 {name}")
 
 
@@ -54,7 +67,7 @@ def host_module_source(name: str) -> str:
     阶段 6D 把超长的宿主函数拆成同模块的多个函数（部分局部变量改成状态对象字段 ``st.x``），
     原来只在一个函数里的接线文字分散到同模块的几个函数里；这类测试改读整个模块。
     """
-    return (BACKEND / "host" / f"{name}.py").read_text(encoding="utf-8")
+    return strip_state_prefix((BACKEND / "host" / f"{name}.py").read_text(encoding="utf-8"))
 
 
 def call_source(text: str, marker: str) -> str:
@@ -77,7 +90,7 @@ def host_nested_function_source(name: str) -> str:
         text = path.read_text(encoding="utf-8")
         for node in ast.walk(ast.parse(text)):
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == name:
-                return ast.get_source_segment(text, node) or ""
+                return strip_state_prefix(ast.get_source_segment(text, node) or "")
     raise LookupError(f"main 与 host 模块里都没有函数 {name}")
 
 

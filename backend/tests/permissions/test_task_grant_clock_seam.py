@@ -140,10 +140,32 @@ def _call_keywords(tree: ast.Module, func_name: str, callee: str) -> list[list[s
     """Keyword names of every ``callee(...)`` call inside ``func_name``."""
 
     found: list[list[str]] = []
-    for node in ast.walk(tree):
-        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            continue
-        if node.name != func_name:
+    funcs = [n for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
+    # 阶段 6D：超长函数切段后，段函数以状态对象为第一个参数；状态类 = 该函数顶层建的 dataclass 实例
+    host = next((n for n in funcs if n.name == func_name), None)
+    dataclasses = {
+        n.name
+        for n in tree.body
+        if isinstance(n, ast.ClassDef)
+        and any(getattr(d, "id", None) == "dataclass" for d in n.decorator_list)
+    }
+    state_classes = {
+        stmt.value.func.id
+        for stmt in (host.body if host is not None else ())
+        if isinstance(stmt, ast.Assign)
+        and isinstance(stmt.value, ast.Call)
+        and isinstance(stmt.value.func, ast.Name)
+        and stmt.value.func.id in dataclasses
+    }
+    phase_names = {
+        n.name
+        for n in funcs
+        if n.args.args
+        and isinstance(n.args.args[0].annotation, ast.Name)
+        and n.args.args[0].annotation.id in state_classes
+    }
+    for node in funcs:
+        if node.name != func_name and node.name not in phase_names:
             continue
         for inner in ast.walk(node):
             if isinstance(inner, ast.Call) and _callee_name(inner.func) == callee:
@@ -160,7 +182,6 @@ def _callee_name(node: ast.expr) -> str:
 
 
 def _assert_capability_runtime_clock_seam() -> None:
-    import main
 
     parameters = inspect.signature(capability_runtime._initialize_capability_runtime).parameters
     assert "clock" in parameters, (

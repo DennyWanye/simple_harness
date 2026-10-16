@@ -6,7 +6,6 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
-import main
 import pytest
 from host import (
     capability_runtime,
@@ -19,6 +18,8 @@ from host import (
     sdk_services,
 )
 from host.state import host_state
+
+from tests.host_source import strip_state_prefix
 
 
 class _ProductionProviderRegistry:
@@ -126,7 +127,7 @@ def test_skill_install_verifier_binds_only_after_sdk_runtime_is_ready():
 def test_sdk_runtime_has_no_placeholder_capability_or_authorization_authority():
     import inspect
 
-    source = inspect.getsource(sdk_runtime_stack)
+    source = strip_state_prefix(inspect.getsource(sdk_runtime_stack))
 
     assert "_MinimalCapabilityBridge" not in source
     assert "_SdkAuthorizationPolicy" not in source
@@ -142,10 +143,10 @@ def test_sdk_runtime_has_no_placeholder_capability_or_authorization_authority():
 def test_sdk_tool_authority_is_reachable_for_fresh_waiting_terminal_and_recovery():
     import inspect
 
-    build = inspect.getsource(sdk_runtime_stack)
-    foreground = inspect.getsource(harness_chat)
-    execute = inspect.getsource(sdk_execution)
-    watcher = inspect.getsource(sdk_recovery)
+    build = strip_state_prefix(inspect.getsource(sdk_runtime_stack))
+    foreground = strip_state_prefix(inspect.getsource(harness_chat))
+    execute = strip_state_prefix(inspect.getsource(sdk_execution))
+    watcher = strip_state_prefix(inspect.getsource(sdk_recovery))
 
     assert "tool_authorities.restore_waiting_run" in build
     assert "except SdkToolAuthorityMigrationUnavailable" in build

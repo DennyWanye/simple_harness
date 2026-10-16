@@ -133,6 +133,12 @@ def build_scopes(fn) -> tuple[dict[int, Scope], list[tuple[ast.Name, Scope]]]:
                     for x in ast.walk(part):
                         if isinstance(x, ast.Name):
                             names.append((x, sc))
+            if isinstance(n, ast.ClassDef):
+                # 类的基类、关键字参数、装饰器在外层求值（类体内的名字归类作用域）
+                for part in [*n.bases, *[k.value for k in n.keywords], *n.decorator_list]:
+                    for x in ast.walk(part):
+                        if isinstance(x, ast.Name):
+                            names.append((x, sc))
             if isinstance(n, COMPS):
                 # 第一个 for 的可迭代对象在外层求值
                 for x in ast.walk(n.generators[0].iter):
@@ -163,8 +169,6 @@ def collect(fn):
     """返回（要改名的名字，要替换的 Name 节点，要补 state.x = x 的绑定语句，nonlocal 语句及其要去掉的名字）。"""
     fn_own = list(own_nodes(fn))
     for n in ast.walk(fn):
-        if isinstance(n, ast.ClassDef):
-            sys.exit(f"拒绝：函数里有类定义（第 {n.lineno} 行）")
         if isinstance(n, ast.Delete):
             sys.exit(f"拒绝：函数里有 del（第 {n.lineno} 行）")
         if (
@@ -188,7 +192,7 @@ def collect(fn):
     binders = [
         n
         for n in fn_own
-        if (isinstance(n, FUNCS) and n.name in targets)
+        if (isinstance(n, (*FUNCS, ast.ClassDef)) and n.name in targets)
         or (
             isinstance(n, (ast.Import, ast.ImportFrom))
             and any((a.asname or a.name).split(".")[0] in targets for a in n.names)
@@ -205,7 +209,7 @@ def collect(fn):
 
 
 def bound_by(stmt) -> list[str]:
-    if isinstance(stmt, FUNCS):
+    if isinstance(stmt, (*FUNCS, ast.ClassDef)):
         return [stmt.name]
     return [(a.asname or a.name).split(".")[0] for a in stmt.names]
 
