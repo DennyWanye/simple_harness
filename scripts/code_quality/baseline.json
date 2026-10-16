@@ -474,9 +474,15 @@
    "from": 2127,
    "to": 2141,
    "reason": "2026-10-16 阶段 6 拆后端巨型类：公共基类里给类型检查用的方法存根复制了含旧版字样的签名，多个子模块各自导入同名旧版符号；运行期旧代码没有增加（2127→2141）"
+  },
+  {
+   "key": "legacy_lines",
+   "from": 2141,
+   "to": 2145,
+   "reason": "阶段 6D 状态对象切段：读运行依赖的函数内导入常量 LEGACY_PAGE_BYTES/LEGACY_PAGE_SIZE 与局部变量 legacy 变成状态数据类字段并补绑定行（同名搬运，非新增兼容代码）"
   }
  ],
- "legacy_lines": 2141,
+ "legacy_lines": 2145,
  "cycle_imports_backend": 79,
  "cycle_imports_sdk": 87
 }
