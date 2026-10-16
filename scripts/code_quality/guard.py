@@ -50,7 +50,11 @@ RELEASE_OWNED = {
     "backend/deskpet/tools/execution_build_manifest.json",
 }
 FORBIDDEN_PY = re.compile(
-    r"(^|/)(schema|migrator|migration|[a-z_]*_migration|schema_migrations)\.py$|(^|/)migrations/")
+    r"(^|/)(schema|migrator|migration|[a-z_]*_migration|schema_migrations)\.py$|(^|/)migrations/"
+    # 阶段 8 裁决：带建表语句或按 SQL 文本哈希核对身份的模块（后端记忆层、SDK 存储与治理层）
+    r"|^backend/deskpet/memory/([a-z0-9_]+_schema|schema_chain|schema_v2_migrator)\.py$"
+    r"|^sdk/simple-harness-sdk/src/agent_orchestrator/(storage|governance|runtime)/[a-z0-9_]+_schema\.py$"
+    r"|^sdk/simple-harness-sdk/src/simple_harness/execution/sqlite/[a-z0-9_]+_schema\.py$")
 # 编解码器清单写死字节哈希的源文件：字节有变即不通过（与 ruff.toml 的排除清单一致）
 CODEC_PINNED = {
     "sdk/simple-harness-sdk/src/" + p for p in (

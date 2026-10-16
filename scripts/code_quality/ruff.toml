@@ -9,6 +9,13 @@ extend-exclude = [
   # 禁区：表结构与迁移（字节不许变）
   "**/schema.py", "**/migrator.py", "**/migration.py", "**/*_migration.py", "**/migrations/**",
   "**/schema_migrations.py",
+  # 阶段 8 裁决：带建表语句或按 SQL 文本哈希核对身份的模块（与 guard.py 的 FORBIDDEN_PY 一致）
+  "backend/deskpet/memory/*_schema.py", "backend/deskpet/memory/schema_chain.py",
+  "backend/deskpet/memory/schema_v2_migrator.py",
+  "sdk/simple-harness-sdk/src/agent_orchestrator/storage/*_schema.py",
+  "sdk/simple-harness-sdk/src/agent_orchestrator/governance/*_schema.py",
+  "sdk/simple-harness-sdk/src/agent_orchestrator/runtime/*_schema.py",
+  "sdk/simple-harness-sdk/src/simple_harness/execution/sqlite/*_schema.py",
   # 发布给用户的能力包模板（已发布模板文字是执行池准入身份）
   "**/capabilities/templates/**",
   # 编解码器清单写死了这些源文件的字节哈希（network_codec_manifest_v5.json），改字节即拒绝解码
