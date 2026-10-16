@@ -1,5 +1,5 @@
 // Browser-only layout fixture. No backend, Provider, or real authorization material.
-import React, { StrictMode, useState } from "react";
+import React, { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { WorkbenchShell } from "../../src/components/WorkbenchShell";
 import "../../src/index.css";
@@ -47,14 +47,17 @@ const channel = {
 function Fixture() {
   const [view, setView] = useState("chat");
   const [mount, setMount] = useState(0);
-  Object.assign(window, { layoutFixture: {
-    hide: () => setView("hidden-fixture-view"), show: () => setView("chat"),
-    remount: () => setMount((n) => n + 1),
-    refresh: () => emit({ type: "human_memory_changed", payload: {} }),
-    disconnect: () => { connected = false; states.forEach((fn) => fn("disconnected")); },
-    reconnect: () => { connected = true; states.forEach((fn) => fn("connected")); emit(bound); },
-    stats: () => ({ replies, reads }),
-  } });
+  // 挂载后再暴露控制入口（渲染期不改外部状态）；浏览器脚本等对话框出现后才调用。
+  useEffect(() => {
+    Object.assign(window, { layoutFixture: {
+      hide: () => setView("hidden-fixture-view"), show: () => setView("chat"),
+      remount: () => setMount((n) => n + 1),
+      refresh: () => emit({ type: "human_memory_changed", payload: {} }),
+      disconnect: () => { connected = false; states.forEach((fn) => fn("disconnected")); },
+      reconnect: () => { connected = true; states.forEach((fn) => fn("connected")); emit(bound); },
+      stats: () => ({ replies, reads }),
+    } });
+  }, []);
   // Same outer containing block as App; all inner layout is production JSX.
   return <div style={{ position: "relative", width: "100vw", height: "100vh", overflow: "hidden" }}>
     <WorkbenchShell key={mount} view={view as React.ComponentProps<typeof WorkbenchShell>["view"]} onViewChange={setView}

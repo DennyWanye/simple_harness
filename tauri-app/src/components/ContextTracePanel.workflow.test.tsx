@@ -238,6 +238,40 @@ describe("ContextTracePanel workflow integration", () => {
     });
   });
 
+  it("评分成功回执显示反馈并按回执里的运行重新读取详情", async () => {
+    const harness = channelHarness();
+    render(<ContextTracePanel open onClose={vi.fn()} getChannel={() => harness.channel} />);
+    await loadPanel(harness, { decisions: [] });
+    fireEvent.click(screen.getByRole("tab", { name: "Evaluations" }));
+    fireEvent.change(screen.getByLabelText("评分"), { target: { value: "0.9" } });
+    fireEvent.click(screen.getByRole("button", { name: "提交评分" }));
+    const submitted = harness.send.mock.calls
+      .map(([message]) => message)
+      .find((message) => message.type === "workflow_evaluation_submit");
+    const detailsBefore = harness.send.mock.calls.filter(
+      ([message]) => message.type === "workflow_run_detail",
+    ).length;
+    harness.emit({
+      type: "workflow_evaluation_submit_response",
+      request_id: submitted.request_id,
+      ok: true,
+      payload: {
+        evaluation_id: "eval-1",
+        trace_id: "trace-1",
+        run_id: "run-1",
+        evaluator_name: "human",
+        evaluator_version: "1",
+        verdict: "pass",
+      },
+    } as unknown as IncomingMessage);
+    expect(screen.getByText("评分已保存")).toBeTruthy();
+    const details = harness.send.mock.calls.filter(
+      ([message]) => message.type === "workflow_run_detail",
+    );
+    expect(details).toHaveLength(detailsBefore + 1);
+    expect(details.at(-1)?.[0].payload).toEqual({ run_id: "run-1" });
+  });
+
   it("keeps the legacy Context decision timeline available", async () => {
     const harness = channelHarness();
     render(<ContextTracePanel open onClose={vi.fn()} getChannel={() => harness.channel} />);

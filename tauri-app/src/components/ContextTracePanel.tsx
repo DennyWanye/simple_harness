@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 DennyWanye
 // SPDX-License-Identifier: BUSL-1.1
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { Icon } from "./Icon";
 import { ReplayDialog, type ReplayForkInput } from "./workflows/ReplayDialog";
 import { RunInspectorPanel, type InspectorView } from "./workflows/RunInspectorPanel";
@@ -151,66 +151,6 @@ export function ContextTracePanel({ open, onClose, getChannel }: Props) {
     refreshDetail(selectedRunId);
   }, [open, refreshDetail, selectedRunId]);
 
-  useEffect(() => {
-    if (!open) return;
-    const channel = getChannel();
-    if (!channel) return;
-    return channel.onMessage((message: IncomingMessage) => {
-      switch (message.type) {
-        case "workflow_runs_list_response": {
-          const payload = (message as WorkflowRunsListResponse).payload;
-          if ((message as WorkflowRunsListResponse).request_id !== listRequestRef.current) return;
-          setListLoading(false);
-          setRuns(payload.runs);
-          setSelectedRunId((current) => {
-            if (current && payload.runs.some((run) => run.run_id === current)) return current;
-            return payload.runs[0]?.run_id ?? null;
-          });
-          break;
-        }
-        case "workflow_run_detail_response": {
-          const payload = (message as WorkflowRunDetailResponse).payload;
-          if ((message as WorkflowRunDetailResponse).request_id !== detailRequestRef.current)
-            return;
-          if (payload.run_id !== selectedRunRef.current) return;
-          setDetailLoading(false);
-          if (payload.run)
-            setRuns((current) =>
-              current.map((run) => (run.run_id === payload.run_id ? payload.run! : run)),
-            );
-          setDetail({
-            runId: payload.run_id,
-            runVersion: payload.run_version ?? payload.run?.run_version,
-            nodes: payload.nodes,
-            edges: payload.edges,
-            spans: payload.spans,
-            checkpoints: payload.checkpoints,
-            evaluations: payload.evaluations,
-            decisions: payload.decisions ?? [],
-            deliveries: payload.deliveries ?? [],
-          });
-          break;
-        }
-        case "workflow_checkpoint_fork_response":
-          handleForkResponse(message as WorkflowCheckpointForkResponse);
-          break;
-        case "workflow_decision_resolve_response":
-          handleDecisionResponse(message as WorkflowDecisionResolveResponse);
-          break;
-        case "workflow_evaluation_submit_response":
-          handleEvaluationResponse(message as WorkflowEvaluationSubmitResponse);
-          break;
-        case "workflow_delivery_retry_response":
-        case "workflow_delivery_discard_response":
-          handleDeliveryResponse(message as WorkflowDeliveryMutationResponse);
-          break;
-        case "workflow_ipc_error":
-          handleIPCError(message as WorkflowIPCErrorResponse);
-          break;
-      }
-    });
-  }, [getChannel, open]);
-
   const beginAction = (action: PendingAction) => {
     if (pendingRef.current) return false;
     pendingRef.current = action;
@@ -285,6 +225,68 @@ export function ContextTracePanel({ open, onClose, getChannel }: Props) {
     refreshRuns();
     refreshDetail(runId);
   }
+
+  // 订阅只随通道与开关重建；回执处理用 effect event，读到的是最新一次渲染的处理函数。
+  const onChannelMessage = useEffectEvent((message: IncomingMessage) => {
+    switch (message.type) {
+      case "workflow_runs_list_response": {
+        const payload = (message as WorkflowRunsListResponse).payload;
+        if ((message as WorkflowRunsListResponse).request_id !== listRequestRef.current) return;
+        setListLoading(false);
+        setRuns(payload.runs);
+        setSelectedRunId((current) => {
+          if (current && payload.runs.some((run) => run.run_id === current)) return current;
+          return payload.runs[0]?.run_id ?? null;
+        });
+        break;
+      }
+      case "workflow_run_detail_response": {
+        const payload = (message as WorkflowRunDetailResponse).payload;
+        if ((message as WorkflowRunDetailResponse).request_id !== detailRequestRef.current) return;
+        if (payload.run_id !== selectedRunRef.current) return;
+        setDetailLoading(false);
+        if (payload.run)
+          setRuns((current) =>
+            current.map((run) => (run.run_id === payload.run_id ? payload.run! : run)),
+          );
+        setDetail({
+          runId: payload.run_id,
+          runVersion: payload.run_version ?? payload.run?.run_version,
+          nodes: payload.nodes,
+          edges: payload.edges,
+          spans: payload.spans,
+          checkpoints: payload.checkpoints,
+          evaluations: payload.evaluations,
+          decisions: payload.decisions ?? [],
+          deliveries: payload.deliveries ?? [],
+        });
+        break;
+      }
+      case "workflow_checkpoint_fork_response":
+        handleForkResponse(message as WorkflowCheckpointForkResponse);
+        break;
+      case "workflow_decision_resolve_response":
+        handleDecisionResponse(message as WorkflowDecisionResolveResponse);
+        break;
+      case "workflow_evaluation_submit_response":
+        handleEvaluationResponse(message as WorkflowEvaluationSubmitResponse);
+        break;
+      case "workflow_delivery_retry_response":
+      case "workflow_delivery_discard_response":
+        handleDeliveryResponse(message as WorkflowDeliveryMutationResponse);
+        break;
+      case "workflow_ipc_error":
+        handleIPCError(message as WorkflowIPCErrorResponse);
+        break;
+    }
+  });
+
+  useEffect(() => {
+    if (!open) return;
+    const channel = getChannel();
+    if (!channel) return;
+    return channel.onMessage((message: IncomingMessage) => onChannelMessage(message));
+  }, [getChannel, open]);
 
   const selectedRun = runs.find((run) => run.run_id === selectedRunId) ?? null;
   const sendDecision = (
