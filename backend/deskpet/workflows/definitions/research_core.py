@@ -15,6 +15,26 @@ from collections.abc import Awaitable, Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
+from deskpet.tools.research_fetch import (
+    _JS_RENDER_MAX_PER_RUN,
+    _host,
+    _site_directive_for,
+    default_search,
+)
+from deskpet.tools.research_report import (
+    _PLAN_PROMPT,
+    _SYNTH_PROMPT,
+    Citation,
+    Passage,
+    ResearchReport,
+    _extract_summary,
+    _finalize_report_md,
+    _no_results_template,
+    _passages_only_fallback,
+    _relevance_score,
+    parse_sub_questions,
+)
+
 from ...tools import research_scoring, research_sources, search_provider
 from ...tools import research_tools as legacy
 from ...tools.agent_reach_port import agent_reach_port
@@ -101,7 +121,7 @@ class FetchPort:
     """
 
     extractor: ExtractCall | None = None
-    max_js_renders: int = legacy._JS_RENDER_MAX_PER_RUN
+    max_js_renders: int = _JS_RENDER_MAX_PER_RUN
     js_renders_used: int = 0
     _budget_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
 
@@ -372,12 +392,12 @@ class ResearchCoreState:
     url_to_question: dict[str, str] = field(default_factory=dict)
     candidate_urls: list[str] = field(default_factory=list)
     extracted: list[Any] = field(default_factory=list)
-    passages: list[legacy.Passage] = field(default_factory=list)
+    passages: list[Passage] = field(default_factory=list)
     velocity: str = ""
     rounds: int = 1
     reranker: str = "off"
     report_md: str = ""
-    citations: list[legacy.Citation] = field(default_factory=list)
+    citations: list[Citation] = field(default_factory=list)
     cite_result: dict[str, Any] = field(
         default_factory=lambda: {"ok": True, "missing": [], "unused": []}
     )
@@ -433,7 +453,7 @@ async def plan_stage(
     else:
         try:
             raw = await ports.llm.complete(
-                legacy._PLAN_PROMPT.format(
+                _PLAN_PROMPT.format(
                     topic=state.llm_topic,
                     user_request=state.request_topic,
                 )
@@ -442,9 +462,7 @@ async def plan_stage(
             logger.debug("plan_stage_complete_failed", exc_info=True)
             state.errors.append(f"plan_llm: {exc}")
             raw = ""
-        state.sub_questions = legacy.parse_sub_questions(
-            raw, max_questions=config.max_sub_questions
-        )
+        state.sub_questions = parse_sub_questions(raw, max_questions=config.max_sub_questions)
     if not state.sub_questions:
         state.sub_questions = [state.request_topic]
         state.errors.append("plan_fallback: using topic verbatim")
@@ -488,7 +506,7 @@ def _stable_search_specs(
 
     for question in state.sub_questions:
         append(question, question)
-        site = legacy._site_directive_for(question) if config.site_directed else None
+        site = _site_directive_for(question) if config.site_directed else None
         if site:
             append(f"{question} {site}", question)
         if config.source_packs:
@@ -606,7 +624,7 @@ def _topic_anchors(topic: str) -> list[str]:
     return list(dict.fromkeys(anchors))
 
 
-def _passes_topic_anchor_gate(state: ResearchCoreState, passage: legacy.Passage) -> bool:
+def _passes_topic_anchor_gate(state: ResearchCoreState, passage: Passage) -> bool:
     """Reject obvious cross-topic fallback pages without relying on an LLM.
 
     Both ASCII terms and CJK bigrams participate. Ordinary lexical relevance
@@ -646,7 +664,7 @@ def _passage_from_extract(
     config: ResearchCoreConfig,
     url: str,
     payload: Any,
-) -> legacy.Passage | None:
+) -> Passage | None:
     if isinstance(payload, BaseException):
         state.errors.append(f"extract:{url}: {payload}")
         return None
@@ -685,7 +703,7 @@ def _passage_from_extract(
     recency = research_scoring.score_recency(
         str(payload.get("date") or ""), topic_velocity=state.velocity
     )
-    relevance = legacy._relevance_score(text, keywords=keywords)
+    relevance = _relevance_score(text, keywords=keywords)
     depth = min(len(text) / 2000.0, 1.0) * 10.0
     score = research_scoring.composite_score(
         authority=authority,
@@ -700,8 +718,8 @@ def _passage_from_extract(
         # FetchDocument emits ISO-8601 timestamps. Citation freshness is
         # informational here; recency scoring above uses the document date.
         fetched_at = time.time()
-    return legacy.Passage(
-        citation=legacy.Citation(
+    return Passage(
+        citation=Citation(
             n=0,
             url=url,
             title=(payload.get("title") or url)[:200],
@@ -827,7 +845,7 @@ async def direct_stage(
                 continue
             seen.add(normalized)
             authority = research_scoring.score_authority(url)
-            relevance = legacy._relevance_score(text, keywords=keywords)
+            relevance = _relevance_score(text, keywords=keywords)
             depth = min(len(text) / 2000.0, 1.0) * 10.0
             score = research_scoring.composite_score(
                 authority=authority,
@@ -837,8 +855,8 @@ async def direct_stage(
                 topic_velocity=state.velocity,
             )
             state.passages.append(
-                legacy.Passage(
-                    citation=legacy.Citation(
+                Passage(
+                    citation=Citation(
                         n=0,
                         url=url,
                         title=(payload.get("title") or url)[:200],
@@ -882,7 +900,7 @@ async def direct_stage(
     return state
 
 
-def _stable_sort_passages(passages: Iterable[legacy.Passage]) -> list[legacy.Passage]:
+def _stable_sort_passages(passages: Iterable[Passage]) -> list[Passage]:
     """Sort by score while preserving deterministic discovery order on ties."""
 
     indexed = list(enumerate(passages))
@@ -963,7 +981,7 @@ async def score_rerank_stage(
         else:
             state.reranker = "llm_failed"
 
-    relevant: list[legacy.Passage] = []
+    relevant: list[Passage] = []
     for passage in state.passages:
         if _passes_topic_anchor_gate(state, passage):
             relevant.append(passage)
@@ -974,7 +992,7 @@ async def score_rerank_stage(
     state.passages = state.passages[: config.max_total_passages]
     for index, passage in enumerate(state.passages, start=1):
         citation = passage.citation
-        passage.citation = legacy.Citation(
+        passage.citation = Citation(
             n=index,
             url=citation.url,
             title=citation.title,
@@ -1040,7 +1058,7 @@ async def synth_stage(
     passage_block = legacy._format_passages_for_llm(state.passages)
     try:
         report_md = await ports.llm.complete(
-            legacy._SYNTH_PROMPT.format(
+            _SYNTH_PROMPT.format(
                 topic=state.llm_topic,
                 request_topic=state.request_topic,
                 user_request=state.request_topic,
@@ -1051,10 +1069,10 @@ async def synth_stage(
     except Exception as exc:  # noqa: BLE001
         logger.debug("synth_stage_complete_failed", exc_info=True)
         state.errors.append(f"synth_llm: {exc}")
-        report_md = legacy._passages_only_fallback(state.request_topic, state.passages)
+        report_md = _passages_only_fallback(state.request_topic, state.passages)
     state.report_md = (report_md or "").strip()
     if not state.report_md:
-        state.report_md = legacy._passages_only_fallback(state.request_topic, state.passages)
+        state.report_md = _passages_only_fallback(state.request_topic, state.passages)
     state.elapsed_ms_per_stage["synth"] = _stage_ms(start)
     return state
 
@@ -1066,16 +1084,14 @@ async def citation_stage(
 ) -> ResearchCoreState:
     del ports, config
     citations = [passage.citation for passage in state.passages]
-    state.report_md, state.citations, state.cite_result = legacy._finalize_report_md(
+    state.report_md, state.citations, state.cite_result = _finalize_report_md(
         state.report_md, citations, state.errors
     )
     return state
 
 
 def _coverage(state: ResearchCoreState) -> dict[str, Any]:
-    domains = {
-        legacy._host(citation.url) for citation in state.citations if legacy._host(citation.url)
-    }
+    domains = {_host(citation.url) for citation in state.citations if _host(citation.url)}
     diversity = research_scoring.diversity_report([citation.url for citation in state.citations])
     return {
         "n_sources": len(state.citations),
@@ -1153,7 +1169,7 @@ def legacy_ports(
     search: SearchCall | None,
     extract: ExtractCall | None,
 ) -> ResearchPorts:
-    search_call = search or legacy.default_search
+    search_call = search or default_search
     return ResearchPorts(
         llm=ResearchLLMPort(
             complete=llm_call,
@@ -1181,11 +1197,11 @@ async def run_research_core(
     parent_sid: str = "default",
     depth: int = 0,
     skip_plan: bool = False,
-) -> legacy.ResearchReport:
+) -> ResearchReport:
     """Compose all reusable stages and return the legacy report DTO."""
 
     if not topic or not topic.strip():
-        return legacy.ResearchReport(
+        return ResearchReport(
             topic="",
             summary="",
             report_md="",
@@ -1251,10 +1267,10 @@ async def run_research_core(
 
     if not state.passages:
         state.errors.append("no usable passages")
-        return legacy.ResearchReport(
+        return ResearchReport(
             topic=request_topic,
             summary="",
-            report_md=legacy._no_results_template(request_topic, state.sub_questions),
+            report_md=_no_results_template(request_topic, state.sub_questions),
             citations=[],
             sub_questions=state.sub_questions,
             coverage={
@@ -1268,9 +1284,9 @@ async def run_research_core(
 
     await synth_stage(state, ports, config)
     await citation_stage(state, ports, config)
-    return legacy.ResearchReport(
+    return ResearchReport(
         topic=request_topic,
-        summary=legacy._extract_summary(state.report_md),
+        summary=_extract_summary(state.report_md),
         report_md=state.report_md,
         citations=state.citations,
         sub_questions=state.sub_questions,

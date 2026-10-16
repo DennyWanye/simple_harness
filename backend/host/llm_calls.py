@@ -5,7 +5,8 @@ from __future__ import annotations
 from deskpet.execution.provider_workloads import SessionAwareLLMCall
 from deskpet.tools import image_tools as _image_tools
 from deskpet.tools import research_tools as _research_tools
-from deskpet.tools.research_tools import _research_llm_result_from_provider_response
+from deskpet.tools.research_fetch import _is_loopback_url
+from deskpet.tools.research_report import _research_llm_result_from_provider_response
 from llm.context_messages import provider_purpose_scope
 from providers.openai_compatible import OpenAICompatibleProvider
 
@@ -218,7 +219,7 @@ try:
     # 会每次研究都失败白调,故 localhost 端点不注入(research 自动跳过精排)。
     try:
         _r_base = str(config.llm.local.base_url or "")
-        if _r_base and not _research_tools._is_loopback_url(_r_base):
+        if _r_base and not _is_loopback_url(_r_base):
             _rerank_model = str(
                 (config.raw.get("research") or {}).get("reranker_model", "gpt-4.1-mini")
             )
@@ -308,7 +309,7 @@ def _refresh_research_live_llm(provider=None) -> None:
 
         try:
             _r_base = str(getattr(_provider, "base_url", "") or "")
-            if _r_base and not _research_tools._is_loopback_url(_r_base):
+            if _r_base and not _is_loopback_url(_r_base):
                 _rerank_model = str(
                     (config.raw.get("research") or {}).get("reranker_model", "gpt-4.1-mini")
                 )

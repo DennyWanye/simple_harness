@@ -16,6 +16,7 @@ import sys
 
 import pytest
 from deskpet.tools import research_tools as r
+from deskpet.tools.research_fetch import _reset_js_render_budget
 
 
 @pytest.fixture(autouse=True)
@@ -23,9 +24,9 @@ def _clean(monkeypatch):
     # 显式确保默认关(不依赖外部 config.toml 状态)
     monkeypatch.setattr(r, "_js_render_enabled", lambda: False)
     monkeypatch.setattr(r, "_jina_enabled", lambda: False)
-    r._reset_js_render_budget()
+    _reset_js_render_budget()
     yield
-    r._reset_js_render_budget()
+    _reset_js_render_budget()
 
 
 _BIG_SHELL = (

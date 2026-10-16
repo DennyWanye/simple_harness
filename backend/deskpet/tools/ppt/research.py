@@ -11,6 +11,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from deskpet.tools import research_tools
+from deskpet.tools.research_report import _DEPTH_PRESETS
 
 from .outline import _PPT_PRO_RESEARCH_CTX_CHARS, SlideOutline, parse_outline
 
@@ -62,8 +63,8 @@ async def _research_topic_for_ppt(topic: str, *, depth: str, timeout_s: float):
     """为 PPT Pro 跑 DeepResearch；软失败返回 None，认证/配置错误上抛。"""
 
     chosen_depth = (depth or "standard").strip().lower()
-    d_subq, d_urls, d_pass, d_rounds = research_tools._DEPTH_PRESETS.get(
-        chosen_depth, research_tools._DEPTH_PRESETS.get("standard", (5, 4, 12, 1))
+    d_subq, d_urls, d_pass, d_rounds = _DEPTH_PRESETS.get(
+        chosen_depth, _DEPTH_PRESETS.get("standard", (5, 4, 12, 1))
     )
 
     async def _run():

@@ -3,6 +3,7 @@ from __future__ import annotations
 import httpx
 import pytest
 from deskpet.tools import research_tools
+from deskpet.tools.research_report import _research_llm_result_from_provider_response
 from deskpet.workflows.contracts import NodeExecutionIdentity, WorkflowContext
 from deskpet.workflows.definitions.research_core import (
     ResearchCallEffectPort,
@@ -76,7 +77,7 @@ def test_provider_usage_shapes_are_normalized_without_fake_zeroes(
     response: dict,
     expected: tuple[int | None, int | None, int | None, str, str | None],
 ) -> None:
-    result = research_tools._research_llm_result_from_provider_response(
+    result = _research_llm_result_from_provider_response(
         response,
         fallback_model="fallback-model",
     )

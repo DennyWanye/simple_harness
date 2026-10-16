@@ -34,6 +34,7 @@ from deskpet.tools import research_tools as _workflow_research_tools
 from deskpet.tools.capabilities import ToolExecutionContext, canonical_hash
 from deskpet.tools.prepared_snapshot import load_context_os_snapshot
 from deskpet.tools.registry import registry as _actual_tool_registry
+from deskpet.tools.research_report import save_workflow_report
 from deskpet.workflows.adapters.code_runtime import (
     DurableToolRuntimeState as _RecoveryDurableToolRuntimeState,
 )
@@ -920,7 +921,7 @@ def _make_v5_artifact_stage_port(run_id):
                 raise ValueError("v5 report synthesis produced no report markdown")
             report_hash = _hashlib.sha256(report_md.encode("utf-8")).hexdigest()
             saved = await asyncio.to_thread(
-                _workflow_research_tools.save_workflow_report,
+                save_workflow_report,
                 topic=str(payload.get("topic") or "research"),
                 report_md=report_md,
                 report_hash=report_hash,
@@ -1356,7 +1357,7 @@ def _startup_deep_v2_context_factory(_workflow_service):
             *, topic: str, report_md: str, report_hash: str, run_id: str
         ) -> dict[str, object]:
             return await asyncio.to_thread(
-                _workflow_research_tools.save_workflow_report,
+                save_workflow_report,
                 topic=topic,
                 report_md=report_md,
                 report_hash=report_hash,

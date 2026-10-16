@@ -9,6 +9,7 @@ import pytest
 from config import SearchGatewayConfig
 from deskpet.retrieval.contracts import RetrievalCandidate, SearchRequest
 from deskpet.retrieval.search_gateway import SearchGateway
+from deskpet.tools.research_fetch import default_search, gateway_search_response
 
 
 class _Provider:
@@ -113,8 +114,8 @@ async def test_research_v2_adapter_returns_response_while_v1_stays_list(monkeypa
     candidate = (await _Provider("duckduckgo").search(SearchRequest("topic"), None, None))[0]
     fake = type("Gateway", (), {"search": AsyncSearch(SearchResponse("topic", (candidate,)))})()
     monkeypatch.setattr(runtime, "get_default_gateway", lambda: fake)
-    response = await research_tools.gateway_search_response("topic", max_results=20, run_id="run")
-    legacy = await research_tools.default_search("topic", max_results=5)
+    response = await gateway_search_response("topic", max_results=20, run_id="run")
+    legacy = await default_search("topic", max_results=5)
     assert isinstance(response, SearchResponse)
     assert response.results[0].source_kind == "serp"
     assert isinstance(legacy, list)

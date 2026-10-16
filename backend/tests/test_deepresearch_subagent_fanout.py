@@ -11,7 +11,17 @@ from typing import Any
 
 import pytest
 from deskpet.tools import research_tools as r
-from deskpet.tools.research_tools import Citation, ResearchReport
+from deskpet.tools.research_report import (
+    _DEEPRESEARCH_TOOL_TIMEOUT,
+    _FANOUT_OUTER_RESERVE,
+    _MIN_SUBRUN,
+    Citation,
+    ResearchReport,
+    _finalize_report_md,
+    _rewrite_local_refs,
+    _strip_footnote_definitions,
+    cite_check,
+)
 
 
 class FakeLLM:
@@ -588,10 +598,10 @@ async def test_tg2_fanout_caps_subquestions_and_preserves_budget(
     assert obs["n_completed"] == expected_cap
     assert obs["waves"] == 5
     assert any("fanout_dropped_subquestions" in e for e in report.errors)
-    assert obs["per_subrun_timeout_s"] >= r._MIN_SUBRUN
+    assert obs["per_subrun_timeout_s"] >= _MIN_SUBRUN
     assert (
-        obs["waves"] * obs["per_subrun_timeout_s"] + r._FANOUT_OUTER_RESERVE
-        <= r._DEEPRESEARCH_TOOL_TIMEOUT
+        obs["waves"] * obs["per_subrun_timeout_s"] + _FANOUT_OUTER_RESERVE
+        <= _DEEPRESEARCH_TOOL_TIMEOUT
     )
 
 
@@ -630,13 +640,13 @@ def test_tg3_merge_subreport_citations_dedupes_urls_and_maps_refs() -> None:
 
 
 def test_tg4_strip_footnote_definitions_removes_appendix_but_keeps_body() -> None:
-    finalized, _, _ = r._finalize_report_md(
+    finalized, _, _ = _finalize_report_md(
         "# T\n\nBody keeps its reference [^1].",
         [_citation(1, "https://example.com/a")],
         [],
     )
 
-    stripped = r._strip_footnote_definitions(finalized)
+    stripped = _strip_footnote_definitions(finalized)
 
     assert stripped == "# T\n\nBody keeps its reference [^1]."
     assert "[^1]:" not in stripped
@@ -645,7 +655,7 @@ def test_tg4_strip_footnote_definitions_removes_appendix_but_keeps_body() -> Non
 def test_tg4_rewrite_local_refs_handles_collisions() -> None:
     md = "First local [^1], second local [^2], unchanged [^9]."
 
-    rewritten = r._rewrite_local_refs(md, {1: 3, 2: 1})
+    rewritten = _rewrite_local_refs(md, {1: 3, 2: 1})
 
     assert rewritten == "First local [^3], second local [^1], unchanged [^9]."
 
@@ -667,7 +677,7 @@ async def test_tg4_fanout_synthesize_falls_back_and_cite_check_passes() -> None:
         errors,
     )
 
-    cc = r.cite_check(report_md, citations)
+    cc = cite_check(report_md, citations)
     assert any("fanout_synth_llm" in e for e in errors)
     assert [c.n for c in citations] == [1, 2]
     assert "[^1]" in report_md
@@ -678,7 +688,7 @@ async def test_tg4_fanout_synthesize_falls_back_and_cite_check_passes() -> None:
 def test_tg4_finalize_report_md_returns_markdown_citations_and_cite_check() -> None:
     errors: list[str] = []
 
-    report_md, citations, cc = r._finalize_report_md(
+    report_md, citations, cc = _finalize_report_md(
         "# T\n\nBody [^1].",
         [_citation(1, "https://example.com/a")],
         errors,

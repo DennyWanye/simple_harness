@@ -11,7 +11,13 @@ from pathlib import Path
 import paths
 import pytest
 from deskpet.tools import research_tools as r
-from deskpet.tools.research_tools import Citation, ResearchReport
+from deskpet.tools.research_report import (
+    _INDEX_HEADER,
+    Citation,
+    ResearchReport,
+    _insert_row_after_header,
+    save_workflow_report,
+)
 
 
 def _report(
@@ -148,20 +154,20 @@ def test_install_root_for_deepresearch_uses_pid_probe_name(monkeypatch, tmp_path
 def test_insert_row_after_header_inserts_after_separator_and_keeps_newest_first():
     old_row = "| 2026-01-01 | old | [old](old.md) | 1 | 1 | flat | 1 |\n"
     new_row = "| 2026-01-02 | new | [new](new.md) | 2 | 2 | deep | 2 |\n"
-    existing = r._INDEX_HEADER + old_row
+    existing = _INDEX_HEADER + old_row
 
-    updated = r._insert_row_after_header(existing, new_row)
+    updated = _insert_row_after_header(existing, new_row)
 
     assert updated.index(new_row) < updated.index(old_row)
-    assert updated.startswith(r._INDEX_HEADER)
+    assert updated.startswith(_INDEX_HEADER)
 
 
 def test_insert_row_after_header_rebuilds_when_separator_missing():
     row = "| 2026-01-02 | new | [new](new.md) | 2 | 2 | deep | 2 |\n"
 
-    updated = r._insert_row_after_header("# broken\n", row)
+    updated = _insert_row_after_header("# broken\n", row)
 
-    assert updated == r._INDEX_HEADER + row + "\n"
+    assert updated == _INDEX_HEADER + row + "\n"
 
 
 @pytest.mark.asyncio
@@ -174,7 +180,7 @@ async def test_update_deepresearch_index_creates_header_dedupes_and_preserves_ut
     await r._update_deepresearch_index(report_path, "中文|主题\n换行", report)
 
     text = (tmp_path / "index.md").read_text(encoding="utf-8")
-    assert text.startswith(r._INDEX_HEADER)
+    assert text.startswith(_INDEX_HEADER)
     assert text.count("[中文报告.md](中文报告.md)") == 1
     assert "中文/主题 换行" in text
     assert "[中文报告.md](中文报告.md)" in text
@@ -241,13 +247,13 @@ def test_save_report_uses_deepresearch_dir_not_output_research(monkeypatch, tmp_
 def test_save_workflow_report_is_idempotent_and_returns_verified_file(monkeypatch, tmp_path):
     monkeypatch.setenv("DESKPET_DEEPRESEARCH_DIR", str(tmp_path / "DeepResearch"))
 
-    first = r.save_workflow_report(
+    first = save_workflow_report(
         topic="中文主题",
         report_md="# 第一版",
         report_hash="hash-one",
         run_id="run:one",
     )
-    second = r.save_workflow_report(
+    second = save_workflow_report(
         topic="中文主题",
         report_md="# 第二版",
         report_hash="hash-two",
@@ -267,7 +273,7 @@ def test_save_workflow_report_returns_absolute_path_for_relative_override(monkey
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("DESKPET_DEEPRESEARCH_DIR", "DeepResearch")
 
-    artifact = r.save_workflow_report(
+    artifact = save_workflow_report(
         topic="相对目录测试",
         report_md="# 报告",
         report_hash="hash-relative",

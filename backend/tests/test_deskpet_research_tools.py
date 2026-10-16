@@ -26,29 +26,35 @@ from __future__ import annotations
 
 import asyncio
 import json
-import re
 import time
-from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
 from deskpet.tools import research_tools as r
-from deskpet.tools.research_tools import (
+from deskpet.tools.research_fetch import (
+    _JS_RENDER_MAX_PER_RUN,
+    _clean_ddg_url,
+    _is_loopback_url,
+    _parse_ddg_results,
+    _parse_ddg_results_regex,
+    _parse_jina,
+    _reset_js_render_budget,
+    _site_directive_for,
+    authority_for_url,
+    default_search,
+)
+from deskpet.tools.research_report import (
     Citation,
     Passage,
     ResearchReport,
-    _clean_ddg_url,
-    _parse_ddg_results,
-    _parse_ddg_results_regex,
-    _topic_keywords,
-    authority_for_url,
+    _parse_rerank_scores,
     cite_check,
     find_footnote_refs,
     parse_sub_questions,
-    research_run,
     score_passage,
 )
+from deskpet.tools.research_tools import _topic_keywords, research_run
 
 
 @pytest.fixture(autouse=True)
@@ -60,10 +66,10 @@ def _isolate_phase2(monkeypatch):
     monkeypatch.setattr(r, "_direct_sources_enabled", lambda: False)
     monkeypatch.setattr(r, "_js_render_enabled", lambda: False)  # JS 渲染默认关,要测的自开
     r._RESEARCH_RAW_CACHE = None  # 清 [research] 配置缓存,防跨测试污染
-    r._reset_js_render_budget()  # 归零 JS 渲染触发计数,防跨测试污染
+    _reset_js_render_budget()  # 归零 JS 渲染触发计数,防跨测试污染
     yield
     r._RESEARCH_RAW_CACHE = None
-    r._reset_js_render_budget()
+    _reset_js_render_budget()
 
 
 def test_deepresearch_registered_and_research_run_alias() -> None:
@@ -301,7 +307,7 @@ async def test_default_search_with_mock_client(monkeypatch) -> None:
     from deskpet.tools import search_provider
 
     monkeypatch.setattr(search_provider, "search_async", _gateway_search)
-    out = await r.default_search("test query", max_results=5, client=object())
+    out = await default_search("test query", max_results=5, client=object())
     assert out == expected
 
 
@@ -313,7 +319,7 @@ async def test_default_search_network_failure_returns_empty(monkeypatch) -> None
         return []
 
     monkeypatch.setattr(search_provider, "search_async", _failed)
-    out = await r.default_search("q", client=object())
+    out = await default_search("q", client=object())
     assert out == []
 
 
@@ -1321,10 +1327,10 @@ async def test_research_run_prunes_unused_citations() -> None:
 
 
 def test_parse_rerank_scores():
-    assert r._parse_rerank_scores('[{"id":1,"score":8},{"id":2,"score":3}]') == {1: 8.0, 2: 3.0}
-    assert r._parse_rerank_scores('前言 [{"id":3,"score":9.5}] 后语') == {3: 9.5}
-    assert r._parse_rerank_scores("not json") == {}
-    assert r._parse_rerank_scores("") == {}
+    assert _parse_rerank_scores('[{"id":1,"score":8},{"id":2,"score":3}]') == {1: 8.0, 2: 3.0}
+    assert _parse_rerank_scores('前言 [{"id":3,"score":9.5}] 后语') == {3: 9.5}
+    assert _parse_rerank_scores("not json") == {}
+    assert _parse_rerank_scores("") == {}
 
 
 @pytest.mark.asyncio
@@ -1497,20 +1503,20 @@ def test_rerank_mode_config(monkeypatch):
 def test_is_loopback_url():
     """localhost 守卫: 解析 hostname + ipaddress,覆盖 ::1/127网段/大小写,
     不误伤含 localhost 子串的远端域名。"""
-    assert r._is_loopback_url("http://localhost:11434") is True
-    assert r._is_loopback_url("http://127.0.0.1:8000/v1") is True
-    assert r._is_loopback_url("http://127.0.0.2:8000") is True  # 127/8 整段
-    assert r._is_loopback_url("http://[::1]:8000/v1") is True
-    assert r._is_loopback_url("http://LOCALHOST:1234") is True  # 大小写
-    assert r._is_loopback_url("https://chinzy.com/v1") is False  # 远端 relay
-    assert r._is_loopback_url("https://my-localhost-cdn.com/v1") is False  # 不误伤
-    assert r._is_loopback_url("") is False
+    assert _is_loopback_url("http://localhost:11434") is True
+    assert _is_loopback_url("http://127.0.0.1:8000/v1") is True
+    assert _is_loopback_url("http://127.0.0.2:8000") is True  # 127/8 整段
+    assert _is_loopback_url("http://[::1]:8000/v1") is True
+    assert _is_loopback_url("http://LOCALHOST:1234") is True  # 大小写
+    assert _is_loopback_url("https://chinzy.com/v1") is False  # 远端 relay
+    assert _is_loopback_url("https://my-localhost-cdn.com/v1") is False  # 不误伤
+    assert _is_loopback_url("") is False
 
 
 def test_parse_rerank_scores_dedup_and_types():
     # 重复 id → 后者覆盖;非法项跳过
-    assert r._parse_rerank_scores('[{"id":1,"score":5},{"id":1,"score":8}]') == {1: 8.0}
-    assert r._parse_rerank_scores('[{"id":2,"score":"x"},{"id":3,"score":7}]') == {3: 7.0}
+    assert _parse_rerank_scores('[{"id":1,"score":5},{"id":1,"score":8}]') == {1: 8.0}
+    assert _parse_rerank_scores('[{"id":2,"score":"x"},{"id":3,"score":7}]') == {3: 7.0}
 
 
 @pytest.mark.asyncio
@@ -1585,11 +1591,11 @@ async def test_research_run_drops_mojibake_source() -> None:
 
 def test_parse_jina():
     body = "Title: 我的标题\nURL Source: http://x\nMarkdown Content:\n这是正文内容。"
-    out = r._parse_jina(body)
+    out = _parse_jina(body)
     assert out["title"] == "我的标题"
     assert out["text"] == "这是正文内容。"
     # 无结构头的纯 markdown
-    out2 = r._parse_jina("# 纯Markdown标题\n一些内容在这里。")
+    out2 = _parse_jina("# 纯Markdown标题\n一些内容在这里。")
     assert "纯Markdown标题" in out2["text"]
 
 
@@ -1862,11 +1868,11 @@ async def test_js_render_budget_cap(monkeypatch):
         return None  # 返 None,不替换,纯计触发次数
 
     monkeypatch.setattr(ce_mod, "cdp_edge_render", _fake_render)
-    r._reset_js_render_budget()
+    _reset_js_render_budget()
     _Resp, _FakeClient = _fake_client_factory()
-    for i in range(r._JS_RENDER_MAX_PER_RUN + 3):
+    for i in range(_JS_RENDER_MAX_PER_RUN + 3):
         await r.default_extract(f"https://spa.com/{i}", client=_FakeClient(_JS_SHELL_BIG))
-    assert called["n"] == r._JS_RENDER_MAX_PER_RUN  # 触发次数封顶
+    assert called["n"] == _JS_RENDER_MAX_PER_RUN  # 触发次数封顶
 
 
 @pytest.mark.asyncio
@@ -1946,11 +1952,11 @@ async def test_js_render_ai_generated_not_in_rendered(monkeypatch):
 
 
 def test_site_directive_for():
-    assert r._site_directive_for("某上市公司2025年财报营收") == "site:cninfo.com.cn"
-    assert r._site_directive_for("新能源汽车产业政策和监管办法") == "site:gov.cn"
-    assert r._site_directive_for("钠离子电池国家标准技术规范") == "site:gov.cn"
-    assert r._site_directive_for("transformer 算法原理 论文 arxiv") == "site:arxiv.org"
-    assert r._site_directive_for("今天天气怎么样") is None  # 不命中 → 不定向
+    assert _site_directive_for("某上市公司2025年财报营收") == "site:cninfo.com.cn"
+    assert _site_directive_for("新能源汽车产业政策和监管办法") == "site:gov.cn"
+    assert _site_directive_for("钠离子电池国家标准技术规范") == "site:gov.cn"
+    assert _site_directive_for("transformer 算法原理 论文 arxiv") == "site:arxiv.org"
+    assert _site_directive_for("今天天气怎么样") is None  # 不命中 → 不定向
 
 
 @pytest.mark.asyncio

@@ -11,6 +11,8 @@
 搬走的定义用到的源模块导入，按原样复制到目标模块（相对导入改成绝对写法）。
 全仓（backend 下全部 .py，含测试与脚本）：`from 源模块 import 搬走的名字`（绝对或相对写法）改成从目标模块导入；
 `"源模块.名字"` 形式的打桩字符串改成 `"目标模块.名字"`；`源模块别名.名字` 形式的属性访问与打桩列出来并拒绝。
+--reexport（只用于下沉，阶段 8F）：按模块别名取用（只读）搬走的名字、以及禁区与编解码钉死文件里
+从源模块导入的名字，都改由源模块回导入转出（钉死文件一字不改）；按别名打桩仍拒绝。
 核对：搬后每个定义的语法树与搬前逐字相同。收尾只给改前导入排序就合规的文件重排导入（--force-exclude）。
 """
 
@@ -30,6 +32,9 @@ REPO = Path(__file__).resolve().parents[2]
 BACKEND = REPO / "backend"
 RUFF = str(REPO.parent / "simple_harness/sdk/simple-harness-sdk/.venv/bin/ruff")
 CFG = str(REPO / "scripts/code_quality/ruff.toml")
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from guard import CODEC_PINNED, FORBIDDEN_PY  # noqa: E402
+
 BUILTINS = set(dir(builtins)) | {"__file__", "__name__", "__doc__", "__spec__", "__builtins__"}
 
 
@@ -68,7 +73,9 @@ def bound(node: ast.stmt) -> set[str]:
 
 def global_loads(nodes: list[ast.stmt]) -> set[str]:
     """这些顶层语句按全局名字读取、自己又没在顶层定义的名字（按作用域，用 symtable）。"""
-    src = ast.unparse(ast.Module(body=list(nodes), type_ignores=[]))
+    # 去掉 __future__ 导入：带 annotations 时 symtable 不记注解里的名字，只在注解里用的名字会漏算
+    body = [n for n in nodes if not (isinstance(n, ast.ImportFrom) and n.module == "__future__")]
+    src = ast.unparse(ast.Module(body=body, type_ignores=[]))
     top = symtable.symtable(src, "<b>", "exec")
     out = {s.get_name() for s in top.get_symbols() if s.is_referenced()}
 
@@ -96,6 +103,7 @@ def main() -> int:
     ap.add_argument("names")
     ap.add_argument("--doc", default="")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--reexport", action="store_true")
     a = ap.parse_args()
     names = [x.strip() for x in a.names.split(",") if x.strip()]
     spath, tpath = mod_path(a.source), mod_path(a.target)
@@ -124,6 +132,9 @@ def main() -> int:
     if uses_rest and rest_uses_moved:
         sys.exit(f"双向依赖：搬走的用到 {uses_rest}，留下的用到 {rest_uses_moved}，搬了也成环")
     direction = "挪出" if uses_rest else "下沉"
+    if a.reexport and uses_rest:
+        sys.exit(f"--reexport 只用于下沉；搬走的用到 {uses_rest}")
+    reexport: set[str] = set()
     # 目标模块要的导入
     imp: list[str] = []
     for nm in sorted(need & set(import_of)):
@@ -165,10 +176,16 @@ def main() -> int:
         except SyntaxError:
             continue
         me = module_of(path)
+        pinned = a.reexport and bool(
+            FORBIDDEN_PY.search(str(path.relative_to(REPO))) or str(path.relative_to(REPO)) in CODEC_PINNED
+        )
         for n in ast.walk(t):
             if isinstance(n, ast.ImportFrom) and absolute(n, me, path.name == "__init__.py") == a.source:
                 hit = [al for al in n.names if al.name in names]
                 if not hit:
+                    continue
+                if pinned:
+                    reexport |= {al.name for al in hit}
                     continue
                 keep = [al for al in n.names if al.name not in names]
                 fmt = lambda al: al.name + (f" as {al.asname}" if al.asname else "")  # noqa: E731
@@ -178,7 +195,7 @@ def main() -> int:
                     stmts.append(f"from {prefix} import {', '.join(fmt(x) for x in keep)}")
                 stmts.append(f"from {a.target} import {', '.join(fmt(x) for x in hit)}")
                 edits[path].append((n, stmts))
-        for nm in names:
+        for nm in [] if pinned else names:
             if re.search(rf"[\"']{re.escape(a.source)}\.{nm}\b", text):
                 edits.setdefault(path, [])
         aliases = {
@@ -201,6 +218,9 @@ def main() -> int:
                 and n.value.id in aliases
                 and n.attr in names
             ):
+                if a.reexport and not (isinstance(n.ctx, ast.Store) or isinstance(n.ctx, ast.Del)):
+                    reexport.add(n.attr)
+                    continue
                 problems.append(f"{path.relative_to(BACKEND)}:{n.lineno} {n.value.id}.{n.attr}")
             if (
                 isinstance(n, ast.Call)
@@ -216,7 +236,10 @@ def main() -> int:
         for p in sorted(set(problems)):
             print("  " + p)
         return 1
+    reexport_only = sorted(reexport - set(rest_uses_moved))
     print(f"{direction}：{len(names)} 个名字；目标模块导入 {len(imp)} 条；改写导入方 {len(edits)} 个文件")
+    if a.reexport:
+        print(f"源模块回导入转出 {len(reexport_only)} 个：{','.join(reexport_only)}")
     if a.dry_run:
         print("\n".join(imp))
         for p, items in sorted(edits.items()):
@@ -256,12 +279,19 @@ def main() -> int:
     if rest_uses_moved:
         last = max((n.end_lineno for n in rest if isinstance(n, (ast.Import, ast.ImportFrom))), default=0)
         out[last:last] = [f"from {a.target} import {', '.join(rest_uses_moved)}\n"]
+    if reexport_only:
+        last = max((n.end_lineno for n in rest if isinstance(n, (ast.Import, ast.ImportFrom))), default=0)
+        out[last:last] = [
+            f"from {a.target} import (  # noqa: F401 - 转出口：按模块别名取用与钉死文件导入\n",
+            *[f"    {x},\n" for x in reexport_only],
+            ")\n",
+        ]
     new_s = "".join(out)
     # 核对
     for n in moved:
         nn = next(x for x in ast.parse(new_t).body if bound(x) == bound(n) and type(x) is type(n))
         if ast.dump(nn) != ast.dump(n):
-            sys.exit(f"{bound(n)} 搬后语法树不同")
+            sys.exit(f"{bound(n)} 搬后语法树不同\n{ast.dump(nn)[:300]}\n{ast.dump(n)[:300]}")
     ast.parse(new_s)
     tpath.parent.mkdir(parents=True, exist_ok=True)
     tpath.write_text(new_t, encoding="utf-8")

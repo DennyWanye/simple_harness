@@ -6,13 +6,14 @@ import time
 import pytest
 from agent.agent_loop import _inject_loop_user_request, _tool_declares_user_request
 from deskpet.tools import research_tools as r
+from deskpet.tools.research_report import _PLAN_PROMPT, Citation, ResearchReport
 from llm.types import ToolCall
 
 ORIGINAL_REQUEST = "Please deeply research Rust Tokio architecture and competitors"
 
 
 def test_plan_prompt_includes_authoritative_user_request() -> None:
-    prompt = r._PLAN_PROMPT.format(
+    prompt = _PLAN_PROMPT.format(
         topic="CATL drift value",
         user_request=ORIGINAL_REQUEST,
     )
@@ -266,12 +267,12 @@ async def test_deepresearch_handler_saves_report_under_returned_topic(
         return _llm
 
     async def fake_deepresearch(topic: str, **kwargs):
-        return r.ResearchReport(
+        return ResearchReport(
             topic=request_topic,
             summary="summary",
             report_md=f"# {request_topic}\n\nTokio evidence [^1].",
             citations=[
-                r.Citation(
+                Citation(
                     n=1,
                     url="https://tokio.rs",
                     title="Tokio",

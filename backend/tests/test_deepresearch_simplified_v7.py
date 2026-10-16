@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 from config import WorkflowsConfig, resolve_deep_research_workflow_version
 from deskpet.tools import research_tools as legacy
+from deskpet.tools.research_report import Citation, FanoutCollection, ResearchReport
 from deskpet.workflows.contracts import WorkflowContext
 from deskpet.workflows.definitions.research_core import (
     FetchPort,
@@ -42,15 +43,15 @@ class PromptLLM:
         )
 
 
-def _report(question: str, idx: int) -> legacy.ResearchReport:
-    citation = legacy.Citation(
+def _report(question: str, idx: int) -> ResearchReport:
+    citation = Citation(
         n=1,
         url=f"https://example.com/{idx}",
         title=f"source {idx}",
         snippet="evidence",
         fetched_at=float(idx),
     )
-    return legacy.ResearchReport(
+    return ResearchReport(
         topic=question,
         summary=f"summary {idx}",
         report_md=f"# {question}\n\nEvidence {idx} [^1].",
@@ -128,7 +129,7 @@ async def test_v7_handlers_decompose_collect_synthesize_and_deliver_once(
     async def collect(**kwargs):
         assert kwargs["simple_children"] is True
         questions = kwargs["sub_questions"]
-        return legacy.FanoutCollection(
+        return FanoutCollection(
             topic=kwargs["topic"],
             sub_questions=questions,
             sub_reports=[

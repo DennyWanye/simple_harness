@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 from deskpet.tools import research_tools as legacy
+from deskpet.tools.research_report import Citation, Passage, ResearchReport
 from deskpet.workflows import WorkflowContext
 from deskpet.workflows.definitions import deep_research_nodes as nodes
 from deskpet.workflows.definitions.research_core import (
@@ -189,8 +190,8 @@ def test_agent_harness_source_pack_targets_primary_ecosystem_sources() -> None:
 
 
 def test_topic_anchor_gate_rejects_cjk_and_high_authority_cross_topic_pages() -> None:
-    unrelated = legacy.Passage(
-        citation=legacy.Citation(
+    unrelated = Passage(
+        citation=Citation(
             n=0,
             url="https://nature.com/fruit",
             title="Banana crop genetics",
@@ -227,8 +228,8 @@ def test_planner_drift_cannot_validate_its_own_cross_topic_evidence() -> None:
         route={},
         sub_questions=["banana crop genetics"],
     )
-    passage = legacy.Passage(
-        citation=legacy.Citation(
+    passage = Passage(
+        citation=Citation(
             n=0,
             url="https://example.com/banana",
             title="Banana crop genetics",
@@ -252,8 +253,8 @@ async def test_partial_llm_rerank_verifies_only_scored_passages() -> None:
         route={},
     )
     state.passages = [
-        legacy.Passage(
-            citation=legacy.Citation(
+        Passage(
+            citation=Citation(
                 n=0,
                 url=f"https://example.com/{index}",
                 title=f"Unrelated {index}",
@@ -341,7 +342,7 @@ async def test_two_concurrent_runs_have_isolated_js_render_budgets(monkeypatch) 
     assert sum("second.example" in url for url in calls) == 2
 
 
-def _normalized_report(report: legacy.ResearchReport) -> dict:
+def _normalized_report(report: ResearchReport) -> dict:
     payload = copy.deepcopy(report.as_dict())
     payload["coverage"]["elapsed_ms_per_stage"] = {
         key: 0 for key in payload["coverage"]["elapsed_ms_per_stage"]
@@ -684,8 +685,8 @@ def test_large_payload_refs_and_stable_reducer(tmp_path: Path) -> None:
     state.search_specs = [("q", "q")]
     state.url_to_question = {"https://example.com/a": "q"}
     state.passages = [
-        legacy.Passage(
-            citation=legacy.Citation(
+        Passage(
+            citation=Citation(
                 n=1,
                 url="https://example.com/a",
                 title="A",
