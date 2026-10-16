@@ -273,6 +273,34 @@ def strip_nonlocals(fn, names: set[str]):
     return fn
 
 
+def ensure_imports(text: str) -> str:
+    """状态数据类要用 dataclass 与 Any：模块里没导入就补（放在 __future__ 导入之后，ruff 再排序）。"""
+    tree = ast.parse(text)
+    have: set[str] = set()
+    for n in tree.body:
+        if isinstance(n, ast.ImportFrom) and n.module in ("dataclasses", "typing"):
+            have |= {f"{n.module}.{a.name}" for a in n.names if a.asname is None}
+    need = []
+    if "dataclasses.dataclass" not in have:
+        need.append("from dataclasses import dataclass\n")
+    if "typing.Any" not in have:
+        need.append("from typing import Any\n")
+    if not need:
+        return text
+    lines = text.splitlines(keepends=True)
+    future = next(
+        (n for n in tree.body if isinstance(n, ast.ImportFrom) and n.module == "__future__"), None
+    )
+    first_import = next((n for n in tree.body if isinstance(n, (ast.Import, ast.ImportFrom))), None)
+    at = (
+        future.end_lineno
+        if future is not None
+        else (first_import.lineno - 1 if first_import else 0)
+    )
+    lines[at:at] = need
+    return "".join(lines)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("file")
@@ -367,7 +395,9 @@ def main() -> int:
     )
     deco = owner.decorator_list[0].lineno if owner.decorator_list else owner.lineno
     lines.insert(deco - 1, cls_text)
-    path.write_text("".join(lines))
+    new_text = "".join(lines)
+    new_text = ensure_imports(new_text)
+    path.write_text(new_text)
     print(f"改名 {len(names)} 个变量、{len(nodes)} 处，补绑定 {len(binders)} 处；插入 {a.cls}")
     return 0
 

@@ -214,7 +214,7 @@ def strip_doc(fn) -> list[ast.stmt]:
 
 
 def main() -> int:
-    path, qual, ref = Path(sys.argv[1]), sys.argv[2], sys.argv[3]
+    path, qual, ref = Path(sys.argv[1]), sys.argv[2], sys.argv[3]  # 可加 --renamed
     cls_name, _, target = qual.partition(".") if "." in qual else (None, "", qual)
     cur = methods(ast.parse(path.read_text()), cls_name)
     old_src = subprocess.run(
@@ -253,6 +253,14 @@ def main() -> int:
         if total != 1:
             print(f"{leaf} 被调用 {total} 次（应为 1）")
             return 1
+    if "--renamed" in sys.argv:
+        # 参照提交里的原函数还没改成状态对象：内联后再把 state.x 还原成 x、去掉建状态与补绑定的语句
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import state_rename as sr
+
+        rn, _, _, _ = sr.collect(old[target])
+        pending[target] = sr.reverse(pending[target], rn, "state")
+        old[target] = sr.strip_nonlocals(old[target], rn)
     same = ast.dump(pending[target]) == ast.dump(old[target])
     others = [n for n in old if n != target and ast.dump(cur[n]) != ast.dump(old[n])]
     missing = [n for n in old if n not in cur]

@@ -217,9 +217,11 @@ def main() -> int:
                     pending_after[node.end_lineno] = tail
                 continue
             body = line.strip()
-            if body not in ("return", "continue", "break"):
+            code, hashmark, comment = body.partition("#")
+            if code.strip() not in ("return", "continue", "break"):
                 sys.exit(f"第 {i} 行流程语句不是单独一行：{body}")
-            out.append((f'{pad}{a.state}.flow = "{kind}"\n', False))
+            tail_comment = f"  #{comment}" if hashmark else ""
+            out.append((f'{pad}{a.state}.flow = "{kind}"{tail_comment}\n', False))
             out.append((f"{pad}return\n", False))
         else:
             out.append((line, i in interior))
