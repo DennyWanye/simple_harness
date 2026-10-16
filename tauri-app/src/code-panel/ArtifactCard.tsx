@@ -29,7 +29,6 @@ function emitArtifactAction(actionId: ActionId, toolName: string, ok: boolean) {
     });
   } catch (e) {
     // 埋点失败永不破 UI 操作
-    // eslint-disable-next-line no-console
     console.warn("[ArtifactCard] metric emit failed:", e);
   }
 }

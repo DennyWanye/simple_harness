@@ -1004,7 +1004,7 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
     .filter(
       (line) =>
         line.startsWith("pytest:") &&
-        !/^pytest:\s*[\w./\-:=\[\]]+(\s+[\w./\-:=\[\]]+)*$/.test(line),
+        !/^pytest:\s*[\w./\-:=[\]]+(\s+[\w./\-:=[\]]+)*$/.test(line),
     );
   // 附资料建任务需要后台支持原子批次（与严格引用模式同一接口）
   const canAttachSources = domains.atomic_source_create === true;

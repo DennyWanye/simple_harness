@@ -19,6 +19,13 @@ export default defineConfig([
       ecmaVersion: 2020,
       globals: globals.browser,
     },
+    rules: {
+      // 下划线开头 = 有意不用（占位参数、解构时剔除的字段）。
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_', ignoreRestSiblings: true },
+      ],
+    },
   },
   {
     // 浏览器布局夹具是页面入口（createRoot 直接挂载），不参与热更新，没有导出。

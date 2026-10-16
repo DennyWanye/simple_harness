@@ -17,7 +17,6 @@
  * language without registration footwork.
  */
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-// @ts-ignore — RSH ships its own d.ts but the styles dir is implicit
 import vscDarkPlus from "react-syntax-highlighter/dist/esm/styles/prism/vsc-dark-plus";
 
 interface Props {

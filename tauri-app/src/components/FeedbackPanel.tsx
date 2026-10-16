@@ -108,7 +108,7 @@ function FeedbackPanelImpl({
         <div style={counterStyle}>
           {note.trim().length} 字
           {!noteOk && note.length > 0 && (
-            <span style={{ color: "#fca5a5" }}>　（再写一点，至少 10 字）</span>
+            <span style={{ color: "#fca5a5" }}>{"\u3000（再写一点，至少 10 字）"}</span>
           )}
         </div>
 
