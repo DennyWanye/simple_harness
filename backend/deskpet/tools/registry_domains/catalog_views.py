@@ -337,36 +337,6 @@ class CatalogViewMixin(ToolRegistryCore):
                 }
             )
 
-    def to_anthropic_schema(
-        self,
-        names: list[str] | None = None,
-        filter_categories: list[str] | None = None,
-    ) -> list[dict[str, Any]]:
-        """Anthropic Messages API tool schema list.
-
-        Anthropic uses ``input_schema`` (not OpenAI's ``parameters``).
-        """
-        with self._lock:
-            specs = list(self._tools.values())
-        out: list[dict[str, Any]] = []
-        name_set = set(names) if names is not None else None
-        cat_set = set(filter_categories) if filter_categories is not None else None
-        for spec in specs:
-            if not spec.env_satisfied():
-                continue
-            if name_set is not None and spec.name not in name_set:
-                continue
-            if cat_set is not None and spec.permission_category not in cat_set:
-                continue
-            out.append(
-                {
-                    "name": spec.name,
-                    "description": spec.description_for_llm,
-                    "input_schema": spec.input_schema_json,
-                }
-            )
-        return out
-
     def authorization_resource_gaps(self) -> tuple[str, ...]:
         """Return executable specs that require authorization but lack a resolver."""
 

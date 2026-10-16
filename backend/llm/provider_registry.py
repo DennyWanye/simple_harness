@@ -1099,11 +1099,6 @@ class LLMProviderRegistry:
 
     # ───────── internal ─────────
 
-    def _normalize_priorities(self) -> None:
-        for i, entry in enumerate(sorted(self._entries, key=lambda e: e.priority), start=1):
-            entry.priority = i
-        self._persist_to_toml()
-
     def _find_index(self, provider_id: str) -> int | None:
         for i, e in enumerate(self._entries):
             if e.id == provider_id:

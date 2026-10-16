@@ -440,38 +440,6 @@ class SkillInstaller:
             shutil.move(str(staging_root), str(target))
         return target
 
-    def finalize_batch(self, result: BatchStageResult) -> dict[str, Any]:
-        """Finalize every staged sub-skill in a BatchStageResult.
-
-        Iterates each StagedSkill, calls finalize(..., cleanup_repo=False),
-        then wipes the shared clone once at the end. Per-skill failures
-        are collected; one bad sub-skill does not abort the rest.
-
-        Returns a dict with ``installed`` (list of {name, path}) and
-        ``errors`` (list of {name, error}) — same shape as the ws
-        ``skill_install_batch_completed`` payload.
-        """
-        installed: list[dict[str, str]] = []
-        errors: list[dict[str, str]] = list(result.errors)  # carry over staging-time errors
-        for staged in result.staged:
-            try:
-                final_path = self.finalize(staged, cleanup_repo=False)
-                installed.append({"name": staged.name, "path": str(final_path)})
-            except Exception as exc:  # noqa: BLE001
-                logger.debug("finalize_batch_failed", exc_info=True)
-                errors.append(
-                    {
-                        "name": staged.name,
-                        "error": f"{type(exc).__name__}: {exc}",
-                    }
-                )
-        # Single cleanup of the shared clone — only in multi mode where
-        # we actually shared one. Single-skill batches don't have a
-        # top-level clone separate from the moved staging_root.
-        if result.multi and result.repo_dir is not None:
-            _force_rmtree(result.repo_dir)
-        return {"installed": installed, "errors": errors}
-
     def cancel(self, staged: StagedSkill) -> None:
         _force_rmtree(self._top_staging_dir(staged))
 

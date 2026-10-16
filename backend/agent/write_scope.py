@@ -33,11 +33,6 @@ from agent.write_targets import _extract_paths_from_command
 _VIOLATION_MSG = "当前任务写盘限定在 workspace；需要写其他项目时请先选择对应工作区"
 
 
-def scope_violation_message() -> str:
-    """越界写盘时返回给 LLM/用户的引导文案（spec 原文）。"""
-    return _VIOLATION_MSG
-
-
 def _is_within(child: Path, root: Path) -> bool:
     """resolve 后 ``child`` 是否在 ``root`` 内（含 root 本身）。"""
     try:

@@ -137,14 +137,6 @@ def test_gateverdict_refuse_helper() -> None:
     assert v.alternative == "你可以用外部工具"
 
 
-def test_gateverdict_render_text_for_refuse() -> None:
-    """REFUSE 文案应是直接答复（含 reason + alternative），不是弹窗确认。"""
-    v = GateVerdict.refuse("我没有图像生成能力", "如果要我帮你写生成图片的代码，请进 code 模式")
-    rendered = v.render_text()
-    assert "我没有图像生成能力" in rendered
-    assert "code 模式" in rendered
-
-
 # ---------------------------------------------------------------------------
 # 歧义请求走 LLM 兜底（注入一个 stub classifier）
 # ---------------------------------------------------------------------------

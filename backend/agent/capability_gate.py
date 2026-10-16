@@ -66,13 +66,6 @@ class GateVerdict:
     def refuse(cls, reason: str, alternative: str) -> GateVerdict:
         return cls(verdict=Verdict.REFUSE, reason=reason, alternative=alternative)
 
-    def render_text(self) -> str:
-        """渲染成直接答复给用户的文案（不是弹窗确认 — 符合 no-sandbox）。"""
-        parts = [self.reason.strip()]
-        if self.alternative.strip():
-            parts.append(self.alternative.strip())
-        return "\n\n".join(p for p in parts if p)
-
 
 # ---------------------------------------------------------------------------
 # Capability 分类规则

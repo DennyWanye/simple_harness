@@ -102,11 +102,6 @@ class PrimaryReadModel:
         self.run_binding_reader = run_binding_reader
         self.history_policy = PrimaryHistoryPolicy(db_path, subject)
 
-    async def _visible(self, evidence_id=None):
-        """No suppression authority exists in a build with no Memory system."""
-
-        return True
-
     async def _subject_visible(self):
         return None
 

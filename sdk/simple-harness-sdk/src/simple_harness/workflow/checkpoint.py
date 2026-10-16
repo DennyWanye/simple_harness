@@ -23,7 +23,6 @@ from simple_harness.execution.uow import ExecutionLease
 from .contracts import StatePatch, WorkflowRunStatus
 from .errors import WorkflowNodeError
 from .execution_ports import (
-    CheckpointExecutionAdapter,
     ResumeCommitBinding,
     WorkflowActivation,
     WorkflowBlobReferencePort,
@@ -107,8 +106,6 @@ class WorkflowCheckpoint:
 
 class WorkflowCheckpointPort(Protocol):
     transaction_owner: object
-
-    def bind_execution_adapter(self, adapter: CheckpointExecutionAdapter) -> None: ...
 
     async def load(self, run_id: str) -> WorkflowCheckpoint | None: ...
 

@@ -83,14 +83,6 @@ def test_code_session_id_helper_is_deterministic_8_hex(tmp_path):
     assert all(c in "0123456789abcdef" for c in rest)
 
 
-def test_all_sessions_returns_snapshot_copy(tmp_path):
-    mgr = CodeModeManager()
-    mgr.enter("default", tmp_path)
-    snap = mgr.all_sessions()
-    snap.clear()  # mutating snapshot must not affect manager
-    assert mgr.is_enabled("default")
-
-
 @pytest.mark.asyncio
 async def test_load_persisted_registers_legacy_base_session(tmp_path):
     class FakeSessionDB:

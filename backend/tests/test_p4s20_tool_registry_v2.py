@@ -145,19 +145,6 @@ def test_to_openai_schema_shape() -> None:
         assert "name" in fn and "description" in fn and "parameters" in fn
 
 
-def test_to_anthropic_schema_shape() -> None:
-    reg = ToolRegistry()
-    _seed(reg)
-    out = reg.to_anthropic_schema()
-    assert isinstance(out, list) and len(out) == 2
-    for item in out:
-        assert "name" in item
-        assert "description" in item
-        assert "input_schema" in item
-        # Anthropic specifically does NOT use the "parameters" key
-        assert "parameters" not in item
-
-
 def test_to_openai_schema_filter_by_name() -> None:
     reg = ToolRegistry()
     _seed(reg)

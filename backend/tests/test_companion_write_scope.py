@@ -24,7 +24,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from agent.write_scope import scope_violation_message, shell_write_scope_check, write_scope_check
+from agent.write_scope import shell_write_scope_check, write_scope_check
 from agent.write_targets import resolve_workspace_root
 
 
@@ -87,14 +87,6 @@ def test_resolve_workspace_root_configured_override(tmp_path: Path, monkeypatch)
     monkeypatch.setenv("DESKPET_WORKSPACE_DIR", str(tmp_path / "environment_ws"))
     root = resolve_workspace_root(configured=str(custom))
     assert root == custom.resolve()
-
-
-# ---------------------------------------------------------------------------
-# scope_violation_message 文案符合 spec 原文
-# ---------------------------------------------------------------------------
-def test_scope_violation_message_text() -> None:
-    msg = scope_violation_message()
-    assert msg == ("当前任务写盘限定在 workspace；需要写其他项目时请先选择对应工作区")
 
 
 # ---------------------------------------------------------------------------

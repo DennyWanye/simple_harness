@@ -803,26 +803,6 @@ async def test_cache_discovered_models_never_changes_missing_default(
     assert reg.get_entry("relay-cloud").default_model == "kimi-k3"
 
 
-@pytest.mark.asyncio
-async def test_normalize_priorities_unique(empty_toml: Path, fake_keyring):
-    """_normalize_priorities rewrites stable priority order to 1..N."""
-    from llm.provider_registry import LLMProviderRegistry
-
-    reg = LLMProviderRegistry(empty_toml)
-    await reg.add_provider(_make_provider_kwargs(id="a", priority=5))
-    await reg.add_provider(_make_provider_kwargs(id="b", priority=5))
-    await reg.add_provider(_make_provider_kwargs(id="c", priority=3))
-
-    reg._normalize_priorities()
-
-    items = sorted(reg.list_providers(), key=lambda p: p["priority"])
-    assert [(p["id"], p["priority"]) for p in items] == [
-        ("c", 1),
-        ("a", 2),
-        ("b", 3),
-    ]
-
-
 def test_ws_settings_provider_messages_are_wired():
     """守住 provider CRUD 的 WS 接线面，并断言 relay 消息已彻底退役。
 

@@ -249,19 +249,6 @@ def test_collisions_invalid_schema_and_bounds_are_rejected() -> None:
     assert oversized.value.code == "catalog_field_too_large"
 
 
-def test_audit_summary_contains_counts_not_schema_or_skill_body() -> None:
-    catalog = RuntimeToolCatalog(_records(), generation=3)
-    state = catalog.start_run(RunId("run-audit"))
-
-    summary = catalog.audit_summary(state)
-
-    assert summary["direct_count"] == 1
-    assert summary["deferred_count"] == 3
-    assert summary["activated_count"] == 0
-    assert "schema" not in repr(summary)
-    assert "instruction" not in repr(summary)
-
-
 def test_concrete_port_restores_checkpoints_and_reapplies_receipts() -> None:
     catalog = RuntimeToolCatalog(_records(), generation=4)
     port = CatalogRunToolExposure(catalog)

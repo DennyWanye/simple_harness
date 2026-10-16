@@ -409,39 +409,3 @@ class HybridRouter:
         return False
 
     # --- runtime hot-swap ---
-
-    def set_cloud_provider(self, provider: LLMProvider | None) -> None:
-        """Atomically replace the cloud provider and reset its circuit-breaker state.
-
-        The stale health cache and circuit state from the old provider are
-        meaningless for the new one, so ``_cloud_state`` is always reset.
-        API keys are never logged.
-        """
-        old_type = type(self._cloud).__name__ if self._cloud is not None else "None"
-        new_type = type(provider).__name__ if provider is not None else "None"
-        self._cloud = provider
-        self._cloud_state = _ProviderState()
-        logger.info(
-            "router_cloud_provider_replaced",
-            old_provider_type=old_type,
-            new_provider_type=new_type,
-        )
-
-    def set_strategy(self, strategy: RoutingStrategy) -> None:
-        """Switch the routing strategy at runtime.
-
-        Only ``LOCAL_FIRST`` and ``CLOUD_FIRST`` are implemented; passing any
-        other value raises ``NotImplementedError`` immediately so callers learn
-        early rather than at the next ``chat_stream`` call.
-        """
-        if strategy not in (RoutingStrategy.LOCAL_FIRST, RoutingStrategy.CLOUD_FIRST):
-            raise NotImplementedError(
-                f"strategy {strategy.value} is not implemented; supported: LOCAL_FIRST, CLOUD_FIRST"
-            )
-        old_strategy = self._strategy
-        self._strategy = strategy
-        logger.info(
-            "router_strategy_changed",
-            old_strategy=old_strategy.value,
-            new_strategy=strategy.value,
-        )

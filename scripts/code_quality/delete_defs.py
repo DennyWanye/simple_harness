@@ -3,7 +3,8 @@
 
 清单一行一处：`文件:行 名字`（"#" 开头与空行跳过）。行号是定义所在行（def / class 行）。
 只删"删除前在本模块里被用到、删除后一处都不用了"的模块顶层导入名，原本就没用的导入不动。
-定义带装饰器的拒绝（阶段 8 裁决：装饰器注册的路由与处理器不能当死代码删）。
+定义带装饰器的拒绝（阶段 8 裁决：装饰器注册的路由与处理器不能当死代码删）；
+例外：测试文件里只带 `pytest.mark.*` 的测试函数（8C-3 删专测函数用），连装饰器一起删。
 
 用法：
     python3 scripts/code_quality/delete_defs.py 清单 [--dry-run]
@@ -93,7 +94,12 @@ def delete_in_file(path: Path, targets: list[tuple[int, str]], dry: bool) -> lis
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             for ln, name in targets:
                 if node.lineno == ln and node.name == name:
-                    if node.decorator_list:
+                    if node.decorator_list and not (
+                        "/tests/" in str(path)
+                        and all(
+                            ast.unparse(d).startswith("pytest.mark.") for d in node.decorator_list
+                        )
+                    ):
                         raise SystemExit(f"{path}:{ln} {name} 带装饰器，不删")
                     nodes.append(node)
     found = {(n.lineno, n.name) for n in nodes}
@@ -115,7 +121,7 @@ def delete_in_file(path: Path, targets: list[tuple[int, str]], dry: bool) -> lis
     notes = [f"{path.relative_to(REPO)}: 删 {n.name}（{n.lineno}-{n.end_lineno}）" for n in nodes]
     # 从下往上删定义（含紧挨着的上方注释行）
     for node in sorted(nodes, key=lambda n: -n.lineno):
-        start = node.lineno - 1
+        start = min([node.lineno, *[d.lineno for d in node.decorator_list]]) - 1
         while start > 0 and lines[start - 1].strip().startswith("#"):
             start -= 1
         del lines[start : node.end_lineno]

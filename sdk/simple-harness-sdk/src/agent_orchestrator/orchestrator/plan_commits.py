@@ -62,7 +62,6 @@ from ..contracts.htn import (
     RunningWorkPolicy,
     SemanticReadSet,
     TaskForm,
-    TaskRef,
     TaskSemanticBindingV1,
     require_commit_ready,
 )
@@ -1707,28 +1706,6 @@ def _shared(store: Store, semantics: HtnStore, mission_id: str) -> SemanticReadS
     """The shared resolver set, with no overrides — the implementation itself."""
 
     return SemanticReadSetChecker(store, semantics, mission_id=mission_id)
-
-
-def _rebound(binding: TaskSemanticBindingV1, task_id: str) -> TaskSemanticBindingV1:
-    """The same meaning on the id the Commit Service minted for it.
-
-    The Planner names its nodes ``A``/``B``; the formal ids are assigned inside the
-    commit.  Re-pointing the binding is therefore normal, and the contract hash is
-    recomputed from the old one so the lineage stays readable.
-    """
-
-    return replace(
-        binding,
-        task_id=TaskRef(task_id),
-        contract_hash=content_hash_of(
-            {
-                "task_id": task_id,
-                "bound_from_task_id": str(binding.task_id),
-                "bound_from_contract_hash": binding.contract_hash,
-                "contract_revision": int(binding.contract_revision),
-            }
-        ),
-    )
 
 
 def _superseded(binding: TaskSemanticBindingV1) -> TaskSemanticBindingV1:

@@ -494,9 +494,6 @@ class NetworkView:
     def execution_frontier(self) -> ExecutionFrontier:
         return ExecutionFrontier.compute(self.plan, self.reports)
 
-    def report_for(self, occurrence: OccurrenceId) -> ReadinessReport:
-        return self.reports[occurrence]
-
 
 def _typed(kind: TypedRefKind, identifier: str) -> TypedRef:
     """A typed reference to something this library already holds by id."""

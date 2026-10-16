@@ -51,7 +51,7 @@ last is exactly the mis-accounting §18.5 warns a new role purpose about.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import PurePosixPath, PureWindowsPath
@@ -862,29 +862,6 @@ class RootReviewCoordinator:
         if active is None:
             return ()
         return carried_criteria_in_revision(semantics, mission_id, int(active.revision))
-
-    def _child_review(self, record_id: str) -> Mapping[str, Any]:
-        """The judgement this contribution was accepted under, quoted not summarised.
-
-        A composition review is asked whether *these accepted parts* add up to the
-        root goal, and "accepted under what" is half of that question.  Read-only and
-        best effort: a record the library cannot produce leaves the field empty rather
-        than making the whole request unbuildable.
-        """
-
-        if not record_id:
-            return {}
-        try:
-            stored = self.semantics.get_review_record(record_id)
-        except (StoreError, ContractError):  # pragma: no cover - a library that lost it
-            return {}
-        return {
-            "review_record_id": str(stored.record.record_id),
-            "verdict": str(stored.record.verdict),
-            "criteria": {
-                str(item.criterion_id): str(item.verdict) for item in stored.record.criteria
-            },
-        }
 
     @staticmethod
     def _outcome(

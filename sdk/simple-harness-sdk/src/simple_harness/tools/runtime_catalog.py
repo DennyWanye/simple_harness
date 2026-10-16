@@ -13,7 +13,6 @@ from __future__ import annotations
 import hashlib
 import hmac
 import re
-from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -1084,22 +1083,6 @@ class RuntimeToolCatalog:
                 "visible Tool execution policy is unavailable",
             )
         return matches[0].execution_policy
-
-    def audit_summary(self, state: RunToolExposureState) -> dict[str, JsonValue]:
-        self._validate_state(state)
-        sources = Counter(item.source for item in self._snapshot.records)
-        kinds = Counter(item.kind.value for item in self._snapshot.records)
-        return {
-            "catalog_generation": self._snapshot.generation,
-            "catalog_fingerprint": self._snapshot.fingerprint,
-            "exposure_revision": state.revision,
-            "direct_count": len(state.direct_ids),
-            "deferred_count": len(state.deferred_ids),
-            "activated_count": len(state.activated_ids),
-            "sources": dict(sorted(sources.items())),
-            "kinds": dict(sorted(kinds.items())),
-            "reason_codes": {},
-        }
 
 
 class CatalogRunToolExposure:

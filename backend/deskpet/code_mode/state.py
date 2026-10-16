@@ -180,8 +180,3 @@ class CodeModeManager:
         return s.code_session_id if s else None
 
     # --------------------------- introspection -------------------------
-
-    def all_sessions(self) -> dict[str, CodeModeState]:
-        """Snapshot of current per-session state (e.g. for /metrics / debug)."""
-        with self._lock:
-            return dict(self._states)
