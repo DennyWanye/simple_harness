@@ -546,5 +546,6 @@ def _is_normalized_full_page_image(path: str) -> bool:
 
         with Image.open(path) as image:
             return image.size == FULL_PAGE_TARGET_SIZE
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 - 图片打不开时按不合规处理
+        log.debug("ppt_full_page_image_check_failed", exc_info=True)
         return False

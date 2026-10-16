@@ -2589,7 +2589,8 @@ def _save_report(topic: str, report: ResearchReport) -> Path | None:
     metadata header. Returns the path, or None if the dir is unavailable."""
     try:
         base = deepresearch_dir()
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 - 报告目录不可用时不保存报告
+        log.warning("research_report_dir_failed", exc_info=True)
         return None
     cov = report.coverage or {}
     header = (

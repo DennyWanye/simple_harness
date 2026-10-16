@@ -5,12 +5,15 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from collections.abc import Iterable, Sequence
 
 from .common import MSO_ANCHOR, MSO_SHAPE, PP_ALIGN, Emu, Inches, Pt, RGBColor
 from .outline import Theme
 from .research import _SLIDE_HEIGHT
+
+logger = logging.getLogger(__name__)
 
 
 def _rgb(triple: tuple[int, int, int]):
@@ -86,8 +89,8 @@ def _set_fill_alpha(shape, alpha_pct: int) -> None:
             srgb.remove(old)
         a = srgb.makeelement(qn("a:alpha"), {"val": str(int(max(0, min(100, alpha_pct)) * 1000))})
         srgb.append(a)
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception:  # noqa: BLE001 - 透明度写不进去时保持不透明
+        logger.debug("ppt_fill_alpha_failed", exc_info=True)
 
 
 def _add_text(

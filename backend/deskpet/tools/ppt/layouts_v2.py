@@ -418,8 +418,8 @@ def _place_cover(slide, img: str, *, left: int, top: int, width: int, height: in
                 frac = (1.0 - img_ar / slot_ar) / 2.0
                 pic.crop_top = frac
                 pic.crop_bottom = frac
-        except Exception:  # noqa: BLE001
-            pass  # PIL 不可用 → 保持铺满(退化)
+        except Exception:  # noqa: BLE001 - 图片库不可用时保持铺满
+            log.debug("ppt_cover_crop_failed", exc_info=True)
         return True
     except Exception as exc:  # noqa: BLE001
         log.debug("place cover failed: %s", exc, exc_info=True)

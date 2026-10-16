@@ -303,7 +303,7 @@ def _load_job(job_id: str) -> dict[str, Any] | None:
     try:
         if f.is_file():
             return json.loads(f.read_text(encoding="utf-8"))
-    except Exception:  # noqa: BLE001
+    except (OSError, ValueError):
         return None
     return None
 

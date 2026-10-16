@@ -112,7 +112,8 @@ def _has_style(document, name: str) -> bool:
     try:
         _ = document.styles[name]
         return True
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 - 文档里没有这个样式时按没有处理
+        log.debug("docx_style_lookup_failed", exc_info=True)
         return False
 
 
@@ -349,8 +350,8 @@ def doc_create(spec: Any, *, output_path: str | None = None) -> dict[str, Any]:
         if title:
             try:
                 document.core_properties.title = str(title)
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception:  # noqa: BLE001 - 文档标题属性写不进去时跳过，不影响出文件
+                log.debug("docx_title_property_failed", exc_info=True)
         document.save(str(out_path))
     except Exception as exc:  # noqa: BLE001
         log.warning("doc_create failed: %s", exc, exc_info=True)
@@ -405,8 +406,8 @@ def doc_read(file_path: str) -> dict[str, Any]:
         style = ""
         try:
             style = para.style.name if para.style else ""
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception:  # noqa: BLE001 - 读不到段落样式时留空，不影响读正文
+            log.debug("docx_paragraph_style_read_failed", exc_info=True)
         paragraphs.append({"index": i, "text": para.text, "style": style})
 
     tables = []
@@ -501,8 +502,8 @@ def _apply_op(document, op: dict[str, Any]) -> dict[str, Any]:
         if style:
             try:
                 new_para.style = str(style)
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception:  # noqa: BLE001 - 样式套不上时保留默认样式
+                log.debug("docx_paragraph_style_apply_failed", exc_info=True)
         if after is not None:
             try:
                 anchor = paragraphs[int(after)]

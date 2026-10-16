@@ -269,7 +269,8 @@ def _ppt_async_enabled() -> bool:
 def _count_image_prompt_pages(outline: Any) -> int:
     try:
         return sum(1 for so in parse_outline(outline) if so.image_prompt)
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 - 大纲解析出错时按零页处理
+        log.debug("ppt_outline_count_failed", exc_info=True)
         return 0
 
 
@@ -359,7 +360,8 @@ def _open_image_file(path: str) -> bool:
         from .image_tools import _open_file as _of  # type: ignore
 
         return bool(_of(Path(str(path))))
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 - 打开图片出错时返回失败
+        log.debug("ppt_open_image_failed", exc_info=True)
         return False
 
 

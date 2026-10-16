@@ -155,8 +155,8 @@ def _resolve_endpoint() -> tuple[str, str | None]:
             data = json.loads(rt.read_text(encoding="utf-8"))
             base_url = str(data.get("base_url") or "")
             api_key = data.get("api_key") or None
-    except Exception:  # noqa: BLE001 — fall through to config
-        pass
+    except Exception:  # noqa: BLE001 - 运行时配置读不到时改用配置文件
+        log.debug("image_runtime_config_read_failed", exc_info=True)
 
     if not base_url:
         try:
@@ -235,7 +235,8 @@ def _trust_env_proxy() -> bool:
         from config import standalone_config_section  # type: ignore[import-not-found]
 
         return bool((standalone_config_section("image") or {}).get("trust_env_proxy", False))
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 - 读不到代理开关时按关闭处理
+        log.debug("image_proxy_config_read_failed", exc_info=True)
         return False
 
 
@@ -365,7 +366,8 @@ def _open_file(path: Path) -> bool:
         opener = "open" if sys.platform == "darwin" else "xdg-open"
         subprocess.Popen([opener, str(path)])  # noqa: S603
         return True
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 - 系统打不开图片时返回失败，由调用方提示
+        log.debug("image_open_file_failed", exc_info=True)
         return False
 
 
@@ -525,7 +527,8 @@ def generate_images(prompts, *, size=_DEFAULT_SIZE, model=None):
             return value
         try:
             return str(value)
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 - 对象转不成文字时按空串处理
+            log.debug("image_prompt_text_failed", exc_info=True)
             return ""
 
     try:

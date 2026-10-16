@@ -34,6 +34,7 @@ isolate.
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 import re
 import tempfile
@@ -47,6 +48,9 @@ from paths import output_dir
 
 from deskpet.permissions.protected_paths import guard
 from deskpet.permissions.system_paths import _norm
+
+logger = logging.getLogger(__name__)
+
 
 # ---------------------------------------------------------------------------
 # Authorization set
@@ -151,8 +155,8 @@ def _default_output_path(prefix: str, suffix: str, kind: str) -> Path:
             ts = int(time.time())
             uniq = _short_hash(_next_seed_uniq(), 4)
             return output_dir(kind) / f"{prefix}-{ts}-{uniq}{suffix}"
-        except Exception:  # noqa: BLE001 — fall back to temp
-            pass
+        except Exception:  # noqa: BLE001 - 输出目录不可用时改用临时目录
+            logger.debug("office_output_path_failed", exc_info=True)
     return auto_temp_path(prefix, suffix)
 
 

@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import copy
+import logging
 import os
 from collections.abc import Iterable, Sequence
 from pathlib import Path
@@ -14,6 +15,8 @@ from typing import Any
 from .. import ppt_template_picker as _tpl
 from .common import MSO_AUTO_SIZE, Pt, RGBColor
 from .outline import SlideOutline
+
+logger = logging.getLogger(__name__)
 
 
 def _fallback_template_path() -> str | None:
@@ -25,7 +28,8 @@ def _fallback_template_path() -> str | None:
         bundled = Path(__file__).parent.parent / "ppt_templates" / "通用商务"
         cands = sorted(bundled.glob("*.pptx"))
         return str(cands[0]) if cands else None
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 - 内置模板目录不可用时当作没有
+        logger.debug("ppt_fallback_template_failed", exc_info=True)
         return None
 
 
@@ -35,12 +39,9 @@ def _user_template_roots() -> list[Path]:
     从不抛异常。
     """
     roots: list[Path] = []
-    try:
-        env = (os.environ.get("DESKPET_PPT_TEMPLATE_ROOTS", "") or "").strip()
-        if env:
-            roots += [Path(p.strip()) for p in env.split(";") if p.strip()]
-    except Exception:  # noqa: BLE001
-        pass
+    env = (os.environ.get("DESKPET_PPT_TEMPLATE_ROOTS", "") or "").strip()
+    if env:
+        roots += [Path(p.strip()) for p in env.split(";") if p.strip()]
     return [r for r in roots if r.is_dir()]
 
 
@@ -76,9 +77,11 @@ def _resolve_template_path(template: str | None) -> str | None:
                 hit = next((p for p in root.rglob(f"{name}.pptx") if p.is_file()), None)
                 if hit is not None:
                     return str(hit.resolve())
-            except Exception:  # noqa: BLE001
+            except Exception:  # noqa: BLE001 - 某个模板目录扫描出错时换下一个
+                logger.debug("ppt_template_root_scan_failed", exc_info=True)
                 continue
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 - 模板路径解析出错时当作没找到
+        logger.debug("ppt_template_resolve_failed", exc_info=True)
         return None
     return None
 
@@ -96,7 +99,8 @@ def _resolve_template_for_render(template: str | None, *, topic: str = "") -> st
             picked = _tpl.pick_template_by_preview(raw, topic)
             return str(picked) if picked is not None else None
         return _resolve_template_path(raw)
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 - 选模板出错时不用模板
+        logger.debug("ppt_template_pick_failed", exc_info=True)
         return None
 
 
@@ -146,7 +150,8 @@ def _template_placeholders(slide, *types: Any) -> list[Any]:
         try:
             if shape.placeholder_format.type in types:
                 placeholders.append(shape)
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 - 读不到占位类型时跳过这个形状
+            logger.debug("ppt_placeholder_type_failed", exc_info=True)
             continue
     return placeholders
 
@@ -159,8 +164,8 @@ def _set_placeholder_text(ph, text: str) -> None:
     except Exception:  # noqa: BLE001
         try:
             ph.text = text
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception:  # noqa: BLE001 - 占位框写不进字时跳过
+            logger.debug("ppt_placeholder_text_failed", exc_info=True)
 
 
 def _fill_placeholder_lines(ph, lines: Sequence[str], *, bold_first: bool = False) -> None:
@@ -175,8 +180,8 @@ def _fill_placeholder_lines(ph, lines: Sequence[str], *, bold_first: bool = Fals
         for line in clean[1:]:
             p = tf.add_paragraph()
             p.text = line
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception:  # noqa: BLE001 - 占位框填字出错时保留原样
+        logger.debug("ppt_placeholder_fill_failed", exc_info=True)
 
 
 def _iter_design_text_shapes(shapes) -> Iterable[Any]:
@@ -187,7 +192,8 @@ def _iter_design_text_shapes(shapes) -> Iterable[Any]:
                 continue
             if getattr(shape, "has_text_frame", False) and (shape.text or "").strip():
                 yield shape
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 - 读不到形状信息时跳过它
+            logger.debug("ppt_design_shape_iter_failed", exc_info=True)
             continue
 
 
@@ -199,14 +205,15 @@ def _shape_text_max_pt(shape) -> float:
                 size = paragraph.font.size
                 if size is not None:
                     max_pt = max(max_pt, float(size.pt))
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception:  # noqa: BLE001 - 读不到段落字号时跳过这一段
+                logger.debug("ppt_paragraph_size_read_failed", exc_info=True)
             for run in paragraph.runs:
                 try:
                     size = run.font.size
                     if size is not None:
                         max_pt = max(max_pt, float(size.pt))
-                except Exception:  # noqa: BLE001
+                except Exception:  # noqa: BLE001 - 读不到文字段字号时跳过它
+                    logger.debug("ppt_run_size_read_failed", exc_info=True)
                     continue
         return max_pt or 18.0
     except Exception:  # noqa: BLE001
@@ -216,7 +223,8 @@ def _shape_text_max_pt(shape) -> float:
 def _shape_text_len(shape) -> int:
     try:
         return len((shape.text or "").strip())
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 - 读不到形状文字时按空处理
+        logger.debug("ppt_shape_text_len_failed", exc_info=True)
         return 0
 
 
@@ -292,8 +300,8 @@ def _ensure_readable_text(shape) -> None:
                 luma = (r * 299 + g * 587 + b * 114) / 255000.0
                 if luma > 0.72:
                     run.font.color.rgb = RGBColor(0x20, 0x29, 0x33)
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception:  # noqa: BLE001 - 调文字颜色出错时保留原色
+        logger.debug("ppt_readable_text_failed", exc_info=True)
 
 
 def _analyze_design_page(slide, slide_w: int = 0, slide_h: int = 0) -> dict[str, Any]:
@@ -316,7 +324,8 @@ def _analyze_design_page(slide, slide_w: int = 0, slide_h: int = 0) -> dict[str,
                         ),
                     }
                 )
-            except Exception:  # noqa: BLE001
+            except Exception:  # noqa: BLE001 - 分析某个形状出错时跳过它
+                logger.debug("ppt_design_page_shape_failed", exc_info=True)
                 continue
 
         # 出血/越界形状不当 title/subtitle(塞中文必裁切);它们若是 >60pt
@@ -418,21 +427,21 @@ def _set_text_keep_style(shape, lines: list[str], *, fit_pt: bool = False) -> No
                     new_pt = _fit_font_pt(shape, clean, orig_pt)
                     if new_pt < orig_pt:
                         r0.font.size = Pt(int(round(new_pt)))
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception:  # noqa: BLE001 - 字号调整出错时保留原字号
+                logger.debug("ppt_keep_style_font_failed", exc_info=True)
         r0.text = clean[0]
         for run in list(p0.runs)[1:]:
             try:
                 run._r.getparent().remove(run._r)
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception:  # noqa: BLE001 - 多余文字段删不掉时保留
+                logger.debug("ppt_keep_style_run_remove_failed", exc_info=True)
 
         tx_body = tf._txBody
         for paragraph in list(tf.paragraphs)[1:]:
             try:
                 tx_body.remove(paragraph._p)
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception:  # noqa: BLE001 - 多余段落删不掉时保留
+                logger.debug("ppt_keep_style_paragraph_remove_failed", exc_info=True)
 
         for line in clean[1:]:
             new_p = copy.deepcopy(p0._p)
@@ -450,8 +459,8 @@ def _set_text_keep_style(shape, lines: list[str], *, fit_pt: bool = False) -> No
             shape.text_frame.text = "\n".join(
                 str(line).strip() for line in lines if str(line).strip()
             )
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception:  # noqa: BLE001 - 整框写字出错时保留原样
+            logger.debug("ppt_keep_style_text_failed", exc_info=True)
 
 
 def _shapes_v_overlap(a, b) -> bool:
@@ -531,8 +540,8 @@ def _page_quality_score(info: dict[str, Any]) -> float:
                     score += 3.0  # 横排标题 = 好
                 else:
                     score -= 5.0  # 竖排/窄高标题 = 中文必裁,重罚
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception:  # noqa: BLE001 - 读不到标题尺寸时不加减分
+                logger.debug("ppt_title_shape_score_failed", exc_info=True)
         # 正文槽适量(1~4)最佳;过多 = 图标网格类,易乱
         nb = int(info.get("n_body", 0))
         if 1 <= nb <= 4:
@@ -543,7 +552,8 @@ def _page_quality_score(info: dict[str, Any]) -> float:
         score -= 0.4 * len(info.get("labels", []))
         score -= 0.6 * len(info.get("decor", []))
         return score
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 - 页面打分出错时按零分处理
+        logger.debug("ppt_page_score_failed", exc_info=True)
         return 0.0
 
 
@@ -591,5 +601,5 @@ def _enable_text_autofit(shape) -> None:
         tf.word_wrap = True
         if MSO_AUTO_SIZE is not None:
             tf.auto_size = MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception:  # noqa: BLE001 - 自动缩字设不上时保留原设置
+        logger.debug("ppt_text_autofit_failed", exc_info=True)

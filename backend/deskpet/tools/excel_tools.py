@@ -184,7 +184,8 @@ def _iter_cells(ws, rng: str):
     a 1-D row/col tuple, and a 2-D tuple-of-tuples uniformly)."""
     try:
         sel = ws[rng]
-    except Exception:  # noqa: BLE001 — bad range string
+    except Exception:  # noqa: BLE001 - 区域写法不对时当作空区域
+        log.debug("excel_range_parse_failed", exc_info=True)
         return
     if isinstance(sel, Cell):
         yield sel

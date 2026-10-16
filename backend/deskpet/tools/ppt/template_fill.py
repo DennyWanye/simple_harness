@@ -89,11 +89,11 @@ def _fit_text_to_shape(shape, *, min_pt: int = 10, default_pt: float = 18.0) -> 
             # 段级字号也写(无 run 的空段/继承段)
             try:
                 p.font.size = Pt(new_pt)
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception:  # noqa: BLE001 - 段落字号写不进去时跳过这一段
+                log.debug("ppt_paragraph_font_size_failed", exc_info=True)
         log.debug("fit_text_to_shape scale=%.2f", scale)
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception:  # noqa: BLE001 - 字号调整出错时保留原字号
+        log.debug("ppt_fit_text_failed", exc_info=True)
 
 
 # 残留占位文 = 模板自带的示例/提示文字,填充后没被覆盖会穿帮。中英都覆盖。
@@ -161,10 +161,11 @@ def _sweep_residual_placeholders(slide) -> None:
             try:
                 if _is_residual_placeholder(shape.text_frame.text):
                     _set_text_keep_style(shape, [])
-            except Exception:  # noqa: BLE001
+            except Exception:  # noqa: BLE001 - 某个形状清理出错时跳过它
+                log.debug("ppt_sweep_placeholder_shape_failed", exc_info=True)
                 continue
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception:  # noqa: BLE001 - 清理残留占位文字出错时保留原样
+        log.debug("ppt_sweep_placeholders_failed", exc_info=True)
 
 
 def _is_english_semantic_label(text: str) -> bool:
@@ -220,8 +221,8 @@ def _insert_design_picture(slide, so: SlideOutline) -> None:
                 picture_ph[0].insert_picture(str(so.image_path))
             except Exception as exc:  # noqa: BLE001
                 log.debug("design picture insert failed: %s", exc, exc_info=True)
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception:  # noqa: BLE001 - 设计页插图出错时保留模板原图
+        log.debug("ppt_design_picture_failed", exc_info=True)
 
 
 def _swap_design_picture(slide, image_path: str) -> bool:
@@ -279,8 +280,8 @@ def _swap_design_picture(slide, image_path: str) -> bool:
                 buf = BytesIO()
                 im.save(buf, format="JPEG", quality=88)
                 new_bytes = buf.getvalue()
-        except Exception:  # noqa: BLE001
-            pass  # PIL 不可用 → 直接塞原字节(WPS 实测可读)
+        except Exception:  # noqa: BLE001 - 图片库不可用时直接用原图字节
+            log.debug("ppt_design_picture_convert_failed", exc_info=True)
 
         image_part._blob = new_bytes
         return True
@@ -304,7 +305,8 @@ def _rects_overlap(a, b, *, min_frac: float = 0.2) -> bool:
         inter = iw * ih
         amin = min((ax2 - ax1) * (ay2 - ay1), (bx2 - bx1) * (by2 - by1))
         return amin > 0 and inter > min_frac * amin
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 - 读不到形状尺寸时按不重叠处理
+        log.debug("ppt_rect_overlap_failed", exc_info=True)
         return False
 
 
@@ -328,12 +330,12 @@ def _scale_shape_runs(shape, scale: float) -> None:
                 for cell in row.cells:
                     _scale_text_frame(cell.text_frame)
             return
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception:  # noqa: BLE001 - 表格字号缩放出错时保留原字号
+        log.debug("ppt_scale_table_runs_failed", exc_info=True)
     try:
         _scale_text_frame(shape.text_frame)
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception:  # noqa: BLE001 - 文字字号缩放出错时保留原字号
+        log.debug("ppt_scale_text_runs_failed", exc_info=True)
 
 
 def _fill_design_page(slide, so: SlideOutline, info: dict[str, Any]) -> None:
@@ -436,7 +438,8 @@ def _fill_design_page(slide, so: SlideOutline, info: dict[str, Any]) -> None:
         try:
             if any(_rects_overlap(shape, f) for f in _filled):
                 _set_text_keep_style(shape, [])
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 - 某个形状判断重叠出错时跳过它
+            log.debug("ppt_overlap_clear_failed", exc_info=True)
             continue
 
     # 章节/标题/引用页是「分隔页」: 本就只该有标题 + 副标题,模板自带的
@@ -451,8 +454,8 @@ def _fill_design_page(slide, so: SlideOutline, info: dict[str, Any]) -> None:
             if s is not None:
                 try:
                     _keep_ids.add(id(s._element))
-                except Exception:  # noqa: BLE001
-                    pass
+                except Exception:  # noqa: BLE001 - 标记保留形状出错时跳过它
+                    log.debug("ppt_keep_shape_mark_failed", exc_info=True)
         try:
             for shape in _iter_design_text_shapes(slide.shapes):
                 try:
@@ -460,10 +463,11 @@ def _fill_design_page(slide, so: SlideOutline, info: dict[str, Any]) -> None:
                         continue
                     if (shape.text_frame.text or "").strip():
                         _set_text_keep_style(shape, [])
-                except Exception:  # noqa: BLE001
+                except Exception:  # noqa: BLE001 - 某个形状清理出错时跳过它
+                    log.debug("ppt_residual_shape_clear_failed", exc_info=True)
                     continue
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception:  # noqa: BLE001 - 清理残留文字出错时保留原样
+            log.debug("ppt_residual_text_clear_failed", exc_info=True)
 
     # 有 AI 生成图(image_prompt 出图后的 image_path) → 换进本页最大图片位,
     # 把模板通用库存照替成贴合主题的定制视觉(模板丰富内容 + AI 视觉合一)。
@@ -491,8 +495,8 @@ def _fill_design_page(slide, so: SlideOutline, info: dict[str, Any]) -> None:
     if so.notes:
         try:
             slide.notes_slide.notes_text_frame.text = so.notes
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception:  # noqa: BLE001 - 备注写不进去时跳过，不影响出文件
+            log.debug("ppt_notes_write_failed", exc_info=True)
 
 
 def _drop_slide_id(prs, sld_id) -> None:
@@ -502,11 +506,11 @@ def _drop_slide_id(prs, sld_id) -> None:
         if r_id:
             try:
                 prs.part.drop_rel(r_id)
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception:  # noqa: BLE001 - 页面关系删不掉时只删页面
+                log.debug("ppt_drop_slide_rel_failed", exc_info=True)
         prs.slides._sldIdLst.remove(sld_id)
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception:  # noqa: BLE001 - 删多余页出错时保留这一页
+        log.debug("ppt_drop_slide_failed", exc_info=True)
 
 
 def _render_with_design_pages(
@@ -588,8 +592,8 @@ def _render_with_design_pages(
             if author:
                 cp.author = author
                 cp.last_modified_by = author
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception:  # noqa: BLE001 - 文档属性写不进去时跳过，不影响出文件
+            log.debug("ppt_core_properties_failed", exc_info=True)
 
         prs.save(out_path)
         return {
@@ -635,8 +639,8 @@ def _render_with_template(
             if rId:
                 try:
                     prs.part.drop_rel(rId)
-                except Exception:  # noqa: BLE001
-                    pass
+                except Exception:  # noqa: BLE001 - 模板页关系删不掉时保留
+                    log.debug("ppt_drop_template_rel_failed", exc_info=True)
             xml_slides.remove(sldId)
 
         for so in slides:
@@ -704,8 +708,8 @@ def _render_with_template(
             if author:
                 cp.author = author
                 cp.last_modified_by = author
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception:  # noqa: BLE001 - 文档属性写不进去时跳过，不影响出文件
+            log.debug("ppt_core_properties_failed", exc_info=True)
 
         prs.save(out_path)
         return {

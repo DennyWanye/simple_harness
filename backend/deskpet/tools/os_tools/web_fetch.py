@@ -14,9 +14,13 @@ P5-S2 Phase 0: error responses now include ``ok: false`` + ``hint``
 from __future__ import annotations
 
 import json
+import logging
 import re
 from typing import Any
 from urllib.parse import urlparse
+
+logger = logging.getLogger(__name__)
+
 
 _EXAMPLES = [
     {"url": "https://example.com"},
@@ -44,8 +48,8 @@ def _strip_html(html: str) -> str:
         out = trafilatura.extract(html) or ""
         if out:
             return out
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001 - 正文抽取库不可用或出错时改用简单去标签
+        logger.debug("web_fetch_trafilatura_failed", exc_info=True)
     # Fallback: drop tags
 
     text = re.sub(r"<script.*?</script>", "", html, flags=re.S | re.I)

@@ -152,12 +152,16 @@ def logs(h: ast.ExceptHandler) -> bool:
 
 
 def logs_exc(h: ast.ExceptHandler) -> bool:
-    """处理体里的日志调用带异常信息：exc_info=... 关键字，或 .exception(...)。"""
+    """处理体里的日志调用带异常信息：exc_info=... 关键字、.exception(...)，或 error_type=...
+    （只记异常类型，用于异常消息可能含隐私数据的地方）。"""
     for n in ast.walk(ast.Module(body=h.body, type_ignores=[])):
         if (
             isinstance(n, ast.Call)
             and isinstance(n.func, ast.Attribute)
-            and (n.func.attr == "exception" or any(k.arg == "exc_info" for k in n.keywords))
+            and (
+                n.func.attr == "exception"
+                or any(k.arg in ("exc_info", "error_type") for k in n.keywords)
+            )
         ):
             return True
     return False

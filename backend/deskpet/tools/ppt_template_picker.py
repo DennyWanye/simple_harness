@@ -59,7 +59,8 @@ def _has_category_subdir(root: Path) -> bool:
         for sub in root.iterdir():
             if sub.is_dir() and any(sub.glob("*.pptx")):
                 return True
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 - 目录读不了时按没有分类处理
+        log.debug("ppt_category_scan_failed", exc_info=True)
         return False
     return False
 
@@ -76,7 +77,8 @@ def _external_root() -> Path | None:
         repo = Path(__file__).resolve().parents[3]
         root = repo / "resources" / "PPT_Template"
         return root if root.is_dir() else None
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 - 外部模板目录不可用时当作没有
+        log.debug("ppt_external_root_failed", exc_info=True)
         return None
 
 
@@ -86,7 +88,8 @@ def _bundled_fallback_root() -> Path | None:
     try:
         root = Path(__file__).parent / "ppt_templates"
         return root if (root.is_dir() and _has_category_subdir(root)) else None
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 - 内置模板目录不可用时当作没有
+        log.debug("ppt_bundled_root_failed", exc_info=True)
         return None
 
 
@@ -158,7 +161,8 @@ def preview_for(pptx_path: Path) -> Path | None:
             cand = preview_dir / f"{stem}{ext}"
             if cand.is_file():
                 return cand
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 - 预览图找不到时当作没有
+        log.debug("ppt_preview_lookup_failed", exc_info=True)
         return None
     return None
 
@@ -181,11 +185,13 @@ def _load_font(size: int):
     for name in ("arial.ttf", "DejaVuSans.ttf", "msyh.ttc", "simhei.ttf"):
         try:
             return ImageFont.truetype(name, size)
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 - 这个字体加载失败时换下一个
+            log.debug("ppt_font_load_failed", exc_info=True)
             continue
     try:
         return ImageFont.load_default()
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 - 默认字体加载失败时不画文字
+        log.debug("ppt_default_font_failed", exc_info=True)
         return None
 
 
@@ -234,8 +240,8 @@ def _build_contact_sheets(
                         ox = x0 + (cell_w - im.width) // 2
                         oy = y0 + (cell_h - im.height) // 2
                         sheet.paste(im, (ox, oy))
-                except Exception:  # noqa: BLE001
-                    pass
+                except Exception:  # noqa: BLE001 - 某张预览图贴不上时留空
+                    log.debug("ppt_contact_sheet_tile_failed", exc_info=True)
                 # id 角标(实心底 + 文字),保证可读
                 label = str(pid)
                 draw.rectangle(
@@ -266,7 +272,8 @@ def _b64_of(path: Path, *, max_w: int = 1024) -> str | None:
             buf = BytesIO()
             im.save(buf, format="JPEG", quality=82)
         return base64.b64encode(buf.getvalue()).decode("ascii")
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 - 预览图编码失败时不附图
+        log.debug("ppt_preview_encode_failed", exc_info=True)
         return None
 
 
@@ -281,14 +288,14 @@ def _parse_pick_id(text: str, valid_ids: set[int]) -> int | None:
             pid = int(obj.get("id"))
             if pid in valid_ids:
                 return pid
-    except Exception:  # noqa: BLE001
+    except (ValueError, TypeError):
         pass
     for tok in re.findall(r"\d+", text):
         try:
             pid = int(tok)
             if pid in valid_ids:
                 return pid
-        except Exception:  # noqa: BLE001
+        except ValueError:
             continue
     return None
 
@@ -381,5 +388,6 @@ def pick_template_by_preview(
         try:
             pptx_all = category_pptx(category_key)
             return rnd.choice(pptx_all) if pptx_all else None
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 - 随机选模板出错时不用模板
+            log.debug("ppt_random_template_failed", exc_info=True)
             return None

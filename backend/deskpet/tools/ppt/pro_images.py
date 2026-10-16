@@ -115,10 +115,7 @@ def _default_template() -> str | None:
     ``DESKPET_PPT_DEFAULT_TEMPLATE``。不设 → None(走 from-scratch)。
     可设成一个大类名(如「高级色」)让生成默认套模板并按预览图选具体设计。
     """
-    try:
-        return (os.environ.get("DESKPET_PPT_DEFAULT_TEMPLATE", "") or "").strip() or None
-    except Exception:  # noqa: BLE001
-        return None
+    return (os.environ.get("DESKPET_PPT_DEFAULT_TEMPLATE", "") or "").strip() or None
 
 
 def _degrade_to_template(slides: Sequence[SlideOutline]) -> list[SlideOutline]:
@@ -212,7 +209,8 @@ def _disk_preflight(*, image_mode: bool, pages: int) -> str | None:
     space check can never itself block a valid render."""
     try:
         base = paths.user_data_dir()
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 - 用户数据目录不可用时跳过磁盘预检
+        log.debug("ppt_user_data_dir_failed", exc_info=True)
         return None
     free = _drive_free_bytes(base)
     if free is None:

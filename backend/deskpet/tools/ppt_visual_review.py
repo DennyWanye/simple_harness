@@ -107,8 +107,8 @@ def _visual_review_model() -> str:
             configured = str(ppt_config.get(key) or "").strip()
             if configured:
                 return configured
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception:  # noqa: BLE001 - 读不到看图模型配置时用默认值
+        log.debug("ppt_visual_review_model_config_failed", exc_info=True)
     return _DEFAULT_VISUAL_REVIEW_MODEL
 
 

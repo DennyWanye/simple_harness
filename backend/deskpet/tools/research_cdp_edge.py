@@ -219,13 +219,13 @@ async def _reset_browser_state(*, remove_profile: bool = True) -> None:
             await recv_task
         except asyncio.CancelledError:
             pass
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception:  # noqa: BLE001 - 收消息任务结束出错时不处理
+            log.debug("cdp_edge_recv_task_cancel_failed", exc_info=True)
     if ws is not None:
         try:
             await ws.close()
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception:  # noqa: BLE001 - 连接关闭出错时不处理
+            log.debug("cdp_edge_ws_close_failed", exc_info=True)
     if proc is not None:
         try:
             if proc.poll() is None:
@@ -235,13 +235,13 @@ async def _reset_browser_state(*, remove_profile: bool = True) -> None:
                 except subprocess.TimeoutExpired:
                     proc.kill()
                     await asyncio.to_thread(proc.wait, timeout=3.0)
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception:  # noqa: BLE001 - 浏览器进程结束出错时不处理
+            log.debug("cdp_edge_process_stop_failed", exc_info=True)
     if remove_profile and user_data_dir:
         try:
             shutil.rmtree(user_data_dir, ignore_errors=True)
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception:  # noqa: BLE001 - 临时目录删不掉时不处理
+            log.debug("cdp_edge_profile_cleanup_failed", exc_info=True)
 
 
 async def _ensure_browser(timeout: float) -> None:
@@ -394,8 +394,8 @@ async def _render_once(url: str, timeout: float) -> str | None:
                     {"targetId": target_id},
                     timeout=min(3.0, _remaining(deadline)),
                 )
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception:  # noqa: BLE001 - 关页面出错时不处理，浏览器重置会清掉
+                log.debug("cdp_edge_close_target_failed", exc_info=True)
 
 
 async def cdp_edge_render(url: str, *, timeout: float = 20.0) -> str | None:
@@ -423,8 +423,8 @@ async def cdp_edge_render(url: str, *, timeout: float = 20.0) -> str | None:
         if not _browser_running():
             try:
                 await _reset_browser_state()
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception:  # noqa: BLE001 - 重置浏览器出错时下次调用再重置
+                log.debug("cdp_edge_reset_failed", exc_info=True)
         log.info(
             "cdp_edge_render",
             url=url,
@@ -439,8 +439,8 @@ async def shutdown_cdp_edge() -> None:
     """清理常驻 Edge 子进程、CDP WebSocket 和临时 profile；幂等。"""
     try:
         await _reset_browser_state()
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception:  # noqa: BLE001 - 关闭时清理浏览器出错不影响退出
+        log.debug("cdp_edge_shutdown_reset_failed", exc_info=True)
 
 
 __all__ = ["cdp_edge_render", "cdp_edge_available", "shutdown_cdp_edge"]

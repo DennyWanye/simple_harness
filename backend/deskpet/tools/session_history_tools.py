@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import inspect
 import json
+import logging
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
@@ -22,6 +23,9 @@ from deskpet.tools.public_projection import (
     project_public_tool_arguments,
     project_public_tool_result,
 )
+
+logger = logging.getLogger(__name__)
+
 
 SESSION_HISTORY_PAGE_IN_SCHEMA: dict[str, Any] = {
     "name": "session_history_page_in",
@@ -132,8 +136,8 @@ def build_session_history_page_in_handler(
                     segment.segment_id,
                     expected_revision=segment.revision,
                 )
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001 - 标记过期失败不影响本次读取
+                logger.warning("session_segment_mark_stale_failed", exc_info=True)
             return _error("segment_stale")
 
         groups, errors = group_causal_messages(messages)

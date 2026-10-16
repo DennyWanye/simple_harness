@@ -9,10 +9,14 @@ availability depends on the host machine, so callers decide when to use it.
 
 from __future__ import annotations
 
+import logging
 import os
 import subprocess
 import sys
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
+
 
 try:  # pragma: no cover - host-dependent import probe
     import pythoncom  # type: ignore
@@ -57,13 +61,13 @@ def com_render_available() -> bool:
         if app is not None:
             try:
                 app.Quit()
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception:  # noqa: BLE001 - 退出办公软件失败时不处理
+                logger.debug("ppt_com_quit_failed", exc_info=True)
         if initialized:
             try:
                 pythoncom.CoUninitialize()
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception:  # noqa: BLE001 - 释放组件失败时不处理
+                logger.debug("ppt_com_uninit_failed", exc_info=True)
     return bool(_AVAILABLE)
 
 
@@ -73,8 +77,8 @@ def _kill_wps() -> None:
     for name in ("wpp.exe", "wps.exe", "wpscloudsvr.exe", "et.exe"):
         try:
             subprocess.run(["taskkill", "/F", "/IM", name], capture_output=True, timeout=10)
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception:  # noqa: BLE001 - 结束渲染进程失败时不处理，下次再试
+            logger.debug("ppt_render_kill_wps_failed", exc_info=True)
 
 
 def render_pptx_to_pngs_safe(
@@ -121,8 +125,8 @@ def render_pptx_to_pngs_safe(
         except subprocess.TimeoutExpired:
             log_warn = True
             _kill_wps()
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception:  # noqa: BLE001 - 渲染子进程起不来时按没有截图处理
+            logger.debug("ppt_render_subprocess_failed", exc_info=True)
         # 读 out_dir 里实际产出的 png(超时也能拿到已渲染的前几页)
         return sorted(
             str(p) for p in dest.glob("slide*.png") if p.is_file() and p.stat().st_size > 1024
@@ -163,7 +167,8 @@ def render_pptx_to_pngs(
             png = dest / f"slide{idx}.png"
             try:
                 pres.Slides(idx).Export(str(png), "PNG", int(width), int(height))
-            except Exception:  # noqa: BLE001
+            except Exception:  # noqa: BLE001 - 某一页导出失败时跳过这一页
+                logger.debug("ppt_com_export_page_failed", exc_info=True)
                 continue
             try:
                 if png.is_file() and png.stat().st_size > 1024:
@@ -177,18 +182,18 @@ def render_pptx_to_pngs(
         if pres is not None:
             try:
                 pres.Close()
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception:  # noqa: BLE001 - 关闭演示文稿失败时不处理
+                logger.debug("ppt_com_close_failed", exc_info=True)
         if app is not None:
             try:
                 app.Quit()
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception:  # noqa: BLE001 - 退出办公软件失败时不处理
+                logger.debug("ppt_com_quit_failed", exc_info=True)
         if initialized:
             try:
                 pythoncom.CoUninitialize()
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception:  # noqa: BLE001 - 释放组件失败时不处理
+                logger.debug("ppt_com_uninit_failed", exc_info=True)
 
 
 if __name__ == "__main__":

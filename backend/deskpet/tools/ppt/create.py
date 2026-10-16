@@ -396,8 +396,8 @@ def _render_full_page_images(
         if author:
             properties.author = author
             properties.last_modified_by = author
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception:  # noqa: BLE001 - 文档属性写不进去时跳过，不影响出文件
+        log.debug("ppt_core_properties_failed", exc_info=True)
     prs.save(out_path)
     return {
         "ok": True,
@@ -472,8 +472,8 @@ def _render_fromscratch(
         if author:
             cp.author = author
             cp.last_modified_by = author
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception:  # noqa: BLE001 - 文档属性写不进去时跳过，不影响出文件
+        log.debug("ppt_core_properties_failed", exc_info=True)
     prs.save(out_path)
     # WI-T1.2 D1：显式 emit artifacts[]（一等公民路径，前端按 kind=file
     # 渲染 ArtifactCard；保留 path 字段保 BC）。
@@ -535,7 +535,8 @@ def _apply_review_actions(
                     )
                     so.font_scale = round(so.font_scale * 0.85, 2)
                     changed = True
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 - 某一页的修正动作出错时跳过这一页
+            log.debug("ppt_review_action_failed", exc_info=True)
             continue
     return changed
 
@@ -643,7 +644,8 @@ def _apply_review_actions_template(
                     )
                     banned_pages.setdefault(idx, set()).add(page_map[idx])
                     changed = True
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 - 某一页的修正动作出错时跳过这一页
+            log.debug("ppt_review_action_failed", exc_info=True)
             continue
     return changed
 

@@ -761,7 +761,8 @@ async def _handle_web_read_sitemap(args: dict[str, Any], task_id: str) -> str:
         tried_any = True
         try:
             fetched = await _fetch_raw_async(url, timeout=10.0)
-        except Exception:
+        except Exception:  # noqa: BLE001 - 某个站点地图取不到时换下一个
+            logger.debug("web_sitemap_fetch_failed", exc_info=True)
             continue
         status = fetched.get("status", 0)
         if status == 404:

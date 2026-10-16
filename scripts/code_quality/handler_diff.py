@@ -82,6 +82,12 @@ def flattened(dump_src: str) -> str:
     tree = ast.parse(dump_src)
     tree.body = [s for s in tree.body if not _is_logger_def(s)]
     tree = _Flatten().visit(tree)
+    for n in ast.walk(tree):  # 删 try 后留下的空 pass 也去掉（不改行为）
+        for field in ("body", "orelse", "finalbody"):
+            stmts = getattr(n, field, None)
+            if isinstance(stmts, list) and len(stmts) > 1:
+                kept = [x for x in stmts if not isinstance(x, ast.Pass)]
+                setattr(n, field, kept or stmts[:1])
     return ast.dump(tree, include_attributes=False)
 
 

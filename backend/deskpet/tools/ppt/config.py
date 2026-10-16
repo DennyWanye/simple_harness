@@ -28,8 +28,8 @@ def _ppt_config_section() -> dict[str, Any]:
         val = raw.get("ppt") if isinstance(raw, dict) else {}
         if isinstance(val, dict):
             merged.update(val)
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception:  # noqa: BLE001 - 主配置读不到时用默认值
+        log.debug("ppt_config_main_read_failed", exc_info=True)
     try:
         # 按需导入：测试替身（config）
         from config import standalone_config_section  # type: ignore[import-not-found]
@@ -37,8 +37,8 @@ def _ppt_config_section() -> dict[str, Any]:
         raw = standalone_config_section("ppt") or {}
         if isinstance(raw, dict):
             merged.update(raw)
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception:  # noqa: BLE001 - 独立配置段读不到时用默认值
+        log.debug("ppt_config_section_read_failed", exc_info=True)
     return merged
 
 

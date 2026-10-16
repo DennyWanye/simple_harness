@@ -404,8 +404,8 @@ def _looks_like_bing_captcha(html: str, results: list[dict[str, str]]) -> bool:
     except ImportError:
         if re.search(r"<li\b[^>]*class=[\"'][^\"']*\bb_algo\b", html, flags=re.I):
             return False
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception:  # noqa: BLE001 - 页面解析出错时按不是验证页处理
+        log.debug("bing_captcha_check_failed", exc_info=True)
     if "li.b_algo" in html:
         return False
     text = _strip(html).lower()
@@ -518,7 +518,7 @@ def _clean_url(url: str) -> str:
             uddg = qs.get("uddg", [""])[0]
             if uddg:
                 return urllib.parse.unquote(uddg)
-        except Exception:  # noqa: BLE001
+        except ValueError:
             pass
     return url
 

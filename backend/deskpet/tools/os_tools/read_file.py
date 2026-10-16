@@ -79,10 +79,6 @@ def _notify_workspace(*, session_id: str, path: str, content: str | None) -> Non
     保存的主 loop reference + run_coroutine_threadsafe 派回主 loop。
     无 store / 无 loop / store error → 静默跳过。
     """
-    try:
-        pass
-    except Exception:
-        return
     store = getattr(_ft, "_workspace_store", None)
     loop = getattr(_ft, "_workspace_loop", None)
     if store is None or loop is None:

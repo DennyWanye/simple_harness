@@ -36,10 +36,6 @@ def _notify_workspace(*, session_id: str, path: str, content: str | None) -> Non
     sync handler 跑在 thread executor，无 running loop → 用 file_tools
     保存的主 loop ref + run_coroutine_threadsafe 派回主 loop。
     """
-    try:
-        pass
-    except Exception:
-        return
     store = getattr(_ft, "_workspace_store", None)
     loop = getattr(_ft, "_workspace_loop", None)
     if store is None or loop is None:

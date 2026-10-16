@@ -358,8 +358,8 @@ def _html_title(html: str, fallback: str = "") -> str:
             title = (node.text() if node else "").strip()
             if title:
                 return title
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception:  # noqa: BLE001 - 网页标题解析出错时当作没有
+        log.debug("research_html_title_failed", exc_info=True)
     m = re.search(r"<title[^>]*>(.*?)</title>", html or "", flags=re.I | re.S)
     if m:
         return _strip_tags(m.group(1))
@@ -402,8 +402,8 @@ def _baike_item(source: str, *, url: str, html: str, fallback_title: str) -> dic
 
         meta = trafilatura.extract_metadata(html or "")
         title = str(getattr(meta, "title", None) or title)
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception:  # noqa: BLE001 - 元数据抽取出错时用原标题
+        log.debug("research_baike_meta_failed", exc_info=True)
     title = _html_title(html, title)
     text = _html_main_text(html)
     return _direct_item(source, url=url, title=title, text=text)
@@ -429,8 +429,8 @@ def _first_baike_link(html: str, base_url: str, *, host: str) -> str:
                 full = urljoin(base_url, href)
                 if host in full:
                     return full
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception:  # noqa: BLE001 - 链接解析出错时当作没有
+        log.debug("research_baike_link_failed", exc_info=True)
     for href in re.findall(r"""href=["']([^"']+)["']""", html or "", flags=re.I):
         if _ok(href):
             full = urljoin(base_url, href)
@@ -603,7 +603,7 @@ def _extract_pdf_text(data: bytes, *, want_financials: bool = False) -> str:
     try:
         # 按需导入：重型包
         import pypdf  # type: ignore
-    except Exception:  # noqa: BLE001
+    except ImportError:
         return ""
     try:
         reader = pypdf.PdfReader(io.BytesIO(data))

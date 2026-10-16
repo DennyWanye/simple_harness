@@ -9,11 +9,15 @@ from __future__ import annotations
 
 import asyncio
 import ipaddress
+import logging
 import re
 import threading
 from collections.abc import Iterable
 from dataclasses import dataclass
 from urllib.parse import urlsplit
+
+logger = logging.getLogger(__name__)
+
 
 _MAX_TEXT_CHARS = 120_000
 _UPSTREAM_LOCK = threading.RLock()
@@ -148,7 +152,8 @@ class AgentReachPort:
                 try:
                     if channel.can_handle(url):
                         return channel
-                except Exception:  # noqa: BLE001
+                except Exception:  # noqa: BLE001 - 某个渠道判断出错时换下一个渠道
+                    logger.debug("agent_reach_channel_match_failed", exc_info=True)
                     continue
             return next((channel for channel in channels if channel.name == "web"), None)
 

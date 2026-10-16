@@ -69,7 +69,8 @@ def ocr_engine_available() -> bool:
         import rapidocr_onnxruntime  # noqa: F401
 
         return True
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 - 识别引擎装不上或加载失败都当作不可用
+        log.debug("ocr_engine_import_failed", exc_info=True)
         return False
 
 

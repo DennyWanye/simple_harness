@@ -659,8 +659,8 @@ class ExecutionMixin(ToolRegistryCore):
                     cfg_default_timeout = float(
                         getattr(cfg, "default_timeout_seconds", 60.0) or 60.0
                     )
-                except Exception:  # noqa: BLE001
-                    pass
+                except Exception:  # noqa: BLE001 - 读不到默认超时配置时用 60 秒
+                    logger.debug("tool_default_timeout_config_failed", exc_info=True)
             timeout_s = (
                 float(getattr(spec, "timeout_seconds", cfg_default_timeout)) or cfg_default_timeout
             )
