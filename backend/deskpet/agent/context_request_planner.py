@@ -11,8 +11,6 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from llm.context_messages import ContextMessageMeta, tag_message
-
 from deskpet.agent.assembler.bundle import (
     AttachmentRef,
     ContextBundle,
@@ -31,6 +29,7 @@ from deskpet.tools.capabilities import (
     ToolEligibilityContext,
     ToolExposureIntent,
 )
+from llm.context_messages import ContextMessageMeta, tag_message
 
 
 class ContextBudgetExceeded(RuntimeError):
@@ -42,6 +41,56 @@ class PlannedContextRequest:
     prepared_context: PreparedContext
     tool_payload: PreparedToolPayload
     budget: RequestBudget
+
+
+@dataclass
+class _InitialContextState:
+    """ContextRequestPlanner.prepare_initial 的运行状态：原函数的局部变量与参数（切段用）。"""
+
+    _plan_history: Any = None
+    active_snapshot: Any = None
+    attachment_refs: Any = None
+    attachment_tokens: Any = None
+    base_payload: Any = None
+    base_set: Any = None
+    base_system: Any = None
+    bundle: Any = None
+    conditional_canonical_names: Any = None
+    conditional_direct_names: Any = None
+    context_window: Any = None
+    current_message: Any = None
+    current_message_id: Any = None
+    decisions: Any = None
+    draft: Any = None
+    effective_pct: Any = None
+    eligibility: Any = None
+    expected_row_revision: Any = None
+    explicit_prepared: Any = None
+    explicit_tool_names: Any = None
+    generation_reserve: Any = None
+    history: Any = None
+    history_plan: Any = None
+    intent: Any = None
+    normalized_attachment_tokens: Any = None
+    page_in_candidates: Any = None
+    page_in_refs: Any = None
+    post_history_messages: Any = None
+    prebuilt_messages: Any = None
+    prefix: Any = None
+    prefix_messages: Any = None
+    prepared: Any = None
+    receipt: Any = None
+    required_names: Any = None
+    selected_budget: Any = None
+    selected_history: Any = None
+    selected_messages: Any = None
+    selected_payload: Any = None
+    selected_set: Any = None
+    snapshot_start: Any = None
+    stable_boundary: Any = None
+    stable_fingerprint: Any = None
+    summary: Any = None
+    user_message: Any = None
 
 
 class ContextRequestPlanner:
@@ -79,184 +128,237 @@ class ContextRequestPlanner:
         attachment_tokens: int = 0,
         current_message_id: int | None = None,
     ) -> PlannedContextRequest:
-        intent, normalized_attachment_tokens, snapshot_start = await self._initial_intent(
-            active_snapshot, attachment_refs, attachment_tokens, bundle
+        state = _InitialContextState(
+            bundle=bundle,
+            base_system=base_system,
+            history=history,
+            user_message=user_message,
+            eligibility=eligibility,
+            context_window=context_window,
+            effective_pct=effective_pct,
+            generation_reserve=generation_reserve,
+            conditional_direct_names=conditional_direct_names,
+            active_snapshot=active_snapshot,
+            prebuilt_messages=prebuilt_messages,
+            attachment_refs=attachment_refs,
+            attachment_tokens=attachment_tokens,
+            current_message_id=current_message_id,
         )
-        explicit_tool_names = _explicit_tool_name_candidates(user_message)
-        conditional_direct_names = tuple(
-            dict.fromkeys((*conditional_direct_names, *explicit_tool_names))
+        await self._initial_tool_sets(state)
+
+        await self._plan_initial_history(state)
+
+        await self._budget_initial_request(state)
+        return PlannedContextRequest(state.prepared, state.selected_payload, state.selected_budget)
+
+    async def _initial_tool_sets(self, state: _InitialContextState) -> None:
+        """解析意图、确定本轮工具集合与固定消息。"""
+
+        (
+            state.intent,
+            state.normalized_attachment_tokens,
+            state.snapshot_start,
+        ) = await self._initial_intent(
+            state.active_snapshot, state.attachment_refs, state.attachment_tokens, state.bundle
+        )
+        state.explicit_tool_names = _explicit_tool_name_candidates(state.user_message)
+        state.conditional_direct_names = tuple(
+            dict.fromkeys((*state.conditional_direct_names, *state.explicit_tool_names))
         )
         # Exactly one catalog/policy read for the initial request.
-        draft = self._resolver.resolve_draft(
-            intent,
-            eligibility=eligibility,
-            conditional_direct_names=conditional_direct_names,
+        state.draft = self._resolver.resolve_draft(
+            state.intent,
+            eligibility=state.eligibility,
+            conditional_direct_names=state.conditional_direct_names,
         )
-        conditional_canonical_names = tuple(cap.ref.name for cap in draft.conditional_direct)
-        page_in_candidates = _page_in_candidates(bundle)
-        prefix, decisions, stable_boundary, stable_fingerprint = _render_prefix(bundle, base_system)
-        explicit_prepared = tuple(
+        state.conditional_canonical_names = tuple(
+            cap.ref.name for cap in state.draft.conditional_direct
+        )
+        state.page_in_candidates = _page_in_candidates(state.bundle)
+        state.prefix, state.decisions, state.stable_boundary, state.stable_fingerprint = (
+            _render_prefix(state.bundle, state.base_system)
+        )
+        state.explicit_prepared = tuple(
             dict.fromkeys(
                 canonical_name
-                for requested_name, canonical_name in draft.conditional_name_map
-                if requested_name in explicit_tool_names
+                for requested_name, canonical_name in state.draft.conditional_name_map
+                if requested_name in state.explicit_tool_names
             )
         )
-        base_set = draft.finalize(required_conditional_names=explicit_prepared)
-        base_payload = prepare_openai_tool_payload(base_set)
-        selected_set = base_set
-        selected_payload = base_payload
-        required_names: set[str] = set(explicit_prepared)
-        if page_in_candidates:
-            required_names.add("context_page_in")
-            if not any(cap.ref.name == "context_page_in" for cap in draft.conditional_direct):
+        state.base_set = state.draft.finalize(required_conditional_names=state.explicit_prepared)
+        state.base_payload = prepare_openai_tool_payload(state.base_set)
+        state.selected_set = state.base_set
+        state.selected_payload = state.base_payload
+        state.required_names: set[str] = set(state.explicit_prepared)
+        if state.page_in_candidates:
+            state.required_names.add("context_page_in")
+            if not any(cap.ref.name == "context_page_in" for cap in state.draft.conditional_direct):
                 raise ContextBudgetExceeded("context_page_in_not_prepared")
-            selected_set = draft.finalize(
+            state.selected_set = state.draft.finalize(
                 required_conditional_names=("context_page_in",),
-                scope_id=base_set.scope_id,
+                scope_id=state.base_set.scope_id,
             )
-            selected_payload = prepare_openai_tool_payload(selected_set)
-        history_plan = None
-        prefix_messages, post_history_messages, current_message = _fixed_message_parts(
-            prefix=prefix,
-            prebuilt_messages=prebuilt_messages,
-            late_system_nudge=bundle.late_system_nudge,
-            user_message=user_message,
+            state.selected_payload = prepare_openai_tool_payload(state.selected_set)
+        state.history_plan = None
+        state.prefix_messages, state.post_history_messages, state.current_message = (
+            _fixed_message_parts(
+                prefix=state.prefix,
+                prebuilt_messages=state.prebuilt_messages,
+                late_system_nudge=state.bundle.late_system_nudge,
+                user_message=state.user_message,
+            )
         )
+
+    async def _plan_initial_history(self, state: _InitialContextState) -> None:
+        """定义按预算重排历史的回调，并挑出本轮要带的历史消息。"""
 
         async def _plan_history(
             payload: PreparedToolPayload,
             *,
-            target_context_window: int = context_window,
-            target_effective_pct: float = effective_pct,
-            target_generation_reserve: int = generation_reserve,
+            target_context_window: int = state.context_window,
+            target_effective_pct: float = state.effective_pct,
+            target_generation_reserve: int = state.generation_reserve,
         ):
             fixed_budget = estimate_request_budget(
-                [*prefix_messages, *post_history_messages, current_message],
+                [*state.prefix_messages, *state.post_history_messages, state.current_message],
                 payload,
                 context_window=target_context_window,
                 effective_pct=target_effective_pct,
                 generation_reserve=target_generation_reserve,
-                attachment_tokens=normalized_attachment_tokens,
+                attachment_tokens=state.normalized_attachment_tokens,
             )
             available_tokens = max(
                 0,
                 fixed_budget.effective_input_budget
                 - fixed_budget.messages_tokens
                 - payload.wire_tokens
-                - normalized_attachment_tokens,
+                - state.normalized_attachment_tokens,
             )
             return await self._history_planner.plan(
-                eligibility.session_id,
+                state.eligibility.session_id,
                 available_tokens=available_tokens,
-                current_message_id=current_message_id,
+                current_message_id=state.current_message_id,
             )
+
+        state._plan_history = _plan_history
 
         if self._history_planner is not None:
             # SessionDB is authoritative even when the assembler's prebuilt L2
             # tail happens to fit.  Never let a fixed top-k shortcut masquerade
             # as complete Session coverage.
-            history_plan, selected_payload, selected_set = await self._selected_history_plan(
-                _plan_history,
-                base_set=base_set,
-                conditional_canonical_names=conditional_canonical_names,
-                draft=draft,
-                required_names=required_names,
-                selected_payload=selected_payload,
-                selected_set=selected_set,
+            (
+                state.history_plan,
+                state.selected_payload,
+                state.selected_set,
+            ) = await self._selected_history_plan(
+                state._plan_history,
+                base_set=state.base_set,
+                conditional_canonical_names=state.conditional_canonical_names,
+                draft=state.draft,
+                required_names=state.required_names,
+                selected_payload=state.selected_payload,
+                selected_set=state.selected_set,
             )
-            selected_history = _wire_history_messages(history_plan.messages)
-            selected_messages = [
-                *prefix_messages,
-                *selected_history,
-                *post_history_messages,
-                current_message,
+            state.selected_history = _wire_history_messages(state.history_plan.messages)
+            state.selected_messages = [
+                *state.prefix_messages,
+                *state.selected_history,
+                *state.post_history_messages,
+                state.current_message,
             ]
         else:
             # ``prebuilt_messages`` preserves the exact current user payload,
             # but fragment-native platform context is authoritative.  Use the
             # same fixed-part merge with or without a SessionHistoryPlanner so
             # Context OS never drops persona/platform fragments.
-            selected_messages = [
-                *prefix_messages,
-                *history,
-                *post_history_messages,
-                current_message,
+            state.selected_messages = [
+                *state.prefix_messages,
+                *state.history,
+                *state.post_history_messages,
+                state.current_message,
             ]
 
-        page_in_refs, selected_budget = self._selected_budget_and_pages(
-            context_window,
-            effective_pct=effective_pct,
-            eligibility=eligibility,
-            generation_reserve=generation_reserve,
-            normalized_attachment_tokens=normalized_attachment_tokens,
-            page_in_candidates=page_in_candidates,
-            selected_messages=selected_messages,
-            selected_payload=selected_payload,
-            selected_set=selected_set,
+    async def _budget_initial_request(self, state: _InitialContextState) -> None:
+        """按上下文预算定页入、不够时重排，生成预备上下文并登记快照。"""
+
+        state.page_in_refs, state.selected_budget = self._selected_budget_and_pages(
+            state.context_window,
+            effective_pct=state.effective_pct,
+            eligibility=state.eligibility,
+            generation_reserve=state.generation_reserve,
+            normalized_attachment_tokens=state.normalized_attachment_tokens,
+            page_in_candidates=state.page_in_candidates,
+            selected_messages=state.selected_messages,
+            selected_payload=state.selected_payload,
+            selected_set=state.selected_set,
         )
-        if not selected_budget.fits:
-            prefix, decisions, stable_boundary, stable_fingerprint = _render_prefix(
-                bundle,
-                base_system,
-                page_in_refs={ref.fragment_id: ref for ref in page_in_refs},
+        if not state.selected_budget.fits:
+            state.prefix, state.decisions, state.stable_boundary, state.stable_fingerprint = (
+                _render_prefix(
+                    state.bundle,
+                    state.base_system,
+                    page_in_refs={ref.fragment_id: ref for ref in state.page_in_refs},
+                )
             )
-            prefix_messages, post_history_messages, current_message = _fixed_message_parts(
-                prefix=prefix,
-                prebuilt_messages=prebuilt_messages,
-                late_system_nudge=bundle.late_system_nudge,
-                user_message=user_message,
+            state.prefix_messages, state.post_history_messages, state.current_message = (
+                _fixed_message_parts(
+                    prefix=state.prefix,
+                    prebuilt_messages=state.prebuilt_messages,
+                    late_system_nudge=state.bundle.late_system_nudge,
+                    user_message=state.user_message,
+                )
             )
-            selected_budget, selected_messages = self._rebudget_selected_messages(
-                context_window,
-                current_message=current_message,
-                effective_pct=effective_pct,
-                generation_reserve=generation_reserve,
-                history=history,
-                history_plan=history_plan,
-                normalized_attachment_tokens=normalized_attachment_tokens,
-                post_history_messages=post_history_messages,
-                prefix_messages=prefix_messages,
-                selected_payload=selected_payload,
+            state.selected_budget, state.selected_messages = self._rebudget_selected_messages(
+                state.context_window,
+                current_message=state.current_message,
+                effective_pct=state.effective_pct,
+                generation_reserve=state.generation_reserve,
+                history=state.history,
+                history_plan=state.history_plan,
+                normalized_attachment_tokens=state.normalized_attachment_tokens,
+                post_history_messages=state.post_history_messages,
+                prefix_messages=state.prefix_messages,
+                selected_payload=state.selected_payload,
             )
-        prepared = self._require_selected_budget(
-            attachment_refs,
-            decisions=decisions,
-            history_plan=history_plan,
-            normalized_attachment_tokens=normalized_attachment_tokens,
-            page_in_refs=page_in_refs,
-            selected_budget=selected_budget,
-            selected_messages=selected_messages,
-            selected_set=selected_set,
-            stable_boundary=stable_boundary,
-            stable_fingerprint=stable_fingerprint,
+        state.prepared = self._require_selected_budget(
+            state.attachment_refs,
+            decisions=state.decisions,
+            history_plan=state.history_plan,
+            normalized_attachment_tokens=state.normalized_attachment_tokens,
+            page_in_refs=state.page_in_refs,
+            selected_budget=state.selected_budget,
+            selected_messages=state.selected_messages,
+            selected_set=state.selected_set,
+            stable_boundary=state.stable_boundary,
+            stable_fingerprint=state.stable_fingerprint,
         )
         self._prepare_with_history_plan(
-            _plan_history,
-            context_window=context_window,
-            current_message=current_message,
-            effective_pct=effective_pct,
-            generation_reserve=generation_reserve,
-            history_plan=history_plan,
-            normalized_attachment_tokens=normalized_attachment_tokens,
-            post_history_messages=post_history_messages,
-            prefix_messages=prefix_messages,
-            prepared=prepared,
-            selected_payload=selected_payload,
-            selected_set=selected_set,
+            state._plan_history,
+            context_window=state.context_window,
+            current_message=state.current_message,
+            effective_pct=state.effective_pct,
+            generation_reserve=state.generation_reserve,
+            history_plan=state.history_plan,
+            normalized_attachment_tokens=state.normalized_attachment_tokens,
+            post_history_messages=state.post_history_messages,
+            prefix_messages=state.prefix_messages,
+            prepared=state.prepared,
+            selected_payload=state.selected_payload,
+            selected_set=state.selected_set,
         )
-        if active_snapshot is not None and self._snapshot_store is not None:
-            summary = _tool_summary(selected_set, selected_payload)
-            expected_row_revision = (
-                int(snapshot_start.handle.row_revision) if snapshot_start is not None else 0
+        if state.active_snapshot is not None and self._snapshot_store is not None:
+            state.summary = _tool_summary(state.selected_set, state.selected_payload)
+            state.expected_row_revision = (
+                int(state.snapshot_start.handle.row_revision)
+                if state.snapshot_start is not None
+                else 0
             )
-            receipt = await self._snapshot_store.persist_projection_with_tool_context_cas(
-                active_snapshot,
-                expected_row_revision=expected_row_revision,
-                prepared_toolset_summary=summary,
+            state.receipt = await self._snapshot_store.persist_projection_with_tool_context_cas(
+                state.active_snapshot,
+                expected_row_revision=state.expected_row_revision,
+                prepared_toolset_summary=state.summary,
             )
-            prepared.active_snapshot_handle = receipt.new_handle
-        return PlannedContextRequest(prepared, selected_payload, selected_budget)
+            state.prepared.active_snapshot_handle = state.receipt.new_handle
 
     async def _initial_intent(
         self,

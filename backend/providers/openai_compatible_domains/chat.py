@@ -8,9 +8,11 @@ from __future__ import annotations
 import asyncio as _asyncio
 import json
 from collections.abc import AsyncIterator
-from typing import TYPE_CHECKING
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
 
 import httpx
+
 from agent.context_report import (
     auto_context_attempt_call,
     auto_context_attempt_iter,
@@ -19,7 +21,6 @@ from agent.context_report import (
 )
 from llm.context_messages import current_provider_attempt_options, split_wire_messages
 from llm.errors import LLMProviderError
-
 from providers._response_sanitizer import sanitize_response
 from providers.dispatch_handoff import current_dispatch_handoff
 
@@ -37,6 +38,39 @@ from .support import (
     _temperature_for_model,
     logger,
 )
+
+
+@dataclass
+class _NonstreamChatState:
+    """非流式工具调用（停用前的旧实现）的运行状态：原函数的局部变量与参数（切段用）。"""
+
+    _: Any = None
+    _advice: Any = None
+    _attempt_options: Any = None
+    _cache_boundary: Any = None
+    _human_msg: Any = None
+    _human_type: Any = None
+    _phase: Any = None
+    _send: Any = None
+    body2: Any = None
+    body_snippet: Any = None
+    content: Any = None
+    data: Any = None
+    human: Any = None
+    idx: Any = None
+    max_tokens: Any = None
+    messages: Any = None
+    msg: Any = None
+    payload: Any = None
+    preview: Any = None
+    response_format: Any = None
+    role: Any = None
+    should_retry: Any = None
+    stripped: Any = None
+    temp: Any = None
+    temperature: Any = None
+    tool_choice: Any = None
+    tools: Any = None
 
 
 class ChatMixin(OpenAICompatibleCore):
@@ -360,36 +394,15 @@ class ChatMixin(OpenAICompatibleCore):
         don't support it usually ignore the field; Ollama specifically
         wants ``format: "json"`` instead, so we shim that case below.
         """
-        temp = _temperature_for_model(
-            self.model,
-            temperature if temperature is not None else self.temperature,
-        )
-        # Phase 1.3 (D4) 前缀稳定纪律 —— 与流式路径一致地抹平历史抖动
-        # 字段。即便此方法当前只作流式 fallback 用，调用方传进来的
-        # messages 已是流式路径 stabilize 过的副本；这里再 stabilize
-        # 一次是幂等的，且保证此方法被直接调用时同样有前缀稳定保证。
-        messages, _ = split_wire_messages(messages)
-        _attempt_options = current_provider_attempt_options()
-        _cache_boundary = _attempt_options.cache_boundary if _attempt_options is not None else None
-        messages = _stabilize_prefix(messages)
-
-        # 临时调试：打印实际发送的消息
-        logger.info(f"[DEBUG_PERSONA] Sending to model={self.model}, base_url={self.base_url}")
-        for idx, msg in enumerate(messages):
-            role = msg.get("role", "?")
-            content = msg.get("content", "")
-            preview = content[:300] if isinstance(content, str) else str(content)[:300]
-            logger.info(f"[DEBUG_PERSONA] Message {idx} ({role}): {preview}")
-
-        payload = self._nonstream_payload(
-            _cache_boundary,
-            max_tokens=max_tokens,
+        state = _NonstreamChatState(
             messages=messages,
-            response_format=response_format,
-            temp=temp,
-            tool_choice=tool_choice,
             tools=tools,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            response_format=response_format,
+            tool_choice=tool_choice,
         )
+        self._prepare_nonstream_payload(state)
         # P4-S22 fix: wrap httpx errors so AgentLoop's existing
         # `except LLMProviderError` catches them and emits a clean
         # ErrorEvent instead of the bare ConnectError bubbling all the
@@ -419,6 +432,52 @@ class ChatMixin(OpenAICompatibleCore):
         # caught in this loop) so reasoning_content 400s still flow to
         # the strip-and-retry handler below.
 
+        self._define_nonstream_send(state)
+
+        await self._send_nonstream_with_retry(state)
+        return self._nonstream_result(state.data, state.messages)
+
+    def _prepare_nonstream_payload(self, state: _NonstreamChatState) -> None:
+        """整理消息（稳定前缀）并生成请求负载。"""
+
+        state.temp = _temperature_for_model(
+            self.model,
+            state.temperature if state.temperature is not None else self.temperature,
+        )
+        # Phase 1.3 (D4) 前缀稳定纪律 —— 与流式路径一致地抹平历史抖动
+        # 字段。即便此方法当前只作流式 fallback 用，调用方传进来的
+        # messages 已是流式路径 stabilize 过的副本；这里再 stabilize
+        # 一次是幂等的，且保证此方法被直接调用时同样有前缀稳定保证。
+        state.messages, state._ = split_wire_messages(state.messages)
+        state._attempt_options = current_provider_attempt_options()
+        state._cache_boundary = (
+            state._attempt_options.cache_boundary if state._attempt_options is not None else None
+        )
+        state.messages = _stabilize_prefix(state.messages)
+
+        # 临时调试：打印实际发送的消息
+        logger.info(f"[DEBUG_PERSONA] Sending to model={self.model}, base_url={self.base_url}")
+        for state.idx, state.msg in enumerate(state.messages):
+            state.role = state.msg.get("role", "?")
+            state.content = state.msg.get("content", "")
+            state.preview = (
+                state.content[:300] if isinstance(state.content, str) else str(state.content)[:300]
+            )
+            logger.info(f"[DEBUG_PERSONA] Message {state.idx} ({state.role}): {state.preview}")
+
+        state.payload = self._nonstream_payload(
+            state._cache_boundary,
+            max_tokens=state.max_tokens,
+            messages=state.messages,
+            response_format=state.response_format,
+            temp=state.temp,
+            tool_choice=state.tool_choice,
+            tools=state.tools,
+        )
+
+    def _define_nonstream_send(self, state: _NonstreamChatState) -> None:
+        """定义一次发送的回调（按需剥掉推理内容、带上提供方调用记账）。"""
+
         async def _send(_msgs: list[dict]) -> dict:
             _wire_msgs = _msgs
             if (
@@ -426,7 +485,7 @@ class ChatMixin(OpenAICompatibleCore):
                 and any(m.get("role") == "system" for m in _wire_msgs)
                 and _is_anthropic_endpoint(self.base_url)
             ):
-                _wire_msgs = _stamp_cache_control(_wire_msgs, boundary_index=_cache_boundary)
+                _wire_msgs = _stamp_cache_control(_wire_msgs, boundary_index=state._cache_boundary)
             transient = (
                 httpx.RemoteProtocolError,
                 httpx.ConnectTimeout,
@@ -462,7 +521,7 @@ class ChatMixin(OpenAICompatibleCore):
                             mark_current_attempt_transport_retry()
                         _r = await _client.post(
                             f"{self.base_url}/chat/completions",
-                            json={**payload, "messages": _wire_msgs},
+                            json={**state.payload, "messages": _wire_msgs},
                         )
                         _r.raise_for_status()
                         return _r.json()
@@ -485,55 +544,60 @@ class ChatMixin(OpenAICompatibleCore):
             assert last_exc is not None
             raise last_exc
 
+        state._send = _send
+
+    async def _send_nonstream_with_retry(self, state: _NonstreamChatState) -> None:
+        """发送一次；可重试的错误重试，tool_choice 被拒时去掉它再发，推理内容报错时剥掉再发。"""
+
         try:
-            data = await _send(messages)
+            state.data = await state._send(state.messages)
         except httpx.HTTPStatusError as exc:
-            body_snippet = ""
+            state.body_snippet = ""
             try:
-                body_snippet = exc.response.text[:600]
+                state.body_snippet = exc.response.text[:600]
             except Exception:  # noqa: BLE001
                 pass
             # 400 + the specific marker → retry once with assistant rows
             # missing reasoning_content stripped from history.
-            should_retry = (
+            state.should_retry = (
                 exc.response.status_code == 400
-                and "reasoning_content" in body_snippet
+                and "reasoning_content" in state.body_snippet
                 and any(
                     m.get("role") == "assistant" and not m.get("reasoning_content")
-                    for m in messages
+                    for m in state.messages
                 )
             )
-            if should_retry:
-                stripped = [
+            if state.should_retry:
+                state.stripped = [
                     m
-                    for m in messages
+                    for m in state.messages
                     if not (m.get("role") == "assistant" and not m.get("reasoning_content"))
                 ]
                 logger.warning(
                     "p4s24_reasoning_400_retry",
-                    original_history_size=len(messages),
-                    stripped_history_size=len(stripped),
-                    dropped=len(messages) - len(stripped),
+                    original_history_size=len(state.messages),
+                    stripped_history_size=len(state.stripped),
+                    dropped=len(state.messages) - len(state.stripped),
                 )
                 try:
-                    data = await _send(stripped)
+                    state.data = await state._send(state.stripped)
                 except httpx.HTTPStatusError as exc2:
-                    body2 = ""
+                    state.body2 = ""
                     try:
-                        body2 = exc2.response.text[:300]
+                        state.body2 = exc2.response.text[:300]
                     except Exception:  # noqa: BLE001
                         pass
                     raise LLMProviderError(
                         f"LLM HTTP {exc2.response.status_code} {exc2.response.reason_phrase}: "
-                        f"{body2}",
+                        f"{state.body2}",
                         status_code=exc2.response.status_code,
                         error_class=self._relay_error_class(
-                            exc2.response.status_code, body2, exc2.response
+                            exc2.response.status_code, state.body2, exc2.response
                         ),
                     ) from exc2
-            elif "tool_choice" in payload and _is_tool_choice_400(exc, body_snippet):
-                payload = dict(payload)
-                payload.pop("tool_choice", None)
+            elif "tool_choice" in state.payload and _is_tool_choice_400(exc, state.body_snippet):
+                state.payload = dict(state.payload)
+                state.payload.pop("tool_choice", None)
                 _record_tool_choice_none_unsupported(self.base_url, self.model)
                 logger.warning(
                     "openai_compat_tool_choice_unsupported_retry",
@@ -541,19 +605,19 @@ class ChatMixin(OpenAICompatibleCore):
                     base_url=self.base_url,
                 )
                 try:
-                    data = await _send(messages)
+                    state.data = await state._send(state.messages)
                 except httpx.HTTPStatusError as exc2:
-                    body2 = ""
+                    state.body2 = ""
                     try:
-                        body2 = exc2.response.text[:300]
+                        state.body2 = exc2.response.text[:300]
                     except Exception:  # noqa: BLE001
                         pass
                     raise LLMProviderError(
                         f"LLM HTTP {exc2.response.status_code} {exc2.response.reason_phrase}: "
-                        f"{body2}",
+                        f"{state.body2}",
                         status_code=exc2.response.status_code,
                         error_class=self._relay_error_class(
-                            exc2.response.status_code, body2, exc2.response
+                            exc2.response.status_code, state.body2, exc2.response
                         ),
                     ) from exc2
             else:
@@ -563,10 +627,10 @@ class ChatMixin(OpenAICompatibleCore):
                 # retry loop, instead of bubbling a half-raw HTTP error.
                 raise LLMProviderError(
                     f"LLM HTTP {exc.response.status_code} {exc.response.reason_phrase}: "
-                    f"{body_snippet[:300]}",
+                    f"{state.body_snippet[:300]}",
                     status_code=exc.response.status_code,
                     error_class=self._relay_error_class(
-                        exc.response.status_code, body_snippet, exc.response
+                        exc.response.status_code, state.body_snippet, exc.response
                     ),
                 ) from exc
         except (
@@ -579,16 +643,16 @@ class ChatMixin(OpenAICompatibleCore):
             # Network-layer failure — typical when the relay keep-alive
             # socket gets reset between turns. P5-S2 A2: classify by
             # phase so supervisor / UI can show actionable hints.
-            _human_type = type(exc).__name__
-            _human_msg = (str(exc) or _human_type).replace("\n", " ")[:300]
-            _phase = (
+            state._human_type = type(exc).__name__
+            state._human_msg = (str(exc) or state._human_type).replace("\n", " ")[:300]
+            state._phase = (
                 "pre-handshake"
                 if isinstance(exc, (httpx.ConnectTimeout, httpx.ConnectError))
                 else "read-timeout"
                 if isinstance(exc, httpx.ReadTimeout)
                 else "transient-other"
             )
-            _advice = {
+            state._advice = {
                 "pre-handshake": (
                     f"无法连接到 LLM endpoint {self.base_url}（DNS/TCP/TLS 握手失败）。"
                     "请检查 base_url 是否拼写正确（如 .invalid 是占位符），"
@@ -597,16 +661,15 @@ class ChatMixin(OpenAICompatibleCore):
                 "read-timeout": (
                     f"等待 {self.base_url} 返回数据超时。模型生成可能过慢或上游排队。"
                 ),
-                "transient-other": (f"连接 {self.base_url} 时遇到 {_human_type}。"),
-            }.get(_phase, f"连接 {self.base_url} 失败：{_human_type}")
+                "transient-other": (f"连接 {self.base_url} 时遇到 {state._human_type}。"),
+            }.get(state._phase, f"连接 {self.base_url} 失败：{state._human_type}")
             raise LLMProviderError(
-                f"LLM 调用失败 [{_phase}]: {_advice} 原始错误: {_human_msg}"
+                f"LLM 调用失败 [{state._phase}]: {state._advice} 原始错误: {state._human_msg}"
             ) from exc
         except httpx.HTTPError as exc:
             # Catch-all for any other transport / parsing httpx error.
-            human = str(exc) or type(exc).__name__
-            raise LLMProviderError(f"LLM 调用失败 ({human})。") from exc
-        return self._nonstream_result(data, messages)
+            state.human = str(exc) or type(exc).__name__
+            raise LLMProviderError(f"LLM 调用失败 ({state.human})。") from exc
 
     def _nonstream_payload(
         self,

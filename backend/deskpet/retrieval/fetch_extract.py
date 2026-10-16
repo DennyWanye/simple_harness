@@ -7,8 +7,9 @@ import hashlib
 import re
 import time
 import urllib.robotparser
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timezone
+from typing import Any
 from urllib.parse import urljoin, urlsplit
 
 import httpx
@@ -83,6 +84,39 @@ class FetchExtractError(RuntimeError):
         self.code, self.retriable, self.status = code, retriable, status
 
 
+@dataclass
+class _FetchState:
+    """FetchExtractService._fetch_uncached 的运行状态：原函数的局部变量与参数（切段用）。"""
+
+    content_type: Any = None
+    deadline: Any = None
+    edge_started: Any = None
+    extract_started: Any = None
+    extractor: Any = None
+    fetcher: Any = None
+    html: Any = None
+    invalid_render: Any = None
+    need_edge: Any = None
+    outcome: Any = None
+    playwright_started: Any = None
+    playwright_valid: Any = None
+    published: Any = None
+    r_extractor: Any = None
+    r_flags: Any = None
+    r_published: Any = None
+    r_text: Any = None
+    r_title: Any = None
+    raw: Any = None
+    render_budget: Any = None
+    rendered: Any = None
+    request: Any = None
+    should_render: Any = None
+    static_error: Any = None
+    text: Any = None
+    title: Any = None
+    url: Any = None
+
+
 class FetchExtractService:
     def __init__(
         self,
@@ -155,53 +189,89 @@ class FetchExtractService:
 
     async def _fetch_uncached(self, request: FetchRequest, url: str) -> EvidenceDocument:
 
-        render_budget = request.render_budget or FetchRenderBudget()
-        raw, static_error = await self._static_fetch(render_budget, request, url)
-        html = str(raw.get("content") or "")
-        content_type = str(raw.get("content_type") or "")
-        extract_started = time.perf_counter()
-        title, text, published, extractor = self._extract(html)
-        fetcher, should_render = self._render_decision(
-            extract_started,
-            extractor=extractor,
-            html=html,
-            raw=raw,
-            request=request,
-            static_error=static_error,
-            text=text,
+        state = _FetchState(request=request, url=url)
+        state.render_budget = state.request.render_budget or FetchRenderBudget()
+        state.raw, state.static_error = await self._static_fetch(
+            state.render_budget, state.request, state.url
         )
-        invalid_render = False
-        playwright_valid = False
+        state.html = str(state.raw.get("content") or "")
+        state.content_type = str(state.raw.get("content_type") or "")
+        state.extract_started = time.perf_counter()
+        state.title, state.text, state.published, state.extractor = self._extract(state.html)
+        state.fetcher, state.should_render = self._render_decision(
+            state.extract_started,
+            extractor=state.extractor,
+            html=state.html,
+            raw=state.raw,
+            request=state.request,
+            static_error=state.static_error,
+            text=state.text,
+        )
+        state.invalid_render = False
+        state.playwright_valid = False
+        await self._render_with_playwright(state)
+
+        state.need_edge = (
+            state.should_render
+            and not state.invalid_render
+            and (
+                state.static_error is not None
+                or looks_like_app_shell(state.html, state.text)
+                or len(state.text) < 300
+                or (state.request.render_policy == "always" and not state.playwright_valid)
+            )
+        )
+        if state.should_render and self.playwright_renderer is None:
+            state.need_edge = True
+        await self._render_with_edge_fallback(state)
+
+        return await self._finish_fetch(
+            state.content_type,
+            extractor=state.extractor,
+            fetcher=state.fetcher,
+            html=state.html,
+            published=state.published,
+            raw=state.raw,
+            request=state.request,
+            static_error=state.static_error,
+            text=state.text,
+            title=state.title,
+            url=state.url,
+        )
+
+    async def _render_with_playwright(self, state: _FetchState) -> None:
+        """需要渲染时先用 Playwright 渲染，结果更好就替换静态抽取结果。"""
+
         if (
-            should_render
+            state.should_render
             and self.playwright_renderer is not None
-            and await render_budget.claim("playwright")
+            and await state.render_budget.claim("playwright")
         ):
-            deadline = request.deadline_monotonic
-            if deadline is None and request.request_budget is not None:
-                deadline = request.request_budget.deadline
-            playwright_started = time.perf_counter()
+            state.deadline = state.request.deadline_monotonic
+            if state.deadline is None and state.request.request_budget is not None:
+                state.deadline = state.request.request_budget.deadline
+            state.playwright_started = time.perf_counter()
             try:
-                outcome = await self.playwright_renderer.render(
-                    url,
-                    timeout=min(request.timeout, 10.0),
-                    deadline=deadline,
-                    cancel_event=request.cancel_event,
+                state.outcome = await self.playwright_renderer.render(
+                    state.url,
+                    timeout=min(state.request.timeout, 10.0),
+                    deadline=state.deadline,
+                    cancel_event=state.request.cancel_event,
                 )
             except asyncio.CancelledError:
                 _timing_metric(
-                    request,
+                    state.request,
                     stage="playwright",
-                    started_at=playwright_started,
+                    started_at=state.playwright_started,
                     status="cancelled",
                     fetcher="playwright",
                 )
                 raise
             except PlaywrightRenderError as exc:
                 _timing_metric(
-                    request,
+                    state.request,
                     stage="playwright",
-                    started_at=playwright_started,
+                    started_at=state.playwright_started,
                     status="failed",
                     fetcher="playwright",
                     error_code=exc.code,
@@ -216,32 +286,49 @@ class FetchExtractService:
                     },
                 )
             else:
-                rendered = outcome.html
-                if len(rendered.encode("utf-8", errors="replace")) <= _MAX_RESPONSE_BYTES:
-                    r_title, r_text, r_published, r_extractor = self._extract(rendered)
-                    r_flags = set(
-                        quality_flags(text=r_text, html=rendered, content_type="text/html")
+                state.rendered = state.outcome.html
+                if len(state.rendered.encode("utf-8", errors="replace")) <= _MAX_RESPONSE_BYTES:
+                    state.r_title, state.r_text, state.r_published, state.r_extractor = (
+                        self._extract(state.rendered)
                     )
-                    invalid_render = bool(
-                        r_flags & {"captcha", "login_wall", "security_verification", "app_shell"}
+                    state.r_flags = set(
+                        quality_flags(
+                            text=state.r_text, html=state.rendered, content_type="text/html"
+                        )
                     )
-                    playwright_valid = bool(r_text.strip()) and not invalid_render
-                    if static_error is not None or len(r_text) > len(text) or invalid_render:
-                        html, title, text = rendered, r_title, r_text
-                        published, extractor, fetcher = r_published, r_extractor, "playwright"
-                        raw["url_final"] = outcome.final_url
-                        raw["content_type"] = "text/html"
-                        static_error = None
+                    state.invalid_render = bool(
+                        state.r_flags
+                        & {"captcha", "login_wall", "security_verification", "app_shell"}
+                    )
+                    state.playwright_valid = bool(state.r_text.strip()) and not state.invalid_render
+                    if (
+                        state.static_error is not None
+                        or len(state.r_text) > len(state.text)
+                        or state.invalid_render
+                    ):
+                        state.html, state.title, state.text = (
+                            state.rendered,
+                            state.r_title,
+                            state.r_text,
+                        )
+                        state.published, state.extractor, state.fetcher = (
+                            state.r_published,
+                            state.r_extractor,
+                            "playwright",
+                        )
+                        state.raw["url_final"] = state.outcome.final_url
+                        state.raw["content_type"] = "text/html"
+                        state.static_error = None
                     _metric(
                         "fetch_extract_fallback",
                         {
                             "stage": "playwright",
                             "fetcher": "playwright",
-                            "ok": not invalid_render,
+                            "ok": not state.invalid_render,
                             "error_code": next(
                                 iter(
                                     sorted(
-                                        r_flags
+                                        state.r_flags
                                         & {
                                             "captcha",
                                             "login_wall",
@@ -255,16 +342,16 @@ class FetchExtractService:
                         },
                     )
                     _timing_metric(
-                        request,
+                        state.request,
                         stage="playwright",
-                        started_at=playwright_started,
-                        status="succeeded" if not invalid_render else "rejected",
+                        started_at=state.playwright_started,
+                        status="succeeded" if not state.invalid_render else "rejected",
                         fetcher="playwright",
-                        extractor=r_extractor,
+                        extractor=state.r_extractor,
                         error_code=next(
                             iter(
                                 sorted(
-                                    r_flags
+                                    state.r_flags
                                     & {
                                         "captcha",
                                         "login_wall",
@@ -275,7 +362,7 @@ class FetchExtractService:
                             ),
                             None,
                         ),
-                        count=len(r_text),
+                        count=len(state.r_text),
                     )
                 else:
                     _metric(
@@ -288,57 +375,62 @@ class FetchExtractService:
                         },
                     )
                     _timing_metric(
-                        request,
+                        state.request,
                         stage="playwright",
-                        started_at=playwright_started,
+                        started_at=state.playwright_started,
                         status="rejected",
                         fetcher="playwright",
                         error_code="response_too_large",
                     )
 
-        need_edge = (
-            should_render
-            and not invalid_render
-            and (
-                static_error is not None
-                or looks_like_app_shell(html, text)
-                or len(text) < 300
-                or (request.render_policy == "always" and not playwright_valid)
-            )
-        )
-        if should_render and self.playwright_renderer is None:
-            need_edge = True
+    async def _render_with_edge_fallback(self, state: _FetchState) -> None:
+        """静态抽取太短或失败时，用本机 Edge 渲染兜底。"""
+
         if (
-            need_edge
-            and await render_budget.claim("edge")
-            and (request.request_budget is None or await request.request_budget.claim_cdp())
+            state.need_edge
+            and await state.render_budget.claim("edge")
+            and (
+                state.request.request_budget is None
+                or await state.request.request_budget.claim_cdp()
+            )
         ):
-            edge_started, rendered = await self._render_with_edge(request, url)
-            if rendered:
-                if len(rendered.encode("utf-8", errors="replace")) <= _MAX_RESPONSE_BYTES:
-                    r_title, r_text, r_published, r_extractor = self._extract(rendered)
-                    if len(r_text) > len(text):
-                        html, title, text, published, extractor, fetcher = (
-                            rendered,
-                            r_title,
-                            r_text,
-                            r_published,
-                            r_extractor,
+            state.edge_started, state.rendered = await self._render_with_edge(
+                state.request, state.url
+            )
+            if state.rendered:
+                if len(state.rendered.encode("utf-8", errors="replace")) <= _MAX_RESPONSE_BYTES:
+                    state.r_title, state.r_text, state.r_published, state.r_extractor = (
+                        self._extract(state.rendered)
+                    )
+                    if len(state.r_text) > len(state.text):
+                        (
+                            state.html,
+                            state.title,
+                            state.text,
+                            state.published,
+                            state.extractor,
+                            state.fetcher,
+                        ) = (
+                            state.rendered,
+                            state.r_title,
+                            state.r_text,
+                            state.r_published,
+                            state.r_extractor,
                             "cdp-edge",
                         )
-                        static_error = None
+                        state.static_error = None
                         _metric(
                             "fetch_extract_fallback",
                             {"stage": "cdp", "fetcher": "cdp-edge", "ok": True},
                         )
                     _timing_metric(
-                        request,
+                        state.request,
                         stage="cdp",
-                        started_at=edge_started,
+                        started_at=state.edge_started,
                         status="succeeded",
                         fetcher="cdp-edge",
-                        extractor=r_extractor,
-                        count=len(r_text),
+                        extractor=state.r_extractor,
+                        count=len(state.r_text),
                     )
                 else:
                     _metric(
@@ -351,35 +443,21 @@ class FetchExtractService:
                         },
                     )
                     _timing_metric(
-                        request,
+                        state.request,
                         stage="cdp",
-                        started_at=edge_started,
+                        started_at=state.edge_started,
                         status="rejected",
                         fetcher="cdp-edge",
                         error_code="response_too_large",
                     )
             else:
                 _timing_metric(
-                    request,
+                    state.request,
                     stage="cdp",
-                    started_at=edge_started,
+                    started_at=state.edge_started,
                     status="empty",
                     fetcher="cdp-edge",
                 )
-
-        return await self._finish_fetch(
-            content_type,
-            extractor=extractor,
-            fetcher=fetcher,
-            html=html,
-            published=published,
-            raw=raw,
-            request=request,
-            static_error=static_error,
-            text=text,
-            title=title,
-            url=url,
-        )
 
     async def _static_fetch(self, render_budget, request: FetchRequest, url: str):
         raw: dict | None = None

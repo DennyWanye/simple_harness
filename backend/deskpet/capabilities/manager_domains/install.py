@@ -9,6 +9,7 @@ import asyncio
 import os
 import shutil
 from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -41,6 +42,45 @@ def _manifest_source_matches(*, requested_source_type: str, manifest_source_type
     if requested_source_type in {"local_archive", "companion_growth"}:
         return manifest_source_type in {requested_source_type, "local"}
     return manifest_source_type == requested_source_type
+
+
+@dataclass
+class _InstallState:
+    """InstallMixin.install 的运行状态：原函数的局部变量与参数（切段用）。"""
+
+    result: Any = None
+    flow: Any = None
+    actual_generation: Any = None
+    binding: Any = None
+    candidate: Any = None
+    current_binding: Any = None
+    derived_from_receipt_ref: Any = None
+    expected_binding_generation: Any = None
+    expected_generation: Any = None
+    expected_pack_id: Any = None
+    generated: Any = None
+    idempotency_key: Any = None
+    install_path: Any = None
+    kind: Any = None
+    lifecycle_request_fields: Any = None
+    management_policy: Any = None
+    manifest: Any = None
+    operation: Any = None
+    operation_id: Any = None
+    owner_key: Any = None
+    parent_manifest_hash: Any = None
+    parent_version: Any = None
+    publication: Any = None
+    request: Any = None
+    resolved_source: Any = None
+    root_run_id: Any = None
+    scope: Any = None
+    scope_key: Any = None
+    source: Any = None
+    staging_path: Any = None
+    stored_error: Any = None
+    validated_ref: Any = None
+    validation: Any = None
 
 
 class InstallMixin(CapabilityPackManagerCore):
@@ -512,139 +552,178 @@ class InstallMixin(CapabilityPackManagerCore):
         expected_binding_generation: int | None = None,
         management_policy: str | None = None,
     ) -> CapabilityInstallResult:
-        await self._require_install_kind(
-            derived_from_receipt_ref, kind, parent_manifest_hash, parent_version
+        state = _InstallState(
+            source=source,
+            scope=scope,
+            scope_key=scope_key,
+            idempotency_key=idempotency_key,
+            root_run_id=root_run_id,
+            generated=generated,
+            expected_pack_id=expected_pack_id,
+            parent_version=parent_version,
+            parent_manifest_hash=parent_manifest_hash,
+            derived_from_receipt_ref=derived_from_receipt_ref,
+            kind=kind,
+            owner_key=owner_key,
+            expected_binding_generation=expected_binding_generation,
+            management_policy=management_policy,
         )
-        resolved_source = self.source_resolver.resolve_declared_source(source)
-        operation_id = _operation_id(idempotency_key)
-        request: Mapping[str, JsonValue] = {
+        await self._require_install_kind(
+            state.derived_from_receipt_ref,
+            state.kind,
+            state.parent_manifest_hash,
+            state.parent_version,
+        )
+        state.resolved_source = self.source_resolver.resolve_declared_source(state.source)
+        state.operation_id = _operation_id(state.idempotency_key)
+        state.request: Mapping[str, JsonValue] = {
             "source": {
-                "type": source.source_type,
-                "uri": source.uri,
-                "revision": source.revision,
-                "subdirectory": source.subdirectory,
+                "type": state.source.source_type,
+                "uri": state.source.uri,
+                "revision": state.source.revision,
+                "subdirectory": state.source.subdirectory,
             },
-            "scope": scope,
-            "scope_key": scope_key,
-            "generated": generated,
-            "expected_pack_id": expected_pack_id,
-            "parent_version": parent_version,
-            "parent_manifest_hash": parent_manifest_hash,
-            "derived_from_receipt_ref": derived_from_receipt_ref,
+            "scope": state.scope,
+            "scope_key": state.scope_key,
+            "generated": state.generated,
+            "expected_pack_id": state.expected_pack_id,
+            "parent_version": state.parent_version,
+            "parent_manifest_hash": state.parent_manifest_hash,
+            "derived_from_receipt_ref": state.derived_from_receipt_ref,
         }
         # Keep the historical request envelope byte-for-byte stable for
         # ordinary installs.  These lifecycle fields were added later for
         # Companion-owned mutations; serializing them as explicit nulls would
         # turn a valid replay of an older first-party install into an
         # idempotency conflict at startup.
-        lifecycle_request_fields = self._lifecycle_request_fields(
-            expected_binding_generation, owner_key
+        state.lifecycle_request_fields = self._lifecycle_request_fields(
+            state.expected_binding_generation, state.owner_key
         )
-        if management_policy is not None:
-            lifecycle_request_fields["management_policy"] = management_policy
-        request = {**request, **lifecycle_request_fields}
-        operation = await self.store.create_operation(
-            operation_id=operation_id,
-            idempotency_key=idempotency_key,
-            kind=kind,
-            request=request,
-            root_run_id=root_run_id,
-            pack_id=expected_pack_id,
-            requested_scope=scope,
-            requested_scope_key=scope_key,
+        if state.management_policy is not None:
+            state.lifecycle_request_fields["management_policy"] = state.management_policy
+        state.request = {**state.request, **state.lifecycle_request_fields}
+        state.operation = await self.store.create_operation(
+            operation_id=state.operation_id,
+            idempotency_key=state.idempotency_key,
+            kind=state.kind,
+            request=state.request,
+            root_run_id=state.root_run_id,
+            pack_id=state.expected_pack_id,
+            requested_scope=state.scope,
+            requested_scope_key=state.scope_key,
         )
-        if operation.status == "succeeded":
-            return await self._result_for_completed_install(operation)
-        if operation.status != "running":
-            stored_error = dict(operation.error or {})
+        if state.operation.status == "succeeded":
+            return await self._result_for_completed_install(state.operation)
+        if state.operation.status != "running":
+            state.stored_error = dict(state.operation.error or {})
             raise CapabilityManagerError(
-                str(stored_error.get("code") or "operation_not_resumable"),
+                str(state.stored_error.get("code") or "operation_not_resumable"),
                 str(
-                    stored_error.get("message")
-                    or f"operation is {operation.status} at {operation.phase}"
+                    state.stored_error.get("message")
+                    or f"operation is {state.operation.status} at {state.operation.phase}"
                 ),
             )
-        staging_path = self.layout.staging_path(operation_id)
-        validated_ref: ValidatedCapabilityPackageRefV1 | None = None
+        state.staging_path = self.layout.staging_path(state.operation_id)
+        state.validated_ref: ValidatedCapabilityPackageRefV1 | None = None
+        state.flow = None
+        await self._run_install_operation(state)
+        if state.flow == "stop":
+            return state.result
+
+    async def _run_install_operation(self, state: _InstallState) -> None:
+        """执行安装操作的各个阶段；失败时按错误类型收尾。"""
+
         try:
-            operation, validated_ref, validation = await self._install_validate_source(
-                operation,
-                operation_id=operation_id,
-                resolved_source=resolved_source,
-                source=source,
-                staging_path=staging_path,
-                validated_ref=validated_ref,
+            (
+                state.operation,
+                state.validated_ref,
+                state.validation,
+            ) = await self._install_validate_source(
+                state.operation,
+                operation_id=state.operation_id,
+                resolved_source=state.resolved_source,
+                source=state.source,
+                staging_path=state.staging_path,
+                validated_ref=state.validated_ref,
             )
-            manifest = validation.manifest
-            if expected_pack_id is not None and manifest.id != expected_pack_id:
+            state.manifest = state.validation.manifest
+            if state.expected_pack_id is not None and state.manifest.id != state.expected_pack_id:
                 raise CapabilityManagerError(
                     "unexpected_pack_id",
-                    f"expected {expected_pack_id}, staged pack is {manifest.id}",
+                    f"expected {state.expected_pack_id}, staged pack is {state.manifest.id}",
                 )
-            install_path, operation, validation = await self._install_stage_payload(
-                generated,
-                manifest=manifest,
-                operation_id=operation_id,
-                resolved_source=resolved_source,
-                staging_path=staging_path,
-                validated_ref=validated_ref,
-                validation=validation,
+            (
+                state.install_path,
+                state.operation,
+                state.validation,
+            ) = await self._install_stage_payload(
+                state.generated,
+                manifest=state.manifest,
+                operation_id=state.operation_id,
+                resolved_source=state.resolved_source,
+                staging_path=state.staging_path,
+                validated_ref=state.validated_ref,
+                validation=state.validation,
             )
 
-            candidate = await self.publisher.prepare_candidate(
-                validation,
-                install_root=install_path,
-                operation_id=operation_id,
+            state.candidate = await self.publisher.prepare_candidate(
+                state.validation,
+                install_root=state.install_path,
+                operation_id=state.operation_id,
             )
-            operation = await self._install_check_candidate(
-                candidate,
-                derived_from_receipt_ref=derived_from_receipt_ref,
-                install_path=install_path,
-                manifest=manifest,
-                operation=operation,
-                operation_id=operation_id,
-                parent_manifest_hash=parent_manifest_hash,
-                parent_version=parent_version,
-                validation=validation,
+            state.operation = await self._install_check_candidate(
+                state.candidate,
+                derived_from_receipt_ref=state.derived_from_receipt_ref,
+                install_path=state.install_path,
+                manifest=state.manifest,
+                operation=state.operation,
+                operation_id=state.operation_id,
+                parent_manifest_hash=state.parent_manifest_hash,
+                parent_version=state.parent_version,
+                validation=state.validation,
             )
 
-            current_binding = await self.store.get_binding(
-                scope,
-                scope_key,
-                manifest.id,
-                owner_key=owner_key,
+            state.current_binding = await self.store.get_binding(
+                state.scope,
+                state.scope_key,
+                state.manifest.id,
+                owner_key=state.owner_key,
             )
-            actual_generation = 0 if current_binding is None else current_binding.generation
-            expected_generation = (
-                actual_generation
-                if expected_binding_generation is None
-                else expected_binding_generation
+            state.actual_generation = (
+                0 if state.current_binding is None else state.current_binding.generation
             )
-            binding, publication = await self._publish_and_bind(
-                operation_id=operation_id,
-                candidate=candidate,
-                pack_id=manifest.id,
-                version=manifest.version,
-                manifest_hash=manifest.manifest_hash,
-                scope=scope,
-                scope_key=scope_key,
-                expected_binding_generation=expected_generation,
-                owner_key=owner_key,
-                management_policy=management_policy,
+            state.expected_generation = (
+                state.actual_generation
+                if state.expected_binding_generation is None
+                else state.expected_binding_generation
             )
-            return await self._install_finish(
-                binding,
-                install_path=install_path,
-                kind=kind,
-                operation_id=operation_id,
-                publication=publication,
-                validation=validation,
+            state.binding, state.publication = await self._publish_and_bind(
+                operation_id=state.operation_id,
+                candidate=state.candidate,
+                pack_id=state.manifest.id,
+                version=state.manifest.version,
+                manifest_hash=state.manifest.manifest_hash,
+                scope=state.scope,
+                scope_key=state.scope_key,
+                expected_binding_generation=state.expected_generation,
+                owner_key=state.owner_key,
+                management_policy=state.management_policy,
             )
+            state.result = await self._install_finish(
+                state.binding,
+                install_path=state.install_path,
+                kind=state.kind,
+                operation_id=state.operation_id,
+                publication=state.publication,
+                validation=state.validation,
+            )
+            state.flow = "stop"
+            return
         except asyncio.CancelledError:
-            await self._cancel_operation(operation_id)
+            await self._cancel_operation(state.operation_id)
             raise
         except Exception as exc:
-            await self._record_operation_failure(operation_id, exc)
+            await self._record_operation_failure(state.operation_id, exc)
             raise
 
     async def _require_install_kind(

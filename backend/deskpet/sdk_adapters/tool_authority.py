@@ -515,6 +515,50 @@ class FaultRecordingRunToolExposure(CatalogRunToolExposure):
             raise
 
 
+@dataclass
+class _PrepareRunState:
+    """SdkRunToolAuthorityRegistry.prepare_run 的运行状态：原函数的局部变量与参数（切段用）。"""
+
+    result: Any = None
+    flow: Any = None
+    authority_fingerprint: Any = None
+    binding_version: Any = None
+    capabilities: Any = None
+    catalog: Any = None
+    catalog_fingerprint: Any = None
+    current: Any = None
+    decisions: Any = None
+    deferred: Any = None
+    deferred_names: Any = None
+    deferred_refs: Any = None
+    disclosure_policy: Any = None
+    dispatch_kinds: Any = None
+    eligibility: Any = None
+    frozen_specs: Any = None
+    generation: Any = None
+    inventory: Any = None
+    inventory_by_name: Any = None
+    names: Any = None
+    normalized_workspace_resolution: Any = None
+    permissions: Any = None
+    prepared: Any = None
+    principal_id: Any = None
+    raw_specs: Any = None
+    record: Any = None
+    request_id: Any = None
+    resource_records: Any = None
+    root_run_id: Any = None
+    run_id: Any = None
+    scope_hash: Any = None
+    scope_seed: Any = None
+    session_id: Any = None
+    task_scope_id: Any = None
+    unavailable_inventory: Any = None
+    work_context: Any = None
+    workspace_resolution: Any = None
+    workspace_root: Any = None
+
+
 class SdkRunToolAuthorityRegistry:
     """Immutable per-Run Tool authority with WAITING-safe scope leases."""
 
@@ -574,160 +618,195 @@ class SdkRunToolAuthorityRegistry:
         workspace_resolution: Mapping[str, Any] | None = None,
         resource_records: Sequence[RuntimeCapabilityRecord] | None = None,
     ) -> SdkRunToolAuthorityV1:
-        run_id = _required(run_id, "run_id")
-        session_id = _required(session_id, "session_id")
-        request_id = _required(request_id, "request_id")
-        root_run_id = _required(root_run_id, "root_run_id")
-        task_scope_id = self._normalized_task_scope_id(
-            binding_version, task_scope_id, workspace_resolution, workspace_root
-        )
-        principal_id = _required(principal_id, "principal_id")
-        normalized_workspace_resolution = self._normalized_workspace_resolution(
-            binding_version, workspace_resolution, workspace_root
-        )
-        catalog_fingerprint = _required(catalog.get("content_fingerprint"), "catalog_fingerprint")
-        generation = int(catalog.get("generation", -1))
-        if generation < 0:
-            raise ValueError("catalog_generation must be non-negative")
-
-        raw_specs = catalog.get("specs")
-        inventory_by_name, names, unavailable_inventory = self._catalog_inventory(
-            inventory, raw_specs
-        )
-        deferred, disclosure_policy = self._deferred_disclosure_policy(
-            deferred_names, disclosure_policy, names, unavailable_inventory
-        )
-        capabilities: list[PreparedToolCapability] = []
-        deferred_refs: list[ToolCapabilityRef] = []
-        frozen_specs: dict[str, _FrozenCapabilitySpec] = {}
-        decisions: list[ToolSelectionDecision] = []
-        permissions: dict[str, str] = {}
-        dispatch_kinds: dict[str, str] = {}
-        self._require_catalog_fingerprints(
-            capabilities,
-            catalog=catalog,
-            decisions=decisions,
-            deferred=deferred,
-            deferred_refs=deferred_refs,
-            dispatch_kinds=dispatch_kinds,
-            frozen_specs=frozen_specs,
-            inventory_by_name=inventory_by_name,
-            normalized_workspace_resolution=normalized_workspace_resolution,
-            permissions=permissions,
-            raw_specs=raw_specs,
-            task_scope_id=task_scope_id,
-        )
-
-        scope_seed = {
-            "run_id": run_id,
-            "session_id": session_id,
-            "request_id": request_id,
-            "root_run_id": root_run_id,
-            "task_scope_id": task_scope_id,
-            "catalog_generation": generation,
-            "catalog_fingerprint": catalog_fingerprint,
-        }
-        prepared = self._prepared_tool_scope(
-            capabilities,
-            catalog=catalog,
-            catalog_fingerprint=catalog_fingerprint,
-            decisions=decisions,
-            deferred=deferred,
-            deferred_refs=deferred_refs,
-            generation=generation,
-            names=names,
-            scope_seed=scope_seed,
-        )
-        work_context = self._run_work_context(
-            binding_version,
-            root_run_id=root_run_id,
-            session_id=session_id,
-            task_scope_id=task_scope_id,
-            workspace_root=workspace_root,
-        )
-        authority_fingerprint = _canonical_sha256(
-            {
-                "disclosure_policy": disclosure_policy,
-                "direct": sorted(set(names) - deferred),
-                "deferred": sorted(deferred),
-                "inventory": [
-                    {
-                        "name": name,
-                        "dispatch_kind": dispatch_kinds[name],
-                        "permission_category": permissions[name],
-                        "source": frozen_specs[name].source,
-                        "version": frozen_specs[name].spec_version,
-                        "execution_identity": frozen_specs[name].execution_identity,
-                        "permission_policy_version": (frozen_specs[name].permission_policy_version),
-                        "projectless_admission": frozen_specs[name].projectless_admission,
-                        "dangerous": frozen_specs[name].dangerous,
-                    }
-                    for name in names
-                ],
-                "principal_id": principal_id,
-                "workspace_resolution": normalized_workspace_resolution,
-            }
-        )
-        scope_hash = _canonical_sha256(
-            {
-                **scope_seed,
-                "prepared_scope_id": prepared.scope_id,
-                "prepared_schema_fingerprint": prepared.schema_fingerprint,
-                "authority_fingerprint": authority_fingerprint,
-                "workspace_root": workspace_root,
-                "workspace_binding_version": binding_version,
-                "workspace_resolution": normalized_workspace_resolution,
-            }
-        )
-        record = SdkRunToolAuthorityV1(
+        state = _PrepareRunState(
             run_id=run_id,
             session_id=session_id,
             request_id=request_id,
             root_run_id=root_run_id,
-            task_work_context=work_context,
-            prepared_tool_set=prepared,
-            catalog_generation=generation,
-            catalog_fingerprint=catalog_fingerprint,
-            capability_hash=prepared.schema_fingerprint,
-            scope_hash=scope_hash,
-            authority_fingerprint=authority_fingerprint,
+            task_scope_id=task_scope_id,
+            workspace_root=workspace_root,
+            catalog=catalog,
+            inventory=inventory,
             principal_id=principal_id,
-            permission_categories=permissions,
-            dispatch_kinds=dispatch_kinds,
-            specs=frozen_specs,
+            deferred_names=deferred_names,
             disclosure_policy=disclosure_policy,
-            workspace_resolution=normalized_workspace_resolution,
+            binding_version=binding_version,
+            workspace_resolution=workspace_resolution,
+            resource_records=resource_records,
+        )
+        state.run_id = _required(state.run_id, "run_id")
+        state.session_id = _required(state.session_id, "session_id")
+        state.request_id = _required(state.request_id, "request_id")
+        state.root_run_id = _required(state.root_run_id, "root_run_id")
+        state.task_scope_id = self._normalized_task_scope_id(
+            state.binding_version,
+            state.task_scope_id,
+            state.workspace_resolution,
+            state.workspace_root,
+        )
+        state.principal_id = _required(state.principal_id, "principal_id")
+        state.normalized_workspace_resolution = self._normalized_workspace_resolution(
+            state.binding_version, state.workspace_resolution, state.workspace_root
+        )
+        state.catalog_fingerprint = _required(
+            state.catalog.get("content_fingerprint"), "catalog_fingerprint"
+        )
+        state.generation = int(state.catalog.get("generation", -1))
+        if state.generation < 0:
+            raise ValueError("catalog_generation must be non-negative")
+
+        state.raw_specs = state.catalog.get("specs")
+        state.inventory_by_name, state.names, state.unavailable_inventory = self._catalog_inventory(
+            state.inventory, state.raw_specs
+        )
+        state.deferred, state.disclosure_policy = self._deferred_disclosure_policy(
+            state.deferred_names, state.disclosure_policy, state.names, state.unavailable_inventory
+        )
+        state.capabilities: list[PreparedToolCapability] = []
+        state.deferred_refs: list[ToolCapabilityRef] = []
+        state.frozen_specs: dict[str, _FrozenCapabilitySpec] = {}
+        state.decisions: list[ToolSelectionDecision] = []
+        state.permissions: dict[str, str] = {}
+        state.dispatch_kinds: dict[str, str] = {}
+        self._require_catalog_fingerprints(
+            state.capabilities,
+            catalog=state.catalog,
+            decisions=state.decisions,
+            deferred=state.deferred,
+            deferred_refs=state.deferred_refs,
+            dispatch_kinds=state.dispatch_kinds,
+            frozen_specs=state.frozen_specs,
+            inventory_by_name=state.inventory_by_name,
+            normalized_workspace_resolution=state.normalized_workspace_resolution,
+            permissions=state.permissions,
+            raw_specs=state.raw_specs,
+            task_scope_id=state.task_scope_id,
+        )
+
+        state.scope_seed = {
+            "run_id": state.run_id,
+            "session_id": state.session_id,
+            "request_id": state.request_id,
+            "root_run_id": state.root_run_id,
+            "task_scope_id": state.task_scope_id,
+            "catalog_generation": state.generation,
+            "catalog_fingerprint": state.catalog_fingerprint,
+        }
+        state.prepared = self._prepared_tool_scope(
+            state.capabilities,
+            catalog=state.catalog,
+            catalog_fingerprint=state.catalog_fingerprint,
+            decisions=state.decisions,
+            deferred=state.deferred,
+            deferred_refs=state.deferred_refs,
+            generation=state.generation,
+            names=state.names,
+            scope_seed=state.scope_seed,
+        )
+        state.work_context = self._run_work_context(
+            state.binding_version,
+            root_run_id=state.root_run_id,
+            session_id=state.session_id,
+            task_scope_id=state.task_scope_id,
+            workspace_root=state.workspace_root,
+        )
+        state.flow = None
+        self._record_prepared_authority(state)
+        if state.flow == "stop":
+            return state.result
+        return self._store_prepared_run(
+            state.catalog,
+            catalog_fingerprint=state.catalog_fingerprint,
+            deferred=state.deferred,
+            frozen_specs=state.frozen_specs,
+            generation=state.generation,
+            raw_specs=state.raw_specs,
+            record=state.record,
+            resource_records=state.resource_records,
+            run_id=state.run_id,
+            unavailable_inventory=state.unavailable_inventory,
+        )
+
+    def _record_prepared_authority(self, state: _PrepareRunState) -> None:
+        """算授权指纹与作用域哈希，生成授权记录；已有同一运行的记录时核对一致，再打开并钉住作用域。"""
+
+        state.authority_fingerprint = _canonical_sha256(
+            {
+                "disclosure_policy": state.disclosure_policy,
+                "direct": sorted(set(state.names) - state.deferred),
+                "deferred": sorted(state.deferred),
+                "inventory": [
+                    {
+                        "name": name,
+                        "dispatch_kind": state.dispatch_kinds[name],
+                        "permission_category": state.permissions[name],
+                        "source": state.frozen_specs[name].source,
+                        "version": state.frozen_specs[name].spec_version,
+                        "execution_identity": state.frozen_specs[name].execution_identity,
+                        "permission_policy_version": (
+                            state.frozen_specs[name].permission_policy_version
+                        ),
+                        "projectless_admission": state.frozen_specs[name].projectless_admission,
+                        "dangerous": state.frozen_specs[name].dangerous,
+                    }
+                    for name in state.names
+                ],
+                "principal_id": state.principal_id,
+                "workspace_resolution": state.normalized_workspace_resolution,
+            }
+        )
+        state.scope_hash = _canonical_sha256(
+            {
+                **state.scope_seed,
+                "prepared_scope_id": state.prepared.scope_id,
+                "prepared_schema_fingerprint": state.prepared.schema_fingerprint,
+                "authority_fingerprint": state.authority_fingerprint,
+                "workspace_root": state.workspace_root,
+                "workspace_binding_version": state.binding_version,
+                "workspace_resolution": state.normalized_workspace_resolution,
+            }
+        )
+        state.record = SdkRunToolAuthorityV1(
+            run_id=state.run_id,
+            session_id=state.session_id,
+            request_id=state.request_id,
+            root_run_id=state.root_run_id,
+            task_work_context=state.work_context,
+            prepared_tool_set=state.prepared,
+            catalog_generation=state.generation,
+            catalog_fingerprint=state.catalog_fingerprint,
+            capability_hash=state.prepared.schema_fingerprint,
+            scope_hash=state.scope_hash,
+            authority_fingerprint=state.authority_fingerprint,
+            principal_id=state.principal_id,
+            permission_categories=state.permissions,
+            dispatch_kinds=state.dispatch_kinds,
+            specs=state.frozen_specs,
+            disclosure_policy=state.disclosure_policy,
+            workspace_resolution=state.normalized_workspace_resolution,
             workspace_identity_validator=self._workspace_identity_validator,
         )
-        current = self._records.get(run_id)
-        if current is not None:
+        state.current = self._records.get(state.run_id)
+        if state.current is not None:
             if (
-                current.capability_hash != record.capability_hash
-                or current.scope_hash != record.scope_hash
-                or current.catalog_fingerprint != record.catalog_fingerprint
+                state.current.capability_hash != state.record.capability_hash
+                or state.current.scope_hash != state.record.scope_hash
+                or state.current.catalog_fingerprint != state.record.catalog_fingerprint
             ):
                 raise RuntimeError("sdk_tool_authority_conflict")
-            return current
-        eligibility = ToolEligibilityContext(session_id, request_id, "sdk-run")
-        self.scope_store.open(prepared, eligibility)
+            state.result = state.current
+            state.flow = "stop"
+            return
+        state.eligibility = ToolEligibilityContext(state.session_id, state.request_id, "sdk-run")
+        self.scope_store.open(state.prepared, state.eligibility)
         if (
-            self.scope_store.pin(prepared.scope_id, session_id=session_id, request_id=request_id)
+            self.scope_store.pin(
+                state.prepared.scope_id, session_id=state.session_id, request_id=state.request_id
+            )
             is None
         ):
-            self.scope_store.purge(prepared.scope_id)
+            self.scope_store.purge(state.prepared.scope_id)
             raise RuntimeError("sdk_tool_scope_pin_failed")
-        return self._store_prepared_run(
-            catalog,
-            catalog_fingerprint=catalog_fingerprint,
-            deferred=deferred,
-            frozen_specs=frozen_specs,
-            generation=generation,
-            raw_specs=raw_specs,
-            record=record,
-            resource_records=resource_records,
-            run_id=run_id,
-            unavailable_inventory=unavailable_inventory,
-        )
 
     def _normalized_task_scope_id(
         self,

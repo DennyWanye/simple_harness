@@ -108,6 +108,47 @@ def _blob_items(refs: Sequence[str]) -> list[dict[str, JsonValue]]:
     return [{"id": digest, "sha256": digest} for digest in digests]
 
 
+@dataclass
+class _CandidateSlotsState:
+    """DeepResearchV6SemanticRuntime.produce_candidate_slots 的运行状态：原函数的局部变量与参数（切段用）。"""
+
+    flow: Any = None
+    allow_upstream: Any = None
+    bundle: Any = None
+    bundle_ref: Any = None
+    candidate_bundle: Any = None
+    first: Any = None
+    group: Any = None
+    group_id: Any = None
+    groups: Any = None
+    identity: Any = None
+    native_identity: Any = None
+    new_refs: Any = None
+    origin: Any = None
+    outcome_reason_codes: Any = None
+    page: Any = None
+    page_slots: Any = None
+    pages: Any = None
+    policies: Any = None
+    prior_outcome_ref: Any = None
+    prompt: Any = None
+    repair_request_ref: Any = None
+    repaired: Any = None
+    requirements: Any = None
+    research_spec: Any = None
+    route: Any = None
+    route_decision: Any = None
+    selected: Any = None
+    selected_envelope: Any = None
+    selected_outcome_ref: Any = None
+    selected_profile_ref: Any = None
+    selected_repair_round: Any = None
+    semantic_fenced: Any = None
+    slots: Any = None
+    spec: Any = None
+    status: Any = None
+
+
 class DeepResearchV6SemanticRuntime:
     """Produce registered candidate and inference slots for graph nodes 4/6."""
 
@@ -666,22 +707,29 @@ class DeepResearchV6SemanticRuntime:
         identity: object | None,
         allow_upstream: bool = True,
     ) -> Mapping[str, JsonValue]:
-        native_identity = self._identity(identity)
-        research_spec = ResearchSpecV1.from_json(spec)
-        route = RouteDecisionV1.from_json(route_decision)
+        state = _CandidateSlotsState(
+            spec=spec,
+            route_decision=route_decision,
+            page_slots=page_slots,
+            identity=identity,
+            allow_upstream=allow_upstream,
+        )
+        state.native_identity = self._identity(state.identity)
+        state.research_spec = ResearchSpecV1.from_json(state.spec)
+        state.route = RouteDecisionV1.from_json(state.route_decision)
         if (
-            route.to_json()["run_id"] != native_identity.run_id
-            or route.to_json()["spec_hash"] != research_spec.spec_hash
+            state.route.to_json()["run_id"] != state.native_identity.run_id
+            or state.route.to_json()["spec_hash"] != state.research_spec.spec_hash
         ):
             raise ValueError("route/spec/run identity differs")
-        policies = await self._policy_refs(native_identity)
-        pages = await self._pages(page_slots, route, native_identity)
-        groups = self._groups(route, research_spec)
-        slots: list[dict[str, JsonValue]] = []
-        new_refs: set[str] = set(policies.values())
-        if not isinstance(allow_upstream, bool):
+        state.policies = await self._policy_refs(state.native_identity)
+        state.pages = await self._pages(state.page_slots, state.route, state.native_identity)
+        state.groups = self._groups(state.route, state.research_spec)
+        state.slots: list[dict[str, JsonValue]] = []
+        state.new_refs: set[str] = set(state.policies.values())
+        if not isinstance(state.allow_upstream, bool):
             raise TypeError("allow_upstream must be bool")
-        if not allow_upstream and research_spec.intent_type != "official_exact_fact":
+        if not state.allow_upstream and state.research_spec.intent_type != "official_exact_fact":
             # A durable generate-now/cancel-settle fence forbids new opaque
             # upstream work.  Canonical page outcomes remain in the workflow
             # state and are admitted as an honest typed partial batch; no fake
@@ -689,174 +737,189 @@ class DeepResearchV6SemanticRuntime:
             return {
                 "candidate_slots": [],
                 "policy_refs": {
-                    key: policies[key]
+                    key: state.policies[key]
                     for key in ("extraction", "llm_extract", "llm_repair", "llm_inference")
                 },
-                "blob_refs": _blob_items(tuple(new_refs)),
+                "blob_refs": _blob_items(tuple(state.new_refs)),
             }
-        requirements = {
-            str(item["requirement_id"]): item for item in research_spec.to_json()["requirements"]
+        state.requirements = {
+            str(item["requirement_id"]): item
+            for item in state.research_spec.to_json()["requirements"]
         }
-        semantic_fenced = False
-        for group in groups:
-            group_id = str(group["work_group_id"])
-            for page in pages:
+        state.semantic_fenced = False
+        for state.group in state.groups:
+            state.group_id = str(state.group["work_group_id"])
+            for state.page in state.pages:
                 if (
-                    research_spec.intent_type != "official_exact_fact"
-                    and await self._generate_now_fenced(native_identity.run_id)
+                    state.research_spec.intent_type != "official_exact_fact"
+                    and await self._generate_now_fenced(state.native_identity.run_id)
                 ):
-                    semantic_fenced = True
+                    state.semantic_fenced = True
                     break
-                bundle: EvidenceCandidateBundleV1 | None = None
-                selected_outcome_ref: str | None = None
-                selected_profile_ref: str
-                selected_envelope: _StageEnvelope | None = None
-                selected_repair_round = 0
-                repair_request_ref: str | None = None
-                prior_outcome_ref: str | None = None
-                outcome_reason_codes: tuple[str, ...] = ()
-                status = "validated"
-                if research_spec.intent_type == "official_exact_fact":
-                    bundle = self._extract_candidate_bundle(
-                        group,
-                        group_id=group_id,
-                        native_identity=native_identity,
-                        page=page,
-                        policies=policies,
-                        requirements=requirements,
-                        research_spec=research_spec,
-                    )
-                    selected_profile_ref = policies["extraction"]
-                    origin = "deterministic"
-                else:
-                    origin = "llm"
-                    first, prompt = await self._candidate_prompt(
-                        group,
-                        group_id=group_id,
-                        native_identity=native_identity,
-                        page=page,
-                        policies=policies,
-                        research_spec=research_spec,
-                        route=route,
-                    )
-                    if first is None:
-                        semantic_fenced = True
-                        break
-                    selected = first
-                    if first.status == "validated":
-                        try:
-                            candidate_bundle = EvidenceCandidateBundleV1.from_json(
-                                self._decode_content(first.content), body_bytes=page.body_bytes
-                            )
-                            self._validate_candidate_bundle(
-                                candidate_bundle,
-                                spec=research_spec,
-                                route=route,
-                                group=group,
-                                page=page,
-                                extraction_policy_ref=policies["extraction"],
-                                repair_round=0,
-                                identity=native_identity,
-                            )
-                            bundle = candidate_bundle
-                        except (TypeError, ValueError, json.JSONDecodeError):
-                            bundle = None
-                    if first.status == "malformed" or (
-                        first.status == "validated" and bundle is None
-                    ):
-                        status = "malformed"
-                        (
-                            outcome_reason_codes,
-                            prior_outcome_ref,
-                        ) = await self._register_invalid_outcome(
-                            first, group_id, native_identity, page
-                        )
-                        if not await self._generate_now_fenced(native_identity.run_id):
-                            repair_request_ref, repaired = await self._repair_candidate(
-                                first,
-                                group_id=group_id,
-                                native_identity=native_identity,
-                                page=page,
-                                policies=policies,
-                                prior_outcome_ref=prior_outcome_ref,
-                                prompt=prompt,
-                            )
-                            if repaired is None:
-                                selected_outcome_ref = prior_outcome_ref
-                            else:
-                                selected = repaired
-                                selected_repair_round = 1
-                                if repaired.status == "validated":
-                                    try:
-                                        bundle, candidate_bundle = self._decode_repaired_bundle(
-                                            group,
-                                            native_identity=native_identity,
-                                            page=page,
-                                            policies=policies,
-                                            repaired=repaired,
-                                            research_spec=research_spec,
-                                            route=route,
-                                        )
-                                    except (TypeError, ValueError, json.JSONDecodeError):
-                                        bundle = None
-                                        status = "malformed"
-                                        outcome_reason_codes = ("candidate_bundle_invalid",)
-                                else:
-                                    status = repaired.status
-                        else:
-                            selected_outcome_ref = prior_outcome_ref
-                    elif first.status != "validated":
-                        status = first.status
-                    selected_envelope = selected
-                    selected_profile_ref = selected.profile_ref
-                    new_refs.update(
-                        ref
-                        for ref in (
-                            first.result_ref,
-                            first.prompt_ref,
-                            selected.result_ref,
-                            selected.prompt_ref,
-                            prior_outcome_ref,
-                            repair_request_ref,
-                        )
-                        if ref is not None
-                    )
-                bundle_ref, selected_outcome_ref, status = await self._store_candidate_outcome(
-                    bundle,
-                    group_id=group_id,
-                    native_identity=native_identity,
-                    new_refs=new_refs,
-                    outcome_reason_codes=outcome_reason_codes,
-                    page=page,
-                    prior_outcome_ref=prior_outcome_ref,
-                    repair_request_ref=repair_request_ref,
-                    selected_envelope=selected_envelope,
-                    selected_outcome_ref=selected_outcome_ref,
-                    selected_repair_round=selected_repair_round,
-                    status=status,
+                state.bundle: EvidenceCandidateBundleV1 | None = None
+                state.selected_outcome_ref: str | None = None
+                state.selected_profile_ref: str
+                state.selected_envelope: _StageEnvelope | None = None
+                state.selected_repair_round = 0
+                state.repair_request_ref: str | None = None
+                state.prior_outcome_ref: str | None = None
+                state.outcome_reason_codes: tuple[str, ...] = ()
+                state.status = "validated"
+                state.flow = None
+                await self._produce_page_candidate(state)
+                if state.flow == "break":
+                    break
+                (
+                    state.bundle_ref,
+                    state.selected_outcome_ref,
+                    state.status,
+                ) = await self._store_candidate_outcome(
+                    state.bundle,
+                    group_id=state.group_id,
+                    native_identity=state.native_identity,
+                    new_refs=state.new_refs,
+                    outcome_reason_codes=state.outcome_reason_codes,
+                    page=state.page,
+                    prior_outcome_ref=state.prior_outcome_ref,
+                    repair_request_ref=state.repair_request_ref,
+                    selected_envelope=state.selected_envelope,
+                    selected_outcome_ref=state.selected_outcome_ref,
+                    selected_repair_round=state.selected_repair_round,
+                    status=state.status,
                 )
                 await self._record_candidate_dependencies(
-                    bundle_ref,
-                    group_id=group_id,
-                    native_identity=native_identity,
-                    new_refs=new_refs,
-                    origin=origin,
-                    page=page,
-                    selected_outcome_ref=selected_outcome_ref,
-                    selected_profile_ref=selected_profile_ref,
-                    slots=slots,
-                    status=status,
+                    state.bundle_ref,
+                    group_id=state.group_id,
+                    native_identity=state.native_identity,
+                    new_refs=state.new_refs,
+                    origin=state.origin,
+                    page=state.page,
+                    selected_outcome_ref=state.selected_outcome_ref,
+                    selected_profile_ref=state.selected_profile_ref,
+                    slots=state.slots,
+                    status=state.status,
                 )
-            if semantic_fenced:
+            if state.semantic_fenced:
                 break
         return {
-            "candidate_slots": slots,
+            "candidate_slots": state.slots,
             "policy_refs": {
-                key: policies[key]
+                key: state.policies[key]
                 for key in ("extraction", "llm_extract", "llm_repair", "llm_inference")
             },
-            "blob_refs": _blob_items(tuple(new_refs)),
+            "blob_refs": _blob_items(tuple(state.new_refs)),
         }
+
+    async def _produce_page_candidate(self, state: _CandidateSlotsState) -> None:
+        """为一页生成候选（官方精确事实走确定性抽取，其余走模型并在格式不对时修复一次）。"""
+
+        if state.research_spec.intent_type == "official_exact_fact":
+            state.bundle = self._extract_candidate_bundle(
+                state.group,
+                group_id=state.group_id,
+                native_identity=state.native_identity,
+                page=state.page,
+                policies=state.policies,
+                requirements=state.requirements,
+                research_spec=state.research_spec,
+            )
+            state.selected_profile_ref = state.policies["extraction"]
+            state.origin = "deterministic"
+        else:
+            state.origin = "llm"
+            state.first, state.prompt = await self._candidate_prompt(
+                state.group,
+                group_id=state.group_id,
+                native_identity=state.native_identity,
+                page=state.page,
+                policies=state.policies,
+                research_spec=state.research_spec,
+                route=state.route,
+            )
+            if state.first is None:
+                state.semantic_fenced = True
+                state.flow = "break"
+                return
+            state.selected = state.first
+            if state.first.status == "validated":
+                try:
+                    state.candidate_bundle = EvidenceCandidateBundleV1.from_json(
+                        self._decode_content(state.first.content),
+                        body_bytes=state.page.body_bytes,
+                    )
+                    self._validate_candidate_bundle(
+                        state.candidate_bundle,
+                        spec=state.research_spec,
+                        route=state.route,
+                        group=state.group,
+                        page=state.page,
+                        extraction_policy_ref=state.policies["extraction"],
+                        repair_round=0,
+                        identity=state.native_identity,
+                    )
+                    state.bundle = state.candidate_bundle
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    state.bundle = None
+            if state.first.status == "malformed" or (
+                state.first.status == "validated" and state.bundle is None
+            ):
+                state.status = "malformed"
+                (
+                    state.outcome_reason_codes,
+                    state.prior_outcome_ref,
+                ) = await self._register_invalid_outcome(
+                    state.first, state.group_id, state.native_identity, state.page
+                )
+                if not await self._generate_now_fenced(state.native_identity.run_id):
+                    state.repair_request_ref, state.repaired = await self._repair_candidate(
+                        state.first,
+                        group_id=state.group_id,
+                        native_identity=state.native_identity,
+                        page=state.page,
+                        policies=state.policies,
+                        prior_outcome_ref=state.prior_outcome_ref,
+                        prompt=state.prompt,
+                    )
+                    if state.repaired is None:
+                        state.selected_outcome_ref = state.prior_outcome_ref
+                    else:
+                        state.selected = state.repaired
+                        state.selected_repair_round = 1
+                        if state.repaired.status == "validated":
+                            try:
+                                state.bundle, state.candidate_bundle = self._decode_repaired_bundle(
+                                    state.group,
+                                    native_identity=state.native_identity,
+                                    page=state.page,
+                                    policies=state.policies,
+                                    repaired=state.repaired,
+                                    research_spec=state.research_spec,
+                                    route=state.route,
+                                )
+                            except (TypeError, ValueError, json.JSONDecodeError):
+                                state.bundle = None
+                                state.status = "malformed"
+                                state.outcome_reason_codes = ("candidate_bundle_invalid",)
+                        else:
+                            state.status = state.repaired.status
+                else:
+                    state.selected_outcome_ref = state.prior_outcome_ref
+            elif state.first.status != "validated":
+                state.status = state.first.status
+            state.selected_envelope = state.selected
+            state.selected_profile_ref = state.selected.profile_ref
+            state.new_refs.update(
+                ref
+                for ref in (
+                    state.first.result_ref,
+                    state.first.prompt_ref,
+                    state.selected.result_ref,
+                    state.selected.prompt_ref,
+                    state.prior_outcome_ref,
+                    state.repair_request_ref,
+                )
+                if ref is not None
+            )
 
     async def _register_invalid_outcome(self, first, group_id, native_identity, page):
         outcome_reason_codes = ("candidate_bundle_invalid",)

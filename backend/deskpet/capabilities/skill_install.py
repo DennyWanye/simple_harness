@@ -445,6 +445,49 @@ class AuthorizedPreflightReceiptResolver:
         )
 
 
+@dataclass
+class _StageState:
+    """GlobalSkillInstallService.stage 的运行状态：原函数的局部变量与参数（切段用）。"""
+
+    result: Any = None
+    flow: Any = None
+    _result: Any = None
+    _returned: Any = None
+    authority: Any = None
+    batch: Any = None
+    call_id: Any = None
+    channel: Any = None
+    content_identity: Any = None
+    effect_id: Any = None
+    existing: Any = None
+    existing_failure: Any = None
+    failure_identity: Any = None
+    generation: Any = None
+    identity: Any = None
+    intent: Any = None
+    intent_id: Any = None
+    is_global: Any = None
+    members: Any = None
+    nonce: Any = None
+    now: Any = None
+    owner: Any = None
+    owner_scope_key: Any = None
+    permissions: Any = None
+    principal_id: Any = None
+    project: Any = None
+    requested_ref: Any = None
+    requested_subpath: Any = None
+    retry_attempt_generation: Any = None
+    retry_claim: Any = None
+    retry_command_id: Any = None
+    retry_failure_receipt_ref: Any = None
+    root_run_id: Any = None
+    run_id: Any = None
+    stage: Any = None
+    url: Any = None
+    visible_skill_names: Any = None
+
+
 class GlobalSkillInstallService:
     def __init__(
         self,
@@ -532,177 +575,246 @@ class GlobalSkillInstallService:
         retry_attempt_generation: int | None = None,
         retry_command_id: str | None = None,
     ) -> SkillInstallPreflightReady | SkillInstallPreflightRejected:
-        if (project is None) == (owner is None):
+        state = _StageState(
+            url=url,
+            project=project,
+            owner=owner,
+            run_id=run_id,
+            root_run_id=root_run_id,
+            call_id=call_id,
+            effect_id=effect_id,
+            channel=channel,
+            requested_ref=requested_ref,
+            requested_subpath=requested_subpath,
+            visible_skill_names=visible_skill_names,
+            retry_failure_receipt_ref=retry_failure_receipt_ref,
+            retry_attempt_generation=retry_attempt_generation,
+            retry_command_id=retry_command_id,
+        )
+        if (state.project is None) == (state.owner is None):
             raise ProjectSkillInstallError(
                 "skill_install_authority_invalid",
                 "Exactly one Project or user-global authority is required",
             )
-        authority = owner if owner is not None else project
-        assert authority is not None
-        owner_scope_key = authority.owner_scope_key
-        principal_id = authority.principal_id
-        identity, is_global, retry_claim = await self._stage_retry_claim(
-            call_id,
-            effect_id=effect_id,
-            owner=owner,
-            owner_scope_key=owner_scope_key,
-            requested_ref=requested_ref,
-            requested_subpath=requested_subpath,
-            run_id=run_id,
-            url=url,
+        state.authority = state.owner if state.owner is not None else state.project
+        assert state.authority is not None
+        state.owner_scope_key = state.authority.owner_scope_key
+        state.principal_id = state.authority.principal_id
+        state.identity, state.is_global, state.retry_claim = await self._stage_retry_claim(
+            state.call_id,
+            effect_id=state.effect_id,
+            owner=state.owner,
+            owner_scope_key=state.owner_scope_key,
+            requested_ref=state.requested_ref,
+            requested_subpath=state.requested_subpath,
+            run_id=state.run_id,
+            url=state.url,
         )
-        intent_id = f"skill-install:{fingerprint_json(identity)}"
-        if not is_global:
-            existing = await self.store.get_skill_install_intent(intent_id)
-            if existing is not None:
-                return await self._outcome_for_existing(existing)
+        state.intent_id = f"skill-install:{fingerprint_json(state.identity)}"
+        state.flow = None
+        await self._resolve_stage_identity(state)
+        if state.flow == "stop":
+            return state.result
+        state.flow = None
+        await self._claim_stage_existing(state)
+        if state.flow == "stop":
+            return state.result
+        state.stage = self._stage_path(state.intent_id)
+        if state.stage.exists():
+            shutil.rmtree(state.stage)
+        state.stage.mkdir(parents=True, exist_ok=False)
+        state.members: list[CapabilitySkillInstallMember] = []
+        state.permissions: set[str] = set()
+        state.flow = None
+        await self._record_stage_intent(state)
+        if state.flow == "stop":
+            return state.result
+
+    async def _resolve_stage_identity(self, state: _StageState) -> None:
+        """确定安装归属与幂等身份，读出已有的失败记录。"""
+
+        if not state.is_global:
+            state.existing = await self.store.get_skill_install_intent(state.intent_id)
+            if state.existing is not None:
+                state.result = await self._outcome_for_existing(state.existing)
+                state.flow = "stop"
+                return
         else:
-            existing_failure, failure_identity, intent_id = await self._stage_failure_identity(
-                owner_scope_key,
-                requested_ref=requested_ref,
-                requested_subpath=requested_subpath,
-                url=url,
-                visible_skill_names=visible_skill_names,
+            (
+                state.existing_failure,
+                state.failure_identity,
+                state.intent_id,
+            ) = await self._stage_failure_identity(
+                state.owner_scope_key,
+                requested_ref=state.requested_ref,
+                requested_subpath=state.requested_subpath,
+                url=state.url,
+                visible_skill_names=state.visible_skill_names,
             )
-            if existing_failure is not None and existing_failure.status == "stage_failed":
-                _returned, _result, retry_claim = await self._retry_failed_stage(
-                    existing_failure,
-                    intent_id=intent_id,
-                    retry_attempt_generation=retry_attempt_generation,
-                    retry_command_id=retry_command_id,
-                    retry_failure_receipt_ref=retry_failure_receipt_ref,
+            if (
+                state.existing_failure is not None
+                and state.existing_failure.status == "stage_failed"
+            ):
+                state._returned, state._result, state.retry_claim = await self._retry_failed_stage(
+                    state.existing_failure,
+                    intent_id=state.intent_id,
+                    retry_attempt_generation=state.retry_attempt_generation,
+                    retry_command_id=state.retry_command_id,
+                    retry_failure_receipt_ref=state.retry_failure_receipt_ref,
                 )
-                if _returned:
-                    return _result
-            identity = failure_identity
+                if state._returned:
+                    state.result = state._result
+                    state.flow = "stop"
+                    return
+            state.identity = state.failure_identity
         try:
-            batch = await self.source.resolve(
-                url,
-                requested_ref=requested_ref,
-                **({"subpath": requested_subpath} if requested_subpath else {}),
-                visible_skill_names=visible_skill_names,
+            state.batch = await self.source.resolve(
+                state.url,
+                requested_ref=state.requested_ref,
+                **({"subpath": state.requested_subpath} if state.requested_subpath else {}),
+                visible_skill_names=state.visible_skill_names,
             )
         except CapabilitySourceError as exc:
-            if retry_claim is not None:
-                return await self._retry_stage_attempt(exc, retry_claim, retry_command_id)
-            return await self._record_stage_failure(
-                intent_id=intent_id,
-                identity=identity,
-                project=authority,
-                run_id=run_id,
-                root_run_id=root_run_id,
-                call_id=call_id,
-                effect_id=effect_id,
-                channel=channel,
+            if state.retry_claim is not None:
+                state.result = await self._retry_stage_attempt(
+                    exc, state.retry_claim, state.retry_command_id
+                )
+                state.flow = "stop"
+                return
+            state.result = await self._record_stage_failure(
+                intent_id=state.intent_id,
+                identity=state.identity,
+                project=state.authority,
+                run_id=state.run_id,
+                root_run_id=state.root_run_id,
+                call_id=state.call_id,
+                effect_id=state.effect_id,
+                channel=state.channel,
                 code=exc.code,
                 message=str(exc),
             )
-        if is_global:
+            state.flow = "stop"
+            return
+
+    async def _claim_stage_existing(self, state: _StageState) -> None:
+        """全局安装时认领已有意图：重试失败的、或复用进行中的。"""
+
+        if state.is_global:
             # 2026-09-25 UI 全量点击: the id is content-addressed, so after one
             # "cancel" (denied) the same Skill could never be installed again — every
             # new click resolved to the closed intent.  A closed intent is history; a
             # new request for the same content opens the next generation.
-            content_identity = {
+            state.content_identity = {
                 "schema": "global-skill-install-intent-v2",
-                "owner_scope_key": owner_scope_key,
-                "exact_commit": batch.evidence.exact_commit,
-                "member_set_stamp": batch.batch_digest,
+                "owner_scope_key": state.owner_scope_key,
+                "exact_commit": state.batch.evidence.exact_commit,
+                "member_set_stamp": state.batch.batch_digest,
             }
-            generation = 0
+            state.generation = 0
             while True:
-                intent_id = "skill-install-global:" + fingerprint_json(
-                    content_identity
-                    if generation == 0
-                    else {**content_identity, "reopened_generation": generation}
+                state.intent_id = "skill-install-global:" + fingerprint_json(
+                    state.content_identity
+                    if state.generation == 0
+                    else {**state.content_identity, "reopened_generation": state.generation}
                 )
-                existing = await self.store.get_skill_install_intent(intent_id)
-                if existing is None or existing.status not in _REOPENABLE_INTENT_STATES:
+                state.existing = await self.store.get_skill_install_intent(state.intent_id)
+                if state.existing is None or state.existing.status not in _REOPENABLE_INTENT_STATES:
                     break
-                generation += 1
-            if existing is not None:
-                if retry_claim is not None:
+                state.generation += 1
+            if state.existing is not None:
+                if state.retry_claim is not None:
                     await self.store.settle_skill_install_retry(
-                        retry_claim.intent_id,
-                        expected_state_version=retry_claim.state_version,
-                        retry_command_id=str(retry_command_id),
+                        state.retry_claim.intent_id,
+                        expected_state_version=state.retry_claim.state_version,
+                        retry_command_id=str(state.retry_command_id),
                         attempt_generation=int(
-                            dict(retry_claim.error or {}).get("attempt_generation") or 1
+                            dict(state.retry_claim.error or {}).get("attempt_generation") or 1
                         ),
                         retry_state="succeeded",
-                        success_intent_id=existing.intent_id,
+                        success_intent_id=state.existing.intent_id,
                         error={"retryable": False},
                     )
-                return await self._outcome_for_existing(existing)
-            call_id, effect_id = await self._stage_prior_effect(call_id, effect_id, intent_id)
-        stage = self._stage_path(intent_id)
-        if stage.exists():
-            shutil.rmtree(stage)
-        stage.mkdir(parents=True, exist_ok=False)
-        members: list[CapabilitySkillInstallMember] = []
-        permissions: set[str] = set()
+                state.result = await self._outcome_for_existing(state.existing)
+                state.flow = "stop"
+                return
+            state.call_id, state.effect_id = await self._stage_prior_effect(
+                state.call_id, state.effect_id, state.intent_id
+            )
+
+    async def _record_stage_intent(self, state: _StageState) -> None:
+        """写入安装意图记录（并发冲突时读回已有记录）。"""
+
         try:
             self._stage_batch_manifests(
-                batch, intent_id=intent_id, members=members, permissions=permissions, stage=stage
+                state.batch,
+                intent_id=state.intent_id,
+                members=state.members,
+                permissions=state.permissions,
+                stage=state.stage,
             )
-            now = float(self.clock())
-            nonce = fingerprint_json(
+            state.now = float(self.clock())
+            state.nonce = fingerprint_json(
                 {
-                    **identity,
-                    "batch_digest": batch.batch_digest,
+                    **state.identity,
+                    "batch_digest": state.batch.batch_digest,
                     # a reopened generation needs its own confirmation
-                    **({"intent_id": intent_id} if is_global else {}),
+                    **({"intent_id": state.intent_id} if state.is_global else {}),
                 }
             )
-            intent = CapabilitySkillInstallIntent(
-                intent_id=intent_id,
-                effect_id=effect_id,
-                call_id=call_id,
-                root_run_id=root_run_id,
-                run_id=run_id,
-                channel=channel,
-                project_scope_key=owner_scope_key,
-                principal_id=principal_id,
+            state.intent = CapabilitySkillInstallIntent(
+                intent_id=state.intent_id,
+                effect_id=state.effect_id,
+                call_id=state.call_id,
+                root_run_id=state.root_run_id,
+                run_id=state.run_id,
+                channel=state.channel,
+                project_scope_key=state.owner_scope_key,
+                principal_id=state.principal_id,
                 source={
                     "schema": (
                         "global-skill-install-source-v2"
-                        if is_global
+                        if state.is_global
                         else "project-skill-install-source-v1"
                     ),
-                    "normalized_url": batch.evidence.normalized_url,
-                    "requested_ref": batch.evidence.requested_ref,
-                    "evidence_hash": batch.evidence.evidence_hash,
-                    "staging_ref": intent_id,
+                    "normalized_url": state.batch.evidence.normalized_url,
+                    "requested_ref": state.batch.evidence.requested_ref,
+                    "evidence_hash": state.batch.evidence.evidence_hash,
+                    "staging_ref": state.intent_id,
                     **(
-                        {"global_owner_key": owner_scope_key}
-                        if is_global
+                        {"global_owner_key": state.owner_scope_key}
+                        if state.is_global
                         else {
-                            "project_id": project.project_id,
-                            "project_revision": project.project_revision,
-                            "project_identity": project.project_identity,
+                            "project_id": state.project.project_id,
+                            "project_revision": state.project.project_revision,
+                            "project_identity": state.project.project_identity,
                         }
                     ),
                 },
-                exact_commit=batch.evidence.exact_commit,
-                archive_hash=batch.evidence.archive_hash,
-                raw_tree_hash=batch.evidence.raw_file_set_digest,
-                member_set_stamp=batch.batch_digest,
-                permission_set_hash=fingerprint_json(sorted(permissions)),
-                confirmation_nonce=nonce,
+                exact_commit=state.batch.evidence.exact_commit,
+                archive_hash=state.batch.evidence.archive_hash,
+                raw_tree_hash=state.batch.evidence.raw_file_set_digest,
+                member_set_stamp=state.batch.batch_digest,
+                permission_set_hash=fingerprint_json(sorted(state.permissions)),
+                confirmation_nonce=state.nonce,
                 confirmation_version=1,
-                expires_at=now + self.confirmation_ttl_seconds,
+                expires_at=state.now + self.confirmation_ttl_seconds,
                 status="staging",
                 state_version=1,
                 settlement_ref=None,
                 cleanup_ref=None,
                 verification_ref=None,
                 error=None,
-                created_at=now,
-                updated_at=now,
+                created_at=state.now,
+                updated_at=state.now,
             )
-            await self.store.create_skill_install_intent(intent, members)
-            return await self._mark_stage_ready(intent_id, members, retry_claim, retry_command_id)
+            await self.store.create_skill_install_intent(state.intent, state.members)
+            state.result = await self._mark_stage_ready(
+                state.intent_id, state.members, state.retry_claim, state.retry_command_id
+            )
+            state.flow = "stop"
+            return
         except BaseException:
-            await self._remove_stage(intent_id)
+            await self._remove_stage(state.intent_id)
             raise
 
     async def _retry_failed_stage(
