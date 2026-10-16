@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 from ...artifacts.versioning import next_versions
 from ...assurance.codec import AssuranceError
@@ -731,8 +731,6 @@ class ResultCommitsMixin(CommitServiceCore):
                 result_id, requirements_revision=requirements_revision
             ),
             artifacts=tuple(self._store.get_artifact(key) for key in stored.artifacts),
-            # accept 以投影里的作者为准，这个参数会被覆盖（见实施记录 5E 发现）
-            producer_agent_ids=(cast(str, attempt.agent_id),),
             reviewer_agent_id=f"critic:{attempt.id}",
             now_ms=int(self._store.now * 1000),
             input_manifest_hash=frozen.frozen.manifest_hash,
@@ -912,8 +910,6 @@ class ResultCommitsMixin(CommitServiceCore):
                     requirements_revision=frozen_requirements_revision(self._store, stored),
                 ),
                 artifacts=tuple(self._store.get_artifact(key) for key in stored.artifacts),
-                # accept 以投影里的作者为准，这个参数会被覆盖（见实施记录 5E 发现）
-                producer_agent_ids=(cast(str, attempt.agent_id),),
                 reviewer_agent_id=f"critic:{attempt.id}",
                 now_ms=int(self._store.now * 1000),
                 input_manifest_hash=frozen_completion.frozen.manifest_hash,

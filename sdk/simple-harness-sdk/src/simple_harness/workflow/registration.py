@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: Apache-2.0
 
-"""Shared public registration construction for official workflow profiles."""
+"""Shared public registration construction for workflow profiles (official SDK and Host product)."""
 
 from __future__ import annotations
 

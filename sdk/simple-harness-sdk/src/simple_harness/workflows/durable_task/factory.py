@@ -10,8 +10,8 @@ from simple_harness.workflow.definition import (
     WorkflowDefinition,
     WorkflowDefinitionRegistration,
 )
+from simple_harness.workflow.registration import build_registration
 
-from .._registration import build_registration
 from . import nodes
 from .definition import create_definition, create_initial_state
 

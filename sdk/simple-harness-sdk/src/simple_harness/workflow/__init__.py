@@ -68,6 +68,7 @@ _EXPORTS = {
         "simple_harness.runtime.orchestration",
         "WorkflowProfileRegistration",
     ),
+    "build_registration": (".registration", "build_registration"),
     "ProfileDescriptor": (
         "simple_harness.runtime.profiles",
         "ProfileDescriptor",

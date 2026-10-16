@@ -379,7 +379,6 @@ class LeafAcceptanceAssembly:
         result_id: str,
         layers: Sequence[Any],
         artifacts: Sequence[Any] = (),
-        producer_agent_ids: Sequence[str] = (),
         reviewer_agent_id: str | None = None,
         now_ms: int,
         command_id: str | None = None,

@@ -39,21 +39,23 @@ from ..contracts.resolution import (
     WorkspaceAccess,
 )
 from ..contracts.semantic_base import Provenance, TypedRef, TypedRefKind, content_hash_of
-from ..storage.assurance_blobs import read_pinned_blob
 from ..storage.assurance_reads import (
     AssuranceReader,
     CurrentAuthority,
     _permission,
-    _require_same_permission,
     read_complete_evidence_snapshot,
     read_epochs_locked,
-    require_epochs_locked,
 )
 from ..storage.assurance_store import AssuranceStore
 from ..storage.htn_store import HtnStore
 from ..verification.evidence_resolver import in_source_roots
 from .assurance_check_use import _merge_reads
-from .assurance_review_pins import ensure_review_blob_pins, release_failed_preparation
+from .assurance_review_pins import (
+    ensure_review_blob_pins,
+    read_review_materials,
+    release_failed_preparation,
+    review_recheck,
+)
 from .assurance_review_transport import assurance_formula, read_review_invocation_locked
 
 if TYPE_CHECKING:
@@ -366,47 +368,36 @@ def prepare_purpose_review(
     blob_refs = {ref for ref in refs if ref.kind in {"source", "artifact"}}
     pins = ensure_review_blob_pins(commit, tenant_id=tenant_id, binding=binding, refs=blob_refs)
     try:
-        materials = {
-            item.ref: item.body_json.encode() for item in metadata if item.ref not in blob_refs
-        }
-        remaining, blobs = maximum_blob_bytes, []
-        for ref in sorted(blob_refs, key=lambda ref: ref.key):
-            blob = read_pinned_blob(
-                reader,
-                ref,
-                pin_id=pins[ref],
-                review_key=review_key,
-                cas=cas,
-                maximum_bytes=remaining,
-                authorize=lambda r: (
-                    _permission(authority, identity, r, int(store.now * 1000)).access
-                ),
-                now_ms=lambda: int(store.now * 1000),
-            )
-            remaining -= len(blob.data)
-            materials[ref] = blob.data
-            blobs.append(blob)
+        materials, blobs = read_review_materials(
+            reader,
+            metadata,
+            blob_refs,
+            pins,
+            review_key=review_key,
+            cas=cas,
+            maximum_bytes=maximum_blob_bytes,
+            authority=authority,
+            identity=identity,
+            now_ms=lambda: int(store.now * 1000),
+        )
         frozen_config = dict(config)
         frozen_config["message"] = render_review_input(
             binding, package=package.to_json(), materials=materials
         )
 
-        def require_current_locked() -> None:
-            current_ms = int(store.now * 1000)
-            if gate.require_execution() != root:
-                raise AssuranceError("RECHECK_REQUIRED")
-            require_epochs_locked(store.connection, mission_id, epochs, now_ms=current_ms)
-            for item in metadata:
-                if reader.read_exact_metadata(item.ref) != item:
-                    raise AssuranceError("RECHECK_REQUIRED")
-            for ref, previous in permissions:
-                _require_same_permission(authority, identity, ref, previous, current_ms)
-            for blob in blobs:
-                blob.require_current_locked(
-                    reader,
-                    now_ms=current_ms,
-                    authorize=lambda ref: _permission(authority, identity, ref, current_ms).access,
-                )
+        require_current_locked = review_recheck(
+            store=store,
+            gate=gate,
+            root=root,
+            mission_id=mission_id,
+            epochs=epochs,
+            metadata=metadata,
+            reader=reader,
+            permissions=permissions,
+            authority=authority,
+            identity=identity,
+            blobs=blobs,
+        )
 
         return commit.ensure_assurance_review_invocation(
             tenant_id=tenant_id,

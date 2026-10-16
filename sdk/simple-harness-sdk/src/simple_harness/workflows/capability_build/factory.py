@@ -30,7 +30,7 @@ from simple_harness.workflow.definition import (
     WorkflowDefinition,
     WorkflowDefinitionRegistration,
 )
-from simple_harness.workflows._registration import build_registration
+from simple_harness.workflow.registration import build_registration
 
 from ._constants import (
     DEFAULT_FIX_BUDGET,

@@ -3,13 +3,19 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from typing import Any
 
 from ..assurance.codec import AssuranceError, canonical, decode, fingerprint
 from ..assurance.refs import AssuranceRef, Pin
 from ..assurance.reviews import AssuranceReviewBinding
-from ..storage.assurance_reads import AssuranceReader
+from ..storage.assurance_blobs import read_pinned_blob
+from ..storage.assurance_reads import (
+    AssuranceReader,
+    _permission,
+    _require_same_permission,
+    require_epochs_locked,
+)
 from ..storage.assurance_store import AssuranceStore
 from ..storage.assurance_work import atomic
 
@@ -243,3 +249,77 @@ def release_orphan_preparations(
             _transition(commit, row, package_id=prepared["package_id"], state="RELEASED")
             released.append(row["pin_id"])
     return {"released": released, "preparing_with_binding": anomalies, "deferred": deferred}
+
+
+def read_review_materials(
+    reader: AssuranceReader,
+    metadata: Iterable[Any],
+    blob_refs: set[AssuranceRef],
+    pins: dict[AssuranceRef, str],
+    *,
+    review_key: str,
+    cas: Any,
+    maximum_bytes: int,
+    authority: Any,
+    identity: Any,
+    now_ms: Callable[[], int],
+) -> tuple[dict[AssuranceRef, bytes], list[Any]]:
+    """Read review materials: metadata as body JSON, pinned sources and artifacts as exact
+    bytes under one shared byte budget. Every read re-checks the caller's current access."""
+
+    materials = {
+        item.ref: item.body_json.encode() for item in metadata if item.ref not in blob_refs
+    }
+    remaining, blobs = maximum_bytes, []
+    for ref in sorted(blob_refs, key=lambda ref: ref.key):
+        blob = read_pinned_blob(
+            reader,
+            ref,
+            pin_id=pins[ref],
+            review_key=review_key,
+            cas=cas,
+            maximum_bytes=remaining,
+            authorize=lambda r: _permission(authority, identity, r, now_ms()).access,
+            now_ms=now_ms,
+        )
+        remaining -= len(blob.data)
+        materials[ref] = blob.data
+        blobs.append(blob)
+    return materials, blobs
+
+
+def review_recheck(
+    *,
+    store: Any,
+    gate: Any,
+    root: Any,
+    mission_id: str,
+    epochs: Any,
+    metadata: Iterable[Any],
+    reader: AssuranceReader,
+    permissions: Iterable[tuple[AssuranceRef, Any]],
+    authority: Any,
+    identity: Any,
+    blobs: list[Any],
+) -> Callable[[], None]:
+    """The commit-time recheck: root authority, epochs, exact metadata, permissions and
+    pinned bytes must all still be current, else the review must be re-prepared."""
+
+    def require_current_locked() -> None:
+        current_ms = int(store.now * 1000)
+        if gate.require_execution() != root:
+            raise AssuranceError("RECHECK_REQUIRED")
+        require_epochs_locked(store.connection, mission_id, epochs, now_ms=current_ms)
+        for item in metadata:
+            if reader.read_exact_metadata(item.ref) != item:
+                raise AssuranceError("RECHECK_REQUIRED")
+        for ref, previous in permissions:
+            _require_same_permission(authority, identity, ref, previous, current_ms)
+        for blob in blobs:
+            blob.require_current_locked(
+                reader,
+                now_ms=current_ms,
+                authorize=lambda ref: _permission(authority, identity, ref, current_ms).access,
+            )
+
+    return require_current_locked

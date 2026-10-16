@@ -7,8 +7,8 @@ from __future__ import annotations
 
 from simple_harness.contracts import JsonValue
 from simple_harness.workflow.definition import WorkflowDefinitionRegistration
+from simple_harness.workflow.registration import build_registration
 
-from .._registration import build_registration
 from .definition import (
     PERSONAL_WORKFLOW_V1_DEFINITION,
     PROFILE_KEY,
