@@ -722,6 +722,50 @@
    ]
   ]
  },
+ "periodic_self_check_reports_tools_used": {
+  "events": [
+   {
+    "__class__": "AssistantMessageEvent",
+    "content": "继续回答",
+    "iteration": 10,
+    "model": "",
+    "reasoning_content": "",
+    "stop_reason": "end_turn",
+    "task_id": "t-char",
+    "tool_calls": [],
+    "type": "assistant_message"
+   },
+   {
+    "__class__": "FinalEvent",
+    "content": "继续回答",
+    "iteration": 10,
+    "reasoning_content": "",
+    "stop_reason": "end_turn",
+    "task_id": "t-char",
+    "total_cache_read_tokens": 0,
+    "total_cache_write_tokens": 0,
+    "total_input_tokens": 10,
+    "total_output_tokens": 5,
+    "type": "final"
+   }
+  ],
+  "llm": [
+   [
+    {
+     "content": "长任务",
+     "role": "user",
+     "tool_call_id": null,
+     "tool_calls": null
+    },
+    {
+     "content": "[self-check 第 1 级 / 第 10/12 轮 — 已用 3 次工具调用]\n你已经跑了 10 轮 ReAct 循环。在下一轮回复中先反思 3 行：\n1. 用户原问题的核心需求是什么？\n2. 你已经完成了哪些核心成果（具体改了什么文件、跑了什么命令、产出了什么结果）？\n3. 剩余工作是否真的必须？若不必须立即 stop_reason=end_turn 把可改进点写进 todo_write。\n记住：用户期望答完原问题，不是追求完美。剩 2 轮预算。",
+     "role": "system",
+     "tool_call_id": null,
+     "tool_calls": null
+    }
+   ]
+  ]
+ },
  "plain_final_answer": {
   "events": [
    {

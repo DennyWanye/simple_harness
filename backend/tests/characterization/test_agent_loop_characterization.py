@@ -693,3 +693,18 @@ async def test_context_chain_safe_plan_runs_coverage_jobs(monkeypatch):
             "estimates": seen,
         },
     )
+
+
+@pytest.mark.asyncio
+async def test_periodic_self_check_reports_tools_used():
+    """第 10 轮的第一级自检提示带着本轮累计的工具调用次数（来自外部反馈）。"""
+    llm = FakeLLM([_final("继续回答")])
+    agent = AgentLoop(llm_registry=llm, tool_registry=FakeTools(), max_iterations=12)
+    events = await _run(
+        agent,
+        messages=[{"role": "user", "content": "长任务"}],
+        _external_tool_feedback={"iteration": 9, "tools_used_count": 3},
+    )
+    _check(
+        "periodic_self_check_reports_tools_used", {"events": events, "llm": _messages(llm.calls)}
+    )
