@@ -245,7 +245,7 @@ def main() -> int:
     files = [str(p) for p in outputs]
     ruff = [os.environ.get("RUFF") or str(REPO.parent / "simple_harness/sdk/simple-harness-sdk/.venv/bin/ruff")]
     subprocess.run([*ruff, "check", "--config", str(RUFF_CONFIG), "--select", "F401,I001", "--fix", "--quiet", *files], check=False)
-    subprocess.run([*ruff, "format", "--config", str(RUFF_CONFIG), "--quiet", *files], check=False)
+    subprocess.run([*ruff, "format", "--force-exclude", "--config", str(RUFF_CONFIG), "--quiet", *files], check=False)
     res = subprocess.run([*ruff, "check", "--config", str(RUFF_CONFIG), "--select", "F401,F811,F821,F841", *files],
                          capture_output=True, text=True)
     print(res.stdout[-4000:] or "ruff：无未定义/未使用名字")

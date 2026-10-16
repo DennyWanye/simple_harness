@@ -8,6 +8,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from ...contracts import JsonValue, canonical_json, validate_json_value
+from ...human import HumanDecisionStore
 from ..run_store import RunFence, StaleRunFence
 from .core import NativeCheckpointCore
 from .support import NATIVE_ENGINE_KIND, NativeCheckpointError, _native_mapping
@@ -35,8 +36,6 @@ class InterruptFailureMixin(NativeCheckpointCore):
         interrupt: Mapping[str, JsonValue] | None = None,
         configurable: Mapping[str, JsonValue] | None = None,
     ) -> dict[str, Any] | None:
-        # 按需导入：循环依赖（checkpointer ↔ human）
-        from ...human import HumanDecisionStore
 
         protocol_call = configurable is not None
         if protocol_call:

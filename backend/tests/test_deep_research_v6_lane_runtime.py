@@ -28,7 +28,7 @@ from deskpet.workflows.definitions.deep_research_v6_compiler import (
     compile_research_spec,
 )
 from deskpet.workflows.definitions.deep_research_v6_contracts import parse_blob_ref
-from deskpet.workflows.store import RegisteredBlobStore
+from deskpet.workflows.store.registered_blob_store import RegisteredBlobStore
 
 NO_SEED_SOURCE_RESOLVER = OfficialSourceResolver(
     OfficialSourceRegistryV1(

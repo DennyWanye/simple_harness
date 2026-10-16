@@ -15,8 +15,8 @@ from deskpet.permissions.legacy_auto_mode import (
     import_legacy_auto_mode_once,
 )
 from deskpet.permissions.task_grants import ResourceSelector, TaskGrant
-from deskpet.workflows.store import SqliteExecutionUnitOfWork
 from deskpet.workflows.store import schema as workflow_schema
+from deskpet.workflows.store.execution_uow import SqliteExecutionUnitOfWork
 
 
 def _hash(value: str) -> str:

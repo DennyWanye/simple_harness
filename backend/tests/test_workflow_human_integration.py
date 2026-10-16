@@ -26,7 +26,8 @@ from deskpet.workflows.human import DecisionStatus, HumanDecisionError, HumanDec
 from deskpet.workflows.ipc import WorkflowIPCDispatcher
 from deskpet.workflows.runner import WorkflowRegistry, WorkflowRunner
 from deskpet.workflows.service import WorkflowService
-from deskpet.workflows.store import FencedAsyncSqliteSaver, WorkflowRunStore
+from deskpet.workflows.store.checkpointer import FencedAsyncSqliteSaver
+from deskpet.workflows.store.run_store import WorkflowRunStore
 
 
 async def _approval_node(state, context):

@@ -19,17 +19,10 @@ from deskpet.workflows.effects import (
 from deskpet.workflows.outbox import WorkflowOutbox
 from deskpet.workflows.runner import WorkflowRegistry, WorkflowRunner
 from deskpet.workflows.service import WorkflowService
-from deskpet.workflows.store import (
-    LegacyCheckpointStore as FencedAsyncSqliteSaver,
-)
-from deskpet.workflows.store import (
-    NativeCheckpointStore,
-    StaleRunFence,
-    WorkflowRunStore,
-)
-from deskpet.workflows.store import (
-    empty_legacy_checkpoint as empty_checkpoint,
-)
+from deskpet.workflows.store.checkpointer import LegacyCheckpointStore as FencedAsyncSqliteSaver
+from deskpet.workflows.store.checkpointer import NativeCheckpointStore
+from deskpet.workflows.store.checkpointer import empty_legacy_checkpoint as empty_checkpoint
+from deskpet.workflows.store.run_store import StaleRunFence, WorkflowRunStore
 
 
 class InjectedFault(RuntimeError):

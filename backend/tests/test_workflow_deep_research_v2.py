@@ -24,7 +24,7 @@ from deskpet.workflows.definitions.v2.deep_research import (
 from deskpet.workflows.native import InMemoryNativeCheckpointStore, NativeExecutionPolicy
 from deskpet.workflows.progress import WorkflowProgressReporter
 from deskpet.workflows.runner import WorkflowRegistry
-from deskpet.workflows.store import RegisteredBlobStore
+from deskpet.workflows.store.registered_blob_store import RegisteredBlobStore
 
 
 async def _llm(prompt: str) -> str:

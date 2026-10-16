@@ -37,7 +37,7 @@ from ..definitions.personal_workflow import (
     initial_state,
 )
 from ..runtime_adapters import WorkflowRuntimeAdapter
-from ..store import RunFence
+from ..store.run_store import RunFence
 from .code_runtime import ToolDispatchPort
 
 

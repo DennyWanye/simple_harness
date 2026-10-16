@@ -23,6 +23,11 @@ from deskpet.execution.contracts import (
     canonical_json,
     thaw_json,
 )
+from deskpet.security.tool_public_projection import (
+    ToolPresentationPolicyV1,
+    ToolPublicProjectorV1,
+    legacy_unknown_tool_policy,
+)
 
 from .core import ExecutionUowCore
 from .support import ContinuationRecord
@@ -793,13 +798,6 @@ class EffectHandoffMixin(ExecutionUowCore):
         state.  Keep the effect identity immutable, but allow the public view to
         follow that one legal CAS transition in the same transaction.
         """
-
-        # 按需导入：循环依赖（execution_uow ↔ tool_public_projection）
-        from deskpet.security.tool_public_projection import (
-            ToolPresentationPolicyV1,
-            ToolPublicProjectorV1,
-            legacy_unknown_tool_policy,
-        )
 
         run = await (
             await db.execute(

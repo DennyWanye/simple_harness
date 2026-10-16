@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import pytest
-from deskpet.workflows.store import WorkflowRunStore
+from deskpet.workflows.store.run_store import WorkflowRunStore
 from deskpet.workflows.trace import SpanKind, SpanStatus, TraceRedactor, TraceStore, use_span
 
 

@@ -20,7 +20,7 @@ from .errors import (
     WorkflowErrorCode,
     WorkflowNodeError,
 )
-from .store import StaleRunFence, WorkflowRunStore
+from .store.run_store import StaleRunFence, WorkflowRunStore
 
 
 @dataclass(frozen=True, slots=True)

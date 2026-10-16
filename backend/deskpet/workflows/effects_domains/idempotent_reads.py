@@ -13,7 +13,7 @@ from datetime import datetime
 
 from ..contracts import EffectKind, canonical_json
 from ..deadlines import DeadlineLeaseV1, DurableDeadlineV1, resume_deadline
-from ..store import RunFence
+from ..store.run_store import RunFence
 from .core import EffectJournalCore
 from .support import (
     BudgetReservationExceeded,

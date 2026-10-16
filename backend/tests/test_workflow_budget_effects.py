@@ -14,7 +14,7 @@ from deskpet.workflows.effects import (
     NormalizedToolOutcome,
     PreparedToolCall,
 )
-from deskpet.workflows.store import StaleRunFence, WorkflowRunStore
+from deskpet.workflows.store.run_store import StaleRunFence, WorkflowRunStore
 
 
 def _prepared(key: str) -> PreparedToolCall:

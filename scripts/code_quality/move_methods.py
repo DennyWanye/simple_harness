@@ -207,7 +207,7 @@ def main() -> int:
     files = [str(new_module), str(path), str(core_path), str(comp)]
     ruff = [os.environ.get("RUFF") or str(REPO.parent / "simple_harness/sdk/simple-harness-sdk/.venv/bin/ruff")]
     subprocess.run([*ruff, "check", "--config", str(RUFF_CONFIG), "--select", "F401,I001", "--fix", "--quiet", *files], check=False)
-    subprocess.run([*ruff, "format", "--config", str(RUFF_CONFIG), "--quiet", str(new_module), str(core_path)]
+    subprocess.run([*ruff, "format", "--force-exclude", "--config", str(RUFF_CONFIG), "--quiet", str(new_module), str(core_path)]
                    + ([str(path)] if local_block is not None else []), check=False)
     res = subprocess.run([*ruff, "check", "--config", str(RUFF_CONFIG), "--select", "F401,F811,F821,F841", *files],
                          capture_output=True, text=True)

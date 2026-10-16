@@ -11,8 +11,9 @@ from deskpet.workflows.adapters.research_runtime import (
     WorkflowControlSignalHub,
 )
 from deskpet.workflows.contracts import NodeExecutionIdentity
-from deskpet.workflows.store import RegisteredBlobStore, WorkflowRunStore
+from deskpet.workflows.store.registered_blob_store import RegisteredBlobStore
 from deskpet.workflows.store.research_repository import ResearchWorkflowRepository
+from deskpet.workflows.store.run_store import WorkflowRunStore
 
 
 class FakeClock:

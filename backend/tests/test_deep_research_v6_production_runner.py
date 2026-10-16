@@ -57,12 +57,9 @@ from deskpet.workflows.definitions.v6.deep_research import initial_state
 from deskpet.workflows.effects import EffectExecutionContext, EffectJournal
 from deskpet.workflows.native import NativeExecutionPolicy
 from deskpet.workflows.runner import WorkflowRegistry, WorkflowRunner
-from deskpet.workflows.store import (
-    NativeCheckpointStore,
-    RegisteredBlobStore,
-    RunFence,
-    WorkflowRunStore,
-)
+from deskpet.workflows.store.checkpointer import NativeCheckpointStore
+from deskpet.workflows.store.registered_blob_store import RegisteredBlobStore
+from deskpet.workflows.store.run_store import RunFence, WorkflowRunStore
 
 TOPICS = {
     "official_exact_fact": "What were China's year-end total population and annual births in 2024?",

@@ -39,7 +39,7 @@ from ..definitions.deep_research_v6_exact_fact import (
     extract_scalar_evidence,
 )
 from ..definitions.deep_research_v6_retrieval_contracts import PageExtractionResultV1
-from ..store import RegisteredBlobStore
+from ..store.registered_blob_store import RegisteredBlobStore
 
 EXTRACTION_POLICY: dict[str, JsonValue] = {
     "schema_version": 1,

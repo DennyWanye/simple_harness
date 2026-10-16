@@ -388,7 +388,7 @@ async def test_standalone_route_project_effect_is_run_fault_with_stable_code(
     tmp_path: Path,
 ) -> None:
     """standalone 下写工具不在 snapshot tools；强制调用 → durable FAILED + sdk_task_execution_route_authority_missing。"""
-    from deskpet.execution import RunState
+    from deskpet.execution.foreground_queue import RunState
     from deskpet.execution.foreground_queue import ForegroundQueueStore
     from deskpet.execution.foreground_runtime import SqliteSdkTerminalObserver
     from deskpet.sdk_adapters.task_execution import TaskExecutionAuthorityError
@@ -671,7 +671,7 @@ async def test_harness_evidence_reservations_drained_before_run_terminal_no_row_
     接受；terminal 前 observer 排空：seq3 无事实 → tombstone(abandoned)；run_terminal=seq4；
     ``authorize_terminal`` 只在排空后放行；crash 后重放排空幂等。
     """
-    from deskpet.execution import RunState
+    from deskpet.execution.foreground_queue import RunState
     from deskpet.execution.evidence_ingress import (
         ExecutionEvidenceIngress,
         TerminalWatermarkPending,
@@ -1448,7 +1448,7 @@ async def test_s5b_s4_single_root_per_canary_and_multi_root_hidden(tmp_path: Pat
     snapshot tools，强制调用 → 整 Run 故障 + 稳定码 ``sdk_task_execution_root_authority_ambiguous``（durable
     FAILED 由 terminal observer 携带），两根 canary hash 均不变；Run 内 append 后 superseded sticky 至下一 route。"""
 
-    from deskpet.execution import RunState
+    from deskpet.execution.foreground_queue import RunState
     from deskpet.execution.foreground_queue import ForegroundQueueStore
     from deskpet.execution.foreground_runtime import SqliteSdkTerminalObserver
     from deskpet.sdk_adapters.effect_gate import EFFECT_GATE_STICKY_REASON

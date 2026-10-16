@@ -20,7 +20,7 @@ from ...definitions.deep_research_v6_contracts import (
     build_route_decision_from_spec,
 )
 from ...definitions.deep_research_v6_evidence_contracts import V6FetchedPageRefPayloadV1
-from ...store import RegisteredBlobStore
+from ...store.registered_blob_store import RegisteredBlobStore
 from ...trace.context import current_span
 from ...trace.models import SpanKind, SpanStatus
 from ...trace.store import TraceStore

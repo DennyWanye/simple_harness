@@ -37,7 +37,7 @@ from agent.agent_loop import (
 from agent.tool_use_shim import OpenAICompatibleAgentLLM
 from config import load_config
 from deskpet.permissions.gate import PermissionGate, PermissionGateConfig
-from deskpet.tools.os_tools import register_os_tools
+from deskpet.tools.os_tools.registration import register_os_tools
 from deskpet.tools.registry import ToolRegistry
 from deskpet.types.skill_platform import PermissionResponse
 from providers.openai_compatible import OpenAICompatibleProvider

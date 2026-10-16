@@ -32,7 +32,8 @@ from deskpet.workflows.effects import (
     EffectStateConflict,
     StagingPreconditionFailed,
 )
-from deskpet.workflows.store import RegisteredBlobStore, WorkflowRunStore
+from deskpet.workflows.store.registered_blob_store import RegisteredBlobStore
+from deskpet.workflows.store.run_store import WorkflowRunStore
 
 
 def _contract_search_result() -> OfficialSearchResultV1:

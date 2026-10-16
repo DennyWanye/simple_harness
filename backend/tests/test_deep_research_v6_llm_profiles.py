@@ -21,7 +21,8 @@ from deskpet.workflows.definitions.research_core import (
     ResearchLLMPortV2,
 )
 from deskpet.workflows.effects import EffectExecutionContext, EffectJournal
-from deskpet.workflows.store import RegisteredBlobStore, WorkflowRunStore
+from deskpet.workflows.store.registered_blob_store import RegisteredBlobStore
+from deskpet.workflows.store.run_store import WorkflowRunStore
 
 EXTRACT_RESPONSE_FORMAT = {
     "type": "json_schema",

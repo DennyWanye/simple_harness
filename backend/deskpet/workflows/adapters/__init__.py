@@ -13,7 +13,7 @@ from ..effects import (
     PreparedToolCall,
     StagedFileEvidence,
 )
-from ..store import RunFence
+from ..store.run_store import RunFence
 
 
 class ToolCallPreparer(Protocol):

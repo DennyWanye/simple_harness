@@ -10,6 +10,7 @@ from typing import Any
 import aiosqlite
 
 from ...contracts import JsonValue, canonical_json, validate_json_value
+from ...outbox import stable_delivery_id, stable_event_id
 from ..run_store import RunFence, StaleRunFence
 from .core import NativeCheckpointCore
 from .support import NativeCheckpointError, _native_mapping
@@ -442,8 +443,6 @@ class TaskCommitMixin(NativeCheckpointCore):
         intent: Mapping[str, Any],
         now: float,
     ) -> str:
-        # 按需导入：循环依赖（checkpointer ↔ outbox）
-        from ...outbox import stable_delivery_id, stable_event_id
 
         intent_id = str(intent.get("intent_id") or "").strip()
         event_type = str(intent.get("event_type") or "").strip()

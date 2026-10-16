@@ -492,7 +492,7 @@ def main() -> int:
     # 导入按名字筛时会把字符串常量里的同名词也算上，多出的导入由 F401 删掉
     subprocess.run([*ruff, "check", "--config", str(RUFF_CONFIG), "--select", "F401,I001",
                     "--fix", "--quiet", *files], check=False)
-    subprocess.run([*ruff, "format", "--config", str(RUFF_CONFIG), "--quiet", *files], check=False)
+    subprocess.run([*ruff, "format", "--force-exclude", "--config", str(RUFF_CONFIG), "--quiet", *files], check=False)
     res = subprocess.run([*ruff, "check", "--config", str(RUFF_CONFIG), "--select",
                           "F401,F811,F821,F841", *files], capture_output=True, text=True)
     print(res.stdout[-4000:] or "ruff：无未定义/未使用名字")

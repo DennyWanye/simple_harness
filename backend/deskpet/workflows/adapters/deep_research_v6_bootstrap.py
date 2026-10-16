@@ -18,7 +18,7 @@ from ..definitions.deep_research_v6_retrieval_contracts import PageExtractionRes
 from ..definitions.research_core import ResearchLLMPortV2
 from ..effects import EffectJournal
 from ..native import NativeExecutionPolicy
-from ..store import RegisteredBlobStore
+from ..store.registered_blob_store import RegisteredBlobStore
 from .deep_research_v6_evidence_runtime import DeepResearchV6EvidenceRuntime
 from .deep_research_v6_retrieval_runtime import (
     DurableV6DeadlinePort,

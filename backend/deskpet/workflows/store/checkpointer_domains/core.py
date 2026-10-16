@@ -15,6 +15,7 @@ import aiosqlite
 
 from ...contracts import JsonValue, canonical_json, validate_json_value
 from ...execution_ports import CheckpointExecutionAdapter
+from ...native import NativeSnapshotEnvelope, NativeTask
 from ..run_store import RunFence, StaleRunFence
 from ..schema import initialize_workflow_db
 from .support import NATIVE_ENGINE_KIND, NativeCheckpointError, _native_mapping
@@ -134,8 +135,6 @@ class NativeCheckpointCore:
 
     @staticmethod
     def _snapshot_object(payload: Mapping[str, Any]) -> object:
-        # 按需导入：循环依赖（checkpointer ↔ native）
-        from ...native import NativeSnapshotEnvelope, NativeTask
 
         completed = payload.get("completed_activations") or {}
         joins = payload.get("join_firings") or []

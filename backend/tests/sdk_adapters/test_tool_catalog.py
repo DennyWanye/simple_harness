@@ -237,7 +237,7 @@ from deskpet.tools import registry
 base_names = registry.list_tools()
 assert len(base_names) == 40, (len(base_names), base_names)
 assert {'generate_image', 'ppt_create', 'ppt_pro'} <= set(base_names)
-from deskpet.tools.os_tools import register_os_tools
+from deskpet.tools.os_tools.registration import register_os_tools
 from deskpet.tools.code_tools import register_code_tools
 from deskpet.tools.code_tools.spawn_subagents_tool import build_await_subagents_tool, product_delegation_tool_catalog
 from deskpet.tools.code_tools.todo_write_tool import build_todo_write_tool

@@ -4,7 +4,7 @@ import sqlite3
 
 import pytest
 from deskpet.workflows.contracts import NodeExecutionIdentity
-from deskpet.workflows.store import RegisteredBlobStore
+from deskpet.workflows.store.registered_blob_store import RegisteredBlobStore
 
 
 @pytest.mark.asyncio

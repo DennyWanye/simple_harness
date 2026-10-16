@@ -13,7 +13,7 @@ from dataclasses import dataclass
 import aiosqlite
 
 from ..contracts import JsonValue, canonical_json, validate_json_value
-from ..store import RunFence, StaleRunFence
+from ..store.run_store import RunFence, StaleRunFence
 from .core import EffectJournalCore
 from .support import (
     BudgetReservationRecord,

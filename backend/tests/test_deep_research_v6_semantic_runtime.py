@@ -29,7 +29,7 @@ from deskpet.workflows.definitions.deep_research_v6_evidence_contracts import (
     ResearchLLMEffectOutcomeV1,
     V6FetchedPageRefPayloadV1,
 )
-from deskpet.workflows.store import RegisteredBlobStore
+from deskpet.workflows.store.registered_blob_store import RegisteredBlobStore
 
 
 def _identity(run_id: str = "run-semantic") -> NodeExecutionIdentity:

@@ -44,7 +44,7 @@ try:
         PermissionGateConfig as _PermissionGateConfig,
     )
     from deskpet.tools import registry as deskpet_tool_registry_v2
-    from deskpet.tools.os_tools import register_os_tools as _register_os_tools_v2
+    from deskpet.tools.os_tools.registration import register_os_tools as _register_os_tools_v2
 
     _register_os_tools_v2(deskpet_tool_registry_v2)
     # General-agent tools (glob, grep, web_search) registered now;

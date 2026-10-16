@@ -8,7 +8,7 @@ from pathlib import Path
 
 import aiosqlite
 import pytest
-from deskpet.execution import (
+from deskpet.execution.foreground_queue import (
     ContextLineage,
     ForegroundQueueError,
     ForegroundQueueStore,

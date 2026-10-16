@@ -33,7 +33,7 @@ from deskpet.workflows.definitions.deep_research_v6_contracts import (
     RouteDecisionV1,
     parse_blob_ref,
 )
-from deskpet.workflows.store import RegisteredBlobStore
+from deskpet.workflows.store.registered_blob_store import RegisteredBlobStore
 from deskpet.workflows.trace import SpanContext, TraceStore, use_span
 from deskpet.workflows.trace.models import SpanKind, SpanStatus
 

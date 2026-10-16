@@ -27,7 +27,7 @@ from deskpet.permissions.runtime import PreparedAuthorizationRuntime
 from deskpet.permissions.task_grants import ResourceSelector
 from deskpet.tools.capabilities import ToolExecutionContext
 from deskpet.workflows.effects import PreparedToolCall
-from deskpet.workflows.store import SqliteExecutionUnitOfWork
+from deskpet.workflows.store.execution_uow import SqliteExecutionUnitOfWork
 
 
 def _hash(value: str) -> str:

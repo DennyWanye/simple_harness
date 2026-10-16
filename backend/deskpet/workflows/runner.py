@@ -66,8 +66,9 @@ from .recovery import (
     repair_head_projection,
 )
 from .replay import WorkflowReplay
-from .store import NativeCheckpointStore, StaleRunFence, WorkflowRunStore
+from .store.checkpointer import NativeCheckpointStore
 from .store.execution_uow import SqliteExecutionUnitOfWork
+from .store.run_store import StaleRunFence, WorkflowRunStore
 from .trace.observer import WorkflowExecutionObserver
 from .trace.ports import instrument_ports
 from .trace.store import TraceStore

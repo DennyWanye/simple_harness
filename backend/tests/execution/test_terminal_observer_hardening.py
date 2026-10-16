@@ -15,11 +15,11 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from deskpet.execution import RunState
 from deskpet.execution.evidence_ingress import (
     ExecutionEvidenceIngress,
     TerminalWatermarkPending,
 )
+from deskpet.execution.foreground_queue import RunState
 from deskpet.execution.foreground_runtime import (
     TERMINAL_ERROR_CODE_FALLBACK,
     SqliteSdkTerminalObserver,

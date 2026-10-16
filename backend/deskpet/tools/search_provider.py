@@ -36,6 +36,8 @@ from typing import Any
 
 import httpx
 
+from deskpet.retrieval.contracts import SearchRequest
+
 from .research_cdp_edge import cdp_edge_render
 
 log = logging.getLogger(__name__)
@@ -738,9 +740,6 @@ async def search_async(
     # async providers. Explicit engines preserve the legacy v1 adapter used by
     # older callers/tests that require a fixed HTTP/CDP sequence.
     if engines is None:
-        # 按需导入：循环依赖（search_provider ↔ retrieval）
-        from deskpet.retrieval.contracts import SearchRequest
-
         # 按需导入：循环依赖（search_provider ↔ runtime）
         from deskpet.retrieval.runtime import get_default_gateway
 

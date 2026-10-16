@@ -42,7 +42,7 @@ from deskpet.workflows.definitions.deep_research_v6_terminal_nodes import (
 from deskpet.workflows.definitions.v6.deep_research import DEEP_RESEARCH_V6, initial_state
 from deskpet.workflows.errors import InvalidStatePatch, WorkflowNodeError
 from deskpet.workflows.native import InMemoryNativeCheckpointStore
-from deskpet.workflows.store import RegisteredBlobStore
+from deskpet.workflows.store.registered_blob_store import RegisteredBlobStore
 
 QUESTION = "深入调研：2024年中国总人口和出生人口分别是多少？优先国家统计局。"
 SOURCE_URL = "https://www.stats.gov.cn/runtime.html"

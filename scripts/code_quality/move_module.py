@@ -131,7 +131,7 @@ def main() -> int:
     if files:
         cfg = str(REPO / "scripts/code_quality/ruff.toml")
         subprocess.run([str(RUFF), "check", "--config", cfg, "--select", "I001", "--fix", "-q", *files], check=False)
-        subprocess.run([str(RUFF), "format", "--config", cfg, "-q", *files], check=False)
+        subprocess.run([str(RUFF), "format", "--force-exclude", "--config", cfg, "-q", *files], check=False)
     for c in changed:
         print("改写", c)
     print(f"搬家完成：{a.old} → {a.new}，改写 {len(files)} 个文件")

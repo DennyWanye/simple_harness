@@ -6,6 +6,7 @@ import copy
 import json
 from typing import Any
 
+from ...native import NativeExecution
 from .core import NativeCheckpointCore
 from .support import NATIVE_ENGINE_KIND, NativeCheckpointError
 
@@ -137,9 +138,6 @@ class CheckpointReadMixin(NativeCheckpointCore):
             )
         # 按需导入：测试替身（deskpet.workflows.contracts）
         from ...contracts import StatePatch
-
-        # 按需导入：循环依赖（checkpointer ↔ native）
-        from ...native import NativeExecution
 
         pending_results = {
             str(item["task_id"]): StatePatch(dict(item["payload"]["patch"]))

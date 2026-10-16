@@ -24,7 +24,7 @@ from deskpet.retrieval.contracts import FetchRequest
 from deskpet.retrieval.fetch_extract import FetchExtractService
 from deskpet.retrieval.playwright_renderer import RenderOutcome
 from deskpet.workflows import NodeExecutionIdentity
-from deskpet.workflows.store import WorkflowRunStore
+from deskpet.workflows.store.run_store import WorkflowRunStore
 from deskpet.workflows.trace import TraceStore
 from deskpet.workflows.trace.observer import WorkflowExecutionObserver
 

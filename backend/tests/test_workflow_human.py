@@ -8,7 +8,7 @@ from deskpet.workflows.human import (
     HumanDecisionError,
     HumanDecisionStore,
 )
-from deskpet.workflows.store import StaleRunFence, WorkflowRunStore
+from deskpet.workflows.store.run_store import StaleRunFence, WorkflowRunStore
 
 
 async def _claimed_run(path, *, clock):

@@ -23,7 +23,6 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from deskpet.execution import RunState
 from deskpet.execution.evidence_ingress import (
     ExecutionEvidenceIngress,
     ObjectiveEventSpec,
@@ -33,6 +32,7 @@ from deskpet.execution.evidence_ingress import (
 from deskpet.execution.foreground_queue import (
     ForegroundQueueError,
     ForegroundQueueStore,
+    RunState,
 )
 from deskpet.execution.foreground_runtime import SqliteSdkTerminalObserver
 from deskpet.task_scope.store import TaskScopeConflict

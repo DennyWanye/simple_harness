@@ -399,7 +399,7 @@ async def settle(
     owner_id: str | None = None,
     generation: int | None = None,
 ):  # type: ignore[no-untyped-def]
-    from deskpet.execution import RunState
+    from deskpet.execution.foreground_queue import RunState
 
     return await fallback.settle(
         host_run_id=env.admission.host_run_id,

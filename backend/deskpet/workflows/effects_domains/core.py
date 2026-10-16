@@ -17,7 +17,8 @@ import aiosqlite
 
 from ..contracts import EffectKind, canonical_json
 from ..deadlines import DurableDeadlineV1
-from ..store import RunFence, StaleRunFence, initialize_workflow_db
+from ..store.run_store import RunFence, StaleRunFence
+from ..store.schema import initialize_workflow_db
 from .support import (
     BudgetReservationRecord,
     CheckpointEffectLink,

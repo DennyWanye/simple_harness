@@ -27,7 +27,7 @@ from ...definitions.deep_research_v6_retrieval_contracts import (
     PageExtractionResultV1,
     SourceLocatorV1,
 )
-from ...store import BlobRef
+from ...store.blob_store import BlobRef
 from ...trace.models import SpanStatus
 from .core import EvidenceRuntimeCore
 from .support import (

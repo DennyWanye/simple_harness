@@ -1,66 +1,8 @@
 """Durable local storage for DeskPet workflows."""
 
-from deskpet.execution.contracts import RecoveryLease, StaleRecoveryLease
-
+# 包根只为禁区里的工作流定义文件（节点源码计入工作流身份，按字节冻结）保留这三个名字；
+# 其余代码一律从定义所在的子模块导入（阶段 6E 解环）。
 from .blob_store import BlobRef, BlobStore
-from .checkpoint_execution import SqliteCheckpointExecutionAdapter
-from .checkpointer import (
-    NATIVE_CHECKPOINT_TYPE,
-    NATIVE_ENGINE_KIND,
-    NATIVE_SNAPSHOT_VERSION,
-    AsyncOnlyWorkflowError,
-    FencedAsyncSqliteSaver,
-    LegacyCheckpointStore,
-    NativeCheckpointError,
-    NativeCheckpointStore,
-    UnsupportedDeltaChannelError,
-    empty_legacy_checkpoint,
-)
-from .execution_uow import (
-    CheckpointExecutionError,
-    ContinuationRecord,
-    ExecutionRuntimeState,
-    ExecutionTx,
-    LegacyDrainLease,
-    LegacyDrainRef,
-    RuntimeActivationCommand,
-    RuntimeActivationError,
-    SqliteExecutionUnitOfWork,
-)
 from .registered_blob_store import RegisteredBlobStore
-from .run_store import ForkPreparationError, RunFence, StaleRunFence, WorkflowRunStore
-from .schema import WORKFLOW_SCHEMA_VERSION, initialize_workflow_db
 
-__all__ = [
-    "BlobRef",
-    "BlobStore",
-    "CheckpointExecutionError",
-    "RegisteredBlobStore",
-    "AsyncOnlyWorkflowError",
-    "FencedAsyncSqliteSaver",
-    "LegacyCheckpointStore",
-    "empty_legacy_checkpoint",
-    "NativeCheckpointStore",
-    "NativeCheckpointError",
-    "NATIVE_ENGINE_KIND",
-    "NATIVE_CHECKPOINT_TYPE",
-    "NATIVE_SNAPSHOT_VERSION",
-    "UnsupportedDeltaChannelError",
-    "RunFence",
-    "ForkPreparationError",
-    "StaleRunFence",
-    "ContinuationRecord",
-    "ExecutionTx",
-    "ExecutionRuntimeState",
-    "LegacyDrainLease",
-    "LegacyDrainRef",
-    "RuntimeActivationCommand",
-    "RecoveryLease",
-    "RuntimeActivationError",
-    "StaleRecoveryLease",
-    "SqliteExecutionUnitOfWork",
-    "SqliteCheckpointExecutionAdapter",
-    "WorkflowRunStore",
-    "WORKFLOW_SCHEMA_VERSION",
-    "initialize_workflow_db",
-]
+__all__ = ["BlobRef", "BlobStore", "RegisteredBlobStore"]

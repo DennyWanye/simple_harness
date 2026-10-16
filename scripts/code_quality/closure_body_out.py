@@ -134,7 +134,7 @@ def main() -> int:
         REPO.parent / "simple_harness/sdk/simple-harness-sdk/.venv/bin/ruff"
     )
     subprocess.run(
-        [ruff, "format", "--config", str(REPO / "scripts/code_quality/ruff.toml"), "--quiet", str(path)],
+        [ruff, "format", "--force-exclude", "--config", str(REPO / "scripts/code_quality/ruff.toml"), "--quiet", str(path)],
         check=False,
     )
     n = inner.end_lineno - body_start + 1

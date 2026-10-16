@@ -20,7 +20,8 @@ from deskpet.workflows.definitions.v1 import (
 )
 from deskpet.workflows.errors import WorkflowErrorCode, WorkflowNodeError
 from deskpet.workflows.runner import WorkflowRegistry, WorkflowRunner
-from deskpet.workflows.store import FencedAsyncSqliteSaver, WorkflowRunStore
+from deskpet.workflows.store.checkpointer import FencedAsyncSqliteSaver
+from deskpet.workflows.store.run_store import WorkflowRunStore
 
 
 class FakeLLM:

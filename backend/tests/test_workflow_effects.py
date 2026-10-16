@@ -26,7 +26,7 @@ from deskpet.workflows.effects import (
     effect_fingerprint,
     target_reservation_key,
 )
-from deskpet.workflows.store import StaleRunFence, WorkflowRunStore
+from deskpet.workflows.store.run_store import StaleRunFence, WorkflowRunStore
 
 
 async def _new_run(

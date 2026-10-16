@@ -24,7 +24,7 @@ from ..contracts import (
     validate_json_value,
 )
 from ..errors import InvalidStatePatch
-from ..store import RegisteredBlobStore
+from ..store.registered_blob_store import RegisteredBlobStore
 from .deep_research_v6_contracts import format_blob_ref, parse_blob_ref, sha256_json
 from .deep_research_v6_integrity import (
     ClaimRecordV1,

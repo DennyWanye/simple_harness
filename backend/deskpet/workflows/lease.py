@@ -11,7 +11,7 @@ from typing import Any, TypeVar
 
 from .contracts import TERMINAL_RUN_STATUSES, WorkflowRunStatus
 from .errors import LeaseLostError
-from .store import RunFence, StaleRunFence, WorkflowRunStore
+from .store.run_store import RunFence, StaleRunFence, WorkflowRunStore
 
 HEARTBEAT_INTERVAL_SECONDS = 15.0
 LEASE_TTL_SECONDS = 90.0

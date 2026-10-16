@@ -39,11 +39,13 @@ from simple_harness.execution.sqlite import Database, SqliteExecutionUnitOfWork
 from simple_harness.execution.uow import RunState
 from simple_harness.runtime import SqliteContextPort, StartSnapshot
 
+from deskpet.execution.evidence_ingress import ProviderInvocationFact, ToolInvocationFact
 from deskpet.memory.primary_tool_causality import (
     PrimaryToolCausalityUnavailable,
     read_tool_causality,
 )
 from deskpet.quality.corpus_trace import read_public_trace
+from deskpet.sdk_adapters.effect_gate import classify_objective_event
 from deskpet.task_scope.protocol import canonical_hash, canonical_json, redact_credential_shapes
 
 from .runtime_paths import (
@@ -622,15 +624,6 @@ class ProductSdkRuntimeStack:
         (terminal record → ``ProviderInvocationFact``).  Anything else, or a
         record that is not terminal, returns ``None`` and is tombstoned.
         """
-
-        # 按需导入：循环依赖（composition ↔ evidence_ingress）
-        from deskpet.execution.evidence_ingress import (
-            ProviderInvocationFact,
-            ToolInvocationFact,
-        )
-
-        # 按需导入：循环依赖（composition ↔ effect_gate）
-        from deskpet.sdk_adapters.effect_gate import classify_objective_event
 
         uow = self._uow
         if uow is None:

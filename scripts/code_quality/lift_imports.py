@@ -685,7 +685,7 @@ def main() -> int:
         # I001 排序；SIM102：去掉导入后外层 if 只剩一个内层 if，合并成一个（安全修复，不改行为）
         subprocess.run([str(RUFF), "check", "--config", str(REPO / "scripts/code_quality/ruff.toml"),
                         "--select", "I001,SIM102", "--fix", "-q", *rels], check=False)
-        subprocess.run([str(RUFF), "format", "--config", str(REPO / "scripts/code_quality/ruff.toml"),
+        subprocess.run([str(RUFF), "format", "--force-exclude", "--config", str(REPO / "scripts/code_quality/ruff.toml"),
                         "-q", *rels], check=False)
         print(f"改写文件 {len(changed)} 个")
     return 0

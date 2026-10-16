@@ -21,8 +21,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from deskpet.execution import RunState
-from deskpet.execution.foreground_queue import ForegroundQueueStore
+from deskpet.execution.foreground_queue import ForegroundQueueStore, RunState
 from deskpet.execution.foreground_runtime import SqliteSdkTerminalObserver
 from deskpet.memory.human_memory_program import HumanMemoryProgramStore
 from deskpet.memory.schema import initialize_human_memory_program_state_db

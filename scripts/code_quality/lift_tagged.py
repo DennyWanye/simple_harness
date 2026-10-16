@@ -54,7 +54,7 @@ def main() -> int:
     ruff = os.environ.get("RUFF") or str(REPO.parent / "simple_harness/sdk/simple-harness-sdk/.venv/bin/ruff")
     config = str(REPO / "scripts/code_quality/ruff.toml")
     subprocess.run([ruff, "check", "--config", config, "--select", "I001,F401", "--fix", "--quiet", str(path)], check=False)
-    subprocess.run([ruff, "format", "--config", config, "--quiet", str(path)], check=False)
+    subprocess.run([ruff, "format", "--force-exclude", "--config", config, "--quiet", str(path)], check=False)
     print(f"{path.name}：上提 {len(picked)} 处导入 {module}（{', '.join(names)}）")
     return 0
 

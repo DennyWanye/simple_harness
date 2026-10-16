@@ -31,7 +31,7 @@ from deskpet.workflows.definitions.v6.deep_research import (
     NODE_IDS,
     initial_state,
 )
-from deskpet.workflows.store import RegisteredBlobStore
+from deskpet.workflows.store.registered_blob_store import RegisteredBlobStore
 
 
 def _identity(run_id: str, node_id: str) -> NodeExecutionIdentity:

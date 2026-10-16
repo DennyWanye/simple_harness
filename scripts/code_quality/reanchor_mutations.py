@@ -42,7 +42,7 @@ def pipeline(text: str, rel: str) -> str:
         p.write_text(text, encoding="utf-8")
         subprocess.run([RUFF, "check", "--config", str(CONFIG), "--select", SAFE_RULES, "--fix", "-q", str(p)],
                        capture_output=True)
-        subprocess.run([RUFF, "format", "--config", str(CONFIG), "-q", str(p)], capture_output=True)
+        subprocess.run([RUFF, "format", "--force-exclude", "--config", str(CONFIG), "-q", str(p)], capture_output=True)
         return p.read_text(encoding="utf-8")
 
 

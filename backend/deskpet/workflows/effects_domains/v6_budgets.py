@@ -13,7 +13,7 @@ import aiosqlite
 
 from ..contracts import JsonValue
 from ..deadlines import DurableDeadlineV1
-from ..store import RunFence
+from ..store.run_store import RunFence
 from .core import EffectJournalCore
 from .support import EffectStateConflict
 

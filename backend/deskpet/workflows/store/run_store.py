@@ -15,6 +15,7 @@ import aiosqlite
 
 from ..errors import LeaseLostError, WorkflowContractError
 from ..execution_ports import CheckpointExecutionAdapter
+from .research_repository import ResearchWorkflowRepository
 from .schema import initialize_workflow_db
 
 
@@ -156,9 +157,6 @@ class WorkflowRunStore:
 
     async def create_child_from_snapshot(self, **kwargs: Any) -> tuple[dict[str, Any], bool]:
         """Delegate the v5 continuation transaction to its focused repository."""
-
-        # 按需导入：循环依赖（run_store ↔ research_repository）
-        from .research_repository import ResearchWorkflowRepository
 
         repository = ResearchWorkflowRepository(self.path, clock=self._clock)
         return await repository.create_child_from_snapshot(**kwargs)

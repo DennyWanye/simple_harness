@@ -10,7 +10,7 @@ from deskpet.workflows.adapters.deep_research_v6_retrieval_runtime import (
 )
 from deskpet.workflows.contracts import canonical_json
 from deskpet.workflows.effects import EffectAction, EffectStateConflict, PreparedToolCall
-from deskpet.workflows.store import RunFence
+from deskpet.workflows.store.run_store import RunFence
 
 from tests.test_workflow_v6_read_effects import _runtime
 

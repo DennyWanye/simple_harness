@@ -43,6 +43,7 @@ from simple_harness import (
 from simple_harness.execution.audit import RunAuditUnavailable
 
 from deskpet.execution.admission_rejection import reject_stale_candidate
+from deskpet.execution.evidence_ingress import ExecutionEvidenceIngress
 from deskpet.execution.foreground_queue import (
     ClaimedExecution,
     ContextLineage,
@@ -56,6 +57,7 @@ from deskpet.execution.foreground_queue import (
 )
 from deskpet.execution.preparation_rejection import PreparationDisclosureRejected
 from deskpet.execution.primary_dependencies import parse_dependencies, read_run_dependencies
+from deskpet.execution.primary_history import record_terminal_observation
 from deskpet.memory.primary_tool_causality import PrimaryToolCausalityUnavailable
 from deskpet.memory.primary_visibility import cause_fields
 from deskpet.memory.trusted_disclosure import TrustedDisclosureError
@@ -2008,8 +2010,6 @@ class SqliteSdkTerminalObserver:
             or len(str(getattr(sdk_evidence, "event_hash", ""))) != 64
         ):
             raise ForegroundRuntimeError("foreground_sdk_terminal_evidence_mismatch")
-        # 按需导入：循环依赖（foreground_runtime ↔ evidence_ingress）
-        from deskpet.execution.evidence_ingress import ExecutionEvidenceIngress
 
         evidence_ingress = ExecutionEvidenceIngress(self._db_path, fault_inject=self._fault_inject)
         effective_scope = await evidence_ingress.resolve_run_scope(sdk_run_id)
@@ -2120,8 +2120,6 @@ class SqliteSdkTerminalObserver:
                     # Unverifiable/old source stays archived; never fabricate
                     # an empty complete proof to make generated history visible.
                     proof = None
-        # 按需导入：循环依赖（foreground_runtime ↔ primary_history）
-        from deskpet.execution.primary_history import record_terminal_observation
 
         occurrence_sources = None
         coordinator = self._occurrence_coordinator

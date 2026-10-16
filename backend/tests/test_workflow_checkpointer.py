@@ -5,22 +5,16 @@ import sqlite3
 import pytest
 from deskpet.workflows.contracts import NodeExecutionIdentity
 from deskpet.workflows.progress import WorkflowProgressReporter
-from deskpet.workflows.store import (
+from deskpet.workflows.store.checkpointer import (
     NATIVE_ENGINE_KIND,
-    WORKFLOW_SCHEMA_VERSION,
     NativeCheckpointError,
     NativeCheckpointStore,
-    RegisteredBlobStore,
-    StaleRunFence,
-    WorkflowRunStore,
-    initialize_workflow_db,
 )
-from deskpet.workflows.store import (
-    LegacyCheckpointStore as FencedAsyncSqliteSaver,
-)
-from deskpet.workflows.store import (
-    empty_legacy_checkpoint as empty_checkpoint,
-)
+from deskpet.workflows.store.checkpointer import LegacyCheckpointStore as FencedAsyncSqliteSaver
+from deskpet.workflows.store.checkpointer import empty_legacy_checkpoint as empty_checkpoint
+from deskpet.workflows.store.registered_blob_store import RegisteredBlobStore
+from deskpet.workflows.store.run_store import StaleRunFence, WorkflowRunStore
+from deskpet.workflows.store.schema import WORKFLOW_SCHEMA_VERSION, initialize_workflow_db
 
 
 async def _run_and_config(tmp_path):

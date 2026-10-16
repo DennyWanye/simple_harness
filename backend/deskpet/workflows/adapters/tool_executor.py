@@ -9,7 +9,7 @@ from concurrent.futures import Executor
 from typing import Any, Protocol, cast
 
 from ..effects import NormalizedToolOutcome, PreparedToolCall
-from ..store import RunFence
+from ..store.run_store import RunFence
 
 
 class _LateEffectFinalizer(Protocol):

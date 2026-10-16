@@ -11,7 +11,8 @@ from deskpet.workflows.launcher import WorkflowLauncher
 from deskpet.workflows.outbox import OutboxError, stable_delivery_id, stable_event_id
 from deskpet.workflows.runner import WorkflowRegistry, WorkflowRunner
 from deskpet.workflows.service import START_SNAPSHOT_KEY, WorkflowService, WorkflowServiceError
-from deskpet.workflows.store import FencedAsyncSqliteSaver, WorkflowRunStore
+from deskpet.workflows.store.checkpointer import FencedAsyncSqliteSaver
+from deskpet.workflows.store.run_store import WorkflowRunStore
 from deskpet.workflows.trace import SpanKind, TraceStore
 
 

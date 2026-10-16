@@ -21,7 +21,7 @@ from deskpet.sdk_adapters.skill_install_verification import (
     SdkTerminalCapabilityReleaseReconciler,
     SkillInstallVerificationRunService,
 )
-from deskpet.workflows.store import RuntimeActivationCommand
+from deskpet.workflows.store.execution_uow import RuntimeActivationCommand
 from llm.resolution import SessionProviderUnavailable
 
 from host.llm_providers import cloud_llm

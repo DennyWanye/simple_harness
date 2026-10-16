@@ -136,6 +136,7 @@ def main() -> int:
         [
             ruff,
             "format",
+            "--force-exclude",
             "--config",
             str(REPO / "scripts/code_quality/ruff.toml"),
             "--quiet",

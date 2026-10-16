@@ -42,7 +42,9 @@ from deskpet.workflows.delivery import (
 )
 from deskpet.workflows.effects import EffectExecutionContext, EffectJournal
 from deskpet.workflows.launcher import WorkflowLauncher
-from deskpet.workflows.store import NativeCheckpointStore, RegisteredBlobStore, RunFence
+from deskpet.workflows.store.checkpointer import NativeCheckpointStore
+from deskpet.workflows.store.registered_blob_store import RegisteredBlobStore
+from deskpet.workflows.store.run_store import RunFence
 
 from tests.host_source import host_nested_function_source, host_source_text
 

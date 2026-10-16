@@ -18,10 +18,12 @@ from .retention import ClockPort, RetentionPolicy, SystemClock, WorkflowRetentio
 from .runner import WorkflowRegistry, WorkflowRunner
 from .runtime_adapters import RuntimeIdentity, WorkflowRuntimeAdapterRegistry
 from .service import WorkflowService
-from .store import NativeCheckpointStore, RegisteredBlobStore, WorkflowRunStore
 from .store.checkpoint_execution import SqliteCheckpointExecutionAdapter
+from .store.checkpointer import NativeCheckpointStore
 from .store.execution_uow import SqliteExecutionUnitOfWork
+from .store.registered_blob_store import RegisteredBlobStore
 from .store.research_repository import ResearchWorkflowRepository
+from .store.run_store import WorkflowRunStore
 
 
 async def build_workflow_service(

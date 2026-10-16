@@ -46,7 +46,7 @@ from ..effects import (
     PreparedToolCall,
     ToolOutcomeState,
 )
-from ..store import RegisteredBlobStore
+from ..store.registered_blob_store import RegisteredBlobStore
 from ..store.research_repository import ResearchWorkflowRepository
 
 

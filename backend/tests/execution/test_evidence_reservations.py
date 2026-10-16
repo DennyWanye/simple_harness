@@ -18,7 +18,6 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from deskpet.execution import RunState
 from deskpet.execution.evidence_ingress import (
     ExecutionEvidenceIngress,
     ObjectiveEventSpec,
@@ -26,7 +25,7 @@ from deskpet.execution.evidence_ingress import (
     TerminalWatermarkPending,
     ToolInvocationFact,
 )
-from deskpet.execution.foreground_queue import ForegroundQueueStore
+from deskpet.execution.foreground_queue import ForegroundQueueStore, RunState
 from deskpet.execution.foreground_runtime import SqliteSdkTerminalObserver
 from deskpet.sdk_adapters.context_authority import ContextRouteLedgerStore
 from deskpet.task_scope.store import TaskScopeConflict

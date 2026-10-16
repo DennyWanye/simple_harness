@@ -27,7 +27,8 @@ from ..effects import (
     EffectStateConflict,
     PreparedToolCall,
 )
-from ..store import RegisteredBlobStore, StaleRunFence
+from ..store.registered_blob_store import RegisteredBlobStore
+from ..store.run_store import StaleRunFence
 from .research_runtime import BoundResearchEffectContext
 
 V6_READ_POLICY_ID = "deep-research-v6-page-read-v1"

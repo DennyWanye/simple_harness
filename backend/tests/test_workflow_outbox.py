@@ -4,7 +4,7 @@ import pytest
 from deskpet.workflows.launcher import WorkflowLauncher
 from deskpet.workflows.outbox import WorkflowOutbox
 from deskpet.workflows.service import WorkflowService
-from deskpet.workflows.store import WorkflowRunStore
+from deskpet.workflows.store.run_store import WorkflowRunStore
 
 
 async def _run_store(tmp_path):

@@ -22,7 +22,7 @@ from deskpet.harness.context import HostContextFactory
 from deskpet.harness.contracts import PreparedRunContextV1
 from deskpet.tools.capabilities import ToolExecutionContext
 from deskpet.tools.registry import ToolRegistry
-from deskpet.workflows.store import SqliteExecutionUnitOfWork
+from deskpet.workflows.store.execution_uow import SqliteExecutionUnitOfWork
 
 
 def _environment() -> PackEnvironment:

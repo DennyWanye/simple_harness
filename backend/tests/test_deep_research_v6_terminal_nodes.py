@@ -29,7 +29,7 @@ from deskpet.workflows.definitions.deep_research_v6_terminal_nodes import (
     persist_manifest_handler,
     render_claims_handler,
 )
-from deskpet.workflows.store import RegisteredBlobStore
+from deskpet.workflows.store.registered_blob_store import RegisteredBlobStore
 
 
 def _identity(run_id: str, node_id: str) -> NodeExecutionIdentity:

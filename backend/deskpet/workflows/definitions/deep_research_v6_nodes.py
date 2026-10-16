@@ -21,7 +21,7 @@ from ..contracts import (
     canonical_json,
     validate_json_value,
 )
-from ..store import RegisteredBlobStore
+from ..store.registered_blob_store import RegisteredBlobStore
 from .deep_research_v6_compiler import COMPILER_POLICY, compile_official_exact_fact
 from .deep_research_v6_contracts import ResearchSpecV1, format_blob_ref, parse_blob_ref
 from .deep_research_v6_delivery import persist_q1_terminal_bundle

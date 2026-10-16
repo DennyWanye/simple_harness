@@ -16,6 +16,7 @@ import aiosqlite
 
 from ..contracts import canonical_json, validate_json_value
 from ..errors import AsyncOnlyWorkflowError, UnsupportedDeltaChannelError
+from ..human import HumanDecisionStore
 from .checkpointer_domains.commits import TaskCommitMixin
 
 # 拆分前从本模块导入的名字照旧可用（同名别名表示有意转出）
@@ -653,9 +654,6 @@ class FencedAsyncSqliteSaver(BaseCheckpointSaver[int]):
                     ),
                 )
             if interrupts:
-                # 按需导入：循环依赖（checkpointer ↔ human）
-                from ..human import HumanDecisionStore
-
                 interrupt_id, prompt, kind, expires_at = interrupts[0]
                 await HumanDecisionStore.open_graph_interrupt_in_transaction(
                     db,

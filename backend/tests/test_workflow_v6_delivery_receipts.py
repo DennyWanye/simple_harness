@@ -5,7 +5,7 @@ from deskpet.memory.session_db import SessionDB
 from deskpet.workflows.delivery import DeliveryAttemptResultV1
 from deskpet.workflows.outbox import OutboxError, WorkflowOutbox
 from deskpet.workflows.service import WorkflowService
-from deskpet.workflows.store import WorkflowRunStore
+from deskpet.workflows.store.run_store import WorkflowRunStore
 
 
 async def _run(store: WorkflowRunStore, key: str, session_id: str, epoch: int) -> str:

@@ -38,7 +38,7 @@ from deskpet.permissions.task_grants import (
     ResourceSelector,
     TaskGrant,
 )
-from deskpet.workflows.store import SqliteExecutionUnitOfWork
+from deskpet.workflows.store.execution_uow import SqliteExecutionUnitOfWork
 
 ARGS_HASH = "a" * 64
 CAPABILITY_HASH = "c" * 64

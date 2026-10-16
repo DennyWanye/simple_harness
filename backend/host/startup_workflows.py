@@ -120,7 +120,8 @@ from deskpet.workflows.runtime_adapters import (
     DeepResearchRuntimeExtension,
 )
 from deskpet.workflows.startup_recovery import activate_and_recover_workflows
-from deskpet.workflows.store import RegisteredBlobStore, RunFence, WorkflowRunStore
+from deskpet.workflows.store.registered_blob_store import RegisteredBlobStore
+from deskpet.workflows.store.run_store import RunFence, WorkflowRunStore
 from deskpet.workflows.terminal_projection import TERMINAL_COMMIT_CAPABILITY
 from providers.openai_compatible import OpenAICompatibleProvider
 

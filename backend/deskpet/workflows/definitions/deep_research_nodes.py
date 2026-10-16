@@ -11,7 +11,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import asdict
 
 from ..contracts import JsonValue, canonical_json, validate_json_value
-from ..store import BlobRef, BlobStore
+from ..store.blob_store import BlobRef, BlobStore
 from .research_core import (
     ResearchCoreConfig,
     ResearchCoreState,

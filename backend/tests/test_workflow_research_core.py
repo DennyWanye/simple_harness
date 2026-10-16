@@ -21,7 +21,7 @@ from deskpet.workflows.definitions.research_core import (
     legacy_ports,
     run_research_core,
 )
-from deskpet.workflows.store import BlobStore
+from deskpet.workflows.store.blob_store import BlobStore
 
 
 class FakeLLM:

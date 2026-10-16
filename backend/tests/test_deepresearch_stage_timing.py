@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 from deskpet.workflows.contracts import NodeExecutionIdentity
-from deskpet.workflows.store import WorkflowRunStore
+from deskpet.workflows.store.run_store import WorkflowRunStore
 from deskpet.workflows.trace import TraceStore
 from deskpet.workflows.trace.observer import WorkflowExecutionObserver
 from observability.metrics_sink import MetricsSink

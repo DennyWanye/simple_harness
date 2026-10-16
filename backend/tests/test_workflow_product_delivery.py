@@ -20,7 +20,7 @@ from deskpet.workflows.adapters.product_delivery import (
 )
 from deskpet.workflows.outbox import WorkflowOutbox
 from deskpet.workflows.service import WorkflowService
-from deskpet.workflows.store import WorkflowRunStore
+from deskpet.workflows.store.run_store import WorkflowRunStore
 
 KEY = b"p" * 32
 

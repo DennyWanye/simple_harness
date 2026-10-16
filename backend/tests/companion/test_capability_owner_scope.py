@@ -24,11 +24,8 @@ from deskpet.capabilities.store import (
     install_capability_schema,
     migrate_capability_schema_v1_to_v2,
 )
-from deskpet.workflows.store import (
-    WORKFLOW_SCHEMA_VERSION,
-    initialize_workflow_db,
-)
 from deskpet.workflows.store import schema as workflow_schema
+from deskpet.workflows.store.schema import WORKFLOW_SCHEMA_VERSION, initialize_workflow_db
 
 
 def _hash(value: str) -> str:

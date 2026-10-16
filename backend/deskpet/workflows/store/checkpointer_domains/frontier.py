@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from ...contracts import JsonValue, canonical_json
+from ...native import NativeCommitResult
 from ..run_store import RunFence, StaleRunFence
 from .core import NativeCheckpointCore
 from .support import NATIVE_ENGINE_KIND, NativeCheckpointError, _native_mapping
@@ -209,9 +210,6 @@ class FrontierRetryMixin(NativeCheckpointCore):
             await st.db.close()
         await self._fault("frontier.after_db_commit_before_return")
         if st.protocol_call:
-            # 按需导入：循环依赖（checkpointer ↔ native）
-            from ...native import NativeCommitResult
-
             st.NativeCommitResult = NativeCommitResult
 
             return st.NativeCommitResult(
@@ -323,9 +321,6 @@ class FrontierRetryMixin(NativeCheckpointCore):
         if st.existing is not None:
             await st.db.commit()
             if st.protocol_call:
-                # 按需导入：循环依赖（checkpointer ↔ native）
-                from ...native import NativeCommitResult
-
                 st.NativeCommitResult = NativeCommitResult
 
                 st.result = st.NativeCommitResult(

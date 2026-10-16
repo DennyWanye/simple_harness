@@ -9,17 +9,17 @@ import sqlite3
 from pathlib import Path
 
 import pytest
-from deskpet.execution import (
+from deskpet.execution.evidence_ingress import (
+    ExecutionEvidenceIngress,
+    TerminalWatermarkPending,
+)
+from deskpet.execution.foreground_queue import (
     ContextLineage,
     ControlKind,
     EffectBoundary,
     ForegroundQueueError,
     ForegroundQueueStore,
     RunState,
-)
-from deskpet.execution.evidence_ingress import (
-    ExecutionEvidenceIngress,
-    TerminalWatermarkPending,
 )
 from deskpet.execution.foreground_runtime import SqliteSdkTerminalObserver
 from deskpet.memory.human_memory_program import HumanMemoryProgramStore

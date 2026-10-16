@@ -18,7 +18,7 @@ from deskpet.workflows.effects import (
     PreparedToolCall,
     TargetMode,
 )
-from deskpet.workflows.store import WorkflowRunStore
+from deskpet.workflows.store.run_store import WorkflowRunStore
 
 from tests.ppt_patching import patch_ppt
 

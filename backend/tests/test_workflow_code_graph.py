@@ -36,7 +36,8 @@ from deskpet.workflows.proposal_state import (
 )
 from deskpet.workflows.runner import WorkflowRegistry, WorkflowRunner
 from deskpet.workflows.service import WorkflowService
-from deskpet.workflows.store import FencedAsyncSqliteSaver, WorkflowRunStore
+from deskpet.workflows.store.checkpointer import FencedAsyncSqliteSaver
+from deskpet.workflows.store.run_store import WorkflowRunStore
 from llm.errors import LLMProviderError
 
 from tests.test_workflow_native_engine import MemoryNativeStore

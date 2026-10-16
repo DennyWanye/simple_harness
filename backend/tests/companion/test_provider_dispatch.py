@@ -35,7 +35,7 @@ from deskpet.execution.provider_invocations import (
     coordinate_provider_call,
     coordinate_provider_stream,
 )
-from deskpet.workflows.store import SqliteExecutionUnitOfWork
+from deskpet.workflows.store.execution_uow import SqliteExecutionUnitOfWork
 from providers.dispatch_handoff import DispatchStartedAck, DispatchStartUnknown
 from providers.dispatch_transport import DispatchAwareAsyncTransport
 from providers.openai_compatible import OpenAICompatibleProvider
