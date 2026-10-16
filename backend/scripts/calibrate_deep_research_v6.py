@@ -1,3 +1,4 @@
+# 运行：cd backend && .venv/bin/python -m scripts.calibrate_deep_research_v6
 from __future__ import annotations
 
 import argparse
@@ -6,7 +7,6 @@ import importlib.util
 import json
 import math
 import statistics
-import sys
 import tempfile
 import time
 from collections import defaultdict
@@ -16,10 +16,6 @@ from pathlib import Path
 import aiosqlite
 import httpx
 
-BACKEND_ROOT = Path(__file__).resolve().parents[1]
-if str(BACKEND_ROOT) not in sys.path:
-    sys.path.insert(0, str(BACKEND_ROOT))
-
 from deskpet.retrieval.contracts import FetchRequest
 from deskpet.retrieval.fetch_extract import FetchExtractService
 from deskpet.retrieval.playwright_renderer import RenderOutcome
@@ -27,6 +23,8 @@ from deskpet.workflows import NodeExecutionIdentity
 from deskpet.workflows.store.run_store import WorkflowRunStore
 from deskpet.workflows.trace import TraceStore
 from deskpet.workflows.trace.observer import WorkflowExecutionObserver
+
+BACKEND_ROOT = Path(__file__).resolve().parents[1]
 
 SAMPLE_COUNT = 20
 SLOW_DELAY_S = 0.01

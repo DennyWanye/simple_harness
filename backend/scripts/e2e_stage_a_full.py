@@ -24,7 +24,6 @@ import sys
 import tempfile
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from agent.agent_loop import (
     AgentLoop,

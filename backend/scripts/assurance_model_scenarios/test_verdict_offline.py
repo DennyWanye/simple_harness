@@ -19,12 +19,10 @@ from __future__ import annotations
 
 import json
 import sqlite3
-import sys
 import tempfile
 from pathlib import Path
 from types import SimpleNamespace
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
 import run  # noqa: E402
 
 GOOD_ORACLE = {

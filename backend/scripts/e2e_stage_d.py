@@ -3,6 +3,8 @@
 
 """P4-S20 Wave 5 — Stage D plugin system E2E smoke.
 
+运行：cd backend && .venv/bin/python -m scripts.e2e_stage_d
+
 Validates end-to-end plugin lifecycle:
   1. scaffold_plugin generates a plugin layout
   2. PluginManager discovers it
@@ -20,7 +22,6 @@ import sys
 import tempfile
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from deskpet.plugins import PluginManager
 from deskpet.skills.parser import parse_skill_md

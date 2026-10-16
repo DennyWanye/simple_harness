@@ -7,18 +7,16 @@ WI-OH-4 `[memory.v2] curation_nudge / auto_learnings` flags, using the ACTUAL
 repo config.toml as the bundle default. Confirms one upgrade run backfills
 the flags while preserving the user's other content + comments.
 
-Run from backend/:  .venv/Scripts/python.exe scripts/verify_feature_flag_backfill.py
+Run from backend/:  .venv/bin/python -m scripts.verify_feature_flag_backfill
 """
 
 from __future__ import annotations
 
 import os
-import sys
 import tempfile
 from pathlib import Path
 
 BACKEND = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(BACKEND))
 REPO_CONFIG = BACKEND.parent / "config.toml"
 
 import tomli  # noqa: E402
