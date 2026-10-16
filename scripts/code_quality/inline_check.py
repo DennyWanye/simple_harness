@@ -226,7 +226,8 @@ def main() -> int:
     ).stdout
     old = methods(ast.parse(old_src), cls_name)
     phases = set(cur) - set(old)
-    pending = {n: cur[n] for n in phases | {target}}
+    targets = target.split(",")  # 同一提交里切了多个函数时用逗号列出，阶段方法在它们之间分配
+    pending = {n: cur[n] for n in phases | set(targets)}
 
     def calls(fn) -> set[str]:
         found = set()
@@ -262,23 +263,27 @@ def main() -> int:
         sys.path.insert(0, str(Path(__file__).resolve().parent))
         import state_rename as sr
 
-        rn, _, _, _ = sr.collect(old[target])
-        pending[target] = sr.reverse(pending[target], rn, STATE)
-        old[target] = sr.strip_nonlocals(old[target], rn)
-    same = ast.dump(pending[target]) == ast.dump(old[target])
-    others = [n for n in old if n != target and ast.dump(cur[n]) != ast.dump(old[n])]
+        for t in targets:
+            rn, _, _, _ = sr.collect(old[t])
+            pending[t] = sr.reverse(pending[t], rn, STATE)
+            old[t] = sr.strip_nonlocals(old[t], rn)
+    all_same = True
+    for t in targets:
+        same = ast.dump(pending[t]) == ast.dump(old[t])
+        all_same = all_same and same
+        print(f"内联 {len(order)} 个阶段方法；{t}：{'逐字相同' if same else '不同'}")
+        if not same:
+            a = ast.unparse(pending[t]).splitlines()
+            b = ast.unparse(old[t]).splitlines()
+            import difflib
+
+            for line in list(difflib.unified_diff(b, a, "参照", "内联后", lineterm="", n=2))[:80]:
+                print(line)
+    others = [n for n in old if n not in targets and ast.dump(cur[n]) != ast.dump(old[n])]
     missing = [n for n in old if n not in cur]
-    print(f"内联 {len(order)} 个阶段方法；{target}：{'逐字相同' if same else '不同'}")
     if others or missing:
         print("其余方法有变化：", others, "缺失：", missing)
-    if not same:
-        a = ast.unparse(pending[target]).splitlines()
-        b = ast.unparse(old[target]).splitlines()
-        import difflib
-
-        for line in list(difflib.unified_diff(b, a, "参照", "内联后", lineterm="", n=2))[:80]:
-            print(line)
-    return 0 if same and not others and not missing else 1
+    return 0 if all_same and not others and not missing else 1
 
 
 if __name__ == "__main__":
