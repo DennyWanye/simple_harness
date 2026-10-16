@@ -14,41 +14,6 @@
 from __future__ import annotations
 
 
-def test_agent_loop_signature_accepts_verify_gate():
-    """新增参数不破坏现有 callers (BC)。"""
-    import inspect
-
-    from agent.agent_loop import AgentLoop
-
-    sig = inspect.signature(AgentLoop.__init__)
-    params = sig.parameters
-    # 新增 3 参数全部 optional w/ default
-    assert "verify_gate" in params
-    assert params["verify_gate"].default is None
-    assert "receipt_store" in params
-    assert params["receipt_store"].default is None
-    assert "max_verify_nudges" in params
-    assert params["max_verify_nudges"].default == 2
-
-
-def test_d8_rebound_format_includes_required_fields():
-    """D8 回灌 schema 必须含 [verify-gate] header + iteration + 失败列表 +
-    Classification + Next。"""
-    # 此测试验文档：AgentLoop 内的 rebound 字符串模板必含关键 token
-    import inspect
-
-    from agent import agent_loop
-    from agent.agent_loop_domains import verify_gates
-
-    # 6B 拆分后核验闸门的回灌模板在 agent_loop_domains/verify_gates.py
-    src = inspect.getsource(agent_loop) + inspect.getsource(verify_gates)
-    # 关键字段
-    assert "[verify-gate]" in src
-    assert "blocked end_turn" in src
-    assert "Classification:" in src
-    assert "unmatched_claim" in src
-
-
 def test_receipt_store_load_session_provides_ledger():
     """AgentLoop 通过 self.receipt_store.load_session(sid) 拿 ledger。
     确保 ReceiptStore.load_session 返 list[ToolReceipt] 接口稳定。"""

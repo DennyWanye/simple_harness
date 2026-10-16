@@ -252,19 +252,6 @@ async def test_compact_anchor_is_appended_after_inject_summary():
     assert "[目标锚定]" in str(last_msg.get("content", ""))
 
 
-# ─────────────────────── 9. Module const _GOAL_ANCHOR_EVERY ───────────────────────
-
-
-def test_agent_loop_goal_anchor_module_const():
-    """_GOAL_ANCHOR_EVERY must be defined as 5 in agent_loop module."""
-    from agent import agent_loop
-
-    assert hasattr(agent_loop, "_GOAL_ANCHOR_EVERY"), (
-        "_GOAL_ANCHOR_EVERY constant missing from agent_loop"
-    )
-    assert agent_loop._GOAL_ANCHOR_EVERY == 5
-
-
 # ─────────────────────── agent_loop helpers ───────────────────────
 
 
@@ -319,43 +306,3 @@ class _NullToolRegistry:
 
     def dispatch(self, name: str, args: dict, task_id: str) -> str:
         return '{"ok": true}'
-
-
-# ─────────────────────── 11. no anchor when no goal ───────────────────────
-
-
-@pytest.mark.asyncio
-async def test_agent_loop_no_anchor_when_no_goal():
-    """BC: session_goal_store=None or no active goal → no [目标锚定] injected."""
-    from agent.agent_loop import _GOAL_ANCHOR_EVERY, AgentLoop
-
-    n = _GOAL_ANCHOR_EVERY
-    responses = []
-    for _ in range(n - 1):
-        responses.append(_make_tool_response())
-    responses.append(_make_final_response())
-
-    llm = _RecordingLLM(responses)
-    tools = _NullToolRegistry()
-
-    # No session_goal_store (BC path)
-    loop = AgentLoop(
-        llm_registry=llm,
-        tool_registry=tools,
-        max_iterations=n + 2,
-        session_goal_store=None,
-    )
-
-    events = [
-        e
-        async for e in loop.run(
-            messages=[{"role": "user", "content": "go"}],
-            session_id="sess_no_goal",
-        )
-    ]
-
-    for call_msgs in llm.all_messages:
-        for m in call_msgs:
-            assert "[目标锚定]" not in str(m.get("content", "")), (
-                "Should NOT inject [目标锚定] when session_goal_store=None"
-            )

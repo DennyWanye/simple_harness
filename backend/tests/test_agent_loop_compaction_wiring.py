@@ -13,8 +13,6 @@ Verifies that:
 
 from __future__ import annotations
 
-from agent.agent_loop import AgentLoop
-
 # ---------------------------------------------------------------------------
 # Minimal fakes
 # ---------------------------------------------------------------------------
@@ -91,30 +89,6 @@ def _make_msgs(n_non_system: int = 4, with_system: bool = True):
         role = "user" if i % 2 == 0 else "assistant"
         out.append({"role": role, "content": f"msg {i}"})
     return out
-
-
-# ---------------------------------------------------------------------------
-# BC: new param exists with default None
-# ---------------------------------------------------------------------------
-
-
-def test_agent_loop_accepts_compressor_param():
-    """AgentLoop.__init__ accepts compressor= kwarg with default None (BC)."""
-    import inspect
-
-    sig = inspect.signature(AgentLoop.__init__)
-    params = sig.parameters
-    assert "compressor" in params, "compressor param missing from AgentLoop.__init__"
-    assert params["compressor"].default is None, "compressor default must be None"
-
-
-def test_agent_loop_compressor_none_by_default():
-    """When compressor not passed, self.compressor is None."""
-    loop = AgentLoop(
-        llm_registry=_FakeLLM(),
-        tool_registry=_FakeToolRegistry(),
-    )
-    assert loop.compressor is None
 
 
 # ---------------------------------------------------------------------------

@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-from agent.agent_loop import PipelineEvent
+from agent.agent_events import PipelineEvent
 from deskpet.agent.run_presenter import CanonicalRunEventPresentationAdapter
 from deskpet.execution.contracts import OutcomeStatus, thaw_json
 from deskpet.execution.delivery_contracts import RunEvent, RunEventCandidate

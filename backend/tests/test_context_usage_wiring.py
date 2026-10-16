@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from agent.agent_loop import ContextCompactedEvent
+from agent.agent_events import ContextCompactedEvent
 from deskpet.agent.run_presenter import (
     PresentationState,
     RunPresentationContext,

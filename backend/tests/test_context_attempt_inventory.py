@@ -13,7 +13,6 @@ CALL = re.compile(
 
 def test_runtime_provider_calls_are_owned_by_scope_or_bottom_seam() -> None:
     bottom_seams = {
-        "agent/agent_loop.py",
         "agent/tool_use_shim.py",
         "llm/registry.py",
         "providers/openai_compatible.py",
@@ -39,11 +38,9 @@ def test_runtime_provider_calls_are_owned_by_scope_or_bottom_seam() -> None:
 
 def test_representative_auxiliary_purposes_are_explicit() -> None:
     expected = {
-        "agent/capability_gate.py": "capability_gate",
         "deskpet/agent/assembler/classifier.py": "classifier",
         "agent/plan.py": "planner",
         "agent/context_manager.py": "context_manager",
-        "deskpet/agent/context_compressor.py": "compressor",
         "deskpet/tools/research_tools.py": "research",
         "deskpet/workflows/adapters/code_runtime.py": "workflow",
     }

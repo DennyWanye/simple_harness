@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import paths as _paths
-from agent.agent_loop import FinalEvent
+from agent.agent_events import FinalEvent
 from deskpet.agent.run_presenter import (
     CanonicalRunEventPresentationAdapter,
     PresentationState,

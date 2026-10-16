@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol
 
 import structlog
-from agent.agent_loop import (
+from agent.agent_events import (
     AgentEvent,
     AssistantDeltaEvent,
     AssistantMessageEvent,

@@ -14,7 +14,6 @@ Tests (TDD, red before green):
 
 from __future__ import annotations
 
-import inspect
 import json
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -118,29 +117,6 @@ def test_garbage_input_returns_none():
 def test_json_array_returns_none():
     """顶级数组（非 dict）→ None。"""
     assert parse_reflection("[1, 2, 3]") is None
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# 4. flag off → agent_loop selfcheck does NOT inject reflection instruction
-# ──────────────────────────────────────────────────────────────────────────────
-
-
-def test_flag_off_selfcheck_no_reflection_marker():
-    """structured_reflection=False (default) → selfcheck msg contains NO reflection marker."""
-    from agent.agent_loop import AgentLoop, _build_selfcheck_message
-
-    # _build_selfcheck_message is a pure function; verify it doesn't contain the marker.
-    # The reflection injection only happens when the flag is on and is appended *after* the
-    # selfcheck message. Verify the base message is clean (flag off = no append).
-    tier2_msg = _build_selfcheck_message(20, 50, 15)
-    assert "task_replanning" not in tier2_msg
-    assert "error_analysis" not in tier2_msg
-
-    # Also verify AgentLoop constructor accepts structured_reflection param with default False.
-    sig = inspect.signature(AgentLoop.__init__)
-    params = sig.parameters
-    assert "structured_reflection" in params
-    assert params["structured_reflection"].default is False
 
 
 # ──────────────────────────────────────────────────────────────────────────────

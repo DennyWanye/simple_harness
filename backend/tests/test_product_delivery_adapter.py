@@ -188,7 +188,7 @@ async def test_handle_event_passes_context(
 
 @pytest.mark.asyncio
 async def test_projects_sdk_tool_call_and_result(delivery_adapter, mock_presenter):
-    from agent.agent_loop import AssistantMessageEvent, ToolCallEvent, ToolResultEvent
+    from agent.agent_events import AssistantMessageEvent, ToolCallEvent, ToolResultEvent
     from simple_harness import CallId
     from simple_harness.tools import ToolCall, ToolResult
 
@@ -216,7 +216,7 @@ async def test_projects_sdk_tool_call_and_result(delivery_adapter, mock_presente
 async def test_tool_call_projection_thaws_nested_sdk_arguments(delivery_adapter, mock_presenter):
     import json
 
-    from agent.agent_loop import ToolCallEvent
+    from agent.agent_events import ToolCallEvent
     from simple_harness import CallId
     from simple_harness.tools import ToolCall
 
@@ -253,7 +253,7 @@ async def test_tool_call_projection_thaws_nested_sdk_arguments(delivery_adapter,
 async def test_projects_public_narration_before_tool_with_stable_iteration(
     delivery_adapter, mock_presenter
 ):
-    from agent.agent_loop import AssistantMessageEvent, ToolCallEvent, ToolResultEvent
+    from agent.agent_events import AssistantMessageEvent, ToolCallEvent, ToolResultEvent
     from simple_harness import CallId
     from simple_harness.tools import ToolCall, ToolResult
 
@@ -284,7 +284,7 @@ async def test_projects_public_narration_before_tool_with_stable_iteration(
 
 @pytest.mark.asyncio
 async def test_empty_public_narration_projects_safe_tool_fallback(delivery_adapter, mock_presenter):
-    from agent.agent_loop import AssistantMessageEvent, ToolCallEvent
+    from agent.agent_events import AssistantMessageEvent, ToolCallEvent
     from simple_harness import CallId
     from simple_harness.tools import ToolCall
 
@@ -308,7 +308,7 @@ async def test_empty_public_narration_projects_safe_tool_fallback(delivery_adapt
 async def test_public_narration_projection_failure_does_not_block_tool_call(
     delivery_adapter, mock_presenter
 ):
-    from agent.agent_loop import AssistantMessageEvent, ToolCallEvent
+    from agent.agent_events import AssistantMessageEvent, ToolCallEvent
     from simple_harness import CallId
     from simple_harness.tools import ToolCall
 
@@ -499,7 +499,7 @@ async def test_web_outcomes_round_trip_real_session_db_with_idempotent_public_pr
 async def test_same_provider_turn_multi_call_shares_iteration_with_interleaved_results(
     delivery_adapter, mock_presenter
 ):
-    from agent.agent_loop import AssistantMessageEvent, ToolCallEvent, ToolResultEvent
+    from agent.agent_events import AssistantMessageEvent, ToolCallEvent, ToolResultEvent
     from simple_harness import CallId
     from simple_harness.tools import ToolCall, ToolResult
 
@@ -534,7 +534,7 @@ async def test_same_provider_turn_multi_call_shares_iteration_with_interleaved_r
 
 @pytest.mark.asyncio
 async def test_next_provider_turn_uses_distinct_iteration(delivery_adapter, mock_presenter):
-    from agent.agent_loop import AssistantMessageEvent, ToolCallEvent
+    from agent.agent_events import AssistantMessageEvent, ToolCallEvent
     from simple_harness import CallId
     from simple_harness.tools import ToolCall
 

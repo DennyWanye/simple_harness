@@ -25,12 +25,9 @@ on Windows occasionally takes 6-8s on first connect).
 
 from __future__ import annotations
 
-
 import httpx
-import pytest
-from agent.agent_loop import AgentLoop, ToolBatchEvent, ToolCall
 from agent.tool_use_shim import _raw_to_response
-from llm.types import ChatResponse, ChatUsage
+from llm.types import ChatResponse
 from providers.openai_compatible import OpenAICompatibleProvider
 
 # ─────────────── connect timeout (Fix A) ───────────────
@@ -107,99 +104,6 @@ def test_raw_to_response_propagates_parse_error_metadata():
     assert tc.args_raw == '{"path": "fo'
     # Empty parsed args (since parse failed)
     assert tc.arguments == {}
-
-
-@pytest.mark.asyncio
-async def test_malformed_args_metadata_reaches_external_tool_batch():
-    """ReActDriver receives parse metadata and can fail closed."""
-
-    class _SpyRegistry:
-        def __init__(self):
-            self.execute_calls: list[tuple] = []
-            self.dispatch_calls: list[tuple] = []
-
-        def schemas(self, **_):
-            return []
-
-        async def execute_tool(self, name, args, sid, task_id):
-            self.execute_calls.append((name, args, sid, task_id))
-            return {"ok": True, "result": "should not be reached"}
-
-        def dispatch(self, name, args, task_id):
-            self.dispatch_calls.append((name, args, task_id))
-            return "should not be reached"
-
-    reg = _SpyRegistry()
-
-    bad_tc = ToolCall(
-        id="c1",
-        name="write_file",
-        arguments={},
-        args_parse_error="Expecting ',' delimiter: line 1 column 50",
-        args_raw='{"path": "G:\\\\foo", "content": "broken \\\\n stuff',
-    )
-
-    class _OneCallLLM:
-        async def chat_with_fallback(self, *a, **k):
-            return ChatResponse(
-                content="",
-                tool_calls=[bad_tc],
-                stop_reason="tool_use",
-                usage=ChatUsage(),
-            )
-
-    loop = AgentLoop(llm_registry=_OneCallLLM(), tool_registry=reg)
-    events = [event async for event in loop.run([{"role": "user", "content": "write"}])]
-
-    # Registry must NOT have been invoked
-    assert reg.execute_calls == [], "execute_tool was called despite malformed args"
-    assert reg.dispatch_calls == [], "dispatch was called despite malformed args"
-
-    batch = next(event for event in events if isinstance(event, ToolBatchEvent))
-    exposed = batch.tool_calls[0]
-    assert exposed.args_parse_error == bad_tc.args_parse_error
-    assert exposed.args_raw == bad_tc.args_raw
-
-
-@pytest.mark.asyncio
-async def test_well_formed_args_reach_external_tool_batch_unchanged():
-    """Clean calls are exposed unchanged and remain unexecuted."""
-
-    class _RealRegistry:
-        def __init__(self):
-            self.calls: list[tuple] = []
-
-        def schemas(self, **_):
-            return []
-
-        async def execute_tool(self, name, args, sid, task_id):
-            self.calls.append((name, args, sid, task_id))
-            return {"ok": True, "result": '{"wrote": 42}'}
-
-    reg = _RealRegistry()
-
-    good_tc = ToolCall(
-        id="c1",
-        name="write_file",
-        arguments={"path": "/tmp/x", "content": "hi"},
-        # Both metadata fields None → not malformed
-    )
-
-    class _OneCallLLM:
-        async def chat_with_fallback(self, *a, **k):
-            return ChatResponse(
-                content="",
-                tool_calls=[good_tc],
-                stop_reason="tool_use",
-                usage=ChatUsage(),
-            )
-
-    loop = AgentLoop(llm_registry=_OneCallLLM(), tool_registry=reg)
-    events = [event async for event in loop.run([{"role": "user", "content": "write"}])]
-
-    batch = next(event for event in events if isinstance(event, ToolBatchEvent))
-    assert batch.tool_calls[0].arguments == {"path": "/tmp/x", "content": "hi"}
-    assert reg.calls == []
 
 
 def test_assembled_tool_call_omits_metadata_when_args_parse_ok():

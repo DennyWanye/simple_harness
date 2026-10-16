@@ -11,7 +11,7 @@ from collections.abc import Sequence
 from typing import Any
 
 import structlog
-from agent.agent_loop import AssistantMessageEvent, ToolCallEvent, ToolResultEvent
+from agent.agent_events import AssistantMessageEvent, ToolCallEvent, ToolResultEvent
 from llm.types import ToolCall
 from simple_harness import thaw_json
 

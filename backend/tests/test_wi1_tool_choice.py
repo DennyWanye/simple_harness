@@ -5,7 +5,6 @@ from typing import Any
 
 import httpx
 import pytest
-from agent.agent_loop import AgentLoop, ErrorEvent, FinalEvent, ToolBatchEvent
 from llm.types import ChatResponse, ToolCall
 from providers.openai_compatible import OpenAICompatibleProvider
 
@@ -201,107 +200,6 @@ async def test_provider_default_tool_choice_is_auto() -> None:
     assert bodies[0]["tool_choice"] == "auto"
 
 
-@pytest.mark.asyncio
-async def test_tier3_forces_tool_choice_none_in_provider_chain() -> None:
-    provider = _ChainProvider()
-    loop = AgentLoop(None, _Tools(), max_iterations=31)
-
-    events = await _collect(
-        loop.run(
-            [{"role": "user", "content": "go"}],
-            provider_chain=[provider],
-            _external_tool_feedback={"iteration": 29, "tools_used_count": 29},
-        )
-    )
-
-    assert any(isinstance(ev, FinalEvent) for ev in events)
-    assert provider.tool_choices == ["none"]
-
-
-@pytest.mark.asyncio
-async def test_tier3_forces_tool_choice_none_in_stream_path() -> None:
-    llm = _StreamingLLM()
-    loop = AgentLoop(llm, _Tools(), max_iterations=31)
-
-    events = await _collect(
-        loop.run(
-            [{"role": "user", "content": "go"}],
-            stream=True,
-            _external_tool_feedback={"iteration": 29, "tools_used_count": 29},
-        )
-    )
-
-    assert any(isinstance(ev, FinalEvent) for ev in events)
-    assert llm.tool_choices == ["none"]
-
-
-@pytest.mark.asyncio
-async def test_tier3_forces_tool_choice_none_in_nonstream_path() -> None:
-    llm = _FallbackLLM()
-    loop = AgentLoop(llm, _Tools(), max_iterations=31)
-
-    events = await _collect(
-        loop.run(
-            [{"role": "user", "content": "go"}],
-            _external_tool_feedback={"iteration": 29, "tools_used_count": 29},
-        )
-    )
-
-    assert any(isinstance(ev, FinalEvent) for ev in events)
-    assert llm.tool_choices == ["none"]
-
-
-@pytest.mark.asyncio
-async def test_force_finish_flag_off_never_forces_none() -> None:
-    llm = _FallbackLLM()
-    loop = AgentLoop(
-        llm,
-        _Tools(),
-        max_iterations=31,
-        force_finish_via_tool_choice=False,
-    )
-
-    events = await _collect(
-        loop.run(
-            [{"role": "user", "content": "go"}],
-            _external_tool_feedback={"iteration": 29, "tools_used_count": 29},
-        )
-    )
-
-    assert any(isinstance(ev, ToolBatchEvent) for ev in events)
-    assert llm.calls == 1
-    assert "none" not in llm.tool_choices
-
-
-@pytest.mark.asyncio
-async def test_tier3_suppresses_completion_nudge() -> None:
-    llm = _FallbackLLM()
-    probe_calls = 0
-
-    async def completion_probe(session_id: str) -> list[dict]:  # noqa: ARG001
-        nonlocal probe_calls
-        probe_calls += 1
-        return [{"content": "unfinished", "status": "pending"}]
-
-    loop = AgentLoop(
-        llm,
-        _Tools(),
-        max_iterations=31,
-        completion_probe=completion_probe,
-        max_completion_nudges=2,
-    )
-
-    events = await _collect(
-        loop.run(
-            [{"role": "user", "content": "go"}],
-            _external_tool_feedback={"iteration": 29, "tools_used_count": 29},
-        )
-    )
-
-    assert any(isinstance(ev, FinalEvent) for ev in events)
-    assert probe_calls == 0
-
-
 class _AlwaysEndTurnLLM:
     """Every turn returns plain end_turn text → always reaches the verify gate."""
 
@@ -358,47 +256,3 @@ class _FailVerifyGate:
         assistant_text: Any,  # noqa: ARG002
     ) -> bool:
         return False
-
-
-@pytest.mark.asyncio
-async def test_verify_exhausted_grants_final_text_turn() -> None:
-    """B5/§17.6: verify exhaustion → one forced tool_choice=none summary turn →
-    terminal ErrorEvent(verify_exhausted) carrying the model summary in detail."""
-    llm = _AlwaysEndTurnLLM()
-    loop = AgentLoop(
-        llm,
-        _Tools(),
-        max_iterations=10,
-        verify_gate=_FailVerifyGate(),
-        max_verify_nudges=2,
-    )
-
-    events = await _collect(loop.run([{"role": "user", "content": "go"}]))
-
-    errors = [ev for ev in events if isinstance(ev, ErrorEvent)]
-    assert errors, "verify exhaustion must surface an ErrorEvent (graceful degrade)"
-    assert errors[-1].reason == "verify_exhausted"
-    # the failure was surfaced with the model's final summary text, not hidden
-    assert errors[-1].detail
-    # the granted final turn used tool_choice="none" (protocol-level hard stop)
-    assert "none" in llm.tool_choices
-
-
-@pytest.mark.asyncio
-async def test_verify_exhausted_flag_off_hard_exits_without_final_turn() -> None:
-    """BC: with force_finish flag off, exhaustion hard-exits (no forced none turn)."""
-    llm = _AlwaysEndTurnLLM()
-    loop = AgentLoop(
-        llm,
-        _Tools(),
-        max_iterations=10,
-        verify_gate=_FailVerifyGate(),
-        max_verify_nudges=2,
-        force_finish_via_tool_choice=False,
-    )
-
-    events = await _collect(loop.run([{"role": "user", "content": "go"}]))
-
-    errors = [ev for ev in events if isinstance(ev, ErrorEvent)]
-    assert errors and errors[-1].reason == "verify_exhausted"
-    assert "none" not in llm.tool_choices

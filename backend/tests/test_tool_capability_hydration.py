@@ -1,23 +1,9 @@
 from __future__ import annotations
 
-import asyncio
 from dataclasses import replace
 
 import pytest
-from agent.agent_loop import (
-    AgentLoop,
-    ErrorEvent,
-    ToolBatchEvent,
-    _planned_generation_reserve,
-)
-from deskpet.agent.assembler.bundle import PreparedContext
 from deskpet.agent.context_budget import prepare_openai_tool_payload
-from deskpet.agent.context_snapshot_store import (
-    ContextSnapshotHandle,
-    SnapshotCommitCancelled,
-    SnapshotConflictError,
-    SnapshotWriteReceipt,
-)
 from deskpet.tools.capabilities import (
     PreparedToolCapability,
     ToolCapabilityBridgeService,
@@ -32,19 +18,6 @@ from deskpet.tools.capabilities import (
 from deskpet.tools.registry import ToolRegistry
 from deskpet.tools.tool_search import register_capability_bridge_tools
 from llm.types import ChatResponse, ChatUsage, ToolCall
-
-
-def test_activation_replan_reuses_prepared_generation_reserve() -> None:
-    class _Budget:
-        generation_reserve = 1024
-
-    class _Prepared:
-        request_budget = _Budget()
-
-    assert _planned_generation_reserve(_Prepared(), {}) == 1024
-    assert _planned_generation_reserve(_Prepared(), {"max_tokens": 8192}) == 1024
-    assert _planned_generation_reserve(object(), {"max_tokens": 768}) == 768
-    assert _planned_generation_reserve(object(), {}) == 0
 
 
 def _runtime():
@@ -308,84 +281,6 @@ def _tool_domain_result(content: str):
     return __import__("json").loads(outer["result"])
 
 
-@pytest.mark.asyncio
-async def test_agent_loop_exposes_search_then_yields_external_tool_boundary() -> None:
-    registry, scopes, _service, prepared = _runtime()
-    target_calls = []
-    original = registry.get("mcp_demo_lookup")
-    assert original is not None
-    registry.register(
-        "mcp_demo_lookup",
-        "mcp",
-        original.schema,
-        lambda args, _task: target_calls.append(args) or "ok",
-        source="mcp:demo",
-        replace_allowed=True,
-    )
-    # The replacement intentionally makes the old deferred ref stale; resolve
-    # a fresh request exactly as production does.
-    eligibility = ToolEligibilityContext("s", "r2", "chat")
-    fresh = (
-        ToolCapabilityResolver(registry)
-        .resolve_draft(
-            ToolExposureIntent(
-                direct_selectors=("source:builtin",),
-                discoverable_selectors=("source:mcp:*",),
-            ),
-            eligibility=eligibility,
-        )
-        .finalize(scope_id="scope2")
-    )
-    scopes.open(fresh, eligibility)
-    registry.set_capability_scope_store(scopes)
-    registry.set_context_os_enabled_provider(lambda: True)
-    llm = _HydrationLLM()
-    loop = AgentLoop(llm, registry, max_iterations=6)
-    events = [
-        event
-        async for event in loop.run(
-            [{"role": "user", "content": "demo"}],
-            session_id="s",
-            prepared_context=PreparedContext(
-                messages=[{"role": "user", "content": "demo"}],
-                tool_set=fresh,
-            ),
-            context_request_id="r2",
-        )
-    ]
-    assert isinstance(events[-1], ToolBatchEvent)
-    assert [call.name for call in events[-1].tool_calls] == ["tool_search"]
-    assert target_calls == []
-    schema_names = [schema["function"]["name"] for schema in llm.calls[0]["tools"]]
-    assert "mcp_demo_lookup" not in schema_names
-    assert events[-1].canonical_messages[-1]["tool_calls"][0]["function"]["name"] == "tool_search"
-
-
-@pytest.mark.asyncio
-async def test_agent_loop_reports_expired_scope_instead_of_registry_mismatch() -> None:
-    registry, scopes, _service, prepared = _runtime()
-    registry.set_capability_scope_store(scopes)
-    scopes.purge(prepared.scope_id)
-    loop = AgentLoop(_HydrationLLM(), registry, max_iterations=2)
-
-    events = [
-        event
-        async for event in loop.run(
-            [{"role": "user", "content": "demo"}],
-            session_id="s",
-            prepared_context=PreparedContext(
-                messages=[{"role": "user", "content": "demo"}],
-                tool_set=prepared,
-            ),
-            context_request_id="r",
-        )
-    ]
-
-    assert isinstance(events[-1], ErrorEvent)
-    assert events[-1].reason == "tool_capability_scope_expired"
-    assert events[-1].detail == "Context OS capability scope is missing or expired"
-
-
 def _activation_candidate(registry, prepared):
     ref = next(item for item in prepared.deferred if item.name == "mcp_demo_lookup")
     spec = registry.get(ref.name)
@@ -397,45 +292,3 @@ def _activation_candidate(registry, prepared):
         )
     )
     return candidate, prepare_openai_tool_payload(candidate)
-
-
-@pytest.mark.asyncio
-async def test_activation_snapshot_cas_failure_keeps_scope_and_local_set_unchanged() -> None:
-    registry, scopes, _service, prepared = _runtime()
-    handle = ContextSnapshotHandle("s", "session:s", 1, "before")
-    scopes.advance_snapshot_handle_prevalidated(prepared.scope_id, handle)
-    prepared_context = PreparedContext(
-        messages=[{"role": "user", "content": "demo"}],
-        tool_set=prepared,
-        active_snapshot_handle=handle,
-    )
-    candidate, payload = _activation_candidate(registry, prepared)
-
-    class _ConflictStore:
-        async def update_tool_context_cas(self, *_args, **kwargs):
-            assert kwargs["prepared_toolset_summary"]["activated_names"] == ["mcp_demo_lookup"]
-            assert kwargs["prepared_toolset_summary"]["adapter_state"] == "prepared"
-            raise SnapshotConflictError(1, 2)
-
-    loop = AgentLoop(
-        _HydrationLLM(),
-        registry,
-        context_snapshot_store=_ConflictStore(),
-    )
-    async with scopes.lock_for(prepared.scope_id):
-        record = scopes.get(prepared.scope_id, session_id="s", request_id="r")
-        with pytest.raises(RuntimeError, match="tool_activation_snapshot_conflict"):
-            await loop._persist_activation_tool_context_locked(
-                session_id="s",
-                scope_store=scopes,
-                scope_record=record,
-                candidate=candidate,
-                prepared_context=prepared_context,
-                tool_payload=payload,
-            )
-
-    current = scopes.get(prepared.scope_id, session_id="s", request_id="r")
-    assert current.prepared is prepared
-    assert current.snapshot_handle == handle
-    assert prepared_context.tool_set is prepared
-    assert prepared_context.active_snapshot_handle == handle

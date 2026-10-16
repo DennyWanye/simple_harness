@@ -245,67 +245,6 @@ async def test_manager_scope_identity_isolated_per_profile_owner(
     assert (await resolver.resolve_instruction(owner_b)).scope == owner_b
 
 
-@pytest.mark.asyncio
-async def test_old_run_remount_uses_frozen_v1_after_live_selection_moves_to_v2(
-    tmp_path: Path,
-) -> None:
-    from agent.agent_loop import AgentLoop
-
-    item_v1, scope_v1 = _copy_versioned_summarize_pack(
-        tmp_path,
-        version="1.0.0",
-        marker="REMOUNT VERSION ONE",
-    )
-    item_v2, scope_v2 = _copy_versioned_summarize_pack(
-        tmp_path,
-        version="2.0.0",
-        marker="REMOUNT VERSION TWO",
-    )
-
-    class _Selection:
-        current = scope_v2
-        calls = 0
-
-        def resolve_selection(self, _name: str):
-            self.calls += 1
-            return self.current
-
-    selection = _Selection()
-    resolver = SkillPackSnapshotResolver(
-        version_store=_VersionStoreMany(item_v1, item_v2),
-        selection_source=selection,
-    )
-    loop = AgentLoop.__new__(AgentLoop)
-    loop.skill_loader = resolver
-    loop._frozen_skill_remounts = {}
-    loop._skills_used_order = ["summarize-day"]
-    loop._skills_used_this_run = {"summarize-day"}
-    durable_result = {
-        **scope_v1.to_dict(),
-        "instruction": "UNTRUSTED TOOL PAYLOAD BODY",
-    }
-
-    await loop._prepare_frozen_skill_remounts(
-        [
-            {
-                "role": "tool",
-                "name": "skill_invoke",
-                "tool_call_id": "call-1",
-                "content": json.dumps(durable_result),
-            }
-        ],
-        prepared_context=None,
-        external_feedback={},
-    )
-    mounted = loop._remount_skills([], "old-run")
-    content = mounted[0]["content"]
-
-    assert "REMOUNT VERSION ONE" in content
-    assert "REMOUNT VERSION TWO" not in content
-    assert "UNTRUSTED TOOL PAYLOAD BODY" not in content
-    assert selection.calls == 0
-
-
 def _capability(name: str, *, toolset: str = "core") -> PreparedToolCapability:
     schema = {
         "type": "function",

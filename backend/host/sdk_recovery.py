@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Mapping
 
-from agent.agent_loop import ErrorEvent, FinalEvent
+from agent.agent_events import ErrorEvent, FinalEvent
 from deskpet.agent.run_presenter import (
     CanonicalRunEventPresentationAdapter,
     PresentationState,
