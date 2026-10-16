@@ -18,8 +18,9 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from agent import agent_loop as agent_loop_module
 from agent.agent_loop import AgentLoop
+from agent.agent_loop_domains import context_attempts as context_attempts_module
+from agent.agent_loop_domains import run_setup as run_setup_module
 from deskpet.agent.evidence_gate import EvidenceGate
 from llm.errors import LLMProviderError
 from llm.types import ChatResponse, ChatUsage, ToolCall
@@ -325,7 +326,9 @@ def _context_agent(monkeypatch, *, fits: bool, compressor: Any = None) -> tuple[
         )
         return _budget(fits=fits)
 
-    monkeypatch.setattr(agent_loop_module, "estimate_selected_attempt_budget", fake_estimate)
+    # 6B 拆分后链式预算与上下文尝试各在自己的模块里读这个函数
+    for module in (run_setup_module, context_attempts_module):
+        monkeypatch.setattr(module, "estimate_selected_attempt_budget", fake_estimate)
     agent = AgentLoop(
         llm_registry=FakeLLM([]), tool_registry=FakeTools(), max_iterations=3, compressor=compressor
     )

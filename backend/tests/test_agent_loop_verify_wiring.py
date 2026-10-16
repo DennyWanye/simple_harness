@@ -108,8 +108,10 @@ def test_d8_rebound_format_includes_required_fields():
     import inspect
 
     from agent import agent_loop
+    from agent.agent_loop_domains import verify_gates
 
-    src = inspect.getsource(agent_loop)
+    # 6B 拆分后核验闸门的回灌模板在 agent_loop_domains/verify_gates.py
+    src = inspect.getsource(agent_loop) + inspect.getsource(verify_gates)
     # 关键字段
     assert "[verify-gate]" in src
     assert "blocked end_turn" in src

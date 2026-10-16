@@ -12,6 +12,7 @@ PRODUCTION_AUTHORITY_FILES = (
     BACKEND / "pipeline" / "voice_pipeline.py",
     BACKEND / "deskpet" / "agent" / "run_presenter.py",
     BACKEND / "agent" / "agent_loop.py",
+    *sorted((BACKEND / "agent" / "agent_loop_domains").glob("*.py")),
     BACKEND / "context.py",
     BACKEND / "agent" / "harness_feedback.py",
 )
