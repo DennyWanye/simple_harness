@@ -219,6 +219,96 @@ def _looks_like_archive_locator(candidate: _CandidatePlan) -> bool:
     }
 
 
+@dataclass
+class _RetrieveState:
+    """RetrievalMixin.retrieve 的运行状态：原函数的局部变量与参数（切段用）。"""
+
+    _bounded_search: Any = None
+    active_plans: Any = None
+    already_fetched: Any = None
+    archive_semaphore: Any = None
+    archive_tasks: Any = None
+    attempted_urls: Any = None
+    candidate_buckets: Any = None
+    canonical_page_keys: Any = None
+    direct: Any = None
+    direct_escalation: Any = None
+    discovered: Any = None
+    discovered_escalation: Any = None
+    discovery_fetch_count: Any = None
+    discovery_outcomes: Any = None
+    discovery_tasks: Any = None
+    escalated: Any = None
+    escalation_archives: Any = None
+    escalation_buckets: Any = None
+    escalation_discovery: Any = None
+    fanout: Any = None
+    fetch_limit: Any = None
+    frozen_route: Any = None
+    identity: Any = None
+    index: Any = None
+    lane_limit: Any = None
+    outcome: Any = None
+    outcomes: Any = None
+    page_key: Any = None
+    page_result_refs: Any = None
+    page_to_ref: Any = None
+    pages: Any = None
+    parent: Any = None
+    parent_lease: Any = None
+    plan: Any = None
+    prior_page: Any = None
+    query_limit: Any = None
+    query_plans: Any = None
+    query_semaphore: Any = None
+    query_timeout_s: Any = None
+    ref_to_page: Any = None
+    remaining_fetches: Any = None
+    remaining_s: Any = None
+    research_spec: Any = None
+    result_ref: Any = None
+    resumed: Any = None
+    route_budget: Any = None
+    route_decision: Any = None
+    route_value: Any = None
+    run_id: Any = None
+    search_count: Any = None
+    searched_archives: Any = None
+    searched_outcomes: Any = None
+    seed_buckets: Any = None
+    seed_candidates: Any = None
+    selected: Any = None
+    semaphore: Any = None
+    spec: Any = None
+    task: Any = None
+    tasks: Any = None
+    transition: Any = None
+    use_search_fallback: Any = None
+
+
+@dataclass
+class _SearchPlanState:
+    """RetrievalMixin._search_plan 的运行状态：原函数的局部变量与参数（切段用）。"""
+
+    _transport: Any = None
+    candidate: Any = None
+    candidate_url: Any = None
+    candidates: Any = None
+    durable: Any = None
+    locator: Any = None
+    locator_value: Any = None
+    plan: Any = None
+    query_timeout_s: Any = None
+    raw_locator: Any = None
+    replayed: Any = None
+    request: Any = None
+    response: Any = None
+    search_span: Any = None
+    st: Any = None
+    target: Any = None
+    typed: Any = None
+
+
 class RetrievalMixin(EvidenceRuntimeCore):
     """Retrieval, query plans and candidate selection."""
 
@@ -231,483 +321,94 @@ class RetrievalMixin(EvidenceRuntimeCore):
         identity: object | None = None,
         route_decision: RouteDecisionV1 | Mapping[str, Any] | None = None,
     ) -> DeepResearchV6RetrievalResult:
-        research_spec = spec if isinstance(spec, ResearchSpecV1) else ResearchSpecV1.from_json(spec)
-        if not isinstance(identity, NodeExecutionIdentity):
+        st = _RetrieveState(spec=spec, identity=identity, route_decision=route_decision)
+        st.research_spec = (
+            st.spec if isinstance(st.spec, ResearchSpecV1) else ResearchSpecV1.from_json(st.spec)
+        )
+        if not isinstance(st.identity, NodeExecutionIdentity):
             raise TypeError("v6 retrieval requires a bound NodeExecutionIdentity")
-        run_id = identity.run_id
-        if route_decision is None:
-            frozen_route = self.plan_route(research_spec, identity=identity)
-        else:
-            frozen_route = (
-                route_decision
-                if isinstance(route_decision, RouteDecisionV1)
-                else RouteDecisionV1.from_json(route_decision)
-            )
-            route_value = frozen_route.to_json()
-            if (
-                route_value["run_id"] != run_id
-                or route_value["spec_hash"] != research_spec.spec_hash
-                or route_value["policy_hash"] != self._policy_hash
-            ):
-                raise ValueError("persisted v6 route decision identity mismatch")
-        if self.durable_reads is not None:
-            parent, parent_lease = await self.durable_reads.deadline_port.resume_root(
-                identity=identity,
-                route_id=str(frozen_route.to_json()["route_id"]),
-                policy_hash=self._policy_hash,
-                budget_ms=self.parent_deadline_ms,
-            )
-        else:
-            parent = DurableDeadlineV1.create(
-                owner_id=run_id,
-                logical_scope="deep_research_v6.official_retrieval",
-                policy_hash=self._policy_hash,
-                budget_ms=self.parent_deadline_ms,
-                now_wall=self.wall_clock(),
-            )
-            resumed = resume_deadline(
-                parent,
-                now_wall=self.wall_clock(),
-                now_monotonic_ns=self.monotonic_ns(),
-            )
-            parent = resumed.state
-            parent_lease = resumed.lease
-        if parent_lease is None:
-            return DeepResearchV6RetrievalResult((), parent, 0, 0, 0, 0, 0, frozen_route)
+        st.run_id = st.identity.run_id
+        await self._resolve_route_and_lease(st)
+        if st.parent_lease is None:
+            return DeepResearchV6RetrievalResult((), st.parent, 0, 0, 0, 0, 0, st.frozen_route)
 
-        route_budget = frozen_route.to_json()["budget"]
-        self._active_route_id = str(frozen_route.to_json()["route_id"])
-        self._active_route_budget = copy.deepcopy(route_budget)
-        query_limit = min(self.max_queries, int(route_budget["query"]))
-        fetch_limit = min(self.max_fetches, int(route_budget["fetch"]))
+        st.route_budget = st.frozen_route.to_json()["budget"]
+        self._active_route_id = str(st.frozen_route.to_json()["route_id"])
+        self._active_route_budget = copy.deepcopy(st.route_budget)
+        st.query_limit = min(self.max_queries, int(st.route_budget["query"]))
+        st.fetch_limit = min(self.max_fetches, int(st.route_budget["fetch"]))
         # Execution consumes the immutable route decision. ``self.max_lanes``
         # is a planner input only; consulting it again here would silently
         # re-plan a persisted route after restart or configuration drift.
-        lane_limit = max(1, min(MAX_QUERY_COUNT, int(route_budget["lane"])))
-        query_plans, seed_buckets = self._build_query_plans(research_spec)
-        query_plans = query_plans[:query_limit]
-        candidate_buckets: list[tuple[_CandidatePlan, ...]] = []
-        discovery_outcomes: tuple[_SeedDiscoveryOutcome, ...] = ()
-        seed_candidates = self._select_candidates(seed_buckets)
-        if seed_candidates:
-            semaphore = asyncio.Semaphore(min(self.max_fetch_concurrency, lane_limit))
-            discovery_tasks = [
-                asyncio.create_task(
-                    self._discover_seed(
-                        candidate,
-                        parent=parent,
-                        run_id=run_id,
-                        identity=identity,
-                        semaphore=semaphore,
-                    )
-                )
-                for candidate in seed_candidates
-            ]
-            try:
-                discovery_outcomes = tuple(await asyncio.gather(*discovery_tasks))
-            except asyncio.CancelledError:
-                for task in discovery_tasks:
-                    task.cancel()
-                await asyncio.gather(*discovery_tasks, return_exceptions=True)
-                raise
-            transition = checkpoint_deadline(
-                parent,
-                parent_lease,
-                now_wall=self.wall_clock(),
-                now_monotonic_ns=self.monotonic_ns(),
-            )
-            parent, parent_lease = transition.state, transition.lease
-            candidate_buckets.extend(
-                outcome.candidates for outcome in discovery_outcomes if outcome.candidates
-            )
+        st.lane_limit = max(1, min(MAX_QUERY_COUNT, int(st.route_budget["lane"])))
+        st.query_plans, st.seed_buckets = self._build_query_plans(st.research_spec)
+        st.query_plans = st.query_plans[: st.query_limit]
+        st.candidate_buckets: list[tuple[_CandidatePlan, ...]] = []
+        st.discovery_outcomes: tuple[_SeedDiscoveryOutcome, ...] = ()
+        st.seed_candidates = self._select_candidates(st.seed_buckets)
+        await self._discover_seed_candidates(st)
 
-        discovery_fetch_count = sum(item.upstream_called for item in discovery_outcomes)
-        if await self._control_fenced(run_id):
+        st.discovery_fetch_count = sum(item.upstream_called for item in st.discovery_outcomes)
+        if await self._control_fenced(st.run_id):
             return DeepResearchV6RetrievalResult(
                 (),
-                parent,
+                st.parent,
                 0,
-                discovery_fetch_count,
-                sum(item.status == "timeout" for item in discovery_outcomes),
-                sum(item.status == "rejected" for item in discovery_outcomes),
-                sum(item.status == "failed" for item in discovery_outcomes),
-                frozen_route,
+                st.discovery_fetch_count,
+                sum(item.status == "timeout" for item in st.discovery_outcomes),
+                sum(item.status == "rejected" for item in st.discovery_outcomes),
+                sum(item.status == "failed" for item in st.discovery_outcomes),
+                st.frozen_route,
             )
         # A matching first-party archive link is stronger and faster than a
         # third-party search result.  Search remains the bounded fallback when
         # the archive is unavailable or has no matching frozen year.
-        use_search_fallback = not candidate_buckets
-        search_count = 0
-        fanout = conditional_fanout_enabled(frozen_route, intent_type=research_spec.intent_type)
+        st.use_search_fallback = not st.candidate_buckets
+        st.search_count = 0
+        st.fanout = conditional_fanout_enabled(
+            st.frozen_route, intent_type=st.research_spec.intent_type
+        )
 
-        async def _search_plan(
-            plan: _QueryPlan, *, query_timeout_s: float
-        ) -> tuple[_CandidatePlan, ...]:
-            request = SearchRequest(
-                query=plan.query,
-                max_results=min(5, self.max_fetches),
-                region=(
-                    plan.target.jurisdiction.casefold()
-                    if isinstance(plan.target, OfficialSourceTargetV1)
-                    else "wt-wt"
-                ),
-                mode="research",
-                hydrate_top=0,
-                total_timeout_s=query_timeout_s,
-                request_id=plan.request_id,
-                run_id=run_id,
-                dimension_id=plan.dimension_id,
-                query_terms=plan.query_terms,
-            )
-            response: SearchResponse | None = None
-            search_span = await self._start_child_span(
-                identity=identity,
-                request_id=plan.request_id,
-                stage=(
-                    "official_search"
-                    if isinstance(plan.target, OfficialSourceTargetV1)
-                    else "general_search"
-                ),
-                ordinal=plan.ordinal,
-            )
-            try:
-                if self.durable_reads is None:
-                    response = await asyncio.wait_for(
-                        dispatch_with_run_fence(
-                            acquire_fence=self.dispatch_fence_acquirer,
-                            run_id=run_id,
-                            operation_kind="workflow.research.search",
-                            operation_id=plan.request_id,
-                            invoke=lambda: self.search_gateway.search(request),
-                        ),
-                        timeout=query_timeout_s,
-                    )
-                else:
+        st.active_plans = st.query_plans if st.use_search_fallback else ()
+        await self._search_active_plans(st)
 
-                    async def _transport(attempt) -> OfficialSearchResultV1:
-                        try:
-                            attempt_timeout_s = query_timeout_s
-                            if attempt.deadline_monotonic_ns is not None:
-                                attempt_timeout_s = min(
-                                    attempt_timeout_s,
-                                    max(
-                                        0.0,
-                                        (attempt.deadline_monotonic_ns - self.monotonic_ns())
-                                        / 1_000_000_000,
-                                    ),
-                                )
-                            item = await asyncio.wait_for(
-                                dispatch_with_run_fence(
-                                    acquire_fence=self.dispatch_fence_acquirer,
-                                    run_id=run_id,
-                                    operation_kind="workflow.research.search",
-                                    operation_id=attempt.logical_effect_id,
-                                    invoke=lambda: self.search_gateway.search(request),
-                                ),
-                                timeout=attempt_timeout_s,
-                            )
-                        except asyncio.CancelledError:
-                            raise
-                        except TimeoutError:
-                            return OfficialSearchResultV1.create(
-                                logical_effect_id=attempt.logical_effect_id,
-                                attempt_no=attempt.attempt_no,
-                                request_id=plan.request_id,
-                                query_hash=hashlib.sha256(plan.query.encode("utf-8")).hexdigest(),
-                                target_id=plan.target.target_id,
-                                candidates=(),
-                                outcome="timeout",
-                                error_code="deadline_expired",
-                                deadline_id=attempt.deadline_id,
-                            )
-                        except Exception:
-                            return OfficialSearchResultV1.create(
-                                logical_effect_id=attempt.logical_effect_id,
-                                attempt_no=attempt.attempt_no,
-                                request_id=plan.request_id,
-                                query_hash=hashlib.sha256(plan.query.encode("utf-8")).hexdigest(),
-                                target_id=plan.target.target_id,
-                                candidates=(),
-                                outcome="failed",
-                                error_code="search_failed",
-                                deadline_id=attempt.deadline_id,
-                            )
-                        typed_candidates: list[SearchCandidateV1] = []
-                        for raw_candidate in item.results:
-                            candidate_url = _candidate_url(raw_candidate)
-                            if not candidate_url.startswith(("http://", "https://")):
-                                continue
-                            locator = await self._persist_locator(
-                                candidate=_CandidatePlan(
-                                    ordinal=len(typed_candidates),
-                                    dimension_id=plan.dimension_id,
-                                    candidate_id=raw_candidate.stable_id,
-                                    requested_url=candidate_url,
-                                    title=raw_candidate.title,
-                                    target=plan.target,
-                                    discovery_years=plan.discovery_years,
-                                ),
-                                final_url=candidate_url,
-                                verification_status="unverified",
-                                identity=identity,
-                            )
-                            typed_candidates.append(
-                                SearchCandidateV1.create(
-                                    ordinal=len(typed_candidates),
-                                    source_locator_ref=locator["source_locator_ref"],
-                                    title_hash=hashlib.sha256(
-                                        raw_candidate.title.encode("utf-8")
-                                    ).hexdigest(),
-                                    snippet_hash=hashlib.sha256(
-                                        raw_candidate.snippet.encode("utf-8")
-                                    ).hexdigest(),
-                                    authority_match="unverified",
-                                    reason_codes=("candidate_unverified",),
-                                )
-                            )
-                        return OfficialSearchResultV1.create(
-                            logical_effect_id=attempt.logical_effect_id,
-                            attempt_no=attempt.attempt_no,
-                            request_id=plan.request_id,
-                            query_hash=hashlib.sha256(plan.query.encode("utf-8")).hexdigest(),
-                            target_id=plan.target.target_id,
-                            candidates=tuple(typed_candidates),
-                            outcome="succeeded" if typed_candidates else "empty",
-                            error_code=None,
-                            deadline_id=attempt.deadline_id,
-                        )
-
-                    durable = await self.durable_reads.execute(
-                        operation_kind="official_search",
-                        route_id=str(frozen_route.to_json()["route_id"]),
-                        target_or_page_id=plan.target.target_id,
-                        ordinal=plan.ordinal,
-                        resource_kind="query",
-                        resource_hard_limit=int(route_budget["query"]),
-                        resource_policy_hash=self._policy_hash,
-                        deadline=parent,
-                        identity=identity,
-                        transport=_transport,
-                    )
-                    typed = OfficialSearchResultV1.from_json(durable)
-                    if typed.outcome != "succeeded":
-                        raise TimeoutError if typed.outcome == "timeout" else RuntimeError
-                    replayed: list[RetrievalCandidate] = []
-                    for candidate in typed.candidates:
-                        raw_locator = await self.blobs.get(
-                            candidate.source_locator_ref.removeprefix("sha256:")
-                        )
-                        locator_value = json.loads(raw_locator.decode("utf-8"))
-                        if not isinstance(locator_value, Mapping):
-                            raise ValueError("source locator blob must be an object")
-                        locator = SourceLocatorV1.from_json(locator_value)
-                        if locator.verification_status != candidate.authority_match:
-                            raise ValueError("search candidate/locator authority mismatch")
-                        replayed.append(
-                            RetrievalCandidate(
-                                stable_id=candidate.candidate_id,
-                                url=locator.canonical_url,
-                                canonical_url=locator.canonical_url,
-                                title="",
-                            )
-                        )
-                    response = SearchResponse(
-                        query=plan.query,
-                        results=tuple(replayed),
-                        request_id=typed.request_id,
-                        run_id=run_id,
-                    )
-            except asyncio.CancelledError:
-                await asyncio.shield(
-                    self._finish_child_span(search_span, SpanStatus.CANCELLED, outcome="cancelled")
-                )
-                raise
-            except TimeoutError:
-                await self._finish_child_span(search_span, SpanStatus.ERROR, outcome="timeout")
-                response = None
-            except Exception:
-                # Search failures are evidence gaps.  Other frozen dimensions
-                # can still return useful pages under the same parent budget.
-                await self._finish_child_span(search_span, SpanStatus.ERROR, outcome="error")
-                response = None
-            else:
-                await self._finish_child_span(
-                    search_span,
-                    SpanStatus.OK,
-                    outcome="hit" if response.results else "empty",
-                    count=len(response.results),
-                )
-            if isinstance(response, SearchResponse):
-                candidates: list[_CandidatePlan] = []
-                for candidate in response.results:
-                    candidate_url = _candidate_url(candidate)
-                    if not candidate_url.startswith(("http://", "https://")):
-                        continue
-                    try:
-                        target = (
-                            plan.target
-                            if isinstance(plan.target, OfficialSourceTargetV1)
-                            else _general_source_target(
-                                candidate_url, source_types=plan.target.source_types
-                            )
-                        )
-                    except ValueError:
-                        continue
-                    candidates.append(
-                        _CandidatePlan(
-                            ordinal=0,
-                            dimension_id=plan.dimension_id,
-                            candidate_id=candidate.stable_id,
-                            requested_url=candidate_url,
-                            title=candidate.title,
-                            target=target,
-                            discovery_years=plan.discovery_years,
-                        )
-                    )
-                return tuple(candidates)
-            return ()
-
-        active_plans = query_plans if use_search_fallback else ()
-        if fanout and active_plans and parent_lease is not None:
-            remaining_s = remaining_timeout_seconds(
-                parent_lease, now_monotonic_ns=self.monotonic_ns()
-            )
-            if remaining_s > 0:
-                query_semaphore = asyncio.Semaphore(lane_limit)
-
-                async def _bounded_search(plan: _QueryPlan) -> tuple[_CandidatePlan, ...]:
-                    async with query_semaphore:
-                        return await _search_plan(plan, query_timeout_s=remaining_s)
-
-                tasks = [asyncio.create_task(_bounded_search(plan)) for plan in active_plans]
-                search_count = len(tasks)
-                try:
-                    candidate_buckets.extend(await asyncio.gather(*tasks))
-                except asyncio.CancelledError:
-                    for task in tasks:
-                        task.cancel()
-                    await asyncio.gather(*tasks, return_exceptions=True)
-                    raise
-                if self.durable_reads is not None:
-                    parent, parent_lease = await self.durable_reads.deadline_port.checkpoint(
-                        identity=identity, state=parent, lease=parent_lease
-                    )
-                else:
-                    transition = checkpoint_deadline(
-                        parent,
-                        parent_lease,
-                        now_wall=self.wall_clock(),
-                        now_monotonic_ns=self.monotonic_ns(),
-                    )
-                    parent, parent_lease = transition.state, transition.lease
-        else:
-            for index, plan in enumerate(active_plans):
-                if parent_lease is None:
-                    break
-                remaining_s = remaining_timeout_seconds(
-                    parent_lease, now_monotonic_ns=self.monotonic_ns()
-                )
-                if remaining_s <= 0:
-                    break
-                query_timeout_s = remaining_s / max(1, len(active_plans) - index)
-                candidate_buckets.append(await _search_plan(plan, query_timeout_s=query_timeout_s))
-                search_count += 1
-                if self.durable_reads is not None:
-                    parent, parent_lease = await self.durable_reads.deadline_port.checkpoint(
-                        identity=identity, state=parent, lease=parent_lease
-                    )
-                else:
-                    transition = checkpoint_deadline(
-                        parent,
-                        parent_lease,
-                        now_wall=self.wall_clock(),
-                        now_monotonic_ns=self.monotonic_ns(),
-                    )
-                    parent, parent_lease = transition.state, transition.lease
-
-        if await self._control_fenced(run_id):
+        if await self._control_fenced(st.run_id):
             return DeepResearchV6RetrievalResult(
                 (),
-                parent,
-                search_count,
-                discovery_fetch_count,
-                sum(item.status == "timeout" for item in discovery_outcomes),
-                sum(item.status == "rejected" for item in discovery_outcomes),
-                sum(item.status == "failed" for item in discovery_outcomes),
-                frozen_route,
+                st.parent,
+                st.search_count,
+                st.discovery_fetch_count,
+                sum(item.status == "timeout" for item in st.discovery_outcomes),
+                sum(item.status == "rejected" for item in st.discovery_outcomes),
+                sum(item.status == "failed" for item in st.discovery_outcomes),
+                st.frozen_route,
             )
-        remaining_fetches = max(0, fetch_limit - discovery_fetch_count)
-        selected = self._select_candidates(candidate_buckets, limit=remaining_fetches)
+        st.remaining_fetches = max(0, st.fetch_limit - st.discovery_fetch_count)
+        st.selected = self._select_candidates(st.candidate_buckets, limit=st.remaining_fetches)
         # Official search can return an archive/index locator rather than the
         # annual publication itself.  Resolve such locators through the same
         # frozen-year, same-authority rule used by registry seeds.  The index
         # consumes one existing fetch lease; discovered targets consume only
         # the remaining frozen fetch budget.
-        searched_archives = tuple(
-            candidate for candidate in selected if _looks_like_archive_locator(candidate)
+        st.searched_archives = tuple(
+            candidate for candidate in st.selected if _looks_like_archive_locator(candidate)
         )
-        if searched_archives and parent_lease is not None:
-            archive_semaphore = asyncio.Semaphore(
-                min(self.max_fetch_concurrency, lane_limit, len(searched_archives))
-            )
-            archive_tasks = [
-                asyncio.create_task(
-                    self._discover_seed(
-                        candidate,
-                        parent=parent,
-                        run_id=run_id,
-                        identity=identity,
-                        semaphore=archive_semaphore,
-                    )
-                )
-                for candidate in searched_archives
-            ]
-            try:
-                searched_outcomes = tuple(await asyncio.gather(*archive_tasks))
-            except asyncio.CancelledError:
-                for task in archive_tasks:
-                    task.cancel()
-                await asyncio.gather(*archive_tasks, return_exceptions=True)
-                raise
-            discovery_outcomes = (*discovery_outcomes, *searched_outcomes)
-            discovery_fetch_count = sum(item.upstream_called for item in discovery_outcomes)
-            if self.durable_reads is not None:
-                parent, parent_lease = await self.durable_reads.deadline_port.checkpoint(
-                    identity=identity, state=parent, lease=parent_lease
-                )
-            else:
-                transition = checkpoint_deadline(
-                    parent,
-                    parent_lease,
-                    now_wall=self.wall_clock(),
-                    now_monotonic_ns=self.monotonic_ns(),
-                )
-                parent, parent_lease = transition.state, transition.lease
-            direct = tuple(
-                candidate for candidate in selected if not _looks_like_archive_locator(candidate)
-            )
-            discovered = tuple(
-                outcome.candidates for outcome in searched_outcomes if outcome.candidates
-            )
-            selected = self._select_candidates(
-                (*discovered, direct),
-                limit=max(0, fetch_limit - discovery_fetch_count),
-            )
-        if not selected or parent_lease is None:
+        await self._discover_searched_archives(st)
+        if not st.selected or st.parent_lease is None:
             return DeepResearchV6RetrievalResult(
                 (),
-                parent,
-                search_count,
-                discovery_fetch_count,
-                sum(item.status == "timeout" for item in discovery_outcomes),
-                sum(item.status == "rejected" for item in discovery_outcomes),
-                sum(item.status == "failed" for item in discovery_outcomes),
-                frozen_route,
+                st.parent,
+                st.search_count,
+                st.discovery_fetch_count,
+                sum(item.status == "timeout" for item in st.discovery_outcomes),
+                sum(item.status == "rejected" for item in st.discovery_outcomes),
+                sum(item.status == "failed" for item in st.discovery_outcomes),
+                st.frozen_route,
                 tuple(
                     sorted(
                         {
                             item.page_result_ref
-                            for item in discovery_outcomes
+                            for item in st.discovery_outcomes
                             if item.page_result_ref is not None
                             and item.status in {"timeout", "rejected", "failed"}
                         }
@@ -715,61 +416,241 @@ class RetrievalMixin(EvidenceRuntimeCore):
                 ),
             )
 
-        async def _fetch_candidates(
-            candidates: Sequence[_CandidatePlan],
-        ) -> tuple[_FetchOutcome, ...]:
-            concurrency = min(self.max_fetch_concurrency, lane_limit, len(candidates))
-            semaphore = asyncio.Semaphore(concurrency)
-            cursor = 0
-            cursor_lock = asyncio.Lock()
-            completed: list[_FetchOutcome] = []
-
-            async def _fetch_worker() -> None:
-                nonlocal cursor
-                while True:
-                    # Pull at most one new page after each durable signal
-                    # check. In-flight pages still settle canonical outcomes.
-                    if await self._control_fenced(run_id):
-                        return
-                    async with cursor_lock:
-                        if cursor >= len(candidates):
-                            return
-                        candidate = candidates[cursor]
-                        cursor += 1
-                    completed.append(
-                        await self._fetch_one(
-                            candidate,
-                            parent=parent,
-                            run_id=run_id,
-                            identity=identity,
-                            semaphore=semaphore,
-                        )
-                    )
-
-            tasks = [asyncio.create_task(_fetch_worker()) for _ in range(concurrency)]
-            try:
-                await asyncio.gather(*tasks)
-                return tuple(completed)
-            except asyncio.CancelledError:
-                for task in tasks:
-                    task.cancel()
-                await asyncio.gather(*tasks, return_exceptions=True)
-                raise
-
-        outcomes = await _fetch_candidates(selected)
+        st.outcomes = await self._fetch_candidates(st, st.selected)
 
         if self.durable_reads is not None:
-            parent, parent_lease = await self.durable_reads.deadline_port.checkpoint(
-                identity=identity, state=parent, lease=parent_lease
+            st.parent, st.parent_lease = await self.durable_reads.deadline_port.checkpoint(
+                identity=st.identity, state=st.parent, lease=st.parent_lease
             )
         else:
-            transition = checkpoint_deadline(
-                parent,
-                parent_lease,
+            st.transition = checkpoint_deadline(
+                st.parent,
+                st.parent_lease,
                 now_wall=self.wall_clock(),
                 now_monotonic_ns=self.monotonic_ns(),
             )
-            parent, parent_lease = transition.state, transition.lease
+            st.parent, st.parent_lease = st.transition.state, st.transition.lease
+
+        await self._escalate_official_exact_fact(st)
+        st.pages = self._canonical_pages(st.outcomes)
+        self._record_page_results(st)
+        return DeepResearchV6RetrievalResult(
+            pages=st.pages,
+            parent_deadline=st.parent,
+            search_count=st.search_count,
+            fetch_count=st.discovery_fetch_count
+            + sum(item.upstream_called for item in st.outcomes),
+            timeout_count=(
+                sum(item.status == "timeout" for item in st.discovery_outcomes)
+                + sum(item.status == "timeout" for item in st.outcomes)
+            ),
+            rejected_count=(
+                sum(item.status == "rejected" for item in st.discovery_outcomes)
+                + sum(item.status == "rejected" for item in st.outcomes)
+            ),
+            failed_count=(
+                sum(item.status == "failed" for item in st.discovery_outcomes)
+                + sum(item.status == "failed" for item in st.outcomes)
+            ),
+            route_decision=st.frozen_route,
+            page_result_refs=st.page_result_refs,
+        )
+
+    async def _resolve_route_and_lease(self, st: _RetrieveState) -> None:
+        """取冻结路由与父级租约（持久读取时先查已记录的路由）。"""
+
+        if st.route_decision is None:
+            st.frozen_route = self.plan_route(st.research_spec, identity=st.identity)
+        else:
+            st.frozen_route = (
+                st.route_decision
+                if isinstance(st.route_decision, RouteDecisionV1)
+                else RouteDecisionV1.from_json(st.route_decision)
+            )
+            st.route_value = st.frozen_route.to_json()
+            if (
+                st.route_value["run_id"] != st.run_id
+                or st.route_value["spec_hash"] != st.research_spec.spec_hash
+                or st.route_value["policy_hash"] != self._policy_hash
+            ):
+                raise ValueError("persisted v6 route decision identity mismatch")
+        if self.durable_reads is not None:
+            st.parent, st.parent_lease = await self.durable_reads.deadline_port.resume_root(
+                identity=st.identity,
+                route_id=str(st.frozen_route.to_json()["route_id"]),
+                policy_hash=self._policy_hash,
+                budget_ms=self.parent_deadline_ms,
+            )
+        else:
+            st.parent = DurableDeadlineV1.create(
+                owner_id=st.run_id,
+                logical_scope="deep_research_v6.official_retrieval",
+                policy_hash=self._policy_hash,
+                budget_ms=self.parent_deadline_ms,
+                now_wall=self.wall_clock(),
+            )
+            st.resumed = resume_deadline(
+                st.parent,
+                now_wall=self.wall_clock(),
+                now_monotonic_ns=self.monotonic_ns(),
+            )
+            st.parent = st.resumed.state
+            st.parent_lease = st.resumed.lease
+
+    async def _discover_seed_candidates(self, st: _RetrieveState) -> None:
+        """种子候选并发展开，推进父级截止时间。"""
+
+        if st.seed_candidates:
+            st.semaphore = asyncio.Semaphore(min(self.max_fetch_concurrency, st.lane_limit))
+            st.discovery_tasks = [
+                asyncio.create_task(
+                    self._discover_seed(
+                        candidate,
+                        parent=st.parent,
+                        run_id=st.run_id,
+                        identity=st.identity,
+                        semaphore=st.semaphore,
+                    )
+                )
+                for candidate in st.seed_candidates
+            ]
+            try:
+                st.discovery_outcomes = tuple(await asyncio.gather(*st.discovery_tasks))
+            except asyncio.CancelledError:
+                for st.task in st.discovery_tasks:
+                    st.task.cancel()
+                await asyncio.gather(*st.discovery_tasks, return_exceptions=True)
+                raise
+            st.transition = checkpoint_deadline(
+                st.parent,
+                st.parent_lease,
+                now_wall=self.wall_clock(),
+                now_monotonic_ns=self.monotonic_ns(),
+            )
+            st.parent, st.parent_lease = st.transition.state, st.transition.lease
+            st.candidate_buckets.extend(
+                outcome.candidates for outcome in st.discovery_outcomes if outcome.candidates
+            )
+
+    async def _search_active_plans(self, st: _RetrieveState) -> None:
+        """按查询计划搜索：可并发时限时并发，否则逐条搜。"""
+
+        if st.fanout and st.active_plans and st.parent_lease is not None:
+            st.remaining_s = remaining_timeout_seconds(
+                st.parent_lease, now_monotonic_ns=self.monotonic_ns()
+            )
+            if st.remaining_s > 0:
+                st.query_semaphore = asyncio.Semaphore(st.lane_limit)
+
+                async def _bounded_search(plan: _QueryPlan) -> tuple[_CandidatePlan, ...]:
+                    async with st.query_semaphore:
+                        return await self._search_plan(st, plan, query_timeout_s=st.remaining_s)
+
+                st._bounded_search = _bounded_search
+
+                st.tasks = [
+                    asyncio.create_task(st._bounded_search(plan)) for plan in st.active_plans
+                ]
+                st.search_count = len(st.tasks)
+                try:
+                    st.candidate_buckets.extend(await asyncio.gather(*st.tasks))
+                except asyncio.CancelledError:
+                    for st.task in st.tasks:
+                        st.task.cancel()
+                    await asyncio.gather(*st.tasks, return_exceptions=True)
+                    raise
+                if self.durable_reads is not None:
+                    st.parent, st.parent_lease = await self.durable_reads.deadline_port.checkpoint(
+                        identity=st.identity, state=st.parent, lease=st.parent_lease
+                    )
+                else:
+                    st.transition = checkpoint_deadline(
+                        st.parent,
+                        st.parent_lease,
+                        now_wall=self.wall_clock(),
+                        now_monotonic_ns=self.monotonic_ns(),
+                    )
+                    st.parent, st.parent_lease = st.transition.state, st.transition.lease
+        else:
+            for st.index, st.plan in enumerate(st.active_plans):
+                if st.parent_lease is None:
+                    break
+                st.remaining_s = remaining_timeout_seconds(
+                    st.parent_lease, now_monotonic_ns=self.monotonic_ns()
+                )
+                if st.remaining_s <= 0:
+                    break
+                st.query_timeout_s = st.remaining_s / max(1, len(st.active_plans) - st.index)
+                st.candidate_buckets.append(
+                    await self._search_plan(st, st.plan, query_timeout_s=st.query_timeout_s)
+                )
+                st.search_count += 1
+                if self.durable_reads is not None:
+                    st.parent, st.parent_lease = await self.durable_reads.deadline_port.checkpoint(
+                        identity=st.identity, state=st.parent, lease=st.parent_lease
+                    )
+                else:
+                    st.transition = checkpoint_deadline(
+                        st.parent,
+                        st.parent_lease,
+                        now_wall=self.wall_clock(),
+                        now_monotonic_ns=self.monotonic_ns(),
+                    )
+                    st.parent, st.parent_lease = st.transition.state, st.transition.lease
+
+    async def _discover_searched_archives(self, st: _RetrieveState) -> None:
+        """搜到的归档地址先展开成候选，再与直连候选合并挑选。"""
+
+        if st.searched_archives and st.parent_lease is not None:
+            st.archive_semaphore = asyncio.Semaphore(
+                min(self.max_fetch_concurrency, st.lane_limit, len(st.searched_archives))
+            )
+            st.archive_tasks = [
+                asyncio.create_task(
+                    self._discover_seed(
+                        candidate,
+                        parent=st.parent,
+                        run_id=st.run_id,
+                        identity=st.identity,
+                        semaphore=st.archive_semaphore,
+                    )
+                )
+                for candidate in st.searched_archives
+            ]
+            try:
+                st.searched_outcomes = tuple(await asyncio.gather(*st.archive_tasks))
+            except asyncio.CancelledError:
+                for st.task in st.archive_tasks:
+                    st.task.cancel()
+                await asyncio.gather(*st.archive_tasks, return_exceptions=True)
+                raise
+            st.discovery_outcomes = (*st.discovery_outcomes, *st.searched_outcomes)
+            st.discovery_fetch_count = sum(item.upstream_called for item in st.discovery_outcomes)
+            if self.durable_reads is not None:
+                st.parent, st.parent_lease = await self.durable_reads.deadline_port.checkpoint(
+                    identity=st.identity, state=st.parent, lease=st.parent_lease
+                )
+            else:
+                st.transition = checkpoint_deadline(
+                    st.parent,
+                    st.parent_lease,
+                    now_wall=self.wall_clock(),
+                    now_monotonic_ns=self.monotonic_ns(),
+                )
+                st.parent, st.parent_lease = st.transition.state, st.transition.lease
+            st.direct = tuple(
+                candidate for candidate in st.selected if not _looks_like_archive_locator(candidate)
+            )
+            st.discovered = tuple(
+                outcome.candidates for outcome in st.searched_outcomes if outcome.candidates
+            )
+            st.selected = self._select_candidates(
+                (*st.discovered, st.direct),
+                limit=max(0, st.fetch_limit - st.discovery_fetch_count),
+            )
+
+    async def _escalate_official_exact_fact(self, st: _RetrieveState) -> None:
+        """精确官方事实题：未命中时逐条再搜、补抓归档与直连候选。"""
 
         # Archive/direct discovery is an optimization inside the frozen
         # official-source route.  If every discovered target settles to an
@@ -778,148 +659,157 @@ class RetrievalMixin(EvidenceRuntimeCore):
         # durable search/page effect identities, so this escalation neither
         # mutates the ResearchSpec nor double-consumes journaled resources.
         if (
-            research_spec.intent_type == "official_exact_fact"
-            and not use_search_fallback
-            and not self._canonical_pages(outcomes)
-            and query_plans
-            and parent_lease is not None
+            st.research_spec.intent_type == "official_exact_fact"
+            and not st.use_search_fallback
+            and not self._canonical_pages(st.outcomes)
+            and st.query_plans
+            and st.parent_lease is not None
             and (
-                discovery_fetch_count + sum(item.upstream_called for item in outcomes) < fetch_limit
+                st.discovery_fetch_count + sum(item.upstream_called for item in st.outcomes)
+                < st.fetch_limit
             )
-            and not await self._control_fenced(run_id)
+            and not await self._control_fenced(st.run_id)
         ):
-            escalation_buckets: list[tuple[_CandidatePlan, ...]] = []
-            for index, plan in enumerate(query_plans):
-                if parent_lease is None or await self._control_fenced(run_id):
+            st.escalation_buckets: list[tuple[_CandidatePlan, ...]] = []
+            for st.index, st.plan in enumerate(st.query_plans):
+                if st.parent_lease is None or await self._control_fenced(st.run_id):
                     break
-                remaining_s = remaining_timeout_seconds(
-                    parent_lease, now_monotonic_ns=self.monotonic_ns()
+                st.remaining_s = remaining_timeout_seconds(
+                    st.parent_lease, now_monotonic_ns=self.monotonic_ns()
                 )
-                if remaining_s <= 0:
+                if st.remaining_s <= 0:
                     break
-                escalation_buckets.append(
-                    await _search_plan(
-                        plan,
-                        query_timeout_s=(remaining_s / max(1, len(query_plans) - index)),
+                st.escalation_buckets.append(
+                    await self._search_plan(
+                        st,
+                        st.plan,
+                        query_timeout_s=(st.remaining_s / max(1, len(st.query_plans) - st.index)),
                     )
                 )
-                search_count += 1
+                st.search_count += 1
                 if self.durable_reads is not None:
-                    parent, parent_lease = await self.durable_reads.deadline_port.checkpoint(
-                        identity=identity, state=parent, lease=parent_lease
+                    st.parent, st.parent_lease = await self.durable_reads.deadline_port.checkpoint(
+                        identity=st.identity, state=st.parent, lease=st.parent_lease
                     )
                 else:
-                    transition = checkpoint_deadline(
-                        parent,
-                        parent_lease,
+                    st.transition = checkpoint_deadline(
+                        st.parent,
+                        st.parent_lease,
                         now_wall=self.wall_clock(),
                         now_monotonic_ns=self.monotonic_ns(),
                     )
-                    parent, parent_lease = transition.state, transition.lease
+                    st.parent, st.parent_lease = st.transition.state, st.transition.lease
 
-            attempted_urls = {candidate.requested_url for candidate in selected}
-            escalation_buckets = [
+            st.attempted_urls = {candidate.requested_url for candidate in st.selected}
+            st.escalation_buckets = [
                 tuple(
                     candidate
                     for candidate in bucket
-                    if candidate.requested_url not in attempted_urls
+                    if candidate.requested_url not in st.attempted_urls
                 )
-                for bucket in escalation_buckets
+                for bucket in st.escalation_buckets
             ]
-            remaining_fetches = max(
+            st.remaining_fetches = max(
                 0,
-                fetch_limit
-                - discovery_fetch_count
-                - sum(item.upstream_called for item in outcomes),
+                st.fetch_limit
+                - st.discovery_fetch_count
+                - sum(item.upstream_called for item in st.outcomes),
             )
-            escalated = self._select_candidates(escalation_buckets, limit=remaining_fetches)
-            escalation_archives = tuple(
-                candidate for candidate in escalated if _looks_like_archive_locator(candidate)
+            st.escalated = self._select_candidates(
+                st.escalation_buckets, limit=st.remaining_fetches
             )
-            if escalation_archives and parent_lease is not None:
-                archive_semaphore = asyncio.Semaphore(
+            st.escalation_archives = tuple(
+                candidate for candidate in st.escalated if _looks_like_archive_locator(candidate)
+            )
+            if st.escalation_archives and st.parent_lease is not None:
+                st.archive_semaphore = asyncio.Semaphore(
                     min(
                         self.max_fetch_concurrency,
-                        lane_limit,
-                        len(escalation_archives),
+                        st.lane_limit,
+                        len(st.escalation_archives),
                     )
                 )
-                archive_tasks = [
+                st.archive_tasks = [
                     asyncio.create_task(
                         self._discover_seed(
                             candidate,
-                            parent=parent,
-                            run_id=run_id,
-                            identity=identity,
-                            semaphore=archive_semaphore,
+                            parent=st.parent,
+                            run_id=st.run_id,
+                            identity=st.identity,
+                            semaphore=st.archive_semaphore,
                         )
                     )
-                    for candidate in escalation_archives
+                    for candidate in st.escalation_archives
                 ]
                 try:
-                    escalation_discovery = tuple(await asyncio.gather(*archive_tasks))
+                    st.escalation_discovery = tuple(await asyncio.gather(*st.archive_tasks))
                 except asyncio.CancelledError:
-                    for task in archive_tasks:
-                        task.cancel()
-                    await asyncio.gather(*archive_tasks, return_exceptions=True)
+                    for st.task in st.archive_tasks:
+                        st.task.cancel()
+                    await asyncio.gather(*st.archive_tasks, return_exceptions=True)
                     raise
-                discovery_outcomes = (
-                    *discovery_outcomes,
-                    *escalation_discovery,
+                st.discovery_outcomes = (
+                    *st.discovery_outcomes,
+                    *st.escalation_discovery,
                 )
-                discovery_fetch_count = sum(item.upstream_called for item in discovery_outcomes)
+                st.discovery_fetch_count = sum(
+                    item.upstream_called for item in st.discovery_outcomes
+                )
                 if self.durable_reads is not None:
-                    parent, parent_lease = await self.durable_reads.deadline_port.checkpoint(
-                        identity=identity,
-                        state=parent,
-                        lease=parent_lease,
+                    st.parent, st.parent_lease = await self.durable_reads.deadline_port.checkpoint(
+                        identity=st.identity,
+                        state=st.parent,
+                        lease=st.parent_lease,
                     )
                 else:
-                    transition = checkpoint_deadline(
-                        parent,
-                        parent_lease,
+                    st.transition = checkpoint_deadline(
+                        st.parent,
+                        st.parent_lease,
                         now_wall=self.wall_clock(),
                         now_monotonic_ns=self.monotonic_ns(),
                     )
-                    parent, parent_lease = transition.state, transition.lease
-                direct_escalation = tuple(
+                    st.parent, st.parent_lease = st.transition.state, st.transition.lease
+                st.direct_escalation = tuple(
                     candidate
-                    for candidate in escalated
+                    for candidate in st.escalated
                     if not _looks_like_archive_locator(candidate)
                 )
-                discovered_escalation = tuple(
-                    outcome.candidates for outcome in escalation_discovery if outcome.candidates
+                st.discovered_escalation = tuple(
+                    outcome.candidates for outcome in st.escalation_discovery if outcome.candidates
                 )
-                already_fetched = sum(item.upstream_called for item in outcomes)
-                escalated = self._select_candidates(
-                    (*discovered_escalation, direct_escalation),
+                st.already_fetched = sum(item.upstream_called for item in st.outcomes)
+                st.escalated = self._select_candidates(
+                    (*st.discovered_escalation, st.direct_escalation),
                     limit=max(
                         0,
-                        fetch_limit - discovery_fetch_count - already_fetched,
+                        st.fetch_limit - st.discovery_fetch_count - st.already_fetched,
                     ),
                 )
-            if escalated and parent_lease is not None:
-                outcomes = (*outcomes, *(await _fetch_candidates(escalated)))
+            if st.escalated and st.parent_lease is not None:
+                st.outcomes = (*st.outcomes, *(await self._fetch_candidates(st, st.escalated)))
                 if self.durable_reads is not None:
-                    parent, parent_lease = await self.durable_reads.deadline_port.checkpoint(
-                        identity=identity, state=parent, lease=parent_lease
+                    st.parent, st.parent_lease = await self.durable_reads.deadline_port.checkpoint(
+                        identity=st.identity, state=st.parent, lease=st.parent_lease
                     )
                 else:
-                    transition = checkpoint_deadline(
-                        parent,
-                        parent_lease,
+                    st.transition = checkpoint_deadline(
+                        st.parent,
+                        st.parent_lease,
                         now_wall=self.wall_clock(),
                         now_monotonic_ns=self.monotonic_ns(),
                     )
-                    parent, parent_lease = transition.state, transition.lease
-        pages = self._canonical_pages(outcomes)
-        page_result_refs = tuple(
+                    st.parent, st.parent_lease = st.transition.state, st.transition.lease
+
+    def _record_page_results(self, st: _RetrieveState) -> None:
+        """整理页面结果引用；有持久读取时登记页面与引用的对应关系。"""
+
+        st.page_result_refs = tuple(
             sorted(
                 {
-                    *self._canonical_page_result_refs(outcomes),
+                    *self._canonical_page_result_refs(st.outcomes),
                     *(
                         item.page_result_ref
-                        for item in discovery_outcomes
+                        for item in st.discovery_outcomes
                         if item.page_result_ref is not None
                         and item.status in {"timeout", "rejected", "failed"}
                     ),
@@ -933,44 +823,298 @@ class RetrievalMixin(EvidenceRuntimeCore):
             # each canonical verified page still has its own canonical result
             # ref; failed/timeout/empty refs remain in the frontier so the
             # semantic and terminal stages can report an evidence gap.
-            page_to_ref: dict[tuple[str, str], str] = {}
-            ref_to_page: dict[str, tuple[str, str]] = {}
-            for outcome in sorted(outcomes, key=lambda item: item.ordinal):
-                if outcome.status != "verified" or outcome.page is None:
+            st.page_to_ref: dict[tuple[str, str], str] = {}
+            st.ref_to_page: dict[str, tuple[str, str]] = {}
+            for st.outcome in sorted(st.outcomes, key=lambda item: item.ordinal):
+                if st.outcome.status != "verified" or st.outcome.page is None:
                     continue
-                page_key = (outcome.page.final_url_hash, outcome.page.body_hash)
-                if page_key in page_to_ref:
+                st.page_key = (st.outcome.page.final_url_hash, st.outcome.page.body_hash)
+                if st.page_key in st.page_to_ref:
                     continue
-                result_ref = outcome.page_result_ref
-                if result_ref is None:
+                st.result_ref = st.outcome.page_result_ref
+                if st.result_ref is None:
                     raise ValueError("canonical page is missing canonical result ref")
-                prior_page = ref_to_page.get(result_ref)
-                if prior_page is not None and prior_page != page_key:
+                st.prior_page = st.ref_to_page.get(st.result_ref)
+                if st.prior_page is not None and st.prior_page != st.page_key:
                     raise ValueError("canonical page result ref aliases distinct pages")
-                page_to_ref[page_key] = result_ref
-                ref_to_page[result_ref] = page_key
-            canonical_page_keys = {(page.final_url_hash, page.body_hash) for page in pages}
-            if canonical_page_keys != set(page_to_ref):
+                st.page_to_ref[st.page_key] = st.result_ref
+                st.ref_to_page[st.result_ref] = st.page_key
+            st.canonical_page_keys = {(page.final_url_hash, page.body_hash) for page in st.pages}
+            if st.canonical_page_keys != set(st.page_to_ref):
                 raise ValueError("canonical page is missing canonical result ref")
-        return DeepResearchV6RetrievalResult(
-            pages=pages,
-            parent_deadline=parent,
-            search_count=search_count,
-            fetch_count=discovery_fetch_count + sum(item.upstream_called for item in outcomes),
-            timeout_count=(
-                sum(item.status == "timeout" for item in discovery_outcomes)
-                + sum(item.status == "timeout" for item in outcomes)
+
+    async def _fetch_candidates(
+        self,
+        st: _RetrieveState,
+        candidates: Sequence[_CandidatePlan],
+    ) -> tuple[_FetchOutcome, ...]:
+        concurrency = min(self.max_fetch_concurrency, st.lane_limit, len(candidates))
+        semaphore = asyncio.Semaphore(concurrency)
+        cursor = 0
+        cursor_lock = asyncio.Lock()
+        completed: list[_FetchOutcome] = []
+
+        async def _fetch_worker() -> None:
+            nonlocal cursor
+            while True:
+                # Pull at most one new page after each durable signal
+                # check. In-flight pages still settle canonical outcomes.
+                if await self._control_fenced(st.run_id):
+                    return
+                async with cursor_lock:
+                    if cursor >= len(candidates):
+                        return
+                    candidate = candidates[cursor]
+                    cursor += 1
+                completed.append(
+                    await self._fetch_one(
+                        candidate,
+                        parent=st.parent,
+                        run_id=st.run_id,
+                        identity=st.identity,
+                        semaphore=semaphore,
+                    )
+                )
+
+        tasks = [asyncio.create_task(_fetch_worker()) for _ in range(concurrency)]
+        try:
+            await asyncio.gather(*tasks)
+            return tuple(completed)
+        except asyncio.CancelledError:
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            raise
+
+    async def _search_plan(
+        self, st: _RetrieveState, plan: _QueryPlan, *, query_timeout_s: float
+    ) -> tuple[_CandidatePlan, ...]:
+        sp = _SearchPlanState(st=st, plan=plan, query_timeout_s=query_timeout_s)
+        sp.request = SearchRequest(
+            query=sp.plan.query,
+            max_results=min(5, self.max_fetches),
+            region=(
+                sp.plan.target.jurisdiction.casefold()
+                if isinstance(sp.plan.target, OfficialSourceTargetV1)
+                else "wt-wt"
             ),
-            rejected_count=(
-                sum(item.status == "rejected" for item in discovery_outcomes)
-                + sum(item.status == "rejected" for item in outcomes)
+            mode="research",
+            hydrate_top=0,
+            total_timeout_s=sp.query_timeout_s,
+            request_id=sp.plan.request_id,
+            run_id=sp.st.run_id,
+            dimension_id=sp.plan.dimension_id,
+            query_terms=sp.plan.query_terms,
+        )
+        sp.response: SearchResponse | None = None
+        sp.search_span = await self._start_child_span(
+            identity=sp.st.identity,
+            request_id=sp.plan.request_id,
+            stage=(
+                "official_search"
+                if isinstance(sp.plan.target, OfficialSourceTargetV1)
+                else "general_search"
             ),
-            failed_count=(
-                sum(item.status == "failed" for item in discovery_outcomes)
-                + sum(item.status == "failed" for item in outcomes)
-            ),
-            route_decision=frozen_route,
-            page_result_refs=page_result_refs,
+            ordinal=sp.plan.ordinal,
+        )
+        try:
+            if self.durable_reads is None:
+                sp.response = await asyncio.wait_for(
+                    dispatch_with_run_fence(
+                        acquire_fence=self.dispatch_fence_acquirer,
+                        run_id=sp.st.run_id,
+                        operation_kind="workflow.research.search",
+                        operation_id=sp.plan.request_id,
+                        invoke=lambda: self.search_gateway.search(sp.request),
+                    ),
+                    timeout=sp.query_timeout_s,
+                )
+            else:
+                await self._search_plan_durable(sp)
+        except asyncio.CancelledError:
+            await asyncio.shield(
+                self._finish_child_span(sp.search_span, SpanStatus.CANCELLED, outcome="cancelled")
+            )
+            raise
+        except TimeoutError:
+            await self._finish_child_span(sp.search_span, SpanStatus.ERROR, outcome="timeout")
+            sp.response = None
+        except Exception:
+            # Search failures are evidence gaps.  Other frozen dimensions
+            # can still return useful pages under the same parent budget.
+            await self._finish_child_span(sp.search_span, SpanStatus.ERROR, outcome="error")
+            sp.response = None
+        else:
+            await self._finish_child_span(
+                sp.search_span,
+                SpanStatus.OK,
+                outcome="hit" if sp.response.results else "empty",
+                count=len(sp.response.results),
+            )
+        if isinstance(sp.response, SearchResponse):
+            sp.candidates: list[_CandidatePlan] = []
+            for sp.candidate in sp.response.results:
+                sp.candidate_url = _candidate_url(sp.candidate)
+                if not sp.candidate_url.startswith(("http://", "https://")):
+                    continue
+                try:
+                    sp.target = (
+                        sp.plan.target
+                        if isinstance(sp.plan.target, OfficialSourceTargetV1)
+                        else _general_source_target(
+                            sp.candidate_url, source_types=sp.plan.target.source_types
+                        )
+                    )
+                except ValueError:
+                    continue
+                sp.candidates.append(
+                    _CandidatePlan(
+                        ordinal=0,
+                        dimension_id=sp.plan.dimension_id,
+                        candidate_id=sp.candidate.stable_id,
+                        requested_url=sp.candidate_url,
+                        title=sp.candidate.title,
+                        target=sp.target,
+                        discovery_years=sp.plan.discovery_years,
+                    )
+                )
+            return tuple(sp.candidates)
+        return ()
+
+    async def _search_plan_durable(self, sp: _SearchPlanState) -> None:
+        """持久读取路径：经持久读取执行官方搜索并回放候选。"""
+
+        async def _transport(attempt) -> OfficialSearchResultV1:
+            try:
+                attempt_timeout_s = sp.query_timeout_s
+                if attempt.deadline_monotonic_ns is not None:
+                    attempt_timeout_s = min(
+                        attempt_timeout_s,
+                        max(
+                            0.0,
+                            (attempt.deadline_monotonic_ns - self.monotonic_ns()) / 1_000_000_000,
+                        ),
+                    )
+                item = await asyncio.wait_for(
+                    dispatch_with_run_fence(
+                        acquire_fence=self.dispatch_fence_acquirer,
+                        run_id=sp.st.run_id,
+                        operation_kind="workflow.research.search",
+                        operation_id=attempt.logical_effect_id,
+                        invoke=lambda: self.search_gateway.search(sp.request),
+                    ),
+                    timeout=attempt_timeout_s,
+                )
+            except asyncio.CancelledError:
+                raise
+            except TimeoutError:
+                return OfficialSearchResultV1.create(
+                    logical_effect_id=attempt.logical_effect_id,
+                    attempt_no=attempt.attempt_no,
+                    request_id=sp.plan.request_id,
+                    query_hash=hashlib.sha256(sp.plan.query.encode("utf-8")).hexdigest(),
+                    target_id=sp.plan.target.target_id,
+                    candidates=(),
+                    outcome="timeout",
+                    error_code="deadline_expired",
+                    deadline_id=attempt.deadline_id,
+                )
+            except Exception:
+                return OfficialSearchResultV1.create(
+                    logical_effect_id=attempt.logical_effect_id,
+                    attempt_no=attempt.attempt_no,
+                    request_id=sp.plan.request_id,
+                    query_hash=hashlib.sha256(sp.plan.query.encode("utf-8")).hexdigest(),
+                    target_id=sp.plan.target.target_id,
+                    candidates=(),
+                    outcome="failed",
+                    error_code="search_failed",
+                    deadline_id=attempt.deadline_id,
+                )
+            typed_candidates: list[SearchCandidateV1] = []
+            for raw_candidate in item.results:
+                candidate_url = _candidate_url(raw_candidate)
+                if not candidate_url.startswith(("http://", "https://")):
+                    continue
+                locator = await self._persist_locator(
+                    candidate=_CandidatePlan(
+                        ordinal=len(typed_candidates),
+                        dimension_id=sp.plan.dimension_id,
+                        candidate_id=raw_candidate.stable_id,
+                        requested_url=candidate_url,
+                        title=raw_candidate.title,
+                        target=sp.plan.target,
+                        discovery_years=sp.plan.discovery_years,
+                    ),
+                    final_url=candidate_url,
+                    verification_status="unverified",
+                    identity=sp.st.identity,
+                )
+                typed_candidates.append(
+                    SearchCandidateV1.create(
+                        ordinal=len(typed_candidates),
+                        source_locator_ref=locator["source_locator_ref"],
+                        title_hash=hashlib.sha256(raw_candidate.title.encode("utf-8")).hexdigest(),
+                        snippet_hash=hashlib.sha256(
+                            raw_candidate.snippet.encode("utf-8")
+                        ).hexdigest(),
+                        authority_match="unverified",
+                        reason_codes=("candidate_unverified",),
+                    )
+                )
+            return OfficialSearchResultV1.create(
+                logical_effect_id=attempt.logical_effect_id,
+                attempt_no=attempt.attempt_no,
+                request_id=sp.plan.request_id,
+                query_hash=hashlib.sha256(sp.plan.query.encode("utf-8")).hexdigest(),
+                target_id=sp.plan.target.target_id,
+                candidates=tuple(typed_candidates),
+                outcome="succeeded" if typed_candidates else "empty",
+                error_code=None,
+                deadline_id=attempt.deadline_id,
+            )
+
+        sp._transport = _transport
+
+        sp.durable = await self.durable_reads.execute(
+            operation_kind="official_search",
+            route_id=str(sp.st.frozen_route.to_json()["route_id"]),
+            target_or_page_id=sp.plan.target.target_id,
+            ordinal=sp.plan.ordinal,
+            resource_kind="query",
+            resource_hard_limit=int(sp.st.route_budget["query"]),
+            resource_policy_hash=self._policy_hash,
+            deadline=sp.st.parent,
+            identity=sp.st.identity,
+            transport=sp._transport,
+        )
+        sp.typed = OfficialSearchResultV1.from_json(sp.durable)
+        if sp.typed.outcome != "succeeded":
+            raise TimeoutError if sp.typed.outcome == "timeout" else RuntimeError
+        sp.replayed: list[RetrievalCandidate] = []
+        for sp.candidate in sp.typed.candidates:
+            sp.raw_locator = await self.blobs.get(
+                sp.candidate.source_locator_ref.removeprefix("sha256:")
+            )
+            sp.locator_value = json.loads(sp.raw_locator.decode("utf-8"))
+            if not isinstance(sp.locator_value, Mapping):
+                raise ValueError("source locator blob must be an object")
+            sp.locator = SourceLocatorV1.from_json(sp.locator_value)
+            if sp.locator.verification_status != sp.candidate.authority_match:
+                raise ValueError("search candidate/locator authority mismatch")
+            sp.replayed.append(
+                RetrievalCandidate(
+                    stable_id=sp.candidate.candidate_id,
+                    url=sp.locator.canonical_url,
+                    canonical_url=sp.locator.canonical_url,
+                    title="",
+                )
+            )
+        sp.response = SearchResponse(
+            query=sp.plan.query,
+            results=tuple(sp.replayed),
+            request_id=sp.typed.request_id,
+            run_id=sp.st.run_id,
         )
 
     def _build_query_plans(
