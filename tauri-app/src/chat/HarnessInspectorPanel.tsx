@@ -13,7 +13,7 @@ import {
   normalizePublicRunSnapshot,
   useHarnessPublicSnapshot,
 } from "../stores/harnessPublicSnapshotStore";
-import type { TaskRunProjectionState } from "../stores/sessionsStore";
+import type { TaskRunProjectionState } from "../stores/sessionTypes";
 import type {
   HarnessInspectorErrorResponse,
   HarnessInspectorDetailsResponse,

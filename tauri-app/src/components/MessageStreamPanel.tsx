@@ -33,12 +33,12 @@ import { invoke } from "@tauri-apps/api/core";
 // 娑堟伅娴佹粴鍔ㄤ綅缃寔涔呴敭(杩涘叆娑堟伅鐣岄潰鎭㈠涓婃浣嶇疆,瑙佷笅 useLayoutEffect)銆?
 const MSGSTREAM_SCROLL_KEY = "deskpet.msgstream.scroll.v1";
 
+import type { InboxItem } from "../stores/sessionSelectors";
 import type {
-  InboxItem,
   Message,
   TaskRunProjectionState,
   WorkflowV5ControlAction,
-} from "../stores/sessionsStore";
+} from "../stores/sessionTypes";
 // 瀛愪唬鐞嗗苟鍙戣繘搴﹀崱鐗囷紙娣辫壊鍙樹綋锛屼笌鏈潰鏉跨幓鐠冩嫙鎬佷竴鑷达級銆俽uns 绌烘椂鑷覆鏌?null锛?
 // Shared control WS dispatches subagent_progress into subagentStore.
 import { SubagentProgressPanel } from "../code-panel/SubagentProgressPanel";

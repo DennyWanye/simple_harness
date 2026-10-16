@@ -6,17 +6,19 @@
  */
 import { describe, expect, it } from "vitest";
 
+import { useSessionsStore } from "./sessionsStore";
 import {
-  type WorkflowEventEnvelope,
-  type SessionState,
-  type SupervisorAlertEntry,
   collect_inbox,
   count_unhandled_by_severity,
   pet_focus_sid,
   severity_score,
   severity_score_breakdown,
-  useSessionsStore,
-} from "./sessionsStore";
+} from "./sessionSelectors";
+import {
+  type WorkflowEventEnvelope,
+  type SessionState,
+  type SupervisorAlertEntry,
+} from "./sessionTypes";
 
 const PRODUCTION_V3_DIAGNOSTICS = [
   "deadline_exhausted",

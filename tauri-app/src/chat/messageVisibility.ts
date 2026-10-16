@@ -1,5 +1,5 @@
 import { extractArtifactsFromResult } from "../code-panel/artifactExtract";
-import type { Message } from "../stores/sessionsStore";
+import type { Message } from "../stores/sessionTypes";
 import { MISSION_CARD_TOOLS } from "../views/chatMission";
 
 /** Message page policy: tool execution trace is visible on every open. */

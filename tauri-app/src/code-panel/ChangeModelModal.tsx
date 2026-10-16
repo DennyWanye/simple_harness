@@ -34,7 +34,8 @@ import {
   supportedWindowsForModel,
   formatContextWindow,
 } from "./sessionModelsStore";
-import { useSessionsStore, type SessionModelParams } from "../stores/sessionsStore";
+import { useSessionsStore } from "../stores/sessionsStore";
+import { type SessionModelParams } from "../stores/sessionTypes";
 
 type EffortValue = "low" | "medium" | "high" | "extra_high" | "max";
 type ReasonMode = "default" | "thinking" | "fast";

@@ -7,7 +7,7 @@ import type {
   TaskRunProjectionStatus,
   WorkflowProgressStatus,
   WorkflowV5ControlAction,
-} from "../../stores/sessionsStore";
+} from "../../stores/sessionTypes";
 import type { CapabilityOperation, CapabilityOperationAction } from "../../types/capabilities";
 import type { WorkflowTaskTrace } from "../AgentActivityMessage";
 import { CapabilityOperationCard } from "../CapabilityOperationCard";

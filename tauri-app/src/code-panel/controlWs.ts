@@ -17,14 +17,14 @@
 import { invoke } from "@tauri-apps/api/core";
 import { BACKEND_PORT } from "../backendPort";
 import { chatErrorMessage } from "../chatErrorMessage";
+import { useSessionsStore } from "../stores/sessionsStore";
 import {
-  useSessionsStore,
   type Message,
   type MessageRole,
   type PlanStep,
   type SessionModelParams,
   type WorkflowEventEnvelope,
-} from "../stores/sessionsStore";
+} from "../stores/sessionTypes";
 import { withClientTurnIdentity } from "../ws/clientTurnIdentity";
 import {
   getWindowControlCredential,

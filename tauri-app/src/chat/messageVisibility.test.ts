@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { Message } from "../stores/sessionsStore";
+import type { Message } from "../stores/sessionTypes";
 import {
   DEFAULT_HIDE_TOOL_TRACE,
   isMessageVisibleForSelectedRun,

@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 DennyWanye
 // SPDX-License-Identifier: BUSL-1.1
 
-import type { SessionModelParams } from "./stores/sessionsStore";
+import type { SessionModelParams } from "./stores/sessionTypes";
 
 export interface SessionBindingAuthority {
   expected_binding_epoch: number;

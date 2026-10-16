@@ -32,13 +32,9 @@ import { Icon } from "../components/Icon";
 import { ContextRing } from "../components/ContextRing";
 import { ContextBreakdownModal } from "../components/ContextBreakdownModal";
 import { ProjectInspector } from "../components/ProjectInspector";
-import {
-  useSessionsStore,
-  collect_inbox,
-  type InboxItem,
-  type Message,
-  type WorkflowV5ControlAction,
-} from "../stores/sessionsStore";
+import { useSessionsStore } from "../stores/sessionsStore";
+import { collect_inbox, type InboxItem } from "../stores/sessionSelectors";
+import { type Message, type WorkflowV5ControlAction } from "../stores/sessionTypes";
 import { forPet } from "../petText";
 import {
   MessageStreamPanel,

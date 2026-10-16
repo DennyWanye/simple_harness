@@ -56,6 +56,8 @@ function refs(node) {
         (ts.isBindingElement(p) && p.propertyName === n) ||
         (ts.isJsxAttribute(p) && p.name === n) ||
         (ts.isQualifiedName(p) && p.right === n) ||
+        // `export { X } from "mod"` 转出别的模块，不引用本模块的 X
+        (ts.isExportSpecifier(p) && p.parent.parent.moduleSpecifier !== undefined) ||
         (ts.isLabeledStatement(p) && p.label === n);
       if (!skip) out.add(n.text);
     }

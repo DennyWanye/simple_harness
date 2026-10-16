@@ -1,4 +1,4 @@
-import type { TaskRunProjectionState } from "../stores/sessionsStore";
+import type { TaskRunProjectionState } from "../stores/sessionTypes";
 import type { ProjectDirectoryRequest } from "../types/skillPlatform";
 
 export type ProjectDirectoryRequestsBySession = Record<

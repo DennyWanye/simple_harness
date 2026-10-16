@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { Message, WorkflowV5ProgressProjection } from "../../stores/sessionsStore";
+import type { Message, WorkflowV5ProgressProjection } from "../../stores/sessionTypes";
 import type { CapabilityOperation } from "../../types/capabilities";
 import type { WorkflowTaskTrace } from "../AgentActivityMessage";
 import { WorkflowProgressGroup } from "./WorkflowProgressGroup";

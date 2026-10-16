@@ -11,7 +11,7 @@ import type {
   Message,
   TaskRunProjectionState,
   WorkflowProgressStatus,
-} from "../stores/sessionsStore";
+} from "../stores/sessionTypes";
 import { useSessionsStore } from "../stores/sessionsStore";
 import { __test_dispatch } from "../code-panel/controlWs";
 import type { HarnessInspectorSnapshot, PublicRunSnapshotV3 } from "../types/messages";

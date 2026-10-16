@@ -12,7 +12,7 @@
  */
 import { useMemo, useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { Message } from "../stores/sessionsStore";
+import type { Message } from "../stores/sessionTypes";
 import { useSessionsStore } from "../stores/sessionsStore";
 import { CopyMessageButton } from "../components/CopyMessageButton";
 import { MarkdownMessage } from "../components/MarkdownMessage";
