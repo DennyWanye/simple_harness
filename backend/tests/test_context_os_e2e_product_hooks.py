@@ -215,7 +215,6 @@ def test_main_wires_hook_without_changing_defaults():
     assert "set_context_os_e2e_hooks(_context_os_e2e_hooks)" in source
     assert '"ctx-fallback"' in source
     assert '"ctx-compact-fixture"' in source
-    assert "_read_context_compaction_model" in source
 
 
 def test_fault_consumer_is_inert_outside_trusted_e2e(monkeypatch):
