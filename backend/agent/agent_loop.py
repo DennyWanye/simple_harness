@@ -1241,6 +1241,213 @@ async def _review_final_response_quality(
         return final_content
 
 
+@dataclass
+class _RunState:
+    """AgentLoop._run_impl 的运行状态：原函数的局部变量与参数（阶段 6B 切段用）。"""
+
+    _AGENTIC_TOOL_THRESHOLD: Any = None
+    _active_compressor: Any = None
+    _actual_compaction_model: Any = None
+    _agentic: Any = None
+    _always_goal: Any = None
+    _anchor_lines: Any = None
+    _attempt_provider: Any = None
+    _attempt_purpose: Any = None
+    _attempt_tools: Any = None
+    _authority_error: Any = None
+    _block_detail: Any = None
+    _budget: Any = None
+    _budget_block_pending: Any = None
+    _budget_model: Any = None
+    _budget_warn_emitted: Any = None
+    _candidate: Any = None
+    _cap_summary: Any = None
+    _chain_budget_rescue_pending: Any = None
+    _compaction_cycle_id: Any = None
+    _compaction_cycle_index: Any = None
+    _compaction_source_event_id: Any = None
+    _compaction_warn_logged: Any = None
+    _completion_anchor: Any = None
+    _completion_reply: Any = None
+    _compress_kwargs: Any = None
+    _compression_resolution: Any = None
+    _context_remount: Any = None
+    _cost_delta: Any = None
+    _cresult: Any = None
+    _ctoken_est: Any = None
+    _ctx_cfg: Any = None
+    _ctx_cfg_for_compression: Any = None
+    _ctx_compact_at: Any = None
+    _ctx_in: Any = None
+    _ctx_out: Any = None
+    _ctx_ratio: Any = None
+    _ctx_should_compress: Any = None
+    _cur_replan: Any = None
+    _done: Any = None
+    _ev_dec: Any = None
+    _ev_result: Any = None
+    _eval_goal_text: Any = None
+    _eval_ledger: Any = None
+    _evidence_anchor: Any = None
+    _evidence_reply: Any = None
+    _evidence_str: Any = None
+    _final_content: Any = None
+    _first: Any = None
+    _flush_body: Any = None
+    _flush_parts: Any = None
+    _for_context: Any = None
+    _for_fn: Any = None
+    _force_finish_next: Any = None
+    _force_finish_queued: Any = None
+    _ga_fn: Any = None
+    _goal: Any = None
+    _goal_anchor: Any = None
+    _goal_reply: Any = None
+    _gt: Any = None
+    _gt_fn: Any = None
+    _hint: Any = None
+    _last_real_prompt_tokens: Any = None
+    _last_user: Any = None
+    _latest_compression_report: Any = None
+    _ledger: Any = None
+    _m: Any = None
+    _maybe_cost: Any = None
+    _model_info_for_compression: Any = None
+    _ok: Any = None
+    _pd: Any = None
+    _pending: Any = None
+    _pg_fn: Any = None
+    _pit: Any = None
+    _post_budget: Any = None
+    _preflush_done: Any = None
+    _prev_task_replanning: Any = None
+    _reason: Any = None
+    _record: Any = None
+    _refl: Any = None
+    _requested_compression_model: Any = None
+    _resolved_candidate: Any = None
+    _resolved_model: Any = None
+    _run_tool_calls: Any = None
+    _sc: Any = None
+    _scope_store: Any = None
+    _self_check_anchor: Any = None
+    _self_check_reply: Any = None
+    _skill_compaction_happened: Any = None
+    _stagnant: Any = None
+    _still_blocked: Any = None
+    _usage: Any = None
+    _v: Any = None
+    _verdict: Any = None
+    _verify_anchor: Any = None
+    _verify_final_done: Any = None
+    _verify_reply: Any = None
+    _vg_goal_text: Any = None
+    _wm_tokens: Any = None
+    allowed_tool_names: Any = None
+    attachment_tokens: Any = None
+    budget_left: Any = None
+    bullet_list: Any = None
+    call: Any = None
+    call_llm_kwargs: Any = None
+    candidate_budgets: Any = None
+    chain_cycle_id: Any = None
+    chain_mode: Any = None
+    completion_nudges_used: Any = None
+    content: Any = None
+    context_metadata_enabled: Any = None
+    context_request_id: Any = None
+    coverage: Any = None
+    coverage_still_pending: Any = None
+    current_tool_set: Any = None
+    delta_count: Any = None
+    empty_reason: Any = None
+    ephemeral_pass: Any = None
+    ev: Any = None
+    ev_type: Any = None
+    exclusive_call: Any = None
+    external_feedback: Any = None
+    final_budget_fits: Any = None
+    final_budgets: Any = None
+    final_dict: Any = None
+    ga: Any = None
+    group_id: Any = None
+    has_hidden_reasoning: Any = None
+    host_validated_zero_tool_terminal: Any = None
+    idx: Any = None
+    incomplete: Any = None
+    initial_budget: Any = None
+    initial_coverage_jobs: Any = None
+    initial_cycle_id: Any = None
+    initial_resolution: Any = None
+    is_sentinel_run: Any = None
+    iteration: Any = None
+    iteration_offset: Any = None
+    last_exc: Any = None
+    last_text: Any = None
+    launch_call_kwargs: Any = None
+    launch_operation_id: Any = None
+    ledger: Any = None
+    lines: Any = None
+    llm_kwargs: Any = None
+    loop_user_request: Any = None
+    mark: Any = None
+    max_reasoning_only_nudges: Any = None
+    messages: Any = None
+    model: Any = None
+    msg: Any = None
+    needs_nonstream_fallback: Any = None
+    next_id: Any = None
+    next_idx: Any = None
+    next_prov: Any = None
+    prepared_context: Any = None
+    prov: Any = None
+    prov_id: Any = None
+    provider_chain: Any = None
+    provider_launch_snapshot: Any = None
+    raw: Any = None
+    reason: Any = None
+    reasoning_only_nudges_used: Any = None
+    reasoning_reply: Any = None
+    rebound: Any = None
+    rejection: Any = None
+    replan: Any = None
+    replan_for_budget: Any = None
+    replanned: Any = None
+    replanned_context: Any = None
+    replanned_tool_set: Any = None
+    request_budget: Any = None
+    reserve: Any = None
+    resolution: Any = None
+    response: Any = None
+    safe_budget: Any = None
+    scoped_evidence: Any = None
+    selected_calls: Any = None
+    session_id: Any = None
+    status: Any = None
+    stream: Any = None
+    stream_capable: Any = None
+    stream_failed_with: Any = None
+    t: Any = None
+    task_id: Any = None
+    tid: Any = None
+    tier: Any = None
+    todos: Any = None
+    tool_call: Any = None
+    tool_names_filter: Any = None
+    tool_schemas: Any = None
+    tools_filter: Any = None
+    tools_used: Any = None
+    tools_used_count: Any = None
+    totals: Any = None
+    tried: Any = None
+    unmatched_lines: Any = None
+    use_model: Any = None
+    used_common_replan: Any = None
+    v_outcome: Any = None
+    verify_nudges_used: Any = None
+    working_messages: Any = None
+
+
 class AgentLoop(ToolContextPersistenceMixin):
     """ReAct-style driver around LLMRegistry + ToolRegistry."""
 
@@ -1851,45 +2058,66 @@ class AgentLoop(ToolContextPersistenceMixin):
         """Drive ReAct; ``stream`` emits deltas when the registry supports
         ``chat_with_fallback_stream`` and otherwise preserves non-streaming.
         """
-        host_validated_zero_tool_terminal = bool(
-            llm_kwargs.pop("host_validated_zero_tool_terminal", False)
+        state = _RunState(
+            messages=messages,
+            task_id=task_id,
+            tools_filter=tools_filter,
+            tool_names_filter=tool_names_filter,
+            model=model,
+            session_id=session_id,
+            stream=stream,
+            provider_chain=provider_chain,
+            loop_user_request=loop_user_request,
+            is_sentinel_run=is_sentinel_run,
+            prepared_context=prepared_context,
+            context_request_id=context_request_id,
+            launch_operation_id=launch_operation_id,
+            provider_launch_snapshot=provider_launch_snapshot,
+            llm_kwargs=llm_kwargs,
         )
-        if (launch_operation_id is None) != (provider_launch_snapshot is None):
+        state.host_validated_zero_tool_terminal = bool(
+            state.llm_kwargs.pop("host_validated_zero_tool_terminal", False)
+        )
+        if (state.launch_operation_id is None) != (state.provider_launch_snapshot is None):
             raise ValueError("launch operation id and snapshot must be paired")
-        launch_call_kwargs = (
+        state.launch_call_kwargs = (
             {}
-            if launch_operation_id is None
+            if state.launch_operation_id is None
             else dict(
-                launch_operation_id=launch_operation_id,
-                provider_launch_snapshot=provider_launch_snapshot,
+                launch_operation_id=state.launch_operation_id,
+                provider_launch_snapshot=state.provider_launch_snapshot,
             )
         )
-        scoped_evidence = llm_kwargs.pop("_scoped_evidence", None)
-        external_feedback = dict(llm_kwargs.pop("_external_tool_feedback", {}) or {})
-        tid = task_id or new_task_id()
-        self._current_tid = tid  # 供 _pipeline_event 构造观测事件用（plans/2026-06-24-...）
-        working_messages: list[dict[str, Any]] = list(messages)
-        context_metadata_enabled = prepared_context is not None
-        if context_metadata_enabled:
-            working_messages = _tag_run_input_messages(working_messages, task_id=tid)
+        state.scoped_evidence = state.llm_kwargs.pop("_scoped_evidence", None)
+        state.external_feedback = dict(state.llm_kwargs.pop("_external_tool_feedback", {}) or {})
+        state.tid = state.task_id or new_task_id()
+        self._current_tid = state.tid  # 供 _pipeline_event 构造观测事件用（plans/2026-06-24-...）
+        state.working_messages: list[dict[str, Any]] = list(state.messages)
+        state.context_metadata_enabled = state.prepared_context is not None
+        if state.context_metadata_enabled:
+            state.working_messages = _tag_run_input_messages(
+                state.working_messages, task_id=state.tid
+            )
         # ⚠️ R1（round-2，plans/2026-06-24-...）：Step2 取证布尔累积标志，对 compaction 免疫
         # （compaction 整体替换 working_messages 不会改这个已置位的布尔）。run() 开头重设 +
         # 快照 history 注入的旧 tool name → 本 run 只认「新 dispatch 且不在 history 快照里」的取证。
-        self._evidence_gathered = bool(external_feedback.get("evidence_gathered"))
-        self._evidence_nudges_used = int(external_feedback.get("evidence_nudges_used", 0))
-        self._history_tool_names = set(self._collect_tool_names(working_messages))
-        current_tool_set = (
-            getattr(prepared_context, "tool_set", None) if prepared_context is not None else None
+        self._evidence_gathered = bool(state.external_feedback.get("evidence_gathered"))
+        self._evidence_nudges_used = int(state.external_feedback.get("evidence_nudges_used", 0))
+        self._history_tool_names = set(self._collect_tool_names(state.working_messages))
+        state.current_tool_set = (
+            getattr(state.prepared_context, "tool_set", None)
+            if state.prepared_context is not None
+            else None
         )
-        if current_tool_set is not None:
-            tool_schemas = list(current_tool_set.logical_schemas())
+        if state.current_tool_set is not None:
+            state.tool_schemas = list(state.current_tool_set.logical_schemas())
         else:
-            tool_schemas = self.tools.schemas(enabled_toolsets=tools_filter)
-        if tool_names_filter is not None:
-            allowed_tool_names = set(tool_names_filter)
-            tool_schemas = [
+            state.tool_schemas = self.tools.schemas(enabled_toolsets=state.tools_filter)
+        if state.tool_names_filter is not None:
+            state.allowed_tool_names = set(state.tool_names_filter)
+            state.tool_schemas = [
                 schema
-                for schema in tool_schemas
+                for schema in state.tool_schemas
                 if str(
                     (
                         schema.get("function", {})
@@ -1897,10 +2125,10 @@ class AgentLoop(ToolContextPersistenceMixin):
                         else schema
                     ).get("name", "")
                 )
-                in allowed_tool_names
+                in state.allowed_tool_names
             ]
-        totals = {"input": 0, "output": 0, "cache_read": 0, "cache_write": 0}
-        use_model = model or self.default_model
+        state.totals = {"input": 0, "output": 0, "cache_read": 0, "cache_write": 0}
+        state.use_model = state.model or self.default_model
 
         # ──────────────── P5-S2 Phase 3: provider chain mode ────────────────
         #
@@ -1914,11 +2142,11 @@ class AgentLoop(ToolContextPersistenceMixin):
         #
         # Empty chain is an actionable user-facing error — emit it once
         # at the top of run() so the loop never tries to call anything.
-        chain_mode = provider_chain is not None
-        if chain_mode and not provider_chain:
+        state.chain_mode = state.provider_chain is not None
+        if state.chain_mode and not state.provider_chain:
             yield ErrorEvent(
                 type="error",
-                task_id=tid,
+                task_id=state.tid,
                 iteration=0,
                 reason="no_provider_configured",
                 detail=("未配置任何 LLM provider。请打开设置 → LLM Providers → 添加"),
@@ -1926,126 +2154,136 @@ class AgentLoop(ToolContextPersistenceMixin):
             return
         # Detect streaming capability lazily — agent loop tests use a
         # mock registry that may only define chat_with_fallback.
-        stream_capable = stream and callable(getattr(self.llm, "chat_with_fallback_stream", None))
+        state.stream_capable = state.stream and callable(
+            getattr(self.llm, "chat_with_fallback_stream", None)
+        )
 
         # Context OS plans one common transcript against the smallest usable
         # provider window before the first transport attempt. This keeps
         # fallback reversible: a smaller backup never receives a request that
         # was only valid for the primary, and it does not terminate the chain
         # merely because its window was discovered late.
-        _chain_budget_rescue_pending = False
-        if context_metadata_enabled and chain_mode and provider_chain:
-            initial_budget = getattr(prepared_context, "request_budget", None)
-            reserve = int(
-                getattr(initial_budget, "generation_reserve", 0)
-                or llm_kwargs.get("max_tokens", 0)
+        state._chain_budget_rescue_pending = False
+        if state.context_metadata_enabled and state.chain_mode and state.provider_chain:
+            state.initial_budget = getattr(state.prepared_context, "request_budget", None)
+            state.reserve = int(
+                getattr(state.initial_budget, "generation_reserve", 0)
+                or state.llm_kwargs.get("max_tokens", 0)
                 or 0
             )
-            attachment_tokens = int(getattr(prepared_context, "attachment_tokens", 0) or 0)
-            candidate_budgets = [
+            state.attachment_tokens = int(
+                getattr(state.prepared_context, "attachment_tokens", 0) or 0
+            )
+            state.candidate_budgets = [
                 estimate_selected_attempt_budget(
                     provider=provider,
-                    model_id=str(getattr(provider, "model", "") or use_model or ""),
-                    messages=working_messages,
-                    tools=tool_schemas or None,
-                    generation_reserve=reserve,
-                    attachment_tokens=attachment_tokens,
+                    model_id=str(getattr(provider, "model", "") or state.use_model or ""),
+                    messages=state.working_messages,
+                    tools=state.tool_schemas or None,
+                    generation_reserve=state.reserve,
+                    attachment_tokens=state.attachment_tokens,
                 )
-                for provider in provider_chain
+                for provider in state.provider_chain
             ]
-            safe_budget = min(
-                candidate_budgets,
+            state.safe_budget = min(
+                state.candidate_budgets,
                 key=lambda item: item.effective_input_budget,
             )
             try:
-                replan_for_budget = getattr(prepared_context, "replan_for_budget", None)
-                used_common_replan = callable(replan_for_budget)
-                if callable(replan_for_budget):
-                    replanned = await asyncio.wait_for(
-                        replan_for_budget(
-                            context_window=safe_budget.context_window,
-                            effective_pct=safe_budget.effective_pct,
-                            generation_reserve=safe_budget.generation_reserve,
+                state.replan_for_budget = getattr(state.prepared_context, "replan_for_budget", None)
+                state.used_common_replan = callable(state.replan_for_budget)
+                if callable(state.replan_for_budget):
+                    state.replanned = await asyncio.wait_for(
+                        state.replan_for_budget(
+                            context_window=state.safe_budget.context_window,
+                            effective_pct=state.safe_budget.effective_pct,
+                            generation_reserve=state.safe_budget.generation_reserve,
                         ),
                         timeout=10.0,
                     )
-                    prepared_context = getattr(replanned, "prepared_context", replanned)
-                    if tuple(getattr(prepared_context, "coverage_compaction_jobs", ()) or ()):
+                    state.prepared_context = getattr(
+                        state.replanned, "prepared_context", state.replanned
+                    )
+                    if tuple(getattr(state.prepared_context, "coverage_compaction_jobs", ()) or ()):
                         if self.compressor is None:
                             raise RuntimeError("coverage_compaction_owner_unavailable")
-                        chain_cycle_id = f"{context_request_id or tid}:chain-safe:1"
-                        resolution = self._resolve_compression_model(
-                            provider_chain,
+                        state.chain_cycle_id = (
+                            f"{state.context_request_id or state.tid}:chain-safe:1"
+                        )
+                        state.resolution = self._resolve_compression_model(
+                            state.provider_chain,
                             requested_model=self._requested_compression_model(),
                         )
                         await self._flush_context_snapshot(
-                            cycle_id=chain_cycle_id,
-                            session_id=session_id,
-                            request_id=context_request_id or tid,
+                            cycle_id=state.chain_cycle_id,
+                            session_id=state.session_id,
+                            request_id=state.context_request_id or state.tid,
                             working_messages=_tag_run_input_messages(
-                                list(prepared_context.messages), task_id=tid
+                                list(state.prepared_context.messages), task_id=state.tid
                             ),
-                            prepared_context=prepared_context,
-                            current_tool_set=getattr(prepared_context, "tool_set", None),
+                            prepared_context=state.prepared_context,
+                            current_tool_set=getattr(state.prepared_context, "tool_set", None),
                         )
                         await self._execute_coverage_compaction_jobs(
-                            cycle_id=chain_cycle_id,
-                            prepared_context=prepared_context,
-                            resolution=resolution,
+                            cycle_id=state.chain_cycle_id,
+                            prepared_context=state.prepared_context,
+                            resolution=state.resolution,
                         )
                         logger.info(
                             "coverage_replan_started sid=%s request_id=%s phase=chain_safe",
-                            session_id,
-                            context_request_id or tid,
+                            state.session_id,
+                            state.context_request_id or state.tid,
                         )
-                        replanned = await asyncio.wait_for(
-                            replan_for_budget(
-                                context_window=safe_budget.context_window,
-                                effective_pct=safe_budget.effective_pct,
-                                generation_reserve=safe_budget.generation_reserve,
+                        state.replanned = await asyncio.wait_for(
+                            state.replan_for_budget(
+                                context_window=state.safe_budget.context_window,
+                                effective_pct=state.safe_budget.effective_pct,
+                                generation_reserve=state.safe_budget.generation_reserve,
                             ),
                             timeout=10.0,
                         )
                         logger.info(
                             "coverage_replan_completed sid=%s request_id=%s phase=chain_safe",
-                            session_id,
-                            context_request_id or tid,
+                            state.session_id,
+                            state.context_request_id or state.tid,
                         )
-                        prepared_context = getattr(replanned, "prepared_context", replanned)
-                    working_messages = _tag_run_input_messages(
-                        list(prepared_context.messages), task_id=tid
+                        state.prepared_context = getattr(
+                            state.replanned, "prepared_context", state.replanned
+                        )
+                    state.working_messages = _tag_run_input_messages(
+                        list(state.prepared_context.messages), task_id=state.tid
                     )
-                current_tool_set = getattr(prepared_context, "tool_set", None)
-                if current_tool_set is not None:
-                    tool_schemas = list(current_tool_set.logical_schemas())
-                final_budgets = [
+                state.current_tool_set = getattr(state.prepared_context, "tool_set", None)
+                if state.current_tool_set is not None:
+                    state.tool_schemas = list(state.current_tool_set.logical_schemas())
+                state.final_budgets = [
                     estimate_selected_attempt_budget(
                         provider=provider,
-                        model_id=str(getattr(provider, "model", "") or use_model or ""),
-                        messages=working_messages,
-                        tools=tool_schemas or None,
-                        generation_reserve=reserve,
-                        attachment_tokens=attachment_tokens,
+                        model_id=str(getattr(provider, "model", "") or state.use_model or ""),
+                        messages=state.working_messages,
+                        tools=state.tool_schemas or None,
+                        generation_reserve=state.reserve,
+                        attachment_tokens=state.attachment_tokens,
                     )
-                    for provider in provider_chain
+                    for provider in state.provider_chain
                 ]
-                coverage_still_pending = bool(
-                    used_common_replan
+                state.coverage_still_pending = bool(
+                    state.used_common_replan
                     and tuple(
                         getattr(
-                            prepared_context,
+                            state.prepared_context,
                             "coverage_compaction_jobs",
                             (),
                         )
                         or ()
                     )
                 )
-                final_budget_fits = all(item.fits for item in final_budgets)
-                if coverage_still_pending or not final_budget_fits:
+                state.final_budget_fits = all(item.fits for item in state.final_budgets)
+                if state.coverage_still_pending or not state.final_budget_fits:
                     logger.warning(
                         "provider_chain_common_budget_detail sid=%s tools=%d budgets=%s",
-                        session_id,
-                        len(tool_schemas or ()),
+                        state.session_id,
+                        len(state.tool_schemas or ()),
                         [
                             {
                                 "planned": item.planned_input_tokens,
@@ -2054,27 +2292,27 @@ class AgentLoop(ToolContextPersistenceMixin):
                                 "tools": item.tool_tokens,
                                 "reserve": item.generation_reserve,
                             }
-                            for item in final_budgets
+                            for item in state.final_budgets
                         ],
                     )
-                    if coverage_still_pending or self.compressor is None:
+                    if state.coverage_still_pending or self.compressor is None:
                         raise RuntimeError("provider_chain_context_budget_exceeded")
                     # Replanning has already exhausted the lossless options.
                     # Let the normal in-loop compactor make exactly one lossy,
                     # goal-preserving rescue attempt before any provider send.
-                    _chain_budget_rescue_pending = True
-                self._history_tool_names = set(self._collect_tool_names(working_messages))
+                    state._chain_budget_rescue_pending = True
+                self._history_tool_names = set(self._collect_tool_names(state.working_messages))
             except Exception as exc:  # noqa: BLE001 - recoverable BLOCK
                 logger.warning(
                     "provider_context_budget_blocked sid=%s request_id=%s error_type=%s error=%r",
-                    session_id,
-                    context_request_id or tid,
+                    state.session_id,
+                    state.context_request_id or state.tid,
                     type(exc).__name__,
                     exc,
                 )
                 yield ErrorEvent(
                     type="error",
-                    task_id=tid,
+                    task_id=state.tid,
                     iteration=0,
                     reason="provider_context_budget_exceeded",
                     detail=str(exc),
@@ -2085,24 +2323,24 @@ class AgentLoop(ToolContextPersistenceMixin):
         # Reset every fresh ``run`` invocation so each chat turn gets a
         # fresh nudge budget — we don't want stale "already nudged 2x"
         # state leaking between turns.
-        completion_nudges_used = 0
+        state.completion_nudges_used = 0
         # Some reasoning-capable OpenAI-compatible models can end a turn
         # after writing only hidden reasoning, without either user-visible
         # content or a structured tool call. Treat that as an incomplete
         # provider turn: give the model one focused repair attempt, then fail
         # structurally instead of silently completing with an empty answer.
-        reasoning_only_nudges_used = 0
+        state.reasoning_only_nudges_used = 0
         # WI-T2.6: 同 completion_nudges_used 模式 — 本轮起算
-        verify_nudges_used = 0
+        state.verify_nudges_used = 0
         # WI-2.2: track previous task_replanning for stagnation detection
-        _prev_task_replanning: str = ""
-        tools_used_count = int(external_feedback.get("tools_used_count", 0))
-        _verify_final_done = False
-        _force_finish_queued = bool(external_feedback.get("force_finish_queued"))
+        state._prev_task_replanning: str = ""
+        state.tools_used_count = int(state.external_feedback.get("tools_used_count", 0))
+        state._verify_final_done = False
+        state._force_finish_queued = bool(state.external_feedback.get("force_finish_queued"))
 
         # P5-S2 B3: warn-once latch so we don't spam the WARN log every
         # iteration once we're in the 80-95% band.
-        _budget_warn_emitted = False
+        state._budget_warn_emitted = False
 
         # WI-4a 目标 always-on 单点注入(对标 Claude Code 钉死 CLAUDE.md)。
         # 唯一注入点 = 这里(循环前注一次),role=system → context_compressor._partition
@@ -2110,186 +2348,195 @@ class AgentLoop(ToolContextPersistenceMixin):
         # 取代了原"周期性 anchor(每 _GOAL_ANCHOR_EVERY 轮重注)"+"压缩后 _build_goal_anchor
         # 注入"两处冗余。目标 + 子目标都从 session_goal_store 取。
         if self.session_goal_store is not None:
-            _ga_fn = getattr(self.session_goal_store, "get_goal_text", None)
-            _always_goal = _ga_fn(session_id) if callable(_ga_fn) else None
-            if _always_goal:
-                _anchor_lines = [f"[目标锚定] 当前目标：{_always_goal}"]
-                _pg_fn = getattr(self.session_goal_store, "get_pending_tasks", None)
-                _pending = _pg_fn(session_id) if callable(_pg_fn) else None
-                if _pending:
-                    _anchor_lines.append(f"[当前子目标] {_pending[0]}")
-                _anchor_lines.append("请确保接下来的动作仍服务于上述目标，不要被中间步骤带偏。")
+            state._ga_fn = getattr(self.session_goal_store, "get_goal_text", None)
+            state._always_goal = state._ga_fn(state.session_id) if callable(state._ga_fn) else None
+            if state._always_goal:
+                state._anchor_lines = [f"[目标锚定] 当前目标：{state._always_goal}"]
+                state._pg_fn = getattr(self.session_goal_store, "get_pending_tasks", None)
+                state._pending = state._pg_fn(state.session_id) if callable(state._pg_fn) else None
+                if state._pending:
+                    state._anchor_lines.append(f"[当前子目标] {state._pending[0]}")
+                state._anchor_lines.append(
+                    "请确保接下来的动作仍服务于上述目标，不要被中间步骤带偏。"
+                )
                 _append_loop_control(
-                    working_messages,
-                    {"role": "system", "content": "\n".join(_anchor_lines)},
-                    metadata_enabled=context_metadata_enabled,
+                    state.working_messages,
+                    {"role": "system", "content": "\n".join(state._anchor_lines)},
+                    metadata_enabled=state.context_metadata_enabled,
                     source="agent_loop.goal_anchor",
                     anchor_after=_latest_context_anchor(
-                        working_messages,
-                        fallback=f"agent-loop:{tid}:run-start",
+                        state.working_messages,
+                        fallback=f"agent-loop:{state.tid}:run-start",
                     ),
-                    fragment_id=f"agent-loop:{tid}:goal-anchor",
+                    fragment_id=f"agent-loop:{state.tid}:goal-anchor",
                     protected=True,
                     trim_policy="never",
                 )
-                logger.info("wi4a_goal_anchor_always_on sid=%s tid=%s", session_id, tid)
+                logger.info("wi4a_goal_anchor_always_on sid=%s tid=%s", state.session_id, state.tid)
 
         # WI-4.0 compaction: warn-once latch so we don't spam the log every
         # iteration when the compressor fires (long multi-tool tasks may cross
         # the threshold repeatedly; we log the first fire and stay quiet after).
-        _compaction_warn_logged: bool = False
+        state._compaction_warn_logged: bool = False
 
         # WI-4b pre-flush 限频 latch: 每个 run 最多把任务态 flush 进 L1 一次
         # (防长 agentic 任务反复触发压缩时刷爆 MEMORY.md 50KB cap → 驱逐真实记忆)。
-        _preflush_done: bool = False
-        _compaction_cycle_index = 0
+        state._preflush_done: bool = False
+        state._compaction_cycle_index = 0
 
         # WI-1B-3 自适应触发线: 本 run 累计工具调用数 ≥ 阈值 → 视为 "agentic"
         # (多工具长任务,提前压留 buffer);否则纯对话(延后压)。仅 adaptive_compact_pct
         # ON 时影响触发线,OFF 时只是个没人读的计数器(字节级 BC)。
-        _run_tool_calls: int = tools_used_count
-        _AGENTIC_TOOL_THRESHOLD = 3
+        state._run_tool_calls: int = state.tools_used_count
+        state._AGENTIC_TOOL_THRESHOLD = 3
 
         # FP-2 TC-2.1 第 3 刀: relay 真实 prompt_tokens 反馈回路。char-based
         # 估算对中文/markdown 系统性低估(真机 real 32.9k 时 estimate <24k),
         # 纯系数追不上内容分布 → 用上一轮 response.usage.input_tokens 兜底,
         # compaction 判定取 max(estimate, real)。0 = 本 run 还没有真实值。
-        _last_real_prompt_tokens: int = 0
-        _latest_compression_report: dict[str, Any] = {}
+        state._last_real_prompt_tokens: int = 0
+        state._latest_compression_report: dict[str, Any] = {}
 
-        self._skills_used_order = list(external_feedback.get("skills_used_order", ()))
+        self._skills_used_order = list(state.external_feedback.get("skills_used_order", ()))
         self._skills_used_this_run = set(self._skills_used_order)
         self._frozen_skill_remounts: dict[str, tuple[Any, str]] = {}
         await self._prepare_frozen_skill_remounts(
-            working_messages,
-            prepared_context=prepared_context,
-            external_feedback=external_feedback,
+            state.working_messages,
+            prepared_context=state.prepared_context,
+            external_feedback=state.external_feedback,
         )
-        _skill_compaction_happened = False
+        state._skill_compaction_happened = False
 
-        initial_coverage_jobs = tuple(
-            getattr(prepared_context, "coverage_compaction_jobs", ()) or ()
+        state.initial_coverage_jobs = tuple(
+            getattr(state.prepared_context, "coverage_compaction_jobs", ()) or ()
         )
-        if context_metadata_enabled and initial_coverage_jobs:
+        if state.context_metadata_enabled and state.initial_coverage_jobs:
             try:
                 if self.compressor is None:
                     raise RuntimeError("coverage_compaction_owner_unavailable")
-                _compaction_cycle_index += 1
-                initial_cycle_id = f"{context_request_id or tid}:coverage:{_compaction_cycle_index}"
-                initial_resolution = self._resolve_compression_model(
-                    provider_chain,
+                state._compaction_cycle_index += 1
+                state.initial_cycle_id = f"{state.context_request_id or state.tid}:coverage:{state._compaction_cycle_index}"
+                state.initial_resolution = self._resolve_compression_model(
+                    state.provider_chain,
                     requested_model=self._requested_compression_model(),
                 )
                 await self._flush_context_snapshot(
-                    cycle_id=initial_cycle_id,
-                    session_id=session_id,
-                    request_id=context_request_id or tid,
-                    working_messages=working_messages,
-                    prepared_context=prepared_context,
-                    current_tool_set=current_tool_set,
+                    cycle_id=state.initial_cycle_id,
+                    session_id=state.session_id,
+                    request_id=state.context_request_id or state.tid,
+                    working_messages=state.working_messages,
+                    prepared_context=state.prepared_context,
+                    current_tool_set=state.current_tool_set,
                 )
                 await self._execute_coverage_compaction_jobs(
-                    cycle_id=initial_cycle_id,
-                    prepared_context=prepared_context,
-                    resolution=initial_resolution,
+                    cycle_id=state.initial_cycle_id,
+                    prepared_context=state.prepared_context,
+                    resolution=state.initial_resolution,
                 )
-                replan = getattr(prepared_context, "replan_after_compaction", None)
-                if not callable(replan):
+                state.replan = getattr(state.prepared_context, "replan_after_compaction", None)
+                if not callable(state.replan):
                     raise RuntimeError("coverage_replan_unavailable")
                 logger.info(
                     "coverage_replan_started sid=%s request_id=%s phase=initial",
-                    session_id,
-                    context_request_id or tid,
+                    state.session_id,
+                    state.context_request_id or state.tid,
                 )
-                replanned = await asyncio.wait_for(replan(), timeout=10.0)
+                state.replanned = await asyncio.wait_for(state.replan(), timeout=10.0)
                 logger.info(
                     "coverage_replan_completed sid=%s request_id=%s phase=initial",
-                    session_id,
-                    context_request_id or tid,
+                    state.session_id,
+                    state.context_request_id or state.tid,
                 )
-                replanned_context = getattr(replanned, "prepared_context", replanned)
-                coverage = getattr(replanned_context, "coverage_report", None)
+                state.replanned_context = getattr(
+                    state.replanned, "prepared_context", state.replanned
+                )
+                state.coverage = getattr(state.replanned_context, "coverage_report", None)
                 if (
-                    coverage is None
-                    or not bool(getattr(coverage, "valid", False))
-                    or tuple(getattr(coverage, "gaps", ()) or ())
-                    or tuple(getattr(coverage, "overlaps", ()) or ())
-                    or tuple(getattr(coverage, "stale_segment_ids", ()) or ())
-                    or tuple(getattr(coverage, "broken_causal_groups", ()) or ())
-                    or tuple(getattr(replanned_context, "coverage_compaction_jobs", ()) or ())
+                    state.coverage is None
+                    or not bool(getattr(state.coverage, "valid", False))
+                    or tuple(getattr(state.coverage, "gaps", ()) or ())
+                    or tuple(getattr(state.coverage, "overlaps", ()) or ())
+                    or tuple(getattr(state.coverage, "stale_segment_ids", ()) or ())
+                    or tuple(getattr(state.coverage, "broken_causal_groups", ()) or ())
+                    or tuple(getattr(state.replanned_context, "coverage_compaction_jobs", ()) or ())
                 ):
                     raise RuntimeError("session_history_coverage_invalid")
-                request_budget = getattr(replanned_context, "request_budget", None)
-                if request_budget is None or not bool(getattr(request_budget, "fits", False)):
+                state.request_budget = getattr(state.replanned_context, "request_budget", None)
+                if state.request_budget is None or not bool(
+                    getattr(state.request_budget, "fits", False)
+                ):
                     raise RuntimeError("context_budget_exceeded_after_coverage")
-                replanned_tool_set = getattr(replanned_context, "tool_set", None)
-                if current_tool_set is not None and (
-                    replanned_tool_set is None
-                    or replanned_tool_set.scope_id != current_tool_set.scope_id
-                    or replanned_tool_set.schema_fingerprint != current_tool_set.schema_fingerprint
+                state.replanned_tool_set = getattr(state.replanned_context, "tool_set", None)
+                if state.current_tool_set is not None and (
+                    state.replanned_tool_set is None
+                    or state.replanned_tool_set.scope_id != state.current_tool_set.scope_id
+                    or state.replanned_tool_set.schema_fingerprint
+                    != state.current_tool_set.schema_fingerprint
                 ):
                     raise RuntimeError("coverage_replan_changed_tool_set")
-                prepared_context = replanned_context
-                working_messages = _tag_run_input_messages(
-                    list(prepared_context.messages), task_id=tid
+                state.prepared_context = state.replanned_context
+                state.working_messages = _tag_run_input_messages(
+                    list(state.prepared_context.messages), task_id=state.tid
                 )
-                current_tool_set = replanned_tool_set
-                if current_tool_set is not None:
-                    tool_schemas = list(current_tool_set.logical_schemas())
-                self._history_tool_names = set(self._collect_tool_names(working_messages))
+                state.current_tool_set = state.replanned_tool_set
+                if state.current_tool_set is not None:
+                    state.tool_schemas = list(state.current_tool_set.logical_schemas())
+                self._history_tool_names = set(self._collect_tool_names(state.working_messages))
             except Exception as coverage_exc:  # noqa: BLE001 - fail closed
                 logger.warning(
                     "coverage_compaction_blocked sid=%s request_id=%s error=%s",
-                    session_id,
-                    context_request_id or tid,
+                    state.session_id,
+                    state.context_request_id or state.tid,
                     str(coverage_exc),
                 )
                 yield ErrorEvent(
                     type="error",
-                    task_id=tid,
+                    task_id=state.tid,
                     iteration=0,
                     reason="context_coverage_block",
                     detail=str(coverage_exc),
                 )
                 return
 
-        iteration_offset = max(0, int(external_feedback.get("iteration", 0)))
-        for iteration in range(iteration_offset + 1, self.max_iterations + 1):
-            if current_tool_set is not None:
-                _scope_store = getattr(self.tools, "capability_scope_store", None)
-                if _scope_store is None or not hasattr(self.tools, "validate_prepared_tool_set"):
+        state.iteration_offset = max(0, int(state.external_feedback.get("iteration", 0)))
+        for state.iteration in range(state.iteration_offset + 1, self.max_iterations + 1):
+            if state.current_tool_set is not None:
+                state._scope_store = getattr(self.tools, "capability_scope_store", None)
+                if state._scope_store is None or not hasattr(
+                    self.tools, "validate_prepared_tool_set"
+                ):
                     yield ErrorEvent(
                         type="error",
-                        task_id=tid,
-                        iteration=iteration,
+                        task_id=state.tid,
+                        iteration=state.iteration,
                         reason="tool_capability_runtime_unavailable",
                         detail="Context OS requires a capability-aware registry",
                     )
                     return
-                _record = _scope_store.get(
-                    current_tool_set.scope_id,
-                    session_id=session_id,
-                    request_id=context_request_id or tid,
+                state._record = state._scope_store.get(
+                    state.current_tool_set.scope_id,
+                    session_id=state.session_id,
+                    request_id=state.context_request_id or state.tid,
                 )
-                if _record is None:
+                if state._record is None:
                     yield ErrorEvent(
                         type="error",
-                        task_id=tid,
-                        iteration=iteration,
+                        task_id=state.tid,
+                        iteration=state.iteration,
                         reason="tool_capability_scope_expired",
                         detail="Context OS capability scope is missing or expired",
                     )
                     return
                 try:
                     self.tools.validate_prepared_tool_set(
-                        current_tool_set,
-                        eligibility=_record.eligibility,
+                        state.current_tool_set,
+                        eligibility=state._record.eligibility,
                     )
                 except Exception as _stale_exc:  # noqa: BLE001
                     yield ErrorEvent(
                         type="error",
-                        task_id=tid,
-                        iteration=iteration,
+                        task_id=state.tid,
+                        iteration=state.iteration,
                         reason=(
                             "tool_policy_unavailable"
                             if "tool_policy_unavailable" in str(_stale_exc)
@@ -2298,10 +2545,10 @@ class AgentLoop(ToolContextPersistenceMixin):
                         detail=str(_stale_exc),
                     )
                     return
-            _force_finish_next = False
-            if _force_finish_queued:
-                _force_finish_next = True
-                _force_finish_queued = False
+            state._force_finish_next = False
+            if state._force_finish_queued:
+                state._force_finish_next = True
+                state._force_finish_queued = False
             # Context OS requests reserve the last loop iteration for an
             # honest, tool-free final response once at least one tool has
             # already run.  Without this reservation, a tool-using model can
@@ -2311,40 +2558,40 @@ class AgentLoop(ToolContextPersistenceMixin):
             # compatible: callers that do not provide PreparedContext retain
             # the historical max_iterations error/stop-loss behavior.
             if (
-                not _force_finish_next
-                and prepared_context is not None
+                not state._force_finish_next
+                and state.prepared_context is not None
                 and self.force_finish_via_tool_choice
-                and tools_used_count > 0
-                and iteration == self.max_iterations
+                and state.tools_used_count > 0
+                and state.iteration == self.max_iterations
             ):
-                _force_finish_next = True
+                state._force_finish_next = True
                 logger.info(
                     "context_os_final_iteration_force_finish sid=%s tid=%s iter=%d tools_used=%d",
-                    session_id,
-                    tid,
-                    iteration,
-                    tools_used_count,
+                    state.session_id,
+                    state.tid,
+                    state.iteration,
+                    state.tools_used_count,
                 )
             if self._tracer:
                 self._tracer.record(
                     {
                         "kind": "iter_start",
-                        "iter": iteration,
-                        "msg_count": len(working_messages),
+                        "iter": state.iteration,
+                        "msg_count": len(state.working_messages),
                     }
                 )
             # P6 Phase 6 — TerminationGate.allows_call() is always run.
             # Checks hard limits (turns, wall-clock, cost) BEFORE we burn
             # another LLM call. The gate is the single source of truth
             # for "should this loop keep going?".
-            _ok, _reason = await traced_call(
+            state._ok, state._reason = await traced_call(
                 name="termination_gate.allows_call",
                 kind=SpanKind.GATE,
                 lifecycle_stage="gate",
-                attributes={"iteration": iteration, "gate": "termination"},
+                attributes={"iteration": state.iteration, "gate": "termination"},
                 invoke=self._gate.allows_call,
             )
-            if not _ok:
+            if not state._ok:
                 # ─── Step7 止损（闸③，plans/2026-06-24-...）：硬上限/资源触顶 → 不硬撑，
                 # 产出诚实止损报告（桌宠交代"卡在哪+建议"，而非只发 error）。
                 # pipeline off 时 self._convergence_controller=None → 走原 ErrorEvent return（字节级 BC）。
@@ -2352,40 +2599,40 @@ class AgentLoop(ToolContextPersistenceMixin):
                     # ⚠️ allows_call() 返回 (False, reason) 但**不调 terminate()**（已核实 termination.py:142）
                     # → 此刻 gate.summary()["reason"] 仍是合成 "running"。真实触顶 reason 在 _reason 里，
                     # 必须用它覆盖 summary 的 reason，否则 resource_capped 判 False → 止损永不触发。
-                    _cap_summary = dict(self._gate.summary())
-                    if _reason is not None:
-                        _cap_summary["reason"] = _reason.value
-                    _verdict = self._convergence_controller.evaluate(
+                    state._cap_summary = dict(self._gate.summary())
+                    if state._reason is not None:
+                        state._cap_summary["reason"] = state._reason.value
+                    state._verdict = self._convergence_controller.evaluate(
                         principal_resolved=False,  # 触顶即未收敛
                         unverified_claims=0,
-                        gate_summary=_cap_summary,
+                        gate_summary=state._cap_summary,
                     )
                     if self._pipeline_observability:
                         yield self._pipeline_event(
                             "chat_v2_convergence",
-                            iteration,
+                            state.iteration,
                             {
-                                "converged": _verdict.converged,
-                                "principal_resolved": _verdict.principal_resolved,
-                                "stop_reason": _verdict.stop_reason,
-                                "report": _verdict.report,
+                                "converged": state._verdict.converged,
+                                "principal_resolved": state._verdict.principal_resolved,
+                                "stop_reason": state._verdict.stop_reason,
+                                "report": state._verdict.report,
                             },
                         )
-                    if _verdict.should_stop_loss and _verdict.report:
+                    if state._verdict.should_stop_loss and state._verdict.report:
                         self._gate.record_final_answer()
                         yield FinalEvent(
                             type="final",
-                            task_id=tid,
-                            iteration=iteration,
-                            content=_verdict.report,
+                            task_id=state.tid,
+                            iteration=state.iteration,
+                            content=state._verdict.report,
                             stop_reason="stop_loss",
                         )
                         return
                 yield ErrorEvent(
                     type="error",
-                    task_id=tid,
-                    iteration=iteration,
-                    reason=(_reason.value if _reason is not None else "unknown"),
+                    task_id=state.tid,
+                    iteration=state.iteration,
+                    reason=(state._reason.value if state._reason is not None else "unknown"),
                     detail="Termination gate blocked LLM call",
                 )
                 return
@@ -2397,69 +2644,69 @@ class AgentLoop(ToolContextPersistenceMixin):
             #
             # P6 Phase 6 — always delegate to self._ctx.check_budget so
             # chat handler + AgentLoop share one budget evaluator.
-            _budget_block_pending = _chain_budget_rescue_pending
-            _chain_budget_rescue_pending = False
+            state._budget_block_pending = state._chain_budget_rescue_pending
+            state._chain_budget_rescue_pending = False
             try:
                 # Use the FIRST provider's model as the context-window
                 # reference (chain mode). In single-provider mode fall
                 # back to default_model.
-                _budget_model = use_model
-                if chain_mode and provider_chain:
-                    _first = provider_chain[0]
-                    _budget_model = getattr(_first, "model", None) or use_model
-                _resolved_model = _budget_model or "unknown"
+                state._budget_model = state.use_model
+                if state.chain_mode and state.provider_chain:
+                    state._first = state.provider_chain[0]
+                    state._budget_model = getattr(state._first, "model", None) or state.use_model
+                state._resolved_model = state._budget_model or "unknown"
                 # Risk-2 fix: floor the estimate with the last real prompt
                 # size (response.usage.input_tokens) so the gate accounts for
                 # the fixed system/tool-schema base that estimate_tokens(
                 # working_messages) misses — otherwise a genuinely over-window
                 # prompt (real 113%) reads as ~16% and never BLOCKs. Default
                 # floor 0 on iter-0 → BC. Mirrors the compaction trigger.
-                _budget = self._ctx.check_budget(
-                    working_messages,
-                    model=_resolved_model,
-                    real_prompt_tokens_floor=_last_real_prompt_tokens,
+                state._budget = self._ctx.check_budget(
+                    state.working_messages,
+                    model=state._resolved_model,
+                    real_prompt_tokens_floor=state._last_real_prompt_tokens,
                 )
-                if _budget.verdict is _BudgetCheck.BLOCK:
+                if state._budget.verdict is _BudgetCheck.BLOCK:
                     logger.error(
                         "p5s2_token_budget_block sid=%s tid=%s iter=%d "
                         "tokens=%d window=%d ratio=%.2f",
-                        session_id,
-                        tid,
-                        iteration,
-                        _budget.estimated_tokens,
-                        _budget.context_window,
-                        _budget.ratio,
+                        state.session_id,
+                        state.tid,
+                        state.iteration,
+                        state._budget.estimated_tokens,
+                        state._budget.context_window,
+                        state._budget.ratio,
                     )
                     if self.compressor is not None and (
-                        context_metadata_enabled or _budget_block_pending
+                        state.context_metadata_enabled or state._budget_block_pending
                     ):
                         # Context OS owns the only lossy recovery path.  Defer
                         # the terminal BLOCK until snapshot flush + compact +
                         # re-estimate have had one chance to recover.
-                        _budget_block_pending = True
+                        state._budget_block_pending = True
                     else:
                         # Legacy/OFF behavior remains byte-for-byte identical.
                         self._gate.record_error(TerminationReason.CONTEXT_BUDGET_BLOCK)
                         yield ErrorEvent(
                             type="error",
-                            task_id=tid,
-                            iteration=iteration,
+                            task_id=state.tid,
+                            iteration=state.iteration,
                             reason="context_budget_block",
-                            detail=_budget.advice,
+                            detail=state._budget.advice,
                         )
                         return
-                elif _budget.verdict is _BudgetCheck.WARN and not _budget_warn_emitted:
+                elif state._budget.verdict is _BudgetCheck.WARN and not state._budget_warn_emitted:
                     logger.warning(
                         "p5s2_token_budget_warn sid=%s tid=%s iter=%d "
                         "tokens=%d window=%d ratio=%.2f",
-                        session_id,
-                        tid,
-                        iteration,
-                        _budget.estimated_tokens,
-                        _budget.context_window,
-                        _budget.ratio,
+                        state.session_id,
+                        state.tid,
+                        state.iteration,
+                        state._budget.estimated_tokens,
+                        state._budget.context_window,
+                        state._budget.ratio,
                     )
-                    _budget_warn_emitted = True
+                    state._budget_warn_emitted = True
             except Exception as _b_exc:  # noqa: BLE001
                 # Budget check is advisory — never fail the loop on it.
                 logger.debug("token_budget_check_failed err=%s", str(_b_exc)[:100])
@@ -2468,8 +2715,8 @@ class AgentLoop(ToolContextPersistenceMixin):
             if self.budget_checker is not None and not self.budget_checker.check_allowed():
                 yield ErrorEvent(
                     type="error",
-                    task_id=tid,
-                    iteration=iteration,
+                    task_id=state.tid,
+                    iteration=state.iteration,
                     reason="budget_exceeded",
                     detail=f"daily budget cap reached (${self.budget_checker.cap_usd:.2f})",
                 )
@@ -2485,31 +2732,34 @@ class AgentLoop(ToolContextPersistenceMixin):
                 # The compressor service is process-wide, while ContextManager
                 # is frozen per Run from the selected model.  Use an isolated
                 # routed view so concurrent Sessions cannot bleed limits.
-                _active_compressor = self.compressor
+                state._active_compressor = self.compressor
                 try:
-                    _ctx_cfg_for_compression = getattr(self._ctx, "config", None)
-                    _model_info_for_compression = getattr(
-                        _ctx_cfg_for_compression, "model_info", None
+                    state._ctx_cfg_for_compression = getattr(self._ctx, "config", None)
+                    state._model_info_for_compression = getattr(
+                        state._ctx_cfg_for_compression, "model_info", None
                     )
-                    _for_context = getattr(self.compressor, "for_context", None)
-                    if callable(_for_context) and _model_info_for_compression is not None:
-                        _active_compressor = _for_context(
-                            context_window=int(_model_info_for_compression.context_window),
+                    state._for_context = getattr(self.compressor, "for_context", None)
+                    if (
+                        callable(state._for_context)
+                        and state._model_info_for_compression is not None
+                    ):
+                        state._active_compressor = state._for_context(
+                            context_window=int(state._model_info_for_compression.context_window),
                             threshold_percent=min(
-                                float(_model_info_for_compression.compact_at_pct),
+                                float(state._model_info_for_compression.compact_at_pct),
                                 0.70,
                             ),
-                            effective_pct=float(_model_info_for_compression.effective_pct),
+                            effective_pct=float(state._model_info_for_compression.effective_pct),
                         )
                 except Exception:  # noqa: BLE001 -- legacy fake/BC compressor
-                    _active_compressor = self.compressor
+                    state._active_compressor = self.compressor
                 try:
-                    _ctoken_est = getattr(_budget, "estimated_tokens", 0)
+                    state._ctoken_est = getattr(state._budget, "estimated_tokens", 0)
                 except Exception:  # noqa: BLE001
-                    _ctoken_est = 0
+                    state._ctoken_est = 0
                 # 第 3 刀: real usage 兜底(见 _last_real_prompt_tokens 注释)。
-                if _last_real_prompt_tokens > _ctoken_est:
-                    _ctoken_est = _last_real_prompt_tokens
+                if state._last_real_prompt_tokens > state._ctoken_est:
+                    state._ctoken_est = state._last_real_prompt_tokens
                 # ★ 第 4 刀(真机测压缩发现的核心 bug 修复): 直接数【即将发送的
                 # working_messages】的 token。原来只用 _budget.estimated_tokens(被
                 # BudgetAllocator 压到 window×0.6,低于压缩阈值 window×0.8)+
@@ -2518,58 +2768,58 @@ class AgentLoop(ToolContextPersistenceMixin):
                 # 1746 真 token 仍不压)。直接数 working_messages 调用前可得、不受
                 # allocator 截断、不延迟,是最可靠的触发信号(复用统一计数,优化 #1+#3)。
                 try:
-                    _wm_tokens = _cmt(working_messages)
-                    if _wm_tokens > _ctoken_est:
-                        _ctoken_est = _wm_tokens
+                    state._wm_tokens = _cmt(state.working_messages)
+                    if state._wm_tokens > state._ctoken_est:
+                        state._ctoken_est = state._wm_tokens
                 except Exception:  # noqa: BLE001
                     pass
-                _ctx_should_compress = False
+                state._ctx_should_compress = False
                 try:
-                    _ctx_cfg = getattr(self._ctx, "config", None)
+                    state._ctx_cfg = getattr(self._ctx, "config", None)
                     # WI-1B-3: adaptive_compact_pct ON → 按本 run 是否 agentic
                     # (工具调用计数 ≥ 阈值) 取微调后的触发线;OFF → for() 直接
                     # 返回原 compact_at_tokens 属性(字节级 BC,等价旧分支)。
-                    _ctx_compact_at = None
-                    _for_fn = getattr(_ctx_cfg, "compact_at_tokens_for", None)
-                    if callable(_for_fn):
-                        _agentic = _run_tool_calls >= _AGENTIC_TOOL_THRESHOLD
-                        _ctx_compact_at = _for_fn(_agentic)
+                    state._ctx_compact_at = None
+                    state._for_fn = getattr(state._ctx_cfg, "compact_at_tokens_for", None)
+                    if callable(state._for_fn):
+                        state._agentic = state._run_tool_calls >= state._AGENTIC_TOOL_THRESHOLD
+                        state._ctx_compact_at = state._for_fn(state._agentic)
                     else:
-                        _ctx_compact_at = getattr(_ctx_cfg, "compact_at_tokens", None)
-                    if _ctx_compact_at is not None:
-                        _ctx_should_compress = _ctoken_est >= int(_ctx_compact_at) > 0
+                        state._ctx_compact_at = getattr(state._ctx_cfg, "compact_at_tokens", None)
+                    if state._ctx_compact_at is not None:
+                        state._ctx_should_compress = (
+                            state._ctoken_est >= int(state._ctx_compact_at) > 0
+                        )
                 except Exception:  # noqa: BLE001
-                    _ctx_should_compress = False
+                    state._ctx_should_compress = False
                 if (
-                    _budget_block_pending
-                    or _active_compressor.should_compress(_ctoken_est)
-                    or _ctx_should_compress
+                    state._budget_block_pending
+                    or state._active_compressor.should_compress(state._ctoken_est)
+                    or state._ctx_should_compress
                 ):
                     try:
-                        _gt = None
+                        state._gt = None
                         if self.session_goal_store is not None:
-                            _gt_fn = getattr(self.session_goal_store, "get_goal_text", None)
-                            if callable(_gt_fn):
-                                _gt = _gt_fn(session_id)
-                        _compression_resolution = None
-                        _compaction_cycle_id = None
-                        _requested_compression_model = self._requested_compression_model()
-                        if context_metadata_enabled:
-                            _compaction_cycle_index += 1
-                            _compaction_cycle_id = (
-                                f"{context_request_id or tid}:compaction:{_compaction_cycle_index}"
-                            )
+                            state._gt_fn = getattr(self.session_goal_store, "get_goal_text", None)
+                            if callable(state._gt_fn):
+                                state._gt = state._gt_fn(state.session_id)
+                        state._compression_resolution = None
+                        state._compaction_cycle_id = None
+                        state._requested_compression_model = self._requested_compression_model()
+                        if state.context_metadata_enabled:
+                            state._compaction_cycle_index += 1
+                            state._compaction_cycle_id = f"{state.context_request_id or state.tid}:compaction:{state._compaction_cycle_index}"
                             await self._flush_context_snapshot(
-                                cycle_id=_compaction_cycle_id,
-                                session_id=session_id,
-                                request_id=context_request_id or tid,
-                                working_messages=working_messages,
-                                prepared_context=prepared_context,
-                                current_tool_set=current_tool_set,
+                                cycle_id=state._compaction_cycle_id,
+                                session_id=state.session_id,
+                                request_id=state.context_request_id or state.tid,
+                                working_messages=state.working_messages,
+                                prepared_context=state.prepared_context,
+                                current_tool_set=state.current_tool_set,
                             )
-                            _compression_resolution = self._resolve_compression_model(
-                                provider_chain,
-                                requested_model=_requested_compression_model,
+                            state._compression_resolution = self._resolve_compression_model(
+                                state.provider_chain,
+                                requested_model=state._requested_compression_model,
                             )
 
                             if context_os_e2e_hooks.consume_context_os_e2e_fault(
@@ -2577,134 +2827,138 @@ class AgentLoop(ToolContextPersistenceMixin):
                             ):
                                 raise RuntimeError("compactor_model_error")
                             await self._execute_coverage_compaction_jobs(
-                                cycle_id=_compaction_cycle_id,
-                                prepared_context=prepared_context,
-                                resolution=_compression_resolution,
+                                cycle_id=state._compaction_cycle_id,
+                                prepared_context=state.prepared_context,
+                                resolution=state._compression_resolution,
                             )
                         # WI-4b pre-flush: 摘掉中段前把任务态写进 L1(跨 session 记任务)。
                         # best-effort + 每 run 限一次(latch),失败绝不阻断压缩。
                         if (
-                            not context_metadata_enabled
+                            not state.context_metadata_enabled
                             and self.file_memory is not None
-                            and not _preflush_done
+                            and not state._preflush_done
                         ):
-                            _preflush_done = True
+                            state._preflush_done = True
                             try:
-                                _last_user = ""
-                                for _m in reversed(working_messages):
-                                    if _m.get("role") == "user":
-                                        _last_user = str(_m.get("content") or "")[:500]
+                                state._last_user = ""
+                                for state._m in reversed(state.working_messages):
+                                    if state._m.get("role") == "user":
+                                        state._last_user = str(state._m.get("content") or "")[:500]
                                         break
-                                _flush_parts = []
-                                if _gt:
-                                    _flush_parts.append(f"目标: {_gt}")
-                                if _last_user:
-                                    _flush_parts.append(f"最近请求: {_last_user}")
-                                if _flush_parts:
-                                    _flush_body = "[任务态快照/task-state] " + "; ".join(
-                                        _flush_parts
+                                state._flush_parts = []
+                                if state._gt:
+                                    state._flush_parts.append(f"目标: {state._gt}")
+                                if state._last_user:
+                                    state._flush_parts.append(f"最近请求: {state._last_user}")
+                                if state._flush_parts:
+                                    state._flush_body = "[任务态快照/task-state] " + "; ".join(
+                                        state._flush_parts
                                     )
                                     await self.file_memory.append(
-                                        "memory", _flush_body, salience=0.6
+                                        "memory", state._flush_body, salience=0.6
                                     )
                                     logger.info(
                                         "wi4b_preflush_l1 sid=%s tid=%s chars=%d",
-                                        session_id,
-                                        tid,
-                                        len(_flush_body),
+                                        state.session_id,
+                                        state.tid,
+                                        len(state._flush_body),
                                     )
                             except Exception as _pf_exc:  # noqa: BLE001
                                 logger.debug(
                                     "wi4b_preflush_failed sid=%s err=%s",
-                                    session_id,
+                                    state.session_id,
                                     str(_pf_exc)[:120],
                                 )
-                        _compress_kwargs: dict[str, Any] = {"goal_text": _gt}
-                        if _compression_resolution is not None:
-                            _candidate = _compression_resolution.candidates[0]
-                            _compress_kwargs.update(
-                                resolved_provider=_candidate.provider,
-                                resolved_model=_candidate.model_id,
-                                compaction_cycle_id=_compaction_cycle_id,
+                        state._compress_kwargs: dict[str, Any] = {"goal_text": state._gt}
+                        if state._compression_resolution is not None:
+                            state._candidate = state._compression_resolution.candidates[0]
+                            state._compress_kwargs.update(
+                                resolved_provider=state._candidate.provider,
+                                resolved_model=state._candidate.model_id,
+                                compaction_cycle_id=state._compaction_cycle_id,
                             )
                         if self._provider_workload_context_factory is not None:
-                            _compress_kwargs["workload_context"] = (
+                            state._compress_kwargs["workload_context"] = (
                                 self._provider_workload_context_factory("agent.context_compaction")
                             )
-                        _context_remount = (
-                            _capture_context_remount(working_messages)
-                            if context_metadata_enabled
+                        state._context_remount = (
+                            _capture_context_remount(state.working_messages)
+                            if state.context_metadata_enabled
                             else None
                         )
-                        if not context_metadata_enabled:
+                        if not state.context_metadata_enabled:
                             if context_os_e2e_hooks.consume_context_os_e2e_fault(
                                 "compactor_model_error"
                             ):
                                 raise RuntimeError("compactor_model_error")
-                        _cresult = await _active_compressor.compress(
-                            working_messages, **_compress_kwargs
+                        state._cresult = await state._active_compressor.compress(
+                            state.working_messages, **state._compress_kwargs
                         )
-                        _resolved_candidate = (
-                            _compression_resolution.candidates[0]
-                            if _compression_resolution is not None
+                        state._resolved_candidate = (
+                            state._compression_resolution.candidates[0]
+                            if state._compression_resolution is not None
                             else None
                         )
-                        _latest_compression_report = {
-                            "requested_model": _requested_compression_model,
+                        state._latest_compression_report = {
+                            "requested_model": state._requested_compression_model,
                             "resolved_model": (
-                                _resolved_candidate.model_id
-                                if _resolved_candidate is not None
+                                state._resolved_candidate.model_id
+                                if state._resolved_candidate is not None
                                 else str(getattr(self.compressor, "model", "") or "")
                             ),
                             "actual_model": (
-                                _resolved_candidate.model_id
-                                if _resolved_candidate is not None
+                                state._resolved_candidate.model_id
+                                if state._resolved_candidate is not None
                                 else str(getattr(self.compressor, "model", "") or "")
                             ),
                             "provider": (
-                                _resolved_candidate.provider_id
-                                if _resolved_candidate is not None
+                                state._resolved_candidate.provider_id
+                                if state._resolved_candidate is not None
                                 else ""
                             ),
                             "source": (
-                                _compression_resolution.source
-                                if _compression_resolution is not None
+                                state._compression_resolution.source
+                                if state._compression_resolution is not None
                                 else "legacy"
                             ),
-                            "failure": str(getattr(_cresult, "error", "") or "")[:200],
+                            "failure": str(getattr(state._cresult, "error", "") or "")[:200],
                         }
-                        if getattr(_cresult, "compressed", False):
-                            _skill_compaction_happened = True
-                            working_messages = _cresult.messages
-                            if _context_remount is not None:
-                                working_messages = _remount_context_after_compaction(
-                                    working_messages,
-                                    _context_remount,
+                        if getattr(state._cresult, "compressed", False):
+                            state._skill_compaction_happened = True
+                            state.working_messages = state._cresult.messages
+                            if state._context_remount is not None:
+                                state.working_messages = _remount_context_after_compaction(
+                                    state.working_messages,
+                                    state._context_remount,
                                 )
                             # WI-4.2: re-inline skill bodies after compaction so
                             # the LLM doesn't lose skill step details that were
                             # in the compressed "middle" messages.
-                            working_messages = self._remount_skills(
-                                working_messages,
-                                session_id,
-                                prepared_context=prepared_context,
+                            state.working_messages = self._remount_skills(
+                                state.working_messages,
+                                state.session_id,
+                                prepared_context=state.prepared_context,
                             )
-                            if not _compaction_warn_logged:
+                            if not state._compaction_warn_logged:
                                 logger.info(
                                     "p1_4_compaction_fired sid=%s tid=%s iter=%d reduction=%s",
-                                    session_id,
-                                    tid,
-                                    iteration,
-                                    getattr(_cresult, "reduction_ratio", "?"),
+                                    state.session_id,
+                                    state.tid,
+                                    state.iteration,
+                                    getattr(state._cresult, "reduction_ratio", "?"),
                                 )
-                                _compaction_warn_logged = True
+                                state._compaction_warn_logged = True
                             # WI-1B-2 压缩可观测: flag ON 时额外 emit metrics +
                             # yield 轻量事件。flag OFF → 整块 short-circuit(BC,
                             # 既不 record 也不构造/yield ContextCompactedEvent)。
                             if self.ctx_observability:
-                                _ctx_in = int(getattr(_cresult, "input_tokens", 0) or 0)
-                                _ctx_out = int(getattr(_cresult, "output_tokens", 0) or 0)
-                                _ctx_ratio = float(getattr(_cresult, "reduction_ratio", 0.0) or 0.0)
+                                state._ctx_in = int(getattr(state._cresult, "input_tokens", 0) or 0)
+                                state._ctx_out = int(
+                                    getattr(state._cresult, "output_tokens", 0) or 0
+                                )
+                                state._ctx_ratio = float(
+                                    getattr(state._cresult, "reduction_ratio", 0.0) or 0.0
+                                )
                                 try:
                                     # 按需导入：测试替身（observability.metrics_sink）
                                     from observability.metrics_sink import (
@@ -2714,29 +2968,27 @@ class AgentLoop(ToolContextPersistenceMixin):
                                     _ctx_metric(
                                         "context_compacted",
                                         {
-                                            "ratio": round(_ctx_ratio, 3),
+                                            "ratio": round(state._ctx_ratio, 3),
                                             "model": getattr(self.compressor, "model", "") or "",
-                                            "count": _ctx_in - _ctx_out,
+                                            "count": state._ctx_in - state._ctx_out,
                                         },
                                     )
                                 except Exception:  # noqa: BLE001
                                     pass
-                                _actual_compaction_model = (
-                                    _resolved_candidate.model_id
-                                    if _resolved_candidate is not None
+                                state._actual_compaction_model = (
+                                    state._resolved_candidate.model_id
+                                    if state._resolved_candidate is not None
                                     else str(getattr(self.compressor, "model", "") or "")
                                 )
-                                _compaction_source_event_id = (
-                                    f"context-compaction:{session_id}:{tid}:{iteration}"
-                                )
+                                state._compaction_source_event_id = f"context-compaction:{state.session_id}:{state.tid}:{state.iteration}"
                                 yield ContextCompactedEvent(
-                                    task_id=tid,
-                                    iteration=iteration,
-                                    reduction=round(_ctx_ratio, 3),
-                                    tokens_in=_ctx_in,
-                                    tokens_out=_ctx_out,
-                                    model=_actual_compaction_model,
-                                    source_event_id=(_compaction_source_event_id),
+                                    task_id=state.tid,
+                                    iteration=state.iteration,
+                                    reduction=round(state._ctx_ratio, 3),
+                                    tokens_in=state._ctx_in,
+                                    tokens_out=state._ctx_out,
+                                    model=state._actual_compaction_model,
+                                    source_event_id=(state._compaction_source_event_id),
                                     based_on_sample_id=str(
                                         getattr(
                                             self,
@@ -2749,50 +3001,50 @@ class AgentLoop(ToolContextPersistenceMixin):
                                 )
 
                                 self._context_usage_basis_sample_id = context_usage_sample_id(
-                                    session_id,
-                                    _compaction_source_event_id,
+                                    state.session_id,
+                                    state._compaction_source_event_id,
                                 )
                     except Exception as _cmp_exc:  # noqa: BLE001
                         # Compaction is advisory — never abort the loop on it.
-                        _latest_compression_report = {
+                        state._latest_compression_report = {
                             "requested_model": self._requested_compression_model(),
                             "failure": str(_cmp_exc)[:200],
                         }
                         logger.debug(
                             "p1_4_compaction_failed sid=%s iter=%d err=%s",
-                            session_id,
-                            iteration,
+                            state.session_id,
+                            state.iteration,
                             str(_cmp_exc)[:200],
                         )
 
-            if _budget_block_pending:
+            if state._budget_block_pending:
                 try:
-                    _post_budget = self._ctx.check_budget(
-                        working_messages,
-                        model=_resolved_model,
+                    state._post_budget = self._ctx.check_budget(
+                        state.working_messages,
+                        model=state._resolved_model,
                         real_prompt_tokens_floor=0,
                     )
-                    _still_blocked = _post_budget.verdict is _BudgetCheck.BLOCK
-                    _block_detail = _post_budget.advice
+                    state._still_blocked = state._post_budget.verdict is _BudgetCheck.BLOCK
+                    state._block_detail = state._post_budget.advice
                 except Exception as _post_exc:  # noqa: BLE001
-                    _still_blocked = True
-                    _block_detail = f"context re-budget failed: {_post_exc}"
-                if _still_blocked:
+                    state._still_blocked = True
+                    state._block_detail = f"context re-budget failed: {_post_exc}"
+                if state._still_blocked:
                     self._gate.record_error(TerminationReason.CONTEXT_BUDGET_BLOCK)
                     yield ErrorEvent(
                         type="error",
-                        task_id=tid,
-                        iteration=iteration,
+                        task_id=state.tid,
+                        iteration=state.iteration,
                         reason="context_budget_block",
-                        detail=_block_detail,
+                        detail=state._block_detail,
                     )
                     return
 
-            if _skill_compaction_happened and self._skills_used_this_run:
-                working_messages = self._remount_skills(
-                    working_messages,
-                    session_id,
-                    prepared_context=prepared_context,
+            if state._skill_compaction_happened and self._skills_used_this_run:
+                state.working_messages = self._remount_skills(
+                    state.working_messages,
+                    state.session_id,
+                    prepared_context=state.prepared_context,
                 )
 
             # P6 Phase 6: escalating in-loop self-check (soft nudge).
@@ -2804,82 +3056,86 @@ class AgentLoop(ToolContextPersistenceMixin):
 
             # Count tools used so far in this loop run (tracked at each
             # tool dispatch). `tools_used` mirrors gate.state.tools_used.
-            tools_used = locals().get("tools_used_count", 0)
+            state.tools_used = locals().get("tools_used_count", 0)
 
-            if iteration > 0 and iteration % _SELFCHECK_EVERY == 0:
-                budget_left = self.max_iterations - iteration
-                msg = _build_selfcheck_message(iteration, self.max_iterations, tools_used)
+            if state.iteration > 0 and state.iteration % _SELFCHECK_EVERY == 0:
+                state.budget_left = self.max_iterations - state.iteration
+                state.msg = _build_selfcheck_message(
+                    state.iteration, self.max_iterations, state.tools_used
+                )
                 # WI-2.1: append reflection instruction at tier2/tier3 only
                 # (zero overhead on normal tier1 path; flag off = BC).
-                if self.structured_reflection and iteration >= _SELFCHECK_TIER2_AT:
-                    msg = msg + _REFLECTION_INSTRUCTION
+                if self.structured_reflection and state.iteration >= _SELFCHECK_TIER2_AT:
+                    state.msg = state.msg + _REFLECTION_INSTRUCTION
                 _append_loop_control(
-                    working_messages,
-                    {"role": "system", "content": msg},
-                    metadata_enabled=context_metadata_enabled,
+                    state.working_messages,
+                    {"role": "system", "content": state.msg},
+                    metadata_enabled=state.context_metadata_enabled,
                     source="agent_loop.self_check",
                     anchor_after=_latest_context_anchor(
-                        working_messages,
-                        fallback=f"agent-loop:{tid}:iteration:{iteration}:start",
+                        state.working_messages,
+                        fallback=f"agent-loop:{state.tid}:iteration:{state.iteration}:start",
                     ),
-                    fragment_id=(f"agent-loop:{tid}:iteration:{iteration}:self-check"),
+                    fragment_id=(f"agent-loop:{state.tid}:iteration:{state.iteration}:self-check"),
                 )
-                tier = (
+                state.tier = (
                     3
-                    if iteration >= _SELFCHECK_TIER3_AT
+                    if state.iteration >= _SELFCHECK_TIER3_AT
                     else 2
-                    if iteration >= _SELFCHECK_TIER2_AT
+                    if state.iteration >= _SELFCHECK_TIER2_AT
                     else 1
                 )
                 logger.info(
                     "p5s2_selfcheck_injected sid=%s tid=%s iter=%d budget=%d "
                     "tier=%d tools_used=%d structured_reflection=%s",
-                    session_id,
-                    tid,
-                    iteration,
-                    budget_left,
-                    tier,
-                    tools_used,
+                    state.session_id,
+                    state.tid,
+                    state.iteration,
+                    state.budget_left,
+                    state.tier,
+                    state.tools_used,
                     self.structured_reflection,
                 )
-                if self.force_finish_via_tool_choice and iteration >= _SELFCHECK_TIER3_AT:
-                    _force_finish_next = True
+                if self.force_finish_via_tool_choice and state.iteration >= _SELFCHECK_TIER3_AT:
+                    state._force_finish_next = True
 
             if (
                 self.session_todo_getter is not None
-                and iteration % _TODO_SYNC_EVERY == 0
-                and iteration < _SELFCHECK_TIER3_AT
+                and state.iteration % _TODO_SYNC_EVERY == 0
+                and state.iteration < _SELFCHECK_TIER3_AT
             ):
                 try:
-                    todos = await self.session_todo_getter(session_id)
+                    state.todos = await self.session_todo_getter(state.session_id)
                 except Exception:
-                    todos = []
-                if todos:
-                    lines = []
-                    for t in todos:
-                        content = (t.get("content") or "")[:80]
-                        status = (t.get("status") or "").lower()
-                        mark = {"completed": "✓", "in_progress": "🔄"}.get(status, "⏳")
-                        lines.append(f"  {mark} {content}")
+                    state.todos = []
+                if state.todos:
+                    state.lines = []
+                    for state.t in state.todos:
+                        state.content = (state.t.get("content") or "")[:80]
+                        state.status = (state.t.get("status") or "").lower()
+                        state.mark = {"completed": "✓", "in_progress": "🔄"}.get(state.status, "⏳")
+                        state.lines.append(f"  {state.mark} {state.content}")
                     _append_loop_control(
-                        working_messages,
+                        state.working_messages,
                         {
                             "role": "system",
-                            "content": _TODO_SYNC_MSG.format(body="\n".join(lines)),
+                            "content": _TODO_SYNC_MSG.format(body="\n".join(state.lines)),
                         },
-                        metadata_enabled=context_metadata_enabled,
+                        metadata_enabled=state.context_metadata_enabled,
                         source="agent_loop.todo_sync",
                         anchor_after=_latest_context_anchor(
-                            working_messages,
-                            fallback=(f"agent-loop:{tid}:iteration:{iteration}:start"),
+                            state.working_messages,
+                            fallback=(f"agent-loop:{state.tid}:iteration:{state.iteration}:start"),
                         ),
-                        fragment_id=(f"agent-loop:{tid}:iteration:{iteration}:todo-sync"),
+                        fragment_id=(
+                            f"agent-loop:{state.tid}:iteration:{state.iteration}:todo-sync"
+                        ),
                     )
                     logger.info(
                         "wi4_todo_sync sid=%s iter=%d n=%d",
-                        session_id,
-                        iteration,
-                        len(todos),
+                        state.session_id,
+                        state.iteration,
+                        len(state.todos),
                     )
 
             # WI-4a: 周期性 [目标锚定] 注入已删除 —— 改由循环前的 always-on 单点注入
@@ -2888,7 +3144,7 @@ class AgentLoop(ToolContextPersistenceMixin):
             # always-on 常驻 + WI-3 结构化摘要保任务共同覆盖,能力不丢。
 
             try:
-                if chain_mode:
+                if state.chain_mode:
                     # ─── Phase 3: walk the chain ───
                     # On transient LLMProviderError, yield a
                     # ProviderChainFallbackEvent and try the next
@@ -2896,117 +3152,125 @@ class AgentLoop(ToolContextPersistenceMixin):
                     # break. If every provider fails, emit
                     # ErrorEvent(reason="all_providers_failed").
 
-                    response = None  # type: ignore[assignment]
-                    last_exc: Exception | None = None
-                    for idx, prov in enumerate(provider_chain):  # type: ignore[arg-type]
+                    state.response = None  # type: ignore[assignment]
+                    state.last_exc: Exception | None = None
+                    for state.idx, state.prov in enumerate(state.provider_chain):  # type: ignore[arg-type]
                         try:
-                            _attempt_tools = None if _force_finish_next else (tool_schemas or None)
-                            _attempt_purpose = (
-                                "force_finish" if _force_finish_next else "agent_response"
+                            state._attempt_tools = (
+                                None if state._force_finish_next else (state.tool_schemas or None)
                             )
-                            raw = await self._run_context_attempt(
-                                provider=prov,
-                                session_id=session_id,
-                                request_id=context_request_id or tid,
+                            state._attempt_purpose = (
+                                "force_finish" if state._force_finish_next else "agent_response"
+                            )
+                            state.raw = await self._run_context_attempt(
+                                provider=state.prov,
+                                session_id=state.session_id,
+                                request_id=state.context_request_id or state.tid,
                                 attempt_id=(
-                                    f"{context_request_id or tid}:iter:{iteration}:provider:{idx}"
+                                    f"{state.context_request_id or state.tid}:iter:{state.iteration}:provider:{state.idx}"
                                 ),
-                                purpose=_attempt_purpose,
-                                messages=working_messages,
-                                tools=_attempt_tools,
-                                fallback_model=use_model or "",
-                                prepared_context=prepared_context,
-                                current_tool_set=current_tool_set,
-                                compression=_latest_compression_report,
-                                invoke=lambda prov=prov: traced_call(
+                                purpose=state._attempt_purpose,
+                                messages=state.working_messages,
+                                tools=state._attempt_tools,
+                                fallback_model=state.use_model or "",
+                                prepared_context=state.prepared_context,
+                                current_tool_set=state.current_tool_set,
+                                compression=state._latest_compression_report,
+                                invoke=lambda prov=state.prov: traced_call(
                                     name="llm.chat_with_tools",
                                     kind=SpanKind.LLM,
                                     lifecycle_stage="llm",
                                     attributes={
-                                        "iteration": iteration,
-                                        "provider": str(getattr(prov, "id", f"provider_{idx}")),
+                                        "iteration": state.iteration,
+                                        "provider": str(
+                                            getattr(prov, "id", f"provider_{state.idx}")
+                                        ),
                                         "stream": False,
-                                        "message_count": len(working_messages),
-                                        "tool_schema_count": len(tool_schemas),
+                                        "message_count": len(state.working_messages),
+                                        "tool_schema_count": len(state.tool_schemas),
                                     },
                                     invoke=lambda: prov.chat_with_tools(
-                                        working_messages,
-                                        tools=_attempt_tools,
-                                        max_tokens=int(llm_kwargs.get("max_tokens", 8192)),
-                                        temperature=llm_kwargs.get("temperature"),
-                                        response_format=llm_kwargs.get("response_format"),
-                                        tool_choice=("none" if _force_finish_next else None),
-                                        **launch_call_kwargs,
+                                        state.working_messages,
+                                        tools=state._attempt_tools,
+                                        max_tokens=int(state.llm_kwargs.get("max_tokens", 8192)),
+                                        temperature=state.llm_kwargs.get("temperature"),
+                                        response_format=state.llm_kwargs.get("response_format"),
+                                        tool_choice=("none" if state._force_finish_next else None),
+                                        **state.launch_call_kwargs,
                                     ),
                                 ),
                             )
                         except (LLMProviderError, RuntimeError) as exc:
-                            _authority_error = _non_fallback_provider_error(exc)
-                            if _should_raise_provider_runtime_error(exc, _authority_error):
+                            state._authority_error = _non_fallback_provider_error(exc)
+                            if _should_raise_provider_runtime_error(exc, state._authority_error):
                                 raise
-                            if _authority_error is not None:
-                                if _authority_error == "tool_catalog_stale":
-                                    _invalidate_stale_mcp_catalog(self.tools, current_tool_set)
+                            if state._authority_error is not None:
+                                if state._authority_error == "tool_catalog_stale":
+                                    _invalidate_stale_mcp_catalog(
+                                        self.tools, state.current_tool_set
+                                    )
                                 yield ErrorEvent(
                                     type="error",
-                                    task_id=tid,
-                                    iteration=iteration,
-                                    reason=_authority_error,
+                                    task_id=state.tid,
+                                    iteration=state.iteration,
+                                    reason=state._authority_error,
                                     detail=str(exc),
-                                    error_class=_authority_error,
+                                    error_class=state._authority_error,
                                 )
                                 return
-                            if launch_call_kwargs:
+                            if state.launch_call_kwargs:
                                 raise
-                            last_exc = exc
-                            prov_id = getattr(prov, "id", f"provider_{idx}")
-                            next_idx = idx + 1
-                            if next_idx < len(provider_chain):  # type: ignore[arg-type]
-                                next_prov = provider_chain[next_idx]  # type: ignore[index]
-                                next_id = getattr(next_prov, "id", f"provider_{next_idx}")
-                                reason = str(exc) or type(exc).__name__
+                            state.last_exc = exc
+                            state.prov_id = getattr(state.prov, "id", f"provider_{state.idx}")
+                            state.next_idx = state.idx + 1
+                            if state.next_idx < len(state.provider_chain):  # type: ignore[arg-type]
+                                state.next_prov = state.provider_chain[state.next_idx]  # type: ignore[index]
+                                state.next_id = getattr(
+                                    state.next_prov, "id", f"provider_{state.next_idx}"
+                                )
+                                state.reason = str(exc) or type(exc).__name__
                                 logger.warning(
                                     "provider_chain_fallback from=%s to=%s reason=%s sid=%s tid=%s",
-                                    prov_id,
-                                    next_id,
-                                    reason[:200],
-                                    session_id,
-                                    tid,
+                                    state.prov_id,
+                                    state.next_id,
+                                    state.reason[:200],
+                                    state.session_id,
+                                    state.tid,
                                 )
                                 yield ProviderChainFallbackEvent(
                                     type="provider_chain_fallback",
-                                    task_id=tid,
-                                    iteration=iteration,
-                                    session_id=session_id,
-                                    from_=prov_id,
-                                    to=next_id,
-                                    reason=reason,
+                                    task_id=state.tid,
+                                    iteration=state.iteration,
+                                    session_id=state.session_id,
+                                    from_=state.prov_id,
+                                    to=state.next_id,
+                                    reason=state.reason,
                                 )
                             else:
                                 logger.warning(
                                     "provider_chain_last_provider_failed id=%s reason=%s sid=%s",
-                                    prov_id,
+                                    state.prov_id,
                                     str(exc)[:200],
-                                    session_id,
+                                    state.session_id,
                                 )
                             continue
                         else:
-                            response = _raw_to_response(raw)
+                            state.response = _raw_to_response(state.raw)
                             break
 
-                    if response is None:
+                    if state.response is None:
                         # All providers in the chain raised.
-                        tried = len(provider_chain)  # type: ignore[arg-type]
-                        last_text = str(last_exc) if last_exc else "unknown"
-                        if isinstance(last_exc, RuntimeError) and str(last_exc).startswith(
-                            "provider_context_budget_exceeded"
-                        ):
+                        state.tried = len(state.provider_chain)  # type: ignore[arg-type]
+                        state.last_text = str(state.last_exc) if state.last_exc else "unknown"
+                        if isinstance(state.last_exc, RuntimeError) and str(
+                            state.last_exc
+                        ).startswith("provider_context_budget_exceeded"):
                             yield ErrorEvent(
                                 type="error",
-                                task_id=tid,
-                                iteration=iteration,
+                                task_id=state.tid,
+                                iteration=state.iteration,
                                 reason="provider_context_budget_exceeded",
-                                detail=last_text,
+                                detail=state.last_text,
                             )
                             return
                         # P6 Phase 6 — record terminal error reason on the
@@ -3015,102 +3279,108 @@ class AgentLoop(ToolContextPersistenceMixin):
                         self._gate.record_error(TerminationReason.ALL_PROVIDERS_FAILED)
                         yield ErrorEvent(
                             type="error",
-                            task_id=tid,
-                            iteration=iteration,
+                            task_id=state.tid,
+                            iteration=state.iteration,
                             reason="all_providers_failed",
-                            detail=(f"tried {tried}, last_error: {last_text}"),
+                            detail=(f"tried {state.tried}, last_error: {state.last_text}"),
                             # 把最后一个 provider 的结构化 error_class 透传给前端，
                             # 让 chain 全失败路径也能 surface 友好分类（如
                             # empty_api_key→"请重新登录" / relay 402→充值），而不是
                             # 退化成无分类的通用错误。
-                            error_class=getattr(last_exc, "error_class", "") or "",
+                            error_class=getattr(state.last_exc, "error_class", "") or "",
                         )
                         return
-                elif stream_capable:
+                elif state.stream_capable:
                     # Streaming path: forward delta events, accumulate
                     # the final dict, then build the same ChatResponse
                     # the non-streaming path would have produced.
-                    final_dict: dict | None = None
-                    delta_count = 0
-                    stream_failed_with: Exception | None = None
-                    call_llm_kwargs = (
-                        {**llm_kwargs, "tool_choice": "none"} if _force_finish_next else llm_kwargs
+                    state.final_dict: dict | None = None
+                    state.delta_count = 0
+                    state.stream_failed_with: Exception | None = None
+                    state.call_llm_kwargs = (
+                        {**state.llm_kwargs, "tool_choice": "none"}
+                        if state._force_finish_next
+                        else state.llm_kwargs
                     )
-                    call_llm_kwargs = {**launch_call_kwargs, **call_llm_kwargs}
-                    _attempt_tools = None if _force_finish_next else (tool_schemas or None)
-                    _attempt_provider = getattr(
+                    state.call_llm_kwargs = {**state.launch_call_kwargs, **state.call_llm_kwargs}
+                    state._attempt_tools = (
+                        None if state._force_finish_next else (state.tool_schemas or None)
+                    )
+                    state._attempt_provider = getattr(
                         self.llm, "_provider", getattr(self.llm, "_active_provider", self.llm)
                     )
-                    _attempt_purpose = "force_finish" if _force_finish_next else "agent_response"
+                    state._attempt_purpose = (
+                        "force_finish" if state._force_finish_next else "agent_response"
+                    )
                     try:
-                        async for ev in self._iterate_context_attempt(
-                            provider=_attempt_provider,
-                            session_id=session_id,
-                            request_id=context_request_id or tid,
-                            attempt_id=f"{context_request_id or tid}:iter:{iteration}:stream",
-                            purpose=_attempt_purpose,
-                            messages=working_messages,
-                            tools=_attempt_tools,
-                            fallback_model=use_model or "",
-                            prepared_context=prepared_context,
-                            current_tool_set=current_tool_set,
-                            compression=_latest_compression_report,
+                        async for state.ev in self._iterate_context_attempt(
+                            provider=state._attempt_provider,
+                            session_id=state.session_id,
+                            request_id=state.context_request_id or state.tid,
+                            attempt_id=f"{state.context_request_id or state.tid}:iter:{state.iteration}:stream",
+                            purpose=state._attempt_purpose,
+                            messages=state.working_messages,
+                            tools=state._attempt_tools,
+                            fallback_model=state.use_model or "",
+                            prepared_context=state.prepared_context,
+                            current_tool_set=state.current_tool_set,
+                            compression=state._latest_compression_report,
                             iterator=lambda: traced_iterate(
                                 name="llm.chat_with_fallback_stream",
                                 kind=SpanKind.LLM,
                                 lifecycle_stage="llm",
                                 attributes={
-                                    "iteration": iteration,
-                                    "model": str(use_model or ""),
+                                    "iteration": state.iteration,
+                                    "model": str(state.use_model or ""),
                                     "stream": True,
-                                    "message_count": len(working_messages),
-                                    "tool_schema_count": len(tool_schemas),
+                                    "message_count": len(state.working_messages),
+                                    "tool_schema_count": len(state.tool_schemas),
                                 },
                                 iterator=lambda: self.llm.chat_with_fallback_stream(  # type: ignore[attr-defined]
-                                    working_messages,
-                                    tools=_attempt_tools,
-                                    model=use_model,
-                                    **call_llm_kwargs,
+                                    state.working_messages,
+                                    tools=state._attempt_tools,
+                                    model=state.use_model,
+                                    **state.call_llm_kwargs,
                                 ),
                             ),
                         ):
-                            ev_type = ev.get("type")
-                            if ev_type == "delta":
-                                delta_count += 1
+                            state.ev_type = state.ev.get("type")
+                            if state.ev_type == "delta":
+                                state.delta_count += 1
                                 yield AssistantDeltaEvent(
                                     type="assistant_delta",
-                                    task_id=tid,
-                                    iteration=iteration,
-                                    content=ev.get("content", ""),
+                                    task_id=state.tid,
+                                    iteration=state.iteration,
+                                    content=state.ev.get("content", ""),
                                     kind="content",
-                                    invocation_id=ev.get("invocation_id"),
-                                    stream_epoch=ev.get("stream_epoch"),
-                                    provisional=bool(ev.get("provisional", False)),
+                                    invocation_id=state.ev.get("invocation_id"),
+                                    stream_epoch=state.ev.get("stream_epoch"),
+                                    provisional=bool(state.ev.get("provisional", False)),
                                 )
-                            elif ev_type == "delta_reasoning":
-                                delta_count += 1
+                            elif state.ev_type == "delta_reasoning":
+                                state.delta_count += 1
                                 yield AssistantDeltaEvent(
                                     type="assistant_delta",
-                                    task_id=tid,
-                                    iteration=iteration,
-                                    content=ev.get("content", ""),
+                                    task_id=state.tid,
+                                    iteration=state.iteration,
+                                    content=state.ev.get("content", ""),
                                     kind="reasoning",
-                                    invocation_id=ev.get("invocation_id"),
-                                    stream_epoch=ev.get("stream_epoch"),
-                                    provisional=bool(ev.get("provisional", False)),
+                                    invocation_id=state.ev.get("invocation_id"),
+                                    stream_epoch=state.ev.get("stream_epoch"),
+                                    provisional=bool(state.ev.get("provisional", False)),
                                 )
-                            elif ev_type == "retract":
+                            elif state.ev_type == "retract":
                                 yield AssistantDeltaEvent(
                                     type="assistant_delta",
-                                    task_id=tid,
-                                    iteration=iteration,
-                                    invocation_id=ev.get("invocation_id"),
-                                    stream_epoch=ev.get("stream_epoch"),
+                                    task_id=state.tid,
+                                    iteration=state.iteration,
+                                    invocation_id=state.ev.get("invocation_id"),
+                                    stream_epoch=state.ev.get("stream_epoch"),
                                     provisional=True,
                                     retract_provisional=True,
                                 )
-                            elif ev_type == "final":
-                                final_dict = ev
+                            elif state.ev_type == "final":
+                                state.final_dict = state.ev
                     except LLMProviderError as stream_exc:
                         # P4-S25 fix: streaming raised after exhausting its
                         # own retry budget (typically RemoteProtocolError
@@ -3121,64 +3391,64 @@ class AgentLoop(ToolContextPersistenceMixin):
                         # own independent retry budget so we effectively
                         # double the resilience without hard-coding 6
                         # retries.
-                        stream_failed_with = stream_exc
+                        state.stream_failed_with = stream_exc
                         logger.warning(
                             "agent_loop_stream_failed_falling_back error=%s",
                             str(stream_exc)[:200],
                         )
 
-                    needs_nonstream_fallback = (
-                        stream_failed_with is not None
-                        or final_dict is None
+                    state.needs_nonstream_fallback = (
+                        state.stream_failed_with is not None
+                        or state.final_dict is None
                         or (
-                            delta_count == 0
-                            and not final_dict.get("content")
-                            and not final_dict.get("tool_calls")
+                            state.delta_count == 0
+                            and not state.final_dict.get("content")
+                            and not state.final_dict.get("tool_calls")
                         )
                     )
                     if (
-                        launch_call_kwargs
-                        and not provider_launch_snapshot.supports_idempotent_launch
+                        state.launch_call_kwargs
+                        and not state.provider_launch_snapshot.supports_idempotent_launch
                     ):
-                        needs_nonstream_fallback = False
-                        if stream_failed_with is not None:
-                            raise stream_failed_with
-                    if needs_nonstream_fallback:
-                        if stream_failed_with is None:
+                        state.needs_nonstream_fallback = False
+                        if state.stream_failed_with is not None:
+                            raise state.stream_failed_with
+                    if state.needs_nonstream_fallback:
+                        if state.stream_failed_with is None:
                             # Empty-stream case (the relay didn't actually stream).
                             logger.warning(
                                 "agent_loop_stream_fallback_to_nonstream delta_count=%d",
-                                delta_count,
+                                state.delta_count,
                             )
-                        response = await self._run_context_attempt(
-                            provider=_attempt_provider,
-                            session_id=session_id,
-                            request_id=context_request_id or tid,
-                            attempt_id=f"{context_request_id or tid}:iter:{iteration}:nonstream-fallback",
-                            purpose=_attempt_purpose,
-                            messages=working_messages,
-                            tools=_attempt_tools,
-                            fallback_model=use_model or "",
-                            prepared_context=prepared_context,
-                            current_tool_set=current_tool_set,
-                            compression=_latest_compression_report,
+                        state.response = await self._run_context_attempt(
+                            provider=state._attempt_provider,
+                            session_id=state.session_id,
+                            request_id=state.context_request_id or state.tid,
+                            attempt_id=f"{state.context_request_id or state.tid}:iter:{state.iteration}:nonstream-fallback",
+                            purpose=state._attempt_purpose,
+                            messages=state.working_messages,
+                            tools=state._attempt_tools,
+                            fallback_model=state.use_model or "",
+                            prepared_context=state.prepared_context,
+                            current_tool_set=state.current_tool_set,
+                            compression=state._latest_compression_report,
                             invoke=lambda: traced_call(
                                 name="llm.chat_with_fallback",
                                 kind=SpanKind.LLM,
                                 lifecycle_stage="llm",
                                 attributes={
-                                    "iteration": iteration,
-                                    "model": str(use_model or ""),
+                                    "iteration": state.iteration,
+                                    "model": str(state.use_model or ""),
                                     "stream": False,
                                     "stream_fallback": True,
-                                    "message_count": len(working_messages),
-                                    "tool_schema_count": len(tool_schemas),
+                                    "message_count": len(state.working_messages),
+                                    "tool_schema_count": len(state.tool_schemas),
                                 },
                                 invoke=lambda: self.llm.chat_with_fallback(
-                                    working_messages,
-                                    tools=_attempt_tools,
-                                    model=use_model,
-                                    **call_llm_kwargs,
+                                    state.working_messages,
+                                    tools=state._attempt_tools,
+                                    model=state.use_model,
+                                    **state.call_llm_kwargs,
                                 ),
                             ),
                         )
@@ -3186,53 +3456,59 @@ class AgentLoop(ToolContextPersistenceMixin):
                         # Convert to ChatResponse to share the rest of the
                         # iteration code with the non-streaming path.
 
-                        response = _raw_to_response(final_dict)
+                        state.response = _raw_to_response(state.final_dict)
                 else:
-                    call_llm_kwargs = (
-                        {**llm_kwargs, "tool_choice": "none"} if _force_finish_next else llm_kwargs
+                    state.call_llm_kwargs = (
+                        {**state.llm_kwargs, "tool_choice": "none"}
+                        if state._force_finish_next
+                        else state.llm_kwargs
                     )
-                    call_llm_kwargs = {**launch_call_kwargs, **call_llm_kwargs}
-                    _attempt_tools = None if _force_finish_next else (tool_schemas or None)
-                    _attempt_provider = getattr(
+                    state.call_llm_kwargs = {**state.launch_call_kwargs, **state.call_llm_kwargs}
+                    state._attempt_tools = (
+                        None if state._force_finish_next else (state.tool_schemas or None)
+                    )
+                    state._attempt_provider = getattr(
                         self.llm, "_provider", getattr(self.llm, "_active_provider", self.llm)
                     )
-                    _attempt_purpose = "force_finish" if _force_finish_next else "agent_response"
-                    response = await self._run_context_attempt(
-                        provider=_attempt_provider,
-                        session_id=session_id,
-                        request_id=context_request_id or tid,
-                        attempt_id=f"{context_request_id or tid}:iter:{iteration}:nonstream",
-                        purpose=_attempt_purpose,
-                        messages=working_messages,
-                        tools=_attempt_tools,
-                        fallback_model=use_model or "",
-                        prepared_context=prepared_context,
-                        current_tool_set=current_tool_set,
-                        compression=_latest_compression_report,
+                    state._attempt_purpose = (
+                        "force_finish" if state._force_finish_next else "agent_response"
+                    )
+                    state.response = await self._run_context_attempt(
+                        provider=state._attempt_provider,
+                        session_id=state.session_id,
+                        request_id=state.context_request_id or state.tid,
+                        attempt_id=f"{state.context_request_id or state.tid}:iter:{state.iteration}:nonstream",
+                        purpose=state._attempt_purpose,
+                        messages=state.working_messages,
+                        tools=state._attempt_tools,
+                        fallback_model=state.use_model or "",
+                        prepared_context=state.prepared_context,
+                        current_tool_set=state.current_tool_set,
+                        compression=state._latest_compression_report,
                         invoke=lambda: traced_call(
                             name="llm.chat_with_fallback",
                             kind=SpanKind.LLM,
                             lifecycle_stage="llm",
                             attributes={
-                                "iteration": iteration,
-                                "model": str(use_model or ""),
+                                "iteration": state.iteration,
+                                "model": str(state.use_model or ""),
                                 "stream": False,
-                                "message_count": len(working_messages),
-                                "tool_schema_count": len(tool_schemas),
+                                "message_count": len(state.working_messages),
+                                "tool_schema_count": len(state.tool_schemas),
                             },
                             invoke=lambda: self.llm.chat_with_fallback(
-                                working_messages,
-                                tools=_attempt_tools,
-                                model=use_model,
-                                **call_llm_kwargs,
+                                state.working_messages,
+                                tools=state._attempt_tools,
+                                model=state.use_model,
+                                **state.call_llm_kwargs,
                             ),
                         ),
                     )
             except LLMBudgetExceededError as exc:
                 yield ErrorEvent(
                     type="error",
-                    task_id=tid,
-                    iteration=iteration,
+                    task_id=state.tid,
+                    iteration=state.iteration,
                     reason="budget_exceeded",
                     detail=str(exc),
                 )
@@ -3244,8 +3520,8 @@ class AgentLoop(ToolContextPersistenceMixin):
                     raise
                 yield ErrorEvent(
                     type="error",
-                    task_id=tid,
-                    iteration=iteration,
+                    task_id=state.tid,
+                    iteration=state.iteration,
                     reason=(
                         "provider_context_budget_exceeded"
                         if str(exc).startswith("provider_context_budget_exceeded")
@@ -3257,8 +3533,8 @@ class AgentLoop(ToolContextPersistenceMixin):
             except LLMProviderError as exc:
                 yield ErrorEvent(
                     type="error",
-                    task_id=tid,
-                    iteration=iteration,
+                    task_id=state.tid,
+                    iteration=state.iteration,
                     reason="llm_error",
                     detail=str(exc),
                     # WI-R5: carry the relay error code so the frontend
@@ -3267,27 +3543,28 @@ class AgentLoop(ToolContextPersistenceMixin):
                 )
                 return
 
-            launch_call_kwargs = {}
-            totals["input"] += response.usage.input_tokens
-            totals["output"] += response.usage.output_tokens
-            totals["cache_read"] += response.usage.cache_read_tokens
-            totals["cache_write"] += response.usage.cache_write_tokens
+            state.launch_call_kwargs = {}
+            state.totals["input"] += state.response.usage.input_tokens
+            state.totals["output"] += state.response.usage.output_tokens
+            state.totals["cache_read"] += state.response.usage.cache_read_tokens
+            state.totals["cache_write"] += state.response.usage.cache_write_tokens
             # 第 3 刀: 记录 relay 真实 prompt 大小,喂下一轮 compaction 判定。
-            if response.usage.input_tokens > _last_real_prompt_tokens:
-                _last_real_prompt_tokens = response.usage.input_tokens
+            if state.response.usage.input_tokens > state._last_real_prompt_tokens:
+                state._last_real_prompt_tokens = state.response.usage.input_tokens
             if self._tracer:
                 self._tracer.record(
                     {
                         "kind": "llm_out",
-                        "iter": iteration,
-                        "stop_reason": response.stop_reason,
-                        "content_preview": (response.content or "")[:200],
+                        "iter": state.iteration,
+                        "stop_reason": state.response.stop_reason,
+                        "content_preview": (state.response.content or "")[:200],
                         "tool_calls": [
-                            {"name": tc.name, "args": tc.arguments} for tc in response.tool_calls
+                            {"name": tc.name, "args": tc.arguments}
+                            for tc in state.response.tool_calls
                         ],
                         "usage": (
-                            response.usage.model_dump()
-                            if hasattr(response.usage, "model_dump")
+                            state.response.usage.model_dump()
+                            if hasattr(state.response.usage, "model_dump")
                             else {}
                         ),
                     }
@@ -3298,36 +3575,36 @@ class AgentLoop(ToolContextPersistenceMixin):
             # cost_usd extra; ChatUsage has no such field today so we
             # pass 0.0). The gate's allows_call check at top of next
             # iteration uses turns_used to decide whether to keep going.
-            _cost_delta = 0.0
-            _usage = getattr(response, "usage", None)
-            if _usage is not None:
-                _maybe_cost = getattr(_usage, "cost_usd", None)
-                if isinstance(_maybe_cost, (int, float)):
-                    _cost_delta = float(_maybe_cost)
-            self._gate.record_turn(cost_delta_usd=_cost_delta)
+            state._cost_delta = 0.0
+            state._usage = getattr(state.response, "usage", None)
+            if state._usage is not None:
+                state._maybe_cost = getattr(state._usage, "cost_usd", None)
+                if isinstance(state._maybe_cost, (int, float)):
+                    state._cost_delta = float(state._maybe_cost)
+            self._gate.record_turn(cost_delta_usd=state._cost_delta)
 
-            if not (response.content or "").strip() and not response.tool_calls:
-                has_hidden_reasoning = bool((response.reasoning_content or "").strip())
-                empty_reason = (
+            if not (state.response.content or "").strip() and not state.response.tool_calls:
+                state.has_hidden_reasoning = bool((state.response.reasoning_content or "").strip())
+                state.empty_reason = (
                     "model_reasoning_only_response"
-                    if has_hidden_reasoning
+                    if state.has_hidden_reasoning
                     else "model_empty_response"
                 )
-                max_reasoning_only_nudges = 3
-                if reasoning_only_nudges_used >= max_reasoning_only_nudges:
+                state.max_reasoning_only_nudges = 3
+                if state.reasoning_only_nudges_used >= state.max_reasoning_only_nudges:
                     logger.warning(
                         "model_non_actionable_response_exhausted "
                         "sid=%s tid=%s iteration=%d reason=%s",
-                        session_id,
-                        tid,
-                        iteration,
-                        empty_reason,
+                        state.session_id,
+                        state.tid,
+                        state.iteration,
+                        state.empty_reason,
                     )
                     yield ErrorEvent(
                         type="error",
-                        task_id=tid,
-                        iteration=iteration,
-                        reason=empty_reason,
+                        task_id=state.tid,
+                        iteration=state.iteration,
+                        reason=state.empty_reason,
                         detail=(
                             "The model exhausted three recovery nudges after "
                             "ending turns with no tool call or user-visible "
@@ -3336,28 +3613,34 @@ class AgentLoop(ToolContextPersistenceMixin):
                     )
                     return
 
-                reasoning_only_nudges_used += 1
-                reasoning_reply = _append_loop_transcript(
-                    working_messages,
+                state.reasoning_only_nudges_used += 1
+                state.reasoning_reply = _append_loop_transcript(
+                    state.working_messages,
                     {
                         "role": "assistant",
                         "content": "",
-                        "reasoning_content": response.reasoning_content,
+                        "reasoning_content": state.response.reasoning_content,
                     },
-                    metadata_enabled=context_metadata_enabled,
+                    metadata_enabled=state.context_metadata_enabled,
                     source="agent_loop.reasoning_only.trigger",
                     role="assistant",
-                    fragment_id=(f"agent-loop:{tid}:iteration:{iteration}:reasoning-only-trigger"),
+                    fragment_id=(
+                        f"agent-loop:{state.tid}:iteration:{state.iteration}:reasoning-only-trigger"
+                    ),
                 )
                 _append_loop_control(
-                    working_messages,
+                    state.working_messages,
                     {
                         "role": "system",
                         "content": (
-                            f"Recovery attempt {reasoning_only_nudges_used} of "
-                            f"{max_reasoning_only_nudges}. "
+                            f"Recovery attempt {state.reasoning_only_nudges_used} of "
+                            f"{state.max_reasoning_only_nudges}. "
                             "Your previous turn contained "
-                            + ("only internal reasoning" if has_hidden_reasoning else "no output")
+                            + (
+                                "only internal reasoning"
+                                if state.has_hidden_reasoning
+                                else "no output"
+                            )
                             + " and no user-visible answer or tool call. "
                             "Do not end a turn this way. If your reasoning "
                             "selected an available tool, emit the actual "
@@ -3365,25 +3648,27 @@ class AgentLoop(ToolContextPersistenceMixin):
                             "concise user-facing answer."
                         ),
                     },
-                    metadata_enabled=context_metadata_enabled,
+                    metadata_enabled=state.context_metadata_enabled,
                     source="agent_loop.reasoning_only.nudge",
                     anchor_after=(
-                        _context_fragment_id(reasoning_reply)
+                        _context_fragment_id(state.reasoning_reply)
                         or _latest_context_anchor(
-                            working_messages,
+                            state.working_messages,
                             fallback=(
-                                f"agent-loop:{tid}:iteration:{iteration}:reasoning-only-trigger"
+                                f"agent-loop:{state.tid}:iteration:{state.iteration}:reasoning-only-trigger"
                             ),
                         )
                     ),
-                    fragment_id=(f"agent-loop:{tid}:iteration:{iteration}:reasoning-only-nudge"),
+                    fragment_id=(
+                        f"agent-loop:{state.tid}:iteration:{state.iteration}:reasoning-only-nudge"
+                    ),
                 )
                 logger.info(
                     "model_non_actionable_response_retried sid=%s tid=%s iteration=%d reason=%s",
-                    session_id,
-                    tid,
-                    iteration,
-                    empty_reason,
+                    state.session_id,
+                    state.tid,
+                    state.iteration,
+                    state.empty_reason,
                 )
                 continue
 
@@ -3391,22 +3676,24 @@ class AgentLoop(ToolContextPersistenceMixin):
             # user-visible answer proves that the provider recovered, so a
             # later isolated reasoning-only turn starts a fresh recovery
             # window instead of inheriting old nudges from earlier work.
-            reasoning_only_nudges_used = 0
+            state.reasoning_only_nudges_used = 0
             yield AssistantMessageEvent(
                 type="assistant_message",
-                task_id=tid,
-                iteration=iteration,
-                content=response.content,
-                reasoning_content=response.reasoning_content,
-                tool_calls=list(response.tool_calls),
-                stop_reason=response.stop_reason,
-                model=response.model,
+                task_id=state.tid,
+                iteration=state.iteration,
+                content=state.response.content,
+                reasoning_content=state.response.reasoning_content,
+                tool_calls=list(state.response.tool_calls),
+                stop_reason=state.response.stop_reason,
+                model=state.response.model,
             )
 
             # End of conversation — emit final and stop.
-            if response.stop_reason != "tool_use" or not response.tool_calls:
-                if host_validated_zero_tool_terminal:
-                    yield _host_validated_terminal_event(self, response, tid, iteration, totals)
+            if state.response.stop_reason != "tool_use" or not state.response.tool_calls:
+                if state.host_validated_zero_tool_terminal:
+                    yield _host_validated_terminal_event(
+                        self, state.response, state.tid, state.iteration, state.totals
+                    )
                     return
                 # WI-1 §17.6 — verify_exhausted final-summary turn: when this
                 # is the single forced "summarize then stop" turn granted after
@@ -3418,22 +3705,22 @@ class AgentLoop(ToolContextPersistenceMixin):
                 # Without this, the verify block's own entry guard
                 # (verify_nudges_used < max) skips re-entry on this turn and the
                 # run would silently end as a FinalEvent, hiding the failure.
-                if _verify_final_done and _force_finish_next:
+                if state._verify_final_done and state._force_finish_next:
                     if self._tracer:
                         self._tracer.record(
                             {
                                 "kind": "end",
-                                "iter": iteration,
+                                "iter": state.iteration,
                                 "reason": "verify_exhausted",
                                 "gate_summary": self._gate.summary(),
                             }
                         )
                     yield ErrorEvent(
                         type="error",
-                        task_id=tid,
-                        iteration=iteration,
+                        task_id=state.tid,
+                        iteration=state.iteration,
                         reason="verify_exhausted",
-                        detail=(response.content or "verify-gate: all retries exhausted"),
+                        detail=(state.response.content or "verify-gate: all retries exhausted"),
                     )
                     return
                 # ─── Step2 EvidenceGate（取证门控，核心闸①，plans/2026-06-24-...）。
@@ -3441,15 +3728,15 @@ class AgentLoop(ToolContextPersistenceMixin):
                 # flag off 时 self._evidence_gate=None → 跳过整段（BC）。判定走 self._evidence_gathered
                 # 布尔（dispatch 时按白名单+history 快照置位），对 compaction 整体替换 working_messages 免疫（R1）。
                 if (
-                    iteration < _SELFCHECK_TIER3_AT
+                    state.iteration < _SELFCHECK_TIER3_AT
                     and self._evidence_gate is not None
                     and self._pipeline_needs_investigation
                 ):
-                    _ev_dec = await traced_call(
+                    state._ev_dec = await traced_call(
                         name="evidence_gate.check",
                         kind=SpanKind.GATE,
                         lifecycle_stage="gate",
-                        attributes={"iteration": iteration, "gate": "evidence"},
+                        attributes={"iteration": state.iteration, "gate": "evidence"},
                         invoke=lambda: self._evidence_gate.check(
                             needs_investigation=self._pipeline_needs_investigation,
                             evidence_gathered=self._evidence_gathered,
@@ -3459,48 +3746,49 @@ class AgentLoop(ToolContextPersistenceMixin):
                     if self._pipeline_observability:
                         yield self._pipeline_event(
                             "chat_v2_evidence_gate",
-                            iteration,
+                            state.iteration,
                             {
-                                "blocked": _ev_dec.blocked,
-                                "reason": _ev_dec.reason,
-                                "nudge_count": _ev_dec.nudge_count,
+                                "blocked": state._ev_dec.blocked,
+                                "reason": state._ev_dec.reason,
+                                "nudge_count": state._ev_dec.nudge_count,
                             },
                         )
-                    if _ev_dec.blocked:
-                        self._evidence_nudges_used = _ev_dec.nudge_count
-                        _evidence_anchor = _latest_context_anchor(
-                            working_messages,
-                            fallback=f"agent-loop:{tid}:iteration:{iteration}:response",
+                    if state._ev_dec.blocked:
+                        self._evidence_nudges_used = state._ev_dec.nudge_count
+                        state._evidence_anchor = _latest_context_anchor(
+                            state.working_messages,
+                            fallback=f"agent-loop:{state.tid}:iteration:{state.iteration}:response",
                         )
-                        if response.content:
-                            _evidence_reply = _append_loop_transcript(
-                                working_messages,
-                                {"role": "assistant", "content": response.content},
-                                metadata_enabled=context_metadata_enabled,
+                        if state.response.content:
+                            state._evidence_reply = _append_loop_transcript(
+                                state.working_messages,
+                                {"role": "assistant", "content": state.response.content},
+                                metadata_enabled=state.context_metadata_enabled,
                                 source="agent_loop.evidence_gate.trigger",
                                 role="assistant",
                                 fragment_id=(
-                                    f"agent-loop:{tid}:iteration:{iteration}:evidence-trigger"
+                                    f"agent-loop:{state.tid}:iteration:{state.iteration}:evidence-trigger"
                                 ),
                             )
-                            _evidence_anchor = (
-                                _context_fragment_id(_evidence_reply) or _evidence_anchor
+                            state._evidence_anchor = (
+                                _context_fragment_id(state._evidence_reply)
+                                or state._evidence_anchor
                             )
                         _append_loop_control(
-                            working_messages,
-                            {"role": "system", "content": _ev_dec.nudge},
-                            metadata_enabled=context_metadata_enabled,
+                            state.working_messages,
+                            {"role": "system", "content": state._ev_dec.nudge},
+                            metadata_enabled=state.context_metadata_enabled,
                             source="agent_loop.evidence_nudge",
-                            anchor_after=_evidence_anchor,
+                            anchor_after=state._evidence_anchor,
                             fragment_id=(
-                                f"agent-loop:{tid}:iteration:{iteration}:"
-                                f"evidence-nudge:{_ev_dec.nudge_count}"
+                                f"agent-loop:{state.tid}:iteration:{state.iteration}:"
+                                f"evidence-nudge:{state._ev_dec.nudge_count}"
                             ),
                         )
                         logger.info(
                             "evidence_gate_nudge_injected sid=%s nudge=%d",
-                            session_id,
-                            _ev_dec.nudge_count,
+                            state.session_id,
+                            state._ev_dec.nudge_count,
                         )
                         continue
 
@@ -3513,47 +3801,48 @@ class AgentLoop(ToolContextPersistenceMixin):
                 # ``max_completion_nudges`` so we can't loop forever when
                 # the LLM digs in.
                 if (
-                    iteration < _SELFCHECK_TIER3_AT
+                    state.iteration < _SELFCHECK_TIER3_AT
                     and self.completion_probe is not None
                     and self.max_completion_nudges > 0
-                    and completion_nudges_used < self.max_completion_nudges
+                    and state.completion_nudges_used < self.max_completion_nudges
                 ):
                     try:
-                        incomplete = await traced_call(
+                        state.incomplete = await traced_call(
                             name="completion_probe.check",
                             kind=SpanKind.GATE,
                             lifecycle_stage="gate",
-                            attributes={"iteration": iteration, "gate": "completion"},
-                            invoke=lambda: self.completion_probe(session_id),
+                            attributes={"iteration": state.iteration, "gate": "completion"},
+                            invoke=lambda: self.completion_probe(state.session_id),
                         )
                     except Exception as exc:  # noqa: BLE001
                         logger.warning(
                             "p5s2_completion_probe_failed sid=%s err=%s",
-                            session_id,
+                            state.session_id,
                             str(exc)[:200],
                         )
-                        incomplete = []
-                    if incomplete:
+                        state.incomplete = []
+                    if state.incomplete:
                         if self._tracer:
                             self._tracer.record(
                                 {
                                     "kind": "gate",
-                                    "iter": iteration,
+                                    "iter": state.iteration,
                                     "which": "completion",
                                     "passed": False,
                                     "reason": "incomplete_todos",
                                 }
                             )
-                        completion_nudges_used += 1
+                        state.completion_nudges_used += 1
                         # Build the rebound system message. Keep it brief
                         # — long prompts crowd the context window.
-                        bullet_list = "\n".join(
-                            f"  - {(t.get('content') or '').strip()[:120]}" for t in incomplete[:8]
+                        state.bullet_list = "\n".join(
+                            f"  - {(t.get('content') or '').strip()[:120]}"
+                            for t in state.incomplete[:8]
                         )
-                        rebound = (
-                            f"你声明已完成（stop_reason={response.stop_reason or 'end_turn'}），"
-                            f"但 todos 里还有 {len(incomplete)} 项未完成：\n"
-                            f"{bullet_list}\n\n"
+                        state.rebound = (
+                            f"你声明已完成（stop_reason={state.response.stop_reason or 'end_turn'}），"
+                            f"但 todos 里还有 {len(state.incomplete)} 项未完成：\n"
+                            f"{state.bullet_list}\n\n"
                             "请继续执行剩余 todos。如果某项确实做不了 / 不该做，"
                             "请用 todo_write 把它标成 completed 并简述原因（或者改文案明确说明放弃理由）。"
                             "不要再次空口说『我做完了』。"
@@ -3562,44 +3851,45 @@ class AgentLoop(ToolContextPersistenceMixin):
                         # so the LLM sees its own prior end_turn output —
                         # otherwise the rebound system message has no
                         # context for "what did I just stop on".
-                        _completion_anchor = _latest_context_anchor(
-                            working_messages,
-                            fallback=f"agent-loop:{tid}:iteration:{iteration}:response",
+                        state._completion_anchor = _latest_context_anchor(
+                            state.working_messages,
+                            fallback=f"agent-loop:{state.tid}:iteration:{state.iteration}:response",
                         )
-                        if response.content:
-                            _completion_reply = _append_loop_transcript(
-                                working_messages,
+                        if state.response.content:
+                            state._completion_reply = _append_loop_transcript(
+                                state.working_messages,
                                 {
                                     "role": "assistant",
-                                    "content": response.content,
+                                    "content": state.response.content,
                                 },
-                                metadata_enabled=context_metadata_enabled,
+                                metadata_enabled=state.context_metadata_enabled,
                                 source="agent_loop.completion_probe.trigger",
                                 role="assistant",
                                 fragment_id=(
-                                    f"agent-loop:{tid}:iteration:{iteration}:completion-trigger"
+                                    f"agent-loop:{state.tid}:iteration:{state.iteration}:completion-trigger"
                                 ),
                             )
-                            _completion_anchor = (
-                                _context_fragment_id(_completion_reply) or _completion_anchor
+                            state._completion_anchor = (
+                                _context_fragment_id(state._completion_reply)
+                                or state._completion_anchor
                             )
                         _append_loop_control(
-                            working_messages,
-                            {"role": "system", "content": rebound},
-                            metadata_enabled=context_metadata_enabled,
+                            state.working_messages,
+                            {"role": "system", "content": state.rebound},
+                            metadata_enabled=state.context_metadata_enabled,
                             source="agent_loop.completion_nudge",
-                            anchor_after=_completion_anchor,
+                            anchor_after=state._completion_anchor,
                             fragment_id=(
-                                f"agent-loop:{tid}:iteration:{iteration}:"
-                                f"completion-nudge:{completion_nudges_used}"
+                                f"agent-loop:{state.tid}:iteration:{state.iteration}:"
+                                f"completion-nudge:{state.completion_nudges_used}"
                             ),
                         )
                         logger.info(
                             "p5s2_completion_nudge_injected sid=%s nudge=%d/%d incomplete=%d",
-                            session_id,
-                            completion_nudges_used,
+                            state.session_id,
+                            state.completion_nudges_used,
                             self.max_completion_nudges,
-                            len(incomplete),
+                            len(state.incomplete),
                         )
                         # Skip the final emission and re-iterate. The
                         # next LLM call sees the nudge.
@@ -3608,7 +3898,7 @@ class AgentLoop(ToolContextPersistenceMixin):
                         self._tracer.record(
                             {
                                 "kind": "gate",
-                                "iter": iteration,
+                                "iter": state.iteration,
                                 "which": "completion",
                                 "passed": True,
                                 "reason": "",
@@ -3619,33 +3909,35 @@ class AgentLoop(ToolContextPersistenceMixin):
                 # plans/2026-06-24-...）。pipeline on 时走编排；off 时落到下方 elif 原 verify_gate 块（BC）。
                 # ⚠️ R2：补 `and response.content` 守卫，与原 verify_gate 块准入对齐。
                 if (
-                    iteration < _SELFCHECK_TIER3_AT
+                    state.iteration < _SELFCHECK_TIER3_AT
                     and self._self_check_gate is not None
                     and self._pipeline_problem_type is not None
-                    and response.content
+                    and state.response.content
                 ):
-                    _ledger = (
-                        self.receipt_store.load_session(session_id)
+                    state._ledger = (
+                        self.receipt_store.load_session(state.session_id)
                         if self.receipt_store is not None
                         else []
                     )
-                    if scoped_evidence is not None:
-                        _ledger = list(scoped_evidence.records)
-                    _sc = await traced_call(
+                    if state.scoped_evidence is not None:
+                        state._ledger = list(state.scoped_evidence.records)
+                    state._sc = await traced_call(
                         name="self_check_gate.check",
                         kind=SpanKind.GATE,
                         lifecycle_stage="gate",
-                        attributes={"iteration": iteration, "gate": "self_check"},
+                        attributes={"iteration": state.iteration, "gate": "self_check"},
                         invoke=lambda: self._self_check_gate.check(
                             problem_type=self._pipeline_problem_type,
-                            assistant_text=response.content or "",
-                            ledger=_ledger,
-                            goal_text=self._extract_goal_text(working_messages),
-                            failure_count=verify_nudges_used,
-                            produced_artifacts=[getattr(r, "tool_name", "?") for r in _ledger],
+                            assistant_text=state.response.content or "",
+                            ledger=state._ledger,
+                            goal_text=self._extract_goal_text(state.working_messages),
+                            failure_count=state.verify_nudges_used,
+                            produced_artifacts=[
+                                getattr(r, "tool_name", "?") for r in state._ledger
+                            ],
                             objective_evidence=[
                                 f"receipt ok: tool={getattr(r, 'tool_name', '?')}"
-                                for r in _ledger
+                                for r in state._ledger
                                 if getattr(r, "ok", True)
                             ],
                             workload_context=(
@@ -3658,69 +3950,70 @@ class AgentLoop(ToolContextPersistenceMixin):
                     if self._pipeline_observability:
                         yield self._pipeline_event(
                             "chat_v2_selfcheck",
-                            iteration,
+                            state.iteration,
                             {
-                                "passed": _sc.passed,
-                                "mode": _sc.mode,
-                                "heterogeneous": _sc.heterogeneous,
-                                "claims_unverified": _sc.claims_unverified,
+                                "passed": state._sc.passed,
+                                "mode": state._sc.mode,
+                                "heterogeneous": state._sc.heterogeneous,
+                                "claims_unverified": state._sc.claims_unverified,
                             },
                         )
-                    if not _sc.passed and verify_nudges_used < self.max_verify_nudges:
-                        verify_nudges_used += 1
-                        _self_check_anchor = _latest_context_anchor(
-                            working_messages,
-                            fallback=f"agent-loop:{tid}:iteration:{iteration}:response",
+                    if not state._sc.passed and state.verify_nudges_used < self.max_verify_nudges:
+                        state.verify_nudges_used += 1
+                        state._self_check_anchor = _latest_context_anchor(
+                            state.working_messages,
+                            fallback=f"agent-loop:{state.tid}:iteration:{state.iteration}:response",
                         )
-                        if response.content:
-                            _self_check_reply = _append_loop_transcript(
-                                working_messages,
-                                {"role": "assistant", "content": response.content},
-                                metadata_enabled=context_metadata_enabled,
+                        if state.response.content:
+                            state._self_check_reply = _append_loop_transcript(
+                                state.working_messages,
+                                {"role": "assistant", "content": state.response.content},
+                                metadata_enabled=state.context_metadata_enabled,
                                 source="agent_loop.self_check_gate.trigger",
                                 role="assistant",
                                 fragment_id=(
-                                    f"agent-loop:{tid}:iteration:{iteration}:self-check-trigger"
+                                    f"agent-loop:{state.tid}:iteration:{state.iteration}:self-check-trigger"
                                 ),
                             )
-                            _self_check_anchor = (
-                                _context_fragment_id(_self_check_reply) or _self_check_anchor
+                            state._self_check_anchor = (
+                                _context_fragment_id(state._self_check_reply)
+                                or state._self_check_anchor
                             )
                         _append_loop_control(
-                            working_messages,
+                            state.working_messages,
                             {
                                 "role": "system",
                                 "content": (
                                     "<自检> 自检未通过：声明与凭据不符。"
-                                    + _sc.reflection_instruction
+                                    + state._sc.reflection_instruction
                                 ),
                             },
-                            metadata_enabled=context_metadata_enabled,
+                            metadata_enabled=state.context_metadata_enabled,
                             source="agent_loop.self_check_nudge",
-                            anchor_after=_self_check_anchor,
+                            anchor_after=state._self_check_anchor,
                             fragment_id=(
-                                f"agent-loop:{tid}:iteration:{iteration}:"
-                                f"self-check-nudge:{verify_nudges_used}"
+                                f"agent-loop:{state.tid}:iteration:{state.iteration}:"
+                                f"self-check-nudge:{state.verify_nudges_used}"
                             ),
                         )
                         logger.info(
                             "self_check_nudge_injected sid=%s mode=%s nudge=%d",
-                            session_id,
-                            _sc.mode,
-                            verify_nudges_used,
+                            state.session_id,
+                            state._sc.mode,
+                            state.verify_nudges_used,
                         )
                         continue
                     # ─── 耗尽分支（MINOR①：复用 verify-exhausted 终态，勿静默放过）。
                     if (
-                        not _sc.passed
-                        and verify_nudges_used >= self.max_verify_nudges
+                        not state._sc.passed
+                        and state.verify_nudges_used >= self.max_verify_nudges
                         and self.force_finish_via_tool_choice
-                        and not _verify_final_done
+                        and not state._verify_final_done
                     ):
-                        _verify_final_done = True
-                        _force_finish_queued = True
+                        state._verify_final_done = True
+                        state._force_finish_queued = True
                         _append_loop_control(
-                            working_messages,
+                            state.working_messages,
                             {
                                 "role": "system",
                                 "content": (
@@ -3728,44 +4021,46 @@ class AgentLoop(ToolContextPersistenceMixin):
                                     "向用户如实总结做了什么、哪些未能验证、建议下一步。不要再调用任何工具。"
                                 ),
                             },
-                            metadata_enabled=context_metadata_enabled,
+                            metadata_enabled=state.context_metadata_enabled,
                             source="agent_loop.self_check_exhausted",
                             anchor_after=_latest_context_anchor(
-                                working_messages,
-                                fallback=(f"agent-loop:{tid}:iteration:{iteration}:response"),
+                                state.working_messages,
+                                fallback=(
+                                    f"agent-loop:{state.tid}:iteration:{state.iteration}:response"
+                                ),
                             ),
                             fragment_id=(
-                                f"agent-loop:{tid}:iteration:{iteration}:self-check-exhausted"
+                                f"agent-loop:{state.tid}:iteration:{state.iteration}:self-check-exhausted"
                             ),
                             protected=True,
                         )
                         logger.warning(
                             "self_check_exhausted sid=%s nudge=%d/%d → force_finish",
-                            session_id,
-                            verify_nudges_used,
+                            state.session_id,
+                            state.verify_nudges_used,
                             self.max_verify_nudges,
                         )
                         continue
                     # force_finish_via_tool_choice=False 时无强制总结轮 → 直发 verify_exhausted 终态。
-                    if not _sc.passed and verify_nudges_used >= self.max_verify_nudges:
+                    if not state._sc.passed and state.verify_nudges_used >= self.max_verify_nudges:
                         if self._tracer:
                             self._tracer.record(
                                 {
                                     "kind": "end",
-                                    "iter": iteration,
+                                    "iter": state.iteration,
                                     "reason": "verify_exhausted",
                                     "gate_summary": self._gate.summary(),
                                 }
                             )
                         yield ErrorEvent(
                             type="error",
-                            task_id=tid,
-                            iteration=iteration,
+                            task_id=state.tid,
+                            iteration=state.iteration,
                             reason="verify_exhausted",
                             detail=(
-                                response.content
+                                state.response.content
                                 or f"self-check: all retries exhausted after "
-                                f"{verify_nudges_used} nudge(s)"
+                                f"{state.verify_nudges_used} nudge(s)"
                             ),
                         )
                         return
@@ -3778,17 +4073,17 @@ class AgentLoop(ToolContextPersistenceMixin):
                 # fail 才强退）。flag-off 时 verify_gate=None 跳过整段（BC）。
                 # ⚠️ pipeline on 时上方 SelfCheckGate if 已处理 → 此 elif 跳过；off 时走原块（BC）。
                 elif (
-                    iteration < _SELFCHECK_TIER3_AT
+                    state.iteration < _SELFCHECK_TIER3_AT
                     and self.verify_gate is not None
                     and getattr(self.verify_gate, "mode", "off") != "off"
-                    and verify_nudges_used < self.max_verify_nudges
-                    and response.content
+                    and state.verify_nudges_used < self.max_verify_nudges
+                    and state.response.content
                 ):
                     try:
                         # 拉取本 session 的 sig-filtered ledger（N1 信任面已在
                         # ReceiptStore.load_session 内强制 hmac_verify）
-                        ledger = (
-                            self.receipt_store.load_session(session_id)
+                        state.ledger = (
+                            self.receipt_store.load_session(state.session_id)
                             if self.receipt_store is not None
                             else []
                         )
@@ -3796,23 +4091,23 @@ class AgentLoop(ToolContextPersistenceMixin):
                         # GoalAlignment is populated when an active goal exists.
                         # BC: goal_text=None (no store / no active goal) → byte-identical
                         # to pre-WI-2.3 (check ignores None goal_text).
-                        _vg_goal_text: str | None = None
+                        state._vg_goal_text: str | None = None
                         if self.session_goal_store is not None:
-                            _gt_fn = getattr(self.session_goal_store, "get_goal_text", None)
-                            if callable(_gt_fn):
-                                _vg_goal_text = _gt_fn(session_id)
-                        v_outcome = await traced_call(
+                            state._gt_fn = getattr(self.session_goal_store, "get_goal_text", None)
+                            if callable(state._gt_fn):
+                                state._vg_goal_text = state._gt_fn(state.session_id)
+                        state.v_outcome = await traced_call(
                             name="verify_gate.check",
                             kind=SpanKind.GATE,
                             lifecycle_stage="gate",
-                            attributes={"iteration": iteration, "gate": "verify"},
+                            attributes={"iteration": state.iteration, "gate": "verify"},
                             invoke=lambda: self.verify_gate.check(
-                                assistant_text=response.content,
-                                ledger=ledger,
-                                goal_text=_vg_goal_text,
+                                assistant_text=state.response.content,
+                                ledger=state.ledger,
+                                goal_text=state._vg_goal_text,
                                 **(
-                                    {"scoped_evidence": scoped_evidence}
-                                    if scoped_evidence is not None
+                                    {"scoped_evidence": state.scoped_evidence}
+                                    if state.scoped_evidence is not None
                                     else {}
                                 ),
                             ),
@@ -3820,54 +4115,56 @@ class AgentLoop(ToolContextPersistenceMixin):
                     except Exception as exc:  # noqa: BLE001
                         logger.warning(
                             "verify_gate.check failed (sid=%s): %s — passing through",
-                            session_id,
+                            state.session_id,
                             exc,
                         )
-                        v_outcome = None
+                        state.v_outcome = None
 
                     if (
-                        v_outcome is not None
-                        and not v_outcome.passed
-                        and v_outcome.unmatched_claims
+                        state.v_outcome is not None
+                        and not state.v_outcome.passed
+                        and state.v_outcome.unmatched_claims
                     ):
                         if self._tracer:
                             self._tracer.record(
                                 {
                                     "kind": "gate",
-                                    "iter": iteration,
+                                    "iter": state.iteration,
                                     "which": "verify",
                                     "passed": False,
                                     "reason": "unmatched_claims",
                                 }
                             )
-                        verify_nudges_used += 1
+                        state.verify_nudges_used += 1
 
                         # WI-2.2: stagnation detection — if 2nd+ rebound and
                         # task_replanning text is nearly identical to previous
                         # round (difflib ratio > 0.85), the LLM is stuck in
                         # copy-paste instead of genuinely replanning. Skip to
                         # ephemeral immediately (don't waste the 2nd nudge).
-                        _stagnant = False
-                        if verify_nudges_used >= 2 and self.structured_reflection:
+                        state._stagnant = False
+                        if state.verify_nudges_used >= 2 and self.structured_reflection:
                             try:
-                                _refl = parse_reflection(response.content or "")
-                                _cur_replan = str(_refl.task_replanning) if _refl else ""
+                                state._refl = parse_reflection(state.response.content or "")
+                                state._cur_replan = (
+                                    str(state._refl.task_replanning) if state._refl else ""
+                                )
                                 if (
-                                    _prev_task_replanning
-                                    and _cur_replan
+                                    state._prev_task_replanning
+                                    and state._cur_replan
                                     and _difflib.SequenceMatcher(
-                                        None, _prev_task_replanning, _cur_replan
+                                        None, state._prev_task_replanning, state._cur_replan
                                     ).ratio()
                                     > 0.85
                                 ):
-                                    _stagnant = True
+                                    state._stagnant = True
                                     logger.info(
                                         "verify_replan_stagnant sid=%s nudge=%d "
                                         "ratio=%.2f — escalating to ephemeral",
-                                        session_id,
-                                        verify_nudges_used,
+                                        state.session_id,
+                                        state.verify_nudges_used,
                                         _difflib.SequenceMatcher(
-                                            None, _prev_task_replanning, _cur_replan
+                                            None, state._prev_task_replanning, state._cur_replan
                                         ).ratio(),
                                     )
                                     try:
@@ -3879,31 +4176,33 @@ class AgentLoop(ToolContextPersistenceMixin):
                                         _vg_metric(
                                             "verify_replan_stagnant",
                                             {
-                                                "nudge_count": int(verify_nudges_used),
+                                                "nudge_count": int(state.verify_nudges_used),
                                             },
                                         )
                                     except Exception:  # noqa: BLE001
                                         pass
-                                if _refl:
-                                    _prev_task_replanning = _cur_replan
+                                if state._refl:
+                                    state._prev_task_replanning = state._cur_replan
                             except Exception:  # noqa: BLE001 — safe-fail
                                 pass
 
                         # 失败计数达 max 或 stagnation → 调 ephemeral 救援
-                        ephemeral_pass = False
-                        if _stagnant or verify_nudges_used >= self.max_verify_nudges:
+                        state.ephemeral_pass = False
+                        if state._stagnant or state.verify_nudges_used >= self.max_verify_nudges:
                             try:
-                                ephemeral_pass = await self.verify_gate.consult_ephemeral_subagent(
-                                    ledger=ledger,
-                                    failed_claims=v_outcome.unmatched_claims,
-                                    assistant_text=response.content,
-                                    workload_context=(
-                                        self._provider_workload_context_factory(
-                                            "agent.verify_ephemeral"
-                                        )
-                                        if self._provider_workload_context_factory is not None
-                                        else None
-                                    ),
+                                state.ephemeral_pass = (
+                                    await self.verify_gate.consult_ephemeral_subagent(
+                                        ledger=state.ledger,
+                                        failed_claims=state.v_outcome.unmatched_claims,
+                                        assistant_text=state.response.content,
+                                        workload_context=(
+                                            self._provider_workload_context_factory(
+                                                "agent.verify_ephemeral"
+                                            )
+                                            if self._provider_workload_context_factory is not None
+                                            else None
+                                        ),
+                                    )
                                 )
                             except Exception as exc:  # noqa: BLE001
                                 logger.warning("ephemeral consult failed: %s", exc)
@@ -3915,27 +4214,32 @@ class AgentLoop(ToolContextPersistenceMixin):
                                 )
 
                                 _eph_metric(
-                                    "ephemeral_rescued" if ephemeral_pass else "ephemeral_pass",
+                                    "ephemeral_rescued"
+                                    if state.ephemeral_pass
+                                    else "ephemeral_pass",
                                     {
-                                        "nudge_count": int(verify_nudges_used),
-                                        "ok": bool(ephemeral_pass),
+                                        "nudge_count": int(state.verify_nudges_used),
+                                        "ok": bool(state.ephemeral_pass),
                                     },
                                 )
                             except Exception:  # noqa: BLE001 — metric 失败不阻 dispatch
                                 pass
 
-                        if not ephemeral_pass:
+                        if not state.ephemeral_pass:
                             # WI-2.2: verify_exhausted — all layers (nudges +
                             # ephemeral) exhausted → emit terminal error + return.
                             # Only when we've either stagnated or used all nudges
                             # AND ephemeral failed.
-                            if _stagnant or verify_nudges_used >= self.max_verify_nudges:
+                            if (
+                                state._stagnant
+                                or state.verify_nudges_used >= self.max_verify_nudges
+                            ):
                                 logger.warning(
                                     "verify_exhausted sid=%s nudge=%d/%d stagnant=%s",
-                                    session_id,
-                                    verify_nudges_used,
+                                    state.session_id,
+                                    state.verify_nudges_used,
                                     self.max_verify_nudges,
-                                    _stagnant,
+                                    state._stagnant,
                                 )
                                 try:
                                     # 按需导入：测试替身（observability.metrics_sink）
@@ -3946,17 +4250,20 @@ class AgentLoop(ToolContextPersistenceMixin):
                                     _vg_metric(
                                         "verify_exhausted",
                                         {
-                                            "nudge_count": int(verify_nudges_used),
-                                            "stagnant": bool(_stagnant),
+                                            "nudge_count": int(state.verify_nudges_used),
+                                            "stagnant": bool(state._stagnant),
                                         },
                                     )
                                 except Exception:  # noqa: BLE001
                                     pass
-                                if self.force_finish_via_tool_choice and not _verify_final_done:
-                                    _verify_final_done = True
-                                    _force_finish_queued = True
+                                if (
+                                    self.force_finish_via_tool_choice
+                                    and not state._verify_final_done
+                                ):
+                                    state._verify_final_done = True
+                                    state._force_finish_queued = True
                                     _append_loop_control(
-                                        working_messages,
+                                        state.working_messages,
                                         {
                                             "role": "system",
                                             "content": (
@@ -3965,16 +4272,16 @@ class AgentLoop(ToolContextPersistenceMixin):
                                                 "不要再调用任何工具。"
                                             ),
                                         },
-                                        metadata_enabled=context_metadata_enabled,
+                                        metadata_enabled=state.context_metadata_enabled,
                                         source="agent_loop.verify_exhausted",
                                         anchor_after=_latest_context_anchor(
-                                            working_messages,
+                                            state.working_messages,
                                             fallback=(
-                                                f"agent-loop:{tid}:iteration:{iteration}:response"
+                                                f"agent-loop:{state.tid}:iteration:{state.iteration}:response"
                                             ),
                                         ),
                                         fragment_id=(
-                                            f"agent-loop:{tid}:iteration:{iteration}:"
+                                            f"agent-loop:{state.tid}:iteration:{state.iteration}:"
                                             "verify-exhausted"
                                         ),
                                         protected=True,
@@ -3984,33 +4291,33 @@ class AgentLoop(ToolContextPersistenceMixin):
                                     self._tracer.record(
                                         {
                                             "kind": "end",
-                                            "iter": iteration,
+                                            "iter": state.iteration,
                                             "reason": "verify_exhausted",
                                             "gate_summary": self._gate.summary(),
                                         }
                                     )
                                 yield ErrorEvent(
                                     type="error",
-                                    task_id=tid,
-                                    iteration=iteration,
+                                    task_id=state.tid,
+                                    iteration=state.iteration,
                                     reason="verify_exhausted",
                                     detail=(
                                         f"verify-gate: all retries exhausted after "
-                                        f"{verify_nudges_used} nudge(s). "
-                                        f"stagnant={_stagnant}"
+                                        f"{state.verify_nudges_used} nudge(s). "
+                                        f"stagnant={state._stagnant}"
                                     ),
                                 )
                                 return
 
                             # Still have nudges: inject rebound + 回灌 D8 schema
-                            unmatched_lines = "\n".join(
+                            state.unmatched_lines = "\n".join(
                                 f"  {i + 1}. [unmatched_claim] {c.raw_text!r} — "
                                 f"no receipt matched ({c.reason})"
-                                for i, c in enumerate(v_outcome.unmatched_claims[:5])
+                                for i, c in enumerate(state.v_outcome.unmatched_claims[:5])
                             )
-                            rebound = (
-                                f"[verify-gate] iteration={iteration} blocked end_turn.\n"
-                                f"Failures:\n{unmatched_lines}\n"
+                            state.rebound = (
+                                f"[verify-gate] iteration={state.iteration} blocked end_turn.\n"
+                                f"Failures:\n{state.unmatched_lines}\n"
                                 f"Classification: unmatched_claim\n"
                                 f"Next: please call the missing tool to actually "
                                 f"perform the action you claimed, then end_turn again."
@@ -4019,66 +4326,69 @@ class AgentLoop(ToolContextPersistenceMixin):
                             # when goal_text was provided and GoalAlignment is
                             # populated. goal_text=None → rebound unchanged (BC).
                             if (
-                                v_outcome.goal_alignment is not None
-                                and not v_outcome.goal_alignment.aligned
+                                state.v_outcome.goal_alignment is not None
+                                and not state.v_outcome.goal_alignment.aligned
                             ):
-                                ga = v_outcome.goal_alignment
-                                _evidence_str = (
-                                    "\n".join(f"  - {e}" for e in ga.objective_evidence[:5])
+                                state.ga = state.v_outcome.goal_alignment
+                                state._evidence_str = (
+                                    "\n".join(f"  - {e}" for e in state.ga.objective_evidence[:5])
                                     or "  (无客观证据)"
                                 )
-                                rebound = (
-                                    rebound
-                                    + f"\n原始目标: {ga.goal_text}\n"
-                                    + f"客观证据: {_evidence_str}\n"
-                                    + f"缺口: {ga.gap}\n"
+                                state.rebound = (
+                                    state.rebound
+                                    + f"\n原始目标: {state.ga.goal_text}\n"
+                                    + f"客观证据: {state._evidence_str}\n"
+                                    + f"缺口: {state.ga.gap}\n"
                                     + "→ 请重规划（结构化反思）后补齐，"
                                     + "使产物真满足原目标，而非换个说法过关。"
                                 )
                             # WI-2.1: append reflection instruction when flag on.
                             # Flag off (default) → rebound string unchanged (BC).
                             if self.structured_reflection:
-                                rebound = rebound + _REFLECTION_INSTRUCTION
-                            _verify_anchor = _latest_context_anchor(
-                                working_messages,
-                                fallback=(f"agent-loop:{tid}:iteration:{iteration}:response"),
+                                state.rebound = state.rebound + _REFLECTION_INSTRUCTION
+                            state._verify_anchor = _latest_context_anchor(
+                                state.working_messages,
+                                fallback=(
+                                    f"agent-loop:{state.tid}:iteration:{state.iteration}:response"
+                                ),
                             )
-                            if response.content:
-                                _verify_reply = _append_loop_transcript(
-                                    working_messages,
+                            if state.response.content:
+                                state._verify_reply = _append_loop_transcript(
+                                    state.working_messages,
                                     {
                                         "role": "assistant",
-                                        "content": response.content,
+                                        "content": state.response.content,
                                     },
-                                    metadata_enabled=context_metadata_enabled,
+                                    metadata_enabled=state.context_metadata_enabled,
                                     source="agent_loop.verify_gate.trigger",
                                     role="assistant",
                                     fragment_id=(
-                                        f"agent-loop:{tid}:iteration:{iteration}:verify-trigger"
+                                        f"agent-loop:{state.tid}:iteration:{state.iteration}:verify-trigger"
                                     ),
                                 )
-                                _verify_anchor = (
-                                    _context_fragment_id(_verify_reply) or _verify_anchor
+                                state._verify_anchor = (
+                                    _context_fragment_id(state._verify_reply)
+                                    or state._verify_anchor
                                 )
                             _append_loop_control(
-                                working_messages,
-                                {"role": "system", "content": rebound},
-                                metadata_enabled=context_metadata_enabled,
+                                state.working_messages,
+                                {"role": "system", "content": state.rebound},
+                                metadata_enabled=state.context_metadata_enabled,
                                 source="agent_loop.verify_nudge",
-                                anchor_after=_verify_anchor,
+                                anchor_after=state._verify_anchor,
                                 fragment_id=(
-                                    f"agent-loop:{tid}:iteration:{iteration}:"
-                                    f"verify-nudge:{verify_nudges_used}"
+                                    f"agent-loop:{state.tid}:iteration:{state.iteration}:"
+                                    f"verify-nudge:{state.verify_nudges_used}"
                                 ),
                             )
                             logger.info(
                                 "verify_gate_nudge_injected sid=%s nudge=%d/%d "
                                 "unmatched=%d ephemeral_pass=%s",
-                                session_id,
-                                verify_nudges_used,
+                                state.session_id,
+                                state.verify_nudges_used,
                                 self.max_verify_nudges,
-                                len(v_outcome.unmatched_claims),
-                                ephemeral_pass,
+                                len(state.v_outcome.unmatched_claims),
+                                state.ephemeral_pass,
                             )
                             # WI-T2.1 v3：真 emit 到 metrics.jsonl（MR-T-8 拦截
                             # 硬证据 — 用户 goal "verify_* event in metrics.jsonl"
@@ -4092,9 +4402,9 @@ class AgentLoop(ToolContextPersistenceMixin):
                                 _verify_metric(
                                     "verify_gate_nudge_injected",
                                     {
-                                        "nudge_count": int(verify_nudges_used),
-                                        "count": int(len(v_outcome.unmatched_claims)),
-                                        "ok": bool(ephemeral_pass),
+                                        "nudge_count": int(state.verify_nudges_used),
+                                        "count": int(len(state.v_outcome.unmatched_claims)),
+                                        "ok": bool(state.ephemeral_pass),
                                     },
                                 )
                             except Exception:  # noqa: BLE001 — metric 失败不阻 dispatch
@@ -4103,13 +4413,13 @@ class AgentLoop(ToolContextPersistenceMixin):
                         else:
                             logger.info(
                                 "verify_gate.ephemeral_rescued sid=%s",
-                                session_id,
+                                state.session_id,
                             )
-                    elif self._tracer and v_outcome is not None:
+                    elif self._tracer and state.v_outcome is not None:
                         self._tracer.record(
                             {
                                 "kind": "gate",
-                                "iter": iteration,
+                                "iter": state.iteration,
                                 "which": "verify",
                                 "passed": True,
                                 "reason": "",
@@ -4125,25 +4435,25 @@ class AgentLoop(ToolContextPersistenceMixin):
                 # = None, or no active goal, or goal.done already) →
                 # skip the block entirely (BC).
                 if (
-                    iteration < _SELFCHECK_TIER3_AT
+                    state.iteration < _SELFCHECK_TIER3_AT
                     and self.session_goal_store is not None
                     and self.goal_checker is not None
                 ):
-                    _goal = self.session_goal_store.get(session_id)
+                    state._goal = self.session_goal_store.get(state.session_id)
                     if (
-                        _goal is not None
-                        and not _goal.done
-                        and _goal.iterations_used < _goal.max_iterations
+                        state._goal is not None
+                        and not state._goal.done
+                        and state._goal.iterations_used < state._goal.max_iterations
                     ):
                         try:
-                            _done, _hint = await traced_call(
+                            state._done, state._hint = await traced_call(
                                 name="goal_checker.check",
                                 kind=SpanKind.GATE,
                                 lifecycle_stage="gate",
-                                attributes={"iteration": iteration, "gate": "goal"},
+                                attributes={"iteration": state.iteration, "gate": "goal"},
                                 invoke=lambda: self.goal_checker.check(
-                                    _goal.text,
-                                    working_messages,
+                                    state._goal.text,
+                                    state.working_messages,
                                     **(
                                         {
                                             "workload_context": self._provider_workload_context_factory(
@@ -4158,12 +4468,12 @@ class AgentLoop(ToolContextPersistenceMixin):
                         except Exception as exc:  # noqa: BLE001 — safe-fail
                             logger.warning(
                                 "goal_checker raised (sid=%s): %s — skipping check",
-                                session_id,
+                                state.session_id,
                                 exc,
                             )
                             # R-T3 §15.4: 兜底也用 skipped 语义（check() 内已 safe-fail，
                             # 这里只作双重防护）。不默认 done=True。
-                            _done, _hint = False, "goal_check=skipped"
+                            state._done, state._hint = False, "goal_check=skipped"
                         # metric emit (best-effort, not blocking)
                         try:
                             from observability.metrics_sink import (  # noqa: PLC0415
@@ -4173,8 +4483,8 @@ class AgentLoop(ToolContextPersistenceMixin):
                             _goal_metric(
                                 "goal_checker_invoked",
                                 {
-                                    "ok": bool(_done),
-                                    "count": int(_goal.iterations_used),
+                                    "ok": bool(state._done),
+                                    "count": int(state._goal.iterations_used),
                                 },
                             )
                         except Exception:  # noqa: BLE001 — metric 失败不阻
@@ -4183,80 +4493,84 @@ class AgentLoop(ToolContextPersistenceMixin):
                         # 无法正向确认 → 不 mark_done，但也不注入"未达成"nudge
                         # （我们不知道目标是否真达成，不能给 LLM 假信号）。
                         # 直接 fall-through 到 FinalEvent / evaluator gate。
-                        if _hint == "goal_check=skipped":
+                        if state._hint == "goal_check=skipped":
                             logger.info(
                                 "goal_checker.skipped sid=%s — "
                                 "checker degraded, proceeding without goal confirmation",
-                                session_id,
+                                state.session_id,
                             )
                             # 不 continue，让正常 FinalEvent 流程继续
-                        elif not _done:
+                        elif not state._done:
                             if self._tracer:
                                 self._tracer.record(
                                     {
                                         "kind": "gate",
-                                        "iter": iteration,
+                                        "iter": state.iteration,
                                         "which": "goal",
                                         "passed": False,
-                                        "reason": str(_hint or "")[:200],
+                                        "reason": str(state._hint or "")[:200],
                                     }
                                 )
-                            self.session_goal_store.increment_iteration(session_id)
+                            self.session_goal_store.increment_iteration(state.session_id)
                             # T1：落库 iterations_used，重启不归零。safe-fail
                             # 内置于 persist_iteration；getattr 兜底旧 store。
-                            _pit = getattr(
+                            state._pit = getattr(
                                 self.session_goal_store,
                                 "persist_iteration",
                                 None,
                             )
-                            if _pit is not None:
-                                await _pit(session_id)
+                            if state._pit is not None:
+                                await state._pit(state.session_id)
                             # Append the assistant message that triggered
                             # this so the LLM sees its own prior end_turn
                             # output — symmetric with completion_probe /
                             # verify_gate rebound shape.
-                            _goal_anchor = _latest_context_anchor(
-                                working_messages,
-                                fallback=(f"agent-loop:{tid}:iteration:{iteration}:response"),
+                            state._goal_anchor = _latest_context_anchor(
+                                state.working_messages,
+                                fallback=(
+                                    f"agent-loop:{state.tid}:iteration:{state.iteration}:response"
+                                ),
                             )
-                            if response.content:
-                                _goal_reply = _append_loop_transcript(
-                                    working_messages,
+                            if state.response.content:
+                                state._goal_reply = _append_loop_transcript(
+                                    state.working_messages,
                                     {
                                         "role": "assistant",
-                                        "content": response.content,
+                                        "content": state.response.content,
                                     },
-                                    metadata_enabled=context_metadata_enabled,
+                                    metadata_enabled=state.context_metadata_enabled,
                                     source="agent_loop.goal_checker.trigger",
                                     role="assistant",
                                     fragment_id=(
-                                        f"agent-loop:{tid}:iteration:{iteration}:goal-trigger"
+                                        f"agent-loop:{state.tid}:iteration:{state.iteration}:goal-trigger"
                                     ),
                                 )
-                                _goal_anchor = _context_fragment_id(_goal_reply) or _goal_anchor
+                                state._goal_anchor = (
+                                    _context_fragment_id(state._goal_reply) or state._goal_anchor
+                                )
                             _append_loop_control(
-                                working_messages,
+                                state.working_messages,
                                 {
                                     "role": "system",
                                     "content": (
                                         f"[goal] 未达成 "
-                                        f"({_goal.iterations_used}/{_goal.max_iterations}): "
-                                        f"{_hint}\n继续工作直到目标完成。"
+                                        f"({state._goal.iterations_used}/{state._goal.max_iterations}): "
+                                        f"{state._hint}\n继续工作直到目标完成。"
                                     ),
                                 },
-                                metadata_enabled=context_metadata_enabled,
+                                metadata_enabled=state.context_metadata_enabled,
                                 source="agent_loop.goal_nudge",
-                                anchor_after=_goal_anchor,
+                                anchor_after=state._goal_anchor,
                                 fragment_id=(
-                                    f"agent-loop:{tid}:iteration:{iteration}:"
-                                    f"goal-nudge:{_goal.iterations_used}"
+                                    f"agent-loop:{state.tid}:iteration:{state.iteration}:"
+                                    f"goal-nudge:{state._goal.iterations_used}"
                                 ),
                             )
                             logger.info(
                                 "goal_checker_nudge_injected sid=%s iter=%d/%d",
-                                session_id,
-                                _goal.iterations_used,
-                                _goal.max_iterations,
+                                state.session_id,
+                                state._goal.iterations_used,
+                                state._goal.max_iterations,
                             )
                             continue
                         else:
@@ -4264,26 +4578,26 @@ class AgentLoop(ToolContextPersistenceMixin):
                                 self._tracer.record(
                                     {
                                         "kind": "gate",
-                                        "iter": iteration,
+                                        "iter": state.iteration,
                                         "which": "goal",
                                         "passed": True,
                                         "reason": "",
                                     }
                                 )
-                            self.session_goal_store.mark_done(session_id)
+                            self.session_goal_store.mark_done(state.session_id)
                             # 落库 done 终态（与 increment 落库对称）：否则
                             # load_persisted 只召回 status='active'，已完成目标
                             # 重启会复活成 active。getattr 兜底旧 store。
-                            _pd = getattr(
+                            state._pd = getattr(
                                 self.session_goal_store,
                                 "persist_done",
                                 None,
                             )
-                            if _pd is not None:
-                                await _pd(session_id)
+                            if state._pd is not None:
+                                await state._pd(state.session_id)
                             logger.info(
                                 "goal_checker.marked_done sid=%s",
-                                session_id,
+                                state.session_id,
                             )
 
                 # WI-2.4: external evaluator gate — BEFORE FinalEvent.
@@ -4303,41 +4617,45 @@ class AgentLoop(ToolContextPersistenceMixin):
                             is_high_consequence_goal as _is_hcg,
                         )
 
-                        _eval_ledger = (
-                            self.receipt_store.load_session(session_id)
+                        state._eval_ledger = (
+                            self.receipt_store.load_session(state.session_id)
                             if self.receipt_store is not None
                             else []
                         )
                         # Extract goal_text from session_goal_store if wired,
                         # else fall back to first user message text.
-                        _eval_goal_text = ""
+                        state._eval_goal_text = ""
                         if self.session_goal_store is not None:
-                            _gt_fn = getattr(self.session_goal_store, "get_goal_text", None)
-                            if callable(_gt_fn):
-                                _eval_goal_text = _gt_fn(session_id) or ""
-                        if not _eval_goal_text:
+                            state._gt_fn = getattr(self.session_goal_store, "get_goal_text", None)
+                            if callable(state._gt_fn):
+                                state._eval_goal_text = state._gt_fn(state.session_id) or ""
+                        if not state._eval_goal_text:
                             # BC fallback: use first user message content
-                            for _m in working_messages:
-                                if _m.get("role") == "user":
-                                    _eval_goal_text = str(_m.get("content") or "")
+                            for state._m in state.working_messages:
+                                if state._m.get("role") == "user":
+                                    state._eval_goal_text = str(state._m.get("content") or "")
                                     break
-                        if _is_hcg(_eval_goal_text, _eval_ledger, []):
-                            _ev_result = await traced_call(
+                        if _is_hcg(state._eval_goal_text, state._eval_ledger, []):
+                            state._ev_result = await traced_call(
                                 name="external_evaluator.evaluate",
                                 kind=SpanKind.GATE,
                                 lifecycle_stage="gate",
-                                attributes={"iteration": iteration, "gate": "external_evaluator"},
+                                attributes={
+                                    "iteration": state.iteration,
+                                    "gate": "external_evaluator",
+                                },
                                 invoke=lambda: self.external_evaluator.evaluate(
-                                    original_goal=_eval_goal_text,
+                                    original_goal=state._eval_goal_text,
                                     produced_artifacts=[
-                                        getattr(r, "tool_name", "unknown") for r in _eval_ledger
+                                        getattr(r, "tool_name", "unknown")
+                                        for r in state._eval_ledger
                                     ],
                                     objective_evidence=[
                                         f"receipt ok: tool={getattr(r, 'tool_name', '?')}"
-                                        for r in _eval_ledger
+                                        for r in state._eval_ledger
                                         if getattr(r, "ok", True)
                                     ],
-                                    conversation_summary=str(response.content or "")[:512],
+                                    conversation_summary=str(state.response.content or "")[:512],
                                     workload_context=(
                                         self._provider_workload_context_factory(
                                             "agent.external_evaluator"
@@ -4348,15 +4666,15 @@ class AgentLoop(ToolContextPersistenceMixin):
                                 ),
                             )
                             if (
-                                _ev_result.get("verdict") == "revise"
-                                and _ev_result.get("quality_score", 10) < 6
+                                state._ev_result.get("verdict") == "revise"
+                                and state._ev_result.get("quality_score", 10) < 6
                             ):
                                 logger.info(
                                     "external_evaluator verdict=revise sid=%s "
                                     "quality_score=%d issues=%d → emit evaluator_revise",
-                                    session_id,
-                                    _ev_result["quality_score"],
-                                    len(_ev_result.get("issues", [])),
+                                    state.session_id,
+                                    state._ev_result["quality_score"],
+                                    len(state._ev_result.get("issues", [])),
                                 )
                                 try:
                                     from observability.metrics_sink import (  # noqa: PLC0415
@@ -4366,58 +4684,58 @@ class AgentLoop(ToolContextPersistenceMixin):
                                     _eval_metric(
                                         "evaluator_revise_triggered",
                                         {
-                                            "quality_score": _ev_result["quality_score"],
-                                            "issues_count": len(_ev_result.get("issues", [])),
+                                            "quality_score": state._ev_result["quality_score"],
+                                            "issues_count": len(state._ev_result.get("issues", [])),
                                         },
                                     )
                                 except Exception:  # noqa: BLE001 — metric 失败不阻
                                     pass
                                 yield ErrorEvent(
                                     type="error",
-                                    task_id=tid,
-                                    iteration=iteration,
+                                    task_id=state.tid,
+                                    iteration=state.iteration,
                                     reason="evaluator_revise",
                                     detail=(
                                         f"[external_evaluator] 质量不足 "
-                                        f"(score={_ev_result['quality_score']}/10): "
-                                        + "; ".join(_ev_result.get("issues", []))
+                                        f"(score={state._ev_result['quality_score']}/10): "
+                                        + "; ".join(state._ev_result.get("issues", []))
                                     ),
                                 )
                                 return
                     except Exception as exc:  # noqa: BLE001 — safe-fail
                         logger.warning(
                             "external_evaluator gate failed (sid=%s): %s — passing through",
-                            session_id,
+                            state.session_id,
                             exc,
                         )
-                _final_content = await _review_final_response_quality(
+                state._final_content = await _review_final_response_quality(
                     self,
-                    response,
-                    user_request=loop_user_request,
-                    session_id=session_id,
-                    request_id=context_request_id or tid,
-                    iteration=iteration,
-                    model=use_model or "",
-                    prepared_context=prepared_context,
-                    current_tool_set=current_tool_set,
-                    totals=totals,
+                    state.response,
+                    user_request=state.loop_user_request,
+                    session_id=state.session_id,
+                    request_id=state.context_request_id or state.tid,
+                    iteration=state.iteration,
+                    model=state.use_model or "",
+                    prepared_context=state.prepared_context,
+                    current_tool_set=state.current_tool_set,
+                    totals=state.totals,
                 )
                 # ─── Step7 收敛标记（自然收尾路径，仅观测；止损在循环顶部 2d-① 处理）。
                 # plans/2026-06-24-...：模型自己 end_turn 正常收尾时 gate 尚未 terminate
                 # （reason="running"），此处只发 converged 观测事件，**不触发止损**（止损只在触顶分支）。
                 if self._convergence_controller is not None and self._pipeline_observability:
-                    _v = self._convergence_controller.evaluate(
+                    state._v = self._convergence_controller.evaluate(
                         principal_resolved=True,
                         unverified_claims=0,
                         gate_summary=self._gate.summary(),
                     )
                     yield self._pipeline_event(
                         "chat_v2_convergence",
-                        iteration,
+                        state.iteration,
                         {
-                            "converged": _v.converged,
-                            "principal_resolved": _v.principal_resolved,
-                            "stop_reason": _v.stop_reason,
+                            "converged": state._v.converged,
+                            "principal_resolved": state._v.principal_resolved,
+                            "stop_reason": state._v.stop_reason,
                             "report": "",
                         },
                     )
@@ -4430,8 +4748,8 @@ class AgentLoop(ToolContextPersistenceMixin):
                     self._tracer.record(
                         {
                             "kind": "end",
-                            "iter": iteration,
-                            "reason": response.stop_reason or "end_turn",
+                            "iter": state.iteration,
+                            "reason": state.response.stop_reason or "end_turn",
                             "gate_summary": self._gate.summary(),
                         }
                     )
@@ -4439,62 +4757,64 @@ class AgentLoop(ToolContextPersistenceMixin):
                 # WI-OH-4: 记忆 self-curation nudge — 在 FinalEvent 之后周期性
                 # fire-and-forget 触发（curator None → BC，跳过整段；非 None 时
                 # 每 _curation_every 回合调一次，异步不挡主回合）。
-                self._maybe_fire_curation_nudge(session_id, working_messages)
+                self._maybe_fire_curation_nudge(state.session_id, state.working_messages)
 
                 yield FinalEvent(
                     type="final",
-                    task_id=tid,
-                    iteration=iteration,
-                    content=_final_content,
-                    reasoning_content=response.reasoning_content,
-                    stop_reason=response.stop_reason or "end_turn",
-                    total_input_tokens=totals["input"],
-                    total_output_tokens=totals["output"],
-                    total_cache_read_tokens=totals["cache_read"],
-                    total_cache_write_tokens=totals["cache_write"],
+                    task_id=state.tid,
+                    iteration=state.iteration,
+                    content=state._final_content,
+                    reasoning_content=state.response.reasoning_content,
+                    stop_reason=state.response.stop_reason or "end_turn",
+                    total_input_tokens=state.totals["input"],
+                    total_output_tokens=state.totals["output"],
+                    total_cache_read_tokens=state.totals["cache_read"],
+                    total_cache_write_tokens=state.totals["cache_write"],
                 )
                 return
 
-            for tool_call in response.tool_calls:
+            for state.tool_call in state.response.tool_calls:
                 _inject_loop_user_request(
-                    tool_call, tool_schemas, loop_user_request=loop_user_request
+                    state.tool_call, state.tool_schemas, loop_user_request=state.loop_user_request
                 )
-            if is_sentinel_run and any(call.name == "deepresearch" for call in response.tool_calls):
+            if state.is_sentinel_run and any(
+                call.name == "deepresearch" for call in state.response.tool_calls
+            ):
                 yield FinalEvent(
                     type="final",
-                    task_id=tid,
-                    iteration=iteration,
+                    task_id=state.tid,
+                    iteration=state.iteration,
                     content=(
                         "Auto-resume sentinel cannot start deepresearch. "
                         "Please explicitly send a research request."
                     ),
-                    total_input_tokens=totals["input"],
-                    total_output_tokens=totals["output"],
-                    total_cache_read_tokens=totals["cache_read"],
-                    total_cache_write_tokens=totals["cache_write"],
+                    total_input_tokens=state.totals["input"],
+                    total_output_tokens=state.totals["output"],
+                    total_cache_read_tokens=state.totals["cache_read"],
+                    total_cache_write_tokens=state.totals["cache_write"],
                 )
                 return
             if await _suppress_repeated_tool_batch(
                 self,
-                response.tool_calls,
-                working_messages,
-                session_id=session_id,
-                task_id=tid,
-                iteration=iteration,
-                metadata_enabled=context_metadata_enabled,
+                state.response.tool_calls,
+                state.working_messages,
+                session_id=state.session_id,
+                task_id=state.tid,
+                iteration=state.iteration,
+                metadata_enabled=state.context_metadata_enabled,
             ):
                 continue
-            group_id = _append_tool_batch_message(
-                response,
-                working_messages,
-                task_id=tid,
-                iteration=iteration,
-                metadata_enabled=context_metadata_enabled,
+            state.group_id = _append_tool_batch_message(
+                state.response,
+                state.working_messages,
+                task_id=state.tid,
+                iteration=state.iteration,
+                metadata_enabled=state.context_metadata_enabled,
             )
-            exclusive_call = next(
+            state.exclusive_call = next(
                 (
                     call
-                    for call in response.tool_calls
+                    for call in state.response.tool_calls
                     if (
                         _tool_completion_semantics(self.tools, call.name) == "accepted_async"
                         or call.name == "tool_activate"
@@ -4502,8 +4822,8 @@ class AgentLoop(ToolContextPersistenceMixin):
                 ),
                 None,
             )
-            selected_calls = list(response.tool_calls)
-            if exclusive_call is not None and len(response.tool_calls) != 1:
+            state.selected_calls = list(state.response.tool_calls)
+            if state.exclusive_call is not None and len(state.response.tool_calls) != 1:
                 # accepted_async and tool_activate hand control to another
                 # durable boundary.  A model can still return one of them in a
                 # larger parallel batch.  Rejecting the whole batch asks the
@@ -4513,17 +4833,17 @@ class AgentLoop(ToolContextPersistenceMixin):
                 # not executed; the next model turn receives the real
                 # exclusive result and can retry only the siblings it still
                 # needs.
-                selected_calls = [exclusive_call]
-                for call in response.tool_calls:
-                    if call.id == exclusive_call.id:
+                state.selected_calls = [state.exclusive_call]
+                for state.call in state.response.tool_calls:
+                    if state.call.id == state.exclusive_call.id:
                         continue
-                    rejection = json.dumps(
+                    state.rejection = json.dumps(
                         {
                             "ok": False,
                             "error": "deferred_by_exclusive_tool",
                             "executed": False,
-                            "exclusive_tool_call_id": exclusive_call.id,
-                            "exclusive_tool_name": exclusive_call.name,
+                            "exclusive_tool_call_id": state.exclusive_call.id,
+                            "exclusive_tool_name": state.exclusive_call.name,
                             "hint": (
                                 "This sibling call was not executed. Retry it only "
                                 "if it is still needed after the exclusive result."
@@ -4532,74 +4852,76 @@ class AgentLoop(ToolContextPersistenceMixin):
                         ensure_ascii=False,
                     )
                     _append_loop_transcript(
-                        working_messages,
+                        state.working_messages,
                         {
                             "role": "tool",
-                            "tool_call_id": call.id,
-                            "name": call.name,
-                            "content": rejection,
+                            "tool_call_id": state.call.id,
+                            "name": state.call.name,
+                            "content": state.rejection,
                         },
-                        metadata_enabled=context_metadata_enabled,
+                        metadata_enabled=state.context_metadata_enabled,
                         source="agent_loop.tool_result",
                         role="tool",
-                        fragment_id=f"{group_id}:tool:{call.id}",
-                        causal_group_id=group_id,
+                        fragment_id=f"{state.group_id}:tool:{state.call.id}",
+                        causal_group_id=state.group_id,
                     )
             yield ToolBatchEvent(
-                task_id=tid,
-                iteration=iteration,
-                tool_calls=tuple(selected_calls),
-                canonical_messages=tuple(copy.deepcopy(message) for message in working_messages),
+                task_id=state.tid,
+                iteration=state.iteration,
+                tool_calls=tuple(state.selected_calls),
+                canonical_messages=tuple(
+                    copy.deepcopy(message) for message in state.working_messages
+                ),
                 feedback_state={
-                    "iteration": iteration,
+                    "iteration": state.iteration,
                     "evidence_gathered": self._evidence_gathered,
                     "evidence_nudges_used": self._evidence_nudges_used,
-                    "tools_used_count": tools_used_count,
+                    "tools_used_count": state.tools_used_count,
                     "skills_used_order": list(self._skills_used_order),
-                    "force_finish_queued": _force_finish_queued,
+                    "force_finish_queued": state._force_finish_queued,
                 },
             )
             return
 
         # Hit max_iterations — spec §11.4 says emit warning + final.
-        logger.warning("agent loop task %s hit max_iterations=%d", tid, self.max_iterations)
+        logger.warning("agent loop task %s hit max_iterations=%d", state.tid, self.max_iterations)
         # ─── Step7 止损（WI-2，plans/2026-06-24-...）：loop range 耗尽（每轮都 tool_use 跑满
         # max_iterations）也接 ConvergenceController，产出诚实止损报告，而非只发 error。
         # 此出口 gate 不一定 terminate()，summary()["reason"] 多半还是合成 "running" → 必须手动
         # 覆盖成 HARD_MAX_TURNS.value（"error_max_turns"），否则 resource_capped 判 False → 止损不触发。
         # pipeline off 时 self._convergence_controller=None → 保持原 warning+ErrorEvent（字节级 BC）。
         if self._convergence_controller is not None:
-            _cap_summary = dict(self._gate.summary())
-            _cap_summary["reason"] = TerminationReason.HARD_MAX_TURNS.value
-            _verdict = self._convergence_controller.evaluate(
+            state._cap_summary = dict(self._gate.summary())
+            state._cap_summary["reason"] = TerminationReason.HARD_MAX_TURNS.value
+            state._verdict = self._convergence_controller.evaluate(
                 principal_resolved=False,  # 跑满 range 必是每轮都在调工具没收尾 → 未收敛
                 unverified_claims=0,
-                gate_summary=_cap_summary,
+                gate_summary=state._cap_summary,
             )
             if self._pipeline_observability:
                 yield self._pipeline_event(
                     "chat_v2_convergence",
                     self.max_iterations,
                     {
-                        "converged": _verdict.converged,
-                        "principal_resolved": _verdict.principal_resolved,
-                        "stop_reason": _verdict.stop_reason,
-                        "report": _verdict.report,
+                        "converged": state._verdict.converged,
+                        "principal_resolved": state._verdict.principal_resolved,
+                        "stop_reason": state._verdict.stop_reason,
+                        "report": state._verdict.report,
                     },
                 )
-            if _verdict.should_stop_loss and _verdict.report:
+            if state._verdict.should_stop_loss and state._verdict.report:
                 self._gate.record_final_answer()
                 yield FinalEvent(
                     type="final",
-                    task_id=tid,
+                    task_id=state.tid,
                     iteration=self.max_iterations,
-                    content=_verdict.report,
+                    content=state._verdict.report,
                     stop_reason="stop_loss",
                 )
                 return
         yield ErrorEvent(
             type="error",
-            task_id=tid,
+            task_id=state.tid,
             iteration=self.max_iterations,
             reason="max_iterations",
             detail=f"exceeded {self.max_iterations} iterations without terminal stop_reason",
