@@ -800,7 +800,7 @@ async def test_run_scope_conflict_names_both_scopes_and_the_only_next_step(
     """``task_scope_conflict`` 必须点名被绑 scope、被请求 scope 与下一步。"""
 
     from deskpet.sdk_adapters.context_route import RUN_SCOPE_BOUND_ELSEWHERE
-    from deskpet.task_scope.store import TaskScopeConflict
+    from deskpet.task_scope.store_support import TaskScopeConflict
 
     tool = await _tool_with_active_scope(state_db, "scope-new-1", resumable="scope-b")
     tool._tool_context_getter = lambda: _tool_context(effect="effect-2", raw="raw-2", turn=2)

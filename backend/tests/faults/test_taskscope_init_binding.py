@@ -30,11 +30,8 @@ from deskpet.task_scope.provisioning import (
     TaskScopeProvisioner,
     TaskScopeProvisionRequest,
 )
-from deskpet.task_scope.store import (
-    CanonicalTaskScopeStore,
-    TaskScopeConflict,
-    TaskScopeNotFound,
-)
+from deskpet.task_scope.store import CanonicalTaskScopeStore
+from deskpet.task_scope.store_support import TaskScopeConflict, TaskScopeNotFound
 from deskpet.task_scope.workspace_bindings import WorkspaceBindingAuthorityStore
 
 from tests.execution import test_foreground_queue as fq

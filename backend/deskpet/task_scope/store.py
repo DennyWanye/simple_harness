@@ -7,7 +7,6 @@ from __future__ import annotations
 import json
 import math
 import time
-import uuid
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -19,6 +18,7 @@ import aiosqlite
 from deskpet.memory.human_memory_program import HumanMemoryProgramStore
 from deskpet.memory.schema import initialize_human_memory_program_state_db
 from deskpet.memory.writer_fence import assert_human_memory_ingress_open_tx, human_memory_connection
+from deskpet.task_scope.projection_sources import append_projection_source_tx
 from deskpet.task_scope.protocol import (
     TaskScopeProtocolError,
     canonical_hash,
@@ -28,14 +28,7 @@ from deskpet.task_scope.protocol import (
     validate_mutation_plan,
     validate_refs,
 )
-
-
-class TaskScopeConflict(RuntimeError):
-    code = "task_scope_conflict"
-
-
-class TaskScopeNotFound(LookupError):
-    code = "task_scope_not_found"
+from deskpet.task_scope.store_support import TaskScopeConflict, TaskScopeNotFound, _uuid
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,10 +79,6 @@ class DeterministicEventBatchReceipt:
     last_event_sequence: int
     source_id: str
     source_hash: str
-
-
-def _uuid(label: str) -> str:
-    return str(uuid.uuid5(uuid.NAMESPACE_URL, f"simple-harness:{label}"))
 
 
 class CanonicalTaskScopeStore:
@@ -178,8 +167,6 @@ class CanonicalTaskScopeStore:
                     (task_scope_id, state_hash, created_at),
                 )
                 await self._write_projection_tx(db, task_scope_id, 1, state, created_at)
-                # 按需导入：循环依赖（store ↔ projection_sources）
-                from deskpet.task_scope.projection_sources import append_projection_source_tx
 
                 await append_projection_source_tx(db, task_scope_id, now=created_at)
                 self._fault("create_task_scope.before_commit")
@@ -243,8 +230,6 @@ class CanonicalTaskScopeStore:
                     "WHERE task_scope_id=? AND event_watermark<?",
                     (receipt.event_sequence, time.time(), task_scope_id, receipt.event_sequence),
                 )
-                # 按需导入：循环依赖（store ↔ projection_sources）
-                from deskpet.task_scope.projection_sources import append_projection_source_tx
 
                 await append_projection_source_tx(db, task_scope_id)
                 await db.commit()
@@ -417,8 +402,6 @@ class CanonicalTaskScopeStore:
                 if updated.rowcount != 1:
                     raise TaskScopeConflict("mutation_base_revision_conflict")
                 await self._write_projection_tx(db, task_scope_id, committed, state, created_at)
-                # 按需导入：循环依赖（store ↔ projection_sources）
-                from deskpet.task_scope.projection_sources import append_projection_source_tx
 
                 await append_projection_source_tx(db, task_scope_id, now=created_at)
                 if commit_hook is not None:
@@ -521,8 +504,6 @@ class CanonicalTaskScopeStore:
                         created_at,
                     ),
                 )
-                # 按需导入：循环依赖（store ↔ projection_sources）
-                from deskpet.task_scope.projection_sources import append_projection_source_tx
 
                 await append_projection_source_tx(db, task_scope_id, now=created_at)
                 self._fault("checkpoint.before_commit")
@@ -623,8 +604,6 @@ class CanonicalTaskScopeStore:
                     "UPDATE task_scope_heads SET event_watermark=?,updated_at=? WHERE task_scope_id=?",
                     (last_sequence, now, task_scope_id),
                 )
-                # 按需导入：循环依赖（store ↔ projection_sources）
-                from deskpet.task_scope.projection_sources import append_projection_source_tx
 
                 source = await append_projection_source_tx(db, task_scope_id, now=now)
                 assert source is not None

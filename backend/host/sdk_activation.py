@@ -8,7 +8,7 @@ import uuid
 from collections.abc import Mapping
 from dataclasses import replace
 
-from agent.write_scope import resolve_workspace_root
+from agent.write_targets import resolve_workspace_root
 from deskpet.agent.turn_preparer import PRODUCT_ROUTE_OWNED_TOOL_NAMES
 from deskpet.companion.run_adapter import BackgroundRunAdapter
 from deskpet.execution.contracts import ProviderLaunchSnapshot, fingerprint_json

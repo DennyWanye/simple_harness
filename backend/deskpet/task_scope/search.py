@@ -24,7 +24,7 @@ from deskpet.task_scope.projections import (
     TaskScopeProjectionStore,
 )
 from deskpet.task_scope.protocol import canonical_hash, canonical_json, identifier
-from deskpet.task_scope.store import TaskScopeNotFound, _uuid
+from deskpet.task_scope.store_support import TaskScopeNotFound, _uuid
 
 MAX_QUERY_BYTES = 64 * 1024
 MAX_CANDIDATES = 100

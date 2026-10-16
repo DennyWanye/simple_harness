@@ -38,8 +38,9 @@ from pathlib import Path
 from typing import Any, Literal
 
 import paths
+from agent.write_targets import extract_shell_write_targets, resolve_workspace_root
 
-from deskpet.tools.office_paths import is_system_path
+from deskpet.permissions.system_paths import is_system_path
 
 logger = logging.getLogger(__name__)
 
@@ -131,9 +132,6 @@ def _canonical(path: str | os.PathLike[str], base: Path | None = None) -> Path:
 
 def _default_workspace() -> Path:
     try:
-        # 按需导入：循环依赖（protected_paths ↔ write_scope）
-        from agent.write_scope import resolve_workspace_root
-
         return resolve_workspace_root()
     except Exception:  # noqa: BLE001
         return Path(tempfile.gettempdir())
@@ -190,9 +188,6 @@ def allowed_roots(extra: Iterable[str | os.PathLike[str]] = ()) -> list[Path]:
 
     roots: list[Path] = []
     try:
-        # 按需导入：循环依赖（protected_paths ↔ write_scope）
-        from agent.write_scope import resolve_workspace_root
-
         roots.append(resolve_workspace_root())
     except Exception:  # noqa: BLE001
         pass
@@ -296,9 +291,6 @@ def paths_in_arguments(arguments: Mapping[str, Any]) -> list[str]:
     command = arguments.get("command")
     if isinstance(command, str) and command.strip():
         try:
-            # 按需导入：循环依赖（protected_paths ↔ write_scope）
-            from agent.write_scope import extract_shell_write_targets
-
             found += extract_shell_write_targets(command)
         except Exception:  # noqa: BLE001
             pass

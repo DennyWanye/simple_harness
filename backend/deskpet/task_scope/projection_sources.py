@@ -12,7 +12,7 @@ from dataclasses import dataclass
 import aiosqlite
 
 from deskpet.task_scope.protocol import canonical_hash, canonical_json
-from deskpet.task_scope.store import TaskScopeNotFound, _uuid
+from deskpet.task_scope.store_support import TaskScopeNotFound, _uuid
 
 # v2(事件 AC): EVIDENCE 清单新增自述的 `event_watermark`。渲染输出变了就必须换版本 ——
 # 版本进 source_hash, 于是老 source 的视图行不会被新渲染器的内容以 INSERT OR IGNORE 顶掉,

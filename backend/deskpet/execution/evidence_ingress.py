@@ -51,12 +51,8 @@ from deskpet.task_scope.protocol import (
     validate_execution_evidence,
     validate_refs,
 )
-from deskpet.task_scope.store import (
-    CanonicalTaskScopeStore,
-    TaskScopeConflict,
-    TaskScopeNotFound,
-    _uuid,
-)
+from deskpet.task_scope.store import CanonicalTaskScopeStore
+from deskpet.task_scope.store_support import TaskScopeConflict, TaskScopeNotFound, _uuid
 
 _LOG = logging.getLogger(__name__)
 

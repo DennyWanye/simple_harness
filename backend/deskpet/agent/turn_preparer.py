@@ -20,7 +20,7 @@ from typing import Any, Literal
 import structlog
 from agent.nudge_queue import format_hints_for_injection
 from agent.plan import maybe_extract_general_plan, plan_to_system_message
-from agent.write_scope import resolve_workspace_root
+from agent.write_targets import resolve_workspace_root
 
 from deskpet.agent.attachment_budget import append_user_attachment_blocks, collect_attachment_budget
 from deskpet.companion.turn_authority import (

@@ -41,7 +41,7 @@ from deskpet.memory.schema import initialize_human_memory_program_state_db
 from deskpet.memory.writer_fence import assert_human_memory_ingress_open_tx, human_memory_connection
 from deskpet.task_scope.projection_sources import append_projection_source_tx
 from deskpet.task_scope.protocol import canonical_hash, canonical_json, identifier
-from deskpet.task_scope.store import TaskScopeConflict, TaskScopeNotFound, _uuid
+from deskpet.task_scope.store_support import TaskScopeConflict, TaskScopeNotFound, _uuid
 
 
 class WorkspaceBindingError(RuntimeError):

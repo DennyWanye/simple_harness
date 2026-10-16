@@ -14,7 +14,8 @@ from deskpet.task_scope.provisioning import (
     TaskScopeProvisionError,
     TaskScopeProvisionRequest,
 )
-from deskpet.task_scope.store import CanonicalTaskScopeStore, TaskScopeConflict
+from deskpet.task_scope.store import CanonicalTaskScopeStore
+from deskpet.task_scope.store_support import TaskScopeConflict
 
 
 async def _scope(

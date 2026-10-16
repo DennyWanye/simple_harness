@@ -91,7 +91,8 @@ from simple_harness.tools.runtime_catalog import ToolEffectClass
 
 from deskpet.execution.evidence_ingress import ObjectiveEventSpec
 from deskpet.task_scope.protocol import redact_credential_shapes
-from deskpet.task_scope.store import CanonicalTaskScopeStore, TaskScopeNotFound, _uuid
+from deskpet.task_scope.store import CanonicalTaskScopeStore
+from deskpet.task_scope.store_support import TaskScopeNotFound, _uuid
 from deskpet.task_scope.workspace_bindings import WorkspaceBindingError
 from deskpet.types.task_work_context import PrimaryRunWorkContext
 

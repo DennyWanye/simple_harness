@@ -13,7 +13,8 @@ from deskpet.memory.schema import (
     InitializeError,
     initialize_human_memory_program_state_db,
 )
-from deskpet.task_scope.store import CanonicalTaskScopeStore, TaskScopeConflict
+from deskpet.task_scope.store import CanonicalTaskScopeStore
+from deskpet.task_scope.store_support import TaskScopeConflict
 from deskpet.task_scope.workspace_bindings import (
     CurrentRunBindingAuthority,
     ManualWorkspaceChallengeAuthorityCheck,

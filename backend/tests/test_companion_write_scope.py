@@ -24,12 +24,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from agent.write_scope import (
-    resolve_workspace_root,
-    scope_violation_message,
-    shell_write_scope_check,
-    write_scope_check,
-)
+from agent.write_scope import scope_violation_message, shell_write_scope_check, write_scope_check
+from agent.write_targets import resolve_workspace_root
 
 
 # ---------------------------------------------------------------------------

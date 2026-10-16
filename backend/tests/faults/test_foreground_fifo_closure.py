@@ -35,7 +35,7 @@ from deskpet.execution.foreground_queue import (
     RunState,
 )
 from deskpet.execution.foreground_runtime import SqliteSdkTerminalObserver
-from deskpet.task_scope.store import TaskScopeConflict
+from deskpet.task_scope.store_support import TaskScopeConflict
 
 from tests.execution import test_foreground_queue as fq
 from tests.faults._runner_contract import LANE_SEAMS, emit, new_root_run_id, state_hash

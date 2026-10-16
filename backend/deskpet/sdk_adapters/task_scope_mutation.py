@@ -73,11 +73,8 @@ from deskpet.task_scope.protocol import (
     canonical_json,
     identifier,
 )
-from deskpet.task_scope.store import (
-    CanonicalTaskScopeStore,
-    TaskScopeConflict,
-    TaskScopeNotFound,
-)
+from deskpet.task_scope.store import CanonicalTaskScopeStore
+from deskpet.task_scope.store_support import TaskScopeConflict, TaskScopeNotFound
 
 TASK_SCOPE_UPDATE_TOOL_NAME = "task_scope_update"
 HOST_TASK_SCOPE_UPDATE_AUTHORITY_REF = "host:task-scope-update:v1"

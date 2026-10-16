@@ -139,7 +139,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 import aiosqlite
-from agent.write_scope import resolve_workspace_root
+from agent.write_targets import resolve_workspace_root
 from simple_harness import CallId, RunId
 from simple_harness.tools import ToolContext, ToolResult
 
@@ -147,7 +147,7 @@ from deskpet.memory.human_memory_service import AppendBindingRequest
 from deskpet.sdk_adapters.context_route import local_owner_auth
 from deskpet.sdk_adapters.task_scope_mutation import write_pre_admission_audit_tx
 from deskpet.sdk_adapters.tool_authority import PROJECT_READ_TOOL_NAMES
-from deskpet.task_scope.store import TaskScopeConflict
+from deskpet.task_scope.store_support import TaskScopeConflict
 from deskpet.task_scope.workspace_bindings import WorkspaceBindingError
 from deskpet.tools.capabilities import canonical_hash
 from deskpet.types.task_work_context import PrimaryRunWorkContext

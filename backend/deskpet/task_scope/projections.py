@@ -22,7 +22,7 @@ from deskpet.task_scope.projection_sources import (
     load_projection_source_tx,
 )
 from deskpet.task_scope.protocol import canonical_hash, canonical_json
-from deskpet.task_scope.store import TaskScopeNotFound, _uuid
+from deskpet.task_scope.store_support import TaskScopeNotFound, _uuid
 
 VIEW_KINDS = ("README", "PLAN", "STATUS", "DECISIONS", "RESUME", "EVIDENCE")
 VIEW_LIMITS = {

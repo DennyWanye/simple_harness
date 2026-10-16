@@ -28,7 +28,7 @@ from deskpet.sdk_adapters.effect_gate import (
     EffectGateRejected,
 )
 from deskpet.sdk_adapters.run_faults import RunFaultMemo
-from deskpet.task_scope.store import TaskScopeNotFound
+from deskpet.task_scope.store_support import TaskScopeNotFound
 from simple_harness import CallId, EffectId, RunId
 from simple_harness.tools import ToolCall, ToolContext
 from simple_harness.tools.contracts import CancellationToken

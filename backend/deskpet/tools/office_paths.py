@@ -42,18 +42,17 @@ import time
 import unicodedata
 from pathlib import Path
 
+from agent.write_targets import resolve_workspace_root
 from paths import output_dir
+
+from deskpet.permissions.protected_paths import guard
+from deskpet.permissions.system_paths import _norm
 
 # ---------------------------------------------------------------------------
 # Authorization set
 # ---------------------------------------------------------------------------
 _lock = threading.Lock()
 _authorized: set[str] = set()
-
-
-def _norm(p: str | os.PathLike[str]) -> Path:
-    """Normalize to an absolute, resolved path (collapses ``..``)."""
-    return Path(p).expanduser().resolve()
 
 
 def authorize_path(p: str | os.PathLike[str]) -> str:
@@ -105,37 +104,6 @@ def is_authorized(p: str | os.PathLike[str]) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# System-directory blacklist (final backstop)
-# ---------------------------------------------------------------------------
-def _system_roots() -> list[Path]:
-    roots: list[Path] = []
-    for env in ("SystemRoot", "windir"):
-        v = os.environ.get(env)
-        if v:
-            roots.append(_norm(v))
-    for env in ("ProgramFiles", "ProgramFiles(x86)", "ProgramW6432"):
-        v = os.environ.get(env)
-        if v:
-            roots.append(_norm(v))
-    # Hard-coded fallbacks in case the env vars are absent.
-    for hard in (r"C:\Windows", r"C:\Program Files", r"C:\Program Files (x86)"):
-        roots.append(_norm(hard))
-    return roots
-
-
-def is_system_path(p: str | os.PathLike[str]) -> bool:
-    """True when ``p`` is inside a protected Windows system directory."""
-    target = _norm(p)
-    for root in _system_roots():
-        try:
-            if target == root or target.is_relative_to(root):
-                return True
-        except (ValueError, AttributeError):
-            pass
-    return False
-
-
-# ---------------------------------------------------------------------------
 # Resolution helpers used by the office tools
 # ---------------------------------------------------------------------------
 class PathError(Exception):
@@ -154,8 +122,6 @@ def resolve_for_read(p: str | os.PathLike[str]) -> Path | None:
         return None
     target = _norm(p)
     # 2026-09-26：不再要求用户先用选择框授权；受保护的核心文件（凭证、密钥）除外。
-    # 按需导入：循环依赖（office_paths ↔ protected_paths）
-    from deskpet.permissions.protected_paths import guard
 
     if guard(target, "read") is not None:
         return None
@@ -216,15 +182,11 @@ def resolve_for_write(
     raw = Path(p).expanduser()
     if not raw.is_absolute():
         # 相对路径按工作区解析，不落进后端进程目录（2026-09-26 挑战意见）
-        # 按需导入：循环依赖（office_paths ↔ write_scope）
-        from agent.write_scope import resolve_workspace_root
 
         raw = resolve_workspace_root() / raw
     target = _norm(raw)
     # 2026-09-26 用户决定：输出位置不再限定为临时/输出/已授权目录；受保护的核心
     # 文件（凭证、本应用自身、系统目录）要用户在会话里授权。
-    # 按需导入：循环依赖（office_paths ↔ protected_paths）
-    from deskpet.permissions.protected_paths import guard
 
     violation = guard(target, "write")
     if violation is not None:

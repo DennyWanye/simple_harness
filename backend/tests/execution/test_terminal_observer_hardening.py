@@ -112,7 +112,7 @@ async def test_run_terminal_reserved_then_ingested(tmp_path: Path) -> None:
         ("run_terminal", "ingested", 2, f"sdk-terminal:{RUN}", 2),
     ]
     # 预留 id 由 terminal:{run_id} 派生：一 Run 恰一条 terminal 预留。
-    from deskpet.task_scope.store import _uuid
+    from deskpet.task_scope.store_support import _uuid
 
     [(reservation_id,)] = er._rows(
         queue_db,
@@ -133,7 +133,7 @@ async def test_run_terminal_reserved_then_ingested(tmp_path: Path) -> None:
         queue_db, "SELECT COUNT(*) FROM harness_evidence_reservations WHERE run_id=?", RUN
     ) == [(2,)]
     # terminal 之后的迟到预留稳定拒绝。
-    from deskpet.task_scope.store import TaskScopeConflict
+    from deskpet.task_scope.store_support import TaskScopeConflict
 
     with pytest.raises(TaskScopeConflict, match="execution_after_terminal_rejected"):
         await ingress.reserve(

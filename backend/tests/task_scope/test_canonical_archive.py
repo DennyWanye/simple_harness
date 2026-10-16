@@ -18,11 +18,8 @@ from deskpet.memory.schema import (
     initialize_state_db,
 )
 from deskpet.task_scope.protocol import TaskScopeProtocolError, canonical_hash
-from deskpet.task_scope.store import (
-    CanonicalTaskScopeStore,
-    TaskEventRecorder,
-    TaskScopeConflict,
-)
+from deskpet.task_scope.store import CanonicalTaskScopeStore, TaskEventRecorder
+from deskpet.task_scope.store_support import TaskScopeConflict
 
 
 def _disclosure(run_id: str, subject: str) -> dict[str, Any]:

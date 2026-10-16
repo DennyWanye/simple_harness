@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 
+from deskpet.task_scope.store_support import TaskScopeConflict
+
 from .projection_sources import ProjectionSourceReceipt
 from .projections import (
     CheckpointDriftReport,
@@ -28,7 +30,6 @@ from .store import (
     MutationApplyReceipt,
     TaskEventReceipt,
     TaskEventRecorder,
-    TaskScopeConflict,
 )
 from .workspace_bindings import (
     CurrentRunBindingAuthority,

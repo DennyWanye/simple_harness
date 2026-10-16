@@ -80,7 +80,8 @@ from deskpet.sdk_adapters.tool_authority import PROJECT_EFFECT_TOOL_NAMES
 from deskpet.task_scope.mutation_disclosure import record_closure_result_tx
 from deskpet.task_scope.projection_sources import append_projection_source_tx
 from deskpet.task_scope.protocol import canonical_hash, canonical_json
-from deskpet.task_scope.store import CanonicalTaskScopeStore, TaskScopeConflict
+from deskpet.task_scope.store import CanonicalTaskScopeStore
+from deskpet.task_scope.store_support import TaskScopeConflict
 
 MATERIAL_HOST_EVENT_KINDS: frozenset[str] = frozenset({"host.file", "host.test"})
 TRIVIAL_EVENT_KINDS: frozenset[str] = frozenset(

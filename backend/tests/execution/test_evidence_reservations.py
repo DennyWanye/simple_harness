@@ -28,7 +28,7 @@ from deskpet.execution.evidence_ingress import (
 from deskpet.execution.foreground_queue import ForegroundQueueStore, RunState
 from deskpet.execution.foreground_runtime import SqliteSdkTerminalObserver
 from deskpet.sdk_adapters.context_authority import ContextRouteLedgerStore
-from deskpet.task_scope.store import TaskScopeConflict
+from deskpet.task_scope.store_support import TaskScopeConflict
 from simple_harness.execution.context_authority import (
     ContextRouteReceipt,
     TaskScopeRoute,

@@ -27,12 +27,8 @@ import aiosqlite
 
 from deskpet.memory.writer_fence import assert_human_memory_ingress_open_tx
 from deskpet.task_scope.protocol import canonical_hash, canonical_json, identifier
-from deskpet.task_scope.store import (
-    CanonicalTaskScopeStore,
-    TaskScopeConflict,
-    TaskScopeNotFound,
-    _uuid,
-)
+from deskpet.task_scope.store import CanonicalTaskScopeStore
+from deskpet.task_scope.store_support import TaskScopeConflict, TaskScopeNotFound, _uuid
 
 ProvisionMode = Literal["managed", "explicit"]
 TrustedPathProvenance = Literal[
