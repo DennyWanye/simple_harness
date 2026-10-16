@@ -84,7 +84,7 @@ def _reexported(path: Path, name: str) -> bool:
     return False
 
 
-def delete_in_file(path: Path, targets: list[tuple[int, str]], dry: bool) -> list[str]:
+def delete_in_file(path: Path, targets: list[tuple[int, str]], dry: bool) -> list[str]:  # noqa: ARG001
     src = path.read_text(encoding="utf-8")
     tree = ast.parse(src)
     lines = src.split("\n")
@@ -143,10 +143,17 @@ def delete_in_file(path: Path, targets: list[tuple[int, str]], dry: bool) -> lis
             lines2[stmt.lineno - 1 : stmt.end_lineno] = [indent + new] if new else []
         out = "\n".join(lines2)
         notes.append(f"{path.relative_to(REPO)}: 删导入 {sorted(drop_names)}")
-    ast.parse(out)
-    if not dry:
-        path.write_text(out, encoding="utf-8")
+    try:
+        ast.parse(out)
+    except SyntaxError as exc:  # 典型情况：类里的方法删光了
+        raise SystemExit(
+            f"{path}: 删除后语法错误（{exc.msg}，第 {exc.lineno} 行），一个文件都没写"
+        ) from exc
+    PENDING[path] = out
     return notes
+
+
+PENDING: dict[Path, str] = {}
 
 
 def main() -> int:
@@ -166,6 +173,9 @@ def main() -> int:
         for note in delete_in_file(path, targets, a.dry_run):
             print(note)
         n += len(targets)
+    if not a.dry_run:  # 全部算完、都能解析，才一起写
+        for path, text in PENDING.items():
+            path.write_text(text, encoding="utf-8")
     print(f"{'预演' if a.dry_run else '已删'}：{len(by_file)} 个文件，{n} 处")
     return 0
 

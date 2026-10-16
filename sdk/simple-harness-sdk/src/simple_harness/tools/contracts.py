@@ -243,10 +243,6 @@ class CancellationToken:
     def cancel(self) -> None:
         self._event.set()
 
-    def raise_if_cancelled(self) -> None:
-        if self.cancelled:
-            raise asyncio.CancelledError
-
     async def wait(self) -> None:
         await self._event.wait()
 

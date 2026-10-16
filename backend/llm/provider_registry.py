@@ -204,9 +204,6 @@ class ProviderEntry:
         if v not in self.models:
             self.models = [*self.models, v]
 
-    def to_toml_dict(self) -> dict[str, Any]:
-        return asdict(self)
-
     def to_public_dict(self) -> dict[str, Any]:
         """Shape returned by ``list_providers()`` — api_key redacted.
 
@@ -1100,36 +1097,7 @@ class LLMProviderRegistry:
                     raise ProviderMutationConflict(entry.id)
             return result
 
-    async def inherit_session_binding(
-        self,
-        session_db: Any,
-        *,
-        source_session_id: str,
-        target_session_id: str,
-        expected_binding_epoch: int,
-    ) -> dict[str, Any]:
-        async with self._mutation_lock:
-            source = await session_db.get_session_provider_binding_authority(source_session_id)
-            provider_id = source.get("provider_id")
-            if provider_id:
-                entry = self.get_entry(str(provider_id))
-                if (
-                    entry is None
-                    or entry.incarnation_id != source.get("provider_incarnation_id")
-                    or entry.config_revision != source.get("provider_config_revision")
-                ):
-                    raise ProviderMutationConflict(str(provider_id))
-            return await session_db.inherit_session_provider_binding(
-                source_session_id,
-                target_session_id,
-                expected_binding_epoch=expected_binding_epoch,
-            )
-
     # ───────── internal ─────────
-
-    def get_account_ref(self, provider_id: str) -> str | None:
-        entry = self.get_entry(provider_id)
-        return entry.account_ref if entry else None
 
     def _normalize_priorities(self) -> None:
         for i, entry in enumerate(sorted(self._entries, key=lambda e: e.priority), start=1):

@@ -1077,19 +1077,5 @@ class OperationCompletionStore:
             for row in rows
         )
 
-    def list_outcome_bindings_for_effect(
-        self, mission_id: str, spec_id: str, effect_key: str
-    ) -> tuple[dict[str, Any], ...]:
-        _, _, binding_kind, _ = _completion_contracts()
-        rows = self._store.connection.execute(
-            "SELECT * FROM operation_outcome_review_bindings WHERE mission_id=? "
-            "AND spec_id=? AND effect_key=? ORDER BY binding_id",
-            (str(mission_id), str(spec_id), str(effect_key)),
-        ).fetchall()
-        return tuple(
-            self._decoded(row, binding_kind, "stored_operation_outcome_binding") or {}
-            for row in rows
-        )
-
 
 __all__ = ("OperationCompletionStore",)

@@ -983,16 +983,6 @@ class ProductVenueRunAdapter:
             presentation_context=context,
         )
 
-    async def _present_commands(
-        self,
-        commands: Sequence[Any],
-        sink: ProductDomainSink,
-    ) -> bool:
-        for command in commands:
-            if not await self._presenter.present_domain(command, sink):
-                return False
-        return True
-
 
 __all__ = [
     "KernelRunClient",

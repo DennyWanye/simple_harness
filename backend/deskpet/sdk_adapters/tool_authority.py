@@ -585,18 +585,6 @@ class SdkRunToolAuthorityRegistry:
         self._run_fault_sink = run_fault_sink
         self._terminal_listeners: list[Callable[[SdkRunToolAuthorityV1], None]] = []
 
-    def bind_workspace_identity_validator(
-        self, validator: Callable[[Mapping[str, Any]], None]
-    ) -> None:
-        if not callable(validator):
-            raise TypeError("workspace identity validator must be callable")
-        if (
-            self._workspace_identity_validator is not None
-            and self._workspace_identity_validator is not validator
-        ):
-            raise RuntimeError("workspace identity validator is already bound")
-        self._workspace_identity_validator = validator
-
     def add_terminal_listener(self, listener: Callable[[SdkRunToolAuthorityV1], None]) -> None:
         self._terminal_listeners.append(listener)
 

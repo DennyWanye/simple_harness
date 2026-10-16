@@ -212,18 +212,6 @@ class SkillPackSnapshotResolver:
             raise TypeError("manager skill selection is not frozen")
         return scope
 
-    async def resolve_named_instruction(
-        self,
-        name: str,
-        arguments: tuple[str, ...] = (),
-    ) -> ResolvedSkillInstructionV1:
-        """Resolve ``/<skill>`` without giving name lookup body authority."""
-
-        return await self.resolve_instruction(
-            self.resolve_selection(name),
-            arguments,
-        )
-
     async def execute(self, name: str, args: list[str] | None = None) -> str:
         """Compatibility command surface backed only by Manager records."""
 

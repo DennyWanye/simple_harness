@@ -38,11 +38,6 @@ class ChildRunCoordinator:
         self._snapshot_leaser = snapshot_leaser
         self._reconcile_trigger: Callable[[], None] | None = None
 
-    def bind_reconcile_trigger(self, trigger: Callable[[], None]) -> None:
-        if self._reconcile_trigger is not None:
-            raise RuntimeError("child reconciliation trigger is already bound")
-        self._reconcile_trigger = trigger
-
     def trigger_reconciliation(self) -> None:
         """Wake the short-lived reconciler after a durable child fact commits."""
 

@@ -522,15 +522,6 @@ class PreferenceResolver:
             value = value.replace(tzinfo=UTC)
         return value.astimezone(UTC)
 
-    def _event_is_live_for_implicit(self, row: Mapping[str, Any]) -> bool:
-        if row["content_state"] != "live":
-            return False
-        if str(row["evidence_reason_code"]) == "preference_conflict":
-            return False
-        return (
-            self._now() - _parse_time(str(row["created_at"])) <= self.policy.implicit_evidence_ttl
-        )
-
     @staticmethod
     def _payload(row: Mapping[str, Any]) -> dict[str, Any]:
         raw = row["payload_json"]
@@ -1000,39 +991,6 @@ class PreferenceResolver:
                 (owner.profile_id, owner.profile_generation, event_id),
             ).fetchone()
             return row is not None
-
-    def list_transition_audits(
-        self,
-        owner: OwnerRef,
-        *,
-        preference_key: str,
-    ) -> tuple[Mapping[str, Any], ...]:
-        """Return queryable transition policy values and their frozen hashes."""
-
-        with self.store.read() as db:
-            rows = db.execute(
-                """SELECT audit_id,reason_code,before_hash,after_hash,lineage_ref,
-                          audit_hash,created_at
-                   FROM audit_events
-                   WHERE profile_id=? AND profile_generation=?
-                     AND action='preference_transition'
-                   ORDER BY created_at,audit_id""",
-                (owner.profile_id, owner.profile_generation),
-            ).fetchall()
-        result = []
-        for row in rows:
-            lineage = json.loads(str(row["lineage_ref"]))
-            if lineage.get("preference_key") != preference_key:
-                continue
-            result.append(
-                {
-                    **dict(row),
-                    "trigger_event_id": lineage["trigger_event_id"],
-                    "policy": lineage["policy"],
-                    "policy_hash": lineage["policy_hash"],
-                }
-            )
-        return tuple(result)
 
 
 def apply_preference_event_db(

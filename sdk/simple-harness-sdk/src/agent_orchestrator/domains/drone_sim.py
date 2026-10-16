@@ -53,50 +53,6 @@ class DroneSimulator:
         finally:
             db.close()
 
-    def create_episode(
-        self,
-        mission_id: str,
-        *,
-        vehicle: str = "sim-1",
-        battery: int = 100,
-        zone_clear: bool = True,
-    ) -> dict[str, Any]:
-        if (
-            not mission_id.strip()
-            or not vehicle.strip()
-            or type(battery) is not int
-            or not 0 <= battery <= 100
-            or type(zone_clear) is not bool
-        ):
-            raise ContractError("invalid simulator episode")
-        initial: dict[str, Any] = {
-            "vehicle": vehicle,
-            "battery": battery,
-            "zone_clear": zone_clear,
-            "connected": True,
-            "airborne": False,
-            "x": 0,
-            "y": 0,
-            "z": 0,
-            "captures": [],
-            "version": 1,
-            "fault": None,
-        }
-        digest = content_hash_of(initial)
-        with self._connection() as db:
-            db.execute("BEGIN IMMEDIATE")
-            row = db.execute(
-                "SELECT initial_hash,state_json FROM episodes WHERE mission_id=?", (mission_id,)
-            ).fetchone()
-            if row is not None:
-                if row["initial_hash"] != digest:
-                    raise ContractError("simulator episode initialization changed on replay")
-                return json.loads(row["state_json"])
-            db.execute(
-                "INSERT INTO episodes VALUES(?,?,?)", (mission_id, digest, canonical_json(initial))
-            )
-        return initial
-
     def read(self, mission_id: str, vehicle: str) -> dict[str, Any]:
         with self._connection() as db:
             row = db.execute(
@@ -108,25 +64,6 @@ class DroneSimulator:
         if state["vehicle"] != vehicle:
             raise ContractError("vehicle is outside the bound simulator episode")
         return state
-
-    def set_fault(self, mission_id: str, fault: str | None) -> None:
-        """Trusted experiment control; deliberately absent from model tools."""
-        if fault not in {None, "unreachable", "blocked_zone", "camera_failure", "motor_failure"}:
-            raise ContractError("unknown simulation fault")
-        with self._connection() as db:
-            db.execute("BEGIN IMMEDIATE")
-            row = db.execute(
-                "SELECT state_json FROM episodes WHERE mission_id=?", (mission_id,)
-            ).fetchone()
-            if row is None:
-                raise ContractError("simulator episode does not exist")
-            state = json.loads(row[0])
-            state["fault"] = fault
-            state["version"] += 1
-            db.execute(
-                "UPDATE episodes SET state_json=? WHERE mission_id=?",
-                (canonical_json(state), mission_id),
-            )
 
     def command(
         self, arguments: Mapping[str, Any], mission_id: str, call_id: str

@@ -90,13 +90,6 @@ class LocalExecutionSources:
     deployment_capabilities: CompleteRead[CapabilitySnapshot]
     local_work: CompleteRead[LocalWorkFacts]
 
-    def source_digests(self) -> tuple[tuple[str, str], ...]:
-        return tuple(
-            (field.name, getattr(self, field.name).source_digest)
-            for field in fields(self)
-            if field.name not in {"structure", "view"}
-        )
-
 
 class TaskGraphLocalExecutionReader:
     def __init__(

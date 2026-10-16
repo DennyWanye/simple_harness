@@ -105,12 +105,6 @@ class InputBindingSnapshot:
             "inputs": [binding.worker_payload() for binding in self.bindings],
         }
 
-    def binding_for_ref(self, opaque_ref: str) -> InputBinding:
-        for binding in self.bindings:
-            if binding.opaque_ref == opaque_ref:
-                return binding
-        raise KeyError(opaque_ref)
-
     def to_mapping(self) -> dict[str, Any]:
         """Serialize host-only bindings; never send this mapping to a worker."""
 

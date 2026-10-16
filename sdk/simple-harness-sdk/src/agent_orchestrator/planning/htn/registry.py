@@ -169,12 +169,6 @@ class ObjectSchema:
     def key(self) -> tuple[str, int]:
         return (self.schema_ref.id, self.schema_ref.version)
 
-    def field_named(self, name: str) -> SchemaField | None:
-        for item in self.fields:
-            if item.name == name:
-                return item
-        return None
-
     def check(self, values: Mapping[str, Any]) -> ArgumentCheck:
         """Type-check one grounded record against this schema."""
 

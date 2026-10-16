@@ -837,37 +837,6 @@ class ProviderBudgetGuard:
         )
         return overrun
 
-    def release_held_grants(
-        self, *, intent_id: str, reason: str = "provider_outcome_unknown"
-    ) -> int:
-        """Release HELD grants for one intent so a later admission is not refused by them.
-
-        P2.3l / N5.  After the bounded unknown-outcome wait the request is treated as
-        confirmed-not-started for *grant* accounting: the SDK invocation stays
-        UNKNOWN (the truth — it may have reached the model) but the grant no longer
-        occupies a slot or the subject's spent envelope.  Called immediately before
-        a service-intent re-hand-off, and again when the round is given up.
-        """
-
-        del reason
-        released = 0
-        with self.store.transaction():
-            rows = self.store.connection.execute(
-                "SELECT * FROM provider_token_grants"
-                " WHERE intent_id=? AND state IN ('RESERVED','HANDED_OFF','UNKNOWN')",
-                (intent_id,),
-            ).fetchall()
-            for row in rows:
-                ticket = ProviderAdmissionTicket(
-                    row["invocation_id"],
-                    row["handoff_ordinal"],
-                    row["wire_hash"],
-                    row["fingerprint"],
-                )
-                self._update(ticket, "RELEASED")
-                released += 1
-        return released
-
     def _owner_gone(self, uow, binding, row) -> bool:
         """The process that handed this grant off no longer holds the run it ran in."""
 

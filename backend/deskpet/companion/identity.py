@@ -330,27 +330,6 @@ class ProfileBindingCoordinator:
         await self.projection.cleanup_owner_runtime(owner, binding_epoch=expected_binding_epoch)
         self._process_owner = None
 
-    async def delete_current_profile(self, *, reason_code: str) -> bool:
-        """Tombstone the bound generation under the process-wide barrier."""
-
-        previous = self.store.get_profile_binding(device_scope=self.device_scope)
-        if previous is None:
-            return False
-        owner = OwnerRef(
-            str(previous["profile_id"]),
-            int(previous["profile_generation"]),
-        )
-        binding_epoch = int(previous["binding_epoch"])
-        self.gate.unbind(expected_binding_epoch=binding_epoch)
-        if self.runtime is not None:
-            await self.runtime.pause()
-        async with self.barrier.exclusive():
-            await self.projection.close_owner_ingress(owner, binding_epoch=binding_epoch)
-            deleted = self.store.delete_profile_generation(owner, reason_code=reason_code)
-        await self.projection.cleanup_owner_runtime(owner, binding_epoch=binding_epoch)
-        self._process_owner = None
-        return bool(deleted)
-
 
 __all__ = [
     "HumanIdentity",

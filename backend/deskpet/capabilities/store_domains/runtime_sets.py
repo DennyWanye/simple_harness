@@ -661,28 +661,6 @@ class RuntimeSetMixin(CapabilityStoreCore):
         async with self.write_transaction() as db:
             return await self._retire_runtime_set_tx(db, operation_id)
 
-    async def list_runtime_sets_for_recovery(
-        self,
-    ) -> tuple[CapabilityRuntimeSetRecord, ...]:
-        async with self.read_connection() as db:
-            rows = await _fetch_mappings(
-                await db.execute(
-                    """SELECT operation_id FROM capability_runtime_sets
-                       WHERE status IN (
-                           'prepared','launching','started','health_passed',
-                           'not_started','unknown','aborting','cleanup_required'
-                       )
-                       ORDER BY created_at,operation_id"""
-                )
-            )
-            records: list[CapabilityRuntimeSetRecord] = []
-            for row in rows:
-                record = await self._get_runtime_set_tx(db, str(row["operation_id"]))
-                if record is not None:
-                    self._validate_runtime_set_integrity(record)
-                    records.append(record)
-            return tuple(records)
-
     async def list_active_versions(
         self, *, owner_key: str | None = None
     ) -> tuple[CapabilityVersionRecord, ...]:

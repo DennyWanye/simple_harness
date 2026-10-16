@@ -288,17 +288,6 @@ class WorkflowRegistry:
     def transaction_owner(self) -> object | None:
         return self._transaction_owner
 
-    def bind_transaction_owner(self, transaction_owner: object) -> None:
-        if transaction_owner is None:
-            raise ValueError("transaction_owner is required")
-        with self._lock:
-            if (
-                self._transaction_owner is not None
-                and self._transaction_owner is not transaction_owner
-            ):
-                raise ValueError("workflow registry transaction owner mismatch")
-            self._transaction_owner = transaction_owner
-
     def register_definition(
         self, registration: WorkflowDefinitionRegistration
     ) -> RegisteredWorkflow:

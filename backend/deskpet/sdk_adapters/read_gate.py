@@ -143,11 +143,9 @@ from agent.write_targets import resolve_workspace_root
 from simple_harness import CallId, RunId
 from simple_harness.tools import ToolContext, ToolResult
 
-from deskpet.memory.human_memory_service import AppendBindingRequest
 from deskpet.sdk_adapters.context_route import local_owner_auth
 from deskpet.sdk_adapters.task_scope_mutation import write_pre_admission_audit_tx
 from deskpet.sdk_adapters.tool_authority import PROJECT_READ_TOOL_NAMES
-from deskpet.task_scope.store_support import TaskScopeConflict
 from deskpet.task_scope.workspace_bindings import WorkspaceBindingError
 from deskpet.tools.capabilities import canonical_hash
 from deskpet.types.task_work_context import PrimaryRunWorkContext
@@ -726,103 +724,6 @@ class WorkspaceReadGate:
         return ToolResult.rejected(reject_call_id, code, read_gate_public_message(code))
 
     # ----------------------------------------------------- F-Z1b proposal
-
-    async def _propose_binding(
-        self,
-        context: ToolContext,
-        call_id: CallId,
-        tool_name: str,
-        bound: BoundReadContext,
-        requested: str,
-    ) -> tuple[str, str | None]:
-        """Route one out-of-root read path through the S4 binding authority.
-
-        Returns ``(reason code, binding_proposal_ref)``.  Never raises and never
-        admits: a binding revision always ends with the model re-routing and
-        re-calling the read (module note "same-call vs retry").
-        """
-
-        if self._service_factory_getter is None or self._binding_append_getter is None:
-            return READ_OUTSIDE_REASON, None
-        try:
-            configured = self._binding_store.configured_root().canonical_path
-        except Exception as exc:  # noqa: BLE001 - a refusal never fails on detail
-            logger.warning("workspace_read_configured_root_unavailable error=%s", exc)
-            return READ_OUTSIDE_REASON, None
-        candidate, refusal = read_binding_candidate_root(
-            requested,
-            primary_root=bound.primary_root,
-            configured_root=str(configured),
-            bound_roots=bound.roots,
-        )
-        if candidate is None:
-            return str(refusal), None
-
-        binding_append = self._binding_append_getter()
-        factory = self._service_factory_getter()
-        if binding_append is None or factory is None:
-            return READ_OUTSIDE_REASON, None
-        effect_id = (
-            context.effect_id.value
-            if context.effect_id is not None
-            else f"read-gate:{call_id.value}"
-        )
-        # The UI card projection (``PrimaryWorkspaceBindings._item``) pins the
-        # proposal's idempotency key to exactly this shape and joins the pending
-        # challenge through a ``context_route_tool_invocations`` row keyed by the
-        # same effect id.  A read-triggered proposal reuses both, so the same
-        # 『项目目录授权』 card appears with no new query and no new schema.
-        idempotency_key = f"context-route:{context.run_id.value}:{effect_id}"
-
-        service = factory.bind(self._auth_factory(), binding_append=binding_append)
-        try:
-            outcome = dict(
-                await service.append_binding(
-                    AppendBindingRequest(
-                        scope_ref=bound.task_scope_id,
-                        root=str(candidate),
-                        idempotency_key=idempotency_key,
-                    )
-                )
-            )
-        except WorkspaceBindingError as exc:
-            # The S4 code set passes through unchanged (too broad, not a
-            # configured descendant, symlink/not-a-directory, identity drift).
-            return str(exc.code), None
-        except TaskScopeConflict as exc:
-            # The candidate is already a root of this task, or the binding head
-            # moved since this call read it.  Both mean "the binding set is
-            # ahead of this Run's route receipt", which is exactly the
-            # re-route-then-retry verdict — never a fresh proposal loop.  (A
-            # model that keeps re-calling the read without re-routing lands
-            # here on every attempt and keeps getting the same next step.)
-            if str(exc) in _BINDING_AHEAD_CONFLICTS:
-                return READ_BINDING_REVISED_REASON, None
-            return str(getattr(exc, "code", "") or "") or READ_OUTSIDE_REASON, None
-        except Exception as exc:  # noqa: BLE001 - stable fail-closed surface
-            code = str(getattr(exc, "code", "") or "")
-            logger.warning(
-                "workspace_read_binding_proposal_failed run=%s tool=%s error=%s",
-                context.run_id.value,
-                tool_name,
-                exc,
-            )
-            return code or READ_OUTSIDE_REASON, None
-
-        if str(outcome.get("status", "")) == "authorization_required":
-            challenge_ref = str(outcome.get("challenge_ref") or "")
-            await self._record_binding_invocation(
-                run_id=context.run_id.value,
-                raw_call_id=call_id.value,
-                effect_id=effect_id,
-                tool_name=tool_name,
-                task_scope_id=bound.task_scope_id,
-                challenge=outcome,
-            )
-            return READ_BINDING_AUTH_REASON, challenge_ref or None
-        return READ_BINDING_REVISED_REASON, str(
-            outcome.get("binding_set_receipt_ref") or outcome.get("receipt_ref") or ""
-        ) or None
 
     async def _record_binding_invocation(
         self,

@@ -364,17 +364,6 @@ class AppWorldEpisode:
         with self._lock:
             return self._observations.world_version
 
-    def on_world_change(self, listener: Callable[[int], None]) -> None:
-        """Host hook; revoke dependent facts before a world mutation begins."""
-        with self._lock:
-            if self._finalized:
-                raise RuntimeError("AppWorld episode is finalized")
-            self._world_change_listeners.append(listener)
-
-    def off_world_change(self, listener: Callable[[int], None]) -> None:
-        with self._lock:
-            self._world_change_listeners.remove(listener)
-
     def _advance_world(self) -> None:
         next_version = self._observations.world_version + 1
         for listener in tuple(self._world_change_listeners):

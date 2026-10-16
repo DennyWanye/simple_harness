@@ -3,24 +3,16 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any
 
 from deskpet.capabilities.effect_plan import BrokeredCommandBoundary
-from deskpet.execution.contracts import (
-    OutcomeStatus,
-    ProviderLaunchSnapshot,
-    RunContext,
-    RunCreate,
-    thaw_json,
-)
-from deskpet.execution.evidence import UNKNOWN_EVIDENCE, EvidenceSelection
+from deskpet.execution.contracts import OutcomeStatus, RunContext, RunCreate, thaw_json
 from deskpet.harness.ports import (
     AttachmentPolicy,
     DelegateRun,
     DriverEvent,
-    DriverStart,
     JoinPolicy,
     OpenDecision,
 )
@@ -301,58 +293,6 @@ class ReactCommandBoundary:
     @property
     def active_brokered_commands(self) -> tuple[BrokeredCommandBoundary, ...]:
         return tuple(command for command in self.brokered_commands if command.status != "terminal")
-
-    def with_outcomes(
-        self,
-        updates: Mapping[int, NormalizedToolOutcome],
-        statuses: Mapping[int, OutcomeStatus],
-        metadata: Mapping[int, Mapping[str, Any]] | None = None,
-    ) -> ReactCommandBoundary:
-        outcomes = list(self.outcomes)
-        outcome_statuses = list(self.outcome_statuses)
-        outcome_metadata = list(self.outcome_metadata)
-        for index, outcome in updates.items():
-            if outcomes[index] is not None and outcomes[index] != outcome:
-                raise ValueError("outcome already recorded with different value")
-            outcomes[index] = outcome
-            outcome_statuses[index] = OutcomeStatus(statuses[index])
-            if metadata and index in metadata:
-                outcome_metadata[index] = MappingProxyType(dict(thaw_json(metadata[index])))
-        return replace(
-            self,
-            outcomes=tuple(outcomes),
-            outcome_statuses=tuple(outcome_statuses),
-            outcome_metadata=tuple(outcome_metadata),
-            version=self.version + 1,
-        )
-
-    def to_start(self, scoped_evidence: EvidenceSelection | None = UNKNOWN_EVIDENCE) -> DriverStart:
-        launch = self.completion_state if self.command_kind == "provider_launch" else {}
-        snapshot = launch.get("provider_launch_snapshot")
-        return DriverStart(
-            run_id=self.run_id,
-            session_id=self.session_id,
-            canonical_messages=self.canonical_messages,
-            session_projection_cursor=self.session_projection_cursor,
-            prepared_context_ref=self.prepared_context_ref,
-            tool_set_snapshot_ref=self.tool_set_snapshot_ref,
-            provider_state=self.provider_state,
-            iteration=self.iteration,
-            completion_state=self.completion_state,
-            run_context=self.run_context,
-            run_spec=self.run_spec,
-            capability_snapshot=self.capability_snapshot,
-            request_payload=self.request_payload,
-            scoped_evidence=scoped_evidence,
-            launch_operation_id=str(launch["launch_operation_id"])
-            if snapshot is not None
-            else None,
-            provider_launch_snapshot=ProviderLaunchSnapshot.from_dict(snapshot)
-            if isinstance(snapshot, Mapping)
-            else None,
-            active_skill_scope_ids=self.active_skill_scope_ids,
-            activated_skill_scopes=self.activated_skill_scopes,
-        )
 
     def to_payload(self) -> dict[str, Any]:
         delegate = self.pending_delegate

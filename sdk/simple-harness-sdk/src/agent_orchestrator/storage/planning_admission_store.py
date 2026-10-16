@@ -440,28 +440,5 @@ class PlanningAdmissionStore:
             )
         return dict(check)
 
-    def list_admission_checks(self, request_id: str) -> tuple[dict[str, Any], ...]:
-        rows = self._store.connection.execute(
-            "SELECT check_id,request_id,decision_id,phase,snapshot_hash,decision_hash,"
-            "authority_hash,operations_hash,delta_hash,check_schema,detail_json,checked_at_ms "
-            "FROM planning_admission_checks WHERE request_id = ? ORDER BY checked_at_ms, check_id",
-            (str(request_id),),
-        ).fetchall()
-        fields = (
-            "check_id",
-            "request_id",
-            "decision_id",
-            "phase",
-            "snapshot_hash",
-            "decision_hash",
-            "authority_hash",
-            "operations_hash",
-            "delta_hash",
-            "check_schema",
-            "detail_json",
-            "checked_at_ms",
-        )
-        return tuple(dict(zip(fields, row, strict=True)) for row in rows)
-
 
 __all__ = ("PlanningAdmissionStore",)

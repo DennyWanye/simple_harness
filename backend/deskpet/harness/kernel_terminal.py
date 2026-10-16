@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import inspect
 import logging
 import time
@@ -54,23 +53,6 @@ class KernelTerminalLifecycle:
                 "terminal observer failed after run commit",
                 extra={"run_id": record.run_id},
             )
-
-    async def _drain_active(self, timeout: float) -> bool:
-        async with self._lock:
-            tasks = tuple(
-                active.task
-                for active in self._live.values()
-                if active.task is not None and not active.task.done()
-            )
-        if not tasks:
-            return True
-        _, pending = await asyncio.wait(tasks, timeout=max(0.0, timeout))
-        if not pending:
-            return True
-        for task in pending:
-            task.cancel()
-        await asyncio.gather(*pending, return_exceptions=True)
-        return False
 
     @staticmethod
     def _ephemeral_record(spec):

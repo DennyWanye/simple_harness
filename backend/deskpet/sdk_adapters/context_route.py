@@ -468,26 +468,6 @@ class ContextRouteToolService:
         )
         return result
 
-    async def _current_turn_text(self, run_id: str) -> str:
-        """This turn's user text as the Host itself admitted it, if readable.
-
-        Advisory: an unavailable reader only costs the probe one of its two
-        lexical surfaces, never the route.
-        """
-
-        if self._current_turn_text_reader is None:
-            return ""
-        try:
-            text = self._current_turn_text_reader(run_id)
-            if inspect.isawaitable(text):
-                text = await text
-        except asyncio.CancelledError:
-            raise
-        except Exception:  # noqa: BLE001 - advisory guard, never a route verdict
-            _LOG.warning("context_route_current_turn_text_unavailable run_id=%s", run_id)
-            return ""
-        return str(text or "").strip()[:_MAX_TEXT]
-
     async def _current_turn_evidence_ref(self, run_id: str, task_scope_id: str) -> str:
         """This turn's admitted user evidence id, for the accepted route result.
 
@@ -732,23 +712,6 @@ class ContextRouteToolService:
         return payload
 
     # 2026-09-10：``memory_standalone`` 路由（类型化召回）随认知记忆 SDK 移除。
-
-    async def _run_is_task_scoped(self, run_id: str) -> bool:
-        """Has this Run already bound a TaskScope (any earlier turn of the Run)?
-
-        Never fail an already successful recall on this read; an unavailable
-        ledger only means the Host cannot claim the Run is doing task work.
-        """
-
-        try:
-            decision = await self._ledger.latest_route_decision_for_run(
-                run_id,
-                task_only=True,
-            )
-        except Exception:  # noqa: BLE001 - advisory hint only, never a route verdict
-            _LOG.warning("context_route_procedure_hint_scope_unavailable run_id=%s", run_id)
-            return False
-        return decision is not None
 
     # 2026-09-10：``_temporal_hint`` / ``_procedure_hint`` 只在类型化召回的
     # 返回上生效，随记忆一并移除。

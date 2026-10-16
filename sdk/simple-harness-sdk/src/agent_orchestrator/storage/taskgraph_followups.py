@@ -236,13 +236,6 @@ class TaskGraphFollowupStore:
                 lease_until_ms=until,
             )
 
-    def read_consumer_receipt(
-        self, claim: ClaimedFollowup, kind: ReceiptKind, identity: str
-    ) -> DurableFollowupReceipt:
-        """Read an actual durable object and bind it to this notification's stable key."""
-        with self.store.read_view():
-            return self._read_receipt(claim, kind, identity)
-
     def _read_receipt(
         self, claim: ClaimedFollowup, kind: ReceiptKind, identity: str
     ) -> DurableFollowupReceipt:

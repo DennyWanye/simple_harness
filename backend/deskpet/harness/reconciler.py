@@ -540,18 +540,5 @@ class HarnessReconciler:
                 return
         raise RuntimeError("harness bootstrap reconciliation did not converge within 1024 passes")
 
-    async def reconcile_ready(self, run_ids: frozenset[str], *, timeout: float) -> bool:
-        if not run_ids:
-            return True
-        await self.recover_pending(only_run_ids=run_ids)
-        deadline = asyncio.get_running_loop().time() + max(0.0, timeout)
-        while run_ids & self._effects.ready_run_ids():
-            remaining = deadline - asyncio.get_running_loop().time()
-            if remaining <= 0:
-                return False
-            await self.recover_pending(only_run_ids=run_ids)
-            await asyncio.sleep(min(0.005, remaining))
-        return True
-
 
 __all__ = ["HarnessReconciler"]

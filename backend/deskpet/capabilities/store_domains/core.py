@@ -512,14 +512,6 @@ class CapabilityStoreTx:
     ) -> CapabilityRefreshIntent:
         return await self._store._commit_refresh_intent_tx(self._db, commit)
 
-    async def fail_refresh_intent(
-        self,
-        intent_id: str,
-        *,
-        error: Mapping[str, JsonValue],
-    ) -> CapabilityRefreshIntent:
-        return await self._store._fail_refresh_intent_tx(self._db, intent_id, error=error)
-
     async def create_runtime_lease(self, **kwargs: Any) -> CapabilityRuntimeLease:
         return await self._store._create_runtime_lease_tx(self._db, **kwargs)
 

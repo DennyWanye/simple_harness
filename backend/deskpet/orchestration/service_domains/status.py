@@ -349,12 +349,6 @@ class StatusMixin(OrchestrationServiceCore):
             logger.exception("assurance root diagnostic failed")
             return None
 
-    def note_authorization_mode(self, mode: str) -> None:
-        """The Host's auto / manual mode governs chat tool effects only (plan §3.7); it is
-        recorded for the status view and never decides an orchestration approval."""
-
-        self._authorization_mode = mode
-
     def runtime_tool_names(self) -> tuple[str, ...]:
         return tuple(self._deployment.allowed_tools) if self._deployment is not None else ()
 

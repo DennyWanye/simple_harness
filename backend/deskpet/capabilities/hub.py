@@ -10,7 +10,7 @@ import hashlib
 import logging
 import re
 import time
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import replace
 from typing import Any, Protocol
 
@@ -792,87 +792,6 @@ class CapabilityHub:
         async with self.publish_lock:
             released = await self.store.release_snapshot_lease(snapshot_ref, run_id)
             await self.mirror_snapshot_release(snapshot_ref=snapshot_ref, run_id=run_id)
-            return released
-
-    async def clone_snapshot_lease_and_commit(
-        self,
-        *,
-        snapshot_ref: str,
-        source_run_id: str,
-        target_run_id: str,
-        root_run_id: str,
-        commit: Callable[[Callable[..., Awaitable[Any]]], Awaitable[Any]],
-    ) -> Any:
-        """Clone a parent's immutable snapshot in the child-command CAS."""
-
-        async with self.publish_lock:
-            fingerprints = await self.store.snapshot_lease_fingerprints(
-                snapshot_ref=snapshot_ref,
-                run_id=source_run_id,
-            )
-            await self.mirror_snapshot_fingerprints(
-                snapshot_ref=snapshot_ref,
-                run_id=target_run_id,
-                tool_spec_fingerprints=fingerprints,
-            )
-
-            async def clone_in_transaction(db: Any, _intent: Any) -> None:
-                cloned = await self.store.bind(db).clone_snapshot_lease(
-                    snapshot_ref=snapshot_ref,
-                    source_run_id=source_run_id,
-                    target_run_id=target_run_id,
-                    root_run_id=root_run_id,
-                )
-                if cloned != fingerprints:
-                    raise RuntimeError("child snapshot lease differs from its mirrored parent")
-
-            try:
-                return await commit(clone_in_transaction)
-            except BaseException:
-                await self.mirror_snapshot_release(
-                    snapshot_ref=snapshot_ref,
-                    run_id=target_run_id,
-                )
-                raise
-
-    async def release_run_leases(
-        self,
-        run_id: str,
-        *,
-        known_snapshot_refs: tuple[str, ...] = (),
-    ) -> int:
-        """Release every active immutable snapshot owned by exactly one run."""
-
-        async with self.publish_lock:
-            snapshot_refs = tuple(
-                sorted(
-                    {
-                        *known_snapshot_refs,
-                        *await self.store.active_snapshot_refs_for_run(run_id),
-                    }
-                )
-            )
-            released = 0
-            for snapshot_ref in snapshot_refs:
-                released += await self.store.release_snapshot_lease(snapshot_ref, run_id)
-                await self.mirror_snapshot_release(
-                    snapshot_ref=snapshot_ref,
-                    run_id=run_id,
-                )
-            return released
-
-    async def reconcile_terminal_run_leases(self) -> int:
-        """Recover the small crash window after terminal commit, before release."""
-
-        async with self.publish_lock:
-            owners = await self.store.terminal_snapshot_lease_owners()
-            released = 0
-            for snapshot_ref, run_id in owners:
-                released += await self.store.release_snapshot_lease(snapshot_ref, run_id)
-                await self.mirror_snapshot_release(
-                    snapshot_ref=snapshot_ref,
-                    run_id=run_id,
-                )
             return released
 
     async def version_can_be_collected(

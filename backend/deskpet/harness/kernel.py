@@ -1275,9 +1275,6 @@ class RunKernel(KernelTerminalLifecycle):
             self._drivers[parent.spec.driver_kind],
         )
 
-    def _child_signal_in_flight(self, run_id: str) -> bool:
-        return self._child_signal_runtime.in_flight(run_id)
-
     @staticmethod
     def _admission_from(continuation) -> AdmissionBoundary | None:
         return admission_from(continuation)
@@ -1295,6 +1292,3 @@ class RunKernel(KernelTerminalLifecycle):
         self, registration: RegisteredDriver, record: RunRecord, stream, lease
     ) -> None:
         await self._admission_launcher.consume(registration, record, stream, lease)
-
-    async def _fail_unknown_launch(self, record: RunRecord, boundary: AdmissionBoundary) -> None:
-        await self._admission_launcher.fail_unknown(record, boundary)

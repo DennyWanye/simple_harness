@@ -23,8 +23,6 @@ from typing import Any
 
 import aiosqlite
 
-from deskpet.memory.analysis_proposal import AdmittedItem, admitted_item
-
 HOST_CLASSIFICATION_AUTHORITY_REF = "host:classification/v1"
 HOST_EVIDENCE_ISSUER_REF = "host:evidence-authority/v1"
 
@@ -50,15 +48,6 @@ class HostEvidenceAuthority:
 
         envelope, receipt, _ = await self._read_admitted(evidence_id)
         return envelope, receipt
-
-    async def read_analysis_item(self, evidence_id: str) -> AdmittedItem:
-        """Use the first Host persistence time as the request's observed time.
-
-        ``committed_at`` survives duplicate ingress and reopen. It is Host
-        metadata, not a replacement for the signed receipt's ``admitted_at``.
-        """
-        envelope, receipt, committed_at = await self._read_admitted(evidence_id)
-        return admitted_item(envelope, receipt, occurred_at=committed_at)
 
     async def _read_admitted(self, evidence_id: str) -> tuple[Any, Any, float]:
         # 按需导入：死代码待删（simple_harness.runtime.SanitizedEvidenceEnvelope）

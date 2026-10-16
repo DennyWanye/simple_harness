@@ -371,10 +371,3 @@ class PermissionGate:
         """
         del session_id
         return []
-
-    # -----------------------------------------------------------------
-    # Test helpers
-    # -----------------------------------------------------------------
-    def clear_cache(self) -> None:
-        """Reset the session allow cache. Used by tests + by `chat_reset`."""
-        self._allow_cache.clear()

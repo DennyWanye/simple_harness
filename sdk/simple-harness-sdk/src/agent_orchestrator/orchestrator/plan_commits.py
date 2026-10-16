@@ -59,7 +59,6 @@ from ..contracts.htn import (
     OccurrenceSpec,
     ProposedPlanDelta,
     ReadItem,
-    ReadItemKind,
     RunningWorkPolicy,
     SemanticReadSet,
     TaskForm,
@@ -547,23 +546,6 @@ class PlanCommitsMixin:
                     raise PlanCommitRejected(
                         "STRUCTURE_INVALID", "rewritten Task is not owned by the exact adopted slot"
                     )
-
-    # ------------------------------------------------------- the proposer's own side
-    def read_item_for(self, mission_id: str, kind: ReadItemKind, subject_id: str) -> ReadItem:
-        """The read-set entry a proposer should record for one subject, right now.
-
-        The proposing side and the checking side must agree on *what* a subject's
-        semantic revision is; writing that formula twice is how they stop agreeing.
-        So the compiler-side entry is built by the same resolvers the commit uses,
-        and a subject whose current state cannot be expressed as a revision plus a
-        content hash is refused here rather than recorded as an unre-checkable read.
-        """
-
-        checker = self._read_set_checker(mission_id)
-        try:
-            return checker.read_item(kind, subject_id)
-        except ReadSetChannelUnknown as unknown:
-            raise PlanCommitRejected("READ_SET_UNRESOLVED", unknown.detail) from unknown
 
     def _read_set_checker(self, mission_id: str) -> SemanticReadSetChecker:
         """The one re-validation implementation, configured for the *plan* path.

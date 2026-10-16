@@ -1786,20 +1786,6 @@ class HumanMemoryHostService:
         if len(canonical_json(dict(value)).encode("utf-8")) > 32 * 1024:
             raise HumanMemoryHostServiceError("task_scope_projection_public_response_too_large")
 
-    async def drop_rebuildable(self, scope_ref: str) -> Mapping[str, object]:
-        await self._assert_owned_scope(scope_ref)
-        with sqlite3.connect(self._db_path) as db:
-            db.execute(
-                "DELETE FROM task_scope_search_fts WHERE task_scope_id=?",
-                (scope_ref,),
-            )
-            db.execute(
-                "DELETE FROM task_scope_projection_cache WHERE task_scope_id=?",
-                (scope_ref,),
-            )
-            db.commit()
-        return {"scope_ref": scope_ref, "dropped": ["fts", "legacy_projection_cache"]}
-
     async def rebuild_derived(self, scope_ref: str) -> Mapping[str, object]:
         await self._assert_owned_scope(scope_ref)
         views = await self._projections.materialize(task_scope_id=scope_ref)
@@ -1874,64 +1860,6 @@ class HumanMemoryHostService:
                 }
             )
         return {"turns": turns}
-
-    async def raw_integrity_manifest(self) -> Mapping[str, object]:
-        """Return a bounded read-only raw-set digest, not a v42 sealed receipt."""
-
-        owned_scopes = await self._owned_scope_ids()
-        raw_sets: dict[str, Mapping[str, object]] = {}
-        with sqlite3.connect(f"file:{self._db_path.resolve()}?mode=ro", uri=True) as db:
-            db.row_factory = sqlite3.Row
-            available = {
-                str(row[0])
-                for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")
-            }
-            for spec in _RAW_SET_ALLOWLIST:
-                if spec.table not in available:
-                    continue
-                columns = [str(row[1]) for row in db.execute(f'PRAGMA table_info("{spec.table}")')]
-                if "subject" in columns:
-                    rows = db.execute(
-                        f'SELECT * FROM "{spec.table}" WHERE subject=?',
-                        (self._auth.subject,),
-                    ).fetchall()
-                elif "task_scope_id" in columns:
-                    if not owned_scopes:
-                        rows = []
-                    else:
-                        placeholders = ",".join("?" for _ in owned_scopes)
-                        rows = db.execute(
-                            f'SELECT * FROM "{spec.table}" WHERE task_scope_id IN ({placeholders})',
-                            tuple(owned_scopes),
-                        ).fetchall()
-                else:
-                    rows = db.execute(f'SELECT * FROM "{spec.table}"').fetchall()
-                canonical_rows = sorted(
-                    canonical_json(
-                        {
-                            key: _json_cell(row[key])
-                            # sqlite3.Row iteration yields values, unlike dict.
-                            for key in row.keys()  # noqa: SIM118
-                        }
-                    ).encode("utf-8")
-                    for row in rows
-                )
-                digest = hashlib.sha256()
-                for row_bytes in canonical_rows:
-                    digest.update(len(row_bytes).to_bytes(8, "big"))
-                    digest.update(row_bytes)
-                raw_sets[spec.logical_name] = {
-                    "row_count": len(canonical_rows),
-                    "content_sha256": digest.hexdigest(),
-                }
-        manifest_hash = hashlib.sha256(canonical_json(raw_sets).encode("utf-8")).hexdigest()
-        return {
-            "schema_version": 1,
-            "format_epoch": self._startup.composition_mode.value,
-            "raw_sets": raw_sets,
-            "content_sha256": manifest_hash,
-            "sealed": False,
-        }
 
     async def _owned_scope_ids(self) -> tuple[str, ...]:
         with sqlite3.connect(f"file:{self._db_path.resolve()}?mode=ro", uri=True) as db:

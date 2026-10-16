@@ -222,16 +222,6 @@ class EvaluationStore:
         finally:
             await db.close()
 
-    async def get_dataset(self, dataset_id: str) -> EvaluationDataset | None:
-        db = await self._connect()
-        try:
-            row = await (
-                await db.execute("SELECT * FROM eval_datasets WHERE dataset_id=?", (dataset_id,))
-            ).fetchone()
-            return self._dataset_from_row(row) if row is not None else None
-        finally:
-            await db.close()
-
     @staticmethod
     def _dataset_from_row(row: aiosqlite.Row) -> EvaluationDataset:
         return EvaluationDataset(

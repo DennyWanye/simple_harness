@@ -539,17 +539,6 @@ class LocalToolRuntime:
             reports.append(await self._cleanup_lease(lease))
         return tuple(reports)
 
-    async def cancel_root_run(self, root_run_id: str) -> tuple[ProcessCleanupReport, ...]:
-        async with self._lease_lock:
-            leases = tuple(
-                lease for lease in self._leases.values() if lease.root_run_id == root_run_id
-            )
-        reports = []
-        for lease in leases:
-            lease.observe_tree()
-            reports.append(await self._cleanup_lease(lease))
-        return tuple(reports)
-
     async def _monitor_lease(self, lease: _RuntimeLease, stop: asyncio.Event) -> None:
         while not stop.is_set():
             lease.observe_tree()

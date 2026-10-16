@@ -227,37 +227,6 @@ class VoicePipeline:
     def bind_run_host_factory(self, factory: RunHostFactory) -> None:
         self._run_host_factory = factory
 
-    async def signal_current_run(
-        self,
-        *,
-        decision_id: str,
-        response: object,
-        nonce: str | None = None,
-        version: int | None = None,
-    ) -> object:
-        """Forward a Voice approval/clarification response to the active Run.
-
-        The RunClient owns authorization and durable decision state.  Voice
-        supplies only its authenticated connection/session view and never
-        rewrites ``PermissionGate.current_source``.
-        """
-
-        handle = self._current_run_handle
-        if handle is None:
-            raise RuntimeError("voice run is not active")
-        decision = str(decision_id).strip()
-        if not decision:
-            raise ValueError("decision_id must be non-empty")
-        signal: dict[str, object] = {
-            "decision_id": decision,
-            "response": response,
-        }
-        if nonce is not None:
-            signal["nonce"] = nonce
-        if version is not None:
-            signal["version"] = version
-        return await handle.signal(MappingProxyType(signal))
-
     async def _broadcast_chat_v2(
         self,
         msg_type: str,

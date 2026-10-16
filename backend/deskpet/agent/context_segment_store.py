@@ -88,17 +88,8 @@ def conservative_token_estimate(messages: Sequence[Any]) -> int:
 class ContextSegmentStore:
     """STUB — 上下文段存储，等待 SDK 替换。"""
 
-    async def get_segments(self, session_id: str) -> list[ContextSegment]:
-        return []
-
     async def upsert(self, segment: ContextSegment) -> None:
         pass
 
     async def delete(self, segment_id: str) -> None:
-        pass
-
-    async def list_coverage(self, session_id: str, limit: int = 100) -> list[ContextSegment]:
-        return []
-
-    async def commit_coverage(self, proof: CoverageCommitProof) -> None:
         pass

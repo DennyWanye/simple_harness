@@ -55,7 +55,7 @@ from typing import Any
 from ...contracts.evidence_state import EvidenceEntry, EvidenceSnapshot
 from ...contracts.htn import MethodRegistryStatus
 from ...contracts.models import ContractError
-from ...contracts.semantic_base import VersionedRef, content_hash_of
+from ...contracts.semantic_base import content_hash_of
 from ...knowledge.predicates import PredicateRegistry, PredicateSignature
 from ...runtime import role_templates
 from .applicability import CapabilityRecord, CapabilitySnapshot
@@ -64,14 +64,7 @@ from .observation_pipeline import ObserverIndex, build_index
 from .observers import PredicateObserver
 from .observers.appworld import appworld_observers
 from .observers.code import code_observers
-from .registry import (
-    AdmissionPolicy,
-    MethodRegistry,
-    SchemaCatalog,
-    TaskForm,
-    TaskTypeCatalog,
-    TaskTypeSpec,
-)
+from .registry import AdmissionPolicy, MethodRegistry, SchemaCatalog, TaskForm, TaskTypeCatalog
 from .seed_methods import SEED_ROOT, SeedDomain, admit_domain, available_domains
 from .seed_methods.loader import install_library
 
@@ -378,9 +371,6 @@ class DeploymentPlanningWorld:
 
     def observed_predicate_ids(self) -> tuple[str, ...]:
         return self.observer_index.predicate_ids()
-
-    def type_for(self, reference: VersionedRef) -> TaskTypeSpec | None:
-        return self.catalog.resolve(reference)
 
 
 def catalog_digest(world: Any) -> str:

@@ -255,9 +255,6 @@ class PackagedEvaluationSuiteLoader:
             suites=tuple(suites),
         )
 
-    def load_suite(self, suite_id: str) -> PackagedEvaluationSuiteV1:
-        return self.load_manifest().suite(suite_id)
-
     def validate_release(self) -> PackagedEvaluationSuiteManifestV1:
         """Validate every resource and return the attested manifest."""
 

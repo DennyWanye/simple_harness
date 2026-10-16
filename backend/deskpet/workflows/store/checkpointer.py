@@ -6,7 +6,7 @@ import copy
 import json
 import time
 import uuid
-from collections.abc import AsyncIterator, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -15,7 +15,7 @@ from typing import Any
 import aiosqlite
 
 from ..contracts import canonical_json, validate_json_value
-from ..errors import AsyncOnlyWorkflowError, UnsupportedDeltaChannelError
+from ..errors import AsyncOnlyWorkflowError
 from ..human import HumanDecisionStore
 from .checkpointer_domains.commits import TaskCommitMixin
 
@@ -287,48 +287,6 @@ class FencedAsyncSqliteSaver(BaseCheckpointSaver[int]):
             )
         finally:
             await db.close()
-
-    async def alist(
-        self,
-        config: RunnableConfig | None,
-        *,
-        filter: dict[str, Any] | None = None,
-        before: RunnableConfig | None = None,
-        limit: int | None = None,
-    ) -> AsyncIterator[CheckpointTuple]:
-        values = _config_values(config or {"configurable": {"thread_id": "*"}})
-        clauses: list[str] = []
-        params: list[Any] = []
-        if values["thread_id"] != "*":
-            clauses.extend(["thread_id=?", "checkpoint_ns=?"])
-            params.extend([str(values["thread_id"]), str(values["checkpoint_ns"])])
-        if before and get_checkpoint_id(before):
-            clauses.append("checkpoint_id<?")
-            params.append(str(get_checkpoint_id(before)))
-        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
-        query = f"SELECT thread_id,checkpoint_ns,checkpoint_id FROM workflow_checkpoints {where} ORDER BY created_at DESC"
-        if limit is not None:
-            query += " LIMIT ?"
-            params.append(limit)
-        db = await self._connect()
-        try:
-            rows = await (await db.execute(query, params)).fetchall()
-        finally:
-            await db.close()
-        for row in rows:
-            item = await self.aget_tuple(
-                {
-                    "configurable": {
-                        "thread_id": row["thread_id"],
-                        "checkpoint_ns": row["checkpoint_ns"],
-                        "checkpoint_id": row["checkpoint_id"],
-                    }
-                }
-            )
-            if item is not None and (
-                not filter or all(item.metadata.get(k) == v for k, v in filter.items())
-            ):
-                yield item
 
     async def aput(
         self,
@@ -748,98 +706,6 @@ class FencedAsyncSqliteSaver(BaseCheckpointSaver[int]):
         finally:
             await db.close()
 
-    async def acopy_thread(self, source_thread_id: str, target_thread_id: str) -> None:
-        if source_thread_id == target_thread_id:
-            return
-        db = await self._connect()
-        try:
-            await db.execute("BEGIN IMMEDIATE")
-            target_exists = await (
-                await db.execute(
-                    "SELECT 1 FROM workflow_checkpoints WHERE thread_id=? LIMIT 1",
-                    (target_thread_id,),
-                )
-            ).fetchone()
-            if target_exists:
-                raise ValueError(f"target checkpoint thread already exists: {target_thread_id}")
-            await db.execute(
-                """INSERT INTO workflow_checkpoints(
-                    thread_id,checkpoint_ns,checkpoint_id,parent_checkpoint_id,run_id,
-                    checkpoint_type,checkpoint_blob,metadata_blob,created_at
-                ) SELECT ?,checkpoint_ns,checkpoint_id,parent_checkpoint_id,run_id,
-                    checkpoint_type,checkpoint_blob,metadata_blob,created_at
-                  FROM workflow_checkpoints WHERE thread_id=?""",
-                (target_thread_id, source_thread_id),
-            )
-            await db.execute(
-                """INSERT INTO workflow_pending_writes(
-                    thread_id,checkpoint_ns,base_checkpoint_id,task_id,write_index,channel,value_type,value_blob,task_path
-                ) SELECT ?,checkpoint_ns,base_checkpoint_id,task_id,write_index,channel,value_type,value_blob,task_path
-                  FROM workflow_pending_writes WHERE thread_id=?""",
-                (target_thread_id, source_thread_id),
-            )
-            await db.commit()
-        except BaseException:
-            if db.in_transaction:
-                await db.rollback()
-            raise
-        finally:
-            await db.close()
-
-    async def aprune(self, thread_ids: Sequence[str], *, strategy: str = "keep_latest") -> None:
-        if strategy not in {"keep_latest", "delete"}:
-            raise ValueError(f"unsupported checkpoint prune strategy: {strategy}")
-        for thread_id in thread_ids:
-            if strategy == "delete":
-                await self.adelete_thread(thread_id)
-                continue
-            db = await self._connect()
-            try:
-                await db.execute("BEGIN IMMEDIATE")
-                keep = await (
-                    await db.execute(
-                        """SELECT checkpoint_ns,checkpoint_id FROM workflow_checkpoints
-                        WHERE thread_id=? ORDER BY checkpoint_ns,created_at DESC,checkpoint_id DESC""",
-                        (thread_id,),
-                    )
-                ).fetchall()
-                keep_ids: set[tuple[str, str]] = set()
-                remove: list[tuple[str, str]] = []
-                for row in keep:
-                    key = (str(row["checkpoint_ns"]), str(row["checkpoint_id"]))
-                    if key[0] not in {item[0] for item in keep_ids}:
-                        keep_ids.add(key)
-                    else:
-                        remove.append(key)
-                for namespace, checkpoint_id in remove:
-                    await db.execute(
-                        "DELETE FROM workflow_pending_writes WHERE thread_id=? AND checkpoint_ns=? AND base_checkpoint_id=?",
-                        (thread_id, namespace, checkpoint_id),
-                    )
-                    await db.execute(
-                        "DELETE FROM workflow_checkpoint_owners WHERE thread_id=? AND checkpoint_ns=? AND checkpoint_id=?",
-                        (thread_id, namespace, checkpoint_id),
-                    )
-                    await db.execute(
-                        "DELETE FROM workflow_checkpoints WHERE thread_id=? AND checkpoint_ns=? AND checkpoint_id=?",
-                        (thread_id, namespace, checkpoint_id),
-                    )
-                await db.commit()
-            except BaseException:
-                if db.in_transaction:
-                    await db.rollback()
-                raise
-            finally:
-                await db.close()
-
-    async def aget_delta_channel_history(self, *, config: RunnableConfig, channels: Sequence[str]):
-        if not channels:
-            return {}
-        raise UnsupportedDeltaChannelError("DeltaChannel is not supported by DeskPet workflow v1")
-
-    def get_tuple(self, config: RunnableConfig) -> CheckpointTuple | None:
-        raise AsyncOnlyWorkflowError("workflow checkpoint saver is async-only")
-
     def list(self, config: RunnableConfig | None, **kwargs: Any):
         raise AsyncOnlyWorkflowError("workflow checkpoint saver is async-only")
 
@@ -850,24 +716,6 @@ class FencedAsyncSqliteSaver(BaseCheckpointSaver[int]):
         metadata: CheckpointMetadata,
         new_versions: ChannelVersions,
     ):
-        raise AsyncOnlyWorkflowError("workflow checkpoint saver is async-only")
-
-    def put_writes(
-        self,
-        config: RunnableConfig,
-        writes: Sequence[tuple[str, Any]],
-        task_id: str,
-        task_path: str = "",
-    ):
-        raise AsyncOnlyWorkflowError("workflow checkpoint saver is async-only")
-
-    def delete_thread(self, thread_id: str) -> None:
-        raise AsyncOnlyWorkflowError("workflow checkpoint saver is async-only")
-
-    def delete_for_runs(self, run_ids: Sequence[str]) -> None:
-        raise AsyncOnlyWorkflowError("workflow checkpoint saver is async-only")
-
-    def copy_thread(self, source_thread_id: str, target_thread_id: str) -> None:
         raise AsyncOnlyWorkflowError("workflow checkpoint saver is async-only")
 
     def prune(self, thread_ids: Sequence[str], *, strategy: str = "keep_latest") -> None:

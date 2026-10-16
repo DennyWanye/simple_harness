@@ -852,30 +852,6 @@ class ContextRouteLedgerStore:
         finally:
             await db.close()
 
-    async def read_context_use_recollections(
-        self, *, sdk_run_id: str, effect_id: str
-    ) -> tuple[Mapping[str, Any], ...]:
-        """Every re-collection receipt for one bound recall, oldest generation first.
-
-        Read-only and cheap: the context-use path calls it once per composed
-        provider request, and replay resolves the exact generation from it.
-        """
-
-        db = await self._connect()
-        try:
-            cursor = await db.execute(
-                "SELECT * FROM context_use_recollections WHERE sdk_run_id=? AND effect_id=? "
-                "ORDER BY generation",
-                (sdk_run_id, effect_id),
-            )
-            rows = tuple(await cursor.fetchall())
-            await cursor.close()
-        finally:
-            await db.close()
-        return tuple(
-            dict(row) | {"bindings": json.loads(str(row["bindings_json"]))} for row in rows
-        )
-
     async def record_context_use_recollection(
         self,
         *,

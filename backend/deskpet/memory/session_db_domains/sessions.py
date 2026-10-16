@@ -40,15 +40,6 @@ class SessionMixin(SessionDBCore):
 
     __slots__ = ()
 
-    async def initialize_primary_conversation(self, subject: str):
-        """Create/replay the subject's sole writable primary conversation.
-
-        This entry does not initialize or inspect legacy Session state.  A v34
-        or older database is rejected by the fresh-only epoch guard.
-        """
-
-        return await self._human_memory_program_store().initialize_subject(subject)
-
     async def open_primary_conversation(
         self,
         subject: str,
@@ -61,14 +52,6 @@ class SessionMixin(SessionDBCore):
             subject,
             requested_conversation_id=requested_conversation_id,
         )
-
-    async def append_primary_evidence(self, envelope: Any, receipt: Any):
-        """Append evidence only after an accepted, hash-bound S1 receipt."""
-
-        return await self._human_memory_program_store().append_evidence(envelope, receipt)
-
-    async def list_primary_evidence(self, subject: str, *, limit: int = 1000):
-        return await self._human_memory_program_store().list_evidence(subject, limit=limit)
 
     # ------------------------------------------------------------------
     # Sessions

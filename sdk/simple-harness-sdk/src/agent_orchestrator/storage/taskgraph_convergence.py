@@ -228,10 +228,6 @@ class TaskGraphConvergenceStore:
                 )
             )
 
-    def require_unfenced(self, mission_id: str, task_id: str) -> None:
-        if self.active_fences(mission_id, task_id):
-            raise StoreConflict("TASKGRAPH_TARGET_FENCED")
-
     def advance_state(
         self, mission_id: str, job_id: str, *, expected_version: int, ready: bool, now_ms: int
     ) -> ConvergenceJob:

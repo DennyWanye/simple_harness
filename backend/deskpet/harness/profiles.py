@@ -161,11 +161,5 @@ class ProfileRegistry:
                 )
         return profile
 
-    def profile_for_route(self, route_tag: str) -> ProfileSpec:
-        try:
-            return self._by_route[route_tag]
-        except KeyError as exc:
-            raise ValueError(f"route tag is not registered: {route_tag}") from exc
-
 
 __all__ = ["ProfileRegistry", "ProfileSpec"]

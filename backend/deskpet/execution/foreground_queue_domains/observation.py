@@ -438,59 +438,6 @@ class ObservationMixin(ForegroundQueueCore):
                 raise
         return attempt_id
 
-    async def reserve_analysis_attempt(
-        self,
-        *,
-        host_run_id: str,
-        sdk_run_id: str,
-        attempt: Mapping[str, object],
-        members: Sequence[tuple[str, str, str]] = (),
-        input_observer_tx=None,
-    ) -> str:
-        """Insert one ``reserved`` **analysis** attempt row for a terminal Run (S5b Task 4).
-
-        Post-turn analysis runs after the Host terminal, when no foreground lease
-        exists any more: the fence is the Memory job lease (design-freeze §6
-        ``lease_seconds = deadline + 30``), so this only verifies that the Run is
-        durably terminal and bound to ``sdk_run_id`` before inserting the row in
-        one transaction.
-        """
-
-        host_run_id = identifier(host_run_id, "host_run_id", 512)
-        sdk_run_id = identifier(sdk_run_id, "sdk_run_id", 512)
-        now = _clock_value(self._clock)
-        await self.initialize()
-        async with self._connection() as db:
-            await db.execute("BEGIN IMMEDIATE")
-            await assert_human_memory_ingress_open_tx(db)
-            try:
-                head = await self._fetchone(
-                    db, "SELECT * FROM foreground_run_heads WHERE host_run_id=?", (host_run_id,)
-                )
-                if head is None:
-                    raise ForegroundQueueError("foreground_run_not_found")
-                if str(head["current_state"]) not in TERMINAL_STATES:
-                    raise ForegroundQueueError("foreground_analysis_run_not_terminal")
-                await self._validate_sdk_binding_tx(db, host_run_id, sdk_run_id)
-                if str(attempt.get("purpose")) != "analysis":
-                    raise ForegroundQueueError("foreground_post_turn_purpose_invalid")
-                attempt_id = await self._insert_post_turn_attempt_tx(
-                    db,
-                    host_run_id=host_run_id,
-                    sdk_run_id=sdk_run_id,
-                    generation=int(head["generation"]),
-                    attempt=attempt,
-                    members=members,
-                    now=now,
-                )
-                if input_observer_tx is not None:
-                    await input_observer_tx(attempt, db)
-                await db.commit()
-            except Exception:
-                await db.rollback()
-                raise
-        return attempt_id
-
     async def _insert_post_turn_attempt_tx(
         self,
         db: aiosqlite.Connection,

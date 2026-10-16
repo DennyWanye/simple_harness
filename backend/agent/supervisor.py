@@ -55,9 +55,6 @@ class SupervisorAction:
     alert_id: str = ""
     raw_action: str = ""  # original LLM action before any coercion
 
-    def is_actionable(self) -> bool:
-        return self.action in ("nudge", "ask_user")
-
 
 # ─────────────── prompt + parsing ────────────────────────────────────
 

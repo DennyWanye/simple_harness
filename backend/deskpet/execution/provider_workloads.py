@@ -943,20 +943,6 @@ class ProviderWorkloadBreaker:
                     removed += 1
         return removed
 
-    async def state_snapshot(self) -> dict[tuple[str, ...], dict[str, Any]]:
-        async with self._lock:
-            return {
-                key: {
-                    "state": state.state.value,
-                    "opened_at": state.opened_at,
-                    "open_until": state.open_until,
-                    "failure_count": state.failure_count,
-                    "reset_generation": state.reset_generation,
-                    "leader_active": state.leader_future is not None,
-                }
-                for key, state in self._states.items()
-            }
-
 
 def _stable_call_id(context: ProviderWorkloadContext) -> str:
     seed = "|".join(("provider-workload-v1", context.call_id))
@@ -1174,9 +1160,6 @@ class ProviderWorkloadRouter:
         task: asyncio.Task[T],
     ) -> asyncio.Task[T]:
         return self._tasks.track(workload_context, task)
-
-    async def reset_scope(self, scope_key: tuple[str, ...], *, expected_provider_id: str) -> int:
-        return await self._breaker.reset(scope_key, expected_provider_id=expected_provider_id)
 
     async def reconcile_provider_revision(self, target: ResolvedProviderWorkloadTarget) -> int:
         """Registry lifecycle hook for revision/delete-and-readd cutovers."""

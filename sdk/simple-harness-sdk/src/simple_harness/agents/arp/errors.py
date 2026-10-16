@@ -41,20 +41,6 @@ class ArpError(ValueError):
             return f"{self.code} at {self.field_path}: {self.message}"
         return f"{self.code}: {self.message}"
 
-    def to_error_json(self, *, stage: str | None = None) -> dict[str, Any]:
-        """Render the public ``Error`` DTO (schema_version 1) for this failure."""
-
-        row = entry(self.code)
-        return {
-            "schema_version": 1,
-            "code": self.code,
-            "stage": stage or str(row["stage"]),
-            "retry": str(row["retry"]),
-            "field_path": self.field_path,
-            "message": str(row["public_message"]),
-            "source_refs": [],
-        }
-
 
 @lru_cache(maxsize=1)
 def catalogue() -> Mapping[str, Mapping[str, Any]]:

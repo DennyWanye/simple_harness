@@ -117,10 +117,6 @@ class SileroVAD:
         """Dynamically adjust VAD threshold (0.0–1.0)."""
         self.threshold = value
 
-    def set_min_speech_ms(self, value: int) -> None:
-        """Dynamically adjust minimum speech duration (ms)."""
-        self.min_speech_ms = value
-
     def current_speech_duration_ms(self) -> int:
         """Return current speech duration in ms. 0 if not currently in speech."""
         if not self._is_speech:

@@ -222,10 +222,6 @@ class ToolRegistryCore:
         else:
             self._session_context[session_id] = dict(context)
 
-    def get_session_context(self, session_id: str) -> dict[str, Any]:
-        """Read-only snapshot of the session's tool-arg context."""
-        return dict(self._session_context.get(session_id, {}))
-
     def set_plan_read_only(self, session_id: str, enabled: bool) -> None:
         """WI-CC-2 — toggle 规划期物理只读 for one session.
 

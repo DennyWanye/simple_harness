@@ -369,33 +369,6 @@ class ReceiptPolicyMixin(CapabilityStoreCore):
                 control_call_id=control_call_id,
             )
 
-    async def list_repair_attempts(
-        self,
-        *,
-        root_run_id: str,
-        error_fingerprint: str | None = None,
-    ) -> tuple[CapabilityRepairAttempt, ...]:
-        async with self.read_connection() as db:
-            if error_fingerprint is None:
-                rows = await (
-                    await db.execute(
-                        """SELECT * FROM capability_repair_attempts
-                           WHERE root_run_id=?
-                           ORDER BY error_fingerprint,attempt_no""",
-                        (root_run_id,),
-                    )
-                ).fetchall()
-            else:
-                rows = await (
-                    await db.execute(
-                        """SELECT * FROM capability_repair_attempts
-                           WHERE root_run_id=? AND error_fingerprint=?
-                           ORDER BY attempt_no""",
-                        (root_run_id, error_fingerprint),
-                    )
-                ).fetchall()
-            return tuple(_repair_attempt_from_row(row) for row in rows)
-
     async def _get_policy_state_tx(self, db: aiosqlite.Connection) -> AuthorizationPolicyState:
         row = await (
             await db.execute(

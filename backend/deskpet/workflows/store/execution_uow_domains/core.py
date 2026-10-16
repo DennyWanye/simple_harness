@@ -129,61 +129,6 @@ class ExecutionTx:
                 (root_run_id, tool_name, policy_json, policy_hash, created_at),
             )
 
-    async def store_tool_public_projection(
-        self,
-        *,
-        effect_id: str,
-        root_run_id: str,
-        run_id: str,
-        tool_name: str,
-        projection: Mapping[str, Any],
-        projection_hash: str,
-        status: str,
-        created_at: float,
-    ) -> None:
-        """Insert-or-verify one terminal public projection in the open tx."""
-
-        projection_json = canonical_json(dict(projection))
-        actual_hash = hashlib.sha256(projection_json.encode("utf-8")).hexdigest()
-        if actual_hash != projection_hash:
-            raise ValueError("tool public projection hash mismatch")
-        await self._db.execute(
-            "INSERT INTO execution_tool_public_projections("
-            "effect_id,root_run_id,run_id,tool_name,schema_version,projection_json,"
-            "projection_hash,status,created_at) VALUES(?,?,?,?,1,?,?,?,?) "
-            "ON CONFLICT(effect_id) DO NOTHING",
-            (
-                effect_id,
-                root_run_id,
-                run_id,
-                tool_name,
-                projection_json,
-                projection_hash,
-                status,
-                created_at,
-            ),
-        )
-        stored = await (
-            await self._db.execute(
-                "SELECT root_run_id,run_id,tool_name,projection_json,projection_hash,status "
-                "FROM execution_tool_public_projections WHERE effect_id=?",
-                (effect_id,),
-            )
-        ).fetchone()
-        assert stored is not None
-        if tuple(str(stored[name]) for name in stored.keys()) != (
-            root_run_id,
-            run_id,
-            tool_name,
-            projection_json,
-            projection_hash,
-            status,
-        ):
-            raise IdempotencyConflict(
-                "tool_public_projection_conflict",
-                "effect already has a different public projection",
-            )
-
     async def consume_workflow_decisions(
         self,
         *,
@@ -282,27 +227,6 @@ class ExecutionTx:
             event_ids=event_ids,
             now=now,
         )
-
-    async def save_continuation_payload(
-        self,
-        *,
-        run_id: str,
-        expected_version: int,
-        payload: Mapping[str, Any],
-    ) -> ContinuationRecord:
-        """CAS one continuation inside a caller-owned cross-domain transaction."""
-
-        self._unit_of_work._validate_continuation_version(expected_version)
-        run = await self._unit_of_work._continuation_run_tx(self._db, run_id)
-        continuation, _ = await self._unit_of_work._save_continuation_tx(
-            self._db,
-            run=run,
-            expected_version=expected_version,
-            payload_json=self._unit_of_work._continuation_payload_json(payload),
-            decision=None,
-            now=float(self._unit_of_work._clock()),
-        )
-        return continuation
 
     async def insert_candidate_draft_receipt(
         self,

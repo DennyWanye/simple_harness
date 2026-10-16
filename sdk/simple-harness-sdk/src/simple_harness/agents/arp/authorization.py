@@ -158,17 +158,6 @@ class RuntimeAuthorizationAdapter:
         self.recorded.append(receipt)
         return receipt
 
-    async def require_allow(self, request: TrustedRuntimeRequest) -> Mapping[str, Any]:
-        receipt = await self.evaluate(request)
-        if receipt["decision"] != "ALLOW":
-            code = {
-                "DENY": "ACCESS_DENIED",
-                "NEEDS_APPROVAL": "AUTHORIZATION_REQUIRED",
-                "UNAVAILABLE": "AUTHORITY_SOURCE_MISSING",
-            }[receipt["decision"]]
-            raise ArpError(code, f"{request.purpose} not allowed", detail={"receipt": receipt})
-        return receipt
-
 
 def receipt_pin(receipt: Mapping[str, Any]) -> Pin:
     return Pin("receipt", str(receipt["authorization_id"]), 0, digest(receipt))

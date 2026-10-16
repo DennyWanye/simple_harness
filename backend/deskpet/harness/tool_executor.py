@@ -6,7 +6,7 @@ import asyncio
 import json
 import logging
 import time
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -1122,11 +1122,6 @@ class EffectBatchExecutor:
                 settled += 1
                 break
         return settled
-
-    def _bind_ready_callback(self, callback: Callable[[str], None]) -> None:
-        bind = getattr(self._registry, "_set_prepared_ready_callback", None)
-        if callable(bind):
-            bind(callback)
 
     async def drain(self, timeout: float) -> frozenset[str]:
         await self._registry.close_prepared_executions(timeout)

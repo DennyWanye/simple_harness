@@ -390,17 +390,6 @@ class CapabilityRefreshStagingService:
             self._validate(intent, evidence)
             return await self.store.bind(db).stage_refresh_intent(intent)
 
-    async def stage_in_transaction(
-        self,
-        db: aiosqlite.Connection,
-        intent: CapabilityRefreshIntent,
-        evidence: CapabilityRefreshStageEvidence,
-    ) -> CapabilityRefreshIntent:
-        """Stage an intent in the caller's effect/child settlement transaction."""
-
-        self._validate(intent, evidence)
-        return await self.store.bind(db).stage_refresh_intent(intent)
-
     async def settle_control_effect_and_stage_refresh(
         self,
         intent: CapabilityRefreshIntent,

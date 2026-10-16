@@ -746,19 +746,6 @@ class OperationMixin(CapabilityStoreCore):
         async with self.write_transaction() as db:
             return await self._advance_publish_intent_tx(db, intent_id, phase=phase, status=status)
 
-    async def pending_publish_intents(
-        self,
-    ) -> tuple[CapabilityPublishIntent, ...]:
-        async with self.read_connection() as db:
-            rows = await (
-                await db.execute(
-                    """SELECT * FROM capability_publish_intents
-                       WHERE status IN ('pending','unknown')
-                       ORDER BY created_at,intent_id"""
-                )
-            ).fetchall()
-            return tuple(_publish_intent_from_row(row) for row in rows)
-
     async def get_publish_intent_for_operation(
         self, operation_id: str
     ) -> CapabilityPublishIntent | None:
@@ -936,31 +923,6 @@ class OperationMixin(CapabilityStoreCore):
                 )
             ).fetchone()
             return None if row is None else _refresh_intent_from_row(row)
-
-    async def pending_refresh_intents(
-        self,
-        *,
-        root_run_id: str | None = None,
-        run_id: str | None = None,
-    ) -> tuple[CapabilityRefreshIntent, ...]:
-        clauses = ["status='pending'"]
-        params: list[str] = []
-        if root_run_id is not None:
-            clauses.append("root_run_id=?")
-            params.append(root_run_id)
-        if run_id is not None:
-            clauses.append("run_id=?")
-            params.append(run_id)
-        async with self.read_connection() as db:
-            rows = await (
-                await db.execute(
-                    f"""SELECT * FROM capability_refresh_intents
-                        WHERE {" AND ".join(clauses)}
-                        ORDER BY created_at,intent_id""",
-                    tuple(params),
-                )
-            ).fetchall()
-            return tuple(_refresh_intent_from_row(row) for row in rows)
 
     async def _commit_refresh_intent_tx(
         self,

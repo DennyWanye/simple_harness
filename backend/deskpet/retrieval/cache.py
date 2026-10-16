@@ -198,13 +198,6 @@ class ProviderHealth:
             eligible_at, _order, provider, state = min(candidates)
             return ProbeCandidate(provider, state.generation, eligible_at)
 
-    async def cooling_down(self, provider: str) -> bool:
-        """Compatibility view for callers that only understand cooldown."""
-
-        async with self._lock:
-            state = self._states.get(provider)
-            return bool(state and state.state != "closed" and state.open_until > self._clock())
-
     async def acquire_permit(
         self,
         provider: str,

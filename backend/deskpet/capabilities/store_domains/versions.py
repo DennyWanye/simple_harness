@@ -276,19 +276,6 @@ class VersionBindingMixin(CapabilityStoreCore):
         async with self.write_transaction() as db:
             return await self._put_version_storage_tx(db, record)
 
-    async def get_version_storage(
-        self, pack_id: str, version: str, manifest_hash: str
-    ) -> CapabilityVersionStorage | None:
-        async with self.read_connection() as db:
-            rows = await _fetch_mappings(
-                await db.execute(
-                    """SELECT * FROM capability_version_storage
-                       WHERE pack_id=? AND version=? AND manifest_hash=?""",
-                    (pack_id, version, manifest_hash),
-                )
-            )
-            return None if not rows else _version_storage_from_row(rows[0])
-
     async def get_version(
         self, pack_id: str, version: str, manifest_hash: str | None = None
     ) -> CapabilityVersionRecord | None:

@@ -23,8 +23,6 @@ from simple_harness.agents.contracts import _message_from_json
 from simple_harness.agents.runtime import AgentRuntime
 from simple_harness.contracts.identity import EffectId
 
-from ..governance.budgets import UsageFact
-
 
 @dataclass(frozen=True, slots=True)
 class Liveness:
@@ -196,73 +194,6 @@ class AgentBridge:
         if record is not None:
             out["effect_state"] = str(getattr(record.state, "value", record.state))
         return out
-
-    def usage_facts(self, *, agent_id: str, include_unknown: bool = False) -> list[UsageFact]:
-        """Cost facts from the SDK invocation ledger (D10'): one fact per invocation.
-
-        ``include_unknown`` is off by default: a CLAIMED/UNKNOWN call is not a
-        final 0, and occupying the append-only ``usage_ref`` used to lose a later
-        charge.  Hierarchical service-intent give-up (P2.3l P1-1) opts in: the
-        ledger now overwrites an ``unknown=1`` row when the call is later known.
-        """
-
-        facts = []
-        for original in self._runtime.uow.list_provider_invocations(RunId(agent_id)):
-            record = self._runtime.uow.read_effective_provider_invocation(original.invocation_id)
-            assert record is not None
-            if str(record.state) == "unknown":
-                if include_unknown:
-                    facts.append(
-                        UsageFact(
-                            f"provider-invocation:{record.invocation_id}",
-                            0,
-                            0,
-                            unknown=True,
-                        )
-                    )
-                continue
-            if str(record.state) not in {"succeeded", "failed"}:
-                # CLAIMED is not a call; provisional is not a final 0.
-                continue
-            usage = record.usage_json if isinstance(record.usage_json, Mapping) else {}
-            tokens = usage.get("usage") if isinstance(usage, Mapping) else None
-            if self._runtime.ports.provider_admission is not None and (
-                not isinstance(tokens, Mapping)
-                or type(tokens.get("input_tokens")) is not int
-                or type(tokens.get("output_tokens")) is not int
-                or tokens["input_tokens"] <= 0
-                or tokens["output_tokens"] <= 0
-            ):
-                # Terminal transport failure without usage — or a relay's 0/0/0
-                # placeholder report (2026-09-24) — is not evidence of zero
-                # charge. The admission grant remains UNKNOWN instead; a
-                # hierarchical terminal import keeps it on the books as unknown
-                # so the released grant is never settled as a zero.  An admission
-                # denial never entered transport: it is a known zero, not unknown.
-                denied = (
-                    str(record.state) == "failed"
-                    and record.error_code == "provider_admission_denied"
-                )
-                if include_unknown and not denied:
-                    facts.append(
-                        UsageFact(
-                            f"provider-invocation:{record.invocation_id}",
-                            0,
-                            0,
-                            unknown=True,
-                        )
-                    )
-                continue
-            input_tokens = int((tokens or {}).get("input_tokens") or 0)
-            output_tokens = int((tokens or {}).get("output_tokens") or 0)
-            facts.append(
-                UsageFact(
-                    f"provider-invocation:{record.invocation_id}",
-                    input_tokens,
-                    output_tokens,
-                )
-            )
-        return facts
 
     def echoed_models(self, *, agent_id: str) -> set[str]:
         """Model names the provider echoed for this Run (D10' model_echo_mismatch check)."""

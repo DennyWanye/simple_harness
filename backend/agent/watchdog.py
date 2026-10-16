@@ -126,12 +126,6 @@ class WatchdogLoop:
 
     # ─── lifecycle ─────────────────────────────────────────────────────
 
-    def set_hook(self, hook: SupervisorHook) -> None:
-        """Replace the supervisor hook (used by main.py to wire S2's
-        dispatcher after watchdog construction).
-        """
-        self._hook = hook
-
     def is_running(self) -> bool:
         return self._task is not None and not self._task.done()
 

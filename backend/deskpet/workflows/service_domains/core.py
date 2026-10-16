@@ -164,16 +164,6 @@ class WorkflowServiceCore:
                 await self._owner_uow.close()
             self._closed = True
 
-    def bind_execution_delivery_wakeup(
-        self,
-        wakeup: Callable[[], None] | None,
-    ) -> None:
-        """Wake the event-driven Harness after an execution-owned delivery lands."""
-
-        if wakeup is not None and not callable(wakeup):
-            raise TypeError("execution delivery wakeup must be callable")
-        self._execution_delivery_wakeup = wakeup
-
     def ensure_runtime_active(self) -> None:
         if self._runtime_activation_required:
             self.runtime_adapters.require_active()

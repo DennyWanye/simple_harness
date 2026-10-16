@@ -194,14 +194,6 @@ class CapabilityCatalogGate:
             self._generation += 1
             self._condition.notify_all()
 
-    async def recover_closed(self, keys: Iterable[CatalogGateKey], *, reason: str) -> None:
-        values = self._keys(keys)
-        async with self._condition:
-            for key in values:
-                self._closed[key] = _required(reason, "reason")
-            self._generation += 1
-            self._condition.notify_all()
-
 
 __all__ = [
     "CapabilityCatalogGate",

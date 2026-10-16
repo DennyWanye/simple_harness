@@ -1000,14 +1000,6 @@ class SessionSearchService:
             cursor = nxt
         return tuple(ordered)
 
-    def page_pin(self, page: Mapping[str, Any], ordinal: int) -> Pin:
-        return Pin(
-            "artifact",
-            f"{page['receipt']['index_snapshot_id']}:page:{ordinal}",
-            ordinal,
-            digest(page),
-        )
-
     # ---- history read (C6) --------------------------------------------------------
 
     def read_history(

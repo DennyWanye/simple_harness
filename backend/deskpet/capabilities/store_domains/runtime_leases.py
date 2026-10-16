@@ -313,28 +313,6 @@ class RuntimeLeaseMixin(CapabilityStoreCore):
         async with self.write_transaction() as db:
             return await self._reconnect_runtime_lease_tx(db, runtime_lease_id, **kwargs)
 
-    async def heartbeat_runtime_lease(
-        self, runtime_lease_id: str, *, session_generation: int
-    ) -> CapabilityRuntimeLease:
-        async with self.write_transaction() as db:
-            cursor = await db.execute(
-                """UPDATE capability_runtime_leases SET heartbeat_at=?
-                   WHERE lease_id=? AND session_generation=? AND state!='stopped'""",
-                (self._clock(), runtime_lease_id, session_generation),
-            )
-            if cursor.rowcount != 1:
-                raise CapabilityStoreConflict(
-                    "runtime_generation_conflict",
-                    "runtime heartbeat does not match a live session",
-                )
-            row = await (
-                await db.execute(
-                    "SELECT * FROM capability_runtime_leases WHERE lease_id=?",
-                    (runtime_lease_id,),
-                )
-            ).fetchone()
-            return _runtime_lease_from_row(row)
-
     async def _claim_runtime_call_tx(
         self,
         db: aiosqlite.Connection,
@@ -557,14 +535,3 @@ class RuntimeLeaseMixin(CapabilityStoreCore):
             )
         ).fetchall()
         return tuple(_runtime_lease_from_row(row) for row in rows)
-
-    async def drain_unreferenced_runtimes(
-        self, *, pack_id: str, version: str, manifest_hash: str
-    ) -> tuple[CapabilityRuntimeLease, ...]:
-        async with self.write_transaction() as db:
-            return await self._drain_unreferenced_runtimes_tx(
-                db,
-                pack_id=pack_id,
-                version=version,
-                manifest_hash=manifest_hash,
-            )

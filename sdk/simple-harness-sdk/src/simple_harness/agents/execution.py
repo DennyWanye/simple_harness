@@ -1054,11 +1054,6 @@ class AgentExecutionDriver:
             )
         return None
 
-    def _settle_failed_provider_turn(self, invocation: DriverInvocation, run_id: RunId) -> None:
-        """Backward-compatible name: any definitely-failed turn releases the checkpoint."""
-
-        self._settle_failed_turn(invocation, run_id)
-
     def _settle_failed_turn(self, invocation: DriverInvocation, run_id: RunId) -> None:
         """Return the run-level ReAct checkpoint to ``ready`` after a failed turn.
 

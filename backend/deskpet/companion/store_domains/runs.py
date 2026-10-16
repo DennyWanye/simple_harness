@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict
 from typing import Any
@@ -248,59 +247,6 @@ class RunBindingMixin(CompanionStoreCore):
                     (owner.profile_id, owner.profile_generation, snapshot.snapshot_id),
                 ).fetchone()
             )
-
-    def resolve_owner_memory_read_scope_for_run(
-        self,
-        run_id: str,
-        *,
-        expected_ref: str | None = None,
-        expected_hash: str | None = None,
-    ) -> Mapping[str, Any]:
-        """Reopen the unique generation-0 memory scope frozen for ``run_id``."""
-
-        if not str(run_id or "").strip():
-            raise ValueError("memory scope resolution requires run_id")
-        with self.read() as db:
-            rows = db.execute(
-                """SELECT s.profile_id,s.profile_generation,d.dependency_id AS scope_ref,
-                          d.content_hash AS dependency_hash,m.scope_hash,m.binding_epoch,
-                          m.session_set_version,m.session_set_hash,m.as_of_message_id,
-                          m.session_ids_json
-                   FROM run_growth_snapshots s
-                   JOIN run_growth_dependency_items d
-                     ON d.profile_id=s.profile_id
-                    AND d.profile_generation=s.profile_generation
-                    AND d.snapshot_id=s.snapshot_id
-                    AND d.dependency_kind='memory_scope'
-                   JOIN owner_memory_read_scopes m
-                     ON m.profile_id=d.profile_id
-                    AND m.profile_generation=d.profile_generation
-                    AND m.scope_ref=d.dependency_id
-                   WHERE s.run_id=? AND s.snapshot_generation=0
-                     AND s.status IN ('prepared','bound','terminal')""",
-                (run_id,),
-            ).fetchall()
-        if len(rows) != 1:
-            raise CompanionStateError("owner_memory_scope_missing_or_ambiguous")
-        row = rows[0]
-        if row["dependency_hash"] != row["scope_hash"]:
-            raise CompanionStateError("owner_memory_scope_dependency_hash_mismatch")
-        if expected_ref is not None and row["scope_ref"] != expected_ref:
-            raise CompanionStateError("owner_memory_scope_ref_mismatch")
-        if expected_hash is not None and row["scope_hash"] != expected_hash:
-            raise CompanionStateError("owner_memory_scope_hash_mismatch")
-        return {
-            "schema_version": 1,
-            "profile_id": str(row["profile_id"]),
-            "profile_generation": int(row["profile_generation"]),
-            "binding_epoch": int(row["binding_epoch"]),
-            "session_ids": tuple(json.loads(str(row["session_ids_json"]))),
-            "session_set_version": int(row["session_set_version"]),
-            "session_set_hash": str(row["session_set_hash"]),
-            "as_of_message_id": int(row["as_of_message_id"]),
-            "scope_hash": str(row["scope_hash"]),
-            "scope_ref": str(row["scope_ref"]),
-        }
 
     def activate_run_binding(
         self,

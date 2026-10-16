@@ -451,19 +451,6 @@ class ProcessToolService:
             "released_private_memory_bytes": max(0, before_memory - after_memory),
         }
 
-    async def close_root_run(self, root_run_id: str) -> list[dict[str, Any]]:
-        async with self._lock:
-            lease_ids = [
-                lease_id
-                for lease_id, lease in self._leases.items()
-                if lease.root_run_id == root_run_id
-            ]
-        results = []
-        for lease_id in lease_ids:
-            with contextlib.suppress(KeyError, PermissionError):
-                results.append(await self.stop_owned(lease_id, root_run_id=root_run_id))
-        return results
-
     async def reset_for_tests(self) -> None:
         async with self._lock:
             leases = tuple(self._leases.values())
