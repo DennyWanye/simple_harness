@@ -1,0 +1,1424 @@
+{
+ "completion_probe_nudges_until_todos_done": {
+  "events": [
+   {
+    "__class__": "AssistantMessageEvent",
+    "content": "做完了",
+    "iteration": 1,
+    "model": "",
+    "reasoning_content": "",
+    "stop_reason": "end_turn",
+    "task_id": "t-char",
+    "tool_calls": [],
+    "type": "assistant_message"
+   },
+   {
+    "__class__": "AssistantMessageEvent",
+    "content": "真做完了",
+    "iteration": 2,
+    "model": "",
+    "reasoning_content": "",
+    "stop_reason": "end_turn",
+    "task_id": "t-char",
+    "tool_calls": [],
+    "type": "assistant_message"
+   },
+   {
+    "__class__": "FinalEvent",
+    "content": "真做完了",
+    "iteration": 2,
+    "reasoning_content": "",
+    "stop_reason": "end_turn",
+    "task_id": "t-char",
+    "total_cache_read_tokens": 0,
+    "total_cache_write_tokens": 0,
+    "total_input_tokens": 20,
+    "total_output_tokens": 10,
+    "type": "final"
+   }
+  ],
+  "llm": [
+   [
+    {
+     "content": "完成任务",
+     "role": "user",
+     "tool_call_id": null,
+     "tool_calls": null
+    }
+   ],
+   [
+    {
+     "content": "完成任务",
+     "role": "user",
+     "tool_call_id": null,
+     "tool_calls": null
+    },
+    {
+     "content": "做完了",
+     "role": "assistant",
+     "tool_call_id": null,
+     "tool_calls": null
+    },
+    {
+     "content": "你声明已完成（stop_reason=end_turn），但 todos 里还有 1 项未完成：\n  - 写测试\n\n请继续执行剩余 todos。如果某项确实做不了 / 不该做，请用 todo_write 把它标成 completed 并简述原因（或者改文案明确说明放弃理由）。不要再次空口说『我做完了』。",
+     "role": "system",
+     "tool_call_id": null,
+     "tool_calls": null
+    }
+   ]
+  ],
+  "trace": [
+   {
+    "iter": 1,
+    "kind": "iter_start",
+    "msg_count": 1
+   },
+   {
+    "content_preview": "做完了",
+    "iter": 1,
+    "kind": "llm_out",
+    "stop_reason": "end_turn",
+    "tool_calls": [],
+    "usage": {
+     "cache_read_tokens": 0,
+     "cache_write_tokens": 0,
+     "input_tokens": 10,
+     "output_tokens": 5
+    }
+   },
+   {
+    "iter": 1,
+    "kind": "gate",
+    "passed": false,
+    "reason": "incomplete_todos",
+    "which": "completion"
+   },
+   {
+    "iter": 2,
+    "kind": "iter_start",
+    "msg_count": 3
+   },
+   {
+    "content_preview": "真做完了",
+    "iter": 2,
+    "kind": "llm_out",
+    "stop_reason": "end_turn",
+    "tool_calls": [],
+    "usage": {
+     "cache_read_tokens": 0,
+     "cache_write_tokens": 0,
+     "input_tokens": 10,
+     "output_tokens": 5
+    }
+   },
+   {
+    "iter": 2,
+    "kind": "gate",
+    "passed": true,
+    "reason": "",
+    "which": "completion"
+   },
+   {
+    "gate_summary": {
+     "cost_usd": "<float>",
+     "elapsed_seconds": "<float>",
+     "reason": "success",
+     "tools_used": 0,
+     "turns_used": 2
+    },
+    "iter": 2,
+    "kind": "end",
+    "reason": "end_turn"
+   }
+  ]
+ },
+ "context_chain_budget_blocked_without_compressor": {
+  "estimates": [
+   {
+    "model_id": "stub-model",
+    "reserve": 4000
+   },
+   {
+    "model_id": "stub-model",
+    "reserve": 4000
+   }
+  ],
+  "events": [
+   {
+    "__class__": "ErrorEvent",
+    "detail": "provider_chain_context_budget_exceeded",
+    "error_class": "",
+    "iteration": 0,
+    "reason": "provider_context_budget_exceeded",
+    "task_id": "t-char",
+    "type": "error"
+   }
+  ],
+  "replans": [
+   {
+    "context_window": 64000,
+    "effective_pct": 0.9,
+    "generation_reserve": 4000
+   }
+  ]
+ },
+ "context_chain_budget_fits": {
+  "estimates": [
+   {
+    "model_id": "stub-model",
+    "reserve": 4000
+   },
+   {
+    "model_id": "stub-model",
+    "reserve": 4000
+   }
+  ],
+  "events": [
+   {
+    "__class__": "AssistantMessageEvent",
+    "content": "规划后回答",
+    "iteration": 1,
+    "model": "model-from-p",
+    "reasoning_content": "",
+    "stop_reason": "end_turn",
+    "task_id": "t-char",
+    "tool_calls": [],
+    "type": "assistant_message"
+   },
+   {
+    "__class__": "FinalEvent",
+    "content": "规划后回答",
+    "iteration": 1,
+    "reasoning_content": "",
+    "stop_reason": "end_turn",
+    "task_id": "t-char",
+    "total_cache_read_tokens": 0,
+    "total_cache_write_tokens": 0,
+    "total_input_tokens": 1,
+    "total_output_tokens": 1,
+    "type": "final"
+   }
+  ],
+  "provider": [
+   [
+    {
+     "content": "规划的问题",
+     "role": "user",
+     "tool_call_id": null,
+     "tool_calls": null
+    }
+   ]
+  ],
+  "replans": [
+   {
+    "context_window": 64000,
+    "effective_pct": 0.9,
+    "generation_reserve": 4000
+   }
+  ]
+ },
+ "context_chain_safe_plan_runs_coverage_jobs": {
+  "estimates": [
+   {
+    "model_id": "stub-model",
+    "reserve": 4000
+   },
+   {
+    "model_id": "stub-model",
+    "reserve": 4000
+   }
+  ],
+  "events": [
+   {
+    "__class__": "AssistantMessageEvent",
+    "content": "规划后回答",
+    "iteration": 1,
+    "model": "model-from-p",
+    "reasoning_content": "",
+    "stop_reason": "end_turn",
+    "task_id": "t-char",
+    "tool_calls": [],
+    "type": "assistant_message"
+   },
+   {
+    "__class__": "FinalEvent",
+    "content": "规划后回答",
+    "iteration": 1,
+    "reasoning_content": "",
+    "stop_reason": "end_turn",
+    "task_id": "t-char",
+    "total_cache_read_tokens": 0,
+    "total_cache_write_tokens": 0,
+    "total_input_tokens": 1,
+    "total_output_tokens": 1,
+    "type": "final"
+   }
+  ],
+  "provider": [
+   [
+    {
+     "content": "原规划",
+     "role": "user",
+     "tool_call_id": null,
+     "tool_calls": null
+    }
+   ]
+  ],
+  "replans": [
+   {
+    "context_window": 64000,
+    "effective_pct": 0.9,
+    "generation_reserve": 4000
+   },
+   {
+    "context_window": 64000,
+    "effective_pct": 0.9,
+    "generation_reserve": 4000
+   }
+  ],
+  "side": [
+   "flush:req-6:chain-safe:1:1",
+   "jobs:req-6:chain-safe:1"
+  ]
+ },
+ "coverage_jobs_block_without_compressor": {
+  "events": [
+   {
+    "__class__": "ErrorEvent",
+    "detail": "coverage_compaction_owner_unavailable",
+    "error_class": "",
+    "iteration": 0,
+    "reason": "context_coverage_block",
+    "task_id": "t-char",
+    "type": "error"
+   }
+  ],
+  "replans": []
+ },
+ "coverage_jobs_compacted_then_replanned": {
+  "events": [
+   {
+    "__class__": "AssistantMessageEvent",
+    "content": "压缩后回答",
+    "iteration": 1,
+    "model": "",
+    "reasoning_content": "",
+    "stop_reason": "end_turn",
+    "task_id": "t-char",
+    "tool_calls": [],
+    "type": "assistant_message"
+   },
+   {
+    "__class__": "FinalEvent",
+    "content": "压缩后回答",
+    "iteration": 1,
+    "reasoning_content": "",
+    "stop_reason": "end_turn",
+    "task_id": "t-char",
+    "total_cache_read_tokens": 0,
+    "total_cache_write_tokens": 0,
+    "total_input_tokens": 10,
+    "total_output_tokens": 5,
+    "type": "final"
+   }
+  ],
+  "llm": [
+   [
+    {
+     "content": "压缩后的历史",
+     "role": "user",
+     "tool_call_id": null,
+     "tool_calls": null
+    }
+   ]
+  ],
+  "side": [
+   "flush:req-4:coverage:1",
+   "jobs:req-4:coverage:1"
+  ]
+ },
+ "coverage_replan_invalid_blocks": {
+  "events": [
+   {
+    "__class__": "ErrorEvent",
+    "detail": "session_history_coverage_invalid",
+    "error_class": "",
+    "iteration": 0,
+    "reason": "context_coverage_block",
+    "task_id": "t-char",
+    "type": "error"
+   }
+  ]
+ },
+ "empty_provider_chain_is_reported_once": {
+  "events": [
+   {
+    "__class__": "ErrorEvent",
+    "detail": "未配置任何 LLM provider。请打开设置 → LLM Providers → 添加",
+    "error_class": "",
+    "iteration": 0,
+    "reason": "no_provider_configured",
+    "task_id": "t-char",
+    "type": "error"
+   }
+  ]
+ },
+ "evidence_gate_nudges_then_final": {
+  "events": [
+   {
+    "__class__": "AssistantMessageEvent",
+    "content": "猜的答案",
+    "iteration": 1,
+    "model": "",
+    "reasoning_content": "",
+    "stop_reason": "end_turn",
+    "task_id": "t-char",
+    "tool_calls": [],
+    "type": "assistant_message"
+   },
+   {
+    "__class__": "PipelineEvent",
+    "iteration": 1,
+    "payload": {
+     "blocked": true,
+     "nudge_count": 1,
+     "reason": "no_evidence"
+    },
+    "task_id": "t-char",
+    "type": "chat_v2_evidence_gate"
+   },
+   {
+    "__class__": "AssistantMessageEvent",
+    "content": "还是猜",
+    "iteration": 2,
+    "model": "",
+    "reasoning_content": "",
+    "stop_reason": "end_turn",
+    "task_id": "t-char",
+    "tool_calls": [],
+    "type": "assistant_message"
+   },
+   {
+    "__class__": "PipelineEvent",
+    "iteration": 2,
+    "payload": {
+     "blocked": false,
+     "nudge_count": 1,
+     "reason": "exhausted"
+    },
+    "task_id": "t-char",
+    "type": "chat_v2_evidence_gate"
+   },
+   {
+    "__class__": "FinalEvent",
+    "content": "还是猜",
+    "iteration": 2,
+    "reasoning_content": "",
+    "stop_reason": "end_turn",
+    "task_id": "t-char",
+    "total_cache_read_tokens": 0,
+    "total_cache_write_tokens": 0,
+    "total_input_tokens": 20,
+    "total_output_tokens": 10,
+    "type": "final"
+   }
+  ],
+  "llm": [
+   [
+    {
+     "content": "为什么报错",
+     "role": "user",
+     "tool_call_id": null,
+     "tool_calls": null
+    }
+   ],
+   [
+    {
+     "content": "为什么报错",
+     "role": "user",
+     "tool_call_id": null,
+     "tool_calls": null
+    },
+    {
+     "content": "猜的答案",
+     "role": "assistant",
+     "tool_call_id": null,
+     "tool_calls": null
+    },
+    {
+     "content": "<调查>\n你还没做任何取证调查就要下结论。**没有调查就没有发言权**——先用取证类工具（deepresearch, fetch_url, glob, grep, inspect, list_files 等）查清事实再回答。",
+     "role": "system",
+     "tool_call_id": null,
+     "tool_calls": null
+    }
+   ]
+  ]
+ },
+ "external_evaluator_approves": {
+  "evaluator": [
+   {
+    "conversation_summary": "已部署到生产",
+    "objective_evidence": [],
+    "original_goal": "部署到生产",
+    "produced_artifacts": []
+   }
+  ],
+  "events": [
+   {
+    "__class__": "AssistantMessageEvent",
+    "content": "已部署到生产",
+    "iteration": 1,
+    "model": "",
+    "reasoning_content": "",
+    "stop_reason": "end_turn",
+    "task_id": "t-char",
+    "tool_calls": [],
+    "type": "assistant_message"
+   },
+   {
+    "__class__": "FinalEvent",
+    "content": "已部署到生产",
+    "iteration": 1,
+    "reasoning_content": "",
+    "stop_reason": "end_turn",
+    "task_id": "t-char",
+    "total_cache_read_tokens": 0,
+    "total_cache_write_tokens": 0,
+    "total_input_tokens": 10,
+    "total_output_tokens": 5,
+    "type": "final"
+   }
+  ],
+  "metrics": []
+ },
+ "external_evaluator_requests_revision": {
+  "evaluator": [
+   {
+    "conversation_summary": "已部署到生产",
+    "objective_evidence": [],
+    "original_goal": "部署到生产",
+    "produced_artifacts": []
+   }
+  ],
+  "events": [
+   {
+    "__class__": "AssistantMessageEvent",
+    "content": "已部署到生产",
+    "iteration": 1,
+    "model": "",
+    "reasoning_content": "",
+    "stop_reason": "end_turn",
+    "task_id": "t-char",
+    "tool_calls": [],
+    "type": "assistant_message"
+   },
+   {
+    "__class__": "ErrorEvent",
+    "detail": "[external_evaluator] 质量不足 (score=3/10): 缺证据",
+    "error_class": "",
+    "iteration": 1,
+    "reason": "evaluator_revise",
+    "task_id": "t-char",
+    "type": "error"
+   }
+  ],
+  "metrics": [
+   [
+    "evaluator_revise_triggered",
+    {
+     "issues_count": 1,
+     "quality_score": 3
+    }
+   ]
+  ]
+ },
+ "max_iterations_exhausted_by_repeated_nudges": {
+  "events": [
+   {
+    "__class__": "AssistantMessageEvent",
+    "content": "猜1",
+    "iteration": 1,
+    "model": "",
+    "reasoning_content": "",
+    "stop_reason": "end_turn",
+    "task_id": "t-char",
+    "tool_calls": [],
+    "type": "assistant_message"
+   },
+   {
+    "__class__": "PipelineEvent",
+    "iteration": 1,
+    "payload": {
+     "blocked": true,
+     "nudge_count": 1,
+     "reason": "no_evidence"
+    },
+    "task_id": "t-char",
+    "type": "chat_v2_evidence_gate"
+   },
+   {
+    "__class__": "AssistantMessageEvent",
+    "content": "猜2",
+    "iteration": 2,
+    "model": "",
+    "reasoning_content": "",
+    "stop_reason": "end_turn",
+    "task_id": "t-char",
+    "tool_calls": [],
+    "type": "assistant_message"
+   },
+   {
+    "__class__": "PipelineEvent",
+    "iteration": 2,
+    "payload": {
+     "blocked": true,
+     "nudge_count": 2,
+     "reason": "no_evidence"
+    },
+    "task_id": "t-char",
+    "type": "chat_v2_evidence_gate"
+   },
+   {
+    "__class__": "ErrorEvent",
+    "detail": "exceeded 2 iterations without terminal stop_reason",
+    "error_class": "",
+    "iteration": 2,
+    "reason": "max_iterations",
+    "task_id": "t-char",
+    "type": "error"
+   }
+  ],
+  "llm": [
+   [
+    {
+     "content": "为什么",
+     "role": "user",
+     "tool_call_id": null,
+     "tool_calls": null
+    }
+   ],
+   [
+    {
+     "content": "为什么",
+     "role": "user",
+     "tool_call_id": null,
+     "tool_calls": null
+    },
+    {
+     "content": "猜1",
+     "role": "assistant",
+     "tool_call_id": null,
+     "tool_calls": null
+    },
+    {
+     "content": "<调查>\n你还没做任何取证调查就要下结论。**没有调查就没有发言权**——先用取证类工具（deepresearch, fetch_url, glob, grep, inspect, list_files 等）查清事实再回答。",
+     "role": "system",
+     "tool_call_id": null,
+     "tool_calls": null
+    }
+   ]
+  ]
+ },
+ "max_iterations_with_convergence_report": {
+  "events": [
+   {
+    "__class__": "AssistantMessageEvent",
+    "content": "猜1",
+    "iteration": 1,
+    "model": "",
+    "reasoning_content": "",
+    "stop_reason": "end_turn",
+    "task_id": "t-char",
+    "tool_calls": [],
+    "type": "assistant_message"
+   },
+   {
+    "__class__": "PipelineEvent",
+    "iteration": 1,
+    "payload": {
+     "blocked": true,
+     "nudge_count": 1,
+     "reason": "no_evidence"
+    },
+    "task_id": "t-char",
+    "type": "chat_v2_evidence_gate"
+   },
+   {
+    "__class__": "AssistantMessageEvent",
+    "content": "猜2",
+    "iteration": 2,
+    "model": "",
+    "reasoning_content": "",
+    "stop_reason": "end_turn",
+    "task_id": "t-char",
+    "tool_calls": [],
+    "type": "assistant_message"
+   },
+   {
+    "__class__": "PipelineEvent",
+    "iteration": 2,
+    "payload": {
+     "blocked": true,
+     "nudge_count": 2,
+     "reason": "no_evidence"
+    },
+    "task_id": "t-char",
+    "type": "chat_v2_evidence_gate"
+   },
+   {
+    "__class__": "PipelineEvent",
+    "iteration": 2,
+    "payload": {
+     "converged": false,
+     "principal_resolved": false,
+     "report": "<收敛>\n主要矛盾是否解决：否\n未对账声明数：0\n已用轮数/工具数：2/0\n止损原因：error_max_turns\n建议下一步：上述卡点需要补充信息或换思路，下次可从「主要矛盾」处继续。",
+     "stop_reason": "error_max_turns"
+    },
+    "task_id": "t-char",
+    "type": "chat_v2_convergence"
+   },
+   {
+    "__class__": "FinalEvent",
+    "content": "<收敛>\n主要矛盾是否解决：否\n未对账声明数：0\n已用轮数/工具数：2/0\n止损原因：error_max_turns\n建议下一步：上述卡点需要补充信息或换思路，下次可从「主要矛盾」处继续。",
+    "iteration": 2,
+    "reasoning_content": "",
+    "stop_reason": "stop_loss",
+    "task_id": "t-char",
+    "total_cache_read_tokens": 0,
+    "total_cache_write_tokens": 0,
+    "total_input_tokens": 0,
+    "total_output_tokens": 0,
+    "type": "final"
+   }
+  ],
+  "llm": [
+   [
+    {
+     "content": "为什么",
+     "role": "user",
+     "tool_call_id": null,
+     "tool_calls": null
+    }
+   ],
+   [
+    {
+     "content": "为什么",
+     "role": "user",
+     "tool_call_id": null,
+     "tool_calls": null
+    },
+    {
+     "content": "猜1",
+     "role": "assistant",
+     "tool_call_id": null,
+     "tool_calls": null
+    },
+    {
+     "content": "<调查>\n你还没做任何取证调查就要下结论。**没有调查就没有发言权**——先用取证类工具（deepresearch, fetch_url, glob, grep, inspect, list_files 等）查清事实再回答。",
+     "role": "system",
+     "tool_call_id": null,
+     "tool_calls": null
+    }
+   ]
+  ]
+ },
+ "plain_final_answer": {
+  "events": [
+   {
+    "__class__": "AssistantMessageEvent",
+    "content": "你好",
+    "iteration": 1,
+    "model": "",
+    "reasoning_content": "",
+    "stop_reason": "end_turn",
+    "task_id": "t-char",
+    "tool_calls": [],
+    "type": "assistant_message"
+   },
+   {
+    "__class__": "FinalEvent",
+    "content": "你好",
+    "iteration": 1,
+    "reasoning_content": "",
+    "stop_reason": "end_turn",
+    "task_id": "t-char",
+    "total_cache_read_tokens": 0,
+    "total_cache_write_tokens": 0,
+    "total_input_tokens": 10,
+    "total_output_tokens": 5,
+    "type": "final"
+   }
+  ],
+  "llm": [
+   [
+    {
+     "content": "你好",
+     "role": "user",
+     "tool_call_id": null,
+     "tool_calls": null
+    }
+   ]
+  ]
+ },
+ "provider_chain_falls_back_on_transient_error": {
+  "a": [
+   [
+    {
+     "content": "问题",
+     "role": "user",
+     "tool_call_id": null,
+     "tool_calls": null
+    }
+   ]
+  ],
+  "b": [
+   [
+    {
+     "content": "问题",
+     "role": "user",
+     "tool_call_id": null,
+     "tool_calls": null
+    }
+   ]
+  ],
+  "events": [
+   {
+    "__class__": "ProviderChainFallbackEvent",
+    "from_": "a",
+    "iteration": 1,
+    "reason": "boom",
+    "session_id": "s-char",
+    "task_id": "t-char",
+    "to": "b",
+    "type": "provider_chain_fallback"
+   },
+   {
+    "__class__": "AssistantMessageEvent",
+    "content": "来自 b",
+    "iteration": 1,
+    "model": "model-from-b",
+    "reasoning_content": "",
+    "stop_reason": "end_turn",
+    "task_id": "t-char",
+    "tool_calls": [],
+    "type": "assistant_message"
+   },
+   {
+    "__class__": "FinalEvent",
+    "content": "来自 b",
+    "iteration": 1,
+    "reasoning_content": "",
+    "stop_reason": "end_turn",
+    "task_id": "t-char",
+    "total_cache_read_tokens": 0,
+    "total_cache_write_tokens": 0,
+    "total_input_tokens": 1,
+    "total_output_tokens": 1,
+    "type": "final"
+   }
+  ]
+ },
+ "provider_error_becomes_error_event": {
+  "events": [
+   {
+    "__class__": "ErrorEvent",
+    "detail": "relay down",
+    "error_class": "",
+    "iteration": 1,
+    "reason": "llm_error",
+    "task_id": "t-char",
+    "type": "error"
+   }
+  ],
+  "llm": [
+   [
+    {
+     "content": "问题",
+     "role": "user",
+     "tool_call_id": null,
+     "tool_calls": null
+    }
+   ]
+  ]
+ },
+ "reasoning_only_turn_is_repaired_once": {
+  "events": [
+   {
+    "__class__": "AssistantMessageEvent",
+    "content": "答",
+    "iteration": 3,
+    "model": "",
+    "reasoning_content": "",
+    "stop_reason": "end_turn",
+    "task_id": "t-char",
+    "tool_calls": [],
+    "type": "assistant_message"
+   },
+   {
+    "__class__": "FinalEvent",
+    "content": "答",
+    "iteration": 3,
+    "reasoning_content": "",
+    "stop_reason": "end_turn",
+    "task_id": "t-char",
+    "total_cache_read_tokens": 0,
+    "total_cache_write_tokens": 0,
+    "total_input_tokens": 30,
+    "total_output_tokens": 15,
+    "type": "final"
+   }
+  ],
+  "llm": [
+   [
+    {
+     "content": "问题",
+     "role": "user",
+     "tool_call_id": null,
+     "tool_calls": null
+    }
+   ],
+   [
+    {
+     "content": "问题",
+     "role": "user",
+     "tool_call_id": null,
+     "tool_calls": null
+    },
+    {
+     "content": "",
+     "role": "assistant",
+     "tool_call_id": null,
+     "tool_calls": null
+    },
+    {
+     "content": "Recovery attempt 1 of 3. Your previous turn contained only internal reasoning and no user-visible answer or tool call. Do not end a turn this way. If your reasoning selected an available tool, emit the actual structured tool call now. Otherwise provide a concise user-facing answer.",
+     "role": "system",
+     "tool_call_id": null,
+     "tool_calls": null
+    }
+   ],
+   [
+    {
+     "content": "问题",
+     "role": "user",
+     "tool_call_id": null,
+     "tool_calls": null
+    },
+    {
+     "content": "",
+     "role": "assistant",
+     "tool_call_id": null,
+     "tool_calls": null
+    },
+    {
+     "content": "Recovery attempt 1 of 3. Your previous turn contained only internal reasoning and no user-visible answer or tool call. Do not end a turn this way. If your reasoning selected an available tool, emit the actual structured tool call now. Otherwise provide a concise user-facing answer.",
+     "role": "system",
+     "tool_call_id": null,
+     "tool_calls": null
+    },
+    {
+     "content": "",
+     "role": "assistant",
+     "tool_call_id": null,
+     "tool_calls": null
+    },
+    {
+     "content": "Recovery attempt 2 of 3. Your previous turn contained only internal reasoning and no user-visible answer or tool call. Do not end a turn this way. If your reasoning selected an available tool, emit the actual structured tool call now. Otherwise provide a concise user-facing answer.",
+     "role": "system",
+     "tool_call_id": null,
+     "tool_calls": null
+    }
+   ]
+  ]
+ },
+ "self_check_gate_gives_up_after_max_nudges": {
+  "events": [
+   {
+    "__class__": "AssistantMessageEvent",
+    "content": "结论 A",
+    "iteration": 1,
+    "model": "",
+    "reasoning_content": "",
+    "stop_reason": "end_turn",
+    "task_id": "t-char",
+    "tool_calls": [],
+    "type": "assistant_message"
+   },
+   {
+    "__class__": "PipelineEvent",
+    "iteration": 1,
+    "payload": {
+     "claims_unverified": [
+      "claim-1"
+     ],
+     "heterogeneous": false,
+     "mode": "claims",
+     "passed": false
+    },
+    "task_id": "t-char",
+    "type": "chat_v2_selfcheck"
+   },
+   {
+    "__class__": "AssistantMessageEvent",
+    "content": "结论 B",
+    "iteration": 2,
+    "model": "",
+    "reasoning_content": "",
+    "stop_reason": "end_turn",
+    "task_id": "t-char",
+    "tool_calls": [],
+    "type": "assistant_message"
+   },
+   {
+    "__class__": "PipelineEvent",
+    "iteration": 2,
+    "payload": {
+     "claims_unverified": [
+      "claim-1"
+     ],
+     "heterogeneous": false,
+     "mode": "claims",
+     "passed": false
+    },
+    "task_id": "t-char",
+    "type": "chat_v2_selfcheck"
+   },
+   {
+    "__class__": "AssistantMessageEvent",
+    "content": "结论 C",
+    "iteration": 3,
+    "model": "",
+    "reasoning_content": "",
+    "stop_reason": "end_turn",
+    "task_id": "t-char",
+    "tool_calls": [],
+    "type": "assistant_message"
+   },
+   {
+    "__class__": "ErrorEvent",
+    "detail": "结论 C",
+    "error_class": "",
+    "iteration": 3,
+    "reason": "verify_exhausted",
+    "task_id": "t-char",
+    "type": "error"
+   }
+  ],
+  "gate": [
+   {
+    "assistant_text": "结论 A",
+    "failure_count": 0,
+    "goal_text": "排查问题",
+    "ledger": [],
+    "objective_evidence": [],
+    "problem_type": "debug",
+    "produced_artifacts": []
+   },
+   {
+    "assistant_text": "结论 B",
+    "failure_count": 1,
+    "goal_text": "排查问题",
+    "ledger": [],
+    "objective_evidence": [],
+    "problem_type": "debug",
+    "produced_artifacts": []
+   }
+  ],
+  "llm": [
+   [
+    {
+     "content": "排查问题",
+     "role": "user",
+     "tool_call_id": null,
+     "tool_calls": null
+    }
+   ],
+   [
+    {
+     "content": "排查问题",
+     "role": "user",
+     "tool_call_id": null,
+     "tool_calls": null
+    },
+    {
+     "content": "结论 A",
+     "role": "assistant",
+     "tool_call_id": null,
+     "tool_calls": null
+    },
+    {
+     "content": "<自检> 自检未通过：声明与凭据不符。请核对你的结论",
+     "role": "system",
+     "tool_call_id": null,
+     "tool_calls": null
+    }
+   ],
+   [
+    {
+     "content": "排查问题",
+     "role": "user",
+     "tool_call_id": null,
+     "tool_calls": null
+    },
+    {
+     "content": "结论 A",
+     "role": "assistant",
+     "tool_call_id": null,
+     "tool_calls": null
+    },
+    {
+     "content": "<自检> 自检未通过：声明与凭据不符。请核对你的结论",
+     "role": "system",
+     "tool_call_id": null,
+     "tool_calls": null
+    },
+    {
+     "content": "自检多次未通过（声明与凭据不符），本轮必须 end_turn：向用户如实总结做了什么、哪些未能验证、建议下一步。不要再调用任何工具。",
+     "role": "system",
+     "tool_call_id": null,
+     "tool_calls": null
+    }
+   ]
+  ]
+ },
+ "self_check_gate_nudges_then_passes": {
+  "events": [
+   {
+    "__class__": "AssistantMessageEvent",
+    "content": "结论 A",
+    "iteration": 1,
+    "model": "",
+    "reasoning_content": "",
+    "stop_reason": "end_turn",
+    "task_id": "t-char",
+    "tool_calls": [],
+    "type": "assistant_message"
+   },
+   {
+    "__class__": "PipelineEvent",
+    "iteration": 1,
+    "payload": {
+     "claims_unverified": [
+      "claim-1"
+     ],
+     "heterogeneous": false,
+     "mode": "claims",
+     "passed": false
+    },
+    "task_id": "t-char",
+    "type": "chat_v2_selfcheck"
+   },
+   {
+    "__class__": "AssistantMessageEvent",
+    "content": "核对后的结论",
+    "iteration": 2,
+    "model": "",
+    "reasoning_content": "",
+    "stop_reason": "end_turn",
+    "task_id": "t-char",
+    "tool_calls": [],
+    "type": "assistant_message"
+   },
+   {
+    "__class__": "PipelineEvent",
+    "iteration": 2,
+    "payload": {
+     "claims_unverified": [],
+     "heterogeneous": false,
+     "mode": "claims",
+     "passed": true
+    },
+    "task_id": "t-char",
+    "type": "chat_v2_selfcheck"
+   },
+   {
+    "__class__": "FinalEvent",
+    "content": "核对后的结论",
+    "iteration": 2,
+    "reasoning_content": "",
+    "stop_reason": "end_turn",
+    "task_id": "t-char",
+    "total_cache_read_tokens": 0,
+    "total_cache_write_tokens": 0,
+    "total_input_tokens": 20,
+    "total_output_tokens": 10,
+    "type": "final"
+   }
+  ],
+  "gate": [
+   {
+    "assistant_text": "结论 A",
+    "failure_count": 0,
+    "goal_text": "排查问题",
+    "ledger": [],
+    "objective_evidence": [],
+    "problem_type": "debug",
+    "produced_artifacts": []
+   },
+   {
+    "assistant_text": "核对后的结论",
+    "failure_count": 1,
+    "goal_text": "排查问题",
+    "ledger": [],
+    "objective_evidence": [],
+    "problem_type": "debug",
+    "produced_artifacts": []
+   }
+  ],
+  "llm": [
+   [
+    {
+     "content": "排查问题",
+     "role": "user",
+     "tool_call_id": null,
+     "tool_calls": null
+    }
+   ],
+   [
+    {
+     "content": "排查问题",
+     "role": "user",
+     "tool_call_id": null,
+     "tool_calls": null
+    },
+    {
+     "content": "结论 A",
+     "role": "assistant",
+     "tool_call_id": null,
+     "tool_calls": null
+    },
+    {
+     "content": "<自检> 自检未通过：声明与凭据不符。请核对你的结论",
+     "role": "system",
+     "tool_call_id": null,
+     "tool_calls": null
+    }
+   ]
+  ],
+  "trace": [
+   {
+    "iter": 1,
+    "kind": "iter_start",
+    "msg_count": 1
+   },
+   {
+    "content_preview": "结论 A",
+    "iter": 1,
+    "kind": "llm_out",
+    "stop_reason": "end_turn",
+    "tool_calls": [],
+    "usage": {
+     "cache_read_tokens": 0,
+     "cache_write_tokens": 0,
+     "input_tokens": 10,
+     "output_tokens": 5
+    }
+   },
+   {
+    "iter": 2,
+    "kind": "iter_start",
+    "msg_count": 3
+   },
+   {
+    "content_preview": "核对后的结论",
+    "iter": 2,
+    "kind": "llm_out",
+    "stop_reason": "end_turn",
+    "tool_calls": [],
+    "usage": {
+     "cache_read_tokens": 0,
+     "cache_write_tokens": 0,
+     "input_tokens": 10,
+     "output_tokens": 5
+    }
+   },
+   {
+    "gate_summary": {
+     "cost_usd": "<float>",
+     "elapsed_seconds": "<float>",
+     "reason": "success",
+     "tools_used": 0,
+     "turns_used": 2
+    },
+    "iter": 2,
+    "kind": "end",
+    "reason": "end_turn"
+   }
+  ]
+ },
+ "termination_gate_cap_report_False": {
+  "events": [
+   {
+    "__class__": "AssistantMessageEvent",
+    "content": "猜1",
+    "iteration": 1,
+    "model": "",
+    "reasoning_content": "",
+    "stop_reason": "end_turn",
+    "task_id": "t-char",
+    "tool_calls": [],
+    "type": "assistant_message"
+   },
+   {
+    "__class__": "PipelineEvent",
+    "iteration": 1,
+    "payload": {
+     "blocked": true,
+     "nudge_count": 1,
+     "reason": "no_evidence"
+    },
+    "task_id": "t-char",
+    "type": "chat_v2_evidence_gate"
+   },
+   {
+    "__class__": "ErrorEvent",
+    "detail": "Termination gate blocked LLM call",
+    "error_class": "",
+    "iteration": 2,
+    "reason": "error_max_turns",
+    "task_id": "t-char",
+    "type": "error"
+   }
+  ],
+  "llm": [
+   [
+    {
+     "content": "为什么",
+     "role": "user",
+     "tool_call_id": null,
+     "tool_calls": null
+    }
+   ]
+  ]
+ },
+ "termination_gate_cap_report_True": {
+  "events": [
+   {
+    "__class__": "AssistantMessageEvent",
+    "content": "猜1",
+    "iteration": 1,
+    "model": "",
+    "reasoning_content": "",
+    "stop_reason": "end_turn",
+    "task_id": "t-char",
+    "tool_calls": [],
+    "type": "assistant_message"
+   },
+   {
+    "__class__": "PipelineEvent",
+    "iteration": 1,
+    "payload": {
+     "blocked": true,
+     "nudge_count": 1,
+     "reason": "no_evidence"
+    },
+    "task_id": "t-char",
+    "type": "chat_v2_evidence_gate"
+   },
+   {
+    "__class__": "PipelineEvent",
+    "iteration": 2,
+    "payload": {
+     "converged": false,
+     "principal_resolved": false,
+     "report": "<收敛>\n主要矛盾是否解决：否\n未对账声明数：0\n已用轮数/工具数：1/0\n止损原因：error_max_turns\n建议下一步：上述卡点需要补充信息或换思路，下次可从「主要矛盾」处继续。",
+     "stop_reason": "error_max_turns"
+    },
+    "task_id": "t-char",
+    "type": "chat_v2_convergence"
+   },
+   {
+    "__class__": "FinalEvent",
+    "content": "<收敛>\n主要矛盾是否解决：否\n未对账声明数：0\n已用轮数/工具数：1/0\n止损原因：error_max_turns\n建议下一步：上述卡点需要补充信息或换思路，下次可从「主要矛盾」处继续。",
+    "iteration": 2,
+    "reasoning_content": "",
+    "stop_reason": "stop_loss",
+    "task_id": "t-char",
+    "total_cache_read_tokens": 0,
+    "total_cache_write_tokens": 0,
+    "total_input_tokens": 0,
+    "total_output_tokens": 0,
+    "type": "final"
+   }
+  ],
+  "llm": [
+   [
+    {
+     "content": "为什么",
+     "role": "user",
+     "tool_call_id": null,
+     "tool_calls": null
+    }
+   ]
+  ]
+ },
+ "tool_request_pauses_at_external_batch": {
+  "events": [
+   {
+    "__class__": "AssistantMessageEvent",
+    "content": "",
+    "iteration": 1,
+    "model": "",
+    "reasoning_content": "",
+    "stop_reason": "tool_use",
+    "task_id": "t-char",
+    "tool_calls": [
+     "<ToolCall>"
+    ],
+    "type": "assistant_message"
+   },
+   {
+    "__class__": "ToolBatchEvent",
+    "canonical_messages": [
+     {
+      "content": "读 a.txt",
+      "role": "user"
+     },
+     {
+      "content": "",
+      "role": "assistant",
+      "tool_calls": [
+       {
+        "function": {
+         "arguments": "{\"path\": \"a.txt\"}",
+         "name": "read_file"
+        },
+        "id": "tc-1",
+        "type": "function"
+       }
+      ]
+     }
+    ],
+    "feedback_state": {
+     "evidence_gathered": false,
+     "evidence_nudges_used": 0,
+     "force_finish_queued": false,
+     "iteration": 1,
+     "skills_used_order": [],
+     "tools_used_count": 0
+    },
+    "iteration": 1,
+    "task_id": "t-char",
+    "tool_calls": [
+     "<ToolCall>"
+    ],
+    "type": "tool_batch"
+   }
+  ],
+  "llm": [
+   [
+    {
+     "content": "读 a.txt",
+     "role": "user",
+     "tool_call_id": null,
+     "tool_calls": null
+    }
+   ]
+  ],
+  "tools": []
+ },
+ "unexpected_exception_propagates": {
+  "events": [],
+  "raised": "RuntimeError('bug')"
+ }
+}
