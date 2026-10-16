@@ -23,6 +23,7 @@ import { dark, titleText, transition } from "../theme/components";
 import { tokens } from "../theme/tokens";
 import type { ControlMessage, IncomingMessage } from "../types/messages";
 import type { ControlChannel } from "../ws/ControlChannel";
+import { sendWhenConnected } from "../ws/sendWhenConnected";
 import {
   clampChatTurnTimeoutMinutes,
   buildChatTurnTimeoutGetMessage,
@@ -760,29 +761,36 @@ export interface StorageUsageData {
 }
 export function StorageUsageSection({ getChannel }: { getChannel: () => ControlChannel | null }) {
   const [data, setData] = useState<StorageUsageData | null>(null);
-  const [busy, setBusy] = useState(false);
+  // 有通道就在挂载时读一次，所以首次渲染就是读取中。
+  const [busy, setBusy] = useState(() => getChannel() !== null);
   const [error, setError] = useState<string | null>(null);
   const pending = useRef<string | null>(null);
   const counter = useRef(0);
 
-  const request = useCallback(
+  // 只发请求，不写状态；返回是否发出。
+  const send = useCallback(
     (refresh: boolean) => {
       const ch = getChannel();
-      if (!ch) {
-        setError("连接不可用");
-        return;
-      }
+      if (!ch) return false;
       const id = `storage-${Date.now()}-${++counter.current}`;
       pending.current = id;
-      setBusy(true);
-      setError(null);
-      if (!ch.send(buildStorageUsageMessage(id, refresh))) {
-        setBusy(false);
-        setError("连接不可用，请求未发送");
-      }
+      return ch.send(buildStorageUsageMessage(id, refresh));
     },
     [getChannel],
   );
+  // 点击"重新测量"：先设读取中，发不出去就报错。
+  const request = (refresh: boolean) => {
+    if (!getChannel()) {
+      setError("连接不可用");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    if (!send(refresh)) {
+      setBusy(false);
+      setError("连接不可用，请求未发送");
+    }
+  };
 
   useEffect(() => {
     const ch = getChannel();
@@ -805,11 +813,13 @@ export function StorageUsageSection({ getChannel }: { getChannel: () => ControlC
       }
       setData(payload.data);
     });
-    request(false);
+    // 挂载读一次：没连上就等连上再发（结果走上面的消息回调）。
+    const cancelSend = sendWhenConnected(ch, () => send(false));
     return () => {
       off();
+      cancelSend();
     };
-  }, [getChannel, request]);
+  }, [getChannel, send]);
 
   const over = !!data?.over_warn;
   return (
@@ -896,15 +906,13 @@ export type GlobalBudgetData = {
 };
 export function GlobalBudgetSection({ getChannel }: { getChannel: () => ControlChannel | null }) {
   const [data, setData] = useState<GlobalBudgetData | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  // 挂载时没有通道就直接说明（原来在 effect 里补写）。
+  const [error, setError] = useState<string | null>(() => (getChannel() ? null : "连接不可用"));
   const pending = useRef<string | null>(null);
 
   useEffect(() => {
     const ch = getChannel();
-    if (!ch) {
-      setError("连接不可用");
-      return;
-    }
+    if (!ch) return;
     const off = ch.onMessage((raw: IncomingMessage) => {
       const msg = raw as unknown as { type?: string; payload?: unknown };
       if (msg.type !== "orchestration_status_response") return;
@@ -922,18 +930,19 @@ export function GlobalBudgetSection({ getChannel }: { getChannel: () => ControlC
       setData(payload.data.global_budget ?? null);
       setError(payload.data.global_budget ? null : "后台没有报全局预算");
     });
-    const id = `global-budget-${Date.now()}`;
-    pending.current = id;
-    if (
-      !ch.send({
+    // 读一次：没连上就等连上再发（结果走上面的消息回调）。
+    const cancelSend = sendWhenConnected(ch, () => {
+      const id = `global-budget-${Date.now()}`;
+      pending.current = id;
+      return ch.send({
         type: "orchestration_status",
         request_id: id,
         payload: {},
-      } as unknown as ControlMessage)
-    )
-      setError("连接不可用，请求未发送");
+      } as unknown as ControlMessage);
+    });
     return () => {
       off();
+      cancelSend();
     };
   }, [getChannel]);
 
@@ -1489,26 +1498,32 @@ function DataDirSection() {
   const [opMsg, setOpMsg] = useState<string | null>(null);
   const [opErr, setOpErr] = useState<string | null>(null);
 
-  const reload = useCallback(async () => {
+  // 读当前设置；结果在回调里写状态。
+  const load = useCallback(
+    () =>
+      import("@tauri-apps/api/core")
+        .then((core) => core.invoke<DataDirSetting>("get_data_dir_setting"))
+        .then(
+          (s) => {
+            setSetting(s);
+            // Pre-fill the input with the current effective path so the
+            // user can edit-in-place rather than retype from scratch
+            // (keep whatever the user already typed).
+            setNewPath((current) => current || s.effective);
+          },
+          (e: unknown) => setLoadErr(e instanceof Error ? e.message : String(e)),
+        ),
+    [],
+  );
+  // 刷新按钮先清错误再读；挂载时错误初值就是 null，直接读。
+  const reload = () => {
     setLoadErr(null);
-    try {
-      const core = await import("@tauri-apps/api/core");
-      const s = await core.invoke<DataDirSetting>("get_data_dir_setting");
-      setSetting(s);
-      // Pre-fill the input with the current effective path so the
-      // user can edit-in-place rather than retype from scratch.
-      if (!newPath) setNewPath(s.effective);
-    } catch (e) {
-      setLoadErr(e instanceof Error ? e.message : String(e));
-    }
-    // Intentionally not depending on newPath — we only want this to
-    // pre-fill on the very first load.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    void load();
+  };
 
   useEffect(() => {
-    reload();
-  }, [reload]);
+    void load();
+  }, [load]);
 
   const handlePickDir = useCallback(async () => {
     setOpErr(null);
