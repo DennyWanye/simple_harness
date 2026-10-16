@@ -310,6 +310,10 @@ export function ToolResultCard({
   // 仅在 ok=true 且 result 含 artifacts[] 时启用 — 失败仍走旧路径
   // 显示错误细节。`artifacts` 字段不在 → 字节级回落旧渲染（TG-5 T5-5）。
   const artifacts = useMemo(() => (ok ? extractArtifactsFromResult(result) : []), [ok, result]);
+  // Raw tool results are useful evidence, but noisy. Keep them hidden until
+  // the user explicitly asks to inspect the result. 声明在分支前：同一张卡可能在
+  // 产物卡与普通结果之间切换，hooks 数量必须不变。
+  const [open, setOpen] = useState(false);
   if (ok && artifacts.length > 0) {
     return (
       <ToolCard
@@ -338,9 +342,6 @@ export function ToolResultCard({
   // P5-S2 Phase 5.1: 走 splitToolError 提取 hint；保留原 pretty-print fallback。
   const { body: display, hint } = splitToolError(result);
   const lineCount = display.split("\n").length;
-  // Raw tool results are useful evidence, but noisy. Keep them hidden until
-  // the user explicitly asks to inspect the result.
-  const [open, setOpen] = useState(false);
   const status = ok ? "✓ ok" : "✗ failed";
   const statusColor = ok ? "#86efac" : "#fca5a5";
   // 有 hint = 后端给了"修这个错误"的可读建议，整张卡加金黄色描边吸引注意。
