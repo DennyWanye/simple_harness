@@ -11,7 +11,8 @@ from deskpet.capabilities.builder import CapabilityBuilderHost
 from deskpet.capabilities.configured_catalog import parse_configured_pack_sources
 from deskpet.capabilities.contracts import CapabilityScope, canonical_global_owner_key
 from deskpet.capabilities.execution_scope_authority import SqliteCurrentExecutionScopeAuthority
-from deskpet.capabilities.platform import BrokeredInvocationAuthority, CapabilityPlatform
+from deskpet.capabilities.local_tool_specs import BrokeredInvocationAuthority
+from deskpet.capabilities.platform import CapabilityPlatform
 from deskpet.capabilities.project_skill_discovery import ProjectSkillDiscoveryService
 from deskpet.capabilities.refresh import (
     CapabilityRefreshService,

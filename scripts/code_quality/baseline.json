@@ -5,7 +5,6 @@
  ],
  "files_2000_3000": [
   "backend/deskpet/capabilities/builder.py:2116",
-  "backend/deskpet/capabilities/platform.py:2675",
   "backend/deskpet/capabilities/store.py:2564",
   "backend/deskpet/execution/contracts.py:2887",
   "backend/deskpet/memory/human_memory_service.py:2146",

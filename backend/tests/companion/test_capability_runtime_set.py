@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 from deskpet.capabilities.local_runtime import LocalToolRuntime
+from deskpet.capabilities.managed_environment import ManagedEnvironmentPreparer
 from deskpet.capabilities.manifest import PackEnvironment, load_and_validate_pack
-from deskpet.capabilities.platform import ManagedEnvironmentPreparer
 from deskpet.capabilities.runtime_prepare import (
     CapabilityRuntimeSetCoordinator,
     PreparedRuntimeInstanceSpec,

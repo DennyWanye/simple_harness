@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 import json
 import shutil
-import sys
 from pathlib import Path
 
 import pytest
@@ -11,7 +10,7 @@ from deskpet.capabilities.brokered_planner import BrokeredEffectPlanner
 from deskpet.capabilities.contracts import CapabilityScope
 from deskpet.capabilities.input_views import InputViewResolver
 from deskpet.capabilities.local_runtime import LocalToolRuntime
-from deskpet.capabilities.manager import CapabilityManagerError
+from deskpet.capabilities.local_tool_specs import LocalCapabilityToolSpecFactory
 from deskpet.capabilities.manifest import (
     PackEnvironment,
     PackManifestError,
@@ -20,7 +19,6 @@ from deskpet.capabilities.manifest import (
 from deskpet.capabilities.platform import (
     CapabilityPlatform,
     LegacyPluginCatalogSource,
-    LocalCapabilityToolSpecFactory,
     MCPManagerRevisionSource,
 )
 from deskpet.capabilities.source import PackSourceRequest
