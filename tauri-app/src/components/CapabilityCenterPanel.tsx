@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useDepsChanged } from "../hooks/useDepsChanged";
 
 import type { IncomingMessage } from "../types/messages";
 import {
@@ -187,9 +188,7 @@ export function CapabilityCenterPanel({
   // list's aria state and the detail pane share one source of truth even when
   // the capability snapshot arrives asynchronously after the filter changes.
   // 渲染期按可见列表调整（含首次渲染，与原 effect 挂载即执行一致）；visibleCapabilities 已 useMemo。
-  const [selectionBase, setSelectionBase] = useState<typeof visibleCapabilities | null>(null);
-  if (selectionBase !== visibleCapabilities) {
-    setSelectionBase(visibleCapabilities);
+  if (useDepsChanged([visibleCapabilities], { onMount: true })) {
     setSelectedId((current) =>
       current && visibleCapabilities.some((item) => item.capability_id === current)
         ? current

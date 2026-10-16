@@ -28,4 +28,18 @@ describe("useDepsChanged", () => {
     rerender(<Draft owner="b" other={2} />);
     expect(screen.getByTestId("resets").textContent).toBe("1:2");
   });
+
+  it("onMount 时首次渲染也算一次变化", () => {
+    function Counted({ owner }: { owner: string }) {
+      const [runs, setRuns] = useState(0);
+      if (useDepsChanged([owner], { onMount: true })) setRuns((n) => n + 1);
+      return <span data-testid="runs">{runs}</span>;
+    }
+    const { rerender } = render(<Counted owner="a" />);
+    expect(screen.getByTestId("runs").textContent).toBe("1");
+    rerender(<Counted owner="a" />);
+    expect(screen.getByTestId("runs").textContent).toBe("1");
+    rerender(<Counted owner="b" />);
+    expect(screen.getByTestId("runs").textContent).toBe("2");
+  });
 });

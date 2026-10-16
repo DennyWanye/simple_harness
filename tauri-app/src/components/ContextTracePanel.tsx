@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
+import { useDepsChanged } from "../hooks/useDepsChanged";
 import { Icon } from "./Icon";
 import { ReplayDialog, type ReplayForkInput } from "./workflows/ReplayDialog";
 import { RunInspectorPanel, type InspectorView } from "./workflows/RunInspectorPanel";
@@ -104,34 +105,20 @@ export function ContextTracePanel({ open, onClose, getChannel }: Props) {
     selectedRunRef.current = selectedRunId;
   }, [selectedRunId]);
 
-  const refreshRuns = useCallback(() => {
+  // 只记请求号并发出，不写状态（effect 与下面的 refresh* 共用）。
+  const sendRunsList = useCallback(() => {
     const channel = getChannel();
-    if (!channel) {
-      setListLoading(false);
-      setLoadError("控制通道尚未连接");
-      return;
-    }
+    if (!channel) return;
     const requestId = nextRequestId("runs");
     listRequestRef.current = requestId;
-    setListLoading(true);
-    setLoadError(null);
     channel.send({ type: "workflow_runs_list", request_id: requestId, payload: { limit: 100 } });
   }, [getChannel]);
-
-  const refreshDetail = useCallback(
-    (runId?: string | null) => {
-      const target = runId ?? selectedRunRef.current;
-      if (!target) return;
+  const sendRunDetail = useCallback(
+    (target: string) => {
       const channel = getChannel();
-      if (!channel) {
-        setDetailLoading(false);
-        setLoadError("控制通道尚未连接");
-        return;
-      }
+      if (!channel) return;
       const requestId = nextRequestId("detail");
       detailRequestRef.current = requestId;
-      setDetailLoading(true);
-      setLoadError(null);
       channel.send({
         type: "workflow_run_detail",
         request_id: requestId,
@@ -141,15 +128,50 @@ export function ContextTracePanel({ open, onClose, getChannel }: Props) {
     [getChannel],
   );
 
-  useEffect(() => {
-    if (open) refreshRuns();
-  }, [open, refreshRuns]);
+  const refreshRuns = useCallback(() => {
+    const hasChannel = getChannel() !== null;
+    setListLoading(hasChannel);
+    setLoadError(hasChannel ? null : "控制通道尚未连接");
+    sendRunsList();
+  }, [getChannel, sendRunsList]);
+
+  const refreshDetail = useCallback(
+    (runId?: string | null) => {
+      const target = runId ?? selectedRunRef.current;
+      if (!target) return;
+      const hasChannel = getChannel() !== null;
+      setDetailLoading(hasChannel);
+      setLoadError(hasChannel ? null : "控制通道尚未连接");
+      sendRunDetail(target);
+    },
+    [getChannel, sendRunDetail],
+  );
+
+  // 打开（含挂载即打开）与换选中运行：渲染期设好读取状态（读当前通道，与原 effect 读到的一致），
+  // effect 只发请求。比对项与原 effect 依赖一致。
+  if (useDepsChanged([open, refreshRuns], { onMount: true }) && open) {
+    const hasChannel = getChannel() !== null;
+    setListLoading(hasChannel);
+    setLoadError(hasChannel ? null : "控制通道尚未连接");
+  }
+  if (
+    useDepsChanged([open, refreshDetail, selectedRunId], { onMount: true }) &&
+    open &&
+    selectedRunId
+  ) {
+    setDetail((current) => (current.runId === selectedRunId ? current : EMPTY_DETAIL));
+    const hasChannel = getChannel() !== null;
+    setDetailLoading(hasChannel);
+    setLoadError(hasChannel ? null : "控制通道尚未连接");
+  }
 
   useEffect(() => {
-    if (!open || !selectedRunId) return;
-    setDetail((current) => (current.runId === selectedRunId ? current : EMPTY_DETAIL));
-    refreshDetail(selectedRunId);
-  }, [open, refreshDetail, selectedRunId]);
+    if (open) sendRunsList();
+  }, [open, sendRunsList]);
+
+  useEffect(() => {
+    if (open && selectedRunId) sendRunDetail(selectedRunId);
+  }, [open, sendRunDetail, selectedRunId]);
 
   const beginAction = (action: PendingAction) => {
     if (pendingRef.current) return false;
@@ -498,12 +520,20 @@ function LegacyContextTrace({
   const [limit, setLimit] = useState(50);
   const [loading, setLoading] = useState(false);
   const [contextWindow, setContextWindow] = useState(32_000);
-  const refresh = useCallback(() => {
+  // 只发请求不写状态；返回是否有通道。
+  const sendList = useCallback(() => {
     const channel = getChannel();
-    if (!channel) return;
-    setLoading(true);
+    if (!channel) return false;
     channel.send({ type: "decisions_list", payload: { limit } });
+    return true;
   }, [getChannel, limit]);
+  const refresh = () => {
+    if (getChannel()) setLoading(true);
+    sendList();
+  };
+  // 激活（含挂载即激活）或条数变了：渲染期设读取中，effect 只发请求。比对项与订阅 effect 依赖一致。
+  if (useDepsChanged([active, getChannel, sendList], { onMount: true }) && active && getChannel())
+    setLoading(true);
   useEffect(() => {
     if (!active) return;
     const channel = getChannel();
@@ -520,9 +550,9 @@ function LegacyContextTrace({
       setReason(payload.reason ?? null);
       setLoading(false);
     });
-    refresh();
+    sendList();
     return unsubscribe;
-  }, [active, getChannel, refresh]);
+  }, [active, getChannel, sendList]);
   const ordered = useMemo(
     () => [...decisions].sort((a, b) => cmpTimestamp(b.timestamp, a.timestamp)),
     [decisions],

@@ -138,4 +138,30 @@ describe("改计划进度面板", () => {
     expect(screen.getByText(/已过期：收到的数据格式不对，显示的是上次的情况/)).toBeTruthy();
     expect(screen.getByRole("button", { name: "重新发送" })).toBeTruthy();
   });
+
+  it("挂载时没连上：不标已过期，连上后读一次", () => {
+    const sent: Sent[] = [];
+    const states = new Set<(state: string) => void>();
+    let connected = false;
+    const channel = {
+      send: (message: unknown) => {
+        if (!connected) return false;
+        sent.push(message as Sent);
+        return true;
+      },
+      onMessage: () => () => undefined,
+      onStateChange: (fn: (state: string) => void) => {
+        states.add(fn);
+        return () => states.delete(fn);
+      },
+    };
+    render(<PlanChangePanel missionId="m-1" channel={channel as never} />);
+    expect(sent).toHaveLength(0);
+    expect(screen.queryByText(/连接不可用/)).toBeNull();
+    act(() => {
+      connected = true;
+      states.forEach((fn) => fn("connected"));
+    });
+    expect(sent.map((m) => m.type)).toEqual(["taskgraph.convergence"]);
+  });
 });

@@ -80,10 +80,8 @@ export function AddProviderModal({
   }
 
   // Merge probed models into the draft (idempotent — only adds new ones).
-  // 首次渲染也要并入（与原 effect 挂载即执行一致），所以初值用 null 哨兵。
-  const [mergedProbe, setMergedProbe] = useState<string[] | undefined | null>(null);
-  if (mergedProbe !== probedModels) {
-    setMergedProbe(probedModels);
+  // 首次渲染也要并入（与原 effect 挂载即执行一致）。
+  if (useDepsChanged([probedModels], { onMount: true })) {
     if (probedModels && probedModels.length > 0)
       setDraft((cur) => {
         const merged = [...cur.models];

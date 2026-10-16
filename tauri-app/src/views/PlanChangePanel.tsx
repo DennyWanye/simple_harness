@@ -27,6 +27,7 @@ import {
   type MissionsChannel,
 } from "../stores/missionsStore";
 import { PROTOCOL_ERROR } from "../ws/orchestrationContracts";
+import { sendWhenConnected } from "../ws/sendWhenConnected";
 
 type Job = { job_id: string; state: string; row_version: number };
 type Blocked = {
@@ -102,15 +103,22 @@ export function PlanChangePanel({
   const reading = useRef<string | null>(null);
   const acting = useRef<string | null>(null);
 
-  const refresh = useCallback(() => {
-    if (!channel || reading.current) return;
+  // 只发读取请求不写状态；已有读取在途算已发。返回是否发出。
+  const sendRead = useCallback(() => {
+    if (!channel) return false;
+    if (reading.current) return true;
     const id = newRequestKey();
     reading.current = id;
     if (!channel.send({ type: READ, request_id: id, payload: { mission_id: missionId } })) {
       reading.current = null;
-      setStale("连接不可用");
+      return false;
     }
+    return true;
   }, [channel, missionId]);
+  // 消息回调里重读：发不出去就标已过期。
+  const refresh = useCallback(() => {
+    if (channel && !sendRead()) setStale("连接不可用");
+  }, [channel, sendRead]);
 
   useEffect(() => {
     if (!channel) return undefined;
@@ -146,9 +154,13 @@ export function PlanChangePanel({
         refresh();
       }
     });
-    refresh();
-    return off;
-  }, [channel, missionId, refresh]);
+    // 首次读取：没连上就等连上再读（结果走上面的消息回调）。
+    const cancelRead = sendWhenConnected(channel, sendRead);
+    return () => {
+      off();
+      cancelRead();
+    };
+  }, [channel, missionId, refresh, sendRead]);
 
   const act = (type: string, body: Record<string, unknown>) => {
     if (!channel) return;

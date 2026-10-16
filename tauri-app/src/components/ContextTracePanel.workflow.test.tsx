@@ -403,4 +403,20 @@ describe("ContextTracePanel workflow integration", () => {
     );
     expect(row.textContent).not.toContain("TOP-SECRET-BODY");
   });
+
+  it("关着时不读；打开后读运行列表；没有通道时直接说明", () => {
+    const harness = channelHarness();
+    const { rerender } = render(
+      <ContextTracePanel open={false} onClose={vi.fn()} getChannel={() => harness.channel} />,
+    );
+    expect(harness.send).not.toHaveBeenCalled();
+    rerender(<ContextTracePanel open onClose={vi.fn()} getChannel={() => harness.channel} />);
+    expect(
+      harness.send.mock.calls.filter(([message]) => message.type === "workflow_runs_list"),
+    ).toHaveLength(1);
+    cleanup();
+
+    render(<ContextTracePanel open onClose={vi.fn()} getChannel={() => null} />);
+    expect(screen.getAllByText("控制通道尚未连接").length).toBeGreaterThan(0);
+  });
 });
