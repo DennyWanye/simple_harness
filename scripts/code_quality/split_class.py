@@ -221,6 +221,13 @@ def main() -> int:
         if core and node is slots:
             texts[core["module"]].append(chunk)
             remaining_body.append("    __slots__ = ()\n")
+        elif (
+            core
+            and isinstance(node, ast.Assign)
+            and isinstance(node.value, ast.Name)
+            and node.value.id in owner
+        ):
+            texts[owner[node.value.id]].append(chunk)  # 方法别名（start = start_workflow）跟被引用的方法走
         elif core and isinstance(node, (ast.Assign, ast.AnnAssign)):
             texts[core["module"]].append(chunk)  # 类属性（常量）搬进公共基类，各 mixin 经 self 读得到
         elif getattr(node, "name", None) in owner:
