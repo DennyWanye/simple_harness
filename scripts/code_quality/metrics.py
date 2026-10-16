@@ -40,6 +40,9 @@ if sys.version_info < (3, 11):  # 系统自带 3.9 解析不了新语法，换�
         os.execv(str(_py), [str(_py), *sys.argv])
 
 REPO = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import except_inventory  # noqa: E402  阶段 7 完成口径与清单脚本共用一份判定
+
 _VENV_BIN = REPO / "sdk/simple-harness-sdk/.venv/bin"
 RUFF = Path(os.environ.get("CQ_RUFF") or (_VENV_BIN / "ruff" if (_VENV_BIN / "ruff").exists() else "ruff"))
 MYPY = Path(os.environ.get("CQ_MYPY") or (_VENV_BIN / "mypy" if (_VENV_BIN / "mypy").exists() else "mypy"))
@@ -119,6 +122,8 @@ def ast_metrics() -> dict:
         "global_stmts": 0, "codename_comment_lines": 0, "legacy_lines": 0, "py_lines": 0,
         # 阶段 3.5 起：留在函数里、标了"循环依赖"的导入（上限：SDK 阶段 5 末 ≤ 30，后端阶段 6 末 ≤ 20）
         "cycle_imports_backend": 0, "cycle_imports_sdk": 0,
+        # 阶段 7 起：产品代码里宽捕获未达完成口径的处数、没写原因的 print（口径见 except_inventory.py）
+        "except_broad_unexplained": 0, "print_product_unexplained": 0,
     }
     for tree_name, tree in PY_TREES.items():
         for path in py_files(tree):
@@ -144,6 +149,8 @@ def ast_metrics() -> dict:
             except SyntaxError:
                 continue
             func_stack: list = []
+            src_lines = src.splitlines()
+            product = except_inventory.is_product(r)
 
             def visit(node, in_func: bool) -> None:
                 for child in ast.iter_child_nodes(node):
@@ -173,6 +180,8 @@ def ast_metrics() -> dict:
                             m["except_broad_silent"] += 1
                     if isinstance(child, ast.Call) and isinstance(child.func, ast.Name) and child.func.id == "print":
                         m["print_calls"] += 1
+                        if product and not except_inventory.PRINT_REASON.search(src_lines[child.lineno - 1]):
+                            m["print_product_unexplained"] += 1
                     if isinstance(child, ast.Call) and isinstance(child.func, ast.Attribute) \
                             and child.func.attr in ("insert", "append") \
                             and isinstance(child.func.value, ast.Attribute) and child.func.value.attr == "path" \
@@ -183,6 +192,9 @@ def ast_metrics() -> dict:
                     visit(child, in_func)
 
             visit(t, False)
+            if product:
+                m["except_broad_unexplained"] += sum(
+                    1 for row in except_inventory.file_rows(r, src, t) if row["unexplained"])
     ts_any = ts_inline = 0
     for path in ts_files():
         src = path.read_text(encoding="utf-8", errors="replace")

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from collections.abc import Mapping
 from typing import Any
 
@@ -26,6 +27,12 @@ def add_safe_exception_summary(
 
     event = dict(event_dict)
     exc_info = event.get("exc_info")
+    # structlog 调用写 exc_info=True 或直接传异常实例时，这里还拿不到元组：
+    # 取当前正在处理的异常（不在 except 里时为空，不出摘要）。
+    if exc_info is True:
+        exc_info = sys.exc_info()
+    elif isinstance(exc_info, BaseException):
+        exc_info = (type(exc_info), exc_info, exc_info.__traceback__)
     if (
         isinstance(exc_info, tuple)
         and len(exc_info) >= 2
