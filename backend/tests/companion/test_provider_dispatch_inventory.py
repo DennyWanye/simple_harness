@@ -45,7 +45,8 @@ def test_production_provider_and_effect_calls_use_approved_dispatch_seams() -> N
         "backend/deskpet/workflows/adapters/research_runtime.py": {
             "self.llm.complete",
         },
-        "backend/deskpet/workflows/adapters/deep_research_v6_evidence_runtime.py": {
+        # 证据运行时拆成 mixin 后，检索调用在 retrieval 子模块
+        "backend/deskpet/workflows/adapters/deep_research_v6_evidence_domains/retrieval.py": {
             "self.search_gateway.search",
         },
         "backend/deskpet/workflows/adapters/code_runtime.py": {
@@ -111,7 +112,14 @@ def test_retry_authority_is_not_hidden_below_the_coordinator() -> None:
     openai_sdk = (ROOT / "backend/llm/openai_adapter.py").read_text(encoding="utf-8")
     anthropic_sdk = (ROOT / "backend/llm/anthropic_adapter.py").read_text(encoding="utf-8")
     gemini_sdk = (ROOT / "backend/llm/gemini_adapter.py").read_text(encoding="utf-8")
-    compatible = (ROOT / "backend/providers/openai_compatible.py").read_text(encoding="utf-8")
+    # 提供方拆成 mixin 后，按门面加 openai_compatible_domains/ 整个包读
+    compatible = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in (
+            ROOT / "backend/providers/openai_compatible.py",
+            *sorted((ROOT / "backend/providers/openai_compatible_domains").glob("*.py")),
+        )
+    )
     shim = (ROOT / "backend/agent/tool_use_shim.py").read_text(encoding="utf-8")
 
     assert '"max_retries": 0' in openai_sdk

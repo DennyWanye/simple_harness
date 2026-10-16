@@ -53,7 +53,14 @@ def test_representative_auxiliary_purposes_are_explicit() -> None:
 
 
 def test_provider_dispatch_bottom_seams_auto_create_attempts() -> None:
-    provider = (BACKEND / "providers/openai_compatible.py").read_text(encoding="utf-8")
+    # 提供方拆成 mixin 后，按门面加 openai_compatible_domains/ 整个包读
+    provider = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in (
+            BACKEND / "providers/openai_compatible.py",
+            *sorted((BACKEND / "providers/openai_compatible_domains").glob("*.py")),
+        )
+    )
     registry = (BACKEND / "llm/registry.py").read_text(encoding="utf-8")
     router = (BACKEND / "router/hybrid_router.py").read_text(encoding="utf-8")
     assert provider.count("auto_context_attempt_call(") >= 2
