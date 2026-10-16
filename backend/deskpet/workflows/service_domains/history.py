@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import logging
 from collections.abc import Sequence
 from typing import Any
 
@@ -11,6 +12,8 @@ from ..delivery import DeliveryDisposition, normalize_v6_delivery_result
 from ..outbox import MAX_PAGE_SIZE, hydrate_event
 from .core import WorkflowServiceCore
 from .support import WorkflowServiceError
+
+logger = logging.getLogger(__name__)
 
 
 class HistoryDeliveryMixin(WorkflowServiceCore):
@@ -272,8 +275,8 @@ class HistoryDeliveryMixin(WorkflowServiceCore):
                                 expected_version=current["version"],
                                 reason="handler_cancelled",
                             )
-                        except Exception:
-                            pass
+                        except Exception:  # noqa: BLE001 - 标记投递失败也失败时留给恢复流程
+                            logger.warning("workflow_delivery_mark_failed_failed", exc_info=True)
                     raise
                 except Exception as exc:
                     failed = await self.outbox.mutate_delivery(

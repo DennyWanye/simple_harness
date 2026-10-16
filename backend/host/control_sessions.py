@@ -261,7 +261,8 @@ async def _cc_session_messages_load(conn: _ControlConnection, raw: dict, msg_typ
                                 _history_tool_names[str(_history_call.get("id") or "")] = str(
                                     _history_function.get("name") or ""
                                 )
-                except Exception:
+                except Exception:  # noqa: BLE001 - 某条历史消息解析出错时跳过
+                    logger.debug("session_history_tool_names_failed", exc_info=True)
                     continue
             for r in rows:
                 if str(r.get("projection_kind") or "") == "companion_event":
@@ -291,8 +292,8 @@ async def _cc_session_messages_load(conn: _ControlConnection, raw: dict, msg_typ
                         _entry["tool_calls"] = project_public_tool_calls(
                             _load_json.loads(_tcs_raw) if isinstance(_tcs_raw, str) else _tcs_raw
                         )
-                    except Exception:
-                        pass
+                    except Exception:  # noqa: BLE001 - 工具调用解析出错时不带这一项
+                        logger.debug("session_history_tool_calls_failed", exc_info=True)
                 # tool_call_id (tool 行的回指)
                 _tcid = r.get("tool_call_id")
                 if _tcid:

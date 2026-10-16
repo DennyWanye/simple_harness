@@ -323,8 +323,8 @@ class VerifyGateMixin(AgentLoopCore):
                             "ok": bool(state.ephemeral_pass),
                         },
                     )
-                except Exception:  # noqa: BLE001 — metric 失败不阻 dispatch
-                    pass
+                except Exception:  # noqa: BLE001 - 指标记录失败不影响派发
+                    logger.debug("verify_ephemeral_metric_failed", exc_info=True)
 
             state.flow = None
             async with aclosing(self._verify_gate_exhausted(state)) as _phase:
@@ -380,12 +380,12 @@ class VerifyGateMixin(AgentLoopCore):
                                 "nudge_count": int(state.verify_nudges_used),
                             },
                         )
-                    except Exception:  # noqa: BLE001
-                        pass
+                    except Exception:  # noqa: BLE001 - 指标记录失败不影响反思
+                        logger.debug("verify_replan_metric_failed", exc_info=True)
                 if state._refl:
                     state._prev_task_replanning = state._cur_replan
-            except Exception:  # noqa: BLE001 — safe-fail
-                pass
+            except Exception:  # noqa: BLE001 - 结构化反思出错时跳过这一步
+                logger.debug("verify_structured_reflection_failed", exc_info=True)
 
     async def _verify_gate_exhausted(self, state: _RunState) -> AsyncGenerator[AgentEvent, None]:
         """核验补提示次数用完：临时会话再核验一次，仍不过就强制收尾。"""
@@ -491,8 +491,8 @@ class VerifyGateMixin(AgentLoopCore):
                         "ok": bool(state.ephemeral_pass),
                     },
                 )
-            except Exception:  # noqa: BLE001 — metric 失败不阻 dispatch
-                pass
+            except Exception:  # noqa: BLE001 - 指标记录失败不影响派发
+                logger.debug("verify_gate_exhausted_metric_failed", exc_info=True)
             state.flow = "continue"
             return
         else:
@@ -529,8 +529,8 @@ class VerifyGateMixin(AgentLoopCore):
                         "stagnant": bool(state._stagnant),
                     },
                 )
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception:  # noqa: BLE001 - 指标记录失败不影响收尾
+                logger.debug("verify_exhausted_metric_failed", exc_info=True)
             if self.force_finish_via_tool_choice and not state._verify_final_done:
                 state._verify_final_done = True
                 state._force_finish_queued = True

@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import logging
 import time
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
 import aiosqlite
+
+logger = logging.getLogger(__name__)
 
 
 class ProviderWorkloadAuditStore:
@@ -101,8 +104,9 @@ class ProviderWorkloadAuditStore:
         }
         try:
             await self.record(event)
-        except Exception:
+        except Exception:  # noqa: BLE001 - 审计库忙或损坏时不能递归审计自己
             # A busy/corrupt audit DB cannot recursively audit itself.
+            logger.debug("provider_workload_audit_record_failed", exc_info=True)
             return
 
     async def enforce_retention(

@@ -168,8 +168,8 @@ def _self_roots() -> list[Path]:
             roots.append(install)
         data = paths.user_data_dir()
         roots += [data / "config.toml", data / "data"]
-    except Exception:  # noqa: BLE001 - classification never raises
-        pass
+    except Exception:  # noqa: BLE001 - 分类不能抛异常，算不出的根目录跳过
+        logger.debug("protected_self_roots_failed", exc_info=True)
     executable = Path(sys.executable).resolve()
     for parent in executable.parents:
         if parent.suffix == ".app":
@@ -189,12 +189,12 @@ def allowed_roots(extra: Iterable[str | os.PathLike[str]] = ()) -> list[Path]:
     roots: list[Path] = []
     try:
         roots.append(resolve_workspace_root())
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception:  # noqa: BLE001 - 工作区根目录算不出时不加
+        logger.debug("allowed_workspace_root_failed", exc_info=True)
     try:
         roots.append(paths.output_dir())
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception:  # noqa: BLE001 - 输出目录算不出时不加
+        logger.debug("allowed_output_dir_failed", exc_info=True)
     roots.append(Path(tempfile.gettempdir()))
     roots += [Path(root) for root in extra if root]
     return [_canonical(root) for root in roots]
@@ -217,8 +217,8 @@ def protected_reason(path: Path, op: Op) -> str | None:
     try:
         if is_system_path(path):  # Windows system roots (harmless elsewhere)
             return "system"
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception:  # noqa: BLE001 - 判断系统路径出错时按不是系统路径
+        logger.debug("system_path_check_failed", exc_info=True)
     if os.name == "nt":
         return None
     if any(_under(path, Path(e)) for e in _SYSTEM_EXCEPTIONS_POSIX):
@@ -292,8 +292,8 @@ def paths_in_arguments(arguments: Mapping[str, Any]) -> list[str]:
     if isinstance(command, str) and command.strip():
         try:
             found += extract_shell_write_targets(command)
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception:  # noqa: BLE001 - 解析命令写入目标出错时按没有
+            logger.debug("shell_write_targets_failed", exc_info=True)
     return found
 
 

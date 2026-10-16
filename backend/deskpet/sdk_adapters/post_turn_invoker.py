@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import time
 import uuid
 from collections.abc import Callable, Mapping, Sequence
@@ -57,6 +58,9 @@ from deskpet.execution.foreground_queue import EffectBoundary, ForegroundQueueSt
 from deskpet.memory.analysis_lineage import binding_model_config_hash
 from deskpet.memory.writer_fence import assert_human_memory_ingress_open_tx
 from deskpet.task_scope.protocol import canonical_json
+
+logger = logging.getLogger(__name__)
+
 
 PURPOSES: frozenset[str] = frozenset({"closure", "analysis"})
 NOT_SENT_ERROR_TYPES: tuple[str, ...] = (
@@ -904,7 +908,8 @@ def durable_response(raw: object) -> Any | None:
 
     try:
         return provider_response_from_json(response)
-    except Exception:  # noqa: BLE001 - a malformed durable copy is treated as absent
+    except Exception:  # noqa: BLE001 - 坏的持久副本当作没有
+        logger.debug("durable_response_parse_failed", exc_info=True)
         return None
 
 

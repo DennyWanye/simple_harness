@@ -423,7 +423,8 @@ async def _report(
             await result
     except asyncio.CancelledError:
         raise
-    except Exception:
+    except Exception:  # noqa: BLE001 - 状态上报失败不影响持久执行
+        logger.debug("workflow_transition_report_failed", exc_info=True)
         return
 
 
@@ -712,8 +713,8 @@ class NativeWorkflowExecutable:
                     if callable(notify):
                         try:
                             notify()
-                        except Exception:
-                            pass
+                        except Exception:  # noqa: BLE001 - 通知回调出错不影响推进
+                            logger.debug("workflow_drive_notify_failed", exc_info=True)
             except (InvalidStatePatch, StateMergeConflict, WorkflowNodeError) as exc:
                 error = (
                     exc
@@ -1110,8 +1111,9 @@ class NativeWorkflowExecutable:
                         "support_rate": quality.get("support_rate"),
                     },
                 )
-        except Exception:
+        except Exception:  # noqa: BLE001 - 指标不能影响持久执行与投递
             # Metrics must never affect durable execution or delivery.
+            logger.debug("workflow_v2_metrics_failed", exc_info=True)
             return
 
     async def _run_task_worker(

@@ -30,9 +30,12 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import sys
 
 import websockets
+
+logger = logging.getLogger(__name__)
 
 
 async def smoke(secret: str) -> int:
@@ -64,7 +67,8 @@ async def smoke(secret: str) -> int:
                 raw = await asyncio.wait_for(ws.recv(), timeout=180.0)
                 try:
                     msg = json.loads(raw)
-                except Exception:
+                except Exception:  # noqa: BLE001 - 不是 JSON 的消息跳过
+                    logger.debug("ws_message_parse_failed", exc_info=True)
                     continue
                 t = msg.get("type", "")
                 if t == "chat_v2_final":

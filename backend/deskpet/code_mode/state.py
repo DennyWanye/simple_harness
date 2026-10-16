@@ -24,10 +24,13 @@ This way:
 from __future__ import annotations
 
 import hashlib
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from threading import RLock
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 
 def _code_session_id(project_root: Path) -> str:
@@ -153,8 +156,8 @@ class CodeModeManager:
         if self._sdb is not None:
             try:
                 await self._sdb.delete_code_session(base_session_id)
-            except Exception:  # noqa: BLE001 — durability is best-effort
-                pass
+            except Exception:  # noqa: BLE001 - 持久化是尽力而为
+                logger.debug("code_session_delete_failed", exc_info=True)
         return csid
 
     # --------------------------- queries -------------------------------

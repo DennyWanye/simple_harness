@@ -205,8 +205,8 @@ class CompactionMixin(AgentLoopCore):
                 state._wm_tokens = _cmt(state.working_messages)
                 if state._wm_tokens > state._ctoken_est:
                     state._ctoken_est = state._wm_tokens
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception:  # noqa: BLE001 - 重算词元数出错时沿用旧估值
+                logger.debug("context_token_recount_failed", exc_info=True)
             state._ctx_should_compress = False
             try:
                 state._ctx_cfg = getattr(self._ctx, "config", None)
@@ -426,8 +426,8 @@ class CompactionMixin(AgentLoopCore):
                             "count": state._ctx_in - state._ctx_out,
                         },
                     )
-                except Exception:  # noqa: BLE001
-                    pass
+                except Exception:  # noqa: BLE001 - 指标记录失败不影响压缩
+                    logger.debug("context_compression_metric_failed", exc_info=True)
                 state._actual_compaction_model = (
                     state._resolved_candidate.model_id
                     if state._resolved_candidate is not None

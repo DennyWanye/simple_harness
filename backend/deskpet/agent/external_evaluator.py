@@ -443,5 +443,5 @@ class ExternalEvaluator:
             from observability.metrics_sink import record as _metric  # noqa: PLC0415
 
             _metric(event_type, payload)
-        except Exception:  # noqa: BLE001 — metric 失败不阻
-            pass
+        except Exception:  # noqa: BLE001 - 指标记录失败不影响评估
+            logger.debug("external_evaluator_metric_failed", exc_info=True)

@@ -192,8 +192,8 @@ def model_context_window(model_id: str) -> int | None:
         ov = _mi._model_section(_mi.load_global_overrides(), mid)
         if ov and "context_window" in ov:
             return int(ov["context_window"])
-    except Exception:  # noqa: BLE001 — never let model_info break the catalog
-        pass
+    except Exception:  # noqa: BLE001 - 模型信息出错不能打断目录
+        logger.debug("model_catalog_window_failed", exc_info=True)
     m = mid.lower()
     for needles, win in _FAMILY_CTX:
         if any(n in m for n in needles):

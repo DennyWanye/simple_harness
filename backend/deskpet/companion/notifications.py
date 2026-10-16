@@ -236,7 +236,8 @@ class CompanionNotificationService:
                 notification_id=str(notification["notification_id"]),
                 repair_fence=fence,
             )
-        except Exception:
+        except Exception:  # noqa: BLE001 - 修复排不进队时等下一次唤醒
+            logger.warning("companion_projection_repair_enqueue_failed", exc_info=True)
             return
         try:
             asyncio.get_running_loop().create_task(self.bind_and_drain(frozen_identity))

@@ -511,8 +511,8 @@ class StreamingToolMixin(OpenAICompatibleCore):
                 state.body = ""
                 try:
                     state.body = exc.response.text[:600]
-                except Exception:  # noqa: BLE001
-                    pass
+                except Exception:  # noqa: BLE001 - 错误响应正文读不出来时不带
+                    logger.debug("provider_error_body_read_failed", exc_info=True)
                 raise LLMProviderError(
                     f"LLM HTTP {exc.response.status_code} "
                     f"{exc.response.reason_phrase}: {state.body[:300]}",
@@ -544,8 +544,8 @@ class StreamingToolMixin(OpenAICompatibleCore):
                 state.body = ""
                 try:
                     state.body = exc.response.text[:600]
-                except Exception:  # noqa: BLE001
-                    pass
+                except Exception:  # noqa: BLE001 - 错误响应正文读不出来时不带
+                    logger.debug("provider_error_body_read_failed", exc_info=True)
                 # P4-S24 mirror in streaming: 400 reasoning_content →
                 # strip stale assistant rows + retry once. Only retry
                 # if we haven't already stripped (avoid infinite loop

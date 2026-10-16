@@ -308,8 +308,8 @@ class PermissionGate:
                             pass
 
                     asyncio.create_task(_drain())
-            except Exception:  # noqa: BLE001
-                pass  # TTS failures don't block permission flow
+            except Exception:  # noqa: BLE001 - 语音提示失败不阻断授权流程
+                logger.debug("permission_prompt_tts_failed", exc_info=True)
         try:
             response: PermissionResponse = await asyncio.wait_for(
                 self._responder(request), timeout=self.config.timeout_s

@@ -1014,8 +1014,8 @@ class MessageMixin(SessionDBCore):
                             (int(turn_id),),
                         )
                         await db.commit()
-                    except Exception:
-                        pass
+                    except Exception:  # noqa: BLE001 - 向量表可能不存在，删不了时跳过
+                        log.debug("messages_vec_delete_failed", exc_info=True)
                     return removed
 
         return (await self._with_retry(_do)) > 0

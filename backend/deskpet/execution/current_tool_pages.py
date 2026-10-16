@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Mapping
 from types import MappingProxyType
 
@@ -31,6 +32,9 @@ from deskpet.sdk_adapters.composition import project_primary_transcript
 from deskpet.sdk_adapters.context_authority import _resolve_model_id, _resolve_window_tokens
 from deskpet.sdk_adapters.context_partitions import text_tokens
 from deskpet.task_scope.protocol import canonical_hash, canonical_json, redact_credential_shapes
+
+logger = logging.getLogger(__name__)
+
 
 PREFIX = "primary-effect-page:v1:"
 MARKER = "primary_settled_effect_v1"
@@ -868,7 +872,8 @@ async def _admitted_next_offset(*, db, stack, sdk_run_id, digest, content, befor
                 continue
             prior_digest, prior_raw = prior_ref.removeprefix(PREFIX).split(":")
             prior_offset = int(prior_raw)
-        except Exception:  # noqa: BLE001 — 提示永远不得改变这次调用的结果
+        except Exception:  # noqa: BLE001 - 提示永远不得改变这次调用的结果
+            logger.debug("tool_page_prior_offset_failed", exc_info=True)
             continue
         if prior_digest == digest and _offset_reason(content, prior_offset) is None:
             highest = prior_offset if highest is None else max(highest, prior_offset)

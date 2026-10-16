@@ -312,8 +312,8 @@ def _prepare_verify_gate(st: _AgentBuildState) -> None:
                         "patterns_loaded": len(st.patterns),
                     },
                 )
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception:  # noqa: BLE001 - 指标记录失败不影响启动
+                logger.debug("verify_gate_init_metric_failed", exc_info=True)
     except Exception as exc:  # noqa: BLE001
         logger.warning("verify_gate init failed: %s — disabled", exc, exc_info=True)
         st.verify_gate = None
@@ -345,7 +345,7 @@ def _prepare_external_evaluator(st: _AgentBuildState) -> None:
             )
         except Exception as exc:  # noqa: BLE001 — safe-fail
             _log.getLogger(__name__).warning(
-                "external_evaluator construction failed: %s — skipping", exc
+                "external_evaluator construction failed: %s — skipping", exc, exc_info=True
             )
 
 

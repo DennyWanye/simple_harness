@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import logging
 import os
 import threading
 import uuid
@@ -16,6 +17,8 @@ from pathlib import Path
 from typing import Any
 
 import aiosqlite
+
+logger = logging.getLogger(__name__)
 
 
 class ExecutionWriteLaneState(StrEnum):
@@ -378,8 +381,8 @@ class ExecutionWriteLane:
             async def close_connection() -> None:
                 try:
                     await db.close()
-                except BaseException:
-                    pass
+                except BaseException:  # noqa: BLE001 - 关闭连接出错时不处理
+                    logger.debug("workflow_write_lane_close_failed", exc_info=True)
 
             task = asyncio.create_task(close_connection())
             _PENDING_CLOSE_TASKS.add(task)

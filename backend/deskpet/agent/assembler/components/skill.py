@@ -256,7 +256,8 @@ class SkillComponent:
                 if resolved_scope != scope:
                     raise RuntimeError("frozen_skill_scope_resolution_mismatch")
                 raw_body = str(resolved.instruction)
-            except Exception:  # noqa: BLE001
+            except Exception:  # noqa: BLE001 - 某个技能解析失败时跳过它
+                logger.warning("frozen_skill_resolve_failed", exc_info=True)
                 continue
             authority_body = raw_body
             is_knowledge = _is_knowledge(nm, skills)

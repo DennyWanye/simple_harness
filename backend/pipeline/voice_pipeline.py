@@ -397,8 +397,8 @@ class VoicePipeline:
         if prior is not None:
             try:
                 await prior
-            except (asyncio.CancelledError, Exception):
-                pass
+            except (asyncio.CancelledError, Exception):  # noqa: BLE001 - 上一句的任务出错不影响这一句
+                logger.debug("voice_prior_utterance_wait_failed", exc_info=True)
 
         self._interrupted = False
         self._processing = True
@@ -529,8 +529,8 @@ class VoicePipeline:
                                     },
                                 }
                             )
-                        except Exception:
-                            pass  # control channel may have disconnected
+                        except Exception:  # noqa: BLE001 - 控制连接可能已断，不处理
+                            logger.debug("voice_amplitude_send_failed", exc_info=True)
                     chunk_index += 1
             self._barge_in_filter.on_tts_end()
 
@@ -555,8 +555,8 @@ class VoicePipeline:
                         "payload": {"message": str(e)},
                     }
                 )
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001 - 音频连接已断时发不出去，不处理
+                logger.debug("voice_error_frame_send_failed", exc_info=True)
         finally:
             # P2-2-M3: always restore the normal VAD threshold — regardless
             # of whether TTS finished naturally, got interrupted, or raised.
@@ -759,8 +759,8 @@ class VoicePipeline:
         if self.control_ws is not None:
             try:
                 await self.control_ws.send_json(frame)
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001 - 控制连接已断时发不出去，不处理
+                logger.debug("voice_run_event_send_failed", exc_info=True)
         if self._broadcast is not None:
             try:
                 await self._broadcast(self.control_ws, frame)

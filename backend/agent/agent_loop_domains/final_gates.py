@@ -543,8 +543,8 @@ class FinalGateMixin(AgentLoopCore):
                             "count": int(state._goal.iterations_used),
                         },
                     )
-                except Exception:  # noqa: BLE001 — metric 失败不阻
-                    pass
+                except Exception:  # noqa: BLE001 - 指标记录失败不影响把关
+                    logger.debug("goal_checker_metric_failed", exc_info=True)
                 state.flow = None
                 await self._apply_goal_check(state)
                 if state.flow is not None:
@@ -749,8 +749,8 @@ class FinalGateMixin(AgentLoopCore):
                                     "issues_count": len(state._ev_result.get("issues", [])),
                                 },
                             )
-                        except Exception:  # noqa: BLE001 — metric 失败不阻
-                            pass
+                        except Exception:  # noqa: BLE001 - 指标记录失败不影响把关
+                            logger.debug("evaluator_revise_metric_failed", exc_info=True)
                         yield ErrorEvent(
                             type="error",
                             task_id=state.tid,

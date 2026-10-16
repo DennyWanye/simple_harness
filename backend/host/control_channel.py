@@ -409,8 +409,8 @@ async def _handle_privileged_companion_frame(
             for status_ws in list(_control_connections.values()):
                 try:
                     await status_ws.send_json(identity_status)
-                except Exception:
-                    pass
+                except Exception:  # noqa: BLE001 - 连接已断时发不出去，不处理
+                    logger.debug("companion_identity_status_send_failed", exc_info=True)
     except Exception as _e:  # noqa: BLE001
         code = getattr(_e, "code", str(_e))
         rechallenge = bool(getattr(_e, "rechallenge", True))
@@ -525,8 +525,8 @@ async def control_channel(ws: WebSocket):
     if not _validate_secret(ws):
         try:
             await ws.close(code=4001, reason="invalid secret")
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001 - 连接已断时关闭会失败，不处理
+            logger.debug("control_ws_close_failed", exc_info=True)
         return
 
     session_id = ws.query_params.get("session_id", "default")
@@ -566,8 +566,8 @@ async def control_channel(ws: WebSocket):
         if _prev_ws is not None and _prev_ws is not ws:
             try:
                 await _prev_ws.close(code=4002, reason="session replaced")
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001 - 旧连接已断时关闭会失败，不处理
+                logger.debug("control_prev_ws_close_failed", exc_info=True)
     _control_connections[connection_registry_key] = ws
     _chat_peer_groups[connection_registry_key] = _initial_chat_peer_group(session_id)
     logger.info("control channel connected", session_id=session_id)

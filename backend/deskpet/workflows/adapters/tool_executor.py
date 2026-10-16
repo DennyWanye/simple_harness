@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import asyncio
 import contextvars
+import logging
 from collections.abc import Callable
 from concurrent.futures import Executor
 from typing import Any, Protocol, cast
 
 from ..effects import NormalizedToolOutcome, PreparedToolCall
 from ..store.run_store import RunFence
+
+logger = logging.getLogger(__name__)
 
 
 class _LateEffectFinalizer(Protocol):
@@ -50,8 +53,9 @@ def _consume_task(task: asyncio.Task[object]) -> None:
         return
     try:
         task.result()
-    except BaseException:
+    except BaseException:  # noqa: BLE001 - 结果不确定的副作用交给恢复流程处理
         # The durable effect remains uncertain and will be handled by recovery.
+        logger.debug("workflow_tool_task_result_failed", exc_info=True)
         return
 
 

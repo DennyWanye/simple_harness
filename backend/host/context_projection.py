@@ -67,17 +67,17 @@ def _build_context_task_projector(
     if services is not None:
         try:
             task_graph = services.get("task_graph_store")
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001 - 服务没注册时不用这一项
+            logger.debug("context_projection_task_graph_missing", exc_info=True)
         try:
             workflow_service = services.get("workflow_service")
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001 - 服务没注册时不用这一项
+            logger.debug("context_projection_workflow_missing", exc_info=True)
         if session_goal_store is None:
             try:
                 session_goal_store = services.get("session_goal_store")
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001 - 服务没注册时不用这一项
+                logger.debug("context_projection_goal_store_missing", exc_info=True)
     if receipt_store is None:
         getter = _get_receipt_store
         if callable(getter):

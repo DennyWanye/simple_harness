@@ -174,8 +174,8 @@ def _snapshot_context_usage_event(
     if provider_chain:
         try:
             _candidates.extend(list(provider_chain))
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception:  # noqa: BLE001 - 读不到提供方链时只看当前模型
+            logger.debug("context_usage_chain_read_failed", exc_info=True)
     if fallback_provider is not None:
         _candidates.append(fallback_provider)
     for _p in _candidates:
@@ -226,8 +226,8 @@ def _snapshot_context_usage_event(
             effective_pct = float(_info.effective_pct)
             compact_at_pct = min(float(_info.compact_at_pct), 0.70)
             recall_sweet = int(_info.recall_sweet_tokens)
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception:  # noqa: BLE001 - 模型信息读不到时用默认值
+            logger.debug("context_usage_model_info_failed", exc_info=True)
     if _latest_attempt is not None and int(_latest_attempt.get("context_window") or 0) > 0:
         context_window = int(_latest_attempt["context_window"])
     payload = {

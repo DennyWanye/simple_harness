@@ -244,7 +244,8 @@ def last_assistant_text(context_port: Any, run_id: str) -> str | None:
         return None
     try:
         context = context_port.load(RunId(run_id))
-    except Exception:  # noqa: BLE001 - an absent context is "no answer", not a crash
+    except Exception:  # noqa: BLE001 - 没有上下文就是没有回答
+        logger.debug("delegation_context_load_failed", exc_info=True)
         return None
     texts = [
         message.content
@@ -581,8 +582,8 @@ class ProductDelegationService:
             try:
                 if self._runtime_getter() is not None and self._uow_getter() is not None:
                     break
-            except Exception:  # noqa: BLE001 - runtime not published yet
-                pass
+            except Exception:  # noqa: BLE001 - 运行时还没发布，继续等
+                logger.debug("delegation_runtime_not_ready", exc_info=True)
             await asyncio.sleep(interval)
         else:
             return 0
@@ -916,7 +917,8 @@ class ProductDelegationService:
         try:
             uow = self._uow_getter()
             record = uow.read_run(parent_run_id) if uow is not None else None
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 - 读不到父运行时按没在停止
+            logger.debug("delegation_parent_run_read_failed", exc_info=True)
             return False
         return record is not None and _state(record) in _TERMINAL | {"cancel_requested"}
 

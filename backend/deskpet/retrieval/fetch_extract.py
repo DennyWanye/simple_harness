@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import logging
 import re
 import time
 import urllib.robotparser
@@ -24,6 +25,9 @@ from .playwright_renderer import FetchRenderBudget, PlaywrightRendererPool, Play
 from .ranking import canonicalize_url, stable_candidate_id
 from .transports import ScraplingTransport
 
+logger = logging.getLogger(__name__)
+
+
 _MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 _TEXT_CONTENT_TYPES = ("text/", "application/xhtml", "application/xml", "application/json")
 
@@ -39,8 +43,8 @@ def _metric(event: str, detail: dict) -> None:
         from observability.metrics_sink import record
 
         record(event, detail)
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001 - 指标记录失败不影响抓取
+        logger.debug("fetch_extract_metric_failed", exc_info=True)
 
 
 def _timing_metric(
@@ -941,8 +945,8 @@ class FetchExtractService:
             if meta:
                 title = str(getattr(meta, "title", None) or "").strip()
                 published = str(getattr(meta, "date", None) or "").strip()
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001 - 元数据抽取出错时标题与日期留空
+            logger.debug("fetch_extract_metadata_failed", exc_info=True)
         if not title:
             match = re.search(r"<title[^>]*>(.*?)</title>", html, re.I | re.S)
             if match:
@@ -971,7 +975,8 @@ class FetchExtractService:
                 headers={"Accept": "text/plain"},
             )
             response.raise_for_status()
-        except Exception:
+        except Exception:  # noqa: BLE001 - 备用抽取服务失败时返回空
+            logger.debug("fetch_extract_jina_failed", exc_info=True)
             return None
         if not raw_content and not isinstance(self.client, httpx.AsyncClient):
             raw_content = str(getattr(response, "text", "") or "").encode("utf-8")

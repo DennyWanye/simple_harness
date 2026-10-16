@@ -141,16 +141,16 @@ def _force_rmtree(path: Path, attempts: int = 3) -> bool:
         try:
             os.chmod(p, stat.S_IWRITE)
             func(p)
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception:  # noqa: BLE001 - 只读文件改权限重删失败时跳过
+            logger.debug("skill_install_rmtree_retry_failed", exc_info=True)
 
     for i in range(attempts):
         if not path.exists():
             return True
         try:
             shutil.rmtree(path, onerror=_onerror)
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception:  # noqa: BLE001 - 删除失败时留下残留目录
+            logger.debug("skill_install_rmtree_failed", exc_info=True)
         if not path.exists():
             return True
         time.sleep(0.2 * (i + 1))

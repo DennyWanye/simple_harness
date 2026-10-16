@@ -478,8 +478,8 @@ async def _run_product_harness_chat(
                 session_id=st.session_id,
                 request_id=st.request_id,
             )
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001 - 连接已断时发不出去，不处理
+            logger.debug("harness_chat_error_frame_failed", exc_info=True)
     finally:
         await _release_chat_run(st)
 
@@ -1082,8 +1082,8 @@ def _launch_product_harness_chat(*args, **kwargs) -> asyncio.Task:
                     task_scope_id = TaskWorkContextResolver.task_scope_id(
                         session_id, request_id, turn_id
                     )
-                except Exception:  # pragma: no cover - terminal fallback only
-                    pass
+                except Exception:  # pragma: no cover - terminal fallback only  # noqa: BLE001 - 只在终态兜底时用到，取不到就不带
+                    logger.debug("harness_chat_terminal_ref_failed", exc_info=True)
             try:
                 await _send_chat_error(
                     websocket,
@@ -1101,8 +1101,8 @@ def _launch_product_harness_chat(*args, **kwargs) -> asyncio.Task:
                     session_id=session_id,
                     request_id=request_id,
                 )
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001 - 连接已断时发不出去，不处理
+                logger.debug("harness_chat_guard_frame_failed", exc_info=True)
             raise
 
     task = asyncio.create_task(guarded())

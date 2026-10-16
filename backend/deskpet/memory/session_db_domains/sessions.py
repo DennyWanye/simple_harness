@@ -597,8 +597,8 @@ class SessionMixin(SessionDBCore):
                     try:
                         await db.execute("DELETE FROM messages_vec")
                         await db.commit()
-                    except Exception:
-                        pass
+                    except Exception:  # noqa: BLE001 - 向量表可能不存在，删不了时跳过
+                        log.debug("messages_vec_clear_failed", exc_info=True)
                     return removed
 
         return await self._with_retry(_do)

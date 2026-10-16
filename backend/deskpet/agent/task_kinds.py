@@ -23,9 +23,13 @@ lane cap。``agent_parallel`` / ``spawn_subagents`` 的每个子任务带一个 
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass, replace
 from typing import Any
+
+logger = logging.getLogger(__name__)
+
 
 # ── WI-OC-1：子代理 spawn 显式 depth 计数 + 上界 ──────────────────────────
 # 现状（基线）：递归守门只靠 `_strip_forbidden` 剔 spawn 类工具 → 子代理拿不到
@@ -284,7 +288,8 @@ def load_kind_overrides(
                 model=spec.get("model", base.model),
                 lane_concurrency=int(spec.get("lane_concurrency", base.lane_concurrency)),
             )
-        except Exception:  # noqa: BLE001 — 单条坏覆盖不污染整表
+        except Exception:  # noqa: BLE001 - 单条坏覆盖跳过，不污染整表
+            logger.warning("task_kind_override_invalid", exc_info=True)
             continue
     return merged
 

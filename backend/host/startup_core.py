@@ -61,8 +61,8 @@ async def _startup_core_services() -> tuple[Any, Any]:
     # 2026-09-26 诊断：`kill -USR1 <pid>` 把所有线程的调用栈打到 stderr（排查 CPU 占满/卡住）
     try:
         _faulthandler.register(_signal.SIGUSR1, all_threads=True)
-    except Exception:  # noqa: BLE001 - diagnostics only (not on Windows)
-        pass
+    except Exception:  # noqa: BLE001 - 只是诊断，Windows 上没有这个信号
+        logger.debug("faulthandler_register_failed", exc_info=True)
     logger.info("preloading models...")
     # 2026-09-26 受保护核心文件：会话卡片走控制通道全局广播（不依赖面板是否可见）
 

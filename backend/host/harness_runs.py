@@ -529,8 +529,8 @@ def _launch_product_harness_continuation(*args, **kwargs) -> asyncio.Task:
                     session_id=session_id,
                     request_id=request_id,
                 )
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001 - 连接已断时发不出去，不处理
+                logger.debug("harness_run_guard_frame_failed", exc_info=True)
             raise
 
     task = asyncio.create_task(guarded())

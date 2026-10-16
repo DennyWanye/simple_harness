@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import json
+import logging
 from collections.abc import AsyncIterator, Callable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -22,6 +23,8 @@ from deskpet.workflows.trace import (
     current_span,
     use_span,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class TraceInstrumentationError(RuntimeError):
@@ -91,8 +94,8 @@ class HarnessTraceSession:
             if owns_run and trace_id:
                 try:
                     await store.finish_run(trace_id, SpanStatus.ERROR, error=exc)
-                except Exception:  # noqa: BLE001 - original trace failure is authoritative
-                    pass
+                except Exception:  # noqa: BLE001 - 以原来的追踪失败为准
+                    logger.debug("workflow_trace_finish_failed", exc_info=True)
             raise TraceInstrumentationError(str(exc)) from exc
 
         return cls(

@@ -160,8 +160,8 @@ class WatchdogLoop:
         t.cancel()
         try:
             await t
-        except (asyncio.CancelledError, Exception):  # noqa: BLE001
-            pass
+        except (asyncio.CancelledError, Exception):  # noqa: BLE001 - 停止时等待任务结束出错不处理
+            logger.debug("watchdog_stop_wait_failed", exc_info=True)
         self._task = None
         logger.info("watchdog stopped")
 
@@ -229,8 +229,8 @@ class WatchdogLoop:
             # supervisor is now responsible for this sid until next scan.
             try:
                 await self._activity.clear_error_pending(sid)
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001 - 清错误标记失败时下次再清
+                logger.debug("watchdog_clear_error_pending_failed", exc_info=True)
 
             # Run the hook with its own try/except to isolate from the loop.
             try:

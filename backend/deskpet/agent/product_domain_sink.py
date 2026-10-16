@@ -55,8 +55,8 @@ class LegacyProductDomainSink:
         if activity is not None:
             try:
                 await activity.set_status(session_id, "idle")
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001 - 会话状态改空闲失败时下次再改
+                logger.debug("product_session_idle_failed", exc_info=True)
 
     async def persist_assistant(self, session_id: str, text: str) -> None:
         if self._db is not None:

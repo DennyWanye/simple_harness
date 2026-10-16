@@ -107,8 +107,8 @@ class WorkflowLauncher:
             runtime_adapters = WorkflowRuntimeAdapterRegistry()
             try:
                 service.runtime_adapters = runtime_adapters
-            except Exception:  # pragma: no cover - very small protocol fakes
-                pass
+            except Exception:  # pragma: no cover - very small protocol fakes  # noqa: BLE001 - 极简协议替身不能设属性时跳过
+                logger.debug("workflow_runtime_adapters_attach_failed", exc_info=True)
         self.runtime_adapters = runtime_adapters
         self._dispatcher_task: asyncio.Task[None] | None = None
         self._dispatcher_interval = _DISPATCHER_SAFETY_INTERVAL
@@ -978,8 +978,8 @@ class WorkflowLauncher:
                 await self.dispatch_due_work()
             except asyncio.CancelledError:
                 raise
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001 - 一轮派发出错时等下一轮再派
+                logger.warning("workflow_dispatch_due_work_failed", exc_info=True)
             timeout = self._dispatcher_interval
             if self._next_deadline is not None:
                 timeout = min(timeout, max(0.0, self._next_deadline - time.time()))

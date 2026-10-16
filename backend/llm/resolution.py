@@ -309,12 +309,12 @@ def _attach_model_params(entries: list[Any], model_params: Any) -> None:
             try:
                 if not _caps(str(getattr(e, "model", "")))["effort"]:
                     frag.pop("reasoning_effort", None)
-            except Exception:  # noqa: BLE001 — non-fatal, keep frag as-is
-                pass
+            except Exception:  # noqa: BLE001 - 能力查不到时保留原参数
+                logger.debug("model_capability_lookup_failed", exc_info=True)
         try:
             e.code_params = frag
-        except Exception:  # noqa: BLE001 — namespace may be slotted; non-fatal
-            pass
+        except Exception:  # noqa: BLE001 - 对象可能不许加属性，不致命
+            logger.debug("model_params_attach_failed", exc_info=True)
 
 
 def _global_chain_entries(registry: Any) -> list[Any]:

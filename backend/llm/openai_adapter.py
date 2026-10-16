@@ -129,8 +129,8 @@ class OpenAIAdapter(BaseLLMAdapter):
                 continue
             try:
                 await client.close()
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception:  # noqa: BLE001 - 关闭是尽力而为
+                logger.debug("openai_client_close_failed", exc_info=True)
         self._client = None
         self._coordinated_client = None
 
@@ -148,8 +148,8 @@ class OpenAIAdapter(BaseLLMAdapter):
                     ra = resp.headers.get("retry-after")
                     if ra:
                         retry_after = float(ra)
-                except Exception:  # noqa: BLE001
-                    pass
+                except Exception:  # noqa: BLE001 - 重试间隔读不出来时不带
+                    logger.debug("openai_retry_after_parse_failed", exc_info=True)
             return LLMRateLimitError(str(exc), provider=provider, retry_after=retry_after)
         if (
             status in (401, 403)

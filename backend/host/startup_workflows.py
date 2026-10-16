@@ -398,8 +398,8 @@ async def _startup_workflow_services() -> Any:
         service_context.register("provider_invocation_coordinator", None)
         try:
             _workflow_research_tools.set_deepresearch_workflow_starter(None)
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001 - 关闭时重置失败不处理
+            logger.debug("deepresearch_starter_reset_failed", exc_info=True)
         logger.warning("workflow_service_init_failed", error=str(exc), exc_info=True)
     return st._sdb
 
@@ -817,7 +817,8 @@ def _define_v5_fetch_transport(st: _DeepV5ContextState) -> None:
                     if st.gateway.fetch_service is not None
                     else None
                 )
-            except Exception:
+            except Exception:  # noqa: BLE001 - 这一路抓取起不来时换下一路
+                logger.debug("workflow_fetch_transport_failed", exc_info=True)
                 continue
             if document is not None:
                 value = document.to_dict()

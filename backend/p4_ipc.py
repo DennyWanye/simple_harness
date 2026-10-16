@@ -609,8 +609,8 @@ def _get_service(sc: Any, name: str) -> Any | None:
     if callable(getter):
         try:
             return getter(name)
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001 - 服务取不到时看下一处
+            logger.debug("p4_ipc_service_lookup_failed", exc_info=True)
     return getattr(sc, name, None)
 
 
@@ -621,6 +621,6 @@ def _get_service(sc: Any, name: str) -> Any | None:
 async def _send_error(ws: Any, message: str) -> None:
     try:
         await ws.send_json({"type": "error", "payload": {"message": message}})
-    except Exception:  # pragma: no cover
+    except Exception:  # pragma: no cover  # noqa: BLE001 - 连接大概已断，没有别的办法
         # WebSocket probably dead — nothing else to do.
-        pass
+        logger.debug("p4_ipc_error_send_failed", exc_info=True)

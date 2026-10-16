@@ -441,8 +441,8 @@ class ContextRouteLedgerStore:
             async def close_owned():
                 try:
                     await connecting
-                except BaseException:
-                    pass
+                except BaseException:  # noqa: BLE001 - 关闭时等待未完成的连接出错不处理
+                    _LOG.debug("context_route_connecting_wait_failed", exc_info=True)
                 await db.close()
 
             cleanup = asyncio.create_task(close_owned())

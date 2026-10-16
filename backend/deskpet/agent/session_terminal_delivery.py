@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import logging
 import re
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
@@ -21,6 +22,9 @@ from deskpet.execution.contracts import (
 )
 from deskpet.execution.uow_ports import ProductProjectionUnitOfWork
 from deskpet.harness.projector import DeliveryDiscarded
+
+logger = logging.getLogger(__name__)
+
 
 _WINDOWS_PATH = re.compile(r"(?i)\b[a-z]:\\[^\s\"']+")
 _TOKEN = re.compile(r"(?i)\b(?:tsk|key|sk)_[a-z0-9_-]+\b")
@@ -238,10 +242,11 @@ class SessionTerminalDeliverySink:
             }
         try:
             await self._live_notifier(target.session_id, frame)
-        except Exception:
+        except Exception:  # noqa: BLE001 - 会话记录是权威，下次加载会重放
             # The transcript row is the durable authority.  A missing or
             # closing websocket must never roll the delivery back; the next
             # session_messages_load will replay the same projection.
+            logger.debug("session_terminal_live_notify_failed", exc_info=True)
             return
 
 

@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 from collections.abc import Awaitable, Callable, Mapping
 from pathlib import Path
 from typing import Any
@@ -28,6 +29,9 @@ from .ui_projection import (
     project_capability_snapshot,
     project_pack_manifest,
 )
+
+logger = logging.getLogger(__name__)
+
 
 CapabilityOperationNotifier = Callable[[Mapping[str, Any]], Awaitable[None]]
 _SCOPE_ORDER = {"run": 0, "project": 1, "user": 2, "builtin": 3}
@@ -348,8 +352,9 @@ class CapabilityCenterService:
                         "payload": {"capabilities": await self.list_capabilities()},
                     }
                 )
-        except Exception:
+        except Exception:  # noqa: BLE001 - 界面断开不能改变生命周期结算
             # A disconnected UI must never change lifecycle settlement.
+            logger.debug("capability_ui_notify_failed", exc_info=True)
             return
 
     async def _drive_operation(
@@ -361,9 +366,9 @@ class CapabilityCenterService:
             await runner()
         except asyncio.CancelledError:
             raise
-        except Exception:
+        except Exception:  # noqa: BLE001 - 能力包管理器已写过结构化错误
             # CapabilityPackManager has already written the structured error.
-            pass
+            logger.debug("capability_operation_failed", exc_info=True)
         finally:
             current = asyncio.current_task()
             async with self._task_lock:

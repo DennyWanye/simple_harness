@@ -32,6 +32,9 @@ one place without touching :func:`classify` logic.
 """
 
 from __future__ import annotations
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 # ─────────────── exception types ───────────────
@@ -140,7 +143,8 @@ def _extract_error_string(raw: dict | str | Exception | None) -> str:
     # safer than raising).
     try:
         return str(raw)
-    except Exception:  # noqa: BLE001 — never let classify itself fail
+    except Exception:  # noqa: BLE001 - 错误分类自身不能出错，转不成文字时按空串
+        logger.debug("error_string_extract_failed", exc_info=True)
         return ""
 
 

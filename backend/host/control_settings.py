@@ -201,8 +201,8 @@ async def _cc_supervisor_user_choice(conn: _ControlConnection, raw: dict, msg_ty
         if _nq_for_stop is not None:
             try:
                 await _nq_for_stop.clear(_target_sid)
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001 - 清空提醒队列失败时旧提醒可能还在
+                logger.warning("supervisor_notice_queue_clear_failed", exc_info=True)
     elif _is_continue:
         try:
             _launch_product_harness_chat(ws, "<<supervisor_followup>>", _target_sid)
@@ -239,8 +239,8 @@ async def _cc_supervisor_toggle(conn: _ControlConnection, raw: dict, msg_type: s
         if _nq_inst is not None:
             try:
                 await _nq_inst.clear()
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001 - 清空提醒队列失败时旧提醒可能还在
+                logger.warning("supervisor_notice_queue_clear_failed", exc_info=True)
         logger.info("supervisor_toggle_disabled")
     await ws.send_json(
         {

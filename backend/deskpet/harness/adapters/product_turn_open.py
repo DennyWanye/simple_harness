@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import logging
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
@@ -31,6 +32,8 @@ from deskpet.types.task_work_context import (
 from deskpet.types.task_work_context import (
     TaskWorkContext as DurableWorkContext,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _trace_jsonable(
@@ -64,8 +67,8 @@ def _trace_jsonable(
     if callable(compact):
         try:
             return _trace_jsonable(compact())
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001 - 压缩不了时按原样转
+            logger.debug("trace_compact_failed", exc_info=True)
     return {"type": type(value).__name__, "repr": repr(value)[:20_000]}
 
 

@@ -243,8 +243,8 @@ async def _cc_chat(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
             }
             try:
                 await ws.send_json(_switch_evt)
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001 - 连接已断时发不出去，不处理
+                logger.debug("chat_model_switch_event_send_failed", exc_info=True)
             await _broadcast_default_chat_peers(ws, _switch_evt)
         await _send_new_session_origin_user_echo(ws, _msg_sid, text)
     # Clicking an empty "new topic" still creates and switches

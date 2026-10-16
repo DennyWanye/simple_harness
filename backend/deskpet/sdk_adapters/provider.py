@@ -147,8 +147,8 @@ class _DiagnosticPostClient:
                         response.status_code,
                         exc_info=True,
                     )
-                except Exception:
-                    pass
+                except Exception:  # noqa: BLE001 - 诊断日志本身出错不影响请求
+                    logger.debug("provider_rejection_diagnostic_log_failed", exc_info=True)
         return response
 
 

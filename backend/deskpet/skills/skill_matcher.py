@@ -27,8 +27,12 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import logging
 import math
 from typing import Any, Optional
+
+logger = logging.getLogger(__name__)
+
 
 # Similarity assigned to an explicit trigger-phrase hit — must clear any
 # reasonable strong_threshold so trigger matches always auto-disclose.
@@ -92,8 +96,8 @@ class SkillMatcher:
                     vec.close()  # defensive: async-returning sync attr
                     continue
                 self._cache[_skill_identity(skill)] = _normalise(vec)
-            except Exception:  # noqa: BLE001 — degrade silently
-                pass
+            except Exception:  # noqa: BLE001 - 某个技能编码失败时不进向量匹配
+                logger.debug("skill_embedding_failed", exc_info=True)
 
     async def build_async(self, skills: list[Any]) -> int:
         """Async pre-warm of the skill embedding cache (lifespan entry).

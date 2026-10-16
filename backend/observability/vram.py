@@ -14,8 +14,12 @@ try/except so every failure mode maps to vram_gb = 0.0 (→ CPU).
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Literal
+
+logger = logging.getLogger(__name__)
+
 
 AsrDevice = Literal["cuda", "cpu"]
 AsrCompute = Literal["float16", "int8"]
@@ -93,7 +97,8 @@ def detect_vram_gb() -> float:
     try:
         # 按需导入：重型包
         import torch  # type: ignore[import-not-found]
-    except Exception:
+    except Exception:  # noqa: BLE001 - 没装或装不上深度学习库时按零显存
+        logger.debug("vram_torch_import_failed", exc_info=True)
         return 0.0
     try:
         if not torch.cuda.is_available():
@@ -101,7 +106,8 @@ def detect_vram_gb() -> float:
         props = torch.cuda.get_device_properties(0)
         # total_memory is bytes
         return float(props.total_memory) / (1024**3)
-    except Exception:
+    except Exception:  # noqa: BLE001 - 显卡信息读不到时按零显存
+        logger.debug("vram_detect_failed", exc_info=True)
         return 0.0
 
 

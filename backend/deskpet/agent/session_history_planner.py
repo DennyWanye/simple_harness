@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -19,6 +20,8 @@ from deskpet.agent.context_segment_store import (
     recover_broken_causal_messages,
 )
 from deskpet.agent.tokens import count_messages_tokens
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -403,8 +406,8 @@ class SessionHistoryPlanner:
                     segment.segment_id,
                     expected_revision=segment.revision,
                 )
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001 - 标记过期失败不影响本次规划
+                logger.warning("session_segment_mark_stale_failed", exc_info=True)
         return valid, tuple(stale)
 
     def _minimum_summary_cover(

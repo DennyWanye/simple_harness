@@ -742,7 +742,8 @@ def resolve_window_tokens(model_id: object) -> int | None:
         if name not in model_info.BUILTIN:
             return None
         return int(model_info.resolve(name).context_window)
-    except Exception:  # noqa: BLE001 — 元数据永远不该打断发送路径
+    except Exception:  # noqa: BLE001 - 元数据永远不该打断发送路径
+        _LOG.debug("wire_window_lookup_failed", exc_info=True)
         return None
 
 

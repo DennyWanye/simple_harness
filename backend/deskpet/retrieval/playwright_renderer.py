@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import inspect
+import logging
 import re
 import time
 from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
@@ -18,6 +19,8 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from deskpet import playwright_bundle
+
+logger = logging.getLogger(__name__)
 
 
 class ReadOnlyAction(str, Enum):
@@ -230,8 +233,8 @@ class PlaywrightRendererPool:
                     # Node driver is not detached from the backend.
                     try:
                         await manager.__aexit__(type(exc), exc, exc.__traceback__)
-                    except Exception:
-                        pass
+                    except Exception:  # noqa: BLE001 - 启动失败后的清理出错时不处理
+                        logger.debug("playwright_manager_exit_failed", exc_info=True)
                 raise
             self._capture_owned_processes(executable, processes_before)
             return self._browser
@@ -571,14 +574,14 @@ class PlaywrightRendererPool:
             if page is not None:
                 try:
                     await page.close()
-                except Exception:
-                    pass
+                except Exception:  # noqa: BLE001 - 关闭出错时不处理
+                    logger.debug("playwright_page_close_failed", exc_info=True)
             if context is not None:
                 try:
                     await context.clear_cookies()
                     await context.close()
-                except Exception:
-                    pass
+                except Exception:  # noqa: BLE001 - 关闭出错时不处理
+                    logger.debug("playwright_context_close_failed", exc_info=True)
             self._active_contexts -= 1
             await self._schedule_idle_shutdown()
 
@@ -663,16 +666,16 @@ class PlaywrightRendererPool:
         if manager is not None:
             try:
                 await manager.stop()
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001 - 关闭出错时不处理
+                logger.debug("playwright_stop_failed", exc_info=True)
 
     async def _close_browser_locked(self) -> None:
         browser, self._browser = self._browser, None
         if browser is not None:
             try:
                 await browser.close()
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001 - 关闭出错时不处理
+                logger.debug("playwright_browser_close_failed", exc_info=True)
         await self._stop_playwright_locked()
         await self._reap_owned_processes()
 

@@ -16,7 +16,7 @@ def _loopback(url: str) -> bool:
     try:
         p = urlparse(url)
         return p.scheme == "http" and p.hostname in {"127.0.0.1", "localhost", "::1"}
-    except Exception:
+    except ValueError:
         return False
 
 

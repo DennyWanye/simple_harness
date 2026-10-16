@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
 
 import httpx
@@ -15,6 +16,9 @@ from providers.context_os_e2e_hooks import trusted_provider_headers
 from providers.dispatch_handoff import current_dispatch_handoff
 from providers.dispatch_transport import DispatchAwareAsyncTransport
 from providers.extra_headers import extra_headers_for
+
+logger = logging.getLogger(__name__)
+
 
 if TYPE_CHECKING:
     from deskpet.execution.contracts import ProviderLaunchSnapshot
@@ -316,5 +320,6 @@ class OpenAICompatibleCore:
                     )
                     return chat_resp.status_code == 200
                 return False
-        except Exception:
+        except Exception:  # noqa: BLE001 - 健康检查出错按不健康
+            logger.debug("provider_health_check_failed", exc_info=True)
             return False

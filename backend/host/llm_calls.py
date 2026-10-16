@@ -58,8 +58,8 @@ def _make_str_llm_call(
                 content = (result or {}).get("content") or ""
                 if content.strip():
                     return content
-            except Exception:  # noqa: BLE001 — 非流式失败回退流式
-                pass
+            except Exception:  # noqa: BLE001 - 非流式失败时改用流式
+                logger.debug("llm_nonstream_call_failed", exc_info=True)
             with provider_purpose_scope(purpose):
                 result = await provider.chat_with_tools(
                     messages=_msgs,
@@ -252,7 +252,10 @@ def _resolve_primary_registry_provider():
             return None
         try:
             _chain = _reg.get_chain()
-        except Exception:  # NoProviderConfiguredError 等 —— 没配就是没配
+        except (
+            Exception
+        ):  # NoProviderConfiguredError 等 —— 没配就是没配  # noqa: BLE001 - 没配提供方就是没配
+            logger.debug("primary_provider_chain_missing", exc_info=True)
             return None
         if not _chain:
             return None

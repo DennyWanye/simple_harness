@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Mapping
 from typing import Any
 
@@ -17,6 +18,8 @@ from ..projection import project_approval, project_detail, project_events, ui_st
 from ..taskgraph import operate_taskgraph, read_taskgraph
 from .core import OrchestrationServiceCore
 from .support import TERMINAL, OrchestrationRequestError
+
+logger = logging.getLogger(__name__)
 
 
 class ReadMixin(OrchestrationServiceCore):
@@ -113,7 +116,8 @@ class ReadMixin(OrchestrationServiceCore):
     def _waiting(self, mission_id: str) -> bool:
         try:
             return bool(self._orchestrator.store.waiting_on(mission_id))
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 - 读不到等待状态时按不在等待
+            logger.debug("orchestration_waiting_read_failed", exc_info=True)
             return False
 
     def mission_detail(self, mission_id: str) -> dict[str, Any]:

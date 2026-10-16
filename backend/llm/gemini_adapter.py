@@ -134,12 +134,12 @@ class GeminiAdapter(BaseLLMAdapter):
                 continue
             try:
                 await client.aio.aclose()
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception:  # noqa: BLE001 - 关闭是尽力而为
+                logger.debug("gemini_async_client_close_failed", exc_info=True)
             try:
                 client.close()
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception:  # noqa: BLE001 - 关闭是尽力而为
+                logger.debug("gemini_client_close_failed", exc_info=True)
         self._client = None
         self._coordinated_client = None
 

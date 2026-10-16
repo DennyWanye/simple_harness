@@ -102,9 +102,9 @@ class WorkflowExecutionObserver:
                 from observability.metrics_sink import record
 
                 record("deepresearch_stage_timing", detail)
-            except Exception:
+            except Exception:  # noqa: BLE001 - 计时镜像不能影响持久执行
                 # Timing mirrors must never affect durable workflow execution.
-                pass
+                logger.debug("workflow_stage_timing_record_failed", exc_info=True)
 
 
 __all__ = ["WorkflowExecutionObserver"]

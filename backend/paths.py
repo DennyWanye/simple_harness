@@ -270,8 +270,8 @@ def output_dir(kind: str = "") -> Path:
     target = base / kind if kind else base
     try:
         target.mkdir(parents=True, exist_ok=True)
-    except Exception:  # noqa: BLE001 — 只读盘等;调用方写文件时报错
-        pass
+    except Exception:  # noqa: BLE001 - 只读盘等情况由调用方写文件时报错
+        logger.debug("output_dir_create_failed", exc_info=True)
     return target
 
 

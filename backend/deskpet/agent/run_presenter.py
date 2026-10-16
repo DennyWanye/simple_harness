@@ -872,8 +872,8 @@ async def _present_final(
                     },
                 }
             )
-        except Exception:
-            pass  # Give up, health check will recover after 60s
+        except Exception:  # noqa: BLE001 - 兜底错误帧也发不出去时由健康检查恢复
+            logger.warning("final_delivery_error_frame_failed", exc_info=True)
     try:
         await context.emit_context_usage(
             context.websocket,
@@ -982,8 +982,8 @@ async def _present_error(
                         },
                     }
                 )
-            except Exception:
-                pass  # Give up, health check will recover
+            except Exception:  # noqa: BLE001 - 兜底错误帧也发不出去时由健康检查恢复
+                logger.warning("error_delivery_fallback_failed", exc_info=True)
 
 
 async def _present_compacted(

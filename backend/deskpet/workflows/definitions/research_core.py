@@ -8,6 +8,7 @@ legacy blocking tool today and by a durable graph in a later task.
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
 import time
 from collections.abc import Awaitable, Callable, Iterable, Mapping
@@ -19,6 +20,8 @@ from ...tools import research_tools as legacy
 from ...tools.agent_reach_port import agent_reach_port
 from ..contracts import NodeExecutionIdentity
 from .deep_research_v5_contracts import ResearchLLMResult
+
+logger = logging.getLogger(__name__)
 
 
 class LLMCall(Protocol):
@@ -1124,8 +1127,8 @@ def _legacy_search_reset() -> None:
     try:
         search_provider.reset_search_runtime_state()
         search_provider.reset_search_cdp_budget()
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception:  # noqa: BLE001 - 搜索状态重置失败时沿用旧状态
+        logger.debug("research_search_state_reset_failed", exc_info=True)
 
 
 def _legacy_search_observation() -> Mapping[str, Any]:

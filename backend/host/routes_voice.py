@@ -92,8 +92,8 @@ async def audio_channel(ws: WebSocket):
     if not _validate_secret(ws):
         try:
             await ws.close(code=4001, reason="invalid secret")
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001 - 连接已断时关闭会失败，不处理
+            logger.debug("audio_ws_close_failed", exc_info=True)
         return
 
     if not _voice_runtime.enabled:

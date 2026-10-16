@@ -22,8 +22,8 @@ def _record_tool_choice_none_unsupported(provider: str, model: str) -> None:
             "tool_choice_none_unsupported",
             {"provider": provider, "model": model},
         )
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception:  # noqa: BLE001 - 指标记录失败不影响请求
+        logger.debug("tool_choice_metric_failed", exc_info=True)
 
 
 def _is_tool_choice_400(exc: httpx.HTTPStatusError, body: str) -> bool:

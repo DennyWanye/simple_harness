@@ -141,8 +141,8 @@ class ComponentRegistry:
                     meta.setdefault("duration_ms", round(dur_ms, 1))
                     meta.setdefault("status", status)
                     slice_obj.meta = meta
-                except Exception:  # noqa: BLE001 — meta 不可写不阻断
-                    pass
+                except Exception:  # noqa: BLE001 - 切片元数据不可写时不阻断
+                    logger.debug("assembler_slice_meta_failed", exc_info=True)
                 slow = (
                     per_component_timeout_s is not None
                     and dur_ms > per_component_timeout_s * 1000.0 * 0.6

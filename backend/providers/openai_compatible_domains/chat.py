@@ -555,8 +555,8 @@ class ChatMixin(OpenAICompatibleCore):
             state.body_snippet = ""
             try:
                 state.body_snippet = exc.response.text[:600]
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception:  # noqa: BLE001 - 错误响应正文读不出来时不带
+                logger.debug("provider_error_body_read_failed", exc_info=True)
             # 400 + the specific marker → retry once with assistant rows
             # missing reasoning_content stripped from history.
             state.should_retry = (
@@ -585,8 +585,8 @@ class ChatMixin(OpenAICompatibleCore):
                     state.body2 = ""
                     try:
                         state.body2 = exc2.response.text[:300]
-                    except Exception:  # noqa: BLE001
-                        pass
+                    except Exception:  # noqa: BLE001 - 错误响应正文读不出来时不带
+                        logger.debug("provider_error_body_read_failed", exc_info=True)
                     raise LLMProviderError(
                         f"LLM HTTP {exc2.response.status_code} {exc2.response.reason_phrase}: "
                         f"{state.body2}",
@@ -610,8 +610,8 @@ class ChatMixin(OpenAICompatibleCore):
                     state.body2 = ""
                     try:
                         state.body2 = exc2.response.text[:300]
-                    except Exception:  # noqa: BLE001
-                        pass
+                    except Exception:  # noqa: BLE001 - 错误响应正文读不出来时不带
+                        logger.debug("provider_error_body_read_failed", exc_info=True)
                     raise LLMProviderError(
                         f"LLM HTTP {exc2.response.status_code} {exc2.response.reason_phrase}: "
                         f"{state.body2}",

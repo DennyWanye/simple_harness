@@ -99,7 +99,7 @@ class WorkspaceComponent:
         # Default: platformdirs — lazy import to keep the hot path lean
         try:
             from platformdirs import user_data_dir  # type: ignore
-        except Exception:
+        except ImportError:
             return None
         return Path(user_data_dir("deskpet", appauthor=False)) / "workspace"
 

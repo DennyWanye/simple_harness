@@ -225,7 +225,8 @@ class EvidenceRuntimeCore:
                     "attempt": identity.attempt,
                 },
             )
-        except Exception:
+        except Exception:  # noqa: BLE001 - 计时跨度开不了时不计时，不影响研究
+            logger.debug("research_child_span_start_failed", exc_info=True)
             return None
         return span_id
 
@@ -265,9 +266,10 @@ class EvidenceRuntimeCore:
                 from observability.metrics_sink import record
 
                 record("deepresearch_stage_timing", detail)
-            except Exception:
-                pass
-        except Exception:
+            except Exception:  # noqa: BLE001 - 指标记录失败不影响主流程
+                logger.debug("research_stage_timing_record_failed", exc_info=True)
+        except Exception:  # noqa: BLE001 - 计时跨度收尾出错时不计时，不影响研究
+            logger.debug("research_child_span_finish_failed", exc_info=True)
             return
 
     async def load_pages(

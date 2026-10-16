@@ -160,8 +160,8 @@ class LLMRegistry:
         for adapter in self._adapters.values():
             try:
                 await adapter.close()
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception:  # noqa: BLE001 - 关闭是尽力而为
+                logger.debug("llm_adapter_close_failed", exc_info=True)
 
     # ───────────────────── chat with fallback ─────────────────────
 

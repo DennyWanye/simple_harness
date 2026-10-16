@@ -36,12 +36,16 @@ Design
 from __future__ import annotations
 
 import enum
+import logging
 import re
 from dataclasses import dataclass
 from typing import Any
 
 from deskpet.agent.tokens import count_messages_tokens
 from llm.model_info import BUILTIN
+
+logger = logging.getLogger(__name__)
+
 
 # Threshold defaults — same as Claude's own internal heuristic:
 #   WARN at 80% so user/UI can react ahead of failure
@@ -193,8 +197,8 @@ def get_context_window(model_name: str) -> int:
         info = BUILTIN.get(normalized)
         if info is not None:
             return info.context_window
-    except Exception:  # noqa: BLE001 — model_info import must never break budget
-        pass
+    except Exception:  # noqa: BLE001 - 模型信息出错不能打断预算，改用默认窗口
+        logger.debug("context_window_lookup_failed", exc_info=True)
 
     # 2/3. legacy table → conservative default
     return _KNOWN_WINDOWS.get(normalized, DEFAULT_CONTEXT_WINDOW)

@@ -44,8 +44,8 @@ def _persist_supervisor_enabled(enabled: bool) -> bool:
         path.write_text(tomlkit.dumps(doc), encoding="utf-8")
         try:
             config.raw.setdefault("supervisor", {})["enabled"] = bool(enabled)
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001 - 设置写不进配置时只在本次运行生效
+            logger.warning("supervisor_setting_persist_failed", exc_info=True)
         return True
     except Exception as exc:  # noqa: BLE001
         logger.warning(

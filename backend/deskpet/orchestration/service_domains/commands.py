@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Iterator, Mapping
 from typing import Any
 
@@ -18,6 +19,9 @@ from deskpet.orchestration.service_domains.support import _STATUS_ZH, RECOVERY_I
 from ..notices import NoticeNotFound
 from .core import OrchestrationServiceCore
 from .support import OrchestrationRequestError
+
+logger = logging.getLogger(__name__)
+
 
 FACADE_CODES = {
     "invalid_request": "invalid_request",
@@ -466,7 +470,8 @@ class CommandMixin(OrchestrationServiceCore):
 
         try:
             pending = self.pending_notices()
-        except Exception:  # noqa: BLE001 - the chat must never fail on a notice read
+        except Exception:  # noqa: BLE001 - 读通知失败不能让聊天失败
+            logger.debug("orchestration_notice_read_failed", exc_info=True)
             return ""
         if not pending:
             return ""

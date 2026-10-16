@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import inspect
 import json
+import logging
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
@@ -73,6 +74,8 @@ from .run_adapter import (
     CompanionPreparedRunFacts,
 )
 from .store import canonical_hash, canonical_json
+
+logger = logging.getLogger(__name__)
 
 
 def _json_object(value: object, code: str) -> dict[str, Any]:
@@ -1645,9 +1648,9 @@ class GrowthProductionPipeline:
                     outcome_hash=outcome_hash,
                     reason_code="background_evaluation_completed",
                 )
-            except Exception:
+            except Exception:  # noqa: BLE001 - 下面的结果记录会核对精确重放
                 # Exact replay is verified by record_evaluation_result below.
-                pass
+                logger.debug("companion_evaluation_settle_failed", exc_info=True)
             recorded = self._store.record_evaluation_result(
                 owner,
                 evaluation_id=evaluation_id,

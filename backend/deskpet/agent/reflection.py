@@ -136,8 +136,8 @@ def _emit_reflection_parse_failed(text_len: int) -> None:
         from observability.metrics_sink import record as _metric  # noqa: PLC0415
 
         _metric("reflection_parse_failed", {"count": 1})
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception:  # noqa: BLE001 - 指标记录失败不影响主流程
+        logger.debug("reflection_parse_metric_failed", exc_info=True)
 
 
 def parse_reflection(assistant_text: str) -> StructuredReflection | None:

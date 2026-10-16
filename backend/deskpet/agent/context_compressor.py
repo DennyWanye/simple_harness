@@ -394,8 +394,8 @@ class ContextCompressor:
                             "tool_results_pruned": n_micro,
                         },
                     )
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception:  # noqa: BLE001 - 压缩记录失败不影响压缩结果
+                logger.debug("context_microcompact_record_failed", exc_info=True)
 
         # Normalize previous compaction formats before choosing new cut points.
         # A summary may have moved into the preserved head/tail, so extracting

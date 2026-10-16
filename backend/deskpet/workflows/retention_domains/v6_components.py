@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from pathlib import Path
 
 import aiosqlite
@@ -12,6 +13,8 @@ from ..contracts import TERMINAL_RUN_STATUSES
 from ..store.research_repository import ResearchWorkflowRepository
 from .core import RetentionCore
 from .support import RUN_STAGE, RetentionStageResult, _column_values, _placeholders
+
+logger = logging.getLogger(__name__)
 
 
 class V6ComponentCleanupMixin(RetentionCore):
@@ -270,7 +273,8 @@ class V6ComponentCleanupMixin(RetentionCore):
                 declared_closure = {str(ref)[7:] for ref in snapshot_value.get("closure_refs", ())}
                 if not declared_closure <= {str(row["sha256"]) for row in refs}:
                     return False
-            except Exception:
+            except Exception:  # noqa: BLE001 - 闭包数据坏了时按无效处理
+                logger.debug("v6_component_closure_check_failed", exc_info=True)
                 return False
             for row in refs:
                 path = self._safe_blob_path(str(row["relative_path"]))

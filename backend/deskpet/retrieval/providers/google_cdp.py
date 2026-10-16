@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from urllib.parse import quote_plus
 
 import httpx
@@ -9,6 +10,8 @@ from deskpet.tools.research_cdp_edge import cdp_edge_available
 
 from ..contracts import PublicErrorCode, SearchBudget, SearchRequest
 from .base import ProviderFailure, candidates_from_rows
+
+logger = logging.getLogger(__name__)
 
 
 class GoogleCDPProvider:
@@ -23,7 +26,8 @@ class GoogleCDPProvider:
         try:
             response = await client.get("https://www.google.com/generate_204", timeout=0.5)
             return response.status_code in {200, 204}
-        except Exception:
+        except Exception:  # noqa: BLE001 - 探测失败按不可用处理
+            logger.debug("google_cdp_probe_failed", exc_info=True)
             return False
 
     async def search(self, request: SearchRequest, budget: SearchBudget, client: httpx.AsyncClient):

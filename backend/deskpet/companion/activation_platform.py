@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import tempfile
 from collections.abc import Mapping
@@ -53,6 +54,9 @@ from .activation import (
 )
 from .contracts import CapabilityMutationReceipt, MutationAction
 from .store import canonical_hash
+
+logger = logging.getLogger(__name__)
+
 
 _CONFIRMATION_AUTHORITY = object()
 
@@ -1019,7 +1023,8 @@ class CompanionCapabilityMutationPlatform:
                 static,
                 reason_code=reason_code,
             )
-        except Exception:
+        except Exception:  # noqa: BLE001 - 中止失败时返回失败，由调用方处理
+            logger.debug("companion_abort_mutation_failed", exc_info=True)
             return False
 
     async def _require_exact_decision(

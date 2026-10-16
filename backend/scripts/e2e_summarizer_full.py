@@ -40,12 +40,16 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import sqlite3
 import sys
 import time
 from pathlib import Path
 
 import websockets
+
+logger = logging.getLogger(__name__)
+
 
 if sys.platform == "win32":
     try:
@@ -155,8 +159,8 @@ def _wipe_test_sessions() -> None:
                     f"DELETE FROM messages_vec WHERE message_id IN ({placeholder})",
                     all_ids,
                 )
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001 - 向量表可能不存在，删不了时跳过
+                logger.debug("messages_vec_wipe_failed", exc_info=True)
 
         conn.execute(f"DELETE FROM messages WHERE session_id LIKE '{SESSIONS_PREFIX}%'")
         conn.execute(f"DELETE FROM messages_archive WHERE session_id LIKE '{SESSIONS_PREFIX}%'")
@@ -216,7 +220,8 @@ def _summary_in_vec(session_id: str) -> bool:
             conn.enable_load_extension(True)
             sqlite_vec.load(conn)
             conn.enable_load_extension(False)
-        except Exception:
+        except Exception:  # noqa: BLE001 - 向量扩展加载不了时按没有
+            logger.debug("sqlite_vec_load_failed", exc_info=True)
             return False
         row = conn.execute(
             "SELECT message_id FROM messages_vec mv "

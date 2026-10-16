@@ -488,8 +488,8 @@ class SkillLoader:
         if self._debounce_timer is not None:
             try:
                 self._debounce_timer.cancel()
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001 - 取消定时器出错不处理
+                logger.debug("skill_reload_timer_cancel_failed", exc_info=True)
             self._debounce_timer = None
         if self._observer is not None:
             try:
@@ -929,8 +929,8 @@ class SkillLoader:
             if self._debounce_timer is not None:
                 try:
                     self._debounce_timer.cancel()
-                except Exception:
-                    pass
+                except Exception:  # noqa: BLE001 - 取消定时器出错不处理
+                    logger.debug("skill_reload_timer_cancel_failed", exc_info=True)
             t = threading.Timer(self._debounce_s, self._on_debounce_fire)
             t.daemon = True
             self._debounce_timer = t

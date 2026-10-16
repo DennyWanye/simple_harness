@@ -608,8 +608,8 @@ class ProductTurnPreparer:
                             "per_skill_max_tokens": int(disclosure.per_skill_max_tokens),
                         }
                     }
-                except Exception:
-                    pass
+                except Exception:  # noqa: BLE001 - 披露配置快照失败时不带这一项
+                    logger.debug("skill_disclosure_snapshot_failed", exc_info=True)
                 workspace_config = (
                     {
                         "verified": True,

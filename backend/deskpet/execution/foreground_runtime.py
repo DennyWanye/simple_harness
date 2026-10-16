@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 import re
 import time
 import uuid
@@ -63,6 +64,9 @@ from deskpet.sdk_adapters.ingress import SdkRuntimeIngress
 from deskpet.task_scope.protocol import redact_credential_shapes
 
 from .foreground_runtime_domains.claimed_drive import ClaimedDriveMixin, ForegroundRuntimeError
+
+logger = logging.getLogger(__name__)
+
 
 # S5b Task 6 (review F-9): the only shape a FAILED terminal's public
 # ``error_code`` may take; everything else degrades to the SDK public code.
@@ -427,10 +431,12 @@ class ForegroundRuntimeExecutionAuthority(ClaimedDriveMixin):
             try:
                 async with asyncio.timeout(0.5):
                     await self._state_changed()
-            except Exception:
+            except Exception as swallowed_exc:  # noqa: BLE001 - 只是提示，不是账本；回调异常可能含隐私，只记类型
                 # Reconnection reads SQLite; this hint is neither ledger nor ACK.
                 # Never publish callback errors, which may contain private data.
-                pass
+                logger.debug(
+                    "foreground_state_changed_hint_failed", error_type=type(swallowed_exc).__name__
+                )
 
     @property
     def subject(self) -> str:
@@ -1102,10 +1108,10 @@ class ForegroundRuntimeExecutionAuthority(ClaimedDriveMixin):
         if self._terminal_audit_wake is not None:
             try:
                 self._terminal_audit_wake()
-            except Exception:
+            except Exception:  # noqa: BLE001 - 唤醒只是优化，持久发现会补上
                 # Wake is only an optimization. Durable terminal discovery recovers
                 # missed notifications without changing the business result.
-                pass
+                logger.debug("foreground_terminal_audit_wake_failed", exc_info=True)
         self._notify_state_changed()
         self._provider.mark_terminal(sdk_run_id, terminal.terminal_state.value.lower())
         cleanup_tools = getattr(self._tools, "mark_terminal_if_registered", None)

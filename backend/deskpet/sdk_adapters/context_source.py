@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 from collections.abc import Awaitable, Callable, Mapping
 from pathlib import Path
@@ -13,6 +14,8 @@ from pathlib import Path
 import aiosqlite
 from simple_harness.contracts import JsonValue, canonical_json
 from simple_harness.runtime import source_snapshot_ref
+
+logger = logging.getLogger(__name__)
 
 
 class ProductContextSourceRepository:
@@ -225,7 +228,8 @@ class ProductContextSourceRepository:
                         active = await active  # type: ignore[assignment,misc]
                     if active:
                         continue
-                except Exception:
+                except Exception:  # noqa: BLE001 - 查不到占用时跳过这一条
+                    logger.debug("context_source_claim_check_failed", exc_info=True)
                     continue
             await self.consume(str(binding_id))
             removed += 1

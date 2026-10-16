@@ -139,8 +139,8 @@ class EdgeTTSProvider:
                 if proc.stdin is not None and not proc.stdin.is_closing():
                     try:
                         proc.stdin.close()
-                    except Exception:
-                        pass
+                    except Exception:  # noqa: BLE001 - 关闭输入出错不处理
+                        logger.debug("edge_tts_stdin_close_failed", exc_info=True)
 
         feeder = asyncio.create_task(_feed())
         pcm_buf = bytearray()
@@ -163,8 +163,8 @@ class EdgeTTSProvider:
             feeder.cancel()
             try:
                 await feeder
-            except (asyncio.CancelledError, Exception):
-                pass
+            except (asyncio.CancelledError, Exception):  # noqa: BLE001 - 喂数据任务出错时按结束处理
+                logger.debug("edge_tts_feeder_wait_failed", exc_info=True)
             if proc.returncode is None:
                 try:
                     proc.kill()

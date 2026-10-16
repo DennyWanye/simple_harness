@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import sqlite3
 import time
 import uuid
@@ -41,6 +42,8 @@ from deskpet.task_scope.workspace_bindings import (
     WorkspaceBindingError,
     canonical_workspace_root,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class AuthorizationPolicyStatePort(Protocol):
@@ -118,7 +121,8 @@ class WorkspaceBindingRuntimeAuthority:
             return
         try:
             await changed()
-        except Exception:  # noqa: BLE001 - a refresh hint never undoes a commit
+        except Exception:  # noqa: BLE001 - 刷新提示不撤销已提交的结果
+            logger.debug("runtime_binding_display_notify_failed", exc_info=True)
             return
 
     async def append_binding(

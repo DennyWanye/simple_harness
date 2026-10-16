@@ -201,7 +201,8 @@ async def _startup_supervisor() -> None:
                         permission_gate_v2 is not None
                         and getattr(permission_gate_v2, "auto_mode", False)
                     )
-                except Exception:
+                except Exception:  # noqa: BLE001 - 读不到自动模式时按关闭
+                    logger.debug("supervisor_auto_mode_check_failed", exc_info=True)
                     return False
 
             async def _supervisor_auto_followup(sid: str, trigger_text: str) -> None:
@@ -423,7 +424,8 @@ async def _startup_auto_resume_and_model_context(_heal_cfg: Any) -> None:
             _gs = service_context.get("session_goal_store")
             try:
                 return _gs.get_goal_text(_sid) if _gs is not None else None
-            except Exception:  # noqa: BLE001 — safe-fail, 不阻 resume
+            except Exception:  # noqa: BLE001 - 读目标失败不阻断恢复
+                logger.debug("resume_goal_text_failed", exc_info=True)
                 return None
 
         # 监工开着就让监工模型给提示；关着用按失败原因的固定提示（不调模型）

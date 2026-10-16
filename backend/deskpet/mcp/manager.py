@@ -343,8 +343,8 @@ class MCPManager:
                 runtime.reconnect_task.cancel()
                 try:
                     await runtime.reconnect_task
-                except (asyncio.CancelledError, Exception):
-                    pass
+                except (asyncio.CancelledError, Exception):  # noqa: BLE001 - 停止时等待重连任务出错不处理
+                    logger.debug("mcp_reconnect_task_stop_failed", exc_info=True)
                 runtime.reconnect_task = None
             await self._teardown_runtime(runtime)
             runtime.state = "stopped"
@@ -770,8 +770,8 @@ class MCPManager:
             if runtime.exit_stack is not None:
                 try:
                     await runtime.exit_stack.aclose()
-                except Exception:  # noqa: BLE001
-                    pass
+                except Exception:  # noqa: BLE001 - 关闭旧连接出错时继续重连
+                    logger.debug("mcp_exit_stack_close_failed", exc_info=True)
                 runtime.exit_stack = None
 
             try:
@@ -1147,8 +1147,8 @@ def _safe_model_dump(value: Any) -> Any:
     if callable(dump):
         try:
             return dump(mode="python")
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception:  # noqa: BLE001 - 转换出错时改用别的办法
+            logger.debug("mcp_model_dump_failed", exc_info=True)
     if isinstance(value, (dict, list, str, int, float, bool)) or value is None:
         return value
     return {"repr": repr(value)}

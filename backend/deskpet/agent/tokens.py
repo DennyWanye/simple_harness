@@ -18,9 +18,13 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 from typing import Any
+
+logger = logging.getLogger(__name__)
+
 
 # CJK 字符(汉字/假名/全角符号)在主流 BPE 里 ≈1 token/字,而裸 char/4 会低估 ~4 倍。
 _CJK_RE = re.compile(r"[　-ヿ㐀-䶿一-鿿豈-﫿＀-￯]")
@@ -70,8 +74,8 @@ def count_text_tokens(text: str) -> int:
     if enc is not None:
         try:
             return max(1, len(enc.encode(text)))
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception:  # noqa: BLE001 - 编码出错时改用估算
+            logger.debug("token_encode_failed", exc_info=True)
     return max(1, _weighted_chars(text) // 4)
 
 

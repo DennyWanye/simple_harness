@@ -12,6 +12,7 @@ import argparse
 import asyncio
 import base64
 import json
+import logging
 import sys
 import time
 import urllib.request
@@ -19,10 +20,13 @@ from pathlib import Path
 
 import websockets
 
+logger = logging.getLogger(__name__)
+
+
 try:
     sys.stdout.reconfigure(encoding="utf-8")
-except Exception:
-    pass
+except Exception:  # noqa: BLE001 - 标准输出不支持改编码时沿用原样
+    logger.debug("stdout_reconfigure_failed", exc_info=True)
 
 SHOT_DIR = Path(r"G:\projects\deskpet\plans\manual-results-2026-06-01\screenshots")
 # code 模式产物落项目目录；companion 模式落 artifacts dir。两处都扫。

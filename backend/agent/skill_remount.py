@@ -244,7 +244,8 @@ def remount_skills(
                 name,
             )
             continue
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 - 某个技能重挂出错时跳过它
+            logger.debug("skill_remount_failed", exc_info=True)
             continue
 
         expected_hash = expected_hashes.get(name)

@@ -169,7 +169,8 @@ def _provider_chain_or_none(provider_registry):
 
     try:
         return provider_registry.get_chain()
-    except Exception:
+    except Exception:  # noqa: BLE001 - 没配提供方时返回空
+        logger.debug("provider_chain_missing", exc_info=True)
         return None
 
 

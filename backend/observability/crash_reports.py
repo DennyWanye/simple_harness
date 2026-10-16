@@ -43,7 +43,8 @@ def _write_report(kind: str, text: str, directory: Path) -> Path | None:
         path = directory / f"{kind}-{ts}.log"
         path.write_text(text, encoding="utf-8")
         return path
-    except Exception:  # pragma: no cover — best-effort
+    except Exception:  # pragma: no cover — best-effort  # noqa: BLE001 - 崩溃报告写不了时只留日志
+        logger.warning("crash_report_write_failed", exc_info=True)
         return None
 
 

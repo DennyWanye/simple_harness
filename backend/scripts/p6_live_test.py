@@ -27,8 +27,12 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import sys
 import time
+
+logger = logging.getLogger(__name__)
+
 
 try:
     import websockets
@@ -49,8 +53,8 @@ if not SECRET:
         m = list(re.finditer(r"secret=([a-f0-9]{32})", text))
         if m:
             SECRET = m[-1].group(1)
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001 - 读不到开发日志时不取密钥
+        logger.debug("dev_log_secret_read_failed", exc_info=True)
 print(f"Using secret={SECRET[:8]}... ({len(SECRET)} chars)")
 BACKEND_WS = f"ws://127.0.0.1:8100/ws/control?secret={SECRET}&session_id=p6-live-test"
 
@@ -94,7 +98,8 @@ async def main() -> int:
         async for raw in ws:
             try:
                 msg = json.loads(raw)
-            except Exception:
+            except Exception:  # noqa: BLE001 - 不是 JSON 的消息跳过
+                logger.debug("ws_message_parse_failed", exc_info=True)
                 continue
             mtype = msg.get("type", "?")
             payload = msg.get("payload", {})

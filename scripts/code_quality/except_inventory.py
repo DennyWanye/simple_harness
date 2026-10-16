@@ -175,11 +175,12 @@ def reraises(h: ast.ExceptHandler) -> bool:
 
 
 def is_product(rel: str) -> bool:
-    """完成口径的范围：后端去掉脚本，SDK 源码；都去掉编解码钉死文件与禁区（表结构、迁移）。"""
+    """完成口径的范围：后端去掉脚本，SDK 源码；都去掉编解码钉死文件与禁区（表结构、迁移、能力包模板）。"""
     return (
         not rel.startswith("backend/scripts/")
         and rel not in CODEC_PINNED
         and not FORBIDDEN_PY.search(rel)
+        and "/capabilities/templates/" not in rel  # 已发布能力包模板是执行池准入身份，不许改
     )
 
 

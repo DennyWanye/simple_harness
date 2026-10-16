@@ -43,6 +43,7 @@ gc 普查（tracemalloc 开）      6.57 s      默认关
 from __future__ import annotations
 
 import gc
+import logging
 import os
 import sys
 import threading
@@ -52,6 +53,9 @@ from collections import Counter
 from collections.abc import Callable, Mapping, MutableMapping
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
+
 
 __all__ = [
     "MemoryProbe",
@@ -142,7 +146,8 @@ def _max_rss_kb() -> int | None:
         import resource  # noqa: PLC0415 - Windows 上没有
 
         raw = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
-    except Exception:
+    except Exception:  # noqa: BLE001 - 平台不支持时不记这项
+        logger.debug("memory_probe_maxrss_failed", exc_info=True)
         return None
     # macOS 的 ru_maxrss 是字节，Linux 是 KiB。
     return raw // 1024 if sys.platform == "darwin" else raw
@@ -155,7 +160,8 @@ def _psutil_process() -> Any | None:
         import psutil  # noqa: PLC0415 - 只在探针开启时才付出这次 import
 
         return psutil.Process()
-    except Exception:
+    except Exception:  # noqa: BLE001 - 没装进程库时不记这项
+        logger.debug("memory_probe_psutil_failed", exc_info=True)
         return None
 
 
@@ -303,8 +309,10 @@ class MemoryProbe:
         run_id = getattr(authority, "run_id", None)
         try:
             self.record_terminal(str(run_id) if run_id is not None else None)
-        except Exception:  # pragma: no cover - 探针不允许影响 Run 终态
-            pass
+        except (
+            Exception
+        ):  # pragma: no cover - 探针不允许影响 Run 终态  # noqa: BLE001 - 探针不许影响运行终态
+            logger.debug("memory_probe_terminal_failed", exc_info=True)
 
     def record_terminal(self, run_id: str | None = None) -> Mapping[str, Any] | None:
         """打一行廉价 RSS 并（按 `every`）投递一次后台采样；**从不**在这里采样。"""
@@ -373,8 +381,10 @@ class MemoryProbe:
     def _emit_safe(self, fields: Mapping[str, Any]) -> None:
         try:
             self._emit(fields)
-        except Exception:  # pragma: no cover - 探针不允许影响 Run 终态
-            pass
+        except (
+            Exception
+        ):  # pragma: no cover - 探针不允许影响 Run 终态  # noqa: BLE001 - 探针不许影响运行终态
+            logger.debug("memory_probe_emit_failed", exc_info=True)
 
     # -- 采样线程 ---------------------------------------------------------
     def _run(self) -> None:
@@ -392,8 +402,10 @@ class MemoryProbe:
                     break
                 try:
                     self._sample(*request)
-                except Exception:  # pragma: no cover - 采样失败不许拖垮线程
-                    pass
+                except (
+                    Exception
+                ):  # pragma: no cover - 采样失败不许拖垮线程  # noqa: BLE001 - 采样失败不许拖垮线程
+                    logger.debug("memory_probe_sample_failed", exc_info=True)
                 finally:
                     with self._lock:
                         self._in_flight = False
@@ -511,7 +523,8 @@ class MemoryProbe:
             self._snapshot_dir.mkdir(parents=True, exist_ok=True)
             name = f"turn-{self._probes}.snap"
             snapshot.dump(str(self._snapshot_dir / name))
-        except Exception:
+        except Exception:  # noqa: BLE001 - 快照写不了时跳过
+            logger.debug("memory_probe_snapshot_failed", exc_info=True)
             return None
         self._prune()
         return name
@@ -522,7 +535,8 @@ class MemoryProbe:
                 self._snapshot_dir.glob("turn-*.snap"),
                 key=lambda path: _snapshot_ordinal(path.name),
             )
-        except Exception:
+        except Exception:  # noqa: BLE001 - 清旧快照出错时下次再清
+            logger.debug("memory_probe_prune_failed", exc_info=True)
             return
         for stale in existing[: max(0, len(existing) - self._keep)]:
             try:

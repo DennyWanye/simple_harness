@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import http.client
 import json
+import logging
 import os
 import random
 import sys
@@ -32,6 +33,9 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
+
+logger = logging.getLogger(__name__)
+
 
 TOTAL_SLOTS = int(os.environ.get("DAYCARD_TOTAL_SLOTS", "1"))
 BATCH_SLOTS = int(os.environ.get("DAYCARD_BATCH_SLOTS", "1"))
@@ -279,8 +283,8 @@ def make_handler(klass: str, slots: Slots, origin: tuple[str, str, int]):
                         self.send_header("Content-Length", str(len(data)))
                         self.end_headers()
                         self.wfile.write(data)
-                    except Exception:
-                        pass
+                    except Exception:  # noqa: BLE001 - 客户端已断时回不了错误，不处理
+                        logger.debug("daycard_relay_error_reply_failed", exc_info=True)
                     status = 502
                 self.close_connection = True
             finally:

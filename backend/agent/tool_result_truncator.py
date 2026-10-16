@@ -108,7 +108,8 @@ def _spill_dir() -> Path | None:
         d = Path(user_cache_dir()) / "tool_refs"
         d.mkdir(parents=True, exist_ok=True)
         return d
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 - 缓存目录不可用时不落盘
+        logger.debug("tool_ref_spill_dir_failed", exc_info=True)
         return None
 
 

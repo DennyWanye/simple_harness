@@ -43,8 +43,12 @@ route barrier all still fail closed on their own.
 from __future__ import annotations
 
 import json
+import logging
 import threading
 from collections import OrderedDict
+
+logger = logging.getLogger(__name__)
+
 
 #: 事件 AL (2026-09-09, HM-TO-A6 第 13 次整跑 T17): 一次**被拒**的大参数调用要在
 #: 历史里付两次钱 —— 拒绝那一轮付一次, 之后每一轮 ``_wire_messages`` 把它原样补
@@ -281,7 +285,8 @@ class ToolCallArgumentsMemo:
                 self._bytes += size
                 self._evict_locked()
                 return key in self._entries
-        except Exception:  # noqa: BLE001 - the memo is advisory, never fatal
+        except Exception:  # noqa: BLE001 - 备忘只是建议，出错不致命
+            logger.debug("tool_call_arguments_memo_failed", exc_info=True)
             return False
 
     def read(self, call_id: object, tool_name: object) -> str | None:

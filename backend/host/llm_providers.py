@@ -73,14 +73,14 @@ if _llm_overrides:
         # 访问器(WI-3)双保险。见 plans/2026-06-16-effective-llm-model-resolution。
         try:
             config.raw.setdefault("llm", {})["model"] = _llm_overrides["model"]
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception:  # noqa: BLE001 - 模型覆盖写不进配置时沿用原配置
+            logger.warning("llm_model_override_failed", exc_info=True)
     if "base_url" in _llm_overrides:
         # base_url 也同步 raw(让 breakdown 探针的 base_url 预览也对;真出站本就用 dataclass)
         try:
             config.raw.setdefault("llm", {})["base_url"] = _llm_overrides["base_url"]
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception:  # noqa: BLE001 - 地址覆盖写不进配置时沿用原配置
+            logger.warning("llm_base_url_override_failed", exc_info=True)
     if "temperature" in _llm_overrides:
         config.llm.local.temperature = float(_llm_overrides["temperature"])
     if "api_key" in _llm_overrides and _llm_overrides["api_key"]:

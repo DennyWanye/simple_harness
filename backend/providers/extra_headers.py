@@ -33,6 +33,7 @@ helper itself (the provider objects still cache ``base_url``/``api_key``).
 from __future__ import annotations
 
 import json
+import logging
 import os
 import threading
 from pathlib import Path
@@ -40,6 +41,9 @@ from typing import Any
 from urllib.parse import urlsplit
 
 import paths as _paths
+
+logger = logging.getLogger(__name__)
+
 
 __all__ = [
     "extra_headers_for",
@@ -63,7 +67,7 @@ def _runtime_path() -> Path:
 def _host_of(url: str) -> str:
     try:
         return (urlsplit(str(url or "")).hostname or "").lower()
-    except Exception:  # noqa: BLE001 - malformed url → no match
+    except ValueError:
         return ""
 
 
@@ -135,6 +139,6 @@ def install_httpx_extra_headers_hook(client: Any) -> Any:
         hooks = client.event_hooks
         hooks.setdefault("request", []).append(_inject)
         client.event_hooks = hooks
-    except Exception:  # noqa: BLE001 - never let a diagnostics hook break startup
-        pass
+    except Exception:  # noqa: BLE001 - 诊断钩子不能打断启动
+        logger.debug("extra_headers_hook_install_failed", exc_info=True)
     return client

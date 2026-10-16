@@ -1492,8 +1492,8 @@ def effective_llm_model(cfg: AppConfig) -> str:
         model = cfg.llm.local.model
         if isinstance(model, str) and model:
             return model
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001 - 读不到本地模型配置时看下一处
+        logger.debug("config_local_model_read_failed", exc_info=True)
 
     try:
         raw = cfg.raw or {}
@@ -1503,8 +1503,8 @@ def effective_llm_model(cfg: AppConfig) -> str:
                 model = llm.get("model")
                 if isinstance(model, str) and model:
                     return model
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001 - 读不到原始模型配置时看下一处
+        logger.debug("config_raw_model_read_failed", exc_info=True)
 
     return "gemma4:e4b"
 
@@ -1521,8 +1521,8 @@ def effective_llm_model_standalone() -> str:
                 model = data.get("model")
                 if isinstance(model, str) and model:
                     return model
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001 - 运行时配置读不到时看下一处
+        logger.debug("config_runtime_model_read_failed", exc_info=True)
 
     try:
         cfg = load_config(resolve_config_path())
@@ -1533,8 +1533,8 @@ def effective_llm_model_standalone() -> str:
                 model = llm.get("model")
                 if isinstance(model, str) and model:
                     return model
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001 - 读不到配置文件里的模型时用默认值
+        logger.debug("config_standalone_model_read_failed", exc_info=True)
 
     return "gemma4:e4b"
 
@@ -1564,8 +1564,8 @@ def standalone_config_section(section: str) -> dict:
             val = raw.get(section)
             if isinstance(val, dict):
                 return val
-    except Exception:  # noqa: BLE001 — 配置缺失/损坏一律回落默认
-        pass
+    except Exception:  # noqa: BLE001 - 配置缺失或损坏时回落默认
+        logger.debug("config_section_read_failed", exc_info=True)
     return {}
 
 

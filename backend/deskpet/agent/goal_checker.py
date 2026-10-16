@@ -46,8 +46,8 @@ def _emit_goal_check_skipped(reason: str) -> None:
         from observability.metrics_sink import record as _metric  # noqa: PLC0415
 
         _metric("goal_check_skipped", {"reason": reason})
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception:  # noqa: BLE001 - 指标记录失败不影响主流程
+        logger.debug("goal_check_skipped_metric_failed", exc_info=True)
 
 
 # 最多喂给 checker 的最近 assistant 轮数

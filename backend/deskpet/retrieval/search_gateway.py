@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from collections.abc import Iterable
 from dataclasses import replace
@@ -39,6 +40,8 @@ from .ranking import dedupe_candidates, normalized_host, rank_candidates
 from .routing import stable_batches
 from .search_gateway_domains.provider_slot import ProviderSlotMixin
 
+logger = logging.getLogger(__name__)
+
 
 def _metric(event: str, detail: dict) -> None:
     try:
@@ -46,8 +49,8 @@ def _metric(event: str, detail: dict) -> None:
         from observability.metrics_sink import record
 
         record(event, detail)
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001 - 指标记录失败不影响搜索
+        logger.debug("search_gateway_metric_failed", exc_info=True)
 
 
 class SearchGateway(ProviderSlotMixin):
