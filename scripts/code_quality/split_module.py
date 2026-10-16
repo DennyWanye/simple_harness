@@ -15,6 +15,12 @@
 - 依赖只许向前：一个族只能用 common 和排在它前面的族；common 只能用源文件导入的外部名字。违反时报错退出，改分组顺序。
 - 每个新模块的导入从源文件导入语句里按用到的名字筛（相对导入多加一个点），再加 common 与前面族的导入。
 - 源文件只留模块说明、`__all__` 与转出导入（按 `__all__` 与余下代码用到的名字从各族导入）。收尾跑 ruff 删未用导入、排序、格式化。
+- 可选（阶段 6C 加）：
+  - "keep": [名字...]：这些定义留在门面原样不动（例如工具处理函数，"模块:限定名" 是身份）；
+    只被它们用到的辅助也留下。门面排在所有族之后，族不许用门面里的名字。
+  - "reexport_all": true：门面按 `名字 as 名字` 转出各族的全部顶层名字（外部按属性读门面也不落空）。
+  - "hoist_late_imports": true：定义之间的导入当普通导入处理（随用到它的族走），不留在门面。
+  - 顶层 `try:` 里只有导入与赋值时当作定义处理（例如可选依赖探测），按它绑定的名字归位。
 """
 
 from __future__ import annotations
@@ -33,7 +39,7 @@ if sys.version_info < (3, 12):
         os.execv(str(_py), [str(_py), *sys.argv])
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from split_class import REPO, RUFF_CONFIG, bound_names, deepen_relative_imports, names_in, render_import  # noqa: E402
+from split_class import MAIN, REPO, RUFF_CONFIG, bound_names, deepen_relative_imports, names_in, render_import  # noqa: E402
 
 
 def defined(node: ast.stmt) -> list[str]:
@@ -43,6 +49,17 @@ def defined(node: ast.stmt) -> list[str]:
         return [t.id for t in node.targets if isinstance(t, ast.Name)]
     if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
         return [node.target.id]
+    if isinstance(node, ast.Try):  # 可选依赖探测：try 里只有导入与赋值
+        names: list[str] = []
+        for part in [node.body, node.orelse, *(h.body for h in node.handlers)]:
+            for s in part:
+                if isinstance(s, (ast.Import, ast.ImportFrom)):
+                    names += [(a.asname or a.name).split(".")[0] for a in s.names]
+                elif isinstance(s, ast.Assign):
+                    names += [t.id for t in s.targets if isinstance(t, ast.Name)]
+                elif not isinstance(s, (ast.Expr, ast.Pass)):
+                    return []
+        return sorted(set(names))
     return []
 
 
@@ -64,8 +81,9 @@ def main() -> int:
     defs: dict[str, ast.stmt] = {}
     order: list[ast.stmt] = []
     keep_nodes: list[ast.stmt] = []  # 留在门面：说明、__all__
+    hoist = spec.get("hoist_late_imports", False)
     for node in body:
-        if isinstance(node, (ast.Import, ast.ImportFrom)) and order:
+        if isinstance(node, (ast.Import, ast.ImportFrom)) and order and not hoist:
             late.append(node)
         elif isinstance(node, (ast.Import, ast.ImportFrom)):
             imports.append((node, False))
@@ -93,7 +111,12 @@ def main() -> int:
     common = spec.get("common", "common")
     group_names = [g["module"] for g in spec["groups"]]
     rank = {m: i for i, m in enumerate(group_names)}
+    rank[MAIN] = len(group_names)  # 门面排在所有族之后
     owner: dict[int, str] = {}
+    for name in spec.get("keep", []):
+        if name not in defs:
+            sys.exit(f"源文件里没有顶层名字 {name}")
+        owner[id(defs[name])] = MAIN
     for g in spec["groups"]:
         for name in g["names"]:
             if name not in defs:
@@ -122,6 +145,8 @@ def main() -> int:
         for dep in uses[id(n)] - set(defined(n)):
             there = module_of[dep]
             if there == here:
+                continue
+            if here == MAIN:
                 continue
             if here == common or (there != common and rank[there] > rank[here]):
                 bad.append(f"{here} 里的 {defined(n)} 用到 {there} 的 {dep}")
@@ -182,18 +207,36 @@ def main() -> int:
     doc = "".join(lines[keep_nodes[0].lineno - 1 : keep_nodes[0].end_lineno]) if keep_nodes and keep_nodes[0] is body[0] else ""
     late_text = "".join("".join(lines[slice(*span(n))]) for n in late)
     # __all__ 里从别的模块导入再转出的名字：门面照原样导入（原导入语句按名字筛）
-    passthrough = import_block(exported - set(defs), 0)
+    kept_code = "".join(chunk[id(n)] for n in order if owner[id(n)] == MAIN).lstrip("\n")
+    kept_used = names_in(kept_code) if kept_code else set()
+    kept_own = {name for n in order if owner[id(n)] == MAIN for name in defined(n)}
+    for name in sorted((kept_used & set(defs)) - kept_own):
+        if name not in reexport.get(module_of[name], []):
+            reexport.setdefault(module_of[name], []).append(name)
+    if spec.get("reexport_all"):
+        for name, mod in module_of.items():
+            if mod != MAIN and name not in reexport.get(mod, []):
+                reexport.setdefault(mod, []).append(name)
+    passthrough = import_block((exported - set(defs)) | (kept_used - set(defs) - {"annotations"}), 0)
+
+    def from_line(m: str, ns: list[str]) -> str:
+        alias = spec.get("reexport_all")
+        items = ", ".join(f"{n} as {n}" if alias else n for n in sorted(ns))
+        return f"from .{spec['package']}.{m} import {items}"
+
     facade = header + doc + "\nfrom __future__ import annotations\n\n" + "\n".join(
-        x for x in (passthrough, *(f"from .{spec['package']}.{m} import {', '.join(ns)}" for m, ns in reexport.items())) if x
+        x for x in (passthrough, *(from_line(m, ns) for m, ns in reexport.items() if m != MAIN)) if x
     ) + "\n\n\n" + ("".join(lines[all_node.lineno - 1 : all_node.end_lineno]) if all_node is not None else "")
+    facade += ("\n\n" + kept_code) if kept_code else ""
     # 有意后置的导入放在 __all__ 之后自成一个导入块，它自带的 noqa 才管得到整块
     facade += ("\n" + late_text) if late_text else ""
     outputs[path] = facade
     sizes = {p.name: t.count("\n") for p, t in outputs.items()}
     print("各文件行数：", json.dumps(sizes, ensure_ascii=False))
     print("自动归位的辅助：", json.dumps(
-        {m: sorted(name for name, mod in module_of.items() if mod == m and not any(name in g["names"] for g in spec["groups"]))
-         for m in [common, *group_names]}, ensure_ascii=False))
+        {m: sorted(name for name, mod in module_of.items() if mod == m and not any(name in g["names"] for g in spec["groups"])
+                   and name not in spec.get("keep", []))
+         for m in [common, *group_names, MAIN]}, ensure_ascii=False))
     if args.dry_run:
         return 0
     package.mkdir(exist_ok=True)
