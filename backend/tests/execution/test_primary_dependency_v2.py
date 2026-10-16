@@ -4,7 +4,7 @@ from copy import deepcopy
 
 import pytest
 from deskpet.execution.foreground_runtime import FrozenContextAuthority
-from deskpet.execution.primary_dependencies import dependencies, parse_dependencies
+from deskpet.execution.primary_dependency_proof import dependencies, parse_dependencies
 from simple_harness import thaw_json
 
 SHORT = {"audit_id": "actual-audit-id", "chunk_ref": "actual-chunk-ref", "content_hash": "a" * 64}

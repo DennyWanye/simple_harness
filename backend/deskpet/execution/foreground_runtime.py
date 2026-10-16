@@ -56,7 +56,8 @@ from deskpet.execution.foreground_queue import (
     RunState,
 )
 from deskpet.execution.preparation_rejection import PreparationDisclosureRejected
-from deskpet.execution.primary_dependencies import parse_dependencies, read_run_dependencies
+from deskpet.execution.primary_dependencies import read_run_dependencies
+from deskpet.execution.primary_dependency_proof import parse_dependencies
 from deskpet.execution.primary_history import record_terminal_observation
 from deskpet.memory.primary_tool_causality import PrimaryToolCausalityUnavailable
 from deskpet.memory.primary_visibility import cause_fields

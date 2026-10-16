@@ -13,11 +13,8 @@ from contextvars import ContextVar
 import aiosqlite
 from simple_harness import thaw_json
 
-from deskpet.execution.primary_dependencies import (
-    dependencies,
-    parse_dependencies,
-    read_run_dependencies,
-)
+from deskpet.execution.primary_dependencies import read_run_dependencies
+from deskpet.execution.primary_dependency_proof import dependencies, parse_dependencies
 from deskpet.memory.trusted_disclosure import resolve_current_disclosure
 from deskpet.task_scope.mutation_disclosure import mutation_fields
 from deskpet.task_scope.protocol import canonical_hash, canonical_json

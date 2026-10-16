@@ -376,7 +376,7 @@ async def test_non_deterministic_page_in_failure_still_rejects_the_next_request(
     tmp_path, monkeypatch
 ):
     """负控：同样 arguments 重放反而成功 → 失败非确定性，history 仍判不可核验。"""
-    from deskpet.execution import primary_context_pages
+    from deskpet.execution import primary_dependencies
     from deskpet.execution.primary_dependencies import PrimaryHistoryDisclosureRejected
 
     rejections, causes = [], []
@@ -395,7 +395,7 @@ async def test_non_deterministic_page_in_failure_still_rejects_the_next_request(
         async def replay_succeeds(**kwargs):
             return {"ok": True, "kind": "primary_tool_history_page_v1", "content": "replayed"}
 
-        monkeypatch.setattr(primary_context_pages, "admitted_page", replay_succeeds)
+        monkeypatch.setattr(primary_dependencies, "admitted_page", replay_succeeds)
         with pytest.raises(PrimaryHistoryDisclosureRejected) as caught:
             await check_runtime_dependencies(**check)
         causes.append(str(caught.value._private_cause))

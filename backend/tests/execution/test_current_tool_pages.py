@@ -10,9 +10,7 @@ from types import SimpleNamespace
 import aiosqlite
 import httpx
 import pytest
-from deskpet.execution.primary_context_pages import (
-    PrimaryContextPageReader,
-)
+from deskpet.execution.primary_context_page_reader import PrimaryContextPageReader
 from deskpet.memory.human_memory_service import QueueTurnRequest
 from deskpet.sdk_adapters.run_bindings import SdkRunBindingV1
 from deskpet.tools.context_page_in_tools import ContextPageInStore

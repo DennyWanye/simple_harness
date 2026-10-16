@@ -26,10 +26,25 @@ from simple_harness.execution.context_authority import ContextRouteReceipt
 from simple_harness.providers import ProviderRequestRejectedError
 from simple_harness.runtime.task_scope_protocol import TaskScopeRoute
 
+from deskpet.execution.current_tool_pages import (
+    LEGACY_PAGE_SIZE,
+    admitted_current_page,
+    rejection_code_matches,
+    verify_control_stubs,
+    verify_request,
+)
+from deskpet.execution.primary_context_pages import (
+    LEGACY_PAGE_BYTES,
+    PrimaryContextPageUnavailable,
+    admitted_page,
+    verify_history_projections,
+)
+from deskpet.execution.primary_context_pages import PREFIX as HISTORY_PAGE_PREFIX
+from deskpet.execution.primary_dependency_proof import dependencies, parse_dependencies
 from deskpet.memory.current_input_source import CurrentInputSourceError
 from deskpet.memory.current_input_visibility import claim_stamp, same_physical_claim
 from deskpet.memory.trusted_disclosure import resolve_current_disclosure
-from deskpet.task_scope.protocol import canonical_hash, canonical_json, digest, identifier
+from deskpet.task_scope.protocol import canonical_hash, canonical_json
 from deskpet.tools.context_page_in_tools import PRIMARY_PAGE_PUBLIC_MESSAGE
 
 _REASON_CODE = re.compile(r"[a-z][a-z0-9_]{0,63}\Z")
@@ -79,83 +94,6 @@ def rejection_reason(exc):
     if type(exc) is ValueError and str(exc) in _PUBLIC_REJECTION_REASONS:
         return str(exc)
     return _GENERIC_REJECTION_REASON
-
-
-def dependencies(
-    evidence=(), recall=(), short_horizon=(), *, schema_version=None, procedure_drafts=()
-):
-    """Canonical bounded proof; v1 remains readable without rewriting archives."""
-    short_horizon = tuple(short_horizon)
-    procedure_drafts = tuple(procedure_drafts)
-    version = (
-        (3 if procedure_drafts else 2 if short_horizon else 1)
-        if schema_version is None
-        else schema_version
-    )
-    if (
-        type(version) is not int
-        or version not in {1, 2, 3}
-        or (version == 1 and short_horizon)
-        or (version != 3 and procedure_drafts)
-    ):
-        raise ValueError("primary_dependencies_invalid")
-    rows = {"evidence": {}, "recall": {}}
-    fields_by_kind = [
-        ("evidence", evidence, ("evidence_id", "envelope_hash")),
-        ("recall", recall, ("result_id", "result_hash", "item_id", "item_hash")),
-    ]
-    if version >= 2:
-        rows["short_horizon"] = {}
-        fields_by_kind.append(
-            ("short_horizon", short_horizon, ("audit_id", "chunk_ref", "content_hash"))
-        )
-    if version == 3:
-        rows["procedure_drafts"] = {}
-        fields_by_kind.append(
-            ("procedure_drafts", procedure_drafts, ("memory_id", "revision", "candidate_hash"))
-        )
-    for kind, values, fields in fields_by_kind:
-        for value in values:
-            if not isinstance(value, Mapping) or set(value) != set(fields):
-                raise ValueError("primary_dependencies_invalid")
-            value = dict(value)
-            for key in fields:
-                if key == "revision":
-                    if type(value[key]) is not int or value[key] < 1:
-                        raise ValueError("primary_dependencies_invalid")
-                else:
-                    (digest if key.endswith("hash") else identifier)(value[key], key)
-            rows[kind][canonical_json(value)] = value
-    if sum(map(len, rows.values())) > 256:
-        raise ValueError("primary_dependencies_limit")
-    return {
-        "schema_version": version,
-        **{kind: [items[key] for key in sorted(items)] for kind, items in rows.items()},
-    }
-
-
-def parse_dependencies(value):
-    if not isinstance(value, Mapping):
-        raise ValueError("primary_dependencies_missing")
-    version = value.get("schema_version")
-    if type(version) is not int or version not in {1, 2, 3}:
-        raise ValueError("primary_dependencies_missing")
-    fields = (
-        {"schema_version", "evidence", "recall"}
-        | ({"short_horizon"} if version >= 2 else set())
-        | ({"procedure_drafts"} if version == 3 else set())
-    )
-    if set(value) != fields or not all(
-        isinstance(value[k], (tuple, list)) for k in fields - {"schema_version"}
-    ):
-        raise ValueError("primary_dependencies_missing")
-    return dependencies(
-        value["evidence"],
-        value["recall"],
-        value.get("short_horizon", ()),
-        schema_version=version,
-        procedure_drafts=value.get("procedure_drafts", ()),
-    )
 
 
 def current_disclosure(*, run_id, subject, request_id):
@@ -294,8 +232,6 @@ async def read_run_dependencies(
     }
     if state.current not in state.proof["evidence"]:
         raise ValueError("primary_dependencies_current_user_missing")
-    # 按需导入：循环依赖（primary_dependencies ↔ primary_context_pages）
-    from deskpet.execution.primary_context_pages import verify_history_projections
 
     state.verify_history_projections = verify_history_projections
 
@@ -605,12 +541,6 @@ async def _verify_page_in_dependency(state: _RunDependencyRead) -> None:
     # 这条重放校验分支不会再有对应的工具调用记录。
     if state.row["tool_name"] == "context_page_in":
         if state.value.get("kind") == "primary_current_tool_page_v1":
-            # 按需导入：循环依赖（primary_dependencies ↔ current_tool_pages）
-            from deskpet.execution.current_tool_pages import (
-                LEGACY_PAGE_SIZE,
-                admitted_current_page,
-            )
-
             state.LEGACY_PAGE_SIZE = LEGACY_PAGE_SIZE
             state.admitted_current_page = admitted_current_page
 
@@ -645,9 +575,6 @@ async def _verify_page_in_dependency(state: _RunDependencyRead) -> None:
             state.flow = "continue"
             return
         if state.value.get("kind") == "primary_tool_history_page_v1":
-            # 按需导入：循环依赖（primary_dependencies ↔ primary_context_pages）
-            from deskpet.execution.primary_context_pages import LEGACY_PAGE_BYTES, admitted_page
-
             state.LEGACY_PAGE_BYTES = LEGACY_PAGE_BYTES
             state.admitted_page = admitted_page
 
@@ -766,18 +693,6 @@ def _require_route_fragments(
 async def _replayed_rejection_page(db, *, fact, run, sdk_run_id, stack, start):
     from deskpet.execution.current_tool_pages import PREFIX as CURRENT_PAGE_PREFIX
 
-    # 按需导入：循环依赖（primary_dependencies ↔ current_tool_pages）
-    from deskpet.execution.current_tool_pages import admitted_current_page
-
-    # 按需导入：循环依赖（primary_dependencies ↔ primary_context_pages）
-    from deskpet.execution.primary_context_pages import PREFIX as HISTORY_PAGE_PREFIX
-
-    # 按需导入：循环依赖（primary_dependencies ↔ primary_context_pages）
-    from deskpet.execution.primary_context_pages import (
-        PrimaryContextPageUnavailable,
-        admitted_page,
-    )
-
     arguments = thaw_json(fact.arguments)
     reference = arguments.get("reference_id") if isinstance(arguments, Mapping) else None
     # Only the primary page handler publishes a stable rejection code;
@@ -818,8 +733,6 @@ async def _replayed_rejection_page(db, *, fact, run, sdk_run_id, stack, start):
         # 事件 AF：一次纯措辞升级不得把还在飞的 Run 判成重放不一致。
         # ``rejection_code_matches`` 只认冻结的「新码 → 它取代的旧码」这
         # 一个方向，语义没有放宽（review M1 同款理由，见 legacy_summary）。
-        # 按需导入：循环依赖（primary_dependencies ↔ current_tool_pages）
-        from deskpet.execution.current_tool_pages import rejection_code_matches
 
         if primary_reference and not rejection_code_matches(fact.result.error_code, str(exc)):
             raise ValueError("primary_page_rejection_mismatch") from exc
@@ -921,8 +834,6 @@ async def check_runtime_dependencies(
             if found is None:
                 return  # trusted Host lookup: this is not a foreground primary Run
             run, proof = found
-            # 按需导入：循环依赖（primary_dependencies ↔ current_tool_pages）
-            from deskpet.execution.current_tool_pages import verify_control_stubs, verify_request
 
             verify_request(stack, sdk_run_id, request.messages)
             # F-E2: an elided control carrier is re-derived against the same

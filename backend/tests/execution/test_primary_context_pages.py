@@ -10,12 +10,12 @@ from types import SimpleNamespace
 import aiosqlite
 import httpx
 import pytest
+from deskpet.execution.primary_context_page_reader import PrimaryContextPageReader
 from deskpet.execution.primary_context_pages import (
     HISTORY_PREFIX,
     HISTORY_SUFFIX,
     PAGE_BYTES,
     PREFIX,
-    PrimaryContextPageReader,
     _excerpt,
     project_history_group,
     verify_history_projections,

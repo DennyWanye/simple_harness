@@ -20,7 +20,7 @@ from deskpet.execution.preparation_rejection import (
     PreparationRejection,
 )
 from deskpet.execution.primary_context_pages import project_history_group
-from deskpet.execution.primary_dependencies import dependencies
+from deskpet.execution.primary_dependency_proof import dependencies
 from deskpet.execution.primary_history import PrimaryHistoryStore
 from deskpet.memory.current_input_source import COMMON_POLICY_TEXT
 from deskpet.memory.primary_visibility import read_evidence_pair

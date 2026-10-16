@@ -23,7 +23,8 @@ from simple_harness.providers import ProviderRequestRejectedError
 
 from deskpet.execution.evidence_ingress import ExecutionEvidenceIngress
 from deskpet.execution.foreground_queue import _EFFECT_BOUNDARY_ALLOWED_STATES, EffectBoundary
-from deskpet.execution.primary_dependencies import dependencies, read_run_dependencies
+from deskpet.execution.primary_dependencies import read_run_dependencies
+from deskpet.execution.primary_dependency_proof import dependencies
 from deskpet.execution.semantic_closure import (
     _MAX_ANSWER_BYTES,
     _scope_observation_tx,

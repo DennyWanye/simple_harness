@@ -19,7 +19,7 @@ from deskpet.capabilities.skill_install import (
     AuthorizedPreflightReceiptResolver,
     ProjectSkillInstallError,
 )
-from deskpet.execution.primary_context_pages import PrimaryContextPageReader
+from deskpet.execution.primary_context_page_reader import PrimaryContextPageReader
 from deskpet.execution.termination_budget import resolve_max_wall_seconds
 from deskpet.memory.evidence_kind_schema import initialize_evidence_kind_state_db
 from deskpet.memory.identity import ValidatedLocalMemoryIdentityAuthority

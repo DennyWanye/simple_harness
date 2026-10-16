@@ -11,6 +11,9 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from deskpet.execution.current_tool_pages import PREFIX as CURRENT_PREFIX
+from deskpet.execution.primary_context_pages import PREFIX, PrimaryContextPageUnavailable
+
 # 事件 AF：主页面引用被拒时公共消息的固定前缀。``primary_dependencies`` 用它
 # 认出"这是主页面的确定性拒绝"，因此它必须是**前缀**而不是全等——升级后同一条
 # 拒绝会在前缀之后追加可执行的下一步（页大小/页起点/下一个 offset），而升级前
@@ -265,11 +268,6 @@ def build_context_page_in_handler(
         runtime = execution_context_getter()
         if runtime is None:
             return _error("context_scope_missing")
-        # 按需导入：循环依赖（context_page_in_tools ↔ current_tool_pages）
-        from deskpet.execution.current_tool_pages import PREFIX as CURRENT_PREFIX
-
-        # 按需导入：循环依赖（context_page_in_tools ↔ primary_context_pages）
-        from deskpet.execution.primary_context_pages import PREFIX, PrimaryContextPageUnavailable
 
         reference_id = str(args.get("reference_id", "") or "").strip()
         if isinstance(args.get("reference_id"), str) and args["reference_id"].startswith(

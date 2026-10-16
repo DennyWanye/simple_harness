@@ -22,11 +22,8 @@ from simple_harness.execution.provider_invocations import (
     provider_response_json,
 )
 
-from deskpet.execution.primary_dependencies import (
-    dependencies,
-    parse_dependencies,
-    read_run_dependencies,
-)
+from deskpet.execution.primary_dependencies import read_run_dependencies
+from deskpet.execution.primary_dependency_proof import dependencies, parse_dependencies
 from deskpet.memory.human_memory_program import HumanMemoryProgramStore
 from deskpet.memory.primary_visibility import read_evidence_pair
 from deskpet.sdk_adapters.task_scope_mutation import _validate_shape, derive_plan_id
