@@ -14,7 +14,13 @@ from __future__ import annotations
 from .foreground_queue_domains.claims import FOREGROUND_SCHEDULER_KIND, ClaimedExecution, ClaimMixin
 from .foreground_queue_domains.driving import DrivingMixin
 from .foreground_queue_domains.enqueue import EnqueueMixin
+
+# 拆分前从本模块导入的名字照旧可用（同名别名表示有意转出）
+from .foreground_queue_domains.observation import (
+    _EFFECT_BOUNDARY_ALLOWED_STATES as _EFFECT_BOUNDARY_ALLOWED_STATES,
+)
 from .foreground_queue_domains.observation import EffectAdmissionReceipt, ObservationMixin
+from .foreground_queue_domains.observation import EffectBoundary as EffectBoundary
 from .foreground_queue_domains.support import (
     AdmissionReceipt,
     ContextLineage,
@@ -34,6 +40,7 @@ from .foreground_queue_domains.support import (
     TerminalReceipt,
     TurnState,
 )
+from .foreground_queue_domains.support import _clock_value as _clock_value
 
 
 class ForegroundQueueStore(EnqueueMixin, ClaimMixin, DrivingMixin, ObservationMixin):
