@@ -35,7 +35,8 @@ SINGLE = {"main", "p4_ipc", "provider_test_connection", "config", "context", "pa
 ALLOWED_EXCEPTIONS = {
     "llm.registry -> agent.context_report",
     "router.hybrid_router -> agent.context_report",
-    "providers.openai_compatible -> agent.context_report",
+    "providers.openai_compatible_domains.chat -> agent.context_report",
+    "providers.openai_compatible_domains.streaming -> agent.context_report",
 }
 SKIP = {"tests", "scripts", ".venv", "vendor", "__pycache__", "build", "dist", "dist-1", "userdata"}
 
