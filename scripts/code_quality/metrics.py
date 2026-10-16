@@ -195,7 +195,7 @@ def ast_metrics() -> dict:
             if product:
                 m["except_broad_unexplained"] += sum(
                     1 for row in except_inventory.file_rows(r, src, t) if row["unexplained"])
-    ts_any = ts_inline = 0
+    ts_any = ts_inline = ts_style_vars = 0
     for path in ts_files():
         src = path.read_text(encoding="utf-8", errors="replace")
         lines = src.count("\n") + 1
@@ -206,6 +206,7 @@ def ast_metrics() -> dict:
             m["files_2000_3000"].append(f"{r}:{lines}")
         ts_any += len(re.findall(r":\s*any\b|\bas any\b|<any>", src))
         ts_inline += src.count("style={{")
+        ts_style_vars += len(re.findall(r"style=\{(?!\{)", src))
         m["legacy_lines"] += len(re.findall(r"^.*(?:legacy|deprecated).*$", src, re.I | re.M))
         for line in src.splitlines():
             s = line.strip()
@@ -214,6 +215,12 @@ def ast_metrics() -> dict:
     m["backend_sdk_module_paths"] = sorted(m["backend_sdk_module_paths"])
     m["ts_explicit_any"] = ts_any
     m["ts_inline_styles"] = ts_inline
+    m["ts_style_vars"] = ts_style_vars  # style={变量}：阶段 9 裁决，防"字面量提常量"骗过内联样式计数
+    # eslint-disable 条数（含测试文件）：阶段 9 裁决，清 eslint 错误不许靠加 disable
+    m["ts_eslint_disable"] = sum(
+        p.read_text(encoding="utf-8", errors="replace").count("eslint-disable")
+        for p in TS_TREE.rglob("*") if p.suffix in (".ts", ".tsx")
+    )
     for k in ("classes_over_1500", "files_over_3000", "files_2000_3000", "backend_sdk_module_paths",
               "funcs_over_300_backend", "funcs_over_300_sdk"):
         m[k].sort()
