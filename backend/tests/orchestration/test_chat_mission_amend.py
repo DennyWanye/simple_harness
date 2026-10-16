@@ -164,7 +164,8 @@ def test_projection_passes_budget_and_drops_charter():
 def test_host_reads_the_charter_only_at_the_door():
     """Host 里读建任务章程的只有建任务门口、建任务工具、技能目录的建任务入参与诊断的输入引用。"""
     allowed = {
-        "deskpet/orchestration/service.py",
+        # 编排服务拆成 mixin 后，建任务门口在 commands 子模块
+        "deskpet/orchestration/service_domains/commands.py",
         "deskpet/orchestration/chat_tool.py",
         "deskpet/orchestration/skill_catalogue.py",
         "deskpet/orchestration/diagnostics.py",

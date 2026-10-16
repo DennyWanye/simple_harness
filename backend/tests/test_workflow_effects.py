@@ -627,7 +627,14 @@ async def test_legacy_effect_facades_delegate_to_connection_aware_primitives(tmp
 
 
 def test_effect_tx_primitives_never_manage_connection_or_transaction_boundaries():
-    tree = ast.parse(textwrap.dedent(inspect.getsource(EffectJournal)))
+    # EffectJournal 拆成 mixin（effects_domains/）后，事务原语分在继承链上的各个类里
+    tree = ast.parse(
+        "\n".join(
+            textwrap.dedent(inspect.getsource(cls))
+            for cls in EffectJournal.__mro__
+            if cls.__module__.startswith("deskpet.workflows.effects")
+        )
+    )
     methods = {
         node.name: node
         for node in ast.walk(tree)
