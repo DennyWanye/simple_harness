@@ -179,6 +179,11 @@ def main() -> int:
         for name in sorted(wanted):
             node = ast.parse(textwrap.dedent(src.chunk(methods[name], body))).body[0]
             node.body = [ast.Expr(ast.Constant(...))]  # type: ignore[attr-defined]
+            # 默认值写 ...：存根不求值，照抄字面量会让禁区比对多出字面量（阶段 6 伴侣存储遇到）
+            node.args.defaults = [ast.Constant(...) for _ in node.args.defaults]  # type: ignore[attr-defined]
+            node.args.kw_defaults = [  # type: ignore[attr-defined]
+                None if d is None else ast.Constant(...) for d in node.args.kw_defaults  # type: ignore[attr-defined]
+            ]
             out.append(textwrap.indent(ast.unparse(node), "        "))
         return ("    if TYPE_CHECKING:\n" + "\n".join(out) + "\n\n") if out else ""
 
