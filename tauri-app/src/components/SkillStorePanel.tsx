@@ -121,7 +121,8 @@ export const SkillStorePanel: React.FC<Props> = ({
   const [alert, setAlert] = useState<AlertState | null>(null);
   const [urlInput, setUrlInput] = useState("");
   const [staged, setStaged] = useState<StagedSkill | null>(null);
-  const [loading, setLoading] = useState(false);
+  // 打开时（初始页签是"已安装"）立即读列表，所以首次渲染就是加载中。
+  const [loading, setLoading] = useState(() => Boolean(open && channel));
 
   // 监听 backend response
   useEffect(() => {
