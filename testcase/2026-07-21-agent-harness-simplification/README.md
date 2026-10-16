@@ -1,3 +1,5 @@
+> 2026-10-17 注：`scripts/bench/harness_baseline.py` 已随代码质量整治阶段 8 删除（它依赖已删的后端 AgentLoop）；下文命令只作历史记录。
+
 # Agent Harness R6/R7 Test Cases
 
 > Scope: R5.5 durable admission, R6 production cutover and R7 release evidence.

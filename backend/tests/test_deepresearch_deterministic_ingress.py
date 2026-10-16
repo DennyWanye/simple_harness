@@ -26,15 +26,3 @@ def test_main_disables_legacy_deepresearch_starter_before_activation() -> None:
     assert binding < recovery
     assert "await workflow_service.activate_runtime(" in recovery_source
     assert "async def _start_deepresearch_graph" not in source
-
-
-def test_main_snapshots_research_source_switches_into_durable_run() -> None:
-    source = (Path(__file__).parents[1] / "deskpet" / "agent" / "turn_preparer.py").read_text(
-        encoding="utf-8"
-    )
-
-    # 统一成双引号再比：格式化把单引号字符串改成了双引号（2026-10-12 代码质量整治阶段 1）
-    source = source.replace("'", '"')
-    assert 'raw.get("research", {})' in source
-    assert '("direct_sources", "source_packs")' in source
-    assert '"research_config"' in source

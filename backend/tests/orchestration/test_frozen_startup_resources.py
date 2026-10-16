@@ -247,3 +247,30 @@ def test_ondemand_adapter_self_hash_keeps_real_source_and_pyz(module):
     assert mode & _ModuleCollectionMode.PY
     assert mode & _ModuleCollectionMode.PYZ
     assert (BACKEND / (module.replace(".", "/") + ".py")).is_file()
+
+
+def test_packaged_policy_migrations_and_build_manifest_use_shipped_data(staged, monkeypatch):
+    from deskpet.agent.assembler import policy
+    from deskpet.memory import schema_chain
+    from deskpet.tools import build_identity
+
+    def no_fallback():
+        pytest.fail("packaged policy fell back to synthetic defaults")
+
+    monkeypatch.setattr(policy, "_builtin_defaults_raw", no_fallback)
+    assert policy.load_policies(
+        default_path=staged / "deskpet/agent/assembler/policies/default.yaml"
+    )
+    monkeypatch.setattr(schema_chain, "MIGRATIONS_DIR", staged / "deskpet/memory/migrations")
+    assert schema_chain._discover() == schema_chain.DOMAIN_CHAIN
+    for attribute, filename in (
+        ("_SOURCES_PATH", "execution_build_sources.json"),
+        ("_BUILD_PATH", "execution_build_manifest.json"),
+        ("_EFFECT_PATH", "tool_effect_policy_manifest.json"),
+    ):
+        monkeypatch.setattr(build_identity, attribute, staged / "deskpet/tools" / filename)
+    build_identity.load_core_handler_authorities.cache_clear()
+    try:
+        assert build_identity.load_core_handler_authorities()
+    finally:
+        build_identity.load_core_handler_authorities.cache_clear()
