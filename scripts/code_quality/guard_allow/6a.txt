@@ -1,2 +1,3 @@
 'deskpet.memory.session_db'
 'deskpet.tools.registry'
+'deskpet.capabilities.manager'
