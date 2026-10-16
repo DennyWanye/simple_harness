@@ -26,12 +26,13 @@ import os
 import re
 import subprocess
 import sys
-import textwrap
 from pathlib import Path
 
 LOOPS = (ast.For, ast.AsyncFor, ast.While)
 SCOPES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)
 REPO = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from reindent import string_interior_lines  # noqa: E402
 
 
 def find_func(tree: ast.Module, qual: str):
@@ -164,18 +165,25 @@ def main() -> int:
         nested_returns = bool(edits)
         edits = {}
     block = lines[top - 1 : end]
-    out = []
+    # 多行字符串内部的行原样保留（只挪代码行的缩进，字面量内容不变）
+    interior = string_interior_lines(src)
+    out: list[tuple[str, bool]] = []
     for i, line in enumerate(block, start=top):
         if i in edits:
             body = line.strip()
             if body not in ("return", "continue", "break"):
                 sys.exit(f"第 {i} 行流程语句不是单独一行：{body}")
             pad = line[: len(line) - len(line.lstrip())]
-            out.append(f'{pad}{a.state}.flow = "{edits[i]}"\n')
-            out.append(f"{pad}return\n")
+            out.append((f'{pad}{a.state}.flow = "{edits[i]}"\n', False))
+            out.append((f"{pad}return\n", False))
         else:
-            out.append(line)
-    body_text = textwrap.indent(textwrap.dedent("".join(out)), " " * 8)
+            out.append((line, i in interior))
+    common = min(
+        (len(ln) - len(ln.lstrip(" ")) for ln, inner in out if not inner and ln.strip()), default=0
+    )
+    body_text = "".join(
+        ln if inner else (" " * 8 + ln[common:] if ln.strip() else "\n") for ln, inner in out
+    )
     has_yield, has_await = kinds(stmts)
     flows = sorted(set(edits.values()))
     if a.nested and nested_returns:

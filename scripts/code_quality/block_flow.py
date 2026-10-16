@@ -19,6 +19,27 @@ if sys.version_info < (3, 12):
         os.execv(str(_py), [str(_py), *sys.argv])
 
 
+def header_bindings(fn: ast.AST, start: int, end: int) -> set[str]:
+    """包住这段的外层语句在头部绑定的名字：with ... as x、for x in ...、match 的 case 模式。
+    这些语句本身跨过段，按"段前结束的语句"取不到它们绑定的名字。"""
+    out: set[str] = set()
+    for n in ast.walk(fn):
+        if not (isinstance(n, ast.stmt) and n.lineno < start and end <= n.end_lineno):
+            continue
+        if isinstance(n, (ast.With, ast.AsyncWith)):
+            for item in n.items:
+                if item.optional_vars is not None:
+                    out |= {x.id for x in ast.walk(item.optional_vars) if isinstance(x, ast.Name)}
+        elif isinstance(n, (ast.For, ast.AsyncFor)):
+            out |= {x.id for x in ast.walk(n.target) if isinstance(x, ast.Name)}
+        elif isinstance(n, ast.Match):
+            for case in n.cases:
+                if case.body and case.body[0].lineno <= start and end <= case.body[-1].end_lineno:
+                    out |= {x.name for x in ast.walk(case.pattern) if isinstance(x, (ast.MatchAs, ast.MatchStar)) and x.name}
+                    out |= {x.rest for x in ast.walk(case.pattern) if isinstance(x, ast.MatchMapping) and x.rest}
+    return out
+
+
 def names(nodes: list[ast.AST], ctx: type) -> set[str]:
     out = set()
     for node in nodes:
@@ -48,7 +69,7 @@ def main() -> int:
         top = [s for s in inside if not any(o is not s and o.lineno <= s.lineno and s.end_lineno <= o.end_lineno for o in inside)]
         before = [s for s in stmts if s.end_lineno < start]
         after = [s for s in stmts if s.lineno > end]
-        assigned_before = names(before, ast.Store) | params
+        assigned_before = names(before, ast.Store) | params | header_bindings(fn, start, end)
         # 段在 `except … as 名字` 里面时，名字由外层的异常处理绑定
         assigned_before |= {
             h.name
