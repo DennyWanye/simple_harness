@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
+from typing import Any
+
+from simple_harness import RunId as SdkRunId
 
 import paths as _paths
 from agent.agent_loop import FinalEvent
@@ -17,11 +21,6 @@ from deskpet.sdk_adapters.desktop_runtime import DesktopSdkRuntimeBridge, _deliv
 from deskpet.sdk_adapters.ingress import SdkRuntimeIngress
 from deskpet.sdk_adapters.provider import provider_endpoint_identity
 from deskpet.sdk_adapters.sdk_candidate import SDK_VERSION
-from llm.code_params import code_params_to_request
-from llm.model_catalog import model_context_window
-from llm.provider_registry import ProviderMutationConflict
-from simple_harness import RunId as SdkRunId
-
 from host.chat_delivery import _broadcast_default_chat_peers, _send_chat_error
 from host.logging_setup import _sdk_observability
 from host.runtime import logger, service_context
@@ -33,6 +32,9 @@ from host.sdk_registry import (
     _sdk_run_ids_by_root,
 )
 from host.state import host_state
+from llm.code_params import code_params_to_request
+from llm.model_catalog import model_context_window
+from llm.provider_registry import ProviderMutationConflict
 
 
 def _assert_sdk_provider_mutation_allowed(provider_ids: Any) -> None:
@@ -200,6 +202,45 @@ async def _voice_run_host(session_id: str):
     return host
 
 
+@dataclass
+class _SdkRunState:
+    """_execute_sdk_run 的运行状态：原函数的局部变量与参数（切段用）。"""
+
+    flow: Any = None
+    adapter: Any = None
+    assistant_texts: Any = None
+    budget: Any = None
+    catalog: Any = None
+    context: Any = None
+    context_binding_id: Any = None
+    context_sources: Any = None
+    context_stage: Any = None
+    conversation: Any = None
+    delivery_adapter: Any = None
+    final_state: Any = None
+    observability_token: Any = None
+    payload: Any = None
+    prepared_snapshot: Any = None
+    presenter: Any = None
+    private: Any = None
+    receipt: Any = None
+    request_id: Any = None
+    root_run_id: Any = None
+    run_binding: Any = None
+    sdk_context: Any = None
+    sdk_run_id: Any = None
+    sdk_state: Any = None
+    sdk_state_value: Any = None
+    session_id: Any = None
+    started: Any = None
+    state: Any = None
+    task_scope_id: Any = None
+    terminal_binding_state: Any = None
+    tool_authority: Any = None
+    turn_id: Any = None
+    websocket: Any = None
+
+
 async def _execute_sdk_run(
     *,
     session_id: str,
@@ -238,57 +279,112 @@ async def _execute_sdk_run(
 
     # The frozen tool authority is keyed by the SDK's deterministic physical
     # Run identity, so compute it before reading any authority into RunStart.
-    sdk_run_id = SdkRuntimeIngress._compute_run_id(  # noqa: SLF001
-        session_id,
-        request_id,
-        str(turn_id),
+    st = _SdkRunState(
+        session_id=session_id,
+        request_id=request_id,
+        turn_id=turn_id,
+        task_scope_id=task_scope_id,
+        prepared_snapshot=prepared_snapshot,
+        run_binding=run_binding,
+        context=context,
+        websocket=websocket,
+        root_run_id=root_run_id,
+        conversation=conversation,
+        context_stage=context_stage,
+        context_binding_id=context_binding_id,
+    )
+    st.sdk_run_id = SdkRuntimeIngress._compute_run_id(  # noqa: SLF001
+        st.session_id,
+        st.request_id,
+        str(st.turn_id),
     ).value
-    private = prepared_snapshot.private_record()
-    catalog = dict(private["catalog"])
-    budget = dict(private["budget"])
-    tool_authority = (
-        host_state.sdk_tool_authority_registry.resolve(sdk_run_id)
+    st.private = st.prepared_snapshot.private_record()
+    st.catalog = dict(st.private["catalog"])
+    st.budget = dict(st.private["budget"])
+    st.tool_authority = (
+        host_state.sdk_tool_authority_registry.resolve(st.sdk_run_id)
         if host_state.sdk_tool_authority_registry is not None
         else None
     )
-    if host_state.sdk_tool_authority_registry is not None and tool_authority is None:
+    if host_state.sdk_tool_authority_registry is not None and st.tool_authority is None:
         raise RuntimeError("SDK Run Tool authority is unavailable")
-    payload = {
-        "input": {"text": str(getattr(context, "text", ""))},
-        "messages": private["provider_messages"],
-        "capability_snapshot": {"tools": list(catalog["tool_names"])},
-        "context_metadata": {
-            "session_id": session_id,
-            "root_run_id": root_run_id,
-            "request_id": request_id,
-            "task_scope_id": task_scope_id,
-            "workspace_root": (
-                tool_authority.task_work_context.workspace_root
-                if tool_authority is not None
-                else None
-            ),
-            "workspace_binding_version": (
-                tool_authority.task_work_context.binding_version
-                if tool_authority is not None
-                else 1
-            ),
-            "conversation_boundary_ref": context.conversation_boundary_ref,
-            "conversation_boundary_version": 1,
-            "snapshot_id": prepared_snapshot.snapshot_id,
-            "binding_epoch": run_binding.binding_epoch,
-            "context_window": run_binding.context_window,
-            "effective_ceiling": int(budget.get("effective_ceiling") or 0),
-            "run_binding": run_binding.to_record(),
-            "tool_authority": (
-                tool_authority.run_start_record() if tool_authority is not None else None
-            ),
-        },
-    }
+    _build_run_payload(st)
+
+    _create_delivery_adapter(st)
+
+    # Register adapter in global registry before SDK start (for Provider,
+    # ProductToolsAdapter, and _DeliverySink routing).
+    _delivery_adapters[st.sdk_run_id] = st.delivery_adapter
+    _sdk_run_ids_by_root[st.root_run_id] = st.sdk_run_id
+    st.terminal_binding_state: str | None = "failed"
+    st.observability_token = _sdk_observability.bind_ingress(
+        run_id=st.sdk_run_id,
+        session_id=st.session_id,
+        request_id=st.request_id,
+    )
+
+    try:
+        await _start_ingress(st)
+
+        await _announce_run_started(st)
+
+        # Wait for SDK Runtime to complete
+        # Events are pushed via DeliveryDispatcher → _DeliverySink → ProductDeliveryAdapter
+        await host_state.sdk_ingress.wait_idle(st.sdk_run_id)
+
+        # Query final state
+        st.final_state = host_state.sdk_ingress.query(st.sdk_run_id)
+        st.sdk_state = getattr(st.final_state, "state", st.final_state)
+        st.sdk_state_value = str(getattr(st.sdk_state, "value", st.sdk_state))
+        if st.sdk_run_id in _sdk_cancel_requested_run_ids:
+            # chat_v2_interrupt owns the canonical cancelled projection and
+            # acknowledgement. Do not race it with a transient SDK
+            # waiting/running read and manufacture run_failed in the UI.
+            logger.info(
+                "sdk_run_user_cancelled",
+                session_id=st.session_id,
+                request_id=st.request_id,
+                root_run_id=st.root_run_id,
+                sdk_run_id=st.sdk_run_id,
+                observed_state=st.sdk_state_value,
+            )
+            st.terminal_binding_state = "cancelled"
+            return
+        st.flow = None
+        await _retain_waiting_run(st)
+        if st.flow == "stop":
+            return
+        st.flow = None
+        await _project_terminal_error(st)
+        if st.flow == "stop":
+            return
+
+        await _present_final_assistant(st)
+
+        # Finalize presentation
+        await st.delivery_adapter.finish()
+        st.terminal_binding_state = "completed"
+
+        logger.info(
+            "sdk_run_completed",
+            session_id=st.session_id,
+            request_id=st.request_id,
+            sdk_run_id=st.sdk_run_id,
+            root_run_id=st.root_run_id,
+            state=st.final_state.value if hasattr(st.final_state, "value") else str(st.final_state),
+        )
+
+    finally:
+        await _release_sdk_run(st)
+
+
+def _create_delivery_adapter(st: _SdkRunState) -> None:
+    """建展示器、事件适配器与投递适配器。"""
 
     # Create presentation infrastructure
-    presenter = build_product_run_presenter()
-    adapter = CanonicalRunEventPresentationAdapter()
-    state = PresentationState()
+    st.presenter = build_product_run_presenter()
+    st.adapter = CanonicalRunEventPresentationAdapter()
+    st.state = PresentationState()
 
     # SDK owns a deterministic internal execution id, while the product UI and
     # SessionDB use the canonical root id reserved by Host. Predict the SDK id
@@ -297,224 +393,241 @@ async def _execute_sdk_run(
     # after awaiting start() races a fast first Provider/tool turn and silently
     # drops its public narration and tool lifecycle.
     # Create ProductDeliveryAdapter for this run
-    delivery_adapter = ProductDeliveryAdapter(
-        session_id=session_id,
-        request_id=request_id,
-        run_id=sdk_run_id,
-        presenter=presenter,
-        adapter=adapter,
-        context=context,
-        state=state,
+    st.delivery_adapter = ProductDeliveryAdapter(
+        session_id=st.session_id,
+        request_id=st.request_id,
+        run_id=st.sdk_run_id,
+        presenter=st.presenter,
+        adapter=st.adapter,
+        context=st.context,
+        state=st.state,
     )
 
-    # Register adapter in global registry before SDK start (for Provider,
-    # ProductToolsAdapter, and _DeliverySink routing).
-    _delivery_adapters[sdk_run_id] = delivery_adapter
-    _sdk_run_ids_by_root[root_run_id] = sdk_run_id
-    terminal_binding_state: str | None = "failed"
-    observability_token = _sdk_observability.bind_ingress(
-        run_id=sdk_run_id,
-        session_id=session_id,
-        request_id=request_id,
+
+async def _announce_run_started(st: _SdkRunState) -> None:
+    """通知前端与同会话其他连接：运行已开始。"""
+
+    # Send run_started event to WebSocket
+    st.started = {
+        "type": "chat_v2_run_started",
+        "payload": {
+            "session_id": st.session_id,
+            "run_id": st.root_run_id,
+            "request_id": st.request_id,
+            "turn_id": st.turn_id,
+            "task_scope_id": st.task_scope_id,
+            "conversation_boundary_ref": st.context.conversation_boundary_ref,
+            "conversation_boundary_version": 1,
+            "projection_version": 0,
+        },
+    }
+    await st.websocket.send_json(st.started)
+    await _broadcast_default_chat_peers(st.websocket, st.started)
+
+    logger.info(
+        "sdk_run_started",
+        session_id=st.session_id,
+        request_id=st.request_id,
+        sdk_run_id=st.sdk_run_id,
+        root_run_id=st.root_run_id,
     )
 
-    try:
-        receipt = await host_state.sdk_ingress.start(
-            session_id=session_id,
-            request_id=request_id,
-            turn_id=str(turn_id),
-            payload=payload,
-            session_generation=run_binding.catalog_generation,
-            tool_catalog_fingerprint=run_binding.catalog_fingerprint,
-            provider_budget_fingerprint=run_binding.budget_fingerprint,
-            conversation=conversation,
-            context_preparation_mode=("consumer_prepared" if context_stage is not None else None),
-            context_stage_id=(str(context_stage.stage_id) if context_stage is not None else None),
-            context_stage_hash=(
-                str(context_stage.private_snapshot_hash) if context_stage is not None else None
-            ),
-            prepared_context=(
-                dict(context_stage.private_snapshot) if context_stage is not None else None
-            ),
-        )
-        if receipt.run_id != sdk_run_id:
-            raise RuntimeError("SDK ingress returned an unexpected Run identity")
-        if context_binding_id is not None:
-            context_sources = service_context.get("sdk_context_source_repository")
-            if context_sources is None:
-                raise RuntimeError("SDK context source repository is unavailable")
-            await context_sources.mark_claimed(
-                context_binding_id,
-                claim_token=receipt.run_id,
-            )
 
-        # Send run_started event to WebSocket
-        started = {
-            "type": "chat_v2_run_started",
-            "payload": {
-                "session_id": session_id,
-                "run_id": root_run_id,
-                "request_id": request_id,
-                "turn_id": turn_id,
-                "task_scope_id": task_scope_id,
-                "conversation_boundary_ref": context.conversation_boundary_ref,
-                "conversation_boundary_version": 1,
-                "projection_version": 0,
-            },
-        }
-        await websocket.send_json(started)
-        await _broadcast_default_chat_peers(websocket, started)
+async def _start_ingress(st: _SdkRunState) -> None:
+    """向 SDK 入口提交运行并认领上下文绑定。"""
 
-        logger.info(
-            "sdk_run_started",
-            session_id=session_id,
-            request_id=request_id,
-            sdk_run_id=sdk_run_id,
-            root_run_id=root_run_id,
+    st.receipt = await host_state.sdk_ingress.start(
+        session_id=st.session_id,
+        request_id=st.request_id,
+        turn_id=str(st.turn_id),
+        payload=st.payload,
+        session_generation=st.run_binding.catalog_generation,
+        tool_catalog_fingerprint=st.run_binding.catalog_fingerprint,
+        provider_budget_fingerprint=st.run_binding.budget_fingerprint,
+        conversation=st.conversation,
+        context_preparation_mode=("consumer_prepared" if st.context_stage is not None else None),
+        context_stage_id=(str(st.context_stage.stage_id) if st.context_stage is not None else None),
+        context_stage_hash=(
+            str(st.context_stage.private_snapshot_hash) if st.context_stage is not None else None
+        ),
+        prepared_context=(
+            dict(st.context_stage.private_snapshot) if st.context_stage is not None else None
+        ),
+    )
+    if st.receipt.run_id != st.sdk_run_id:
+        raise RuntimeError("SDK ingress returned an unexpected Run identity")
+    if st.context_binding_id is not None:
+        st.context_sources = service_context.get("sdk_context_source_repository")
+        if st.context_sources is None:
+            raise RuntimeError("SDK context source repository is unavailable")
+        await st.context_sources.mark_claimed(
+            st.context_binding_id,
+            claim_token=st.receipt.run_id,
         )
 
-        # Wait for SDK Runtime to complete
-        # Events are pushed via DeliveryDispatcher → _DeliverySink → ProductDeliveryAdapter
-        await host_state.sdk_ingress.wait_idle(sdk_run_id)
 
-        # Query final state
-        final_state = host_state.sdk_ingress.query(sdk_run_id)
-        sdk_state = getattr(final_state, "state", final_state)
-        sdk_state_value = str(getattr(sdk_state, "value", sdk_state))
-        if sdk_run_id in _sdk_cancel_requested_run_ids:
-            # chat_v2_interrupt owns the canonical cancelled projection and
-            # acknowledgement. Do not race it with a transient SDK
-            # waiting/running read and manufacture run_failed in the UI.
-            logger.info(
-                "sdk_run_user_cancelled",
-                session_id=session_id,
-                request_id=request_id,
-                root_run_id=root_run_id,
-                sdk_run_id=sdk_run_id,
-                observed_state=sdk_state_value,
-            )
-            terminal_binding_state = "cancelled"
-            return
-        if sdk_state_value == "waiting":
-            terminal_binding_state = None
-            _sdk_retained_presentations[sdk_run_id] = (delivery_adapter, presenter, state, context)
-            if host_state.sdk_provider_binding_resolver is not None:
-                host_state.sdk_provider_binding_resolver.mark_waiting(sdk_run_id)
-            if host_state.sdk_tool_authority_registry is not None:
-                host_state.sdk_tool_authority_registry.mark_waiting(sdk_run_id)
-            await _project_open_sdk_authorizations(
-                websocket,
-                sdk_run_id=sdk_run_id,
-            )
-            logger.info(
-                "sdk_run_waiting_binding_retained",
-                sdk_run_id=sdk_run_id,
-                root_run_id=root_run_id,
-            )
-            return
-        if sdk_state_value != "completed":
-            terminal_binding_state = (
-                sdk_state_value if sdk_state_value in {"failed", "cancelled"} else "failed"
-            )
-            # A failed/cancelled SDK run has no assistant text to present.
-            # Emit the product terminal error instead of an empty final frame,
-            # so the UI can settle the canonical root projection visibly.
-            await _send_chat_error(
-                websocket,
-                {
-                    "type": "chat_v2_error",
-                    "payload": {
-                        "session_id": session_id,
-                        "run_id": root_run_id,
-                        "request_id": request_id,
-                        "task_scope_id": task_scope_id,
-                        "error": "run_failed",
-                        "detail": f"sdk_run_{sdk_state_value}",
-                    },
-                },
-                session_id=session_id,
-                request_id=request_id,
-            )
+async def _present_final_assistant(st: _SdkRunState) -> None:
+    """把 SDK 上下文里最后一条助手回复交给展示层。"""
+
+    # SDK 的 ReAct driver 不产生 delivery 事件，assistant 文本只落在 SDK 的
+    # context 里。这里手动把它桥接回 presenter，走 _present_final 的
+    # 「写 SessionDB + 推 WebSocket」既有展示链路。
+    if host_state.sdk_context_port is not None:
+        try:
+            st.sdk_context = host_state.sdk_context_port.load(SdkRunId(st.sdk_run_id))
+            st.assistant_texts = [
+                message.content
+                for message in st.sdk_context.messages
+                if str(message.role.value) == "assistant"
+            ]
+            if st.assistant_texts:
+                await st.presenter.present(
+                    FinalEvent(content=st.assistant_texts[-1]),
+                    st.context,
+                    st.state,
+                )
+        except Exception as _assistant_exc:  # noqa: BLE001
             logger.warning(
-                "sdk_run_terminal_error_projected",
-                session_id=session_id,
-                request_id=request_id,
-                root_run_id=root_run_id,
-                sdk_run_id=sdk_run_id,
-                state=sdk_state_value,
+                "sdk_assistant_presentation_failed",
+                error=str(_assistant_exc)[:200],
             )
-            return
 
-        # SDK 的 ReAct driver 不产生 delivery 事件，assistant 文本只落在 SDK 的
-        # context 里。这里手动把它桥接回 presenter，走 _present_final 的
-        # 「写 SessionDB + 推 WebSocket」既有展示链路。
-        if host_state.sdk_context_port is not None:
-            try:
-                sdk_context = host_state.sdk_context_port.load(SdkRunId(sdk_run_id))
-                assistant_texts = [
-                    message.content
-                    for message in sdk_context.messages
-                    if str(message.role.value) == "assistant"
-                ]
-                if assistant_texts:
-                    await presenter.present(
-                        FinalEvent(content=assistant_texts[-1]),
-                        context,
-                        state,
-                    )
-            except Exception as _assistant_exc:  # noqa: BLE001
-                logger.warning(
-                    "sdk_assistant_presentation_failed",
-                    error=str(_assistant_exc)[:200],
-                )
 
-        # Finalize presentation
-        await delivery_adapter.finish()
-        terminal_binding_state = "completed"
+def _build_run_payload(st: _SdkRunState) -> None:
+    """组装 SDK 运行的输入载荷与上下文元数据。"""
 
+    st.payload = {
+        "input": {"text": str(getattr(st.context, "text", ""))},
+        "messages": st.private["provider_messages"],
+        "capability_snapshot": {"tools": list(st.catalog["tool_names"])},
+        "context_metadata": {
+            "session_id": st.session_id,
+            "root_run_id": st.root_run_id,
+            "request_id": st.request_id,
+            "task_scope_id": st.task_scope_id,
+            "workspace_root": (
+                st.tool_authority.task_work_context.workspace_root
+                if st.tool_authority is not None
+                else None
+            ),
+            "workspace_binding_version": (
+                st.tool_authority.task_work_context.binding_version
+                if st.tool_authority is not None
+                else 1
+            ),
+            "conversation_boundary_ref": st.context.conversation_boundary_ref,
+            "conversation_boundary_version": 1,
+            "snapshot_id": st.prepared_snapshot.snapshot_id,
+            "binding_epoch": st.run_binding.binding_epoch,
+            "context_window": st.run_binding.context_window,
+            "effective_ceiling": int(st.budget.get("effective_ceiling") or 0),
+            "run_binding": st.run_binding.to_record(),
+            "tool_authority": (
+                st.tool_authority.run_start_record() if st.tool_authority is not None else None
+            ),
+        },
+    }
+
+
+async def _retain_waiting_run(st: _SdkRunState) -> None:
+    """等待授权：保留展示状态与绑定，投递待批准项。"""
+
+    if st.sdk_state_value == "waiting":
+        st.terminal_binding_state = None
+        _sdk_retained_presentations[st.sdk_run_id] = (
+            st.delivery_adapter,
+            st.presenter,
+            st.state,
+            st.context,
+        )
+        if host_state.sdk_provider_binding_resolver is not None:
+            host_state.sdk_provider_binding_resolver.mark_waiting(st.sdk_run_id)
+        if host_state.sdk_tool_authority_registry is not None:
+            host_state.sdk_tool_authority_registry.mark_waiting(st.sdk_run_id)
+        await _project_open_sdk_authorizations(
+            st.websocket,
+            sdk_run_id=st.sdk_run_id,
+        )
         logger.info(
-            "sdk_run_completed",
-            session_id=session_id,
-            request_id=request_id,
-            sdk_run_id=sdk_run_id,
-            root_run_id=root_run_id,
-            state=final_state.value if hasattr(final_state, "value") else str(final_state),
+            "sdk_run_waiting_binding_retained",
+            sdk_run_id=st.sdk_run_id,
+            root_run_id=st.root_run_id,
         )
+        st.flow = "stop"
+        return
 
-    finally:
-        _sdk_observability.reset_ingress(observability_token)
-        if (
-            terminal_binding_state is not None
-            and host_state.sdk_provider_binding_resolver is not None
-        ):
-            try:
-                host_state.sdk_provider_binding_resolver.mark_terminal(
-                    sdk_run_id, terminal_binding_state
-                )
-            except KeyError:
-                pass
-        if (
-            terminal_binding_state is not None
-            and host_state.sdk_tool_authority_registry is not None
-        ):
-            try:
-                host_state.sdk_tool_authority_registry.mark_terminal(
-                    sdk_run_id, terminal_binding_state
-                )
-            except KeyError:
-                pass
-        # WAITING is durable and resumable: retain both delivery and identity
-        # routes until a signal causes the Run to reach a terminal state.
-        if terminal_binding_state is not None:
-            _sdk_retained_presentations.pop(sdk_run_id, None)
-            _delivery_adapters.pop(sdk_run_id, None)
-            if _sdk_run_ids_by_root.get(root_run_id) == sdk_run_id:
-                _sdk_run_ids_by_root.pop(root_run_id, None)
-            _sdk_cancel_requested_run_ids.discard(sdk_run_id)
-        logger.debug(
-            "sdk_run_adapter_cleanup",
-            sdk_run_id=sdk_run_id,
-            root_run_id=root_run_id,
-            remaining_adapters=len(_delivery_adapters),
+
+async def _project_terminal_error(st: _SdkRunState) -> None:
+    """未正常完成：向界面投递运行失败并记日志。"""
+
+    if st.sdk_state_value != "completed":
+        st.terminal_binding_state = (
+            st.sdk_state_value if st.sdk_state_value in {"failed", "cancelled"} else "failed"
         )
-        await _sdk_observability.export_async()
+        # A failed/cancelled SDK run has no assistant text to present.
+        # Emit the product terminal error instead of an empty final frame,
+        # so the UI can settle the canonical root projection visibly.
+        await _send_chat_error(
+            st.websocket,
+            {
+                "type": "chat_v2_error",
+                "payload": {
+                    "session_id": st.session_id,
+                    "run_id": st.root_run_id,
+                    "request_id": st.request_id,
+                    "task_scope_id": st.task_scope_id,
+                    "error": "run_failed",
+                    "detail": f"sdk_run_{st.sdk_state_value}",
+                },
+            },
+            session_id=st.session_id,
+            request_id=st.request_id,
+        )
+        logger.warning(
+            "sdk_run_terminal_error_projected",
+            session_id=st.session_id,
+            request_id=st.request_id,
+            root_run_id=st.root_run_id,
+            sdk_run_id=st.sdk_run_id,
+            state=st.sdk_state_value,
+        )
+        st.flow = "stop"
+        return
+
+
+async def _release_sdk_run(st: _SdkRunState) -> None:
+    """收尾：解除观测绑定、按终态释放供应方绑定与工具授权、清理登记表。"""
+
+    _sdk_observability.reset_ingress(st.observability_token)
+    if (
+        st.terminal_binding_state is not None
+        and host_state.sdk_provider_binding_resolver is not None
+    ):
+        try:
+            host_state.sdk_provider_binding_resolver.mark_terminal(
+                st.sdk_run_id, st.terminal_binding_state
+            )
+        except KeyError:
+            pass
+    if st.terminal_binding_state is not None and host_state.sdk_tool_authority_registry is not None:
+        try:
+            host_state.sdk_tool_authority_registry.mark_terminal(
+                st.sdk_run_id, st.terminal_binding_state
+            )
+        except KeyError:
+            pass
+    # WAITING is durable and resumable: retain both delivery and identity
+    # routes until a signal causes the Run to reach a terminal state.
+    if st.terminal_binding_state is not None:
+        _sdk_retained_presentations.pop(st.sdk_run_id, None)
+        _delivery_adapters.pop(st.sdk_run_id, None)
+        if _sdk_run_ids_by_root.get(st.root_run_id) == st.sdk_run_id:
+            _sdk_run_ids_by_root.pop(st.root_run_id, None)
+        _sdk_cancel_requested_run_ids.discard(st.sdk_run_id)
+    logger.debug(
+        "sdk_run_adapter_cleanup",
+        sdk_run_id=st.sdk_run_id,
+        root_run_id=st.root_run_id,
+        remaining_adapters=len(_delivery_adapters),
+    )
+    await _sdk_observability.export_async()
