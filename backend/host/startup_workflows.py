@@ -319,71 +319,7 @@ async def _startup_workflow_services() -> Any:
         )
         service_context.register("harness_public_read_service", _harness_public_read_service)
 
-        _execution_fence = UnboundRunExecutionFence()
-        _provider_fault_script = ProviderFaultScriptV1.from_environment()
-
-        _runtime_tool_registry.set_tool_completion_latch(
-            ToolCompletionLatchScriptV1.from_environment()
-        )
-        _provider_invocation_coordinator = ProviderInvocationCoordinator(
-            _workflow_service.execution_uow,
-            fence_reacquirer=_execution_fence.acquire,
-            fault_script=_provider_fault_script,
-        )
-        service_context.register("run_execution_fence_acquirer", _execution_fence.acquire)
-        service_context.register(
-            "provider_invocation_coordinator",
-            _provider_invocation_coordinator,
-        )
-
-        _provider_registry_for_workloads = service_context.get("provider_registry")
-
-        def _provider_workload_factory(entry, model):
-            if _provider_registry_for_workloads is None:
-                raise RuntimeError("provider registry is unavailable")
-            provider = OpenAICompatibleProvider(
-                base_url=entry.base_url,
-                api_key=(_provider_registry_for_workloads.resolve_api_key(entry.id) or "ollama"),
-                model=model,
-                temperature=getattr(entry, "temperature", 0.7),
-                sanitize_inline_cot_dsml=_sanitize_cot_dsml,
-                code_params=getattr(entry, "code_params", None),
-                is_relay=(getattr(entry, "source", "") == "relay"),
-            )
-            provider.provider_id = str(entry.id)
-            return provider
-
-        _provider_workload_audit = ProviderWorkloadAuditStore(_state_db_path)
-        _session_workload_resolver = SessionProviderWorkloadTargetResolver(
-            registry=_provider_registry_for_workloads,
-            session_db=_session_db,
-            readiness=getattr(service_context, "provider_routing_readiness", None),
-            provider_factory=_provider_workload_factory,
-            start_snapshot_reader=_workflow_service.execution_uow,
-        )
-        _background_model_policy = BackgroundModelPolicy(
-            registry=_provider_registry_for_workloads,
-            readiness=getattr(service_context, "provider_routing_readiness", None),
-            provider_factory=_provider_workload_factory,
-        )
-        _provider_workload_router = ProviderWorkloadRouter(
-            ProviderWorkloadRoutePolicy(
-                session=_session_workload_resolver,
-                background=_background_model_policy,
-            ),
-            breaker=ProviderWorkloadBreaker(),
-            audit=_provider_workload_audit,
-            fault_script=_provider_fault_script,
-        )
-        service_context.register("provider_workload_audit", _provider_workload_audit)
-        service_context.register("provider_workload_router", _provider_workload_router)
-        if _provider_fault_script is not None:
-            _provider_fault_scenario_runner = ProviderFaultScenarioRunner(
-                _provider_fault_script,
-                _provider_workload_router,
-                task_owner=_provider_workload_maintenance_tasks,
-            )
-            await _provider_fault_scenario_runner.start()
+        await _startup_provider_invocation_runtime(_workflow_service)
 
         async def _deep_context_factory(row, start_payload) -> WorkflowContext:
             llm_call = await _workflow_research_tools._resolve_default_llm_call()
@@ -405,116 +341,7 @@ async def _startup_workflow_services() -> Any:
                 blob_root=str(values.get("blob_root") or ""),
             )
 
-        async def _deep_v2_context_factory(row, start_payload) -> WorkflowContext:
-            # 按需导入：测试替身（deskpet.retrieval.runtime.get_default_gateway）
-            from deskpet.retrieval.runtime import get_default_gateway
-
-            llm_call = await _workflow_research_tools._resolve_default_llm_call()
-            legacy = legacy_ports(llm_call=llm_call, search=None, extract=None)
-            gateway = get_default_gateway()
-            run_id = str(row.get("run_id") or "")
-
-            async def _search(query: str, *, max_results: int) -> list[dict]:
-                response = await gateway.search(
-                    SearchRequest(
-                        query=query,
-                        max_results=max_results,
-                        mode="research",
-                        run_id=run_id,
-                    )
-                )
-                payload = response.to_dict()
-                attempts = list(payload.get("attempts") or [])
-                public_codes = [
-                    str(value.get("public_error_code"))
-                    for value in attempts
-                    if isinstance(value, dict) and value.get("public_error_code")
-                ]
-                coverage = dict(response.coverage())
-                safe_attempts = [
-                    {
-                        "provider": str(value.get("provider") or ""),
-                        "status": str(value.get("status") or ""),
-                        "permit": str(value.get("permit") or "closed"),
-                        "probe_outcome": (
-                            str(value.get("probe_outcome")) if value.get("probe_outcome") else None
-                        ),
-                        "upstream_called": bool(value.get("upstream_called", False)),
-                        "is_rescue": bool(value.get("is_rescue", False)),
-                    }
-                    for value in attempts
-                    if isinstance(value, dict)
-                ]
-                return ResearchSearchResults(
-                    list(payload["results"]),
-                    observation={
-                        "request_id": str(payload.get("request_id") or ""),
-                        "run_id": str(payload.get("run_id") or run_id),
-                        "degraded": bool(response.degraded),
-                        "reason_code": public_codes[-1] if public_codes else None,
-                        "engines_tried": list(response.engines_tried),
-                        "engines_hit": list(response.engines_hit),
-                        "provider_attempt_count": int(coverage["actual_requests"]),
-                        "provider_probe_count": int(coverage["probes"]),
-                        "provider_attempts": safe_attempts,
-                        "rescue_status": str(response.rescue_status),
-                        "rescue_error_code": (
-                            response.rescue_error_code.value
-                            if response.rescue_error_code is not None
-                            else None
-                        ),
-                        "rescue_upstream_called": bool(response.rescue_upstream_called),
-                        "coverage": coverage,
-                    },
-                )
-
-            async def _extract(url: str) -> dict:
-                if gateway.fetch_service is None:
-                    return await legacy.fetch.extract(url)
-                document = await gateway.fetch_service.fetch(
-                    FetchRequest(url=url, timeout=15.0, render_policy="auto")
-                )
-                return document.to_dict()
-
-            async def _save_artifact(
-                *, topic: str, report_md: str, report_hash: str, run_id: str
-            ) -> dict[str, object]:
-                return await asyncio.to_thread(
-                    _workflow_research_tools.save_workflow_report,
-                    topic=topic,
-                    report_md=report_md,
-                    report_hash=report_hash,
-                    run_id=run_id,
-                )
-
-            blob_root = _paths.user_data_dir() / "workflows" / "blobs"
-            return WorkflowContext(
-                ports={
-                    "llm": legacy.llm,
-                    "search": ResearchSearchPort(
-                        search_call=_search,
-                        direct_call=legacy.search.direct_call,
-                        reset_runtime=legacy.search.reset_runtime,
-                    ),
-                    "fetch": FetchPort(_extract),
-                    "artifact": ResearchArtifactPort(_save_artifact),
-                    "blob": RegisteredBlobStore(
-                        blob_root,
-                        _workflow_service.run_store.path,
-                    ),
-                    "native_execution_policy": NativeExecutionPolicy(
-                        max_parallel_tasks=max(
-                            2,
-                            min(
-                                6,
-                                int(config.workflows.deep_research_max_parallel_tasks),
-                            ),
-                        )
-                    ),
-                },
-                request_id=str(row.get("request_id") or ""),
-                turn_id=str(row.get("turn_id") or ""),
-            )
+        _deep_v2_context_factory = _startup_deep_v2_context_factory(_workflow_service)
 
         async def _deep_v7_context_factory(row, start_payload) -> WorkflowContext:
             base = await _deep_v2_context_factory(row, start_payload)
@@ -971,151 +798,21 @@ async def _startup_workflow_services() -> Any:
                 blob_root=str(values.get("blob_root") or ""),
             )
 
-        def _deep_v5_state_factory(**values):
-            runtime = {
-                **dict(values.get("research_config") or {}),
-                "soft_checkpoint_seconds": config.research_v5.soft_checkpoint_seconds,
-                "lease_seconds": config.research_v5.lease_seconds,
-                "auto_cap_seconds": config.research_v5.auto_cap_seconds,
-                "plateau_rounds": config.research_v5.plateau_rounds,
-            }
-            return deep_research_v5_initial_state(
-                topic=str(values["topic"]),
-                run_id=str(values["run_id"]),
-                thread_id=str(values["thread_id"]),
-                session_id=str(values["session_id"]),
-                mode=str(values.get("mode") or "standard"),
-                research_config=runtime,
-                blob_root=str(values.get("blob_root") or ""),
-                operation_id=str(values.get("operation_id") or values["run_id"]),
-                continuation_snapshot=(
-                    dict(values["continuation_snapshot"])
-                    if isinstance(values.get("continuation_snapshot"), dict)
-                    else None
-                ),
-                parent_operation_id=(
-                    str(values["parent_operation_id"])
-                    if values.get("parent_operation_id") is not None
-                    else None
-                ),
-                only_gaps=bool(values.get("only_gaps", False)),
-            )
+        _deep_v5_state_factory = _startup_deep_v5_state_factory()
 
-        async def _deep_v6_state_factory(**values):
-            continuation_snapshot = None
-            topic = str(values.get("topic") or "")
-            answer_locale = str(values.get("answer_locale") or "zh-CN")
-            if values.get("source_snapshot_hash") is not None:
-                loader = getattr(
-                    _workflow_service.research_repository,
-                    "load_continuation_snapshot_v6",
-                    None,
-                )
-                if not callable(loader):
-                    raise RuntimeError("v6 continuation snapshot loader is unavailable")
-                continuation_snapshot = decode_deep_research_v6_continuation_snapshot(
-                    await loader(str(values["run_id"]))
-                )
-                blob_loader = getattr(_workflow_service, "_research_snapshot_loader", None)
-                if not callable(blob_loader):
-                    raise RuntimeError("v6 continuation registered blob loader is unavailable")
-                spec_bytes = await blob_loader(str(continuation_snapshot["spec_ref"])[7:])
-                spec_value = (
-                    json.loads(spec_bytes.decode("utf-8"))
-                    if isinstance(spec_bytes, bytes)
-                    else spec_bytes
-                )
-                if not isinstance(spec_value, dict):
-                    raise RuntimeError("v6 continuation spec blob is invalid")
-                topic = str(spec_value.get("normalized_question") or "")
-                answer_locale = str(spec_value.get("answer_locale") or "zh-CN")
-            return deep_research_v6_initial_state(
-                topic=topic,
-                run_id=str(values["run_id"]),
-                thread_id=str(values["thread_id"]),
-                session_id=str(values["session_id"]),
-                answer_locale=answer_locale,
-                schema_version=(
-                    int(values["schema_version"])
-                    if values.get("schema_version") is not None
-                    else None
-                ),
-                parent_run_id=(
-                    str(values["parent_run_id"])
-                    if values.get("parent_run_id") is not None
-                    else None
-                ),
-                source_snapshot_hash=(
-                    str(values["source_snapshot_hash"])
-                    if values.get("source_snapshot_hash") is not None
-                    else None
-                ),
-                continuation_snapshot=continuation_snapshot,
-            )
-
-        def _deep_v7_state_factory(**values):
-            return deep_research_v7_initial_state(
-                topic=str(values["topic"]),
-                run_id=str(values["run_id"]),
-                thread_id=str(values["thread_id"]),
-                session_id=str(values["session_id"]),
-                mode=str(values.get("mode") or "standard"),
-                research_config=dict(values.get("research_config") or {}),
-                blob_root=str(values.get("blob_root") or ""),
-            )
-
-        _workflow_launcher.register_adapter(
-            "deep_research",
-            "v1",
-            state_factory=_deep_state_factory,
-            context_factory=_deep_context_factory,
-        )
-        _workflow_launcher.register_adapter(
-            "deep_research",
-            "v2",
-            state_factory=_deep_v2_state_factory,
-            context_factory=_deep_v2_context_factory,
-        )
-        _workflow_launcher.register_adapter(
-            "deep_research",
-            "v3",
-            state_factory=_deep_v3_state_factory,
-            context_factory=_deep_v2_context_factory,
-        )
-        _workflow_launcher.register_adapter(
-            "deep_research",
-            "v4",
-            state_factory=_deep_v4_state_factory,
-            context_factory=_deep_v2_context_factory,
-        )
-        _workflow_launcher.register_adapter(
-            "deep_research",
-            "v5",
-            state_factory=_deep_v5_state_factory,
-            context_factory=_deep_v5_context_factory,
-        )
-        _workflow_launcher.register_adapter(
-            "deep_research",
-            "v6",
-            state_factory=_deep_v6_state_factory,
-            context_factory=_deep_v6_context_factory,
-            extensions={
-                DEEP_RESEARCH_EXTENSION: DeepResearchRuntimeExtension(
-                    new_runs_enabled=True,
-                    action_ids=("generate_now", "continue_research", "cancel_settle"),
-                    continuation=DeepResearchContinuationAdapter(
-                        decode_snapshot=decode_deep_research_v6_continuation_snapshot,
-                        build_child_payload=build_deep_research_v6_continuation_payload,
-                    ),
-                    terminal_commit_capability=TERMINAL_COMMIT_CAPABILITY,
-                )
-            },
-        )
-        _workflow_launcher.register_adapter(
-            "deep_research",
-            "v7",
-            state_factory=_deep_v7_state_factory,
-            context_factory=_deep_v7_context_factory,
+        _startup_register_deep_research_adapters(
+            _deep_context_factory,
+            _deep_state_factory=_deep_state_factory,
+            _deep_v2_context_factory=_deep_v2_context_factory,
+            _deep_v2_state_factory=_deep_v2_state_factory,
+            _deep_v3_state_factory=_deep_v3_state_factory,
+            _deep_v4_state_factory=_deep_v4_state_factory,
+            _deep_v5_context_factory=_deep_v5_context_factory,
+            _deep_v5_state_factory=_deep_v5_state_factory,
+            _deep_v6_context_factory=_deep_v6_context_factory,
+            _deep_v7_context_factory=_deep_v7_context_factory,
+            _workflow_launcher=_workflow_launcher,
+            _workflow_service=_workflow_service,
         )
 
         def _code_recovery_state_factory(**values):
@@ -1358,50 +1055,7 @@ async def _startup_workflow_services() -> Any:
         )
         # Import the actual ToolRegistry instance for personal_runtime_adapter
 
-        _workflow_service.runtime_adapters.register(
-            build_personal_runtime_adapter(
-                journal=_PersonalEffectJournal(_workflow_service.run_store.path),
-                tool_registry=_actual_tool_registry,
-                run_start_snapshot_reader=(_workflow_service.execution_uow.read_run_start_snapshot),
-                dispatch_fence_acquirer=service_context.get("run_execution_fence_acquirer"),
-            )
-        )
-
-        # New product workflow starts are owned exclusively by RunKernel.
-        # The legacy tool handlers remain library-compatible but are not wired
-        # as production launch ingress.
-        _workflow_research_tools.set_deepresearch_workflow_starter(None)
-        try:
-            _configure_ppt_production(recover=False)
-            logger.info("ppt_pro_services_wired")
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("ppt_pro_services_wire_failed", error=str(exc))
-
-        _workflow_recovery = await activate_and_recover_workflows(
-            project_bindings=_project_binding_service,
-            workflow_service=_workflow_service,
-            workflow_launcher=_workflow_launcher,
-            required_runtime_identities=_workflow_service.runtime_adapters.identities(),
-        )
-        _delete_reconcile = _workflow_recovery["delete_reconcile"]
-        startup_recoveries = _workflow_recovery["startup_recoveries"]
-        recovered_decisions = _workflow_recovery["recovered_decisions"]
-        recovered_deliveries = _workflow_recovery["recovered_deliveries"]
-        recovered_runs = _workflow_recovery["recovered_runs"]
-        if _delete_reconcile["failed"]:
-            logger.warning(
-                "session_delete_cancel_reconcile_incomplete",
-                **_delete_reconcile,
-            )
-        logger.info(
-            "workflow_service_ready",
-            db_path=str(_workflow_service.run_store.path),
-            versions=_workflow_service.runner.registry.versions(),
-            recovered_runs=len(recovered_runs),
-            startup_recoveries=len(startup_recoveries),
-            recovered_decisions=len(recovered_decisions),
-            recovered_deliveries=len(recovered_deliveries),
-        )
+        await _startup_register_personal_runtime_adapter(_workflow_launcher, _workflow_service)
     except Exception as exc:  # noqa: BLE001 - old ReAct stays available
         service_context.register("workflow_service", None)
         service_context.register("run_execution_fence_acquirer", None)
@@ -1412,3 +1066,394 @@ async def _startup_workflow_services() -> Any:
             pass
         logger.warning("workflow_service_init_failed", error=str(exc))
     return _sdb
+
+
+async def _startup_provider_invocation_runtime(_workflow_service) -> None:
+    _execution_fence = UnboundRunExecutionFence()
+    _provider_fault_script = ProviderFaultScriptV1.from_environment()
+
+    _runtime_tool_registry.set_tool_completion_latch(ToolCompletionLatchScriptV1.from_environment())
+    _provider_invocation_coordinator = ProviderInvocationCoordinator(
+        _workflow_service.execution_uow,
+        fence_reacquirer=_execution_fence.acquire,
+        fault_script=_provider_fault_script,
+    )
+    service_context.register("run_execution_fence_acquirer", _execution_fence.acquire)
+    service_context.register(
+        "provider_invocation_coordinator",
+        _provider_invocation_coordinator,
+    )
+
+    _provider_registry_for_workloads = service_context.get("provider_registry")
+
+    def _provider_workload_factory(entry, model):
+        if _provider_registry_for_workloads is None:
+            raise RuntimeError("provider registry is unavailable")
+        provider = OpenAICompatibleProvider(
+            base_url=entry.base_url,
+            api_key=(_provider_registry_for_workloads.resolve_api_key(entry.id) or "ollama"),
+            model=model,
+            temperature=getattr(entry, "temperature", 0.7),
+            sanitize_inline_cot_dsml=_sanitize_cot_dsml,
+            code_params=getattr(entry, "code_params", None),
+            is_relay=(getattr(entry, "source", "") == "relay"),
+        )
+        provider.provider_id = str(entry.id)
+        return provider
+
+    _provider_workload_audit = ProviderWorkloadAuditStore(_state_db_path)
+    _session_workload_resolver = SessionProviderWorkloadTargetResolver(
+        registry=_provider_registry_for_workloads,
+        session_db=_session_db,
+        readiness=getattr(service_context, "provider_routing_readiness", None),
+        provider_factory=_provider_workload_factory,
+        start_snapshot_reader=_workflow_service.execution_uow,
+    )
+    _background_model_policy = BackgroundModelPolicy(
+        registry=_provider_registry_for_workloads,
+        readiness=getattr(service_context, "provider_routing_readiness", None),
+        provider_factory=_provider_workload_factory,
+    )
+    _provider_workload_router = ProviderWorkloadRouter(
+        ProviderWorkloadRoutePolicy(
+            session=_session_workload_resolver,
+            background=_background_model_policy,
+        ),
+        breaker=ProviderWorkloadBreaker(),
+        audit=_provider_workload_audit,
+        fault_script=_provider_fault_script,
+    )
+    service_context.register("provider_workload_audit", _provider_workload_audit)
+    service_context.register("provider_workload_router", _provider_workload_router)
+    if _provider_fault_script is not None:
+        _provider_fault_scenario_runner = ProviderFaultScenarioRunner(
+            _provider_fault_script,
+            _provider_workload_router,
+            task_owner=_provider_workload_maintenance_tasks,
+        )
+        await _provider_fault_scenario_runner.start()
+
+
+def _startup_deep_v2_context_factory(_workflow_service):
+    async def _deep_v2_context_factory(row, start_payload) -> WorkflowContext:
+        # 按需导入：测试替身（deskpet.retrieval.runtime.get_default_gateway）
+        from deskpet.retrieval.runtime import get_default_gateway
+
+        llm_call = await _workflow_research_tools._resolve_default_llm_call()
+        legacy = legacy_ports(llm_call=llm_call, search=None, extract=None)
+        gateway = get_default_gateway()
+        run_id = str(row.get("run_id") or "")
+
+        async def _search(query: str, *, max_results: int) -> list[dict]:
+            response = await gateway.search(
+                SearchRequest(
+                    query=query,
+                    max_results=max_results,
+                    mode="research",
+                    run_id=run_id,
+                )
+            )
+            payload = response.to_dict()
+            attempts = list(payload.get("attempts") or [])
+            public_codes = [
+                str(value.get("public_error_code"))
+                for value in attempts
+                if isinstance(value, dict) and value.get("public_error_code")
+            ]
+            coverage = dict(response.coverage())
+            safe_attempts = [
+                {
+                    "provider": str(value.get("provider") or ""),
+                    "status": str(value.get("status") or ""),
+                    "permit": str(value.get("permit") or "closed"),
+                    "probe_outcome": (
+                        str(value.get("probe_outcome")) if value.get("probe_outcome") else None
+                    ),
+                    "upstream_called": bool(value.get("upstream_called", False)),
+                    "is_rescue": bool(value.get("is_rescue", False)),
+                }
+                for value in attempts
+                if isinstance(value, dict)
+            ]
+            return ResearchSearchResults(
+                list(payload["results"]),
+                observation={
+                    "request_id": str(payload.get("request_id") or ""),
+                    "run_id": str(payload.get("run_id") or run_id),
+                    "degraded": bool(response.degraded),
+                    "reason_code": public_codes[-1] if public_codes else None,
+                    "engines_tried": list(response.engines_tried),
+                    "engines_hit": list(response.engines_hit),
+                    "provider_attempt_count": int(coverage["actual_requests"]),
+                    "provider_probe_count": int(coverage["probes"]),
+                    "provider_attempts": safe_attempts,
+                    "rescue_status": str(response.rescue_status),
+                    "rescue_error_code": (
+                        response.rescue_error_code.value
+                        if response.rescue_error_code is not None
+                        else None
+                    ),
+                    "rescue_upstream_called": bool(response.rescue_upstream_called),
+                    "coverage": coverage,
+                },
+            )
+
+        async def _extract(url: str) -> dict:
+            if gateway.fetch_service is None:
+                return await legacy.fetch.extract(url)
+            document = await gateway.fetch_service.fetch(
+                FetchRequest(url=url, timeout=15.0, render_policy="auto")
+            )
+            return document.to_dict()
+
+        async def _save_artifact(
+            *, topic: str, report_md: str, report_hash: str, run_id: str
+        ) -> dict[str, object]:
+            return await asyncio.to_thread(
+                _workflow_research_tools.save_workflow_report,
+                topic=topic,
+                report_md=report_md,
+                report_hash=report_hash,
+                run_id=run_id,
+            )
+
+        blob_root = _paths.user_data_dir() / "workflows" / "blobs"
+        return WorkflowContext(
+            ports={
+                "llm": legacy.llm,
+                "search": ResearchSearchPort(
+                    search_call=_search,
+                    direct_call=legacy.search.direct_call,
+                    reset_runtime=legacy.search.reset_runtime,
+                ),
+                "fetch": FetchPort(_extract),
+                "artifact": ResearchArtifactPort(_save_artifact),
+                "blob": RegisteredBlobStore(
+                    blob_root,
+                    _workflow_service.run_store.path,
+                ),
+                "native_execution_policy": NativeExecutionPolicy(
+                    max_parallel_tasks=max(
+                        2,
+                        min(
+                            6,
+                            int(config.workflows.deep_research_max_parallel_tasks),
+                        ),
+                    )
+                ),
+            },
+            request_id=str(row.get("request_id") or ""),
+            turn_id=str(row.get("turn_id") or ""),
+        )
+
+    return _deep_v2_context_factory
+
+
+def _startup_deep_v5_state_factory():
+    def _deep_v5_state_factory(**values):
+        runtime = {
+            **dict(values.get("research_config") or {}),
+            "soft_checkpoint_seconds": config.research_v5.soft_checkpoint_seconds,
+            "lease_seconds": config.research_v5.lease_seconds,
+            "auto_cap_seconds": config.research_v5.auto_cap_seconds,
+            "plateau_rounds": config.research_v5.plateau_rounds,
+        }
+        return deep_research_v5_initial_state(
+            topic=str(values["topic"]),
+            run_id=str(values["run_id"]),
+            thread_id=str(values["thread_id"]),
+            session_id=str(values["session_id"]),
+            mode=str(values.get("mode") or "standard"),
+            research_config=runtime,
+            blob_root=str(values.get("blob_root") or ""),
+            operation_id=str(values.get("operation_id") or values["run_id"]),
+            continuation_snapshot=(
+                dict(values["continuation_snapshot"])
+                if isinstance(values.get("continuation_snapshot"), dict)
+                else None
+            ),
+            parent_operation_id=(
+                str(values["parent_operation_id"])
+                if values.get("parent_operation_id") is not None
+                else None
+            ),
+            only_gaps=bool(values.get("only_gaps", False)),
+        )
+
+    return _deep_v5_state_factory
+
+
+def _startup_register_deep_research_adapters(
+    _deep_context_factory,
+    *,
+    _deep_state_factory,
+    _deep_v2_context_factory,
+    _deep_v2_state_factory,
+    _deep_v3_state_factory,
+    _deep_v4_state_factory,
+    _deep_v5_context_factory,
+    _deep_v5_state_factory,
+    _deep_v6_context_factory,
+    _deep_v7_context_factory,
+    _workflow_launcher,
+    _workflow_service,
+) -> None:
+    async def _deep_v6_state_factory(**values):
+        continuation_snapshot = None
+        topic = str(values.get("topic") or "")
+        answer_locale = str(values.get("answer_locale") or "zh-CN")
+        if values.get("source_snapshot_hash") is not None:
+            loader = getattr(
+                _workflow_service.research_repository,
+                "load_continuation_snapshot_v6",
+                None,
+            )
+            if not callable(loader):
+                raise RuntimeError("v6 continuation snapshot loader is unavailable")
+            continuation_snapshot = decode_deep_research_v6_continuation_snapshot(
+                await loader(str(values["run_id"]))
+            )
+            blob_loader = getattr(_workflow_service, "_research_snapshot_loader", None)
+            if not callable(blob_loader):
+                raise RuntimeError("v6 continuation registered blob loader is unavailable")
+            spec_bytes = await blob_loader(str(continuation_snapshot["spec_ref"])[7:])
+            spec_value = (
+                json.loads(spec_bytes.decode("utf-8"))
+                if isinstance(spec_bytes, bytes)
+                else spec_bytes
+            )
+            if not isinstance(spec_value, dict):
+                raise RuntimeError("v6 continuation spec blob is invalid")
+            topic = str(spec_value.get("normalized_question") or "")
+            answer_locale = str(spec_value.get("answer_locale") or "zh-CN")
+        return deep_research_v6_initial_state(
+            topic=topic,
+            run_id=str(values["run_id"]),
+            thread_id=str(values["thread_id"]),
+            session_id=str(values["session_id"]),
+            answer_locale=answer_locale,
+            schema_version=(
+                int(values["schema_version"]) if values.get("schema_version") is not None else None
+            ),
+            parent_run_id=(
+                str(values["parent_run_id"]) if values.get("parent_run_id") is not None else None
+            ),
+            source_snapshot_hash=(
+                str(values["source_snapshot_hash"])
+                if values.get("source_snapshot_hash") is not None
+                else None
+            ),
+            continuation_snapshot=continuation_snapshot,
+        )
+
+    def _deep_v7_state_factory(**values):
+        return deep_research_v7_initial_state(
+            topic=str(values["topic"]),
+            run_id=str(values["run_id"]),
+            thread_id=str(values["thread_id"]),
+            session_id=str(values["session_id"]),
+            mode=str(values.get("mode") or "standard"),
+            research_config=dict(values.get("research_config") or {}),
+            blob_root=str(values.get("blob_root") or ""),
+        )
+
+    _workflow_launcher.register_adapter(
+        "deep_research",
+        "v1",
+        state_factory=_deep_state_factory,
+        context_factory=_deep_context_factory,
+    )
+    _workflow_launcher.register_adapter(
+        "deep_research",
+        "v2",
+        state_factory=_deep_v2_state_factory,
+        context_factory=_deep_v2_context_factory,
+    )
+    _workflow_launcher.register_adapter(
+        "deep_research",
+        "v3",
+        state_factory=_deep_v3_state_factory,
+        context_factory=_deep_v2_context_factory,
+    )
+    _workflow_launcher.register_adapter(
+        "deep_research",
+        "v4",
+        state_factory=_deep_v4_state_factory,
+        context_factory=_deep_v2_context_factory,
+    )
+    _workflow_launcher.register_adapter(
+        "deep_research",
+        "v5",
+        state_factory=_deep_v5_state_factory,
+        context_factory=_deep_v5_context_factory,
+    )
+    _workflow_launcher.register_adapter(
+        "deep_research",
+        "v6",
+        state_factory=_deep_v6_state_factory,
+        context_factory=_deep_v6_context_factory,
+        extensions={
+            DEEP_RESEARCH_EXTENSION: DeepResearchRuntimeExtension(
+                new_runs_enabled=True,
+                action_ids=("generate_now", "continue_research", "cancel_settle"),
+                continuation=DeepResearchContinuationAdapter(
+                    decode_snapshot=decode_deep_research_v6_continuation_snapshot,
+                    build_child_payload=build_deep_research_v6_continuation_payload,
+                ),
+                terminal_commit_capability=TERMINAL_COMMIT_CAPABILITY,
+            )
+        },
+    )
+    _workflow_launcher.register_adapter(
+        "deep_research",
+        "v7",
+        state_factory=_deep_v7_state_factory,
+        context_factory=_deep_v7_context_factory,
+    )
+
+
+async def _startup_register_personal_runtime_adapter(_workflow_launcher, _workflow_service) -> None:
+    _workflow_service.runtime_adapters.register(
+        build_personal_runtime_adapter(
+            journal=_PersonalEffectJournal(_workflow_service.run_store.path),
+            tool_registry=_actual_tool_registry,
+            run_start_snapshot_reader=(_workflow_service.execution_uow.read_run_start_snapshot),
+            dispatch_fence_acquirer=service_context.get("run_execution_fence_acquirer"),
+        )
+    )
+
+    # New product workflow starts are owned exclusively by RunKernel.
+    # The legacy tool handlers remain library-compatible but are not wired
+    # as production launch ingress.
+    _workflow_research_tools.set_deepresearch_workflow_starter(None)
+    try:
+        _configure_ppt_production(recover=False)
+        logger.info("ppt_pro_services_wired")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ppt_pro_services_wire_failed", error=str(exc))
+
+    _workflow_recovery = await activate_and_recover_workflows(
+        project_bindings=_project_binding_service,
+        workflow_service=_workflow_service,
+        workflow_launcher=_workflow_launcher,
+        required_runtime_identities=_workflow_service.runtime_adapters.identities(),
+    )
+    _delete_reconcile = _workflow_recovery["delete_reconcile"]
+    startup_recoveries = _workflow_recovery["startup_recoveries"]
+    recovered_decisions = _workflow_recovery["recovered_decisions"]
+    recovered_deliveries = _workflow_recovery["recovered_deliveries"]
+    recovered_runs = _workflow_recovery["recovered_runs"]
+    if _delete_reconcile["failed"]:
+        logger.warning(
+            "session_delete_cancel_reconcile_incomplete",
+            **_delete_reconcile,
+        )
+    logger.info(
+        "workflow_service_ready",
+        db_path=str(_workflow_service.run_store.path),
+        versions=_workflow_service.runner.registry.versions(),
+        recovered_runs=len(recovered_runs),
+        startup_recoveries=len(startup_recoveries),
+        recovered_decisions=len(recovered_decisions),
+        recovered_deliveries=len(recovered_deliveries),
+    )

@@ -231,7 +231,7 @@ class ContextRequestPlanner:
             stable_boundary=stable_boundary,
             stable_fingerprint=stable_fingerprint,
         )
-        await self._prepare_with_history_plan(
+        self._prepare_with_history_plan(
             _plan_history,
             context_window=context_window,
             current_message=current_message,
@@ -427,7 +427,7 @@ class ContextRequestPlanner:
         )
         return prepared
 
-    async def _prepare_with_history_plan(
+    def _prepare_with_history_plan(
         self,
         _plan_history,
         *,

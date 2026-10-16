@@ -122,14 +122,15 @@ def test_explicit_v5_pin_remains_supported_for_new_roots() -> None:
 
 
 def test_main_keeps_v6_and_defaults_new_roots_to_simplified_v7() -> None:
-    source = host_source_text()
-    registration = source.index('"deep_research",\n            "v6",')
+    # 注册语句随代码拆分可能换了缩进层级：按去掉缩进后的文本查
+    source = "\n".join(line.strip() for line in host_source_text().splitlines())
+    registration = source.index('"deep_research",\n"v6",')
     # 截到注册语句末尾（原来用函数内的一条导入作终点，该导入已上提到模块顶部）
     marker = "context_factory=_deep_v7_context_factory"
     registration_end = source.index(marker, registration) + len(marker)
     assert "new_runs_enabled=True" in source[registration:registration_end]
     assert (
-        '"v7",\n            state_factory=_deep_v7_state_factory'
+        '"v7",\nstate_factory=_deep_v7_state_factory'
         in source[registration:registration_end]
     )
     assert "context_factory=_deep_v7_context_factory" in source[registration:registration_end]
