@@ -1,0 +1,2 @@
+'deskpet.memory.session_db'
+'deskpet.tools.registry'

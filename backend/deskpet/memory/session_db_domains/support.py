@@ -10,7 +10,8 @@ from typing import Any
 
 from deskpet.companion.companion_message_projection import TrustedCompanionOwner
 
-log = logging.getLogger(__name__)
+# 日志记录器名字钉在拆分前的模块名：按名字配置的日志级别与过滤照旧生效
+log = logging.getLogger("deskpet.memory.session_db")
 DEFAULT_MEMORY_USER_ID = "deskpet-local-owner-v1"  # legacy non-Harness projection only
 
 
