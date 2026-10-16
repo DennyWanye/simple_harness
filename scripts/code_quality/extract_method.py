@@ -38,7 +38,7 @@ if sys.version_info < (3, 12):
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from reindent import reindent, string_interior_lines  # noqa: E402
-from scope_names import first_seen, names  # noqa: E402
+from scope_names import defined_before, definitely_assigned, first_seen, locally_bound, names  # noqa: E402
 
 
 def header_bindings(fn: ast.AST, start: int, end: int) -> set[str]:
@@ -105,13 +105,16 @@ def main() -> int:
             and n.name == inner_name
             and n is not outer
         )
-    else:
+    start, end = (int(x) for x in a.span.split("-"))
+    if outer is None:
+        # 同名函数可能不止一个（不同类里）：取包住这段的那个
         fn = next(
             n
             for n in ast.walk(tree)
-            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name == a.method
+            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and n.name == a.method
+            and n.lineno <= start <= end <= n.end_lineno
         )
-    start, end = (int(x) for x in a.span.split("-"))
 
     # 找到恰好覆盖这段的同层语句
     def block_in(body: list[ast.stmt]) -> list[ast.stmt] | None:
@@ -133,6 +136,12 @@ def main() -> int:
                     return found
         return None
 
+    # 新名字不能和已有的函数重名（同名后定义的会覆盖前一个）
+    if any(
+        isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name == a.new_name
+        for n in ast.walk(tree)
+    ):
+        sys.exit(f"名字 {a.new_name} 已经有了")
     block = block_in(fn.body)
     if block is None:
         sys.exit("行范围不是同一层的完整语句")
@@ -233,6 +242,12 @@ def main() -> int:
     }
     if set(returns) & handler_names:
         sys.exit(f"返回值里有异常名 {sorted(set(returns) & handler_names)}（出了 except 块就解绑）")
+    if not a.tail:
+        maybe = sorted(r for r in returns if r not in definitely_assigned(block, param_names))
+        if maybe:
+            sys.exit(
+                f"返回值 {maybe} 走完这段不一定已赋值（只在部分分支或循环里赋值；段前有值的要作参数传入）"
+            )
     missing_in = (
         need_in
         - param_names
@@ -261,6 +276,11 @@ def main() -> int:
     shadowed = missing_in & names(block, ast.Store)
     if missing_in - shadowed:
         sys.exit(f"参数缺：{sorted(missing_in - shadowed)}（段内读到、段前赋过值）")
+    unsure = sorted(param_names - defined_before(fn, start)) if outer is None else []
+    if unsure:
+        sys.exit(
+            f"参数 {unsure} 在调用处不一定已赋值（某条路上没赋值，调用会报 UnboundLocalError）"
+        )
 
     # 先读还是先写按作用域判断（推导式、lambda、内层函数自己的名字不算），赋值目标的写入算在整条语句末尾
     def first(name: str, ctx: type) -> tuple[int, int]:
@@ -278,13 +298,18 @@ def main() -> int:
     shadowed -= comp_bound
 
     # 赋值语句右边先求值：同一行里"读在右、写在左"按读在先处理（行号相同比列号不可靠，保守判为读在先）
-    read_first = sorted(n for n in shadowed if first(n, ast.Load) <= first(n, ast.Store))
+    # 只有段顶层无条件的第一次赋值才算先写（条件分支里的赋值不算：另一条路读的是段前的值）
+    read_first = sorted(n for n in shadowed if not locally_bound(block, n))
     if read_first:
         sys.exit(f"参数缺：{read_first}（段内先读后写，要从段前传进来）")
     if shadowed:
         print(f"提示：{sorted(shadowed)} 段内先赋值再读，不作参数")
+    # 返回值走完段不一定被重新赋值时，要靠参数带进段前的值，不算多余
     redundant = sorted(
-        n for n in param_names & names(block, ast.Store) if first(n, ast.Store) < first(n, ast.Load)
+        n
+        for n in param_names & names(block, ast.Store)
+        if locally_bound(block, n)
+        and (n not in returns or n in definitely_assigned(block, param_names - {n}))
     )
     if redundant:
         sys.exit(f"多余参数：{redundant}（段内先赋值再读，不用传进来）")

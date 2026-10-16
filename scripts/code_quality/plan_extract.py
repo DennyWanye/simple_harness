@@ -38,7 +38,7 @@ if sys.version_info < (3, 12):
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from extract_method import header_bindings  # noqa: E402
-from scope_names import first_seen, names  # noqa: E402
+from scope_names import defined_before, definitely_assigned, locally_bound, names  # noqa: E402
 
 SCOPES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)
 LOOPS = (ast.For, ast.AsyncFor, ast.While)
@@ -233,14 +233,7 @@ def analyse(fn, lines, target: int, max_size: int = 140, min_size: int = 25, max
 
                 # 段内先赋值再读的名字不算参数（粗判：段内第一次出现是写）
 
-                need_in = {
-                    n
-                    for n in need_in
-                    if not (
-                        n in stores
-                        and first_seen(block, n, ast.Store) < first_seen(block, n, ast.Load)
-                    )
-                }
+                need_in = {n for n in need_in if not locally_bound(block, n)}
                 # except ... as 名字：出了处理块就解绑，不能当返回值
                 handler_names = {
                     h.name
@@ -264,6 +257,25 @@ def analyse(fn, lines, target: int, max_size: int = 140, min_size: int = 25, max
                         and (s.end_lineno < start or s.lineno > end)
                     ]
                     need_out |= stores_out & names(outside, ast.Load)
+                # 返回值必须走完这段一定已赋值：只在部分分支赋值、段前有值的，作参数传入；段前也没值的，不抽
+                if not tail:
+                    sure = definitely_assigned(block, set(need_in))
+                    for v in sorted(need_out - sure):
+                        if v in assigned_before:
+                            need_in.add(v)
+                    if need_out - definitely_assigned(block, set(need_in)):
+                        continue
+                # 段里定义的内层函数被段后用到：返回闭包不好读，不抽（这类闭包另行提成模块级函数）
+                if need_out & {
+                    x.name
+                    for top in block
+                    for x in ast.walk(top)
+                    if isinstance(x, (ast.FunctionDef, ast.AsyncFunctionDef))
+                }:
+                    continue
+                # 参数在调用处必须一定已赋值，否则调用本身可能报 UnboundLocalError
+                if need_in - defined_before(fn, start):
+                    continue
                 if len(need_in) > max_params or len(need_out) > 3:
                     continue
                 score = size - 6 * len(need_in) - 12 * len(need_out)

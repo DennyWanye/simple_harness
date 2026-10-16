@@ -22,6 +22,8 @@ import sys
 from pathlib import Path
 
 FUNCS = (ast.FunctionDef, ast.AsyncFunctionDef)
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from scope_names import defined_before  # noqa: E402
 
 
 def functions(tree: ast.Module) -> dict[str, ast.AST]:
@@ -160,6 +162,25 @@ def check(path: Path, ref: str) -> bool:
     cur = functions(ast.parse(path.read_text(encoding="utf-8")))
     new = {k: v for k, v in cur.items() if k not in old}
     hosts = {k: copy.deepcopy(v) for k, v in cur.items()}
+    # 调用处的实参必须一定已赋值（否则走到某条路时调用本身报 UnboundLocalError）
+    unsafe = []
+    for hk, host in cur.items():
+        for st in ast.walk(host):
+            if not isinstance(st, ast.stmt):
+                continue
+            value = getattr(st, "value", None)
+            key = match_call(value, new) if value is not None else None
+            if key is None:
+                continue
+            call = value.value if isinstance(value, ast.Await) else value
+            args = {a.id for a in call.args if isinstance(a, ast.Name)} | {
+                kw.arg for kw in call.keywords
+            }
+            missing = args - defined_before(host, st.lineno)
+            if missing:
+                unsafe.append(f"{hk} 调 {key.rsplit('.', 1)[-1]}：{sorted(missing)}")
+    for u in unsafe:
+        print(f"{path}：实参在调用处不一定已赋值 {u}")
     left = set(new)
 
     def calls_new(fn) -> set[str]:
