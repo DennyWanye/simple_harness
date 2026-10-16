@@ -1,3 +1,4 @@
 'deskpet.memory.session_db'
 'deskpet.tools.registry'
 'deskpet.capabilities.manager'
+'deskpet.workflows.adapters.deep_research_v6_evidence_runtime'
