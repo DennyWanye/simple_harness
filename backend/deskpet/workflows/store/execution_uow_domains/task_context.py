@@ -10,20 +10,18 @@ from typing import Any
 
 import aiosqlite
 
+from deskpet.execution.attempt_contracts import PlanVersionRecord, TaskGoalRecord
 from deskpet.execution.contracts import (
     TERMINAL_RUN_STATUSES,
     IdempotencyConflict,
-    PlanVersionRecord,
-    RunEvent,
-    RunEventCandidate,
     RunNotFound,
     RunStatus,
-    TaskGoalRecord,
     TaskGoalStatus,
     TerminalConflict,
     VersionConflict,
     fingerprint_json,
 )
+from deskpet.execution.delivery_contracts import RunEvent, RunEventCandidate
 from deskpet.types.task_work_context import (
     ConversationBoundary,
     QueuedUserContinuation,

@@ -9,17 +9,19 @@ from typing import Any
 import aiosqlite
 import httpx
 import pytest
-from deskpet.execution.contracts import (
+from deskpet.execution.attempt_contracts import (
     AttemptRecord,
-    PersistenceLevel,
     PlanVersionRecord,
     ProviderActionBatch,
     ProviderActionCall,
     ProviderTurnFence,
+    TaskGoalRecord,
+)
+from deskpet.execution.contracts import (
+    PersistenceLevel,
     RunContext,
     RunCreate,
     RunStatus,
-    TaskGoalRecord,
     fingerprint_json,
     root_idempotency_key,
 )

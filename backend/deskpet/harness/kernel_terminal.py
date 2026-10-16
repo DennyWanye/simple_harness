@@ -10,12 +10,8 @@ from dataclasses import replace
 
 from deskpet.execution.contracts import (
     TERMINAL_RUN_STATUSES,
-    LiveCursor,
-    OutcomeStatus,
     PersistenceLevel,
     RecoveryLease,
-    RunEvent,
-    RunEventCandidate,
     RunNotFound,
     RunRecord,
     RunStatus,
@@ -24,6 +20,7 @@ from deskpet.execution.contracts import (
     stable_event_id,
     thaw_json,
 )
+from deskpet.execution.delivery_contracts import LiveCursor, RunEvent, RunEventCandidate
 from deskpet.execution.fences import release_run_execution_fence
 from deskpet.execution.run_block_signals import (
     RootBlockReasonV1,

@@ -6,11 +6,8 @@ from deskpet.companion.signals import (
     GrowthTerminalDeliverySink,
 )
 from deskpet.companion.store import CompanionStore
-from deskpet.execution.contracts import (
-    OutcomeStatus,
-    RunEvent,
-    RunEventCandidate,
-)
+from deskpet.execution.contracts import OutcomeStatus
+from deskpet.execution.delivery_contracts import RunEvent, RunEventCandidate
 from deskpet.harness.projector import DeliveryDiscarded
 
 

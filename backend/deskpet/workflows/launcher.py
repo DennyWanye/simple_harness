@@ -15,10 +15,10 @@ from deskpet.execution.contracts import (
     AdmissionLaunchClaim,
     RecoveryLease,
     RunCreate,
-    RunEventCandidate,
     RunStartSnapshotRecord,
     StaleRecoveryLease,
 )
+from deskpet.execution.delivery_contracts import RunEventCandidate
 
 from .contracts import TERMINAL_RUN_STATUSES, JsonValue, WorkflowContext
 from .execution_ports import WorkflowExecutionPorts

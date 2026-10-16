@@ -11,9 +11,9 @@ from deskpet.execution.contracts import (
     TERMINAL_RUN_STATUSES,
     ActiveRunCapacityExceeded,
     ActorContext,
-    RunEvent,
     RunRecord,
 )
+from deskpet.execution.delivery_contracts import RunEvent
 
 
 class LiveStreamOverflow(RuntimeError):

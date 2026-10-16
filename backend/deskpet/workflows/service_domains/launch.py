@@ -12,12 +12,10 @@ from typing import Any
 from deskpet.execution.contracts import (
     AdmissionLaunchClaim,
     DeliveryPolicy,
-    DeliverySpec,
     OutcomeStatus,
     PersistenceLevel,
     RunContext,
     RunCreate,
-    RunEventCandidate,
     RunStartSnapshotRecord,
     RunStatus,
     WorkflowRunSeed,
@@ -25,6 +23,7 @@ from deskpet.execution.contracts import (
     fingerprint_json,
 )
 from deskpet.execution.contracts import stable_event_id as stable_execution_event_id
+from deskpet.execution.delivery_contracts import DeliverySpec, RunEventCandidate
 
 from ..contracts import JsonValue, WorkflowContext, validate_json_value
 from ..execution_ports import WorkflowExecutionPorts

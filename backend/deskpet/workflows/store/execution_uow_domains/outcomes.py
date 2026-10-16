@@ -12,15 +12,12 @@ from deskpet.execution.contracts import (
     TERMINAL_RUN_STATUSES,
     AdmissionLaunchUnknownFence,
     AdmissionPhase,
-    DeliverySpec,
-    FinalizeRunResult,
     IdempotencyConflict,
     OutcomeStatus,
     PersistenceLevel,
     PersistenceRequired,
     RecoveryLease,
     RunCreate,
-    RunEventCandidate,
     RunIdentityConflict,
     RunNotFound,
     RunRecord,
@@ -30,6 +27,7 @@ from deskpet.execution.contracts import (
     VersionConflict,
     stable_event_id,
 )
+from deskpet.execution.delivery_contracts import DeliverySpec, FinalizeRunResult, RunEventCandidate
 
 from .core import ExecutionUowCore
 

@@ -4,23 +4,25 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 
-from deskpet.execution.contracts import (
+from deskpet.execution.attempt_contracts import (
     AttemptFailureSet,
     AttemptRecord,
+    ProviderActionBatch,
+    ProviderActionCall,
+    ProviderBatchAdmissionResult,
+    ProviderTurnFence,
+    TaskExternalWait,
+    TaskFailureReport,
+)
+from deskpet.execution.contracts import (
     AttemptStatus,
     ExternalWaitState,
     FailureBackfillState,
     IdempotencyConflict,
     ProviderActionAdmissionState,
-    ProviderActionBatch,
-    ProviderActionCall,
-    ProviderBatchAdmissionResult,
     ProviderBatchStatus,
     ProviderResumeState,
-    ProviderTurnFence,
     ProviderTurnState,
-    TaskExternalWait,
-    TaskFailureReport,
     TaskGoalStatus,
     TerminalConflict,
     VersionConflict,

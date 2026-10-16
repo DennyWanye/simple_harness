@@ -38,13 +38,8 @@ def _owned_call(method):
     return call
 
 
-from deskpet.execution.contracts import (
-    DeliveryPolicy,
-    DeliverySpec,
-    OutcomeStatus,
-    RecoveryLease,
-    RunEventCandidate,
-)
+from deskpet.execution.contracts import DeliveryPolicy, OutcomeStatus, RecoveryLease
+from deskpet.execution.delivery_contracts import DeliverySpec, RunEventCandidate
 
 from .contracts import TERMINAL_RUN_STATUSES, JsonValue, WorkflowContext, WorkflowRunStatus
 from .definition import CompiledWorkflow, WorkflowManifest

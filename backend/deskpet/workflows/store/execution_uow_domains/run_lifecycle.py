@@ -16,7 +16,6 @@ from deskpet.execution.contracts import (
     PersistenceLevel,
     PersistenceRequired,
     RunCreate,
-    RunEventCandidate,
     RunIdentityConflict,
     RunNotFound,
     RunStartSnapshotRecord,
@@ -25,12 +24,13 @@ from deskpet.execution.contracts import (
     canonical_json,
     thaw_json,
 )
+from deskpet.execution.delivery_contracts import RunEventCandidate
 
 from .core import ExecutionUowCore
 from .support import RuntimeActivationError
 
 if TYPE_CHECKING:
-    from ..execution_uow import SqliteExecutionUnitOfWork
+    pass
 
 
 class RunLifecycleMixin(ExecutionUowCore):

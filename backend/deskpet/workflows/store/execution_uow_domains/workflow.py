@@ -14,13 +14,11 @@ from deskpet.execution.contracts import (
     AdmissionPhase,
     DecisionConflict,
     DeliveryPolicy,
-    DeliverySpec,
     IdempotencyConflict,
     OutcomeStatus,
     PersistenceLevel,
     PersistenceRequired,
     RunCreate,
-    RunEventCandidate,
     RunIdentityConflict,
     RunNotFound,
     RunRecord,
@@ -35,6 +33,7 @@ from deskpet.execution.contracts import (
     thaw_json,
     validate_json_value,
 )
+from deskpet.execution.delivery_contracts import DeliverySpec, RunEventCandidate
 
 from .core import ExecutionUowCore
 from .support import CheckpointExecutionError

@@ -16,15 +16,14 @@ from deskpet.execution.contracts import (
     AdmissionPhase,
     JsonValue,
     OutcomeStatus,
-    PersistenceLevel,
     RunCreate,
-    RunEventCandidate,
     RunRecord,
     RunRef,
     RunStatus,
     TerminalConflict,
     fingerprint_json,
 )
+from deskpet.execution.delivery_contracts import RunEventCandidate
 from deskpet.execution.fences import release_run_execution_fence
 from deskpet.execution.uow_ports import AdmissionUnitOfWork
 from deskpet.permissions.admission import admission_completion_state

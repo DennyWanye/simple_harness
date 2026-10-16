@@ -9,7 +9,8 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
-from deskpet.execution.contracts import DeliveryPolicy, ExecutionError, RunEvent
+from deskpet.execution.contracts import DeliveryPolicy, ExecutionError
+from deskpet.execution.delivery_contracts import RunEvent
 from deskpet.execution.fences import (
     TerminalDeliveryFencePort,
     UnboundTerminalDeliveryFence,

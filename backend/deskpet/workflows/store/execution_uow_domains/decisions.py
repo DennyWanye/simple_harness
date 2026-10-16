@@ -19,11 +19,8 @@ from deskpet.execution.contracts import (
     DecisionRecord,
     DecisionSignal,
     DecisionStatus,
-    DeliverySpec,
     PersistenceLevel,
     PersistenceRequired,
-    RunEvent,
-    RunEventCandidate,
     RunNotFound,
     RunRecord,
     RunRef,
@@ -33,6 +30,7 @@ from deskpet.execution.contracts import (
     stable_decision_grant_id,
     thaw_json,
 )
+from deskpet.execution.delivery_contracts import DeliverySpec, RunEvent, RunEventCandidate
 from deskpet.permissions.policy import (
     AuthorizationPolicy,
     AuthorizationPolicyState,

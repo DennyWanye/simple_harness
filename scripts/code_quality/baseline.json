@@ -5,7 +5,6 @@
  ],
  "files_2000_3000": [
   "backend/deskpet/capabilities/builder.py:2116",
-  "backend/deskpet/execution/contracts.py:2887",
   "backend/deskpet/memory/human_memory_service.py:2146",
   "backend/deskpet/tools/research_tools.py:2802",
   "backend/deskpet/workflows/adapters/research_runtime.py:2231",
@@ -124,7 +123,7 @@
  "main_py_lines": 289,
  "ts_explicit_any": 62,
  "ts_inline_styles": 850,
- "ruff_backend_total": 2052,
+ "ruff_backend_total": 2051,
  "ruff_backend_by_rule": {
   "E501": 3993,
   "UP045": 590,

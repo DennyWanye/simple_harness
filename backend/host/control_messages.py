@@ -7,7 +7,8 @@ from pathlib import Path
 
 from agent.agent_loop import PipelineEvent
 from deskpet.agent.run_presenter import CanonicalRunEventPresentationAdapter
-from deskpet.execution.contracts import OutcomeStatus, RunEvent, RunEventCandidate, thaw_json
+from deskpet.execution.contracts import OutcomeStatus, thaw_json
+from deskpet.execution.delivery_contracts import RunEvent, RunEventCandidate
 from deskpet.execution.run_read_model import PublicReadError
 from fastapi import WebSocket
 

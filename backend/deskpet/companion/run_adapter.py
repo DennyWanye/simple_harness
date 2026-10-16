@@ -17,13 +17,8 @@ from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, fields, replace
 from typing import Any, TypeAlias
 
-from deskpet.execution.contracts import (
-    OutcomeStatus,
-    RunEvent,
-    RunRef,
-    root_idempotency_key,
-    thaw_json,
-)
+from deskpet.execution.contracts import OutcomeStatus, RunRef, root_idempotency_key, thaw_json
+from deskpet.execution.delivery_contracts import RunEvent
 from deskpet.harness.adapters.venues import KernelRunClient
 from deskpet.harness.contracts import (
     HostContext,

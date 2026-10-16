@@ -5,7 +5,8 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable, Mapping
 from typing import Any
 
-from deskpet.execution.contracts import RunEvent, thaw_json
+from deskpet.execution.contracts import thaw_json
+from deskpet.execution.delivery_contracts import RunEvent
 
 BoundReader = Callable[[str], bool | Awaitable[bool]]
 

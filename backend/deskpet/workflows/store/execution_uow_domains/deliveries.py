@@ -11,13 +11,11 @@ import aiosqlite
 from deskpet.execution.contracts import (
     DeliveryClaimConflict,
     DeliveryNotFound,
-    DeliveryRecord,
-    DeliverySpec,
     DeliveryStatus,
     IdempotencyConflict,
-    RunEvent,
     stable_delivery_id,
 )
+from deskpet.execution.delivery_contracts import DeliveryRecord, DeliverySpec, RunEvent
 
 from .core import ExecutionUowCore
 

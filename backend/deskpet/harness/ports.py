@@ -22,10 +22,9 @@ from deskpet.execution.contracts import (
     RecoveryLease,
     RunContext,
     RunCreate,
-    RunEvent,
-    RunEventCandidate,
     thaw_json,
 )
+from deskpet.execution.delivery_contracts import RunEvent, RunEventCandidate
 from deskpet.execution.evidence import UNKNOWN_EVIDENCE, EvidenceSelection
 from deskpet.tools.capabilities import ToolExecutionContext
 from deskpet.workflows.effects import NormalizedToolOutcome, PreparedToolCall, ToolOutcomeState

@@ -8,14 +8,11 @@ from typing import Any
 
 import aiosqlite
 
+from deskpet.execution.attempt_contracts import ProfileLaunchConsumeResult, ProfileLaunchTicket
 from deskpet.execution.contracts import (
     AttemptStatus,
-    ChildCommandIntent,
-    ChildCommandRecord,
     IdempotencyConflict,
     LinkKind,
-    ProfileLaunchConsumeResult,
-    ProfileLaunchTicket,
     ProfileLaunchTicketState,
     ProviderActionAdmissionState,
     RecoveryLease,
@@ -29,6 +26,7 @@ from deskpet.execution.contracts import (
     fingerprint_json,
     thaw_json,
 )
+from deskpet.execution.delivery_contracts import ChildCommandIntent, ChildCommandRecord
 
 from .core import ExecutionUowCore
 

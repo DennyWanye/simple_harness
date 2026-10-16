@@ -22,14 +22,12 @@ from deskpet.execution.contracts import (
     DecisionNotFound,
     DecisionOpen,
     DecisionSignal,
-    DeliverySpec,
     IdempotencyConflict,
     OutcomeStatus,
     PersistenceLevel,
     PersistenceRequired,
     RecoveryLease,
     RunCreate,
-    RunEventCandidate,
     RunNotFound,
     RunRef,
     RunStartSnapshotRecord,
@@ -40,6 +38,7 @@ from deskpet.execution.contracts import (
     fingerprint_json,
     thaw_json,
 )
+from deskpet.execution.delivery_contracts import DeliverySpec, RunEventCandidate
 from deskpet.types.task_grants import TaskGrant
 
 from .core import ExecutionUowCore

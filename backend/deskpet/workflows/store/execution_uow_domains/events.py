@@ -9,13 +9,9 @@ import aiosqlite
 
 from deskpet.execution.contracts import (
     TERMINAL_RUN_STATUSES,
-    DeliveryRecord,
-    DeliverySpec,
     EventNotFound,
     ExecutionRunFenceRecord,
     IdempotencyConflict,
-    RunEvent,
-    RunEventCandidate,
     RunIdentityConflict,
     RunNotFound,
     TerminalConflict,
@@ -23,6 +19,12 @@ from deskpet.execution.contracts import (
     canonical_json,
     stable_event_id,
     thaw_json,
+)
+from deskpet.execution.delivery_contracts import (
+    DeliveryRecord,
+    DeliverySpec,
+    RunEvent,
+    RunEventCandidate,
 )
 
 from .core import ExecutionUowCore

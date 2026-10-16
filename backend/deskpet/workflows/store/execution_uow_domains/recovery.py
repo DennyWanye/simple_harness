@@ -19,7 +19,6 @@ from deskpet.execution.contracts import (
     LegacyRunProjection,
     ParentCycleError,
     RecoveryLease,
-    RunLinkSpec,
     RunNotFound,
     RunRecord,
     RunRef,
@@ -27,6 +26,7 @@ from deskpet.execution.contracts import (
     StaleRecoveryLease,
     thaw_json,
 )
+from deskpet.execution.delivery_contracts import RunLinkSpec
 from deskpet.execution.evidence import (
     UNKNOWN_EVIDENCE,
     CompletionEvidence,

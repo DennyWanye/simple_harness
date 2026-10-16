@@ -35,7 +35,8 @@ from llm.types import ToolCall
 
 from deskpet.agent.product_domain_sink import ProductDomainSink
 from deskpet.agent.turn_preparer import ProductDomainCommand
-from deskpet.execution.contracts import OutcomeStatus, RunEvent, thaw_json
+from deskpet.execution.contracts import OutcomeStatus, thaw_json
+from deskpet.execution.delivery_contracts import RunEvent
 from deskpet.tools.public_projection import (
     project_public_tool_arguments,
     project_public_tool_result,

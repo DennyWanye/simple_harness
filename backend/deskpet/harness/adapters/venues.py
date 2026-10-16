@@ -34,12 +34,12 @@ from deskpet.execution.contracts import (
     ActorContext,
     AdmissionSpec,
     ProviderLaunchSnapshot,
-    RunEvent,
     RunNotFound,
     RunRef,
     fingerprint_json,
 )
 from deskpet.execution.contracts import DecisionSignal as DurableDecisionSignal
+from deskpet.execution.delivery_contracts import RunEvent
 from deskpet.execution.run_block_signals import (
     PreflightBlocked,
     RootBlockReasonV1,

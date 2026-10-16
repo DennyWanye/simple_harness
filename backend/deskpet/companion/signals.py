@@ -23,14 +23,8 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Protocol
 
-from deskpet.execution.contracts import (
-    DeliveryPolicy,
-    DeliverySpec,
-    OutcomeStatus,
-    RunEvent,
-    fingerprint_json,
-    thaw_json,
-)
+from deskpet.execution.contracts import DeliveryPolicy, OutcomeStatus, fingerprint_json, thaw_json
+from deskpet.execution.delivery_contracts import DeliverySpec, RunEvent
 from deskpet.harness.projector import DeliveryDiscarded
 
 from .contracts import (

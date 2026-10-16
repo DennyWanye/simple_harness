@@ -11,12 +11,12 @@ from typing import Any
 from deskpet.execution.contracts import (
     IdempotencyConflict,
     OutcomeStatus,
-    RunEventCandidate,
     RunRecord,
     TerminalConflict,
     canonical_json,
     stable_event_id,
 )
+from deskpet.execution.delivery_contracts import RunEventCandidate
 from deskpet.harness.contracts import HostExtensionRefV1
 
 

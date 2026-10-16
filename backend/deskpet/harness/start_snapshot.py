@@ -12,13 +12,13 @@ from observability.redaction import TraceRedactor
 from deskpet.capabilities.refresh import context_os_snapshot_ref
 from deskpet.execution.contracts import (
     DeliveryPolicy,
-    DeliverySpec,
     JsonValue,
     RunCreate,
     RunStartSnapshotRecord,
     canonical_json,
     fingerprint_json,
 )
+from deskpet.execution.delivery_contracts import DeliverySpec
 from deskpet.tools.prepared_snapshot import load_context_os_snapshot
 
 from .contracts import (

@@ -24,13 +24,13 @@ from deskpet.execution.contracts import (
     PersistenceLevel,
     RunContext,
     RunCreate,
-    RunEventCandidate,
     RunRef,
     RunStartSnapshotRecord,
     RunStatus,
     canonical_json,
     fingerprint_json,
 )
+from deskpet.execution.delivery_contracts import RunEventCandidate
 from deskpet.workflows.store.execution_uow import SqliteExecutionUnitOfWork
 from deskpet.workflows.store.schema import (
     WORKFLOW_SCHEMA_VERSION,

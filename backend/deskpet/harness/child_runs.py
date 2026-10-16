@@ -7,11 +7,10 @@ import json
 from collections.abc import Callable, Mapping
 from typing import Any
 
+from deskpet.execution.attempt_contracts import ProfileLaunchTicket
 from deskpet.execution.contracts import (
     AttachmentPolicy,
-    ChildCommandIntent,
     PersistenceLevel,
-    ProfileLaunchTicket,
     RunContext,
     RunCreate,
     RunRecord,
@@ -22,6 +21,7 @@ from deskpet.execution.contracts import (
     fingerprint_json,
     thaw_json,
 )
+from deskpet.execution.delivery_contracts import ChildCommandIntent
 from deskpet.execution.uow_ports import ChildRunUnitOfWork
 from deskpet.harness.contracts import PreparedRunContextV1
 from deskpet.harness.ports import DriverEvent, JoinPolicy

@@ -15,7 +15,7 @@ from agent.agent_loop import AssistantMessageEvent, ToolCallEvent, ToolResultEve
 from llm.types import ToolCall
 from simple_harness import thaw_json
 
-from deskpet.execution.contracts import LiveCursor, RunEvent, RunEventCandidate
+from deskpet.execution.delivery_contracts import LiveCursor, RunEvent, RunEventCandidate
 
 logger = structlog.get_logger(__name__)
 

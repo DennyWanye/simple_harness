@@ -10,17 +10,15 @@ from typing import Any, Protocol
 from deskpet.execution.contracts import (
     ActorContext,
     AdmissionSpec,
-    DeliverySpec,
     JsonValue,
     ProviderLaunchSnapshot,
     RunCreate,
-    RunEvent,
-    RunEventCandidate,
     RunRecord,
     RunRef,
     RunStatus,
     fingerprint_json,
 )
+from deskpet.execution.delivery_contracts import DeliverySpec, RunEvent, RunEventCandidate
 
 from .ports import Driver
 

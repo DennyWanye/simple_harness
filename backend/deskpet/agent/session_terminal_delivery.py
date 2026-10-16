@@ -12,14 +12,8 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 from weakref import WeakValueDictionary
 
-from deskpet.execution.contracts import (
-    DeliveryPolicy,
-    DeliverySpec,
-    OutcomeStatus,
-    RunEvent,
-    canonical_json,
-    thaw_json,
-)
+from deskpet.execution.contracts import DeliveryPolicy, OutcomeStatus, canonical_json, thaw_json
+from deskpet.execution.delivery_contracts import DeliverySpec, RunEvent
 from deskpet.execution.uow_ports import ProductProjectionUnitOfWork
 from deskpet.harness.projector import DeliveryDiscarded
 
