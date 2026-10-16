@@ -79,13 +79,11 @@ export function ProjectInspector({
           pending.current.delete(relocated.request_id);
           if (!relocated.payload.ok) return setError(relocated.payload.error.message);
           const currentGit = inspection?.git ?? null;
-          useSessionsStore
-            .getState()
-            .apply_project_inspection({
-              request_id: relocated.request_id,
-              project: relocated.payload.project,
-              git: currentGit,
-            });
+          useSessionsStore.getState().apply_project_inspection({
+            request_id: relocated.request_id,
+            project: relocated.payload.project,
+            git: currentGit,
+          });
           window.dispatchEvent(
             new CustomEvent(PROJECT_GROUP_REFRESH_EVENT, {
               detail: { projectId: relocated.payload.project.project_id },

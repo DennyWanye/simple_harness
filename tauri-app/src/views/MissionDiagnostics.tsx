@@ -162,7 +162,9 @@ const DiagnosticsSession: React.FC<Props> = ({ missionId, channel }) => {
           </p>
           <p>
             待结算用量：
-            {ledger.unsettled_usage_tokens == null ? "未知" : asText(ledger.unsettled_usage_tokens)}{" "}
+            {ledger.unsettled_usage_tokens == null
+              ? "未知"
+              : asText(ledger.unsettled_usage_tokens)}{" "}
             tokens。
             {incomplete
               ? "记录不完整，以上已记录用量不能作为最终总消耗。"
