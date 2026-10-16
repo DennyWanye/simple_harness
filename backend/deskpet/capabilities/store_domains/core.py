@@ -412,23 +412,6 @@ class CapabilityStoreTx:
     async def create_operation(self, **kwargs: Any) -> CapabilityOperationRecord:
         return await self._store._create_operation_tx(self._db, **kwargs)
 
-    async def create_skill_install_intent(
-        self,
-        intent: CapabilitySkillInstallIntent,
-        members: Sequence[CapabilitySkillInstallMember],
-    ) -> CapabilitySkillInstallIntent:
-        return await self._store._create_skill_install_intent_tx(self._db, intent, members)
-
-    async def cas_skill_install_intent(
-        self, intent_id: str, **kwargs: Any
-    ) -> CapabilitySkillInstallIntent:
-        return await self._store._cas_skill_install_intent_tx(self._db, intent_id, **kwargs)
-
-    async def handoff_skill_install_intent(
-        self, intent_id: str, **kwargs: Any
-    ) -> CapabilitySkillInstallHandoff:
-        return await self._store._handoff_skill_install_intent_tx(self._db, intent_id, **kwargs)
-
     async def bind_operation_pack_id(
         self, operation_id: str, pack_id: str
     ) -> CapabilityOperationRecord:
