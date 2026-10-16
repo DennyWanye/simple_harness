@@ -26,8 +26,14 @@ export function DecisionPanel({
   useEffect(() => {
     locked.current = submitting;
   }, [submitting]);
-  useEffect(() => {
+  // 换了决策（或版本）就清空草稿：渲染期按上一版比对，不在 effect 里 setState。
+  const decisionKey = JSON.stringify([decision?.decision_id, decision?.version]);
+  const [shownDecision, setShownDecision] = useState(decisionKey);
+  if (shownDecision !== decisionKey) {
+    setShownDecision(decisionKey);
     setDraft("");
+  }
+  useEffect(() => {
     locked.current = false;
   }, [decision?.decision_id, decision?.version]);
 

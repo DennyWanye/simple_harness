@@ -51,15 +51,15 @@ export function CompanionDetailModal({ event, query, onClose }: CompanionDetailM
   const [section, setSection] = useState<CompanionDetailSection>("overview");
   const [items, setItems] = useState<CompanionDetailItem[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  // 打开即读第一页，所以初始就是加载中。
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const requestTokenRef = useRef(0);
 
   const load = useCallback(
     async (cursor: string | null) => {
+      // 加载中与清错由调用方先设好（渲染期重置或点击处理），这里只发请求、收结果。
       const token = ++requestTokenRef.current;
-      setLoading(true);
-      setError(null);
       try {
         const response = await query({
           notification_id: event.notification.notification_id,
@@ -91,9 +91,34 @@ export function CompanionDetailModal({ event, query, onClose }: CompanionDetailM
     [event.notification.detail_version, event.notification.notification_id, query, section],
   );
 
-  useEffect(() => {
+  // 读取条件变了（换通知、换版本、换分区）：渲染期清空并进入加载中，effect 只发请求。
+  // 比对项与 load 的依赖一致。
+  const loadKey = {
+    query,
+    notificationId: event.notification.notification_id,
+    detailVersion: event.notification.detail_version,
+    section,
+  };
+  const [shownKey, setShownKey] = useState(loadKey);
+  if (
+    shownKey.query !== loadKey.query ||
+    shownKey.notificationId !== loadKey.notificationId ||
+    shownKey.detailVersion !== loadKey.detailVersion ||
+    shownKey.section !== loadKey.section
+  ) {
+    setShownKey(loadKey);
     setItems([]);
     setNextCursor(null);
+    setLoading(true);
+    setError(null);
+  }
+  const reload = (cursor: string | null) => {
+    setLoading(true);
+    setError(null);
+    void load(cursor);
+  };
+
+  useEffect(() => {
     void load(null);
   }, [load]);
 
@@ -161,12 +186,12 @@ export function CompanionDetailModal({ event, query, onClose }: CompanionDetailM
 
         <footer style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
           {error && (
-            <button type="button" disabled={loading} onClick={() => void load(null)}>
+            <button type="button" disabled={loading} onClick={() => reload(null)}>
               从第一页重新加载
             </button>
           )}
           {nextCursor && !error && (
-            <button type="button" disabled={loading} onClick={() => void load(nextCursor)}>
+            <button type="button" disabled={loading} onClick={() => reload(nextCursor)}>
               {loading ? "加载中…" : "加载更多"}
             </button>
           )}

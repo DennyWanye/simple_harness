@@ -15,10 +15,15 @@ interface Props {
 export const ClarificationDialog: React.FC<Props> = ({ current, onResolve }) => {
   const [answer, setAnswer] = useState("");
   const inputRef = useRef<HTMLInputElement | null>(null);
+  // 换了一条澄清请求就清空输入（渲染期按上一条比对，不在 effect 里 setState）。
+  const [shownRequest, setShownRequest] = useState(current);
+  if (shownRequest !== current) {
+    setShownRequest(current);
+    if (current) setAnswer("");
+  }
 
   useEffect(() => {
     if (!current) return;
-    setAnswer("");
     const id = window.setTimeout(() => inputRef.current?.focus(), 0);
     return () => window.clearTimeout(id);
   }, [current]);

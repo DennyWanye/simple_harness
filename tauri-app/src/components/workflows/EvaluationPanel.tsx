@@ -27,8 +27,8 @@ export function EvaluationPanel({
   const [score, setScore] = useState(0.8);
   const [labels, setLabels] = useState("");
   const [comment, setComment] = useState("");
-  const [versionA, setVersionA] = useState("");
-  const [versionB, setVersionB] = useState("");
+  const [pickedA, setVersionA] = useState("");
+  const [pickedB, setVersionB] = useState("");
   const locked = useRef(false);
   const versions = useMemo(
     () =>
@@ -44,10 +44,9 @@ export function EvaluationPanel({
   useEffect(() => {
     locked.current = submitting;
   }, [submitting]);
-  useEffect(() => {
-    if (!versionA && versions[0]) setVersionA(versions[0]);
-    if (!versionB && versions[1]) setVersionB(versions[1]);
-  }, [versionA, versionB, versions]);
+  // 用户没选时默认前两个版本（渲染期派生，不在 effect 里补写状态）。
+  const versionA = pickedA || versions[0] || "";
+  const versionB = pickedB || versions[1] || "";
 
   const submit = () => {
     if (locked.current || submitting) return;

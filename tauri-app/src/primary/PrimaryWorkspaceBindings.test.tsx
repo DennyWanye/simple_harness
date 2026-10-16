@@ -193,3 +193,35 @@ it("pages by the original cursor rather than treating 32 items as a lifetime lim
   fireEvent.click(screen.getByRole("button", { name: "返回最新目录授权" }));
   expect(h.send.mock.calls[2][0].request).toEqual({ primary_ref: "p" });
 });
+
+it("refreshVersion 变化多读一次；换主人时清空列表并重新读取", async () => {
+  const h = fixture();
+  const view = (owner: string, refreshVersion: number) => (
+    <PrimaryWorkspaceBindings
+      port={h.port}
+      primaryRef="p"
+      ownerKey={owner}
+      ready
+      recovery={h.recovery}
+      refreshVersion={refreshVersion}
+    />
+  );
+  const pendingReads = () =>
+    h.send.mock.calls.filter(([v]) => v.operation === "primary.bindings.pending").length;
+  const { rerender } = render(view("owner", 0));
+  await waitFor(() => expect(pendingReads()).toBe(1));
+  await act(async () =>
+    h.response(0, { primary_ref: "p", items: [item], truncated: false, next_cursor: null }),
+  );
+  expect(screen.getByText("目录：/actual/original-root")).toBeTruthy();
+  expect(pendingReads()).toBe(1);
+
+  rerender(view("owner", 1));
+  await waitFor(() => expect(pendingReads()).toBe(2));
+
+  rerender(view("other-owner", 1));
+  expect(screen.queryByText("目录：/actual/original-root")).toBeNull();
+  await waitFor(() => expect(pendingReads()).toBe(3));
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  expect(pendingReads()).toBe(3);
+});

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { buttonStyle, cardStyle } from "../theme/components";
 import { tokens } from "../theme/tokens";
 import type { PrimaryPort } from "./controller";
@@ -87,19 +87,31 @@ export function PrimaryWorkspaceBindings({
   const [error, setError] = useState("");
   const [decisionError, setDecisionError] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
-  const [actions, setActions] = useState<{
+  // 订阅里的操作入口；只在点击处理与 effect 里读。
+  const actions = useRef<{
     refresh: () => void;
     page: (cursor?: string) => void;
     decide: (item: Binding, decision: string) => void;
   } | null>(null);
-  useEffect(() => {
+  // 订阅条件变了：渲染期清空上一次的画面（比对项与订阅 effect 的依赖一致）。
+  const subscriptionKey = { port, primaryRef, ownerKey, ready, recovery };
+  const [shownKey, setShownKey] = useState(subscriptionKey);
+  if (
+    shownKey.port !== port ||
+    shownKey.primaryRef !== primaryRef ||
+    shownKey.ownerKey !== ownerKey ||
+    shownKey.ready !== ready ||
+    shownKey.recovery !== recovery
+  ) {
+    setShownKey(subscriptionKey);
     setItems([]);
     setNextCursor(null);
     setPaged(false);
     setError("");
     setDecisionError("");
     setBusy(null);
-    setActions(null);
+  }
+  useEffect(() => {
     const owner = ownerKey;
     if (!ready || !owner) return;
     const requests = new PrimaryRequests(port);
@@ -242,7 +254,7 @@ export function PrimaryWorkspaceBindings({
       if (record(raw).type === "human_memory_changed") focus();
     });
     window.addEventListener("focus", focus);
-    setActions({
+    actions.current = {
       refresh: focus,
       page: (cursor) => {
         pageCursor = cursor;
@@ -251,8 +263,11 @@ export function PrimaryWorkspaceBindings({
       decide: (item, decision) => {
         void decide(item, decision);
       },
-    });
+    };
+    // 订阅建立后读第一次（原来经 actions 状态变化触发的那次）。
+    focus();
     return () => {
+      actions.current = null;
       live = false;
       ++epoch;
       ++readVersion;
@@ -262,31 +277,35 @@ export function PrimaryWorkspaceBindings({
       window.removeEventListener("focus", focus);
     };
   }, [port, primaryRef, ownerKey, ready, recovery]);
+  // refreshVersion 变化时再读一次；挂载时不读（订阅 effect 已读过）。
+  const seenRefreshVersion = useRef(refreshVersion);
   useEffect(() => {
-    actions?.refresh();
-  }, [refreshVersion, actions]);
+    if (seenRefreshVersion.current === refreshVersion) return;
+    seenRefreshVersion.current = refreshVersion;
+    actions.current?.refresh();
+  }, [refreshVersion]);
   if (!ready || !ownerKey) return null;
   return (
     <section aria-label="项目目录授权">
       {error && (
         <p role="alert">
           {error}
-          <button onClick={() => actions?.refresh()}>重新读取目录授权</button>
+          <button onClick={() => actions.current?.refresh()}>重新读取目录授权</button>
         </p>
       )}
       {decisionError && (
         <p role="alert">
           {decisionError}
-          <button onClick={() => actions?.refresh()}>核对决定状态</button>
+          <button onClick={() => actions.current?.refresh()}>核对决定状态</button>
         </p>
       )}
       {paged && (
-        <button disabled={busy !== null} onClick={() => actions?.page()}>
+        <button disabled={busy !== null} onClick={() => actions.current?.page()}>
           返回最新目录授权
         </button>
       )}
       {nextCursor && (
-        <button disabled={busy !== null} onClick={() => actions?.page(nextCursor)}>
+        <button disabled={busy !== null} onClick={() => actions.current?.page(nextCursor)}>
           读取下一页目录授权
         </button>
       )}
@@ -306,7 +325,7 @@ export function PrimaryWorkspaceBindings({
               <button
                 style={buttonStyle("primary", "sm", busy !== null)}
                 disabled={busy !== null}
-                onClick={() => actions?.decide(item, "allow")}
+                onClick={() => actions.current?.decide(item, "allow")}
               >
                 {item.state === "allow_recorded" ? "重试完成已允许的绑定" : "允许本次绑定"}
               </button>
@@ -317,7 +336,7 @@ export function PrimaryWorkspaceBindings({
                     marginLeft: tokens.space.sm,
                   }}
                   disabled={busy !== null}
-                  onClick={() => actions?.decide(item, "deny")}
+                  onClick={() => actions.current?.decide(item, "deny")}
                 >
                   拒绝
                 </button>

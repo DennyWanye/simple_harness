@@ -153,4 +153,34 @@ describe("CompanionDetailModal", () => {
     expect(screen.queryByText("迟到旧页")).toBeNull();
     expect(screen.getByText("当前证据")).toBeTruthy();
   });
+
+  it("切换分区时立即清掉上一分区的条目并显示加载中", async () => {
+    type DetailResult = CompanionDetailResponse | CompanionDetailErrorResponse;
+    const pending: Array<(value: DetailResult) => void> = [];
+    const query = vi.fn(
+      (_request: { section: string; cursor: string | null }) =>
+        new Promise<DetailResult>((resolve) => pending.push(resolve)),
+    );
+    render(<CompanionDetailModal event={event} query={query} onClose={vi.fn()} />);
+    await waitFor(() => expect(query).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      pending[0]({
+        type: "companion_detail_response",
+        request_id: "overview",
+        payload: {
+          notification_id: "notice-1",
+          section: "overview",
+          detail_version: "detail-v7",
+          items: [{ id: "overview-row", summary: "概览条目" }],
+          next_cursor: null,
+        },
+      });
+    });
+    expect(await screen.findByText("概览条目")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "证据" }));
+    expect(screen.queryByText("概览条目")).toBeNull();
+    await waitFor(() => expect(query).toHaveBeenCalledTimes(2));
+    expect(query.mock.calls[1][0]).toMatchObject({ section: "evidence", cursor: null });
+  });
 });

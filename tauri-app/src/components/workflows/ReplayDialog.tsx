@@ -28,11 +28,19 @@ export function ReplayDialog({
   const [confirmEffects, setConfirmEffects] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
   const locked = useRef(false);
+  // 打开或换了 Checkpoint 就清空草稿：渲染期按上一次比对，不在 effect 里 setState。
+  const replayKey = JSON.stringify([open, checkpoint?.checkpoint_id]);
+  const [shownReplay, setShownReplay] = useState(replayKey);
+  if (shownReplay !== replayKey) {
+    setShownReplay(replayKey);
+    if (open) {
+      setPatchText("");
+      setConfirmEffects(false);
+      setValidationError(null);
+    }
+  }
   useEffect(() => {
     if (!open) return;
-    setPatchText("");
-    setConfirmEffects(false);
-    setValidationError(null);
     locked.current = false;
   }, [open, checkpoint?.checkpoint_id]);
   useEffect(() => {
