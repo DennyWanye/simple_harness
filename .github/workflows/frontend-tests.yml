@@ -6,7 +6,7 @@ name: Frontend Tests (vitest + lint)
 #
 # 触发条件：tauri-app/** 任意改动 + 主干分支 push。
 # 不跑 cargo test（已在 release.yml 中通过 build 隐式验证）；只跑 vitest +
-# tsc 类型检查，~30s。
+# tsc 类型检查 + eslint，~30s。
 
 on:
   pull_request:
@@ -47,6 +47,10 @@ jobs:
 
       - name: TypeScript check
         run: npx tsc -b --noEmit
+
+      # 代码质量整治阶段 9（9J）：eslint 阻断，警告也不许有（不许靠 eslint-disable 凑数，条数进棘轮）。
+      - name: ESLint (blocking, zero warnings)
+        run: npx eslint . --max-warnings 0
 
       - name: Run vitest (required — no --no-vitest skip)
         run: npm test -- --run

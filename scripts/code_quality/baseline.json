@@ -6,7 +6,6 @@
  "files_2000_3000": [
   "backend/deskpet/capabilities/builder.py:2116",
   "backend/deskpet/memory/human_memory_service.py:2146",
-  "backend/deskpet/tools/research_tools.py:2802",
   "backend/deskpet/workflows/adapters/research_runtime.py:2231",
   "sdk/simple-harness-sdk/src/agent_orchestrator/contracts/planning_decisions.py:2109",
   "sdk/simple-harness-sdk/src/agent_orchestrator/contracts/resolution.py:2141",
@@ -14,16 +13,15 @@
   "sdk/simple-harness-sdk/src/simple_harness/runtime/evidence_protocol.py:2636",
   "sdk/simple-harness-sdk/src/simple_harness/runtime/recall_protocol_v4.py:2077",
   "sdk/simple-harness-sdk/src/simple_harness/workflow/native.py:2298",
-  "tauri-app/src/code-panel/controlWs.ts:2311",
-  "tauri-app/src/components/SettingsPanel.tsx:2116",
+  "tauri-app/src/code-panel/controlWs.ts:2504",
   "tauri-app/src/stores/sessionsStore.ts:2822",
-  "tauri-app/src/views/MissionsView.tsx:2149"
+  "tauri-app/src/views/MissionsView.tsx:2168"
  ],
  "funcs_over_300_backend": [],
  "funcs_over_300_sdk": [],
- "funcs_over_150": 296,
- "inner_imports": 426,
- "except_broad": 1778,
+ "funcs_over_150": 291,
+ "inner_imports": 371,
+ "except_broad": 1652,
  "except_broad_silent": 10,
  "backend_imports_sdk_internal": 0,
  "backend_sdk_module_paths": [
@@ -108,22 +106,21 @@
   "simple_harness.tools.reconciliation",
   "simple_harness.tools.runtime_catalog",
   "simple_harness.workflow",
-  "simple_harness.workflows.personal_v1",
   "simple_harness_service.realtime",
   "simple_harness_service.realtime.adapters",
   "simple_harness_service.realtime.connectors",
   "simple_harness_service.realtime.ports",
   "simple_harness_service.realtime.transports"
  ],
- "print_calls": 418,
+ "print_calls": 417,
  "sys_path_hacks": 2,
  "global_stmts": 54,
- "codename_comment_lines": 407,
+ "codename_comment_lines": 382,
  "py_lines": 652286,
  "main_py_lines": 289,
- "ts_explicit_any": 62,
- "ts_inline_styles": 850,
- "ruff_backend_total": 2051,
+ "ts_explicit_any": 0,
+ "ts_inline_styles": 841,
+ "ruff_backend_total": 1911,
  "ruff_backend_by_rule": {
   "E501": 3993,
   "UP045": 590,
@@ -205,9 +202,9 @@
   "SIM211": 1,
   "C413": 1
  },
- "complexity_over_15_backend": 201,
+ "complexity_over_15_backend": 194,
  "complexity_over_25_backend": 32,
- "ruff_sdk_total": 1061,
+ "ruff_sdk_total": 1060,
  "ruff_sdk_by_rule": {
   "E501": 3426,
   "C901": 177,
@@ -255,18 +252,18 @@
   "F402": 1,
   "RET505": 1
  },
- "complexity_over_15_sdk": 165,
+ "complexity_over_15_sdk": 164,
  "complexity_over_25_sdk": 41,
  "tracked_bak_files": 0,
  "tracked_root_reports": 34,
  "tracked_root_images": 5,
  "tracked_test_evidence": 1843,
  "mypy_sdk_errors": 0,
- "mypy_backend_errors": 3766,
- "dup_clones_30_lines": 53,
- "dup_lines": 3600,
- "eslint_errors": 189,
- "eslint_warnings": 6,
+ "mypy_backend_errors": 3475,
+ "dup_clones_30_lines": 50,
+ "dup_lines": 3157,
+ "eslint_errors": 0,
+ "eslint_warnings": 0,
  "_rebase_log": [
   {
    "key": "files_over_3000",
@@ -371,11 +368,11 @@
    "reason": "2026-10-17 阶段 9 裁决新增：style={变量} 计数与 eslint-disable 条数进棘轮（只减不增）"
   }
  ],
- "legacy_lines": 2132,
- "cycle_imports_backend": 18,
+ "legacy_lines": 2049,
+ "cycle_imports_backend": 17,
  "cycle_imports_sdk": 40,
  "except_broad_unexplained": 0,
  "print_product_unexplained": 0,
  "ts_style_vars": 612,
- "ts_eslint_disable": 20
+ "ts_eslint_disable": 18
 }
