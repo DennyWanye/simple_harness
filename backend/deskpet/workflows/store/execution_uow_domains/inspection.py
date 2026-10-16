@@ -10,6 +10,60 @@ from typing import Any
 from .core import ExecutionUowCore
 
 
+def _json(value: Any, default: Any) -> Any:
+    if value is None:
+        return default
+    try:
+        parsed = json.loads(str(value))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return default
+    return parsed
+
+
+def _prepared_call_id(value: Any) -> str:
+    prepared = _json(value, {})
+    if not isinstance(prepared, Mapping):
+        return ""
+    return str(prepared.get("stable_call_id") or "")
+
+
+def _optional_float(value: Any) -> float | None:
+    return None if value is None else float(value)
+
+
+def _iteration(group_id: str) -> int | None:
+    marker = ":iter:"
+    if marker not in group_id:
+        return None
+    suffix = group_id.split(marker, 1)[1].split(":", 1)[0]
+    try:
+        return int(suffix)
+    except ValueError:
+        return None
+
+
+def _checkpoint_payload(value: Any) -> Mapping[str, Any]:
+    if value is None:
+        return {}
+    try:
+        raw = bytes(value) if not isinstance(value, bytes) else value
+        parsed = json.loads(raw.decode("utf-8"))
+    except (TypeError, ValueError, UnicodeDecodeError, json.JSONDecodeError):
+        return {}
+    return parsed if isinstance(parsed, Mapping) else {}
+
+
+def _public_message(value: Any) -> str:
+    if not isinstance(value, str):
+        return ""
+    return re.sub(
+        r"<think>[\s\S]*?(?:</think>|$)",
+        "",
+        value,
+        flags=re.IGNORECASE,
+    ).strip()
+
+
 class RunInspectionMixin(ExecutionUowCore):
     """The harness run inspection read."""
 
@@ -34,69 +88,15 @@ class RunInspectionMixin(ExecutionUowCore):
         if not run_key or not session_key:
             raise ValueError("run_id and expected_session_id are required")
 
-        def _json(value: Any, default: Any) -> Any:
-            if value is None:
-                return default
-            try:
-                parsed = json.loads(str(value))
-            except (TypeError, ValueError, json.JSONDecodeError):
-                return default
-            return parsed
-
-        def _prepared_call_id(value: Any) -> str:
-            prepared = _json(value, {})
-            if not isinstance(prepared, Mapping):
-                return ""
-            return str(prepared.get("stable_call_id") or "")
-
-        def _optional_float(value: Any) -> float | None:
-            return None if value is None else float(value)
-
-        def _iteration(group_id: str) -> int | None:
-            marker = ":iter:"
-            if marker not in group_id:
-                return None
-            suffix = group_id.split(marker, 1)[1].split(":", 1)[0]
-            try:
-                return int(suffix)
-            except ValueError:
-                return None
-
-        def _checkpoint_payload(value: Any) -> Mapping[str, Any]:
-            if value is None:
-                return {}
-            try:
-                raw = bytes(value) if not isinstance(value, bytes) else value
-                parsed = json.loads(raw.decode("utf-8"))
-            except (TypeError, ValueError, UnicodeDecodeError, json.JSONDecodeError):
-                return {}
-            return parsed if isinstance(parsed, Mapping) else {}
-
-        def _public_message(value: Any) -> str:
-            if not isinstance(value, str):
-                return ""
-            return re.sub(
-                r"<think>[\s\S]*?(?:</think>|$)",
-                "",
-                value,
-                flags=re.IGNORECASE,
-            ).strip()
-
         async with self._read_connection() as db:
-            run = await (
-                await db.execute(
-                    """SELECT * FROM execution_runs
-                    WHERE run_id=? AND root_run_id=run_id AND session_id=?""",
-                    (run_key, session_key),
-                )
-            ).fetchone()
             (
                 _returned,
                 _result,
                 continuation,
                 projection,
+                run,
                 snapshot,
-            ) = await self._inspect_start_snapshot(db, run, run_key)
+            ) = await self._inspect_run_rows(db, run_key, session_key)
             if _returned:
                 return _result
             goal, latest_plan, lineage_rows = await self._inspect_goal_rows(db, run_key)
@@ -114,85 +114,13 @@ class RunInspectionMixin(ExecutionUowCore):
                 else {}
             )
             pending_calls = pending.get("calls", []) if isinstance(pending, Mapping) else []
-            pending_tool_names = [
-                str(item.get("tool_name") or "")
-                for item in pending_calls
-                if isinstance(item, Mapping) and item.get("tool_name")
-            ]
-            tool_observations_by_call: dict[str, dict[str, str | None]] = {}
-            completion_state = (
-                pending.get("completion_state") if isinstance(pending, Mapping) else None
-            )
-            canonical_messages = (
-                pending.get("canonical_messages", []) if isinstance(pending, Mapping) else []
-            )
-            if isinstance(canonical_messages, list):
-                for message in canonical_messages:
-                    if not isinstance(message, Mapping) or message.get("role") != "tool":
-                        continue
-                    call_id = str(message.get("tool_call_id") or "").strip()
-                    content = message.get("content")
-                    payload = _json(content, {}) if isinstance(content, str) else content
-                    if not call_id or not isinstance(payload, Mapping):
-                        continue
-                    outcome = payload.get("outcome")
-                    outcome = outcome if isinstance(outcome, Mapping) else {}
-                    raw_status = str(
-                        payload.get("outcome_status")
-                        or payload.get("status")
-                        or outcome.get("state")
-                        or ""
-                    ).strip()
-                    status = {
-                        "success": "succeeded",
-                        "failure": "failed",
-                    }.get(raw_status, raw_status)
-                    error = outcome.get("error")
-                    if isinstance(error, Mapping):
-                        error_code = str(error.get("code") or "").strip()
-                        error_message = str(error.get("message") or "").strip()
-                    else:
-                        error_code = ""
-                        error_message = str(error).strip() if error is not None else ""
-                    tool_observations_by_call[call_id] = {
-                        "status": status or None,
-                        "error_code": error_code or None,
-                        "error_message": (error_message[:1000] or None),
-                    }
-            feedback = (
-                completion_state.get("agent_loop_feedback")
-                if isinstance(completion_state, Mapping)
-                else None
-            )
-            tool_history = feedback.get("tool_history") if isinstance(feedback, Mapping) else None
-            if isinstance(tool_history, list):
-                for item in tool_history:
-                    if not isinstance(item, Mapping):
-                        continue
-                    call_id = str(item.get("call_id") or "").strip()
-                    ok = item.get("ok")
-                    if not call_id or not isinstance(ok, bool):
-                        continue
-                    observation = tool_observations_by_call.setdefault(
-                        call_id,
-                        {
-                            "status": None,
-                            "error_code": None,
-                            "error_message": None,
-                        },
-                    )
-                    if not observation.get("status"):
-                        observation["status"] = "succeeded" if ok else "failed"
-
-            pending_outcome_status_by_call: dict[str, str] = {
-                call_id: str(observation["status"])
-                for call_id, observation in tool_observations_by_call.items()
-                if observation.get("status")
-            }
+            (
+                completion_state,
+                pending_outcome_status_by_call,
+                pending_tool_names,
+                tool_observations_by_call,
+            ) = self._inspect_pending_calls(pending, pending_calls)
             observed_batch_status, pending_current_attempt, providers = self._inspect_batch_status(
-                _iteration,
-                _json=_json,
-                _optional_float=_optional_float,
                 call_rows=call_rows,
                 completion_state=completion_state,
                 pending=pending,
@@ -201,81 +129,42 @@ class RunInspectionMixin(ExecutionUowCore):
                 provider_rows=provider_rows,
             )
 
-            workflow_step_by_call: dict[tuple[str, str], str] = {}
-            workflow_plans = []
-            events = self._inspect_workflow_checkpoint_events(
-                _checkpoint_payload,
-                _json=_json,
-                _public_message=_public_message,
-                event_rows=event_rows,
-                workflow_checkpoint_rows=workflow_checkpoint_rows,
-                workflow_plans=workflow_plans,
-                workflow_step_by_call=workflow_step_by_call,
+            events, product_turn_steps, snapshot_request, workflow_plans, workflow_step_by_call = (
+                self._inspect_workflow_steps(
+                    event_rows=event_rows,
+                    snapshot=snapshot,
+                    workflow_checkpoint_rows=workflow_checkpoint_rows,
+                )
             )
-
-            snapshot_request = (
-                {} if snapshot is None else _json(snapshot["sanitized_request_json"], {})
-            )
-            snapshot_payload = (
-                snapshot_request.get("payload", {}) if isinstance(snapshot_request, Mapping) else {}
-            )
-            product_turn_steps = (
-                snapshot_payload.get("product_turn_trace", [])
-                if isinstance(snapshot_payload, Mapping)
-                else []
-            )
-            if not isinstance(product_turn_steps, list):
-                product_turn_steps = []
 
             now = float(self._clock())
             run_status = str(run["status"]).split(".")[-1].lower()
             latest_provider = providers[-1] if providers else None
             latest_effect = effect_rows[-1] if effect_rows else None
-            active_children = [
-                item
-                for item in lineage_rows
-                if str(item["run_id"]) != run_key
-                and str(item["status"]).split(".")[-1].lower()
-                not in {"completed", "failed", "cancelled"}
-            ]
-            progress_timestamps = [
-                float(run["updated_at"]),
-                *[float(item["updated_at"]) for item in provider_rows],
-                *[float(item["updated_at"]) for item in effect_rows],
-                *[float(item["updated_at"]) for item in attempt_rows],
-                *[float(item["created_at"]) for item in event_rows],
-            ]
-            if continuation is not None:
-                progress_timestamps.append(float(continuation["updated_at"]))
-            last_progress_at = max(progress_timestamps)
+            active_children, last_progress_at = self._inspect_progress(
+                attempt_rows,
+                continuation=continuation,
+                effect_rows=effect_rows,
+                event_rows=event_rows,
+                lineage_rows=lineage_rows,
+                provider_rows=provider_rows,
+                run=run,
+                run_key=run_key,
+            )
             stalled_for_seconds = max(0.0, now - last_progress_at)
 
-            phase = "agent"
-            waiting_reason = None
-            summary = "Agent 正在规划下一步"
-            terminal_statuses = {"completed", "failed", "cancelled"}
-            phase, summary, waiting_reason = self._inspect_phase_summary(
-                active_children,
-                continuation=continuation,
-                latest_effect=latest_effect,
-                latest_provider=latest_provider,
-                phase=phase,
-                run_status=run_status,
-                summary=summary,
-                terminal_statuses=terminal_statuses,
-                waiting_reason=waiting_reason,
-            )
-
-            error_candidates: list[tuple[float, dict[str, Any]]] = []
-            self._inspect_provider_failures(
-                error_candidates,
-                events=events,
-                failure_rows=failure_rows,
-                providers=providers,
-                tool_observations_by_call=tool_observations_by_call,
-            )
-            last_error = (
-                None if not error_candidates else max(error_candidates, key=lambda item: item[0])[1]
+            last_error, phase, summary, terminal_statuses, waiting_reason = (
+                self._inspect_status_summary(
+                    active_children,
+                    continuation=continuation,
+                    events=events,
+                    failure_rows=failure_rows,
+                    latest_effect=latest_effect,
+                    latest_provider=latest_provider,
+                    providers=providers,
+                    run_status=run_status,
+                    tool_observations_by_call=tool_observations_by_call,
+                )
             )
             artifact_count = sum(
                 len(refs)
@@ -287,345 +176,254 @@ class RunInspectionMixin(ExecutionUowCore):
                 "schema_version": 2,
                 "refreshed_at": now,
                 "session_id": session_key,
-                "activity": {
-                    "phase": phase,
-                    "summary": summary,
-                    "waiting_reason": waiting_reason,
-                    "last_progress_at": last_progress_at,
-                    "stalled_for_seconds": stalled_for_seconds,
-                    "is_stalled": (
-                        run_status not in terminal_statuses and stalled_for_seconds >= 60.0
-                    ),
-                    "last_error": last_error,
-                    "artifact_count": artifact_count,
-                },
-                "run": {
-                    "run_id": str(run["run_id"]),
-                    "root_run_id": str(run["root_run_id"]),
-                    "request_id": str(run["request_id"]),
-                    "turn_id": str(run["turn_id"]),
-                    "trace_id": str(run["trace_id"]),
-                    "driver_kind": str(run["driver_kind"]),
-                    "profile_key": str(run["profile_key"]),
-                    "persistence_level": str(run["persistence_level"]),
-                    "status": str(run["status"]),
-                    "version": int(run["version"]),
-                    "durable_seq": int(run["durable_seq"]),
-                    "owner_kind": str(run["owner_kind"]),
-                    "owner_generation": int(run["owner_generation"]),
-                    "created_at": float(run["created_at"]),
-                    "started_at": _optional_float(run["started_at"]),
-                    "updated_at": float(run["updated_at"]),
-                    "ended_at": _optional_float(run["ended_at"]),
-                },
-                "projection": (
-                    None
-                    if projection is None
-                    else {
-                        "task_scope_id": str(projection["task_scope_id"]),
-                        "ui_state": str(projection["ui_state"]),
-                        "version": int(projection["projection_version"]),
-                        "created_at": float(projection["created_at"]),
-                        "updated_at": float(projection["updated_at"]),
-                    }
+                "activity": _inspect_activity(
+                    artifact_count,
+                    last_error=last_error,
+                    last_progress_at=last_progress_at,
+                    phase=phase,
+                    run_status=run_status,
+                    stalled_for_seconds=stalled_for_seconds,
+                    summary=summary,
+                    terminal_statuses=terminal_statuses,
+                    waiting_reason=waiting_reason,
                 ),
-                "prepared_context": {
-                    "available": snapshot is not None,
-                    "start_fingerprint": (
-                        None if snapshot is None else str(snapshot["start_fingerprint"])
-                    ),
-                    "prepared_ref_count": (
-                        0
-                        if snapshot is None
-                        else len(
-                            _json(snapshot["prepared_refs_json"], {})
-                            if isinstance(
-                                _json(snapshot["prepared_refs_json"], {}),
-                                Mapping,
-                            )
-                            else {}
-                        )
-                    ),
-                    "terminal_delivery_count": (
-                        0
-                        if snapshot is None
-                        else len(
-                            _json(snapshot["terminal_deliveries_json"], [])
-                            if isinstance(
-                                _json(snapshot["terminal_deliveries_json"], []),
-                                list,
-                            )
-                            else []
-                        )
-                    ),
-                    "created_at": (None if snapshot is None else float(snapshot["created_at"])),
-                    "steps": product_turn_steps,
-                    "details": (
-                        None
-                        if snapshot is None
-                        else {
-                            "canonical_messages": _json(snapshot["canonical_messages_json"], []),
-                            "sanitized_request": snapshot_request,
-                            "run_context": _json(snapshot["run_context_json"], {}),
-                            "run_spec": _json(snapshot["run_spec_json"], {}),
-                            "prepared_refs": _json(snapshot["prepared_refs_json"], {}),
-                            "capability_snapshot": _json(snapshot["capability_snapshot_json"], {}),
-                            "provider_launch_policy": _json(
-                                snapshot["provider_launch_policy_json"], {}
-                            ),
-                        }
-                    ),
-                },
+                "run": _inspect_run(run),
+                "projection": (_inspect_projection(projection)),
+                "prepared_context": _inspect_prepared_context(
+                    product_turn_steps, snapshot, snapshot_request
+                ),
                 "continuation": (
-                    None
-                    if continuation is None
-                    else {
-                        "iteration": int(continuation["iteration"]),
-                        "version": int(continuation["continuation_version"]),
-                        "pending_decision_id": (
-                            None
-                            if continuation["pending_decision_id"] is None
-                            else str(continuation["pending_decision_id"])
-                        ),
-                        "pending_call_count": len(pending_calls),
-                        "pending_tool_names": pending_tool_names[:50],
-                        "updated_at": float(continuation["updated_at"]),
-                    }
+                    _inspect_continuation(continuation, pending_calls, pending_tool_names)
                 ),
-                "goal": (
-                    None
-                    if goal is None
-                    else {
-                        "goal_id": str(goal["goal_id"]),
-                        "task_scope_id": str(goal["task_scope_id"]),
-                        "status": str(goal["status"]),
-                        "version": int(goal["goal_version"]),
-                        "plan_version": (
-                            None if latest_plan is None else int(latest_plan["plan_version"])
-                        ),
-                        "trigger_failure_set_id": (
-                            None
-                            if latest_plan is None or latest_plan["trigger_failure_set_id"] is None
-                            else str(latest_plan["trigger_failure_set_id"])
-                        ),
-                        "created_at": float(goal["created_at"]),
-                        "updated_at": float(goal["updated_at"]),
-                        "ended_at": _optional_float(goal["ended_at"]),
-                    }
-                ),
-                "lineage": [
-                    {
-                        "run_id": str(item["run_id"]),
-                        "parent_run_id": (
-                            None if item["parent_run_id"] is None else str(item["parent_run_id"])
-                        ),
-                        "driver_kind": str(item["driver_kind"]),
-                        "profile_key": str(item["profile_key"]),
-                        "status": str(item["status"]),
-                        "version": int(item["version"]),
-                        "created_at": float(item["created_at"]),
-                        "started_at": _optional_float(item["started_at"]),
-                        "updated_at": float(item["updated_at"]),
-                        "ended_at": _optional_float(item["ended_at"]),
-                    }
-                    for item in lineage_rows
-                ],
+                "goal": (_inspect_goal(goal, latest_plan)),
+                "lineage": _inspect_lineage(lineage_rows),
                 "provider_invocations": providers,
-                "action_batches": [
-                    {
-                        "batch_id": str(item["provider_batch_id"]),
-                        "provider_turn_id": str(item["provider_turn_id"]),
-                        "pending_call_count": int(item["pending_call_count"]),
-                        "failure_set_id": (
-                            None if item["failure_set_id"] is None else str(item["failure_set_id"])
-                        ),
-                        "status": str(item["status"]),
-                        "observed_status": observed_batch_status.get(
-                            str(item["provider_batch_id"])
-                        ),
-                        "version": int(item["batch_version"]),
-                        "created_at": float(item["created_at"]),
-                        "updated_at": float(item["updated_at"]),
-                        "settled_at": _optional_float(item["settled_at"]),
-                    }
-                    for item in batch_rows
-                ],
-                "tool_calls": [
-                    {
-                        "call_record_id": str(item["call_record_id"]),
-                        "batch_id": str(item["provider_batch_id"]),
-                        "order": int(item["call_order"]),
-                        "call_id": str(item["provider_call_id"]),
-                        "tool_name": str(item["raw_tool_name"]),
-                        "admission_state": str(item["admission_state"]),
-                        "outcome_status": (
-                            pending_outcome_status_by_call.get(str(item["provider_call_id"]))
-                        ),
-                        "error_code": (
-                            tool_observations_by_call.get(str(item["provider_call_id"]), {}).get(
-                                "error_code"
-                            )
-                        ),
-                        "error_message": (
-                            tool_observations_by_call.get(str(item["provider_call_id"]), {}).get(
-                                "error_message"
-                            )
-                        ),
-                        "terminal_outcome_ref": (
-                            None
-                            if item["terminal_outcome_ref"] is None
-                            else str(item["terminal_outcome_ref"])
-                        ),
-                        "details": {
-                            "raw_arguments_ref": (
-                                None
-                                if item["raw_arguments_ref"] is None
-                                else str(item["raw_arguments_ref"])
-                            ),
-                            "raw_arguments_hash": (
-                                None
-                                if item["raw_arguments_hash"] is None
-                                else str(item["raw_arguments_hash"])
-                            ),
-                            "parsed_arguments_hash": (
-                                None
-                                if item["parsed_arguments_hash"] is None
-                                else str(item["parsed_arguments_hash"])
-                            ),
-                            "prepared_call_ref": (
-                                None
-                                if item["prepared_call_ref"] is None
-                                else str(item["prepared_call_ref"])
-                            ),
-                        },
-                        "version": int(item["call_version"]),
-                        "created_at": float(item["created_at"]),
-                        "updated_at": float(item["updated_at"]),
-                    }
-                    for item in call_rows
-                ],
-                "effects": [
-                    {
-                        "effect_id": str(item["effect_id"]),
-                        "run_id": str(item["run_id"]),
-                        "call_id": str(item["call_id"]),
-                        "tool_name": str(item["tool_name"]),
-                        "effect_type": str(item["effect_type"]),
-                        "status": str(item["status"]),
-                        "handoff_state": str(item["handoff_state"]),
-                        "completion_disposition": str(item["completion_disposition"]),
-                        "receipt_ref": (
-                            None if item["receipt_ref"] is None else str(item["receipt_ref"])
-                        ),
-                        "details": {
-                            "policy": _json(item["policy_json"], {}),
-                            "prepared": _json(item["prepared_json"], {}),
-                            "outcome": _json(item["outcome_json"], None),
-                            "artifact_refs": _json(item["artifact_refs_json"], []),
-                        },
-                        "created_at": float(item["created_at"]),
-                        "updated_at": float(item["updated_at"]),
-                        "ended_at": _optional_float(item["ended_at"]),
-                    }
-                    for item in effect_rows
-                ],
-                "workflow_effects": [
-                    {
-                        "effect_id": str(item["effect_id"]),
-                        "run_id": str(item["run_id"]),
-                        "status": str(item["status"]),
-                        "workflow_step_id": workflow_step_by_call.get(
-                            (
-                                str(item["run_id"]),
-                                _prepared_call_id(item["prepared_json"]),
-                            )
-                        ),
-                        "receipt_ref": (
-                            None if item["receipt_ref"] is None else str(item["receipt_ref"])
-                        ),
-                        "details": {
-                            "prepared": _json(item["prepared_json"], {}),
-                            "outcome": _json(item["outcome_json"], None),
-                            "artifact_refs": _json(item["artifact_refs_json"], []),
-                        },
-                        "created_at": float(item["started_at"]),
-                        "updated_at": float(item["updated_at"]),
-                        "ended_at": _optional_float(item["ended_at"]),
-                    }
-                    for item in workflow_effect_rows
-                ],
+                "action_batches": _inspect_action_batches(batch_rows, observed_batch_status),
+                "tool_calls": _inspect_tool_calls(
+                    call_rows, pending_outcome_status_by_call, tool_observations_by_call
+                ),
+                "effects": _inspect_effects(effect_rows),
+                "workflow_effects": _inspect_workflow_effects(
+                    workflow_effect_rows=workflow_effect_rows,
+                    workflow_step_by_call=workflow_step_by_call,
+                ),
                 "workflow_plans": workflow_plans,
-                "attempts": [
-                    {
-                        "attempt_id": str(item["attempt_id"]),
-                        "run_id": str(item["run_id"]),
-                        "provider_turn_id": str(item["provider_turn_id"]),
-                        "batch_id": str(item["provider_batch_id"]),
-                        "plan_version": int(item["plan_version"]),
-                        "trigger_failure_set_id": (
-                            None
-                            if item["trigger_failure_set_id"] is None
-                            else str(item["trigger_failure_set_id"])
-                        ),
-                        "supersedes_attempt_id": (
-                            None
-                            if item["supersedes_attempt_id"] is None
-                            else str(item["supersedes_attempt_id"])
-                        ),
-                        "status": str(item["status"]),
-                        "continuation_status": (
-                            str(pending_current_attempt["status"])
-                            if pending_current_attempt is not None
-                            and str(pending_current_attempt.get("attempt_id") or "")
-                            == str(item["attempt_id"])
-                            and pending_current_attempt.get("status") is not None
-                            else observed_batch_status.get(str(item["provider_batch_id"]))
-                        ),
-                        "version": int(item["attempt_version"]),
-                        "created_at": float(item["created_at"]),
-                        "updated_at": float(item["updated_at"]),
-                        "ended_at": _optional_float(item["ended_at"]),
-                    }
-                    for item in attempt_rows
-                ],
-                "failures": [
-                    {
-                        "report_ref": str(item["report_ref"]),
-                        "run_id": str(item["run_id"]),
-                        "attempt_id": str(item["attempt_id"]),
-                        "plan_version": int(item["plan_version"]),
-                        "provider_call_id": (
-                            None
-                            if item["provider_call_id"] is None
-                            else str(item["provider_call_id"])
-                        ),
-                        "child_run_id": (
-                            None if item["child_run_id"] is None else str(item["child_run_id"])
-                        ),
-                        "failed_call_id": (
-                            None if item["failed_call_id"] is None else str(item["failed_call_id"])
-                        ),
-                        "failed_effect_id": (
-                            None
-                            if item["failed_effect_id"] is None
-                            else str(item["failed_effect_id"])
-                        ),
-                        "failed_step": str(item["failed_step"]),
-                        "error_class": str(item["error_class"]),
-                        "error_code": str(item["error_code"]),
-                        "error_message": (
-                            tool_observations_by_call.get(
-                                str(item["provider_call_id"] or ""), {}
-                            ).get("error_message")
-                        ),
-                        "source_kind": str(item["source_kind"]),
-                        "source_identity": str(item["source_identity"]),
-                        "created_at": float(item["created_at"]),
-                    }
-                    for item in failure_rows
-                ],
+                "attempts": _inspect_attempts(
+                    attempt_rows, observed_batch_status, pending_current_attempt
+                ),
+                "failures": _inspect_failures(failure_rows, tool_observations_by_call),
                 "events": events,
             }
+
+    async def _inspect_run_rows(self, db, run_key, session_key):
+        run = await (
+            await db.execute(
+                """SELECT * FROM execution_runs
+                    WHERE run_id=? AND root_run_id=run_id AND session_id=?""",
+                (run_key, session_key),
+            )
+        ).fetchone()
+        (
+            _returned,
+            _result,
+            continuation,
+            projection,
+            snapshot,
+        ) = await self._inspect_start_snapshot(db, run, run_key)
+        if _returned:
+            return (True, (_result), None, None, None, None)
+        return False, None, continuation, projection, run, snapshot
+
+    def _inspect_pending_calls(self, pending, pending_calls):
+        pending_tool_names = [
+            str(item.get("tool_name") or "")
+            for item in pending_calls
+            if isinstance(item, Mapping) and item.get("tool_name")
+        ]
+        tool_observations_by_call: dict[str, dict[str, str | None]] = {}
+        completion_state = pending.get("completion_state") if isinstance(pending, Mapping) else None
+        self._collect_tool_observations(completion_state, pending, tool_observations_by_call)
+
+        pending_outcome_status_by_call: dict[str, str] = {
+            call_id: str(observation["status"])
+            for call_id, observation in tool_observations_by_call.items()
+            if observation.get("status")
+        }
+        return (
+            completion_state,
+            pending_outcome_status_by_call,
+            pending_tool_names,
+            tool_observations_by_call,
+        )
+
+    def _inspect_progress(
+        self,
+        attempt_rows,
+        *,
+        continuation,
+        effect_rows,
+        event_rows,
+        lineage_rows,
+        provider_rows,
+        run,
+        run_key,
+    ):
+        active_children = [
+            item
+            for item in lineage_rows
+            if str(item["run_id"]) != run_key
+            and str(item["status"]).split(".")[-1].lower()
+            not in {"completed", "failed", "cancelled"}
+        ]
+        progress_timestamps = [
+            float(run["updated_at"]),
+            *[float(item["updated_at"]) for item in provider_rows],
+            *[float(item["updated_at"]) for item in effect_rows],
+            *[float(item["updated_at"]) for item in attempt_rows],
+            *[float(item["created_at"]) for item in event_rows],
+        ]
+        if continuation is not None:
+            progress_timestamps.append(float(continuation["updated_at"]))
+        last_progress_at = max(progress_timestamps)
+        return active_children, last_progress_at
+
+    def _collect_tool_observations(
+        self,
+        completion_state,
+        pending,
+        tool_observations_by_call: dict[str, dict[str, str | None]],
+    ) -> None:
+        canonical_messages = (
+            pending.get("canonical_messages", []) if isinstance(pending, Mapping) else []
+        )
+        if isinstance(canonical_messages, list):
+            for message in canonical_messages:
+                if not isinstance(message, Mapping) or message.get("role") != "tool":
+                    continue
+                call_id = str(message.get("tool_call_id") or "").strip()
+                content = message.get("content")
+                payload = _json(content, {}) if isinstance(content, str) else content
+                if not call_id or not isinstance(payload, Mapping):
+                    continue
+                outcome = payload.get("outcome")
+                outcome = outcome if isinstance(outcome, Mapping) else {}
+                raw_status = str(
+                    payload.get("outcome_status")
+                    or payload.get("status")
+                    or outcome.get("state")
+                    or ""
+                ).strip()
+                status = {
+                    "success": "succeeded",
+                    "failure": "failed",
+                }.get(raw_status, raw_status)
+                error = outcome.get("error")
+                if isinstance(error, Mapping):
+                    error_code = str(error.get("code") or "").strip()
+                    error_message = str(error.get("message") or "").strip()
+                else:
+                    error_code = ""
+                    error_message = str(error).strip() if error is not None else ""
+                tool_observations_by_call[call_id] = {
+                    "status": status or None,
+                    "error_code": error_code or None,
+                    "error_message": (error_message[:1000] or None),
+                }
+        feedback = (
+            completion_state.get("agent_loop_feedback")
+            if isinstance(completion_state, Mapping)
+            else None
+        )
+        tool_history = feedback.get("tool_history") if isinstance(feedback, Mapping) else None
+        if isinstance(tool_history, list):
+            for item in tool_history:
+                if not isinstance(item, Mapping):
+                    continue
+                call_id = str(item.get("call_id") or "").strip()
+                ok = item.get("ok")
+                if not call_id or not isinstance(ok, bool):
+                    continue
+                observation = tool_observations_by_call.setdefault(
+                    call_id,
+                    {
+                        "status": None,
+                        "error_code": None,
+                        "error_message": None,
+                    },
+                )
+                if not observation.get("status"):
+                    observation["status"] = "succeeded" if ok else "failed"
+
+    def _inspect_workflow_steps(
+        self,
+        *,
+        event_rows,
+        snapshot,
+        workflow_checkpoint_rows,
+    ):
+        workflow_step_by_call: dict[tuple[str, str], str] = {}
+        workflow_plans = []
+        events = self._inspect_workflow_checkpoint_events(
+            event_rows=event_rows,
+            workflow_checkpoint_rows=workflow_checkpoint_rows,
+            workflow_plans=workflow_plans,
+            workflow_step_by_call=workflow_step_by_call,
+        )
+
+        snapshot_request = {} if snapshot is None else _json(snapshot["sanitized_request_json"], {})
+        snapshot_payload = (
+            snapshot_request.get("payload", {}) if isinstance(snapshot_request, Mapping) else {}
+        )
+        product_turn_steps = (
+            snapshot_payload.get("product_turn_trace", [])
+            if isinstance(snapshot_payload, Mapping)
+            else []
+        )
+        if not isinstance(product_turn_steps, list):
+            product_turn_steps = []
+        return events, product_turn_steps, snapshot_request, workflow_plans, workflow_step_by_call
+
+    def _inspect_status_summary(
+        self,
+        active_children,
+        *,
+        continuation,
+        events,
+        failure_rows,
+        latest_effect,
+        latest_provider,
+        providers,
+        run_status,
+        tool_observations_by_call: dict[str, dict[str, str | None]],
+    ):
+        phase = "agent"
+        waiting_reason = None
+        summary = "Agent 正在规划下一步"
+        terminal_statuses = {"completed", "failed", "cancelled"}
+        phase, summary, waiting_reason = self._inspect_phase_summary(
+            active_children,
+            continuation=continuation,
+            latest_effect=latest_effect,
+            latest_provider=latest_provider,
+            phase=phase,
+            run_status=run_status,
+            summary=summary,
+            terminal_statuses=terminal_statuses,
+            waiting_reason=waiting_reason,
+        )
+
+        error_candidates: list[tuple[float, dict[str, Any]]] = []
+        self._inspect_provider_failures(
+            error_candidates,
+            events=events,
+            failure_rows=failure_rows,
+            providers=providers,
+            tool_observations_by_call=tool_observations_by_call,
+        )
+        last_error = (
+            None if not error_candidates else max(error_candidates, key=lambda item: item[0])[1]
+        )
+        return last_error, phase, summary, terminal_statuses, waiting_reason
 
     async def _inspect_start_snapshot(self, db, run, run_key):
         if run is None:
@@ -659,10 +457,7 @@ class RunInspectionMixin(ExecutionUowCore):
 
     def _inspect_batch_status(
         self,
-        _iteration,
         *,
-        _json,
-        _optional_float,
         call_rows,
         completion_state,
         pending,
@@ -695,9 +490,6 @@ class RunInspectionMixin(ExecutionUowCore):
         providers = []
         for item in provider_rows:
             self._inspect_tool_dispatch_item(
-                _iteration,
-                _json=_json,
-                _optional_float=_optional_float,
                 item=item,
                 providers=providers,
             )
@@ -900,9 +692,7 @@ class RunInspectionMixin(ExecutionUowCore):
                 pending_current_attempt = current_attempt
         return pending_current_attempt
 
-    def _inspect_tool_dispatch_item(
-        self, _iteration, *, _json, _optional_float, item, providers
-    ) -> None:
+    def _inspect_tool_dispatch_item(self, *, item, providers) -> None:
         started_at = _optional_float(item["dispatch_started_at"])
         updated_at = float(item["updated_at"])
         status = str(item["status"])
@@ -948,10 +738,7 @@ class RunInspectionMixin(ExecutionUowCore):
 
     def _inspect_workflow_checkpoint_events(
         self,
-        _checkpoint_payload,
         *,
-        _json,
-        _public_message,
         event_rows,
         workflow_checkpoint_rows,
         workflow_plans,
@@ -1208,3 +995,355 @@ class RunInspectionMixin(ExecutionUowCore):
                         },
                     )
                 )
+
+
+def _inspect_projection(projection):
+    return (
+        None
+        if projection is None
+        else {
+            "task_scope_id": str(projection["task_scope_id"]),
+            "ui_state": str(projection["ui_state"]),
+            "version": int(projection["projection_version"]),
+            "created_at": float(projection["created_at"]),
+            "updated_at": float(projection["updated_at"]),
+        }
+    )
+
+
+def _inspect_activity(
+    artifact_count,
+    *,
+    last_error,
+    last_progress_at,
+    phase,
+    run_status,
+    stalled_for_seconds,
+    summary,
+    terminal_statuses,
+    waiting_reason,
+):
+    return {
+        "phase": phase,
+        "summary": summary,
+        "waiting_reason": waiting_reason,
+        "last_progress_at": last_progress_at,
+        "stalled_for_seconds": stalled_for_seconds,
+        "is_stalled": (run_status not in terminal_statuses and stalled_for_seconds >= 60.0),
+        "last_error": last_error,
+        "artifact_count": artifact_count,
+    }
+
+
+def _inspect_run(run):
+    return {
+        "run_id": str(run["run_id"]),
+        "root_run_id": str(run["root_run_id"]),
+        "request_id": str(run["request_id"]),
+        "turn_id": str(run["turn_id"]),
+        "trace_id": str(run["trace_id"]),
+        "driver_kind": str(run["driver_kind"]),
+        "profile_key": str(run["profile_key"]),
+        "persistence_level": str(run["persistence_level"]),
+        "status": str(run["status"]),
+        "version": int(run["version"]),
+        "durable_seq": int(run["durable_seq"]),
+        "owner_kind": str(run["owner_kind"]),
+        "owner_generation": int(run["owner_generation"]),
+        "created_at": float(run["created_at"]),
+        "started_at": _optional_float(run["started_at"]),
+        "updated_at": float(run["updated_at"]),
+        "ended_at": _optional_float(run["ended_at"]),
+    }
+
+
+def _inspect_prepared_context(product_turn_steps, snapshot, snapshot_request):
+    return {
+        "available": snapshot is not None,
+        "start_fingerprint": (None if snapshot is None else str(snapshot["start_fingerprint"])),
+        "prepared_ref_count": (
+            0
+            if snapshot is None
+            else len(
+                _json(snapshot["prepared_refs_json"], {})
+                if isinstance(
+                    _json(snapshot["prepared_refs_json"], {}),
+                    Mapping,
+                )
+                else {}
+            )
+        ),
+        "terminal_delivery_count": (
+            0
+            if snapshot is None
+            else len(
+                _json(snapshot["terminal_deliveries_json"], [])
+                if isinstance(
+                    _json(snapshot["terminal_deliveries_json"], []),
+                    list,
+                )
+                else []
+            )
+        ),
+        "created_at": (None if snapshot is None else float(snapshot["created_at"])),
+        "steps": product_turn_steps,
+        "details": (
+            None
+            if snapshot is None
+            else {
+                "canonical_messages": _json(snapshot["canonical_messages_json"], []),
+                "sanitized_request": snapshot_request,
+                "run_context": _json(snapshot["run_context_json"], {}),
+                "run_spec": _json(snapshot["run_spec_json"], {}),
+                "prepared_refs": _json(snapshot["prepared_refs_json"], {}),
+                "capability_snapshot": _json(snapshot["capability_snapshot_json"], {}),
+                "provider_launch_policy": _json(snapshot["provider_launch_policy_json"], {}),
+            }
+        ),
+    }
+
+
+def _inspect_continuation(continuation, pending_calls, pending_tool_names):
+    return (
+        None
+        if continuation is None
+        else {
+            "iteration": int(continuation["iteration"]),
+            "version": int(continuation["continuation_version"]),
+            "pending_decision_id": (
+                None
+                if continuation["pending_decision_id"] is None
+                else str(continuation["pending_decision_id"])
+            ),
+            "pending_call_count": len(pending_calls),
+            "pending_tool_names": pending_tool_names[:50],
+            "updated_at": float(continuation["updated_at"]),
+        }
+    )
+
+
+def _inspect_goal(goal, latest_plan):
+    return (
+        None
+        if goal is None
+        else {
+            "goal_id": str(goal["goal_id"]),
+            "task_scope_id": str(goal["task_scope_id"]),
+            "status": str(goal["status"]),
+            "version": int(goal["goal_version"]),
+            "plan_version": (None if latest_plan is None else int(latest_plan["plan_version"])),
+            "trigger_failure_set_id": (
+                None
+                if latest_plan is None or latest_plan["trigger_failure_set_id"] is None
+                else str(latest_plan["trigger_failure_set_id"])
+            ),
+            "created_at": float(goal["created_at"]),
+            "updated_at": float(goal["updated_at"]),
+            "ended_at": _optional_float(goal["ended_at"]),
+        }
+    )
+
+
+def _inspect_lineage(lineage_rows):
+    return [
+        {
+            "run_id": str(item["run_id"]),
+            "parent_run_id": (
+                None if item["parent_run_id"] is None else str(item["parent_run_id"])
+            ),
+            "driver_kind": str(item["driver_kind"]),
+            "profile_key": str(item["profile_key"]),
+            "status": str(item["status"]),
+            "version": int(item["version"]),
+            "created_at": float(item["created_at"]),
+            "started_at": _optional_float(item["started_at"]),
+            "updated_at": float(item["updated_at"]),
+            "ended_at": _optional_float(item["ended_at"]),
+        }
+        for item in lineage_rows
+    ]
+
+
+def _inspect_action_batches(batch_rows, observed_batch_status):
+    return [
+        {
+            "batch_id": str(item["provider_batch_id"]),
+            "provider_turn_id": str(item["provider_turn_id"]),
+            "pending_call_count": int(item["pending_call_count"]),
+            "failure_set_id": (
+                None if item["failure_set_id"] is None else str(item["failure_set_id"])
+            ),
+            "status": str(item["status"]),
+            "observed_status": observed_batch_status.get(str(item["provider_batch_id"])),
+            "version": int(item["batch_version"]),
+            "created_at": float(item["created_at"]),
+            "updated_at": float(item["updated_at"]),
+            "settled_at": _optional_float(item["settled_at"]),
+        }
+        for item in batch_rows
+    ]
+
+
+def _inspect_tool_calls(call_rows, pending_outcome_status_by_call, tool_observations_by_call):
+    return [
+        {
+            "call_record_id": str(item["call_record_id"]),
+            "batch_id": str(item["provider_batch_id"]),
+            "order": int(item["call_order"]),
+            "call_id": str(item["provider_call_id"]),
+            "tool_name": str(item["raw_tool_name"]),
+            "admission_state": str(item["admission_state"]),
+            "outcome_status": (pending_outcome_status_by_call.get(str(item["provider_call_id"]))),
+            "error_code": (
+                tool_observations_by_call.get(str(item["provider_call_id"]), {}).get("error_code")
+            ),
+            "error_message": (
+                tool_observations_by_call.get(str(item["provider_call_id"]), {}).get(
+                    "error_message"
+                )
+            ),
+            "terminal_outcome_ref": (
+                None if item["terminal_outcome_ref"] is None else str(item["terminal_outcome_ref"])
+            ),
+            "details": {
+                "raw_arguments_ref": (
+                    None if item["raw_arguments_ref"] is None else str(item["raw_arguments_ref"])
+                ),
+                "raw_arguments_hash": (
+                    None if item["raw_arguments_hash"] is None else str(item["raw_arguments_hash"])
+                ),
+                "parsed_arguments_hash": (
+                    None
+                    if item["parsed_arguments_hash"] is None
+                    else str(item["parsed_arguments_hash"])
+                ),
+                "prepared_call_ref": (
+                    None if item["prepared_call_ref"] is None else str(item["prepared_call_ref"])
+                ),
+            },
+            "version": int(item["call_version"]),
+            "created_at": float(item["created_at"]),
+            "updated_at": float(item["updated_at"]),
+        }
+        for item in call_rows
+    ]
+
+
+def _inspect_effects(effect_rows):
+    return [
+        {
+            "effect_id": str(item["effect_id"]),
+            "run_id": str(item["run_id"]),
+            "call_id": str(item["call_id"]),
+            "tool_name": str(item["tool_name"]),
+            "effect_type": str(item["effect_type"]),
+            "status": str(item["status"]),
+            "handoff_state": str(item["handoff_state"]),
+            "completion_disposition": str(item["completion_disposition"]),
+            "receipt_ref": (None if item["receipt_ref"] is None else str(item["receipt_ref"])),
+            "details": {
+                "policy": _json(item["policy_json"], {}),
+                "prepared": _json(item["prepared_json"], {}),
+                "outcome": _json(item["outcome_json"], None),
+                "artifact_refs": _json(item["artifact_refs_json"], []),
+            },
+            "created_at": float(item["created_at"]),
+            "updated_at": float(item["updated_at"]),
+            "ended_at": _optional_float(item["ended_at"]),
+        }
+        for item in effect_rows
+    ]
+
+
+def _inspect_workflow_effects(*, workflow_effect_rows, workflow_step_by_call):
+    return [
+        {
+            "effect_id": str(item["effect_id"]),
+            "run_id": str(item["run_id"]),
+            "status": str(item["status"]),
+            "workflow_step_id": workflow_step_by_call.get(
+                (
+                    str(item["run_id"]),
+                    _prepared_call_id(item["prepared_json"]),
+                )
+            ),
+            "receipt_ref": (None if item["receipt_ref"] is None else str(item["receipt_ref"])),
+            "details": {
+                "prepared": _json(item["prepared_json"], {}),
+                "outcome": _json(item["outcome_json"], None),
+                "artifact_refs": _json(item["artifact_refs_json"], []),
+            },
+            "created_at": float(item["started_at"]),
+            "updated_at": float(item["updated_at"]),
+            "ended_at": _optional_float(item["ended_at"]),
+        }
+        for item in workflow_effect_rows
+    ]
+
+
+def _inspect_attempts(attempt_rows, observed_batch_status, pending_current_attempt):
+    return [
+        {
+            "attempt_id": str(item["attempt_id"]),
+            "run_id": str(item["run_id"]),
+            "provider_turn_id": str(item["provider_turn_id"]),
+            "batch_id": str(item["provider_batch_id"]),
+            "plan_version": int(item["plan_version"]),
+            "trigger_failure_set_id": (
+                None
+                if item["trigger_failure_set_id"] is None
+                else str(item["trigger_failure_set_id"])
+            ),
+            "supersedes_attempt_id": (
+                None
+                if item["supersedes_attempt_id"] is None
+                else str(item["supersedes_attempt_id"])
+            ),
+            "status": str(item["status"]),
+            "continuation_status": (
+                str(pending_current_attempt["status"])
+                if pending_current_attempt is not None
+                and str(pending_current_attempt.get("attempt_id") or "") == str(item["attempt_id"])
+                and pending_current_attempt.get("status") is not None
+                else observed_batch_status.get(str(item["provider_batch_id"]))
+            ),
+            "version": int(item["attempt_version"]),
+            "created_at": float(item["created_at"]),
+            "updated_at": float(item["updated_at"]),
+            "ended_at": _optional_float(item["ended_at"]),
+        }
+        for item in attempt_rows
+    ]
+
+
+def _inspect_failures(failure_rows, tool_observations_by_call):
+    return [
+        {
+            "report_ref": str(item["report_ref"]),
+            "run_id": str(item["run_id"]),
+            "attempt_id": str(item["attempt_id"]),
+            "plan_version": int(item["plan_version"]),
+            "provider_call_id": (
+                None if item["provider_call_id"] is None else str(item["provider_call_id"])
+            ),
+            "child_run_id": (None if item["child_run_id"] is None else str(item["child_run_id"])),
+            "failed_call_id": (
+                None if item["failed_call_id"] is None else str(item["failed_call_id"])
+            ),
+            "failed_effect_id": (
+                None if item["failed_effect_id"] is None else str(item["failed_effect_id"])
+            ),
+            "failed_step": str(item["failed_step"]),
+            "error_class": str(item["error_class"]),
+            "error_code": str(item["error_code"]),
+            "error_message": (
+                tool_observations_by_call.get(str(item["provider_call_id"] or ""), {}).get(
+                    "error_message"
+                )
+            ),
+            "source_kind": str(item["source_kind"]),
+            "source_identity": str(item["source_identity"]),
+            "created_at": float(item["created_at"]),
+        }
+        for item in failure_rows
+    ]
