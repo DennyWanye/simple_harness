@@ -123,4 +123,43 @@ describe("ChangeModelModal model filtering", () => {
       ).disabled,
     ).toBe(true);
   });
+
+  it("切换模型后，上下文档位回到新模型的默认值，选过的档位不带过去", () => {
+    useSessionModelsStore.getState().set_catalog(
+      [
+        {
+          id: "model-a",
+          label: "Model A",
+          caps: { thinking: false, fast: false, context: true, effort: false },
+          context_window: 512_000,
+          supported_windows: [128_000, 256_000, 512_000, 1_000_000],
+        },
+        {
+          id: "model-b",
+          label: "Model B",
+          caps: { thinking: false, fast: false, context: true, effort: false },
+          context_window: 128_000,
+          supported_windows: [128_000, 256_000, 1_000_000],
+        },
+      ],
+      "live",
+      "model-a",
+    );
+    render(<ChangeModelModal session_id="session-1" current_model="model-a" onClose={vi.fn()} />);
+    const ctx = () => screen.getByRole("combobox", { name: "上下文窗口" }) as HTMLSelectElement;
+    expect(ctx().value).toBe("512000");
+    fireEvent.change(ctx(), { target: { value: "1000000" } });
+    expect(ctx().value).toBe("1000000");
+
+    fireEvent.change(screen.getByRole("combobox", { name: "模型" }), {
+      target: { value: "model-b" },
+    });
+    expect(ctx().value).toBe("128000");
+
+    // 不改档位直接保存：新模型保持自己的窗口，不发档位变更。
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    expect(controlWS.send).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: "model_context_set" }),
+    );
+  });
 });

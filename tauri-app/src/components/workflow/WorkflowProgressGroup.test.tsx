@@ -685,3 +685,73 @@ describe("WorkflowProgressGroup", () => {
     expect(onWorkflowRetry.mock.calls[1][2]).toBe(firstKey);
   });
 });
+
+describe("换了重试动作，重试状态回到空闲", () => {
+  function v5Summary(controlAction: WorkflowV5ProgressProjection["control_action"]) {
+    return summary({
+      workflow_run_id: "run-v5",
+      workflow_version: "v5",
+      workflow_v5: v5Projection({ control_action: controlAction }),
+      workflow_capability: "deep_research_progress_v5",
+    });
+  }
+
+  it("提交中换了动作：按钮不再显示正在提交，换成新动作且可点", () => {
+    const onAction = vi.fn(() => new Promise<{ run_id: string }>(() => undefined));
+    const view = render(
+      <WorkflowProgressGroup
+        runId="run-v5"
+        summary={v5Summary("generate_now")}
+        stages={[]}
+        onWorkflowRetry={onAction}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "立即用现有证据生成" }));
+    expect((screen.getByRole("button", { name: "正在提交…" }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+
+    view.rerender(
+      <WorkflowProgressGroup
+        runId="run-v5"
+        summary={v5Summary("continue_research")}
+        stages={[]}
+        onWorkflowRetry={onAction}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: "正在提交…" })).toBeNull();
+    const next = screen.getByRole("button", { name: "继续补充调研" }) as HTMLButtonElement;
+    expect(next.disabled).toBe(false);
+    fireEvent.click(next);
+    expect(onAction).toHaveBeenLastCalledWith("run-v5", "continue_research", expect.any(String));
+  });
+
+  it("被拒绝后换了动作：拒绝提示消失", async () => {
+    const onAction = vi.fn(() => Promise.reject({ message: "动作已过期", definitive: true }));
+    const view = render(
+      <WorkflowProgressGroup
+        runId="run-v5"
+        summary={v5Summary("generate_now")}
+        stages={[]}
+        onWorkflowRetry={onAction}
+      />,
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "立即用现有证据生成" }));
+    });
+    expect(screen.getByRole("alert").textContent).toBe("动作已过期");
+
+    view.rerender(
+      <WorkflowProgressGroup
+        runId="run-v5"
+        summary={v5Summary("cancel_settle")}
+        stages={[]}
+        onWorkflowRetry={onAction}
+      />,
+    );
+    expect(screen.queryByText("动作已过期")).toBeNull();
+    expect(
+      (screen.getByRole("button", { name: "停止当前收敛并生成" }) as HTMLButtonElement).disabled,
+    ).toBe(false);
+  });
+});

@@ -1933,3 +1933,108 @@ describe("U09 任务列表与任务详情收到坏消息", () => {
     expect(useMissionsStore.getState().events["mission-1"]).toHaveLength(5);
   });
 });
+
+describe("订阅重建（换了通道）清掉旧订阅上的画面状态", () => {
+  function renderSwitchable() {
+    const channel = new FakeChannel();
+    const view = render(<Workbench channel={channel} />);
+    channel.reply("orchestration_status", AVAILABLE);
+    const switchTo = () => {
+      const next = new FakeChannel();
+      view.rerender(<Workbench channel={next} />);
+      next.reply("orchestration_status", AVAILABLE);
+      return next;
+    };
+    return { channel, switchTo };
+  }
+
+  it("创建中换了通道：创建中提示消失，表单恢复可编辑，并提示创建结果未知", () => {
+    const { channel, switchTo } = renderSwitchable();
+    channel.reply("mission_list", { missions: [] });
+    fireEvent.click(screen.getByRole("button", { name: "新建任务" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "任务目标" }), {
+      target: { value: "写一份 NOTES.md" },
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: "成功条件" }), {
+      target: { value: "file:NOTES.md" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "提交任务" }));
+    expect(channel.all("mission_create")).toHaveLength(1);
+    expect(screen.getByText("正在创建任务…")).toBeTruthy();
+    expect(
+      (screen.getByRole("textbox", { name: "任务目标" }) as HTMLTextAreaElement).disabled,
+    ).toBe(true);
+
+    const next = switchTo();
+    expect(screen.queryByText("正在创建任务…")).toBeNull();
+    expect(
+      (screen.getByRole("textbox", { name: "任务目标" }) as HTMLTextAreaElement).disabled,
+    ).toBe(false);
+    expect(screen.getByText(/连接已变化，创建结果未知/)).toBeTruthy();
+    const submit = screen.getByRole("button", { name: "提交任务" }) as HTMLButtonElement;
+    expect(submit.disabled).toBe(false);
+    fireEvent.click(submit);
+    expect(next.all("mission_create")).toHaveLength(1);
+  });
+
+  it("复核请求在途时换了通道：复核按钮恢复可点", () => {
+    const { channel, switchTo } = renderSwitchable();
+    channel.reply("mission_list", { missions: [MISSION_ROW] });
+    fireEvent.click(screen.getByTestId("mission-row-mission-1"));
+    channel.reply("mission_get", {
+      ...DETAIL,
+      approvals: [
+        { request_id: "review-1", kind: "review", state: "PENDING", summary: "请确认结果" },
+      ],
+    });
+    const pass = within(screen.getByTestId("approval-review-1")).getByRole("button", {
+      name: "复核通过",
+    }) as HTMLButtonElement;
+    fireEvent.click(pass);
+    expect(channel.all("mission_approval_decide")).toHaveLength(1);
+    expect(pass.disabled).toBe(true);
+
+    switchTo();
+    const again = within(screen.getByTestId("approval-review-1")).getByRole("button", {
+      name: "复核通过",
+    }) as HTMLButtonElement;
+    expect(again.disabled).toBe(false);
+  });
+
+  it("已打开的产物预览在换了通道后关掉", () => {
+    const { channel, switchTo } = renderSwitchable();
+    channel.reply("mission_list", { missions: [MISSION_ROW] });
+    fireEvent.click(screen.getByTestId("mission-row-mission-1"));
+    channel.reply("mission_get", {
+      ...DETAIL,
+      artifacts: [
+        {
+          id: "artifact-1",
+          task_id: "task-1",
+          attempt_id: "attempt-1",
+          path: "NOTES.md",
+          content_hash: "0123456789abcdef0123456789abcdef",
+          size_bytes: 2048,
+          verification_status: "VERIFIED",
+        },
+      ],
+    });
+    fireEvent.click(
+      within(screen.getByTestId("artifact-artifact-1")).getByRole("button", { name: "查看产物" }),
+    );
+    channel.reply("mission_artifact_read", {
+      artifact_id: "artifact-1",
+      mission_id: "mission-1",
+      path: "NOTES.md",
+      content_hash: "0123456789abcdef0123456789abcdef",
+      size_bytes: 2048,
+      encoding: "utf-8",
+      content: "- 要点一",
+      truncated: false,
+    });
+    expect(screen.getByRole("region", { name: "产物内容" })).toBeTruthy();
+
+    switchTo();
+    expect(screen.queryByRole("region", { name: "产物内容" })).toBeNull();
+  });
+});

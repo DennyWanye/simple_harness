@@ -78,4 +78,55 @@ describe("PlanningQuestions", () => {
     const sent = (send.mock.calls[0] as unknown[])[0] as { payload: Record<string, unknown> };
     expect(sent.payload).toMatchObject({ answer: "b", attach_as_source: false });
   });
+
+  it("换了通道就解除处理中：提交按钮恢复可点，回答框可编辑", () => {
+    const first = channel();
+    const onAnswered = () => {};
+    const view = render(
+      <PlanningQuestions
+        questions={[textQuestion]}
+        channel={first.channel}
+        onAnswered={onAnswered}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("规划问题回答"), { target: { value: "给出数据" } });
+    fireEvent.click(screen.getByText("提交回答"));
+    expect((screen.getByRole("button", { name: "正在提交…" }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    expect((screen.getByLabelText("规划问题回答") as HTMLTextAreaElement).disabled).toBe(true);
+
+    // 旧通道上的请求不会再有回执。换一个通道对象重渲染。
+    const second = channel();
+    view.rerender(
+      <PlanningQuestions
+        questions={[textQuestion]}
+        channel={second.channel}
+        onAnswered={onAnswered}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: "正在提交…" })).toBeNull();
+    const submit = screen.getByRole("button", { name: "提交回答" }) as HTMLButtonElement;
+    expect(submit.disabled).toBe(false);
+    expect((screen.getByLabelText("规划问题回答") as HTMLTextAreaElement).disabled).toBe(false);
+    fireEvent.click(submit);
+    expect(second.send).toHaveBeenCalledTimes(1);
+  });
+
+  it("换了回答回调（订阅重建）也解除处理中", () => {
+    const { channel: ch } = channel();
+    const view = render(
+      <PlanningQuestions questions={[textQuestion]} channel={ch} onAnswered={() => {}} />,
+    );
+    fireEvent.change(screen.getByLabelText("规划问题回答"), { target: { value: "给出数据" } });
+    fireEvent.click(screen.getByText("提交回答"));
+    expect(screen.getByRole("button", { name: "正在提交…" })).toBeTruthy();
+
+    view.rerender(
+      <PlanningQuestions questions={[textQuestion]} channel={ch} onAnswered={() => {}} />,
+    );
+    expect((screen.getByRole("button", { name: "提交回答" }) as HTMLButtonElement).disabled).toBe(
+      false,
+    );
+  });
 });

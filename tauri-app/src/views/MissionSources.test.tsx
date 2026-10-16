@@ -137,6 +137,41 @@ describe("mission reference material", () => {
     channel.changeState("disconnected" as ConnectionState);
     expect(screen.getByRole("alert").textContent).toContain("结果未知");
   });
+
+  it("换了任务就清空资料操作的草稿：操作面板关掉，理由与原版本不带到新任务", () => {
+    const { channel, onChanged, rerender } = setup();
+    fireEvent.click(screen.getByRole("button", { name: "撤销 sources/a.md" }));
+    fireEvent.change(screen.getByLabelText("撤销理由"), { target: { value: "outdated" } });
+    expect(screen.getByText(/原版本 old-version-/)).toBeTruthy();
+
+    rerender(
+      <MissionSources missionId="m2" sources={[]} channel={channel} onChanged={onChanged} />,
+    );
+    expect(screen.queryByLabelText("撤销理由")).toBeNull();
+    expect(screen.queryByText(/原版本/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "提交" })).toBeNull();
+
+    // 新任务里打开登记，草稿是空的。
+    fireEvent.click(screen.getByRole("button", { name: "登记新资料" }));
+    expect((screen.getByLabelText("来源路径 1") as HTMLInputElement).value).toBe("sources/");
+    expect((screen.getByLabelText("来源正文 1") as HTMLTextAreaElement).value).toBe("");
+  });
+
+  it("换了任务就清掉上一个任务的资料错误提示", () => {
+    const { channel, onChanged, rerender } = setup();
+    fireEvent.click(screen.getByRole("button", { name: "登记新资料" }));
+    fireEvent.change(screen.getByLabelText("来源路径 1"), { target: { value: "sources/new.md" } });
+    fireEvent.change(screen.getByLabelText("来源正文 1"), { target: { value: "x" } });
+    fireEvent.click(screen.getByRole("button", { name: "提交" }));
+    channel.reply(channel.last("mission_source_register"), {}, false, "conflict");
+    expect(screen.getByRole("alert").textContent).toContain("conflict");
+
+    rerender(
+      <MissionSources missionId="m2" sources={[]} channel={channel} onChanged={onChanged} />,
+    );
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByLabelText("来源正文 1")).toBeNull();
+  });
 });
 
 describe("source import oracle", () => {

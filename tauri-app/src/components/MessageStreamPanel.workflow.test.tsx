@@ -1136,4 +1136,55 @@ describe("PublicProgressRow", () => {
 
     expect(screen.queryByTestId("project-directory-card")).toBeNull();
   });
+
+  it("提交后出错就解除已提交：显示错误，确认按钮回来，可以再提交", () => {
+    const onConfirm = vi.fn(() => true);
+    const request = {
+      session_id: "default",
+      run_id: "root-project",
+      request_id: "decision-project",
+      decision_id: "decision-project",
+      nonce: "nonce-project",
+      version: 0,
+      title: "选择项目保存位置",
+      required_action: "确认现有目录",
+      wait_kind: "user_content" as const,
+      wait_ref: "external-wait:project",
+      project_name: "Harness Demo",
+      folder_name: "harness-demo",
+      project_kind: "Web app",
+      directory_mode: "use_existing" as const,
+      parent_directory: "/Users/denny/projects/harness-demo",
+      received_at: 1000,
+    };
+    const panel = (error: string | null) => (
+      <MessageStreamPanel
+        embedded
+        filter="all"
+        chatMessages={[]}
+        warnings={[]}
+        errors={[]}
+        onSetFilter={() => undefined}
+        onDismiss={() => undefined}
+        onDismissAll={() => undefined}
+        onJumpToSession={() => undefined}
+        onChoice={() => undefined}
+        projectDirectoryRequest={request}
+        projectDirectoryError={error}
+        onProjectDirectoryConfirm={onConfirm}
+      />
+    );
+    const view = render(panel(null));
+    fireEvent.click(screen.getByRole("button", { name: "使用此文件夹" }));
+    expect(onConfirm).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("项目位置已确认")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "使用此文件夹" })).toBeNull();
+
+    view.rerender(panel("目录不可写"));
+    expect(screen.getByRole("alert").textContent).toBe("目录不可写");
+    expect(screen.queryByText("项目位置已确认")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "使用此文件夹" }));
+    expect(onConfirm).toHaveBeenCalledTimes(2);
+    expect(screen.getByText("项目位置已确认")).toBeTruthy();
+  });
 });

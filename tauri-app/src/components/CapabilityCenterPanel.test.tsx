@@ -300,6 +300,81 @@ describe("CapabilityCenterPanel", () => {
   });
 });
 
+describe("CapabilityCenterPanel 选中项跟着可见列表走", () => {
+  it("首次渲染就选中可见列表第一项，详情显示它", () => {
+    render(
+      <CapabilityCenterPanel
+        open
+        channel={new FakeCapabilityChannel()}
+        onClose={vi.fn()}
+        onOpenLegacySkillStore={vi.fn()}
+        initialCapabilities={capabilities}
+      />,
+    );
+    expect(screen.getByRole("button", { name: /Godot/ }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: /Blender/ }).getAttribute("aria-pressed")).toBe(
+      "false",
+    );
+    expect(screen.getByTestId("capability-detail").textContent).toContain("Godot");
+  });
+
+  it("新快照让选中项不再符合筛选条件：详情改指向可见列表第一项", () => {
+    const channel = new FakeCapabilityChannel();
+    render(
+      <CapabilityCenterPanel
+        open
+        channel={channel}
+        onClose={vi.fn()}
+        onOpenLegacySkillStore={vi.fn()}
+        initialCapabilities={capabilities}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("能力类别"), { target: { value: "tool" } });
+    fireEvent.click(screen.getByRole("button", { name: /Blender/ }));
+    expect(screen.getByTestId("capability-detail").textContent).toContain("缺少可执行文件");
+
+    // Blender 还在快照里，但类别变了，被"工具"筛选隐藏。
+    act(() =>
+      channel.emit({
+        type: "capability_list_response",
+        payload: {
+          capabilities: [capabilities[0], { ...capabilities[1], categories: ["instruction"] }],
+        },
+      }),
+    );
+    expect(screen.queryByRole("button", { name: /Blender/ })).toBeNull();
+    expect(screen.getByRole("button", { name: /Godot/ }).getAttribute("aria-pressed")).toBe("true");
+    const detail = screen.getByTestId("capability-detail").textContent;
+    expect(detail).toContain("Godot");
+    expect(detail).not.toContain("缺少可执行文件");
+  });
+
+  it("新快照让可见列表变空：详情显示选择提示", () => {
+    const channel = new FakeCapabilityChannel();
+    render(
+      <CapabilityCenterPanel
+        open
+        channel={channel}
+        onClose={vi.fn()}
+        onOpenLegacySkillStore={vi.fn()}
+        initialCapabilities={capabilities}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("能力类别"), { target: { value: "pack" } });
+    expect(screen.getByTestId("capability-detail").textContent).toContain("Godot");
+
+    act(() =>
+      channel.emit({
+        type: "capability_list_response",
+        payload: { capabilities: [{ ...capabilities[0], categories: ["tool"] }, capabilities[1]] },
+      }),
+    );
+    expect(screen.getByText("没有符合筛选条件的能力。")).toBeTruthy();
+    expect(screen.queryByTestId("capability-detail")).toBeNull();
+    expect(screen.getByText("选择一项能力查看详情。")).toBeTruthy();
+  });
+});
+
 describe("Capability Center wire builders", () => {
   it("maps lifecycle actions to explicit backend messages", () => {
     expect(buildCapabilityMutationMessage("install", "godot")).toEqual({

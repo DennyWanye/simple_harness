@@ -251,6 +251,29 @@ describe("OperationWorkspace", () => {
     expect(changed).toHaveBeenCalledOnce();
     expect((confirm.closest("fieldset") as HTMLFieldSetElement).disabled).toBe(false);
   });
+
+  it("换了通道就解除处理中：按钮恢复可点，再点从新通道发出", () => {
+    const oldChannel = new Channel();
+    const view = render(
+      <OperationWorkspace value={confirmation()} channel={oldChannel} onChanged={vi.fn()} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "确认上述完成要求" }));
+    const pendingButton = screen.getByRole("button", { name: "正在确认…" });
+    expect((pendingButton.closest("fieldset") as HTMLFieldSetElement).disabled).toBe(true);
+
+    // 旧通道上的请求不会再有回执。换一个通道对象重渲染。
+    const newChannel = new Channel();
+    view.rerender(
+      <OperationWorkspace value={confirmation()} channel={newChannel} onChanged={vi.fn()} />,
+    );
+    expect(screen.queryByRole("button", { name: "正在确认…" })).toBeNull();
+    const confirm = screen.getByRole("button", { name: "确认上述完成要求" });
+    expect((confirm.closest("fieldset") as HTMLFieldSetElement).disabled).toBe(false);
+    fireEvent.click(confirm);
+    expect(
+      newChannel.sent.filter((message) => message.type === "mission_operation_completion_approve"),
+    ).toHaveLength(1);
+  });
 });
 
 describe("默认预填（2026-09-29 真机：对话卡片里确认要点十几下）", () => {

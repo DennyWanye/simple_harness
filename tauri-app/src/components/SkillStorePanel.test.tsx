@@ -140,3 +140,104 @@ describe("SkillStorePanel managed global install", () => {
     expect(screen.queryByText(/确认安装/)).toBeNull();
   });
 });
+
+describe("SkillStorePanel 切换页签", () => {
+  it("切到市场：清掉旧提示、显示加载中、发市场列表请求", () => {
+    const channel = new FakeChannel();
+    render(<SkillStorePanel open variant="page" channel={channel} />);
+    expect(channel.sent.at(-1)).toEqual({ type: "skill_list_installed" });
+    act(() =>
+      channel.emit({
+        type: "skill_list_installed_response",
+        payload: { skills: [], error: "已安装列表读取失败" },
+      }),
+    );
+    expect(screen.getByRole("status").textContent).toContain("已安装列表读取失败");
+    expect(screen.queryByText("加载中…")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "市场" }));
+    expect(screen.queryByText("已安装列表读取失败")).toBeNull();
+    expect(screen.getByText("加载中…")).toBeTruthy();
+    expect(channel.sent.at(-1)).toEqual({ type: "skill_marketplace_list" });
+
+    act(() => channel.emit({ type: "skill_marketplace_list_response", payload: { skills: [] } }));
+    expect(screen.queryByText("加载中…")).toBeNull();
+    expect(screen.getByText("暂无可用技能")).toBeTruthy();
+  });
+
+  it("切回已安装：清掉旧提示、显示加载中、发已安装列表请求", () => {
+    const channel = new FakeChannel();
+    render(<SkillStorePanel open variant="page" channel={channel} />);
+    fireEvent.click(screen.getByRole("button", { name: "市场" }));
+    act(() =>
+      channel.emit({
+        type: "skill_marketplace_list_response",
+        payload: { skills: [], error: "HTTP 404" },
+      }),
+    );
+    expect(screen.getByRole("status").textContent).toContain("官方注册表暂未发布。");
+
+    fireEvent.click(screen.getByRole("button", { name: "已安装" }));
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(screen.getByText("加载中…")).toBeTruthy();
+    expect(channel.sent.at(-1)).toEqual({ type: "skill_list_installed" });
+  });
+
+  it("切到通过 URL 安装：清掉旧提示，不发列表请求，也不显示加载中", () => {
+    const channel = new FakeChannel();
+    render(<SkillStorePanel open variant="page" channel={channel} />);
+    fireEvent.click(screen.getByRole("button", { name: "市场" }));
+    act(() =>
+      channel.emit({
+        type: "skill_marketplace_list_response",
+        payload: { skills: [], error: "网络错误" },
+      }),
+    );
+    expect(screen.getByText(/注册表加载失败/)).toBeTruthy();
+    const sentBefore = channel.sent.length;
+
+    fireEvent.click(screen.getByRole("button", { name: "通过 URL 安装" }));
+    expect(screen.queryByText(/注册表加载失败/)).toBeNull();
+    expect(channel.sent).toHaveLength(sentBefore);
+    expect(screen.queryByText("加载中…")).toBeNull();
+    const input = screen.getByPlaceholderText(
+      "github:anthropics/skills/tree/main/skills/algorithmic-art",
+    );
+    fireEvent.change(input, { target: { value: "https://github.com/o/r" } });
+    expect((screen.getByRole("button", { name: "安装" }) as HTMLButtonElement).disabled).toBe(
+      false,
+    );
+  });
+});
+
+describe("SkillStorePanel 加载中未回列表时切走", () => {
+  it("市场列表还没回来就切到通过 URL 安装：安装按钮可用", () => {
+    const channel = new FakeChannel();
+    render(<SkillStorePanel open variant="page" channel={channel} />);
+    fireEvent.click(screen.getByRole("button", { name: "市场" }));
+    expect(screen.getByText("加载中…")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "通过 URL 安装" }));
+    fireEvent.change(
+      screen.getByPlaceholderText("github:anthropics/skills/tree/main/skills/algorithmic-art"),
+      { target: { value: "https://github.com/o/r" } },
+    );
+    expect((screen.getByRole("button", { name: "安装" }) as HTMLButtonElement).disabled).toBe(
+      false,
+    );
+  });
+});
+
+describe("SkillStorePanel 首次打开", () => {
+  it("首次打开就在已安装页签显示加载中，并发已安装列表请求", () => {
+    const channel = new FakeChannel();
+    render(<SkillStorePanel open variant="page" channel={channel} />);
+    expect(screen.getByText("加载中…")).toBeTruthy();
+    expect(screen.queryByText("暂无已安装技能")).toBeNull();
+    expect(channel.sent).toEqual([{ type: "skill_list_installed" }]);
+
+    act(() => channel.emit({ type: "skill_list_installed_response", payload: { skills: [] } }));
+    expect(screen.queryByText("加载中…")).toBeNull();
+    expect(screen.getByText("暂无已安装技能")).toBeTruthy();
+  });
+});
