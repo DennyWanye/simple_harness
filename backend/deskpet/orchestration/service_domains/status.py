@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from collections.abc import Mapping
 from typing import Any
@@ -29,7 +30,11 @@ from ..runtime_profile import (
     source_runtime_options,
 )
 from .core import OrchestrationServiceCore
-from .support import QUARANTINE_REASON, TERMINAL, WORKSPACE_TOOLS, OrchestrationRequestError, logger
+from .support import QUARANTINE_REASON, TERMINAL, WORKSPACE_TOOLS, OrchestrationRequestError
+
+# 与原模块同名的记录器（getLogger 按名字返回同一个对象）；就地定义，ruff 才认得出
+# 捕获异常后写日志的写法
+logger = logging.getLogger("deskpet.orchestration.service")
 
 #: 第 2～4 批补齐评估处置（H01）：SDK 重启恢复协议降级时，服务不当"可用"——不派发、不收新任务与改要求，
 #: 只开读取与诊断；失败的那一步写在 ``status().recovery`` 里，界面照实显示。

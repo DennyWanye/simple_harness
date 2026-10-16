@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import secrets
 from collections.abc import Awaitable, Callable, Mapping
@@ -31,7 +32,11 @@ from ..provider import NO_MODEL, ProviderSnapshot, ProviderUnavailable
 from ..runtime_profile import ONLY_DEEPSEEK_REASON, source_runtime_options
 from ..settings import OrchestrationSettings
 from ..storage_usage import StorageUsage
-from .support import QUARANTINE_REASON, WORKSPACE_TOOLS, OrchestrationRequestError, logger
+from .support import QUARANTINE_REASON, WORKSPACE_TOOLS, OrchestrationRequestError
+
+# 与原模块同名的记录器（getLogger 按名字返回同一个对象）；就地定义，ruff 才认得出
+# 捕获异常后写日志的写法
+logger = logging.getLogger("deskpet.orchestration.service")
 
 TENANT = "local-desktop"
 KNOWLEDGE_TOOLS = ("knowledge_list", "knowledge_read")

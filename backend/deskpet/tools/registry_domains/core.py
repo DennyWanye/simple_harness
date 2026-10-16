@@ -1,11 +1,12 @@
 # SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: BUSL-1.1
 
-"""Construction, providers and shared settings; schema and inventory methods aliased in the class body."""
+"""Construction, providers, shared settings, and the aliased schema and inventory methods."""
 
 from __future__ import annotations
 
 import asyncio
+import logging
 import threading
 from collections.abc import Callable, Iterable, Sequence
 from typing import TYPE_CHECKING, Any
@@ -13,11 +14,15 @@ from typing import TYPE_CHECKING, Any
 from deskpet.workflows.effects import NormalizedToolOutcome, PreparedToolCall
 
 from ..capabilities import ToolCapabilityScopeStore, ToolExecutionContext, ToolPolicySnapshot
-from .support import _WRITE_PERMISSION_CATEGORIES, ToolSpec, logger
+from .support import _WRITE_PERMISSION_CATEGORIES, ToolSpec
+
+# 与原模块同名的记录器（getLogger 按名字返回同一个对象）；就地定义，ruff 才认得出
+# 捕获异常后写日志的写法
+logger = logging.getLogger("deskpet.tools.registry")
 
 
 class ToolRegistryCore:
-    """Construction, providers and shared settings; schema and inventory methods aliased in the class body."""
+    """Construction, providers, shared settings, and the aliased schema and inventory methods."""
 
     if TYPE_CHECKING:
 

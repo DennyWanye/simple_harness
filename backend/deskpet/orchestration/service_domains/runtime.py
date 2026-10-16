@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import sys
 from collections.abc import Mapping
 from pathlib import Path
@@ -37,7 +38,11 @@ from ..skill_catalogue import (
 )
 from ..skill_catalogue import request as skill_request
 from .core import OrchestrationServiceCore
-from .support import TERMINAL, OrchestrationRequestError, logger
+from .support import TERMINAL, OrchestrationRequestError
+
+# 与原模块同名的记录器（getLogger 按名字返回同一个对象）；就地定义，ruff 才认得出
+# 捕获异常后写日志的写法
+logger = logging.getLogger("deskpet.orchestration.service")
 
 
 def backoff_delay(failures: int, maximum: float) -> float:

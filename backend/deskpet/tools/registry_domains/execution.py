@@ -10,6 +10,7 @@ import contextvars
 import copy
 import inspect as _inspect
 import json
+import logging
 import os
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
@@ -50,9 +51,12 @@ from .support import (
     ToolSpec,
     _result_payload,
     _schema_hash,
-    logger,
     tool_spec_fingerprint,
 )
+
+# 与原模块同名的记录器（getLogger 按名字返回同一个对象）；就地定义，ruff 才认得出
+# 捕获异常后写日志的写法
+logger = logging.getLogger("deskpet.tools.registry")
 
 _PREPARED_FILE_TARGET_TOOLS: frozenset[str] = frozenset(
     {
