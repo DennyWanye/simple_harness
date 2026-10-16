@@ -25,13 +25,13 @@ import json
 from typing import Any
 
 import pytest
+from deskpet.sdk_adapters.capability_bridge import SdkRuntimeCapabilityBridgeAdapter
 from deskpet.sdk_adapters.context_authority import canonical_sha256
 from deskpet.sdk_adapters.run_route_state import RunRouteStateMemo
 from deskpet.sdk_adapters.tool_authority import (
     PROJECT_EFFECT_ROUTE_REASON,
     SDK_DIRECT_TOOL_KERNEL,
     SDK_EXPLICIT_DEFERRED_DISCLOSURE_POLICY,
-    SdkRuntimeCapabilityBridgeAdapter,
     SdkRunToolAuthorityRegistry,
 )
 from deskpet.sdk_adapters.tools import (

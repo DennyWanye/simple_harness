@@ -6,11 +6,9 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
+from deskpet.sdk_adapters.capability_bridge import SdkRuntimeCapabilityBridgeAdapter
 from deskpet.sdk_adapters.context_authority import canonical_sha256
-from deskpet.sdk_adapters.tool_authority import (
-    SdkRuntimeCapabilityBridgeAdapter,
-    SdkRunToolAuthorityRegistry,
-)
+from deskpet.sdk_adapters.tool_authority import SdkRunToolAuthorityRegistry
 from deskpet.sdk_adapters.tools import (
     ProductToolInventoryEntry,
     ProductToolsAdapter,

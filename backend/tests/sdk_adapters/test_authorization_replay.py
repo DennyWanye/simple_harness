@@ -22,10 +22,8 @@ from deskpet.product_state.authorization_saga import (
 from deskpet.product_state.database import ProductStateDatabase
 from deskpet.product_state.task_grants import DurableTaskGrantAuthority
 from deskpet.sdk_adapters.authorization import ProductAuthorizationAdapter
-from deskpet.sdk_adapters.tool_authority import (
-    SdkPreparedAuthorizationPolicy,
-    SdkRunToolAuthorityRegistry,
-)
+from deskpet.sdk_adapters.prepared_authorization import SdkPreparedAuthorizationPolicy
+from deskpet.sdk_adapters.tool_authority import SdkRunToolAuthorityRegistry
 from simple_harness import CallId, EffectId, RunId
 from simple_harness.tools import AuthorizationDecision, PreparedToolEffect, ToolCall, ToolSpec
 from test_tool_authority import _AuthorizationStore, _prepare

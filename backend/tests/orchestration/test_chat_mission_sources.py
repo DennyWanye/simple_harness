@@ -18,7 +18,8 @@ from deskpet.orchestration.chat_tool import (
     update_mission_source,
 )
 from deskpet.orchestration.service import OrchestrationRequestError
-from deskpet.sdk_adapters.tool_authority import SDK_DIRECT_TOOL_KERNEL, describe_call_zh
+from deskpet.sdk_adapters.prepared_authorization import describe_call_zh
+from deskpet.sdk_adapters.tool_authority import SDK_DIRECT_TOOL_KERNEL
 from deskpet.sdk_adapters.tools import HOST_COMPOSED_TOOL_NAMES, PRODUCT_TOOL_NAMES
 
 OLD, NEW = "a" * 64, "b" * 64

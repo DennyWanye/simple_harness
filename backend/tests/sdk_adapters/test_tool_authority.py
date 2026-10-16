@@ -15,13 +15,15 @@ from deskpet.product_state.authorization_saga import AuthorizationSagaRepository
 from deskpet.product_state.database import ProductStateDatabase
 from deskpet.product_state.task_grants import DurableTaskGrantAuthority
 from deskpet.sdk_adapters.authorization import ProductAuthorizationAdapter
+from deskpet.sdk_adapters.capability_bridge import (
+    SdkCapabilityBridgeAdapter,
+    SdkRuntimeCapabilityBridgeAdapter,
+)
+from deskpet.sdk_adapters.prepared_authorization import SdkPreparedAuthorizationPolicy
 from deskpet.sdk_adapters.tool_authority import (
     SDK_DIRECT_TOOL_KERNEL,
     SDK_EXPLICIT_DEFERRED_DISCLOSURE_POLICY,
     SDK_FULL_CATALOG_DISCLOSURE_POLICY,
-    SdkCapabilityBridgeAdapter,
-    SdkPreparedAuthorizationPolicy,
-    SdkRuntimeCapabilityBridgeAdapter,
     SdkRunToolAuthorityRegistry,
     SdkToolAuthorityMigrationUnavailable,
     _v2_record_hashes,
@@ -1635,7 +1637,7 @@ def test_primary_tool_authority_rejects_project_effect_inventory():
 
 def test_popup_text_says_in_chinese_what_is_being_allowed() -> None:
     # 2026-09-25 UI 全量点击：弹窗以前是 "Allow context_route for this exact request?"。
-    from deskpet.sdk_adapters.tool_authority import describe_call_zh
+    from deskpet.sdk_adapters.prepared_authorization import describe_call_zh
 
     assert describe_call_zh("context_route", {"route": "create_new", "title": "周报"}) == (
         "新建任务「周报」，并在工作区里为它新建一个任务目录"

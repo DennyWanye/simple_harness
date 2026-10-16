@@ -55,6 +55,7 @@ from deskpet.product_state.authorization_saga import AuthorizationSagaRepository
 from deskpet.product_state.database import ProductStateDatabase
 from deskpet.product_state.task_grants import DurableTaskGrantAuthority
 from deskpet.sdk_adapters.authorization import ProductAuthorizationAdapter
+from deskpet.sdk_adapters.capability_bridge import SdkRuntimeCapabilityBridgeAdapter
 from deskpet.sdk_adapters.capability_catalog import ProductCapabilityCatalogSourceAdapter
 from deskpet.sdk_adapters.composition import (
     OwnedResourceCloser,
@@ -86,6 +87,7 @@ from deskpet.sdk_adapters.delegation import (
 from deskpet.sdk_adapters.desktop_runtime import _DeliverySink
 from deskpet.sdk_adapters.effect_gate import EffectGate, project_tool_execution_context
 from deskpet.sdk_adapters.null_memory_port import NoMemoryAgentPort
+from deskpet.sdk_adapters.prepared_authorization import SdkPreparedAuthorizationPolicy
 from deskpet.sdk_adapters.provider import ProductProviderInvocationCoordinator
 from deskpet.sdk_adapters.provider_projection_pump import (
     ProviderProjectionContextV1,
@@ -117,8 +119,6 @@ from deskpet.sdk_adapters.task_scope_mutation import (
     read_current_turn_evidence_ref as _read_current_turn_evidence_ref,
 )
 from deskpet.sdk_adapters.tool_authority import (
-    SdkPreparedAuthorizationPolicy,
-    SdkRuntimeCapabilityBridgeAdapter,
     SdkRunToolAuthorityRegistry,
     SdkToolAuthorityMigrationUnavailable,
 )

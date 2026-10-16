@@ -21,7 +21,7 @@ from deskpet.product_state.authorization_saga import (
     auto_skill_approval_receipt,
 )
 from deskpet.sdk_adapters.authorization import AuthorizationTerminalEvidence
-from deskpet.sdk_adapters.tool_authority import (
+from deskpet.sdk_adapters.prepared_authorization import (
     SkillInstallPreflightReady,
     SkillInstallPreflightRejected,
 )

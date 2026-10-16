@@ -18,7 +18,7 @@ from deskpet.product_state.authorization_saga import AuthorizationSagaRepository
 from deskpet.product_state.database import ProductStateDatabase
 from deskpet.product_state.task_grants import DurableTaskGrantAuthority
 from deskpet.sdk_adapters.authorization import ProductAuthorizationAdapter
-from deskpet.sdk_adapters.tool_authority import SdkPreparedAuthorizationPolicy
+from deskpet.sdk_adapters.prepared_authorization import SdkPreparedAuthorizationPolicy
 from host import harness_runs, sdk_registry
 from host.state import host_state
 from tests.companion.test_window_control_credentials import _ingress

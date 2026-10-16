@@ -28,15 +28,17 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from deskpet.sdk_adapters.capability_bridge import (
+    RunAvailabilityFacts,
+    SdkRuntimeCapabilityBridgeAdapter,
+    unavailable_capability_next_action,
+)
 from deskpet.sdk_adapters.context_authority import canonical_sha256
 from deskpet.sdk_adapters.tool_authority import (
     SDK_DIRECT_TOOL_KERNEL,
     SDK_EXPLICIT_DEFERRED_DISCLOSURE_POLICY,
     SDK_FULL_CATALOG_DISCLOSURE_POLICY,
-    RunAvailabilityFacts,
-    SdkRuntimeCapabilityBridgeAdapter,
     SdkRunToolAuthorityRegistry,
-    unavailable_capability_next_action,
 )
 from deskpet.sdk_adapters.tools import (
     ProductToolInventoryEntry,

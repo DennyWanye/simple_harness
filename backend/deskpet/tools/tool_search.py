@@ -113,9 +113,7 @@ def _activation_rejection(
     )
     if code == "tool_unavailable":
         # 按需导入：导入隔离
-        from deskpet.sdk_adapters.tool_authority import (
-            unavailable_capability_next_action,
-        )
+        from deskpet.sdk_adapters.capability_bridge import unavailable_capability_next_action
 
         # HM-TO-A6 incident Z: a static next step told the model to activate the
         # capability that had just been refused.  The bridge knows this Run's

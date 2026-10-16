@@ -1244,10 +1244,10 @@ def dynamic_tools(
     page_in_store=None,
     context_route_ledger_factory=None,
 ):
+    from deskpet.sdk_adapters.capability_bridge import SdkRuntimeCapabilityBridgeAdapter
     from deskpet.sdk_adapters.context_route import ContextRouteToolService
     from deskpet.sdk_adapters.effect_gate import project_tool_execution_context
     from deskpet.sdk_adapters.task_scope_mutation import TaskScopeUpdateService
-    from deskpet.sdk_adapters.tool_authority import SdkRuntimeCapabilityBridgeAdapter
     from deskpet.sdk_adapters.tools import ProductToolsAdapter, active_product_tool_context
     from deskpet.task_scope.workspace_bindings import WorkspaceBindingAuthorityStore
     from deskpet.tools.os_tools.write_file import write_file
