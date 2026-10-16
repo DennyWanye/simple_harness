@@ -24,6 +24,7 @@ from typing import Any
 from deskpet.agent.context_budget import RequestBudget
 from deskpet.agent.tokens import count_messages_tokens
 from llm import model_info
+from llm.context_attempt_hooks import ContextAttemptHooks, install_context_attempt_hooks
 from llm.context_messages import (
     ProviderAttemptOptions,
     context_attempt_scope,
@@ -415,8 +416,22 @@ _ATTEMPT_STORE: ContextAttemptStore | None = None
 
 
 def set_context_attempt_store(store: ContextAttemptStore | None) -> None:
+    """设置尝试记录库，并把本模块的实现注册给下层挂钩（模型注册表、路由、提供方经挂钩调用）。
+
+    清空时撤销注册：没有记录库时下层直接放行，与本模块各函数的语义一致。
+    """
     global _ATTEMPT_STORE
     _ATTEMPT_STORE = store
+    install_context_attempt_hooks(
+        None
+        if store is None
+        else ContextAttemptHooks(
+            call=auto_context_attempt_call,
+            iterate=auto_context_attempt_iter,
+            mark_sent=mark_current_attempt_sent,
+            mark_transport_retry=mark_current_attempt_transport_retry,
+        )
+    )
 
 
 def get_context_attempt_store() -> ContextAttemptStore | None:

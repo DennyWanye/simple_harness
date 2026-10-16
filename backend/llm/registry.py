@@ -26,12 +26,12 @@ import asyncio
 import logging
 from typing import Any
 
-from agent.context_report import auto_context_attempt_call
 from providers.dispatch_handoff import current_dispatch_handoff
 
 from llm.anthropic_adapter import AnthropicAdapter
 from llm.base import BaseLLMAdapter
 from llm.budget import DailyBudget
+from llm.context_attempt_hooks import auto_context_attempt_call
 from llm.errors import (
     LLMAuthError,
     LLMBudgetExceededError,

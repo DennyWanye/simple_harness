@@ -19,7 +19,7 @@ import time
 from collections.abc import AsyncIterator
 
 import structlog
-from agent.context_report import auto_context_attempt_iter
+from llm.context_attempt_hooks import auto_context_attempt_iter
 from observability.metrics import llm_ttft_seconds
 from providers.base import LLMProvider
 

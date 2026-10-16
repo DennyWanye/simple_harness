@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 
-from agent.context_report import (
+from llm.context_attempt_hooks import (
     auto_context_attempt_call,
     auto_context_attempt_iter,
     mark_current_attempt_sent,

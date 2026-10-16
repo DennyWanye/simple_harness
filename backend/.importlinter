@@ -29,9 +29,5 @@ layers =
     deskpet : agent
     llm : providers : memory : tools
     observability
-# 上下文报告不是叶子模块（依赖 deskpet 的预算与计数），向上引用登记为例外：4 行例外，交 8.7 解开（阶段6-偏差单-分层例外.md）。
-ignore_imports =
-    llm.registry -> agent.context_report
-    router.hybrid_router -> agent.context_report
-    providers.openai_compatible_domains.chat -> agent.context_report
-    providers.openai_compatible_domains.streaming -> agent.context_report
+# 阶段 8.7：上下文尝试改为依赖倒置（下层经 llm.context_attempt_hooks 调用，agent.context_report 设置记录库时注册），
+# 原 4 行例外清空，不许再加。

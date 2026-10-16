@@ -31,13 +31,8 @@ LAYERS = [
 ]
 LEVEL = {name: i for i, group in enumerate(LAYERS) for name in group}
 SINGLE = {"main", "p4_ipc", "provider_test_connection", "config", "context", "paths"}
-# 分层契约的登记例外（上下文报告的三处向上引用，阶段 6 拆分时解开）；只许减少
-ALLOWED_EXCEPTIONS = {
-    "llm.registry -> agent.context_report",
-    "router.hybrid_router -> agent.context_report",
-    "providers.openai_compatible_domains.chat -> agent.context_report",
-    "providers.openai_compatible_domains.streaming -> agent.context_report",
-}
+# 分层契约的登记例外：阶段 8.7 依赖倒置后清空（上下文尝试经 llm.context_attempt_hooks 注册）；不许再加
+ALLOWED_EXCEPTIONS: set[str] = set()
 SKIP = {"tests", "scripts", ".venv", "vendor", "__pycache__", "build", "dist", "dist-1", "userdata"}
 
 
