@@ -8,7 +8,7 @@ from deskpet.permissions.policy import (
     AuthorizationPolicyState,
     DecisionContext,
 )
-from deskpet.permissions.task_grants import (
+from deskpet.types.task_grants import (
     ExactGrantRequest,
     ResourceSelector,
     TaskGrant,

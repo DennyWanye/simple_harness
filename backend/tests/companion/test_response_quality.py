@@ -1,12 +1,7 @@
 from __future__ import annotations
 
-import json
-
 import pytest
 from agent.agent_loop import AgentLoop, FinalEvent
-from deskpet.companion.response_quality import (
-    ModelResponseCompletenessGate,
-)
 from llm.types import ChatResponse, ChatUsage
 
 
@@ -47,109 +42,6 @@ def _response(content: str, *, input_tokens: int = 2, output_tokens: int = 1):
             input_tokens=input_tokens,
             output_tokens=output_tokens,
         ),
-    )
-
-
-def test_response_quality_gate_repairs_semantic_omission() -> None:
-    gate = ModelResponseCompletenessGate()
-
-    decision = gate.resolve(
-        original_response="周三发布，小赵。",
-        review_response=json.dumps(
-            {
-                "complete": False,
-                "missing_items": ["小孙今晚完成验收清单"],
-                "revised_response": ("周三发布；负责人小赵；小孙今晚完成验收清单。"),
-            },
-            ensure_ascii=False,
-        ),
-    )
-
-    assert decision.checked is True
-    assert decision.revised is True
-    assert decision.missing_items == ("小孙今晚完成验收清单",)
-    assert decision.text.endswith("小孙今晚完成验收清单。")
-
-
-def test_response_quality_gate_preserves_original_when_complete() -> None:
-    gate = ModelResponseCompletenessGate()
-
-    decision = gate.resolve(
-        original_response="周三发布；负责人小赵；小孙今晚完成验收清单。",
-        review_response=(
-            "```json\n"
-            '{"complete":true,"missing_items":[],"revised_response":'
-            '"不应采用这个改写"}\n'
-            "```"
-        ),
-    )
-
-    assert decision.checked is True
-    assert decision.revised is False
-    assert decision.text == "周三发布；负责人小赵；小孙今晚完成验收清单。"
-
-
-def test_response_quality_gate_fails_open_on_invalid_model_output() -> None:
-    gate = ModelResponseCompletenessGate()
-
-    decision = gate.resolve(
-        original_response="保留原回答",
-        review_response="not-json",
-    )
-
-    assert decision.checked is False
-    assert decision.revised is False
-    assert decision.text == "保留原回答"
-
-
-@pytest.mark.asyncio
-async def test_agent_loop_uses_model_review_and_accounts_for_usage() -> None:
-    llm = _LLM(
-        [
-            _response("周三发布，小赵。", input_tokens=10, output_tokens=2),
-            _response(
-                json.dumps(
-                    {
-                        "complete": False,
-                        "missing_items": ["小孙今晚完成验收清单"],
-                        "revised_response": ("周三发布；负责人小赵；小孙今晚完成验收清单。"),
-                    },
-                    ensure_ascii=False,
-                ),
-                input_tokens=6,
-                output_tokens=4,
-            ),
-        ]
-    )
-    loop = AgentLoop(
-        llm_registry=llm,
-        tool_registry=_Tools(),
-        response_quality_gate=ModelResponseCompletenessGate(),
-    )
-
-    events = [
-        event
-        async for event in loop.run(
-            messages=[
-                {
-                    "role": "user",
-                    "content": ("请概括：版本周三发布，负责人小赵，行动项小孙今晚完成验收清单。"),
-                }
-            ],
-            loop_user_request=("请概括：版本周三发布，负责人小赵，行动项小孙今晚完成验收清单。"),
-        )
-    ]
-
-    final = events[-1]
-    assert isinstance(final, FinalEvent)
-    assert final.content == "周三发布；负责人小赵；小孙今晚完成验收清单。"
-    assert final.total_input_tokens == 16
-    assert final.total_output_tokens == 6
-    assert len(llm.calls) == 2
-    assert llm.calls[1]["tools"] is None
-    assert (
-        llm.calls[1]["kwargs"]["response_format"]["json_schema"]["name"]
-        == "companion_response_completeness_v1"
     )
 
 

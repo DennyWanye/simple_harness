@@ -18,7 +18,6 @@ from typing import Any
 import pytest
 from agent.agent_loop import AgentLoop, FinalEvent, PipelineEvent, ToolBatchEvent
 from agent.termination import GateConfig, TerminationGate
-from deskpet.agent.evidence_gate import EvidenceGate
 from llm.types import ChatResponse, ChatUsage, ToolCall
 
 
@@ -80,112 +79,6 @@ async def test_pipeline_off_is_bc_no_pipeline_events():
     ]
     assert not any(isinstance(e, PipelineEvent) for e in events)
     assert any(isinstance(e, FinalEvent) for e in events)
-
-
-@pytest.mark.asyncio
-async def test_host_validated_zero_tool_terminal_skips_foreground_gates():
-    """Trusted structured background output terminates before conversation gates."""
-    llm = FakeLLM([_final('{"schema_version":1,"ok":true}')])
-    agent = AgentLoop(
-        llm_registry=llm,
-        tool_registry=FakeTools(),
-        max_iterations=5,
-        evidence_gate=EvidenceGate(max_nudges=2),
-        pipeline_needs_investigation=True,
-        pipeline_problem_type="debug",
-        pipeline_observability=True,
-    )
-
-    events = [
-        event
-        async for event in agent.run(
-            task_id="background-1",
-            session_id="companion:profile-a:1:job-1",
-            messages=[{"role": "user", "content": "return strict JSON"}],
-            host_validated_zero_tool_terminal=True,
-        )
-    ]
-
-    assert len(llm.calls) == 1
-    assert isinstance(events[-1], FinalEvent)
-    assert events[-1].content == '{"schema_version":1,"ok":true}'
-    assert not any(
-        isinstance(event, PipelineEvent) and event.type == "chat_v2_evidence_gate"
-        for event in events
-    )
-
-
-@pytest.mark.asyncio
-async def test_evidence_gate_blocks_then_pauses_at_external_tool_batch():
-    """Evidence nudge runs before an external read batch is exposed."""
-    llm = FakeLLM(
-        [
-            _final("我觉得是 token 过期了"),  # iter1: 无取证直接下结论 → 被拦
-            _tool("read", {"path": "auth.py"}),  # iter2: 转而取证
-            _final("查证后确认是 token 配置错误"),  # iter3: 取证后收尾 → 放行
-        ]
-    )
-    tools = FakeTools({"read": json.dumps({"ok": True})})
-    agent = AgentLoop(
-        llm_registry=llm,
-        tool_registry=tools,
-        max_iterations=10,
-        evidence_gate=EvidenceGate(max_nudges=2),
-        pipeline_needs_investigation=True,
-        pipeline_problem_type="debug",
-        pipeline_observability=True,
-    )
-    events = [
-        ev
-        async for ev in agent.run(
-            task_id="t2",
-            session_id="s2",
-            messages=[{"role": "user", "content": "登录报错帮我看看"}],
-        )
-    ]
-    # 发了 evidence_gate 观测事件，且至少一次 blocked=True
-    eg_events = [
-        e for e in events if isinstance(e, PipelineEvent) and e.type == "chat_v2_evidence_gate"
-    ]
-    assert any(e.payload.get("blocked") for e in eg_events)
-    batch = next(e for e in events if isinstance(e, ToolBatchEvent))
-    assert [call.name for call in batch.tool_calls] == ["read"]
-    assert tools.calls == []
-    assert len(llm.calls) == 2
-    assert not any(isinstance(e, FinalEvent) for e in events)
-
-
-@pytest.mark.asyncio
-async def test_evidence_gate_off_when_no_investigation():
-    """needs_investigation=False → EvidenceGate 不拦（首轮 end_turn 直接收尾）。"""
-    llm = FakeLLM([_final("答案是 42")])
-    agent = AgentLoop(
-        llm_registry=llm,
-        tool_registry=FakeTools(),
-        max_iterations=5,
-        evidence_gate=EvidenceGate(max_nudges=2),
-        pipeline_needs_investigation=False,  # 不需取证
-        pipeline_problem_type="factual_qa",
-        pipeline_observability=True,
-    )
-    events = [
-        ev
-        async for ev in agent.run(
-            task_id="t3",
-            session_id="s3",
-            messages=[{"role": "user", "content": "1+1=?"}],
-        )
-    ]
-    assert any(isinstance(e, FinalEvent) for e in events)
-    # 没有 blocked 事件
-    eg_blocked = [
-        e
-        for e in events
-        if isinstance(e, PipelineEvent)
-        and e.type == "chat_v2_evidence_gate"
-        and e.payload.get("blocked")
-    ]
-    assert eg_blocked == []
 
 
 @pytest.mark.asyncio

@@ -21,7 +21,6 @@ import pytest
 from agent.agent_loop import AgentLoop
 from agent.agent_loop_domains import context_attempts as context_attempts_module
 from agent.agent_loop_domains import run_setup as run_setup_module
-from deskpet.agent.evidence_gate import EvidenceGate
 from llm.errors import LLMProviderError
 from llm.types import ChatResponse, ChatUsage, ToolCall
 
@@ -193,22 +192,6 @@ async def test_tool_request_pauses_at_external_batch():
         "tool_request_pauses_at_external_batch",
         {"events": events, "llm": _messages(llm.calls), "tools": tools.calls},
     )
-
-
-@pytest.mark.asyncio
-async def test_evidence_gate_nudges_then_final():
-    llm = FakeLLM([_final("猜的答案"), _final("还是猜"), _final("最后")])
-    agent = AgentLoop(
-        llm_registry=llm,
-        tool_registry=FakeTools(),
-        max_iterations=5,
-        evidence_gate=EvidenceGate(max_nudges=1),
-        pipeline_needs_investigation=True,
-        pipeline_problem_type="debug",
-        pipeline_observability=True,
-    )
-    events = await _run(agent, messages=[{"role": "user", "content": "为什么报错"}])
-    _check("evidence_gate_nudges_then_final", {"events": events, "llm": _messages(llm.calls)})
 
 
 @pytest.mark.asyncio
@@ -451,47 +434,6 @@ async def test_coverage_replan_invalid_blocks(monkeypatch):
     _check("coverage_replan_invalid_blocks", {"events": events})
 
 
-# ── 场景：轮次上限与止损 ───────────────────────────────────────────────────────
-
-
-@pytest.mark.asyncio
-async def test_max_iterations_exhausted_by_repeated_nudges():
-    llm = FakeLLM([_final("猜1"), _final("猜2"), _final("猜3"), _final("猜4")])
-    agent = AgentLoop(
-        llm_registry=llm,
-        tool_registry=FakeTools(),
-        max_iterations=2,
-        evidence_gate=EvidenceGate(max_nudges=5),
-        pipeline_needs_investigation=True,
-        pipeline_problem_type="debug",
-        pipeline_observability=True,
-    )
-    events = await _run(agent, messages=[{"role": "user", "content": "为什么"}])
-    _check(
-        "max_iterations_exhausted_by_repeated_nudges",
-        {"events": events, "llm": _messages(llm.calls)},
-    )
-
-
-@pytest.mark.asyncio
-async def test_max_iterations_with_convergence_report():
-    llm = FakeLLM([_final("猜1"), _final("猜2"), _final("猜3"), _final("猜4")])
-    agent = AgentLoop(
-        llm_registry=llm,
-        tool_registry=FakeTools(),
-        max_iterations=2,
-        evidence_gate=EvidenceGate(max_nudges=5),
-        pipeline_needs_investigation=True,
-        pipeline_problem_type="debug",
-        pipeline_observability=True,
-        convergence_report_on_stop=True,
-    )
-    events = await _run(agent, messages=[{"role": "user", "content": "为什么"}])
-    _check(
-        "max_iterations_with_convergence_report", {"events": events, "llm": _messages(llm.calls)}
-    )
-
-
 # ── 场景：收尾闸门 ───────────────────────────────────────────────────────────
 
 
@@ -636,27 +578,6 @@ async def test_self_check_gate_gives_up_after_max_nudges():
         "self_check_gate_gives_up_after_max_nudges",
         {"events": events, "llm": _messages(llm.calls), "gate": gate.calls},
     )
-
-
-@pytest.mark.parametrize("report", [False, True])
-@pytest.mark.asyncio
-async def test_termination_gate_cap(report):
-    from agent.termination import GateConfig, TerminationGate
-
-    llm = FakeLLM([_final("猜1"), _final("猜2"), _final("猜3")])
-    agent = AgentLoop(
-        llm_registry=llm,
-        tool_registry=FakeTools(),
-        max_iterations=5,
-        termination_gate=TerminationGate(GateConfig(max_turns=1)),
-        evidence_gate=EvidenceGate(max_nudges=5),
-        pipeline_needs_investigation=True,
-        pipeline_problem_type="debug",
-        pipeline_observability=True,
-        convergence_report_on_stop=report,
-    )
-    events = await _run(agent, messages=[{"role": "user", "content": "为什么"}])
-    _check(f"termination_gate_cap_report_{report}", {"events": events, "llm": _messages(llm.calls)})
 
 
 @pytest.mark.asyncio

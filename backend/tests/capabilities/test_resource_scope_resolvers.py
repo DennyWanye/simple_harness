@@ -6,10 +6,10 @@ from pathlib import Path
 
 import pytest
 from deskpet.permissions.runtime import PreparedAuthorizationRuntime
-from deskpet.permissions.task_grants import canonical_filesystem_path
 from deskpet.tools.capabilities import ToolExecutionContext
 from deskpet.tools.os_tools.registration import register_os_tools
 from deskpet.tools.registry import ToolRegistry, tool_spec_fingerprint
+from deskpet.types.task_grants import canonical_filesystem_path
 from deskpet.workflows.effects import PreparedToolCall
 
 
@@ -235,7 +235,7 @@ def test_resource_resolver_requires_trusted_host_context(tmp_path: Path) -> None
 def test_resource_resolver_identity_is_part_of_tool_spec_fingerprint() -> None:
     def resolver(args, context):  # type: ignore[no-untyped-def]
         del args, context
-        from deskpet.permissions.task_grants import ResourceSelector
+        from deskpet.types.task_grants import ResourceSelector
 
         return (ResourceSelector("system_change", "probe", ("write",)),)
 

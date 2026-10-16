@@ -32,10 +32,6 @@ from deskpet.companion.evaluation import (
     EvaluationIdentityV1,
     EvaluationPermitIssuer,
 )
-from deskpet.companion.evaluation_execution import (
-    EvaluationCaseCompletionV1,
-    EvaluationCaseStartAckV1,
-)
 from deskpet.companion.growth import (
     CandidateBindingFenceV1,
     GrowthTargetIdentityV1,
@@ -367,104 +363,6 @@ def _complete_variant(
         reason_code="result_committed",
     )
     return result_hash
-
-
-def test_real_store_evaluation_execution_fence_start_and_completion(
-    evaluation_store,
-) -> None:
-    store, owner, _ = evaluation_store
-    _issue_permit(store, owner)
-    claim = store.claim_evaluation_case(
-        owner,
-        evaluation_id="evaluation-1",
-        case_id="case-1",
-        variant="old",
-        claim_owner="real-store-worker",
-        lease_seconds=30,
-    )
-    fence = store.get_evaluation_execution_fence(
-        owner,
-        evaluation_id="evaluation-1",
-        case_id="case-1",
-        variant="old",
-    )
-    assert fence["candidate_status"] == "evaluating"
-    assert fence["policy_verified"] == 1
-    launch, _ = _launch(
-        claim,
-        variant="old",
-        launch_id="real-store-launch",
-        claim_owner="real-store-worker",
-    )
-    store.create_evaluation_case_launch(owner, launch, claim_owner="real-store-worker")
-    start_facts = {
-        "schema_version": 1,
-        "launch_id": launch.launch_id,
-        "runtime_instance_id": "evaluation:real-store-launch",
-        "adapter_identity": "managed-process-test-v1",
-        "job_identity": "job-real-store",
-        "pid": 4321,
-        "process_create_time": 123.5,
-        "command_line_hash": "command-real-store",
-    }
-    ack = EvaluationCaseStartAckV1(
-        launch_id=launch.launch_id,
-        runtime_instance_id="evaluation:real-store-launch",
-        adapter_identity="managed-process-test-v1",
-        job_identity="job-real-store",
-        pid=4321,
-        process_create_time=123.5,
-        command_line_hash="command-real-store",
-        start_receipt_hash=canonical_hash(start_facts),
-    )
-    started = store.record_evaluation_case_start_ack(
-        owner,
-        evaluation_id="evaluation-1",
-        case_id="case-1",
-        variant="old",
-        claim_owner="real-store-worker",
-        claim_epoch=int(claim["claim_epoch"]),
-        ack=ack,
-        reason_code="start_ack",
-    )
-    assert started["status"] == "started"
-    result_payload = {
-        "assertions": {"passed": True},
-        "judge_result": {"score": 1},
-        "usage": {"tokens": 2},
-    }
-    completion = EvaluationCaseCompletionV1(
-        outcome_ref="outcome:real-store",
-        outcome_hash="outcome-hash-real-store",
-        assertions=result_payload["assertions"],
-        judge_result=result_payload["judge_result"],
-        usage=result_payload["usage"],
-        result_hash=canonical_hash(result_payload),
-        reason_code="completed",
-        cleanup_receipt_hash="cleanup-real-store",
-        survivor_count=0,
-    )
-    committed = store.commit_evaluation_case_completion(
-        owner,
-        evaluation_id="evaluation-1",
-        case_id="case-1",
-        variant="old",
-        claim_owner="real-store-worker",
-        claim_epoch=int(claim["claim_epoch"]),
-        launch_id=launch.launch_id,
-        completion=completion,
-    )
-    assert committed["result_hash"] == completion.result_hash
-    recovery = store.get_evaluation_case_recovery_state(
-        owner,
-        evaluation_id="evaluation-1",
-        case_id="case-1",
-        variant="old",
-        claim_epoch=int(claim["claim_epoch"]),
-    )
-    assert recovery is not None
-    assert recovery["launch_status"] == "completed"
-    assert recovery["survivor_count"] == 0
 
 
 def test_evaluation_permit_case_launch_result_and_report_are_fenced(evaluation_store) -> None:

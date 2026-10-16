@@ -17,7 +17,7 @@ from deskpet.workflows.retention import (
 )
 from deskpet.workflows.runtime_adapters import WorkflowRuntimeAdapter
 from deskpet.workflows.store.schema import initialize_workflow_db
-from deskpet.workflows.trace.redaction import TraceRedactor
+from observability.redaction import TraceRedactor
 
 DAY = 24 * 60 * 60
 

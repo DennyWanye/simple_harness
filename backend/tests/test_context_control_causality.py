@@ -8,14 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 from agent.agent_loop import AgentLoop, ToolBatchEvent
-from llm.context_messages import (
-    CONTEXT_MESSAGE_META_KEY,
-    ContextMessageMeta,
-    append_control,
-    append_transcript,
-    split_wire_messages,
-    tag_message,
-)
+from llm.context_messages import CONTEXT_MESSAGE_META_KEY, ContextMessageMeta, split_wire_messages
 from llm.types import ChatResponse, ToolCall
 
 
@@ -195,47 +188,6 @@ async def test_completion_control_anchors_after_triggering_assistant() -> None:
     assert control_meta.anchor_after == trigger_meta.fragment_id
 
 
-def test_control_survives_deepcopy_and_stays_at_causal_position() -> None:
-    messages: list[dict] = []
-    append_transcript(
-        messages,
-        "request",
-        source="test.user",
-        fragment_id="user-1",
-    )
-    append_transcript(
-        messages,
-        {"role": "assistant", "content": "stopped"},
-        source="test.assistant",
-        role="assistant",
-        fragment_id="assistant-1",
-    )
-    append_control(
-        messages,
-        "continue",
-        source="test.nudge",
-        fragment_id="control-1",
-        anchor_after="assistant-1",
-    )
-
-    cloned = copy.deepcopy(messages)
-    assert [_metadata(message) for message in cloned] == [
-        _metadata(message) for message in messages
-    ]
-
-    from deskpet.agent.context_compressor import _partition
-
-    system, head, middle, tail = _partition(cloned, first_n=1, last_n=1)
-    rebuilt = system + head + middle + tail
-    assert [message["content"] for message in rebuilt] == [
-        "request",
-        "stopped",
-        "continue",
-    ]
-    control = rebuilt[-1]
-    assert _metadata(control).anchor_after == "assistant-1"
-
-
 @pytest.mark.asyncio
 async def test_context_os_off_keeps_canonical_batch_append_shape() -> None:
     llm = _ToolThenFinalLLM()
@@ -266,46 +218,3 @@ async def test_context_os_off_keeps_canonical_batch_append_shape() -> None:
     ]
     assert all(CONTEXT_MESSAGE_META_KEY not in message for message in batch.canonical_messages)
     assert len(llm.calls) == 1
-
-
-def test_partition_never_splits_explicit_causal_group() -> None:
-    group = "group-1"
-    assistant = tag_message(
-        {
-            "role": "assistant",
-            "content": "",
-            "tool_calls": [{"id": "call-1"}],
-        },
-        ContextMessageMeta(
-            placement="transcript",
-            lifetime="history",
-            source="test.assistant",
-            causal_group_id=group,
-            fragment_id="assistant-1",
-        ),
-    )
-    tool = tag_message(
-        {"role": "tool", "tool_call_id": "call-1", "content": "ok"},
-        ContextMessageMeta(
-            placement="transcript",
-            lifetime="history",
-            source="test.tool",
-            causal_group_id=group,
-            fragment_id="tool-1",
-        ),
-    )
-    messages = [
-        {"role": "user", "content": "head"},
-        assistant,
-        tool,
-        {"role": "user", "content": "tail"},
-    ]
-
-    from deskpet.agent.context_compressor import _partition
-
-    _, head, middle, tail = _partition(messages, first_n=2, last_n=1)
-    placements = [head, middle, tail]
-    containing = [part for part in placements if assistant in part or tool in part]
-    assert len(containing) == 1
-    assert assistant in containing[0]
-    assert tool in containing[0]

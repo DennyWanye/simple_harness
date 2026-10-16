@@ -19,7 +19,6 @@ from deskpet.companion.schema import (
 )
 from deskpet.companion.store import CompanionStore
 from deskpet.execution.contracts import (
-    ActorContext,
     DecisionOpen,
     DecisionSignal,
     GrantConsume,
@@ -32,7 +31,7 @@ from deskpet.execution.contracts import (
     root_idempotency_key,
 )
 from deskpet.harness.contracts import HostContext
-from deskpet.permissions.task_grants import (
+from deskpet.types.task_grants import (
     ExactGrantRequest,
     PreparedAuthorizationCommit,
     ResourceSelector,

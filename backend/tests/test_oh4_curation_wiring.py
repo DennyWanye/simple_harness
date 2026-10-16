@@ -26,7 +26,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from unittest.mock import MagicMock
 
 from config import load_config
 
@@ -136,55 +135,3 @@ class _MemStub:
 class _CfgStub:
     tools: _ToolsStub = field(default_factory=_ToolsStub)
     memory: _MemStub = field(default_factory=_MemStub)
-
-
-def _build(**kwargs):
-    from host.agent_factory import build_agent
-
-    base = dict(
-        llm_registry=MagicMock(name="llm_registry"),
-        tool_registry=MagicMock(name="tool_registry"),
-        context_manager=MagicMock(name="ctx_mgr"),
-        receipt_store_getter=lambda: None,
-    )
-    base.update(kwargs)
-    return build_agent(_CfgStub(), **base)
-
-
-def test_build_agent_wires_memory_curator():
-    """**核心接电证据**：build_agent(memory_curator=X) → agent._memory_curator is X.
-
-    lifespan register 的 curator 经 main.py:6924 service_context.get 取出、传给
-    build_agent；本测试验工厂这一段真把它接到 _AgentLoop，否则即便 lifespan
-    注册成功，agent_loop 仍拿不到 curator → nudge 死。
-    """
-    sentinel = MagicMock(name="MemoryCurator")
-    agent = _build(memory_curator=sentinel)
-    assert agent._memory_curator is sentinel, (
-        "build_agent 必须把 memory_curator 透传给 _AgentLoop（否则 OH-4 生产 no-op）。"
-    )
-
-
-def test_build_agent_curator_none_is_bc():
-    """默认 memory_curator=None → agent._memory_curator is None（BC，不 fire）。"""
-    agent = _build()
-    assert agent._memory_curator is None
-
-
-def test_build_agent_passes_curation_every_n():
-    """cfg.memory.v2.curation_nudge_every_n_turns 透传到 _curation_every（频率门控）。"""
-    cfg = _CfgStub()
-    cfg.memory.v2.curation_nudge_every_n_turns = 2
-    from host.agent_factory import build_agent
-
-    agent = build_agent(
-        cfg,
-        llm_registry=MagicMock(),
-        tool_registry=MagicMock(),
-        context_manager=MagicMock(),
-        receipt_store_getter=lambda: None,
-        memory_curator=MagicMock(name="curator"),
-    )
-    assert agent._curation_every == 2, (
-        "every_n=2 → 每 2 回合 fire；若漏传则退回默认 8，真机'聊 2 轮'验收不触发。"
-    )

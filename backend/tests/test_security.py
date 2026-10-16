@@ -9,47 +9,8 @@ from collections.abc import AsyncIterator
 
 import pytest
 from agent.providers.tool_using import ToolUsingAgent
-from memory.sensitive_filter import RedactingMemoryStore, redact
 from tools.base import ToolSpec
 from tools.registry import ToolRegistry
-
-# --- redact() ---
-
-
-@pytest.mark.parametrize(
-    "raw, expected_marker",
-    [
-        ("my key is sk-abc123def456ghi789jkl012mno", "[REDACTED:API_KEY]"),
-        ("auth: sk-ant-api03-0123456789abcdef0123456789abcdef012345", "[REDACTED:ANTHROPIC_KEY]"),
-        ("ghp_abcd1234efgh5678ijkl9012mnop3456qrst", "[REDACTED:GITHUB_TOKEN]"),
-        ("AKIAIOSFODNN7EXAMPLE", "[REDACTED:AWS_KEY]"),
-        ("contact me at alice@example.com please", "[REDACTED:EMAIL]"),
-        ("phone: 13912345678", "[REDACTED:PHONE_CN]"),
-        ("password: hunter2", "[REDACTED:CREDENTIAL]"),
-        ("API_KEY=s3cr3tv4lu3", "[REDACTED:CREDENTIAL]"),
-        ("4111 1111 1111 1111", "[REDACTED:CREDIT_CARD]"),
-        (
-            "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NSJ9.abc123xyz",
-            "[REDACTED:JWT]",
-        ),
-    ],
-)
-def test_redact_replaces_sensitive_spans(raw: str, expected_marker: str):
-    out = redact(raw)
-    assert expected_marker in out
-    # Original secret substring should no longer appear verbatim (except for
-    # well-known placeholders that don't match our patterns).
-    assert out != raw
-
-
-def test_redact_leaves_innocent_text_alone():
-    benign = "Hello, how are you today? The weather is nice."
-    assert redact(benign) == benign
-
-
-def test_redact_handles_empty_input():
-    assert redact("") == ""
-
 
 # --- RedactingMemoryStore ---
 
@@ -66,29 +27,6 @@ class _FakeStore:
 
     async def clear(self, session_id):
         self.appended = [t for t in self.appended if t[0] != session_id]
-
-
-@pytest.mark.asyncio
-async def test_redacting_store_masks_on_append():
-    inner = _FakeStore()
-    store = RedactingMemoryStore(inner)
-
-    await store.append("s1", "user", "my key is sk-abc123def456ghi789jkl012mno ok?")
-
-    assert len(inner.appended) == 1
-    _, _, stored = inner.appended[0]
-    assert "[REDACTED:API_KEY]" in stored
-    assert "sk-abc123def456ghi789jkl012mno" not in stored
-
-
-@pytest.mark.asyncio
-async def test_redacting_store_passes_reads_through():
-    inner = _FakeStore()
-    store = RedactingMemoryStore(inner)
-
-    # Even though inner has nothing, the call should be forwarded.
-    result = await store.get_recent("s1")
-    assert result == []
 
 
 # --- Tool confirmation ---

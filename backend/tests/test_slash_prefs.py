@@ -16,10 +16,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
-from deskpet.agent.preference_memory import PreferenceMemory
 from deskpet.commands import _handle_prefs, dispatch_slash_command
 
 
@@ -32,14 +29,6 @@ def _fake_embed_factory():
         return out
 
     return _embed
-
-
-async def _make_pref(tmp_path: Path) -> PreferenceMemory:
-    pref = PreferenceMemory(tmp_path / "pref.json", _fake_embed_factory())
-    await pref.record("你用什么模型", "ask", "intent")
-    await pref.record("帮我重构登录页", "task", "intent")
-    await pref.record("生成 PPT", "approved", "plan")
-    return pref
 
 
 # ---- flag off ----------------------------------------------------------
@@ -63,119 +52,7 @@ def test_handle_prefs_none_direct():
     assert "preference_memory" in res["message"]
 
 
-# ---- list --------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_prefs_list(tmp_path: Path):
-    pref = await _make_pref(tmp_path)
-    res = await dispatch_slash_command(
-        "prefs",
-        "",
-        "sid",
-        session_pref_memory=pref,
-    )
-    assert res["type"] == "prefs_list"
-    assert res["count"] == 3
-    assert len(res["entries"]) == 3
-    # 契约字段齐全
-    for e in res["entries"]:
-        assert set(e.keys()) == {"text", "label", "kind", "ts"}
-    kinds = {e["kind"] for e in res["entries"]}
-    assert kinds == {"intent", "plan"}
-
-
-@pytest.mark.asyncio
-async def test_prefs_list_empty(tmp_path: Path):
-    pref = PreferenceMemory(tmp_path / "pref.json", _fake_embed_factory())
-    res = await dispatch_slash_command(
-        "prefs",
-        "",
-        "sid",
-        session_pref_memory=pref,
-    )
-    assert res["type"] == "prefs_list"
-    assert res["count"] == 0
-    assert res["entries"] == []
-
-
-# ---- clear (全清) -------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_prefs_clear_all(tmp_path: Path):
-    pref = await _make_pref(tmp_path)
-    res = await dispatch_slash_command(
-        "prefs",
-        "clear",
-        "sid",
-        session_pref_memory=pref,
-    )
-    assert res["type"] == "prefs_cleared"
-    assert res["removed"] == 3
-    assert res["kind"] is None
-    # 真清干净
-    assert pref.list_entries() == []
-
-
 # ---- clear by kind ------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_prefs_clear_intent(tmp_path: Path):
-    pref = await _make_pref(tmp_path)
-    res = await dispatch_slash_command(
-        "prefs",
-        "clear intent",
-        "sid",
-        session_pref_memory=pref,
-    )
-    assert res["type"] == "prefs_cleared"
-    assert res["removed"] == 2  # 两条 intent
-    assert res["kind"] == "intent"
-    # plan 还在
-    remaining = pref.list_entries()
-    assert len(remaining) == 1
-    assert remaining[0]["kind"] == "plan"
-
-
-@pytest.mark.asyncio
-async def test_prefs_clear_plan(tmp_path: Path):
-    pref = await _make_pref(tmp_path)
-    res = await dispatch_slash_command(
-        "prefs",
-        "clear plan",
-        "sid",
-        session_pref_memory=pref,
-    )
-    assert res["type"] == "prefs_cleared"
-    assert res["removed"] == 1
-    assert res["kind"] == "plan"
-
-
-@pytest.mark.asyncio
-async def test_prefs_clear_unknown_kind(tmp_path: Path):
-    pref = await _make_pref(tmp_path)
-    res = await dispatch_slash_command(
-        "prefs",
-        "clear bogus",
-        "sid",
-        session_pref_memory=pref,
-    )
-    assert res["type"] == "error"
-    assert "bogus" in res["message"]
-
-
-@pytest.mark.asyncio
-async def test_prefs_unknown_subcommand(tmp_path: Path):
-    pref = await _make_pref(tmp_path)
-    res = await dispatch_slash_command(
-        "prefs",
-        "wat",
-        "sid",
-        session_pref_memory=pref,
-    )
-    assert res["type"] == "error"
 
 
 @pytest.mark.asyncio

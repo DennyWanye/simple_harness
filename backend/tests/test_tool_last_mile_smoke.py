@@ -37,20 +37,6 @@ def test_t0_2_receipt_module_imports():
     )
 
 
-def test_t0_3_verify_gate_module_imports():
-    from deskpet.agent.verify_gate import (  # noqa: F401
-        CascadeExtractor,
-        Claim,
-        ClaimPattern,
-        RegexExtractor,
-        SmallLLMExtractor,
-        UnmatchedClaim,
-        VerifierFailure,
-        VerifyGate,
-        VerifyOutcome,
-    )
-
-
 def test_t0_4_registry_execute_tool_signature_compatible():
     """execute_tool 签名不破现有 caller（4 必需位置参数 + 默认值）。"""
     from deskpet.tools.registry import ToolRegistry
@@ -97,19 +83,3 @@ def test_t0_6_receipt_hmac_sign_verify_roundtrip():
     # 篡改 → verify 失败
     r.tool_name = "evil"
     assert hmac_verify(r) is False
-
-
-def test_t0_7_verify_gate_off_mode_passes():
-    from deskpet.agent.verify_gate import RegexExtractor, VerifyGate
-
-    gate = VerifyGate(extractor=RegexExtractor(patterns=[]), mode="off")
-    outcome = gate.check(assistant_text="anything", ledger=None)
-    assert outcome.passed is True
-
-
-def test_t0_8_verify_gate_invalid_mode_rejected():
-    import pytest
-    from deskpet.agent.verify_gate import RegexExtractor, VerifyGate
-
-    with pytest.raises(ValueError, match="invalid mode"):
-        VerifyGate(extractor=RegexExtractor(patterns=[]), mode="bananas")

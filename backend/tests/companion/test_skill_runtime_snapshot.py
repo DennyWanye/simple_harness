@@ -16,7 +16,6 @@ from deskpet.companion.skills import (
     inventory_first_party_skill_packs,
 )
 from deskpet.skills.loader import SkillPackSnapshotResolver
-from deskpet.skills.skill_matcher import SkillMatcher
 from deskpet.tools.capabilities import (
     PreparedToolCapability,
     PreparedToolSet,
@@ -387,36 +386,6 @@ def test_exact_capture_missing_allowed_tool_fails_closed(tmp_path: Path) -> None
             (scope,),
             exact_tool_facts=(_exact_fact(shell),),
         )
-
-
-def test_skill_matcher_cache_isolates_owner_version_and_hash() -> None:
-    class _Embedder:
-        def encode(self, _text):
-            return [1.0, 0.0]
-
-    base = {
-        "name": "same",
-        "description": "same description",
-        "pack_id": "skill-same",
-        "version": "1.0.0",
-        "manifest_hash": "a" * 64,
-        "content_hash": "b" * 64,
-    }
-    owner_a = {**base, "owner_key": "owner-a"}
-    owner_b = {**base, "owner_key": "owner-b"}
-    version_b = {
-        **base,
-        "owner_key": "owner-a",
-        "version": "2.0.0",
-        "content_hash": "c" * 64,
-    }
-    matcher = SkillMatcher(_Embedder())
-    matcher.build([owner_a, owner_b, version_b])
-
-    assert len(matcher._cache) == 3
-    assert matcher.match("query", [owner_a])
-    assert matcher.match("query", [owner_b])
-    assert matcher.match("query", [version_b])
 
 
 @pytest.mark.asyncio

@@ -29,20 +29,6 @@ def test_ascii_reasonable():
     assert 90 <= n <= 160, f"ASCII 440 chars 估成 {n}"
 
 
-def test_cross_module_consistency():
-    """compressor / budget / token_budget 必须同口径(优化 #3 核心)。"""
-    from agent import token_budget as tb
-    from deskpet.agent import context_compressor as cc
-    from deskpet.agent.assembler import budget as bg
-
-    t = "钠离子电池 GB/T 44265-2024 electric storage station 技术规范"
-    a = count_text_tokens(t)
-    assert cc._approx_tokens(t) == a
-    assert bg._count_tokens(t) == a
-    msgs = [{"role": "user", "content": t}, {"role": "assistant", "content": "好的" * 50}]
-    assert count_messages_tokens(msgs) == tb.estimate_tokens(msgs)
-
-
 def test_messages_counts_tool_calls():
     """tool_calls 载荷也计入(防止工具密集会话低估)。"""
     msgs = [

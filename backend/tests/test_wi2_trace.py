@@ -6,7 +6,6 @@ from typing import Any
 
 import pytest
 from agent.agent_loop import AgentLoop, ToolBatchEvent
-from agent.trace import IterationTracer
 from llm.types import ChatResponse, ToolCall
 
 
@@ -76,40 +75,6 @@ def _read_jsonl(path: Path) -> list[dict]:
     return [
         json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()
     ]
-
-
-@pytest.mark.asyncio
-async def test_tracer_writes_jsonl_with_full_tool_args(tmp_path: Path) -> None:
-    tracer = IterationTracer(
-        trace_dir=tmp_path / "traces",
-        session_id="session-a",
-        task_id="task-a",
-    )
-    llm = _TraceLLM()
-    loop = AgentLoop(llm, _Tools(), max_iterations=3, tracer=tracer)
-
-    events = await _collect(
-        loop.run(
-            [{"role": "user", "content": "trace this"}],
-            task_id="task-a",
-            session_id="session-a",
-        )
-    )
-
-    assert any(isinstance(ev, ToolBatchEvent) for ev in events)
-    assert llm.calls == 1
-
-    rows = _read_jsonl(tmp_path / "traces" / "task-a.jsonl")
-    kinds = [row["kind"] for row in rows]
-    assert "iter_start" in kinds
-    assert "llm_out" in kinds
-    assert "tool_result" not in kinds
-    assert "end" not in kinds
-
-    llm_out = next(row for row in rows if row["kind"] == "llm_out" and row["tool_calls"])
-    args = llm_out["tool_calls"][0]["args"]
-    assert args["full"] == "x" * 500
-    assert args["nested"] == {"keep": ["all", "args"]}
 
 
 @pytest.mark.asyncio

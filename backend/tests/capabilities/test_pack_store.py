@@ -14,7 +14,7 @@ from deskpet.capabilities.store import (
     CapabilityVersionRecord,
     initialize_capability_database,
 )
-from deskpet.permissions.task_grants import ResourceSelector, TaskGrant
+from deskpet.types.task_grants import ResourceSelector, TaskGrant
 
 
 def _hash(value: str) -> str:

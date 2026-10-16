@@ -74,3 +74,17 @@
 - 清单：阶段8-删除清单-8C3.md 的"保留"一节。
 - 不删的原因：连测试一起删会丢掉对在用代码的覆盖。
 - 建议：以后逐个判断。确实只为测试存在的，挪到测试辅助模块（如 `agent_orchestrator/testing/`）；接口本身该给产品用而没接上的，查清是不是漏接。
+
+## F-10 能力激活后的安全监控做好了但没接进产品（待接线，2026-10-17 阶段 8K 登记）
+
+- 位置：`backend/deskpet/companion/activation_guard.py`。
+- 现状：只有它调用 `record_capability_guard_incident`（capability_activation.py:653）；生产里能力激活在跑（production_pipeline.py:1746、:1880），但没有任何地方构造它。
+- 依据：阶段8-偏差单-不可达代码.md 独立裁决第 4 条；用户 2026-09-27 定"做好的功能都开启"。
+- 下一步：按功能开发流程接线并默认开启（先写能复现"激活后出事故被记录"的测试）。不在代码质量整治范围内。
+
+## F-11 代码恢复工作流的上下文工厂导入一个不存在的模块（缺陷，2026-10-17 登记）
+
+- 位置：`backend/host/startup_workflows.py` 的 `_build_code_recovery_context`，函数内 `from deskpet.harness.adapters.legacy_execution_migration import resolve_frozen_legacy_workspace`。该模块从 2026-08 分叉起就不存在。
+- 影响：code_complex、durable_task 两个工作流重启后恢复时，走到这里抛 ImportError。注释标的"死代码待删"是误标：函数在用，导入坏了。
+- 关系：与 F-1（durable_task 节点引用不存在的属性）同属 durable_task 恢复链。
+- 下一步：先定恢复时工作区从哪里取（这是功能修复），写能复现的测试再修。不在代码质量整治范围内。

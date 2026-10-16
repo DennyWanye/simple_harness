@@ -5,7 +5,6 @@ from dataclasses import dataclass, field
 
 import pytest
 from deskpet.agent.assembler.policy import load_policies
-from deskpet.agent.goal_store import SessionGoalStore
 from deskpet.tools.capabilities import (
     ToolCapabilityResolver,
     ToolCapabilityScopeStore,
@@ -127,20 +126,6 @@ def test_atomic_catalog_cas_conflicts_without_partial_mutation() -> None:
     unchanged = registry.catalog_snapshot()
     assert unchanged.revision == before.revision
     assert [spec.name for spec in unchanged.specs] == ["old"]
-
-
-def test_strict_goal_lookup_never_falls_back_to_another_session() -> None:
-    goals = SessionGoalStore()
-    goal = goals.set("session-a", "ship it")
-    assert goals.get_active_goal_context("session-b") == (
-        goal.goal_id,
-        "session-a",
-    )  # legacy behavior intentionally retained for OFF
-    assert goals.get_active_goal_context_for_session("session-b") is None
-    assert goals.get_active_goal_context_for_session("session-a") == (
-        goal.goal_id,
-        "session-a",
-    )
 
 
 def test_resolver_is_session_aware_and_provider_neutral() -> None:

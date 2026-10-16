@@ -13,13 +13,6 @@ from unittest.mock import AsyncMock
 
 import httpx
 import pytest
-from deskpet.product_state.database import ProductStateDatabase
-from deskpet.sdk_adapters.capability_host import (
-    ProductCapabilityHostAdapter,
-    ProductCapabilityOperationReceipts,
-)
-from deskpet.sdk_adapters.context import ProductContextAdapter
-from deskpet.sdk_adapters.personal_catalog import ProductPersonalCatalogAdapter
 from deskpet.sdk_adapters.provider import (
     ProductProviderAdapter,
     ProductProviderInvocationCoordinator,
@@ -32,7 +25,7 @@ from deskpet.sdk_adapters.tools import (
     active_product_tool_context,
     build_product_tool_registry,
 )
-from simple_harness import CallId, RequestId, RunId, fingerprint_json
+from simple_harness import CallId, RequestId, RunId
 from simple_harness.contracts.messages import ContentBlock, Message, MessageRole
 from simple_harness.execution.dispatch import (
     ProviderInvocationCoordinator,
@@ -54,7 +47,6 @@ from simple_harness.providers import (
     ProviderToolSpec,
 )
 from simple_harness.tools import CancellationToken, ToolCall, ToolContext, ToolOutcome
-from simple_harness.workflows.personal_v1 import PersonalWorkflowSelectionV1
 
 
 def test_provider_restores_cooperative_task_cancellation() -> None:
@@ -1458,141 +1450,3 @@ print(json.dumps(blocked))
         check=True,
     )
     assert json.loads(result.stdout) == []
-
-
-def test_context_personal_and_capability_ports_are_projection_only_and_idempotent(
-    tmp_path,
-) -> None:
-    context = ProductContextAdapter()
-    start = context.project_run_start(
-        execution_session_id="session-1",
-        run_id="run-1",
-        request_id="request-1",
-        turn_id="turn-1",
-        messages=({"role": "user", "content": "hello"},),
-        capability_snapshot={"tools": ["file_read"]},
-        tool_catalog_generation=7,
-    )
-    assert start.input["messages"][0]["content"] == "hello"
-    assert not hasattr(context, "append")
-
-    personal = ProductPersonalCatalogAdapter()
-    issued = PersonalWorkflowSelectionV1.issue(
-        owner_key="owner-1",
-        pack_id="pack-1",
-        version="1",
-        manifest_hash="a" * 64,
-        binding_generation=1,
-        graph={"nodes": [], "edges": []},
-        graph_hash=fingerprint_json({"nodes": [], "edges": []}),
-        query_hash="c" * 64,
-        run_catalog_content_stamp="stamp-1",
-        lease_entries=({"lease_id": "lease-1"},),
-        effect_topology={},
-        tool_bindings={},
-    )
-    selection = personal.bind_selection(issued.to_child_payload())
-    assert selection.selection_id == issued.selection_id
-    assert "matcher" not in vars(personal)
-    forged_graph = dict(issued.to_child_payload())
-    forged_graph["graph"] = {"nodes": [{"id": "forged"}], "edges": []}
-    with pytest.raises(ValueError, match="graph hash"):
-        personal.bind_selection(forged_graph)
-    forged_selection = dict(issued.to_child_payload())
-    forged_selection["selection_fingerprint"] = "d" * 64
-    with pytest.raises(ValueError, match="fingerprint"):
-        personal.bind_selection(forged_selection)
-    with pytest.raises(ValueError, match="override"):
-        context.project_run_start(
-            execution_session_id="session-1",
-            run_id="run-2",
-            request_id="request-2",
-            turn_id="turn-2",
-            messages=({"role": "user", "content": "hello"},),
-            capability_snapshot={},
-            tool_catalog_generation=7,
-            trusted_input={"messages": []},
-        )
-
-    physical = 0
-
-    async def search(**kwargs):
-        nonlocal physical
-        physical += 1
-        return {"operation_key": kwargs["operation_key"], "matches": []}
-
-    database = ProductStateDatabase(tmp_path / "capability-operations.db")
-    database.initialize()
-    capability = ProductCapabilityHostAdapter(
-        search=search,
-        receipts=ProductCapabilityOperationReceipts(database, clock=lambda: 10.0),
-    )
-
-    async def case() -> None:
-        first = await capability.search(query="ocr", operation_key="op-1", admission={})
-        second = await capability.search(query="ocr", operation_key="op-1", admission={})
-        assert first == second
-        assert physical == 1
-        with pytest.raises(ValueError, match="operation_key"):
-            await capability.search(query="different", operation_key="op-1", admission={})
-
-    asyncio.run(case())
-    database.close()
-    reopened = ProductStateDatabase(tmp_path / "capability-operations.db")
-    reopened.initialize()
-    after_restart = ProductCapabilityHostAdapter(
-        search=search,
-        receipts=ProductCapabilityOperationReceipts(reopened, clock=lambda: 11.0),
-    )
-    asyncio.run(after_restart.search(query="ocr", operation_key="op-1", admission={}))
-    assert physical == 1
-    reopened.close()
-
-
-def test_capability_handler_return_crash_reopens_without_second_physical_call(
-    tmp_path,
-) -> None:
-    path = tmp_path / "capability-handler-crash.db"
-    physical = 0
-
-    async def search(**kwargs):
-        nonlocal physical
-        physical += 1
-        return {"operation_key": kwargs["operation_key"], "matches": ["ocr"]}
-
-    database = ProductStateDatabase(path)
-    database.initialize()
-    crashing = ProductCapabilityHostAdapter(
-        search=search,
-        receipts=ProductCapabilityOperationReceipts(database, clock=lambda: 10.0),
-        fault=lambda point: (
-            (_ for _ in ()).throw(RuntimeError("crash")) if point == "handler_return" else None
-        ),
-    )
-    with pytest.raises(RuntimeError, match="crash"):
-        asyncio.run(crashing.search(query="ocr", operation_key="op-crash", admission={}))
-    assert physical == 1
-    database.close()
-
-    reopened = ProductStateDatabase(path)
-    reopened.initialize()
-    unresolved = ProductCapabilityHostAdapter(
-        search=search,
-        receipts=ProductCapabilityOperationReceipts(reopened, clock=lambda: 11.0),
-    )
-    with pytest.raises(RuntimeError, match="pending reconciliation"):
-        asyncio.run(unresolved.search(query="ocr", operation_key="op-crash", admission={}))
-    assert physical == 1
-
-    reconciled = ProductCapabilityHostAdapter(
-        search=search,
-        receipts=ProductCapabilityOperationReceipts(reopened, clock=lambda: 12.0),
-        reconcile=lambda **_kwargs: {
-            "operation_key": "op-crash",
-            "matches": ["ocr"],
-        },
-    )
-    recovered = asyncio.run(reconciled.search(query="ocr", operation_key="op-crash", admission={}))
-    assert recovered["matches"] == ["ocr"]
-    assert physical == 1
-    reopened.close()

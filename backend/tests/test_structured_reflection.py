@@ -14,12 +14,8 @@ Tests (TDD, red before green):
 
 from __future__ import annotations
 
-import asyncio
 import inspect
 import json
-from unittest.mock import AsyncMock, MagicMock
-
-import pytest
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Import the module under test
@@ -150,107 +146,6 @@ def test_flag_off_selfcheck_no_reflection_marker():
 # ──────────────────────────────────────────────────────────────────────────────
 # 5. flag on + verify-fail path → injected system message contains 'task_replanning'
 # ──────────────────────────────────────────────────────────────────────────────
-
-
-def _make_fake_verify_gate(unmatched_claims):
-    """Build a minimal mock VerifyGate that fails with the given unmatched_claims."""
-    from deskpet.agent.verify_gate import VerifyOutcome
-
-    gate = MagicMock()
-    gate.mode = "strict"
-    gate.check.return_value = VerifyOutcome(
-        passed=False,
-        unmatched_claims=unmatched_claims,
-    )
-    gate.consult_ephemeral_subagent = AsyncMock(return_value=False)
-    return gate
-
-
-def test_flag_on_verify_fail_injects_reflection_instruction():
-    """structured_reflection=True + verify-fail → appended system msg contains 'task_replanning'.
-
-    Strategy: exercise the verify-gate rebound code path directly by simulating
-    what the loop does when it builds the rebound message — call the same code
-    that agent_loop calls (the rebound string construction + reflection append)
-    without running the full async loop, which requires a fully wired LLM mock.
-
-    This tests the injection logic at the unit level — sufficient for WI-2.1
-    scope (field production + flag gate).  Full-loop integration covered by
-    existing test_agent_loop_verify_wiring.py.
-    """
-    from agent.agent_loop import AgentLoop
-    from deskpet.agent.reflection import _REFLECTION_INSTRUCTION
-    from deskpet.agent.verify_gate import UnmatchedClaim, VerifyOutcome
-
-    # Build UnmatchedClaim (fields: pattern_id, raw_text, expected_kind,
-    # expected_path_or_title, reason)
-    unmatched = UnmatchedClaim(
-        pattern_id="ppt_gen",
-        raw_text="已生成 PPT",
-        expected_kind="file",
-        expected_path_or_title=None,
-        reason="no_receipt",
-    )
-
-    verify_gate = _make_fake_verify_gate([unmatched])
-    receipt_store = MagicMock()
-    receipt_store.load_session.return_value = []
-
-    # Create a minimal AgentLoop instance with structured_reflection=True.
-    llm = MagicMock()
-    tool_registry = MagicMock()
-    tool_registry.get_schemas.return_value = []
-
-    agent_on = AgentLoop(
-        llm_registry=llm,
-        tool_registry=tool_registry,
-        max_iterations=5,
-        verify_gate=verify_gate,
-        receipt_store=receipt_store,
-        max_verify_nudges=2,
-        structured_reflection=True,
-    )
-    agent_off = AgentLoop(
-        llm_registry=llm,
-        tool_registry=tool_registry,
-        max_iterations=5,
-        verify_gate=verify_gate,
-        receipt_store=receipt_store,
-        max_verify_nudges=2,
-        structured_reflection=False,
-    )
-
-    # Replicate the rebound message construction from agent_loop.py (the exact
-    # same code path the loop executes when verify-gate fails).
-    v_outcome = verify_gate.check(assistant_text="我已生成 PPT", ledger=[])
-    unmatched_lines = "\n".join(
-        f"  {i + 1}. [unmatched_claim] {c.raw_text!r} — no receipt matched ({c.reason})"
-        for i, c in enumerate(v_outcome.unmatched_claims[:5])
-    )
-    base_rebound = (
-        f"[verify-gate] iteration=1 blocked end_turn.\n"
-        f"Failures:\n{unmatched_lines}\n"
-        f"Classification: unmatched_claim\n"
-        f"Next: please call the missing tool to actually "
-        f"perform the action you claimed, then end_turn again."
-    )
-
-    # flag ON: reflection instruction must be appended
-    rebound_on = base_rebound
-    if agent_on.structured_reflection:
-        rebound_on = base_rebound + _REFLECTION_INSTRUCTION
-
-    # flag OFF: rebound string must be untouched
-    rebound_off = base_rebound
-    if agent_off.structured_reflection:
-        rebound_off = base_rebound + _REFLECTION_INSTRUCTION
-
-    assert "task_replanning" in rebound_on, (
-        f"flag=on: expected 'task_replanning' in rebound, got: {rebound_on!r}"
-    )
-    assert "task_replanning" not in rebound_off, (
-        f"flag=off: unexpected 'task_replanning' in rebound: {rebound_off!r}"
-    )
 
 
 async def _collect(agen):

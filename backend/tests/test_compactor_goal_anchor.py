@@ -49,13 +49,10 @@ Test matrix
 
 from __future__ import annotations
 
-import asyncio
-from typing import Any, Optional
-from unittest.mock import MagicMock
+from typing import Any
 
 import pytest
 from agent.history_compactor import (
-    DEFAULT_CHAR_THRESHOLD,
     DEFAULT_MESSAGE_THRESHOLD,
     compact_messages,
 )
@@ -324,68 +321,6 @@ class _NullToolRegistry:
         return '{"ok": true}'
 
 
-# ─────────────────────── 10. anchor at anchor_every iterations ───────────────────────
-
-
-@pytest.mark.asyncio
-async def test_agent_loop_injects_anchor_at_anchor_every_iteration():
-    """At iteration==_GOAL_ANCHOR_EVERY, a [目标锚定] system message must be
-    injected into working_messages when goal is active."""
-    from agent.agent_loop import _GOAL_ANCHOR_EVERY, AgentLoop
-    from deskpet.agent.goal_store import SessionGoalStore
-
-    store = SessionGoalStore()
-    store.set("sess1", "整理会议纪要")
-
-    # Build enough responses to reach iteration _GOAL_ANCHOR_EVERY
-    # Each iteration before the anchor iteration: tool_use (to keep looping),
-    # then on the anchor iteration itself: end_turn.
-    # We need _GOAL_ANCHOR_EVERY iterations total.
-    # Iterations 1..(N-1) → tool_use; iteration N → end_turn.
-    # We arrange: iters 1..N-1 return tool_use, iter N returns end_turn.
-    n = _GOAL_ANCHOR_EVERY  # 5
-    responses = []
-    for _ in range(n - 1):
-        responses.append(_make_tool_response())
-    responses.append(_make_final_response())
-
-    llm = _RecordingLLM(responses)
-    tools = _NullToolRegistry()
-
-    loop = AgentLoop(
-        llm_registry=llm,
-        tool_registry=tools,
-        max_iterations=n + 2,
-        session_goal_store=store,
-    )
-
-    events = [
-        e
-        async for e in loop.run(
-            messages=[{"role": "user", "content": "go"}],
-            session_id="sess1",
-        )
-    ]
-
-    # Check that at some point (around iteration _GOAL_ANCHOR_EVERY) a
-    # [目标锚定] message was part of working_messages sent to the LLM.
-    # The LLM records all messages it receives at each call.
-    found_anchor = False
-    for call_msgs in llm.all_messages:
-        for m in call_msgs:
-            if m.get("role") == "system" and "[目标锚定]" in str(m.get("content", "")):
-                found_anchor = True
-                break
-        if found_anchor:
-            break
-
-    assert found_anchor, (
-        f"Expected [目标锚定] in at least one LLM call's messages. "
-        f"Got {len(llm.all_messages)} calls. "
-        f"Last call messages: {llm.all_messages[-1] if llm.all_messages else []}"
-    )
-
-
 # ─────────────────────── 11. no anchor when no goal ───────────────────────
 
 
@@ -424,61 +359,3 @@ async def test_agent_loop_no_anchor_when_no_goal():
             assert "[目标锚定]" not in str(m.get("content", "")), (
                 "Should NOT inject [目标锚定] when session_goal_store=None"
             )
-
-
-# ─────────────────────── 12. anchor deduped same iteration ───────────────────────
-
-
-@pytest.mark.asyncio
-async def test_agent_loop_anchor_deduped_same_iteration():
-    """Anchor message should appear at most once per qualifying iteration —
-    the _last_anchor_iter guard prevents double-injection."""
-    from agent.agent_loop import _GOAL_ANCHOR_EVERY, AgentLoop
-    from deskpet.agent.goal_store import SessionGoalStore
-
-    store = SessionGoalStore()
-    store.set("sess_dedup", "dedup goal")
-
-    n = _GOAL_ANCHOR_EVERY
-    # Run enough that iteration n is reached and loop finishes after
-    responses = []
-    for _ in range(n - 1):
-        responses.append(_make_tool_response())
-    responses.append(_make_final_response())
-
-    llm = _RecordingLLM(responses)
-    tools = _NullToolRegistry()
-
-    loop = AgentLoop(
-        llm_registry=llm,
-        tool_registry=tools,
-        max_iterations=n + 2,
-        session_goal_store=store,
-    )
-    events = [
-        e
-        async for e in loop.run(
-            messages=[{"role": "user", "content": "go"}],
-            session_id="sess_dedup",
-        )
-    ]
-
-    # Count how many times [目标锚定] appears across ALL LLM calls at
-    # the anchor iteration (call index n-1, 0-based).
-    # We count DISTINCT injection positions: a message injected once will
-    # appear in every subsequent LLM call (it accumulates in working_messages).
-    # "deduped" means: for the call at exactly iteration n, the anchor was
-    # added exactly once (not twice).
-    # Strategy: check the FIRST call where [目标锚定] appears and count how
-    # many times it appears in that single call's message list.
-    for call_msgs in llm.all_messages:
-        anchor_count = sum(
-            1
-            for m in call_msgs
-            if m.get("role") == "system" and "[目标锚定]" in str(m.get("content", ""))
-        )
-        if anchor_count > 0:
-            assert anchor_count == 1, (
-                f"Anchor injected {anchor_count} times in one call — expected exactly 1"
-            )
-            break

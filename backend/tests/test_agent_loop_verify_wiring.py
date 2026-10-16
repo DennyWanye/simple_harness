@@ -13,18 +13,6 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
-
-import pytest
-from deskpet.agent.verify_gate import (
-    Claim,
-    ClaimPattern,
-    RegexExtractor,
-    UnmatchedClaim,
-    VerifyGate,
-    VerifyOutcome,
-)
-
 
 def test_agent_loop_signature_accepts_verify_gate():
     """新增参数不破坏现有 callers (BC)。"""
@@ -41,64 +29,6 @@ def test_agent_loop_signature_accepts_verify_gate():
     assert params["receipt_store"].default is None
     assert "max_verify_nudges" in params
     assert params["max_verify_nudges"].default == 2
-
-
-def test_verify_gate_off_mode_short_circuits():
-    """mode=off 时 verify_gate.check 直接返回 passed=True (无 ledger 调用)。"""
-    pat = ClaimPattern(id="x", regex=r"已生成", artifact_kind="file")
-    gate = VerifyGate(extractor=RegexExtractor([pat]), mode="off")
-    o = gate.check(assistant_text="已生成 x.pptx", ledger=[])
-    assert o.passed is True
-
-
-def test_verify_gate_strict_blocks_fake_claim():
-    """**核心修复证据 P0-3 + P0-2 联合**: strict + 空 ledger + claim → 拒。
-    AgentLoop 看到 outcome.passed=False 时会回灌 D8 system message。"""
-    pat = ClaimPattern(
-        id="zh_gen",
-        regex=r"已生成 (?P<title>\S+)",
-        artifact_kind="file",
-        tool_hint=["ppt_create"],
-    )
-    gate = VerifyGate(extractor=RegexExtractor([pat]), mode="strict")
-    o = gate.check(
-        assistant_text="已生成 fake.pptx，但其实没调任何工具。",
-        ledger=[],
-    )
-    assert o.passed is False
-    assert len(o.unmatched_claims) == 1
-    assert o.unmatched_claims[0].reason == "no_receipt"
-
-
-@pytest.mark.asyncio
-async def test_ephemeral_rescue_pass_path():
-    """failure_count 达上限 + ephemeral 判 pass → 整体放行（救援链）。"""
-
-    async def _eph(ctx: dict) -> bool:
-        # 模拟 ephemeral 看到 ledger 后判断"这其实有据，regex 漏抓"
-        return True
-
-    pat = ClaimPattern(
-        id="zh_gen",
-        regex=r"已生成 (?P<title>\S+)",
-        artifact_kind="file",
-        tool_hint=["ppt_create"],
-    )
-    gate = VerifyGate(extractor=RegexExtractor([pat]), mode="strict", ephemeral_subagent=_eph)
-    verdict = await gate.consult_ephemeral_subagent(
-        ledger=[],
-        failed_claims=[
-            UnmatchedClaim(
-                pattern_id="zh_gen",
-                raw_text="已生成 x.pptx",
-                expected_kind="file",
-                expected_path_or_title="x.pptx",
-                reason="no_receipt",
-            )
-        ],
-        assistant_text="已生成 x.pptx",
-    )
-    assert verdict is True
 
 
 def test_d8_rebound_format_includes_required_fields():

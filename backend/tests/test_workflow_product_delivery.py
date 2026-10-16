@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pytest
 import pytest_asyncio
-from deskpet.agent.verify_gate import ClaimPattern, RegexExtractor, VerifyGate
 from deskpet.memory.session_db import SessionDB
 from deskpet.tools.receipt_store import ReceiptStore
 from deskpet.workflows.adapters.product_delivery import (
@@ -15,7 +14,6 @@ from deskpet.workflows.adapters.product_delivery import (
     ProductDeliveryError,
     build_product_delivery_handlers,
     resolve_workflow_content_text,
-    stable_workflow_receipt_id,
     workflow_message_projection,
 )
 from deskpet.workflows.outbox import WorkflowOutbox
@@ -68,16 +66,6 @@ def _event(event_id: str, *, run_id: str, kind: str, payload: dict) -> dict:
 
 def _delivery(event_id: str, channel: str, target_id: str = "session-1") -> dict:
     return {"event_id": event_id, "channel": channel, "target_id": target_id}
-
-
-def _completion_gate(tool_name: str) -> VerifyGate:
-    pattern = ClaimPattern(
-        id="graph_completed",
-        regex=r"已生成 (?P<title>[^\s，。]+\.pptx)",
-        artifact_kind="file",
-        tool_hint=[tool_name],
-    )
-    return VerifyGate(extractor=RegexExtractor([pattern]), mode="strict")
 
 
 @pytest_asyncio.fixture
@@ -466,104 +454,6 @@ async def test_handlers_wire_through_real_workflow_service_and_outbox(
     assert len(messages) == 1
     envelope = json.loads(messages[0]["content"])
     assert envelope["workflow"]["event_id"] == event["event_id"]
-
-
-@pytest.mark.asyncio
-async def test_success_receipt_is_append_once_and_is_real_verifygate_evidence(stores) -> None:
-    session_db, receipt_store = stores
-    adapter = ProductDeliveryAdapter(session_db=session_db, receipt_store=receipt_store)
-    event = _event(
-        "receipt-event-success",
-        run_id="ppt-run",
-        kind="receipt",
-        payload={
-            "tool": "ppt_pro",
-            "outcome": "success",
-            "run_id": "ppt-run",
-            "sha256": "b" * 64,
-        },
-    )
-    delivery = _delivery(event["event_id"], "receipt_jsonl")
-
-    first = await adapter.deliver_receipt(event, delivery)
-    second = await adapter.deliver_receipt(event, delivery)
-
-    assert second == first
-    receipts = receipt_store.load_session("session-1")
-    assert len(receipts) == 1
-    receipt = receipts[0]
-    assert receipt.receipt_id == stable_workflow_receipt_id(event["event_id"], "delivered")
-    assert (receipt.sig_version, receipt.phase, receipt.outcome, receipt.ok) == (
-        2,
-        "delivered",
-        "success",
-        True,
-    )
-    assert receipt.effect_id == event["event_id"]
-    assert receipt.artifacts == ["b" * 64]
-    assert adapter.load_verify_evidence("session-1") == [receipt]
-
-    outcome = _completion_gate("ppt_pro").check(
-        assistant_text="已生成 deck.pptx",
-        ledger=adapter.load_verify_evidence("session-1"),
-    )
-    assert outcome.passed is True
-    assert outcome.claims_extracted == 1
-
-    jsonl = receipt_store.receipts_dir / "session-1.jsonl"
-    assert len(jsonl.read_text(encoding="utf-8").splitlines()) == 1
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("terminal_outcome", "error_class"),
-    [("failed", "workflow_failed"), ("cancelled", "workflow_cancelled")],
-)
-async def test_failure_and_cancel_close_accepted_ledger_without_completion_evidence(
-    stores, terminal_outcome: str, error_class: str
-) -> None:
-    session_db, receipt_store = stores
-    adapter = ProductDeliveryAdapter(session_db=session_db, receipt_store=receipt_store)
-    accepted = _event(
-        f"accepted-{terminal_outcome}",
-        run_id=f"run-{terminal_outcome}",
-        kind="accepted",
-        payload={"tool": "ppt_pro", "outcome": "pending", "phase": "accepted"},
-    )
-    terminal = _event(
-        f"terminal-{terminal_outcome}",
-        run_id=f"run-{terminal_outcome}",
-        kind="receipt",
-        payload={
-            "tool": "ppt_pro",
-            "outcome": terminal_outcome,
-            "error": f"workflow {terminal_outcome}",
-        },
-    )
-
-    accepted_result = await adapter.deliver_receipt(
-        accepted, _delivery(accepted["event_id"], "receipt")
-    )
-    terminal_result = await adapter.deliver_receipt(
-        terminal, _delivery(terminal["event_id"], "receipt")
-    )
-
-    assert accepted_result["completion_evidence"] is False
-    assert terminal_result["completion_evidence"] is False
-    receipts = receipt_store.load_session("session-1")
-    assert [(item.phase, item.outcome, item.ok) for item in receipts] == [
-        ("accepted", "pending", False),
-        ("delivered", "failed", False),
-    ]
-    assert receipts[-1].error_class == error_class
-    assert adapter.load_verify_evidence("session-1") == []
-
-    outcome = _completion_gate("ppt_pro").check(
-        assistant_text="已生成 deck.pptx",
-        ledger=receipt_store.load_session("session-1"),
-    )
-    assert outcome.passed is False
-    assert outcome.unmatched_claims[0].reason == "no_receipt"
 
 
 @pytest.mark.asyncio

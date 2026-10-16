@@ -21,9 +21,9 @@ from deskpet.capabilities.tools import (
     CapabilityToolService,
     register_capability_tools,
 )
-from deskpet.permissions.task_grants import canonical_filesystem_path
 from deskpet.tools.capabilities import ToolExecutionContext
 from deskpet.tools.registry import ToolRegistry
+from deskpet.types.task_grants import canonical_filesystem_path
 
 
 def _context(

@@ -24,8 +24,8 @@ from deskpet.execution.contracts import (
     root_idempotency_key,
 )
 from deskpet.permissions.runtime import PreparedAuthorizationRuntime
-from deskpet.permissions.task_grants import ResourceSelector
 from deskpet.tools.capabilities import ToolExecutionContext
+from deskpet.types.task_grants import ResourceSelector
 from deskpet.workflows.effects import PreparedToolCall
 from deskpet.workflows.store.execution_uow import SqliteExecutionUnitOfWork
 

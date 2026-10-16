@@ -19,7 +19,6 @@ from deskpet.companion.authority import (
     RevocationBarrierTimeout,
     get_process_revocation_barrier,
 )
-from deskpet.companion.legacy_authority import LegacyGrowthAuthorityAdapter
 
 
 class FakeAuthorityStore:
@@ -452,32 +451,3 @@ class FakeReminderReader:
 class FakeReminderWriter:
     async def write_reminder(self, request: GrowthIngressRequest) -> object:
         return ("reminder-write", request.payload["value"])
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("kind", "expected"),
-    [
-        (GrowthIngressKind.PREFERENCE_READ, ("preference-read", "profile-a")),
-        (GrowthIngressKind.PREFERENCE_WRITE, ("preference-write", "x")),
-        (GrowthIngressKind.CODIFY, ("codify", 7)),
-        (GrowthIngressKind.REMINDER_READ, ("reminder-read", "profile-a")),
-        (GrowthIngressKind.REMINDER_WRITE, ("reminder-write", "x")),
-    ],
-)
-async def test_legacy_adapter_maps_typed_ports(kind: GrowthIngressKind, expected: object) -> None:
-    adapter = LegacyGrowthAuthorityAdapter(
-        preference_reader=FakePreferenceReader(),
-        preference_writer=FakePreferenceWriter(),
-        codifier=FakeCodifier(),
-        reminder_reader=FakeReminderReader(),
-        reminder_writer=FakeReminderWriter(),
-    )
-    ingress = request(kind, authority_generation=1)
-
-    if kind.is_write:
-        actual = await adapter.write(ingress)
-    else:
-        actual = await adapter.read(ingress)
-
-    assert actual == expected

@@ -6,8 +6,8 @@ from pathlib import Path
 import pytest
 from deskpet.permissions.policy import AuthorizationPolicyState
 from deskpet.permissions.runtime import PreparedAuthorizationRuntime
-from deskpet.permissions.task_grants import ResourceSelector, TaskGrant
 from deskpet.tools.capabilities import ToolExecutionContext
+from deskpet.types.task_grants import ResourceSelector, TaskGrant
 from deskpet.workflows.effects import PreparedToolCall
 
 

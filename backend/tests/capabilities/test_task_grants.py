@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 
 import pytest
-from deskpet.permissions.task_grants import (
+from deskpet.types.task_grants import (
     ExactGrantRequest,
     ResourceSelector,
     TaskGrant,

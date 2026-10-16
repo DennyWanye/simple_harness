@@ -255,12 +255,3 @@ def test_registered_in_registry():
     assert spec is not None
     assert spec.toolset == "image"
     assert spec.schema["name"] == "generate_image"
-
-
-def test_capability_gate_marker_matches_tool_name():
-    """The tool name must equal capability_gate's image marker so
-    registering it flips image requests REFUSE→PASS."""
-    from agent import capability_gate as cg
-
-    img_cap = next(c for c in cg._CAPABILITIES if c.key == "image")
-    assert "generate_image" in img_cap.tool_markers

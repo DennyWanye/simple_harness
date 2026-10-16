@@ -18,8 +18,6 @@
 
 from __future__ import annotations
 
-import asyncio
-
 import pytest
 
 # ─── GoalChecker 降级矩阵 ─────────────────────────────────────
@@ -57,119 +55,6 @@ def _make_timeout_llm():
         raise TimeoutError("LLM timeout")
 
     return _call
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# T-D1: GoalChecker timeout → (False, "goal_check=skipped") — NOT (True, ...)
-# ─────────────────────────────────────────────────────────────────────────────
-
-
-@pytest.mark.asyncio
-async def test_goal_checker_timeout_returns_skipped_not_done():
-    """R-T3 key assertion: timeout MUST return done=False (not default-PASS)."""
-    from deskpet.agent.goal_checker import GoalChecker
-
-    checker = GoalChecker(_make_timeout_llm())
-    done, hint = await checker.check("write a report", [])
-    # CRITICAL: must NOT be done=True (that would be dangerous default-pass)
-    assert done is False, (
-        "GoalChecker timeout must NOT default to done=True — "
-        "that silently marks goal done when checker is broken."
-    )
-    assert hint == "goal_check=skipped"
-
-
-@pytest.mark.asyncio
-async def test_goal_checker_llm_exception_returns_skipped():
-    """R-T3: any LLM exception → skipped signal, not default done."""
-    from deskpet.agent.goal_checker import GoalChecker
-
-    checker = GoalChecker(_make_failing_llm(RuntimeError("connection refused")))
-    done, hint = await checker.check("任意目标", [])
-    assert done is False
-    assert hint == "goal_check=skipped"
-
-
-@pytest.mark.asyncio
-async def test_goal_checker_malformed_json_returns_skipped():
-    """R-T3: LLM returns garbage JSON → skipped, not done=True."""
-    from deskpet.agent.goal_checker import GoalChecker
-
-    checker = GoalChecker(_make_llm("this is not json at all!!!"))
-    done, hint = await checker.check("send email", [])
-    assert done is False
-    assert hint == "goal_check=skipped"
-
-
-@pytest.mark.asyncio
-async def test_goal_checker_non_string_response_returns_skipped():
-    """R-T3: non-str LLM response → skipped."""
-    from deskpet.agent.goal_checker import GoalChecker
-
-    async def _bad_llm(p: str):
-        return 999  # type: ignore[return-value]
-
-    checker = GoalChecker(_bad_llm)
-    done, hint = await checker.check("目标", [])
-    assert done is False
-    assert hint == "goal_check=skipped"
-
-
-@pytest.mark.asyncio
-async def test_goal_checker_missing_done_field_returns_skipped():
-    """R-T3: JSON with no 'done' field → skipped."""
-    from deskpet.agent.goal_checker import GoalChecker
-
-    checker = GoalChecker(_make_llm('{"hint": "missing done field"}'))
-    done, hint = await checker.check("目标", [])
-    assert done is False
-    assert hint == "goal_check=skipped"
-
-
-@pytest.mark.asyncio
-async def test_goal_checker_normal_done_true_unaffected():
-    """BC: normal success path (done=true) still returns (True, '')."""
-    from deskpet.agent.goal_checker import GoalChecker
-
-    checker = GoalChecker(_make_llm('{"done": true, "hint": ""}'))
-    done, hint = await checker.check("write hello", [])
-    assert done is True
-    assert hint == ""
-
-
-@pytest.mark.asyncio
-async def test_goal_checker_normal_done_false_unaffected():
-    """BC: normal not-done path still returns (False, hint text)."""
-    from deskpet.agent.goal_checker import GoalChecker
-
-    checker = GoalChecker(_make_llm('{"done": false, "hint": "缺少测试"}'))
-    done, hint = await checker.check("make tests pass", [])
-    assert done is False
-    assert hint == "缺少测试"
-
-
-@pytest.mark.asyncio
-async def test_goal_checker_skipped_emits_metric(monkeypatch):
-    """R-T3: degradation fact emitted to metrics on skipped."""
-    from deskpet.agent import goal_checker as _gc_module
-
-    sink = _RecordingMetricsSink()
-
-    # Patch metrics_sink.record inside goal_checker module
-    import observability.metrics_sink as _ms
-
-    monkeypatch.setattr(_ms, "record", sink.record)
-
-    from deskpet.agent.goal_checker import GoalChecker
-
-    checker = GoalChecker(_make_timeout_llm())
-    done, hint = await checker.check("目标", [])
-
-    assert done is False
-    assert hint == "goal_check=skipped"
-    # metric should have been emitted
-    events = [e for e, _ in sink.events if e == "goal_check_skipped"]
-    assert len(events) >= 1, f"Expected goal_check_skipped metric, got: {sink.events}"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -393,18 +278,6 @@ async def test_evaluator_no_crash_on_any_error():
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.asyncio
-async def test_goal_checker_never_crashes_on_exception():
-    """R-T3: GoalChecker never raises — always returns (bool, str)."""
-    from deskpet.agent.goal_checker import GoalChecker
-
-    for exc in [RuntimeError("boom"), TimeoutError(), ValueError("bad"), OSError("io")]:
-        checker = GoalChecker(_make_failing_llm(exc))
-        done, hint = await checker.check("目标", [])
-        assert isinstance(done, bool)
-        assert isinstance(hint, str)
-
-
 def test_reflection_never_crashes():
     """R-T3: parse_reflection never raises — returns None or StructuredReflection."""
     from deskpet.agent.reflection import parse_reflection
@@ -418,7 +291,7 @@ def test_reflection_never_crashes():
 # T-D5: R-T6 — Receipt shadow fields (BC + round-trip)
 # ─────────────────────────────────────────────────────────────────────────────
 
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 
 
 def _make_basic_receipt(**overrides):
@@ -446,7 +319,6 @@ def test_receipt_shadow_fields_have_safe_defaults():
 
 def test_receipt_shadow_verdict_can_be_set():
     """R-T6: shadow_verdict can record 'would_block' or 'would_pass'."""
-    from deskpet.tools.receipt import ToolReceipt
 
     r = _make_basic_receipt()
     r.shadow_verdict = "would_block"

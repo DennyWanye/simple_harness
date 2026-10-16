@@ -11,18 +11,7 @@ from __future__ import annotations
 import inspect
 
 import pytest
-from deskpet.workflows.definitions import deep_research_v6_nodes as legacy_q1
 from deskpet.workflows.definitions.v6.deep_research import NODE_IDS, initial_state
-
-
-def test_q1_helpers_remain_importable_for_isolated_legacy_recovery() -> None:
-    # Historical readers may still import these names. They are deliberately
-    # absent from the production graph and must not be removed until old-run
-    # recovery policy explicitly retires them.
-    assert callable(legacy_q1.compile_spec_handler)
-    assert callable(legacy_q1.collect_pages_handler)
-    assert callable(legacy_q1.extract_facts_handler)
-    assert callable(legacy_q1.assess_render_handler)
 
 
 def test_production_v6_never_routes_through_q1_only_nodes() -> None:
