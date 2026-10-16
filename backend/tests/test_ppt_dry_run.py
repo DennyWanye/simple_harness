@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from deskpet.tools.ppt_tools import ppt_create
 
+from tests.ppt_patching import patch_ppt
+
 OUTLINE = [
     {"layout": "title", "title": "Demo Deck", "subtitle": "WI-T1.6"},
     {"layout": "bullet", "title": "Section 1", "bullets": ["alpha", "beta", "gamma"]},
@@ -61,9 +63,8 @@ def test_t3_2_dry_run_empty_outline_returns_error():
 
 def test_t3_2_dry_run_works_without_python_pptx(monkeypatch):
     """dry_run 不依赖 python-pptx — 即使 _HAS_PPTX=False 也能预览。"""
-    import deskpet.tools.ppt_tools as ppt_mod
 
-    monkeypatch.setattr(ppt_mod, "_HAS_PPTX", False)
+    patch_ppt(monkeypatch, "_HAS_PPTX", False)
     result = ppt_create(OUTLINE, dry_run=True, title="Preview")
     # 关键：_HAS_PPTX=False 时 dry_run 路径仍 ok=True（不走 missing_dependency）
     assert result["ok"] is True

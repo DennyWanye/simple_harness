@@ -12,6 +12,8 @@ import pytest
 from deskpet.tools import ppt_tools
 from deskpet.tools.ppt_tools import _HAS_PPTX, ppt_create
 
+from tests.ppt_patching import patch_ppt
+
 pytestmark = pytest.mark.skipif(not _HAS_PPTX, reason="python-pptx not installed")
 
 
@@ -22,7 +24,7 @@ OUTLINE = [
 
 
 def _enable_preview_in_tests(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(ppt_tools, "_in_pytest", lambda: False, raising=False)
+    patch_ppt(monkeypatch, "_in_pytest", lambda: False, raising=False)
 
 
 def test_preview_artifacts_appended(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -39,8 +41,8 @@ def test_preview_artifacts_appended(monkeypatch: pytest.MonkeyPatch, tmp_path: P
             pngs.append(str(png))
         return pngs
 
-    monkeypatch.setattr(
-        ppt_tools,
+    patch_ppt(
+        monkeypatch,
         "ppt_render",
         SimpleNamespace(
             com_render_available=lambda: True,
@@ -74,8 +76,8 @@ def test_preview_disabled_by_config(monkeypatch: pytest.MonkeyPatch, tmp_path: P
     assert ppt_tools._ppt_preview_render_enabled() is False
 
     # 接线层: enabled=False 时渲染器绝不被调
-    monkeypatch.setattr(
-        ppt_tools,
+    patch_ppt(
+        monkeypatch,
         "ppt_render",
         SimpleNamespace(
             com_render_available=lambda: True,
@@ -94,8 +96,8 @@ def test_preview_disabled_by_config(monkeypatch: pytest.MonkeyPatch, tmp_path: P
 
 def test_preview_render_unavailable_ok(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     _enable_preview_in_tests(monkeypatch)
-    monkeypatch.setattr(
-        ppt_tools,
+    patch_ppt(
+        monkeypatch,
         "ppt_render",
         SimpleNamespace(
             com_render_available=lambda: False,

@@ -11,6 +11,8 @@ import pytest
 from deskpet.tools import ppt_tools
 from deskpet.tools.ppt_tools import SlideOutline
 
+from tests.ppt_patching import patch_ppt
+
 
 def _report(md: str = "市场规模 120 亿美元，年增速 18%。[^1]") -> SimpleNamespace:
     return SimpleNamespace(report_md=md)
@@ -147,7 +149,7 @@ def test_ppt_pro_content_outline_to_markdown_multiple_pages():
 
 
 def test_ppt_pro_content_default_research_timeout_preserves_deep_research(monkeypatch):
-    monkeypatch.setattr(ppt_tools, "_ppt_config_section", lambda: {})
+    patch_ppt(monkeypatch, "_ppt_config_section", lambda: {})
 
     cfg = ppt_tools._ppt_pro_cfg()
 

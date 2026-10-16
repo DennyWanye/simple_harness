@@ -7,10 +7,11 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from deskpet.tools import ppt_tools
 from deskpet.workflows.adapters.ppt_runtime import PptRuntime
 from host import ppt_outline
 from host import runtime as host_runtime
+
+from tests.ppt_patching import patch_ppt
 
 
 @pytest.mark.asyncio
@@ -21,7 +22,6 @@ async def test_runtime_operations_use_executor_and_return_json_safe_refs(
     # run. Evidence automation sets this globally, which would otherwise make
     # PptRuntime enter the production EffectJournal path and fail closed.
     monkeypatch.delenv("DESKPET_USER_DATA_DIR", raising=False)
-    from deskpet.tools import ppt_tools
 
     loop_thread = threading.get_ident()
     worker_threads: list[int] = []
@@ -58,11 +58,11 @@ async def test_runtime_operations_use_executor_and_return_json_safe_refs(
             assert timeout == 150.0
             return [str(preview)]
 
-    monkeypatch.setattr(ppt_tools, "probe_image_reachable", probe)
-    monkeypatch.setattr(ppt_tools, "generate_images", generate)
-    monkeypatch.setattr(ppt_tools, "_render_pro", render)
-    monkeypatch.setattr(ppt_tools, "_ppt_preview_render_enabled", lambda: True)
-    monkeypatch.setattr(ppt_tools, "_get_ppt_renderer", lambda: Renderer())
+    patch_ppt(monkeypatch, "probe_image_reachable", probe)
+    patch_ppt(monkeypatch, "generate_images", generate)
+    patch_ppt(monkeypatch, "_render_pro", render)
+    patch_ppt(monkeypatch, "_ppt_preview_render_enabled", lambda: True)
+    patch_ppt(monkeypatch, "_get_ppt_renderer", lambda: Renderer())
 
     runtime = PptRuntime()
     assert await runtime.probe_images(timeout_s=2.0)
@@ -191,7 +191,7 @@ async def test_startup_registers_runtime_but_disables_legacy_tool_starter(monkey
         lambda: asyncio.sleep(0, result=lambda _prompt: "ok"),
     )
     services = {}
-    monkeypatch.setattr(ppt_tools, "set_ppt_pro_services", lambda **kw: services.update(kw))
+    patch_ppt(monkeypatch, "set_ppt_pro_services", lambda **kw: services.update(kw))
 
     ppt_outline._configure_ppt_production()
     assert captured["registered_adapter"][0][:2] == ("ppt_pro", "v1")
@@ -296,7 +296,7 @@ def test_startup_flags_do_not_disable_durable_workflow(
         "workflows",
         SimpleNamespace(enabled=enabled, ppt_pro=ppt_pro),
     )
-    monkeypatch.setattr(ppt_tools, "set_ppt_pro_services", lambda **kw: services.update(kw))
+    patch_ppt(monkeypatch, "set_ppt_pro_services", lambda **kw: services.update(kw))
 
     ppt_outline._configure_ppt_production(recover=False)
 

@@ -7,6 +7,8 @@ import pytest
 from deskpet.tools import ppt_tools
 from deskpet.tools.ppt_tools import SlideOutline
 
+from tests.ppt_patching import patch_ppt
+
 
 def _slides() -> list[SlideOutline]:
     return [
@@ -101,19 +103,17 @@ def test_callout_extraction_uses_powerpoint_two_line_capacity():
 
 def test_render_pro_probe_false_uses_template_and_skips_image_gen(monkeypatch):
     calls: list[tuple[object, dict]] = []
-    monkeypatch.setattr(
-        ppt_tools, "probe_image_reachable", lambda *, timeout_s: False, raising=False
-    )
+    patch_ppt(monkeypatch, "probe_image_reachable", lambda *, timeout_s: False, raising=False)
     # Template fallback uses the deterministic bundled-template path (bug#2 fix),
     # not the legacy _default_template / vision picker.
-    monkeypatch.setattr(ppt_tools, "_fallback_template_path", lambda: "tpl")
-    monkeypatch.setattr(ppt_tools, "_disk_preflight", lambda **_k: None)
+    patch_ppt(monkeypatch, "_fallback_template_path", lambda: "tpl")
+    patch_ppt(monkeypatch, "_disk_preflight", lambda **_k: None)
 
     def fake_ppt_create(outline, **kwargs):
         calls.append((outline, kwargs))
         return {"ok": True, "path": "deck.pptx", "artifacts": []}
 
-    monkeypatch.setattr(ppt_tools, "ppt_create", fake_ppt_create)
+    patch_ppt(monkeypatch, "ppt_create", fake_ppt_create)
     messages: list[str] = []
 
     result = ppt_tools._render_pro(
@@ -144,7 +144,7 @@ def test_autofill_first_image_connectivity_or_model_unavailable_falls_back(monke
         calls.append(list(prompts))
         return [{"prompt": prompts[0], "path": None, "error": "nope", "error_kind": error_kind}]
 
-    monkeypatch.setattr(ppt_tools, "generate_images", fake_generate, raising=False)
+    patch_ppt(monkeypatch, "generate_images", fake_generate, raising=False)
 
     reachable, n_ok = ppt_tools._autofill_with_connectivity_gate(_slides())
 
@@ -164,7 +164,7 @@ def test_autofill_first_image_content_failure_continues(monkeypatch):
         return [{"prompt": prompts[0], "path": "ok.png", "error": None, "error_kind": None}]
 
     slides = _slides()
-    monkeypatch.setattr(ppt_tools, "generate_images", fake_generate, raising=False)
+    patch_ppt(monkeypatch, "generate_images", fake_generate, raising=False)
 
     reachable, n_ok = ppt_tools._autofill_with_connectivity_gate(slides)
 
@@ -181,15 +181,13 @@ def test_autofill_all_images_fail_returns_fallback(monkeypatch):
             for p in prompts
         ]
 
-    monkeypatch.setattr(ppt_tools, "generate_images", fake_generate, raising=False)
+    patch_ppt(monkeypatch, "generate_images", fake_generate, raising=False)
 
     assert ppt_tools._autofill_with_connectivity_gate(_slides()) == (False, 0)
 
 
 def test_render_pro_all_success_uses_image_path_without_second_generation(monkeypatch):
-    monkeypatch.setattr(
-        ppt_tools, "probe_image_reachable", lambda *, timeout_s: True, raising=False
-    )
+    patch_ppt(monkeypatch, "probe_image_reachable", lambda *, timeout_s: True, raising=False)
 
     def fake_generate(prompts, *, size, model=None):
         return [
@@ -198,10 +196,10 @@ def test_render_pro_all_success_uses_image_path_without_second_generation(monkey
         ]
 
     calls: list[tuple[object, dict]] = []
-    monkeypatch.setattr(ppt_tools, "generate_images", fake_generate, raising=False)
-    monkeypatch.setattr(ppt_tools, "_disk_preflight", lambda **_k: None)
-    monkeypatch.setattr(
-        ppt_tools,
+    patch_ppt(monkeypatch, "generate_images", fake_generate, raising=False)
+    patch_ppt(monkeypatch, "_disk_preflight", lambda **_k: None)
+    patch_ppt(
+        monkeypatch,
         "ppt_create",
         lambda outline, **kwargs: calls.append((outline, kwargs)) or {"ok": True},
     )
@@ -229,23 +227,23 @@ def test_render_pro_trusts_prepared_images_and_forces_editable_native_engine(
     monkeypatch,
 ):
     calls: list[tuple[object, dict]] = []
-    monkeypatch.setattr(ppt_tools, "_disk_preflight", lambda **_k: None)
-    monkeypatch.setattr(
-        ppt_tools,
+    patch_ppt(monkeypatch, "_disk_preflight", lambda **_k: None)
+    patch_ppt(
+        monkeypatch,
         "probe_image_reachable",
         lambda **_kwargs: (_ for _ in ()).throw(
             AssertionError("prepared workflow images must not be probed again")
         ),
     )
-    monkeypatch.setattr(
-        ppt_tools,
+    patch_ppt(
+        monkeypatch,
         "_autofill_with_connectivity_gate",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(
             AssertionError("prepared workflow images must not be generated again")
         ),
     )
-    monkeypatch.setattr(
-        ppt_tools,
+    patch_ppt(
+        monkeypatch,
         "ppt_create",
         lambda outline, **kwargs: (
             calls.append((outline, kwargs)) or {"ok": True, "path": "editable.pptx"}
@@ -289,29 +287,29 @@ def test_render_pro_trusts_prepared_images_and_forces_editable_native_engine(
 
 def test_disk_preflight_blocks_when_low_and_passes_when_enough(monkeypatch):
     # Low free space → clear user-facing error.
-    monkeypatch.setattr(ppt_tools, "_drive_free_bytes", lambda _p: 10 * 1024 * 1024)
+    patch_ppt(monkeypatch, "_drive_free_bytes", lambda _p: 10 * 1024 * 1024)
     msg = ppt_tools._disk_preflight(image_mode=True, pages=8)
     assert msg is not None and "磁盘空间不足" in msg
     # Plenty of space → no block.
-    monkeypatch.setattr(ppt_tools, "_drive_free_bytes", lambda _p: 50 * 1024 * 1024 * 1024)
+    patch_ppt(monkeypatch, "_drive_free_bytes", lambda _p: 50 * 1024 * 1024 * 1024)
     assert ppt_tools._disk_preflight(image_mode=True, pages=8) is None
     # Unknown free space (probe failed) → must never block a valid render.
-    monkeypatch.setattr(ppt_tools, "_drive_free_bytes", lambda _p: None)
+    patch_ppt(monkeypatch, "_drive_free_bytes", lambda _p: None)
     assert ppt_tools._disk_preflight(image_mode=True, pages=8) is None
 
 
 def test_render_pro_aborts_early_on_low_disk(monkeypatch):
-    monkeypatch.setattr(
-        ppt_tools, "_disk_preflight", lambda **_k: "磁盘空间不足：C:\\ 仅剩 5MB，请清理后重试。"
+    patch_ppt(
+        monkeypatch, "_disk_preflight", lambda **_k: "磁盘空间不足：C:\\ 仅剩 5MB，请清理后重试。"
     )
     called = {"ppt_create": 0, "probe": 0}
-    monkeypatch.setattr(
-        ppt_tools,
+    patch_ppt(
+        monkeypatch,
         "ppt_create",
         lambda *a, **k: called.__setitem__("ppt_create", called["ppt_create"] + 1) or {"ok": True},
     )
-    monkeypatch.setattr(
-        ppt_tools,
+    patch_ppt(
+        monkeypatch,
         "probe_image_reachable",
         lambda *, timeout_s: called.__setitem__("probe", called["probe"] + 1) or True,
         raising=False,
@@ -335,10 +333,8 @@ def test_render_pro_aborts_early_on_low_disk(monkeypatch):
 
 
 def test_render_pro_partial_image_failure_notifies(monkeypatch):
-    monkeypatch.setattr(
-        ppt_tools, "probe_image_reachable", lambda *, timeout_s: True, raising=False
-    )
-    monkeypatch.setattr(ppt_tools, "_disk_preflight", lambda **_k: None)
+    patch_ppt(monkeypatch, "probe_image_reachable", lambda *, timeout_s: True, raising=False)
+    patch_ppt(monkeypatch, "_disk_preflight", lambda **_k: None)
     seq = {"n": 0}
 
     def fake_generate(prompts, *, size, model=None):
@@ -347,9 +343,9 @@ def test_render_pro_partial_image_failure_notifies(monkeypatch):
             return [{"prompt": prompts[0], "path": "cover.png", "error": None, "error_kind": None}]
         return [{"prompt": prompts[0], "path": None, "error": "blocked", "error_kind": "content"}]
 
-    monkeypatch.setattr(ppt_tools, "generate_images", fake_generate, raising=False)
-    monkeypatch.setattr(
-        ppt_tools, "ppt_create", lambda outline, **kwargs: {"ok": True, "path": "deck.pptx"}
+    patch_ppt(monkeypatch, "generate_images", fake_generate, raising=False)
+    patch_ppt(
+        monkeypatch, "ppt_create", lambda outline, **kwargs: {"ok": True, "path": "deck.pptx"}
     )
     messages: list[str] = []
 
@@ -383,14 +379,14 @@ def test_degrade_to_template_clears_image_fields_and_keeps_content():
 def test_ppt_create_explicit_skip_false_preserves_default_image_autofill(monkeypatch, tmp_path):
     called = {"autofill": 0}
 
-    monkeypatch.setattr(ppt_tools, "_HAS_PPTX", True)
-    monkeypatch.setattr(
-        ppt_tools,
+    patch_ppt(monkeypatch, "_HAS_PPTX", True)
+    patch_ppt(
+        monkeypatch,
         "_autofill_image_prompts",
         lambda slides: called.__setitem__("autofill", called["autofill"] + 1),
     )
-    monkeypatch.setattr(
-        ppt_tools,
+    patch_ppt(
+        monkeypatch,
         "_render_fromscratch",
         lambda slides, theme_obj, out_path, **kwargs: {
             "ok": True,
@@ -398,8 +394,8 @@ def test_ppt_create_explicit_skip_false_preserves_default_image_autofill(monkeyp
             "artifacts": [],
         },
     )
-    monkeypatch.setattr(ppt_tools, "_visual_review_loop", lambda *a, **k: None)
-    monkeypatch.setattr(ppt_tools, "_maybe_render_preview", lambda result: None)
+    patch_ppt(monkeypatch, "_visual_review_loop", lambda *a, **k: None)
+    patch_ppt(monkeypatch, "_maybe_render_preview", lambda result: None)
 
     result = ppt_tools.ppt_create(
         [{"layout": "image_full", "title": "T", "image_prompt": "draw it"}],

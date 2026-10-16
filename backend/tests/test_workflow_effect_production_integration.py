@@ -20,6 +20,8 @@ from deskpet.workflows.effects import (
 )
 from deskpet.workflows.store import WorkflowRunStore
 
+from tests.ppt_patching import patch_ppt
+
 
 async def _effect_context(
     path: Path,
@@ -324,7 +326,6 @@ async def test_production_run_ambiguity_fails_closed_before_code_handler(
 async def test_ppt_effects_reuse_committed_json_safe_results(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    from deskpet.tools import ppt_tools
 
     user_data_dir = tmp_path / "user-data"
     db_path = user_data_dir / "data" / "workflow.db"
@@ -363,10 +364,10 @@ async def test_ppt_effects_reuse_committed_json_safe_results(
             preview.write_bytes(b"preview")
             return [preview]
 
-    monkeypatch.setattr(ppt_tools, "generate_images", generate)
-    monkeypatch.setattr(ppt_tools, "_render_pro", publish)
-    monkeypatch.setattr(ppt_tools, "_ppt_preview_render_enabled", lambda: True)
-    monkeypatch.setattr(ppt_tools, "_get_ppt_renderer", lambda: Renderer())
+    patch_ppt(monkeypatch, "generate_images", generate)
+    patch_ppt(monkeypatch, "_render_pro", publish)
+    patch_ppt(monkeypatch, "_ppt_preview_render_enabled", lambda: True)
+    patch_ppt(monkeypatch, "_get_ppt_renderer", lambda: Renderer())
     runtime = PptRuntime()
 
     async def run_all():
@@ -409,7 +410,6 @@ async def test_ppt_effects_reuse_committed_json_safe_results(
 async def test_ppt_uncertain_image_generation_fails_closed(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    from deskpet.tools import ppt_tools
 
     context, _ = await _effect_context(
         tmp_path / "workflow.db",
@@ -425,7 +425,7 @@ async def test_ppt_uncertain_image_generation_fails_closed(
         calls += 1
         raise RuntimeError("image provider disconnected")
 
-    monkeypatch.setattr(ppt_tools, "generate_images", fail_generate)
+    patch_ppt(monkeypatch, "generate_images", fail_generate)
     runtime = PptRuntime(effect_context={"image": context})
     kwargs = {
         "slide_id": "slide-dangerous",
@@ -446,7 +446,6 @@ async def test_ppt_uncertain_image_generation_fails_closed(
 async def test_full_page_image_effect_reuses_normalized_asset_and_detects_retention_loss(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    from deskpet.tools import ppt_tools
     from PIL import Image
 
     context, _ = await _effect_context(
@@ -466,7 +465,7 @@ async def test_full_page_image_effect_reuses_normalized_asset_and_detects_retent
         assert model == "model-a"
         return [{"path": str(provider_path), "error": None}]
 
-    monkeypatch.setattr(ppt_tools, "generate_images", generate)
+    patch_ppt(monkeypatch, "generate_images", generate)
     runtime = PptRuntime(effect_context={"image": context})
     kwargs = {
         "slide_id": "slide-full-page",

@@ -4,11 +4,11 @@ import asyncio
 from types import SimpleNamespace
 
 import pytest
-from deskpet.tools import ppt_tools
 from host import chat_delivery, connections, control_messages, ppt_outline
 from host import runtime as host_runtime
 
 from tests.host_patch import patch_host_global
+from tests.ppt_patching import patch_ppt
 
 
 def _use_control_connections(monkeypatch, mapping) -> None:
@@ -402,7 +402,7 @@ def test_ppt_outline_startup_expire_is_called(monkeypatch):
 def test_ppt_pro_startup_wires_only_durable_workflow(monkeypatch):
 
     seen = {}
-    monkeypatch.setattr(ppt_tools, "set_ppt_pro_services", lambda **kwargs: seen.update(kwargs))
+    patch_ppt(monkeypatch, "set_ppt_pro_services", lambda **kwargs: seen.update(kwargs))
 
     ppt_outline._configure_ppt_production()
 

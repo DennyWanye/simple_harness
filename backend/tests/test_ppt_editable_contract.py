@@ -11,6 +11,8 @@ from PIL import Image
 from pptx import Presentation
 from pptx.util import Inches, Pt
 
+from tests.ppt_patching import patch_ppt
+
 
 def test_new_ppt_run_defaults_to_editable_native_objects() -> None:
     state = ppt_pro_initial_state(
@@ -1029,7 +1031,7 @@ def test_editable_gate_rejects_image_full_layout_even_with_native_title(
 
 
 def test_conclusion_slide_keeps_every_editable_bullet(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr(ppt_tools, "_default_template", lambda: None)
+    patch_ppt(monkeypatch, "_default_template", lambda: None)
     output = tmp_path / "conclusion.pptx"
     conclusion = {
         "layout": "image",
@@ -1070,7 +1072,7 @@ def test_native_table_and_bar_chart_are_rendered_and_enforced(
     tmp_path,
     monkeypatch,
 ) -> None:
-    monkeypatch.setattr(ppt_tools, "_default_template", lambda: None)
+    patch_ppt(monkeypatch, "_default_template", lambda: None)
     output = tmp_path / "editable.pptx"
     chart_slide = {
         "layout": "chart",
@@ -1449,7 +1451,7 @@ def test_editable_table_visual_revision_scales_cell_text(tmp_path) -> None:
 
 @pytest.mark.parametrize("layout", ["chart", "toc"])
 def test_change_variant_changes_chart_and_toc_slide_output(tmp_path, monkeypatch, layout) -> None:
-    monkeypatch.setattr(ppt_tools, "_default_template", lambda: None)
+    patch_ppt(monkeypatch, "_default_template", lambda: None)
     common = {
         "layout": layout,
         "title": f"{layout.title()} revision",

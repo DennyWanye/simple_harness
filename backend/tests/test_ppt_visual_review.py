@@ -6,7 +6,6 @@
 
 from __future__ import annotations
 
-import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -21,6 +20,8 @@ from deskpet.tools.ppt_tools import (
     parse_outline,
 )
 from deskpet.tools.ppt_visual_review import _parse_review_json
+
+from tests.ppt_patching import patch_ppt
 
 pytestmark = pytest.mark.skipif(not _HAS_PPTX, reason="python-pptx not installed")
 
@@ -191,7 +192,7 @@ def test_apply_ok_or_invalid_no_change():
 
 def _loop_env(monkeypatch, tmp_path, reviews_rounds):
     """搭闭环测试环境: mock 渲染器(写假png) + mock review_slides(按轮出)。"""
-    monkeypatch.setattr(ppt_tools, "_in_pytest", lambda: False)
+    patch_ppt(monkeypatch, "_in_pytest", lambda: False)
 
     shots: list[str] = []
 
@@ -203,8 +204,8 @@ def _loop_env(monkeypatch, tmp_path, reviews_rounds):
         shots.append(str(d))
         return [str(p)]
 
-    monkeypatch.setattr(
-        ppt_tools,
+    patch_ppt(
+        monkeypatch,
         "ppt_render",
         SimpleNamespace(
             com_render_available=lambda: True,
@@ -231,7 +232,7 @@ def _loop_env(monkeypatch, tmp_path, reviews_rounds):
         rerenders["n"] += 1
         return real_render(*a, **kw)
 
-    monkeypatch.setattr(ppt_tools, "_render_fromscratch", counting_render)
+    patch_ppt(monkeypatch, "_render_fromscratch", counting_render)
     return shots, calls, rerenders
 
 
@@ -310,7 +311,7 @@ def test_loop_config_off(monkeypatch, tmp_path):
         tmp_path,
         [[{"page": 1, "ok": False, "action": "shrink_text"}]],
     )
-    monkeypatch.setattr(ppt_tools, "_ppt_visual_review_enabled", lambda: False)
+    patch_ppt(monkeypatch, "_ppt_visual_review_enabled", lambda: False)
     result: dict = {"ok": True}
     _visual_review_loop(slides, get_theme("dark"), out, title="t", author="a", result=result)
     assert calls["n"] == 0
@@ -362,7 +363,7 @@ def test_template_loop_change_page_rerenders(monkeypatch, tmp_path):
     """模板闭环: 第1轮 change_page → ban+重渲染(banned 传入);第2轮 clean。"""
     from deskpet.tools.ppt_tools import _visual_review_loop_template
 
-    monkeypatch.setattr(ppt_tools, "_in_pytest", lambda: False)
+    patch_ppt(monkeypatch, "_in_pytest", lambda: False)
 
     def fake_render_pngs(pptx, out_dir, **kw):
         d = Path(out_dir)
@@ -371,8 +372,8 @@ def test_template_loop_change_page_rerenders(monkeypatch, tmp_path):
         p.write_bytes(b"\x89PNG" + b"x" * 2048)
         return [str(p)]
 
-    monkeypatch.setattr(
-        ppt_tools,
+    patch_ppt(
+        monkeypatch,
         "ppt_render",
         SimpleNamespace(
             com_render_available=lambda: True, render_pptx_to_pngs_safe=fake_render_pngs
@@ -403,7 +404,7 @@ def test_template_loop_change_page_rerenders(monkeypatch, tmp_path):
         rerenders["banned"] = kw.get("banned_pages")
         return {"ok": True, "path": kw.get("out_path"), "page_map": [9], "slide_count": 1}
 
-    monkeypatch.setattr(ppt_tools, "_render_with_design_pages", fake_design_render)
+    patch_ppt(monkeypatch, "_render_with_design_pages", fake_design_render)
 
     slides = _mk_slides()[:1]
     out = tmp_path / "deck.pptx"
