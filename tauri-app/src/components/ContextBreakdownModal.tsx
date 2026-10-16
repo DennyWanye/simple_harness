@@ -189,7 +189,13 @@ function normalizeBreakdownResponse(value: unknown): BreakdownResponse | null {
   };
 }
 
-export interface ContextBreakdownModalProps {
+export /** 控制通道推来的一条消息（未经校验；本组件只认 context_breakdown_response）。 */
+interface BreakdownChannelMessage {
+  type?: string;
+  payload?: unknown;
+}
+
+interface ContextBreakdownModalProps {
   open: boolean;
   onClose(): void;
   sessionId: string;
@@ -201,7 +207,7 @@ export interface ContextBreakdownModalProps {
   /** Sender. */
   send(msg: { type: string; payload?: Record<string, unknown> }): void;
   /** Subscriber — returns an unsubscribe. */
-  onMessage(fn: (msg: any) => void): () => void;
+  onMessage(fn: (msg: unknown) => void): () => void;
 }
 
 function fmtTokens(n: number): string {
@@ -419,8 +425,10 @@ export function ContextBreakdownModal({
         : null;
     let active = true;
     const off = onMessageRef.current((msg) => {
-      if (msg?.type === "context_breakdown_response") {
-        const p = normalizeBreakdownResponse(msg.payload);
+      if (
+        (msg as BreakdownChannelMessage | null | undefined)?.type === "context_breakdown_response"
+      ) {
+        const p = normalizeBreakdownResponse((msg as BreakdownChannelMessage).payload);
         if (
           !active ||
           !p ||

@@ -178,7 +178,21 @@ export const useProvidersStore = create<ProvidersStore>(() => ({
  * Unknown types are ignored so adding new server-side events later
  * doesn't accidentally clobber the store.
  */
-export function dispatchProviderEvent(msg: { type: string; payload?: any }): void {
+/** 服务商相关控制消息（载荷按 type 各带其中一部分字段）。 */
+export interface ProviderEventMessage {
+  type?: string;
+  payload?: {
+    providers?: Provider[];
+    provider?: Provider;
+    id?: string;
+    reason?: unknown;
+    detail?: unknown;
+    ok?: boolean;
+    models?: string[];
+  };
+}
+
+export function dispatchProviderEvent(msg: ProviderEventMessage): void {
   switch (msg.type) {
     case "settings_providers_list_response":
     case "providers_changed":

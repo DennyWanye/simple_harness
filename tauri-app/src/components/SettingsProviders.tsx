@@ -45,7 +45,7 @@ import {
   buildListRequestMessage,
   sortProvidersForDisplay,
 } from "./providersStore";
-import type { Provider } from "./providersStore";
+import type { Provider, ProviderEventMessage } from "./providersStore";
 
 // ---- Component ------------------------------------------------------------
 
@@ -207,7 +207,7 @@ export function SettingsProviders({ getChannel, lastMessage }: SettingsProviders
   const [deleteTarget, setDeleteTarget] = useState<Provider | null>(null);
   const pendingSaveIdRef = useRef<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const observeSaveResult = useCallback((msg: { type?: string; payload?: any }) => {
+  const observeSaveResult = useCallback((msg: ProviderEventMessage) => {
     const pendingId = pendingSaveIdRef.current;
     if (!pendingId) return;
     if (msg.type === "settings_providers_error") {
@@ -261,7 +261,7 @@ export function SettingsProviders({ getChannel, lastMessage }: SettingsProviders
       if (s === "connected") request();
     });
     const offMsg = ch.onMessage?.((incoming) => {
-      const msg = incoming as unknown as { type?: string; payload?: any };
+      const msg = incoming as unknown as ProviderEventMessage;
       observeSaveResult(msg);
       if (
         msg.type !== "settings_providers_list_response" &&
@@ -283,7 +283,7 @@ export function SettingsProviders({ getChannel, lastMessage }: SettingsProviders
   // Listen for inbound provider events on the shared lastMessage prop.
   useEffect(() => {
     if (!lastMessage) return;
-    const msg = lastMessage as { type: string; payload?: any };
+    const msg = lastMessage as ProviderEventMessage;
     observeSaveResult(msg);
     switch (msg.type) {
       case "settings_providers_list_response":
@@ -455,7 +455,7 @@ export function SettingsProviders({ getChannel, lastMessage }: SettingsProviders
   // Watch for the backend's probe response on the shared ws inbox.
   useEffect(() => {
     if (!lastMessage) return;
-    const msg = lastMessage as { type: string; payload?: any };
+    const msg = lastMessage as ProviderEventMessage;
     if (msg.type !== "settings_providers_probe_models_response") return;
     clearProbeTimeout();
     setProbing(false);

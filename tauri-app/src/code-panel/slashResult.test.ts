@@ -15,7 +15,7 @@
  */
 import { describe, it, expect } from "vitest";
 
-import { format_slash_result } from "./controlWs";
+import { format_slash_result, type SlashCommandResult } from "./controlWs";
 
 const EIGHT_TYPES = [
   "help",
@@ -29,7 +29,7 @@ const EIGHT_TYPES = [
 ] as const;
 
 // 每种 type 一个有代表性的 sample（对齐后端契约）。
-const SAMPLES: Record<string, any> = {
+const SAMPLES: Record<string, SlashCommandResult> = {
   help: {
     type: "help",
     builtins: [{ name: "prefs", description: "查看偏好记忆" }],
@@ -98,7 +98,7 @@ describe("format_slash_result — 8 种 type 全覆盖", () => {
   });
 
   it("default 兜底：未知 type 也产非空 message（禁止静默丢）", () => {
-    const out = format_slash_result({ type: "totally_unknown_xyz", foo: 1 });
+    const out = format_slash_result({ type: "totally_unknown_xyz", foo: 1 } as SlashCommandResult);
     expect(out.trim().length).toBeGreaterThan(0);
     expect(out).toContain("totally_unknown_xyz");
   });

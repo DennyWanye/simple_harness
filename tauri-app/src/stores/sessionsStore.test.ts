@@ -185,7 +185,7 @@ describe("legacy skill candidate removal", () => {
       role: "skill_candidate",
       skill_candidate_id: 7,
       skill_candidate_awaiting: true,
-    } as any);
+    } as unknown as Parameters<typeof store.push_message>[1]);
 
     store.set_messages("legacy-candidate", []);
 

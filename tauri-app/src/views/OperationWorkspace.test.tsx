@@ -4,6 +4,21 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ControlMessage, IncomingMessage } from "../types/messages";
 import { OperationWorkspace } from "./OperationWorkspace";
 
+/** 完成要求确认请求里本测试检查的字段。 */
+interface ApprovePayload {
+  [key: string]: unknown;
+  expected_requirements_ref?: unknown;
+  proposal: {
+    mode?: string;
+    content_criterion_ids?: string[];
+    effects: Array<{
+      criterion_ids?: string[];
+      required_milestone?: string;
+      obligation_id?: string;
+    }>;
+  };
+}
+
 class Channel {
   sent: ControlMessage[] = [];
   listeners = new Set<(message: IncomingMessage) => void>();
@@ -128,7 +143,7 @@ describe("OperationWorkspace", () => {
     expect(sent).toHaveLength(1);
     // 2026-09-26 真机：回应要几秒，按钮只变灰看不出在处理，被当成"要点两次"。
     expect(screen.getByRole("button", { name: "正在确认…" })).toBeTruthy();
-    const payload = sent[0].payload as Record<string, any>;
+    const payload = sent[0].payload as ApprovePayload;
     expect(payload.expected_requirements_ref).toEqual(requirements);
     expect(payload.proposal.effects).toHaveLength(1);
     expect(payload.proposal.effects[0].criterion_ids).toEqual(criteria.map((item) => item.id));
@@ -252,7 +267,7 @@ describe("默认预填（2026-09-29 真机：对话卡片里确认要点十几�
     const sent = channel.sent.filter(
       (message) => message.type === "mission_operation_completion_approve",
     );
-    expect((sent[0].payload as Record<string, any>).proposal.content_criterion_ids).toEqual(
+    expect((sent[0].payload as ApprovePayload).proposal.content_criterion_ids).toEqual(
       criteria.map((item) => item.id),
     );
   });
@@ -273,16 +288,13 @@ describe("默认预填（2026-09-29 真机：对话卡片里确认要点十几�
     const channel = new Channel();
     render(<OperationWorkspace value={value} channel={channel} onChanged={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "确认上述完成要求" }));
-    const proposal = (channel.sent[0].payload as Record<string, any>).proposal;
+    const proposal = (channel.sent[0].payload as ApprovePayload).proposal;
     expect(proposal.mode).toBe("REQUIRED_EFFECTS");
     expect(proposal.content_criterion_ids).toEqual(["c-1", "c-2"]);
-    expect(proposal.effects.map((e: Record<string, any>) => e.criterion_ids)).toEqual([
-      ["c-3"],
-      ["c-4"],
-    ]);
+    expect(proposal.effects.map((e) => e.criterion_ids)).toEqual([["c-3"], ["c-4"]]);
     expect(
       proposal.effects.every(
-        (e: Record<string, any>) =>
+        (e) =>
           e.required_milestone === "PUBLISHED_HASH_MATCHES" && e.obligation_id === "obligation-1",
       ),
     ).toBe(true);

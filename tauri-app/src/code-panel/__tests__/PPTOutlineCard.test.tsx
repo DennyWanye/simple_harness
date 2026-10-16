@@ -36,7 +36,7 @@ function renderCard(overrides: Partial<ComponentProps<typeof PPTOutlineCard>> = 
     sources_count: 12,
     no_research: false,
     history,
-  } as any);
+  });
 
   return render(
     <PPTOutlineCard
@@ -198,7 +198,7 @@ describe("PPTOutlineCard", () => {
       sources_count: 1,
       no_research: false,
       history: [],
-    } as any);
+    });
     store.push_message("default", {
       role: "ppt_outline",
       ppt_outline_awaiting: true,
@@ -208,7 +208,7 @@ describe("PPTOutlineCard", () => {
       sources_count: 2,
       no_research: false,
       history: [],
-    } as any);
+    });
 
     const outlines = useSessionsStore
       .getState()
@@ -229,7 +229,7 @@ describe("PPTOutlineCard", () => {
       sources_count: 3,
       no_research: false,
       history: [],
-    } as any);
+    });
 
     const liveCard = useSessionsStore.getState().sessions.default.messages[0];
     store.set_messages("default", [

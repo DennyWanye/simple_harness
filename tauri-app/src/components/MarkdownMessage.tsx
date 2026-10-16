@@ -13,6 +13,7 @@
  * artifact_open、列表/段落间距）抽到这里，两处共用，保证 code 模式和桌宠消息框
  * 的渲染一致。
  */
+import type { ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { invoke } from "@tauri-apps/api/core";
@@ -52,18 +53,26 @@ export function MarkdownMessage({ children }: { children: string }) {
       // 没它会把 `| 列 | 列 |` 当裸文本显示）。
       remarkPlugins={[remarkGfm]}
       components={{
-        code: ({ inline, className, children }: any) => {
+        code: ({
+          inline,
+          className,
+          children,
+        }: {
+          inline?: boolean;
+          className?: string;
+          children?: ReactNode;
+        }) => {
           const match = /language-(\w+)/.exec(className || "");
           if (!inline && match) {
             return <CodeBlock language={match[1]}>{String(children).replace(/\n$/, "")}</CodeBlock>;
           }
           return <InlineCode>{children}</InlineCode>;
         },
-        p: ({ children }: any) => <p style={{ margin: "4px 0" }}>{children}</p>,
-        ul: ({ children }: any) => <ul style={{ margin: "6px 0", paddingLeft: 22 }}>{children}</ul>,
-        ol: ({ children }: any) => <ol style={{ margin: "6px 0", paddingLeft: 22 }}>{children}</ol>,
+        p: ({ children }) => <p style={{ margin: "4px 0" }}>{children}</p>,
+        ul: ({ children }) => <ul style={{ margin: "6px 0", paddingLeft: 22 }}>{children}</ul>,
+        ol: ({ children }) => <ol style={{ margin: "6px 0", paddingLeft: 22 }}>{children}</ol>,
         // GFM 表格：深色主题描边 + 横向滚动（宽表不撑爆气泡）。
-        table: ({ children }: any) => (
+        table: ({ children }) => (
           <div style={{ overflowX: "auto", margin: "8px 0" }}>
             <table
               style={{
@@ -76,7 +85,7 @@ export function MarkdownMessage({ children }: { children: string }) {
             </table>
           </div>
         ),
-        th: ({ children }: any) => (
+        th: ({ children }) => (
           <th
             style={{
               border: "1px solid rgba(148,163,184,0.3)",
@@ -89,7 +98,7 @@ export function MarkdownMessage({ children }: { children: string }) {
             {children}
           </th>
         ),
-        td: ({ children }: any) => (
+        td: ({ children }) => (
           <td
             style={{
               border: "1px solid rgba(148,163,184,0.22)",
@@ -99,7 +108,7 @@ export function MarkdownMessage({ children }: { children: string }) {
             {children}
           </td>
         ),
-        a: ({ href, children }: any) => {
+        a: ({ href, children }) => {
           const url = typeof href === "string" ? href : "";
           if (isLocalFilePath(url)) {
             // 本地文件链接（如 LLM 写的 [打开 PPT](C:\...\xxx.pptx)）：

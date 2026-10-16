@@ -17,7 +17,14 @@
 import { invoke } from "@tauri-apps/api/core";
 import { BACKEND_PORT } from "../backendPort";
 import { chatErrorMessage } from "../chatErrorMessage";
-import { useSessionsStore } from "../stores/sessionsStore";
+import {
+  useSessionsStore,
+  type Message,
+  type MessageRole,
+  type PlanStep,
+  type SessionModelParams,
+  type WorkflowEventEnvelope,
+} from "../stores/sessionsStore";
 import { withClientTurnIdentity } from "../ws/clientTurnIdentity";
 import {
   getWindowControlCredential,
@@ -25,11 +32,12 @@ import {
 } from "../auth/windowControlCredential";
 import type { CanonicalJson } from "../auth/controlCommandCanonical";
 import { useSubagentStore } from "./subagentStore";
-import { useProvidersStore } from "./providersStore";
+import { useProvidersStore, type ProviderEntry } from "./providersStore";
 import { useSessionModelsStore } from "./sessionModelsStore";
 // P5-S2 Phase 4 — settings panel provider mutation events
-import { dispatchProviderEvent } from "../components/providersStore";
-import type { CompanionEvent } from "../types/messages";
+import { dispatchProviderEvent, type ProviderEventMessage } from "../components/providersStore";
+import type { CompanionDecision, CompanionEvent, ContextUsageSnapshot } from "../types/messages";
+import type { PPTOutlineHistoryItem } from "../types/skillPlatform";
 
 const RECONNECT_BASE_MS = 1000;
 const RECONNECT_MAX_MS = 15000;
@@ -58,16 +66,17 @@ export const CONTROL_SESSION_ID = "message-panel-main";
 
 function companionEventFrom(value: unknown): CompanionEvent | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const outer = value as Record<string, any>;
+  const outer = value as Record<string, unknown>;
   const raw =
     outer.type === "companion_event" &&
     outer.payload &&
     typeof outer.payload === "object" &&
     !Array.isArray(outer.payload)
-      ? (outer.payload as Record<string, any>)
+      ? (outer.payload as Record<string, unknown>)
       : outer;
-  const notificationSource =
-    raw.notification && typeof raw.notification === "object" ? raw.notification : raw;
+  const notificationSource = (
+    raw.notification && typeof raw.notification === "object" ? raw.notification : raw
+  ) as Record<string, unknown>;
   const event: CompanionEvent = {
     event_id: String(raw.event_id || raw.projection_event_id || ""),
     profile_id: String(raw.profile_id || ""),
@@ -90,7 +99,10 @@ function companionEventFrom(value: unknown): CompanionEvent | null {
         ? notificationSource.available_actions.map(String)
         : [],
     },
-    decision: raw.decision && typeof raw.decision === "object" ? raw.decision : undefined,
+    decision:
+      raw.decision && typeof raw.decision === "object"
+        ? (raw.decision as CompanionDecision)
+        : undefined,
     tombstone: raw.tombstone === true,
   };
   if (
@@ -213,11 +225,164 @@ function persistedToolOutcome(text: unknown): {
 // sockets and getting kicked by the backend's "session replaced"
 // guard. Without this we saw a connect/disconnect storm in the
 // backend log every dev session.
+/** 控制通道收到的一条消息：JSON 解析结果，未经校验；载荷字段由 type 决定。 */
+interface ControlWireMessage {
+  type?: string;
+  request_id?: string;
+  payload?: ControlWirePayload;
+}
+
+/** 各类消息载荷里 dispatch 读取的字段（后端按消息类型各发其中一部分）。 */
+interface ControlWirePayload {
+  action?: unknown;
+  action_categories?: unknown;
+  alert_id?: unknown;
+  arguments?: Record<string, unknown>;
+  artifacts?: unknown;
+  attempt?: unknown;
+  attempts?: unknown;
+  auto_confirmed?: unknown;
+  awaiting_confirm?: unknown;
+  bindingEpoch?: unknown;
+  binding_epoch?: unknown;
+  cancelled?: unknown;
+  challenge?: unknown;
+  companion_events?: unknown[];
+  connectionId?: unknown;
+  connection_id?: unknown;
+  content?: string;
+  controlEpoch?: unknown;
+  control_epoch?: unknown;
+  conversation_boundary_ref?: unknown;
+  conversation_boundary_version?: unknown;
+  decision_id?: string;
+  decision_status?: unknown;
+  default_model?: unknown;
+  detail?: unknown;
+  diagnosis?: unknown;
+  error?: unknown;
+  event_id?: unknown;
+  event_type?: unknown;
+  final_error?: unknown;
+  history?: PPTOutlineHistoryItem[];
+  invocation_id?: unknown;
+  items?: unknown;
+  kind?: unknown;
+  messages?: HistoryRow[];
+  model_params?: SessionModelParams | null;
+  models?: unknown;
+  name?: string;
+  new_sid?: unknown;
+  nextRequestSeq?: unknown;
+  next_request_seq?: unknown;
+  no_research?: unknown;
+  nonce?: string;
+  notification_id?: unknown;
+  occurred_at?: unknown;
+  ok?: boolean;
+  outline_id?: string;
+  outline_md?: string;
+  payload?: unknown;
+  peak_concurrent?: unknown;
+  phase?: unknown;
+  plan?: HistoryPlan;
+  preferred_model?: string | null;
+  profile_generation?: unknown;
+  profile_id?: unknown;
+  projection_event_id?: unknown;
+  projection_id?: unknown;
+  projection_version?: unknown;
+  projections?: Record<string, unknown>[];
+  provider_config_revision?: number | null;
+  provider_id?: string | null;
+  provider_incarnation_id?: string | null;
+  providers?: unknown;
+  provisional?: unknown;
+  query_id?: unknown;
+  queued?: unknown;
+  rationale?: string;
+  ready?: unknown;
+  reason?: unknown;
+  redaction_version?: unknown;
+  requestSeq?: unknown;
+  request_id?: unknown;
+  request_seq?: unknown;
+  result?: unknown;
+  retract?: unknown;
+  retract_provisional?: unknown;
+  root_run_id?: unknown;
+  route_version?: unknown;
+  run_id?: string;
+  run_version?: unknown;
+  seq?: unknown;
+  session_id?: string;
+  severity?: unknown;
+  source?: unknown;
+  sources_count?: unknown;
+  state?: unknown;
+  status?: unknown;
+  steps?: PlanStep[];
+  stream_epoch?: unknown;
+  suggested_buttons?: unknown;
+  summary?: unknown;
+  summary_id?: unknown;
+  target_directory?: string;
+  task_id?: unknown;
+  task_root_run_id?: unknown;
+  task_scope_id?: unknown;
+  text?: string;
+  tool?: string;
+  topic?: string;
+  total_queued?: unknown;
+  total_rejected?: unknown;
+  ts?: unknown;
+  turn_id?: unknown;
+  ui_state?: unknown;
+  unknown?: unknown;
+  user_message?: unknown;
+  version?: number;
+  workflow_event_id?: unknown;
+}
+
+/** 会话历史里的一行（session_messages_response 的 messages 元素）。 */
+interface HistoryRow {
+  id?: string;
+  ts?: number;
+  role?: MessageRole | "tool";
+  text?: string;
+  tool_calls?: HistoryToolCall[];
+  tool_call_id?: string;
+  workflow_event?: WorkflowEventEnvelope;
+  companion_event?: unknown;
+  projection_kind?: string;
+  workflow_event_id?: string;
+  projection_event_id?: string;
+  run_id?: string;
+  task_scope_id?: string;
+}
+
+/** 历史行里助手发起的一次工具调用（OpenAI tool_calls 形状，旧行可能只有 name）。 */
+interface HistoryToolCall {
+  id?: string;
+  name?: string;
+  function?: { name?: string; arguments?: unknown };
+}
+
+/** session_messages_response 单独带回的待确认计划。 */
+interface HistoryPlan {
+  awaiting?: boolean;
+  rationale?: string;
+  steps?: PlanStep[];
+  target_directory?: string;
+  action_categories?: unknown;
+  auto_confirmed?: unknown;
+}
+
 type GlobalWS = {
   __deskpet_panel_ws__?: WebSocket | null;
-  __deskpet_panel_listeners__?: Set<(msg: any) => void>;
+  __deskpet_panel_listeners__?: Set<(msg: unknown) => void>;
   __deskpet_companion_challenge__?: CompanionActionChallenge | null;
-  __deskpet_companion_identity_status__?: any | null;
+  __deskpet_companion_identity_status__?: ControlWireMessage | null;
 };
 const G = globalThis as unknown as GlobalWS;
 
@@ -232,7 +397,7 @@ function clear_connect_timeout() {
   connect_timeout = null;
 }
 
-type Listener = (msg: any) => void;
+type Listener = (msg: unknown) => void;
 const listeners: Set<Listener> = G.__deskpet_panel_listeners__ ?? new Set<Listener>();
 G.__deskpet_panel_listeners__ = listeners;
 
@@ -260,7 +425,8 @@ interface CompanionActionChallenge {
 }
 
 let companionChallenge: CompanionActionChallenge | null = G.__deskpet_companion_challenge__ ?? null;
-let latestCompanionIdentityStatus: any | null = G.__deskpet_companion_identity_status__ ?? null;
+let latestCompanionIdentityStatus: ControlWireMessage | null =
+  G.__deskpet_companion_identity_status__ ?? null;
 let companionActionInFlight = false;
 
 let current_state: ControlWS["state"] extends () => infer R ? R : never = "disconnected";
@@ -406,7 +572,7 @@ async function open_socket() {
     }
   };
   ws.onmessage = (ev) => {
-    let parsed: any;
+    let parsed: ControlWireMessage;
     try {
       parsed = JSON.parse(ev.data);
     } catch {
@@ -481,10 +647,31 @@ function schedule_reconnect() {
   reconnect_attempt++;
   // P5-S2 Phase 5: globalThis.setTimeout works in both browser + node (vitest);
   // window.setTimeout would crash in the node test env when ws.ts is imported.
-  reconnect_timer = (globalThis as any).setTimeout(() => {
+  reconnect_timer = globalThis.setTimeout(() => {
     reconnect_timer = null;
     void open_socket();
   }, delay) as unknown as number;
+}
+
+/** slash_command_result 的 result 对象（后端契约，按 type 各带其中一部分字段）。 */
+export interface SlashCommandResult {
+  type?: string;
+  builtins?: Array<{ name: string; description?: string }>;
+  skills?: Array<{ name: string; description?: string }>;
+  text?: string;
+  max_iterations?: number;
+  active?: boolean;
+  iterations_used?: number;
+  done?: boolean;
+  ok?: boolean;
+  skill?: string;
+  output?: unknown;
+  entries?: Array<{ kind: string; label: string; text: string; ts?: number }>;
+  count?: number;
+  removed?: number;
+  kind?: string;
+  message?: string;
+  hint?: string;
 }
 
 /**
@@ -493,15 +680,15 @@ function schedule_reconnect() {
  * skill_result / prefs_list / prefs_cleared / error）+ default 兜底（raw JSON），
  * 禁止任何 type 落空被静默丢弃。
  */
-export function format_slash_result(result: any): string {
+export function format_slash_result(result: SlashCommandResult | null | undefined): string {
   const r = result || {};
   switch (r.type) {
     case "help": {
       const builtins = (r.builtins || [])
-        .map((b: any) => `  /${b.name} — ${b.description || ""}`)
+        .map((b) => `  /${b.name} — ${b.description || ""}`)
         .join("\n");
       const skills = (r.skills || [])
-        .map((s: any) => `  /${s.name} — ${s.description || ""}`)
+        .map((s) => `  /${s.name} — ${s.description || ""}`)
         .join("\n");
       const parts = ["可用命令:"];
       if (builtins) parts.push(builtins);
@@ -523,7 +710,7 @@ export function format_slash_result(result: any): string {
     case "prefs_list": {
       const entries = r.entries || [];
       if (!entries.length) return "偏好记忆为空（暂无意图/计划记录）";
-      const lines = entries.map((e: any) => `  ${e.kind}/${e.label}: ${e.text}`);
+      const lines = entries.map((e) => `  ${e.kind}/${e.label}: ${e.text}`);
       return [`偏好记忆（共 ${r.count ?? entries.length} 条）:`, ...lines].join("\n");
     }
     case "prefs_cleared":
@@ -635,7 +822,7 @@ function flushDeferredMessages(
   );
 }
 
-function dispatch(msg: any) {
+function dispatch(msg: ControlWireMessage) {
   if (msg?.type === "companion_identity_status" || msg?.type === "companion_identity_unready") {
     latestCompanionIdentityStatus = msg;
     G.__deskpet_companion_identity_status__ = msg;
@@ -857,7 +1044,7 @@ function dispatch(msg: any) {
     }
     case "task_projections_response": {
       const projections = Array.isArray(msg.payload?.projections) ? msg.payload.projections : [];
-      projections.forEach((projection: any) => {
+      projections.forEach((projection) => {
         const runId = String(projection?.run_id || "").trim();
         if (!runId) return;
         const existing = useSessionsStore.getState().sessions[sid]?.run_projections?.[runId];
@@ -994,18 +1181,18 @@ function dispatch(msg: any) {
       const cur = store.sessions[sid];
       const last = cur?.messages.findLast(
         (message) =>
-          message.role === (role as any) &&
+          message.role === role &&
           (!runId || message.run_id === runId) &&
           (!invocationId || message.invocation_id === invocationId),
       );
-      if (last && last.role === (role as any)) {
+      if (last && last.role === role) {
         // Append to existing partial bubble in-place.
         last.text = (last.text || "") + chunk;
         // Trigger zustand re-render via a no-op upsert.
         store.upsert(sid, { last_activity: Date.now() });
       } else {
         store.push_message(sid, {
-          role: role as any,
+          role,
           text: chunk,
           run_id: runId || undefined,
           task_scope_id: taskScopeId || undefined,
@@ -1020,7 +1207,7 @@ function dispatch(msg: any) {
       const p = msg.payload || {};
       // Authority frames without their own Session identity are unsafe:
       // active_sid may have changed while a reconnect response was in flight.
-      store.upsert_context_usage(p);
+      store.upsert_context_usage(p as ContextUsageSnapshot);
       break;
     }
     case "chat_v2_user_echo": {
@@ -1089,7 +1276,7 @@ function dispatch(msg: any) {
           (message) =>
             message.role === "reasoning_summary" && message.reasoning_summary_id === summaryId,
         ) ?? -1;
-      const summary = {
+      const summary: Omit<Message, "id" | "ts"> = {
         role: "reasoning_summary" as const,
         text,
         reasoning_summary_id: summaryId,
@@ -1128,7 +1315,7 @@ function dispatch(msg: any) {
         let cleaned = cur.messages.filter(
           (m) =>
             !(
-              (m.role === ("assistant_delta" as any) || m.role === ("reasoning_delta" as any)) &&
+              (m.role === "assistant_delta" || m.role === "reasoning_delta") &&
               (!runId || m.run_id === runId)
             ),
         );
@@ -1199,11 +1386,11 @@ function dispatch(msg: any) {
     }
     case "workflow_event":
     case "workflow_final": {
-      const event = msg.payload || {};
+      const event = (msg.payload || {}) as WorkflowEventEnvelope;
       const eventId = String(event.event_id || "");
       const eventType = String(event.event_type || "");
       const body = event.payload || {};
-      const nested = body.payload || {};
+      const nested = (body.payload || {}) as { text?: unknown };
       const text = String(nested.text || body.text || "").trim();
       const currentBefore = store.sessions[sid];
       const projectionRunId = String(event.root_run_id || event.task_root_run_id || "").trim();
@@ -1367,7 +1554,7 @@ function dispatch(msg: any) {
       // intended steps before / during execution.
       const p = msg.payload || {};
       store.push_message(sid, {
-        role: "plan" as any,
+        role: "plan",
         plan_rationale: p.rationale,
         plan_steps: p.steps,
         plan_target_directory: p.target_directory,
@@ -1384,14 +1571,14 @@ function dispatch(msg: any) {
         plan_version: p.version,
         run_id: String(p.run_id || "") || undefined,
         task_scope_id: String(p.task_scope_id || "") || undefined,
-      } as any);
+      });
       break;
     }
     case "ppt_outline_proposed": {
       const p = msg.payload || {};
       const targetSid = typeof p.session_id === "string" && p.session_id ? p.session_id : sid;
       store.push_message(targetSid, {
-        role: "ppt_outline" as any,
+        role: "ppt_outline",
         ppt_outline_awaiting: true,
         outline_id: p.outline_id,
         topic: p.topic,
@@ -1399,7 +1586,7 @@ function dispatch(msg: any) {
         sources_count: typeof p.sources_count === "number" ? p.sources_count : 0,
         no_research: !!p.no_research,
         history: Array.isArray(p.history) ? p.history : [],
-      } as any);
+      });
       break;
     }
     case "ppt_outline_resolved": {
@@ -1553,8 +1740,8 @@ function dispatch(msg: any) {
       // FEAT-A2: /help /goal /prefs /skill 结果。此前 ws.ts 无此 case →
       // 所有 slash 结果被静默丢弃。现在格式化成一条 slash_result bubble。
       const p = msg.payload || {};
-      const text = format_slash_result(p.result);
-      store.push_message(sid, { role: "slash_result" as any, text });
+      const text = format_slash_result(p.result as SlashCommandResult | undefined);
+      store.push_message(sid, { role: "slash_result", text });
       // slash 是同步请求-响应：结果到达即结束本轮。不清 inflight 会让
       // InputBar 永卡"思考中"（发送钮变停止钮，后续输入无法提交）。
       store.upsert(sid, { status: "idle", inflight: false });
@@ -1583,7 +1770,9 @@ function dispatch(msg: any) {
         break;
       }
       const baseResultRaw =
-        Array.isArray(p.artifacts) && p.artifacts.length > 0 ? JSON.stringify(p) : p.result;
+        Array.isArray(p.artifacts) && p.artifacts.length > 0
+          ? JSON.stringify(p)
+          : (p.result as string | undefined);
       const liveError =
         publicToolErrorText(p.error) ??
         (p.ok === false && typeof p.status === "string" ? p.status : undefined);
@@ -1630,9 +1819,9 @@ function dispatch(msg: any) {
       // Pre-fix the frontend只 expected user/assistant, so even after the
       // backend persists everything UI would still drop them.
       const target = msg.payload?.session_id || sid;
-      const items: any[] = msg.payload?.messages ?? [];
-      const restored: any[] = [];
-      const workflowEvents: any[] = [];
+      const items: HistoryRow[] = msg.payload?.messages ?? [];
+      const restored: Message[] = [];
+      const workflowEvents: WorkflowEventEnvelope[] = [];
       const companionEvents: CompanionEvent[] = [];
       for (const rawEvent of msg.payload?.companion_events ?? []) {
         const event = companionEventFrom(rawEvent);
@@ -1711,7 +1900,7 @@ function dispatch(msg: any) {
         // restart. Restore the live shape so ArtifactCard rendering and the
         // workflow-event idempotency key stay identical across reconnects.
         if (role === "assistant" && !tool_calls) {
-          let artifactEnvelope: any = null;
+          let artifactEnvelope: Record<string, unknown> | null = null;
           try {
             const parsed = JSON.parse(String(m.text || ""));
             if (
@@ -1780,8 +1969,8 @@ function dispatch(msg: any) {
               ts,
             });
           }
-          tool_calls.forEach((tc: any, idx: number) => {
-            let args: any = tc?.function?.arguments;
+          tool_calls.forEach((tc, idx) => {
+            let args: unknown = tc?.function?.arguments;
             if (typeof args === "string") {
               try {
                 args = JSON.parse(args);
@@ -1793,7 +1982,10 @@ function dispatch(msg: any) {
               id: `${base_id}-tc${idx}`,
               role: "tool_call",
               tool_name: tc?.function?.name || tc?.name || "unknown",
-              tool_args: typeof args === "object" && args !== null ? args : undefined,
+              tool_args:
+                typeof args === "object" && args !== null
+                  ? (args as Record<string, unknown>)
+                  : undefined,
               run_id: m.run_id || undefined,
               task_scope_id: m.task_scope_id || undefined,
               ts,
@@ -1821,7 +2013,7 @@ function dispatch(msg: any) {
       const _plan = msg.payload?.plan;
       if (_plan && _plan.awaiting) {
         store.push_message(target, {
-          role: "plan" as any,
+          role: "plan",
           plan_rationale: _plan.rationale,
           plan_steps: _plan.steps,
           plan_target_directory: _plan.target_directory,
@@ -1831,7 +2023,7 @@ function dispatch(msg: any) {
           plan_auto_confirmed: !!_plan.auto_confirmed,
           plan_awaiting_confirm: true,
           plan_sid: target,
-        } as any);
+        });
       }
       break;
     }
@@ -1925,7 +2117,7 @@ function dispatch(msg: any) {
         diagnosis: String(p.diagnosis || ""),
         user_message: String(p.user_message || ""),
         suggested_buttons: Array.isArray(p.suggested_buttons)
-          ? p.suggested_buttons.map((b: any) => String(b)).slice(0, 2)
+          ? p.suggested_buttons.map((b: unknown) => String(b)).slice(0, 2)
           : [],
         received_at: Date.now(),
       });
@@ -1941,9 +2133,9 @@ function dispatch(msg: any) {
       // Session bindings are durable tombstones and must not be silently
       // rewritten when a provider disappears.
       const incoming = Array.isArray(msg.payload?.providers) ? msg.payload.providers : [];
-      useProvidersStore.getState().set_providers(incoming);
+      useProvidersStore.getState().set_providers(incoming as ProviderEntry[]);
       // Mirror into Phase 4 settings store so SettingsProviders re-renders.
-      dispatchProviderEvent(msg);
+      dispatchProviderEvent(msg as ProviderEventMessage);
       // The model catalog is a derived view of the active Provider chain.
       // Refresh it from the backend authority whenever that chain changes;
       // otherwise a catalog fetched before Provider setup remains empty for
@@ -1956,9 +2148,9 @@ function dispatch(msg: any) {
       // the broadcast — populate the store without binding reconciliation
       // (no UI state to reconcile yet on first load).
       const incoming = Array.isArray(msg.payload?.providers) ? msg.payload.providers : [];
-      useProvidersStore.getState().set_providers(incoming);
+      useProvidersStore.getState().set_providers(incoming as ProviderEntry[]);
       // Mirror into Phase 4 settings store.
-      dispatchProviderEvent(msg);
+      dispatchProviderEvent(msg as ProviderEventMessage);
       break;
     }
     // P5-S2 Phase 4 — individual provider mutation events route to
@@ -1969,7 +2161,7 @@ function dispatch(msg: any) {
     case "settings_providers_updated":
     case "settings_providers_removed":
     case "settings_providers_error": {
-      dispatchProviderEvent(msg);
+      dispatchProviderEvent(msg as ProviderEventMessage);
       break;
     }
     case "session_provider_binding":
@@ -2176,7 +2368,8 @@ export const controlWS: ControlWS = {
 // P5-S2 Phase 5: vitest hook. Production never imports this; tests use it to
 // drive `dispatch` without spinning up a real WebSocket. Exported under a
 // `__test_` prefix to make the intent obvious at call sites.
-export const __test_dispatch = dispatch;
+// 测试钩子：与真实通道一样，传入的消息不经校验。
+export const __test_dispatch = dispatch as (msg: unknown) => void;
 export function __test_register_pending_run_status_query(
   queryId: string,
   sid: string,
@@ -2292,8 +2485,8 @@ void open_socket();
 // and the backend keeps closing them with code 4002 "session
 // replaced", which onclose interprets as needing a reconnect — hence
 // the reconnect storm.
-if ((import.meta as any).hot) {
-  (import.meta as any).hot.dispose(() => {
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => {
     stopSessionHealthCheck(); // 清理健康检查定时器
     if (reconnect_timer != null) {
       clearTimeout(reconnect_timer);

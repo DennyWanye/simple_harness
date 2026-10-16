@@ -40,6 +40,7 @@ import { useBackendLifecycle, type Lifecycle } from "./hooks/useBackendLifecycle
 import { useSessionsStore } from "./stores/sessionsStore";
 import { BACKEND_PORT } from "./backendPort";
 import { chatErrorMessage } from "./chatErrorMessage";
+import type { ChatResponse, ContextUsageSnapshot } from "./types/messages";
 // 2026-08-09：relay（托管账号登录）整套移除。产品只有手动 provider
 // 一条路径（baseUrl + apiKey），身份走本地 profile。
 
@@ -51,6 +52,29 @@ import { chatErrorMessage } from "./chatErrorMessage";
  * （InputBar 会带 `new_session: true` 让后端新建 uuid 会话再投递）。
  */
 const NO_ACTIVE_SESSION = "";
+
+/** 控制通道消息里 App 读取的载荷字段（后端按消息类型各发其中一部分）。 */
+interface AppControlPayload {
+  session_id?: string;
+  new_sid?: unknown;
+  run_id?: unknown;
+  request_id?: unknown;
+  task_scope_id?: unknown;
+  turn_id?: unknown;
+  conversation_boundary_ref?: unknown;
+  conversation_boundary_version?: unknown;
+  projection_version?: unknown;
+  error?: unknown;
+  detail?: unknown;
+  reason?: unknown;
+  alert_id?: unknown;
+  severity?: unknown;
+  action?: unknown;
+  diagnosis?: unknown;
+  user_message?: unknown;
+  suggested_buttons?: unknown;
+}
+type AppControlMessage = { type?: string; payload?: AppControlPayload };
 
 function App() {
   // W5 (R17): silent self-update on startup. No-op under dev-browser or
@@ -615,12 +639,12 @@ function App() {
   useEffect(() => {
     if (!lastMessage) return;
     const t = (lastMessage as { type?: string }).type;
-    const payloadSid = (lastMessage as any).payload?.session_id;
+    const payloadSid = (lastMessage as AppControlMessage).payload?.session_id;
     const isActivePayload = !payloadSid || payloadSid === activeSidRef.current;
     switch (t) {
       case "session_switched":
       case "task_session_started": {
-        const nextSid = (lastMessage as any).payload?.new_sid;
+        const nextSid = (lastMessage as AppControlMessage).payload?.new_sid;
         if (typeof nextSid === "string" && nextSid) {
           switchActiveSid(nextSid);
         }
@@ -630,8 +654,11 @@ function App() {
         if (!isActivePayload) break;
         // T8：消息气泡渲染归 ChatView（sessionsStore 读模型）；此处仅
         // 保留路由指示灯（云端/本地）刷新。
-        if ((lastMessage as any).payload.provider) {
-          setRouteKind((lastMessage as any).payload.provider);
+        if ((lastMessage as ChatResponse).payload.provider) {
+          // 上一行已判非空。
+          setRouteKind(
+            (lastMessage as { payload: { provider: "cloud" | "local" } }).payload.provider,
+          );
         }
         break;
       // T8：tool_use_event / chat_v2_user_echo / workflow_event /
@@ -640,7 +667,7 @@ function App() {
       // sessionsStore（controlWs dispatch 权威写入）→ ChatView 呈现。
       case "context_usage": {
         // 2026-05-31 restore — context-usage ring update from backend.
-        const cu = (lastMessage as any).payload;
+        const cu = (lastMessage as { payload?: ContextUsageSnapshot }).payload;
         if (cu?.session_id) {
           useSessionsStore.getState().ensure(cu.session_id);
           useSessionsStore.getState().upsert_context_usage(cu);
@@ -649,7 +676,7 @@ function App() {
       }
       case "chat_v2_run_reserved":
       case "chat_v2_run_started": {
-        const p = (lastMessage as any).payload || {};
+        const p = (lastMessage as AppControlMessage).payload || {};
         const sid = String(p.session_id || activeSidRef.current);
         const runId = String(p.run_id || "").trim();
         if (runId) {
@@ -687,7 +714,10 @@ function App() {
                 ? p.conversation_boundary_version
                 : undefined,
             version: typeof p.projection_version === "number" ? p.projection_version : 0,
-            status: (lastMessage as any).type === "chat_v2_run_reserved" ? "starting" : "running",
+            status:
+              (lastMessage as AppControlMessage).type === "chat_v2_run_reserved"
+                ? "starting"
+                : "running",
             inflight: true,
             ui_state: shouldSelect ? "open" : "background",
           });
@@ -699,7 +729,7 @@ function App() {
       }
       case "chat_v2_final": {
         if (!isActivePayload) break;
-        const finalPayload = (lastMessage as any).payload || {};
+        const finalPayload = (lastMessage as AppControlMessage).payload || {};
         const finalSid = String(finalPayload.session_id || activeSidRef.current);
         const finalRunId = String(finalPayload.run_id || "").trim();
         if (finalRunId) {
@@ -712,7 +742,7 @@ function App() {
         break;
       }
       case "session_messages_error": {
-        const p: any = (lastMessage as any).payload || {};
+        const p = (lastMessage as AppControlMessage).payload || {};
         if (p.session_id && String(p.session_id) !== activeSidRef.current) break;
         // Keep the last known view instead of replacing it with stale or
         // empty data. The user can retry once the projection gate recovers.
@@ -721,7 +751,7 @@ function App() {
       }
       case "chat_v2_error": {
         if (!isActivePayload) break;
-        const p: any = (lastMessage as any).payload || {};
+        const p = (lastMessage as AppControlMessage).payload || {};
         const errorSid = String(p.session_id || activeSidRef.current);
         const errorRunId = String(p.run_id || "").trim();
         if (errorRunId) {
@@ -746,7 +776,7 @@ function App() {
         // P5-S2/S3 — supervisor pushed a diagnosis. Cache it on the
         // session store（消息面板/后续视图消费）。T4：桌宠气泡与
         // PetStateMachine 已删，仅保留 store 缓存链路。
-        const p: any = (lastMessage as any).payload || {};
+        const p = (lastMessage as AppControlMessage).payload || {};
         if (p.session_id) {
           // Make sure the session exists in the store (supervisor may
           // alert on a panel-only sid this window hasn't seen yet).
@@ -758,7 +788,7 @@ function App() {
             diagnosis: String(p.diagnosis || ""),
             user_message: String(p.user_message || ""),
             suggested_buttons: Array.isArray(p.suggested_buttons)
-              ? p.suggested_buttons.map((b: any) => String(b)).slice(0, 2)
+              ? p.suggested_buttons.map((b: unknown) => String(b)).slice(0, 2)
               : [],
             received_at: Date.now(),
           });
