@@ -7,81 +7,10 @@ root. Read the immutable VerificationPassed event, not mutable latest reports.
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
-from ..assurance.codec import fingerprint
 from ..contracts.models import VERIFICATION_LAYERS
-from ..contracts.resolution import ReviewVerdict
-from ..contracts.semantic_base import content_hash_of
 from ..storage.store import StoreError
-
-
-def accepted_verification_evidence(
-    store: Any, semantics: Any, mission_id: str, acceptance: Any
-) -> dict[str, Any]:
-    review = semantics.get_review_record(str(acceptance.review_record_id))
-    package = semantics.get_review_package(str(review.record.package_id))
-    binding = package.binding
-    if (
-        not review.official
-        or review.record.verdict != ReviewVerdict.ACCEPT
-        or review.record.binding != binding
-        or review.record.purpose != package.purpose
-        or str(acceptance.mission_id) != mission_id
-        or str(binding.mission_id) != mission_id
-        or str(binding.subject_ref.kind) != "task"
-        or str(binding.subject_ref.id) != str(acceptance.task_id)
-        or binding.subject_ref.revision != acceptance.contract_revision
-        or binding.obligation_id != acceptance.obligation_id
-        or binding.requirements_revision != acceptance.requirements_revision
-        or binding.input_manifest_hash != acceptance.input_manifest_hash
-    ):
-        raise StoreError("TASKGRAPH_REVIEW_EVIDENCE_IDENTITY_MISMATCH")
-    candidates = []
-    for ref in package.candidate_refs:
-        result = store.get_result(str(ref.id))
-        if result is not None:
-            if ref.content_hash != fingerprint(result.envelope.to_json()):
-                raise StoreError("TASKGRAPH_REVIEW_EVIDENCE_RESULT_MISMATCH")
-            if (
-                str(package.purpose) != "TASK_CONTENT"
-                or result.verification_state != "DONE"
-                or result.verdict != "PASS"
-            ):
-                raise StoreError("TASKGRAPH_REVIEW_EVIDENCE_RESULT_NOT_ACCEPTED")
-            candidates.append(result.envelope)
-    if not candidates:
-        return {"status": "UNAVAILABLE", "reason": "contribution_has_no_result_candidate"}
-    if len(candidates) != 1:
-        raise StoreError("TASKGRAPH_REVIEW_EVIDENCE_RESULT_AMBIGUOUS")
-    result = candidates[0]
-    if result.mission_id != mission_id or result.task_id != str(acceptance.task_id):
-        raise StoreError("TASKGRAPH_REVIEW_EVIDENCE_RESULT_MISMATCH")
-    rows = store.connection.execute(
-        "SELECT event_id,seq,payload_json FROM events WHERE mission_id=? AND task_id=? "
-        "AND attempt_id=? AND type='VerificationPassed' "
-        "AND json_extract(payload_json,'$.result_id')=? ORDER BY seq",
-        (mission_id, result.task_id, result.attempt_id, result.id),
-    ).fetchall()
-    if not rows:
-        return {"status": "UNAVAILABLE", "reason": "original_verification_event_missing"}
-    if len(rows) != 1:
-        raise StoreError("TASKGRAPH_REVIEW_EVIDENCE_EVENT_AMBIGUOUS")
-    row = rows[0]
-    try:
-        payload = json.loads(row[2])
-        layers = _bounded_layers(payload, mission_id, result)
-    except (KeyError, TypeError, ValueError, AttributeError) as exc:
-        raise StoreError("TASKGRAPH_REVIEW_EVIDENCE_MALFORMED_EVENT") from exc
-    return {
-        "status": "RECORDED",
-        "result_id": result.id,
-        "attempt_id": result.attempt_id,
-        "source_event": {"id": row[0], "seq": row[1], "payload_hash": content_hash_of(payload)},
-        "layers": layers,
-        "scope": "Original child verification only; independent root review is still required.",
-    }
 
 
 def _bounded_layers(payload: dict[str, Any], mission_id: str, result: Any) -> list[dict[str, Any]]:

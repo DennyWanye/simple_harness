@@ -218,54 +218,6 @@ def _is_absolute_path(value: str) -> bool:
     return PurePosixPath(value).is_absolute() or PureWindowsPath(value).is_absolute()
 
 
-def sanitised_goal_parameters(parameters: Mapping[str, Any]) -> dict[str, Any]:
-    """The root's typed parameters with every host path replaced by a placeholder.
-
-    P2.3k verification P1-3.  ``typed_parameters.repository`` is the worktree's
-    absolute path on the host that ran the episode; before this it went into the
-    reviewer's JSON, into ``content_hash`` (the intent's ``context_version``) and so
-    into every event and fixture — the same Mission state hashed differently on two
-    machines, and the host's directory layout travelled into a model prompt.  The
-    reviewer needs to know *which* test the parameter names, never *where* the
-    checkout lives.  Pure and total: nothing else about a value is touched.
-    """
-
-    absolute = {
-        item.rstrip("/")
-        for item in parameters.values()
-        if isinstance(item, str) and _is_absolute_path(item)
-    }
-    # The workspace root is the absolute value the others live under: the one that
-    # prefixes the most of them, the shortest on a tie.  (Not simply the shortest —
-    # an unrelated short path such as ``/var/log`` must not claim the checkout.)
-    root = None
-    if absolute:
-        root = max(
-            sorted(absolute, key=len),
-            key=lambda candidate: sum(
-                1 for other in absolute if other != candidate and other.startswith(candidate + "/")
-            ),
-        )
-
-    def one(value: Any) -> Any:
-        if isinstance(value, str):
-            if not _is_absolute_path(value):
-                return value
-            if root is not None and (value == root or value.startswith(root + "/")):
-                relative = value[len(root) :].lstrip("/")
-                if not relative:
-                    return WORKSPACE_PLACEHOLDER
-                return f"{WORKSPACE_PLACEHOLDER}/{relative}"
-            return PATH_PLACEHOLDER
-        if isinstance(value, Mapping):
-            return {str(key): one(item) for key, item in value.items()}
-        if isinstance(value, (list, tuple)):
-            return [one(item) for item in value]
-        return value
-
-    return {str(key): one(item) for key, item in parameters.items()}
-
-
 def acceptance_ref(store: Any, acceptance_id: str) -> TypedRef:
     """One contributing acceptance, referenced as the candidate it is.
 

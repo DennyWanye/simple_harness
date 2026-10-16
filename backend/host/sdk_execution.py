@@ -13,7 +13,6 @@ from deskpet.agent.run_presenter import (
     PresentationState,
     build_product_run_presenter,
 )
-from deskpet.sdk_adapters.context_route import local_owner_auth
 from deskpet.sdk_adapters.delivery import ProductDeliveryAdapter
 from deskpet.sdk_adapters.desktop_runtime import DesktopSdkRuntimeBridge, _delivery_adapters
 from deskpet.sdk_adapters.ingress import SdkRuntimeIngress
@@ -88,24 +87,6 @@ def _trigger_harness_recovery_after_identity_bind() -> bool:
         return False
     trigger()
     return True
-
-
-def _local_owner_auth():
-    """Single Host authority template for the authenticated local owner."""
-
-    return local_owner_auth()
-
-
-def _resolve_sdk_provider_binding_resolver():  # type: ignore[no-untyped-def]
-    """The Run→Provider binding resolver: service_context slot first, module global second.
-
-    S5b Task 6 P0: the slot is registered by `_build_product_sdk_runtime_stack`
-    while the module global is only assigned after the stack is built, so any
-    composition step running during the build must read the slot.
-    """
-
-    resolver = service_context.get("sdk_provider_binding_resolver")
-    return resolver if resolver is not None else host_state.sdk_provider_binding_resolver
 
 
 def _provider_endpoint_identity_for_binding(record):  # type: ignore[no-untyped-def]

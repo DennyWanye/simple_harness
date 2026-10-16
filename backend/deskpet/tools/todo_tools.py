@@ -27,7 +27,6 @@ import json
 import logging
 import os
 import threading
-import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -115,40 +114,6 @@ _SCHEMA_WRITE: dict[str, Any] = {
         "required": ["title"],
     },
 }
-
-
-def _handle_todo_write(args: dict[str, Any], task_id: str) -> str:
-    title = str(args.get("title", "") or "").strip()
-    if not title:
-        return _err("title is required", retriable=False)
-    due_date = args.get("due_date")
-    if due_date is not None and not isinstance(due_date, str):
-        return _err("due_date must be string or null", retriable=False)
-    priority = str(args.get("priority", "normal") or "normal")
-    if priority not in _VALID_PRIORITIES:
-        return _err(
-            f"priority must be one of {sorted(_VALID_PRIORITIES)}",
-            retriable=False,
-        )
-    todo_id = str(uuid.uuid4())
-    with _file_lock:
-        data = _load()
-        data["todos"].append(
-            {
-                "id": todo_id,
-                "title": title,
-                "due_date": due_date,
-                "priority": priority,
-                "status": "open",
-                "created_at": _now_iso(),
-                "completed_at": None,
-            }
-        )
-        try:
-            _save(data)
-        except OSError as exc:
-            return _err(f"persist failed: {exc}", retriable=True)
-    return json.dumps({"todo_id": todo_id, "ok": True}, ensure_ascii=False)
 
 
 # ---------------------------------------------------------------------

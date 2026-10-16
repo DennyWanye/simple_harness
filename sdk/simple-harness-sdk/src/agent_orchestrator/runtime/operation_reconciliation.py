@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any
 
 from ..contracts.models import ContractError
 from ..contracts.operation_reconciliation import ScopedReconciliationObservationV1
@@ -28,31 +28,6 @@ class ReconciliationEvidence:
     observation: ScopedReconciliationObservationV1
     # Original protocol documents, keyed by tool receipt reference id.
     receipts: Mapping[str, Mapping[str, Any]]
-
-
-class ReconciliationAdapter(Protocol):
-    connector: Any
-    profile: Any
-
-    def observe(
-        self,
-        *,
-        action: Mapping[str, Any],
-        resolved: Any,
-        handoff_events: tuple[Any, ...],
-        now_ms: int,
-    ) -> ReconciliationEvidence: ...
-
-    def verify(
-        self,
-        evidence: ReconciliationEvidence,
-        *,
-        action: Mapping[str, Any],
-        resolved: Any,
-        handoff_events: tuple[Any, ...],
-    ) -> None:
-        """Verify raw service protocol semantics; pure, no network or writes."""
-        ...
 
 
 def handoff_events(store: Any, action: Mapping[str, Any]) -> tuple[Any, ...]:

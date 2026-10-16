@@ -1612,11 +1612,6 @@ _cfg_cache_mtime: float | None = None
 _cfg_cache_size: int | None = None
 
 
-def _load_config_uncached(path: Path) -> AppConfig:
-    """Real loader — extracted so cache wrapper stays small."""
-    return _load_config_impl(path)
-
-
 def load_config(path: str | Path = "config.toml") -> AppConfig:
     """Process-wide cached AppConfig loader (WI-T5.1 v3).
 

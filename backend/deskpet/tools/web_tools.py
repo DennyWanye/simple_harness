@@ -34,7 +34,6 @@ from collections import deque
 from typing import Any
 from xml.etree import ElementTree as ET
 
-import httpx
 
 from deskpet.retrieval import runtime
 from deskpet.retrieval.contracts import FetchRequest
@@ -99,46 +98,6 @@ def _client_headers() -> dict[str, str]:
     }
 
 
-def _respect_robots(url: str) -> bool:
-    cfg = load_web_config()
-    if not cfg.respect_robots_txt:
-        return True
-    host = _host(url)
-    if not host:
-        return True
-    with _robots_lock:
-        rp = _robots_cache.get(host)
-        if host not in _robots_cache:
-            parsed = urllib.parse.urlparse(url)
-            robots_url = f"{parsed.scheme}://{parsed.netloc}/robots.txt"
-            rp = urllib.robotparser.RobotFileParser()
-            rp.set_url(robots_url)
-            try:
-                # Use our own UA string so sites that return different
-                # robots.txt per-UA see what we actually send.
-                with httpx.Client(
-                    headers=_client_headers(),
-                    timeout=5.0,
-                    follow_redirects=True,
-                ) as client:
-                    resp = client.get(robots_url)
-                if resp.status_code == 200:
-                    rp.parse(resp.text.splitlines())
-                else:
-                    # No robots.txt (or 4xx/5xx) → permissive by default,
-                    # mirroring urllib.robotparser's empty-file behaviour.
-                    rp.parse([])
-            except Exception as exc:  # noqa: BLE001 — robots shouldn't break fetches
-                logger.debug("robots fetch failed for %s: %s", host, exc, exc_info=True)
-                rp.parse([])
-            _robots_cache[host] = rp
-        else:
-            rp = _robots_cache[host]
-    if rp is None:
-        return True
-    return rp.can_fetch(_user_agent(), url)
-
-
 def _throttle(host: str) -> None:
     cfg = load_web_config()
     interval = cfg.request_interval_ms / 1000.0
@@ -171,36 +130,6 @@ def _check_block(host: str) -> tuple[bool, str | None]:
         # Cooldown expired — drop the entry, give the domain another chance.
         del _block_cache[host]
     return True, None
-
-
-def _register_block(host: str) -> None:
-    with _block_lock:
-        entry = _block_cache.get(host)
-        count = (entry[1] + 1) if entry else 1
-        if count >= _BLOCK_THRESHOLD:
-            _block_cache[host] = (time.time() + _BLOCK_COOLDOWN_S, count)
-        else:
-            # Keep counting but don't actually block yet. ``until=0.0``
-            # is the sentinel "still counting" state — ``_check_block``
-            # treats it as allowed, not blocked.
-            _block_cache[host] = (0.0, count)
-
-
-def _clear_block(host: str) -> None:
-    with _block_lock:
-        _block_cache.pop(host, None)
-
-
-def _detect_captcha(text: str) -> bool:
-    needles = (
-        "captcha",
-        "cf-chl-bypass",
-        "cloudflare",
-        "are you a human",
-        "security check",
-    )
-    lowered = text[:4000].lower()
-    return any(n in lowered for n in needles)
 
 
 def _scrapling_fetch_html(url: str, timeout: float) -> dict[str, Any] | None:

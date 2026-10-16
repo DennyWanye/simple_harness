@@ -9,15 +9,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
-from deskpet.execution.contracts import (
-    DeliveryPolicy,
-    DeliverySpec,
-    ExecutionError,
-    OutcomeStatus,
-    RunEvent,
-    RunEventCandidate,
-    RunRecord,
-)
+from deskpet.execution.contracts import DeliveryPolicy, ExecutionError, RunEvent
 from deskpet.execution.fences import (
     TerminalDeliveryFencePort,
     UnboundTerminalDeliveryFence,
@@ -49,78 +41,6 @@ class SinkRegistration:
     def __post_init__(self) -> None:
         if not self.sink_kind.strip() or not self.sink_instance.strip():
             raise ValueError("sink registration requires kind and instance")
-
-
-class GoalTerminalProjection:
-    """Strict-session Goal association plus its durable terminal sink."""
-
-    def __init__(self, goal_store: object) -> None:
-        self._goals = goal_store
-
-    def resolve(self, session_id: str) -> str | None:
-        context = self._goals.get_active_goal_context_for_session(session_id)
-        return context[0] if context is not None and context[1] == session_id else None
-
-    def association_event(self, spec: RunCreate, target_id: str) -> RunEventCandidate:
-        return RunEventCandidate(
-            event_key=f"goal:{target_id}",
-            kind="goal_associated",
-            status=OutcomeStatus.ACCEPTED,
-            driver_kind=spec.driver_kind,
-            payload={"target_id": target_id},
-        )
-
-    def deliveries(self, record: RunRecord, events: Sequence[RunEvent]) -> Sequence[DeliverySpec]:
-        target = next(
-            (
-                str(event.candidate.payload["target_id"])
-                for event in events
-                if event.kind == "goal_associated"
-            ),
-            None,
-        )
-        return (
-            ()
-            if target is None
-            else (
-                DeliverySpec(
-                    "goal_projection",
-                    "session-goals",
-                    target,
-                    DeliveryPolicy.DURABLE_REQUIRED,
-                ),
-            )
-        )
-
-    def requires_durable(self, _request: object, host: object) -> bool:
-        session_id = str(getattr(host, "session_id", "") or "")
-        return bool(session_id and self.resolve(session_id) is not None)
-
-    def freeze_deliveries(self, _request: object, host: object) -> Sequence[DeliverySpec]:
-        session_id = str(getattr(host, "session_id", "") or "")
-        target = self.resolve(session_id) if session_id else None
-        if target is None:
-            return ()
-        return (
-            DeliverySpec(
-                "goal_projection",
-                "session-goals",
-                target,
-                DeliveryPolicy.DURABLE_REQUIRED,
-            ),
-        )
-
-    async def is_bound(self, target_id: str) -> bool:
-        return bool(target_id)
-
-    async def deliver(self, event: RunEvent, target_id: str) -> None:
-        if event.run_id != event.root_run_id or event.kind not in {"final", "run.final"}:
-            raise ExecutionError(
-                "invalid_goal_projection", "only root terminal events project Goals"
-            )
-        status = "done" if event.status is OutcomeStatus.SUCCEEDED else "abandoned"
-        if not await self._goals.project_terminal(target_id, status):
-            raise ExecutionError("goal_projection_conflict", "Goal target is absent or changed")
 
 
 class ExecutionDeliveryDispatcher:

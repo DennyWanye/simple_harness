@@ -72,10 +72,6 @@ from host.tools_bootstrap import deskpet_tool_registry_v2
 from host.window_control import _WINDOW_CONTROL_BOOTSTRAP
 
 
-def _legacy_growth_owner() -> tuple[str, int]:
-    return host_state.legacy_growth_owner
-
-
 class _ReminderPolicyProvider:
     def snapshot(self, _owner):
         return ReminderSchedulerPolicy(

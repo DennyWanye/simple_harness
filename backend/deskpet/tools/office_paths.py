@@ -199,13 +199,6 @@ def resolve_for_write(
     return target
 
 
-def _is_under(child: Path, parent: Path) -> bool:
-    try:
-        return child.is_relative_to(parent)
-    except (ValueError, AttributeError):
-        return False
-
-
 # ---------------------------------------------------------------------------
 # WI-T1.5 last-mile artifact 默认保存路径 + title_slug
 # 详见 plans/2026-05-23-tool-last-mile-upgrade/00-PRD.md §3 D4 (v2.1)

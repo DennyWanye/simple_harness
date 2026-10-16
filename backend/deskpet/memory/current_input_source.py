@@ -8,11 +8,10 @@ from __future__ import annotations
 
 import hashlib
 import json
-from base64 import b64decode, urlsafe_b64encode
+from base64 import urlsafe_b64encode
 
-import aiosqlite
 
-from deskpet.memory.disclosure_records import binding_token, current_record_tx
+from deskpet.memory.disclosure_records import binding_token
 from deskpet.memory.primary_visibility import read_evidence_pair
 from deskpet.memory.writer_fence import require_authenticated_host_snapshot
 from deskpet.task_scope.protocol import canonical_hash, digest, identifier
@@ -215,42 +214,6 @@ async def read_input_use_tx(db, *, turn, config):
     return envelope, receipt, fact
 
 
-async def read_current_input_source(*, db_path, subject, turn_id):
-    """Current bound input facts. Only the later SDK consumer can decide use.
-
-    Old history-source resolution uses the original configuration instead; this
-    reader explicitly requires the current head to match the admitted token.
-    """
-
-    # 按需导入：死代码待删（deskpet.memory.history_source_authority）
-    from deskpet.memory.history_source_authority import history_namespace_tx
-
-    async with aiosqlite.connect(f"file:{db_path}?mode=ro", uri=True) as db:
-        db.row_factory = aiosqlite.Row
-        await db.execute("BEGIN")
-        namespace, primary = await history_namespace_tx(db, subject)
-        row = await (
-            await db.execute("SELECT * FROM foreground_turns WHERE turn_id=?", (turn_id,))
-        ).fetchone()
-        if row is None or row["subject"] != subject or row["primary_conversation_id"] != primary:
-            raise CurrentInputSourceError("turn_subject_mismatch")
-        body = json.loads(row["turn_json"])
-        config = await current_record_tx(db, subject)
-        if config is None or body.get("disclosure_binding") != binding_token(config):
-            raise CurrentInputSourceError("policy_changed")
-        envelope, receipt, fact = await read_input_use_tx(db, turn=row, config=config)
-        return {
-            "envelope": envelope,
-            "receipt": receipt,
-            "input_use": fact,
-            "turn_id": turn_id,
-            "turn_hash": row["turn_hash"],
-            "namespace": namespace,
-            "source_sequence": row["enqueue_sequence"],
-            "fact_hash": canonical_hash({"domain": "host.current-input.fact.v1", "payload": fact}),
-        }
-
-
 def input_context_ref(source_ref, token, request_id):
     """Versioned request correlation for new input turns only, never a grant."""
 
@@ -263,19 +226,3 @@ def input_context_ref(source_ref, token, request_id):
         + ":"
         + canonical_hash({"binding": token, "request_id": request_id})
     )
-
-
-def input_context_request_id(context):
-
-    try:
-        _, encoded = context.authority_ref.rsplit(":input-v1:", 1)
-        encoded, request_hash = encoded.split(":")
-        digest(request_hash, "request_hash")
-        decoded = b64decode(
-            encoded + "=" * (-len(encoded) % 4), altchars=b"-_", validate=True
-        ).decode()
-        if urlsafe_b64encode(decoded.encode()).decode().rstrip("=") != encoded:
-            raise ValueError("noncanonical")
-        return decoded
-    except (ValueError, UnicodeError):
-        raise CurrentInputSourceError("request_reference_invalid") from None

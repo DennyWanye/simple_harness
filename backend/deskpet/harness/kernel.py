@@ -1298,7 +1298,3 @@ class RunKernel(KernelTerminalLifecycle):
 
     async def _fail_unknown_launch(self, record: RunRecord, boundary: AdmissionBoundary) -> None:
         await self._admission_launcher.fail_unknown(record, boundary)
-
-
-def kernel_public_operations() -> tuple[str, ...]:
-    return ("start", "observe", "signal", "cancel", "recover", "close")

@@ -1032,33 +1032,6 @@ def _resolve_model_id(metadata: Mapping[str, Any]) -> str | None:
     return None
 
 
-def _pending_occurrence_message(pending: tuple[Any, ...], *, overdue_keys=frozenset()) -> Any:
-    """Bounded, Host-authored summary of eligible pending occurrences."""
-
-    entries = [
-        {
-            "action": str(entry.action_text)[:512],
-            "occurred_at": float(entry.occurred_at),
-            "occurrence_key": entry.occurrence_key,
-            "memory_id": entry.memory_id,
-            "overdue": entry.occurrence_key in overdue_keys,
-        }
-        for entry in pending[:8]
-    ]
-    body = canonical_json(
-        {
-            "kind": "pending_prospective_occurrences",
-            "count": len(pending),
-            "entries": entries,
-        }
-    )
-    return Message(
-        role=MessageRole.SYSTEM,
-        content=body,
-        metadata={"source": "prospective_inbox", "trust": "host_authority"},
-    )
-
-
 # --------------------------------------------------------------------------
 # Incident Z (2026-09-09), degradation step 5: wrap up instead of dying.
 #
@@ -1843,14 +1816,6 @@ class ProductRunContextAuthority:
         if snapshot.payload_hash != expected:
             raise SnapshotContractConflict("sdk_context_authority_payload_fingerprint_drift")
         return snapshot
-
-
-class NoRecallBlockedError(RuntimeError):
-    code = "sdk_no_recall_blocked_pending_occurrence"
-
-    def __init__(self, pending_count: int) -> None:
-        super().__init__(f"{self.code}: {pending_count} pending occurrence(s)")
-        self.pending_count = pending_count
 
 
 class ProductRuntimeDecisionSink:

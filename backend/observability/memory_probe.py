@@ -50,7 +50,7 @@ import threading
 import time
 import tracemalloc
 from collections import Counter
-from collections.abc import Callable, Mapping, MutableMapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -591,10 +591,3 @@ def install_memory_probe(
     probe.start()
     registry.add_terminal_listener(probe.observe_terminal)
     return probe
-
-
-def clear_probe_env(env: MutableMapping[str, str]) -> None:
-    """把继承来的探针环境变量清干净（发射端用，保证跑与跑之间确定）。"""
-
-    for name in PROBE_ENV_NAMES:
-        env.pop(name, None)

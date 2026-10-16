@@ -6,21 +6,13 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 from collections.abc import Awaitable, Callable, Mapping
-from typing import TYPE_CHECKING, TypeVar
+from typing import TypeVar
 
 from simple_harness.contracts import JsonValue
 from simple_harness.execution.uow import ExecutionLease, RunRecord
-from simple_harness.runtime.orchestration import (
-    RuntimeStartDispatchRecord,
-    RuntimeStartDispatchState,
-)
 from simple_harness.workflow.execution_ports import WorkflowTransaction
-from simple_harness.workflow.native import TerminalProjectionPrepareReceipt
 
-if TYPE_CHECKING:
-    from simple_harness.runtime.orchestration import RuntimeStartDispatchRecord
 from .uow_domains.admission import StartAdmissionMixin
 from .uow_domains.audit import RunAuditMixin
 from .uow_domains.base_agent import BaseAgentMixin
@@ -151,36 +143,6 @@ class SqliteExecutionUnitOfWork(
                 float(row["expires_at"]),
             )
         )
-
-
-def _runtime_start_dispatch_record(
-    row: sqlite3.Row,
-) -> RuntimeStartDispatchRecord:
-
-    return RuntimeStartDispatchRecord(
-        claim_id=str(row["claim_id"]),
-        run_id=str(row["run_id"]),
-        owner_id=str(row["owner_id"]),
-        runtime_lease_epoch=int(row["runtime_lease_epoch"]),
-        claim_epoch=int(row["claim_epoch"]),
-        expires_at=float(row["expires_at"]),
-        version=int(row["version"]),
-        state=RuntimeStartDispatchState(str(row["state"])),
-    )
-
-
-def _terminal_projection_prepare(row: sqlite3.Row):  # type: ignore[no-untyped-def]
-
-    return TerminalProjectionPrepareReceipt(
-        operation_id=str(row["operation_id"]),
-        run_id=str(row["run_id"]),
-        terminal_checkpoint_id=str(row["terminal_checkpoint_id"]),
-        descriptor_digest=str(row["descriptor_digest"]),
-        input_hash=str(row["input_hash"]),
-        output=json.loads(str(row["output_json"])),
-        output_hash=str(row["output_hash"]),
-        blob_refs=tuple(json.loads(str(row["blob_refs_json"]))),
-    )
 
 
 __all__ = ("SqliteExecutionUnitOfWork",)

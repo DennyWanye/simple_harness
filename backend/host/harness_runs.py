@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from collections.abc import Mapping
 
 from deskpet.memory.primary_decisions import is_primary_sdk_target
@@ -13,7 +12,7 @@ from simple_harness import RunId as SdkRunId
 from simple_harness.contracts.messages import Message, MessageRole
 from simple_harness.runtime import ConversationContinuationInput
 
-from host.chat_delivery import _broadcast_default_chat_peers, _send_chat_error
+from host.chat_delivery import _broadcast_default_chat_peers
 from host.runtime import logger, service_context
 from host.sdk_context import _bounded_sdk_history
 from host.sdk_recovery import _ensure_sdk_recovery_watcher
@@ -154,22 +153,6 @@ def _authoritative_sdk_run_projection(root_run_id: str, sdk_run_id: str = "") ->
             f"sdk-run:{resolved_sdk_run_id}:terminal:v{version}" if terminal else None
         ),
     }
-
-
-async def _product_harness_has_live_attached_child(
-    session_id: str,
-    run_id: str,
-) -> bool:
-    """Legacy diagnostic: report a non-terminal attached child Run.
-
-    Active-budget enforcement no longer consults this presentation-layer
-    helper. Durable waiting transitions pause the root budget directly, and
-    RunKernel owns cancellation when the active budget is actually exhausted.
-
-    TEMPORARILY DISABLED: kernel access needs SDK Runtime adapter update.
-    """
-    # TODO: Re-enable when SDK Runtime provides kernel access through ingress
-    return False
 
 
 async def _signal_product_harness_decision(
@@ -503,48 +486,3 @@ async def _run_product_harness_continuation(
     }
     await websocket.send_json(accepted_event)
     await _broadcast_default_chat_peers(websocket, accepted_event)
-
-
-def _launch_product_harness_continuation(*args, **kwargs) -> asyncio.Task:
-    async def guarded() -> None:
-        try:
-            await _run_product_harness_continuation(*args, **kwargs)
-        except Exception as exc:  # noqa: BLE001
-            websocket = args[0]
-            session_id = str(args[2] if len(args) > 2 else kwargs.get("session_id") or "default")
-            try:
-                request_id = str(kwargs.get("request_id") or "")
-                await _send_chat_error(
-                    websocket,
-                    {
-                        "type": "chat_v2_error",
-                        "payload": {
-                            "error": str(exc) or type(exc).__name__,
-                            "detail": type(exc).__name__,
-                            "session_id": session_id,
-                            "run_id": str(kwargs.get("root_run_id") or ""),
-                            "task_scope_id": str(kwargs.get("task_scope_id") or ""),
-                            "request_id": request_id,
-                        },
-                    },
-                    session_id=session_id,
-                    request_id=request_id,
-                )
-            except Exception:  # noqa: BLE001 - 连接已断时发不出去，不处理
-                logger.debug("harness_run_guard_frame_failed", exc_info=True)
-            raise
-
-    task = asyncio.create_task(guarded())
-
-    def report_failure(done: asyncio.Task) -> None:
-        if done.cancelled():
-            return
-        try:
-            error = done.exception()
-        except asyncio.CancelledError:
-            return
-        if error is not None:
-            logger.warning("product_harness_continuation_failed", error=str(error))
-
-    task.add_done_callback(report_failure)
-    return task

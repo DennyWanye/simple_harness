@@ -45,7 +45,7 @@ import sys
 import time
 import urllib.parse
 from collections.abc import Awaitable, Callable, Iterable
-from dataclasses import asdict, dataclass, field, replace
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional, Protocol
 
@@ -56,7 +56,6 @@ from paths import deepresearch_dir
 from deskpet.retrieval import runtime
 from deskpet.retrieval.contracts import FetchRequest, SearchRequest
 from deskpet.retrieval.fetch_extract import FetchExtractError, FetchExtractService
-from deskpet.retrieval.providers.base import candidates_from_rows
 
 from . import research_cdp_edge as _ce
 from . import research_scoring, search_provider
@@ -78,12 +77,6 @@ _CHILD_PROGRESS_TIMEOUT = 5.0
 # (graceful degrade, no embedder dependency in tests).
 _SEMANTIC_SCORER = None
 _WORKFLOW_STARTER: Callable[[dict[str, Any], str], Awaitable[dict[str, Any]]] | None = None
-
-
-def set_semantic_scorer(fn) -> None:
-    """Wire a BGE-M3-backed relevance scorer (called from main.py)."""
-    global _SEMANTIC_SCORER
-    _SEMANTIC_SCORER = fn
 
 
 def set_deepresearch_workflow_starter(
@@ -1020,27 +1013,6 @@ async def gateway_search_response(
     )
 
 
-def direct_items_to_candidates(items: list[dict[str, Any]], *, source: str):
-    """Normalize authoritative/direct-source rows into retrieval contracts."""
-
-    candidates = candidates_from_rows(
-        source,
-        [
-            {
-                "url": str(item.get("url") or item.get("link") or ""),
-                "title": str(item.get("title") or item.get("name") or ""),
-                "snippet": str(
-                    item.get("snippet") or item.get("summary") or item.get("text") or ""
-                ),
-                "published_at": item.get("published_at") or item.get("date"),
-            }
-            for item in items
-        ],
-    )
-
-    return [replace(item, source_kind="direct") for item in candidates]
-
-
 def _parse_ddg_results(html: str, *, max_results: int) -> list[dict[str, Any]]:
     """Pure parser — easier to unit-test without network."""
     out: list[dict[str, Any]] = []
@@ -1142,24 +1114,6 @@ def _parse_jina(body: str) -> dict[str, str]:
     if mc != -1:
         text = body[mc + len("Markdown Content:") :].strip()
     return {"title": title, "text": text.strip()}
-
-
-async def _jina_extract(url: str, *, client: httpx.AsyncClient) -> dict[str, str] | None:
-    """二级抓取: 调 r.jina.ai 拿 JS 渲染后 Markdown。best-effort,失败/空→None。"""
-    try:
-        resp = await client.get(
-            _JINA_READER_BASE + url,
-            timeout=_JINA_TIMEOUT,
-            headers={"Accept": "text/plain", "X-Return-Format": "markdown"},
-        )
-        resp.raise_for_status()
-        body = resp.text
-    except Exception as exc:  # noqa: BLE001
-        log.debug("jina reader failed for %s: %s", url, exc, exc_info=True)
-        return None
-    if not body or len(body) < _JINA_MIN_CHARS:
-        return None
-    return _parse_jina(body)
 
 
 def _scrapling_fetch_html(url: str, timeout: float = _DEFAULT_TIMEOUT) -> dict[str, Any] | None:

@@ -263,21 +263,3 @@ async def _ensure_companion_inbox_route(
         ):
             return session_id
     raise RuntimeError("companion_inbox_route_unavailable")
-
-
-def _is_companion_history_session_id(
-    session_id: str,
-) -> bool:
-    """Return whether a session id should be shown in the message panel list."""
-    sid = (session_id or "").strip()
-    # 2026-08-09：原先这里为保留会话 `default` 开了一条白名单。保留会话已移除，
-    # 会话 id 一律是 uuid（或存量 `task-` 前缀），不再需要该特例。
-    # Legacy task ids remain visible so old history can still be renamed,
-    # copied, or deleted. Newly generated task sessions are opaque UUIDs.
-    if sid.startswith("task-"):
-        return True
-    try:
-        uuid.UUID(sid)
-        return True
-    except (TypeError, ValueError, AttributeError):
-        return False

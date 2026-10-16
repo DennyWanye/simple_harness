@@ -65,21 +65,6 @@ def _resolve_code_recovery_provider(*, provider_snapshot, model_snapshot, regist
     return fallback
 
 
-def _freeze_durable_task_provider_snapshot(
-    provider_id: str,
-) -> tuple[dict[str, str], dict[str, str]]:
-    """Freeze the exact provider/model used by a new durable child."""
-
-    registry = service_context.get("provider_registry")
-    entry = registry.get_entry(provider_id) if registry is not None else None
-    if entry is None or not str(getattr(entry, "model", "") or "").strip():
-        raise RuntimeError(f"durable task provider unavailable:{provider_id}")
-    return (
-        {"provider_id": str(entry.id)},
-        {"model": str(entry.model)},
-    )
-
-
 def _build_agent_provider_chain(*, entries, registry):
     """Build every provider resolved for a general-agent Run, in order."""
 

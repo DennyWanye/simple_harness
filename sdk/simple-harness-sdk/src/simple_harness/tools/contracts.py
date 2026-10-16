@@ -281,15 +281,6 @@ async def await_tool_value(value: object | Awaitable[object]) -> object:
     return await value if inspect.isawaitable(value) else value
 
 
-async def await_tool_result(value: object | Awaitable[object]) -> ToolResult:
-    """Compatibility helper for callers that require an already-normalized result."""
-
-    result = await await_tool_value(value)
-    if not isinstance(result, ToolResult):
-        raise TypeError("Tool handler must return ToolResult")
-    return result
-
-
 __all__ = (
     "CancellationToken",
     "FunctionTool",

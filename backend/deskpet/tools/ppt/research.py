@@ -91,36 +91,6 @@ async def _research_topic_for_ppt(topic: str, *, depth: str, timeout_s: float):
         return None
 
 
-def _save_and_index_research(topic: str, report: Any):
-    """Best-effort 落盘调研报告并更新 DeepResearch 索引；失败只记录日志。"""
-    try:
-        saved = research_tools._save_report(topic, report)
-        if not saved:
-            return None
-
-        async def _update() -> None:
-            await research_tools._update_deepresearch_index(saved, topic, report)
-
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            asyncio.run(_update())
-        else:
-            task = loop.create_task(_update())
-
-            def _log_done(t: asyncio.Task) -> None:
-                try:
-                    t.result()
-                except Exception as exc:  # noqa: BLE001
-                    log.debug("ppt_pro research index update skipped: %s", exc, exc_info=True)
-
-            task.add_done_callback(_log_done)
-        return saved
-    except Exception as exc:  # noqa: BLE001
-        log.debug("ppt_pro research save skipped: %s", exc, exc_info=True)
-        return None
-
-
 async def _draft_outline_from_research(
     topic: str,
     report: Any,

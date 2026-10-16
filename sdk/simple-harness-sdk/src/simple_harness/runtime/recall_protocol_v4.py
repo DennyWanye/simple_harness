@@ -89,14 +89,6 @@ def _non_negative_int(value: object, name: str) -> int:
     return value
 
 
-def _bounded_ordinal(value: object, name: str, *, allow_zero: bool = False) -> int:
-    minimum = 0 if allow_zero else 1
-    if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
-        qualifier = "non-negative" if allow_zero else "positive"
-        raise ValueError(f"{name} must be a {qualifier} integer")
-    return value
-
-
 def _finite_score(value: object, name: str) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise TypeError(f"{name} must be numeric")

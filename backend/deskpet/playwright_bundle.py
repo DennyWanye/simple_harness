@@ -355,14 +355,3 @@ def resolve_browser_bundle(
         contract.revision,
         contract.executable_sha256,
     )
-
-
-def assert_short_build_paths(*paths: Path, max_deepest_length: int = 240) -> None:
-    contract = get_platform_contract()
-    suffix = Path(contract.owner_dir) / contract.revision_dir / Path(contract.executable_relative)
-    for path in paths:
-        predicted = Path(path).resolve() / suffix
-        if len(str(predicted)) > max_deepest_length:
-            raise PlaywrightBundleError(
-                f"build path is too long ({len(str(predicted))}>{max_deepest_length}): {predicted}"
-            )

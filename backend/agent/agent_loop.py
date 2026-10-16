@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import json as _json
 from collections.abc import AsyncIterator, Mapping
 from contextlib import aclosing
 from dataclasses import dataclass
@@ -21,7 +20,6 @@ from typing import TYPE_CHECKING, Any, Union
 from deskpet.workflows.trace import SpanContext, SpanStatus
 from llm.types import ToolCall
 
-from agent import errors as agent_errors
 from agent.task_id import new_task_id
 from agent.tool_context_persistence import ToolContextPersistenceMixin
 from agent.workflow_trace import HarnessTraceSession, TraceInstrumentationError
@@ -88,58 +86,6 @@ def _decode_tool_envelope(result: str) -> dict[str, Any] | None:
     return payload if isinstance(payload, dict) else None
 
 
-def _async_handoff_details(result: str) -> dict[str, str] | None:
-    """Return stable workflow refs only for a successful registry envelope."""
-
-    envelope = _decode_tool_envelope(result)
-    if envelope is None or envelope.get("ok") is not True:
-        return None
-    payload: Any = envelope.get("result")
-    if isinstance(payload, str):
-        try:
-            payload = json.loads(payload)
-        except ValueError:
-            return None
-    if not isinstance(payload, dict):
-        return None
-    accepted_event_id = str(
-        payload.get("accepted_event_id") or envelope.get("accepted_event_id") or ""
-    )
-    if (
-        payload.get("ok") is False
-        or payload.get("accepted") is False
-        or envelope.get("accepted") is False
-    ):
-        return None
-    if payload.get("accepted") is not True and not accepted_event_id:
-        return None
-    return {
-        "event_id": accepted_event_id,
-        "run_id": str(payload.get("run_id") or envelope.get("run_id") or ""),
-        "request_id": str(payload.get("request_id") or envelope.get("request_id") or ""),
-        "turn_id": str(payload.get("turn_id") or envelope.get("turn_id") or ""),
-    }
-
-
-def _tool_dispatch_failed(result: Any) -> bool:
-    if not isinstance(result, str):
-        return False
-    payload = _decode_tool_envelope(result)
-    if payload is None:
-        return False
-    if payload.get("ok") is False:
-        return True
-    nested = payload.get("result")
-    if isinstance(nested, str):
-        try:
-            nested = json.loads(nested)
-        except ValueError:
-            nested = None
-    if isinstance(nested, dict) and nested.get("ok") is False:
-        return True
-    return bool(payload.get("error")) and payload.get("ok") is not True
-
-
 # ───────────────────── WI-1.3 goal-anchor constants ─────────────────────
 #
 # Every ``_GOAL_ANCHOR_EVERY`` iterations, when there is an active goal,
@@ -154,125 +100,12 @@ _GOAL_ANCHOR_EVERY = 5
 # ───────────────────── P5-S2 Phase 2 helpers ─────────────────────
 
 
-def _classify_tool_result(result_str: str) -> type[Exception]:
-    """Classify a tool result JSON string into an error class.
-
-    Handles two layouts emitted by the dispatch path:
-      1. v2 envelope: ``{"ok": false, "result": null, "error": "..."}``
-      2. legacy / hand-shaped: ``{"error": "...", "retriable": ...}``
-      3. nested — handler put a structured envelope into ``result`` as
-         a JSON string: ``{"ok": true, "result": "{\"ok\":false,\"error\":...}"}``
-
-    Always defaults to :class:`agent_errors.TransientToolError` on parse
-    failure / unknown shape (conservative — never break a turn over
-    something we can't read).
-    """
-
-    try:
-        payload = _json.loads(result_str) if isinstance(result_str, str) else result_str
-    except (ValueError, TypeError):
-        return agent_errors.TransientToolError
-
-    if not isinstance(payload, dict):
-        return agent_errors.TransientToolError
-
-    # v2 envelope success path: ok=True with nested result. Inspect the
-    # nested structure (handlers can return {"ok": false, ...} inside
-    # result even when execute_tool considered the call "successful"
-    # at the dispatch layer).
-    if payload.get("ok") is True and isinstance(payload.get("result"), str):
-        nested_str = payload["result"]
-        try:
-            nested = _json.loads(nested_str)
-        except (ValueError, TypeError):
-            nested = None
-        if isinstance(nested, dict) and nested.get("ok") is False:
-            return agent_errors.classify(nested)
-        # Successful, no nested error → no classification needed.
-        return agent_errors.TransientToolError
-
-    # Failure envelopes (top-level error string).
-    return agent_errors.classify(payload)
-
-
-def _extract_break_detail(result_str: str, tool_name: str) -> str:
-    """Pull a short human-readable detail string out of a tool result
-    JSON for the ``ErrorEvent.detail`` field. Prefers a ``hint``
-    (Phase 0 sensor feedback) over the raw ``error`` so the message we
-    surface is actionable.
-    """
-
-    try:
-        payload = _json.loads(result_str) if isinstance(result_str, str) else result_str
-    except (ValueError, TypeError):
-        return f"tool {tool_name} returned unparseable error"
-
-    if not isinstance(payload, dict):
-        return f"tool {tool_name}: {str(payload)[:200]}"
-
-    # Try nested first (envelope.result is a JSON string with the
-    # actual handler error including hint).
-    nested_str = payload.get("result")
-    if isinstance(nested_str, str):
-        try:
-            nested = _json.loads(nested_str)
-        except (ValueError, TypeError):
-            nested = None
-        if isinstance(nested, dict):
-            for key in ("hint", "error", "message"):
-                value = nested.get(key)
-                if isinstance(value, str) and value:
-                    return f"tool {tool_name}: {value}"[:300]
-
-    # Fall back to top-level fields.
-    for key in ("hint", "error", "message"):
-        value = payload.get(key)
-        if isinstance(value, str) and value:
-            return f"tool {tool_name}: {value}"[:300]
-
-    return f"tool {tool_name} permanent error (no detail)"
-
-
 _DEEPRESEARCH_FINALIZE_MSG = (
     "[deepresearch 已完成]\n"
     "上一条 deepresearch 工具结果已经产出调研报告/引用/文件。"
     "请不要再调用 web_search、web_fetch、web_extract_article 或 deepresearch；"
     "直接基于该报告回答用户，说明关键结论、来源质量和必要限制。"
 )
-
-
-def _deepresearch_result_is_complete(result_str: str) -> bool:
-    """Return True when a deepresearch result is good enough to finalize.
-
-    The v2 registry usually wraps tool output as ``{"ok": true,
-    "result": "<handler json>"}``, while some tests/legacy paths return
-    the handler JSON directly. Only a successful payload with report text
-    plus citations or a saved artifact should force the next turn to stop
-    using tools; failed/empty reports may still need follow-up search.
-    """
-
-    try:
-        payload = _json.loads(result_str) if isinstance(result_str, str) else result_str
-    except (TypeError, ValueError):
-        return False
-    if not isinstance(payload, dict):
-        return False
-
-    if payload.get("ok") is True and isinstance(payload.get("result"), str):
-        try:
-            nested = _json.loads(payload["result"])
-        except (TypeError, ValueError):
-            nested = None
-        if isinstance(nested, dict):
-            payload = nested
-
-    if payload.get("ok") is not True:
-        return False
-    report_md = str(payload.get("report_md") or "").strip()
-    citations = payload.get("citations")
-    has_citations = isinstance(citations, list) and bool(citations)
-    has_artifact = bool(payload.get("path") or payload.get("artifacts"))
-    return bool(report_md and (has_citations or has_artifact))
 
 
 @dataclass

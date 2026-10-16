@@ -1154,10 +1154,6 @@ def _unknown_effects(checkpoint_port, run_id: RunId):  # type: ignore[no-untyped
     return tuple(reader(run_id.value))
 
 
-def _reserved_provider_turns(checkpoint_port, run_id: str) -> int | None:  # type: ignore[no-untyped-def]
-    return _checkpoint_totals(checkpoint_port, run_id).provider_turns
-
-
 def _turn_deadline(per_turn: object) -> float | None:
     if not isinstance(per_turn, Mapping):
         return None

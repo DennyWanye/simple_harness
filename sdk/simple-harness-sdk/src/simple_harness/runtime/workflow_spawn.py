@@ -256,43 +256,6 @@ def _construct_context(cls: type, /, **values: object):  # type: ignore[no-untyp
     return self
 
 
-def _create_workflow_spawn_tool_context(
-    *,
-    run_id: str,
-    request_id: str,
-    turn_id: str,
-    internal_tool_call_id: str,
-    catalog_snapshot_hash: str,
-    react_checkpoint_revision: int,
-    issue_authority: WorkflowSpawnIssueAuthority,
-) -> WorkflowSpawnToolContext:
-    for name, value in (
-        ("run_id", run_id),
-        ("request_id", request_id),
-        ("turn_id", turn_id),
-        ("internal_tool_call_id", internal_tool_call_id),
-        ("catalog_snapshot_hash", catalog_snapshot_hash),
-    ):
-        _required(value, name)
-    if react_checkpoint_revision < 0:
-        raise ValueError("react_checkpoint_revision must be non-negative")
-    if (
-        issue_authority.execution_lease.run_id != run_id
-        or issue_authority.react_checkpoint_revision != react_checkpoint_revision
-    ):
-        raise ValueError("workflow spawn Tool context authority differs")
-    return _construct_context(
-        WorkflowSpawnToolContext,
-        run_id=run_id,
-        request_id=request_id,
-        turn_id=turn_id,
-        internal_tool_call_id=internal_tool_call_id,
-        catalog_snapshot_hash=catalog_snapshot_hash,
-        react_checkpoint_revision=react_checkpoint_revision,
-        issue_authority=issue_authority,
-    )
-
-
 def _create_workflow_spawn_invocation(
     *,
     spawn_operation_id: str,
@@ -414,12 +377,6 @@ def _create_workflow_spawn_tool_outcome(
         child_start_ref=child_start_ref,
         suspension=suspension,
     )
-
-
-def _create_workflow_spawn_succeeded(
-    control: WorkflowSpawnToolOutcome,
-) -> WorkflowSpawnSucceeded:
-    return _construct(WorkflowSpawnSucceeded, control=control)
 
 
 def _create_workflow_spawn_failed(

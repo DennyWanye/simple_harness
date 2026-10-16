@@ -73,21 +73,6 @@ class TerminalDeliveryFencePort(Protocol):
     ) -> bool: ...
 
 
-class CallableRunExecutionFence:
-    """Adapt one existing shared acquirer without creating a second lock."""
-
-    def __init__(
-        self,
-        acquire: Callable[[str], Awaitable[RunExecutionFenceLease]],
-    ) -> None:
-        if not callable(acquire):
-            raise TypeError("run execution fence acquirer must be callable")
-        self._acquire = acquire
-
-    async def acquire(self, run_id: str) -> RunExecutionFenceLease:
-        return await self._acquire(_required(run_id, "run_id"))
-
-
 @dataclass(slots=True)
 class UnboundRunExecutionFenceLease:
     """Lease for Runs that have no product snapshot dependency."""

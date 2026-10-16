@@ -443,65 +443,6 @@ def _has_complete_attempt(options: ProviderAttemptOptions | None) -> bool:
     return bool(options and options.session_id and options.request_id and options.attempt_id)
 
 
-def _rebudget_current_attempt(
-    *,
-    options: ProviderAttemptOptions,
-    provider: Any,
-    model_id: str,
-    messages: Sequence[Mapping[str, Any]],
-    tools: Sequence[Mapping[str, Any]] | None,
-    generation_reserve: int,
-    attachment_tokens: int,
-) -> None:
-    if _ATTEMPT_STORE is None:
-        return
-    current = _ATTEMPT_STORE.get(
-        str(options.session_id), str(options.request_id), str(options.attempt_id)
-    )
-    if current is None or current.state != "planned":
-        return
-    provider_id, resolved_model, adapter_id, adapter_version = _provider_identity(
-        provider, model_id
-    )
-    budget = estimate_selected_attempt_budget(
-        provider=provider,
-        model_id=resolved_model,
-        messages=messages,
-        tools=tools,
-        generation_reserve=(generation_reserve or current.reserve_tokens),
-        attachment_tokens=(attachment_tokens or current.attachment_tokens),
-    )
-    wire_messages, _ = split_wire_messages(messages)
-    wire_tools = list(tools or ())
-    _ATTEMPT_STORE.update_prepared(
-        str(options.session_id),
-        str(options.request_id),
-        str(options.attempt_id),
-        provider_id=provider_id,
-        model_id=resolved_model,
-        adapter_id=adapter_id,
-        adapter_version=adapter_version,
-        message_hash=_digest(wire_messages),
-        wire_tool_hash=_digest(wire_tools),
-        message_tokens=budget.messages_tokens,
-        tool_tokens=budget.tool_tokens,
-        attachment_tokens=budget.attachment_tokens,
-        reserve_tokens=budget.generation_reserve,
-        effective_input_budget=budget.effective_input_budget,
-        context_window=budget.context_window,
-        planned_tokens=budget.planned_input_tokens,
-    )
-    if not budget.fits:
-        _ATTEMPT_STORE.transition(
-            str(options.session_id),
-            str(options.request_id),
-            str(options.attempt_id),
-            "failed",
-            reasons=(*current.reasons, "provider_context_budget_exceeded"),
-        )
-        raise RuntimeError("provider_context_budget_exceeded")
-
-
 async def auto_context_attempt_call(
     *,
     invoke: Any,

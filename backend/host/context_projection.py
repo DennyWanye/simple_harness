@@ -3,15 +3,12 @@
 from __future__ import annotations
 
 from config import load_config
-from deskpet.agent.assembler.bundle import ContextFragment
 from deskpet.agent.context_task import (
     GoalProjectionAdapter,
     ReceiptProjectionAdapter,
     TaskContextProjector,
-    TaskFact,
     WorkflowProjectionAdapter,
 )
-from llm.context_messages import ContextMessageMeta, tag_message
 from p4_ipc import _context_compaction_config_path, _read_context_compaction_model
 
 from host.runtime import _CONFIG_PATH, config, logger, service_context
@@ -95,77 +92,3 @@ def _build_context_task_projector(
             ReceiptProjectionAdapter(receipt_store) if receipt_store is not None else None
         ),
     )
-
-
-async def _project_initial_context_snapshot(
-    *,
-    session_id: str,
-    request_id: str,
-    task_scope_id: str = "",
-    user_text: str,
-    explicit_new: bool = False,
-):
-    """Project active authorities plus typed evidence for a new long task."""
-
-    evidence = (
-        (
-            TaskFact(
-                fact_id=f"request:{request_id}",
-                text=str(user_text).strip(),
-                source="session_request",
-                status="pending",
-            ),
-        )
-        if explicit_new and str(user_text).strip()
-        else ()
-    )
-    return await _build_context_task_projector().project(
-        effective_sid=session_id,
-        request_id=request_id,
-        task_scope_id=task_scope_id,
-        user_text=user_text,
-        explicit_new=explicit_new,
-        structured_evidence=evidence,
-    )
-
-
-def _attach_task_snapshot_to_request(bundle, messages, snapshot) -> None:
-    """Mount one protected task fragment into bundle facts and wire messages."""
-
-    if snapshot is None:
-        return
-
-    task = snapshot.to_protected_fragment()
-    if not any(fragment.fragment_id == task.fragment_id for fragment in bundle.fragments):
-        bundle.fragments.append(
-            ContextFragment(
-                fragment_id=task.fragment_id,
-                source=task.source,
-                role="system",
-                content=task.content,
-                lifetime="task",
-                placement="prefix",
-                priority=task.priority,
-                trim_policy="never",
-                protected=True,
-                reason=task.reason,
-            )
-        )
-    tagged = tag_message(
-        {"role": "system", "content": task.content},
-        ContextMessageMeta(
-            placement="prefix",
-            lifetime="task",
-            source=task.source,
-            protected=True,
-            trim_policy="never",
-            fragment_id=task.fragment_id,
-            priority=task.priority,
-            reason=task.reason,
-        ),
-    )
-    insert_at = next(
-        (index for index, message in enumerate(messages) if message.get("role") != "system"),
-        len(messages),
-    )
-    messages.insert(insert_at, tagged)

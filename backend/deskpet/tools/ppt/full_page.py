@@ -29,36 +29,6 @@ from .outline import (
 log = logging.getLogger("deskpet.tools.ppt_tools")  # 拆包后仍用原模块名，日志过滤与告警规则不变
 
 
-def _crop_image_to_169(path: str) -> str:
-    """把生成图中心裁切成 16:9 后另存,返回裁切版路径。
-
-    image_full 全幅铺图会把图拉到 16:9 画布 —— 方图/3:2 直接拉伸会明显
-    变形。中心裁切零变形。PIL 不可用/失败 → 返回原路径(退化为拉伸)。
-    """
-    try:
-        # 按需导入：重型包
-        from PIL import Image  # type: ignore
-
-        src = Path(path)
-        with Image.open(src) as im:
-            w, h = im.size
-            target_h = int(w * 9 / 16)
-            if target_h > h:
-                # 图太「方」,反向裁宽
-                target_w = int(h * 16 / 9)
-                left = max(0, (w - target_w) // 2)
-                box = (left, 0, left + target_w, h)
-            else:
-                top = max(0, (h - target_h) // 2)
-                box = (0, top, w, top + target_h)
-            out = src.with_name(src.stem + "_169" + src.suffix)
-            im.crop(box).save(out)
-        return str(out)
-    except Exception as exc:  # noqa: BLE001
-        log.debug("16:9 crop failed (%s); using original image", exc, exc_info=True)
-        return path
-
-
 # 每个版式对应的「负空间」构图指令(调研: prompt 主动留白给文字才不盖字)。
 def _normalize_full_page_image(path: str, *, output_path: str | None = None) -> str:
     """Create the exact 16:9 page asset committed by a full-page image effect."""
