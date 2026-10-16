@@ -75,7 +75,9 @@ def test_stale_reply_after_epoch_moved_is_not_charged(tmp_path):
             assert refusal_charges_planner(["METHOD_STRUCTURE_INVALID"]) is True
             assert refusal_charges_planner([]) is True
             # 产品接线上也没扣：这个任务里没有任何一次拒收被计入"规划器答错"
-            from agent_orchestrator.orchestrator.orchestrator_domains.planning_feedback import _refusal_codes
+            from agent_orchestrator.orchestrator.orchestrator_domains.planning_feedback import (
+                _refusal_codes,
+            )
 
             rejected = [e for e in events if e.type == "PlanningRejected"]
             assert [e for e in rejected if refusal_charges_planner(_refusal_codes(e))] == []

@@ -90,7 +90,9 @@ def test_consecutive_after_handoff_unknowns_stop_when_the_ladder_is_spent(tmp_pa
     HTTP status, and never carry the reply text."""
 
     async def case() -> dict[str, Any]:
-        from agent_orchestrator.orchestrator.orchestrator_domains.planning_feedback import PLANNER_TURN_FAILURE_GRACE
+        from agent_orchestrator.orchestrator.orchestrator_domains.planning_feedback import (
+            PLANNER_TURN_FAILURE_GRACE,
+        )
 
         assert PLANNER_TURN_FAILURE_GRACE == 6
         provider = FaultyProvider(

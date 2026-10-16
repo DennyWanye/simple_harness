@@ -1007,7 +1007,9 @@ def test_inflight_reply_and_pending_question_after_amend(tmp_path):
     """①规划器作答期间用户改了要求：那份回复按"请求过期"退回，不算它答错。
     ②根终审判不下来、裁决卡等用户时改要求：题目作废（它问的是旧版要求下的事），任务按新版重排后完成。"""
     from agent_orchestrator.contracts.error_table import refusal_charges_planner
-    from agent_orchestrator.orchestrator.orchestrator_domains.planning_feedback import _refusal_codes
+    from agent_orchestrator.orchestrator.orchestrator_domains.planning_feedback import (
+        _refusal_codes,
+    )
     from agent_orchestrator.storage.planning_human_store import PlanningHumanStore
     from agent_orchestrator.testing.scripted_replies import decision, review_input, review_reply
 
