@@ -1,10 +1,11 @@
 # SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: BUSL-1.1
-"""Legacy AgentEvent presentation extracted without changing its owner.
-R2 keeps ``main.py::_run_chat`` and ``AgentLoop`` in charge.  This presenter
-only owns the product projection already performed by their event bridge.
-Handlers are explicitly registered in live, durable, and domain groups so a
-later Driver can reuse the same mapping without growing another switch.
+"""把运行事件（``AgentEvent``）投影成产品前端帧与领域命令的展示层。
+
+使用方：主对话运行与恢复（``host/sdk_execution.py``、``host/sdk_recovery.py``）、
+``host/harness_chat.py``、``host/control_messages.py`` 把事件交给它投影；
+``deskpet/compat/run_presenter.py`` 转出 ``build_product_run_presenter``。
+处理函数按实时、持久、领域三组显式登记，换驱动时复用同一张映射，不另长分支。
 """
 
 from __future__ import annotations

@@ -1,4 +1,8 @@
-"""Durable tool-context persistence collaborator for AgentLoop."""
+"""工具上下文快照的 CAS 持久化混入类（``ToolContextPersistenceMixin``）。
+
+现状：产品代码与测试都不导入本模块；它依赖的 ``deskpet/agent/context_snapshot_store.py``
+是占位模块。
+"""
 
 from __future__ import annotations
 

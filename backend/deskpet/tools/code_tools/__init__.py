@@ -1,18 +1,22 @@
 # SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: BUSL-1.1
 
-"""P4-S22 Code mode tools.
+"""代码类工具包。
 
-Five tools registered alongside the seven OS tools when Code mode is
-active. Companion mode never sees them — registration is gated by
-``code_mode.is_enabled(session_id)`` at registry-emit time, so the LLM
-won't even know they exist outside Code mode.
+``register_code_tools`` 由 ``host/tools_bootstrap.py`` 在启动时调用，把 glob、grep、
+web_search、fetch_tool_result 注册进工具登记表（``toolset="code"``）；todo_write 与
+委派类工具只在传入对应处理函数时才注册。
 
-  * glob  — find files by pattern (pathlib.rglob), mtime-sorted
-  * grep  — content search via Python re (no external rg dependency)
-  * todo_write — task list state, persisted to SessionDB + pushed to UI
-  * web_search — DuckDuckGo HTML scrape
-  * agent — spawn a nested AgentLoop with read-only tools
+本包导出：
+
+  * glob  — 按模式找文件（pathlib.rglob），按修改时间排序
+  * grep  — 用 Python re 搜内容（不依赖外部 rg）
+  * todo_write — 当前会话的任务清单，存进 SessionDB 并推给界面
+  * web_search — 走进程内共享的 SearchGateway（``deskpet.retrieval``）
+  * ask_clarification — 向用户提澄清问题
+
+委派类工具（agent、agent_parallel、spawn_team、spawn_subagents）在本包只留公开结构，
+执行归产品 Harness 的 ``DelegateRun``。
 """
 
 from __future__ import annotations

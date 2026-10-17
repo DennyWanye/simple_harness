@@ -1,10 +1,10 @@
 # SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: BUSL-1.1
 
-"""Frozen worker dispatch (memory SDK not integrated yet).
+"""冻结包的子进程派发入口，``main.py`` 在模块加载时调用。
 
-旧 embedder 子进程 worker 已随记忆系统移除。SDK 上线后如需独立 worker，
-再在这里恢复对应的 ``-m`` 派发分支。
+现在没有需要派发的冻结子进程模块，函数是空操作；原先的向量模型子进程已随认知记忆
+系统一起移除。
 """
 
 from __future__ import annotations

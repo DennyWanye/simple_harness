@@ -1,7 +1,10 @@
 # SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: BUSL-1.1
 
-"""Optional structured tracing adapter for the legacy AgentLoop harness."""
+"""可选的结构化追踪适配器，写入 ``deskpet.workflows.trace`` 的追踪存储。
+
+现状：产品代码与测试都不导入本模块。
+"""
 
 from __future__ import annotations
 

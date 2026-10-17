@@ -1,17 +1,15 @@
 # SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: BUSL-1.1
 
-"""P4 agent subsystem.
+"""Host 侧给 Agent 运行配套的部件。
 
-Houses:
+包里主要有：
 
-- ``loop.py``               (P4-S6, task 11.x) — DeskPetAgent ReAct loop,
-  lifted and slimmed from Hermes ``AIAgent.run_conversation``.
-- ``context_compressor.py`` (P4-S8, task 13.x) — rolling summary when
-  conversation token count exceeds ``context_window * 0.7``.
-- ``assembler/``            (P4-S7, task 12.x) — ContextAssembler v1
-  (TaskClassifier + ComponentRegistry + BudgetAllocator + ContextBundle).
+- ``assembler/`` — ContextAssembler（TaskClassifier + ComponentRegistry +
+  BudgetAllocator + ContextBundle）。
+- ``run_presenter.py`` — 把运行事件投影成产品前端帧。
+- ``tokens.py``、``context_budget.py``、``context_usage.py`` — token 计数、上下文预算与用量。
+- ``turn_preparer.py`` — 产品轮次输入与 Host 共用的产品路由工具名。
 
-All concrete modules land in later slices. This ``__init__`` only declares
-the package surface so imports work from P4-S0 onwards.
+本 ``__init__`` 不导出任何名字。
 """

@@ -1,24 +1,21 @@
 # SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: BUSL-1.1
 
-"""P4-S11 IPC handlers — Skills / decisions / model-context endpoints.
+"""控制通道里技能、决策、模型上下文、权限这几类消息的处理函数。
 
-2026-09-10：MemoryPanel 相关的九条消息（memory_search / memory_l1_* /
-memory_facts_list / memory_forget{,_undo} / memory_pin / memory_unpin）随
-认知记忆 SDK 一并移除。
+本模块处理 ``P4_IPC_MESSAGE_TYPES`` 里的八种消息：
 
-Four message types the front-end drives:
+- ``skills_list`` / ``decisions_list`` — 列技能、列决策；
+- ``model_context_get`` / ``model_context_set`` — 读写每个模型的上下文窗口覆盖；
+- ``context_compaction_get`` / ``context_compaction_set`` — 读写上下文压缩用的模型；
+- ``model_provision_status`` — 首启模型下载进度；
+- ``permissions_pending_list`` — 列当前会话待批的权限请求。
 
-- ``skills_list``         → ``skills_list_response``
-- ``decisions_list``      → ``decisions_list_response``
+依赖的服务没注册时，处理函数返回空结果（附原因），不报错。
 
-Every handler tolerates "service not registered" gracefully (empty
-payload + warning log) so the S11 front-end can ship before the S12
-wire-in flips on `SkillLoader` / `ContextAssembler` / `MemoryManager`.
-
-The dispatcher below is called from ``backend/main.py``'s control
-channel after auth. It never raises — protocol-level errors round-trip
-as ``{"type": "error", "payload": {"message": "..."}}``.
+调用方是 ``backend/host/control_channel.py``：鉴权后按消息类型转到 ``handle``。
+``handle`` 不抛异常，协议层错误以 ``{"type": "error", "payload": {"message": "..."}}``
+回给前端。
 """
 
 from __future__ import annotations

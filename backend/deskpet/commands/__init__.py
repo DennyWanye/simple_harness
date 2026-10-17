@@ -3,8 +3,9 @@
 
 """Slash command dispatcher — WI-A2 v1.
 
-用户在桌宠 chat 框输 `/<cmd> [args]` → InputBar 发 `slash_command` WS →
-main.py handler 调 dispatch_slash_command。
+用户在聊天输入框输 `/<cmd> [args]` → 前端（如 tauri-app/src/code-panel/InputBar.tsx）发
+`slash_command` 控制消息 → host/control_sessions.py 的 `_cc_slash_command` 调
+dispatch_slash_command。
 
 约定:
   - cmd 不区分大小写（lowercased）

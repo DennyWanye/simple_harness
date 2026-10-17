@@ -12,14 +12,13 @@ Attribution:
 Responsibilities:
     * 拉起 state.db（通过 ``schema.initialize_state_db`` 做迁移 + .bak 回滚）
     * WAL 模式 + 应用层 SQLITE_BUSY 重试（jitter exponential backoff，≤5 次）
-    * 暴露 create_session / append_message / get_messages / search_fts /
-      update_salience / close 六个 async API
     * 可选 sqlite-vec 虚拟表 ``messages_vec``（load_extension 失败 → warn + 降级）
+    * 具体读写按领域拆在 ``session_db_domains/`` 的各个混入类里（会话、消息、
+      提供方尝试账本、上下文用量、工作项等），``SessionDB`` 把它们组合起来。
 
-Not here（留给后续 slice）：
-    * L3 向量召回本体 → P4-S3 retriever.py
-    * embedding 计算 → P4-S2 embedder.py
-    * 文件记忆 / MemoryManager → P4-S4
+这是 Host 的会话账本，不做向量召回、嵌入计算或文件记忆（认知记忆系统已移除）。
+使用方：``host/stores_bootstrap.py`` 启动时建库，``deskpet/workflows/adapters/product_delivery.py``
+与 ``scripts/reset_agent_data.py`` 也直接用它。
 """
 
 from __future__ import annotations

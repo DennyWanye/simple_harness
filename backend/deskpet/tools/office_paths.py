@@ -3,11 +3,10 @@
 
 """Office-file path authorization — the "防手滑" layer (beta builtin skills).
 
-The office skills (excel / doc / pdf / file-organize / ocr) intentionally
-work with **real user files anywhere on disk** — unlike ``file_tools.py``
-they are NOT confined to the ``%APPDATA%\\deskpet\\workspace`` sandbox.
-DeskPet is a single-user desktop pet; a hard sandbox would block the
-core use case ("改我桌面上这份合同").
+办公类技能（excel / doc / pdf / file-organize / ocr）有意直接处理磁盘上任意位置的
+**真实用户文件**——与 ``file_tools.py`` 不同，它们不限定在
+``%APPDATA%\\deskpet\\workspace`` 沙箱里。本应用是单用户的本机桌面工作台，硬沙箱会
+挡住核心用法（"改我桌面上这份合同"）。
 
 But the LLM can hallucinate a path, or a prompt-injected web page can
 ask it to overwrite ``C:\\Windows\\...``. So instead of a sandbox we use

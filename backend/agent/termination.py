@@ -1,13 +1,17 @@
 # SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: BUSL-1.1
 
-"""P6 — TerminationGate state machine.
+"""TerminationGate 终止判定状态机。
 
-Centralized termination decisions for AgentLoop. Hard limits (turns, tools,
-wall-clock, budget) are non-negotiable and enforced by this module rather
-than relying on the LLM honoring system messages.
+轮数、工具调用数、墙钟、预算这类硬上限集中在这里判定，不指望模型自觉遵守
+system 消息。
 
-See openspec/changes/p6-agent-loop-refactor/design.md §"模块 1: TerminationGate".
+现状：产品代码不导入本模块（SDK 运行时的终止上限在
+``simple_harness.runtime.termination``），只有 ``tests/test_p6_termination_gate.py``
+引用它。
+
+设计见 openspec/changes/archive/2026-05-12-p6-agent-loop-refactor/design.md
+§"模块 1: TerminationGate"。
 
 Design references:
 - Claude Code SDK ResultMessage.subtype — enum termination reasons.

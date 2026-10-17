@@ -1,19 +1,15 @@
 # SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: BUSL-1.1
 
-"""MemoryStore Protocol and value objects.
+"""短期会话记忆的 ``MemoryStore`` 协议与值对象。
 
-V5 §4.5 envisions semantic memory (bge-m3 + sqlite vector). S2 ships
-the simpler short-term conversation memory first — future slices can
-add a SemanticMemoryStore alongside without changing this contract.
+``MemoryStore`` 只管按会话取最近几轮、追加一轮、清空一个会话。
+``agent/providers/simple_llm.py`` 可选注入它，给请求带上最近的对话历史；
+会话库 ``SessionDB``（``deskpet/memory/session_db_domains/messages.py``）实现它，
+并使用这里的 ``ConversationTurn`` / ``StoredTurn`` / ``SessionSummary``。
 
-S14 (V5 §6 threat 5 — user agency over private data) adds a small
-management surface on top of the core Protocol: listing turns with
-their primary-key id, deleting a single turn, listing known sessions,
-and a global ``clear_all``. These sit on the concrete class and on
-any decorator (e.g. RedactingMemoryStore) rather than on the Protocol,
-so a minimal backend (e.g. in-memory test double) isn't forced to
-implement admin endpoints.
+管理类接口（列轮次、删单轮、列会话、``clear_all``）放在具体类上，不放进协议，
+所以最小实现（例如内存里的测试替身）不必实现这些管理接口。
 """
 
 from __future__ import annotations

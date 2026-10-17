@@ -1,10 +1,12 @@
 # SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: BUSL-1.1
 
-"""P5-S1: per-session activity tracking for the supervisor watchdog.
+"""监督看门狗用的按会话活动记录。
 
-Lives next to ``agent_loop.py``. Pure data — no I/O, no LLM. The watchdog
-loop reads from this; the WS event forwarder in main.py writes to it.
+纯数据，不做 I/O，不调 LLM。``host/startup_supervision.py`` 把默认实例注册为
+``session_activity`` 服务；``deskpet/agent/run_presenter.py`` 投影运行事件时写入，
+``deskpet/agent/product_domain_sink.py`` 把会话置为空闲；``agent/watchdog.py``、
+``agent/auto_resume.py``、``agent/snapshot.py`` 读取。
 
 Design notes:
 - in-memory only (rebuilt on backend restart); Code-mode session state

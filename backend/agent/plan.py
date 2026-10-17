@@ -1,15 +1,14 @@
 # SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: BUSL-1.1
 
-"""General-agent plan helper.
+"""通用任务的规划辅助。
 
-For a complex request, do one structured-output LLM call to extract a
-small plan of steps. The plan is:
+对复杂请求做一次结构化输出的 LLM 调用，抽出一份小的步骤计划（``Plan``）。
+``plan_to_system_message`` 把计划转成一条额外的 ``system`` 消息，让模型调度工具时
+锚定计划。
 
-1. Sent to the frontend as ``chat_v2_plan`` so the user can see it.
-2. Injected as an extra ``system`` message into the working_messages
-   the AgentLoop consumes, so the LLM stays anchored to the plan
-   while it dispatches tools.
+现状：产品代码不导入本模块，只有 ``tests/test_plan_companion.py`` 与
+``tests/test_superpowers_edgecases.py`` 引用它。
 
 Manual policy gates effectful plans on one task-level confirmation.  For
 manual authorization the planning call is mandatory for every non-chitchat

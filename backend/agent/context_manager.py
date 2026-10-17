@@ -5,12 +5,10 @@
 
 Why
 ---
-Before P6 the chat handler + AgentLoop reached directly into three
-independent helpers — B1 ``tool_result_truncator``, B2 ``history_compactor``,
-B3 ``token_budget`` — and each call site duplicated wiring (thresholds,
-provider plumbing, ref-store sharing).  This module unifies them into a
-single facade so the agent loop has **one** dependency for "context
-optimization":
+本模块把三个独立助手——B1 ``tool_result_truncator``、B2 ``history_compactor``、
+B3 ``token_budget``——收成一个门面，调用方只依赖一处"上下文优化"。
+现状：产品代码不导入本模块，只有 tests/ 下的测试（如 ``test_p6_context_manager.py``、
+``test_context_manager_dedup.py``）引用它。门面提供：
 
   * Truncate noisy tool results into head + tail + ref_id marker (B1)
   * Compact old turns into a summary system message when history grows

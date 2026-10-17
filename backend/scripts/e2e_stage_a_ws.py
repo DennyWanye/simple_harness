@@ -4,9 +4,8 @@
 """P4-S20 真实 WS 端到端测试 — 模拟前端打实跑后端 chat_v2 路径。
 
 不依赖 Tauri 桌面壳像素截图，而是直接打 ws://127.0.0.1:8100/ws/control
-模拟真实前端的 IPC 调用。比 e2e_stage_a_full.py 更严苛 —— 用的是生产
-backend 进程（已经在 8100 上跑着的 main.py），不是脚本里临时构造的
-AgentLoop。
+模拟真实前端的 IPC 调用。用的是已经在 8100 上运行的生产后端进程，脚本里不另外
+拼装运行环境。
 
 依赖：backend 已经在 8100 监听（DESKPET_DEV_MODE=1 下绕过 secret）。
 

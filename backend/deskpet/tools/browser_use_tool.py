@@ -22,20 +22,12 @@ Why this module looks the way it does
   cannot actually start. OFF = zero effect: the optional ``browser_use``
   import and Chromium launch only happen inside a dispatched run.
 
-* **Async fire-and-quick-return.** browser-use runs are long (30s–3min).
-  The repo's only existing async worker (``memory/vector_worker.py``) is
-  an ``asyncio.Task`` bound to the backend event loop with
-  ``start()``/``stop()`` lifecycle and *no* job-result delivery
-  mechanism — it is not a fire-and-quick-return job dispatcher callable
-  from a sync tool handler, and wiring one into the event loop would
-  require touching ``main.py`` (out of scope). So this module ships a
-  small **self-contained background-thread job runner**: the
-  ``start`` action returns instantly with
-  ``{"ok": true, "status": "running", "job_id": ...}``; the agent then
-  polls ``{"action": "result", "job_id": ...}`` (or ``"poll"``) for the
-  outcome. Job state is also persisted to a JSON file under
-  ``user_data_dir()/browser_jobs/`` so a backend restart mid-run still
-  surfaces a terminal ``error`` rather than a phantom ``running``.
+* **异步启动、快速返回。** browser-use 一次要跑 30 秒到 3 分钟，而工具处理函数是
+  同步调用。本模块自带一个**独立的后台线程任务执行器**，不接进后端事件循环：
+  ``start`` 动作立即返回 ``{"ok": true, "status": "running", "job_id": ...}``，
+  Agent 再用 ``{"action": "result", "job_id": ...}``（或 ``"poll"``）轮询结果。
+  任务状态同时写进 ``user_data_dir()/browser_jobs/`` 下的 JSON 文件，后端中途重启后
+  仍会给出终态 ``error``，不会留下假的 ``running``。
 
 * **Localhost-only by default.** A code-mode *test* agent must not roam
   the open internet. ``start_url`` (and the model, via a hard system

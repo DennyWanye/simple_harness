@@ -1,10 +1,11 @@
 # SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: BUSL-1.1
 
-"""STUB — context_snapshot_store。
+"""占位模块 — context_snapshot_store。
 
-原模块已移除，等待 simple-harness-memory-sdk 集成。
-此 stub 防止 tool_context_persistence.py / agent_loop.py 在运行时崩溃。
+原上下文快照存储已随认知记忆系统移除，这里只留异常类型、句柄与回执的结构，以及
+返回空结果的 ``ContextSnapshotStore``。
+现状：唯一导入方是 ``agent/tool_context_persistence.py``（它本身没有导入方）。
 """
 
 from __future__ import annotations

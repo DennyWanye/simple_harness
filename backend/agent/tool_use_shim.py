@@ -1,26 +1,18 @@
 # SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: BUSL-1.1
 
-"""P4-S20 Wave 2b — thin LLM shim for AgentLoop.
+"""把 OpenAI 兼容提供方包成带工具调用的 LLM 接口的薄壳。
 
-AgentLoop expects a ``chat_with_fallback(messages, tools=, ...)``
-returning an ``llm.types.ChatResponse``. The deskpet runtime currently
-uses ``OpenAICompatibleProvider`` (which does ``chat_stream`` for the
-chat panel, plus the new ``chat_with_tools`` non-streaming method).
+``OpenAICompatibleAgentLLM`` 把 ``OpenAICompatibleProvider`` 的 ``chat_with_tools``
+（或 ``chat_with_tools_at_most_once``）包成 ``chat_with_fallback(messages, tools=, ...)``，
+返回 ``llm.types.ChatResponse``；``chat_with_fallback_stream`` 是流式版本，走
+``chat_stream_with_tools``，完成时返回同样的 ``ChatResponse``，中途产出增量事件，
+调用方可以把文字与工具调用逐步转发给界面。这样不必拉起完整的 ``LLMRegistry``
+（它要 anthropic/openai/gemini 各自的密钥）。
 
-This shim wires the two together so we can drive the new tool-use loop
-without spinning up the full ``LLMRegistry`` (which would require its
-own anthropic/openai/gemini API keys).
-
-P4-S25 A1: also exposes ``chat_with_fallback_stream`` for the streaming
-path. Same return shape (ChatResponse on completion) but yields
-intermediate delta events the agent loop can forward to the WS so the
-user sees text/tool calls trickle in instead of waiting silently for
-30+ seconds on thinking-mode models.
-
-Production wiring:
-    shim = OpenAICompatibleAgentLLM(provider=cloud_or_local_provider)
-    loop = AgentLoop(llm_registry=shim, tool_registry=registry_v2)
+现在的使用方：``host/startup_workflows.py`` 构造代码恢复工作流的上下文时，用
+``OpenAICompatibleAgentLLM`` 包住解析出的提供方，交给 ``_RecoveryProposalPort``。
+``OpenAICompatibleAgentLLMChain``（多个提供方依次回落）目前只有测试使用。
 """
 
 from __future__ import annotations

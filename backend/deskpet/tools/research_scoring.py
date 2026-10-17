@@ -17,9 +17,8 @@ authority map + literal keyword coverage. V8 brings a far richer model:
 * **Diversity** + **sub-question coverage** checks so one domain can't
   dominate the evidence pool.
 
-The relevance/depth dimensions stay caller-supplied (the pipeline fills
-them from keyword coverage and, when available, BGE-M3 semantic
-similarity — see ``research_tools``).
+相关度、深度两个维度由调用方提供：流水线按关键词覆盖率填写。``research_tools``
+留有可选的语义打分钩子 ``_SEMANTIC_SCORER``，目前产品代码没有注入它。
 
 Everything here is pure + deterministic (no network, no LLM) so it is
 trivially unit-testable, mirroring V8's "deterministic helpers" stance.

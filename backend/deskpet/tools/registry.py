@@ -6,26 +6,24 @@
 Design notes
 ------------
 
-* **Auto-discovery**: ``deskpet/tools/__init__.py`` walks the package's
-  submodules with ``pkgutil.iter_modules`` and imports each one so their
-  top-level ``registry.register(...)`` calls land in the singleton. Tool
-  authors never touch ``__init__.py`` — drop a new ``foo_tool.py`` and
-  call ``register`` at module scope.
+* **显式组装产品目录**：导入 ``deskpet.tools`` 包本身不扫描文件系统、不执行工具模块。
+  第一次读目录或派发时，``deskpet/tools/__init__.py`` 按显式清单
+  ``_LEGACY_STATIC_PROVIDER_MODULES`` 逐个导入模块，调用它的
+  ``register_static_tools(registry)`` 注册进本模块的单例。新加的静态工具模块要写
+  ``register_static_tools`` 并加进这份清单。
 
 * **OpenAI function-calling format**: ``schemas()`` emits the exact
   ``{type: "function", function: {name, description, parameters}}``
   shape that anthropic/openai/gemini adapters all normalize against
   (see spec "OpenAI-Format Tool Schemas").
 
-* **Toolset gating**: every tool belongs to a ``toolset`` string
-  (e.g. ``"file"``, ``"web"``, ``"memory"``, ``"control"``). The
-  ContextAssembler passes ``enabled_toolsets=[...]`` at turn start so
-  only the task-relevant slice shows up in the LLM prompt.
+* **按 toolset 筛选**：每个工具属于一个 ``toolset`` 字符串（如 ``"file"``、``"web"``、
+  ``"code"``、``"control"``）。``schemas(enabled_toolsets=[...])`` 只输出白名单里的
+  toolset。
 
-* **Env + check gating**: ``requires_env=["BRAVE_API_KEY"]`` hides the
-  tool entirely when any var is missing. ``check_fn`` runs just before
-  dispatch and, on False, short-circuits with a retriable error JSON —
-  used by ``memory_search`` while the BGE-M3 embedder is still warming.
+* **按环境变量与检查函数放行**：``requires_env=["BRAVE_API_KEY"]`` 在任一变量缺失时
+  整个隐藏该工具。``check_fn`` 在派发前运行，返回 False 时短路返回可重试的错误 JSON；
+  例如 MCP 工具在对应服务没连上时被这样挡住（见 ``deskpet/mcp/manager.py``）。
 
 * **Error contract**: every dispatch path — whether the handler succeeds,
   returns an error dict, raises, or is gated by check_fn — MUST return a

@@ -13,10 +13,10 @@ viewer.
 Flat auto-discovered module (same as web_tools.py / file_tools.py):
 ``registry.register`` at module scope, zero main.py change.
 
-Name MUST stay ``generate_image`` — it equals capability_gate.py image
-``tool_markers[0]``, so registering it flips image requests
-REFUSE→PASS (consistent with companion-context-isolation §D2:
-"新增图像工具自动放行"). Plan: plans/2026-05-16-generate-image-tool.md
+工具名必须保持 ``generate_image``：这个名字写在已登记的工具清单
+（``deskpet/tool_catalog/real_tool_manifest.json``、``schema_migrations.json``）、
+``deskpet/tool_catalog/providers.py`` 与 ``deskpet/sdk_adapters/tools.py`` 的工具名集合里，
+改名会让这些登记对不上。计划：plans/archive/2026-05-16-generate-image-tool.md
 """
 
 from __future__ import annotations

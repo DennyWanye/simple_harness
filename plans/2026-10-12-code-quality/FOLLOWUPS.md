@@ -162,3 +162,19 @@
 - 主检出 `tauri-app/node_modules` 是 pnpm 按 package.json 的版本范围装的（工作树借用它），CI 用 `npm ci` 按 package-lock.json 装。实测 eslint-plugin-react-hooks 本机 7.1.1、锁文件 7.0.1，两版对 set-state-in-effect 的判定互相错开，本机 eslint 干净而 CI 报 2 个错误、2 个警告（9D-13 已改代码，使两版都干净）。
 - 其他依赖可能也有版本差。
 - 下一步：本机改用 `npm ci` 按锁文件装（需要下载，先问用户），或把锁文件升到本机版本（同样需要下载）；在那之前，前端 lint 结论以 CI 为准，本机可从 npm 缓存离线取锁文件版本复核。
+
+## F-23 可安全去版本后缀的命名（2026-10-17 阶段 10B 登记）
+
+- 依据：阶段10-带版本号命名清单.md（逐项证据：引用处数与位置、五项身份核查——结构标题、kind/type 字面量、注册名与工具结构、工作流节点源码、钉死与各种清单）。
+- 归阶段 11 尾巴清单（15 个，都在后端 companion 与 tools/prepared_snapshot，不碰 SDK、不碰执行构建清单，按模块整批改）：PreparedSkillToolIntersectionV1、GrowthSignalV1、CandidateFinalizeProofV1、TrustedCapabilityFailureReceiptV1、GuardBindingSnapshotV1、GuardMonitorOutcomeV1、WorkflowDataflowValidationV1、CandidateImmutableRiskFactsV1、FirstPartySkillTemplateV1、TrustedActivationDecisionProofV1、TrustedLifecycleCandidateSourceV1、CandidateBuildLaunchStateV1、LiveReflectionEvidenceV1、LiveGrowthTargetFactsV1、HostNeutralSemanticGrowthResultV1。
+- 归第二轮（88 个加前端 1 个）：引用面大、使用方在深度研究线或去留未定的后端工作流引擎；其中 EvaluationVerdictV1、PreparedRunCatalogLeaseV1 去后缀会重名要另取名，PublicRunSnapshotV3 要前后端一起改。
+- 注意：甲类里 23 个类的后缀与类内 schema_version / version 字段相同，属"冻结合同"命名，按 10D 的命名规范判断是否保留后缀。
+- 乙类（身份或协议版本）与丙类（多版本并存，删旧版归删工作流线与两套引擎欠账）不在此项。
+
+## F-24 阶段 10C 顺带发现的死代码候选（2026-10-17 登记）
+
+- 疑似死脚本 6 个（文件头核对清单有理由）：backend/scripts 的 cdp_a_class_recon、cdp_a_class_run、cdp_pet_g2_test、hybrid_pet_click（连已移除的桌宠窗口）、download_bge_m3（依赖不存在的 embedder.py，下载格式与执行池读的本机量化模型不符）、setup_models（whisper 那半可能仍有用）。
+- backend/agent/ 的 plan、context_manager、termination 只剩测试在用；workflow_trace、tool_context_persistence 连测试都没有；deskpet/agent/ 的 context_segment_store、context_snapshot_store 几乎没人导入。
+- research_tools 的语义打分钩子 `_SEMANTIC_SCORER` 始终为 None，语义打分路径不执行。
+- model_provisioner.py 的下载清单里 wemm-embedding-2b 向量模型没有使用方。
+- 下一步：与 F-21 一起按真实导入可达性重扫，出删除清单；做好但没接线的功能按规则记待用户定。

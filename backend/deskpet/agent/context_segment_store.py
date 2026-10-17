@@ -1,10 +1,10 @@
 # SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: BUSL-1.1
 
-"""STUB — context_segment_store。
+"""占位模块 — context_segment_store。
 
-原模块已移除，等待 simple-harness-memory-sdk 集成。
-此 stub 仅防止 session_history_planner.py 在导入时崩溃。
+原上下文分段存储已随认知记忆系统移除，这里只留数据结构与透传/空实现的函数。
+现状：产品代码与测试都不导入本模块。
 """
 
 from __future__ import annotations
