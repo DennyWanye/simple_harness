@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const invoke = vi.fn();
 vi.mock("@tauri-apps/api/core", () => ({ invoke: (...args: unknown[]) => invoke(...args) }));
 
-const { DataDirSection } = await import("./SettingsPanel");
+const { DataDirSection } = await import("./SettingsSystemSections");
 
 afterEach(() => {
   cleanup();

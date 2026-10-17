@@ -4,7 +4,8 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { SkillCatalogueSection, evaluationStatus, poolLabel, poolStatus } from "./SettingsPanel";
+import { SkillCatalogueSection } from "./SettingsOrchestrationSections";
+import { evaluationStatus, poolLabel, poolStatus } from "./settingsOrchestration";
 import type { ControlMessage, IncomingMessage } from "../types/messages";
 import type { ControlChannel, ConnectionState } from "../ws/ControlChannel";
 

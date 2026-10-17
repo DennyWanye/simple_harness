@@ -4,7 +4,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { StorageUsageSection } from "./SettingsPanel";
+import { StorageUsageSection } from "./SettingsOrchestrationSections";
 import { buildStorageUsageMessage } from "./settingsMessages";
 import type { ControlMessage, IncomingMessage } from "../types/messages";
 import type { ControlChannel, ConnectionState } from "../ws/ControlChannel";

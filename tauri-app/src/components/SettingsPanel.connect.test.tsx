@@ -10,7 +10,7 @@ import {
   PublishDirSection,
   SkillCatalogueSection,
   StorageUsageSection,
-} from "./SettingsPanel";
+} from "./SettingsOrchestrationSections";
 import type { ControlMessage, IncomingMessage } from "../types/messages";
 import type { ControlChannel, ConnectionState } from "../ws/ControlChannel";
 

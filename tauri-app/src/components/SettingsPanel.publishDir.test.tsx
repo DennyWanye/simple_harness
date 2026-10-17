@@ -4,7 +4,8 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { PublishDirSection, buildPublishDirMessage } from "./SettingsPanel";
+import { PublishDirSection } from "./SettingsOrchestrationSections";
+import { buildPublishDirMessage } from "./settingsOrchestration";
 import type { ControlMessage, IncomingMessage } from "../types/messages";
 import type { ControlChannel, ConnectionState } from "../ws/ControlChannel";
 

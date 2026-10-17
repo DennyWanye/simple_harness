@@ -11,7 +11,7 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { AutoModeToggle } from "./SettingsPanel";
+import { AutoModeToggle } from "./SettingsSystemSections";
 import { buildAutoModeSetMessage, readAutoModePolicy } from "./settingsMessages";
 import type { ControlMessage, IncomingMessage } from "../types/messages";
 import type { ControlChannel, ConnectionState } from "../ws/ControlChannel";
