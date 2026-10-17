@@ -29,6 +29,8 @@ APP = ROOT / "tauri-app"
 THEMES = ("dark", "light")
 VIEWPORT = {"width": 1280, "height": 860}
 HOVER_LIMIT = 250
+# 前端直接引入的 SDK 契约 JSON（tauri-app 之外），导出副本时一并带上。
+SDK_ASSETS = ["sdk/simple-harness-sdk/src/agent_orchestrator/assurance/contracts", "sdk/simple-harness-sdk/src/agent_orchestrator/graph/schemas", "sdk/simple-harness-sdk/tests/orchestrator/acceptance_assets"]
 
 COLLECT_JS = r"""
 () => {
@@ -98,7 +100,7 @@ def build(ref, out):
         run(["node", str(APP / "tests/browser/style-gallery-build.mjs"), str(app_dir), str(out)])
         return
     tmp = Path(tempfile.mkdtemp(prefix="gallery-src-", dir=os.environ.get("TMPDIR")))
-    data = subprocess.run(["git", "archive", ref, "tauri-app"], cwd=ROOT, check=True, capture_output=True).stdout
+    data = subprocess.run(["git", "archive", ref, "tauri-app", *SDK_ASSETS], cwd=ROOT, check=True, capture_output=True).stdout
     with tarfile.open(fileobj=io.BytesIO(data)) as tar:
         tar.extractall(tmp, filter="data")
     (tmp / "tauri-app/node_modules").symlink_to(APP / "node_modules")

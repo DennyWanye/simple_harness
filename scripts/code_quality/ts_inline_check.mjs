@@ -1,14 +1,15 @@
 // 代码质量整治阶段 9（9I）：内联样式转类的静态核对（裁决条件 3，不循环）。
 // 用法（在仓库根目录运行）：node scripts/code_quality/ts_inline_check.mjs [--ref 提交] [--canary] [文件...]
 //   默认 ref=HEAD；不给文件时取工作区相对 ref 改过、且旁边有 <名>.styles.css 的 .tsx。
-// 原内联一侧（与转换工具无关）：从 ref 导出整个 tauri-app 副本，在副本里给每个文件追加一行
-//   导出原 style 表达式的数组，用 vitest（jsdom，与单测同一套配置）真正执行模块求值；
+// 原内联一侧（与转换工具无关）：从 ref 导出整个 tauri-app 副本，在副本里为每个文件生成探针模块
+//   （原文件里探针表达式传递用到的导入与顶层声明 + 导出原 style 表达式的数组），用 vitest
+//   （jsdom，与单测同一套配置）真正执行求值；
 //   再按 React 客户端的规则（react-dom-client 的 setValueForStyle：跳过空值、数字按 React 自己的
 //   无单位属性表补 px、字符串去首尾空白）得到"属性→值"有序表。无单位属性表直接从 react-dom 源码读出。
 // 生成一侧：postcss 解析 <名>.styles.css，把整值为 var(--sh-…令牌变量) 的换回 tokens.ts 的变量值。
 // 两表逐条（含顺序）相同才通过。另查：
 //   - 两版 JSX 元素一一对应，除 style 与 className 外属性语法树相同；className 只多出生成类；
-//   - 文件其余部分语法树相同（只许删掉转换后不再引用的模块级常量与导入、加 .styles.css 导入）；
+//   - 文件其余部分语法树相同（只许删掉转换后不再引用的模块级常量、非导出函数与导入，加 .styles.css 导入）；
 //   - 生成的值不含 ! ; { } /* \ <。
 // --canary：在内存里改坏一个值、改坏一处转义，必须各报出一条，否则核对工具本身不合格。
 import { execFileSync, spawnSync } from "node:child_process";
@@ -39,6 +40,8 @@ if (!files.length) {
 }
 const { TOKEN_CSS_VARS } = await import(pathToFileURL(path.join(APP, "src/theme/tokens.ts")).href);
 const DANGEROUS = /[!;{}\\<]|\/\*/;
+// 前端直接引入的 SDK 契约 JSON（tauri-app 之外），导出副本时一并带上。
+const SDK_ASSETS = ["sdk/simple-harness-sdk/src/agent_orchestrator/assurance/contracts", "sdk/simple-harness-sdk/src/agent_orchestrator/graph/schemas", "sdk/simple-harness-sdk/tests/orchestrator/acceptance_assets"];
 const problems = [];
 const parse = (name, text) => ts.createSourceFile(name, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 
@@ -80,9 +83,20 @@ const styleExpr = (el) => {
   const a = attrsOf(el).find((x) => ts.isJsxAttribute(x) && x.name.getText() === "style");
   return a?.initializer && ts.isJsxExpression(a.initializer) ? a.initializer.expression : null;
 };
+/** 表达式位置上的标识符（不含属性名、JSX 属性名、小写标签名这类不引用变量的位置）。 */
 const identifiersIn = (sf) => {
   const s = new Set();
-  const visit = (n) => { if (ts.isIdentifier(n)) s.add(n.text); n.forEachChild(visit); };
+  const visit = (n) => {
+    if (ts.isIdentifier(n)) {
+      const p = n.parent;
+      const notRef = (ts.isPropertyAccessExpression(p) && p.name === n) || (ts.isPropertyAssignment(p) && p.name === n) ||
+        (ts.isJsxAttribute(p) && p.name === n) || (ts.isPropertySignature(p) && p.name === n) ||
+        (ts.isBindingElement(p) && p.propertyName === n) || (ts.isQualifiedName(p) && p.right === n) ||
+        ((ts.isJsxOpeningElement(p) || ts.isJsxClosingElement(p) || ts.isJsxSelfClosingElement(p)) && p.tagName === n && /^[a-z]/.test(n.text));
+      if (!notRef) s.add(n.text);
+    }
+    n.forEachChild(visit);
+  };
   visit(sf);
   return s;
 };
@@ -149,8 +163,9 @@ for (const rel of files) {
     const n = ne[i];
     const where = `${rel}:${osf.getLineAndCharacterOfPosition(o.getStart()).line + 1}`;
     if (o.tagName.getText(osf) !== n.tagName.getText(nsf)) { problems.push(`${where}：标签不同`); return; }
-    const rest = (el, sf) => attrsOf(el).filter((a) => !(ts.isJsxAttribute(a) && ["style", "className"].includes(a.name.getText(sf))))
-      .map((a) => serialize(a, sf)).join("\n--\n");
+    // 嵌套在属性里的 JSX（如 banner={<div style=…/>}）也是被比对的元素，它们的 style/className 各自核对
+    const styleOrClass = (x) => ts.isJsxAttribute(x) && ["style", "className"].includes(x.name.getText());
+    const rest = (el, sf) => attrsOf(el).filter((a) => !styleOrClass(a)).map((a) => serialize(a, sf, styleOrClass)).join("\n--\n");
     if (rest(o, osf) !== rest(n, nsf)) problems.push(`${where}：style/className 以外的属性变了`);
     for (const a of attrsOf(o)) if (ts.isJsxAttribute(a) && ["style", "className"].includes(a.name.getText(osf))) skipNodes.add(a);
     for (const a of attrsOf(n)) if (ts.isJsxAttribute(a) && ["style", "className"].includes(a.name.getText(nsf))) skipNodes.add(a);
@@ -175,6 +190,12 @@ for (const rel of files) {
   const newTopNames = new Set(nsf.statements.filter(ts.isVariableStatement).flatMap(declNames));
   const keepOld = osf.statements.filter((st) => {
     if (ts.isImportDeclaration(st)) return false;
+    if (ts.isFunctionDeclaration(st) && st.name && !nsf.statements.some((x) => ts.isFunctionDeclaration(x) && x.name?.text === st.name.text)) {
+      const exported = st.modifiers?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword);
+      if (exported) problems.push(`${rel}：删掉了导出函数 ${st.name.text}`);
+      if (newIds.has(st.name.text)) problems.push(`${rel}：删掉的函数 ${st.name.text} 在新文件里仍有同名引用`);
+      return false;
+    }
     if (ts.isVariableStatement(st)) {
       const names = declNames(st);
       if (names.every((x) => !newTopNames.has(x))) {
@@ -224,11 +245,73 @@ for (const rel of files) {
   if (sites.length) plan.push({ rel, sites });
 }
 
+/**
+ * 探针模块：只保留探针表达式（传递地）用到的导入说明符与顶层声明，按原顺序；其余顶层语句
+ * （挂载根节点、注册监听之类的副作用）不带。名字按标识符文本收集（宁多勿少）。
+ */
+function probeModule(rel, text, exprs) {
+  const sf = parse(rel, text);
+  const exprSf = parse("probe.tsx", exprs.map((e) => `(${e});`).join("\n"));
+  const declares = new Map();
+  const names = (st) => {
+    if (ts.isVariableStatement(st)) {
+      const out = [];
+      const c = (b) => (ts.isIdentifier(b) ? out.push(b.text) : b.elements.forEach((e) => !ts.isOmittedExpression(e) && c(e.name)));
+      st.declarationList.declarations.forEach((d) => c(d.name));
+      return out;
+    }
+    if ((ts.isFunctionDeclaration(st) || ts.isClassDeclaration(st) || ts.isEnumDeclaration(st)) && st.name) return [st.name.text];
+    return [];
+  };
+  sf.statements.forEach((st) => names(st).forEach((x) => declares.set(x, st)));
+  const importOf = new Map();
+  for (const st of sf.statements.filter(ts.isImportDeclaration)) {
+    const c = st.importClause;
+    if (!c || c.isTypeOnly) continue;
+    if (c.name) importOf.set(c.name.text, { st, kind: "default" });
+    if (c.namedBindings && ts.isNamespaceImport(c.namedBindings)) importOf.set(c.namedBindings.name.text, { st, kind: "ns" });
+    if (c.namedBindings && ts.isNamedImports(c.namedBindings))
+      for (const e of c.namedBindings.elements) if (!e.isTypeOnly) importOf.set(e.name.text, { st, kind: "named", e });
+  }
+  const keep = new Set();
+  const usedImports = new Set();
+  const queue = [];
+  const scan = (node) => { const v = (n) => { if (ts.isIdentifier(n)) queue.push(n.text); n.forEachChild(v); }; v(node); };
+  scan(exprSf);
+  const seen = new Set();
+  while (queue.length) {
+    const x = queue.pop();
+    if (seen.has(x)) continue;
+    seen.add(x);
+    if (importOf.has(x)) usedImports.add(x);
+    const st = declares.get(x);
+    if (st && !keep.has(st)) { keep.add(st); scan(st); }
+  }
+  const lines = [];
+  for (const st of sf.statements.filter(ts.isImportDeclaration)) {
+    const c = st.importClause;
+    if (!c || c.isTypeOnly) continue;
+    const spec = st.moduleSpecifier.getText(sf);
+    const parts = [];
+    if (c.name && usedImports.has(c.name.text)) parts.push(c.name.text);
+    if (c.namedBindings && ts.isNamespaceImport(c.namedBindings) && usedImports.has(c.namedBindings.name.text))
+      parts.push(`* as ${c.namedBindings.name.text}`);
+    if (c.namedBindings && ts.isNamedImports(c.namedBindings)) {
+      const named = c.namedBindings.elements.filter((e) => !e.isTypeOnly && usedImports.has(e.name.text)).map((e) => e.getText(sf));
+      if (named.length) parts.push(`{ ${named.join(", ")} }`);
+    }
+    if (parts.length) lines.push(`import ${parts.join(", ")} from ${spec};`);
+  }
+  for (const st of sf.statements) if (keep.has(st)) lines.push(st.getText(sf));
+  lines.push(`export const __shProbe = [\n${exprs.map((e) => `  (${e}),`).join("\n")}\n];`);
+  return lines.join("\n") + "\n";
+}
+
 // ---- 原内联一侧：在 ref 副本里真正执行求值 ----
 const tmp = mkdtempSync(path.join(process.env.TMPDIR ?? os.tmpdir(), "inline-check-"));
 const before = {};
 try {
-  const tar = execFileSync("git", ["archive", ref, "tauri-app"], { maxBuffer: 1 << 30 });
+  const tar = execFileSync("git", ["archive", ref, "tauri-app", ...SDK_ASSETS], { maxBuffer: 1 << 30 });
   execFileSync("tar", ["-x", "-C", tmp], { input: tar });
   const app = path.join(tmp, "tauri-app");
   symlinkSync(path.join(APP, "node_modules"), path.join(app, "node_modules"));
@@ -237,7 +320,7 @@ try {
     const inApp = path.relative("tauri-app", rel);
     const probe = path.join(app, inApp.replace(/\.tsx$/, `.__probe${k}.tsx`));
     const orig = readFileSync(path.join(tmp, rel), "utf8");
-    writeFileSync(probe, `${orig}\nexport const __shProbe = [\n${sites.map((s) => `  (${s.expr}),`).join("\n")}\n];\n`);
+    writeFileSync(probe, probeModule(rel, orig, sites.map((s) => s.expr)));
     probes.push([rel, "./" + path.relative(path.join(app, "src"), probe).replace(/\.tsx$/, "")]);
   });
   const out = path.join(tmp, "probe-out.json");
