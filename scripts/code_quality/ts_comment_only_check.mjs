@@ -17,7 +17,8 @@ function tokens(name, text) {
   const sf = ts.createSourceFile(name, text, ts.ScriptTarget.Latest, true, kind);
   const out = [];
   const walk = (n) => {
-    const kids = n.getChildren(sf);
+    // JSDoc（/** … */）是注释，但 getChildren 会把它当子节点返回，去掉。
+    const kids = n.getChildren(sf).filter((c) => c.kind < ts.SyntaxKind.FirstJSDocNode || c.kind > ts.SyntaxKind.LastJSDocNode);
     if (kids.length === 0) {
       if (n.kind !== ts.SyntaxKind.EndOfFileToken) out.push([ts.SyntaxKind[n.kind], n.getText(sf), sf.getLineAndCharacterOfPosition(n.getStart(sf)).line + 1]);
       return;

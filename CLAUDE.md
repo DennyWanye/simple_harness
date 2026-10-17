@@ -183,6 +183,14 @@ When a feature/module passes acceptance (pytest/vitest/cargo/manual E2E):
 
 **"做了功能又加一层兼容" = 违反本约束。**
 
+### 注释与命名规范（代码质量整治阶段 10，2026-10-17）
+
+- 注释写"为什么这样写"和约束，**不写代号与修复历史**（`P4-S25`、`WI-T2.1`、"第 2 批 K02"、"推后第 3 批"、"第 12 次第 6 轮"之类）；历史留给 git 与 `plans/`。指标"带代号的注释"只减不增（除禁区与编解码钉死文件里的 10 行）。
+- 新写和改到的注释用中文，标识符用英文；没改到的英文注释不专门翻译，改写就整段改中文。
+- 文件头注释写当前职责，与现状不符就改正。
+- 版本号后缀只给属于身份的名字（冻结合同/持久格式带同号 schema_version、工作流定义版本、协议版本）；出新版删旧版。可安全去后缀的清单见 `plans/2026-10-12-code-quality/阶段10-带版本号命名清单.md`（F-23）。
+- 生成文件（如 `*.styles.css`）不手改，改源头后重新生成。
+
 ### Testing Phase: Immediate Default-ON (HARD CONSTRAINT)
 
 **Current phase is testing. Completed capabilities must be default-ON immediately, no gradual rollout.**
