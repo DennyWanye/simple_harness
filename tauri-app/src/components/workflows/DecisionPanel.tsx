@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "../Icon";
 import type { WorkflowDecisionOption, WorkflowDecisionView } from "./types";
+import "./DecisionPanel.styles.css";
 
 type Props = {
   decision?: WorkflowDecisionView | null;
@@ -60,36 +61,34 @@ export function DecisionPanel({
   };
 
   return (
-    <section aria-label="待处理决策" style={sectionStyle}>
-      <div style={sectionHeaderStyle}>
-        <span style={{ display: "flex", alignItems: "center", gap: 7, minWidth: 0 }}>
+    <section aria-label="待处理决策" className="sh-DecisionPanel-1">
+      <div className="sh-DecisionPanel-2">
+        <span className="sh-DecisionPanel-3">
           <Icon name={expired ? "alert" : "hand"} size={14} />
-          <strong style={{ fontSize: 12 }}>需要你的决定</strong>
-          <span style={kindStyle}>{decision.kind}</span>
+          <strong className="sh-DecisionPanel-4">需要你的决定</strong>
+          <span className="sh-DecisionPanel-5">{decision.kind}</span>
         </span>
         <span style={{ color: expired ? "#fca5a5" : "#fbbf24", fontSize: 10 }}>
           {expired ? "已过期" : "等待中"}
         </span>
       </div>
-      <div style={bodyStyle}>
-        <strong style={{ display: "block", overflowWrap: "anywhere", fontSize: 11 }}>
-          {prompt.title}
-        </strong>
-        {prompt.message && <p style={messageStyle}>{prompt.message}</p>}
-        {prompt.detail && <pre style={detailStyle}>{prompt.detail}</pre>}
+      <div className="sh-DecisionPanel-6">
+        <strong className="sh-DecisionPanel-7">{prompt.title}</strong>
+        {prompt.message && <p className="sh-DecisionPanel-8">{prompt.message}</p>}
+        {prompt.detail && <pre className="sh-DecisionPanel-9">{prompt.detail}</pre>}
         {error && (
-          <div role="alert" style={errorStyle}>
+          <div role="alert" className="sh-DecisionPanel-10">
             {error}
           </div>
         )}
         {feedback && (
-          <div role="status" style={successStyle}>
+          <div role="status" className="sh-DecisionPanel-11">
             {feedback}
           </div>
         )}
 
         {expired ? (
-          <div style={actionsStyle}>
+          <div className="sh-DecisionPanel-12">
             <button
               type="button"
               disabled={submitting}
@@ -110,7 +109,7 @@ export function DecisionPanel({
             </button>
           </div>
         ) : options.length > 0 ? (
-          <div style={optionGridStyle}>
+          <div className="sh-DecisionPanel-13">
             {options.map((option, index) => (
               <button
                 key={`${option.label}-${index}`}
@@ -121,12 +120,12 @@ export function DecisionPanel({
                 style={optionStyle(option, submitting)}
               >
                 <Icon name={option.dangerous ? "alert" : "check"} size={13} />
-                <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>{option.label}</span>
+                <span className="sh-DecisionPanel-14">{option.label}</span>
               </button>
             ))}
           </div>
         ) : isApprovalKind(decision.kind) ? (
-          <div style={actionsStyle}>
+          <div className="sh-DecisionPanel-12">
             <button
               type="button"
               disabled={submitting}
@@ -147,7 +146,7 @@ export function DecisionPanel({
             </button>
           </div>
         ) : (
-          <div style={{ display: "grid", gap: 7 }}>
+          <div className="sh-DecisionPanel-15">
             <textarea
               aria-label="决策回复"
               value={draft}
@@ -155,7 +154,7 @@ export function DecisionPanel({
               onChange={(event) => setDraft(event.target.value)}
               placeholder="输入回复"
               rows={3}
-              style={textareaStyle}
+              className="sh-DecisionPanel-16"
             />
             <button
               type="button"
@@ -241,85 +240,6 @@ function isExpired(value?: number | null) {
 function isApprovalKind(kind: string) {
   return /approval|permission|confirm|review|plan|outline/i.test(kind);
 }
-
-const sectionStyle: React.CSSProperties = { borderTop: "1px solid rgba(148,163,184,0.14)" };
-const sectionHeaderStyle: React.CSSProperties = {
-  minHeight: 38,
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "space-between",
-  gap: 8,
-  padding: "6px 10px",
-  color: "#e5e7eb",
-};
-const kindStyle: React.CSSProperties = {
-  maxWidth: 120,
-  overflow: "hidden",
-  textOverflow: "ellipsis",
-  whiteSpace: "nowrap",
-  color: "#94a3b8",
-  fontSize: 10,
-};
-const bodyStyle: React.CSSProperties = {
-  display: "grid",
-  gap: 8,
-  padding: "0 10px 10px",
-  color: "#e5e7eb",
-};
-const messageStyle: React.CSSProperties = {
-  margin: 0,
-  color: "#cbd5e1",
-  fontSize: 11,
-  lineHeight: 1.5,
-  overflowWrap: "anywhere",
-};
-const detailStyle: React.CSSProperties = {
-  maxHeight: 120,
-  margin: 0,
-  padding: 7,
-  overflow: "auto",
-  whiteSpace: "pre-wrap",
-  overflowWrap: "anywhere",
-  border: "1px solid rgba(148,163,184,0.16)",
-  borderRadius: 6,
-  color: "#94a3b8",
-  background: "rgba(15,23,42,0.54)",
-  fontSize: 10,
-};
-const actionsStyle: React.CSSProperties = { display: "flex", flexWrap: "wrap", gap: 7 };
-const optionGridStyle: React.CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit,minmax(120px,1fr))",
-  gap: 7,
-};
-const textareaStyle: React.CSSProperties = {
-  width: "100%",
-  minWidth: 0,
-  resize: "vertical",
-  padding: 7,
-  border: "1px solid rgba(148,163,184,0.25)",
-  borderRadius: 6,
-  background: "#0f172a",
-  color: "#e5e7eb",
-  font: "inherit",
-  fontSize: 11,
-};
-const errorStyle: React.CSSProperties = {
-  padding: 7,
-  borderLeft: "3px solid #f87171",
-  color: "#fca5a5",
-  background: "rgba(127,29,29,0.14)",
-  fontSize: 10,
-  overflowWrap: "anywhere",
-};
-const successStyle: React.CSSProperties = {
-  padding: 7,
-  borderLeft: "3px solid #34d399",
-  color: "#86efac",
-  background: "rgba(20,83,45,0.14)",
-  fontSize: 10,
-  overflowWrap: "anywhere",
-};
 
 function buttonStyle(tone: "primary" | "danger", disabled: boolean): React.CSSProperties {
   return {

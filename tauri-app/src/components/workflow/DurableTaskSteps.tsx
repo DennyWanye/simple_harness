@@ -6,6 +6,7 @@ import type {
   WorkflowTaskTrace,
 } from "../AgentActivityMessage";
 import { requestHarnessPublicToolDetails } from "../../stores/harnessPublicSnapshotStore";
+import "./DurableTaskSteps.styles.css";
 
 const STEP_TONE: Record<string, { icon: string; label: string; color: string }> = {
   completed: { icon: "✓", label: "已完成", color: "#34d399" },
@@ -65,8 +66,8 @@ function CompactTool({ tool }: { tool: WorkflowTaskTool }) {
       : null;
 
   return (
-    <div data-testid={`compact-tool-${tool.id}`} style={toolRowStyle}>
-      <div style={toolButtonStyle}>
+    <div data-testid={`compact-tool-${tool.id}`} className="sh-DurableTaskSteps-1">
+      <div className="sh-DurableTaskSteps-2">
         <span aria-hidden="true" style={{ color }}>
           {["cancelled", "rejected"].includes(tool.status)
             ? "–"
@@ -76,10 +77,10 @@ function CompactTool({ tool }: { tool: WorkflowTaskTool }) {
                 ? "✓"
                 : "●"}
         </span>
-        <span title={toolSummary(tool)} style={toolNameStyle}>
+        <span title={toolSummary(tool)} className="sh-DurableTaskSteps-3">
           {toolSummary(tool)}
         </span>
-        {duration ? <span style={metaStyle}>{duration}</span> : null}
+        {duration ? <span className="sh-DurableTaskSteps-4">{duration}</span> : null}
         <span style={{ color, fontSize: 10 }}>{status}</span>
         <button
           type="button"
@@ -91,7 +92,7 @@ function CompactTool({ tool }: { tool: WorkflowTaskTool }) {
               requestHarnessPublicToolDetails(tool.detailRef);
             setInputExpanded((value) => !value);
           }}
-          style={toolMiniButtonStyle}
+          className="sh-DurableTaskSteps-5"
         >
           输入 {inputExpanded ? "▴" : "▾"}
         </button>
@@ -106,27 +107,27 @@ function CompactTool({ tool }: { tool: WorkflowTaskTool }) {
                 requestHarnessPublicToolDetails(tool.detailRef);
               setResultExpanded((value) => !value);
             }}
-            style={toolMiniButtonStyle}
+            className="sh-DurableTaskSteps-5"
           >
             结果 {resultExpanded ? "▴" : "▾"}
           </button>
         ) : null}
       </div>
       {inputExpanded ? (
-        <div id={detailId} style={toolDetailStyle}>
+        <div id={detailId} className="sh-DurableTaskSteps-6">
           <strong>输入</strong>
           {tool.args !== undefined ? (
-            <pre style={preStyle}>{compactValue(tool.args)}</pre>
+            <pre className="sh-DurableTaskSteps-7">{compactValue(tool.args)}</pre>
           ) : (
             <span>{tool.unavailableReason ?? "正在读取可公开的工具输入…"}</span>
           )}
         </div>
       ) : null}
       {resultExpanded ? (
-        <div id={resultId} style={toolDetailStyle}>
+        <div id={resultId} className="sh-DurableTaskSteps-6">
           <strong>结果</strong>
           {tool.result !== undefined ? (
-            <pre style={preStyle}>{compactValue(tool.result)}</pre>
+            <pre className="sh-DurableTaskSteps-7">{compactValue(tool.result)}</pre>
           ) : (
             <span>{tool.unavailableReason ?? "正在读取可公开的工具结果…"}</span>
           )}
@@ -149,9 +150,9 @@ export function DurableTaskSteps({ trace }: { trace: WorkflowTaskTrace }) {
     <div
       data-testid={`durable-task-steps-${trace.runId}`}
       aria-label={`执行步骤，共 ${trace.steps.length} 步`}
-      style={containerStyle}
+      className="sh-DurableTaskSteps-8"
     >
-      <div style={overviewStyle}>
+      <div className="sh-DurableTaskSteps-9">
         <span>
           {completed}/{trace.steps.length} 步
         </span>
@@ -163,13 +164,17 @@ export function DurableTaskSteps({ trace }: { trace: WorkflowTaskTrace }) {
               : "正在加载步骤记录"}
         </span>
       </div>
-      <div style={stepsStyle}>
+      <div className="sh-DurableTaskSteps-10">
         {trace.steps.map((step) => {
           const expanded = stepOverrides[step.id] ?? step.current;
           const tone = toneFor(step);
           const detailsId = `task-step-${step.id.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
           return (
-            <div key={step.id} data-testid={`durable-task-step-${step.id}`} style={stepStyle}>
+            <div
+              key={step.id}
+              data-testid={`durable-task-step-${step.id}`}
+              className="sh-DurableTaskSteps-11"
+            >
               <button
                 type="button"
                 aria-expanded={expanded}
@@ -181,31 +186,34 @@ export function DurableTaskSteps({ trace }: { trace: WorkflowTaskTrace }) {
                     [step.id]: !(current[step.id] ?? step.current),
                   }))
                 }
-                style={stepButtonStyle}
+                className="sh-DurableTaskSteps-12"
               >
                 <span aria-hidden="true" style={{ ...stepIconStyle, color: tone.color }}>
                   {tone.icon}
                 </span>
-                <span style={stepTitleStyle}>
+                <span className="sh-DurableTaskSteps-13">
                   {step.index + 1}. {step.title}
                 </span>
                 {step.tools.length > 0 ? (
-                  <span style={metaStyle}>{step.tools.length} 个工具</span>
+                  <span className="sh-DurableTaskSteps-4">{step.tools.length} 个工具</span>
                 ) : null}
                 <span style={{ ...metaStyle, color: tone.color }}>{tone.label}</span>
-                <span aria-hidden="true" style={chevronStyle}>
+                <span aria-hidden="true" className="sh-DurableTaskSteps-14">
                   {expanded ? "▴" : "▾"}
                 </span>
               </button>
               {expanded ? (
-                <div id={detailsId} style={stepDetailStyle}>
+                <div id={detailsId} className="sh-DurableTaskSteps-15">
                   {step.messages.map((message, index) => (
-                    <p key={`${step.id}:message:${index}`} style={messageStyle}>
+                    <p key={`${step.id}:message:${index}`} className="sh-DurableTaskSteps-16">
                       {message}
                     </p>
                   ))}
                   {step.substeps.length > 0 ? (
-                    <div style={substepsStyle} aria-label={`${step.title}的工作流步骤`}>
+                    <div
+                      className="sh-DurableTaskSteps-17"
+                      aria-label={`${step.title}的工作流步骤`}
+                    >
                       {step.substeps.map((substep) => {
                         const substepTone =
                           STEP_TONE[substep.current ? "running" : substep.status] ??
@@ -213,7 +221,7 @@ export function DurableTaskSteps({ trace }: { trace: WorkflowTaskTrace }) {
                         return (
                           <div
                             key={substep.id}
-                            style={substepStyle}
+                            className="sh-DurableTaskSteps-18"
                             aria-current={substep.current ? "step" : undefined}
                           >
                             <span style={{ color: substepTone.color }}>{substepTone.icon}</span>
@@ -232,7 +240,7 @@ export function DurableTaskSteps({ trace }: { trace: WorkflowTaskTrace }) {
                   {step.messages.length === 0 &&
                   step.tools.length === 0 &&
                   step.substeps.length === 0 ? (
-                    <span style={emptyStyle}>这一步还没有执行记录。</span>
+                    <span className="sh-DurableTaskSteps-19">这一步还没有执行记录。</span>
                   ) : null}
                 </div>
               ) : null}
@@ -244,40 +252,6 @@ export function DurableTaskSteps({ trace }: { trace: WorkflowTaskTrace }) {
   );
 }
 
-const containerStyle: CSSProperties = {
-  display: "grid",
-  gap: 5,
-  paddingTop: 4,
-};
-const overviewStyle: CSSProperties = {
-  display: "flex",
-  justifyContent: "space-between",
-  gap: 10,
-  color: "#91a1b5",
-  fontSize: 10.5,
-};
-const stepsStyle: CSSProperties = {
-  display: "grid",
-  borderTop: "1px solid rgba(148,163,184,0.14)",
-};
-const stepStyle: CSSProperties = {
-  display: "grid",
-  borderBottom: "1px solid rgba(148,163,184,0.12)",
-};
-const stepButtonStyle: CSSProperties = {
-  width: "100%",
-  minHeight: 30,
-  display: "flex",
-  alignItems: "center",
-  gap: 7,
-  padding: "5px 0",
-  border: 0,
-  background: "transparent",
-  color: "inherit",
-  textAlign: "left",
-  cursor: "pointer",
-  font: "inherit",
-};
 const stepIconStyle: CSSProperties = {
   flex: "0 0 14px",
   width: 14,
@@ -285,110 +259,8 @@ const stepIconStyle: CSSProperties = {
   fontWeight: 700,
   fontSize: 11,
 };
-const stepTitleStyle: CSSProperties = {
-  minWidth: 0,
-  flex: 1,
-  overflow: "hidden",
-  textOverflow: "ellipsis",
-  whiteSpace: "nowrap",
-  color: "#dce5f2",
-  fontSize: 11.5,
-};
 const metaStyle: CSSProperties = {
   flexShrink: 0,
   color: "#8492a6",
   fontSize: 10,
-};
-const chevronStyle: CSSProperties = {
-  flexShrink: 0,
-  color: "#718096",
-  fontSize: 10,
-};
-const stepDetailStyle: CSSProperties = {
-  display: "grid",
-  gap: 4,
-  padding: "0 0 7px 21px",
-};
-const messageStyle: CSSProperties = {
-  margin: 0,
-  color: "#b9c2d0",
-  fontSize: 11,
-  lineHeight: 1.45,
-  whiteSpace: "pre-wrap",
-};
-const toolRowStyle: CSSProperties = {
-  display: "grid",
-  borderRadius: 4,
-  background: "rgba(15,23,42,0.42)",
-};
-const toolButtonStyle: CSSProperties = {
-  minHeight: 26,
-  width: "100%",
-  display: "flex",
-  alignItems: "center",
-  gap: 6,
-  padding: "3px 7px",
-  background: "transparent",
-  color: "#cbd5e1",
-  textAlign: "left",
-  font: "inherit",
-};
-const substepsStyle: CSSProperties = {
-  display: "grid",
-  gap: 2,
-  padding: "2px 0 4px",
-};
-const substepStyle: CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "14px minmax(0, 1fr) auto",
-  alignItems: "center",
-  gap: 5,
-  minHeight: 22,
-  color: "#b9c2d0",
-  fontSize: 10.5,
-};
-const toolMiniButtonStyle: CSSProperties = {
-  flexShrink: 0,
-  border: "1px solid rgba(148,163,184,0.2)",
-  borderRadius: 4,
-  padding: "1px 4px",
-  background: "transparent",
-  color: "#91a1b5",
-  cursor: "pointer",
-  font: "inherit",
-  fontSize: 9.5,
-};
-const toolNameStyle: CSSProperties = {
-  minWidth: 0,
-  flex: 1,
-  overflow: "hidden",
-  textOverflow: "ellipsis",
-  whiteSpace: "nowrap",
-  fontFamily: "Consolas, 'Courier New', monospace",
-  fontSize: 10.5,
-};
-const toolDetailStyle: CSSProperties = {
-  display: "grid",
-  gap: 3,
-  padding: "4px 7px 7px 21px",
-  color: "#8fa0b6",
-  fontSize: 10,
-};
-const preStyle: CSSProperties = {
-  maxHeight: 150,
-  overflow: "auto",
-  margin: 0,
-  padding: 6,
-  borderRadius: 4,
-  background: "rgba(2,6,23,0.52)",
-  color: "#b9c2d0",
-  fontFamily: "Consolas, 'Courier New', monospace",
-  fontSize: 10,
-  lineHeight: 1.35,
-  whiteSpace: "pre-wrap",
-  wordBreak: "break-word",
-};
-const emptyStyle: CSSProperties = {
-  color: "#718096",
-  fontSize: 10.5,
 };

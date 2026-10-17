@@ -19,16 +19,10 @@ import {
   type CapabilityOperationAction,
 } from "../types/capabilities";
 import type { ControlChannel } from "../ws/ControlChannel";
-import {
-  INTERACTIVE_CLASS,
-  dark,
-  emptyState as emptyStateStyle,
-  metaText,
-  titleText,
-  transition,
-} from "../theme/components";
+import { INTERACTIVE_CLASS, dark, transition } from "../theme/components";
 import { tokens } from "../theme/tokens";
 import { CapabilityOperationCard } from "./CapabilityOperationCard";
+import "./CapabilityCenterPanel.styles.css";
 
 type CapabilityChannel = Pick<ControlChannel, "send" | "onMessage">;
 type Tab = "capabilities" | "operations";
@@ -239,17 +233,16 @@ export function CapabilityCenterPanel({
       aria-label="能力中心"
       style={isPage ? pagePanelStyle : panelStyle}
     >
-      <header style={headerStyle}>
+      <header className="sh-CapabilityCenterPanel-1">
         <div>
-          <h2 style={titleText}>能力中心</h2>
-          <p style={subtitleStyle}>查看可用能力、运行健康与安装/生成进度</p>
+          <h2 className="sh-CapabilityCenterPanel-2">能力中心</h2>
+          <p className="sh-CapabilityCenterPanel-3">查看可用能力、运行健康与安装/生成进度</p>
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div className="sh-CapabilityCenterPanel-4">
           <button
             type="button"
             onClick={onOpenLegacySkillStore}
-            className={INTERACTIVE_CLASS}
-            style={secondaryButtonStyle}
+            className={`${INTERACTIVE_CLASS} sh-CapabilityCenterPanel-5`}
           >
             打开旧 Skill Store
           </button>
@@ -258,7 +251,7 @@ export function CapabilityCenterPanel({
               type="button"
               aria-label="关闭能力中心"
               onClick={onClose}
-              style={iconButtonStyle}
+              className="sh-CapabilityCenterPanel-6"
             >
               ×
             </button>
@@ -266,7 +259,7 @@ export function CapabilityCenterPanel({
         </div>
       </header>
 
-      <div style={statusBarStyle}>
+      <div className="sh-CapabilityCenterPanel-7">
         <span>
           当前授权：{" "}
           <strong>
@@ -274,10 +267,10 @@ export function CapabilityCenterPanel({
           </strong>
         </span>
         <span>进度来源：工作流推送</span>
-        {!channel ? <span style={{ color: dark.warning }}>离线快照</span> : null}
+        {!channel ? <span className="sh-CapabilityCenterPanel-8">离线快照</span> : null}
       </div>
 
-      <nav aria-label="能力中心视图" style={tabsStyle}>
+      <nav aria-label="能力中心视图" className="sh-CapabilityCenterPanel-9">
         <button
           type="button"
           aria-selected={tab === "capabilities"}
@@ -299,13 +292,13 @@ export function CapabilityCenterPanel({
       </nav>
 
       {notice ? (
-        <div role="status" style={noticeStyle}>
+        <div role="status" className="sh-CapabilityCenterPanel-10">
           <span>{notice}</span>
           <button
             type="button"
             aria-label="关闭提示"
             onClick={() => setNotice(null)}
-            style={inlineDismissStyle}
+            className="sh-CapabilityCenterPanel-11"
           >
             ×
           </button>
@@ -313,9 +306,9 @@ export function CapabilityCenterPanel({
       ) : null}
 
       {tab === "capabilities" ? (
-        <div style={bodyGridStyle}>
-          <aside style={listPaneStyle}>
-            <label style={fieldLabelStyle}>
+        <div className="sh-CapabilityCenterPanel-12">
+          <aside className="sh-CapabilityCenterPanel-13">
+            <label className="sh-CapabilityCenterPanel-14">
               搜索
               <input
                 aria-label="搜索能力"
@@ -330,10 +323,10 @@ export function CapabilityCenterPanel({
                   );
                 }}
                 placeholder="名称、来源或 ID"
-                style={inputStyle}
+                className="sh-CapabilityCenterPanel-15"
               />
             </label>
-            <label style={fieldLabelStyle}>
+            <label className="sh-CapabilityCenterPanel-14">
               类别
               <select
                 aria-label="能力类别"
@@ -347,7 +340,7 @@ export function CapabilityCenterPanel({
                     )?.capability_id ?? null,
                   );
                 }}
-                style={inputStyle}
+                className="sh-CapabilityCenterPanel-15"
               >
                 <option value="all">全部</option>
                 <option value="instruction">说明</option>
@@ -357,18 +350,7 @@ export function CapabilityCenterPanel({
               </select>
             </label>
 
-            <div
-              data-testid="capability-list"
-              style={{
-                display: "grid",
-                // minmax(0,1fr)：隐式轨道默认以行内 nowrap 文本的
-                // min-content 为下限，min 尺寸(800×560)下会撑破列宽
-                // 出横向滚动条（WBUI-DEF-S03-01）
-                gridTemplateColumns: "minmax(0, 1fr)",
-                gap: 7,
-                overflowY: "auto",
-              }}
-            >
+            <div data-testid="capability-list" className="sh-CapabilityCenterPanel-16">
               {visibleCapabilities.map((capability) => (
                 <button
                   key={capability.capability_id}
@@ -377,9 +359,9 @@ export function CapabilityCenterPanel({
                   onClick={() => setSelectedId(capability.capability_id)}
                   style={capabilityListItemStyle(selectedId === capability.capability_id)}
                 >
-                  <span style={{ minWidth: 0, textAlign: "left" }}>
-                    <strong style={ellipsisStyle}>{capability.name}</strong>
-                    <span style={listMetaStyle}>
+                  <span className="sh-CapabilityCenterPanel-17">
+                    <strong className="sh-CapabilityCenterPanel-18">{capability.name}</strong>
+                    <span className="sh-CapabilityCenterPanel-19">
                       {capability.version} · {capability.source.label}
                     </span>
                   </span>
@@ -394,21 +376,21 @@ export function CapabilityCenterPanel({
                 </button>
               ))}
               {visibleCapabilities.length === 0 ? (
-                <div style={emptyStyle}>没有符合筛选条件的能力。</div>
+                <div className="sh-CapabilityCenterPanel-20">没有符合筛选条件的能力。</div>
               ) : null}
             </div>
           </aside>
 
-          <main style={detailPaneStyle}>
+          <main className="sh-CapabilityCenterPanel-21">
             {selected ? (
               <CapabilityDetail capability={selected} onMutation={sendCapabilityMutation} />
             ) : (
-              <div style={emptyStyle}>选择一项能力查看详情。</div>
+              <div className="sh-CapabilityCenterPanel-20">选择一项能力查看详情。</div>
             )}
           </main>
         </div>
       ) : (
-        <main data-testid="capability-operation-list" style={operationListStyle}>
+        <main data-testid="capability-operation-list" className="sh-CapabilityCenterPanel-22">
           {operations.map((operation) => (
             <CapabilityOperationCard
               key={operation.operation_id}
@@ -417,7 +399,7 @@ export function CapabilityCenterPanel({
             />
           ))}
           {operations.length === 0 ? (
-            <div style={emptyStyle}>目前没有能力安装或生成操作。</div>
+            <div className="sh-CapabilityCenterPanel-20">目前没有能力安装或生成操作。</div>
           ) : null}
         </main>
       )}
@@ -429,7 +411,7 @@ export function CapabilityCenterPanel({
   return (
     <div
       role="presentation"
-      style={backdropStyle}
+      className="sh-CapabilityCenterPanel-23"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose?.();
       }}
@@ -452,15 +434,12 @@ function CapabilityDetail({
   return (
     // 同 WBUI-DEF-S03-01：轨道钉死 minmax(0,1fr)，否则明细 dl 的
     // min-content(≈192px) 在 min 尺寸下顶破详情列，健康文案逐行硬裁
-    <article
-      data-testid="capability-detail"
-      style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 14 }}
-    >
+    <article data-testid="capability-detail" className="sh-CapabilityCenterPanel-24">
       <header>
-        <h3 style={{ margin: 0 }}>{capability.name}</h3>
-        <p style={{ ...subtitleStyle, marginTop: 5 }}>{capability.description || "暂无说明"}</p>
+        <h3 className="sh-CapabilityCenterPanel-25">{capability.name}</h3>
+        <p className="sh-CapabilityCenterPanel-26">{capability.description || "暂无说明"}</p>
       </header>
-      <dl style={detailGridStyle}>
+      <dl className="sh-CapabilityCenterPanel-27">
         <dt>类别</dt>
         <dd>{capability.categories.map((item) => CATEGORY_LABEL[item]).join("、")}</dd>
         <dt>版本</dt>
@@ -476,19 +455,9 @@ function CapabilityDetail({
         </dd>
       </dl>
       {capability.manifest ? (
-        <section
-          data-testid="capability-manifest-detail"
-          style={{
-            display: "grid",
-            gap: 10,
-            padding: 12,
-            borderRadius: 10,
-            background: dark.inset,
-            border: `1px solid ${dark.insetBorder}`,
-          }}
-        >
-          <h4 style={{ margin: 0 }}>清单详情</h4>
-          <dl style={detailGridStyle}>
+        <section data-testid="capability-manifest-detail" className="sh-CapabilityCenterPanel-28">
+          <h4 className="sh-CapabilityCenterPanel-25">清单详情</h4>
+          <dl className="sh-CapabilityCenterPanel-27">
             <dt>兼容 Simple Harness</dt>
             <dd>{capability.manifest.compatibility.deskpet}</dd>
             <dt>操作系统</dt>
@@ -504,30 +473,30 @@ function CapabilityDetail({
           </dl>
           <div>
             <strong>Skills</strong>
-            <div style={manifestValueStyle}>
+            <div className="sh-CapabilityCenterPanel-29">
               {capability.manifest.entries.skills.map((item) => item.path).join("、") || "无"}
             </div>
           </div>
           <div>
             <strong>Tools</strong>
             {capability.manifest.entries.tools.length ? (
-              <ul style={manifestListStyle}>
+              <ul className="sh-CapabilityCenterPanel-30">
                 {capability.manifest.entries.tools.map((tool) => (
                   <li key={`${tool.id}:${tool.provider_name}`}>
                     <code>{tool.provider_name}</code> · {tool.runtime} · {tool.execution_profile}
-                    <div style={manifestValueStyle}>
+                    <div className="sh-CapabilityCenterPanel-29">
                       入口 {tool.entry} · Schema {tool.schema} · 健康检查 {tool.healthcheck}
                     </div>
                   </li>
                 ))}
               </ul>
             ) : (
-              <div style={manifestValueStyle}>无</div>
+              <div className="sh-CapabilityCenterPanel-29">无</div>
             )}
           </div>
           <div>
             <strong>MCP Servers</strong>
-            <div style={manifestValueStyle}>
+            <div className="sh-CapabilityCenterPanel-29">
               {capability.manifest.entries.mcp_servers
                 .map((item) => `${item.id} (${item.config_ref})`)
                 .join("、") || "无"}
@@ -535,7 +504,7 @@ function CapabilityDetail({
           </div>
           <div>
             <strong>依赖</strong>
-            <div style={manifestValueStyle}>
+            <div className="sh-CapabilityCenterPanel-29">
               Python：
               {capability.manifest.dependencies.python.join("、") || "无"}
               <br />
@@ -546,31 +515,31 @@ function CapabilityDetail({
             </div>
           </div>
           <details>
-            <summary style={{ cursor: "pointer", fontWeight: 600 }}>
+            <summary className="sh-CapabilityCenterPanel-31">
               文件哈希 ({capability.manifest.files.length})
             </summary>
-            <ul style={manifestListStyle}>
+            <ul className="sh-CapabilityCenterPanel-30">
               {capability.manifest.files.map((file) => (
                 <li key={file.path}>
                   <div>{file.path}</div>
-                  <code style={{ overflowWrap: "anywhere" }}>{file.sha256}</code>
+                  <code className="sh-CapabilityCenterPanel-32">{file.sha256}</code>
                 </li>
               ))}
             </ul>
           </details>
-          <div style={manifestValueStyle}>
+          <div className="sh-CapabilityCenterPanel-29">
             卸载：停止服务 {capability.manifest.uninstall.stop_servers ? "是" : "否"}；
             无引用时移除环境{" "}
             {capability.manifest.uninstall.remove_environment_when_unreferenced ? "是" : "否"}
           </div>
-          <div style={manifestValueStyle}>
+          <div className="sh-CapabilityCenterPanel-29">
             Manifest SHA-256：
-            <code style={{ overflowWrap: "anywhere" }}>{capability.manifest.manifest_hash}</code>
+            <code className="sh-CapabilityCenterPanel-32">{capability.manifest.manifest_hash}</code>
           </div>
         </section>
       ) : null}
       {capability.available_actions?.length ? (
-        <footer style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+        <footer className="sh-CapabilityCenterPanel-33">
           {capability.available_actions.map((action) => (
             <button
               key={action}
@@ -596,15 +565,6 @@ function CapabilityDetail({
   );
 }
 
-const backdropStyle: CSSProperties = {
-  position: "fixed",
-  inset: 0,
-  zIndex: 9997,
-  display: "grid",
-  placeItems: "center",
-  padding: tokens.space.xl,
-  background: dark.scrim,
-};
 const panelStyle: CSSProperties = {
   width: "min(920px, 96vw)",
   height: "min(680px, 92vh)",
@@ -633,36 +593,6 @@ const pagePanelStyle: CSSProperties = {
   background: "transparent",
   color: dark.text,
 };
-const headerStyle: CSSProperties = {
-  display: "flex",
-  alignItems: "flex-start",
-  justifyContent: "space-between",
-  gap: tokens.space.md,
-  padding: `${tokens.space.lg}px ${tokens.space.xl}px ${tokens.space.md}px`,
-};
-const subtitleStyle: CSSProperties = {
-  ...metaText,
-  margin: `${tokens.space.xs}px 0 0`,
-};
-const statusBarStyle: CSSProperties = {
-  display: "flex",
-  flexWrap: "wrap",
-  justifyContent: "space-between",
-  gap: tokens.space.sm,
-  padding: `${tokens.space.sm}px ${tokens.space.xl}px`,
-  borderTop: `1px solid ${dark.hairline}`,
-  borderBottom: `1px solid ${dark.hairline}`,
-  background: "transparent",
-  color: dark.textMuted,
-  fontSize: tokens.text.sm.size,
-  fontVariantNumeric: tokens.font.numeric,
-};
-const tabsStyle: CSSProperties = {
-  display: "flex",
-  gap: tokens.space.lg,
-  padding: `${tokens.space.sm}px ${tokens.space.xl}px 0`,
-  borderBottom: `1px solid ${dark.hairline}`,
-};
 /** 下划线 tab：选中态 2px 强调下划线 + 正文色，不换色相。 */
 const tabButtonStyle = (active: boolean): CSSProperties => ({
   border: 0,
@@ -677,76 +607,6 @@ const tabButtonStyle = (active: boolean): CSSProperties => ({
   fontWeight: active ? tokens.weight.semibold : tokens.weight.medium,
   transition,
 });
-const noticeStyle: CSSProperties = {
-  display: "flex",
-  justifyContent: "space-between",
-  gap: 8,
-  margin: `${tokens.space.md}px ${tokens.space.xl}px 0`,
-  padding: `${tokens.space.sm}px ${tokens.space.md}px`,
-  border: `1px solid ${dark.hairline}`,
-  borderLeft: `2px solid ${dark.accent}`,
-  borderRadius: tokens.radius.md,
-  background: "transparent",
-  color: dark.textMuted,
-  fontSize: tokens.text.sm.size,
-};
-const bodyGridStyle: CSSProperties = {
-  minHeight: 0,
-  flex: 1,
-  display: "grid",
-  // 左列下限 200px：250px 会在 min 窗口(800×560)把详情值列挤到 ~47px，
-  // CJK/长词被逐字断行。列表行自带 ellipsis，200px 仍可读。
-  gridTemplateColumns: "minmax(200px, 0.38fr) minmax(0, 0.62fr)",
-  gap: 0,
-};
-const listPaneStyle: CSSProperties = {
-  minHeight: 0,
-  display: "flex",
-  flexDirection: "column",
-  gap: tokens.space.md,
-  padding: tokens.space.lg,
-  borderRight: `1px solid ${dark.hairline}`,
-  background: "transparent",
-};
-const detailPaneStyle: CSSProperties = {
-  minWidth: 0,
-  minHeight: 0,
-  overflowY: "auto",
-  padding: tokens.space.xl,
-  background: "transparent",
-};
-const operationListStyle: CSSProperties = {
-  flex: 1,
-  minHeight: 0,
-  display: "grid",
-  // 与能力列表同类：钉死轨道下限，防操作卡片长 token 在 min 尺寸下撑宽
-  gridTemplateColumns: "minmax(0, 1fr)",
-  alignContent: "start",
-  gap: tokens.space.md,
-  overflowY: "auto",
-  padding: tokens.space.xl,
-};
-const fieldLabelStyle: CSSProperties = {
-  display: "grid",
-  gap: tokens.space.xs,
-  color: dark.textMuted,
-  fontSize: tokens.text.sm.size,
-  fontWeight: tokens.weight.medium,
-};
-const inputStyle: CSSProperties = {
-  width: "100%",
-  boxSizing: "border-box",
-  border: `1px solid ${dark.borderStrong}`,
-  borderRadius: tokens.radius.md,
-  height: tokens.controlHeight,
-  padding: `0 ${tokens.space.md}px`,
-  background: dark.card,
-  color: dark.text,
-  fontFamily: tokens.font.ui,
-  fontSize: tokens.text.base.size,
-  outline: "none",
-  transition,
-};
 const capabilityListItemStyle = (active: boolean): CSSProperties => ({
   width: "100%",
   display: "flex",
@@ -762,53 +622,6 @@ const capabilityListItemStyle = (active: boolean): CSSProperties => ({
   textAlign: "left",
   transition,
 });
-const ellipsisStyle: CSSProperties = {
-  display: "block",
-  overflow: "hidden",
-  textOverflow: "ellipsis",
-  whiteSpace: "nowrap",
-  fontSize: tokens.text.base.size,
-  fontWeight: tokens.weight.medium,
-};
-const listMetaStyle: CSSProperties = {
-  display: "block",
-  marginTop: 2,
-  overflow: "hidden",
-  textOverflow: "ellipsis",
-  whiteSpace: "nowrap",
-  color: dark.textFaint,
-  fontSize: tokens.text.sm.size,
-};
-const detailGridStyle: CSSProperties = {
-  display: "grid",
-  // 1fr 的隐式 min 是 auto（= 值列最长单词宽）；min 尺寸下改用
-  // minmax(0,1fr) 让值列可收窄，配合 overflowWrap 断长 token
-  gridTemplateColumns: "72px minmax(0, 1fr)",
-  gap: `${tokens.space.md}px ${tokens.space.lg}px`,
-  margin: 0,
-  fontSize: tokens.text.base.size,
-  overflowWrap: "anywhere",
-};
-const manifestValueStyle: CSSProperties = {
-  marginTop: 3,
-  color: dark.textMuted,
-  fontSize: tokens.text.sm.size,
-  lineHeight: tokens.text.sm.lh,
-  overflowWrap: "anywhere",
-};
-const manifestListStyle: CSSProperties = {
-  display: "grid",
-  gap: 6,
-  margin: `${tokens.space.xs}px 0 0`,
-  paddingLeft: tokens.space.xl,
-  color: dark.textMuted,
-  fontSize: tokens.text.sm.size,
-  lineHeight: tokens.text.sm.lh,
-};
-const emptyStyle: CSSProperties = {
-  ...emptyStateStyle,
-  padding: `${tokens.space.xxl}px ${tokens.space.lg}px`,
-};
 const secondaryButtonStyle: CSSProperties = {
   border: `1px solid ${dark.borderStrong}`,
   borderRadius: tokens.radius.md,
@@ -821,23 +634,4 @@ const secondaryButtonStyle: CSSProperties = {
   fontSize: tokens.text.sm.size,
   fontWeight: tokens.weight.medium,
   transition,
-};
-const iconButtonStyle: CSSProperties = {
-  width: tokens.controlHeight,
-  height: tokens.controlHeight,
-  border: `1px solid ${dark.border}`,
-  borderRadius: tokens.radius.md,
-  background: "transparent",
-  color: dark.textMuted,
-  cursor: "pointer",
-  fontSize: tokens.text.lg.size,
-  lineHeight: 1,
-  transition,
-};
-const inlineDismissStyle: CSSProperties = {
-  border: 0,
-  padding: 0,
-  background: "transparent",
-  color: "inherit",
-  cursor: "pointer",
 };

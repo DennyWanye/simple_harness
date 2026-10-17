@@ -1,0 +1,288 @@
+/* 生成文件，不要手改：src/components/ContextTracePanel.tsx 里静态内联样式的等价类（9I）。
+   重新生成：node scripts/code_quality/ts_inline_to_class.mjs convert src/components/ContextTracePanel.tsx */
+
+.sh-ContextTracePanel-1 {
+  position: absolute;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  background: var(--sh-surface, #15181C);
+  color: var(--sh-text, #E8E5DF);
+  font-family: var(--sh-font-ui);
+  font-size: var(--sh-text-base-size);
+  line-height: var(--sh-text-base-lh);
+  animation: bp-fade-in 160ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.sh-ContextTracePanel-2 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sh-space-md);
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--sh-hairline, rgba(255,255,255,0.075));
+  flex-shrink: 0;
+}
+
+.sh-ContextTracePanel-3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.sh-ContextTracePanel-4 {
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  border-radius: 7px;
+  background: rgba(34,211,238,0.15);
+  color: #67e8f9;
+}
+
+.sh-ContextTracePanel-5 {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.sh-ContextTracePanel-6 {
+  width: var(--sh-control-height);
+  height: var(--sh-control-height);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--sh-radius-md);
+  background: transparent;
+  border: 1px solid var(--sh-hairline, rgba(255,255,255,0.075));
+  color: var(--sh-text-2, #A7A29A);
+  cursor: pointer;
+  transition: background-color 120ms cubic-bezier(0.4, 0, 0.2, 1), border-color 120ms cubic-bezier(0.4, 0, 0.2, 1), color 120ms cubic-bezier(0.4, 0, 0.2, 1), opacity 120ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.sh-ContextTracePanel-7 {
+  min-height: 38px;
+  display: flex;
+  flex: 0 0 auto;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--sh-hairline, rgba(255,255,255,0.075));
+}
+
+.sh-ContextTracePanel-8 {
+  min-height: 0;
+  flex: 1;
+  position: relative;
+}
+
+.sh-ContextTracePanel-9 {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 13px;
+}
+
+.sh-ContextTracePanel-10 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.sh-ContextTracePanel-11 {
+  font-family: var(--sh-font-ui);
+  font-size: var(--sh-text-sm-size);
+  font-weight: var(--sh-weight-semibold);
+  font-variant-numeric: tabular-nums;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: var(--sh-radius-md);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  white-space: nowrap;
+  border: 1px solid transparent;
+  transition: background-color 120ms cubic-bezier(0.4, 0, 0.2, 1), border-color 120ms cubic-bezier(0.4, 0, 0.2, 1), color 120ms cubic-bezier(0.4, 0, 0.2, 1), opacity 120ms cubic-bezier(0.4, 0, 0.2, 1);
+  box-sizing: border-box;
+  background: var(--sh-accent, #7FB2AA);
+  color: var(--sh-on-accent, #0E1013);
+}
+
+.sh-ContextTracePanel-12 {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--sh-text-2, #A7A29A);
+  font-size: 10px;
+}
+
+.sh-ContextTracePanel-13 {
+  font-family: var(--sh-font-ui);
+  font-size: var(--sh-text-base-size);
+  background: var(--sh-card, #1C2026);
+  color: var(--sh-text, #E8E5DF);
+  border: 1px solid var(--sh-hairline-strong, rgba(255,255,255,0.14));
+  border-radius: var(--sh-radius-md);
+  height: var(--sh-control-height);
+  padding: 4px 6px;
+  outline: none;
+  transition: background-color 120ms cubic-bezier(0.4, 0, 0.2, 1), border-color 120ms cubic-bezier(0.4, 0, 0.2, 1), color 120ms cubic-bezier(0.4, 0, 0.2, 1), opacity 120ms cubic-bezier(0.4, 0, 0.2, 1);
+  box-sizing: border-box;
+  width: 58px;
+  text-align: center;
+}
+
+.sh-ContextTracePanel-14 {
+  font-family: var(--sh-font-ui);
+  font-size: var(--sh-text-base-size);
+  background: var(--sh-card, #1C2026);
+  color: var(--sh-text, #E8E5DF);
+  border: 1px solid var(--sh-hairline-strong, rgba(255,255,255,0.14));
+  border-radius: var(--sh-radius-md);
+  height: var(--sh-control-height);
+  padding: 4px 6px;
+  outline: none;
+  transition: background-color 120ms cubic-bezier(0.4, 0, 0.2, 1), border-color 120ms cubic-bezier(0.4, 0, 0.2, 1), color 120ms cubic-bezier(0.4, 0, 0.2, 1), opacity 120ms cubic-bezier(0.4, 0, 0.2, 1);
+  box-sizing: border-box;
+  width: 86px;
+  text-align: center;
+}
+
+.sh-ContextTracePanel-15 {
+  color: var(--sh-text-3, #736F69);
+  font-size: 10px;
+}
+
+.sh-ContextTracePanel-16 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+}
+
+.sh-ContextTracePanel-17 {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.sh-ContextTracePanel-18 {
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.sh-ContextTracePanel-19 {
+  height: 6px;
+  margin-top: 4px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: #0f172a;
+}
+
+.sh-ContextTracePanel-20 {
+  flex: 1;
+  overflow-y: auto;
+  background: transparent;
+  border: 1px solid var(--sh-hairline, rgba(255,255,255,0.075));
+  border-radius: var(--sh-radius-lg);
+  padding: var(--sh-space-sm);
+}
+
+.sh-ContextTracePanel-21 {
+  margin-top: 32px;
+  color: var(--sh-text-3, #736F69);
+  text-align: center;
+  font-size: 12px;
+}
+
+.sh-ContextTracePanel-22 {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 6px;
+  border-bottom: 1px solid var(--sh-hairline, rgba(255,255,255,0.075));
+}
+
+.sh-ContextTracePanel-23 {
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.sh-ContextTracePanel-24 {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  color: var(--sh-text-2, #A7A29A);
+  font-size: 10px;
+}
+
+.sh-ContextTracePanel-25 {
+  color: var(--sh-text-3, #736F69);
+  font-size: 9px;
+  overflow-wrap: anywhere;
+}
+
+.sh-ContextTracePanel-26 {
+  color: var(--sh-text-2, #A7A29A);
+  font-size: 10px;
+}
+
+.sh-ContextTracePanel-27 {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 9px;
+}
+
+.sh-ContextTracePanel-28 {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--sh-text-2, #A7A29A);
+  font-size: 9px;
+}
+
+.sh-ContextTracePanel-29 {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 11px;
+}
+
+.sh-ContextTracePanel-30 {
+  flex: 0 0 auto;
+  color: var(--sh-text-3, #736F69);
+  font-size: 10px;
+}
+
+.sh-ContextTracePanel-31 {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  color: var(--sh-text-2, #A7A29A);
+  font-size: 10px;
+}
+
+.sh-ContextTracePanel-32 {
+  margin-top: 2px;
+}
+
+.sh-ContextTracePanel-33 {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 3px;
+  color: var(--sh-text-3, #736F69);
+  font-size: 10px;
+}

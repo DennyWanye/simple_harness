@@ -14,7 +14,7 @@
  * for `context_breakdown_response`. Caller passes a `sessionId` + a
  * `send` + `onMessage` plumbing pair.
  */
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { ContextUsageSnapshot } from "../stores/sessionsStore";
 import {
@@ -24,6 +24,7 @@ import {
 } from "../context/contextAuthority";
 import { ringColor, ringPercent } from "./contextRingMath";
 import { useDepsChanged } from "../hooks/useDepsChanged";
+import "./ContextBreakdownModal.styles.css";
 
 interface BreakdownSection {
   kind: string;
@@ -256,7 +257,7 @@ function ContextHistoryChart({ history }: { history: ContextHistorySample[] }) {
         : [after];
     });
   if (!points.length) {
-    return <div style={chartEmptyStyle}>暂无 Context 变化记录</div>;
+    return <div className="sh-ContextBreakdownModal-1">暂无 Context 变化记录</div>;
   }
   const width = 640;
   const height = 190;
@@ -275,12 +276,12 @@ function ContextHistoryChart({ history }: { history: ContextHistorySample[] }) {
   const y = (tokens: number) => pad.top + plotHeight - (tokens / maxTokens) * plotHeight;
   const line = points.map((point, index) => `${x(point.time, index)},${y(point.tokens)}`).join(" ");
   return (
-    <div style={chartWrapStyle}>
+    <div className="sh-ContextBreakdownModal-2">
       <svg
         role="img"
         aria-label="Context 大小随时间变化折线图"
         viewBox={`0 0 ${width} ${height}`}
-        style={{ display: "block", width: "100%", height: "auto" }}
+        className="sh-ContextBreakdownModal-3"
       >
         {[0, 0.5, 1].map((ratio) => (
           <g key={ratio}>
@@ -349,17 +350,17 @@ function ContextHistoryChart({ history }: { history: ContextHistorySample[] }) {
           tokens
         </text>
       </svg>
-      <div style={chartLegendStyle}>
+      <div className="sh-ContextBreakdownModal-4">
         <span>
-          <i style={{ ...legendDotStyle, background: "#38bdf8" }} />
+          <i className="sh-ContextBreakdownModal-5" />
           Context 大小
         </span>
         <span>
-          <i style={{ ...legendDotStyle, background: "#f59e0b" }} />
+          <i className="sh-ContextBreakdownModal-6" />
           压缩前
         </span>
         <span>
-          <i style={{ ...legendDotStyle, background: "#a855f7" }} />
+          <i className="sh-ContextBreakdownModal-7" />
           压缩后
         </span>
       </div>
@@ -509,59 +510,32 @@ export function ContextBreakdownModal({
       role="dialog"
       aria-modal="true"
       aria-label="Context usage breakdown"
-      style={overlayStyle}
+      className="sh-ContextBreakdownModal-8"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div style={modalStyle}>
-        <header
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            marginBottom: 8,
-          }}
-        >
-          <div style={{ minWidth: 0, flex: 1 }}>
-            <h3
-              title={`Context usage · ${sessionId}`}
-              style={{
-                margin: 0,
-                fontSize: 14,
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
-            >
-              Context usage · <span style={{ color: "#94a3b8", fontWeight: 400 }}>{sessionId}</span>
+      <div className="sh-ContextBreakdownModal-9">
+        <header className="sh-ContextBreakdownModal-10">
+          <div className="sh-ContextBreakdownModal-11">
+            <h3 title={`Context usage · ${sessionId}`} className="sh-ContextBreakdownModal-12">
+              Context usage · <span className="sh-ContextBreakdownModal-13">{sessionId}</span>
             </h3>
-            <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 2 }}>
+            <div className="sh-ContextBreakdownModal-14">
               {effectiveProjectName} · {snapshot?.model?.trim() || "模型信息不可用"}
             </div>
             {effectiveProjectRoot && (
-              <div
-                title={effectiveProjectRoot}
-                style={{
-                  maxWidth: 560,
-                  marginTop: 3,
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                  color: "#64748b",
-                  fontSize: 10,
-                }}
-              >
+              <div title={effectiveProjectRoot} className="sh-ContextBreakdownModal-15">
                 {effectiveProjectRoot}
               </div>
             )}
           </div>
-          <button onClick={onClose} aria-label="关闭" style={{ ...closeBtn, flexShrink: 0 }}>
+          <button onClick={onClose} aria-label="关闭" className="sh-ContextBreakdownModal-16">
             ✕
           </button>
         </header>
 
-        <div style={{ marginBottom: 12 }}>
+        <div className="sh-ContextBreakdownModal-17">
           {!measured && (
             <div
               role="status"
@@ -581,29 +555,14 @@ export function ContextBreakdownModal({
           )}
           {measured && snapshot && (
             <>
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  fontSize: 11,
-                  marginBottom: 4,
-                }}
-              >
+              <div className="sh-ContextBreakdownModal-18">
                 <span>
                   <b style={{ color }}>{snapshot.prompt_tokens.toLocaleString()}</b> /{" "}
                   {snapshot.effective_ceiling.toLocaleString()} tokens
                 </span>
-                <span style={{ color: "#94a3b8" }}>{pct.toFixed(1)}% measured</span>
+                <span className="sh-ContextBreakdownModal-19">{pct.toFixed(1)}% measured</span>
               </div>
-              <div
-                style={{
-                  position: "relative",
-                  height: 8,
-                  background: "#1f2937",
-                  borderRadius: 4,
-                  overflow: "hidden",
-                }}
-              >
+              <div className="sh-ContextBreakdownModal-20">
                 <div
                   style={{
                     width: `${pct}%`,
@@ -641,9 +600,7 @@ export function ContextBreakdownModal({
                   />
                 )}
               </div>
-              <div
-                style={{ fontSize: 10, color: "#6b7280", marginTop: 4, display: "flex", gap: 12 }}
-              >
+              <div className="sh-ContextBreakdownModal-21">
                 {snapshot.cached_tokens > 0 && (
                   <span>cache hit: {fmtTokens(snapshot.cached_tokens)}</span>
                 )}
@@ -652,7 +609,7 @@ export function ContextBreakdownModal({
                   <span>sweet @ {fmtTokens(snapshot.recall_sweet)}</span>
                 )}
               </div>
-              <div style={{ color: "#64748b", fontSize: 10, marginTop: 5 }}>
+              <div className="sh-ContextBreakdownModal-22">
                 实测 · sample {snapshot.sample_id || "不可用"} · snapshot{" "}
                 {snapshot.snapshot_id || "不可用"}
               </div>
@@ -660,24 +617,16 @@ export function ContextBreakdownModal({
           )}
         </div>
 
-        <div style={{ borderTop: "1px solid #374151", paddingTop: 12 }}>
-          <div style={{ fontSize: 12, color: "#cbd5e1", marginBottom: 8 }}>Context 变化记录</div>
+        <div className="sh-ContextBreakdownModal-23">
+          <div className="sh-ContextBreakdownModal-24">Context 变化记录</div>
           <ContextHistoryChart history={data?.history ?? []} />
         </div>
 
-        <div style={{ borderTop: "1px solid #374151", paddingTop: 12 }}>
-          <div
-            style={{
-              fontSize: 12,
-              color: "#cbd5e1",
-              marginBottom: 8,
-              display: "flex",
-              justifyContent: "space-between",
-            }}
-          >
+        <div className="sh-ContextBreakdownModal-23">
+          <div className="sh-ContextBreakdownModal-25">
             <span>冻结请求构成（按项标记 measured / estimated / unavailable）</span>
             {data && (
-              <span style={{ color: "#94a3b8", fontSize: 10 }}>
+              <span className="sh-ContextBreakdownModal-26">
                 {data.availability === "available"
                   ? `估算合计 ${fmtTokens(sectionTotal)} · LLM 实测 ${data.last_usage_prompt_tokens === null ? "不可用" : fmtTokens(data.last_usage_prompt_tokens)}`
                   : "冻结请求构成不可用"}
@@ -685,27 +634,12 @@ export function ContextBreakdownModal({
             )}
           </div>
 
-          {loading && (
-            <div style={{ color: "#94a3b8", fontSize: 12, padding: 12, textAlign: "center" }}>
-              加载 breakdown …
-            </div>
-          )}
-          {!loading && !data && (
-            <div style={{ color: "#94a3b8", fontSize: 12, padding: 12 }}>暂无数据</div>
-          )}
+          {loading && <div className="sh-ContextBreakdownModal-27">加载 breakdown …</div>}
+          {!loading && !data && <div className="sh-ContextBreakdownModal-28">暂无数据</div>}
 
           {data && (
             <>
-              <div
-                style={{
-                  display: "flex",
-                  height: 10,
-                  borderRadius: 4,
-                  overflow: "hidden",
-                  marginBottom: 8,
-                  background: "#1f2937",
-                }}
-              >
+              <div className="sh-ContextBreakdownModal-29">
                 {data.sections.map((s, index) => {
                   const w = sectionTotal > 0 ? ((s.tokens ?? 0) / sectionTotal) * 100 : 0;
                   if (w <= 0) return null;
@@ -719,33 +653,15 @@ export function ContextBreakdownModal({
                 })}
               </div>
 
-              <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "grid", gap: 6 }}>
+              <ul className="sh-ContextBreakdownModal-30">
                 {data.sections.map((s, index) => (
-                  <li
-                    key={`${s.kind}:${index}`}
-                    style={{
-                      background: "#111827",
-                      borderRadius: 4,
-                      padding: "8px 10px",
-                      border: "1px solid #1f2937",
-                    }}
-                  >
+                  <li key={`${s.kind}:${index}`} className="sh-ContextBreakdownModal-31">
                     <button
                       type="button"
                       onClick={() => setExpanded((e) => ({ ...e, [s.kind]: !e[s.kind] }))}
-                      style={{
-                        background: "transparent",
-                        border: "none",
-                        padding: 0,
-                        color: "inherit",
-                        cursor: "pointer",
-                        width: "100%",
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                      }}
+                      className="sh-ContextBreakdownModal-32"
                     >
-                      <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
+                      <span className="sh-ContextBreakdownModal-33">
                         <span
                           style={{
                             display: "inline-block",
@@ -757,30 +673,17 @@ export function ContextBreakdownModal({
                         />
                         <b>{s.label}</b>
                         {typeof s.count === "number" && (
-                          <span style={{ color: "#94a3b8", fontSize: 11 }}>· {s.count} 项</span>
+                          <span className="sh-ContextBreakdownModal-34">· {s.count} 项</span>
                         )}
                       </span>
-                      <span style={{ color: "#94a3b8", fontSize: 11 }}>
+                      <span className="sh-ContextBreakdownModal-34">
                         {s.tokens === null ? "tokens 不可用" : `${fmtTokens(s.tokens)} tokens`} ·{" "}
                         {s.token_source} {expanded[s.kind] ? "▴" : "▾"}
                       </span>
                     </button>
                     {expanded[s.kind] && (
-                      <div style={{ marginTop: 8 }}>
-                        <pre
-                          style={{
-                            margin: 0,
-                            fontSize: 10.5,
-                            color: "#cbd5e1",
-                            background: "#0b1120",
-                            padding: 8,
-                            borderRadius: 3,
-                            maxHeight: 180,
-                            overflow: "auto",
-                            whiteSpace: "pre-wrap",
-                            wordBreak: "break-word",
-                          }}
-                        >
+                      <div className="sh-ContextBreakdownModal-35">
+                        <pre className="sh-ContextBreakdownModal-36">
                           {s.public_preview || "无公开预览"}
                           {s.preview_truncated ? "…" : ""}
                         </pre>
@@ -796,72 +699,3 @@ export function ContextBreakdownModal({
     </div>
   );
 }
-
-const overlayStyle: React.CSSProperties = {
-  position: "fixed",
-  inset: 0,
-  background: "rgba(0,0,0,0.55)",
-  display: "grid",
-  placeItems: "center",
-  padding: 8,
-  zIndex: 1250,
-};
-
-const modalStyle: React.CSSProperties = {
-  background: "#0f172a",
-  color: "#e2e8f0",
-  boxSizing: "border-box",
-  padding: 16,
-  borderRadius: 8,
-  width: "min(94vw, 720px)",
-  maxHeight: "90vh",
-  overflowY: "auto",
-  overflowX: "hidden",
-  border: "1px solid #1e293b",
-  boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
-  fontFamily: "inherit",
-};
-
-const chartWrapStyle: React.CSSProperties = {
-  marginBottom: 12,
-  padding: 8,
-  border: "1px solid rgba(56,189,248,0.14)",
-  borderRadius: 7,
-  background: "rgba(2,6,23,0.54)",
-};
-
-const chartLegendStyle: React.CSSProperties = {
-  display: "flex",
-  justifyContent: "center",
-  gap: 14,
-  color: "#94a3b8",
-  fontSize: 9.5,
-};
-
-const legendDotStyle: React.CSSProperties = {
-  display: "inline-block",
-  width: 7,
-  height: 7,
-  marginRight: 4,
-  borderRadius: "50%",
-};
-
-const chartEmptyStyle: React.CSSProperties = {
-  minHeight: 110,
-  display: "grid",
-  placeItems: "center",
-  marginBottom: 12,
-  border: "1px dashed rgba(148,163,184,0.2)",
-  borderRadius: 7,
-  color: "#64748b",
-  fontSize: 11,
-};
-
-const closeBtn: React.CSSProperties = {
-  background: "transparent",
-  border: "none",
-  color: "#94a3b8",
-  cursor: "pointer",
-  fontSize: 14,
-  padding: 4,
-};

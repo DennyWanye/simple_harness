@@ -1,4 +1,5 @@
 import type { WorkflowRunSummary } from "./types";
+import "./RunList.styles.css";
 
 type Props = {
   runs: WorkflowRunSummary[];
@@ -21,10 +22,10 @@ const statusColor: Record<string, string> = {
 
 export function RunList({ runs, selectedRunId, onSelect }: Props) {
   if (runs.length === 0) {
-    return <div style={emptyStyle}>暂无运行记录</div>;
+    return <div className="sh-RunList-1">暂无运行记录</div>;
   }
   return (
-    <div role="list" aria-label="Workflow runs" style={{ display: "grid", gap: 1 }}>
+    <div role="list" aria-label="Workflow runs" className="sh-RunList-2">
       {runs.map((run) => (
         <button
           key={run.run_id}
@@ -46,28 +47,9 @@ export function RunList({ runs, selectedRunId, onSelect }: Props) {
               background: statusColor[run.status] ?? "#94a3b8",
             }}
           />
-          <span style={{ minWidth: 0, flex: 1, textAlign: "left" }}>
-            <strong
-              style={{
-                display: "block",
-                fontSize: 12,
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
-            >
-              {run.workflow_name}
-            </strong>
-            <span
-              style={{
-                display: "block",
-                fontSize: 10,
-                color: "#94a3b8",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
-            >
+          <span className="sh-RunList-3">
+            <strong className="sh-RunList-4">{run.workflow_name}</strong>
+            <span className="sh-RunList-5">
               {run.run_id.slice(0, 12)} · v{run.workflow_version}
             </span>
           </span>
@@ -92,10 +74,4 @@ const rowStyle: React.CSSProperties = {
   borderRadius: 6,
   cursor: "pointer",
   background: "transparent",
-};
-const emptyStyle: React.CSSProperties = {
-  padding: 20,
-  textAlign: "center",
-  color: "#64748b",
-  fontSize: 12,
 };

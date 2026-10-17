@@ -26,15 +26,13 @@ import {
   badgeStyle,
   bannerStyle,
   buttonStyle,
-  cardStyle,
   dark,
-  inputStyle,
   surfaceModal,
   tabStyle,
-  backdropStyle,
 } from "../theme/components";
 import { tokens } from "../theme/tokens";
 import { useConfirm } from "./useConfirm";
+import "./SkillStorePanel.styles.css";
 
 type Tab = "installed" | "marketplace" | "add-url";
 
@@ -365,64 +363,20 @@ export const SkillStorePanel: React.FC<Props> = ({
       onClick={isPage ? undefined : (e) => e.stopPropagation()}
     >
       {/* Header */}
-      <div
-        style={{
-          padding: `${tokens.space.lg}px ${tokens.space.lg}px 0`,
-          display: "flex",
-          alignItems: "flex-start",
-          gap: tokens.space.md,
-        }}
-      >
-        <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 11 }}>
-          <span
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              width: 36,
-              height: 36,
-              borderRadius: 11,
-              background: "rgba(79,147,255,0.15)",
-              color: "#7fb0ff",
-              flexShrink: 0,
-            }}
-          >
+      <div className="sh-SkillStorePanel-1">
+        <div className="sh-SkillStorePanel-2">
+          <span className="sh-SkillStorePanel-3">
             <Icon name="store" size={20} />
           </span>
           <div>
-            <div
-              style={{
-                fontSize: tokens.text.xs.size,
-                color: dark.textMuted,
-                fontWeight: tokens.weight.medium,
-                marginBottom: 1,
-              }}
-            >
-              SkillStore
-            </div>
-            <h2
-              id="skill-store-title"
-              style={{
-                margin: 0,
-                fontSize: tokens.text.xl.size,
-                fontWeight: tokens.weight.bold,
-                color: dark.text,
-              }}
-            >
+            <div className="sh-SkillStorePanel-4">SkillStore</div>
+            <h2 id="skill-store-title" className="sh-SkillStorePanel-5">
               技能商店
             </h2>
           </div>
         </div>
         {onOpenCapabilityCenter ? (
-          <button
-            type="button"
-            onClick={onOpenCapabilityCenter}
-            style={{
-              ...buttonStyle("secondary"),
-              flexShrink: 0,
-              fontSize: tokens.text.xs.size,
-            }}
-          >
+          <button type="button" onClick={onOpenCapabilityCenter} className="sh-SkillStorePanel-6">
             返回能力中心
           </button>
         ) : null}
@@ -430,19 +384,7 @@ export const SkillStorePanel: React.FC<Props> = ({
           <button
             type="button"
             onClick={onClose}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              width: 32,
-              height: 32,
-              padding: 0,
-              borderRadius: 9,
-              background: dark.card,
-              border: `1px solid ${dark.border}`,
-              color: dark.textMuted,
-              cursor: "pointer",
-            }}
+            className="sh-SkillStorePanel-7"
             aria-label="关闭"
           >
             <Icon name="close" size={16} />
@@ -451,13 +393,7 @@ export const SkillStorePanel: React.FC<Props> = ({
       </div>
 
       {/* Tabs */}
-      <div
-        style={{
-          padding: `${tokens.space.md}px ${tokens.space.lg}px 0`,
-          display: "flex",
-          gap: tokens.space.xs,
-        }}
-      >
+      <div className="sh-SkillStorePanel-8">
         {(Object.keys(TAB_LABEL) as Tab[]).map((t) => {
           const active = tab === t;
           return (
@@ -476,11 +412,7 @@ export const SkillStorePanel: React.FC<Props> = ({
 
       {/* Alert */}
       {alert && (
-        <div
-          style={{
-            margin: `${tokens.space.md}px ${tokens.space.lg}px 0`,
-          }}
-        >
+        <div className="sh-SkillStorePanel-9">
           <div
             style={{
               ...bannerStyle(
@@ -496,14 +428,8 @@ export const SkillStorePanel: React.FC<Props> = ({
             <span>{alert.message}</span>
             <button
               type="button"
-              className="bp-btn-ghost"
+              className="bp-btn-ghost sh-SkillStorePanel-10"
               onClick={() => setAlert(null)}
-              style={{
-                ...buttonStyle("ghost", "sm"),
-                padding: 4,
-                color: "currentColor",
-                opacity: 0.65,
-              }}
               aria-label="关闭提示"
             >
               <Icon name="close" size={14} />
@@ -513,13 +439,7 @@ export const SkillStorePanel: React.FC<Props> = ({
       )}
 
       {/* Body */}
-      <div
-        style={{
-          overflow: "auto",
-          flex: 1,
-          padding: `${tokens.space.md}px ${tokens.space.lg}px ${tokens.space.lg}px`,
-        }}
-      >
+      <div className="sh-SkillStorePanel-11">
         {tab === "installed" && (
           <InstalledList skills={installed} loading={loading} onUninstall={uninstall} />
         )}
@@ -556,17 +476,7 @@ export const SkillStorePanel: React.FC<Props> = ({
 
   return (
     <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: backdropStyle.background,
-        backdropFilter: "blur(2px)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 9000,
-        animation: `bp-fade-in ${tokens.duration.base}ms ${tokens.easing.out}`,
-      }}
+      className="sh-SkillStorePanel-12"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
@@ -604,63 +514,20 @@ const EmptyState: React.FC<{ icon?: IconName; title: string; hint?: string }> = 
   title,
   hint,
 }) => (
-  <div
-    style={{
-      padding: `${tokens.space.xxl}px ${tokens.space.lg}px`,
-      textAlign: "center",
-      color: dark.textMuted,
-    }}
-  >
+  <div className="sh-SkillStorePanel-13">
     {icon && (
-      <div
-        style={{
-          width: 56,
-          height: 56,
-          margin: "0 auto",
-          marginBottom: tokens.space.md,
-          borderRadius: 16,
-          display: "grid",
-          placeItems: "center",
-          background: dark.card,
-          color: dark.textFaint,
-        }}
-      >
+      <div className="sh-SkillStorePanel-14">
         <Icon name={icon} size={26} />
       </div>
     )}
-    <div
-      style={{
-        fontSize: tokens.text.md.size,
-        color: dark.text,
-        fontWeight: tokens.weight.medium,
-      }}
-    >
-      {title}
-    </div>
-    {hint && (
-      <div
-        style={{
-          fontSize: tokens.text.sm.size,
-          color: dark.textMuted,
-          marginTop: tokens.space.xs,
-        }}
-      >
-        {hint}
-      </div>
-    )}
+    <div className="sh-SkillStorePanel-15">{title}</div>
+    {hint && <div className="sh-SkillStorePanel-16">{hint}</div>}
   </div>
 );
 
 const LoadingState: React.FC<{ label?: string }> = ({ label = "加载中…" }) => (
-  <div
-    style={{
-      padding: `${tokens.space.xxl}px ${tokens.space.lg}px`,
-      textAlign: "center",
-      color: dark.textMuted,
-      fontSize: tokens.text.sm.size,
-    }}
-  >
-    <span className="bp-spinner" style={{ marginRight: tokens.space.sm }} />
+  <div className="sh-SkillStorePanel-17">
+    <span className="bp-spinner sh-SkillStorePanel-18" />
     {label}
   </div>
 );
@@ -680,73 +547,23 @@ const InstalledList: React.FC<{
       />
     );
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: tokens.space.sm }}>
+    <div className="sh-SkillStorePanel-19">
       {skills.map((s) => (
-        <div
-          key={s.name}
-          className="bp-card"
-          style={{
-            ...cardStyle,
-            display: "flex",
-            alignItems: "center",
-            gap: tokens.space.md,
-          }}
-        >
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div
-              style={{
-                fontSize: tokens.text.md.size,
-                fontWeight: tokens.weight.semibold,
-                color: dark.text,
-                display: "flex",
-                alignItems: "center",
-                gap: tokens.space.xs,
-              }}
-            >
+        <div key={s.name} className="bp-card sh-SkillStorePanel-20">
+          <div className="sh-SkillStorePanel-21">
+            <div className="sh-SkillStorePanel-22">
               {s.name}
-              {s.version && (
-                <span
-                  style={{
-                    fontSize: tokens.text.xs.size,
-                    color: dark.textMuted,
-                    fontWeight: tokens.weight.regular,
-                  }}
-                >
-                  v{s.version}
-                </span>
-              )}
+              {s.version && <span className="sh-SkillStorePanel-23">v{s.version}</span>}
             </div>
-            {s.description && (
-              <div
-                style={{
-                  fontSize: tokens.text.sm.size,
-                  color: dark.textMuted,
-                  marginTop: 2,
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  display: "-webkit-box",
-                  WebkitLineClamp: 2,
-                  WebkitBoxOrient: "vertical",
-                }}
-              >
-                {s.description}
-              </div>
-            )}
+            {s.description && <div className="sh-SkillStorePanel-24">{s.description}</div>}
           </div>
           {s.scope === "builtin" ? (
-            <span style={{ fontSize: tokens.text.xs.size, color: tokens.color.text.faint }}>
-              内置
-            </span>
+            <span className="sh-SkillStorePanel-25">内置</span>
           ) : (
             <button
               type="button"
-              className="bp-btn-secondary"
+              className="bp-btn-secondary sh-SkillStorePanel-26"
               onClick={() => onUninstall(s)}
-              style={{
-                ...buttonStyle("secondary", "sm"),
-                color: tokens.color.danger.bg,
-                borderColor: tokens.color.danger.border,
-              }}
             >
               卸载
             </button>
@@ -774,39 +591,13 @@ const MarketplaceList: React.FC<{
       />
     );
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: tokens.space.sm }}>
+    <div className="sh-SkillStorePanel-19">
       {skills.map((s) => (
-        <div
-          key={s.source_url}
-          className="bp-card"
-          style={{
-            ...cardStyle,
-            display: "flex",
-            alignItems: "flex-start",
-            gap: tokens.space.md,
-          }}
-        >
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div
-              style={{
-                fontSize: tokens.text.md.size,
-                fontWeight: tokens.weight.semibold,
-                color: dark.text,
-              }}
-            >
+        <div key={s.source_url} className="bp-card sh-SkillStorePanel-27">
+          <div className="sh-SkillStorePanel-21">
+            <div className="sh-SkillStorePanel-28">
               {s.name}
-              {s.author && (
-                <span
-                  style={{
-                    fontSize: tokens.text.xs.size,
-                    color: dark.textMuted,
-                    fontWeight: tokens.weight.regular,
-                    marginLeft: tokens.space.xs,
-                  }}
-                >
-                  · {s.author}
-                </span>
-              )}
+              {s.author && <span className="sh-SkillStorePanel-29">· {s.author}</span>}
             </div>
             {/* Marketplace cards: clamp to 4 lines so a long description
                 (e.g. docx skill ships ~1500 chars of "Triggers include …
@@ -814,42 +605,12 @@ const MarketplaceList: React.FC<{
                 expand the card to fill the entire scroll viewport,
                 hiding the rest of the list. InstalledList already does
                 this at line ~510. Keep both in sync. */}
-            <div
-              style={{
-                fontSize: tokens.text.sm.size,
-                color: dark.textMuted,
-                marginTop: 4,
-                lineHeight: 1.5,
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                display: "-webkit-box",
-                WebkitLineClamp: 4,
-                WebkitBoxOrient: "vertical",
-              }}
-              title={s.description}
-            >
+            <div className="sh-SkillStorePanel-30" title={s.description}>
               {s.description}
             </div>
-            <div
-              style={{
-                fontSize: tokens.text.xs.size,
-                color: dark.textFaint,
-                marginTop: 6,
-                fontFamily: tokens.font.mono,
-                wordBreak: "break-all",
-              }}
-            >
-              {s.source_url}
-            </div>
+            <div className="sh-SkillStorePanel-31">{s.source_url}</div>
             {(s.permission_categories || []).length > 0 && (
-              <div
-                style={{
-                  marginTop: tokens.space.sm,
-                  display: "flex",
-                  gap: tokens.space.xs,
-                  flexWrap: "wrap",
-                }}
-              >
+              <div className="sh-SkillStorePanel-32">
                 {(s.permission_categories || []).map((c) => (
                   <span
                     key={c}
@@ -863,9 +624,8 @@ const MarketplaceList: React.FC<{
           </div>
           <button
             type="button"
-            className="bp-btn-primary"
+            className="bp-btn-primary sh-SkillStorePanel-33"
             onClick={() => onInstall(s)}
-            style={buttonStyle("primary", "sm")}
           >
             安装
           </button>
@@ -884,47 +644,27 @@ const AddByUrl: React.FC<{
   disabled: boolean;
 }> = ({ value, onChange, onSubmit, disabled }) => (
   <div>
-    <div
-      style={{
-        ...bannerStyle("info"),
-        marginBottom: tokens.space.md,
-        fontSize: tokens.text.sm.size,
-      }}
-    >
+    <div className="sh-SkillStorePanel-34">
       支持以下 GitHub 形式：
-      <ul
-        style={{
-          margin: `${tokens.space.xs}px 0 0`,
-          paddingLeft: tokens.space.lg,
-          fontFamily: tokens.font.mono,
-          fontSize: tokens.text.xs.size,
-        }}
-      >
+      <ul className="sh-SkillStorePanel-35">
         <li>github:owner/repo</li>
         <li>github:owner/repo/tree/branch/subpath</li>
         <li>https://github.com/owner/repo</li>
       </ul>
     </div>
     <input
-      className="bp-input"
+      className="bp-input sh-SkillStorePanel-36"
       type="text"
       value={value}
       onChange={(e) => onChange(e.target.value)}
       placeholder="github:anthropics/skills/tree/main/skills/algorithmic-art"
-      style={inputStyle}
       onKeyDown={(e) => {
         if (e.key === "Enter" && !disabled && value.trim()) {
           onSubmit();
         }
       }}
     />
-    <div
-      style={{
-        marginTop: tokens.space.md,
-        display: "flex",
-        justifyContent: "flex-end",
-      }}
-    >
+    <div className="sh-SkillStorePanel-37">
       <button
         type="button"
         className="bp-btn-primary"
@@ -948,19 +688,7 @@ const ConfirmModal: React.FC<{
 }> = ({ staged, sensitive, onApprove, onCancel }) => {
   const dangerous = sensitive.length > 0;
   return (
-    <div
-      style={{
-        position: "absolute",
-        inset: 0,
-        background: backdropStyle.background,
-        backdropFilter: "blur(3px)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 10,
-        animation: `bp-fade-in ${tokens.duration.base}ms ${tokens.easing.out}`,
-      }}
-    >
+    <div className="sh-SkillStorePanel-38">
       <div
         style={{
           ...surfaceModal,
@@ -971,72 +699,29 @@ const ConfirmModal: React.FC<{
           animation: `bp-pop-in ${tokens.duration.base}ms ${tokens.easing.out}`,
         }}
       >
-        <div
-          style={{
-            fontSize: tokens.text.xs.size,
-            color: dark.textMuted,
-            fontWeight: tokens.weight.medium,
-            marginBottom: 2,
-          }}
-        >
-          确认安装
-        </div>
-        <h3
-          style={{
-            margin: 0,
-            fontSize: tokens.text.lg.size,
-            fontWeight: tokens.weight.semibold,
-            color: dark.text,
-          }}
-        >
-          全局安装 {staged.members.length} 个 Skill
-        </h3>
-        <p
-          style={{
-            fontSize: tokens.text.md.size,
-            color: dark.textMuted,
-            marginTop: tokens.space.sm,
-            marginBottom: tokens.space.sm,
-            lineHeight: 1.55,
-          }}
-        >
+        <div className="sh-SkillStorePanel-39">确认安装</div>
+        <h3 className="sh-SkillStorePanel-40">全局安装 {staged.members.length} 个 Skill</h3>
+        <p className="sh-SkillStorePanel-41">
           安装后可在所有会话中使用；实际工具执行仍遵循权限与可用性策略。
         </p>
-        <div
-          style={{
-            ...bannerStyle("info"),
-            fontSize: tokens.text.xs.size,
-            fontFamily: tokens.font.mono,
-            wordBreak: "break-all",
-            marginBottom: tokens.space.sm,
-          }}
-        >
+        <div className="sh-SkillStorePanel-42">
           <div>{staged.repository_url}</div>
           <div>commit: {staged.resolved_commit || "(未提供)"}</div>
           <div>digest: {staged.digest || "(未提供)"}</div>
           {staged.expires_at ? <div>expires: {String(staged.expires_at)}</div> : null}
         </div>
-        <div
-          aria-label="待安装 Skill 清单"
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: tokens.space.xs,
-            maxHeight: 220,
-            overflow: "auto",
-          }}
-        >
+        <div aria-label="待安装 Skill 清单" className="sh-SkillStorePanel-43">
           {staged.members.map((member) => (
             <div
               key={`${member.name}:${member.manifest_hash || member.content_hash || ""}`}
-              style={cardStyle}
+              className="sh-SkillStorePanel-44"
             >
               <strong>{member.name}</strong>
               {member.description ? (
-                <div style={{ color: dark.textMuted, marginTop: 2 }}>{member.description}</div>
+                <div className="sh-SkillStorePanel-45">{member.description}</div>
               ) : null}
               {(member.permission_categories || []).length ? (
-                <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 6 }}>
+                <div className="sh-SkillStorePanel-46">
                   {member.permission_categories.map((category) => (
                     <span
                       key={category}
@@ -1051,63 +736,24 @@ const ConfirmModal: React.FC<{
           ))}
         </div>
         {dangerous && (
-          <div
-            style={{
-              ...bannerStyle("error"),
-              display: "flex",
-              alignItems: "flex-start",
-              gap: 7,
-            }}
-          >
+          <div className="sh-SkillStorePanel-47">
             <Icon name="alert" size={15} style={{ marginTop: 1, flexShrink: 0 }} />
             <span>
               该技能请求敏感权限：
-              <strong style={{ marginLeft: 4 }}>{sensitive.join(", ")}</strong>
+              <strong className="sh-SkillStorePanel-48">{sensitive.join(", ")}</strong>
               。请确认来源可信。
             </span>
           </div>
         )}
-        <details style={{ marginTop: tokens.space.md, fontSize: tokens.text.sm.size }}>
-          <summary
-            style={{
-              cursor: "pointer",
-              WebkitUserSelect: "none",
-              userSelect: "none",
-              color: dark.textMuted,
-            }}
-          >
-            查看冻结安装摘要
-          </summary>
-          <pre
-            style={{
-              background: dark.inset,
-              border: `1px solid ${dark.insetBorder}`,
-              color: dark.textMuted,
-              padding: tokens.space.sm,
-              borderRadius: tokens.radius.md,
-              fontFamily: tokens.font.mono,
-              fontSize: tokens.text.xs.size,
-              maxHeight: 200,
-              overflow: "auto",
-              margin: `${tokens.space.xs}px 0 0`,
-            }}
-          >
-            {JSON.stringify(staged, null, 2)}
-          </pre>
+        <details className="sh-SkillStorePanel-49">
+          <summary className="sh-SkillStorePanel-50">查看冻结安装摘要</summary>
+          <pre className="sh-SkillStorePanel-51">{JSON.stringify(staged, null, 2)}</pre>
         </details>
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "flex-end",
-            gap: tokens.space.sm,
-            marginTop: tokens.space.lg,
-          }}
-        >
+        <div className="sh-SkillStorePanel-52">
           <button
             type="button"
-            className="bp-btn-secondary"
+            className="bp-btn-secondary sh-SkillStorePanel-53"
             onClick={onCancel}
-            style={buttonStyle("secondary", "md")}
           >
             取消
           </button>

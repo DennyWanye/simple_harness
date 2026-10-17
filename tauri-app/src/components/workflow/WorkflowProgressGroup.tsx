@@ -12,6 +12,7 @@ import type { CapabilityOperation, CapabilityOperationAction } from "../../types
 import type { WorkflowTaskTrace } from "../AgentActivityMessage";
 import { CapabilityOperationCard } from "../CapabilityOperationCard";
 import { DurableTaskSteps } from "./DurableTaskSteps";
+import "./WorkflowProgressGroup.styles.css";
 
 export interface WorkflowProgressGroupProps {
   runId: string;
@@ -525,21 +526,12 @@ export function WorkflowProgressGroup({
         data-role="workflow_group"
         data-status={status}
         aria-label={`${name}总体进度`}
-        style={{
-          alignSelf: "stretch",
-          flexShrink: 0,
-          display: "grid",
-          gap: 4,
-          padding: "7px 2px",
-          borderBottom: "1px solid rgba(148, 163, 184, 0.12)",
-        }}
+        className="sh-WorkflowProgressGroup-1"
       >
-        <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-          <strong style={{ color: "#e8edf6", fontSize: 12.5 }}>{name}</strong>
+        <div className="sh-WorkflowProgressGroup-2">
+          <strong className="sh-WorkflowProgressGroup-3">{name}</strong>
           <span style={{ color: tone.accent, fontSize: 10.5 }}>{tone.label}</span>
-          <span style={{ marginLeft: "auto", color: "#7f8a99", fontSize: 10.5 }}>
-            {elapsedLabel}
-          </span>
+          <span className="sh-WorkflowProgressGroup-4">{elapsedLabel}</span>
         </div>
         <DurableTaskSteps trace={taskTrace} />
       </section>
@@ -553,23 +545,13 @@ export function WorkflowProgressGroup({
         data-role="workflow_group"
         data-status={status}
         aria-label={`${name}总体进度`}
-        style={{
-          alignSelf: "stretch",
-          flexShrink: 0,
-          display: "grid",
-          gap: 3,
-          padding: "7px 2px",
-          borderBottom: "1px solid rgba(148, 163, 184, 0.12)",
-        }}
+        className="sh-WorkflowProgressGroup-5"
       >
-        <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-          <strong style={{ color: "#e8edf6", fontSize: 12.5 }}>{name}</strong>
+        <div className="sh-WorkflowProgressGroup-2">
+          <strong className="sh-WorkflowProgressGroup-3">{name}</strong>
           <span style={{ color: tone.accent, fontSize: 10.5 }}>{tone.label}</span>
           {summary?.workflow_delivery ? (
-            <span
-              data-testid="workflow-delivery-status"
-              style={{ color: "#7f8a99", fontSize: 10.5 }}
-            >
+            <span data-testid="workflow-delivery-status" className="sh-WorkflowProgressGroup-6">
               {DELIVERY_LABELS[summary.workflow_delivery.status]}
             </span>
           ) : null}
@@ -588,7 +570,7 @@ export function WorkflowProgressGroup({
           aria-valuemax={100}
           aria-valuenow={percent}
           aria-valuetext={`${tone.label}，${currentStage}，${completed}/${total}，${elapsedLabel}`}
-          style={{ color: "#7f8a99", fontSize: 10.5 }}
+          className="sh-WorkflowProgressGroup-6"
         >
           {completed}/{total} · {elapsedLabel} · {percent}%
         </span>
@@ -615,9 +597,9 @@ export function WorkflowProgressGroup({
         background: "rgba(18, 24, 35, 0.92)",
       }}
     >
-      <div style={{ padding: "11px 13px", display: "grid", gap: 4 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-          <strong style={titleStyle}>{name}</strong>
+      <div className="sh-WorkflowProgressGroup-7">
+        <div className="sh-WorkflowProgressGroup-8">
+          <strong className="sh-WorkflowProgressGroup-9">{name}</strong>
           <span style={{ ...statusStyle, color: tone.accent, background: tone.soft }}>
             {tone.label}
           </span>
@@ -636,7 +618,7 @@ export function WorkflowProgressGroup({
           aria-valuemax={100}
           aria-valuenow={percent}
           aria-valuetext={`${tone.label}，${currentStage}，${completed}/${total}，${elapsedLabel}`}
-          style={progressTrackStyle}
+          className="sh-WorkflowProgressGroup-10"
         >
           <div
             style={{
@@ -648,7 +630,7 @@ export function WorkflowProgressGroup({
             }}
           />
         </div>
-        <div style={footerStyle}>
+        <div className="sh-WorkflowProgressGroup-11">
           <span>
             {completed}/{total} · {elapsedLabel}
           </span>
@@ -664,7 +646,7 @@ export function WorkflowProgressGroup({
               aria-expanded={allExpanded}
               aria-controls={detailsId}
               onClick={toggleAll}
-              style={toggleStyle}
+              className="sh-WorkflowProgressGroup-12"
             >
               {allExpanded ? "收起阶段" : `查看阶段 (${orderedStages.length})`}
             </button>
@@ -678,7 +660,7 @@ export function WorkflowProgressGroup({
           />
         ) : null}
         {v5 ? (
-          <div data-testid="workflow-v5-overview" style={v5OverviewStyle}>
+          <div data-testid="workflow-v5-overview" className="sh-WorkflowProgressGroup-13">
             <span>
               核心覆盖 {v5.dimension_counts.core_covered}/{v5.dimension_counts.core_total}
             </span>
@@ -722,9 +704,9 @@ export function WorkflowProgressGroup({
           <div
             data-testid="workflow-v7-children"
             aria-label={`调研子方向，共 ${v7Children.length} 个`}
-            style={{ display: "grid", gap: 6, marginTop: 4 }}
+            className="sh-WorkflowProgressGroup-14"
           >
-            <strong style={{ color: "#dbeafe", fontSize: 12 }}>
+            <strong className="sh-WorkflowProgressGroup-15">
               主 Agent 拆出的 {v7Children.length} 个子方向
             </strong>
             {v7Children.map((child) => (
@@ -732,16 +714,9 @@ export function WorkflowProgressGroup({
                 key={child.child_id}
                 data-testid={`workflow-v7-child-${child.child_id}`}
                 data-status={child.status}
-                style={{
-                  display: "grid",
-                  gap: 2,
-                  padding: "6px 8px",
-                  borderRadius: 6,
-                  background: "rgba(30,41,59,0.72)",
-                  border: "1px solid rgba(148,163,184,0.18)",
-                }}
+                className="sh-WorkflowProgressGroup-16"
               >
-                <span title={child.question} style={{ color: "#e2e8f0", fontSize: 12 }}>
+                <span title={child.question} className="sh-WorkflowProgressGroup-17">
                   {child.question}
                 </span>
                 <span
@@ -758,7 +733,7 @@ export function WorkflowProgressGroup({
           </div>
         ) : null}
         {retryAvailable && status !== "failed" ? (
-          <div aria-live="polite" style={controlStyle}>
+          <div aria-live="polite" className="sh-WorkflowProgressGroup-18">
             <span>
               {v5?.control_status === "accepted" || v5?.control_status === "observed"
                 ? `正在收敛（${v5.control_status}，剩余 ${settleRemaining ?? 0} 秒）`
@@ -768,7 +743,7 @@ export function WorkflowProgressGroup({
               type="button"
               onClick={retry}
               disabled={retryState.status === "pending" || retryState.status === "resolved"}
-              style={retryButtonStyle}
+              className="sh-WorkflowProgressGroup-19"
             >
               {retryState.status === "pending"
                 ? "正在提交…"
@@ -786,7 +761,7 @@ export function WorkflowProgressGroup({
           </div>
         ) : null}
         {status === "failed" ? (
-          <div role="alert" aria-live="assertive" style={failureSummaryStyle}>
+          <div role="alert" aria-live="assertive" className="sh-WorkflowProgressGroup-20">
             <strong>{summary?.workflow_error || "调研未能完成"}</strong>
             {summary?.workflow_metrics ? (
               <span>
@@ -807,7 +782,7 @@ export function WorkflowProgressGroup({
                 type="button"
                 onClick={retry}
                 disabled={retryState.status === "pending" || retryState.status === "resolved"}
-                style={retryButtonStyle}
+                className="sh-WorkflowProgressGroup-19"
               >
                 {retryState.status === "pending"
                   ? "正在创建新调研…"
@@ -826,13 +801,13 @@ export function WorkflowProgressGroup({
       </div>
 
       {skippedStages.length > 0 ? (
-        <div style={skippedStyle}>
+        <div className="sh-WorkflowProgressGroup-21">
           <button
             type="button"
             aria-expanded={skippedExpanded}
             aria-controls={safeDomId("workflow-skipped", runId)}
             onClick={() => setSkippedExpanded((value) => !value)}
-            style={skippedButtonStyle}
+            className="sh-WorkflowProgressGroup-22"
           >
             <span aria-hidden="true">⊘</span>
             <strong>后续 {skippedStages.length} 步未执行</strong>
@@ -841,7 +816,7 @@ export function WorkflowProgressGroup({
           <div
             id={safeDomId("workflow-skipped", runId)}
             hidden={!skippedExpanded}
-            style={skippedListStyle}
+            className="sh-WorkflowProgressGroup-23"
           >
             {skippedStages.map((stageId) => (
               <span key={stageId}>{STAGE_LABELS[stageId] || stageId}</span>
@@ -864,7 +839,11 @@ export function WorkflowProgressGroup({
             const rowDetailsId = safeDomId(`workflow-stage-detail-${runId}`, row.key);
             const message = row.message;
             return (
-              <div key={row.key} data-testid={`timeline-row-${row.key}`} style={timelineItemStyle}>
+              <div
+                key={row.key}
+                data-testid={`timeline-row-${row.key}`}
+                className="sh-WorkflowProgressGroup-24"
+              >
                 <button
                   type="button"
                   aria-expanded={expanded}
@@ -883,13 +862,13 @@ export function WorkflowProgressGroup({
                   >
                     {rowTone.icon}
                   </span>
-                  <span style={timelineTextStyle}>
-                    <span style={timelineHeadingStyle}>
+                  <span className="sh-WorkflowProgressGroup-25">
+                    <span className="sh-WorkflowProgressGroup-26">
                       <strong>{row.label}</strong>
                       <span style={{ color: rowTone.color }}>{rowTone.label}</span>
                     </span>
-                    <span style={timelineActionStyle}>{row.action}</span>
-                    <span title={row.result} style={timelineResultStyle}>
+                    <span className="sh-WorkflowProgressGroup-27">{row.action}</span>
+                    <span title={row.result} className="sh-WorkflowProgressGroup-28">
                       {row.result}
                     </span>
                     {row.reasons.length > 0 ? (
@@ -898,7 +877,7 @@ export function WorkflowProgressGroup({
                       </span>
                     ) : null}
                   </span>
-                  <span aria-hidden="true" style={{ color: "#8492a6", fontSize: 11 }}>
+                  <span aria-hidden="true" className="sh-WorkflowProgressGroup-29">
                     {expanded ? "▴" : "▾"}
                   </span>
                 </button>
@@ -910,19 +889,19 @@ export function WorkflowProgressGroup({
                         : undefined
                     }
                     data-degraded={row.status === "degraded" ? "true" : "false"}
-                    style={stageBubbleStyle}
+                    className="sh-WorkflowProgressGroup-30"
                   >
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                      <strong style={{ color: "#dce8f5", fontSize: 11.5 }}>{row.action}</strong>
-                      <span style={{ color: "#8492a6", fontSize: 10 }}>
+                    <div className="sh-WorkflowProgressGroup-31">
+                      <strong className="sh-WorkflowProgressGroup-32">{row.action}</strong>
+                      <span className="sh-WorkflowProgressGroup-33">
                         {message.workflow_duration_ms === undefined
                           ? rowTone.label
                           : formatDuration(message.workflow_duration_ms)}
                       </span>
                     </div>
-                    <div style={stageSummaryStyle}>{row.result}</div>
+                    <div className="sh-WorkflowProgressGroup-34">{row.result}</div>
                     {message.workflow_v5 ? (
-                      <dl style={v5DetailsStyle}>
+                      <dl className="sh-WorkflowProgressGroup-35">
                         <dt>做了什么</dt>
                         <dd>{message.workflow_v5.action}</dd>
                         <dt>得到什么</dt>
@@ -948,10 +927,10 @@ export function WorkflowProgressGroup({
                       </dl>
                     ) : null}
                     {row.reasons.length > 0 ? (
-                      <div style={stageReasonStyle}>{row.reasons.join("；")}</div>
+                      <div className="sh-WorkflowProgressGroup-36">{row.reasons.join("；")}</div>
                     ) : null}
                     {message.workflow_metrics ? (
-                      <div style={metricsStyle}>
+                      <div className="sh-WorkflowProgressGroup-37">
                         {Object.entries(message.workflow_metrics)
                           .filter(([key]) => key in METRIC_LABELS)
                           .map(([key, value]) => (
@@ -961,7 +940,7 @@ export function WorkflowProgressGroup({
                           ))}
                       </div>
                     ) : null}
-                    <div style={stageFooterStyle}>
+                    <div className="sh-WorkflowProgressGroup-38">
                       <span>{rowTone.label}</span>
                       {message.workflow_next_stage ? (
                         <span>下一步：{message.workflow_next_stage}</span>
@@ -978,15 +957,6 @@ export function WorkflowProgressGroup({
   );
 }
 
-const titleStyle: CSSProperties = {
-  minWidth: 0,
-  flex: 1,
-  overflow: "hidden",
-  textOverflow: "ellipsis",
-  whiteSpace: "nowrap",
-  color: "#e8edf6",
-  fontSize: 12.5,
-};
 const statusStyle: CSSProperties = {
   flexShrink: 0,
   padding: "2px 7px",
@@ -1003,30 +973,6 @@ const detailStyle: CSSProperties = {
   fontSize: 11.5,
   lineHeight: "18px",
 };
-const progressTrackStyle: CSSProperties = {
-  height: 6,
-  alignSelf: "center",
-  borderRadius: 3,
-  overflow: "hidden",
-  background: "rgba(148,163,184,0.18)",
-};
-const footerStyle: CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  gap: 8,
-  color: "#7f8a99",
-  fontSize: 10.5,
-  lineHeight: "18px",
-};
-const toggleStyle: CSSProperties = {
-  marginLeft: "auto",
-  padding: 0,
-  border: 0,
-  background: "transparent",
-  color: "#8bcdf4",
-  font: "inherit",
-  cursor: "pointer",
-};
 const timelineStyle: CSSProperties = {
   display: "grid",
   gap: 6,
@@ -1035,7 +981,6 @@ const timelineStyle: CSSProperties = {
   padding: "0 10px 10px",
   scrollbarWidth: "thin",
 };
-const timelineItemStyle: CSSProperties = { display: "grid", gap: 5 };
 const timelineButtonStyle: CSSProperties = {
   width: "100%",
   display: "flex",
@@ -1060,122 +1005,9 @@ const timelineIconStyle: CSSProperties = {
   fontWeight: 700,
   fontSize: 11,
 };
-const timelineTextStyle: CSSProperties = { minWidth: 0, flex: 1, display: "grid", gap: 2 };
-const timelineHeadingStyle: CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "space-between",
-  gap: 8,
-  color: "#dce8f5",
-  fontSize: 11.5,
-};
-const timelineActionStyle: CSSProperties = { color: "#b9c2d0", fontSize: 11 };
-const timelineResultStyle: CSSProperties = {
-  color: "#91a1b5",
-  fontSize: 10.5,
-  overflow: "hidden",
-  textOverflow: "ellipsis",
-  whiteSpace: "nowrap",
-};
 const timelineReasonStyle: CSSProperties = {
   fontSize: 10.5,
   overflow: "hidden",
   textOverflow: "ellipsis",
   whiteSpace: "nowrap",
-};
-const stageBubbleStyle: CSSProperties = {
-  display: "grid",
-  gap: 5,
-  margin: "0 4px",
-  padding: "9px 10px",
-  borderRadius: 7,
-  border: "1px solid rgba(148,163,184,0.2)",
-  background: "rgba(255,255,255,0.04)",
-};
-const stageSummaryStyle: CSSProperties = { color: "#b9c2d0", fontSize: 11, lineHeight: 1.45 };
-const stageReasonStyle: CSSProperties = { color: "#fb923c", fontSize: 10.5, lineHeight: 1.4 };
-const failureSummaryStyle: CSSProperties = {
-  display: "flex",
-  flexWrap: "wrap",
-  alignItems: "center",
-  gap: 8,
-  paddingTop: 3,
-  color: "#fca5a5",
-  fontSize: 10.5,
-};
-const retryButtonStyle: CSSProperties = {
-  border: "1px solid rgba(248,113,113,0.55)",
-  borderRadius: 5,
-  padding: "3px 8px",
-  background: "rgba(248,113,113,0.12)",
-  color: "#fecaca",
-  cursor: "pointer",
-  font: "inherit",
-};
-const skippedStyle: CSSProperties = {
-  display: "grid",
-  gap: 4,
-  margin: "0 10px 8px",
-  border: "1px solid rgba(248,113,113,0.3)",
-  borderRadius: 7,
-  background: "rgba(127,29,29,0.12)",
-};
-const skippedButtonStyle: CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "space-between",
-  gap: 8,
-  width: "100%",
-  padding: "7px 9px",
-  border: 0,
-  background: "transparent",
-  color: "#fca5a5",
-  cursor: "pointer",
-  font: "inherit",
-};
-const skippedListStyle: CSSProperties = {
-  display: "flex",
-  flexWrap: "wrap",
-  gap: 6,
-  padding: "0 9px 8px",
-  color: "#cbd5e1",
-  fontSize: 10.5,
-};
-const metricsStyle: CSSProperties = {
-  display: "flex",
-  flexWrap: "wrap",
-  gap: "3px 9px",
-  color: "#91a1b5",
-  fontSize: 10,
-};
-const stageFooterStyle: CSSProperties = {
-  display: "flex",
-  justifyContent: "space-between",
-  gap: 8,
-  color: "#8492a6",
-  fontSize: 10,
-};
-const v5OverviewStyle: CSSProperties = {
-  display: "flex",
-  flexWrap: "wrap",
-  gap: "4px 10px",
-  color: "#a9bad0",
-  fontSize: 10.5,
-  lineHeight: 1.45,
-};
-const controlStyle: CSSProperties = {
-  display: "flex",
-  flexWrap: "wrap",
-  alignItems: "center",
-  gap: 8,
-  color: "#b9c2d0",
-  fontSize: 10.5,
-};
-const v5DetailsStyle: CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "72px 1fr",
-  gap: "3px 8px",
-  margin: 0,
-  color: "#a9bad0",
-  fontSize: 10.5,
 };

@@ -1,0 +1,277 @@
+/* 生成文件，不要手改：src/components/ContextBreakdownModal.tsx 里静态内联样式的等价类（9I）。
+   重新生成：node scripts/code_quality/ts_inline_to_class.mjs convert src/components/ContextBreakdownModal.tsx */
+
+.sh-ContextBreakdownModal-1 {
+  min-height: 110px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 12px;
+  border: 1px dashed rgba(148,163,184,0.2);
+  border-radius: 7px;
+  color: #64748b;
+  font-size: 11px;
+}
+
+.sh-ContextBreakdownModal-2 {
+  margin-bottom: 12px;
+  padding: 8px;
+  border: 1px solid rgba(56,189,248,0.14);
+  border-radius: 7px;
+  background: rgba(2,6,23,0.54);
+}
+
+.sh-ContextBreakdownModal-3 {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.sh-ContextBreakdownModal-4 {
+  display: flex;
+  justify-content: center;
+  gap: 14px;
+  color: #94a3b8;
+  font-size: 9.5px;
+}
+
+.sh-ContextBreakdownModal-5 {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 4px;
+  border-radius: 50%;
+  background: #38bdf8;
+}
+
+.sh-ContextBreakdownModal-6 {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 4px;
+  border-radius: 50%;
+  background: #f59e0b;
+}
+
+.sh-ContextBreakdownModal-7 {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 4px;
+  border-radius: 50%;
+  background: #a855f7;
+}
+
+.sh-ContextBreakdownModal-8 {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.55);
+  display: grid;
+  place-items: center;
+  padding: 8px;
+  z-index: 1250;
+}
+
+.sh-ContextBreakdownModal-9 {
+  background: #0f172a;
+  color: #e2e8f0;
+  box-sizing: border-box;
+  padding: 16px;
+  border-radius: 8px;
+  width: min(94vw, 720px);
+  max-height: 90vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  border: 1px solid #1e293b;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  font-family: inherit;
+}
+
+.sh-ContextBreakdownModal-10 {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.sh-ContextBreakdownModal-11 {
+  min-width: 0;
+  flex: 1;
+}
+
+.sh-ContextBreakdownModal-12 {
+  margin: 0;
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sh-ContextBreakdownModal-13 {
+  color: #94a3b8;
+  font-weight: 400;
+}
+
+.sh-ContextBreakdownModal-14 {
+  font-size: 11px;
+  color: #94a3b8;
+  margin-top: 2px;
+}
+
+.sh-ContextBreakdownModal-15 {
+  max-width: 560px;
+  margin-top: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #64748b;
+  font-size: 10px;
+}
+
+.sh-ContextBreakdownModal-16 {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 4px;
+  flex-shrink: 0;
+}
+
+.sh-ContextBreakdownModal-17 {
+  margin-bottom: 12px;
+}
+
+.sh-ContextBreakdownModal-18 {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  margin-bottom: 4px;
+}
+
+.sh-ContextBreakdownModal-19 {
+  color: #94a3b8;
+}
+
+.sh-ContextBreakdownModal-20 {
+  position: relative;
+  height: 8px;
+  background: #1f2937;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.sh-ContextBreakdownModal-21 {
+  font-size: 10px;
+  color: #6b7280;
+  margin-top: 4px;
+  display: flex;
+  gap: 12px;
+}
+
+.sh-ContextBreakdownModal-22 {
+  color: #64748b;
+  font-size: 10px;
+  margin-top: 5px;
+}
+
+.sh-ContextBreakdownModal-23 {
+  border-top: 1px solid #374151;
+  padding-top: 12px;
+}
+
+.sh-ContextBreakdownModal-24 {
+  font-size: 12px;
+  color: #cbd5e1;
+  margin-bottom: 8px;
+}
+
+.sh-ContextBreakdownModal-25 {
+  font-size: 12px;
+  color: #cbd5e1;
+  margin-bottom: 8px;
+  display: flex;
+  justify-content: space-between;
+}
+
+.sh-ContextBreakdownModal-26 {
+  color: #94a3b8;
+  font-size: 10px;
+}
+
+.sh-ContextBreakdownModal-27 {
+  color: #94a3b8;
+  font-size: 12px;
+  padding: 12px;
+  text-align: center;
+}
+
+.sh-ContextBreakdownModal-28 {
+  color: #94a3b8;
+  font-size: 12px;
+  padding: 12px;
+}
+
+.sh-ContextBreakdownModal-29 {
+  display: flex;
+  height: 10px;
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 8px;
+  background: #1f2937;
+}
+
+.sh-ContextBreakdownModal-30 {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.sh-ContextBreakdownModal-31 {
+  background: #111827;
+  border-radius: 4px;
+  padding: 8px 10px;
+  border: 1px solid #1f2937;
+}
+
+.sh-ContextBreakdownModal-32 {
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: inherit;
+  cursor: pointer;
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.sh-ContextBreakdownModal-33 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.sh-ContextBreakdownModal-34 {
+  color: #94a3b8;
+  font-size: 11px;
+}
+
+.sh-ContextBreakdownModal-35 {
+  margin-top: 8px;
+}
+
+.sh-ContextBreakdownModal-36 {
+  margin: 0;
+  font-size: 10.5px;
+  color: #cbd5e1;
+  background: #0b1120;
+  padding: 8px;
+  border-radius: 3px;
+  max-height: 180px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}

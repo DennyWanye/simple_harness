@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "../Icon";
 import type { CheckpointView } from "./types";
+import "./ReplayDialog.styles.css";
 
 export type ReplayForkInput = {
   statePatch?: Record<string, unknown>;
@@ -79,12 +80,17 @@ export function ReplayDialog({
   return (
     <div
       role="presentation"
-      style={backdropStyle}
+      className="sh-ReplayDialog-1"
       onMouseDown={(event) => event.target === event.currentTarget && !submitting && onClose()}
     >
-      <div role="dialog" aria-modal="true" aria-label="从 Checkpoint 创建分支" style={dialogStyle}>
-        <div style={headerStyle}>
-          <span style={{ display: "flex", alignItems: "center", gap: 7 }}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="从 Checkpoint 创建分支"
+        className="sh-ReplayDialog-2"
+      >
+        <div className="sh-ReplayDialog-3">
+          <span className="sh-ReplayDialog-4">
             <Icon name="refresh" size={15} />
             <strong>创建分支运行</strong>
           </span>
@@ -94,25 +100,25 @@ export function ReplayDialog({
             title="关闭"
             disabled={submitting}
             onClick={onClose}
-            style={iconButtonStyle}
+            className="sh-ReplayDialog-5"
           >
             <Icon name="close" size={14} />
           </button>
         </div>
-        <div style={contentStyle}>
-          <div style={checkpointStyle}>
+        <div className="sh-ReplayDialog-6">
+          <div className="sh-ReplayDialog-7">
             <span>Checkpoint</span>
-            <strong style={{ overflowWrap: "anywhere" }}>{checkpoint.checkpoint_id}</strong>
+            <strong className="sh-ReplayDialog-8">{checkpoint.checkpoint_id}</strong>
             <span>
               {checkpoint.node_id ?? "root"} · {checkpoint.status}
             </span>
           </div>
           {!forkable && (
-            <div role="alert" style={errorStyle}>
+            <div role="alert" className="sh-ReplayDialog-9">
               {checkpoint.fork_reason ?? "这个 checkpoint 不能用于分支"}
             </div>
           )}
-          <label style={fieldStyle}>
+          <label className="sh-ReplayDialog-10">
             <span>状态补丁（可选）</span>
             <textarea
               aria-label="状态补丁"
@@ -121,11 +127,11 @@ export function ReplayDialog({
               onChange={(event) => setPatchText(event.target.value)}
               rows={5}
               placeholder={'{"values": {}}'}
-              style={textareaStyle}
+              className="sh-ReplayDialog-11"
             />
           </label>
           {requiresConfirmation && (
-            <label style={confirmStyle}>
+            <label className="sh-ReplayDialog-12">
               <input
                 type="checkbox"
                 checked={confirmEffects}
@@ -139,12 +145,12 @@ export function ReplayDialog({
             </label>
           )}
           {(validationError || error) && (
-            <div role="alert" style={errorStyle}>
+            <div role="alert" className="sh-ReplayDialog-9">
               {validationError ?? error}
             </div>
           )}
         </div>
-        <div style={footerStyle}>
+        <div className="sh-ReplayDialog-13">
           <button
             type="button"
             disabled={submitting}
@@ -167,103 +173,6 @@ export function ReplayDialog({
     </div>
   );
 }
-
-const backdropStyle: React.CSSProperties = {
-  position: "absolute",
-  inset: 0,
-  zIndex: 3,
-  display: "grid",
-  placeItems: "center",
-  padding: 12,
-  background: "rgba(2,6,23,0.72)",
-};
-const dialogStyle: React.CSSProperties = {
-  width: "min(460px,100%)",
-  maxHeight: "min(620px,100%)",
-  display: "grid",
-  gridTemplateRows: "auto minmax(0,1fr) auto",
-  overflow: "hidden",
-  border: "1px solid rgba(148,163,184,0.25)",
-  borderRadius: 8,
-  background: "#0b1120",
-  color: "#e5e7eb",
-  boxShadow: "0 18px 55px rgba(0,0,0,0.42)",
-};
-const headerStyle: React.CSSProperties = {
-  minHeight: 44,
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "space-between",
-  padding: "7px 10px",
-  borderBottom: "1px solid rgba(148,163,184,0.14)",
-  fontSize: 12,
-};
-const contentStyle: React.CSSProperties = {
-  minHeight: 0,
-  overflow: "auto",
-  display: "grid",
-  alignContent: "start",
-  gap: 10,
-  padding: 10,
-};
-const checkpointStyle: React.CSSProperties = {
-  display: "grid",
-  gap: 3,
-  paddingBottom: 9,
-  borderBottom: "1px solid rgba(148,163,184,0.12)",
-  color: "#94a3b8",
-  fontSize: 10,
-};
-const fieldStyle: React.CSSProperties = { display: "grid", gap: 6, color: "#cbd5e1", fontSize: 11 };
-const textareaStyle: React.CSSProperties = {
-  width: "100%",
-  minWidth: 0,
-  resize: "vertical",
-  padding: 8,
-  border: "1px solid rgba(148,163,184,0.25)",
-  borderRadius: 6,
-  background: "#0f172a",
-  color: "#e5e7eb",
-  fontFamily: "ui-monospace, monospace",
-  fontSize: 10,
-};
-const confirmStyle: React.CSSProperties = {
-  display: "flex",
-  alignItems: "flex-start",
-  gap: 8,
-  padding: 8,
-  borderLeft: "3px solid #f59e0b",
-  background: "rgba(120,53,15,0.15)",
-  color: "#fde68a",
-  fontSize: 11,
-};
-const errorStyle: React.CSSProperties = {
-  padding: 8,
-  borderLeft: "3px solid #f87171",
-  background: "rgba(127,29,29,0.15)",
-  color: "#fca5a5",
-  fontSize: 10,
-  overflowWrap: "anywhere",
-};
-const footerStyle: React.CSSProperties = {
-  minHeight: 48,
-  display: "flex",
-  justifyContent: "flex-end",
-  gap: 7,
-  padding: 8,
-  borderTop: "1px solid rgba(148,163,184,0.14)",
-};
-const iconButtonStyle: React.CSSProperties = {
-  width: 30,
-  height: 30,
-  display: "grid",
-  placeItems: "center",
-  border: "1px solid rgba(148,163,184,0.2)",
-  borderRadius: 6,
-  background: "transparent",
-  color: "#cbd5e1",
-  cursor: "pointer",
-};
 
 function buttonStyle(primary: boolean, disabled: boolean): React.CSSProperties {
   return {

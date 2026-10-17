@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 DennyWanye
 // SPDX-License-Identifier: BUSL-1.1
 
-import type { CSSProperties } from "react";
-
 import {
   capabilityOperationProgress,
   redactCapabilityText,
@@ -10,6 +8,7 @@ import {
   type CapabilityOperationAction,
 } from "../types/capabilities";
 import { dark } from "../theme/components";
+import "./CapabilityOperationCard.styles.css";
 
 interface Props {
   operation: CapabilityOperation;
@@ -63,7 +62,7 @@ function SafeText({ children, collapseAt = 180 }: { children: unknown; collapseA
   return (
     <details>
       <summary>{safe.slice(0, collapseAt)}…</summary>
-      <div style={{ marginTop: 6, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{safe}</div>
+      <div className="sh-CapabilityOperationCard-1">{safe}</div>
     </details>
   );
 }
@@ -94,10 +93,10 @@ export function CapabilityOperationCard({ operation, onAction, compact = false }
         boxShadow: compact ? undefined : "0 8px 24px rgba(0,0,0,0.20)",
       }}
     >
-      <header style={rowStyle}>
-        <div style={{ minWidth: 0 }}>
+      <header className="sh-CapabilityOperationCard-2">
+        <div className="sh-CapabilityOperationCard-3">
           <strong>{redactCapabilityText(operation.capability_name)}</strong>
-          <span style={mutedStyle}>
+          <span className="sh-CapabilityOperationCard-4">
             {KIND_LABEL[operation.kind]} · {PHASE_LABEL[operation.phase]}
           </span>
         </div>
@@ -121,12 +120,7 @@ export function CapabilityOperationCard({ operation, onAction, compact = false }
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={progress}
-        style={{
-          height: 6,
-          borderRadius: 999,
-          overflow: "hidden",
-          background: "rgba(148,163,184,0.22)",
-        }}
+        className="sh-CapabilityOperationCard-5"
       >
         <div
           style={{
@@ -138,7 +132,7 @@ export function CapabilityOperationCard({ operation, onAction, compact = false }
         />
       </div>
 
-      <div style={{ ...rowStyle, fontSize: 11 }}>
+      <div className="sh-CapabilityOperationCard-6">
         <span>{progress}%</span>
         <span data-testid="capability-authorization-state">
           {operation.authorization_mode === "auto"
@@ -151,8 +145,8 @@ export function CapabilityOperationCard({ operation, onAction, compact = false }
 
       {operation.current_validation ? (
         <section>
-          <strong style={labelStyle}>正在验证</strong>
-          <div style={bodyStyle}>
+          <strong className="sh-CapabilityOperationCard-7">正在验证</strong>
+          <div className="sh-CapabilityOperationCard-8">
             <SafeText>{operation.current_validation}</SafeText>
           </div>
         </section>
@@ -160,23 +154,23 @@ export function CapabilityOperationCard({ operation, onAction, compact = false }
 
       {operation.latest_result ? (
         <section>
-          <strong style={labelStyle}>最近结果</strong>
-          <div style={bodyStyle}>
+          <strong className="sh-CapabilityOperationCard-7">最近结果</strong>
+          <div className="sh-CapabilityOperationCard-8">
             <SafeText>{operation.latest_result}</SafeText>
           </div>
         </section>
       ) : null}
 
       {operation.error_message ? (
-        <section role="alert" style={{ color: "#fca5a5" }}>
-          <strong style={labelStyle}>
+        <section role="alert" className="sh-CapabilityOperationCard-9">
+          <strong className="sh-CapabilityOperationCard-7">
             {operation.error_code ? `失败：${operation.error_code}` : "操作失败"}
           </strong>
-          <div style={bodyStyle}>
+          <div className="sh-CapabilityOperationCard-8">
             <SafeText>{operation.error_message}</SafeText>
           </div>
           {operation.recovery_hint ? (
-            <div style={{ ...bodyStyle, marginTop: 4 }}>
+            <div className="sh-CapabilityOperationCard-10">
               恢复建议：<SafeText>{operation.recovery_hint}</SafeText>
             </div>
           ) : null}
@@ -185,14 +179,17 @@ export function CapabilityOperationCard({ operation, onAction, compact = false }
 
       {!compact && operation.artifacts.length > 0 ? (
         <section>
-          <strong style={labelStyle}>产物</strong>
-          <ul style={listStyle}>
+          <strong className="sh-CapabilityOperationCard-7">产物</strong>
+          <ul className="sh-CapabilityOperationCard-11">
             {operation.artifacts.map((artifact) => (
               <li key={artifact.artifact_id}>
                 <SafeText>{artifact.name}</SafeText>
                 {artifact.kind ? ` · ${redactCapabilityText(artifact.kind)}` : ""}
                 {artifact.ref ? (
-                  <code style={codeStyle}> {redactCapabilityText(artifact.ref)}</code>
+                  <code className="sh-CapabilityOperationCard-12">
+                    {" "}
+                    {redactCapabilityText(artifact.ref)}
+                  </code>
                 ) : null}
               </li>
             ))}
@@ -202,8 +199,8 @@ export function CapabilityOperationCard({ operation, onAction, compact = false }
 
       {!compact && operation.verification_receipts.length > 0 ? (
         <section>
-          <strong style={labelStyle}>Verification Receipt</strong>
-          <ul style={listStyle}>
+          <strong className="sh-CapabilityOperationCard-7">Verification Receipt</strong>
+          <ul className="sh-CapabilityOperationCard-11">
             {operation.verification_receipts.map((receipt) => (
               <li key={receipt.receipt_id}>
                 {receipt.status === "passed"
@@ -214,7 +211,10 @@ export function CapabilityOperationCard({ operation, onAction, compact = false }
                 {" · "}
                 <SafeText>{receipt.summary}</SafeText>
                 {receipt.ref ? (
-                  <code style={codeStyle}> {redactCapabilityText(receipt.ref)}</code>
+                  <code className="sh-CapabilityOperationCard-12">
+                    {" "}
+                    {redactCapabilityText(receipt.ref)}
+                  </code>
                 ) : null}
               </li>
             ))}
@@ -223,7 +223,7 @@ export function CapabilityOperationCard({ operation, onAction, compact = false }
       ) : null}
 
       {onAction && operation.available_actions.length > 0 ? (
-        <footer style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>
+        <footer className="sh-CapabilityOperationCard-13">
           {operation.available_actions.map((action) => (
             <button
               key={action}
@@ -246,37 +246,3 @@ export function CapabilityOperationCard({ operation, onAction, compact = false }
     </article>
   );
 }
-
-const rowStyle: CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "space-between",
-  gap: 10,
-};
-const mutedStyle: CSSProperties = {
-  display: "block",
-  marginTop: 2,
-  color: dark.textMuted,
-  fontSize: 11,
-};
-const labelStyle: CSSProperties = { display: "block", fontSize: 11 };
-const bodyStyle: CSSProperties = {
-  marginTop: 3,
-  fontSize: 12,
-  lineHeight: 1.5,
-  overflowWrap: "anywhere",
-};
-const listStyle: CSSProperties = {
-  display: "grid",
-  gap: 4,
-  margin: "5px 0 0",
-  paddingLeft: 18,
-  fontSize: 11,
-};
-const codeStyle: CSSProperties = {
-  padding: "1px 4px",
-  borderRadius: 4,
-  background: dark.inset,
-  color: dark.textMuted,
-  fontSize: 10,
-};

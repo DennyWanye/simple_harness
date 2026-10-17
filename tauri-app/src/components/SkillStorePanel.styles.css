@@ -1,0 +1,527 @@
+/* 生成文件，不要手改：src/components/SkillStorePanel.tsx 里静态内联样式的等价类（9I）。
+   重新生成：node scripts/code_quality/ts_inline_to_class.mjs convert src/components/SkillStorePanel.tsx */
+
+.sh-SkillStorePanel-1 {
+  padding: 16px 16px 0;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sh-space-md);
+}
+
+.sh-SkillStorePanel-2 {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+
+.sh-SkillStorePanel-3 {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 11px;
+  background: rgba(79,147,255,0.15);
+  color: #7fb0ff;
+  flex-shrink: 0;
+}
+
+.sh-SkillStorePanel-4 {
+  font-size: var(--sh-text-xs-size);
+  color: var(--sh-text-2, #A7A29A);
+  font-weight: var(--sh-weight-medium);
+  margin-bottom: 1px;
+}
+
+.sh-SkillStorePanel-5 {
+  margin: 0;
+  font-size: var(--sh-text-xl-size);
+  font-weight: var(--sh-weight-bold);
+  color: var(--sh-text, #E8E5DF);
+}
+
+.sh-SkillStorePanel-6 {
+  font-family: var(--sh-font-ui);
+  font-size: var(--sh-text-xs-size);
+  font-weight: var(--sh-weight-medium);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  height: var(--sh-control-height);
+  padding: 0 14px;
+  border: 1px solid transparent;
+  border-radius: var(--sh-radius-md);
+  cursor: pointer;
+  transition: background-color 120ms cubic-bezier(0.4, 0, 0.2, 1), border-color 120ms cubic-bezier(0.4, 0, 0.2, 1), color 120ms cubic-bezier(0.4, 0, 0.2, 1), opacity 120ms cubic-bezier(0.4, 0, 0.2, 1);
+  -webkit-user-select: none;
+  user-select: none;
+  opacity: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  white-space: nowrap;
+  box-sizing: border-box;
+  background: transparent;
+  color: var(--sh-text, #E8E5DF);
+  border-color: var(--sh-hairline-strong, rgba(255,255,255,0.14));
+  flex-shrink: 0;
+}
+
+.sh-SkillStorePanel-7 {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 9px;
+  background: var(--sh-card, #1C2026);
+  border: 1px solid var(--sh-hairline, rgba(255,255,255,0.075));
+  color: var(--sh-text-2, #A7A29A);
+  cursor: pointer;
+}
+
+.sh-SkillStorePanel-8 {
+  padding: 12px 16px 0;
+  display: flex;
+  gap: var(--sh-space-xs);
+}
+
+.sh-SkillStorePanel-9 {
+  margin: 12px 16px 0;
+}
+
+.sh-SkillStorePanel-10 {
+  font-family: var(--sh-font-ui);
+  font-size: var(--sh-text-sm-size);
+  font-weight: var(--sh-weight-medium);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  height: 28px;
+  padding: 4px;
+  border: 1px solid transparent;
+  border-radius: var(--sh-radius-md);
+  cursor: pointer;
+  transition: background-color 120ms cubic-bezier(0.4, 0, 0.2, 1), border-color 120ms cubic-bezier(0.4, 0, 0.2, 1), color 120ms cubic-bezier(0.4, 0, 0.2, 1), opacity 120ms cubic-bezier(0.4, 0, 0.2, 1);
+  -webkit-user-select: none;
+  user-select: none;
+  opacity: 0.65;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  white-space: nowrap;
+  box-sizing: border-box;
+  background: transparent;
+  color: currentColor;
+}
+
+.sh-SkillStorePanel-11 {
+  overflow: auto;
+  flex: 1;
+  padding: 12px 16px 16px;
+}
+
+.sh-SkillStorePanel-12 {
+  position: fixed;
+  inset: 0;
+  background: var(--sh-scrim, rgba(6,8,10,0.56));
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9000;
+  animation: bp-fade-in 160ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.sh-SkillStorePanel-13 {
+  padding: 32px 16px;
+  text-align: center;
+  color: var(--sh-text-2, #A7A29A);
+}
+
+.sh-SkillStorePanel-14 {
+  width: 56px;
+  height: 56px;
+  margin: 0 auto;
+  margin-bottom: var(--sh-space-md);
+  border-radius: 16px;
+  display: grid;
+  place-items: center;
+  background: var(--sh-card, #1C2026);
+  color: var(--sh-text-3, #736F69);
+}
+
+.sh-SkillStorePanel-15 {
+  font-size: var(--sh-text-md-size);
+  color: var(--sh-text, #E8E5DF);
+  font-weight: var(--sh-weight-medium);
+}
+
+.sh-SkillStorePanel-16 {
+  font-size: var(--sh-text-sm-size);
+  color: var(--sh-text-2, #A7A29A);
+  margin-top: var(--sh-space-xs);
+}
+
+.sh-SkillStorePanel-17 {
+  padding: 32px 16px;
+  text-align: center;
+  color: var(--sh-text-2, #A7A29A);
+  font-size: var(--sh-text-sm-size);
+}
+
+.sh-SkillStorePanel-18 {
+  margin-right: var(--sh-space-sm);
+}
+
+.sh-SkillStorePanel-19 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sh-space-sm);
+}
+
+.sh-SkillStorePanel-20 {
+  background: var(--sh-card, #1C2026);
+  border: 1px solid var(--sh-hairline, rgba(255,255,255,0.075));
+  border-radius: var(--sh-radius-lg);
+  padding: var(--sh-space-md);
+  transition: background-color 120ms cubic-bezier(0.4, 0, 0.2, 1), border-color 120ms cubic-bezier(0.4, 0, 0.2, 1), color 120ms cubic-bezier(0.4, 0, 0.2, 1), opacity 120ms cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex;
+  align-items: center;
+  gap: var(--sh-space-md);
+}
+
+.sh-SkillStorePanel-21 {
+  flex: 1;
+  min-width: 0;
+}
+
+.sh-SkillStorePanel-22 {
+  font-size: var(--sh-text-md-size);
+  font-weight: var(--sh-weight-semibold);
+  color: var(--sh-text, #E8E5DF);
+  display: flex;
+  align-items: center;
+  gap: var(--sh-space-xs);
+}
+
+.sh-SkillStorePanel-23 {
+  font-size: var(--sh-text-xs-size);
+  color: var(--sh-text-2, #A7A29A);
+  font-weight: var(--sh-weight-regular);
+}
+
+.sh-SkillStorePanel-24 {
+  font-size: var(--sh-text-sm-size);
+  color: var(--sh-text-2, #A7A29A);
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.sh-SkillStorePanel-25 {
+  font-size: var(--sh-text-xs-size);
+  color: var(--sh-text-3, #736F69);
+}
+
+.sh-SkillStorePanel-26 {
+  font-family: var(--sh-font-ui);
+  font-size: var(--sh-text-sm-size);
+  font-weight: var(--sh-weight-medium);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: var(--sh-radius-md);
+  cursor: pointer;
+  transition: background-color 120ms cubic-bezier(0.4, 0, 0.2, 1), border-color 120ms cubic-bezier(0.4, 0, 0.2, 1), color 120ms cubic-bezier(0.4, 0, 0.2, 1), opacity 120ms cubic-bezier(0.4, 0, 0.2, 1);
+  -webkit-user-select: none;
+  user-select: none;
+  opacity: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  white-space: nowrap;
+  box-sizing: border-box;
+  background: transparent;
+  color: var(--sh-danger, #D9645F);
+  border-color: var(--sh-hairline-strong, rgba(255,255,255,0.14));
+}
+
+.sh-SkillStorePanel-27 {
+  background: var(--sh-card, #1C2026);
+  border: 1px solid var(--sh-hairline, rgba(255,255,255,0.075));
+  border-radius: var(--sh-radius-lg);
+  padding: var(--sh-space-md);
+  transition: background-color 120ms cubic-bezier(0.4, 0, 0.2, 1), border-color 120ms cubic-bezier(0.4, 0, 0.2, 1), color 120ms cubic-bezier(0.4, 0, 0.2, 1), opacity 120ms cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sh-space-md);
+}
+
+.sh-SkillStorePanel-28 {
+  font-size: var(--sh-text-md-size);
+  font-weight: var(--sh-weight-semibold);
+  color: var(--sh-text, #E8E5DF);
+}
+
+.sh-SkillStorePanel-29 {
+  font-size: var(--sh-text-xs-size);
+  color: var(--sh-text-2, #A7A29A);
+  font-weight: var(--sh-weight-regular);
+  margin-left: var(--sh-space-xs);
+}
+
+.sh-SkillStorePanel-30 {
+  font-size: var(--sh-text-sm-size);
+  color: var(--sh-text-2, #A7A29A);
+  margin-top: 4px;
+  line-height: 1.5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+}
+
+.sh-SkillStorePanel-31 {
+  font-size: var(--sh-text-xs-size);
+  color: var(--sh-text-3, #736F69);
+  margin-top: 6px;
+  font-family: var(--sh-font-mono);
+  word-break: break-all;
+}
+
+.sh-SkillStorePanel-32 {
+  margin-top: var(--sh-space-sm);
+  display: flex;
+  gap: var(--sh-space-xs);
+  flex-wrap: wrap;
+}
+
+.sh-SkillStorePanel-33 {
+  font-family: var(--sh-font-ui);
+  font-size: var(--sh-text-sm-size);
+  font-weight: var(--sh-weight-semibold);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: var(--sh-radius-md);
+  cursor: pointer;
+  transition: background-color 120ms cubic-bezier(0.4, 0, 0.2, 1), border-color 120ms cubic-bezier(0.4, 0, 0.2, 1), color 120ms cubic-bezier(0.4, 0, 0.2, 1), opacity 120ms cubic-bezier(0.4, 0, 0.2, 1);
+  -webkit-user-select: none;
+  user-select: none;
+  opacity: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  white-space: nowrap;
+  box-sizing: border-box;
+  background: var(--sh-accent, #7FB2AA);
+  color: var(--sh-on-accent, #0E1013);
+  border-color: transparent;
+}
+
+.sh-SkillStorePanel-34 {
+  font-family: var(--sh-font-ui);
+  font-size: var(--sh-text-sm-size);
+  line-height: var(--sh-text-base-lh);
+  padding: 8px 12px;
+  background: var(--sh-card, #1C2026);
+  color: var(--sh-info, #6E9FD1);
+  border: 1px solid var(--sh-hairline, rgba(255,255,255,0.075));
+  border-left: 2px solid var(--sh-info, #6E9FD1);
+  border-radius: var(--sh-radius-md);
+  margin-bottom: var(--sh-space-md);
+}
+
+.sh-SkillStorePanel-35 {
+  margin: 4px 0 0;
+  padding-left: var(--sh-space-lg);
+  font-family: var(--sh-font-mono);
+  font-size: var(--sh-text-xs-size);
+}
+
+.sh-SkillStorePanel-36 {
+  font-family: var(--sh-font-ui);
+  font-size: var(--sh-text-base-size);
+  width: 100%;
+  height: var(--sh-control-height);
+  padding: 0 12px;
+  border: 1px solid var(--sh-hairline-strong, rgba(255,255,255,0.14));
+  border-radius: var(--sh-radius-md);
+  outline: none;
+  background: var(--sh-card, #1C2026);
+  color: var(--sh-text, #E8E5DF);
+  transition: background-color 120ms cubic-bezier(0.4, 0, 0.2, 1), border-color 120ms cubic-bezier(0.4, 0, 0.2, 1), color 120ms cubic-bezier(0.4, 0, 0.2, 1), opacity 120ms cubic-bezier(0.4, 0, 0.2, 1);
+  box-sizing: border-box;
+}
+
+.sh-SkillStorePanel-37 {
+  margin-top: var(--sh-space-md);
+  display: flex;
+  justify-content: flex-end;
+}
+
+.sh-SkillStorePanel-38 {
+  position: absolute;
+  inset: 0;
+  background: var(--sh-scrim, rgba(6,8,10,0.56));
+  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  animation: bp-fade-in 160ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.sh-SkillStorePanel-39 {
+  font-size: var(--sh-text-xs-size);
+  color: var(--sh-text-2, #A7A29A);
+  font-weight: var(--sh-weight-medium);
+  margin-bottom: 2px;
+}
+
+.sh-SkillStorePanel-40 {
+  margin: 0;
+  font-size: var(--sh-text-lg-size);
+  font-weight: var(--sh-weight-semibold);
+  color: var(--sh-text, #E8E5DF);
+}
+
+.sh-SkillStorePanel-41 {
+  font-size: var(--sh-text-md-size);
+  color: var(--sh-text-2, #A7A29A);
+  margin-top: var(--sh-space-sm);
+  margin-bottom: var(--sh-space-sm);
+  line-height: 1.55;
+}
+
+.sh-SkillStorePanel-42 {
+  font-family: var(--sh-font-mono);
+  font-size: var(--sh-text-xs-size);
+  line-height: var(--sh-text-base-lh);
+  padding: 8px 12px;
+  background: var(--sh-card, #1C2026);
+  color: var(--sh-info, #6E9FD1);
+  border: 1px solid var(--sh-hairline, rgba(255,255,255,0.075));
+  border-left: 2px solid var(--sh-info, #6E9FD1);
+  border-radius: var(--sh-radius-md);
+  word-break: break-all;
+  margin-bottom: var(--sh-space-sm);
+}
+
+.sh-SkillStorePanel-43 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sh-space-xs);
+  max-height: 220px;
+  overflow: auto;
+}
+
+.sh-SkillStorePanel-44 {
+  background: var(--sh-card, #1C2026);
+  border: 1px solid var(--sh-hairline, rgba(255,255,255,0.075));
+  border-radius: var(--sh-radius-lg);
+  padding: var(--sh-space-md);
+  transition: background-color 120ms cubic-bezier(0.4, 0, 0.2, 1), border-color 120ms cubic-bezier(0.4, 0, 0.2, 1), color 120ms cubic-bezier(0.4, 0, 0.2, 1), opacity 120ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.sh-SkillStorePanel-45 {
+  color: var(--sh-text-2, #A7A29A);
+  margin-top: 2px;
+}
+
+.sh-SkillStorePanel-46 {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+
+.sh-SkillStorePanel-47 {
+  font-family: var(--sh-font-ui);
+  font-size: var(--sh-text-base-size);
+  line-height: var(--sh-text-base-lh);
+  padding: 8px 12px;
+  background: var(--sh-card, #1C2026);
+  color: var(--sh-danger, #D9645F);
+  border: 1px solid var(--sh-hairline, rgba(255,255,255,0.075));
+  border-left: 2px solid var(--sh-danger, #D9645F);
+  border-radius: var(--sh-radius-md);
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+}
+
+.sh-SkillStorePanel-48 {
+  margin-left: 4px;
+}
+
+.sh-SkillStorePanel-49 {
+  margin-top: var(--sh-space-md);
+  font-size: var(--sh-text-sm-size);
+}
+
+.sh-SkillStorePanel-50 {
+  cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+  color: var(--sh-text-2, #A7A29A);
+}
+
+.sh-SkillStorePanel-51 {
+  background: var(--sh-card, #1C2026);
+  border: 1px solid var(--sh-hairline, rgba(255,255,255,0.075));
+  color: var(--sh-text-2, #A7A29A);
+  padding: var(--sh-space-sm);
+  border-radius: var(--sh-radius-md);
+  font-family: var(--sh-font-mono);
+  font-size: var(--sh-text-xs-size);
+  max-height: 200px;
+  overflow: auto;
+  margin: 4px 0 0;
+}
+
+.sh-SkillStorePanel-52 {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--sh-space-sm);
+  margin-top: var(--sh-space-lg);
+}
+
+.sh-SkillStorePanel-53 {
+  font-family: var(--sh-font-ui);
+  font-size: var(--sh-text-base-size);
+  font-weight: var(--sh-weight-medium);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  height: var(--sh-control-height);
+  padding: 0 14px;
+  border: 1px solid transparent;
+  border-radius: var(--sh-radius-md);
+  cursor: pointer;
+  transition: background-color 120ms cubic-bezier(0.4, 0, 0.2, 1), border-color 120ms cubic-bezier(0.4, 0, 0.2, 1), color 120ms cubic-bezier(0.4, 0, 0.2, 1), opacity 120ms cubic-bezier(0.4, 0, 0.2, 1);
+  -webkit-user-select: none;
+  user-select: none;
+  opacity: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  white-space: nowrap;
+  box-sizing: border-box;
+  background: transparent;
+  color: var(--sh-text, #E8E5DF);
+  border-color: var(--sh-hairline-strong, rgba(255,255,255,0.14));
+}

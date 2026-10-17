@@ -9,18 +9,9 @@ import {
   type TaskScopeOpen,
   type TaskScopeViewKind,
 } from "../primary/taskScopeRequests";
-import { buttonStyle, dark } from "../theme/components";
+import "./PrimaryTaskPanel.styles.css";
 
 const pageInKinds: TaskScopeViewKind[] = ["PLAN", "DECISIONS", "RESUME", "EVIDENCE"];
-const pre = {
-  whiteSpace: "pre-wrap",
-  overflowWrap: "anywhere",
-  background: dark.card,
-  padding: 8,
-  borderRadius: 6,
-  maxHeight: 240,
-  overflowY: "auto",
-} as const;
 const short = (v: string) => (v.length > 16 ? `${v.slice(0, 8)}…${v.slice(-6)}` : v);
 const modeLabel: Record<string, string> = {
   manual: "Manual（手动）",
@@ -88,22 +79,13 @@ export function PrimaryTaskPanel({
     status = open ? statusSummary(open) : null,
     pkg = open?.resume_package;
   const card = (c: TaskScopeCandidate, extra?: ReactNode) => (
-    <li
-      key={c.scope_ref}
-      style={{
-        padding: 12,
-        marginBottom: 8,
-        background: dark.card,
-        borderRadius: 8,
-        overflowWrap: "anywhere",
-      }}
-    >
+    <li key={c.scope_ref} className="sh-PrimaryTaskPanel-1">
       <p>
         <strong>{c.title || "（无标题）"}</strong> · {c.status || "状态未知"}
         {c.project && ` · ${c.project}`}
       </p>
       {c.goal && <p>目标：{c.goal}</p>}
-      {c.snippet && <p style={{ color: dark.textMuted }}>{c.snippet}</p>}
+      {c.snippet && <p className="sh-PrimaryTaskPanel-2">{c.snippet}</p>}
       {extra}
       <details>
         <summary>任务标识</summary>
@@ -114,7 +96,7 @@ export function PrimaryTaskPanel({
         </p>
       </details>
       <button
-        style={buttonStyle("secondary", "sm")}
+        className="sh-PrimaryTaskPanel-3"
         disabled={state.busy}
         onClick={() => void client.open(c)}
       >
@@ -132,25 +114,25 @@ export function PrimaryTaskPanel({
           event.preventDefault();
           void client.search(draft);
         }}
-        style={{ display: "flex", gap: 8 }}
+        className="sh-PrimaryTaskPanel-4"
       >
         <input
           aria-label="搜索任务"
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
           placeholder="输入任务标题、目标或关键词"
-          style={{ flex: 1 }}
+          className="sh-PrimaryTaskPanel-5"
         />
         <button
           type="submit"
-          style={buttonStyle("secondary", "sm")}
+          className="sh-PrimaryTaskPanel-3"
           disabled={state.busy || !draft.trim()}
         >
           搜索
         </button>
         <button
           type="button"
-          style={buttonStyle("secondary", "sm")}
+          className="sh-PrimaryTaskPanel-3"
           disabled={state.busy}
           onClick={() => void client.list()}
         >
@@ -164,7 +146,7 @@ export function PrimaryTaskPanel({
         <>
           <p>候选 {state.search.candidates.length} 项（不授予任何权限）</p>
           {state.search.candidates.length === 0 && <p>没有匹配的任务候选。</p>}
-          <ul aria-label="任务候选" style={{ listStyle: "none", padding: 0 }}>
+          <ul aria-label="任务候选" className="sh-PrimaryTaskPanel-6">
             {state.search.candidates.map((c) => card(c))}
           </ul>
           {state.search.next_cursor && (
@@ -181,11 +163,11 @@ export function PrimaryTaskPanel({
         <>
           <p>最近任务 {state.list.items.length} 项（按最近更新排序，不授予任何权限）</p>
           {state.list.items.length === 0 && <p>当前身份还没有任务。</p>}
-          <ul aria-label="最近任务" style={{ listStyle: "none", padding: 0 }}>
+          <ul aria-label="最近任务" className="sh-PrimaryTaskPanel-6">
             {state.list.items.map((c) =>
               card(
                 c,
-                <p style={{ color: dark.textMuted }}>
+                <p className="sh-PrimaryTaskPanel-2">
                   更新于 {new Date(c.updated_at * 1000).toLocaleString()} · 修订{" "}
                   {c.canonical_revision} · 绑定：
                   {bindingLine(
@@ -208,9 +190,9 @@ export function PrimaryTaskPanel({
         </>
       )}
       {open && pkg && (
-        <article aria-label="任务详情" style={{ marginTop: 12 }}>
+        <article aria-label="任务详情" className="sh-PrimaryTaskPanel-7">
           <h3>已打开的任务（只读投影，不是执行授权）</h3>
-          <pre style={pre}>{pkg.read_views.README.content}</pre>
+          <pre className="sh-PrimaryTaskPanel-8">{pkg.read_views.README.content}</pre>
           {status && (
             <ul>
               <li>状态：{String(status.status ?? "未知")}</li>
@@ -229,7 +211,7 @@ export function PrimaryTaskPanel({
           )}
           <details>
             <summary>来源修订与凭证</summary>
-            <p style={{ overflowWrap: "anywhere" }}>
+            <p className="sh-PrimaryTaskPanel-9">
               来源 {open.source_ref} · 修订 {pkg.canonical_revision}
               <br />
               来源哈希 {open.source_hash}
@@ -251,11 +233,11 @@ export function PrimaryTaskPanel({
             {bindingLine(open.binding_summary, pkg.binding_set_revision, pkg.binding_receipt_hash)}
             Manual/Auto 由 Host 按可信 Run 模式记录，界面不提供切换。
           </p>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <div className="sh-PrimaryTaskPanel-10">
             {pageInKinds.map((kind) => (
               <button
                 key={kind}
-                style={buttonStyle("secondary", "sm")}
+                className="sh-PrimaryTaskPanel-3"
                 disabled={state.busy}
                 onClick={() => void client.loadView(kind)}
               >
@@ -273,14 +255,14 @@ export function PrimaryTaskPanel({
                     {kind} · 来源 {short(view.source_hash)} · 内容 {short(view.content_sha256)}
                     {kind === "EVIDENCE" && ` · 区块 ${view.block_count}`}
                   </h4>
-                  <pre style={pre}>{view.content}</pre>
+                  <pre className="sh-PrimaryTaskPanel-8">{view.content}</pre>
                 </section>
               );
             })}
           {state.views.EVIDENCE && (
             <div>
               <button
-                style={buttonStyle("secondary", "sm")}
+                className="sh-PrimaryTaskPanel-3"
                 disabled={state.busy}
                 onClick={() => void client.loadEvidenceGroups()}
               >
@@ -317,8 +299,8 @@ export function PrimaryTaskPanel({
               )}
               {state.evidencePage && (
                 <section aria-label="证据页">
-                  <p style={{ overflowWrap: "anywhere" }}>页 {state.evidencePage.page.page_id}</p>
-                  <pre style={pre}>{state.evidencePage.page.content}</pre>
+                  <p className="sh-PrimaryTaskPanel-9">页 {state.evidencePage.page.page_id}</p>
+                  <pre className="sh-PrimaryTaskPanel-8">{state.evidencePage.page.content}</pre>
                   {state.evidencePage.next_cursor && (
                     <button
                       disabled={state.busy}

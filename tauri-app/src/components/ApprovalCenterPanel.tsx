@@ -27,7 +27,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import type { ControlChannel } from "../ws/ControlChannel";
 import type { IncomingMessage, PendingPermissionItem } from "../types/messages";
-import { buttonStyle, dark, surfaceModal } from "../theme/components";
+import { dark } from "../theme/components";
 import { tokens } from "../theme/tokens";
 import {
   buildPendingListMessage,
@@ -37,6 +37,7 @@ import {
   pendingFromRequest,
 } from "./approvalMessages";
 import type { ApprovalDecision } from "./approvalMessages";
+import "./ApprovalCenterPanel.styles.css";
 
 // ----------------------------------------------------------------------
 // Component
@@ -116,50 +117,17 @@ export const ApprovalCenterPanel: React.FC<Props> = ({ channel, enabled = false,
   if (pending.length === 0) return null;
 
   return (
-    <div
-      role="region"
-      aria-label="审批中心"
-      style={{
-        ...surfaceModal,
-        position: "fixed",
-        right: tokens.space.lg,
-        bottom: tokens.space.lg,
-        width: 360,
-        maxWidth: "92vw",
-        maxHeight: "70vh",
-        overflow: "auto",
-        zIndex: 9998,
-        display: "flex",
-        flexDirection: "column",
-        gap: tokens.space.sm,
-        padding: tokens.space.md,
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: tokens.space.sm,
-        }}
-      >
-        <strong style={{ fontSize: tokens.text.md.size }}>
+    <div role="region" aria-label="审批中心" className="sh-ApprovalCenterPanel-1">
+      <div className="sh-ApprovalCenterPanel-2">
+        <strong className="sh-ApprovalCenterPanel-3">
           审批中心
-          <span
-            style={{
-              marginLeft: 6,
-              fontSize: tokens.text.xs.size,
-              color: dark.textMuted,
-            }}
-          >
-            {pending.length} 待处理
-          </span>
+          <span className="sh-ApprovalCenterPanel-4">{pending.length} 待处理</span>
         </strong>
-        <div style={{ display: "flex", gap: tokens.space.xs }}>
+        <div className="sh-ApprovalCenterPanel-5">
           <button
             type="button"
             onClick={() => decideAll("deny")}
-            style={buttonStyle("secondary", "sm")}
+            className="sh-ApprovalCenterPanel-6"
             title="拒绝全部待处理请求"
           >
             全部拒绝
@@ -167,7 +135,7 @@ export const ApprovalCenterPanel: React.FC<Props> = ({ channel, enabled = false,
           <button
             type="button"
             onClick={() => decideAll("allow")}
-            style={buttonStyle("primary", "sm")}
+            className="sh-ApprovalCenterPanel-7"
             title="批准全部待处理请求（各发一次 allow）"
           >
             全部批准
@@ -175,16 +143,7 @@ export const ApprovalCenterPanel: React.FC<Props> = ({ channel, enabled = false,
         </div>
       </div>
 
-      <ul
-        style={{
-          listStyle: "none",
-          margin: 0,
-          padding: 0,
-          display: "flex",
-          flexDirection: "column",
-          gap: tokens.space.xs,
-        }}
-      >
+      <ul className="sh-ApprovalCenterPanel-8">
         {pending.map((item) => (
           <li
             key={item.request_id}
@@ -198,37 +157,22 @@ export const ApprovalCenterPanel: React.FC<Props> = ({ channel, enabled = false,
               gap: tokens.space.xs,
             }}
           >
-            <div
-              style={{
-                fontSize: tokens.text.sm.size,
-                color: dark.text,
-                wordBreak: "break-word",
-              }}
-            >
-              <span
-                style={{
-                  fontFamily: tokens.font.mono,
-                  fontSize: tokens.text.xs.size,
-                  color: dark.textMuted,
-                  marginRight: 6,
-                }}
-              >
-                {item.category}
-              </span>
+            <div className="sh-ApprovalCenterPanel-9">
+              <span className="sh-ApprovalCenterPanel-10">{item.category}</span>
               {item.summary}
             </div>
-            <div style={{ display: "flex", gap: tokens.space.xs }}>
+            <div className="sh-ApprovalCenterPanel-5">
               <button
                 type="button"
                 onClick={() => decideOne(item.request_id, "deny")}
-                style={buttonStyle("secondary", "sm")}
+                className="sh-ApprovalCenterPanel-6"
               >
                 拒绝
               </button>
               <button
                 type="button"
                 onClick={() => decideOne(item.request_id, "allow")}
-                style={buttonStyle("primary", "sm")}
+                className="sh-ApprovalCenterPanel-7"
               >
                 允许
               </button>

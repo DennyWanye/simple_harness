@@ -18,15 +18,7 @@ import type {
   WorkflowNodeView,
   WorkflowRunSummary,
 } from "./workflows/types";
-import {
-  dark,
-  darkButton,
-  darkCloseBtn,
-  darkInput,
-  darkListSurface,
-  darkPanelHeader,
-  darkPanelSurface,
-} from "../theme/components";
+import { dark } from "../theme/components";
 import type { ControlChannel } from "../ws/ControlChannel";
 import type {
   ContextAttemptSnapshot,
@@ -41,6 +33,7 @@ import type {
   WorkflowRunDetailResponse,
   WorkflowRunsListResponse,
 } from "../types/messages";
+import "./ContextTracePanel.styles.css";
 
 type Props = {
   open: boolean;
@@ -422,31 +415,21 @@ export function ContextTracePanel({ open, onClose, getChannel }: Props) {
   return (
     <div
       data-testid="context-trace-panel"
-      style={darkPanelSurface}
+      className="sh-ContextTracePanel-1"
       role="dialog"
       aria-label="ContextTrace"
     >
-      <div style={darkPanelHeader}>
-        <span style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-          <span style={titleIconStyle}>
+      <div className="sh-ContextTracePanel-2">
+        <span className="sh-ContextTracePanel-3">
+          <span className="sh-ContextTracePanel-4">
             <Icon name="compass" size={15} />
           </span>
-          <strong
-            style={{
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-              fontSize: 14,
-              fontWeight: 600,
-            }}
-          >
-            ContextTrace
-          </strong>
+          <strong className="sh-ContextTracePanel-5">ContextTrace</strong>
         </span>
         <button
           data-testid="trace-close"
           onClick={onClose}
-          style={darkCloseBtn}
+          className="sh-ContextTracePanel-6"
           title="关闭"
           aria-label="关闭"
         >
@@ -454,7 +437,7 @@ export function ContextTracePanel({ open, onClose, getChannel }: Props) {
         </button>
       </div>
 
-      <div role="tablist" aria-label="ContextTrace views" style={topTabsStyle}>
+      <div role="tablist" aria-label="ContextTrace views" className="sh-ContextTracePanel-7">
         {(Object.keys(tabLabel) as PanelTab[]).map((item) => (
           <button
             key={item}
@@ -473,7 +456,7 @@ export function ContextTracePanel({ open, onClose, getChannel }: Props) {
         ))}
       </div>
 
-      <div style={{ minHeight: 0, flex: 1, position: "relative" }}>
+      <div className="sh-ContextTracePanel-8">
         {tab === "context" ? (
           <LegacyContextTrace getChannel={getChannel} active />
         ) : (
@@ -580,13 +563,18 @@ function LegacyContextTrace({
   const warning = percent >= 0.9;
 
   return (
-    <div style={legacyLayoutStyle}>
-      <div style={legacyControlsStyle}>
-        <button data-testid="trace-refresh" onClick={refresh} style={btnStyle()} disabled={loading}>
+    <div className="sh-ContextTracePanel-9">
+      <div className="sh-ContextTracePanel-10">
+        <button
+          data-testid="trace-refresh"
+          onClick={refresh}
+          className="sh-ContextTracePanel-11"
+          disabled={loading}
+        >
           <Icon name={loading ? "loader" : "refresh"} size={13} />
           刷新
         </button>
-        <label style={legacyLabelStyle}>
+        <label className="sh-ContextTracePanel-12">
           <span>条数</span>
           <input
             data-testid="trace-limit"
@@ -597,10 +585,10 @@ function LegacyContextTrace({
             onChange={(event) =>
               setLimit(Math.max(1, Math.min(200, Number(event.target.value) || 50)))
             }
-            style={numInputStyle}
+            className="sh-ContextTracePanel-13"
           />
         </label>
-        <label style={legacyLabelStyle}>
+        <label className="sh-ContextTracePanel-12">
           <span>actual context_window</span>
           <input
             data-testid="trace-ctx-window"
@@ -608,12 +596,12 @@ function LegacyContextTrace({
             type="number"
             value={contextWindow}
             readOnly
-            style={{ ...numInputStyle, width: 86 }}
+            className="sh-ContextTracePanel-14"
           />
         </label>
       </div>
       {reason && (
-        <div data-testid="trace-reason" style={{ color: dark.textFaint, fontSize: 10 }}>
+        <div data-testid="trace-reason" className="sh-ContextTracePanel-15">
           {reason === "context_assembler_not_registered"
             ? "当前没有可观察的上下文记录（主对话和任务编排的上下文不经过这里）。"
             : `后端提示：${reason}`}
@@ -629,20 +617,12 @@ function LegacyContextTrace({
             background: warning ? "rgba(249,115,22,0.13)" : dark.card,
           }}
         >
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 8,
-              fontSize: 11,
-            }}
-          >
-            <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+          <div className="sh-ContextTracePanel-16">
+            <span className="sh-ContextTracePanel-17">
               {warning && <Icon name="alert" size={12} />}
               {warning ? "预算接近上限" : "上一回合 token 预算"}
             </span>
-            <span style={{ textAlign: "right", overflowWrap: "anywhere" }}>
+            <span className="sh-ContextTracePanel-18">
               {used.toLocaleString()} / {contextWindow.toLocaleString()} (
               {(percent * 100).toFixed(1)}%)
             </span>
@@ -653,7 +633,7 @@ function LegacyContextTrace({
             aria-valuenow={Math.round(percent * 100)}
             aria-valuemin={0}
             aria-valuemax={100}
-            style={progressStyle}
+            className="sh-ContextTracePanel-19"
           >
             <div
               data-testid="trace-budget-bar"
@@ -667,7 +647,7 @@ function LegacyContextTrace({
         </div>
       )}
       {orderedAttempts.length > 0 && (
-        <div data-testid="context-attempts" style={darkListSurface}>
+        <div data-testid="context-attempts" className="sh-ContextTracePanel-20">
           {orderedAttempts.map((attempt) => (
             <ContextAttemptRow
               key={`${attempt.request_id}:${attempt.attempt_id}`}
@@ -676,8 +656,10 @@ function LegacyContextTrace({
           ))}
         </div>
       )}
-      <div style={darkListSurface}>
-        {ordered.length === 0 && !loading && <div style={legacyEmptyStyle}>(无决策记录)</div>}
+      <div className="sh-ContextTracePanel-20">
+        {ordered.length === 0 && !loading && (
+          <div className="sh-ContextTracePanel-21">(无决策记录)</div>
+        )}
         {ordered.map((decision, index) => (
           <DecisionRow
             key={`${String(decision.timestamp)}-${index}`}
@@ -698,20 +680,16 @@ function ContextAttemptRow({ attempt }: { attempt: ContextAttemptSnapshot }) {
     attempt.requested_compression_model;
   const shortHash = (value: string) => (value ? value.slice(0, 10) : "-");
   return (
-    <div data-testid={`context-attempt-${attempt.attempt_id}`} style={decisionRowStyle}>
-      <div
-        style={{ display: "flex", gap: 8, justifyContent: "space-between", alignItems: "baseline" }}
-      >
+    <div data-testid={`context-attempt-${attempt.attempt_id}`} className="sh-ContextTracePanel-22">
+      <div className="sh-ContextTracePanel-23">
         <strong>
           {attempt.purpose || "unclassified"} · {attempt.state}
         </strong>
-        <span style={{ color: dark.textFaint, fontSize: 10 }}>
+        <span className="sh-ContextTracePanel-15">
           {attempt.provider_id || attempt.adapter_id} / {attempt.model_id || "-"}
         </span>
       </div>
-      <div
-        style={{ display: "flex", flexWrap: "wrap", gap: 10, color: dark.textMuted, fontSize: 10 }}
-      >
+      <div className="sh-ContextTracePanel-24">
         <span>
           planned <strong>{attempt.planned_tokens.toLocaleString()}</strong>
         </span>
@@ -741,26 +719,20 @@ function ContextAttemptRow({ attempt }: { attempt: ContextAttemptSnapshot }) {
           retries <strong>{attempt.transport_retry_count}</strong>
         </span>
       </div>
-      <div style={{ color: dark.textFaint, fontSize: 9, overflowWrap: "anywhere" }}>
+      <div className="sh-ContextTracePanel-25">
         wire {shortHash(attempt.wire_tool_hash)} · schema {shortHash(attempt.schema_fingerprint)} ·
         policy {shortHash(attempt.policy_fingerprint)} · cache{" "}
         {shortHash(attempt.cache_fingerprint)}
       </div>
       {compressionModel && (
-        <div
-          data-testid="context-attempt-compression"
-          style={{ color: dark.textMuted, fontSize: 10 }}
-        >
+        <div data-testid="context-attempt-compression" className="sh-ContextTracePanel-26">
           compression {attempt.requested_compression_model || "-"} →{" "}
           {attempt.resolved_compression_model || "-"} → {attempt.actual_compression_model || "-"}
           {attempt.compression_failure ? ` · failed: ${attempt.compression_failure}` : ""}
         </div>
       )}
       {attempt.fragments.length > 0 && (
-        <div
-          data-testid="context-attempt-fragments"
-          style={{ display: "flex", flexDirection: "column", gap: 2, fontSize: 9 }}
-        >
+        <div data-testid="context-attempt-fragments" className="sh-ContextTracePanel-27">
           {attempt.fragments.map((fragment) => (
             <span key={fragment.fragment_id}>
               {fragment.action} · {fragment.fragment_id} · {fragment.estimated_tokens}t
@@ -770,16 +742,7 @@ function ContextAttemptRow({ attempt }: { attempt: ContextAttemptSnapshot }) {
         </div>
       )}
       {attempt.coverage_valid != null && (
-        <div
-          data-testid="context-attempt-coverage"
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: 2,
-            color: dark.textMuted,
-            fontSize: 9,
-          }}
-        >
+        <div data-testid="context-attempt-coverage" className="sh-ContextTracePanel-28">
           <span>
             coverage {attempt.coverage_valid ? "valid" : "invalid"} · page-in refs{" "}
             {attempt.coverage_page_in_refs} · gaps {attempt.coverage_gaps.length} · overlaps{" "}
@@ -809,23 +772,17 @@ function DecisionRow({
   const entries = Object.entries(decision.token_breakdown || {});
   const total = decision.total_tokens ?? 0;
   return (
-    <div data-testid={`trace-decision-${index}`} style={decisionRowStyle}>
-      <div
-        style={{ display: "flex", gap: 8, justifyContent: "space-between", alignItems: "baseline" }}
-      >
-        <span style={{ minWidth: 0, overflowWrap: "anywhere", fontSize: 11 }}>
+    <div data-testid={`trace-decision-${index}`} className="sh-ContextTracePanel-22">
+      <div className="sh-ContextTracePanel-23">
+        <span className="sh-ContextTracePanel-29">
           <strong style={{ color: classifierColor(decision.classifier_path) }}>
             {decision.classifier_path || "?"}
           </strong>
           {decision.reason ? ` · ${decision.reason}` : ""}
         </span>
-        <span style={{ flex: "0 0 auto", color: dark.textFaint, fontSize: 10 }}>
-          {formatTimestamp(decision.timestamp)}
-        </span>
+        <span className="sh-ContextTracePanel-30">{formatTimestamp(decision.timestamp)}</span>
       </div>
-      <div
-        style={{ display: "flex", flexWrap: "wrap", gap: 12, color: dark.textMuted, fontSize: 10 }}
-      >
+      <div className="sh-ContextTracePanel-31">
         <span>
           latency <strong>{fmtMs(decision.latency_ms)}</strong>
         </span>
@@ -875,7 +832,7 @@ function TokenBreakdownBar({
   const safeTotal = total || 1;
   const usedPercent = contextWindow > 0 ? Math.min(1, total / contextWindow) : 0;
   return (
-    <div data-testid="trace-breakdown" style={{ marginTop: 2 }}>
+    <div data-testid="trace-breakdown" className="sh-ContextTracePanel-32">
       <div
         title={`使用 ${total.toLocaleString()} / ${contextWindow.toLocaleString()} tokens`}
         style={{
@@ -902,16 +859,7 @@ function TokenBreakdownBar({
           ) : null,
         )}
       </div>
-      <div
-        style={{
-          display: "flex",
-          flexWrap: "wrap",
-          gap: 8,
-          marginTop: 3,
-          color: dark.textFaint,
-          fontSize: 10,
-        }}
-      >
+      <div className="sh-ContextTracePanel-33">
         {entries.map(([section, value]) => (
           <span key={section}>
             <span
@@ -970,28 +918,7 @@ function toEpoch(value?: string | number) {
 function sum(values: number[]) {
   return values.reduce((total, value) => total + value, 0);
 }
-function btnStyle(): React.CSSProperties {
-  return darkButton("primary", "sm");
-}
 
-const titleIconStyle: React.CSSProperties = {
-  width: 26,
-  height: 26,
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  flex: "0 0 auto",
-  borderRadius: 7,
-  background: "rgba(34,211,238,0.15)",
-  color: "#67e8f9",
-};
-const topTabsStyle: React.CSSProperties = {
-  minHeight: 38,
-  display: "flex",
-  flex: "0 0 auto",
-  overflowX: "auto",
-  borderBottom: `1px solid ${dark.hairline}`,
-};
 const topTabStyle: React.CSSProperties = {
   minWidth: 72,
   padding: "0 10px",
@@ -1000,51 +927,4 @@ const topTabStyle: React.CSSProperties = {
   background: "transparent",
   cursor: "pointer",
   fontSize: 11,
-};
-const legacyLayoutStyle: React.CSSProperties = {
-  height: "100%",
-  minHeight: 0,
-  display: "flex",
-  flexDirection: "column",
-  gap: 8,
-  padding: 13,
-};
-const legacyControlsStyle: React.CSSProperties = {
-  display: "flex",
-  flexWrap: "wrap",
-  alignItems: "center",
-  gap: 8,
-};
-const legacyLabelStyle: React.CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  gap: 4,
-  color: dark.textMuted,
-  fontSize: 10,
-};
-const numInputStyle: React.CSSProperties = {
-  ...darkInput,
-  width: 58,
-  padding: "4px 6px",
-  textAlign: "center",
-};
-const progressStyle: React.CSSProperties = {
-  height: 6,
-  marginTop: 4,
-  overflow: "hidden",
-  borderRadius: 3,
-  background: "#0f172a",
-};
-const legacyEmptyStyle: React.CSSProperties = {
-  marginTop: 32,
-  color: dark.textFaint,
-  textAlign: "center",
-  fontSize: 12,
-};
-const decisionRowStyle: React.CSSProperties = {
-  display: "flex",
-  flexDirection: "column",
-  gap: 4,
-  padding: "8px 6px",
-  borderBottom: `1px solid ${dark.hairline}`,
 };
