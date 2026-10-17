@@ -156,3 +156,9 @@
 - 19 个已转换文件的生成类不在发版产物里：这些模块只被 `import type` 引用，运行时不可达。例如 ChatView、MessageStreamPanel、SubagentProgressPanel、MessageBubble、SessionList。
 - 《阶段9-偏差单-前端不可达模块》只按 13 个模块处理，漏了这一批。
 - 下一步：按前端真实导入可达性（值导入，不算 `import type`）重扫一遍，出清单；做好但没接线的功能按规则记待用户定，其余走删除清单。
+
+## F-22 本机前端依赖与锁文件不一致（2026-10-17 阶段 9 合并后 CI 查出）
+
+- 主检出 `tauri-app/node_modules` 是 pnpm 按 package.json 的版本范围装的（工作树借用它），CI 用 `npm ci` 按 package-lock.json 装。实测 eslint-plugin-react-hooks 本机 7.1.1、锁文件 7.0.1，两版对 set-state-in-effect 的判定互相错开，本机 eslint 干净而 CI 报 2 个错误、2 个警告（9D-13 已改代码，使两版都干净）。
+- 其他依赖可能也有版本差。
+- 下一步：本机改用 `npm ci` 按锁文件装（需要下载，先问用户），或把锁文件升到本机版本（同样需要下载）；在那之前，前端 lint 结论以 CI 为准，本机可从 npm 缓存离线取锁文件版本复核。

@@ -124,18 +124,21 @@ describe("LiveGraph（SDK 执行过程接口）", () => {
   it("节点超过 200 时，计划版本第一次出现就把没在执行的复合步骤折叠（根不折）", async () => {
     const channel = mount();
     channel.reply(SNAP, bigSnapshot(false));
-    await waitFor(() => expect(screen.getAllByRole("button", { name: /^展开：/ }).length).toBe(1));
+    await waitFor(() => expect(screen.getAllByRole("button", { name: /^展开：/ }).length).toBe(1), {
+      timeout: 15000, // 201 个节点的排版在 CI 上要 1 秒以上
+    });
     expect(screen.getByText(/已折叠 201 项/)).toBeTruthy();
-  });
+  }, 30000);
 
   it("有子步骤在执行的复合步骤不自动折叠", async () => {
     const channel = mount();
     channel.reply(SNAP, bigSnapshot(true));
-    await waitFor(() =>
-      expect(screen.getAllByRole("button", { name: /^折叠：/ }).length).toBeGreaterThan(0),
+    await waitFor(
+      () => expect(screen.getAllByRole("button", { name: /^折叠：/ }).length).toBeGreaterThan(0),
+      { timeout: 15000 },
     );
     expect(screen.queryAllByRole("button", { name: /^展开：/ })).toHaveLength(0);
-  });
+  }, 30000);
 
   it("打开就读一次 SDK 执行过程；步骤标题用方法步骤职责，根用任务目标；不再用直读表的旧动词", async () => {
     const channel = mount();
