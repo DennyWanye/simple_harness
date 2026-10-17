@@ -5,7 +5,7 @@ name: Code Quality (ratchet + format)
 # 后端 mypy 依赖本机第三方库，在本地按阶段跑；eslint 由前端作业阻断（计划 2.12 修订）。
 on:
   push:
-    branches: [main, cq-phase11]
+    branches: [main]
   pull_request:
 
 jobs:
