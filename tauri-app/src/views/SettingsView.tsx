@@ -17,6 +17,7 @@ import React from "react";
 
 import { SettingsPanel } from "../components/SettingsPanel";
 import type { ControlChannel } from "../ws/ControlChannel";
+import "./SettingsView.styles.css";
 
 export interface SettingsViewProps {
   getChannel: () => ControlChannel | null;
@@ -37,18 +38,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   autostart,
 }) => {
   return (
-    <section
-      data-testid="view-settings"
-      aria-label="设置"
-      style={{
-        flex: 1,
-        minWidth: 0,
-        minHeight: 0,
-        display: "flex",
-        flexDirection: "column",
-        overflow: "hidden",
-      }}
-    >
+    <section data-testid="view-settings" aria-label="设置" className="sh-SettingsView-1">
       <SettingsPanel
         variant="page"
         open

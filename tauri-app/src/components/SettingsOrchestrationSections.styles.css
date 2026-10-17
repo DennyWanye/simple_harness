@@ -1,0 +1,172 @@
+/* 生成文件，不要手改：src/components/SettingsOrchestrationSections.tsx 里静态内联样式的等价类（9I）。
+   重新生成：node scripts/code_quality/ts_inline_to_class.mjs convert src/components/SettingsOrchestrationSections.tsx */
+
+.sh-SettingsOrchestrationSections-1 {
+  border-top: 1px solid var(--sh-hairline, rgba(255,255,255,0.075));
+  padding-top: var(--sh-space-xl);
+  margin-top: var(--sh-space-xl);
+  display: grid;
+  gap: var(--sh-space-md);
+  max-width: 760px;
+}
+
+.sh-SettingsOrchestrationSections-2 {
+  margin: 0;
+  font-size: var(--sh-text-md-size);
+  color: var(--sh-text, #E8E5DF);
+  font-weight: var(--sh-weight-semibold);
+  letter-spacing: -0.01em;
+}
+
+.sh-SettingsOrchestrationSections-3 {
+  font-size: var(--sh-text-sm-size);
+  color: var(--sh-warning, #D9A441);
+  margin: 0;
+  line-height: var(--sh-text-sm-lh);
+  border: 1px solid var(--sh-warning, #D9A441);
+  border-radius: 6px;
+  padding: 6px 10px;
+}
+
+.sh-SettingsOrchestrationSections-4 {
+  height: var(--sh-control-height);
+  padding: 0 16px;
+  border-radius: var(--sh-radius-md);
+  border: 1px solid var(--sh-hairline-strong, rgba(255,255,255,0.14));
+  background: transparent;
+  color: var(--sh-text, #E8E5DF);
+  font-family: var(--sh-font-ui);
+  font-size: var(--sh-text-base-size);
+  font-weight: var(--sh-weight-medium);
+  cursor: pointer;
+  transition: background-color 120ms cubic-bezier(0.4, 0, 0.2, 1), border-color 120ms cubic-bezier(0.4, 0, 0.2, 1), color 120ms cubic-bezier(0.4, 0, 0.2, 1), opacity 120ms cubic-bezier(0.4, 0, 0.2, 1);
+  box-sizing: border-box;
+  margin-left: 6px;
+}
+
+.sh-SettingsOrchestrationSections-5 {
+  font-size: var(--sh-text-sm-size);
+  color: var(--sh-text-2, #A7A29A);
+  margin: 0;
+  line-height: var(--sh-text-sm-lh);
+}
+
+.sh-SettingsOrchestrationSections-6 {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 10px;
+  row-gap: 2px;
+  font-size: 12px;
+  color: var(--sh-text-2, #A7A29A);
+}
+
+.sh-SettingsOrchestrationSections-7 {
+  height: var(--sh-control-height);
+  padding: 0 16px;
+  border-radius: var(--sh-radius-md);
+  border: 1px solid var(--sh-hairline-strong, rgba(255,255,255,0.14));
+  background: transparent;
+  color: var(--sh-text, #E8E5DF);
+  font-family: var(--sh-font-ui);
+  font-size: var(--sh-text-base-size);
+  font-weight: var(--sh-weight-medium);
+  cursor: pointer;
+  transition: background-color 120ms cubic-bezier(0.4, 0, 0.2, 1), border-color 120ms cubic-bezier(0.4, 0, 0.2, 1), color 120ms cubic-bezier(0.4, 0, 0.2, 1), opacity 120ms cubic-bezier(0.4, 0, 0.2, 1);
+  box-sizing: border-box;
+}
+
+.sh-SettingsOrchestrationSections-8 {
+  font-size: var(--sh-text-sm-size);
+  color: var(--sh-text-2, #A7A29A);
+  margin: 0;
+  line-height: var(--sh-text-sm-lh);
+  margin-left: 8px;
+}
+
+.sh-SettingsOrchestrationSections-9 {
+  display: flex;
+  gap: 6px;
+}
+
+.sh-SettingsOrchestrationSections-10 {
+  flex: 1;
+  padding: 5px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--sh-hairline, rgba(255,255,255,0.075));
+  background: var(--sh-card, #1C2026);
+  color: var(--sh-text, #E8E5DF);
+  font-size: 12px;
+  font-family: monospace;
+}
+
+.sh-SettingsOrchestrationSections-11 {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.sh-SettingsOrchestrationSections-12 {
+  height: var(--sh-control-height);
+  padding: 0 16px;
+  border-radius: var(--sh-radius-md);
+  border: 1px solid transparent;
+  background: var(--sh-accent, #7FB2AA);
+  color: var(--sh-on-accent, #0E1013);
+  font-family: var(--sh-font-ui);
+  font-size: var(--sh-text-base-size);
+  font-weight: var(--sh-weight-semibold);
+  cursor: pointer;
+  transition: background-color 120ms cubic-bezier(0.4, 0, 0.2, 1), border-color 120ms cubic-bezier(0.4, 0, 0.2, 1), color 120ms cubic-bezier(0.4, 0, 0.2, 1), opacity 120ms cubic-bezier(0.4, 0, 0.2, 1);
+  box-sizing: border-box;
+}
+
+.sh-SettingsOrchestrationSections-13 {
+  font-size: var(--sh-text-sm-size);
+  color: var(--sh-danger, #D9645F);
+  margin: 0;
+  line-height: var(--sh-text-sm-lh);
+}
+
+.sh-SettingsOrchestrationSections-14 {
+  font-size: var(--sh-text-sm-size);
+  padding: 8px 12px;
+  background: var(--sh-card, #1C2026);
+  border: 1px solid var(--sh-hairline, rgba(255,255,255,0.075));
+  border-radius: var(--sh-radius-md);
+  line-height: var(--sh-text-sm-lh);
+}
+
+.sh-SettingsOrchestrationSections-15 {
+  border-top: 1px solid var(--sh-hairline, rgba(255,255,255,0.075));
+  padding: 6px 0;
+}
+
+.sh-SettingsOrchestrationSections-16 {
+  font-size: 13px;
+  color: var(--sh-text, #E8E5DF);
+}
+
+.sh-SettingsOrchestrationSections-17 {
+  color: var(--sh-text-2, #A7A29A);
+}
+
+.sh-SettingsOrchestrationSections-18 {
+  font-size: var(--sh-text-sm-size);
+  color: var(--sh-text-2, #A7A29A);
+  margin: 0;
+  line-height: var(--sh-text-sm-lh);
+  margin-top: 2px;
+}
+
+.sh-SettingsOrchestrationSections-19 {
+  margin: 4px 0;
+  padding-left: 18px;
+  font-size: 12px;
+  color: var(--sh-text-2, #A7A29A);
+}
+
+.sh-SettingsOrchestrationSections-20 {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}

@@ -20,9 +20,9 @@ import { useMemo, useState } from "react";
 import { useDepsChanged } from "../hooks/useDepsChanged";
 import type { Provider } from "./providersStore";
 import { dark } from "../theme/components";
-import { tokens } from "../theme/tokens";
 import { createProviderId, validateProviderDraft, prefillFromProvider } from "./providerDraft";
 import type { ProviderDraft } from "./providerDraft";
+import "./AddProviderModal.styles.css";
 
 // ---- Component -----------------------------------------------------------
 
@@ -134,25 +134,20 @@ export function AddProviderModal({
       role="dialog"
       aria-modal="true"
       aria-label={isEditing ? "编辑 provider" : "添加 provider"}
-      style={overlayStyle}
+      className="sh-AddProviderModal-1"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <form style={modalStyle} onSubmit={handleSubmit}>
-        <header style={{ display: "flex", justifyContent: "space-between" }}>
-          <h3 style={{ margin: 0, fontSize: 14 }}>
+      <form className="sh-AddProviderModal-2" onSubmit={handleSubmit}>
+        <header className="sh-AddProviderModal-3">
+          <h3 className="sh-AddProviderModal-4">
             {isEditing ? `编辑 provider: ${editing!.id}` : "添加 LLM Provider"}
           </h3>
           <button
             type="button"
             onClick={onClose}
-            style={{
-              background: "transparent",
-              border: "none",
-              fontSize: 14,
-              cursor: "pointer",
-            }}
+            className="sh-AddProviderModal-5"
             aria-label="关闭"
           >
             ✕
@@ -161,51 +156,48 @@ export function AddProviderModal({
 
         {/* ID field hidden for new providers (auto-generated UUID) */}
         {isEditing && (
-          <label style={fieldStyle}>
+          <label className="sh-AddProviderModal-6">
             <span>id</span>
             <input
               data-testid="provider-id-input"
               disabled={true}
               value={draft.id}
-              style={{ ...inputStyle, opacity: 0.6 }}
+              className="sh-AddProviderModal-7"
             />
           </label>
         )}
 
-        <label style={fieldStyle}>
+        <label className="sh-AddProviderModal-6">
           <span>name</span>
           <input
             data-testid="provider-name-input"
             value={draft.name}
             onChange={(e) => setDraft({ ...draft, name: e.target.value })}
             placeholder="DeepSeek via My Relay"
-            style={inputStyle}
+            className="sh-AddProviderModal-8"
           />
           {submitted && validation.errors.name && (
-            <span style={errStyle}>{validation.errors.name}</span>
+            <span className="sh-AddProviderModal-9">{validation.errors.name}</span>
           )}
         </label>
 
-        <label style={fieldStyle}>
+        <label className="sh-AddProviderModal-6">
           <span>base_url</span>
           <input
             data-testid="provider-base-url-input"
             value={draft.base_url}
             onChange={(e) => setDraft({ ...draft, base_url: e.target.value })}
             placeholder="https://your-llm-relay.example.com/v1"
-            style={inputStyle}
+            className="sh-AddProviderModal-8"
           />
           {submitted && validation.errors.base_url && (
-            <span style={errStyle}>{validation.errors.base_url}</span>
+            <span className="sh-AddProviderModal-9">{validation.errors.base_url}</span>
           )}
         </label>
 
-        <label style={fieldStyle}>
+        <label className="sh-AddProviderModal-6">
           <span>
-            api_key{" "}
-            {isEditing && (
-              <em style={{ fontSize: 10, color: dark.textMuted }}>(留空保留已存的 key)</em>
-            )}
+            api_key {isEditing && <em className="sh-AddProviderModal-10">(留空保留已存的 key)</em>}
           </span>
           <input
             data-testid="provider-api-key-input"
@@ -213,37 +205,27 @@ export function AddProviderModal({
             value={draft.api_key}
             onChange={(e) => setDraft({ ...draft, api_key: e.target.value })}
             placeholder={isEditing ? "(已配置)" : "sk-..."}
-            style={inputStyle}
+            className="sh-AddProviderModal-8"
             autoComplete="off"
           />
           {submitted && validation.errors.api_key && (
-            <span style={errStyle}>{validation.errors.api_key}</span>
+            <span className="sh-AddProviderModal-9">{validation.errors.api_key}</span>
           )}
         </label>
 
-        <div style={fieldStyle}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        <div className="sh-AddProviderModal-6">
+          <div className="sh-AddProviderModal-11">
             <button
               type="button"
               onClick={() => setShowModels((v) => !v)}
-              style={{
-                background: "transparent",
-                border: "none",
-                cursor: "pointer",
-                padding: 0,
-                fontSize: 12,
-                color: dark.textMuted,
-              }}
+              className="sh-AddProviderModal-12"
               aria-expanded={showModels}
               aria-label={showModels ? "收起 models" : "展开 models"}
             >
               {showModels ? "▼" : "▶"}
             </button>
-            <span style={{ flex: 1 }}>
-              models{" "}
-              <em style={{ color: dark.textMuted, fontSize: 10 }}>
-                (可配置多个；默认 model 用 ◉ 标记)
-              </em>
+            <span className="sh-AddProviderModal-13">
+              models <em className="sh-AddProviderModal-14">(可配置多个；默认 model 用 ◉ 标记)</em>
             </span>
             <button
               type="button"
@@ -253,7 +235,7 @@ export function AddProviderModal({
                 }
               }}
               disabled={!canProbe || probing}
-              style={probeBtn}
+              className="sh-AddProviderModal-15"
               title="向 base_url/models 拉取支持的模型列表"
               data-testid="provider-probe-models-button"
             >
@@ -261,21 +243,10 @@ export function AddProviderModal({
             </button>
           </div>
           {showModels && (
-            <div style={{ display: "grid", gap: 4, marginTop: 4 }}>
-              <div
-                style={{
-                  display: "grid",
-                  gap: 4,
-                  // Cap height for long lists (100+ models from probe), with
-                  // its own scroll so the modal's footer (取消/保存) stays
-                  // visible without endless outer scrolling.
-                  maxHeight: 220,
-                  overflowY: "auto",
-                  paddingRight: 2,
-                }}
-              >
+            <div className="sh-AddProviderModal-16">
+              <div className="sh-AddProviderModal-17">
                 {draft.models.length === 0 && (
-                  <div style={{ fontSize: 11, color: dark.textFaint, padding: "4px 6px" }}>
+                  <div className="sh-AddProviderModal-18">
                     尚未配置 model（手动添加或点 🔍 自动获取）
                   </div>
                 )}
@@ -293,13 +264,7 @@ export function AddProviderModal({
                     }}
                   >
                     <label
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 4,
-                        cursor: "pointer",
-                        flex: 1,
-                      }}
+                      className="sh-AddProviderModal-19"
                       title={draft.default_model === m ? "默认 model" : "点击设为默认"}
                     >
                       <input
@@ -309,22 +274,12 @@ export function AddProviderModal({
                         onChange={() => setDraft({ ...draft, default_model: m })}
                         aria-label={`设 ${m} 为默认`}
                       />
-                      <span
-                        style={{ overflowWrap: "anywhere", fontFamily: "monospace", fontSize: 11 }}
-                      >
-                        {m}
-                      </span>
+                      <span className="sh-AddProviderModal-20">{m}</span>
                     </label>
                     <button
                       type="button"
                       onClick={() => removeModel(m)}
-                      style={{
-                        background: "transparent",
-                        border: "none",
-                        color: dark.danger,
-                        cursor: "pointer",
-                        fontSize: 11,
-                      }}
+                      className="sh-AddProviderModal-21"
                       aria-label={`删除 ${m}`}
                     >
                       删除
@@ -332,7 +287,7 @@ export function AddProviderModal({
                   </div>
                 ))}
               </div>
-              <div style={{ display: "flex", gap: 4 }}>
+              <div className="sh-AddProviderModal-22">
                 <input
                   value={newModel}
                   onChange={(e) => setNewModel(e.target.value)}
@@ -343,21 +298,21 @@ export function AddProviderModal({
                     }
                   }}
                   placeholder="新 model 名（例：claude-sonnet-4-5）"
-                  style={{ ...inputStyle, flex: 1 }}
+                  className="sh-AddProviderModal-23"
                   data-testid="provider-new-model-input"
                 />
                 <button
                   type="button"
                   onClick={addModel}
                   disabled={!newModel.trim()}
-                  style={smallAddBtn}
+                  className="sh-AddProviderModal-24"
                   data-testid="provider-add-model-button"
                 >
                   + 添加
                 </button>
               </div>
               {probeError && (
-                <div style={errStyle}>
+                <div className="sh-AddProviderModal-9">
                   自动获取失败：
                   {/all connection attempts failed|connection refused|connecterror/i.test(
                     probeError,
@@ -369,27 +324,19 @@ export function AddProviderModal({
             </div>
           )}
           {saveError && (
-            <span role="alert" style={errStyle}>
+            <span role="alert" className="sh-AddProviderModal-9">
               {saveError}
             </span>
           )}
           {submitted && validation.errors.models && (
-            <span style={errStyle}>{validation.errors.models}</span>
+            <span className="sh-AddProviderModal-9">{validation.errors.models}</span>
           )}
         </div>
 
         {/* 2026-08-09：「启用」开关原先只对 relay provider 显示，relay 移除后
             改为编辑既有 provider 时一律可见（新建的默认就是启用）。 */}
         {isEditing && (
-          <label
-            style={{
-              ...fieldStyle,
-              display: "flex",
-              flexDirection: "row",
-              alignItems: "center",
-              gap: 6,
-            }}
-          >
+          <label className="sh-AddProviderModal-25">
             <input
               type="checkbox"
               checked={draft.enabled ?? true}
@@ -400,15 +347,15 @@ export function AddProviderModal({
           </label>
         )}
 
-        <footer style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
-          <button type="button" onClick={onClose} style={cancelBtn}>
+        <footer className="sh-AddProviderModal-26">
+          <button type="button" onClick={onClose} className="sh-AddProviderModal-27">
             取消
           </button>
           <button
             type="submit"
             disabled={saving}
             data-testid="provider-save-button"
-            style={saveBtn}
+            className="sh-AddProviderModal-28"
           >
             {saving ? "保存中…" : isEditing ? "保存" : "添加"}
           </button>
@@ -418,83 +365,3 @@ export function AddProviderModal({
   );
 }
 // ---- inline styles -------------------------------------------------------
-
-const overlayStyle: React.CSSProperties = {
-  position: "fixed",
-  inset: 0,
-  background: dark.scrim,
-  display: "grid",
-  placeItems: "center",
-  padding: 8,
-  zIndex: 1100,
-};
-const modalStyle: React.CSSProperties = {
-  background: dark.bg,
-  border: `1px solid ${dark.borderStrong}`,
-  padding: 16,
-  borderRadius: 8,
-  width: "min(94vw, 440px)",
-  maxHeight: "92vh",
-  overflowY: "auto",
-  overflowX: "hidden",
-  color: dark.text,
-  boxShadow: tokens.shadow.overlay,
-  display: "grid",
-  gap: 8,
-};
-const fieldStyle: React.CSSProperties = {
-  display: "grid",
-  gap: 4,
-  fontSize: 12,
-};
-const inputStyle: React.CSSProperties = {
-  padding: "5px 8px",
-  borderRadius: 4,
-  border: `1px solid ${dark.border}`,
-  background: dark.card,
-  color: dark.text,
-  fontSize: 12,
-  fontFamily: "inherit",
-  outline: "none",
-  minWidth: 0,
-};
-const errStyle: React.CSSProperties = {
-  fontSize: 11,
-  color: dark.danger,
-};
-const saveBtn: React.CSSProperties = {
-  padding: "5px 12px",
-  borderRadius: 4,
-  border: "1px solid transparent",
-  background: dark.accent,
-  color: "white",
-  fontSize: 12,
-  cursor: "pointer",
-};
-const cancelBtn: React.CSSProperties = {
-  padding: "5px 12px",
-  borderRadius: 4,
-  border: `1px solid ${dark.border}`,
-  background: dark.card,
-  color: dark.text,
-  fontSize: 12,
-  cursor: "pointer",
-};
-const smallAddBtn: React.CSSProperties = {
-  padding: "3px 10px",
-  borderRadius: 4,
-  border: `1px solid ${dark.accentBorder}`,
-  background: dark.card,
-  color: dark.accentText,
-  fontSize: 11,
-  cursor: "pointer",
-};
-const probeBtn: React.CSSProperties = {
-  padding: "3px 8px",
-  borderRadius: 4,
-  border: `1px solid ${dark.border}`,
-  background: dark.card,
-  color: dark.textMuted,
-  fontSize: 11,
-  cursor: "pointer",
-};

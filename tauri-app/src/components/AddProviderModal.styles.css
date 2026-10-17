@@ -1,0 +1,224 @@
+/* 生成文件，不要手改：src/components/AddProviderModal.tsx 里静态内联样式的等价类（9I）。
+   重新生成：node scripts/code_quality/ts_inline_to_class.mjs convert src/components/AddProviderModal.tsx */
+
+.sh-AddProviderModal-1 {
+  position: fixed;
+  inset: 0;
+  background: var(--sh-scrim, rgba(6,8,10,0.56));
+  display: grid;
+  place-items: center;
+  padding: 8px;
+  z-index: 1100;
+}
+
+.sh-AddProviderModal-2 {
+  background: var(--sh-surface, #15181C);
+  border: 1px solid var(--sh-hairline-strong, rgba(255,255,255,0.14));
+  padding: 16px;
+  border-radius: 8px;
+  width: min(94vw, 440px);
+  max-height: 92vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  color: var(--sh-text, #E8E5DF);
+  box-shadow: var(--sh-shadow-overlay, 0 16px 48px rgba(0,0,0,0.44));
+  display: grid;
+  gap: 8px;
+}
+
+.sh-AddProviderModal-3 {
+  display: flex;
+  justify-content: space-between;
+}
+
+.sh-AddProviderModal-4 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.sh-AddProviderModal-5 {
+  background: transparent;
+  border: none;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.sh-AddProviderModal-6 {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.sh-AddProviderModal-7 {
+  padding: 5px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--sh-hairline, rgba(255,255,255,0.075));
+  background: var(--sh-card, #1C2026);
+  color: var(--sh-text, #E8E5DF);
+  font-size: 12px;
+  font-family: inherit;
+  outline: none;
+  min-width: 0;
+  opacity: 0.6;
+}
+
+.sh-AddProviderModal-8 {
+  padding: 5px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--sh-hairline, rgba(255,255,255,0.075));
+  background: var(--sh-card, #1C2026);
+  color: var(--sh-text, #E8E5DF);
+  font-size: 12px;
+  font-family: inherit;
+  outline: none;
+  min-width: 0;
+}
+
+.sh-AddProviderModal-9 {
+  font-size: 11px;
+  color: var(--sh-danger, #D9645F);
+}
+
+.sh-AddProviderModal-10 {
+  font-size: 10px;
+  color: var(--sh-text-2, #A7A29A);
+}
+
+.sh-AddProviderModal-11 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sh-AddProviderModal-12 {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  font-size: 12px;
+  color: var(--sh-text-2, #A7A29A);
+}
+
+.sh-AddProviderModal-13 {
+  flex: 1;
+}
+
+.sh-AddProviderModal-14 {
+  color: var(--sh-text-2, #A7A29A);
+  font-size: 10px;
+}
+
+.sh-AddProviderModal-15 {
+  padding: 3px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--sh-hairline, rgba(255,255,255,0.075));
+  background: var(--sh-card, #1C2026);
+  color: var(--sh-text-2, #A7A29A);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.sh-AddProviderModal-16 {
+  display: grid;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.sh-AddProviderModal-17 {
+  display: grid;
+  gap: 4px;
+  max-height: 220px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.sh-AddProviderModal-18 {
+  font-size: 11px;
+  color: var(--sh-text-3, #736F69);
+  padding: 4px 6px;
+}
+
+.sh-AddProviderModal-19 {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  flex: 1;
+}
+
+.sh-AddProviderModal-20 {
+  overflow-wrap: anywhere;
+  font-family: monospace;
+  font-size: 11px;
+}
+
+.sh-AddProviderModal-21 {
+  background: transparent;
+  border: none;
+  color: var(--sh-danger, #D9645F);
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.sh-AddProviderModal-22 {
+  display: flex;
+  gap: 4px;
+}
+
+.sh-AddProviderModal-23 {
+  padding: 5px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--sh-hairline, rgba(255,255,255,0.075));
+  background: var(--sh-card, #1C2026);
+  color: var(--sh-text, #E8E5DF);
+  font-size: 12px;
+  font-family: inherit;
+  outline: none;
+  min-width: 0;
+  flex: 1;
+}
+
+.sh-AddProviderModal-24 {
+  padding: 3px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--sh-accent-border, rgba(127,178,170,0.34));
+  background: var(--sh-card, #1C2026);
+  color: var(--sh-accent-text, #9FCDC5);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.sh-AddProviderModal-25 {
+  display: flex;
+  gap: 6px;
+  font-size: 12px;
+  flex-direction: row;
+  align-items: center;
+}
+
+.sh-AddProviderModal-26 {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.sh-AddProviderModal-27 {
+  padding: 5px 12px;
+  border-radius: 4px;
+  border: 1px solid var(--sh-hairline, rgba(255,255,255,0.075));
+  background: var(--sh-card, #1C2026);
+  color: var(--sh-text, #E8E5DF);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.sh-AddProviderModal-28 {
+  padding: 5px 12px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  background: var(--sh-accent, #7FB2AA);
+  color: white;
+  font-size: 12px;
+  cursor: pointer;
+}

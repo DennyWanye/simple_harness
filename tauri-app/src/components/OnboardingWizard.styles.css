@@ -1,0 +1,145 @@
+/* 生成文件，不要手改：src/components/OnboardingWizard.tsx 里静态内联样式的等价类（9I）。
+   重新生成：node scripts/code_quality/ts_inline_to_class.mjs convert src/components/OnboardingWizard.tsx */
+
+.sh-OnboardingWizard-1 {
+  position: fixed;
+  inset: 0;
+  background: rgba(8,11,20,0.58);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  backdrop-filter: blur(7px);
+  -webkit-backdrop-filter: blur(7px);
+}
+
+.sh-OnboardingWizard-2 {
+  width: 460px;
+  max-width: 92vw;
+  background: var(--sh-surface, #15181C);
+  border-radius: 20px;
+  padding: 28px 32px 22px;
+  border: 1px solid var(--sh-hairline-strong, rgba(255,255,255,0.14));
+  box-shadow: 0 32px 70px rgba(8,11,20,0.45), 0 4px 14px rgba(8,11,20,0.18);
+  font-family: "Inter","PingFang SC","Microsoft YaHei UI",sans-serif;
+  color: var(--sh-text, #E8E5DF);
+  animation: bp-pop-in 280ms cubic-bezier(0.16,1,0.3,1);
+}
+
+.sh-OnboardingWizard-3 {
+  display: flex;
+  gap: 7px;
+  justify-content: center;
+  margin-bottom: 20px;
+}
+
+.sh-OnboardingWizard-4 {
+  font-size: 22px;
+  font-weight: 700;
+  margin: 0 0 12px;
+}
+
+.sh-OnboardingWizard-5 {
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--sh-text-2, #A7A29A);
+  margin: 0 0 10px;
+}
+
+.sh-OnboardingWizard-6 {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--sh-text-2, #A7A29A);
+  margin: 12px 0 4px;
+}
+
+.sh-OnboardingWizard-7 {
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 4px;
+  padding: 9px 12px;
+  font-size: 13px;
+  border: 1px solid var(--sh-hairline, rgba(255,255,255,0.075));
+  border-radius: 10px;
+  background: var(--sh-card, #1C2026);
+  outline: none;
+  color: var(--sh-text, #E8E5DF);
+}
+
+.sh-OnboardingWizard-8 {
+  margin-top: 14px;
+  padding: 9px 18px;
+  font-size: 13px;
+  font-weight: 700;
+  background: linear-gradient(180deg,#1e293b,#0f172a);
+  color: #fff;
+  border: 1px solid rgba(15,23,42,0.6);
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.sh-OnboardingWizard-9 {
+  color: #6ee7b7;
+  font-size: 13px;
+  font-weight: 600;
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sh-OnboardingWizard-10 {
+  color: #fca5a5;
+  font-size: 13px;
+  font-weight: 600;
+  margin-top: 10px;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  line-height: 1.5;
+}
+
+.sh-OnboardingWizard-11 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 22px;
+}
+
+.sh-OnboardingWizard-12 {
+  padding: 8px 12px;
+  font-size: 12.5px;
+  background: transparent;
+  color: #94a3b8;
+  border: none;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.sh-OnboardingWizard-13 {
+  flex: 1;
+}
+
+.sh-OnboardingWizard-14 {
+  padding: 9px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--sh-card, #1C2026);
+  color: var(--sh-text, #E8E5DF);
+  border: 1px solid var(--sh-hairline, rgba(255,255,255,0.075));
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.sh-OnboardingWizard-15 {
+  padding: 9px 22px;
+  font-size: 13px;
+  font-weight: 700;
+  background: linear-gradient(180deg,#3b82f6,#2563eb);
+  color: #fff;
+  border: 1px solid rgba(37,99,235,0.5);
+  border-radius: 10px;
+  box-shadow: 0 6px 16px rgba(37,99,235,0.30);
+  cursor: pointer;
+}

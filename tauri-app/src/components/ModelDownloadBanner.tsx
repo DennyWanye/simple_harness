@@ -15,6 +15,7 @@ import { useEffect, useRef, useState } from "react";
 
 import type { ControlChannel } from "../ws/ControlChannel";
 import type { IncomingMessage, ModelProvisionStatusResponse } from "../types/messages";
+import "./ModelDownloadBanner.styles.css";
 
 type Props = {
   getChannel: () => ControlChannel | null;
@@ -81,26 +82,26 @@ export function ModelDownloadBanner({ getChannel }: Props) {
   const pct = totalBytes > 0 ? Math.min(100, Math.round((done / totalBytes) * 100)) : null;
 
   return (
-    <div style={bannerStyle} data-testid="model-download-banner">
+    <div className="sh-ModelDownloadBanner-1" data-testid="model-download-banner">
       {state === "error" ? (
-        <div style={{ color: "#fecaca" }}>
+        <div className="sh-ModelDownloadBanner-2">
           ⚠ 模型下载失败：{payload.error || "未知错误"}。请检查网络后重启 Simple Harness 重试。
         </div>
       ) : (
         <>
-          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+          <div className="sh-ModelDownloadBanner-3">
             <span>
               {state === "checking"
                 ? "正在检查模型…"
                 : `正在下载模型 ${index}/${total}${payload.current ? `：${payload.current}` : ""}`}
             </span>
-            <span style={{ color: "#93c5fd" }}>
+            <span className="sh-ModelDownloadBanner-4">
               {pct !== null ? `${pct}%` : state === "downloading" ? "…" : ""}
             </span>
           </div>
           {state === "downloading" && (
             <>
-              <div style={trackStyle}>
+              <div className="sh-ModelDownloadBanner-5">
                 <div
                   style={{
                     ...barStyle,
@@ -110,7 +111,7 @@ export function ModelDownloadBanner({ getChannel }: Props) {
                   }}
                 />
               </div>
-              <div style={hintStyle}>
+              <div className="sh-ModelDownloadBanner-6">
                 首次启动需下载语音/记忆模型（约 2.6GB，仅此一次）。
                 {totalBytes > 0 ? ` ${fmtBytes(done)} / ${fmtBytes(totalBytes)}` : ""}
               </div>
@@ -122,38 +123,9 @@ export function ModelDownloadBanner({ getChannel }: Props) {
   );
 }
 
-const bannerStyle: React.CSSProperties = {
-  position: "fixed",
-  left: 8,
-  right: 8,
-  bottom: 8,
-  zIndex: 9999,
-  padding: "8px 12px",
-  borderRadius: 10,
-  background: "rgba(15,23,42,0.92)",
-  color: "#e2e8f0",
-  fontSize: 12,
-  lineHeight: 1.5,
-  boxShadow: "0 4px 16px rgba(0,0,0,0.35)",
-  border: "1px solid rgba(148,163,184,0.25)",
-};
-
-const trackStyle: React.CSSProperties = {
-  height: 6,
-  borderRadius: 4,
-  background: "rgba(148,163,184,0.25)",
-  overflow: "hidden",
-};
-
 const barStyle: React.CSSProperties = {
   height: "100%",
   borderRadius: 4,
   background: "linear-gradient(90deg,#3b82f6,#60a5fa)",
   transition: "width 400ms ease",
-};
-
-const hintStyle: React.CSSProperties = {
-  fontSize: 11,
-  color: "#94a3b8",
-  marginTop: 4,
 };

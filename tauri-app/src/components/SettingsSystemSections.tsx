@@ -5,8 +5,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import { useConfirm } from "./useConfirm";
 import { formatUpdaterError } from "./updaterError";
-import { dark } from "../theme/components";
-import { tokens } from "../theme/tokens";
 import type { IncomingMessage } from "../types/messages";
 import type { ControlChannel } from "../ws/ControlChannel";
 import {
@@ -23,15 +21,7 @@ import {
   formatMb,
 } from "./settingsMessages";
 import type { AuthorizationPolicyView, DataDirSetting } from "./settingsMessages";
-import {
-  sectionStyle,
-  h3Style,
-  btnRowStyle,
-  btnStyle,
-  primaryBtnStyle,
-  statusStyle,
-  hintStyle,
-} from "./settingsStyles";
+import "./SettingsSystemSections.styles.css";
 
 // ----------------------------------------------------------------------
 // 关于与更新 (2026-06-05) — 手动"检查更新"入口。
@@ -136,51 +126,45 @@ export function UpdateSection() {
       : null;
 
   return (
-    <section style={sectionStyle}>
-      <h3 style={h3Style}>关于与更新</h3>
-      <div style={statusStyle}>
+    <section className="sh-SettingsSystemSections-1">
+      <h3 className="sh-SettingsSystemSections-2">关于与更新</h3>
+      <div className="sh-SettingsSystemSections-3">
         当前版本：<strong>{version ? `v${version}` : "—"}</strong>
       </div>
 
-      {phase === "latest" && <div style={statusStyle}>✅ 已是最新版本。</div>}
+      {phase === "latest" && <div className="sh-SettingsSystemSections-3">✅ 已是最新版本。</div>}
 
       {phase === "available" && (
-        <div style={statusStyle}>
+        <div className="sh-SettingsSystemSections-3">
           🎉 发现新版本 <strong>v{newVersion}</strong>
-          {notes ? (
-            <div style={{ marginTop: 6, color: dark.textMuted, whiteSpace: "pre-wrap" }}>
-              {notes}
-            </div>
-          ) : null}
+          {notes ? <div className="sh-SettingsSystemSections-4">{notes}</div> : null}
         </div>
       )}
 
       {phase === "downloading" && (
-        <div style={statusStyle}>
+        <div className="sh-SettingsSystemSections-3">
           正在下载并安装{pct !== null ? ` … ${pct}%` : "…"}
-          <div style={{ marginTop: 6, color: dark.textMuted, fontSize: tokens.text.sm.size }}>
+          <div className="sh-SettingsSystemSections-5">
             安装时 Simple Harness 会自动关闭，请稍候它重新启动。
           </div>
         </div>
       )}
 
-      {phase === "done" && <div style={statusStyle}>✅ 更新已安装，重启后生效。</div>}
-
-      {phase === "error" && (
-        <div style={{ ...statusStyle, borderLeft: `2px solid ${dark.danger}`, color: dark.danger }}>
-          {errMsg}
-        </div>
+      {phase === "done" && (
+        <div className="sh-SettingsSystemSections-3">✅ 更新已安装，重启后生效。</div>
       )}
 
-      <div style={btnRowStyle}>
+      {phase === "error" && <div className="sh-SettingsSystemSections-6">{errMsg}</div>}
+
+      <div className="sh-SettingsSystemSections-7">
         {phase === "available" ? (
-          <button type="button" style={primaryBtnStyle} onClick={onInstall}>
+          <button type="button" className="sh-SettingsSystemSections-8" onClick={onInstall}>
             下载并安装 v{newVersion}
           </button>
         ) : (
           <button
             type="button"
-            style={btnStyle}
+            className="sh-SettingsSystemSections-9"
             onClick={onCheck}
             disabled={phase === "checking" || phase === "downloading"}
           >
@@ -189,7 +173,7 @@ export function UpdateSection() {
         )}
       </div>
 
-      <p style={hintStyle}>
+      <p className="sh-SettingsSystemSections-10">
         点击后会联网检查是否有新版本。发现新版本时下载安装包并自动校验签名， 确保来自官方发布。
       </p>
     </section>
@@ -307,7 +291,7 @@ export function AutoModeToggle({ getChannel }: { getChannel: () => ControlChanne
   const disabled = loading || pending;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+    <div className="sh-SettingsSystemSections-11">
       <label
         style={{
           display: "flex",
@@ -327,10 +311,7 @@ export function AutoModeToggle({ getChannel }: { getChannel: () => ControlChanne
         />
         <span>自动模式（推荐）：自动处理符合策略的请求</span>
       </label>
-      <span
-        data-testid="permission-auto-mode-status"
-        style={{ fontSize: 11, color: dark.textMuted }}
-      >
+      <span data-testid="permission-auto-mode-status" className="sh-SettingsSystemSections-12">
         {loading
           ? "正在读取授权策略…"
           : pending
@@ -338,12 +319,12 @@ export function AutoModeToggle({ getChannel }: { getChannel: () => ControlChanne
             : `当前：${policy.mode === "auto" ? "自动" : "手动"}` +
               `（策略代次 ${policy.generation} · ${policy.provenance}）`}
       </span>
-      <p style={{ fontSize: 11, color: dark.textMuted, margin: 0, lineHeight: 1.5 }}>
+      <p className="sh-SettingsSystemSections-13">
         开启后，读写文件、运行命令、联网、技能安装等 Agent 工具权限会直接放行；
         能力安装/生成卡片会标记“Auto 已授权”以便审计，不再弹 Simple Harness 授权窗口。
         关闭后恢复逐项确认。这个开关不等于 Windows 管理员权限，也不会绕过系统级限制。
       </p>
-      {err && <span style={{ color: dark.danger, fontSize: tokens.text.sm.size }}>{err}</span>}
+      {err && <span className="sh-SettingsSystemSections-14">{err}</span>}
     </div>
   );
 }
@@ -451,11 +432,8 @@ export function ChatTurnTimeoutSetting({
   );
 
   return (
-    <div style={{ display: "grid", gap: 6, marginTop: 10 }}>
-      <label
-        htmlFor="chat-turn-timeout-minutes"
-        style={{ fontSize: 13, fontWeight: 600, color: dark.text }}
-      >
+    <div className="sh-SettingsSystemSections-15">
+      <label htmlFor="chat-turn-timeout-minutes" className="sh-SettingsSystemSections-16">
         Agent 有效执行预算（分钟）
       </label>
       <input
@@ -468,26 +446,17 @@ export function ChatTurnTimeoutSetting({
         disabled={turnTimeoutMin === null}
         placeholder="读取中"
         onChange={(e) => onChange(e.target.value)}
-        style={{
-          width: 120,
-          padding: "5px 8px",
-          borderRadius: 4,
-          border: `1px solid ${dark.border}`,
-          background: dark.card,
-          color: dark.text,
-          fontSize: 12,
-          outline: "none",
-        }}
+        className="sh-SettingsSystemSections-17"
         data-testid="chat-turn-timeout-minutes"
       />
-      <p style={hintStyle}>
+      <p className="sh-SettingsSystemSections-10">
         只累计 Agent、模型和工具实际工作的时间；等待你确认、选择文件夹或完成外部操作时暂停。默认 15
         分钟，范围 1-60。
       </p>
-      <span data-testid="chat-turn-timeout-status" style={{ color: dark.textMuted, fontSize: 11 }}>
+      <span data-testid="chat-turn-timeout-status" className="sh-SettingsSystemSections-18">
         {status}
       </span>
-      {err && <span style={{ color: dark.danger, fontSize: tokens.text.sm.size }}>{err}</span>}
+      {err && <span className="sh-SettingsSystemSections-14">{err}</span>}
     </div>
   );
 }
@@ -534,23 +503,16 @@ export function DangerZoneSection() {
   }, [includeModels, ask]);
 
   return (
-    <section style={{ ...sectionStyle, borderTop: `1px solid ${dark.borderStrong}` }}>
+    <section className="sh-SettingsSystemSections-19">
       {confirmDialog}
-      <h3 style={{ ...h3Style, color: dark.danger }}>危险区</h3>
-      <p style={hintStyle}>
+      <h3 className="sh-SettingsSystemSections-20">危险区</h3>
+      <p className="sh-SettingsSystemSections-10">
         "完全卸载" 会清除 Simple Harness 当前解析到的用户数据目录（配置、SQLite、日志）。 ⚠️ 若为
         portable 安装（数据实际在安装目录的 <code>userdata/</code>）或你
         自定义过数据目录，此按钮可能删不到真正的数据——最可靠的做法是直接删除
         整个安装目录。卸载安装包本身仍需在「应用和功能」里进行。
       </p>
-      <label
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 6,
-          fontSize: 12,
-        }}
-      >
+      <label className="sh-SettingsSystemSections-21">
         <input
           type="checkbox"
           checked={includeModels}
@@ -563,22 +525,17 @@ export function DangerZoneSection() {
         </span>
       </label>
       {err && (
-        <div role="alert" style={{ ...statusStyle, color: dark.danger }}>
+        <div role="alert" className="sh-SettingsSystemSections-22">
           {err}
         </div>
       )}
-      <div style={btnRowStyle}>
+      <div className="sh-SettingsSystemSections-7">
         <button
           type="button"
           data-testid="purge-user-data"
           onClick={handlePurge}
           disabled={busy}
-          style={{
-            ...btnStyle,
-            background: dark.danger,
-            color: "white",
-            borderColor: dark.danger,
-          }}
+          className="sh-SettingsSystemSections-23"
         >
           {busy ? "删除中…" : "完全卸载（清除用户数据）"}
         </button>
@@ -735,109 +692,83 @@ export function DataDirSection() {
 
   if (loadErr) {
     return (
-      <section style={sectionStyle}>
-        <h3 style={h3Style}>数据目录</h3>
-        <div style={{ ...statusStyle, color: dark.danger }}>加载失败：{loadErr}</div>
+      <section className="sh-SettingsSystemSections-1">
+        <h3 className="sh-SettingsSystemSections-2">数据目录</h3>
+        <div className="sh-SettingsSystemSections-22">加载失败：{loadErr}</div>
       </section>
     );
   }
   if (!setting) {
     return (
-      <section style={sectionStyle}>
-        <h3 style={h3Style}>数据目录</h3>
-        <div style={statusStyle}>加载中…</div>
+      <section className="sh-SettingsSystemSections-1">
+        <h3 className="sh-SettingsSystemSections-2">数据目录</h3>
+        <div className="sh-SettingsSystemSections-3">加载中…</div>
       </section>
     );
   }
 
   return (
-    <section id="settings-data-dir" style={sectionStyle}>
+    <section id="settings-data-dir" className="sh-SettingsSystemSections-1">
       {confirmDialog}
-      <h3 style={h3Style}>数据目录</h3>
-      <p style={hintStyle}>
+      <h3 className="sh-SettingsSystemSections-2">数据目录</h3>
+      <p className="sh-SettingsSystemSections-10">
         Simple Harness 的聊天历史、配置、SQLite 数据库和设备 ID 都保存在这里。 如果 C
         盘空间紧张，可以搬到其他磁盘。
       </p>
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "auto 1fr",
-          columnGap: 10,
-          rowGap: 4,
-          fontSize: 12,
-        }}
-      >
-        <div style={{ color: dark.textMuted }}>当前生效</div>
-        <div style={{ fontFamily: "monospace" }}>
+      <div className="sh-SettingsSystemSections-24">
+        <div className="sh-SettingsSystemSections-25">当前生效</div>
+        <div className="sh-SettingsSystemSections-26">
           {setting.effective}{" "}
-          <span style={{ color: dark.textMuted }}>({formatMb(setting.effective_size_bytes)})</span>
+          <span className="sh-SettingsSystemSections-25">
+            ({formatMb(setting.effective_size_bytes)})
+          </span>
         </div>
 
-        <div style={{ color: dark.textMuted }}>环境变量</div>
-        <div style={{ fontFamily: "monospace" }}>
+        <div className="sh-SettingsSystemSections-25">环境变量</div>
+        <div className="sh-SettingsSystemSections-26">
           {setting.env_override ?? (
-            <span style={{ color: dark.textFaint }}>(未设置 — 使用默认路径)</span>
+            <span className="sh-SettingsSystemSections-27">(未设置 — 使用默认路径)</span>
           )}
         </div>
 
-        <div style={{ color: dark.textMuted }}>已保存偏好</div>
-        <div style={{ fontFamily: "monospace" }}>
-          {setting.preference ?? <span style={{ color: dark.textFaint }}>(未设置)</span>}
+        <div className="sh-SettingsSystemSections-25">已保存偏好</div>
+        <div className="sh-SettingsSystemSections-26">
+          {setting.preference ?? <span className="sh-SettingsSystemSections-27">(未设置)</span>}
         </div>
 
-        <div style={{ color: dark.textMuted }}>默认路径</div>
-        <div style={{ fontFamily: "monospace", color: dark.textMuted }}>
-          {setting.default ?? "—"}
-        </div>
+        <div className="sh-SettingsSystemSections-25">默认路径</div>
+        <div className="sh-SettingsSystemSections-28">{setting.default ?? "—"}</div>
       </div>
 
       {setting.externally_pinned && (
-        <div role="status" style={{ ...statusStyle, color: dark.warning }}>
+        <div role="status" className="sh-SettingsSystemSections-29">
           当前目录由启动环境变量固定。为避免显示“已保存”但重启仍被覆盖，应用内切换已禁用。
         </div>
       )}
 
-      <div style={{ display: "grid", gap: 6, marginTop: 8 }}>
-        <label style={{ fontSize: 12, color: dark.textMuted }}>新路径</label>
-        <div style={{ display: "flex", gap: 6 }}>
+      <div className="sh-SettingsSystemSections-30">
+        <label className="sh-SettingsSystemSections-31">新路径</label>
+        <div className="sh-SettingsSystemSections-32">
           <input
             type="text"
             value={newPath}
             onChange={(e) => setNewPath(e.target.value)}
             disabled={busy || setting.externally_pinned}
             placeholder="F:\deskpet\data"
-            style={{
-              flex: 1,
-              padding: "5px 8px",
-              borderRadius: 4,
-              border: `1px solid ${dark.border}`,
-              background: dark.card,
-              color: dark.text,
-              fontSize: 12,
-              fontFamily: "monospace",
-              outline: "none",
-            }}
+            className="sh-SettingsSystemSections-33"
             data-testid="data-dir-input"
           />
           <button
             type="button"
             onClick={handlePickDir}
             disabled={busy || setting.externally_pinned}
-            style={btnStyle}
+            className="sh-SettingsSystemSections-9"
           >
             浏览…
           </button>
         </div>
-        <label
-          style={{
-            display: "flex",
-            gap: 6,
-            alignItems: "center",
-            fontSize: 12,
-            color: dark.textMuted,
-          }}
-        >
+        <label className="sh-SettingsSystemSections-34">
           <input
             type="checkbox"
             checked={moveData}
@@ -848,17 +779,12 @@ export function DataDirSection() {
         </label>
       </div>
 
-      <div style={{ display: "flex", gap: 8, marginTop: 4, flexWrap: "wrap" }}>
+      <div className="sh-SettingsSystemSections-35">
         <button
           type="button"
           onClick={handleApply}
           disabled={busy || setting.externally_pinned}
-          style={{
-            ...btnStyle,
-            background: dark.accent,
-            color: "white",
-            borderColor: dark.accent,
-          }}
+          className="sh-SettingsSystemSections-36"
           data-testid="data-dir-apply"
         >
           {busy ? "处理中…" : "应用"}
@@ -867,32 +793,28 @@ export function DataDirSection() {
           type="button"
           onClick={handleReset}
           disabled={busy || setting.externally_pinned}
-          style={btnStyle}
+          className="sh-SettingsSystemSections-9"
           data-testid="data-dir-reset"
         >
           恢复默认
         </button>
-        <button type="button" onClick={reload} disabled={busy} style={btnStyle}>
+        <button
+          type="button"
+          onClick={reload}
+          disabled={busy}
+          className="sh-SettingsSystemSections-9"
+        >
           刷新
         </button>
       </div>
 
       {opMsg && (
-        <div
-          role="status"
-          style={{
-            ...statusStyle,
-            background: "transparent",
-            border: `1px solid ${dark.borderStrong}`,
-            borderLeft: `2px solid ${dark.success}`,
-            color: dark.success,
-          }}
-        >
+        <div role="status" className="sh-SettingsSystemSections-37">
           {opMsg}
         </div>
       )}
       {opErr && (
-        <div role="alert" style={{ ...statusStyle, color: dark.danger }}>
+        <div role="alert" className="sh-SettingsSystemSections-22">
           {opErr}
         </div>
       )}

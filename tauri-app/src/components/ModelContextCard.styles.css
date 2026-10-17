@@ -1,0 +1,104 @@
+/* 生成文件，不要手改：src/components/ModelContextCard.tsx 里静态内联样式的等价类（9I）。
+   重新生成：node scripts/code_quality/ts_inline_to_class.mjs convert src/components/ModelContextCard.tsx */
+
+.sh-ModelContextCard-1 {
+  border: 1px solid var(--sh-hairline, rgba(255,255,255,0.075));
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin-top: 8px;
+  background: var(--sh-card, #1C2026);
+}
+
+.sh-ModelContextCard-2 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.sh-ModelContextCard-3 {
+  font-size: 12px;
+}
+
+.sh-ModelContextCard-4 {
+  background: var(--sh-card, #1C2026);
+  color: var(--sh-text, #E8E5DF);
+  border: 1px solid var(--sh-hairline-strong, rgba(255,255,255,0.14));
+  border-radius: 3px;
+  padding: 1px 4px;
+  font-size: 11px;
+}
+
+.sh-ModelContextCard-5 {
+  font-size: 11px;
+  color: var(--sh-text-3, #736F69);
+}
+
+.sh-ModelContextCard-6 {
+  font-size: 11px;
+  color: var(--sh-warning, #D9A441);
+}
+
+.sh-ModelContextCard-7 {
+  font-size: 11px;
+  color: var(--sh-text, #E8E5DF);
+  line-height: 1.6;
+}
+
+.sh-ModelContextCard-8 {
+  margin-top: 8px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 8px;
+  align-items: center;
+  font-size: 11px;
+}
+
+.sh-ModelContextCard-9 {
+  background: var(--sh-card, #1C2026);
+  color: var(--sh-text, #E8E5DF);
+  border: 1px solid var(--sh-hairline-strong, rgba(255,255,255,0.14));
+  border-radius: 3px;
+  padding: 2px 6px;
+  font-size: 11px;
+  font-family: monospace;
+}
+
+.sh-ModelContextCard-10 {
+  margin-top: 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sh-ModelContextCard-11 {
+  background: var(--sh-success, #6FBF8F);
+  color: white;
+  border: none;
+  border-radius: 3px;
+  padding: 2px 10px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.sh-ModelContextCard-12 {
+  background: var(--sh-accent, #7FB2AA);
+  color: white;
+  border: none;
+  border-radius: 3px;
+  padding: 2px 10px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.sh-ModelContextCard-13 {
+  font-size: 10px;
+  color: var(--sh-text-3, #736F69);
+}
+
+.sh-ModelContextCard-14 {
+  font-size: 10px;
+  color: var(--sh-text-3, #736F69);
+  margin-top: 6px;
+  line-height: 1.5;
+}

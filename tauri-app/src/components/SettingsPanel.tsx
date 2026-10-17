@@ -15,10 +15,9 @@
 import { Icon } from "./Icon";
 import { ModelContextCard } from "./ModelContextCard";
 import { SettingsProviders } from "./SettingsProviders";
-import { dark, titleText, transition } from "../theme/components";
+import { dark } from "../theme/components";
 import { tokens } from "../theme/tokens";
 import type { ControlChannel } from "../ws/ControlChannel";
-import { sectionStyle, h3Style, hintStyle } from "./settingsStyles";
 import {
   StorageUsageSection,
   GlobalBudgetSection,
@@ -32,6 +31,7 @@ import {
   DangerZoneSection,
   DataDirSection,
 } from "./SettingsSystemSections";
+import "./SettingsPanel.styles.css";
 
 interface SettingsPanelProps {
   open: boolean;
@@ -72,13 +72,18 @@ export function SettingsPanel({
 
   const panel = (
     <div style={isPage ? pagePanelStyle : panelStyle} onClick={(e) => e.stopPropagation()}>
-      <header style={headerStyle}>
-        <span style={{ display: "flex", alignItems: "center", gap: tokens.space.md }}>
+      <header className="sh-SettingsPanel-1">
+        <span className="sh-SettingsPanel-2">
           <Icon name="settings" size={18} style={{ color: dark.textMuted }} />
-          <h2 style={titleText}>设置</h2>
+          <h2 className="sh-SettingsPanel-3">设置</h2>
         </span>
         {!isPage && (
-          <button type="button" onClick={onClose} aria-label="关闭设置" style={closeBtnStyle}>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="关闭设置"
+            className="sh-SettingsPanel-4"
+          >
             <Icon name="close" size={16} />
           </button>
         )}
@@ -94,18 +99,9 @@ export function SettingsPanel({
 
       {/* ================ 通用（T11：自启开关自 Toolbar 移入） ================ */}
       {autostart?.ready && (
-        <section style={sectionStyle}>
-          <h3 style={h3Style}>通用</h3>
-          <label
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              fontSize: 12.5,
-              color: dark.text,
-              cursor: "pointer",
-            }}
-          >
+        <section className="sh-SettingsPanel-5">
+          <h3 className="sh-SettingsPanel-6">通用</h3>
+          <label className="sh-SettingsPanel-7">
             <input
               type="checkbox"
               data-testid="autostart-toggle"
@@ -114,19 +110,19 @@ export function SettingsPanel({
             />
             开机自动启动
           </label>
-          <p style={hintStyle}>登录系统后自动启动 Simple Harness。</p>
+          <p className="sh-SettingsPanel-8">登录系统后自动启动 Simple Harness。</p>
         </section>
       )}
 
       {/* ================ LLM Providers (P5-S2 Phase 4) ================ */}
-      <section style={sectionStyle}>
-        <h3 style={h3Style}>LLM Providers</h3>
+      <section className="sh-SettingsPanel-5">
+        <h3 className="sh-SettingsPanel-6">LLM Providers</h3>
         <SettingsProviders getChannel={getChannel} />
       </section>
 
       {/* ================ 模型状态 (P4-S16) ================ */}
-      <section style={sectionStyle}>
-        <h3 style={h3Style}>模型状态</h3>
+      <section className="sh-SettingsPanel-5">
+        <h3 className="sh-SettingsPanel-6">模型状态</h3>
         {/* 2026-09-10：BGE-M3 / WeMM 嵌入器状态卡随认知记忆 SDK 一并移除
               ——本构建不再注册任何 embedder。 */}
         {/* Phase 1.1.6（context-1m-rearch）：per-model 上下文窗口卡片 */}
@@ -134,8 +130,8 @@ export function SettingsPanel({
       </section>
 
       {/* ================ 自动模式 (P4-S21 #13) ================ */}
-      <section style={sectionStyle}>
-        <h3 style={h3Style}>权限</h3>
+      <section className="sh-SettingsPanel-5">
+        <h3 className="sh-SettingsPanel-6">权限</h3>
         <AutoModeToggle getChannel={getChannel} />
         <ChatTurnTimeoutSetting getChannel={getChannel} />
       </section>
@@ -175,7 +171,7 @@ export function SettingsPanel({
       role="dialog"
       aria-modal="true"
       aria-label="设置"
-      style={overlayStyle}
+      className="sh-SettingsPanel-9"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -186,16 +182,6 @@ export function SettingsPanel({
 }
 // ---- inline styles (kept local so the panel has no CSS imports to wire) ----
 
-const overlayStyle: React.CSSProperties = {
-  position: "fixed",
-  inset: 0,
-  background: dark.scrim,
-  display: "grid",
-  placeItems: "center",
-  padding: tokens.space.md,
-  zIndex: 1000,
-  animation: `bp-fade-in ${tokens.duration.base}ms ${tokens.easing.out}`,
-};
 const panelStyle: React.CSSProperties = {
   background: dark.panel,
   padding: `0 ${tokens.space.xl}px ${tokens.space.xl}px`,
@@ -223,29 +209,4 @@ const pagePanelStyle: React.CSSProperties = {
   overflowX: "hidden",
   color: dark.text,
   fontFamily: tokens.font.ui,
-};
-const headerStyle: React.CSSProperties = {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-  position: "sticky",
-  top: 0,
-  zIndex: 2,
-  margin: `0 -${tokens.space.xl}px ${tokens.space.lg}px`,
-  padding: `${tokens.space.lg}px ${tokens.space.xl}px`,
-  background: dark.panel,
-  borderBottom: `1px solid ${dark.hairline}`,
-};
-const closeBtnStyle: React.CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  width: tokens.controlHeight,
-  height: tokens.controlHeight,
-  background: "transparent",
-  border: `1px solid ${dark.border}`,
-  borderRadius: tokens.radius.md,
-  cursor: "pointer",
-  color: dark.textMuted,
-  transition,
 };

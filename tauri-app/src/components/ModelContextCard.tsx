@@ -20,6 +20,7 @@ import {
   buildModelContextSetMessage,
   parseModelContextEdits,
 } from "./modelContextMessages";
+import "./ModelContextCard.styles.css";
 
 type Props = {
   getChannel: () => ControlChannel | null;
@@ -185,37 +186,14 @@ export function ModelContextCard({ getChannel }: Props) {
   }, [compactionModel, getChannel]);
 
   return (
-    <div
-      data-testid="model-context-card"
-      style={{
-        border: `1px solid ${dark.cardBorder}`,
-        borderRadius: "6px",
-        padding: "8px 10px",
-        marginTop: "8px",
-        background: dark.card,
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          marginBottom: "6px",
-        }}
-      >
-        <strong style={{ fontSize: "12px" }}>模型上下文窗口</strong>
+    <div data-testid="model-context-card" className="sh-ModelContextCard-1">
+      <div className="sh-ModelContextCard-2">
+        <strong className="sh-ModelContextCard-3">模型上下文窗口</strong>
         <select
           data-testid="model-context-select"
           value={model}
           onChange={(e) => onModelChange(e.target.value)}
-          style={{
-            background: dark.card,
-            color: dark.text,
-            border: `1px solid ${dark.borderStrong}`,
-            borderRadius: "3px",
-            padding: "1px 4px",
-            fontSize: "11px",
-          }}
+          className="sh-ModelContextCard-4"
         >
           {(() => {
             // 下拉 = 中转站目录全量 ∪ builtin 画像模型 ∪ 当前选中
@@ -230,17 +208,15 @@ export function ModelContextCard({ getChannel }: Props) {
         </select>
       </div>
 
-      {state.kind === "loading" && (
-        <div style={{ fontSize: "11px", color: dark.textFaint }}>加载中…</div>
-      )}
+      {state.kind === "loading" && <div className="sh-ModelContextCard-5">加载中…</div>}
 
       {state.kind === "error" && (
-        <div style={{ fontSize: "11px", color: dark.warning }}>后端提示：{state.reason}</div>
+        <div className="sh-ModelContextCard-6">后端提示：{state.reason}</div>
       )}
 
       {state.kind === "ready" && (
         <>
-          <div style={{ fontSize: "11px", color: dark.text, lineHeight: 1.6 }}>
+          <div className="sh-ModelContextCard-7">
             <div>
               上下文总长度：
               <strong> {fmtTokens(state.resolved.context_window)}</strong>
@@ -257,16 +233,7 @@ export function ModelContextCard({ getChannel }: Props) {
             </div>
           </div>
 
-          <div
-            style={{
-              marginTop: "8px",
-              display: "grid",
-              gridTemplateColumns: "auto 1fr",
-              gap: "4px 8px",
-              alignItems: "center",
-              fontSize: "11px",
-            }}
-          >
+          <div className="sh-ModelContextCard-8">
             {/* 2026-06-13: context_window 只读展示(上方"生效窗口"),
                 不再提供自由输入 —— 窗口档位在「模型与参数」modal 选。
                 本卡只允许调压缩触发阈值。 */}
@@ -278,7 +245,7 @@ export function ModelContextCard({ getChannel }: Props) {
               onChange={(e) => setCompactEdit(e.target.value)}
               inputMode="decimal"
               placeholder="如 0.75 = 75% 时触发压缩"
-              style={inputStyle}
+              className="sh-ModelContextCard-9"
             />
             <label htmlFor="mc-compaction-model">压缩模型</label>
             <select
@@ -289,7 +256,7 @@ export function ModelContextCard({ getChannel }: Props) {
                 setCompactionModel(e.target.value);
                 setCompactionSaveMsg(null);
               }}
-              style={inputStyle}
+              className="sh-ModelContextCard-9"
             >
               <option value="follow_session">跟随当前会话</option>
               {compactionModels.map((candidate) => (
@@ -300,57 +267,27 @@ export function ModelContextCard({ getChannel }: Props) {
             </select>
           </div>
 
-          <div
-            style={{
-              marginTop: "6px",
-              display: "flex",
-              alignItems: "center",
-              gap: "8px",
-            }}
-          >
+          <div className="sh-ModelContextCard-10">
             <button
               data-testid="model-context-save"
               onClick={onSave}
-              style={{
-                background: dark.success,
-                color: "white",
-                border: "none",
-                borderRadius: "3px",
-                padding: "2px 10px",
-                fontSize: "11px",
-                cursor: "pointer",
-              }}
+              className="sh-ModelContextCard-11"
             >
               保存到全局
             </button>
             <button
               data-testid="context-compaction-model-save"
               onClick={onCompactionModelSave}
-              style={{
-                background: dark.accent,
-                color: "white",
-                border: "none",
-                borderRadius: "3px",
-                padding: "2px 10px",
-                fontSize: "11px",
-                cursor: "pointer",
-              }}
+              className="sh-ModelContextCard-12"
             >
               保存压缩模型
             </button>
-            {saveMsg && <span style={{ fontSize: "10px", color: dark.textFaint }}>{saveMsg}</span>}
+            {saveMsg && <span className="sh-ModelContextCard-13">{saveMsg}</span>}
             {compactionSaveMsg && (
-              <span style={{ fontSize: "10px", color: dark.textFaint }}>{compactionSaveMsg}</span>
+              <span className="sh-ModelContextCard-13">{compactionSaveMsg}</span>
             )}
           </div>
-          <div
-            style={{
-              fontSize: "10px",
-              color: dark.textFaint,
-              marginTop: "6px",
-              lineHeight: 1.5,
-            }}
-          >
+          <div className="sh-ModelContextCard-14">
             写回当前 Simple Harness 用户数据目录下的 model_overrides.toml。切模型零配置编辑——
             ContextManager 阈值随窗口自动伸缩（v2）。
           </div>
@@ -390,12 +327,3 @@ function SourceBadge({ source }: { source: string }) {
     </span>
   );
 }
-const inputStyle: React.CSSProperties = {
-  background: dark.card,
-  color: dark.text,
-  border: `1px solid ${dark.borderStrong}`,
-  borderRadius: "3px",
-  padding: "2px 6px",
-  fontSize: "11px",
-  fontFamily: "monospace",
-};

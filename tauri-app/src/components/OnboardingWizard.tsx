@@ -23,6 +23,7 @@ import { Icon } from "./Icon";
 import { dark } from "../theme/components";
 import { stepsForEdition, nextStepAllowed } from "./onboardingSteps";
 import type { OnboardingTestState } from "./onboardingSteps";
+import "./OnboardingWizard.styles.css";
 
 export interface OnboardingConfig {
   base_url: string;
@@ -80,10 +81,10 @@ function OnboardingWizardImpl({
   const canAdvance = nextStepAllowed(steps, index, testState);
 
   return (
-    <div data-testid="onboarding-wizard" style={overlayStyle}>
-      <div style={cardStyle} role="dialog" aria-label="Simple Harness 初次设置">
+    <div data-testid="onboarding-wizard" className="sh-OnboardingWizard-1">
+      <div className="sh-OnboardingWizard-2" role="dialog" aria-label="Simple Harness 初次设置">
         {/* Step indicator — one dot per step in the active edition's list */}
-        <div style={stepBarStyle}>
+        <div className="sh-OnboardingWizard-3">
           {steps.map((s, n) => (
             <div
               key={s.id}
@@ -98,27 +99,27 @@ function OnboardingWizardImpl({
 
         {currentStep?.id === "welcome" && (
           <div data-testid="onboarding-step-welcome">
-            <h2 style={titleStyle}>欢迎使用 Simple Harness</h2>
-            <p style={bodyStyle}>
+            <h2 className="sh-OnboardingWizard-4">欢迎使用 Simple Harness</h2>
+            <p className="sh-OnboardingWizard-5">
               Simple Harness 是一个住在你桌面上的 AI 工作台。它能陪你聊天、记住你 说过的事、帮你做
               PPT、查资料，还能进入"代码模式"帮你写程序。
             </p>
-            <p style={bodyStyle}>很快就能开始 —— 整个过程不到 1 分钟。</p>
+            <p className="sh-OnboardingWizard-5">很快就能开始 —— 整个过程不到 1 分钟。</p>
           </div>
         )}
 
         {currentStep?.id === "connectModel" && (
           <div data-testid="onboarding-step-connectModel">
-            <h2 style={titleStyle}>接入大模型</h2>
-            <p style={bodyStyle}>
+            <h2 className="sh-OnboardingWizard-4">接入大模型</h2>
+            <p className="sh-OnboardingWizard-5">
               Simple Harness 的"大脑"需要一个大语言模型。填入你的服务地址、模型名和密钥，
               点"测试连接"验证后即可继续。
             </p>
-            <label style={labelStyle}>
+            <label className="sh-OnboardingWizard-6">
               服务地址 (base_url)
               <input
                 data-testid="onboarding-base-url"
-                style={inputStyle}
+                className="sh-OnboardingWizard-7"
                 value={baseUrl}
                 placeholder="https://api.example.com/v1"
                 onChange={(e) => {
@@ -127,11 +128,11 @@ function OnboardingWizardImpl({
                 }}
               />
             </label>
-            <label style={labelStyle}>
+            <label className="sh-OnboardingWizard-6">
               模型名 (model)
               <input
                 data-testid="onboarding-model"
-                style={inputStyle}
+                className="sh-OnboardingWizard-7"
                 value={model}
                 placeholder="gpt-4o / deepseek-chat / ..."
                 onChange={(e) => {
@@ -140,11 +141,11 @@ function OnboardingWizardImpl({
                 }}
               />
             </label>
-            <label style={labelStyle}>
+            <label className="sh-OnboardingWizard-6">
               密钥 (api_key)
               <input
                 data-testid="onboarding-api-key"
-                style={inputStyle}
+                className="sh-OnboardingWizard-7"
                 type="password"
                 value={apiKey}
                 placeholder="sk-..."
@@ -156,20 +157,20 @@ function OnboardingWizardImpl({
             </label>
             <button
               data-testid="onboarding-test-btn"
-              style={testBtnStyle}
+              className="sh-OnboardingWizard-8"
               disabled={testState === "testing"}
               onClick={handleTest}
             >
               {testState === "testing" ? "测试中…" : "测试连接"}
             </button>
             {testState === "ok" && (
-              <p data-testid="onboarding-test-ok" style={okStyle}>
+              <p data-testid="onboarding-test-ok" className="sh-OnboardingWizard-9">
                 <Icon name="check" size={15} />
                 连接成功，配置已保存
               </p>
             )}
             {testState === "failed" && (
-              <p data-testid="onboarding-test-error" style={errStyle}>
+              <p data-testid="onboarding-test-error" className="sh-OnboardingWizard-10">
                 <Icon name="alert" size={15} style={{ flexShrink: 0, marginTop: 1 }} />
                 <span>{testError}</span>
               </p>
@@ -179,29 +180,33 @@ function OnboardingWizardImpl({
 
         {currentStep?.id === "ready" && (
           <div data-testid="onboarding-step-ready">
-            <h2 style={titleStyle}>本地记忆能力</h2>
-            <p style={bodyStyle}>
+            <h2 className="sh-OnboardingWizard-4">本地记忆能力</h2>
+            <p className="sh-OnboardingWizard-5">
               Simple Harness 会在后台下载一个本地记忆模型 (BGE-M3，约 286MB)，
               用来记住你和它的对话。
             </p>
-            <p style={bodyStyle}>
+            <p className="sh-OnboardingWizard-5">
               下载完成前，记忆功能会以"轻量模式"运行 —— 不影响聊天，
               只是长期记忆会稍弱一些。下载完成后自动切换，无需任何操作。
             </p>
-            <p style={bodyStyle}>一切就绪，开始用 Simple Harness 干活吧！</p>
+            <p className="sh-OnboardingWizard-5">一切就绪，开始用 Simple Harness 干活吧！</p>
           </div>
         )}
 
         {/* Footer buttons */}
-        <div style={footerStyle}>
-          <button data-testid="onboarding-skip-btn" style={skipBtnStyle} onClick={onSkip}>
+        <div className="sh-OnboardingWizard-11">
+          <button
+            data-testid="onboarding-skip-btn"
+            className="sh-OnboardingWizard-12"
+            onClick={onSkip}
+          >
             跳过
           </button>
-          <div style={{ flex: 1 }} />
+          <div className="sh-OnboardingWizard-13" />
           {index > 0 && (
             <button
               data-testid="onboarding-back-btn"
-              style={secondaryBtnStyle}
+              className="sh-OnboardingWizard-14"
               onClick={() => setIndex((i) => Math.max(0, i - 1))}
             >
               上一步
@@ -226,7 +231,7 @@ function OnboardingWizardImpl({
           {isLast && (
             <button
               data-testid="onboarding-finish-btn"
-              style={primaryBtnStyle}
+              className="sh-OnboardingWizard-15"
               onClick={onComplete}
             >
               完成
@@ -240,106 +245,11 @@ function OnboardingWizardImpl({
 export const OnboardingWizard = memo(OnboardingWizardImpl);
 // --------------------------- styles ----------------------------------
 
-const overlayStyle: React.CSSProperties = {
-  position: "fixed",
-  inset: 0,
-  background: "rgba(8,11,20,0.58)",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  zIndex: 9999,
-  backdropFilter: "blur(7px)",
-  WebkitBackdropFilter: "blur(7px)",
-};
-const cardStyle: React.CSSProperties = {
-  width: 460,
-  maxWidth: "92vw",
-  background: dark.bg,
-  borderRadius: 20,
-  padding: "28px 32px 22px",
-  border: `1px solid ${dark.borderStrong}`,
-  boxShadow: "0 32px 70px rgba(8,11,20,0.45), 0 4px 14px rgba(8,11,20,0.18)",
-  fontFamily: '"Inter","PingFang SC","Microsoft YaHei UI",sans-serif',
-  color: dark.text,
-  animation: "bp-pop-in 280ms cubic-bezier(0.16,1,0.3,1)",
-};
-const stepBarStyle: React.CSSProperties = {
-  display: "flex",
-  gap: 7,
-  justifyContent: "center",
-  marginBottom: 20,
-};
 const dotStyle: React.CSSProperties = {
   width: 30,
   height: 5,
   borderRadius: 999,
   transition: "background 220ms ease",
-};
-const titleStyle: React.CSSProperties = {
-  fontSize: 22,
-  fontWeight: 700,
-  margin: "0 0 12px",
-};
-const bodyStyle: React.CSSProperties = {
-  fontSize: 14,
-  lineHeight: 1.7,
-  color: dark.textMuted,
-  margin: "0 0 10px",
-};
-const labelStyle: React.CSSProperties = {
-  display: "block",
-  fontSize: 12.5,
-  fontWeight: 600,
-  color: dark.textMuted,
-  margin: "12px 0 4px",
-};
-const inputStyle: React.CSSProperties = {
-  width: "100%",
-  boxSizing: "border-box",
-  marginTop: 4,
-  padding: "9px 12px",
-  fontSize: 13,
-  border: `1px solid ${dark.border}`,
-  borderRadius: 10,
-  background: dark.inset,
-  outline: "none",
-  color: dark.text,
-};
-const testBtnStyle: React.CSSProperties = {
-  marginTop: 14,
-  padding: "9px 18px",
-  fontSize: 13,
-  fontWeight: 700,
-  background: "linear-gradient(180deg,#1e293b,#0f172a)",
-  color: "#fff",
-  border: "1px solid rgba(15,23,42,0.6)",
-  borderRadius: 10,
-  cursor: "pointer",
-};
-const okStyle: React.CSSProperties = {
-  color: "#6ee7b7",
-  fontSize: 13,
-  fontWeight: 600,
-  marginTop: 10,
-  display: "flex",
-  alignItems: "center",
-  gap: 6,
-};
-const errStyle: React.CSSProperties = {
-  color: "#fca5a5",
-  fontSize: 13,
-  fontWeight: 600,
-  marginTop: 10,
-  display: "flex",
-  alignItems: "flex-start",
-  gap: 6,
-  lineHeight: 1.5,
-};
-const footerStyle: React.CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  gap: 8,
-  marginTop: 22,
 };
 const primaryBtnStyle: React.CSSProperties = {
   padding: "9px 22px",
@@ -351,23 +261,4 @@ const primaryBtnStyle: React.CSSProperties = {
   borderRadius: 10,
   boxShadow: "0 6px 16px rgba(37,99,235,0.30)",
   cursor: "pointer",
-};
-const secondaryBtnStyle: React.CSSProperties = {
-  padding: "9px 16px",
-  fontSize: 13,
-  fontWeight: 600,
-  background: dark.card,
-  color: dark.text,
-  border: `1px solid ${dark.border}`,
-  borderRadius: 10,
-  cursor: "pointer",
-};
-const skipBtnStyle: React.CSSProperties = {
-  padding: "8px 12px",
-  fontSize: 12.5,
-  background: "transparent",
-  color: "#94a3b8",
-  border: "none",
-  cursor: "pointer",
-  textDecoration: "underline",
 };

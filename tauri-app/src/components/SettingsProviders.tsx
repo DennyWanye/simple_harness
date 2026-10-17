@@ -45,6 +45,7 @@ import {
   sortProvidersForDisplay,
 } from "./providersStore";
 import type { Provider, ProviderEventMessage } from "./providersStore";
+import "./SettingsProviders.styles.css";
 
 // ---- Component ------------------------------------------------------------
 
@@ -119,20 +120,11 @@ function SortableRow({
         >
           ⠿
         </span>
-        <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-            <span
-              style={{
-                fontWeight: 600,
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
-            >
-              {provider.name}
-            </span>
+        <div className="sh-SettingsProviders-1">
+          <div className="sh-SettingsProviders-2">
+            <span className="sh-SettingsProviders-3">{provider.name}</span>
           </div>
-          <div style={{ color: dark.textMuted, fontSize: 11, overflowWrap: "anywhere" }}>
+          <div className="sh-SettingsProviders-4">
             {provider.default_model ||
               provider.model ||
               (provider.models && provider.models[0]) ||
@@ -141,22 +133,18 @@ function SortableRow({
               ? ` (+${provider.models.length - 1})`
               : ""}
           </div>
-          <div style={{ color: dark.textFaint, fontSize: 11, overflowWrap: "anywhere" }}>
-            {provider.base_url}
-          </div>
-          <div style={{ color: dark.textFaint, fontSize: 11 }}>
-            API Key: {displayApiKey(provider)}
-          </div>
+          <div className="sh-SettingsProviders-5">{provider.base_url}</div>
+          <div className="sh-SettingsProviders-6">API Key: {displayApiKey(provider)}</div>
         </div>
       </div>
       <div style={actionsRow}>
         {provider.models.length > 0 && (
-          <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11 }}>
+          <label className="sh-SettingsProviders-7">
             默认
             <select
               value={provider.default_model || provider.model || provider.models[0] || ""}
               onChange={(e) => onDefaultModelChange(provider.id, e.target.value)}
-              style={selectStyle}
+              className="sh-SettingsProviders-8"
               data-testid={`provider-default-model-select-${provider.id}`}
               aria-label={`默认模型 ${provider.name}`}
             >
@@ -168,7 +156,7 @@ function SortableRow({
             </select>
           </label>
         )}
-        <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11 }}>
+        <label className="sh-SettingsProviders-7">
           <input
             type="checkbox"
             checked={provider.enabled}
@@ -180,7 +168,7 @@ function SortableRow({
         <button
           type="button"
           onClick={() => onEdit(provider)}
-          style={{ ...rowBtn }}
+          className="sh-SettingsProviders-9"
           data-testid={`provider-edit-btn-${provider.id}`}
         >
           编辑
@@ -188,7 +176,7 @@ function SortableRow({
         <button
           type="button"
           onClick={() => onDelete(provider.id)}
-          style={{ ...rowBtn, color: dark.danger }}
+          className="sh-SettingsProviders-10"
           data-testid={`provider-delete-btn-${provider.id}`}
         >
           删除
@@ -464,15 +452,8 @@ export function SettingsProviders({ getChannel }: SettingsProvidersProps) {
 
   return (
     <div data-testid="settings-providers">
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: 6,
-        }}
-      >
-        <p style={{ fontSize: 11, color: dark.textMuted, margin: 0 }}>
+      <div className="sh-SettingsProviders-11">
+        <p className="sh-SettingsProviders-12">
           按优先级排列；拖拽 ⠿ 改顺序，第一个失败时自动落到下一个。
         </p>
         <button
@@ -482,7 +463,7 @@ export function SettingsProviders({ getChannel }: SettingsProvidersProps) {
             setEditTarget(null);
             setAddOpen(true);
           }}
-          style={addBtnStyle}
+          className="sh-SettingsProviders-13"
           data-testid="provider-add-button"
         >
           + 添加
@@ -490,17 +471,17 @@ export function SettingsProviders({ getChannel }: SettingsProvidersProps) {
       </div>
 
       {error && (
-        <div role="alert" style={errorStyle}>
+        <div role="alert" className="sh-SettingsProviders-14">
           {error}
         </div>
       )}
 
       {ordered.length === 0 ? (
-        <div style={emptyStyle}>请添加你的第一个 LLM provider</div>
+        <div className="sh-SettingsProviders-15">请添加你的第一个 LLM provider</div>
       ) : (
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
           <SortableContext items={ordered_ids} strategy={verticalListSortingStrategy}>
-            <ul style={listStyle} data-testid="provider-list">
+            <ul className="sh-SettingsProviders-16" data-testid="provider-list">
               {ordered.map((p) => (
                 <SortableRow
                   key={p.id}
@@ -558,56 +539,3 @@ export function SettingsProviders({ getChannel }: SettingsProvidersProps) {
   );
 }
 // ---- inline styles --------------------------------------------------------
-
-const listStyle: React.CSSProperties = {
-  listStyle: "none",
-  margin: 0,
-  padding: 0,
-  display: "grid",
-  gap: 6,
-};
-const rowBtn: React.CSSProperties = {
-  padding: "3px 8px",
-  borderRadius: 4,
-  border: `1px solid ${dark.border}`,
-  background: dark.card,
-  color: dark.text,
-  fontSize: 11,
-  cursor: "pointer",
-};
-const selectStyle: React.CSSProperties = {
-  maxWidth: 180,
-  padding: "2px 6px",
-  borderRadius: 4,
-  border: `1px solid ${dark.border}`,
-  background: dark.card,
-  color: dark.text,
-  fontSize: 11,
-};
-const addBtnStyle: React.CSSProperties = {
-  padding: "4px 10px",
-  borderRadius: 4,
-  border: "1px solid transparent",
-  background: dark.accent,
-  color: "white",
-  fontSize: 12,
-  cursor: "pointer",
-};
-const errorStyle: React.CSSProperties = {
-  fontSize: 12,
-  padding: "5px 8px",
-  background: "transparent",
-  color: dark.danger,
-  border: `1px solid ${dark.borderStrong}`,
-  borderLeft: `2px solid ${dark.danger}`,
-  borderRadius: 4,
-  marginBottom: 6,
-};
-const emptyStyle: React.CSSProperties = {
-  fontSize: 12,
-  padding: "12px 8px",
-  background: dark.inset,
-  color: dark.textMuted,
-  borderRadius: 4,
-  textAlign: "center",
-};

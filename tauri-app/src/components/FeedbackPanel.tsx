@@ -18,8 +18,8 @@
  */
 import { memo, useState, useCallback } from "react";
 import { Icon } from "./Icon";
-import { dark } from "../theme/components";
 import { isFeedbackNoteValid } from "./feedbackValidation";
+import "./FeedbackPanel.styles.css";
 
 export interface FeedbackBundleResult {
   zip_path: string;
@@ -62,29 +62,18 @@ function FeedbackPanelImpl({
   }, [noteOk, note, onBuildBundle]);
 
   return (
-    <div data-testid="feedback-panel" style={overlayStyle}>
-      <div style={cardStyle} role="dialog" aria-label="反馈问题">
-        <div style={headerStyle}>
-          <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "center",
-                width: 32,
-                height: 32,
-                borderRadius: 10,
-                background: "rgba(244,63,94,0.14)",
-                color: "#fda4af",
-              }}
-            >
+    <div data-testid="feedback-panel" className="sh-FeedbackPanel-1">
+      <div className="sh-FeedbackPanel-2" role="dialog" aria-label="反馈问题">
+        <div className="sh-FeedbackPanel-3">
+          <span className="sh-FeedbackPanel-4">
+            <span className="sh-FeedbackPanel-5">
               <Icon name="bug" size={18} />
             </span>
-            <h2 style={titleStyle}>反馈问题</h2>
+            <h2 className="sh-FeedbackPanel-6">反馈问题</h2>
           </span>
           <button
             data-testid="feedback-close-btn"
-            style={closeBtnStyle}
+            className="sh-FeedbackPanel-7"
             onClick={onClose}
             aria-label="关闭"
           >
@@ -92,23 +81,23 @@ function FeedbackPanelImpl({
           </button>
         </div>
 
-        <p style={hintStyle}>
+        <p className="sh-FeedbackPanel-8">
           描述你遇到的问题，Simple Harness 会打包诊断信息（崩溃记录 + 最近日志 + 匿名使用计数）。
           <strong>诊断包不含你的 API 密钥</strong>。
         </p>
 
         <textarea
           data-testid="feedback-note"
-          style={textareaStyle}
+          className="sh-FeedbackPanel-9"
           value={note}
           placeholder="例如：点击设置保存后没反应，重启也没用…（至少 10 个字）"
           rows={5}
           onChange={(e) => setNote(e.target.value)}
         />
-        <div style={counterStyle}>
+        <div className="sh-FeedbackPanel-10">
           {note.trim().length} 字
           {!noteOk && note.length > 0 && (
-            <span style={{ color: "#fca5a5" }}>{"\u3000（再写一点，至少 10 字）"}</span>
+            <span className="sh-FeedbackPanel-11">{"\u3000（再写一点，至少 10 字）"}</span>
           )}
         </div>
 
@@ -126,22 +115,13 @@ function FeedbackPanelImpl({
         </button>
 
         {state === "done" && result && (
-          <div data-testid="feedback-result" style={resultStyle}>
-            <p
-              style={{
-                margin: "0 0 6px",
-                fontWeight: 600,
-                color: "#6ee7b7",
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-              }}
-            >
+          <div data-testid="feedback-result" className="sh-FeedbackPanel-12">
+            <p className="sh-FeedbackPanel-13">
               <Icon name="check" size={15} />
               诊断包已生成（{(result.size_bytes / 1024).toFixed(0)} KB）
             </p>
-            <code style={pathStyle}>{result.zip_path}</code>
-            <p style={{ margin: "8px 0 0", fontSize: 12.5, color: dark.textMuted }}>
+            <code className="sh-FeedbackPanel-14">{result.zip_path}</code>
+            <p className="sh-FeedbackPanel-15">
               文件已在资源管理器中高亮显示。请把它发送到：
               <strong> {feedbackChannel}</strong>
             </p>
@@ -149,7 +129,7 @@ function FeedbackPanelImpl({
         )}
 
         {state === "error" && (
-          <p data-testid="feedback-error" style={errStyle}>
+          <p data-testid="feedback-error" className="sh-FeedbackPanel-16">
             ✗ 打包失败：{error}
             <br />
             你也可以手动到安装目录的 <code>crash_reports/</code> 取文件。
@@ -162,74 +142,6 @@ function FeedbackPanelImpl({
 export const FeedbackPanel = memo(FeedbackPanelImpl);
 // --------------------------- styles ----------------------------------
 
-const overlayStyle: React.CSSProperties = {
-  position: "fixed",
-  inset: 0,
-  background: "rgba(15, 23, 42, 0.55)",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  zIndex: 9998,
-  backdropFilter: "blur(4px)",
-};
-const cardStyle: React.CSSProperties = {
-  width: 440,
-  maxWidth: "92vw",
-  background: dark.bg,
-  borderRadius: 16,
-  padding: "20px 24px 22px",
-  boxShadow: "0 24px 60px rgba(0,0,0,0.32)",
-  fontFamily: "Microsoft YaHei UI, sans-serif",
-  color: dark.text,
-  border: `1px solid ${dark.borderStrong}`,
-};
-const headerStyle: React.CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "space-between",
-};
-const titleStyle: React.CSSProperties = {
-  fontSize: 18,
-  fontWeight: 700,
-  margin: 0,
-};
-const closeBtnStyle: React.CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  width: 30,
-  height: 30,
-  background: dark.card,
-  border: `1px solid ${dark.border}`,
-  borderRadius: 9,
-  color: dark.textMuted,
-  cursor: "pointer",
-};
-const hintStyle: React.CSSProperties = {
-  fontSize: 13,
-  lineHeight: 1.6,
-  color: dark.textMuted,
-  margin: "10px 0 12px",
-};
-const textareaStyle: React.CSSProperties = {
-  width: "100%",
-  boxSizing: "border-box",
-  padding: "11px 13px",
-  fontSize: 13,
-  lineHeight: 1.6,
-  border: `1px solid ${dark.border}`,
-  borderRadius: 11,
-  background: dark.inset,
-  outline: "none",
-  resize: "vertical",
-  fontFamily: "inherit",
-  color: dark.text,
-};
-const counterStyle: React.CSSProperties = {
-  fontSize: 11.5,
-  color: "#94a3b8",
-  margin: "4px 2px 12px",
-};
 const buildBtnStyle: React.CSSProperties = {
   width: "100%",
   padding: "11px 0",
@@ -240,26 +152,4 @@ const buildBtnStyle: React.CSSProperties = {
   border: "1px solid rgba(37,99,235,0.5)",
   borderRadius: 11,
   boxShadow: "0 6px 18px rgba(37,99,235,0.32)",
-};
-const resultStyle: React.CSSProperties = {
-  marginTop: 14,
-  padding: "12px 14px",
-  background: "rgba(16,185,129,0.12)",
-  border: "1px solid rgba(110,231,183,0.28)",
-  borderRadius: 8,
-};
-const pathStyle: React.CSSProperties = {
-  display: "block",
-  fontSize: 11.5,
-  background: dark.inset,
-  padding: "6px 8px",
-  borderRadius: 6,
-  wordBreak: "break-all",
-  color: dark.textMuted,
-};
-const errStyle: React.CSSProperties = {
-  marginTop: 12,
-  fontSize: 12.5,
-  color: "#fca5a5",
-  lineHeight: 1.6,
 };

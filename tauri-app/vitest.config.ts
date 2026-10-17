@@ -31,6 +31,9 @@ export default defineConfig({
     poolOptions: { forks: { minForks: 1 } },
     include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
     setupFiles: ['./src/test/_setup.ts'],
+    // 9I：生成的内联替代类（*.styles.css）要交给 vitest 处理，测试辅助 styleOf 才能用 ?raw 读到声明；
+    // 其余 CSS 仍按默认置空。
+    css: { include: [/\.styles\.css(?:$|\?)/] },
     coverage: {
       provider: 'v8',
       include: [

@@ -8,15 +8,7 @@ import type { ControlMessage, IncomingMessage } from "../types/messages";
 import type { ControlChannel } from "../ws/ControlChannel";
 import { sendWhenConnected } from "../ws/sendWhenConnected";
 import { buildStorageUsageMessage, formatGb, formatMonth, formatTokens } from "./settingsMessages";
-import {
-  sectionStyle,
-  h3Style,
-  btnRowStyle,
-  btnStyle,
-  primaryBtnStyle,
-  statusStyle,
-  hintStyle,
-} from "./settingsStyles";
+import { statusStyle } from "./settingsStyles";
 import {
   buildPublishDirMessage,
   SKILL_STATE,
@@ -33,6 +25,7 @@ import type {
   SkillCatalogueData,
   SkillReply,
 } from "./settingsOrchestration";
+import "./SettingsOrchestrationSections.styles.css";
 
 export function StorageUsageSection({ getChannel }: { getChannel: () => ControlChannel | null }) {
   const [data, setData] = useState<StorageUsageData | null>(null);
@@ -98,24 +91,18 @@ export function StorageUsageSection({ getChannel }: { getChannel: () => ControlC
 
   const over = !!data?.over_warn;
   return (
-    <section style={sectionStyle} data-testid="storage-usage">
-      <h3 style={h3Style}>任务与会话数据</h3>
+    <section className="sh-SettingsOrchestrationSections-1" data-testid="storage-usage">
+      <h3 className="sh-SettingsOrchestrationSections-2">任务与会话数据</h3>
       {over && data ? (
         <div
           role="alert"
           data-testid="storage-usage-warning"
-          style={{
-            ...hintStyle,
-            color: dark.warning,
-            border: `1px solid ${dark.warning}`,
-            borderRadius: 6,
-            padding: "6px 10px",
-          }}
+          className="sh-SettingsOrchestrationSections-3"
         >
           已超过 {formatGb(data.warn_bytes)}。这些数据会一直保留，请到「数据目录」迁移到更大的磁盘。{" "}
           <button
             type="button"
-            style={{ ...btnStyle, marginLeft: 6 }}
+            className="sh-SettingsOrchestrationSections-4"
             onClick={() =>
               document.getElementById("settings-data-dir")?.scrollIntoView({ behavior: "smooth" })
             }
@@ -124,7 +111,7 @@ export function StorageUsageSection({ getChannel }: { getChannel: () => ControlC
           </button>
         </div>
       ) : null}
-      <p style={hintStyle}>
+      <p className="sh-SettingsOrchestrationSections-5">
         {data
           ? data.measured
             ? `任务与会话数据：${formatGb(data.bytes)}`
@@ -133,16 +120,7 @@ export function StorageUsageSection({ getChannel }: { getChannel: () => ControlC
         （含聊天记录、检索索引和检查记录；用于审计，不会自动删除）
       </p>
       {data?.measured ? (
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "auto 1fr",
-            columnGap: 10,
-            rowGap: 2,
-            fontSize: 12,
-            color: dark.textMuted,
-          }}
-        >
+        <div className="sh-SettingsOrchestrationSections-6">
           {data.breakdown.map((row) => (
             <Fragment key={row.key}>
               <div>{row.label}</div>
@@ -155,13 +133,13 @@ export function StorageUsageSection({ getChannel }: { getChannel: () => ControlC
         <button
           type="button"
           data-testid="storage-usage-refresh"
-          style={btnStyle}
+          className="sh-SettingsOrchestrationSections-7"
           disabled={busy}
           onClick={() => request(true)}
         >
           {busy ? "统计中…" : "重新统计"}
         </button>
-        {error && data ? <span style={{ ...hintStyle, marginLeft: 8 }}>{error}</span> : null}
+        {error && data ? <span className="sh-SettingsOrchestrationSections-8">{error}</span> : null}
       </div>
     </section>
   );
@@ -210,9 +188,9 @@ export function GlobalBudgetSection({ getChannel }: { getChannel: () => ControlC
   }, [getChannel]);
 
   return (
-    <section style={sectionStyle} data-testid="global-budget">
-      <h3 style={h3Style}>本月全局预算</h3>
-      <p style={hintStyle}>
+    <section className="sh-SettingsOrchestrationSections-1" data-testid="global-budget">
+      <h3 className="sh-SettingsOrchestrationSections-2">本月全局预算</h3>
+      <p className="sh-SettingsOrchestrationSections-5">
         这台机器上所有后台任务每个月合计可用的 token 上限（单个任务默认上限 2000 万、每一步 1000
         万）。 任务的用量算在它建立的那个月；每月 1 日自动换成新的一个月，额度重新是满的。
         本月用完后新任务会在第一轮规划时停下、本月建立的任务也会停下； 在 config.toml 的
@@ -349,10 +327,10 @@ export function PublishDirSection({ getChannel }: { getChannel: () => ControlCha
 
   const publish = data?.publish ?? {};
   return (
-    <section style={sectionStyle} data-testid="publish-dir">
+    <section className="sh-SettingsOrchestrationSections-1" data-testid="publish-dir">
       {confirmDialog}
-      <h3 style={h3Style}>任务发布目录</h3>
-      <p style={hintStyle}>
+      <h3 className="sh-SettingsOrchestrationSections-2">任务发布目录</h3>
+      <p className="sh-SettingsOrchestrationSections-5">
         任务里要求"发布到…"时，系统只会把审核通过的文件发布到这个目录（每次发布都要你批准）。
       </p>
       <div
@@ -368,7 +346,7 @@ export function PublishDirSection({ getChannel }: { getChannel: () => ControlCha
               ? `未生效：${publish.reason ?? "原因未知"}（${data.configured}）`
               : "未授权：带发布要求的任务无法发布"}
       </div>
-      <div style={{ display: "flex", gap: 6 }}>
+      <div className="sh-SettingsOrchestrationSections-9">
         <input
           type="text"
           aria-label="发布目录路径"
@@ -376,26 +354,22 @@ export function PublishDirSection({ getChannel }: { getChannel: () => ControlCha
           disabled={busy}
           onChange={(e) => setPath(e.target.value)}
           placeholder="/Users/你/Documents/发布"
-          style={{
-            flex: 1,
-            padding: "5px 8px",
-            borderRadius: 4,
-            border: `1px solid ${dark.border}`,
-            background: dark.card,
-            color: dark.text,
-            fontSize: 12,
-            fontFamily: "monospace",
-          }}
+          className="sh-SettingsOrchestrationSections-10"
         />
-        <button type="button" style={btnStyle} disabled={busy} onClick={pick}>
+        <button
+          type="button"
+          className="sh-SettingsOrchestrationSections-7"
+          disabled={busy}
+          onClick={pick}
+        >
           选择目录…
         </button>
       </div>
-      <div style={btnRowStyle}>
+      <div className="sh-SettingsOrchestrationSections-11">
         <button
           type="button"
           data-testid="publish-dir-save"
-          style={primaryBtnStyle}
+          className="sh-SettingsOrchestrationSections-12"
           disabled={busy || !path.trim() || path.trim() === (data?.configured ?? "")}
           onClick={() => save(path.trim())}
         >
@@ -405,7 +379,7 @@ export function PublishDirSection({ getChannel }: { getChannel: () => ControlCha
           <button
             type="button"
             data-testid="publish-dir-revoke"
-            style={btnStyle}
+            className="sh-SettingsOrchestrationSections-7"
             disabled={busy}
             onClick={() => save("")}
           >
@@ -414,11 +388,11 @@ export function PublishDirSection({ getChannel }: { getChannel: () => ControlCha
         ) : null}
       </div>
       {error && data ? (
-        <p role="alert" style={{ ...hintStyle, color: dark.danger }}>
+        <p role="alert" className="sh-SettingsOrchestrationSections-13">
           {error}
         </p>
       ) : null}
-      {done ? <p style={hintStyle}>{done}</p> : null}
+      {done ? <p className="sh-SettingsOrchestrationSections-5">{done}</p> : null}
     </section>
   );
 }
@@ -542,13 +516,17 @@ export function SkillCatalogueSection({ getChannel }: { getChannel: () => Contro
   );
 
   return (
-    <section style={sectionStyle} data-testid="skill-catalogue">
+    <section className="sh-SettingsOrchestrationSections-1" data-testid="skill-catalogue">
       {confirmDialog}
-      <h3 style={h3Style}>任务技能目录</h3>
-      <p style={hintStyle}>
+      <h3 className="sh-SettingsOrchestrationSections-2">任务技能目录</h3>
+      <p className="sh-SettingsOrchestrationSections-5">
         所有任务执行档位共用这一个技能目录：安装一次，各档位看到同一版本；暂停或退役一次，各档位下一次使用即生效。新装的技能要先评估：系统建一个试用任务，由执行者真实调用它，独立审阅通过后才能准入。
       </p>
-      <div role="status" data-testid="skill-catalogue-status" style={statusStyle}>
+      <div
+        role="status"
+        data-testid="skill-catalogue-status"
+        className="sh-SettingsOrchestrationSections-14"
+      >
         {data === null
           ? (error ?? "读取中…")
           : data.skills.length === 0
@@ -556,7 +534,7 @@ export function SkillCatalogueSection({ getChannel }: { getChannel: () => Contro
             : `共 ${data.skills.length} 个技能版本`}{" "}
         <button
           type="button"
-          style={btnStyle}
+          className="sh-SettingsOrchestrationSections-7"
           disabled={busy}
           onClick={() => {
             setDone(null);
@@ -572,18 +550,18 @@ export function SkillCatalogueSection({ getChannel }: { getChannel: () => Contro
           <div
             key={`${row.skill_id}@${row.version}`}
             data-testid="skill-row"
-            style={{ borderTop: `1px solid ${dark.border}`, padding: "6px 0" }}
+            className="sh-SettingsOrchestrationSections-15"
           >
-            <div style={{ fontSize: 13, color: dark.text }}>
+            <div className="sh-SettingsOrchestrationSections-16">
               {row.name}{" "}
-              <span style={{ color: dark.textMuted }}>
+              <span className="sh-SettingsOrchestrationSections-17">
                 第 {row.version} 版 · {SKILL_STATE[row.state ?? ""] ?? "未知"}
               </span>
             </div>
             {row.description ? (
-              <div style={{ ...hintStyle, marginTop: 2 }}>{row.description}</div>
+              <div className="sh-SettingsOrchestrationSections-18">{row.description}</div>
             ) : null}
-            <ul style={{ margin: "4px 0", paddingLeft: 18, fontSize: 12, color: dark.textMuted }}>
+            <ul className="sh-SettingsOrchestrationSections-19">
               {Object.entries(row.pools).map(([pool, view]) => (
                 <li key={pool}>
                   {poolLabel(pool)}：{poolStatus(view)}
@@ -591,15 +569,15 @@ export function SkillCatalogueSection({ getChannel }: { getChannel: () => Contro
               ))}
             </ul>
             {evaluation.text && row.state === "TRIAL" ? (
-              <div data-testid="skill-evaluation" style={{ ...hintStyle, marginTop: 2 }}>
+              <div data-testid="skill-evaluation" className="sh-SettingsOrchestrationSections-18">
                 {evaluation.text}
               </div>
             ) : null}
-            <div style={btnRowStyle}>
+            <div className="sh-SettingsOrchestrationSections-11">
               {evaluation.action === "evaluate" ? (
                 <button
                   type="button"
-                  style={primaryBtnStyle}
+                  className="sh-SettingsOrchestrationSections-12"
                   disabled={busy}
                   onClick={() => step(row, "evaluate")}
                 >
@@ -609,7 +587,7 @@ export function SkillCatalogueSection({ getChannel }: { getChannel: () => Contro
               {evaluation.action === "admit" ? (
                 <button
                   type="button"
-                  style={primaryBtnStyle}
+                  className="sh-SettingsOrchestrationSections-12"
                   disabled={busy}
                   onClick={() => step(row, "admit")}
                 >
@@ -619,7 +597,7 @@ export function SkillCatalogueSection({ getChannel }: { getChannel: () => Contro
               {row.state === "ADMITTED" ? (
                 <button
                   type="button"
-                  style={btnStyle}
+                  className="sh-SettingsOrchestrationSections-7"
                   disabled={busy}
                   onClick={() => act(row, "SUSPEND")}
                 >
@@ -629,7 +607,7 @@ export function SkillCatalogueSection({ getChannel }: { getChannel: () => Contro
               {row.state === "SUSPENDED" ? (
                 <button
                   type="button"
-                  style={btnStyle}
+                  className="sh-SettingsOrchestrationSections-7"
                   disabled={busy}
                   onClick={() => act(row, "RESUME")}
                 >
@@ -639,7 +617,7 @@ export function SkillCatalogueSection({ getChannel }: { getChannel: () => Contro
               {row.state !== "RETIRED" ? (
                 <button
                   type="button"
-                  style={btnStyle}
+                  className="sh-SettingsOrchestrationSections-7"
                   disabled={busy}
                   onClick={() => act(row, "RETIRE")}
                 >
@@ -650,7 +628,7 @@ export function SkillCatalogueSection({ getChannel }: { getChannel: () => Contro
           </div>
         );
       })}
-      <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+      <div className="sh-SettingsOrchestrationSections-20">
         <input
           type="text"
           aria-label="技能包路径"
@@ -658,21 +636,12 @@ export function SkillCatalogueSection({ getChannel }: { getChannel: () => Contro
           disabled={busy}
           onChange={(e) => setPath(e.target.value)}
           placeholder="/Users/你/Downloads/某技能.zip"
-          style={{
-            flex: 1,
-            padding: "5px 8px",
-            borderRadius: 4,
-            border: `1px solid ${dark.border}`,
-            background: dark.card,
-            color: dark.text,
-            fontSize: 12,
-            fontFamily: "monospace",
-          }}
+          className="sh-SettingsOrchestrationSections-10"
         />
         <button
           type="button"
           data-testid="skill-install"
-          style={primaryBtnStyle}
+          className="sh-SettingsOrchestrationSections-12"
           disabled={busy || !path.trim()}
           onClick={() => {
             setDone(null);
@@ -683,11 +652,11 @@ export function SkillCatalogueSection({ getChannel }: { getChannel: () => Contro
         </button>
       </div>
       {error && data ? (
-        <p role="alert" style={{ ...hintStyle, color: dark.danger }}>
+        <p role="alert" className="sh-SettingsOrchestrationSections-13">
           {error}
         </p>
       ) : null}
-      {done ? <p style={hintStyle}>{done}</p> : null}
+      {done ? <p className="sh-SettingsOrchestrationSections-5">{done}</p> : null}
     </section>
   );
 }

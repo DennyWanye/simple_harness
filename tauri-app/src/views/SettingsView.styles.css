@@ -1,0 +1,11 @@
+/* 生成文件，不要手改：src/views/SettingsView.tsx 里静态内联样式的等价类（9I）。
+   重新生成：node scripts/code_quality/ts_inline_to_class.mjs convert src/views/SettingsView.tsx */
+
+.sh-SettingsView-1 {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}

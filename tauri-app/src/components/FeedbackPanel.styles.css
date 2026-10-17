@@ -1,0 +1,139 @@
+/* 生成文件，不要手改：src/components/FeedbackPanel.tsx 里静态内联样式的等价类（9I）。
+   重新生成：node scripts/code_quality/ts_inline_to_class.mjs convert src/components/FeedbackPanel.tsx */
+
+.sh-FeedbackPanel-1 {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9998;
+  backdrop-filter: blur(4px);
+}
+
+.sh-FeedbackPanel-2 {
+  width: 440px;
+  max-width: 92vw;
+  background: var(--sh-surface, #15181C);
+  border-radius: 16px;
+  padding: 20px 24px 22px;
+  box-shadow: 0 24px 60px rgba(0,0,0,0.32);
+  font-family: Microsoft YaHei UI, sans-serif;
+  color: var(--sh-text, #E8E5DF);
+  border: 1px solid var(--sh-hairline-strong, rgba(255,255,255,0.14));
+}
+
+.sh-FeedbackPanel-3 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sh-FeedbackPanel-4 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sh-FeedbackPanel-5 {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: rgba(244,63,94,0.14);
+  color: #fda4af;
+}
+
+.sh-FeedbackPanel-6 {
+  font-size: 18px;
+  font-weight: 700;
+  margin: 0;
+}
+
+.sh-FeedbackPanel-7 {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  background: var(--sh-card, #1C2026);
+  border: 1px solid var(--sh-hairline, rgba(255,255,255,0.075));
+  border-radius: 9px;
+  color: var(--sh-text-2, #A7A29A);
+  cursor: pointer;
+}
+
+.sh-FeedbackPanel-8 {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--sh-text-2, #A7A29A);
+  margin: 10px 0 12px;
+}
+
+.sh-FeedbackPanel-9 {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 11px 13px;
+  font-size: 13px;
+  line-height: 1.6;
+  border: 1px solid var(--sh-hairline, rgba(255,255,255,0.075));
+  border-radius: 11px;
+  background: var(--sh-card, #1C2026);
+  outline: none;
+  resize: vertical;
+  font-family: inherit;
+  color: var(--sh-text, #E8E5DF);
+}
+
+.sh-FeedbackPanel-10 {
+  font-size: 11.5px;
+  color: #94a3b8;
+  margin: 4px 2px 12px;
+}
+
+.sh-FeedbackPanel-11 {
+  color: #fca5a5;
+}
+
+.sh-FeedbackPanel-12 {
+  margin-top: 14px;
+  padding: 12px 14px;
+  background: rgba(16,185,129,0.12);
+  border: 1px solid rgba(110,231,183,0.28);
+  border-radius: 8px;
+}
+
+.sh-FeedbackPanel-13 {
+  margin: 0 0 6px;
+  font-weight: 600;
+  color: #6ee7b7;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sh-FeedbackPanel-14 {
+  display: block;
+  font-size: 11.5px;
+  background: var(--sh-card, #1C2026);
+  padding: 6px 8px;
+  border-radius: 6px;
+  word-break: break-all;
+  color: var(--sh-text-2, #A7A29A);
+}
+
+.sh-FeedbackPanel-15 {
+  margin: 8px 0 0;
+  font-size: 12.5px;
+  color: var(--sh-text-2, #A7A29A);
+}
+
+.sh-FeedbackPanel-16 {
+  margin-top: 12px;
+  font-size: 12.5px;
+  color: #fca5a5;
+  line-height: 1.6;
+}

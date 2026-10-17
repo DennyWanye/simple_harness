@@ -36,6 +36,7 @@ import {
 } from "./sessionModelsStore";
 import { useSessionsStore } from "../stores/sessionsStore";
 import { type SessionModelParams } from "../stores/sessionTypes";
+import "./ChangeModelModal.styles.css";
 
 type EffortValue = "low" | "medium" | "high" | "extra_high" | "max";
 type ReasonMode = "default" | "thinking" | "fast";
@@ -186,13 +187,13 @@ export function ChangeModelModal({
   };
 
   return (
-    <div style={overlayStyle} onClick={onClose} role="dialog" aria-label="改 model">
-      <div style={dialogStyle} onClick={(e) => e.stopPropagation()}>
-        <header style={headerStyle}>模型与参数</header>
+    <div className="sh-ChangeModelModal-1" onClick={onClose} role="dialog" aria-label="改 model">
+      <div className="sh-ChangeModelModal-2" onClick={(e) => e.stopPropagation()}>
+        <header className="sh-ChangeModelModal-3">模型与参数</header>
 
-        <div style={bodyStyle}>
+        <div className="sh-ChangeModelModal-4">
           {/* Model dropdown */}
-          <label style={labelStyle} htmlFor="change-model-select">
+          <label className="sh-ChangeModelModal-5" htmlFor="change-model-select">
             模型
           </label>
           <input
@@ -201,7 +202,7 @@ export function ChangeModelModal({
             placeholder="输入模型名称快速筛选…"
             value={model_filter}
             onChange={(event) => set_model_filter(event.target.value)}
-            style={filterInputStyle}
+            className="sh-ChangeModelModal-6"
             autoFocus
           />
           <select
@@ -212,7 +213,7 @@ export function ChangeModelModal({
               set_model(e.target.value);
               set_model_filter("");
             }}
-            style={selectStyle}
+            className="sh-ChangeModelModal-7"
           >
             {!selected_model_is_visible && selected_model_option && (
               <option value={selected_model_option.value} hidden disabled>
@@ -232,7 +233,9 @@ export function ChangeModelModal({
           </select>
           {/* Always show the effective model name; binding mechanics stay internal. */}
           {(model.trim() || default_model.trim()) && (
-            <span style={hintStyle}>当前生效：{model.trim() || default_model.trim()}</span>
+            <span className="sh-ChangeModelModal-8">
+              当前生效：{model.trim() || default_model.trim()}
+            </span>
           )}
 
           {/* Reasoning mode — single-select (Thinking ⟺ Fast are
@@ -240,7 +243,7 @@ export function ChangeModelModal({
               Only the modes the model supports are offered. */}
           {(caps.thinking || caps.fast) && (
             <>
-              <label style={labelStyle}>推理模式</label>
+              <label className="sh-ChangeModelModal-5">推理模式</label>
               <Segmented
                 ariaLabel="推理模式"
                 options={[
@@ -260,7 +263,7 @@ export function ChangeModelModal({
               为全局 override);单档/未知型号保持只读 chip。 */}
           {caps.context && ctx_options.length > 1 && (
             <>
-              <label style={labelStyle} htmlFor="ctx-window-select">
+              <label className="sh-ChangeModelModal-5" htmlFor="ctx-window-select">
                 上下文窗口
               </label>
               <select
@@ -268,7 +271,7 @@ export function ChangeModelModal({
                 aria-label="上下文窗口"
                 value={String(ctx_selected ?? ctx_options[0])}
                 onChange={(e) => set_ctx_choice(Number(e.target.value))}
-                style={selectStyle}
+                className="sh-ChangeModelModal-7"
               >
                 {ctx_options.map((w) => (
                   <option key={w} value={String(w)}>
@@ -276,15 +279,15 @@ export function ChangeModelModal({
                   </option>
                 ))}
               </select>
-              <span style={hintStyle}>
+              <span className="sh-ChangeModelModal-8">
                 临时用户预算档位（默认 256K）；实际上限仍由 provider 决定，选择对所有会话生效
               </span>
             </>
           )}
           {caps.context && ctx_options.length <= 1 && (
             <>
-              <label style={labelStyle}>上下文窗口（模型决定）</label>
-              <div style={ctxChipStyle} aria-label="上下文窗口">
+              <label className="sh-ChangeModelModal-5">上下文窗口（模型决定）</label>
+              <div className="sh-ChangeModelModal-9" aria-label="上下文窗口">
                 {ctx_window != null
                   ? formatContextWindow(ctx_window) || "由 provider 决定"
                   : "由 provider 决定"}
@@ -295,32 +298,32 @@ export function ChangeModelModal({
           {/* Effort segmented — gpt-5.x / OpenAI family only */}
           {caps.effort && (
             <>
-              <label style={labelStyle}>推理强度（Effort）</label>
+              <label className="sh-ChangeModelModal-5">推理强度（Effort）</label>
               <Segmented
                 ariaLabel="推理强度"
                 options={EFFORT_OPTIONS}
                 value={effort}
                 onChange={set_effort}
               />
-              <span style={hintStyle}>
+              <span className="sh-ChangeModelModal-8">
                 Extra High / Max 在仅支持 low/medium/high 的后端会收敛到 High
               </span>
             </>
           )}
 
           {!caps.thinking && !caps.fast && !caps.context && !caps.effort && (
-            <span style={hintStyle}>该模型无可调参数（仅切换模型本身）</span>
+            <span className="sh-ChangeModelModal-8">该模型无可调参数（仅切换模型本身）</span>
           )}
         </div>
 
-        <footer style={footerStyle}>
-          <button type="button" onClick={onClose} style={btnSecondary}>
+        <footer className="sh-ChangeModelModal-10">
+          <button type="button" onClick={onClose} className="sh-ChangeModelModal-11">
             取消
           </button>
-          <button type="button" onClick={clear_and_submit} style={btnSecondary}>
+          <button type="button" onClick={clear_and_submit} className="sh-ChangeModelModal-11">
             清空（回全局链）
           </button>
-          <button type="button" onClick={submit} style={btnPrimary}>
+          <button type="button" onClick={submit} className="sh-ChangeModelModal-12">
             保存
           </button>
         </footer>
@@ -341,7 +344,7 @@ function Segmented<T extends string>({
   onChange: (v: T) => void;
 }) {
   return (
-    <div role="group" aria-label={ariaLabel} style={segmentedWrapStyle}>
+    <div role="group" aria-label={ariaLabel} className="sh-ChangeModelModal-13">
       {options.map((o) => {
         const active = o.value === value;
         return (
@@ -365,86 +368,6 @@ function Segmented<T extends string>({
   );
 }
 
-const overlayStyle: React.CSSProperties = {
-  position: "fixed",
-  inset: 0,
-  background: "rgba(0, 0, 0, 0.55)",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  zIndex: 1000,
-};
-
-const dialogStyle: React.CSSProperties = {
-  background: "#1e2330",
-  color: "#e2e8f0",
-  borderRadius: 8,
-  padding: 18,
-  width: 380,
-  boxShadow: "0 10px 40px rgba(0,0,0,0.5)",
-  border: "1px solid rgba(148,163,184,0.18)",
-};
-
-const headerStyle: React.CSSProperties = {
-  fontSize: 14,
-  fontWeight: 700,
-  marginBottom: 12,
-};
-
-const bodyStyle: React.CSSProperties = {
-  display: "flex",
-  flexDirection: "column",
-  gap: 7,
-  marginBottom: 14,
-};
-
-const labelStyle: React.CSSProperties = {
-  fontSize: 11,
-  color: "#94a3b8",
-  marginTop: 4,
-};
-
-const hintStyle: React.CSSProperties = {
-  fontSize: 10,
-  color: "rgba(148,163,184,0.7)",
-  fontStyle: "italic",
-};
-
-const ctxChipStyle: React.CSSProperties = {
-  background: "rgba(30, 35, 48, 0.85)",
-  color: "#cbd5e1",
-  border: "1px solid rgba(148, 163, 184, 0.22)",
-  borderRadius: 6,
-  padding: "6px 9px",
-  fontSize: 12,
-  fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-};
-
-const selectStyle: React.CSSProperties = {
-  background: "rgba(30, 35, 48, 0.85)",
-  color: "#e2e8f0",
-  border: "1px solid rgba(148, 163, 184, 0.30)",
-  borderRadius: 6,
-  padding: "6px 9px",
-  fontSize: 12.5,
-  outline: "none",
-  cursor: "pointer",
-};
-
-const filterInputStyle: React.CSSProperties = {
-  ...selectStyle,
-  cursor: "text",
-};
-
-const segmentedWrapStyle: React.CSSProperties = {
-  display: "flex",
-  gap: 3,
-  background: "rgba(15, 18, 28, 0.6)",
-  border: "1px solid rgba(148, 163, 184, 0.22)",
-  borderRadius: 6,
-  padding: 3,
-};
-
 const segmentBtnStyle: React.CSSProperties = {
   flex: 1,
   border: "none",
@@ -453,31 +376,4 @@ const segmentBtnStyle: React.CSSProperties = {
   fontSize: 11.5,
   cursor: "pointer",
   transition: "background 120ms",
-};
-
-const footerStyle: React.CSSProperties = {
-  display: "flex",
-  justifyContent: "flex-end",
-  gap: 8,
-};
-
-const btnPrimary: React.CSSProperties = {
-  background: "#2563eb",
-  color: "#fff",
-  border: "none",
-  borderRadius: 5,
-  padding: "5px 12px",
-  fontSize: 12,
-  cursor: "pointer",
-  fontWeight: 600,
-};
-
-const btnSecondary: React.CSSProperties = {
-  background: "rgba(148, 163, 184, 0.18)",
-  color: "#e2e8f0",
-  border: "1px solid rgba(148, 163, 184, 0.30)",
-  borderRadius: 5,
-  padding: "5px 12px",
-  fontSize: 12,
-  cursor: "pointer",
 };

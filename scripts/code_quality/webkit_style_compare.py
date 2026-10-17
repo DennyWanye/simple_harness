@@ -7,7 +7,8 @@
                                                预览服务器提供产物，WebKit 打开每个场景，深浅两套主题，
                                                取全部元素（含有内容的 ::before/::after）的 getComputedStyle，
                                                再逐个悬停可交互元素取其计算样式
-  compare <前.json> <后.json>                   逐元素比对，全等才通过
+  compare <前.json> <后.json>                   逐元素比对，全等或仅有裁决列明的压缩器等价差异才通过
+  selftest                                     压缩器等价放过规则的金丝雀
   smoke   --dist <目录>                         每个场景能渲染、无报错，打印元素数
 
 <style> 元素不计入逐元素比对（不渲染）；后一版运行时 <style> 只许 sh-theme。
@@ -219,10 +220,38 @@ def diff_styles(a, b):
     return [(k, pa.get(k), pb.get(k)) for k in keys if pa.get(k) != pb.get(k)]
 
 
-def compare(before, after, limit=40):
-    A = json.loads(Path(before).read_text())
-    B = json.loads(Path(after).read_text())
-    problems, notes = [], []
+# 压缩器等价（《阶段9-偏差单-压缩器改写背景》裁决）：lightningcss 1.32 把 `background: transparent` 压成
+# `background:0 0`，背景位置计算值由 0% 变 0px。只在比对阶段、在下面的精确边界内放过，取样数据不动。
+MINIFIER_VERSIONS = {"vite": "8.1.3", "lightningcss": "1.32.0"}
+WAIVABLE_PROPS = {"background-position-x", "background-position-y"}
+ZERO_VALUES = {"0%", "0px"}
+
+
+def unit_status(sa, sb):
+    """一个比对单位（元素本身、伪元素或一次悬停）的结果：("equal" | "waived" | "diff", 差异表)。
+
+    放过须同时满足：差异属性只有 background-position-x/-y；每个差异值两边都恰为 "0%" 或 "0px"（单层）；
+    两边 background-image 都恰为 "none"。否则照常报差异，差异表完整（含背景位置）。
+    """
+    if sa == sb:
+        return "equal", []
+    d = diff_styles(sa or "", sb or "")
+    if sa is None or sb is None:
+        return "diff", d
+    pa, pb = parse(sa), parse(sb)
+    ok = (
+        d
+        and all(k in WAIVABLE_PROPS for k, _, _ in d)
+        and all(x in ZERO_VALUES and y in ZERO_VALUES for _, x, y in d)
+        and pa.get("background-image") == "none"
+        and pb.get("background-image") == "none"
+    )
+    return ("waived" if ok else "diff"), d
+
+
+def compare_data(A, B):
+    problems, notes, samples = [], [], []
+    waived = {"元素": 0, "伪元素": 0, "悬停": 0}
     for key in sorted(set(A["scenes"]) | set(B["scenes"])):
         a, b = A["scenes"].get(key), B["scenes"].get(key)
         if not a or not b:
@@ -243,29 +272,87 @@ def compare(before, after, limit=40):
                 problems.append(f"{key}: 第 {ea['i']} 个元素标签不同 {ea['tag']} / {eb['tag']}")
                 break
             for slot in ("s", "::before", "::after"):
-                sa = a["styles"][ea[slot]] if slot in ea else None
-                sb = b["styles"][eb[slot]] if slot in eb else None
-                if sa != sb:
-                    d = diff_styles(sa or "", sb or "")
-                    problems.append(f"{key}: 第 {ea['i']} 个元素 <{ea['tag']}> {slot if slot != 's' else ''} 计算样式不同 {d[:6]}")
+                if (slot in ea) != (slot in eb):
+                    problems.append(f"{key}: 第 {ea['i']} 个元素 <{ea['tag']}> {slot} 只在一边")
+                    continue
+                if slot not in ea:
+                    continue
+                status, d = unit_status(a["styles"][ea[slot]], b["styles"][eb[slot]])
+                if status == "diff":
+                    problems.append(f"{key}: 第 {ea['i']} 个元素 <{ea['tag']}> {slot if slot != 's' else ''} 计算样式不同 {d[:8]}")
+                elif status == "waived":
+                    waived["元素" if slot == "s" else "伪元素"] += 1
+                    samples.append(f"{key} 第 {ea['i']} 个元素 <{ea['tag']}>{'' if slot == 's' else ' ' + slot}")
         ha, hb = a.get("hover", []), b.get("hover", [])
         if [i for i, _ in ha] != [i for i, _ in hb]:
             problems.append(f"{key}: 悬停目标不同")
         else:
             for (i, x), (_, y) in zip(ha, hb):
-                if x != y:
-                    problems.append(f"{key}: 悬停第 {i} 个元素 <{x['tag']}> 计算样式不同 {diff_styles(x['s'], y['s'])[:6]}")
+                if x["tag"] != y["tag"]:
+                    problems.append(f"{key}: 悬停第 {i} 个元素标签不同")
+                    continue
+                status, d = unit_status(x["s"], y["s"])
+                if status == "diff":
+                    problems.append(f"{key}: 悬停第 {i} 个元素 <{x['tag']}> 计算样式不同 {d[:8]}")
+                elif status == "waived":
+                    waived["悬停"] += 1
+    return problems, notes, waived, samples
+
+
+def compare(before, after, limit=40):
+    A = json.loads(Path(before).read_text())
+    B = json.loads(Path(after).read_text())
+    problems, notes, waived, samples = compare_data(A, B)
     total = sum(len(d["elements"]) for d in A["scenes"].values())
     hovers = sum(len(d.get("hover", [])) for d in A["scenes"].values())
     print(f"引擎：前 {A.get('engine')}，后 {B.get('engine')}；场景×主题 {len(A['scenes'])}；元素 {total}；悬停 {hovers}")
     if notes:
         print(f"说明（不算差异）：{len(notes)} 个场景×主题的运行时 <style> 前后不同，例如 {notes[0]}")
+    if any(waived.values()):
+        print(f"压缩器等价放过（vite {MINIFIER_VERSIONS['vite']}、lightningcss {MINIFIER_VERSIONS['lightningcss']}）：前 5 条明细")
+        for x in samples[:5]:
+            print("  " + x)
     for p in problems[:limit]:
         print("  " + p)
     if len(problems) > limit:
         print(f"  ……另有 {len(problems) - limit} 条")
-    print("计算样式比对：" + ("不通过" if problems else "通过"))
+    tag = f"（压缩器等价放过 元素 {waived['元素']} / 伪元素 {waived['伪元素']} / 悬停 {waived['悬停']}）" if any(waived.values()) else ""
+    print("计算样式比对：" + ("不通过" if problems else "通过") + tag)
     return 1 if problems else 0
+
+
+def check_minifier_versions():
+    """放过规则只对裁决实测过的版本有效（裁决条件 3）。"""
+    got = {k: json.loads((APP / "node_modules" / k / "package.json").read_text())["version"] for k in MINIFIER_VERSIONS}
+    if got != MINIFIER_VERSIONS:
+        raise SystemExit(f"压缩器版本变了 {got}，先按偏差单裁决第 4 点重跑压缩器实测，再更新 MINIFIER_VERSIONS")
+
+
+def selftest():
+    """放过规则的金丝雀（裁决条件 4）：5 种情况必须仍报差异，1 种必须放过。"""
+    base = "background-image:none;background-position-x:0%;background-position-y:0%;color:red"
+    def unit(after, before=base):
+        A = {"scenes": {"s|dark": {"styles": [before], "elements": [{"i": 0, "tag": "button", "s": 0}], "errors": [], "styleTags": ["sh-theme"]}}}
+        B = {"scenes": {"s|dark": {"styles": [after], "elements": [{"i": 0, "tag": "button", "s": 0}], "errors": [], "styleTags": ["sh-theme"]}}}
+        problems, _, waived, _ = compare_data(A, B)
+        return bool(problems), waived["元素"]
+    cases = [
+        ("0% → 1px", base.replace("x:0%", "x:1px"), True),
+        ("0% → 50%", base.replace("x:0%", "x:50%"), True),
+        ("一边有背景图", base.replace("image:none", "image:url(\"a.png\")").replace("0%", "0px"), True),
+        ("另有属性不同", base.replace("0%", "0px").replace("red", "blue"), True),
+        ("多层值", base.replace("x:0%", "x:0px, 0px"), True),
+        ("正向：只差 0% → 0px 且无背景图", base.replace("0%", "0px"), False),
+    ]
+    bad = 0
+    for name, after, should_fail in cases:
+        before = base.replace("x:0%", "x:0%, 0%") if name == "多层值" else base
+        failed, w = unit(after, before)
+        ok = failed == should_fail and (should_fail or w == 1)
+        bad += not ok
+        print(f"  {'对' if ok else '错'}  {name}：{'报差异' if failed else '放过'}")
+    print("放过规则金丝雀：" + ("不通过" if bad else "通过"))
+    return 1 if bad else 0
 
 
 def smoke(dist):
@@ -297,6 +384,7 @@ def main():
     d = sub.add_parser("dump"); d.add_argument("--dist", required=True); d.add_argument("--out", required=True)
     d.add_argument("--scenes"); d.add_argument("--no-hover", action="store_true")
     c = sub.add_parser("compare"); c.add_argument("before"); c.add_argument("after")
+    sub.add_parser("selftest")
     s = sub.add_parser("smoke"); s.add_argument("--dist", required=True)
     a = ap.parse_args()
     if a.cmd == "build":
@@ -304,7 +392,10 @@ def main():
     elif a.cmd == "dump":
         dump(a.dist, a.out, a.scenes.split(",") if a.scenes else None, not a.no_hover)
     elif a.cmd == "compare":
+        check_minifier_versions()
         sys.exit(compare(a.before, a.after))
+    elif a.cmd == "selftest":
+        sys.exit(selftest())
     elif a.cmd == "smoke":
         sys.exit(smoke(a.dist))
 
