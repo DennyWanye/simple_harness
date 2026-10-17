@@ -20,7 +20,7 @@
  * BC：默认 `enabled={false}` → 整个面板不渲染（return null），现有单弹窗路径
  * （App.tsx 的 PermissionPopup）完全不受影响。只有显式开 prop 才显示聚合视图。
  *
- * 测试约定（同 MemoryPanel.facts.test.tsx）：vitest env=jsdom，但本组件的关键
+ * 测试约定：vitest env=jsdom，但本组件的关键
  * 逻辑（消息构造 + 列表 reducer + 批量决策构造）拆成纯函数导出，测试直接 import
  * 断言，不 mount React 树。
  */

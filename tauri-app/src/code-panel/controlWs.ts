@@ -2,17 +2,13 @@
 // SPDX-License-Identifier: BUSL-1.1
 
 /**
- * WebSocket dispatcher for the code panel window.
+ * 对话面板一侧的控制通道分发器。
  *
- * Both windows talk to the same backend on `ws://127.0.0.1:8100`.
- * The pet window already owns its WS via `useControlChannel`; the
- * code panel opens its OWN connection so backend can broadcast the
- * same event to both windows independently (matters for multi-session
- * — a tile in the panel grid updates without round-tripping through
- * the pet's React state).
+ * 与主界面连同一个后台（`ws://127.0.0.1:8100`）。主界面（App）经
+ * `useControlChannel` 持有自己的连接；这里另开一条连接，后台把同一事件
+ * 分别推给两条连接，会话卡片不必绕经主界面的状态就能更新。
  *
- * The shared secret is fetched via Tauri's `get_shared_secret` IPC
- * (already implemented in process_manager.rs).
+ * 共享密钥经 Tauri 的 `get_shared_secret` 取得（process_manager.rs 实现）。
  */
 import { invoke } from "@tauri-apps/api/core";
 import { BACKEND_PORT } from "../backendPort";

@@ -5,12 +5,12 @@
  * 共享 Markdown 渲染组件。
  *
  * 背景：code 模式的 `AssistantBubble`（code-panel/MessageBubble.tsx）一直用
- * react-markdown 渲染 LLM 回复，而桌宠消息大框（components/MessageStreamPanel.tsx
+ * react-markdown 渲染 LLM 回复，而消息流（components/MessageStreamRows.tsx
  * 的 ChatRow）此前把 assistant 文本当**纯文本** div 渲染 → 用户看到的是 raw
  * markdown（```code```、**bold**、列表标记全裸露）。
  *
  * 把那套 react-markdown + 自定义 components（代码块高亮、本地文件链接走
- * artifact_open、列表/段落间距）抽到这里，两处共用，保证 code 模式和桌宠消息框
+ * artifact_open、列表/段落间距）抽到这里，两处共用，保证 code 模式和消息流
  * 的渲染一致。
  */
 import type { ReactNode } from "react";

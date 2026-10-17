@@ -155,6 +155,7 @@
 
 - 19 个已转换文件的生成类不在发版产物里：这些模块只被 `import type` 引用，运行时不可达。例如 ChatView、MessageStreamPanel、SubagentProgressPanel、MessageBubble、SessionList。
 - 《阶段9-偏差单-前端不可达模块》只按 13 个模块处理，漏了这一批。
+- 补充（阶段 10C）：MessageStreamPanel、MessageStreamRows、messageStreamTypes 里有编码损坏的乱码注释（UTF-8 被当 GBK），MessageStreamRows.tsx 的界面文字 `"(宸ュ叿)"` 是乱码字符串（原文应为"(工具)"）；若保留这组组件，要一起修复。
 - 下一步：按前端真实导入可达性（值导入，不算 `import type`）重扫一遍，出清单；做好但没接线的功能按规则记待用户定，其余走删除清单。
 
 ## F-22 本机前端依赖与锁文件不一致（2026-10-17 阶段 9 合并后 CI 查出）
