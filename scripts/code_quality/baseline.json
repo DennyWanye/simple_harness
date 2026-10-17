@@ -12,10 +12,7 @@
   "sdk/simple-harness-sdk/src/agent_orchestrator/orchestrator/resolution_commits.py:2252",
   "sdk/simple-harness-sdk/src/simple_harness/runtime/evidence_protocol.py:2636",
   "sdk/simple-harness-sdk/src/simple_harness/runtime/recall_protocol_v4.py:2077",
-  "sdk/simple-harness-sdk/src/simple_harness/workflow/native.py:2298",
-  "tauri-app/src/code-panel/controlWs.ts:2504",
-  "tauri-app/src/stores/sessionsStore.ts:2822",
-  "tauri-app/src/views/MissionsView.tsx:2168"
+  "sdk/simple-harness-sdk/src/simple_harness/workflow/native.py:2298"
  ],
  "funcs_over_300_backend": [],
  "funcs_over_300_sdk": [],
@@ -119,7 +116,7 @@
  "py_lines": 652286,
  "main_py_lines": 289,
  "ts_explicit_any": 0,
- "ts_inline_styles": 841,
+ "ts_inline_styles": 155,
  "ruff_backend_total": 1911,
  "ruff_backend_by_rule": {
   "E501": 3993,
@@ -368,11 +365,11 @@
    "reason": "2026-10-17 阶段 9 裁决新增：style={变量} 计数与 eslint-disable 条数进棘轮（只减不增）"
   }
  ],
- "legacy_lines": 2049,
+ "legacy_lines": 2041,
  "cycle_imports_backend": 17,
  "cycle_imports_sdk": 40,
  "except_broad_unexplained": 0,
  "print_product_unexplained": 0,
- "ts_style_vars": 612,
- "ts_eslint_disable": 18
+ "ts_style_vars": 40,
+ "ts_eslint_disable": 11
 }
