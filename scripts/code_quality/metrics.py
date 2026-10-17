@@ -255,6 +255,7 @@ def _mypy_errors(args: list[str], cwd: Path, name: str) -> int:
     res = subprocess.run([str(MYPY), *args], cwd=cwd, capture_output=True, text=True)
     mm = re.search(r"Found (\d+) errors?", res.stdout)
     if mm:
+        print(f"{name} 报错：\n" + "\n".join(ln for ln in res.stdout.splitlines() if ": error:" in ln)[-4000:])
         return int(mm.group(1))
     if "Success" in res.stdout:
         return 0

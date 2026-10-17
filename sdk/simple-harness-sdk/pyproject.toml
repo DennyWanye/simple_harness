@@ -107,6 +107,9 @@ select = ["E", "F", "W", "I", "UP"]
 
 [tool.mypy]
 python_version = "3.11"
+# 产品只做 macOS（2026-10-04 用户定）；沙箱执行器在非 macOS 上构造即拒，按别的平台检查会把
+# 其后代码当成执行不到。固定按 macOS 检查，CI（Linux）与本机结果一致（计划 2.12 修订）。
+platform = "darwin"
 # 代码质量整治 5E：范围是 SDK 全部源码（豁免见下面的 overrides）。
 files = [
   "src",
