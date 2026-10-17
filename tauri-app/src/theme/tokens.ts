@@ -199,11 +199,61 @@ export function v(key: PaletteKey): string {
   return `var(${cssVarName[key]}, ${palette.dark[key]})`;
 }
 
+function tokenBlock(): string {
+  return Object.entries(TOKEN_CSS_VARS)
+    .map(([name, value]) => `  ${name}: ${value};`)
+    .join("\n");
+}
+
 function block(theme: ThemeName): string {
   return (Object.keys(cssVarName) as PaletteKey[])
     .map((key) => `  ${cssVarName[key]}: ${palette[theme][key]};`)
     .join("\n");
 }
+
+// ── 字体栈：系统原生优先，中文 PingFang，数字 tabular-nums ──
+export const font = {
+  ui: [
+    "-apple-system",
+    '"SF Pro Text"',
+    '"PingFang SC"',
+    "system-ui",
+    '"Segoe UI"',
+    '"Microsoft YaHei UI"',
+    '"Helvetica Neue"',
+    "Arial",
+    "sans-serif",
+    '"Apple Color Emoji"',
+    '"Segoe UI Emoji"',
+  ].join(", "),
+  mono: [
+    '"SF Mono"',
+    '"JetBrains Mono"',
+    '"Cascadia Code"',
+    "ui-monospace",
+    "Consolas",
+    "monospace",
+  ].join(", "),
+  /** 中文标点与数字对齐：等宽数字。 */
+  numeric: "tabular-nums" as const,
+} as const;
+
+/**
+ * 与主题无关的尺寸令牌变量（间距、圆角、控件高度、字号与行高、字重、字体）。
+ * 9I 起样式类只引用这些变量，不写数值；变量值由这里从令牌生成，用例锁住二者相等。
+ */
+export const TOKEN_CSS_VARS: Record<string, string> = {
+  ...Object.fromEntries(Object.entries(space).map(([k, n]) => [`--sh-space-${k}`, `${n}px`])),
+  ...Object.fromEntries(Object.entries(radius).map(([k, n]) => [`--sh-radius-${k}`, `${n}px`])),
+  "--sh-control-height": `${controlHeight}px`,
+  ...Object.fromEntries(
+    Object.entries(text).map(([k, t]) => [`--sh-text-${k}-size`, `${t.size}px`]),
+  ),
+  ...Object.fromEntries(Object.entries(text).map(([k, t]) => [`--sh-text-${k}-lh`, String(t.lh)])),
+  ...Object.fromEntries(Object.entries(weight).map(([k, n]) => [`--sh-weight-${k}`, String(n)])),
+  "--sh-font-ui": font.ui,
+  "--sh-font-mono": font.mono,
+};
 
 /**
  * 主题变量表 —— 由 main.tsx 注入 `<style id="sh-theme">`。
@@ -212,6 +262,7 @@ function block(theme: ThemeName): string {
  */
 export const THEME_CSS = `:root {
   color-scheme: light dark;
+${tokenBlock()}
 ${block("light")}
 }
 
@@ -301,33 +352,6 @@ export const color = {
     faint: v("text3"),
     onAccent: v("onAccent"),
   },
-} as const;
-
-// ── 字体栈：系统原生优先，中文 PingFang，数字 tabular-nums ──
-export const font = {
-  ui: [
-    "-apple-system",
-    '"SF Pro Text"',
-    '"PingFang SC"',
-    "system-ui",
-    '"Segoe UI"',
-    '"Microsoft YaHei UI"',
-    '"Helvetica Neue"',
-    "Arial",
-    "sans-serif",
-    '"Apple Color Emoji"',
-    '"Segoe UI Emoji"',
-  ].join(", "),
-  mono: [
-    '"SF Mono"',
-    '"JetBrains Mono"',
-    '"Cascadia Code"',
-    "ui-monospace",
-    "Consolas",
-    "monospace",
-  ].join(", "),
-  /** 中文标点与数字对齐：等宽数字。 */
-  numeric: "tabular-nums" as const,
 } as const;
 
 // 综合输出（习惯写法）
