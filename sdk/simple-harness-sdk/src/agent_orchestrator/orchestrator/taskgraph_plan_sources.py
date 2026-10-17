@@ -135,7 +135,7 @@ def eligible_sharing(
                 continue
             accepted = eligible[0]
         elif outcome is OccurrenceOutcome.SETTLED_OTHER:
-            # 第四批：任务做完了但现行要求下不算数——按旧版要求通过、待重审的步骤。点名它就是
+            # 任务做完了但现行要求下不算数——按旧版要求通过、待重审的步骤。点名它就是
             # 沿用那份结果，审阅员按新版重审；重审已打回的不再是候选。
             accepted = _kept_acceptance(reader.store, acceptances, entry, binding, requirement)
             if accepted is None:
@@ -417,7 +417,7 @@ class TaskGraphPlanSourceReader:
                     "catalog": [item.to_json() for item in world.catalog.task_types()],
                     "schemas": [item.to_json() for item in world.schemas.schemas()],
                 },
-                # 2026-09-30（结构修复真机第 4 局）：开工许可与执行许可是派发进展，归"正在跑的工作"
+                # 开工许可与执行许可是派发进展，归"正在跑的工作"
                 # （续跑时允许变化）；原来放在证据里，等收敛期间别的步骤一开工，修复就永远提交不了。
                 "evidence": {
                     "world": _document(evidence),

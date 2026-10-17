@@ -1295,7 +1295,7 @@ class VerificationMixin(OrchestratorCore):
             str, list[bool]
         ] = {}  # review P2-7: what each Task Critic said, per criterion
         for task in tasks:
-            # 第四批：一份结果可能按几版要求审过，取最新一版的审阅意见
+            # 一份结果可能按几版要求审过，取最新一版的审阅意见
             layers = self.store.list_verifications(
                 task.accepted_result_id or "", requirements_revision=None
             )

@@ -76,7 +76,7 @@ class AccountSnapshot:
     reserved_tool_calls: int = 0
     settled_tool_calls: int = 0
     reserved_attempts: int = 0
-    # 推后第 3 批 H08：真起过的执行者会话数（只增不退）与检索类工具的预留 / 结清
+    # 真起过的执行者会话数（只增不退）与检索类工具的预留 / 结清
     agents_started: int = 0
     reserved_search_calls: int = 0
     settled_search_calls: int = 0
@@ -498,7 +498,7 @@ class BudgetLedger:
             "SELECT * FROM budget_reservations WHERE mission_id = ? ORDER BY created_at",
             (mission_id,),
         ).fetchall()
-        # 按月配额（2026-10-06 车道 P）：这个任务挂在它建立当月的全局总账下，报告就读那一个，
+        # 按月配额：这个任务挂在它建立当月的全局总账下，报告就读那一个，
         # 不是库里随便第一个全局账户
         global_row = self._store.connection.execute(
             "SELECT g.account_id FROM budget_accounts m JOIN budget_accounts g ON g.account_id = m.parent_id"

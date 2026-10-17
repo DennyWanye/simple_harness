@@ -1182,7 +1182,7 @@ def _merge(
         for child in draft.child_bindings
         if child.reuse_policy is not ReusePolicy.NEW_WORK
     }
-    # Which edges leave with the retired membership (TaskGraph 补全第三批): an edge
+    # Which edges leave with the retired membership: an edge
     # goes when either end leaves the network, or when both ends belong to the retired
     # membership (its children or the goal it refined) and no surviving adopted
     # method holds both ends.  An edge between a shared step and a surviving branch

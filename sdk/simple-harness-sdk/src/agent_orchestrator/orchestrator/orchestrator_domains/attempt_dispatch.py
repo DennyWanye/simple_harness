@@ -420,7 +420,7 @@ class AttemptDispatchMixin(OrchestratorCore):
         if building:
             context = taskgraph_context
             artifacts = {}
-            # 第三批：交付绑定与端口绑定一样物化（同一份清单、同一道身份复核）
+            # 交付绑定与端口绑定一样物化（同一份清单、同一道身份复核）
             for entry in (*context.manifest.bindings, *context.manifest.deliveries):
                 artifact = self.store.get_artifact(entry.artifact_id)
                 if artifact is None:
@@ -632,7 +632,7 @@ class AttemptDispatchMixin(OrchestratorCore):
                 tuple(config.get("allowed_tools", WORKER_TOOLS)),
                 tuple(str(p) for p in config.get("untrusted_sources", ())),
                 max_tool_calls=None if cap is None else int(cap),
-                # 批准过的尝试：可申请数按核额度用的基础额度说（opt.171 评估建议 2）
+                # 批准过的尝试：可申请数按核额度用的基础额度说
                 max_request_amount=(
                     None
                     if not isinstance(config.get("resource_grant"), Mapping)

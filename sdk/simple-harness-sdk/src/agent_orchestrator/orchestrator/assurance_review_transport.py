@@ -524,7 +524,7 @@ def read_review_invocation_locked(
     ):
         raise AssuranceError("REVIEW_BINDING_SOURCE_MISMATCH")
     intent = commit.store.get_intent(intent_id)
-    # 回执的写者与对象由解析器核（第 2 批 A09）
+    # 回执的写者与对象由解析器核
     source = reader.read_exact_metadata(
         AssuranceRef.from_json(body["source_receipt_ref"]),
         receipt_kind="AssuranceReviewInvocationEnsured",
@@ -791,8 +791,8 @@ def _require_format_repair(
         # stays held — counted at its upper bound, visible on the account — and the one
         # second invocation is funded by its own reservation.  Waiting for settlement
         # here would never end: an unknown charge is only counted at its upper bound at
-        # closeout (user, 2026-09-26), and closeout waits for this review (车道 S，
-        # 2026-10-06).  Only a first reservation that is no longer held fails closed.
+        # closeout (user, 2026-09-26), and closeout waits for this review.
+        # Only a first reservation that is no longer held fails closed.
         reservation = commit.ledger.reservation(intent.subject_id)
         if reservation is None or reservation.get("state") != "RESERVED":
             raise

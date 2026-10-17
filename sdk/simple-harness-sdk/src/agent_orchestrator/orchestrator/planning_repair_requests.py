@@ -49,9 +49,8 @@ STEP_FAILURE_SOURCES = {
     "VerificationFailed": "VerifierAcceptanceRejected",
     "AttemptLost": "WorkerRejected",
     "AttemptTimedOut": "WorkerRejected",
-    # 2026-09-29 真机第十、十一局：步骤如实报告"卡住"（缺上游文件）后尝试进"等重试"，
-    # 却没人问规划器，几秒后判"没有可派发的工作"、整局失败。如实的卡住/失败/没进展
-    # 报告也交给规划器（带上步骤自己的说明）。
+    # 步骤如实报告的卡住 / 失败 / 没进展也交给规划器（带上步骤自己的说明）：
+    # 否则尝试进"等重试"后没人问规划器，几秒后就判"没有可派发的工作"、整个任务失败。
     "OutcomeRecorded": "WorkerRejected",
 }
 #: 一次资料变更时没有任何已通过的步骤是拿着旧版做的：只记这一条（不发修复请求），下一轮不再重算。
@@ -318,7 +317,7 @@ def precondition_triggers(handler: Any, dispatch: Any, mission: Any, *, seen: se
     return produced
 
 
-#: 2026-10-11 第三批：规划器处理写入冲突时要知道系统交文件的规则——只写事实，不改模板与工具说明。
+#: 规划器处理写入冲突时要知道系统交文件的规则——只写事实，不改模板与工具说明。
 WRITE_CONFLICT_DELIVERY_RULE = (
     "数据边接上的写入型上游交出它那次验收通过的全部文件（操作申请单除外）；只读型上游只交原工作区"
     "文件的副本；接续上游另交它自己冻结清单里收到的文件。几份不同内容落到同一路径时，系统只认"
@@ -352,7 +351,7 @@ def write_conflict_triggers(dispatch: Any, mission: Any, *, seen: set[str]) -> b
 
 #: 片 B：计划里有目标还没有做法 → 每个计划版本一条请求，幂等键是这个前缀加任务号和计划版本号。
 #: 任务号必须在键里：事件的幂等键是全库唯一的，只写版本号的话，同一个库里第一个任务占了
-#: "第 1 版"之后，后面每个任务的第 1 版请求都撞键写不进去（片 B 真机第 2、3 局）。
+#: "第 1 版"之后，后面每个任务的第 1 版请求都撞键写不进去。
 OPEN_GOALS_PREFIX = "open-goals:"
 
 
@@ -405,7 +404,7 @@ def request_planner_for_stall(
     roots = tuple(
         str(network.occurrence(occurrence).task_id) for occurrence in network.root_occurrence_ids
     )
-    # 车道 J H03（§10.5、§24.1 第 10 条）：等待关系成环（死锁）也是事实的一部分，一并交给规划器一次。
+    # §10.5、§24.1 第 10 条：等待关系成环（死锁）也是事实的一部分，一并交给规划器一次。
     wait_for = deadlock_facts(collect_wait_facts(dispatch.store, network))
     return record_request(
         dispatch,
@@ -884,7 +883,7 @@ def collect_triggers(handler: Any, mission: Any) -> bool:
                 "detail": dict(event.payload),
                 **failure_class(event.attempt_id),
                 **({"occurrence": step_failure_facts(events, event)} if event.task_id else {}),
-                # 推后第 3 批 H10：这次尝试的资源申请与核的结果——批不批由规划器判
+                # 这次尝试的资源申请与核的结果——批不批由规划器判
                 **(
                     planner_detail(events, event.attempt_id)
                     if event.type == "OutcomeRecorded"
@@ -926,7 +925,7 @@ def collect_triggers(handler: Any, mission: Any) -> bool:
         if revision.amendment_credential_ref and source_key not in seen:
             # what changed is a comparison of the two revisions by id — a fact, not a judgment
             previous = revisions.get(number - 1)
-            # 只改目标时条目三列表全空（N3-02 / H19）：目标的新旧原文只在同一次修订的改要求事件里，
+            # 只改目标时条目三列表全空：目标的新旧原文只在同一次修订的改要求事件里，
             # 照抄过来交给规划器，不另存一份
             amended = next(
                 (

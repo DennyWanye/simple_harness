@@ -138,7 +138,7 @@ class AssuranceMissionFactory:
             now_ms=int(store.now * 1000),
             reconciliation=targets,
         )
-        # 推后第 2 批 A14：检查规格随保证通道一起由系统写定，用到时只读。
+        # 检查规格随保证通道一起由系统写定，用到时只读。
         self.check_specs.register_specs_locked(mission.id)
 
 

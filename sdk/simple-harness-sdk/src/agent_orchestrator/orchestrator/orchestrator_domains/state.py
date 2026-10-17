@@ -26,7 +26,7 @@ class PlanningRoundState:
     # review P0-1: a Planner whose pool is cooling down waits too: mission_id → (since, ordinal)
     deferred_planning: dict[str, tuple[float, int]] = field(default_factory=DeferredPlanning)
 
-    #: 推后第 1 批 A26（裁决 2026-10-07 建议 1）：开规划轮时证据签不出 PLAN 证书、正在等下一轮
+    #: 开规划轮时证据签不出 PLAN 证书、正在等下一轮
     #: 重签的任务。这是合法等待，不判停滞；建出规划意图即清。
     #: mission → (这段连续等待开始的存储时钟时刻, 最近一次签不出的时刻)；等待上限从开始时刻算
     planning_evidence_waits: dict[str, tuple[float, float]] = field(default_factory=dict)
@@ -37,7 +37,7 @@ class PlanningRoundState:
     #: most one more window; the re-hand-off itself is durable (the event).
     service_blocked_since: dict[str, float] = field(default_factory=dict)
 
-    #: 第 2 批 A27: blocked keys whose same-call-key re-read found a result at the bound;
+    #: blocked keys whose same-call-key re-read found a result at the bound;
     #: they get exactly one more window for the collector before the round's own door.
     handoff_known_waits: set[str] = field(default_factory=set)
 
@@ -72,7 +72,7 @@ class AttemptState:
     #: which refuses rather than indexing a port nobody named.
     port_claims: dict[str, tuple[PortClaim, ...]] = field(default_factory=dict)
 
-    # 推后第 3 批 H10：结果块上取下的资源申请，按结果编号暂存到记录这次结果为止
+    # 结果块上取下的资源申请，按结果编号暂存到记录这次结果为止
     resource_requests: dict[str, Any] = field(default_factory=dict)
 
     client_ids: dict[str, str | None] = field(default_factory=dict)
@@ -128,7 +128,7 @@ class MissionRoundState:
     #: boundary by the first ``run()`` (the loop is not running yet in ``__aenter__``).
     startup_faults: list[tuple[str, str, Exception]] = field(default_factory=list)
 
-    # 任务号 → (上次无进展一轮时的全局事件游标, 时刻)；见 _missions_due（第 4 批）
+    # 任务号 → (上次无进展一轮时的全局事件游标, 时刻)；见 _missions_due
     mission_marks: dict[str, tuple[int, float]] = field(default_factory=dict)
 
     rotation: int = 0

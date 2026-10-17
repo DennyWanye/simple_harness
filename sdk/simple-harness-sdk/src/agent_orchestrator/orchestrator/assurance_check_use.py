@@ -181,7 +181,7 @@ def prepare_local_check_use(
     gate = adapter.commit._assurance_root_gate
     if gate is None or gate.require_execution().root_incarnation_id != identity.root_incarnation_id:
         raise AssuranceError("CHECK_USE_IDENTITY")
-    # 解析时就核用途与访问（第 2 批 A10）：这个读取器读到的每份精确引用都经现行授权。
+    # 解析时就核用途与访问：这个读取器读到的每份精确引用都经现行授权。
     reader = AssuranceReader(
         store,
         tenant_id=adapter.tenant_id,

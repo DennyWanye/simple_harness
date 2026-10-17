@@ -200,7 +200,7 @@ _EXACT = {
 # canonical body; payload-only hashes are not interchangeable with event refs.
 
 
-# 完成规格 / 完成范围经原 OCC 读者读（第 2 批 A13）：合同解码、行身份与批准回执 / 任务绑定的
+# 完成规格 / 完成范围经原 OCC 读者读：合同解码、行身份与批准回执 / 任务绑定的
 # 校验都是它的；这里只核归属、哈希并整形。
 _COMPLETION = {
     "completion_spec": ("get_spec_by_id", "operation_completion_specs"),
@@ -289,7 +289,7 @@ class AssuranceReader:
                 params += (ref.pin.revision,)
             rows = connection.execute(query + " LIMIT 2", params).fetchall()
             if not rows:
-                # A08：身份还在、钉住的版本不是来源现在持有的 → 当前性错误，按资产用自己的名字报。
+                # 身份还在、钉住的版本不是来源现在持有的 → 当前性错误，按资产用自己的名字报。
                 if (
                     revision is not None
                     and connection.execute(
@@ -318,7 +318,7 @@ class AssuranceReader:
             if ref.kind == "commit_receipt":
                 if body.get("mission_id") != self.mission_id:
                     raise AssuranceError("REF_SCOPE_MISMATCH", ref.pin.id)
-                # A09：真实 Commit writer 写的行，kind 是写者身份、subject_id 是它写的对象。
+                # 真实 Commit writer 写的行，kind 是写者身份、subject_id 是它写的对象。
                 issuer = text(row["kind"])
                 if receipt_kind is not None and row["kind"] != receipt_kind:
                     raise AssuranceError("REF_ISSUER_MISMATCH", ref.pin.id)
@@ -405,7 +405,7 @@ class CompleteRead:
         return ReadItem(
             "QUERY_SET",
             self.query_key,
-            # 2026-10-01（第 4 项）：指纹不含时钟。含时钟时任务里任何一次写入都让每张证书的
+            # 指纹不含时钟。含时钟时任务里任何一次写入都让每张证书的
             # 查询集"变了"，逐项重读（orchestrator/assurance_recheck）永远比不上；时钟另由
             # 证书自己的 epoch 字段记着。
             fingerprint(

@@ -220,7 +220,7 @@ def evaluate_success_expression(
 
 
 # --------------------------------------------------------------------------------------
-# Hard gate (AER §4.1, scenario AER-V02)
+# Hard gate (AER §4.1)
 # --------------------------------------------------------------------------------------
 
 
@@ -269,7 +269,7 @@ def hard_gate(
 
 
 # --------------------------------------------------------------------------------------
-# Required checks and the one-to-one catalogue match (AER §5.4, scenario AER-V04)
+# Required checks and the one-to-one catalogue match (AER §5.4)
 # --------------------------------------------------------------------------------------
 
 
@@ -390,7 +390,7 @@ def required_checks_complete(package: ReviewPackage, record: ReviewRecord) -> Co
 
 
 # --------------------------------------------------------------------------------------
-# Independence (AER §5.3, scenario AER-V05)
+# Independence (AER §5.3)
 # --------------------------------------------------------------------------------------
 
 
@@ -661,7 +661,7 @@ def acceptable(
     if structure_violations:
         reasons.append(AcceptReason.HARD_CONSTRAINT_STRUCTURE)
 
-    # 2. AER-V01: a required criterion the package never carried cannot be met.
+    # 2. a required criterion the package never carried cannot be met.
     catalogue = set(package.criterion_catalogue())
     missing_root = tuple(
         criterion_id

@@ -336,7 +336,7 @@ class ResultCommitsMixin(CommitServiceCore):
                 payload={"outcome": str(envelope.outcome), "summary": envelope.summary[:400]},
             )
             if resource_request is not None:
-                # 推后第 3 批 H10：申请与核的结果，和这次结果同一个事务
+                # 申请与核的结果，和这次结果同一个事务
 
                 self._emit(
                     REQUESTED,

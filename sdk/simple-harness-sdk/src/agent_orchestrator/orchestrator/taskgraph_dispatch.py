@@ -34,7 +34,7 @@ from ..storage.taskgraph_binding import require_bound
 from ..storage.taskgraph_store import TaskGraphStore
 from .hierarchical_dispatch import HierarchicalDispatch, NetworkView
 
-#: 2026-10-11 第三批：冻结输入第 3 版——清单本身列出全部交付（端口绑定 + 交付绑定），意图的
+#: 冻结输入第 3 版——清单本身列出全部交付（端口绑定 + 交付绑定），意图的
 #: ``inputs`` 必须与清单物化结果完全相等。第 1、2 版（清单只有端口、多交文件另存）已退役：开发期
 #: 不兼容旧数据，遇到即以具名码拒绝，不冒充"损坏"。
 FROZEN_INPUT_VERSION = 3
@@ -388,7 +388,7 @@ class TaskGraphDispatchBinding:
         rules = self.dispatch_for(task.mission_id).target_rules_for(task.id)
         if not isinstance(rules, TargetRules):
             raise StoreError("TARGET_RULES_UNAVAILABLE")
-        # 第三批：清单（端口绑定 + 交付绑定）的物化结果就是这次尝试的全部输入，没有第二套叠加
+        # 清单（端口绑定 + 交付绑定）的物化结果就是这次尝试的全部输入，没有第二套叠加
         expected = tuple(manifest_upstream_inputs(manifest, rules, network=view.network))
         if canonical_json([dict(item) for item in inputs]) != canonical_json(
             [item.to_json() for item in expected]

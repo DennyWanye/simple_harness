@@ -156,7 +156,7 @@ def amend_requirements(
                 if entry_changes
                 else unchanged_entries(previous)
             )
-        except AmendmentRefused as error:  # 按属性取码，不切异常文字（第 1 批 T02）
+        except AmendmentRefused as error:  # 按属性取码，不切异常文字
             raise RequirementsAmendmentError(error.code, error.detail) from error
 
         try:  # the same door a new Mission's requirements pass

@@ -96,7 +96,7 @@ def register_template(template: RoleTemplate) -> None:
     TEMPLATE_VERSIONS.setdefault(template.name, {})[template.prompt_version] = template
 
 
-#: 分层模式的规划器提示词，只有这一份（HTN 精简 片 A 第 10 项、片 C）。
+#: 分层模式的规划器提示词，只有这一份。
 #:
 #: * 判断归规划器——为目标选哪个做法、现有做法都不合适时自己提一个、失败后怎么修；
 #: * 新做法要过独立审阅，结论回来后才被叫醒；审阅没通过的做法不能采用；
@@ -486,10 +486,10 @@ register_template(PLANNER_HIERARCHICAL)
 #: package changes in a way the prompt can be wrong about.  Version 10 (HTN 精简 片 C)
 #: is the single-layer package: nine views, a failure's details in one place.  Version
 #: 11 (删旧平面模式第三刀第 4 步): ``compensation_candidates`` and REQUEST_COMPENSATION
-#: are gone.  Version 14 (第 2 批 K03): the twelfth view, ``knowledge`` — the blackboard
+#: are gone.  Version 14: the twelfth view, ``knowledge`` — the blackboard
 #: (current verified knowledge and reviewer-checked step summaries) a Planner judges
-#: direction from.  Version 15 (夜间 N3-03): ``knowledge`` gains its third layer,
-#: ``candidate`` — claims not verified yet, leads and not facts.  Version 16 (夜间 N6):
+#: direction from.  Version 15: ``knowledge`` gains its third layer,
+#: ``candidate`` — claims not verified yet, leads and not facts.  Version 16:
 #: a method proposal context may carry ``criterion_share_unreadable`` — the requirements
 #: handed to an intermediate goal could not be read (before, that read as "none").
 PLANNING_DECISION_PACKAGE_VERSION = 17

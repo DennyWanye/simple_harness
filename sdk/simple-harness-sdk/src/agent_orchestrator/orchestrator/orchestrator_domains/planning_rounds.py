@@ -143,7 +143,7 @@ class PlanningRoundMixin(OrchestratorCore):
         refusals = list(refused.use.refusals)
         waited = now - since
         if waited >= self._config.profile_wait_seconds:
-            # opt.169 评估建议 1：原因一直不消失时不无声地等下去——与"规划池不可用"同一个上限，
+            # 原因一直不消失时不无声地等下去——与"规划池不可用"同一个上限，
             # 到点按名停下，明细写清哪条路、哪几条拒绝原因、等了多久。
             self._planning.planning_evidence_waits.pop(mission_id, None)
             self._stop_planning_round(
@@ -811,7 +811,7 @@ class PlanningRoundMixin(OrchestratorCore):
                 root_review_repairs_remaining=max(0, int(self._config.max_root_review_repairs)),
                 repeated_failure_before_escalation_remaining=None,
             ),
-            # 推后第 1 批 A26：这个请求签过 PLAN 证书的证据，此刻还当前吗（只核不落库）
+            # 这个请求签过 PLAN 证书的证据，此刻还当前吗（只核不落库）
             planning_evidence_stale=planning_evidence_stale(
                 self.commit, mission.id, request.request_id
             ),
@@ -1121,7 +1121,7 @@ class PlanningRoundMixin(OrchestratorCore):
             request_id=retry_request_id,
         )
         if retry_request_id is None:
-            # 推后第 1 批 A26：把知识与核对过的摘要当事实交给规划器，就是一次 PLAN 使用——同一事务里
+            # 把知识与核对过的摘要当事实交给规划器，就是一次 PLAN 使用——同一事务里
             # 签证书；签不出（证据此刻不当前、时钟不可信、授权变了）这一轮不开，回滚后下一轮重来。
             # 格式重试沿用开头那次请求冻结的包，它的回复照样在准入时复核这张证书的证据。
 

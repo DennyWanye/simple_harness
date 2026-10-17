@@ -158,7 +158,7 @@ class MissionControlV1:
                 "current_authentication_required": True,
             }
         report = gate.diagnostic()
-        # 第 2 批 A02：启动时安装 / 核对根失败 → 编排只开管理模式（隔离）；诊断如实说隔离，带阻塞码。
+        # 启动时安装 / 核对根失败 → 编排只开管理模式（隔离）；诊断如实说隔离，带阻塞码。
         code = getattr(self._orchestrator, "_assurance_quarantine_code", None)
         if code is not None:
             report = {

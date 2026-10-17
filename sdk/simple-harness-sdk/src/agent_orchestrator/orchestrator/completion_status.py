@@ -40,7 +40,7 @@ from .operation_completion import OperationCompletionReader
 from .review_adjudication import accepted_or_adjudicated
 from .scoped_composition_review import root_content_projection
 
-#: 效果"不在途"的两种状态（Assurance §7.2，2026-10-06 车道 O）：已验收，或结果不明等人 / 对账。
+#: 效果"不在途"的两种状态（Assurance §7.2）：已验收，或结果不明等人 / 对账。
 #: 根终审只在根范围每项必需效果都不在途时开门；收尾把"只差结果不明的效果"记 BLOCKED_UNKNOWN。
 #: 其余状态（等申请单 / 审阅 / 批准 / 执行 / 结果审阅、被拒、没生效）都是在途或归系统操作那条线处理。
 EFFECT_SETTLED_STATES = frozenset({"ACCEPTED", "RECONCILIATION_REQUIRED"})
@@ -177,8 +177,8 @@ def _official_accept_review(
         or acceptance.validity is not Validity.CURRENT
         or record.record_id != acceptance.review_record_id
         or record.purpose is not purpose
-        # 2026-09-30：两次审阅都判不下来、由人裁决通过的记录也算（真机第 3 局：验收已提交，
-        # 这里只认"通过"，根目标一直以为子步骤没做完，任务以无事可做失败）。
+        # 两次审阅都判不下来、由人裁决通过的记录也算（否则
+        # 只认"通过"，根目标会一直以为子步骤没做完，任务以无事可做失败）。
         or not accepted_or_adjudicated(htn._store, record)
     ):
         return False
@@ -313,7 +313,7 @@ def _compound_content(
     required = set(scope.content_criterion_ids)
     if record.purpose is ReviewPurpose.MISSION_FINAL:
         requirements = htn.get_requirements_revision(mission_id, scope.requirements_ref.revision)
-        # Assurance §7.2（2026-10-06 车道 O）：根终审判的是根的内容投影；效果另由 ``effects_ready`` 读
+        # Assurance §7.2：根终审判的是根的内容投影；效果另由 ``effects_ready`` 读
         # 效果验收。与切包 / 根结论提交读同一个投影。
 
         projection = root_content_projection(requirements, scope)

@@ -169,7 +169,7 @@ class AttemptCollectionMixin(OrchestratorCore):
         if attempt is None:  # Mission judge has a view id, not a worker Attempt.
             return False
         if intent.config.get("carried_requirements_revision") is not None:
-            # 第四批：重审已验收的结果——原尝试早已结束，看任务是否还在现行计划里
+            # 重审已验收的结果——原尝试早已结束，看任务是否还在现行计划里
 
             return not carried_review_alive(self.store, intent.mission_id, attempt.task_id)
         task = self.store.get_task(attempt.task_id)
@@ -298,7 +298,7 @@ class AttemptCollectionMixin(OrchestratorCore):
 
         in_flight = False
         last_settled: float | None = None
-        # V32（核验 opt.179 建议）：只读这三列，不把整行记录反序列化
+        # 只读这三列，不把整行记录反序列化
         for state, handed_off, settled in runtime.uow.list_provider_invocation_liveness(
             RunId(agent.run_id)
         ):
@@ -381,7 +381,7 @@ class AttemptCollectionMixin(OrchestratorCore):
                 # D3-4': only a *running* turn is timed; queued / semaphore-waiting ones are not;
                 # 2026-10-10: nor one whose model call is still on the wire within its own bound.
                 # The progress mark moves only when the next call is reserved, so a long call
-                # that has just come back counts from the moment it settled (独立核验 M1).
+                # that has just come back counts from the moment it settled.
                 since = attempt.progress_at
                 if last_settled is not None:
                     since = max(since, last_settled)
@@ -471,7 +471,7 @@ class AttemptCollectionMixin(OrchestratorCore):
         if overdue is None:
             return False
         if overdue["shape"] == "blocked" and self._provider_blocked(liveness):
-            # 第 2 批 A27 (§6.2): before the call is written off and reopened in a fresh
+            # before the call is written off and reopened in a fresh
             # session, its own call key is re-read.  A result that turned up is collected,
             # not re-asked (one more window); otherwise the record says what the check found
             # and which call the fresh session stands in for.

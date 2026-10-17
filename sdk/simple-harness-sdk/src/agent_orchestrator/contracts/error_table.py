@@ -46,7 +46,7 @@ class TaskGraphBoundaryCode(StrEnum):
     DEFERRED = "DEFERRED"
     COMMAND_PAYLOAD_CONFLICT = "COMMAND_PAYLOAD_CONFLICT"
     HISTORICAL_STRUCTURE_UNAVAILABLE = "HISTORICAL_STRUCTURE_UNAVAILABLE"
-    # 只读接口发出的码（第 1 批 T03）
+    # 只读接口发出的码
     BOUND_REACHED = "BOUND_REACHED"
     INVALID_CURSOR = "INVALID_CURSOR"
     INVALID_REQUEST = "INVALID_REQUEST"
@@ -131,7 +131,7 @@ _SHARING_PLANNER_CODE: dict[S, P] = {
     S.TASKGRAPH_SHARE_ACTIVE_PRODUCER_NOT_EXISTING: P.REUSE_NOT_ALLOWED,
     S.TASKGRAPH_SHARE_ACTIVE_PRODUCER_CHANGED: P.REUSE_NOT_ALLOWED,
     S.TASKGRAPH_SHARE_ACTIVE_INPUTS_CHANGED: P.REUSE_NOT_ALLOWED,
-    # 第 1 批评估（2026-10-06）：§12 优先级表里"刚失效 / 未决"不是规划器答错——开工许可不再当前属请求过期，
+    # §12 优先级表里"刚失效 / 未决"不是规划器答错——开工许可不再当前属请求过期，
     # 先后关系未放行 / 未结清属需收敛；三者不扣规划器次数（refusal_charges_planner 按类别判）。
     S.TASKGRAPH_SHARE_ACTIVE_START_NOT_CURRENT: P.REQUEST_BINDING_STALE,
     S.TASKGRAPH_SHARE_ACTIVE_CONSUMER_MISSING: P.REUSE_NOT_ALLOWED,
@@ -268,7 +268,7 @@ _TASKGRAPH: dict[T, ErrorEntry] = {
     T.DEFERRED: _e(C.NEEDS_CONVERGENCE),
     T.COMMAND_PAYLOAD_CONFLICT: _e(C.COMMIT_CONFLICT),
     T.HISTORICAL_STRUCTURE_UNAVAILABLE: _e(C.SOURCE_UNAVAILABLE),
-    # 只读接口发出的码（第 1 批 T03）
+    # 只读接口发出的码
     T.BOUND_REACHED: _e(C.BUDGET),
     T.INVALID_CURSOR: _e(C.IDENTITY_PROTOCOL),
     T.INVALID_REQUEST: _e(C.IDENTITY_PROTOCOL),
@@ -302,7 +302,7 @@ def handoff_refusal_transient(reason: object) -> bool:
     )
 
 
-# 一轮故障（TaskGraph 补全第一批，原计划 §12）：一个任务这一轮的工作冲出异常时，主循环只按
+# 一轮故障（原计划 §12）：一个任务这一轮的工作冲出异常时，主循环只按
 # 异常带的类型码查这张表，决定"数据损坏、当轮停这个任务"还是"原地重试、由连续次数上限兜住"。
 # 不读异常文字。没带码的异常（库锁、磁盘、网络、程序错误）与带了却没登记的码一律原地重试
 # （用户 2026-09-28：基础设施故障原地重试）；"未知码拒绝"落在登记上——带码的异常类都继承
@@ -362,7 +362,7 @@ def round_fault_handling(error: BaseException) -> tuple[RoundFaultHandling, str 
     return RoundFaultHandling.RETRY_IN_PLACE, None if code is None else str(code)
 
 
-# 第 2 批车道 J：调度死锁与恢复协议的码。死锁是"合法候选、但互相等着对方"——需收敛，不算规划器答错；
+# 调度死锁与恢复协议的码。死锁是"合法候选、但互相等着对方"——需收敛，不算规划器答错；
 # 恢复锁被别人持着是同一座库上的并发冲突；降级恢复、禁副作用与单个任务被隔离都是"这一刻来源不可用"。
 _SCHEDULING: dict[SchedulingStopCode, ErrorEntry] = {
     SchedulingStopCode.RESOURCE_WAIT_CYCLE: ErrorEntry(C.NEEDS_CONVERGENCE, charges_planner=False),

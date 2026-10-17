@@ -147,7 +147,7 @@ def next_versions(existing: Sequence[Artifact]) -> dict[str, int]:
 # unchanged, the suite hashes its source to hold that).  The all-ancestors sweep (four
 # helpers that merged every ancestor's accepted files into a new Attempt's inputs)
 # lost its last production caller when attribution moved to the root resolution's
-# contribution list (2026-10-06 第 2 批车道 H) and was deleted with it (车道 I2).
+# contribution list and was deleted with it.
 # ``graph/terminal.py`` still orders by ``topological`` and keeps tolerating a damaged
 # graph: an operator's view of a broken Mission must still render (decision 11).
 #

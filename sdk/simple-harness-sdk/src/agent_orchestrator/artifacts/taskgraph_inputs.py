@@ -108,7 +108,7 @@ def require_current_manifest_use(
         )
         if witness_problem is not None:
             raise ContractError("TASKGRAPH_FROZEN_INPUT_WITNESS_NOT_CURRENT")
-    # 2026-10-11 第三批：交付绑定同样要有当前的许可——对真实产出者那次验收的见证，同一纪元、同一
+    # 交付绑定同样要有当前的许可——对真实产出者那次验收的见证，同一纪元、同一
     # 支持版本、USABLE。文件内容本身已冻结（路径与哈希在物化时复核），这里只核"现在还能用"。
     for delivery in manifest.deliveries:
         verdict = witness_verdict(

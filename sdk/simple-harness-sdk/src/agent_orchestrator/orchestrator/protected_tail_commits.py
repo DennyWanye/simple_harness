@@ -239,7 +239,7 @@ class ProtectedTailCommitsMixin:
                 reason="protected_subject_terminal",
             )
             # The release is its own fact: the caller's event may be a replay of an earlier
-            # settlement (same subject key), so the hold says it was released (HTN 补齐阶段 G：
+            # settlement (same subject key), so the hold says it was released (
             # 业务行不许静默改动).
             self._emit(
                 "BudgetTailReleased",

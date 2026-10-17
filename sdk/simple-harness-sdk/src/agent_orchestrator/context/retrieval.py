@@ -30,7 +30,7 @@ from ..memory.verified_knowledge import KnowledgeRecord, knowledge_ref
 
 RETRIEVAL_VERSION = "retrieval-v4-hierarchy-structure"
 WEIGHTS = {
-    # 推后第 2 批 K06：09-10 §10.1 的"Task DAG 距离"(proximity) 与"分支相关性"(branch)
+    # 09-10 §10.1 的"Task DAG 距离"(proximity) 与"分支相关性"(branch)
     # 各占原 proximity 的一半，普通最高分仍是 7.0
     "relevance": 3.0,
     "trust": 2.0,
@@ -439,7 +439,7 @@ def knowledge_view(record: KnowledgeRecord, scored: Scored | None = None) -> dic
         ],
         "used_by": list(record.used_by),
         "disputed_by": list(record.disputed_by),
-        # 第 2 批 K02：原计划 §11.2 的三个登记项，没登记的就是 None
+        # 原计划 §11.2 的三个登记项，没登记的就是 None
         "validity_interval": None
         if record.validity_interval is None
         else dict(record.validity_interval),

@@ -43,7 +43,7 @@ if TYPE_CHECKING:
 
 EVENT_TYPE = "RowsWritten"
 DEPLOYMENT_TIMELINE = "deployment"
-#: 屏障触发器自动写的信号：不算领域事件，也不参与归属（偏差裁决 1 R11）。
+#: 屏障触发器自动写的信号：不算领域事件，也不参与归属。
 TRIGGER_EVENTS = frozenset({"AssuranceEvidenceChanged"})
 
 

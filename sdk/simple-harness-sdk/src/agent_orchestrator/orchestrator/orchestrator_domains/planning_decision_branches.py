@@ -531,7 +531,7 @@ class PlanningDecisionBranchMixin(OrchestratorCore):
         )
 
         if isinstance(error, MethodProposalRefused):
-            # 片 A 第 5 项：被拒的做法草案把每条可修正的问题原样列出。
+            # 被拒的做法草案把每条可修正的问题原样列出。
             code = error.code
             error_detail = {
                 "error": "method proposal refused",

@@ -191,9 +191,9 @@ class MissionLifecycleCommitsMixin(CommitServiceCore):
             parent: str | None = None
             limits = spec.budget
             if self._global_budget is not None:  # D6-1: Global → Mission (§18.2), never the reverse
-                # 按任务建立月份计（第 2 批车道 P）：任务挂在建立当月的全局总账下，它的全部用量
+                # 按任务建立月份计：任务挂在建立当月的全局总账下，它的全部用量
                 # 都记在这个月，哪怕它跨月才跑完。当月第一个任务把这个月的账户打开；上限始终是
-                # 部署配置的月配额（配置改了，服务启动时与新任务建立时随之改，夜间 N3-24）。
+                # 部署配置的月配额（配置改了，服务启动时与新任务建立时随之改）。
                 parent = global_account_id(mission.created_at)
                 self._ledger.open_account(
                     account_id=parent,
@@ -877,7 +877,7 @@ class MissionLifecycleCommitsMixin(CommitServiceCore):
             return
         network = self._judgment_network(mission)
 
-        # Assurance §7.2（2026-10-06 车道 O）：判定读的是根的内容是否满足（根结论据此形成）；根的
+        # Assurance §7.2：判定读的是根的内容是否满足（根结论据此形成）；根的
         # 必需效果由收尾核对收敛（结果不明 → BLOCKED_UNKNOWN），不是判定的前置。
         if not all(
             read_occurrence_completion(self._store, mission_id, str(root)).content_ready

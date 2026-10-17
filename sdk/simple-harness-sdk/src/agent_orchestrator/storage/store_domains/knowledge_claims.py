@@ -78,7 +78,7 @@ class StoreKnowledgeClaimMixin(StoreCore):
                     canonical_json(record.to_json()),
                     record.created_at,
                     self.now,
-                    # 第 2 批 K02：三列与 JSON 同一次写入；None 落成 NULL，不猜
+                    # 三列与 JSON 同一次写入；None 落成 NULL，不猜
                     None
                     if record.validity_interval is None
                     else canonical_json(dict(record.validity_interval)),

@@ -469,7 +469,7 @@ class PlanCommitsMixin:
                 raise PlanCommitRejected(
                     "REPAIR_NOT_ALLOWED", "accepted dependent requires an explicit successor"
                 )
-            # 夜间 N6：这是秩序约束，不是缺陷——结论是不可变的事实，原地改它的成员会让现行结论说的
+            # 这是秩序约束，不是缺陷——结论是不可变的事实，原地改它的成员会让现行结论说的
             # 不再是它当时审过的那组步骤。目标要换，就换掉持有它的上级做法：被换下的做法细化出的
             # 子目标连同它下面采用的做法一起退役（compiler._retirement_closure），新子目标重新形成结论。
             if any(

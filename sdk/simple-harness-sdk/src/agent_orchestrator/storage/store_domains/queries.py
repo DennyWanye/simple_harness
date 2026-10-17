@@ -185,7 +185,7 @@ class StoreQueryMixin(StoreCore):
         if row is None:
             return None
         usage = dict(row)
-        # V34（核验 opt.179 建议）：超出准入上限的调用照记不拦（可多算不可少算）；把它们的数目与
+        # 超出准入上限的调用照记不拦（可多算不可少算）；把它们的数目与
         # 多出的 token 一起交给任务详情与审计视图，只显示、不拦。
         overrun = (
             self.connection.execute(

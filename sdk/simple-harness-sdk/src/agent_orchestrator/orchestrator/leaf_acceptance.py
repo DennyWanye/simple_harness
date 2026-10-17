@@ -114,7 +114,7 @@ if TYPE_CHECKING:
 
 #: The layer statuses that mean the check *ran to a conclusion*.  ``ERROR`` and
 #: ``NEEDS_HUMAN`` are deliberately absent: a check that could not finish is not a
-#: check that passed, and AER-V04 exists because "the model said it passed" is not
+#: check that passed, because "the model said it passed" is not
 #: the same fact as "the layer ran".
 CONCLUSIVE_LAYER_STATUSES = frozenset({"PASS", "FAIL"})
 

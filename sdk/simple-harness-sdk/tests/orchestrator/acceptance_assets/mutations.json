@@ -1908,7 +1908,7 @@
       "id": "SM-11",
       "source": "2026-10-10 独立核验 opt.180 M1：工具调用 id 不计入内存上限",
       "file": "src/simple_harness/providers/chat_stream.py",
-      "original": "                if name not in call:\n                    self._keep(value)  # 独立核验 opt.180 M1: ids are kept text too",
+      "original": "                if name not in call:\n                    self._keep(value)  # ids are kept text too",
       "replacement": "                if name not in call:\n                    pass",
       "tests": [
         "tests/providers/test_chat_stream_long_reasoning.py::test_tool_call_ids_count_toward_the_memory_bound"
@@ -2018,7 +2018,7 @@
       "id": "SM-21",
       "source": "2026-10-11 第二批：停止条件在步骤待开工时就问规划器（第三轮复查发现 3）",
       "file": "src/agent_orchestrator/orchestrator/orchestrator_domains/resource_limits.py",
-      "original": "        if any(\n            task.status is TaskStatus.READY and not task.paused\n            for task in self.store.list_tasks(mission.id)\n        ):\n            return False  # V38：暂停的步骤不会开工，不算\"正要开工\"\n",
+      "original": "        if any(\n            task.status is TaskStatus.READY and not task.paused\n            for task in self.store.list_tasks(mission.id)\n        ):\n            return False  # 暂停的步骤不会开工，不算\"正要开工\"\n",
       "replacement": "",
       "tests": [
         "tests/orchestrator/test_batch2_h_stop_conditions.py::test_a_reached_condition_is_not_raised_while_an_admitted_step_waits_to_start"

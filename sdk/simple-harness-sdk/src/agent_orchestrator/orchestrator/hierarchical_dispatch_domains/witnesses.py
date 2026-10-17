@@ -160,7 +160,7 @@ class WitnessIssueMixin(HierarchicalDispatchCore):
                 if item.producer_occurrence == output.producer_occurrence
                 and item.output_port == output.output_port
             }
-            # 2026-10-11 第三批：接力文件的真实产出者那次验收也要给这个下游一份见证——与清单构造
+            # 接力文件的真实产出者那次验收也要给这个下游一份见证——与清单构造
             # 同一处枚举（``delivery_sources`` 读的就是这些验收），一个验收一份，不按文件数发。
             sources = [
                 (str(output.acceptance_id), int(output.support_revision)),

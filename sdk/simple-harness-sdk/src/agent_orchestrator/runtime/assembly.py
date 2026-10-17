@@ -54,7 +54,7 @@ class OrchestratorConfig:
     owner_id: str = "agent-orchestrator"
     max_concurrency: int = 2
     max_concurrent_model_calls: int = 2
-    #: 规划预算·答错次数：自上一次提交成功起，规划器的回答被拒几次即停（片 A 第 8 项）。
+    #: 规划预算·答错次数：自上一次提交成功起，规划器的回答被拒几次即停。
     max_planning_attempts: int = 3
     # P2.3c part 3a: how many times one ``requirements_revision`` may have its root
     # MISSION_FINAL review cut.  A re-cut is the correct answer to a leaf accepted or
@@ -96,8 +96,8 @@ class OrchestratorConfig:
     #: 调用处被终止、每次从头重来各花 120～185 万 token；达到上限的事实同时交给执行者下一轮与规划器
     #: （拆不拆步由规划器判断）。
     max_model_calls_per_turn: int = 64
-    #: 独立核验 opt.182 M1：工具上限原来 48 = 24 次调用 × 2；调用放到 64 后按同一比例放到 128，
-    #: 否则工具上限先到（实测每次调用带 0.9～1.6 个工具），改了等于没改。
+    #: 工具上限按调用上限的 2 倍给（64 次调用 → 128）：实测每次调用带 0.9～1.6 个工具，
+    #: 比例低了工具上限会先到。
     max_tool_calls_per_turn: int = 128
     knowledge_sharing: bool = True  # step 4 (D4-19): the layer's kill switch
     on_retrieval_failure: str = "block"  # step 4 (D4-11'): block | degrade
@@ -119,8 +119,7 @@ class OrchestratorConfig:
     aging_window_seconds: float = 300.0
     # step 6 (D6-1 / D6-8)
     global_budget: Budget | None = None  # §18.2 Global Budget above every Mission; None = uncapped
-    # 2026-09-25 user decision: a materialised leaf gets this fixed token allowance; V42
-    # (2026-10-11) deleted the even share, so the default is the product's own number.
+    # 实例化的叶子拿这个固定 token 额度；默认值与产品自己的设置同一个数。
     task_max_tokens: int = field(default=DEFAULT_TASK_MAX_TOKENS, kw_only=True)
     # step 6 (D6-2 / D6-3): the §18.5 caps and the gate they drive
     max_running_attempts: int | None = (
@@ -133,7 +132,7 @@ class OrchestratorConfig:
     reduced_reserve_ratio: float = 0.5
     exploration_slots: int = 1
     verifier_workers: int = 2  # §29.1 "2 个 Verifier Worker" as the verification concurrency
-    # 推后第 3 批 H12（§18.5"提高 Verifier 资源""禁止新任务继续分裂"）：待审结果积压时审阅并发
+    # §18.5"提高 Verifier 资源""禁止新任务继续分裂"：待审结果积压时审阅并发
     # 升到这个上限，回落后恢复；已有计划的任务暂停开新规划轮，最长这么多秒。都不改并发上限默认值、
     # 不进准入身份。None = max(审阅数, min(2 × 审阅数, 模型调用名额))：多开的审阅拿不到模型名额只会
     # 排队、按回合墙钟超时（裁决 2026-10-07 第 6 件 B，偏离 #53），桌面默认 2/2 时不加。

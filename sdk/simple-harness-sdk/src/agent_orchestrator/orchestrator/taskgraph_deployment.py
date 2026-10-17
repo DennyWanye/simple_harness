@@ -112,7 +112,7 @@ class InstalledHtnWiringAcceptance:
             identity = {k: v for k, v in value.items() if k != "deployment_id"}
             if _hash(canonical_json(identity).encode()) != value["deployment_id"]:
                 raise ValueError("deployment identity changed")
-            # 执行图验收门（原计划 §0.3 / §16，补齐第 1 批 V12）：清单里的验收结论只有两种取值。
+            # 执行图验收门（原计划 §0.3 / §16）：清单里的验收结论只有两种取值。
             # NOT_RUN 时不得带任何证据；VALIDATED 时必须带门报告的哈希，且门报告是对着**这一份**源码
             # 清单跑的（source_files_sha256 相等）。读取方从不把 NOT_RUN 当成通过；生产开关由 Host 按
             # :meth:`acceptance_status` 决定开不开（SDK 测试世界允许 NOT_RUN，门本身就是这些测试）。

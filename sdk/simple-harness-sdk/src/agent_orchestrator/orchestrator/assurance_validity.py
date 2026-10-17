@@ -83,7 +83,7 @@ USE_TARGET_KINDS = {
     "TASK_CONTENT": "result",
     "MISSION_FINAL": "task",
     "OPERATION_OUTCOME": "operation",
-    # 2026-10-01（第 3 项）：中间目标的组合审阅，目标是该复合任务
+    # 中间目标的组合审阅，目标是该复合任务
     "COMPOSITION": "task",
 }
 
@@ -491,7 +491,7 @@ class AssuranceValidity:
             }
             if adjudication_ref is not None:
                 required.add(adjudication_ref)
-            # 解析时就核用途与访问（第 2 批 A10）
+            # 解析时就核用途与访问
             authorized = AssuranceReader(
                 store,
                 tenant_id=self.tenant_id,

@@ -47,7 +47,7 @@ class TaskGraphReadError(ContractError):
 
 
 def _fail(code: str, detail: str, *, retry: str = "NONE") -> NoReturn:
-    # 对外发出的码必须在错误码表里登记并归类（§12；第 1 批 T03）：没登记的码在这里就拒绝。
+    # 对外发出的码必须在错误码表里登记并归类（§12）：没登记的码在这里就拒绝。
     classify(code)
     raise TaskGraphReadError(
         TaskGraphErrorV1(
@@ -796,7 +796,7 @@ class TaskGraphReadApi:
                     }
                 )
             # 阶段 B 第 2 条：连败被挡住的通知（§10.2 三类被挡通知都在运维查询里可见），带重发要的行版本。
-            # 合同 taskgraph-convergence-view-v2（第 2 批 T07）：v1 不许这个字段，界面在读它，所以升版。
+            # 合同 taskgraph-convergence-view-v2：v1 不许这个字段，界面在读它，所以升版。
             blocked = [
                 dict(row)
                 for row in connection.execute(

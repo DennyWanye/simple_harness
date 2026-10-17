@@ -35,15 +35,15 @@ REVIEW_SOURCE_REPLACED = "REVIEW_SOURCE_REPLACED"
 #: 一次终审作废的原因：回复到达时，它审的那个 ``MISSION_FINAL`` 包已不再描述世界（纪元动了、
 #: 贡献集动了、资料版本集动了……）。过不过期只由根终审协调器的 ``stale_reasons`` 说了算——同一个
 #: 判定，协调器据它重切或判"切包用完"，导入据它作废这份迟到回复；具体的过期码记在回执
-#: ``stale_reasons`` 里（第 1 批车道 F，2026-10-06）。
+#: ``stale_reasons`` 里。
 REVIEW_PACKAGE_STALE = "REVIEW_PACKAGE_STALE"
 
 # 审阅这一侧登记的唤醒事件（事件消费表的类别登记，按类型列出，不按前缀猜；事件名不带来权限——
 # 唤醒以后准备照常重核来源、授权、纪元、钉住对象与预算）。两类都只唤醒还没做完的同一项导入工作
-# （工作键不变，目标升到这条事件），不另起一项、不重解已做完的导入（推后第 1 批 A25）。
+# （工作键不变，目标升到这条事件），不另起一项、不重解已做完的导入。
 #: SOURCE_OR_AUTHORITY_CHANGED，也是 ACTUAL_CHECK_AVAILABLE 的实际信号：屏障触发器在资料换版 /
 #: 撤销、以及检查绑定写入（source_table=assurance_check_bindings）的同一事务里写它。等检查的导入
-#: 就靠它醒（P1a 偏差裁决第 3 件：不另登记检查事件，免得同一事实叫醒两次）。
+#: 就靠它醒（不另登记检查事件，免得同一事实叫醒两次）。
 EVIDENCE_CHANGED_EVENT = "AssuranceEvidenceChanged"
 #: BUSINESS_OR_RUNTIME_SETTLED：调用与预算结清（与收尾消费者登记的同一组名字）；只唤醒卡在预算上的导入。
 SETTLED_EVENTS = frozenset({"IntentSettled", "BudgetReleased", "BudgetTailReleased"})
@@ -339,7 +339,7 @@ class AssuranceReviewConsumer:
                     )
             if self.check_adapter is not None and checks_pending(body, selected):
                 # 必检的检查还没绑定进库：等它，不拿缺检查的 UNKNOWN 导入（那会判不下来、再调一次
-                # 模型）。检查绑定事件唤醒这同一项工作，回复照旧是这一份（推后第 1 批 A25）。
+                # 模型）。检查绑定事件唤醒这同一项工作，回复照旧是这一份。
                 now_ms = int(self.store.now * 1000)
                 return AssuranceWait(CHECK_PENDING, now_ms + budget_wait_delay_ms(claim.tries))
             raw_ref = AssuranceRef.from_json(

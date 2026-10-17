@@ -60,7 +60,7 @@ FAULT_POINTS = (
     "after_accept_before_supersede",  # step 3 (inside the accept transaction → rolls back)
     "after_task_completed",  # step 3 (accept committed, release / next cycle not yet run)
     "retrieval_unavailable",  # step 4 (S4-07): the knowledge index cannot be read
-    # HTN 补齐 F1-2（崩溃切点 K06、K08、K09）
+    # 崩溃切点 K06、K08、K09
     "before_goal_resolution",  # a goal's review is saved, its conclusion not committed yet
     "after_handoff_before_call",  # an operation's hand-off is recorded, the external call not made
     "after_external_effect",  # the external call returned, its outcome not recorded yet
@@ -412,7 +412,7 @@ class MissionLifecycleMixin(OrchestratorCore):
         if intent.kind == "attempt":
             attempt = self.store.get_attempt(intent.subject_id)
             if attempt is not None and attempt.status not in TERMINAL_ATTEMPT:
-                # 推后第 1 批 A26（AER §12.2）：冻结的请求不静默替换上下文。恢复前按它开工时装进
+                # 冻结的请求不静默替换上下文。恢复前按它开工时装进
                 # 上下文的证据重签 RECOVERY；签不出就不恢复：按"被打断"记丢失（不扣次数），失败明细
                 # 写明哪一项、为什么；这一步下一轮拿当前上下文重做。
 

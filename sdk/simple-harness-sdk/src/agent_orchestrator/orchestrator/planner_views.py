@@ -206,9 +206,9 @@ def read_planner_package(
         read_item=SemanticReadSetChecker(store, htn, mission_id=mission.id).read_item,
     )
 
-    # knowledge (第 2 批 K03) -----------------------------------------------------------
+    # knowledge -----------------------------------------------------------
     # 黑板给规划器看的三层：现在仍然当前的已验证知识（与读工具、推送上下文、审查包同一个判定）、
-    # 审阅员核对过忠实的步骤摘要、还没验证的候选结论（夜间 N3-03，与目录同一个读法，是线索不是事实）；
+    # 审阅员核对过忠实的步骤摘要、还没验证的候选结论（与目录同一个读法，是线索不是事实）；
     # 按任务范围、按有效性过滤、有上限。
 
     current = current_knowledge(store, mission.id)

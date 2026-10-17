@@ -280,7 +280,7 @@ class StoreCore:
             self._depth = 1
             self._holder = self._current_task()
             self._transaction_generation += 1
-            if self._source_naming:  # 只记本事务里的写（偏差裁决 1 第 5 条）
+            if self._source_naming:  # 只记本事务里的写
                 begin(self._connection)
             try:
                 yield self._connection

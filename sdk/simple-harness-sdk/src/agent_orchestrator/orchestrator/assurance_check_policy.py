@@ -182,7 +182,7 @@ def approve_check_policy(
                 planning_subject_criteria(commit.store, mission_id, binding, requirements),
             )
         elif purpose == "MISSION_FINAL":
-            # 2026-10-06（Assurance §7.2，车道 O）：根终审只判根范围的内容判据；效果判据由各自的
+            # Assurance §7.2：根终审只判根范围的内容判据；效果判据由各自的
             # 结果审阅判，根终审不判第二遍。与切包、根结论提交读的是同一个投影。
 
             if scope is None:

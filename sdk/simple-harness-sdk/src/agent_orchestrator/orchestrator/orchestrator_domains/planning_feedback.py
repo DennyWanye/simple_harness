@@ -380,7 +380,7 @@ class PlanningFeedbackMixin(OrchestratorCore):
                 # 2026-09-28 真机：12 轮规划里 5 轮是模型服务端报错与重启打断，规划器根本
                 # 没被听到却照样扣次数，任务因此失败。没有回复的回合不算"答错"，但设宽限，
                 # 服务一直坏着时超出部分照样计数，不会无限重试。
-                # 2026-10-10（第三轮复查）：规划器自己的调用结果不明（交出后线路断了）同样不是它答错，
+                # 规划器自己的调用结果不明（交出后线路断了）同样不是它答错，
                 # 与回合失败走同一道宽限（用户 09-28：服务出错不计次数）；连续不明另有上限
                 # （MAX_CONSECUTIVE_AFTER_HANDOFF_UNKNOWNS），不会无限重试。
                 if _planning_turn_unanswered(event) and forgiven < PLANNER_TURN_FAILURE_GRACE:
@@ -406,7 +406,7 @@ class PlanningFeedbackMixin(OrchestratorCore):
         latest_forgiven = False
         for event in self.store.list_events(mission_id):
             if event.type == "PlanningRejected":
-                # V30（核验 opt.179 建议）：与 ``_planning_attempts`` 同一口径——结果不明也是"没被听到"
+                # 与 ``_planning_attempts`` 同一口径——结果不明也是"没被听到"
                 latest_forgiven = (
                     _planning_turn_unanswered(event) and forgiven < PLANNER_TURN_FAILURE_GRACE
                 )

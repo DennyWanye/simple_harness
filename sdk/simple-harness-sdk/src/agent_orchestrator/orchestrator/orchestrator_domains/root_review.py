@@ -159,7 +159,7 @@ class RootReviewMixin(OrchestratorCore):
                 # reason forever.
                 return False
             if any(c.startswith(ACTION_PREFIX) for c in current_statements(self.store, current)):
-                # 2026-10-06（Assurance §7.2，车道 O）：带动作的任务判定之后每轮仍走这里——批准被撤销 /
+                # Assurance §7.2：带动作的任务判定之后每轮仍走这里——批准被撤销 /
                 # 过期在这里停任务，该交接的照样交接；动作被拒绝 / 没生效归系统操作线（``system_operations``：
                 # 重交、问规划器或具名停），不在这里停。判定已记、收尾待收敛时它自己答"没进展"。
                 return await self._decide_actions(current, live)  # D7-7' two-stage judgment
@@ -172,7 +172,7 @@ class RootReviewMixin(OrchestratorCore):
             return await self._judge(current, live)
         if await self._runtime_exhausted(mission, tasks):  # after the judge (review P2-9)
             return True
-        # 第 2 批车道 H（H06）：任务自带的计数型停止条件——达到上限先问规划器一次，停在原地才停
+        # 任务自带的计数型停止条件——达到上限先问规划器一次，停在原地才停
         if await self._stop_conditions_reached(mission, new_mode):
             return True
         if any(task.status is TaskStatus.FAILED for task in tasks):

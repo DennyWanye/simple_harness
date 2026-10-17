@@ -408,7 +408,7 @@ def install_assurance(orchestrator: Any, ports: AssuranceDeploymentPorts) -> Ins
         "CLOSEOUT": AssuranceCloseoutConsumer(
             commit,
             tenant_id=tenant_id,
-            authority=authority,  # 收尾定稿重读权限（第 2 批车道 N，A01）
+            authority=authority,  # 收尾定稿重读权限
             finalizer=ports.finalizer or partial(finalize_assured_mission, commit),
         ),
         "NOTIFY": AssuranceNotifyConsumer(

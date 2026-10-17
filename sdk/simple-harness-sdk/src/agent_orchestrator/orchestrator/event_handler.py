@@ -104,7 +104,7 @@ class Orchestrator(
                 mission_profile_validator=self._validate_mission_profile,
             )
 
-            # 车道 J H04（§14.4）：模型写的代码起的子进程，身份与回收材料落库；重启后按它回收。
+            # §14.4：模型写的代码起的子进程，身份与回收材料落库；重启后按它回收。
             if self._executor is not None:
                 cast(Any, self._executor).ledger = StoreSandboxLedger(self._store)
             if self._wiring.assurance_root_setup is not None or AssuranceRootGate.required(
@@ -124,7 +124,7 @@ class Orchestrator(
                         self._wiring.assurance_root_setup(self)
                     self._wiring.assurance_root_gate.require_execution()
                 except AssuranceError as error:
-                    # 原计划 §10.1（第 2 批 A02）：标记缺失 / 不符、安装身份冲突 → 根进隔离：服务起来，
+                    # 原计划 §10.1：标记缺失 / 不符、安装身份冲突 → 根进隔离：服务起来，
                     # 只开非披露诊断与隔离只读分支；不装配、不派发、不自动写回状态文件。
                     # Keep the authenticated management API available. No SDK
                     # pools, recovery, workspace cleanup, Context or dispatch runs.
@@ -410,7 +410,7 @@ class Orchestrator(
                 continue
             idle_rounds += 1
             if idle_rounds == 1:
-                # 第 4 批（审阅 2026-09-29）："空闲"只能由一次全量处理得出：清掉安静标记，
+                # "空闲"只能由一次全量处理得出：清掉安静标记，
                 # 下一轮每个任务都看一遍，仍无进展才算空闲返回。
                 self._rounds.mission_marks.clear()
             if idle_rounds >= 2:

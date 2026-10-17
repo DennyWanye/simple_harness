@@ -109,7 +109,7 @@ class CompositionAcceptanceAssembly:
     dispatch: HierarchicalDispatch
     scope_id: str = "mission"
     issued_by: str = "orchestrator"
-    #: 2026-10-01（第 3 项）：保证通道下正式组合审阅记录的两个出口，由编排循环提供——
+    #: 保证通道下正式组合审阅记录的两个出口，由编排循环提供——
     #: 复审后仍判不下来 → ``ask_person(record, task_id, occurrence_id)``；
     #: 打回 / 拒绝（或人裁决打回）→ ``on_rejected(record, package, task_id, occurrence_id)``。
     ask_person: Any = None
@@ -226,8 +226,7 @@ class CompositionAcceptanceAssembly:
             )
         except AssuranceError as error:
             raise ContractError(f"Assurance COMPOSITION review unavailable: {error}") from error
-        # 2026-10-01（第 3 项）：消费正式记录。此前这里直接返回，记录进来后没人读它，
-        # 中间目标永远收不了尾（真机库里从没跑过三层计划，所以没暴露）。
+        # 消费正式记录：不读它的话，中间目标永远收不了尾。
 
         record = self.semantics.official_review_record(str(package.package_id))
         if record is None:

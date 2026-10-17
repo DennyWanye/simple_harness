@@ -628,9 +628,9 @@ class PlanningDecisionMixin(OrchestratorCore):
             )
         except SharingRefused as error:
             # 共用的秩序核对没过（规划器提示词里说的"TaskGraph 开头的原因代码"）：是这份决定的
-            # 问题，退回规划器；不是库故障，原地重试多少次结果都一样（联测真机第三局）。
+            # 问题，退回规划器；不是库故障，原地重试多少次结果都一样。
             # 按异常类型码判（错误码表 SharingRefusalCode → 规划器码），不读异常文字；其它
-            # ContractError 不在这里接，照旧往上抛当库故障原地重试（第 1 批 T01）。
+            # ContractError 不在这里接，照旧往上抛当库故障原地重试。
             codes = _sharing_refusal_codes(error)
             if codes is None:
                 raise

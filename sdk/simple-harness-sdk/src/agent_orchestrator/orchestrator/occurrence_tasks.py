@@ -88,7 +88,7 @@ MATERIALISER = "occurrence-tasks-v1"
 #: primitive this much is a refusal (``BUDGET_INSUFFICIENT``), never a row rounded
 #: down to an account nobody can draw on.
 MIN_TOKEN_SHARE = 1
-#: V42：每个叶子的固定额度；与产品设置里的默认值同一个数（Host ``task_max_tokens``）。
+#: 每个叶子的固定额度；与产品设置里的默认值同一个数（Host ``task_max_tokens``）。
 DEFAULT_TASK_MAX_TOKENS = 10_000_000
 
 #: What a compound's account is opened with.  A compound is refined and never
@@ -140,7 +140,7 @@ class Materialisation:
     #: 2026-10-11 user decision A: every new leaf gets this fixed allowance (at most the
     #: pool); the pool is conserved at reservation time by the account chain, so the
     #: equation below checks each leaf's ceiling against the pool instead of their sum.
-    #: V42: the even share is gone — there is one way to fund a leaf.
+    #: There is one way to fund a leaf.
     fixed_allowance: int | None = None
     available_tokens: int | None = None
     #: What the Mission's Task rows already hold, *before* this round — read from the
@@ -279,7 +279,7 @@ def occurrence_criteria(
     content_refs = tuple(ref for ref in binding.requirement_refs if ref not in operations)
     references = tuple(ref for ref in content_refs if ref in set(owned))
     if not references:
-        # 2026-09-29 第 5 批（审阅）：没被方法链接的步骤兜底承担全部内容要求，但方法已把
+        # 没被方法链接的步骤兜底承担全部内容要求，但方法已把
         # "写出文件"（file:）交给别的步骤时不再兜给它——否则它要写出不归它的文件，反复失败。
         statements = (
             {}

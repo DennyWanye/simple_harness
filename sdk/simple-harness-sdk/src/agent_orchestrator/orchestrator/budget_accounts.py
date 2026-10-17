@@ -10,14 +10,14 @@ from dataclasses import dataclass
 class Reservation:
     tokens: int
     tool_calls: int = 0  # step 6 (D6-8): the Attempt's tool-call cap, reserved up front
-    search_calls: int = 0  # 推后第 3 批 H08：这次尝试预留的检索次数
+    search_calls: int = 0  # 这次尝试预留的检索次数
 
 
 def mission_account(mission_id: str) -> str:
     return f"budget:{mission_id}"
 
 
-#: step 6 (D6-1): §18.2 "Global Budget" above every Mission.  第 2 批车道 P（2026-10-06 用户定）：
+#: step 6 (D6-1): §18.2 "Global Budget" above every Mission.
 #: 全局预算是按月配额——每个自然月一个全局总账 ``budget:global:YYYY-MM``，月初自然是一个新的空账。
 GLOBAL_ACCOUNT_PREFIX = "budget:global:"
 

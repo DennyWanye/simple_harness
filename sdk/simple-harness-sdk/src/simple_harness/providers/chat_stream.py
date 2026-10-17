@@ -64,7 +64,7 @@ class ChatStream:
 
     def __init__(self) -> None:
         # Buffers, not per-piece lists: a relay sends one token per event, and a list slot
-        # per piece is memory the bound would not see (独立核验 opt.180 M2).
+        # per piece is memory the bound would not see.
         self.content = io.StringIO()
         self.reasoning = io.StringIO()
         self.tools: dict[int, dict[str, Any]] = {}
@@ -186,7 +186,7 @@ class ChatStream:
                 if not isinstance(value, str) or (name in call and call[name] != value):
                     raise _reject(f"tool call {name} changed or is not a string")
                 if name not in call:
-                    self._keep(value)  # 独立核验 opt.180 M1: ids are kept text too
+                    self._keep(value)  # ids are kept text too
                 call[name] = value
         function = delta.get("function")
         if function is not None:

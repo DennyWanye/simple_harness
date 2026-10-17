@@ -162,7 +162,7 @@ class MissionSourceReader:
                 detail={"reason": str(error)[:200]},
             ) from error
         try:
-            # 每次模型请求前：这一刻把审阅材料交给模型，DISCLOSE 证书落库（推后第 2 批 A03）
+            # 每次模型请求前：这一刻把审阅材料交给模型，DISCLOSE 证书落库
             require_review_handoff(commit, intent, record=True)
         except AssuranceError as error:
             raise ArpError(

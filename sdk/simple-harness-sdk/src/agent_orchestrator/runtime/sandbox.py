@@ -413,7 +413,7 @@ class _Executor:
             if exec_root is not None
             else Path(tempfile.gettempdir()).resolve() / f"orch-exec-{os.getuid()}"
         )
-        #: 车道 J H04：子进程身份与回收材料的账本；编排启动时绑上（``StoreSandboxLedger``）。
+        #: 子进程身份与回收材料的账本；编排启动时绑上（``StoreSandboxLedger``）。
         self.ledger: SandboxExecutionLedger | None = None
 
     @property

@@ -112,9 +112,8 @@ class MethodPlanningMixin(HierarchicalDispatchCore):
             mission_id=mission_id,
         )
 
-        # 2026-09-29 第十局：criterion_evidence 原先给每个编号配同一句总目标，模型看不出
-        # c-user-3 是"跑测试"、c-user-6 是"写出 README.md"，只能按目标描述自己猜编号，
-        # 把文件要求链到了错的步骤。有任务要求原文的编号换成它自己的原文。
+        # criterion_evidence 里有任务要求原文的编号配它自己的原文，不配同一句总目标：
+        # 否则模型看不出哪个编号是"跑测试"、哪个是"写出 README.md"，会把文件要求链到错的步骤。
         requirements = self.semantics().latest_requirements_revision(mission_id)
         statements = (
             {}
@@ -137,7 +136,7 @@ class MethodPlanningMixin(HierarchicalDispatchCore):
                 ),
             )
         # 片 B：中间目标的类型不声明判据，它负责的是上级做法分给它的要求（原编号、用户原话）。
-        # 夜间 N6：读不出分给它的那一份时如实写进材料（criterion_share_unreadable），不当成"没有"。
+        # 读不出分给它的那一份时如实写进材料（criterion_share_unreadable），不当成"没有"。
         # 按需导入：循环依赖（hierarchical_dispatch ↔ assurance_check_policy）
         from ..assurance_check_policy import goal_share
 

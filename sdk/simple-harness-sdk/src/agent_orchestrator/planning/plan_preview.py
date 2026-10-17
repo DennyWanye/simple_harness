@@ -409,7 +409,7 @@ def _named_reuse(
         handed = slot_criteria(method, step)
         owned = occurrence_criteria(inputs.network, inputs.registry.definition, entry.occurrence_id)
         # 按旧版通过、待重审的步骤不查这一条：它在新计划里负责哪些要求由新做法定，
-        # 审阅员按新范围重审（第四批）
+        # 审阅员按新范围重审
         extra = [] if entry.carried else sorted(handed - owned)
         if extra:
             raise ReuseRefused(

@@ -532,7 +532,7 @@ class GradingCommitsMixin(CommitServiceCore):
                 )
             record = self._store.get_knowledge(other.id)
             if record is not None and claim.id not in record.disputed_by:
-                # K07：谁改了它，与这次改动同一次写入
+                # 谁改了它，与这次改动同一次写入
                 self._store.upsert_knowledge(
                     modified(
                         replace(record, disputed_by=(*record.disputed_by, claim.id)),

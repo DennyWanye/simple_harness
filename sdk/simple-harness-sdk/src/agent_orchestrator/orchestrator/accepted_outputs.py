@@ -130,7 +130,7 @@ def declared_output_ports(
 
     covered = criterion_linked_occurrences(network.obligation_coverage)
     if own_ports:
-        # 2026-09-29 真机第十二局：完成协议下每一步都声明它自己的端口（与
+        # 完成协议下每一步都声明它自己的端口（与
         # ``output_ports_in_revision`` 的完成协议分支同一条规则），没被消费也没被链接的
         # 最后一步也不例外——否则接受侧算出 0 个端口，与核对侧永远对不上。
         covered = covered | {producer}

@@ -99,7 +99,7 @@ class PlanningWaitMixin(OrchestratorCore):
                 if event.type == "PlanningMethodProposed" and event.payload.get(
                     "assurance_review_key"
                 ):
-                    # 片 A 第 7 项：送审的做法不叫醒规划器；它的审阅结论
+                    # 送审的做法不叫醒规划器；它的审阅结论
                     # （PlanningMethodReviewed）入库后才叫醒。
                     return False
                 # Older receipts used an unqualified ID; match their source too,
@@ -133,7 +133,7 @@ class PlanningWaitMixin(OrchestratorCore):
             pending = [e for e in events if e.type in service_types and needs_resume(e)]
             if not pending:
                 return False
-            # 推后第 3 批 H12：审阅积压时，自己有结果在排队等审的任务先不开新规划轮（积压消退或
+            # 审阅积压时，自己有结果在排队等审的任务先不开新规划轮（积压消退或
             # 暂停到时限后再开）。人刚答了问题的那一轮不等：人在等结果（试用前第 5 步）。
             if self._decomposition_paused(mission) and not any(
                 e.type == "PlanningHumanAnswered" for e in pending
@@ -549,7 +549,7 @@ class PlanningWaitMixin(OrchestratorCore):
                 # could bypass target revalidation on the next cycle.
                 continue
             except PointUseRefused as refused:
-                # 同普通开轮：保留 WAIT，这一轮不开，不算故障（A26 裁决建议 1）
+                # 同普通开轮：保留 WAIT，这一轮不开，不算故障
                 self._planning_round_waits(listed.id, refused, path="wait_wakeup")
                 continue
             except ContextRejected as error:

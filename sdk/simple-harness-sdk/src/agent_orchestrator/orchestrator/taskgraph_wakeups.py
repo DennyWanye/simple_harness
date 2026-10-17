@@ -71,13 +71,13 @@ class TaskGraphConvergenceWakeups:
                         raise StoreError("TASKGRAPH_CONVERGENCE_WAKE_CORRUPT")
                     if now_ms < _integer(saved["next_due_ms"], "next_due_ms"):
                         continue
-                    # 2026-10-11（opt.177 核验建议 d）：作业推进过（行版本变了）就从头数——退避是对"一直
+                    # 作业推进过（行版本变了）就从头数——退避是对"一直
                     # 等着"的，不是对作业本身的；没推进才继续翻倍。
                     if _integer(saved["job_version"], "job_version", minimum=0) == int(
                         job["row_version"]
                     ):
                         ordinal = _integer(saved["ordinal"], "ordinal", minimum=1) + 1
-                # 独立核验 opt.184 M1：序号重数后编号不能撞上旧事件（撞上就按幂等键原样返回、什么都
+                # 序号重数后编号不能撞上旧事件（撞上就按幂等键原样返回、什么都
                 # 没写，唤醒被悄悄吞掉）——编号带上作业的行版本
                 identity = derive_id(
                     "tg-convergence-wake-event", key, str(int(job["row_version"])), str(ordinal)

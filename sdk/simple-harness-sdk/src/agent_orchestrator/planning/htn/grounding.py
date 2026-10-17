@@ -250,7 +250,7 @@ class SharedGoalEntry:
     #: it names.
     acceptance_ref: TypedRef | None = None
     #: The acceptance is of an earlier requirements revision: the step is kept and the
-    #: same result is reviewed again under the current ones (TaskGraph 补全第四批).
+    #: same result is reviewed again under the current ones.
     carried: bool = False
     #: The acceptances the same accepted result holds under earlier requirements revisions.
     #: A slot that named the step while it was carried still quotes one of these after the

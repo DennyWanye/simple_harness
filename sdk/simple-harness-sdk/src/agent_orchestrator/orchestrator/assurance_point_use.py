@@ -58,9 +58,9 @@ ATTEMPT_CONSUMER = "ATTEMPT"
 PLANNING_REQUEST_CONSUMER = "PLANNING_REQUEST"
 #: 运行中一次读取工具调用：执行者 / 审阅员的 ``knowledge_read``（裁决 2026-10-07 第 5 件）、审阅员取证读
 TOOL_CALL_CONSUMER = "TOOL_CALL"
-#: 一次发给审阅模型的请求（派发意图编号）：交出初始材料（A03）
+#: 一次发给审阅模型的请求（派发意图编号）：交出初始材料
 REVIEW_INTENT_CONSUMER = "REVIEW_INTENT"
-#: 本人在界面里读一个产物（A03 原生下载）
+#: 本人在界面里读一个产物（原生下载）
 NATIVE_READ_CONSUMER = "NATIVE_READ"
 READER_VERSION = "assurance-point-use-v1"
 #: §8.4：需要 MAINTAIN 而没有实际持续监测 / 锁 / fence。

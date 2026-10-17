@@ -372,7 +372,7 @@ def read_task_content_candidate(
                 "OP_CONTENT_REVIEW_UNAVAILABLE", "candidate result unavailable"
             )
         attempt = store.get_attempt(result.envelope.attempt_id)
-        # 第四批：已验收的结果按现行（更新的）要求重审，冻结输入照旧、范围取现行的
+        # 已验收的结果按现行（更新的）要求重审，冻结输入照旧、范围取现行的
         accepted = result.verification_state == "DONE" and result.verdict == "PASS"
         frozen = load_completion_result_inputs(
             store,

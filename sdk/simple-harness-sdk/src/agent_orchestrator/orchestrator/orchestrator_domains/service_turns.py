@@ -221,7 +221,7 @@ class ServiceTurnMixin(OrchestratorCore):
         waited = self.store.now - since
         if waited < self._service_blocker_limit:
             return None  # still waiting: not progress (阶段 B 裁决第 6 类)
-        # 第 2 批 A27 (§6.2 "原 intent 由 runtime 核对"): the bound passed — re-read this
+        # the bound passed — re-read this
         # hand-off's own call key before the round is ended and the ladder asks again.
 
         check = self._unknown_handoff_check(intent)

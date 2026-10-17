@@ -101,7 +101,7 @@ class ResolutionProblemKind(StrEnum):
     MAP_KEY_MISSING = "map_key_missing"
     MAP_KEY_DUPLICATE = "map_key_duplicate"
     MAP_KEY_MISPLACED = "map_key_misplaced"
-    # 2026-10-11 第三批：数据边交出的非端口文件（交付绑定）也要见证与版本证明
+    # 数据边交出的非端口文件（交付绑定）也要见证与版本证明
     DELIVERY_WITNESS_MISSING = "delivery_witness_missing"
     DELIVERY_WITNESS_NOT_USABLE = "delivery_witness_not_usable"
     DELIVERY_SOURCE_UNAVAILABLE = "delivery_source_unavailable"
@@ -1286,7 +1286,7 @@ def resolve_declared_inputs(
 
 
 # --------------------------------------------------------------------------------------
-# resolve_deliveries (2026-10-11 第三批：冻结清单里的接力文件)
+# resolve_deliveries (冻结清单里的接力文件)
 # --------------------------------------------------------------------------------------
 
 
@@ -1633,7 +1633,7 @@ def materialise_plan(manifest: InputManifest, target_rules: TargetRules) -> Mate
         )
     problems: list[ResolutionProblem] = []
     # (target, content_hash, artifact_id, binding_id, input_port, requirement_id, producer);
-    # a delivery binding (2026-10-11 第三批) has no port and no requirement.
+    # a delivery binding has no port and no requirement.
     Member = tuple[ResourceIdentity, str, str, str, str | None, str | None, str]
     grouped: dict[tuple[str, str], list[Member]] = {}
     for binding in manifest.bindings:

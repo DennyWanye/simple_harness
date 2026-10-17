@@ -81,7 +81,7 @@ def ensure_task_content_review(
         task = semantics.task_semantics_of(mission_id, task_id)
         if task is None:  # 5E 显式判空：与上面结果缺失同一个错误码
             raise AssuranceError("SOURCE_UNAVAILABLE", task_id)
-        # 第四批：已验收的结果按现行（更新的）要求重审时，冻结输入照旧、范围取现行的
+        # 已验收的结果按现行（更新的）要求重审时，冻结输入照旧、范围取现行的
         frozen = load_completion_result_inputs(
             store,
             result,
@@ -111,7 +111,7 @@ def ensure_task_content_review(
             "DISCLOSE",
             root.root_incarnation_id,
         )
-        # 解析时就核用途与访问（第 2 批 A10）：授权与身份进读取器，许可随解析结果回来。
+        # 解析时就核用途与访问：授权与身份进读取器，许可随解析结果回来。
         reader = AssuranceReader(
             store,
             tenant_id=tenant_id,
@@ -267,7 +267,7 @@ def ensure_task_content_review(
                 "check_requirements": policies,
                 "evidence_catalogue": [item.to_json() for item in catalogue],
                 "producer_agent_ids": list(package.producer_agent_ids),
-                # 两种政策由审阅运行时先登记，这里只钉登记回执（推后第 2 批 A18）
+                # 两种政策由审阅运行时先登记，这里只钉登记回执
                 "reviewer_policy_ref": policy_refs[0].to_json(),
                 "context_policy_ref": policy_refs[1].to_json(),
                 "criterion_policy_ref": policy_ref.to_json(),
@@ -319,7 +319,7 @@ def ensure_task_content_review(
             tenant_id=tenant_id,
             binding=binding,
             package=package,
-            # 同一份结果按几版要求审（第四批），每版一条审阅绑定
+            # 同一份结果按几版要求审，每版一条审阅绑定
             request_command_id=f"content-review:{result_id}:r{int(projection.requirements.revision)}",
             config=frozen_config,
             reservation=reservation,

@@ -131,7 +131,7 @@ def _view(record) -> dict[str, Any]:  # type: ignore[no-untyped-def]
         "used_by": list(record.used_by),
         "supersedes": record.supersedes,
         "superseded_by": record.superseded_by,
-        "modified_by": [dict(entry) for entry in record.modified_by],  # §11.2"由谁修改过"（K07）
+        "modified_by": [dict(entry) for entry in record.modified_by],  # §11.2"由谁修改过"
     }
 
 

@@ -684,7 +684,7 @@ class TaskGraphConvergenceViewV2:
         return cls(**{key: row[key] for key in row})
 
 
-# ------------------------------------------------------------------ execution process（推后第 3 批 U09）
+# ------------------------------------------------------------------ execution process
 #
 # 字段表即合同：``_record`` 按"必有字段 / 可有字段 → 核对函数"逐个核，多一个、少一个都拒。
 # 上界取 ``orchestrator/taskgraph_execution_view.py`` 的截断长度；不定长的标识取 1024。

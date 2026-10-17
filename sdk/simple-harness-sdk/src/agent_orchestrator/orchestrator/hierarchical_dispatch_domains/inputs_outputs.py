@@ -129,7 +129,7 @@ class InputOutputMixin(HierarchicalDispatchCore):
         )
         if result.problems or result.manifest is None or not result.manifest.is_frozen:
             return result
-        # 2026-10-11 第三批：端口解析完、冻结了，再把这些上游交出的其余文件（交付绑定）按同一份
+        # 端口解析完、冻结了，再把这些上游交出的其余文件（交付绑定）按同一份
         # 规则算进清单——每份都带真实产出者那次验收的见证；版本证明不了的报冲突，不替规划器选。
         return resolve_deliveries(
             result.manifest,
@@ -667,7 +667,7 @@ class InputOutputMixin(HierarchicalDispatchCore):
             # not a materialisation failure — so nothing is placed and nothing raises.
             return []
         # 阶段 D（10-03）：开工前先查这一步直接上游牵涉的写入冲突（规则一：没有先后的两步把同一文件写成
-        # 两样）。独立核验 opt.185 M1：这道检查原先在被删的叠加函数里，不能随它一起没了。
+        # 两样）。
         producers = tuple(
             dict.fromkeys(str(item.producer_task_ref) for item in result.manifest.bindings)
         )
@@ -719,7 +719,7 @@ class InputOutputMixin(HierarchicalDispatchCore):
                 continue  # 只读这些上游喂的下游，不解析别的
             consumer_task = self.store.get_task(consumer)
             if consumer_task is not None and consumer_task.status is TaskStatus.COMPLETED:
-                # 2026-10-11（opt.176 核验建议 1）：做完的下游拿到的输入早已冻结在它的清单里，再解析
+                # 做完的下游拿到的输入早已冻结在它的清单里，再解析
                 # 一遍只是开销（每轮修复触发都对全部下游完整解析，步骤多时核心用例集从 601 秒涨到 670 秒）。
                 # 没做完的（含停下的）照旧报：那是规划器与事后取证都要看的事实。
                 continue

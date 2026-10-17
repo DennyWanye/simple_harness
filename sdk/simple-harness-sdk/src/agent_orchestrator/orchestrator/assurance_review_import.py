@@ -158,7 +158,7 @@ def review_subject_stopped(store: Any, binding: AssuranceReviewBinding) -> bool:
         if attempt is None:
             return True
         if carried_review_binding(store, body, result):
-            # TaskGraph 补全第四批：重审的对象是已验收的结果，任务与原尝试早已结束是它的常态；
+            # 重审的对象是已验收的结果，任务与原尝试早已结束是它的常态；
             # 它活着 = 任务没结束、这一步还在现行计划里
             return not carried_review_alive(store, mission.id, task.id)
         return task.status in TERMINAL_TASK or attempt.status in TERMINAL_ATTEMPT
@@ -918,7 +918,7 @@ def prepare_official_review(
             refs.add(imported.provider_manifest.ref)
         refs.update(item.ref for item in imported.catalogue)
         refs.update(item.ref for item in imported.disclosure_metadata)
-        # 解析时就核用途与访问（第 2 批 A10）：授权与身份进读取器，许可随解析结果回来。
+        # 解析时就核用途与访问：授权与身份进读取器，许可随解析结果回来。
         reader = AssuranceReader(
             store,
             tenant_id=reader.tenant_id,
@@ -1021,7 +1021,7 @@ def read_official_review_binding_locked(
     receipt_ref = AssuranceRef(
         "commit_receipt", Pin(row["import_receipt_id"], 0, fingerprint(dict(receipt)))
     )
-    # 回执的写者与对象由解析器核（第 2 批 A09）
+    # 回执的写者与对象由解析器核
     metadata = reader.read_exact_metadata(
         receipt_ref, receipt_kind="AssuranceReviewImported", receipt_subject=str(record.record_id)
     )

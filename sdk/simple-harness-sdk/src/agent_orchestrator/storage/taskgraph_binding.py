@@ -15,8 +15,8 @@ from .store import StoreError
 if TYPE_CHECKING:
     from .store import Store
 
-#: The one kernel identity (a CHECK on ``taskgraph_policy_bindings`` pins it).  Since
-#: 2026-10-03 (HTN 补齐阶段 A′) a Mission is bound in its creation transaction and the policy
+#: The one kernel identity (a CHECK on ``taskgraph_policy_bindings`` pins it).  A
+#: Mission is bound in its creation transaction and the policy
 #: no longer carries a planning-grant reference (nothing read it — every plan commit keeps its
 #: own planning-authority gate); an older binding still carrying it is refused by name
 #: (``TASKGRAPH_POLICY_FIELDS_INVALID``), so the kernel string itself did not need to move.

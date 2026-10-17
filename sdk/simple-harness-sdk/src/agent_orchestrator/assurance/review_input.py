@@ -12,7 +12,7 @@ from .evidence import CatalogueEntry, evidence_label
 from .refs import AssuranceRef
 from .reviews import AssuranceReviewBinding
 
-#: 审阅员提示词的版本（第 2 批 K01 起单独计：v1 是只有两件证据工具的那一版）。改了正文就升一版，
+#: 审阅员提示词的版本（单独计：v1 是只有两件证据工具的那一版）。改了正文就升一版，
 #: 不留旧版本；钉哈希按正文在运行时算（``fingerprint({"instructions", "codec"})``）。
 #: v3（2026-10-06 晚，原计划 F04 后半）：回复第 5 版，多了 global_findings（不属于任何一条准则的问题）。
 REVIEW_INSTRUCTIONS_VERSION = "assurance-review-instructions-v3"

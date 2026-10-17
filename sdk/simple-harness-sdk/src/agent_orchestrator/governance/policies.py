@@ -77,7 +77,7 @@ class DeploymentPolicy:
     # not isolated; the SDK default so every earlier deployment keeps running as it did).
     # None = derived from ``local_code_execution`` (True → process_only, False → off).
     code_execution: str | None = None
-    # 第 2 批车道 H（H06）：任务停止条件 ``no_new_knowledge`` / ``result_duplication`` 的默认阈值。
+    # 任务停止条件 ``no_new_knowledge`` / ``result_duplication`` 的默认阈值。
     # 任务建立时可在条件名后带 ``=值`` 覆盖；只是上限，不判语义。
     no_new_knowledge_rounds: int = field(default=5, kw_only=True)
     result_duplication_rate: float = field(default=0.5, kw_only=True)
@@ -392,8 +392,8 @@ SNAPSHOT_FIELDS: dict[str, str] = {
             "reduced_reserve_ratio",
             "exploration_slots",
             "verifier_workers",
-            "verifier_workers_ceiling",  # 推后第 3 批 H12：积压时审阅并发的上限
-            "decomposition_pause_seconds",  # 推后第 3 批 H12：积压时暂停新拆分的时限
+            "verifier_workers_ceiling",  # 积压时审阅并发的上限
+            "decomposition_pause_seconds",  # 积压时暂停新拆分的时限
             "deployment_policy",
             "profile_failure_threshold",
             "profile_cooldown_seconds",

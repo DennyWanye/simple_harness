@@ -361,7 +361,7 @@ class RootResolutionMixin(HierarchicalDispatchCore):
         assert inputs.record is not None
         manifest_hash = input_manifest_hash or inputs.package.binding.input_manifest_hash
         resolution_id = resolution_id or f"res-{inputs.occurrence_id}"
-        # Assurance §7.2（2026-10-06 车道 O）：根结论复述的是根的内容投影——根终审判的那一份；
+        # Assurance §7.2：根结论复述的是根的内容投影——根终审判的那一份；
         # 效果判据由各自的结果审阅判、收尾核对收敛，不写进根结论。
 
         try:
@@ -481,7 +481,7 @@ class RootResolutionMixin(HierarchicalDispatchCore):
                 else CompoundFacts(
                     selected_method_legal=inputs.method_instance_id is not None,
                     contributing_occurrence_ids=tuple(sorted(inputs.contributions)),
-                    # 2026-09-30 真机第 6 局：两次判不下来、人裁决通过的最终审查同样算组合义务达成
+                    # 两次判不下来、人裁决通过的最终审查同样算组合义务达成
                     composition_obligation_passed=accepted_or_adjudicated(
                         self.store, inputs.record
                     ),

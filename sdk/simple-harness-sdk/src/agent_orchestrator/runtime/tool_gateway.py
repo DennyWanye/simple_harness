@@ -30,7 +30,7 @@ from .domain_tools import DomainTool
 logger = logging.getLogger(__name__)
 
 
-#: 执行者与审阅员共用的一轮作答余量（2026-09-29 第六局审阅员先例；推后第 3 批 R3-3 补裁并入 B 级 #52）：
+#: 执行者与审阅员共用的一轮作答余量：
 #: 交给 SDK 的单回合工具上限 = 网关上限 + 这个余量。网关是权威——到上限就拒绝并告知（审阅员"马上作答"、
 #: 执行者"可以申请更多额度"），余量内的调用都被拒、不执行，模型还有机会作答；SDK 循环不先截断。
 TOOL_ANSWER_MARGIN = 8
@@ -183,7 +183,7 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
 }
 TOOL_NAMES = tuple(TOOL_SCHEMAS)
 ASSURANCE_EVIDENCE_TOOLS = ("assurance_find_evidence", "assurance_read_evidence")
-#: 第 2 批 K01：审阅员的四件工具——两件只读证据工具，加上执行者那一套黑板读工具（同一个读器，
+#: 审阅员的四件工具——两件只读证据工具，加上执行者那一套黑板读工具（同一个读器，
 #: 按审阅所在任务的范围、只列当前有效；用户 10-02："审阅员通过黑板自己去取"）。
 ASSURANCE_REVIEWER_TOOLS = (*ASSURANCE_EVIDENCE_TOOLS, "knowledge_list", "knowledge_read")
 WORKER_TOOLS = ("workspace_read_file", "workspace_write_file", "workspace_list", "run_tests")
@@ -362,9 +362,9 @@ class WorkspaceBinding:
     allowed_tools: tuple[str, ...]
     untrusted_sources: tuple[str, ...] = ()  # step 4 (D4-12): path prefixes marked as data
     max_tool_calls: int | None = None  # step 6 (D6-7 ⑤ / D6-8): the reserved tool-call cap
-    # 推后第 3 批 H08：这次尝试预留的检索次数（``SEARCH_TOOL_NAMES``）；None = 不限
+    # 这次尝试预留的检索次数（``SEARCH_TOOL_NAMES``）；None = 不限
     max_search_calls: int | None = None
-    # opt.171 评估建议 2：执行者一次最多可申请的工具次数（核额度用的基础额度）；None = 与 max_tool_calls 相同
+    # 执行者一次最多可申请的工具次数（核额度用的基础额度）；None = 与 max_tool_calls 相同
     max_request_amount: int | None = None
     protected: tuple[str, ...] = ()  # step 6 (D6-6): read-only upstream inputs of this Attempt
     denied_prefixes: tuple[str, ...] = ()  # step 6 (D6-7): the deployment's denied paths
@@ -536,7 +536,7 @@ class WorkspaceToolGateway:
             raise ValueError("domain tools cannot replace existing tool names")
         self._domain_locks: dict[str, asyncio.Lock] = {}
         # The fourth argument names the reader (attempt, this tool call, review key):
-        # content is handed over through the use-certificate issuer (A26).
+        # content is handed over through the use-certificate issuer.
         self.knowledge_reader: (
             Callable[[str, str, Mapping[str, Any], Mapping[str, Any]], Mapping[str, Any]] | None
         ) = None
@@ -558,7 +558,7 @@ class WorkspaceToolGateway:
         # ASSURANCE-EXEC-1.1 §4: installed by the assured review runtime. The
         # reader performs the current permission/pin/exact-bytes read itself;
         # the refusal hook re-reads the live review invocation before each call.
-        # ``call_id``（关键字）：这次工具调用，读一条证据交出前签的 DISCLOSE 证书以它为消费方（A03）。
+        # ``call_id``（关键字）：这次工具调用，读一条证据交出前签的 DISCLOSE 证书以它为消费方。
         self.assurance_evidence_reader: Callable[..., Mapping[str, Any]] | None = None
         self.assurance_review_refusal: Callable[[str, WorkspaceBinding], str | None] | None = None
 
@@ -712,7 +712,7 @@ class WorkspaceToolGateway:
         try:
             # An assured reviewer binding has no Attempt workspace and must not
             # fabricate one; its tools read pinned Store/CAS evidence and the Mission's
-            # blackboard only (K01: the knowledge tools on a review binding too).
+            # blackboard only (the knowledge tools on a review binding too).
             workspace = (
                 None
                 if call.name in ASSURANCE_EVIDENCE_TOOLS or binding.review_key is not None
@@ -780,7 +780,7 @@ class WorkspaceToolGateway:
                 if self.knowledge_reader is None or binding.mission_id is None:
                     raise WorkspaceError("knowledge tools are unavailable for this binding")
                 if binding.review_key is not None:
-                    # K01: a reviewer reads the blackboard under its live review only
+                    # a reviewer reads the blackboard under its live review only
                     record["review_key"] = binding.review_key
                     refusal = (
                         None
@@ -1050,12 +1050,12 @@ class WorkspaceToolGateway:
                 outcome="rate_limited",
                 stage="rate",
                 message=(
-                    # 2026-09-29 第六局：最终审阅查满次数后被截断、两次都没给结论，整个任务
+                    # 实测：最终审阅查满次数后被截断、两次都没给结论，整个任务
                     # 判失败。审阅员查满时明确告诉它别再查、马上作答（循环上限留了余量）。
                     f"查看次数已用完（最多 {binding.max_tool_calls} 次）：不要再调用任何工具，"
                     "立即根据已经看到的证据，按要求的格式给出结论。"
                     if binding.review_key is not None
-                    # 推后第 3 批 H10（裁决 2026-10-07 第 4 件，偏离 #52）：执行者只在工具次数用完时
+                    # 执行者只在工具次数用完时
                     # 从这句话得知可申请；模板、工具说明、上下文包都不改
                     else f"this Attempt may execute at most {binding.max_tool_calls} tool calls. "
                     "本次尝试的工具次数已用完。如果确实还需要更多工具次数才能完成：交 blocked 结果，"
@@ -1064,7 +1064,7 @@ class WorkspaceToolGateway:
                     "给不给由规划器决定。"
                 ),
             )
-        # 4b. 推后第 3 批 H08：检索次数用完只拒绝检索类工具，别的工具照常
+        # 4b. 检索次数用完只拒绝检索类工具，别的工具照常
         if call.name in SEARCH_TOOL_NAMES and binding.max_search_calls is not None:
             searched = (
                 self.search_counter(binding.attempt_id)

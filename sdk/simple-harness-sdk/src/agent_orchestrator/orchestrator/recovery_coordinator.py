@@ -141,7 +141,7 @@ def _owner_alive(pid: int, started_at: str) -> bool:
     return identity is not None and str(identity["process_started_at"]) == started_at
 
 
-#: 恢复第 3 步逐项列出的被隔离任务保证待办上限（推后第 3 批 A21，偏离 #50）。
+#: 恢复第 3 步逐项列出的被隔离任务保证待办上限。
 ISOLATED_WAITING_LIMIT = 64
 
 
@@ -428,7 +428,7 @@ class RecoveryCoordinator:
         isolated: list[dict[str, str]] = []
         for mission_id, where, error in orch._rounds.startup_faults:
             if orch.recovery_isolated(mission_id):
-                # 第 3 步已隔离：本进程不替它写故障、不停它（N3-27），只在这一步的结果里记一笔
+                # 第 3 步已隔离：本进程不替它写故障、不停它，只在这一步的结果里记一笔
                 isolated.append(
                     {"mission_id": mission_id, "where": where, "error": type(error).__name__}
                 )

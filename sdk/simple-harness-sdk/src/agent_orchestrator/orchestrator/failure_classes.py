@@ -41,9 +41,9 @@ _MODEL_TURN_CODES = frozenset(
     }
 )
 _INFRA_TURN_KINDS = frozenset({"provider_unavailable", "provider_error"})
-# 单轮墙钟超时：2026-09-29 真机第八局，应用停机/重启期间这一轮的时限走完，重启后报超时。
+# 单轮墙钟超时：应用停机/重启期间这一轮的时限走完，重启后报超时。
 # 这不是模型把内容做错；按被打断处理（原地重做、不扣次数、同一步合计有上限）。
-# 执行层内部异常：第九局重启后"模型调用已交出、结果未知"（ProviderInvocationConflictError）
+# 执行层内部异常：重启后"模型调用已交出、结果未知"（ProviderInvocationConflictError）
 # 以 base_agent_driver_exception 结束这一轮——运行时自己的异常，从来不是模型做错。
 _INTERRUPTED_TURN_CODES = frozenset({"react_wall_clock_exceeded", "base_agent_driver_exception"})
 _INTERRUPTED_REASONS = frozenset(
@@ -52,7 +52,7 @@ _INTERRUPTED_REASONS = frozenset(
         "executor_turn_missing",
         "executor_agent_missing",
         "provider_outcome_unknown",
-        # 推后第 1 批 A26：重启后在途尝试开工时装进上下文的证据已不当前，不恢复、拿当前上下文重做
+        # 重启后在途尝试开工时装进上下文的证据已不当前，不恢复、拿当前上下文重做
         "recovery_use_refused",
     }
 )
@@ -86,7 +86,7 @@ def output_exhausted_fact(error: Mapping[str, Any] | None) -> str:
 
 _TURN_CAP_FACTS = {
     "react_max_turns_exceeded": "上一次尝试达到单轮模型调用次数上限被终止，没有交出结果。",
-    # 独立核验 opt.182 S1：工具次数做满（网关拒绝后仍继续调）同样是事实
+    # 工具次数做满（网关拒绝后仍继续调）同样是事实
     "react_max_tool_calls_exceeded": "上一次尝试达到单轮工具调用次数上限被终止，没有交出结果。",
 }
 
@@ -239,8 +239,8 @@ def review_exhausted_by_interruption(store: Any, review_key: str) -> bool:
 #   CORRUPT 数据损坏：重试也是同一个结果，当轮停这个任务（规划失败，带完整性错误码）；
 #   RETRY   其余：原地重试；同一任务同一处连续 NON_MODEL_FAILURE_CAP 轮、且距第一次至少
 #           ROUND_FAULT_MIN_SECONDS 秒才停（"库读写故障"）。
-# 分到哪一类只按异常带的类型码查错误码表（``contracts.error_table.round_fault_handling``，
-# TaskGraph 补全第一批），不读异常文字；没带码或码没登记的一律 RETRY，由上限兜住。
+# 分到哪一类只按异常带的类型码查错误码表（``contracts.error_table.round_fault_handling``），
+# 不读异常文字；没带码或码没登记的一律 RETRY，由上限兜住。
 ROUND_CORRUPT = "CORRUPT"
 ROUND_RETRY = "RETRY"
 ROUND_FAULT_MIN_SECONDS = 120.0

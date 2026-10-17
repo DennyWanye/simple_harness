@@ -236,7 +236,7 @@ def prepare_purpose_review(
             "DISCLOSE",
             root.root_incarnation_id,
         )
-        # 解析时就核用途与访问（第 2 批 A10）：授权与身份进读取器，许可随解析结果回来。
+        # 解析时就核用途与访问：授权与身份进读取器，许可随解析结果回来。
         reader = AssuranceReader(
             store,
             tenant_id=tenant_id,
@@ -357,7 +357,7 @@ def prepare_purpose_review(
                 "check_requirements": policies,
                 "evidence_catalogue": [item.to_json() for item in catalogue],
                 "producer_agent_ids": list(package.producer_agent_ids),
-                # 两种政策由审阅运行时先登记，这里只钉登记回执（推后第 2 批 A18）
+                # 两种政策由审阅运行时先登记，这里只钉登记回执
                 "reviewer_policy_ref": policy_refs[0].to_json(),
                 "context_policy_ref": policy_refs[1].to_json(),
                 "criterion_policy_ref": policy_ref.to_json(),
@@ -631,7 +631,7 @@ def action_proposal_subject(
         )
     }
     # 原计划 §2（:41）申请单审查"接实际 payload/spec/owner"：范围钉住的那一份已批准完成规格
-    # （范围表外键指向它），经原 OCC 读者读（推后第 3 批 A11）。
+    # （范围表外键指向它），经原 OCC 读者读。
     materials.add(
         AssuranceRef(
             "completion_spec", Pin(str(scope_row["spec_id"]), 0, str(scope_row["spec_hash"]))

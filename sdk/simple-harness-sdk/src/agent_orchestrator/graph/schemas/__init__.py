@@ -23,7 +23,7 @@ SCHEMA_NAMES: tuple[str, ...] = (
     "taskgraph-explanation-v1",
     "taskgraph-diff-v1",
     "taskgraph-convergence-view-v2",
-    # 推后第 3 批 U09：执行过程主画面与回合详情（HTN §17.2"前端用同一公开 Schema 验证"）
+    # 执行过程主画面与回合详情（HTN §17.2"前端用同一公开 Schema 验证"）
     "taskgraph-execution-view-v1",
     "taskgraph-execution-detail-v1",
 )

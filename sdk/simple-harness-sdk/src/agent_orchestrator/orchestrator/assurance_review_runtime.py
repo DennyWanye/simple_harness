@@ -67,7 +67,7 @@ class ReviewCallInterrupted(ContractError):
 
 #: The reviewing model is in its provider-failure cooldown: a review cannot be opened now.
 REVIEW_ROUTE_UNAVAILABLE = "REVIEW_ROUTE_UNAVAILABLE"
-#: 2026-09-29 第六局：最终审阅员每轮并发查 5 次左右，查满 32 次时循环直接截断，两次都没给
+#: 实测：最终审阅员每轮并发查 5 次左右，查满 32 次时循环直接截断，两次都没给
 #: 结论。循环上限比查看工具上限多留一轮的余量（与执行者共用 ``TOOL_ANSWER_MARGIN``）：工具先拒绝
 #: 并提示"马上作答"，模型还能作答。
 REVIEW_TOOL_CALLS = MAX_EVIDENCE_TOOL_CALLS + TOOL_ANSWER_MARGIN
@@ -259,7 +259,7 @@ class AssuranceReviewRuntime:
                 name=name,
                 instructions=REVIEW_INSTRUCTIONS,
                 model_profile_ref=decision.profile_id,
-                # §4: the two read-only evidence tools, plus the blackboard readers (K01).
+                # §4: the two read-only evidence tools, plus the blackboard readers.
                 tool_names=ASSURANCE_REVIEWER_TOOLS,
                 limits=AgentLimits(
                     max_model_calls_per_turn=REVIEW_MODEL_CALLS,

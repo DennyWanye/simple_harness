@@ -80,7 +80,7 @@ class MissionSpec:
     success_criteria: tuple[str, ...]
     tenant_id: str
     idempotency_key: str
-    # 第 2 批车道 H（H06）：两种计数型停止默认开启，阈值取部署政策（``stop_conditions`` 模块）
+    # 两种计数型停止默认开启，阈值取部署政策（``stop_conditions`` 模块）
     stop_conditions: tuple[str, ...] = (
         "verification_passed",
         "budget_exhausted",
@@ -127,7 +127,7 @@ class MissionSpec:
         if self.untrusted_sources:
             data["untrusted_sources"] = list(self.untrusted_sources)
         if self.domain != CODE_DOMAIN:
-            # A07: the default must not change ``spec_hash`` — a Host that re-sends the same
+            # the default must not change ``spec_hash`` — a Host that re-sends the same
             # request after upgrading would otherwise get a MissionConflict
             data["domain"] = self.domain
         if self.runtime_profile_id is not None:

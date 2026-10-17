@@ -115,8 +115,8 @@ class DispatchAdmissionMixin(HierarchicalDispatchCore):
             task = self.store.get_task(task_id)
             if task is not None and task.accepted_result_id:
                 # 阶段 E：这一步已有通过的结果。结果在现行要求下算数 → 等完成，不再派执行者。
-                # 是按旧版要求通过的、现在不算数 → 不派执行者：系统请审阅员按新要求重审同一份结果
-                # （TaskGraph 补全第四批）；重审没过 → 如实报出来，换掉这一步或换做法由规划器定。
+                # 是按旧版要求通过的、现在不算数 → 不派执行者：系统请审阅员按新要求重审同一份结果；
+                # 重审没过 → 如实报出来，换掉这一步或换做法由规划器定。
                 counts = self._accepted_result_counts(mission_id, str(spec.occurrence_id))
                 # 按需导入：循环依赖（hierarchical_dispatch ↔ carried_review）
                 from ..carried_review import (

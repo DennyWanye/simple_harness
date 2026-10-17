@@ -54,7 +54,7 @@ class IdleFacts:
     assurance_work: bool = False
     unknown_actions: bool = False
     approvals_pending: bool = False
-    #: 推后第 3 批 H12：审阅积压中，已有计划的任务暂停开新规划轮（有时限）
+    #: 审阅积压中，已有计划的任务暂停开新规划轮（有时限）
     backlog_paused: bool = False
     #: the plan withholds or admits something; ``None`` when it was not read
     plan_has_work: bool | None = None

@@ -129,9 +129,9 @@ def retry_feedback(
             # 2026-10-09：原来拼的是一段原始字典，模型读不懂；只写事实，怎么办由它判断
             feedback.append(output_exhausted_fact(failure.get("error")))
         elif reason == "turn_failed":
-            # 2026-10-10（第三轮复查）：服务侧出错的那一轮同样只写一句事实，不拼原始字典。
+            # 服务侧出错的那一轮同样只写一句事实，不拼原始字典。
             # 只有归类为服务侧（INFRA）的才说"服务侧错误"；模型自己这一轮的失败（回合上限、
-            # 工具参数错…）写错误码和错误自带的说明，不替它定性（独立核验 M2）。
+            # 工具参数错…）写错误码和错误自带的说明，不替它定性。
             error: Any = failure.get("error") if isinstance(failure.get("error"), Mapping) else {}
             code = error.get("error_code") or failure.get("error_kind") or "unknown"
             if classify_failure(failure) == INFRA:
@@ -318,7 +318,7 @@ class AttemptJudgmentMixin(OrchestratorCore):
         # P2.3b / §24.1 decision 4: the Attempt starts from the resolved InputManifest,
         # so an ORDER-only predecessor contributes nothing.
         try:
-            # 2026-10-11 第三批：清单（端口绑定 + 交付绑定）的物化结果就是全部输入，没有第二套叠加。
+            # 清单（端口绑定 + 交付绑定）的物化结果就是全部输入，没有第二套叠加。
             inputs = new_mode.attempt_inputs(mission.id, task.id)
         except WriteConflictPending as error:
             # 阶段 D：上游两步把同一个文件写成了两样；这一步不开工，等规划器处理写入冲突修复请求
@@ -337,7 +337,7 @@ class AttemptJudgmentMixin(OrchestratorCore):
         role = self._template(role_for_task(task), mission.id)  # D5-9: approach
         role = self._hierarchical_worker_template(role, mission.id)
         untrusted = [str(p) for p in (mission.final_report or {}).get("untrusted_sources", [])]
-        # 现行计划网络只读一次：检索按它的目标树排序（推后第 2 批 K06），父目标与直接上游也读它（K04）
+        # 现行计划网络只读一次：检索按它的目标树排序，父目标与直接上游也读它
         network_error: Exception | None = None
         try:
             network = new_mode.network(mission.id)
@@ -400,7 +400,7 @@ class AttemptJudgmentMixin(OrchestratorCore):
         untrusted, previous_files, source_binding, source_versions = self._workspace_files_for(
             mission, previous, inputs, untrusted
         )
-        # 第 2 批车道 H（K04，原计划 §10 第 3 项）：父目标与直接上游从分层网络读——这一步所在做法
+        # 原计划 §10 第 3 项：父目标与直接上游从分层网络读——这一步所在做法
         # 细化的目标（原文、它负责的要求原文），与数据边上把产出交给它的生产者（目标、状态、已验收
         # 结论的摘要、交到这一步的产物）。``Task.dependency_ids`` 在分层下恒空，不再按它过滤。
 
@@ -460,9 +460,9 @@ class AttemptJudgmentMixin(OrchestratorCore):
                     self._note(f"task {task.id}: tool calls all reserved in flight; waiting")
                     return False
                 tool_cap = min(tool_cap, reservable)
-        # 推后第 3 批 H08：检索次数按账户链还能预留的数给这次尝试；用完不停任务，只让网关拒绝检索
+        # 检索次数按账户链还能预留的数给这次尝试；用完不停任务，只让网关拒绝检索
         search_cap = self._search_call_room(mission, task)
-        # 推后第 3 批 H10：规划器批准了（原样重试）上一次尝试的资源申请 → 这次的工具上限加上批准数
+        # 规划器批准了（原样重试）上一次尝试的资源申请 → 这次的工具上限加上批准数
         resource_grant = self._resource_grant(mission, task)
         if resource_grant is not None:
             tool_cap = int(resource_grant["base_cap"]) + int(resource_grant["amount"])
@@ -473,7 +473,7 @@ class AttemptJudgmentMixin(OrchestratorCore):
             tool_names=allowed,
             limits=AgentLimits(
                 max_model_calls_per_turn=self._config.max_model_calls_per_turn,
-                # R3-3 补裁（B 级 #52）：SDK 单回合上限多留一轮余量，网关按 tool_cap 拒绝并告知
+                # SDK 单回合上限多留一轮余量，网关按 tool_cap 拒绝并告知
                 max_tool_calls_per_turn=tool_cap + TOOL_ANSWER_MARGIN,
                 turn_deadline_seconds=min(
                     self._config.turn_deadline_seconds,
@@ -1104,7 +1104,7 @@ class AttemptJudgmentMixin(OrchestratorCore):
                 )
                 await self._release_mission(mission.id)
                 return True
-            # 2026-10-06（Assurance §7.2，车道 O）：系统准备的动作被人拒绝（REJECTED）、没生效（FAILED）、
+            # Assurance §7.2：系统准备的动作被人拒绝（REJECTED）、没生效（FAILED）、
             # 还没产生（申请单在等审阅 / 批准 / 物化）或被撤销后待重交，都归系统操作那条线
             # （``system_operations`` / ``operation_runtime``：内容换了就替代重交、证实没生效按原内容重交到
             # 上限、否则交规划器一次或具名停下）；判定不再等效果，这里就不第二次判它们，也不判"没有候选"。
@@ -1145,7 +1145,7 @@ class AttemptJudgmentMixin(OrchestratorCore):
             # (BLOCKED_UNKNOWN / DRAINING keep the Mission ACTIVE) and the unique final
             # writer completes it.  Nothing to re-judge: idle, not stalled.
             return False
-        # 2026-10-06（Assurance §7.2，车道 O）：判定不等每个要求动作 SUCCEEDED——业务要求由根结论判定，
+        # Assurance §7.2：判定不等每个要求动作 SUCCEEDED——业务要求由根结论判定，
         # 效果（发布有没有真的生效）由收尾核对：结果不明 → BLOCKED_UNKNOWN、在途 → 范围未满足，
         # 收敛后才 READY → 完成。
         self._judge_with_actions(mission, plain, summary, unmet=None)
@@ -1167,7 +1167,7 @@ class AttemptJudgmentMixin(OrchestratorCore):
                 continue
             action = self.commit.action_for_criterion(mission.id, criterion, self._connectors)
             state = None if action is None else str(action["state"])
-            # 2026-10-06（Assurance §7.2，车道 O）：业务要求由根结论判定；这项效果有没有真的生效由
+            # Assurance §7.2：业务要求由根结论判定；这项效果有没有真的生效由
             # 收尾核对（结果不明 → BLOCKED_UNKNOWN、在途 → 范围未满足），完成只由唯一的收尾写方写。
             # 这一行记的是判定时动作走到了哪一步，不是"效果已生效"。
             judgments.append(

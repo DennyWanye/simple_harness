@@ -573,7 +573,7 @@ class ReviewAccount(StrEnum):
 
 #: §13 v1.4: total, so no purpose can quietly escape budget accounting. COMPOSITION lands on the
 #: Mission account: a compound goal holds no tokens of its own (its share goes to its steps when it
-#: is refined), so the contract says where the cost really lands（第 2 批 A24，片 B 真机第 4 局）.
+#: is refined), so the contract says where the cost really lands.
 REVIEW_PURPOSE_ACCOUNTS: Mapping[ReviewPurpose, ReviewAccount] = {
     ReviewPurpose.TASK_CONTENT: ReviewAccount.TASK,
     ReviewPurpose.METHOD_PLAN: ReviewAccount.MISSION_PLANNING,

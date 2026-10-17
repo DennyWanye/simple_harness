@@ -423,7 +423,7 @@ class AttemptLifecycleCommitsMixin(CommitServiceCore):
                 },
             )
         grant = intent_config.get("resource_grant")
-        if grant:  # 推后第 3 批 H10：规划器批准的资源申请，和这次尝试同一个事务
+        if grant:  # 规划器批准的资源申请，和这次尝试同一个事务
             self._emit(
                 GRANTED,
                 task.mission_id,

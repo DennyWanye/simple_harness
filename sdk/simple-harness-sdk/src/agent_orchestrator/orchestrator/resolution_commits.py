@@ -1086,11 +1086,11 @@ class ResolutionCommitsMixin:
                 # over the bound MISSION_FINAL manifest, committed in this same
                 # transaction.
                 assured, licence_id = self._require_assured_root_use(command)
-                # Assurance §7.2（2026-10-06 车道 O）：根按它的内容投影验收——效果判据由各自的
+                # Assurance §7.2：根按它的内容投影验收——效果判据由各自的
                 # 结果审阅判，在收尾里收敛，不在这里第二次判。
                 root_projection = self._root_projection(semantics, command)
             elif command.purpose is ReviewPurpose.COMPOSITION:
-                # 2026-10-01（第 3 项）：中间目标的结论由组合审阅证书许可，同根终审。
+                # 中间目标的结论由组合审阅证书许可，同根终审。
                 assured, licence_id = self._require_assured_compound_use(command)
             else:
                 raise ResolutionCommitRejected(

@@ -28,7 +28,7 @@ from .core import OrchestratorCore
 from .support import logger
 
 #: 没有新事件的任务多久无论如何全量处理一次（秒）：卡死检测、租约到期等按时间发生的事
-#: 靠它照常发生（2026-09-29 第 4 批）。
+#: 靠它照常发生。
 MISSION_RECHECK_SECONDS = 10.0
 
 
@@ -45,7 +45,7 @@ class CycleMixin(OrchestratorCore):
         return mission_id in self._rounds.recovery_isolated
 
     def _active_missions(self) -> list[Mission]:
-        # 2026-09-29（第 4 批）：每轮要调好几次；先按状态列筛，只解码未结束的任务，
+        # 每轮要调好几次；先按状态列筛，只解码未结束的任务，
         # 不再每次把几十个已结束任务整份解码一遍。
         ended = sorted(str(status) for status in TERMINAL_MISSION)
         rows = self.store.connection.execute(
@@ -584,7 +584,7 @@ class CycleMixin(OrchestratorCore):
             task = asyncio.create_task(self._verify(stored.envelope.id))
             self._attempts.verifying[stored.envelope.id] = task
             await asyncio.sleep(0)  # let the verification reach its first Commit before deciding
-        # TaskGraph 补全第四批：改要求后沿用的叶子按新要求重审，与验证共用同一组名额
+        # 改要求后沿用的叶子按新要求重审，与验证共用同一组名额
         for mission_id in sorted(active):
             if len(self._attempts.verifying) >= self._verifier_capacity():
                 break

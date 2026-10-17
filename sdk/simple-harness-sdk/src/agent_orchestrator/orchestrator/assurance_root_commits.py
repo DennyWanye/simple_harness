@@ -172,7 +172,7 @@ def install_native_root(
             _initialize_clock(commit, body["root_incarnation_id"], int(commit.store.now * 1000))
         if old is None:
             _publish(gate, ref, body["root_incarnation_id"])
-        # 已有回执的根不按部署身份把状态文件写回（第 2 批 A02，原计划 §10.1）：状态文件缺失 /
+        # 已有回执的根不按部署身份把状态文件写回（原计划 §10.1）：状态文件缺失 /
         # 不符就是隔离，读门说了算；这里只核对，不修。
         gate.require_execution()
         return ref

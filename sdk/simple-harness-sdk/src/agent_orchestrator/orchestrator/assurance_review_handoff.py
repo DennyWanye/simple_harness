@@ -55,7 +55,7 @@ class AssuranceReviewHandoff:
         reader = AssuranceReader(store, tenant_id=mission.tenant_id, mission_id=mission.id)
         package = HtnStore(store).get_review_package(body["package_ref"]["id"])
         _validate_package(reader, package, body)
-        # 两个政策钉住只读登记正文，再与当前部署比（推后第 2 批 A18）
+        # 两个政策钉住只读登记正文，再与当前部署比
         require_registered_policies_locked(
             orch,
             tenant_id=mission.tenant_id,

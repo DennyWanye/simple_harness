@@ -479,7 +479,7 @@ class DeploymentMixin(OrchestratorCore):
         status = mission.status if current is None else current.status
         if status is MissionStatus.CREATED:
             # Damaged before its first planning round: stopped the same way, by name
-            # (TaskGraph 补全第二批; the contract gate does the same for an unbound one).
+            # (the contract gate does the same for an unbound one).
             self.commit.begin_planning(mission.id)
             status = MissionStatus.PLANNING
         if status is MissionStatus.PLANNING:

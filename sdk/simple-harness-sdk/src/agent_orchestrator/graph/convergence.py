@@ -75,7 +75,7 @@ def compute_convergence_impact(
     new_bindings = {str(item.task_id): item for item in new.task_bindings}
     retired_instances = set(before.adopted_instance_ids) - set(candidate.adopted_instance_ids)
     surviving_instances = set(before.adopted_instance_ids) & set(candidate.adopted_instance_ids)
-    # 2026-09-30（结构修复真机第 3 局）：只有真正共享的产出才不能改义——候选里仍按共享方式
+    # 只有真正共享的产出才不能改义——候选里仍按共享方式
     # （share_active / reuse_accepted）需要它，或一个修订前后都在的使用方仍需要它。只被换了新
     # 方法实例的同一父目标需要的步骤（后继步骤换掉上游后它的输入改指新上游）不是共享，照常列为
     # 输入已替换去重做；原来连它也拒，结构修复永远提交不了。

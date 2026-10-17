@@ -52,7 +52,7 @@ OBSERVATION_EVENTS = frozenset(
         "AssuranceCloseoutEvaluated",
         "AssuranceUseValidityChecked",
         "HierarchicalMissionStalled",
-        # 存储层记账（全业务重放 v3）：跟着业务写入走，本身不是进展（偏差裁决 1 R13）
+        # 存储层记账（全业务重放 v3）：跟着业务写入走，本身不是进展
         "RowsWritten",
     }
 )
@@ -322,7 +322,7 @@ class IdleStallMixin(OrchestratorCore):
             outcome_exhaustion_is_final(self.store, mission.id, item["review_key"])
             for item in self._exhausted_reviews(mission.id, "assurance-operation-outcome:")
         ):
-            # 2026-09-29 真机第七局：一份发布的结果审阅的调用两次都没回来，这项效果永远核不完；
+            # 一份发布的结果审阅的调用两次都没回来，这项效果永远核不完；
             # 再把它当合法等待，任务就一直挂着。交给卡死检测明确停下。被重启打断而用完的
             # 还有一次重审（outcome_retake_due），重审没用完前仍是合法等待。
             return True
@@ -430,7 +430,7 @@ class IdleStallMixin(OrchestratorCore):
             planned = {str(spec.task_id) for spec in new_mode.network(mission.id).occurrences}
         except (GraphIntegrityError, ContractError, StoreError):
             planned = {task.id for task in rows}
-        # 2026-10-06（Assurance §7.2，车道 O）：判定不再等效果收敛，所以"判定已记、等收尾"只在收尾还能
+        # Assurance §7.2：判定不再等效果收敛，所以"判定已记、等收尾"只在收尾还能
         # 收敛时才是合法等待——操作那条线已具名判死的效果（成功却无回执、物化一直被拒、结果审阅用完、
         # 交接被拒、裁决打回）让它回到卡死检测：先问规划器一次，再具名停下，不会永远挂着。
         judged = self.commit.assured_closeout_pending(mission.id)
@@ -752,7 +752,7 @@ class IdleStallMixin(OrchestratorCore):
                     "this execution cycle ends"
                 )
                 continue
-            # 片 D 第 1 项："计划卡住了要不要改"是规划器的判断。确认停滞之后先把局面如实交给
+            # "计划卡住了要不要改"是规划器的判断。确认停滞之后先把局面如实交给
             # 它一次（每个计划版本一条请求）；同一版计划问过之后又停在原地，才判停。
 
             withheld = [item.to_json() for item in admissions.refusals]
@@ -790,7 +790,7 @@ class IdleStallMixin(OrchestratorCore):
                     "the Planner is asked once for this plan revision before the Mission is stopped"
                 )
                 continue
-            # 车道 J H03（原计划 §10.5、§24.1 第 10 条）：问过规划器、它不改、等待关系成环 → 按"死锁"停，
+            # 原计划 §10.5、§24.1 第 10 条：问过规划器、它不改、等待关系成环 → 按"死锁"停，
             # 不借"没有可派发的工作"；环的事实随停止详情写出。
             # 按需导入：测试替身（agent_orchestrator.scheduling.wait_for.collect_wait_facts）
             from ...scheduling.wait_for import collect_wait_facts, deadlock_facts, has_deadlock

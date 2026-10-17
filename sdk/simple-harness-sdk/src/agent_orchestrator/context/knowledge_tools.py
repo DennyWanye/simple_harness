@@ -186,7 +186,7 @@ def _catalogue(store: Store, mission_id: str) -> list[dict[str, Any]]:
                 "preview": record.content[:200],
                 "source_task": record.source_task,
                 "evidence": list(record.evidence),
-                # 第 2 批 K02：目录里就能看到保障等级与有效期；None＝没登记
+                # 目录里就能看到保障等级与有效期；None＝没登记
                 "assurance_level": record.assurance_level,
                 "validity_interval": None
                 if record.validity_interval is None
@@ -348,7 +348,7 @@ def read_knowledge_tool(
     text = row["_text"]
     digest = _digest(text)
     if offset and args.get("expected_sha256") != digest:
-        # 核验 opt.184 建议：续读被拒同样说清要带什么
+        # 续读被拒同样说清要带什么
         if "expected_sha256" not in args:
             raise ValueError(
                 "knowledge_read paging needs expected_sha256: pass the sha256 the first "
@@ -362,7 +362,7 @@ def read_knowledge_tool(
         raise ValueError("offset is outside original knowledge")
     end = min(offset + 2048, len(text))
     if row["layer"] in {VERIFIED_LAYER, SUMMARY_LAYER}:
-        # 读取后复核（K05）：正文已取出，交出去之前过一道门；目录那次判定不替这一次作数
+        # 读取后复核：正文已取出，交出去之前过一道门；目录那次判定不替这一次作数
 
         if handover is None:
             raise ValueError("knowledge content needs the hand-over gate")

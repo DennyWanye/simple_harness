@@ -66,7 +66,7 @@ class CommitServiceCore:
         self._follow_global_quota_on_start()
         if int(task_max_tokens) < 1:
             raise ValueError("task_max_tokens must be a positive token count")
-        # fixed per-leaf allowance (V42: the even share is gone; the default is the product's
+        # fixed per-leaf allowance (the default is the product's
         # own 10,000,000, see plan_commits)
         self._task_max_tokens = int(task_max_tokens)
         # host support 0.9.8: the verification layers this deployment runs — without local

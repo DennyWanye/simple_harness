@@ -98,7 +98,7 @@ def _execution_sources(store: Store, intent_id: str, profiles: Any):
     if action["state"] != "SUCCEEDED":
         raise OperationOutcomeError("OP_OUTCOME_PENDING")
     if not action.get("receipt"):
-        # 2026-10-06 第 1 批车道 E：动作已成功却没有回执——不会再有回执来。读不出回执不是
+        # 动作已成功却没有回执——不会再有回执来。读不出回执不是
         # "等一等"，是具名的来源缺失；卡死检测按它停下（event_handler._outcome_source_refusals）。
         raise OperationOutcomeError("OP_OUTCOME_SOURCE_UNAVAILABLE", "succeeded without a receipt")
     if any(

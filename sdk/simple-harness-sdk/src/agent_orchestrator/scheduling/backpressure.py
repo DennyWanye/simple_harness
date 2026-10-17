@@ -156,7 +156,7 @@ class BackpressureState:
         )
 
 
-#: 推后第 3 批 H12：两种积压应对只看这一维（待审结果数）。
+#: 两种积压应对只看这一维（待审结果数）。
 BACKLOG_DIMENSION = "pending_verifications"
 #: 调度器状态里存当前应对的键。
 BACKLOG_KEY = "backlog_response"

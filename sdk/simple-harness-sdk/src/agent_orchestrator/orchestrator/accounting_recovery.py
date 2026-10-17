@@ -189,7 +189,7 @@ def import_late_accounting(orch) -> bool:
     store = orch.store
     if not store.has_table("provider_token_grants"):
         return False
-    # 2026-09-28 真机（第四轮）：运行中每轮都有写入，下面的"安静代次"永远不成立，已结束
+    # 运行中每轮都有写入，下面的"安静代次"永远不成立，已结束
     # 任务留下的几十个"用量未知"旧预留与旧授权每轮仍被完整重核一遍。它们不会再有新调用，
     # 只可能等到迟到的对账记录：每 5 分钟重核一次；未结束任务的照旧每轮都核。
     now = time.monotonic()
@@ -199,7 +199,7 @@ def import_late_accounting(orch) -> bool:
     if full:
         orch._late_accounting_ended_at = now
     # Guard recovery reads effective receipts. An actual overrun is recorded with its real
-    # numbers (OVERRUN is a fact, never raised; 2026-10-10 第一批); its usage must still be
+    # numbers (OVERRUN is a fact, never raised); its usage must still be
     # imported. Other failures stay fail-closed and are checked per subject below.
     for pool in orch.assembled.pools.values():
         guard = pool.bridge.runtime.ports.provider_admission

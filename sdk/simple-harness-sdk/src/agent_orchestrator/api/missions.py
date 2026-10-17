@@ -67,7 +67,7 @@ def spec_from_request(
             isinstance(value, str) or not all(isinstance(item, str) for item in value)
         ):
             raise MissionRequestError(f"{name} must be a list of strings")
-    # 第 2 批车道 H（H06）：两种计数型停止条件的阈值写法在建任务时就校验，不留到主循环里才发现
+    # 两种计数型停止条件的阈值写法在建任务时就校验，不留到主循环里才发现
 
     try:
         parse_stop_conditions(request.get("stop_conditions") or (), None)
@@ -78,8 +78,7 @@ def spec_from_request(
         isinstance(k, str) and isinstance(v, str) for k, v in seed.items()
     ):
         raise MissionRequestError("workspace_seed must map paths to text")
-    # host support S2 (P3.1-A06, the user's Phase3 gap G02): the step-4 charter fields are
-    # mapped too — before, a request naming them was accepted and they were silently lost
+    # 第 4 步章程字段也要映射：不映射的话，请求里写了它们也会被静默丢掉
     untrusted = request.get("untrusted_sources", ())
     if isinstance(untrusted, str) or not all(isinstance(s, str) for s in untrusted):
         raise MissionRequestError("untrusted_sources must be a list of path prefixes")

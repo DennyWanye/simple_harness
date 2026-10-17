@@ -91,8 +91,7 @@ CLOSEOUT_SOURCE_EVENTS = frozenset(
     }
 )
 # 检查到了也走这一条：检查绑定写入同一事务里，屏障触发器写 ``AssuranceEvidenceChanged``
-# （source_table=assurance_check_bindings）。原先登记的两个检查事件名是回执种类、没有写方，已删
-# （推后第 1 批 P1a 偏差裁决第 3 件，2026-10-07）。
+# （source_table=assurance_check_bindings）。原先登记的两个检查事件名是回执种类、没有写方，已删。
 VALIDITY_SOURCE_EVENTS = frozenset({"AssuranceEvidenceChanged"})
 # Own outputs: DIAGNOSTIC_ONLY for every consumer, never re-ingested as work.
 DIAGNOSTIC_EVENTS = frozenset({VALIDITY_CHECKED_EVENT, CLOSEOUT_EVENT, NOTIFIED_EVENT})
@@ -254,7 +253,7 @@ class AssuranceValidityConsumer(_ConsumerBase):
         reasons = []
         if certificate["root_incarnation_id"] != root:
             reasons.append("ROOT_CHANGED")
-        # 2026-10-01（第 4 项）：来源是否变了按读集逐项重读，不再比整任务时钟——时钟一动
+        # 来源是否变了按读集逐项重读，不再比整任务时钟——时钟一动
         # 就判"来源已变"让这个观察从没接到任何决定上。时钟移动只是说明（notes）。
         changed = changed_items(self.store, tenant_id=self.tenant_id, certificate=certificate)
         if changed:
@@ -510,7 +509,7 @@ class AssuranceCloseoutConsumer(_ConsumerBase):
         reasons: list[str] = []
         if str(mission.status) != "ACTIVE":
             reasons.append("MISSION_NOT_ACTIVE")
-        # A01：时钟回拨 / 不稳时不定稿——与证书最终锁同一个判定（``require_epochs_locked``）。
+        # 时钟回拨 / 不稳时不定稿——与证书最终锁同一个判定（``require_epochs_locked``）。
         if clock_discontinuous(epochs, now_ms=now_ms):
             reasons.append("TIME_DISCONTINUITY")
         resolution, missing, roots, unavailable = self._root_resolution(mission)
@@ -534,7 +533,7 @@ class AssuranceCloseoutConsumer(_ConsumerBase):
                 mission.id, int(resolution.requirements_version)
             )
         )
-        # A17 读集 / A01 权限：真的按引用重读根结论与要求版本（读不到或正文不符就在这里拒绝，不猜），
+        # 读集与权限：真的按引用重读根结论与要求版本（读不到或正文不符就在这里拒绝，不猜），
         # 再让当前权威对每张所依赖证书的身份就根结论重新签 ACCESS / POLICY 见证。
         reader = AssuranceReader(self.store, tenant_id=self.tenant_id, mission_id=mission.id)
         reads: list[ReadItem] = [
@@ -557,8 +556,8 @@ class AssuranceCloseoutConsumer(_ConsumerBase):
             reasons.append("ROOT_RESOLUTION_NOT_ACCEPT")
         if str(resolution.validity) != "CURRENT":
             reasons.append("ROOT_RESOLUTION_NOT_CURRENT")
-        # 2026-10-01（第 4 项）：收尾前复查"当初通过的依据现在还成立吗"——根结论、中间目标
-        # 结论、每条贡献验收的证书逐项重读；真变了（或到期了，A01）就不收尾，由规划器按修复请求
+        # 收尾前复查"当初通过的依据现在还成立吗"——根结论、中间目标
+        # 结论、每条贡献验收的证书逐项重读；真变了（或到期了）就不收尾，由规划器按修复请求
         # 决定重做。这里只拦收尾，不写 goal_resolutions.validity（用户红线）。
         stale = stale_certificates(
             self.store, tenant_id=self.tenant_id, mission_id=mission.id, now_ms=now_ms
@@ -600,7 +599,7 @@ class AssuranceCloseoutConsumer(_ConsumerBase):
             )
             if status.complete:
                 continue
-            # 第 1 批偏差 2（B 口径）：根范围只差结果不明的效果时不是"范围未满足"，是"效果不明"——
+            # 根范围只差结果不明的效果时不是"范围未满足"，是"效果不明"——
             # 走下面的 BLOCKED_UNKNOWN（原计划 §7.2），不落 ROOT_SCOPE_UNMET。
             (blocked if unmet_only_by_unknown_effects(status, states) else unmet).append(root)
         body["completion_spec_hash"] = spec_hashes[0] if spec_hashes else None
@@ -612,7 +611,7 @@ class AssuranceCloseoutConsumer(_ConsumerBase):
         body["pending_effect_keys"] = pending_effects
         if unmet:
             reasons.append("ROOT_SCOPE_UNMET")
-        # A07：已交出的动作，不限根范围——结果不明（UNKNOWN）的是危险工作；交出去还没收敛（HANDED_OFF）
+        # 已交出的动作，不限根范围——结果不明（UNKNOWN）的是危险工作；交出去还没收敛（HANDED_OFF）
         # 的是没收敛的写者，让收尾 DRAINING，收敛后再评（原计划 §7.2）。
         unknown_actions = self.store.list_actions(mission.id, "UNKNOWN")
         handed_off = self.store.list_actions(mission.id, "HANDED_OFF")
@@ -628,7 +627,7 @@ class AssuranceCloseoutConsumer(_ConsumerBase):
             )
             if intent.mission_id == mission.id
         )
-        # A07：未结算的预留——预留表里 RESERVED 的，加上尾部预留表里仍 HELD 的（含首个审阅员的尾部
+        # 未结算的预留——预留表里 RESERVED 的，加上尾部预留表里仍 HELD 的（含首个审阅员的尾部
         # 预留；两张表不一致时以预留本身为准）。
         open_reservations, accounting = self._open_accounting(mission.id)
         body["accounting_pending_refs"] = accounting
@@ -878,7 +877,7 @@ class AssuranceCloseoutConsumer(_ConsumerBase):
             # History never rolls back. Re-evaluations after finalisation are
             # recorded as receipts only; the row keeps its final identity.
             evaluation = {**evaluation, "state": "FINALIZED", "reasons": ["ALREADY_FINALIZED"]}
-        # 收尾行正文 = closeout-v1 文档；内部核对字段只进这次评估的回执（第 2 批车道 N，A17）。
+        # 收尾行正文 = closeout-v1 文档；内部核对字段只进这次评估的回执。
         document = closeout_document(evaluation)
         check_hash = fingerprint(document)
         check_json = canonical(document)
@@ -995,7 +994,7 @@ class AssuranceCloseoutConsumer(_ConsumerBase):
                 evaluation = self._evaluate_locked(current, now_ms=int(self.store.now * 1000))
                 if self._stable(evaluation) != preview:
                     raise AssuranceError("RECHECK_REQUIRED")
-                # A01：定稿那一次事务重读纪元与时钟（依据读取时 vs 现在）。
+                # 定稿那一次事务重读纪元与时钟（依据读取时 vs 现在）。
                 self.require_final_consistency(basis, evaluation)
                 return self._write_locked(evaluation, trigger=trigger, claim=claim)
 
@@ -1030,7 +1029,7 @@ class AssuranceNotifyConsumer(_ConsumerBase):
     def classify(self, event: Event) -> tuple[WorkTarget, ...]:
         if event.type != NOTIFICATION_EVENT:
             return ()
-        # 与终态写入同事务建的那条待办是同一个目标（第 2 批 A20）：重放只合并，不冲突
+        # 与终态写入同事务建的那条待办是同一个目标：重放只合并，不冲突
         return (notification_work_target(event),)
 
     async def prepare(self, claim: WorkClaim) -> PreparedAssuranceWork | AssuranceWait:

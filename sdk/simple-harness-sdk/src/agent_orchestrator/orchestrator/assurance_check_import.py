@@ -230,6 +230,5 @@ def import_local_check_locked(
         receipt=AssuranceRef("commit_receipt", Pin(receipt_id, 0, fingerprint(receipt))),
     )
     # 检查到了怎么通知读方：同一事务里屏障触发器写的 ``AssuranceEvidenceChanged``
-    # （source_table=assurance_check_bindings）。不另写检查事件——那会让同一事实叫醒读方两次
-    # （推后第 1 批 P1a 偏差裁决第 3 件，2026-10-07）。
+    # （source_table=assurance_check_bindings）。不另写检查事件——那会让同一事实叫醒读方两次。
     return ref

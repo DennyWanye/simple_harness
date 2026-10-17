@@ -1278,7 +1278,7 @@ class RepairReplaceMethodDecision:
     rejected_method_instance: PlanningRefV1
     replacement_method_ref: PlanningRefV1
     bindings: Mapping[str, Any]
-    #: 做法里的步骤名 → 已有步骤的出现编号（TaskGraph 补全第三批，见 :func:`_reuse_map`）
+    #: 做法里的步骤名 → 已有步骤的出现编号（见 :func:`_reuse_map`）
     reuse: Mapping[str, str] = MappingProxyType({})
     #: 换下的做法本身有错（阶段 C3）：规划器明确写一句理由才算；拿不准就不写。对照全库先例写的
     #: 做法被这样换下，记为对那条先例的一次归因。

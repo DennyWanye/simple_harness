@@ -112,7 +112,7 @@ def original_source_mutation(store: Store, *, writer: str) -> Iterator[None]:
                     (first_seq, receipt_id),
                 )
             ]
-            # 全局变动只唤醒没结束的任务（迁移 41，HTN 补齐阶段 G）：没有没结束的绑定任务时，
+            # 全局变动只唤醒没结束的任务（迁移 41）：没有没结束的绑定任务时，
             # 唤醒列表为空是正常的；有却没唤醒事件才是错
             if (
                 not wake_event_ids

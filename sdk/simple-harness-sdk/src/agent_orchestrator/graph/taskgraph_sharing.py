@@ -66,7 +66,7 @@ def validate_sharing(
     if sources.independent_required - set(old_members):
         raise ContractError("TASKGRAPH_INDEPENDENT_DEMAND_SOURCE_INVALID")
     impact = compute_convergence_impact(before, candidate)
-    # 2026-09-30（结构修复真机第 4 局）：独立需要的工作不能被**移除**。保留下来、只是换代的
+    # 独立需要的工作不能被**移除**。保留下来、只是换代的
     # （父目标换了方法实例、输入改指新上游）仍在计划里、照样满足那份需要；原来连它也拒，
     # 执行图开着时任何改任务根目标方法的结构修复都提交不了。
     if sources.independent_required & {
@@ -165,7 +165,7 @@ def validate_sharing(
             raise SharingRefused(SharingRefusalCode.TASKGRAPH_SHARED_DATA_POLICY_DIFFERS)
         if demand.mode == "reuse_accepted":
             # ``carried``: accepted under earlier requirements and kept — the same result is
-            # reviewed again under the current ones after the commit (TaskGraph 补全第四批).
+            # reviewed again under the current ones after the commit.
             # A slot that named the step while it was carried quotes the earlier acceptance of
             # the same result; after the re-review passed it is still that reuse.
             if (

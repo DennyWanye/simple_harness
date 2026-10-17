@@ -141,7 +141,7 @@ MAX_FACTS = 24
 #: Mission's whole memory; the catalogue stays readable by the Workers' tools.
 MAX_KNOWLEDGE = 16
 #: One candidate row's text in ``views.knowledge``: a lead, not a fact, so a bounded
-#: preview (the catalogue shows 200); a cut says so at its end (opt.167 评估建议第 5 条).
+#: preview (the catalogue shows 200); a cut says so at its end.
 CANDIDATE_CONTENT_LIMIT = 600
 
 

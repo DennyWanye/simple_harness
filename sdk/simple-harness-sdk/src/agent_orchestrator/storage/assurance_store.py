@@ -535,8 +535,7 @@ class AssuranceStore:
             "not_after_ms": certificate.not_after_ms,
         }
         with atomic(self.store) as connection:
-            # 推后第 2 批 A23：read_set 只存在证书正文里；原反向依赖索引（queries Q09，原计划说是
-            # 优化）没有读方，迁移 47 删表。
+            # read_set 只存在证书正文里，没有反向依赖索引（没有读方）。
             return self._insert(
                 connection, "assurance_use_certificates", row, identities=(("certificate_id",),)
             )

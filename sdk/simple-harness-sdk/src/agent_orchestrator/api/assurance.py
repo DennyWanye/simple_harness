@@ -483,7 +483,7 @@ class AssuranceApi:
                     )
                 )
         # CLOSEOUT: the consumer's projected row.
-        # 收尾行正文只有 closeout-v1 字段；根化身与纪元在那次评估的回执里（第 2 批车道 N，A17）。
+        # 收尾行正文只有 closeout-v1 字段；根化身与纪元在那次评估的回执里。
 
         found = closeout_detail(store, mission_id)
         if found is None:
@@ -584,7 +584,7 @@ class AssuranceApi:
                 reviews[str(side["review_key"])] = ("OFFICIAL_" + str(record.verdict), record)
                 if str(record.purpose) == "MISSION_FINAL":
                     root_manifest = self._manifest(mission_id, record.evidence_manifest_hash)
-        # Criteria of the requirements revision in force at ``at_seq`` (C.6，推后第 3 批 A22): the
+        # Criteria of the requirements revision in force at ``at_seq`` (C.6): the
         # last amendment at or before it pins revision + content hash; none means the activated one.
 
         amended = [e for e in events if e.type == REQUIREMENTS_AMENDED]
@@ -961,7 +961,7 @@ class AssuranceApi:
         elif subject.kind not in ("result", "task"):
             reasons.append("SUBJECT_KIND_UNSUPPORTED:" + subject.kind)
         else:
-            # 第 1 批 A04：诊断走纯算路径——不写、不清共用候选缓存（原计划：use_check 只读）。
+            # 诊断走纯算路径——不写、不清共用候选缓存（原计划：use_check 只读）。
             try:
                 if subject.kind == "result":
                     candidate = self._validity.diagnose_accept_use_for_result(

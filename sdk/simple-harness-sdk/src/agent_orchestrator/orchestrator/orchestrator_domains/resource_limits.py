@@ -123,7 +123,7 @@ class ResourceLimitMixin(OrchestratorCore):
         reservable: int | None = None
         spent_room: int | None = None
         with self.store.transaction():
-            # the Global account of the Mission's creation month is its pool's parent (车道 P)
+            # the Global account of the Mission's creation month is its pool's parent
             try:
                 pool_parent = self.commit.ledger.account(mission_account(mission.id)).parent_id
             except BudgetError:
@@ -306,14 +306,13 @@ class ResourceLimitMixin(OrchestratorCore):
         )
         if not reached:
             return False
-        # 2026-10-11（第三轮复查附带发现 3）：parse 局里规划器刚换了接替步、那一步还没派发，这里就问它
-        # "这一版计划不改就停？"——它在一步正要开工时被问是否结束，最后去问人。有步骤已放行、还没开工
-        # 时不是问的时候：等那一步开了工（或被挡住）再说。只看事实：READY 的步骤。
+        # 有步骤已放行、还没开工时，不问规划器"这一版计划不改就停？"——它会在一步正要开工时被问
+        # 是否结束，最后去问人。等那一步开了工（或被挡住）再说。只看事实：READY 的步骤。
         if any(
             task.status is TaskStatus.READY and not task.paused
             for task in self.store.list_tasks(mission.id)
         ):
-            return False  # V38：暂停的步骤不会开工，不算"正要开工"
+            return False  # 暂停的步骤不会开工，不算"正要开工"
         try:
             network = new_mode.network(mission.id)
         except (GraphIntegrityError, ContractError, StoreError) as error:

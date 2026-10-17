@@ -588,11 +588,11 @@ class OrchestratorCore:
         self._reviews = ReviewState()
         self._between = CycleHooks()
         self._rounds = MissionRoundState()
-        #: 重启恢复协议的协调者（车道 J H01，§25.1 第 11 条）：``__aenter__`` 建，``recover()`` 跑；
+        #: 重启恢复协议的协调者（§25.1 第 11 条）：``__aenter__`` 建，``recover()`` 跑；
         #: 降级恢复时主循环只开只读与诊断。
         self._recovery: RecoveryCoordinator | None = None
         self._pressure = BackpressureState()  # D6-2: the current backpressure signal
-        # 推后第 3 批 H12：积压时的两种应对（审阅并发、暂停新拆分），每轮观测后重算
+        # 积压时的两种应对（审阅并发、暂停新拆分），每轮观测后重算
         self._backlog = self._backlog_response(self._pressure)
         self._connectors: dict[str, Any] = dict(
             connectors or {}

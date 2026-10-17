@@ -989,7 +989,7 @@ class OperationCompletionStore:
             for row in rows
         )
 
-    #: What a requirements amendment may change in a kept step's scope (TaskGraph 补全第四批).
+    #: What a requirements amendment may change in a kept step's scope.
     _REQUIREMENT_KEYS = frozenset({"requirements_ref", "spec_hash", "content_criterion_ids"})
 
     def scope_unchanged(self, old: Any, current: Any, *, across_requirements: bool = False) -> bool:

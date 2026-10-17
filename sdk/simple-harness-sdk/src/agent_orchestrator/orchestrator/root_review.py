@@ -133,7 +133,7 @@ ROOT_REVIEW_REJECTED = "HierarchicalRootReviewRejected"
 
 #: The reviewer's reply could not be read as a verdict.  Also **not** a retry: an
 #: unreadable answer is not a conclusion, and asking again with the same package
-#: would spend the Mission account on the same question (AER-V04).
+#: would spend the Mission account on the same question.
 ROOT_REVIEW_UNREADABLE = "HierarchicalRootReviewUnreadable"
 
 #: One requirements revision has used up its cuts.  The Mission is left with no
@@ -638,7 +638,7 @@ class RootReviewCoordinator:
         if previous is not None:
             self._supersede(mission_id, previous, reasons=state.stale_reasons)
         requirements, scope = self._requirements(mission_id, binding)
-        # 2026-10-06（Assurance §7.2，车道 O）：根终审只判根范围的内容判据；效果判据由各自的结果审阅判、
+        # Assurance §7.2：根终审只判根范围的内容判据；效果判据由各自的结果审阅判、
         # 收尾核对收敛。效果的现状作为事实随包交给审阅员。
 
         projection = root_content_projection(requirements, scope)

@@ -40,7 +40,7 @@ JUDGMENT_KEY = "assurance_judgment"
 CLOSEOUT_KEY = "assurance_closeout"
 #: closeout-v1（``assurance/schemas/closeout-v1.schema.json``，与 ``plans/Assurance/specs/1.1/contracts`` 同一份）
 #: 的字段，与 schema 的 ``required`` 相等；收尾行正文、定稿回执的文档部分、任务最终报告里的收尾记录都只有
-#: 这些键（第 1 批 A17；第 2 批车道 N 补 ``read_set``：收尾自己读了根结论 / 要求版本 / 完成范围 / 权限）。
+#: 这些键（含 ``read_set``：收尾自己读了根结论 / 要求版本 / 完成范围 / 权限）。
 CLOSEOUT_V1_FIELDS = (
     "schema_version",
     "mission_id",
@@ -259,7 +259,7 @@ def finalize_assured_mission(
         "previous_check_body_hash": row["check_body_hash"],
         "judged_event_id": judgment["judged_event_id"],
         "state_version": state_version,
-        # 内部核对字段随回执走（第 2 批车道 N）：Host 诊断按根化身 / 纪元判 ROOT_CHANGED / SOURCE_CHANGED。
+        # 内部核对字段随回执走：Host 诊断按根化身 / 纪元判 ROOT_CHANGED / SOURCE_CHANGED。
         "mission_version": int(mission.version),
         "root_incarnation_id": evaluation["root_incarnation_id"],
         "epochs": dict(evaluation["epochs"]),
