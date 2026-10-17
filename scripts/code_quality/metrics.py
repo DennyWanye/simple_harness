@@ -4,7 +4,7 @@
 用法：
     python3 scripts/code_quality/metrics.py collect [--slow] [--out FILE]
         采集全部指标，打印摘要；--out 写 JSON。--slow 额外跑 mypy 与 eslint。
-    python3 scripts/code_quality/metrics.py check [--slow] [--baseline FILE] [--new-since REF]
+    python3 scripts/code_quality/metrics.py check [--slow | --ci-slow] [--baseline FILE] [--new-since REF]
         棘轮：任何指标比基线高就失败。--new-since 时，REF 之后新建的文件
         必须没有超 150 行的函数、没有复杂度超 15 的函数（新代码硬规则）。
         从旧文件原样搬来的函数（九成以上的行出自本次删掉的行）不算新代码，由全局棘轮管。
@@ -32,6 +32,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 if sys.version_info < (3, 11):  # 系统自带 3.9 解析不了新语法，换用后端虚拟环境的解释器
@@ -249,33 +250,61 @@ def ruff_metrics() -> dict:
     return out
 
 
-def slow_metrics() -> dict:
-    out: dict = {}
-    res = subprocess.run([str(MYPY)], cwd=REPO / "sdk/simple-harness-sdk", capture_output=True, text=True)
+def _mypy_errors(args: list[str], cwd: Path, name: str) -> int:
+    """跑 mypy 取错误数。输出里既没有"Found N errors"也没有"Success"就是没跑起来，直接失败，不记成通过。"""
+    res = subprocess.run([str(MYPY), *args], cwd=cwd, capture_output=True, text=True)
     mm = re.search(r"Found (\d+) errors?", res.stdout)
-    out["mypy_sdk_errors"] = int(mm.group(1)) if mm else (0 if "Success" in res.stdout else -1)
-    res = subprocess.run([str(MYPY), "--config-file", "scripts/code_quality/mypy-backend.ini"], cwd=REPO,
-                         capture_output=True, text=True)
-    mm = re.search(r"Found (\d+) errors?", res.stdout)
-    out["mypy_backend_errors"] = int(mm.group(1)) if mm else (0 if "Success" in res.stdout else -1)
-    jout = REPO / "tauri-app/node_modules/.tmp/cq-jscpd"
-    subprocess.run(["npx", "--yes", "jscpd@4.0.5", "--min-lines", "30", "--min-tokens", "150",
-                    "--max-size", "5mb", "--max-lines", "50000", "--reporters", "json", "--output", str(jout),
-                    "--silent", "--ignore", JSCPD_IGNORE, "--format", "python,typescript,tsx",
-                    "backend", "sdk/simple-harness-sdk/src", "tauri-app/src"], cwd=REPO,
-                   capture_output=True, text=True)
-    rep = jout / "jscpd-report.json"
-    if rep.exists():
+    if mm:
+        return int(mm.group(1))
+    if "Success" in res.stdout:
+        return 0
+    raise SystemExit(f"{name} 没跑起来（退出码 {res.returncode}）：\n{(res.stdout + res.stderr)[-2000:]}")
+
+
+def mypy_sdk_metrics() -> dict:
+    return {"mypy_sdk_errors": _mypy_errors([], REPO / "sdk/simple-harness-sdk", "SDK mypy")}
+
+
+def jscpd_metrics() -> dict:
+    """查重。报告写进新建的临时目录，避免读到上一次的旧报告；没有报告就失败。"""
+    with tempfile.TemporaryDirectory(prefix="cq-jscpd-") as tmp:
+        res = subprocess.run(["npx", "--yes", "jscpd@4.0.5", "--min-lines", "30", "--min-tokens", "150",
+                              "--max-size", "5mb", "--max-lines", "50000", "--reporters", "json", "--output", tmp,
+                              "--silent", "--ignore", JSCPD_IGNORE, "--format", "python,typescript,tsx",
+                              "backend", "sdk/simple-harness-sdk/src", "tauri-app/src"], cwd=REPO,
+                             capture_output=True, text=True)
+        rep = Path(tmp) / "jscpd-report.json"
+        if not rep.exists():
+            raise SystemExit(f"jscpd 没出报告（退出码 {res.returncode}）：\n{(res.stdout + res.stderr)[-2000:]}")
         tot = json.loads(rep.read_text())["statistics"]["total"]
-        out["dup_clones_30_lines"] = tot["clones"]
-        out["dup_lines"] = tot["duplicatedLines"]
+    return {"dup_clones_30_lines": tot["clones"], "dup_lines": tot["duplicatedLines"]}
+
+
+def slow_metrics() -> dict:
+    out: dict = mypy_sdk_metrics()
+    out["mypy_backend_errors"] = _mypy_errors(["--config-file", "scripts/code_quality/mypy-backend.ini"], REPO,
+                                              "后端 mypy")
+    out.update(jscpd_metrics())
     tmp = REPO / "tauri-app/node_modules/.tmp/cq-eslint.json"
     tmp.parent.mkdir(parents=True, exist_ok=True)
+    tmp.unlink(missing_ok=True)
     subprocess.run(["npx", "eslint", ".", "-f", "json", "-o", str(tmp)], cwd=REPO / "tauri-app",
                    capture_output=True, text=True)
-    data = json.loads(tmp.read_text()) if tmp.exists() else []
+    if not tmp.exists():
+        raise SystemExit("eslint 没出报告")
+    data = json.loads(tmp.read_text())
     out["eslint_errors"] = sum(f["errorCount"] for f in data)
     out["eslint_warnings"] = sum(f["warningCount"] for f in data)
+    return out
+
+
+def ci_slow_metrics() -> dict:
+    """CI 跑的慢指标：SDK mypy 与查重。后端 mypy 依赖本机后端虚拟环境的第三方库，CI 装不出同样的库，
+    计数会漂，只在本地按阶段跑（计划 2.12 修订）；eslint 由前端作业阻断。"""
+    out = mypy_sdk_metrics()
+    out.update(jscpd_metrics())
+    for k, v in out.items():
+        print(f"慢指标 {k} = {v}")
     return out
 
 
@@ -289,12 +318,14 @@ def git_metrics() -> dict:
     }
 
 
-def collect(slow: bool) -> dict:
+def collect(slow: bool, ci_slow: bool = False) -> dict:
     m = ast_metrics()
     m.update(ruff_metrics())
     m.update(git_metrics())
     if slow:
         m.update(slow_metrics())
+    elif ci_slow:
+        m.update(ci_slow_metrics())
     return m
 
 
@@ -368,6 +399,7 @@ def main() -> int:
     ap.add_argument("--reason", default="")
     ap.add_argument("--md")
     ap.add_argument("--slow", action="store_true")
+    ap.add_argument("--ci-slow", action="store_true", help="只加 SDK mypy 与查重（CI 用）")
     ap.add_argument("--out")
     ap.add_argument("--baseline", default=str(BASELINE))
     ap.add_argument("--new-since")
@@ -399,7 +431,7 @@ def main() -> int:
             Path(a.md).write_text("\n".join(out) + "\n", encoding="utf-8")
         return 0
 
-    m = collect(a.slow)
+    m = collect(a.slow, a.ci_slow)
     if a.cmd == "collect":
         summary(m)
         if a.out:
