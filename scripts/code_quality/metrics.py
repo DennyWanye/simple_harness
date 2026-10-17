@@ -280,7 +280,7 @@ def slow_metrics() -> dict:
 
 
 def git_metrics() -> dict:
-    files = subprocess.run(["git", "ls-files"], cwd=REPO, capture_output=True, text=True).stdout.splitlines()
+    files = subprocess.run(["git", "-c", "core.quotepath=off", "ls-files"], cwd=REPO, capture_output=True, text=True).stdout.splitlines()
     return {
         "tracked_bak_files": sum(1 for f in files if re.search(r"\.bak\d*$", f)),
         "tracked_root_reports": sum(1 for f in files if "/" not in f and f.endswith(".md")),

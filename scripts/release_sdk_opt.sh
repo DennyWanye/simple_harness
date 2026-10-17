@@ -43,7 +43,6 @@ find src tests -name __pycache__ -prune -exec rm -rf {} +
 
 cd "$REPO"
 $GIT add -A sdk/simple-harness-sdk ARCHITECTURE plans/2026-09-27-desktop-next
-$GIT reset -q .local-test-evidence/2026-09-28/batch7/watch_steps.py 2>/dev/null || true
 $GIT commit -qm "$MSG"
 COMMIT=$($GIT rev-parse HEAD)
 

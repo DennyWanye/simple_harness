@@ -244,40 +244,6 @@ plans/**/verification/**/.plan-test-gate.lock
 .superpowers/
 .testenv/
 
-# Project-wide local-only test evidence policy (AGENTS.md, 2026-08-13).
-# Raw evidence stays on this Mac until a verified LAN NAS archive exists.
-/.local-test-evidence/*
-!/.local-test-evidence/2026-09-15/
-/.local-test-evidence/2026-09-15/*
-!/.local-test-evidence/2026-09-15/a96/
-# User-requested exception 2026-09-15: publish A96 Flash receipts on origin/main,
-# but keep the truncated Qwen matrix-v2 local-only.
-/.local-test-evidence/2026-09-15/a96/matrix-v2/
-/.local-test-evidence/2026-09-15/a96/**/__pycache__/
-/.local-test-evidence/2026-09-15/a96/**/*.pyc
-/.local-test-evidence/2026-09-15/a96/**/*.db-wal
-/.local-test-evidence/2026-09-15/a96/**/*.db-shm
-# 2026-09-16 Grok A96: keep scripts / identities / summaries / freeze in git; episodes, data, venv, experiments stay local.
-!/.local-test-evidence/2026-09-16/
-/.local-test-evidence/2026-09-16/*
-!/.local-test-evidence/2026-09-16/a96-grok/
-/.local-test-evidence/2026-09-16/a96-grok/*
-!/.local-test-evidence/2026-09-16/a96-grok/*.py
-!/.local-test-evidence/2026-09-16/a96-grok/*.sh
-!/.local-test-evidence/2026-09-16/a96-grok/*.md
-!/.local-test-evidence/2026-09-16/a96-grok/FREEZE.json
-!/.local-test-evidence/2026-09-16/a96-grok/appworld-*.log
-!/.local-test-evidence/2026-09-16/a96-grok/matrix-grok46-256k-v1/
-/.local-test-evidence/2026-09-16/a96-grok/matrix-grok46-256k-v1/*
-!/.local-test-evidence/2026-09-16/a96-grok/matrix-grok46-256k-v1/identity.json
-!/.local-test-evidence/2026-09-16/a96-grok/matrix-grok46-256k-v1/summary.json
-!/.local-test-evidence/2026-09-16/a96-grok/matrix-grok46-256k-v2/
-/.local-test-evidence/2026-09-16/a96-grok/matrix-grok46-256k-v2/*
-!/.local-test-evidence/2026-09-16/a96-grok/matrix-grok46-256k-v2/identity.json
-!/.local-test-evidence/2026-09-16/a96-grok/matrix-grok46-256k-v2/summary.json
-!/.local-test-evidence/2026-09-16/a96-grok/matrix-grok46-256k-v2/progress.json
-!/.local-test-evidence/2026-09-16/a96-grok/matrix-grok46-256k-v2/grok-usage-audit.jsonl
-/local-test-evidence/
 # Raw verification logs remain local, including legacy artifact directories.
 # AGENTS.md requires only reviewed summaries and evidence hashes in new commits.
 # Previously tracked evidence remains in history; this does not untrack it.
@@ -301,5 +267,5 @@ plans/2026-08-04-workbench-ui/verification-manifest-r*.json
 # local backups of credentials (never commit)
 .env.bak*
 
-# New evidence stays local in every checkout/subproject; historical tracked files are unchanged.
+# 测试证据一律不入库（代码质量整治 11.3，2026-10-17 从 git 移出，不重写历史）；各检出与子项目都适用。
 **/.local-test-evidence/
