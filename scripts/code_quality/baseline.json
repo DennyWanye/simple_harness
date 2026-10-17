@@ -112,12 +112,12 @@
  "print_calls": 417,
  "sys_path_hacks": 2,
  "global_stmts": 54,
- "codename_comment_lines": 382,
+ "codename_comment_lines": 10,
  "py_lines": 652286,
- "main_py_lines": 289,
+ "main_py_lines": 272,
  "ts_explicit_any": 0,
  "ts_inline_styles": 155,
- "ruff_backend_total": 1911,
+ "ruff_backend_total": 1908,
  "ruff_backend_by_rule": {
   "E501": 3993,
   "UP045": 590,
@@ -201,7 +201,7 @@
  },
  "complexity_over_15_backend": 194,
  "complexity_over_25_backend": 32,
- "ruff_sdk_total": 1060,
+ "ruff_sdk_total": 1042,
  "ruff_sdk_by_rule": {
   "E501": 3426,
   "C901": 177,
@@ -365,7 +365,7 @@
    "reason": "2026-10-17 阶段 9 裁决新增：style={变量} 计数与 eslint-disable 条数进棘轮（只减不增）"
   }
  ],
- "legacy_lines": 2041,
+ "legacy_lines": 2037,
  "cycle_imports_backend": 17,
  "cycle_imports_sdk": 40,
  "except_broad_unexplained": 0,
