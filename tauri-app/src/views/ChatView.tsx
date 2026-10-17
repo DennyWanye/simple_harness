@@ -24,8 +24,6 @@
  * 样式纪律（WB-11）：颜色一律取 theme/tokens + dark 套件，零硬编码色值。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties } from "react";
-
 import { tokens } from "../theme/tokens";
 import { dark, bannerStyle, buttonStyle } from "../theme/components";
 import { Icon } from "../components/Icon";
@@ -35,9 +33,8 @@ import { ProjectInspector } from "../components/ProjectInspector";
 import { useSessionsStore } from "../stores/sessionsStore";
 import { collect_inbox, type InboxItem } from "../stores/sessionSelectors";
 import { type Message, type WorkflowV5ControlAction } from "../stores/sessionTypes";
-import { forPet } from "../petText";
 import { MessageStreamPanel } from "../components/MessageStreamPanel";
-import { type ChatStreamMessage, type StreamFilter } from "../components/messageStreamTypes";
+import { type StreamFilter } from "../components/messageStreamTypes";
 import { InputBar } from "../code-panel/InputBar";
 import { ChangeModelModal } from "../code-panel/ChangeModelModal";
 import { PermissionPopup } from "../components/PermissionPopup";
@@ -52,11 +49,8 @@ import { projectRequest } from "../chat/projectSessionProtocol";
 import { BACKEND_PORT } from "../backendPort";
 import { useRealtimeVoice } from "../hooks/useRealtimeVoice";
 import { VOICE_INPUT_ENABLED } from "../voiceAvailability";
-import {
-  DEFAULT_HIDE_TOOL_TRACE,
-  isMessageVisibleForSelectedRun,
-  shouldHideToolTrace,
-} from "../chat/messageVisibility";
+import { DEFAULT_HIDE_TOOL_TRACE, isMessageVisibleForSelectedRun } from "../chat/messageVisibility";
+import { buildChatStreamMessages } from "./chatStreamMessages";
 import { HarnessInspectorPanel } from "../chat/HarnessInspectorPanel";
 import {
   CompanionDetailModal,
@@ -80,6 +74,7 @@ import {
   storeProjectDirectoryRequest,
   type ProjectDirectoryRequestsBySession,
 } from "../chat/projectDirectoryState";
+import { iconBtnStyle, modelChipStyle } from "./chatViewStyles";
 
 const EMPTY_COMPANION_EVENTS: CompanionEvent[] = [];
 /** 空态兜底必须是**模块级常量**，不能写成 `?? []`。
@@ -90,24 +85,20 @@ const EMPTY_COMPANION_EVENTS: CompanionEvent[] = [];
  * blank_session 里那个稳定数组）；取消保留会话后 `sessions[""]` 为 undefined，
  * 兜底分支第一次真正生效，2026-08-09 真机冷启动当场打爆 ChatView。 */
 const EMPTY_MESSAGES: Message[] = [];
-
 type WorkflowRetryDeferred = {
   promise: Promise<{ run_id: string }>;
   resolve: (value: { run_id: string }) => void;
   reject: (reason: Error) => void;
 };
-
 function workflowRetryError(message: string, code: string, definitive: boolean): Error {
   return Object.assign(new Error(message), { code, definitive });
 }
-
 export interface ChatViewProps {
   activeSid: string;
   /** App 下传的后端共享秘钥（空 = 后端未就绪，显示状态条）。 */
   secret: string;
   onSwitchSid?: (sid: string) => void;
 }
-
 export function ChatView({ activeSid, secret, onSwitchSid = () => {} }: ChatViewProps) {
   const permissionRequests = usePermissionRequests(controlWS);
   const realtimeVoice = useRealtimeVoice(BACKEND_PORT, secret);
@@ -563,88 +554,17 @@ export function ChatView({ activeSid, secret, onSwitchSid = () => {} }: ChatView
 
   // Companion-stream derivation（strip <think> via forPet；工具执行轨迹
   // tool_call/tool_result 全程可观测——与原消息面板口径一致）。
-  const chatMessages = useMemo(() => {
-    const out: ChatStreamMessage[] = [];
-    visibleMessages.forEach((m) => {
-      const ts = m.ts;
-      const runId = m.run_id?.trim() || undefined;
-      if (m.role === "user") {
-        out.push({
-          role: "user",
-          text: m.text ?? "",
-          ts,
-          runId,
-          continuationStatus: m.continuation_status,
-          continuationError: m.continuation_error,
-        });
-        return;
-      }
-      if (shouldHideToolTrace(m, hideTools)) {
-        return;
-      }
-      if (m.role === "reasoning_summary") {
-        if (!hideProgress && m.text) {
-          out.push({
-            role: "progress",
-            text: m.text,
-            ts,
-            runId,
-            phase: m.reasoning_phase,
-            status: m.reasoning_status,
-          });
-        }
-        return;
-      }
-      if ((m.role as string) === "tool_call") {
-        const args = m.tool_args ? JSON.stringify(m.tool_args).slice(0, 120) : "";
-        out.push({
-          role: "tool",
-          text: `🔧 调用 ${m.tool_name || "(工具)"}${args ? ` ${args}${args.length >= 120 ? "…" : ""}` : ""}`,
-          ts,
-          runId,
-          toolName: m.tool_name,
-          toolArgs: m.tool_args ?? {},
-        });
-        return;
-      }
-      if ((m.role as string) === "tool_result") {
-        out.push({
-          role: "tool",
-          text: `${m.tool_ok === false ? "❌" : "✅"} ${m.tool_name || "(工具)"} 完成`,
-          ts,
-          runId,
-          toolName: m.tool_name,
-          toolOk: m.tool_ok,
-          toolResultRaw: m.tool_result,
-        });
-        return;
-      }
-      if (m.role === "ppt_outline") {
-        out.push({ role: "ppt_outline", message: m, session_id: activeSid, ts });
-        return;
-      }
-      if (m.role === "workflow_progress" || m.role === "workflow_stage") {
-        out.push({ role: m.role, message: m, ts });
-        return;
-      }
-      const clean = forPet(m.text);
-      if (clean) out.push({ role: "assistant", text: clean, ts, runId });
-    });
-    // provisional 条目排在全部已落库消息之后即可；用已有最大 ts 派生
-    // 纯函数时间基（渲染期不得调用 Date.now，react-hooks/purity）。
-    const provisionalBaseTs = (out.length ? out[out.length - 1].ts : 0) + 1;
-    companionProvisional.forEach((text, index) => {
-      const clean = forPet(text);
-      if (clean) {
-        out.push({
-          role: "assistant",
-          text: clean,
-          ts: provisionalBaseTs + index,
-        });
-      }
-    });
-    return out;
-  }, [visibleMessages, hideTools, hideProgress, activeSid, companionProvisional]);
+  const chatMessages = useMemo(
+    () =>
+      buildChatStreamMessages({
+        visibleMessages,
+        hideTools,
+        hideProgress,
+        activeSid,
+        companionProvisional,
+      }),
+    [visibleMessages, hideTools, hideProgress, activeSid, companionProvisional],
+  );
   const warnings = useMemo<InboxItem[]>(() => collect_inbox(sessions, "yellow"), [sessions]);
   const errors = useMemo<InboxItem[]>(() => collect_inbox(sessions, "red"), [sessions]);
 
@@ -1029,39 +949,4 @@ export function ChatView({ activeSid, secret, onSwitchSid = () => {} }: ChatView
     </section>
   );
 }
-
-// 统一图标按钮 — 深色套件低对比（零硬编码色值，WB-11）。
-const iconBtnStyle: CSSProperties = {
-  width: 28,
-  height: 28,
-  flexShrink: 0,
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  background: dark.card,
-  color: dark.textMuted,
-  border: `1px solid ${dark.border}`,
-  borderRadius: tokens.radius.md,
-  cursor: "pointer",
-  padding: 0,
-};
-
-const modelChipStyle: CSSProperties = {
-  flexShrink: 0,
-  maxWidth: 170,
-  height: 28,
-  padding: `0 ${tokens.space.md - 1}px`,
-  display: "flex",
-  alignItems: "center",
-  gap: tokens.space.xs + 1,
-  background: dark.card,
-  color: dark.textMuted,
-  border: `1px solid ${dark.cardBorder}`,
-  borderRadius: tokens.radius.pill,
-  fontSize: tokens.text.xs.size,
-  fontWeight: tokens.weight.semibold,
-  fontFamily: tokens.font.ui,
-  cursor: "pointer",
-};
-
 export default ChatView;
