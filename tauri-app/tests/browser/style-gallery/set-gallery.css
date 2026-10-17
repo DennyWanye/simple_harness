@@ -1,0 +1,45 @@
+/* 设置车道（set）场景的布局类（只用于画廊）。 */
+.set-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 12px;
+  align-items: flex-start;
+}
+.set-col {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  max-width: 820px;
+}
+/* 弹窗/浮层框：transform 让 position:fixed 的子元素以本框为包含块，多份弹窗可以并排。 */
+.set-frame {
+  position: relative;
+  transform: translateZ(0);
+  width: 600px;
+  height: 680px;
+  overflow: hidden;
+  border: 1px dashed rgba(148, 163, 184, 0.35);
+}
+.set-frame-short {
+  position: relative;
+  transform: translateZ(0);
+  width: 600px;
+  height: 200px;
+  overflow: hidden;
+  border: 1px dashed rgba(148, 163, 184, 0.35);
+}
+/* 项目检查器：右侧栏绝对定位，需要相对定位的容器。 */
+.set-rail {
+  position: relative;
+  width: 600px;
+  height: 320px;
+  border: 1px dashed rgba(148, 163, 184, 0.35);
+}
+.set-page {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+}

@@ -1,0 +1,23 @@
+/* cap 车道场景的布局类（只用于画廊舞台，不进产品）。 */
+.cap-frame {
+  position: relative;
+  height: 620px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.3);
+}
+.cap-frame-short {
+  position: relative;
+  height: 420px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.3);
+}
+.cap-column {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  padding: 12px;
+}

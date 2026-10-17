@@ -1,0 +1,10 @@
+/* 画廊舞台：与 App 相同的外层包含块（相对定位、占满视口）。 */
+.gallery-stage {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  overflow: auto;
+}
+.gallery-error {
+  color: red;
+}
