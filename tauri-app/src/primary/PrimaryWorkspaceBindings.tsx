@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { buttonStyle, cardStyle } from "../theme/components";
+import { buttonStyle } from "../theme/components";
 import { tokens } from "../theme/tokens";
 import type { PrimaryPort } from "./controller";
 import { PrimaryRequests, record } from "./requests";
@@ -9,6 +9,7 @@ import {
   type BindingIdentity,
   type PrimaryBindingRecovery,
 } from "./bindingRecovery";
+import "./PrimaryWorkspaceBindings.styles.css";
 
 type Binding = BindingIdentity & {
   challenge_ref: string;
@@ -310,10 +311,7 @@ export function PrimaryWorkspaceBindings({
         </button>
       )}
       {items.map((item) => (
-        <article
-          key={item.challenge_ref}
-          style={{ ...cardStyle, margin: `${tokens.space.sm}px 0` }}
-        >
+        <article key={item.challenge_ref} className="sh-PrimaryWorkspaceBindings-1">
           <strong>{labels[item.state] ?? "目录授权状态未确认"}</strong>
           <p>新任务：{item.scope_ref}</p>
           <p>目录：{item.root_path}</p>

@@ -26,8 +26,6 @@
  */
 import React from "react";
 
-import { tokens } from "../theme/tokens";
-import { dark } from "../theme/components";
 import { Sidebar, type RouteKind, type SidebarMoreActions } from "./Sidebar";
 import type { SessionListProps } from "./SessionList";
 import type { ChatViewProps } from "../views/ChatView";
@@ -37,6 +35,7 @@ import { SkillsView, type SkillsViewProps } from "../views/SkillsView";
 import { ArtifactsView } from "../views/ArtifactsView";
 import { SettingsView, type SettingsViewProps } from "../views/SettingsView";
 import { MissionsView, type MissionsViewProps } from "../views/MissionsView";
+import "./WorkbenchShell.styles.css";
 
 export type WorkbenchView = "chat" | "missions" | "skills" | "artifacts" | "settings";
 
@@ -75,21 +74,7 @@ export const WorkbenchShell: React.FC<WorkbenchShellProps> = ({
   moreActions,
 }) => {
   return (
-    <div
-      data-testid="workbench-shell"
-      style={{
-        display: "flex",
-        flexDirection: "row",
-        width: "100%",
-        height: "100%",
-        minWidth: 0,
-        minHeight: 0,
-        overflow: "hidden",
-        background: dark.bgSolid,
-        color: dark.text,
-        fontFamily: tokens.font.ui,
-      }}
-    >
+    <div data-testid="workbench-shell" className="sh-WorkbenchShell-1">
       <Sidebar
         view={view}
         onViewChange={onViewChange}
@@ -100,20 +85,10 @@ export const WorkbenchShell: React.FC<WorkbenchShellProps> = ({
 
       {/* 内容区 — flex:1 + min-width:0（防止子内容把布局撑破，WB-3
           min 尺寸 800×560 下布局不破的关键约束）。 */}
-      <main
-        data-testid="workbench-content"
-        style={{
-          flex: 1,
-          minWidth: 0,
-          minHeight: 0,
-          display: "flex",
-          flexDirection: "column",
-          overflow: "hidden",
-        }}
-      >
+      <main data-testid="workbench-content" className="sh-WorkbenchShell-2">
         {/* 顶部横幅插槽（T4 落位 petError 横幅）。 */}
         {banner != null && (
-          <div data-testid="workbench-banner" style={{ flexShrink: 0 }}>
+          <div data-testid="workbench-banner" className="sh-WorkbenchShell-3">
             {banner}
           </div>
         )}

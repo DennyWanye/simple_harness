@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 DennyWanye
 // SPDX-License-Identifier: BUSL-1.1
 
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import type {
   CompanionDetailErrorResponse,
@@ -10,6 +10,7 @@ import type {
   CompanionDetailSection,
   CompanionEvent,
 } from "../../types/messages";
+import "./CompanionDetailModal.styles.css";
 
 export type CompanionDetailQuery = (request: {
   notification_id: string;
@@ -135,22 +136,20 @@ export function CompanionDetailModal({ event, query, onClose }: CompanionDetailM
       aria-modal="true"
       aria-label="伙伴成长详情"
       data-testid="companion-detail-modal"
-      style={overlayStyle}
+      className="sh-CompanionDetailModal-1"
     >
-      <section style={modalStyle}>
-        <header style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+      <section className="sh-CompanionDetailModal-2">
+        <header className="sh-CompanionDetailModal-3">
           <div>
             <strong>成长详情</strong>
-            <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 3 }}>
-              {event.notification.summary}
-            </div>
+            <div className="sh-CompanionDetailModal-4">{event.notification.summary}</div>
           </div>
           <button type="button" aria-label="关闭详情" onClick={onClose}>
             ×
           </button>
         </header>
 
-        <nav aria-label="详情章节" style={tabsStyle}>
+        <nav aria-label="详情章节" className="sh-CompanionDetailModal-5">
           {sections.map((item) => (
             <button
               key={item.id}
@@ -163,28 +162,30 @@ export function CompanionDetailModal({ event, query, onClose }: CompanionDetailM
           ))}
         </nav>
 
-        <div style={{ overflow: "auto", flex: 1, minHeight: 120 }}>
+        <div className="sh-CompanionDetailModal-6">
           {error && (
-            <div role="alert" style={{ color: "#fca5a5" }}>
+            <div role="alert" className="sh-CompanionDetailModal-7">
               {error}
             </div>
           )}
           {!error && items.length === 0 && !loading && (
-            <div style={{ color: "#94a3b8" }}>本章节暂无可见内容。</div>
+            <div className="sh-CompanionDetailModal-8">本章节暂无可见内容。</div>
           )}
           {items.map((item) => (
-            <article key={item.id} style={itemStyle}>
+            <article key={item.id} className="sh-CompanionDetailModal-9">
               {item.title && <strong>{item.title}</strong>}
               {item.summary && <div>{item.summary}</div>}
               {item.status && <div>状态：{item.status}</div>}
               {item.hash && <div>摘要：{item.hash}</div>}
               {item.occurred_at && <time>{item.occurred_at}</time>}
-              {detailMetadata(item) && <pre style={metadataStyle}>{detailMetadata(item)}</pre>}
+              {detailMetadata(item) && (
+                <pre className="sh-CompanionDetailModal-10">{detailMetadata(item)}</pre>
+              )}
             </article>
           ))}
         </div>
 
-        <footer style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+        <footer className="sh-CompanionDetailModal-11">
           {error && (
             <button type="button" disabled={loading} onClick={() => reload(null)}>
               从第一页重新加载
@@ -211,51 +212,3 @@ function detailMetadata(item: CompanionDetailItem): string {
   );
   return Object.keys(metadata).length > 0 ? JSON.stringify(metadata, null, 2) : "";
 }
-
-const overlayStyle: CSSProperties = {
-  position: "fixed",
-  inset: 0,
-  zIndex: 10050,
-  display: "grid",
-  placeItems: "center",
-  background: "rgba(2,6,23,.68)",
-  padding: 18,
-};
-
-const modalStyle: CSSProperties = {
-  width: "min(720px, 94vw)",
-  maxHeight: "86vh",
-  display: "flex",
-  flexDirection: "column",
-  gap: 12,
-  padding: 16,
-  border: "1px solid rgba(129,140,248,.4)",
-  borderRadius: 14,
-  background: "#111827",
-  color: "#e5e7eb",
-  boxShadow: "0 24px 80px rgba(0,0,0,.45)",
-};
-
-const tabsStyle: CSSProperties = {
-  display: "flex",
-  flexWrap: "wrap",
-  gap: 6,
-};
-
-const itemStyle: CSSProperties = {
-  display: "grid",
-  gap: 4,
-  padding: 10,
-  marginBottom: 8,
-  borderRadius: 8,
-  background: "rgba(255,255,255,.05)",
-  fontSize: 13,
-};
-
-const metadataStyle: CSSProperties = {
-  margin: 0,
-  whiteSpace: "pre-wrap",
-  overflowWrap: "anywhere",
-  color: "#cbd5e1",
-  fontSize: 11,
-};

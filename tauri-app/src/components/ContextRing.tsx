@@ -21,6 +21,7 @@ import React, { useMemo } from "react";
 import type { ContextUsageSnapshot } from "../stores/sessionsStore";
 import { contextDisplayState } from "../context/contextAuthority";
 import { ringPercent, ringColor } from "./contextRingMath";
+import "./ContextRing.styles.css";
 
 export interface ContextRingProps {
   snapshot: ContextUsageSnapshot | null | undefined;
@@ -130,14 +131,12 @@ export function ContextRing({
           strokeDasharray={`${dash} ${circ - dash}`}
           strokeDashoffset={circ / 4}
           strokeLinecap="round"
-          style={{ transition: "stroke-dasharray 360ms ease-out, stroke 240ms ease" }}
+          className="sh-ContextRing-1"
         />
         {sweetPct > 0 && sweetPct < 100 && <circle cx={tickX} cy={tickY} r={1.2} fill="#fbbf24" />}
       </svg>
       {showLabel && (
-        <span style={{ fontSize: 10.5, color: "#94a3b8", lineHeight: 1, whiteSpace: "nowrap" }}>
-          {measured ? `${pct.toFixed(0)}%` : "—"}
-        </span>
+        <span className="sh-ContextRing-2">{measured ? `${pct.toFixed(0)}%` : "—"}</span>
       )}
     </button>
   );

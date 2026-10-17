@@ -8,7 +8,6 @@ void V2_CLIENT_VERSION; // silence unused import (re-exported for diagnostics la
 import { ModelDownloadBanner } from "./components/ModelDownloadBanner";
 import { ContextTracePanel } from "./components/ContextTracePanel";
 import { WorkbenchShell, type WorkbenchView } from "./components/WorkbenchShell";
-import { dark, bannerStyle } from "./theme/components";
 import { StartupOverlay, type BootState } from "./components/StartupOverlay";
 import { RuntimeBackendBanner } from "./components/RuntimeBackendBanner";
 import { useBudgetToast } from "./hooks/useBudgetToast";
@@ -42,6 +41,7 @@ import { useSessionsStore } from "./stores/sessionsStore";
 import { BACKEND_PORT } from "./backendPort";
 import { chatErrorMessage } from "./chatErrorMessage";
 import type { ChatResponse, ContextUsageSnapshot, IncomingMessage } from "./types/messages";
+import "./App.styles.css";
 // 2026-08-09：relay（托管账号登录）整套移除。产品只有手动 provider
 // 一条路径（baseUrl + apiKey），身份走本地 profile。
 
@@ -809,17 +809,7 @@ function App() {
   // 随桌宠删除；supervisor_alert 的 store 缓存链路保留（见上方 switch）。
 
   return (
-    <div
-      style={{
-        position: "relative",
-        width: "100vw",
-        height: "100vh",
-        // T6 (workbench-ui)：主窗普通化 — 不再透明/drag-region，工作台
-        // 深色底（WB-1/WB-3）。
-        background: dark.bgSolid,
-        overflow: "hidden",
-      }}
-    >
+    <div className="sh-App-1">
       {/* T6 — 工作台壳：Sidebar 240px + 内容区。view state 在 App 层
           （D2），视图 props 走显式合同（见 WorkbenchShell 文件头）。
           petError 横幅插槽由 banner prop 承接（T4 搬迁落位）。 */}
@@ -839,27 +829,9 @@ function App() {
             ) : petError ? (
               // T4 搬迁：原桌宠列顶部错误条 → WorkbenchShell 顶部横幅插槽
               // （bannerStyle("error")，主题单源；用户手动 ✕ 关闭不自动消失）。
-              <div
-                role="alert"
-                style={{
-                  ...bannerStyle("error"),
-                  display: "flex",
-                  alignItems: "flex-start",
-                  gap: 6,
-                  borderRadius: 0,
-                  maxHeight: 60,
-                  overflowY: "auto",
-                }}
-              >
-                <span style={{ flexShrink: 0 }}>⚠</span>
-                <span
-                  data-bp-selectable=""
-                  style={{
-                    flex: 1,
-                    wordBreak: "break-word",
-                    whiteSpace: "pre-wrap",
-                  }}
-                >
+              <div role="alert" className="sh-App-2">
+                <span className="sh-App-3">⚠</span>
+                <span data-bp-selectable="" className="sh-App-4">
                   {petError}
                 </span>
                 <button
@@ -867,16 +839,7 @@ function App() {
                   onClick={() => setPetError(null)}
                   title="关闭"
                   aria-label="关闭错误提示"
-                  style={{
-                    flexShrink: 0,
-                    background: "transparent",
-                    border: "none",
-                    color: "inherit",
-                    cursor: "pointer",
-                    fontSize: 13,
-                    lineHeight: 1,
-                    padding: "0 2px",
-                  }}
+                  className="sh-App-5"
                 >
                   ✕
                 </button>
@@ -952,23 +915,7 @@ function App() {
 
       {/* P2-1-S8 budget-exceeded toast */}
       {budgetToast && (
-        <div
-          role="status"
-          aria-live="polite"
-          style={{
-            position: "fixed",
-            top: 16,
-            right: 16,
-            maxWidth: 320,
-            padding: "10px 14px",
-            background: "#b91c1c",
-            color: "white",
-            borderRadius: 6,
-            fontSize: 13,
-            boxShadow: "0 4px 12px rgba(0,0,0,0.25)",
-            zIndex: 2000,
-          }}
-        >
+        <div role="status" aria-live="polite" className="sh-App-6">
           {budgetToast}
         </div>
       )}

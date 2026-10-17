@@ -17,6 +17,7 @@ import { useCallback, useRef, useState } from "react";
 import type React from "react";
 
 import { ConfirmDialog } from "../code-panel/ConfirmDialog";
+import "./useConfirm.styles.css";
 
 export interface ConfirmRequest {
   title: string;
@@ -46,7 +47,7 @@ export function useConfirm(): [React.ReactNode, (request: ConfirmRequest) => Pro
   const dialog = request ? (
     <ConfirmDialog
       title={request.title}
-      message={<span style={{ whiteSpace: "pre-wrap" }}>{request.message}</span>}
+      message={<span className="sh-useConfirm-1">{request.message}</span>}
       confirm_label={request.confirm_label}
       variant={request.variant ?? "danger"}
       onConfirm={() => settle(true)}

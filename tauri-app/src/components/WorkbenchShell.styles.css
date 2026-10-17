@@ -1,0 +1,28 @@
+/* 生成文件，不要手改：src/components/WorkbenchShell.tsx 里静态内联样式的等价类（9I）。
+   重新生成：node scripts/code_quality/ts_inline_to_class.mjs convert src/components/WorkbenchShell.tsx */
+
+.sh-WorkbenchShell-1 {
+  display: flex;
+  flex-direction: row;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--sh-bg, #0E1013);
+  color: var(--sh-text, #E8E5DF);
+  font-family: var(--sh-font-ui);
+}
+
+.sh-WorkbenchShell-2 {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.sh-WorkbenchShell-3 {
+  flex-shrink: 0;
+}

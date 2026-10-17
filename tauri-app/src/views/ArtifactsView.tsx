@@ -15,18 +15,9 @@ import React, { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
 import { tokens } from "../theme/tokens";
-import {
-  INTERACTIVE_CLASS,
-  bannerStyle,
-  buttonStyle,
-  cardStyle,
-  dark,
-  emptyState,
-  metaText,
-  titleText,
-  viewHeader,
-} from "../theme/components";
+import { INTERACTIVE_CLASS, buttonStyle, dark, metaText } from "../theme/components";
 import { Icon, type IconName } from "../components/Icon";
+import "./ArtifactsView.styles.css";
 
 /** 与 src-tauri/src/artifact_ops.rs 的 ArtifactListEntry 对应。 */
 export interface ArtifactListEntry {
@@ -122,38 +113,15 @@ const ArtifactRow: React.FC<{ entry: ArtifactListEntry }> = ({ entry }) => {
   const pending = current?.status === "pending";
 
   return (
-    <li data-testid="artifact-item" style={{ ...cardStyle, listStyle: "none" }}>
-      <div
-        data-testid="artifact-name"
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: tokens.space.sm,
-          fontWeight: tokens.weight.semibold,
-          color: dark.text,
-          fontSize: tokens.text.md.size,
-          marginBottom: tokens.space.xs,
-          wordBreak: "break-all",
-        }}
-      >
+    <li data-testid="artifact-item" className="sh-ArtifactsView-1">
+      <div data-testid="artifact-name" className="sh-ArtifactsView-2">
         <Icon name={extIcon(entry.name)} size={16} style={{ color: dark.textMuted }} />
         {entry.name}
       </div>
-      <div
-        style={{
-          ...metaText,
-          marginBottom: tokens.space.md,
-        }}
-      >
+      <div className="sh-ArtifactsView-3">
         {humanSize(entry.size)} · {formatModified(entry.modified_at)}
       </div>
-      <div
-        style={{
-          display: "flex",
-          gap: tokens.space.xs + 2,
-          flexWrap: "wrap",
-        }}
-      >
+      <div className="sh-ArtifactsView-4">
         <button
           type="button"
           data-testid="artifact-action-open"
@@ -229,24 +197,11 @@ export const ArtifactsView: React.FC = () => {
   }, [refresh]);
 
   return (
-    <section
-      data-testid="view-artifacts"
-      aria-label="产物库"
-      style={{
-        flex: 1,
-        minWidth: 0,
-        minHeight: 0,
-        display: "flex",
-        flexDirection: "column",
-        overflow: "hidden",
-        color: dark.text,
-        fontFamily: tokens.font.ui,
-      }}
-    >
-      <header style={viewHeader}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <h1 style={titleText}>产物库</h1>
-          <p style={{ ...metaText, margin: `${tokens.space.xs}px 0 0` }}>
+    <section data-testid="view-artifacts" aria-label="产物库" className="sh-ArtifactsView-5">
+      <header className="sh-ArtifactsView-6">
+        <div className="sh-ArtifactsView-7">
+          <h1 className="sh-ArtifactsView-8">产物库</h1>
+          <p className="sh-ArtifactsView-9">
             任务生成的文件，按修改时间倒序
             {entries && entries.length > 0 ? ` · 共 ${entries.length} 项` : ""}
           </p>
@@ -254,66 +209,35 @@ export const ArtifactsView: React.FC = () => {
         <button
           type="button"
           data-testid="artifacts-refresh"
-          className={INTERACTIVE_CLASS}
-          style={buttonStyle("ghost", "md")}
+          className={`${INTERACTIVE_CLASS} sh-ArtifactsView-10`}
           onClick={() => void refresh()}
         >
           刷新
         </button>
       </header>
 
-      <div
-        style={{
-          flex: 1,
-          minHeight: 0,
-          overflowY: "auto",
-          padding: `${tokens.space.xl}px ${tokens.space.xl}px`,
-        }}
-      >
+      <div className="sh-ArtifactsView-11">
         {error ? (
-          <div
-            role="alert"
-            style={{
-              ...bannerStyle("error"),
-              marginBottom: tokens.space.md,
-            }}
-          >
+          <div role="alert" className="sh-ArtifactsView-12">
             产物列表加载失败：{error}
           </div>
         ) : null}
 
         {entries === null ? (
-          <div style={emptyState}>
+          <div className="sh-ArtifactsView-13">
             <span className="bp-spinner" aria-hidden />
             加载中…
           </div>
         ) : entries.length === 0 ? (
-          <div data-testid="artifacts-empty" style={emptyState}>
+          <div data-testid="artifacts-empty" className="sh-ArtifactsView-13">
             <Icon name="file" size={28} strokeWidth={1.2} style={{ color: dark.textFaint }} />
-            <div
-              style={{
-                color: dark.text,
-                fontSize: tokens.text.md.size,
-                fontWeight: tokens.weight.semibold,
-              }}
-            >
-              暂无产物
-            </div>
-            <p style={{ margin: 0, maxWidth: 420 }}>
+            <div className="sh-ArtifactsView-14">暂无产物</div>
+            <p className="sh-ArtifactsView-15">
               任务生成的文件会出现在这里；消息流中的产物卡片不受影响。
             </p>
           </div>
         ) : (
-          <ul
-            data-testid="artifacts-list"
-            style={{
-              display: "grid",
-              gap: tokens.space.sm,
-              margin: "0 auto",
-              padding: 0,
-              maxWidth: 760,
-            }}
-          >
+          <ul data-testid="artifacts-list" className="sh-ArtifactsView-16">
             {entries.map((entry) => (
               <ArtifactRow key={entry.path} entry={entry} />
             ))}

@@ -14,6 +14,7 @@ import React, { useState } from "react";
 import { CapabilityCenterPanel } from "../components/CapabilityCenterPanel";
 import { SkillStorePanel } from "../components/SkillStorePanel";
 import type { ControlChannel } from "../ws/ControlChannel";
+import "./SkillsView.styles.css";
 
 export interface SkillsViewProps {
   /** App 的 permissionChannel（connected 时的 ControlChannel）。 */
@@ -26,18 +27,7 @@ export const SkillsView: React.FC<SkillsViewProps> = ({ channel, sessionId }) =>
   // 互跳 state 本地化（T6 合同声明；T10 实装）。
   const [mode, setMode] = useState<"center" | "legacy-store">("center");
   return (
-    <section
-      data-testid="view-skills"
-      aria-label="技能中心"
-      style={{
-        flex: 1,
-        minWidth: 0,
-        minHeight: 0,
-        display: "flex",
-        flexDirection: "column",
-        overflow: "hidden",
-      }}
-    >
+    <section data-testid="view-skills" aria-label="技能中心" className="sh-SkillsView-1">
       {mode === "center" ? (
         <CapabilityCenterPanel
           open

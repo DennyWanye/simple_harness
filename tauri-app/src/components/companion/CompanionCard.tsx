@@ -1,9 +1,8 @@
 // SPDX-FileCopyrightText: 2026 DennyWanye
 // SPDX-License-Identifier: BUSL-1.1
 
-import type { CSSProperties } from "react";
-
 import type { CompanionEvent } from "../../types/messages";
+import "./CompanionCard.styles.css";
 
 export interface CompanionCardProps {
   event: CompanionEvent;
@@ -61,10 +60,8 @@ export function CompanionCard({ event, onOpenDetail, onAction, busy = false }: C
         color: "#e5e7eb",
       }}
     >
-      <div style={{ fontSize: 12, color: "#a5b4fc", marginBottom: 8 }}>
-        伙伴成长 · {notification.kind}
-      </div>
-      <div style={{ display: "grid", gap: 7, fontSize: 13, lineHeight: 1.55 }}>
+      <div className="sh-CompanionCard-1">伙伴成长 · {notification.kind}</div>
+      <div className="sh-CompanionCard-2">
         {event.tombstone ? (
           <div>{notification.summary}</div>
         ) : (
@@ -84,13 +81,13 @@ export function CompanionCard({ event, onOpenDetail, onAction, busy = false }: C
       </div>
 
       {decision?.kind === "evaluation_authorization" && (
-        <div data-testid="companion-evaluation-decision" style={decisionBoxStyle}>
+        <div data-testid="companion-evaluation-decision" className="sh-CompanionCard-3">
           <div>候选包：{shortHash(decision.candidate_package_hash)}</div>
           <div>代码摘要：{shortHash(decision.candidate_code_digest)}</div>
           <div>评测套件：{shortHash(decision.suite_hash)}</div>
           {decision.status === "confirmed" && <strong>仅已授权本机评测，尚未激活。</strong>}
           {!readOnly && (
-            <div style={buttonRowStyle}>
+            <div className="sh-CompanionCard-4">
               <button
                 type="button"
                 disabled={busy}
@@ -112,16 +109,16 @@ export function CompanionCard({ event, onOpenDetail, onAction, busy = false }: C
       )}
 
       {decision?.kind === "activation" && (
-        <div data-testid="companion-activation-decision" style={decisionBoxStyle}>
+        <div data-testid="companion-activation-decision" className="sh-CompanionCard-3">
           <div>包摘要：{shortHash(decision.candidate_package_hash)}</div>
           <div>代码摘要：{shortHash(decision.candidate_code_digest)}</div>
-          <strong style={{ color: "#fbbf24" }}>
+          <strong className="sh-CompanionCard-5">
             激活会让此代码以后可被调用；Job 仅管理生命周期，不提供 OS
             沙箱，代码可直接访问本机文件/网络/凭据。
           </strong>
           <div>本次确认不代表允许以后任何外部发送、删除或付费动作。</div>
           {!readOnly && (
-            <div style={buttonRowStyle}>
+            <div className="sh-CompanionCard-4">
               <button
                 type="button"
                 disabled={busy}
@@ -142,13 +139,13 @@ export function CompanionCard({ event, onOpenDetail, onAction, busy = false }: C
       )}
 
       {decision?.kind === "action_confirmation" && (
-        <div data-testid="companion-action-confirmation" style={decisionBoxStyle}>
+        <div data-testid="companion-action-confirmation" className="sh-CompanionCard-3">
           <div>工具：{decision.tool_name}</div>
           <div>目标：{decision.redacted_target_summary}</div>
           <div>参数摘要：{shortHash(decision.args_hash)}</div>
           <div>有效期至：{decision.expires_at}</div>
           {!readOnly && (
-            <div style={buttonRowStyle}>
+            <div className="sh-CompanionCard-4">
               <button
                 type="button"
                 disabled={busy}
@@ -168,7 +165,7 @@ export function CompanionCard({ event, onOpenDetail, onAction, busy = false }: C
         </div>
       )}
 
-      <div style={{ ...buttonRowStyle, marginTop: 10 }}>
+      <div className="sh-CompanionCard-6">
         {canViewDetail && (
           <button type="button" onClick={() => onOpenDetail(event)}>
             查看详情
@@ -189,21 +186,3 @@ export function CompanionCard({ event, onOpenDetail, onAction, busy = false }: C
     </article>
   );
 }
-
-const decisionBoxStyle: CSSProperties = {
-  marginTop: 10,
-  padding: 9,
-  borderRadius: 9,
-  background: "rgba(15,23,42,.72)",
-  display: "grid",
-  gap: 5,
-  fontSize: 12,
-  overflowWrap: "anywhere",
-};
-
-const buttonRowStyle: CSSProperties = {
-  display: "flex",
-  flexWrap: "wrap",
-  gap: 7,
-  alignItems: "center",
-};

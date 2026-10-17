@@ -5,6 +5,7 @@ import { createRoot } from "react-dom/client";
 import "./index.css";
 import { applyTheme, watchSystemTheme } from "./theme/applyTheme";
 import { BACKEND_PORT } from "./backendPort";
+import "./main.styles.css";
 
 // 设计令牌变量表必须先于任何组件渲染注入（深浅两套镜像）。
 applyTheme();
@@ -67,9 +68,7 @@ if (isSlashTest) {
     .then(({ SlashTestHarness }) => root.render(<SlashTestHarness />))
     .catch((e) => {
       console.error("[main] slashtest load failed:", e);
-      root.render(
-        <div style={{ padding: 20, color: "#f87171" }}>Failed to load slashtest: {String(e)}</div>,
-      );
+      root.render(<div className="sh-main-1">Failed to load slashtest: {String(e)}</div>);
     });
 } else {
   // Pet shell eagerly imports — needs to start fast.

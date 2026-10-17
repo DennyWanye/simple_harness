@@ -32,6 +32,7 @@ import {
   worstConnectionState,
   type ControlWsState,
 } from "../hooks/useControlWsState";
+import "./Sidebar.styles.css";
 
 export const SIDEBAR_WIDTH = 232;
 
@@ -114,41 +115,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const aggregated = worstConnectionState(connectionState ?? "disconnected", chatWsState);
   const connColor = getConnColor(aggregated, routeKind);
   return (
-    <nav
-      aria-label="工作台导航"
-      data-testid="workbench-sidebar"
-      style={{
-        width: SIDEBAR_WIDTH,
-        minWidth: SIDEBAR_WIDTH,
-        maxWidth: SIDEBAR_WIDTH,
-        boxSizing: "border-box",
-        height: "100%",
-        display: "flex",
-        flexDirection: "column",
-        gap: tokens.space.xxs,
-        padding: `${tokens.space.md}px ${tokens.space.sm}px ${tokens.space.md}px`,
-        background: dark.panel,
-        borderRight: `1px solid ${dark.hairline}`,
-        color: dark.text,
-        fontFamily: tokens.font.ui,
-        overflow: "hidden",
-      }}
-    >
+    <nav aria-label="工作台导航" data-testid="workbench-sidebar" className="sh-Sidebar-1">
       {/* Logo / 品牌区 */}
-      <div
-        data-testid="sidebar-logo"
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: tokens.space.sm,
-          padding: `${tokens.space.xs}px ${tokens.space.md}px ${tokens.space.xl}px`,
-          fontSize: tokens.text.md.size,
-          fontWeight: tokens.weight.semibold,
-          letterSpacing: tokens.tracking.tight,
-          color: dark.text,
-          flexShrink: 0,
-        }}
-      >
+      <div data-testid="sidebar-logo" className="sh-Sidebar-2">
         Simple Harness
       </div>
 
@@ -166,36 +135,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </React.Fragment>
       ))}
 
-      <div style={{ flex: 1, minHeight: 0 }} />
+      <div className="sh-Sidebar-3" />
 
       {/* T13：「更多」折叠组 — Trace/反馈（原 Toolbar 入口，
           点击行为=原浮层打开，能力不减；icon+tooltip 与原 Toolbar 同构）。 */}
       {moreActions && (
-        <div style={{ flexShrink: 0 }}>
+        <div className="sh-Sidebar-4">
           <button
             type="button"
             data-testid="sidebar-more-toggle"
             aria-expanded={moreOpen}
             onClick={() => setMoreOpen((open) => !open)}
-            className={INTERACTIVE_CLASS}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: tokens.space.sm,
-              width: "100%",
-              height: tokens.controlHeight,
-              boxSizing: "border-box",
-              padding: `0 ${tokens.space.md}px`,
-              borderRadius: tokens.radius.md,
-              border: "1px solid transparent",
-              background: "transparent",
-              color: dark.textMuted,
-              fontFamily: tokens.font.ui,
-              fontSize: tokens.text.base.size,
-              fontWeight: tokens.weight.medium,
-              textAlign: "left",
-              transition,
-            }}
+            className={`${INTERACTIVE_CLASS} sh-Sidebar-5`}
           >
             <Icon
               name="chevron-right"
@@ -208,15 +159,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             更多
           </button>
           {moreOpen && (
-            <div
-              data-testid="sidebar-more-group"
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: tokens.space.xxs,
-                padding: `${tokens.space.xxs}px 0 ${tokens.space.xs}px ${tokens.space.md}px`,
-              }}
-            >
+            <div data-testid="sidebar-more-group" className="sh-Sidebar-6">
               <MoreActionButton
                 title="ContextTrace"
                 testId="trace-toggle"
@@ -242,19 +185,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         testId="nav-settings"
         onClick={() => onViewChange("settings")}
       />
-      <div
-        data-testid="sidebar-conn-badge"
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: tokens.space.xs,
-          padding: `${tokens.space.sm}px ${tokens.space.md}px 0`,
-          fontSize: tokens.text.sm.size,
-          fontVariantNumeric: tokens.font.numeric,
-          color: dark.textFaint,
-          flexShrink: 0,
-        }}
-      >
+      <div data-testid="sidebar-conn-badge" className="sh-Sidebar-7">
         <span
           aria-hidden
           style={{
@@ -310,20 +241,7 @@ const NavButton: React.FC<{
     <Icon name={icon} size={16} style={{ color: active ? dark.accent : "currentColor" }} />
     {label}
     {badge ? (
-      <span
-        data-testid={`${testId}-badge`}
-        aria-label={`待处理 ${badge}`}
-        style={{
-          marginLeft: "auto",
-          minWidth: 18,
-          padding: "0 6px",
-          borderRadius: tokens.radius.md,
-          background: dark.accentSoft,
-          color: dark.accent,
-          fontSize: tokens.text.xs.size,
-          textAlign: "center",
-        }}
-      >
+      <span data-testid={`${testId}-badge`} aria-label={`待处理 ${badge}`} className="sh-Sidebar-8">
         {badge}
       </span>
     ) : null}
@@ -342,25 +260,7 @@ const MoreActionButton: React.FC<{
     aria-label={title}
     title={title}
     onClick={onClick}
-    className={INTERACTIVE_CLASS}
-    style={{
-      display: "flex",
-      alignItems: "center",
-      gap: tokens.space.sm,
-      width: "100%",
-      height: 32,
-      boxSizing: "border-box",
-      padding: `0 ${tokens.space.sm}px`,
-      borderRadius: tokens.radius.md,
-      border: "1px solid transparent",
-      background: "transparent",
-      color: dark.textMuted,
-      fontFamily: tokens.font.ui,
-      fontSize: tokens.text.sm.size,
-      fontWeight: tokens.weight.regular,
-      textAlign: "left",
-      transition,
-    }}
+    className={`${INTERACTIVE_CLASS} sh-Sidebar-9`}
   >
     <Icon name={icon} size={15} />
     <span>{title}</span>

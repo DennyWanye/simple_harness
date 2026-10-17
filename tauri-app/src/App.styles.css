@@ -1,0 +1,62 @@
+/* 生成文件，不要手改：src/App.tsx 里静态内联样式的等价类（9I）。
+   重新生成：node scripts/code_quality/ts_inline_to_class.mjs convert src/App.tsx */
+
+.sh-App-1 {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  background: var(--sh-bg, #0E1013);
+  overflow: hidden;
+}
+
+.sh-App-2 {
+  font-family: var(--sh-font-ui);
+  font-size: var(--sh-text-base-size);
+  line-height: var(--sh-text-base-lh);
+  padding: 8px 12px;
+  background: var(--sh-card, #1C2026);
+  color: var(--sh-danger, #D9645F);
+  border: 1px solid var(--sh-hairline, rgba(255,255,255,0.075));
+  border-left: 2px solid var(--sh-danger, #D9645F);
+  border-radius: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  max-height: 60px;
+  overflow-y: auto;
+}
+
+.sh-App-3 {
+  flex-shrink: 0;
+}
+
+.sh-App-4 {
+  flex: 1;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.sh-App-5 {
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 0 2px;
+}
+
+.sh-App-6 {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  max-width: 320px;
+  padding: 10px 14px;
+  background: #b91c1c;
+  color: white;
+  border-radius: 6px;
+  font-size: 13px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+  z-index: 2000;
+}

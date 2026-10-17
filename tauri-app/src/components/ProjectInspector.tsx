@@ -13,10 +13,9 @@ import {
 } from "../chat/projectSessionProtocol";
 import { useSessionsStore } from "../stores/sessionsStore";
 import { ProjectPickerDialog } from "./ProjectPickerDialog";
-import { tokens } from "../theme/tokens";
-import { dark } from "../theme/components";
 import "./ProjectInspector.css";
 import { PROJECT_GROUP_REFRESH_EVENT } from "./SessionList";
+import "./ProjectInspector.styles.css";
 
 export function ProjectInspector({
   activeSid,
@@ -135,15 +134,13 @@ export function ProjectInspector({
       : (inspection?.project.display_name ?? "项目加载中…");
   const content = (
     <>
-      <strong style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>
-        {label}
-      </strong>
+      <strong className="sh-ProjectInspector-1">{label}</strong>
       {session?.session_kind === "projectless" && (
         <button
           type="button"
           data-testid="inspector-continue"
           onClick={() => setPickerOpen(true)}
-          style={buttonStyle}
+          className="sh-ProjectInspector-2"
         >
           在项目中继续
         </button>
@@ -151,7 +148,7 @@ export function ProjectInspector({
     </>
   );
   const projectDetails = inspection && (
-    <div style={detailsStyle}>
+    <div className="sh-ProjectInspector-3">
       <Field label="项目根目录" value={inspection.project.project_root} />
       {session?.execution_root && session.execution_root !== inspection.project.project_root && (
         <Field label="执行目录" value={session.execution_root} />
@@ -164,7 +161,7 @@ export function ProjectInspector({
             : "不可用"
         }
       />
-      <div style={{ display: "flex", flexWrap: "wrap", gap: tokens.space.xs }}>
+      <div className="sh-ProjectInspector-4">
         <button
           type="button"
           onClick={() =>
@@ -172,17 +169,17 @@ export function ProjectInspector({
               session?.execution_root || inspection.project.project_root,
             )
           }
-          style={buttonStyle}
+          className="sh-ProjectInspector-2"
         >
           复制路径
         </button>
-        <button type="button" onClick={() => void open()} style={buttonStyle}>
+        <button type="button" onClick={() => void open()} className="sh-ProjectInspector-2">
           打开目录
         </button>
         <button
           type="button"
           onClick={() => create(inspection.project.project_id, null)}
-          style={buttonStyle}
+          className="sh-ProjectInspector-2"
         >
           新建同项目 Session
         </button>
@@ -191,14 +188,14 @@ export function ProjectInspector({
             type="button"
             data-testid="project-relocate"
             onClick={() => void relocate()}
-            style={buttonStyle}
+            className="sh-ProjectInspector-2"
           >
             重新定位同一项目
           </button>
         )}
       </div>
       {error && (
-        <div role="alert" style={{ color: tokens.color.danger.fg }}>
+        <div role="alert" className="sh-ProjectInspector-5">
           {error}
         </div>
       )}
@@ -208,29 +205,22 @@ export function ProjectInspector({
   return (
     <>
       <div
-        className="project-inspector-compact"
+        className="project-inspector-compact sh-ProjectInspector-6"
         data-testid="project-inspector-compact"
-        style={barStyle}
         onClick={() => setExpanded((value) => !value)}
       >
         {content}
         <span>{expanded ? "▴" : "▾"}</span>
       </div>
       <aside
-        className="project-inspector-rail"
+        className="project-inspector-rail sh-ProjectInspector-7"
         data-testid="project-inspector-rail"
-        style={railStyle}
       >
-        <div style={barStyle}>{content}</div>
+        <div className="sh-ProjectInspector-6">{content}</div>
         {projectDetails}
       </aside>
       {expanded && (
-        <div
-          className="project-inspector-compact"
-          style={{ ...detailsStyle, top: 42, height: "auto" }}
-        >
-          {projectDetails}
-        </div>
+        <div className="project-inspector-compact sh-ProjectInspector-8">{projectDetails}</div>
       )}
       {pickerOpen && (
         <ProjectPickerDialog
@@ -246,40 +236,10 @@ export function ProjectInspector({
 function Field({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <div style={{ color: dark.textMuted, fontSize: tokens.text.xs.size }}>{label}</div>
-      <div data-bp-selectable="" style={{ wordBreak: "break-all" }}>
+      <div className="sh-ProjectInspector-9">{label}</div>
+      <div data-bp-selectable="" className="sh-ProjectInspector-10">
         {value}
       </div>
     </div>
   );
 }
-const railStyle: React.CSSProperties = {
-  flexDirection: "column",
-  borderLeft: `1px solid ${dark.hairline}`,
-  background: dark.bgSolid,
-  color: dark.text,
-};
-const barStyle: React.CSSProperties = {
-  alignItems: "center",
-  gap: tokens.space.sm,
-  padding: `0 ${tokens.space.md}px`,
-  borderBottom: `1px solid ${dark.hairline}`,
-  background: dark.card,
-  color: dark.text,
-};
-const detailsStyle: React.CSSProperties = {
-  display: "flex",
-  flexDirection: "column",
-  gap: tokens.space.md,
-  padding: tokens.space.md,
-  background: dark.bgSolid,
-  color: dark.text,
-};
-const buttonStyle: React.CSSProperties = {
-  border: `1px solid ${dark.borderStrong}`,
-  borderRadius: tokens.radius.sm,
-  background: dark.card,
-  color: dark.text,
-  cursor: "pointer",
-  padding: `${tokens.space.xs}px ${tokens.space.sm}px`,
-};

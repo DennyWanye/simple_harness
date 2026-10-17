@@ -27,6 +27,7 @@ import { dark } from "../theme/components";
 import { ProjectPickerDialog } from "./ProjectPickerDialog";
 import { ConfirmDialog } from "../code-panel/ConfirmDialog";
 import { MAX_TITLE_LEN, normalizeTopicTitle } from "../chat/topicTitle";
+import "./SessionList.styles.css";
 
 export interface SessionListProps {
   activeSid: string;
@@ -270,19 +271,19 @@ export function SessionList({ activeSid, onSwitchSid }: SessionListProps) {
     if (row.kind === "project") {
       const key = `project:${row.project.project_id}`;
       return (
-        <div data-testid={`project-group-${row.project.project_id}`} style={groupStyle}>
+        <div data-testid={`project-group-${row.project.project_id}`} className="sh-SessionList-1">
           <button
             type="button"
             onClick={() => toggleProject(row.project.project_id)}
             aria-expanded={expanded.has(key)}
-            style={groupButtonStyle}
+            className="sh-SessionList-2"
           >
             <span>{expanded.has(key) ? "▾" : "▸"}</span>
-            <span style={ellipsisStyle}>{row.project.display_name}</span>
+            <span className="sh-SessionList-3">{row.project.display_name}</span>
             {row.project.availability === "missing" && (
               <span
                 data-testid={`project-missing-${row.project.project_id}`}
-                style={{ color: tokens.color.warning.fg }}
+                className="sh-SessionList-4"
               >
                 目录不可用
               </span>
@@ -292,7 +293,7 @@ export function SessionList({ activeSid, onSwitchSid }: SessionListProps) {
             type="button"
             aria-label={`在 ${row.project.display_name} 中新建 Session`}
             onClick={() => createSession(row.project.project_id)}
-            style={tinyButtonStyle}
+            className="sh-SessionList-5"
           >
             ＋
           </button>
@@ -301,19 +302,26 @@ export function SessionList({ activeSid, onSwitchSid }: SessionListProps) {
     }
     if (row.kind === "scope")
       return (
-        <div style={groupStyle}>
+        <div className="sh-SessionList-1">
           <strong>{row.label}</strong>
         </div>
       );
     if (row.kind === "empty")
       return (
-        <div data-testid={`session-empty-${projectScopeKey(row.scope)}`} style={emptyStyle}>
+        <div
+          data-testid={`session-empty-${projectScopeKey(row.scope)}`}
+          className="sh-SessionList-6"
+        >
           暂无 Session
         </div>
       );
     if (row.kind === "catalog-load")
       return (
-        <button type="button" onClick={() => requestCatalog(catalog.next_cursor)} style={loadStyle}>
+        <button
+          type="button"
+          onClick={() => requestCatalog(catalog.next_cursor)}
+          className="sh-SessionList-7"
+        >
           加载更多项目
         </button>
       );
@@ -323,7 +331,7 @@ export function SessionList({ activeSid, onSwitchSid }: SessionListProps) {
         <button
           type="button"
           onClick={() => requestSessions(row.scope, page?.next_cursor ?? null)}
-          style={loadStyle}
+          className="sh-SessionList-7"
         >
           加载更多会话
         </button>
@@ -353,7 +361,7 @@ export function SessionList({ activeSid, onSwitchSid }: SessionListProps) {
               if (event.key === "Enter") finishRename(row.session);
               if (event.key === "Escape") setEditingSid(null);
             }}
-            style={{ ...sessionButtonStyle, border: `1px solid ${dark.accent}` }}
+            className="sh-SessionList-8"
           />
         ) : (
           <button
@@ -364,10 +372,10 @@ export function SessionList({ activeSid, onSwitchSid }: SessionListProps) {
               setEditingSid(row.session.session_id);
               setDraftTitle(row.session.title ?? "");
             }}
-            style={sessionButtonStyle}
+            className="sh-SessionList-9"
           >
-            <span style={ellipsisStyle}>{topicDisplayLabel(row.session)}</span>
-            <small style={{ color: dark.textMuted }}>
+            <span className="sh-SessionList-3">{topicDisplayLabel(row.session)}</span>
+            <small className="sh-SessionList-10">
               {row.session.workspace_kind === "automatic"
                 ? `默认目录 · ${row.session.execution_root ?? ""}`
                 : row.session.workspace_kind === "selected"
@@ -387,7 +395,7 @@ export function SessionList({ activeSid, onSwitchSid }: SessionListProps) {
             title="在项目中继续"
             aria-label="在项目中继续"
             onClick={() => setPicker({ sourceSid: row.session.session_id })}
-            style={tinyButtonStyle}
+            className="sh-SessionList-5"
           >
             ↗
           </button>
@@ -396,7 +404,7 @@ export function SessionList({ activeSid, onSwitchSid }: SessionListProps) {
           type="button"
           aria-label="删除会话"
           onClick={() => setPendingDelete(row.session)}
-          style={tinyButtonStyle}
+          className="sh-SessionList-5"
         >
           ×
         </button>
@@ -419,23 +427,14 @@ export function SessionList({ activeSid, onSwitchSid }: SessionListProps) {
   };
 
   return (
-    <div
-      data-testid="session-list"
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        minHeight: 0,
-        flex: 1,
-        gap: tokens.space.xs,
-      }}
-    >
-      <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: tokens.space.xs }}>
+    <div data-testid="session-list" className="sh-SessionList-11">
+      <div className="sh-SessionList-12">
         <button
           type="button"
           data-testid="session-new-topic"
           disabled={!companionIdentityReady}
           onClick={() => setPicker({ sourceSid: null, allowDefault: true })}
-          style={primaryButtonStyle}
+          className="sh-SessionList-13"
         >
           ＋ 新建普通会话
         </button>
@@ -445,17 +444,17 @@ export function SessionList({ activeSid, onSwitchSid }: SessionListProps) {
           disabled={!companionIdentityReady}
           onClick={() => setPicker({ sourceSid: null })}
           aria-label="添加项目"
-          style={primaryButtonStyle}
+          className="sh-SessionList-13"
         >
           ⌘＋
         </button>
       </div>
       {error && (
-        <div role="alert" style={{ color: tokens.color.danger.fg, fontSize: tokens.text.sm.size }}>
+        <div role="alert" className="sh-SessionList-14">
           {error}
         </div>
       )}
-      <div style={{ flex: 1, minHeight: 0 }}>
+      <div className="sh-SessionList-15">
         <Virtuoso
           data={rows}
           computeItemKey={(_index, row) =>
@@ -491,77 +490,10 @@ export function SessionList({ activeSid, onSwitchSid }: SessionListProps) {
   );
 }
 
-const ellipsisStyle: React.CSSProperties = {
-  minWidth: 0,
-  overflow: "hidden",
-  textOverflow: "ellipsis",
-  whiteSpace: "nowrap",
-};
-const primaryButtonStyle: React.CSSProperties = {
-  padding: `${tokens.space.xs + 2}px ${tokens.space.sm}px`,
-  borderRadius: tokens.radius.md,
-  border: `1px dashed ${dark.borderStrong}`,
-  background: "transparent",
-  color: dark.accent,
-  cursor: "pointer",
-};
-const groupStyle: React.CSSProperties = {
-  minHeight: 36,
-  display: "flex",
-  alignItems: "center",
-  gap: tokens.space.xs,
-  padding: `${tokens.space.xs}px ${tokens.space.sm}px`,
-  color: dark.text,
-};
-const groupButtonStyle: React.CSSProperties = {
-  flex: 1,
-  minWidth: 0,
-  display: "flex",
-  gap: tokens.space.xs,
-  alignItems: "center",
-  border: 0,
-  background: "transparent",
-  color: "inherit",
-  cursor: "pointer",
-  textAlign: "left",
-};
-const tinyButtonStyle: React.CSSProperties = {
-  border: 0,
-  background: "transparent",
-  color: dark.accent,
-  cursor: "pointer",
-  padding: tokens.space.xs,
-};
 const sessionRowStyle: React.CSSProperties = {
   minHeight: 44,
   display: "flex",
   alignItems: "center",
   padding: `2px ${tokens.space.sm}px 2px ${tokens.space.md}px`,
   borderLeft: "3px solid transparent",
-};
-const sessionButtonStyle: React.CSSProperties = {
-  flex: 1,
-  minWidth: 0,
-  display: "flex",
-  flexDirection: "column",
-  alignItems: "stretch",
-  gap: 2,
-  border: 0,
-  background: "transparent",
-  color: dark.text,
-  cursor: "pointer",
-  textAlign: "left",
-};
-const emptyStyle: React.CSSProperties = {
-  padding: `${tokens.space.sm}px ${tokens.space.lg}px`,
-  color: dark.textFaint,
-  fontSize: tokens.text.sm.size,
-};
-const loadStyle: React.CSSProperties = {
-  width: "100%",
-  border: 0,
-  background: "transparent",
-  color: dark.accent,
-  cursor: "pointer",
-  padding: tokens.space.sm,
 };

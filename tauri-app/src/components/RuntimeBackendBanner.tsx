@@ -1,9 +1,7 @@
 // SPDX-FileCopyrightText: 2026 DennyWanye
 // SPDX-License-Identifier: BUSL-1.1
 
-import type { CSSProperties } from "react";
-
-import { dark, bannerStyle } from "../theme/components";
+import "./RuntimeBackendBanner.styles.css";
 
 export interface RuntimeBackendBannerProps {
   message: string;
@@ -11,17 +9,6 @@ export interface RuntimeBackendBannerProps {
   onOpenLogDir: () => void;
   onDismiss: () => void;
 }
-
-const actionStyle: CSSProperties = {
-  flexShrink: 0,
-  background: "transparent",
-  border: `1px solid ${dark.borderStrong}`,
-  borderRadius: 4,
-  color: "inherit",
-  cursor: "pointer",
-  font: "inherit",
-  padding: "2px 8px",
-};
 
 /**
  * Non-blocking recovery surface for a backend that dies after the workbench
@@ -35,25 +22,15 @@ export function RuntimeBackendBanner({
   onDismiss,
 }: RuntimeBackendBannerProps) {
   return (
-    <div
-      role="alert"
-      data-testid="runtime-backend-banner"
-      style={{
-        ...bannerStyle("error"),
-        display: "flex",
-        alignItems: "center",
-        gap: 8,
-        borderRadius: 0,
-      }}
-    >
+    <div role="alert" data-testid="runtime-backend-banner" className="sh-RuntimeBackendBanner-1">
       <span aria-hidden="true">⚠</span>
-      <span data-bp-selectable="" style={{ flex: 1, minWidth: 0 }}>
+      <span data-bp-selectable="" className="sh-RuntimeBackendBanner-2">
         {message}
       </span>
-      <button type="button" onClick={onRetry} style={actionStyle}>
+      <button type="button" onClick={onRetry} className="sh-RuntimeBackendBanner-3">
         重试后端
       </button>
-      <button type="button" onClick={onOpenLogDir} style={actionStyle}>
+      <button type="button" onClick={onOpenLogDir} className="sh-RuntimeBackendBanner-3">
         打开日志
       </button>
       <button
@@ -61,7 +38,7 @@ export function RuntimeBackendBanner({
         onClick={onDismiss}
         title="关闭"
         aria-label="关闭后端错误提示"
-        style={{ ...actionStyle, border: "none", paddingInline: 4 }}
+        className="sh-RuntimeBackendBanner-4"
       >
         ✕
       </button>
