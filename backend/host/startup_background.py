@@ -82,7 +82,7 @@ async def _startup_embedder_and_workload_audit() -> Any:
     # Task 13 retires the JSON PreferenceMemory writer. The existing
     # preference_memory.json file is imported once by the authority cutover
     # reader and remains read-only upgrade residue.
-    # P4-S15: VectorWorker — starts after SessionDB is initialised so the
+    # VectorWorker — starts after SessionDB is initialised so the
     # vec0 schema is in place. After start, wire its enqueue() onto the
     # SessionDB write-hook so new chat turns auto-embed.
     _vw = service_context.get("vector_worker")
@@ -217,12 +217,12 @@ async def _startup_vector_worker(_sdb: Any, _vw: Any) -> None:
 
 async def _startup_curation_image_and_mcp() -> None:
     """启动：MCP 管理器。"""
-    # P4-S15: MCPManager — bootstrap from raw [mcp] section. start() is
+    # MCPManager — bootstrap from raw [mcp] section. start() is
     # tolerant: missing section / disabled servers / spawn failures are all
     # logged but don't raise. Only the manager handle is registered; the
     # actual server states are inspectable via manager.server_state().
     try:
-        # P4-S18: ensure workspace dir exists before spawning filesystem MCP
+        # ensure workspace dir exists before spawning filesystem MCP
         # server. Without this, npx @modelcontextprotocol/server-filesystem
         # spawns OK but its first stat() fails with ENOENT, MCP transport
         # closes, and our manager spins in reconnect loop forever (logged

@@ -231,7 +231,7 @@ class WorkItemMixin(SessionDBCore):
         del base_session_id, code_session_id, project_root, project_name
         raise RuntimeError("code_session_authority_retired")
 
-    # ── FEAT-A4 (superpowers): plan-confirm 硬门 awaiting plan sidecar ──
+    # ── plan-confirm 硬门 awaiting plan sidecar ──
     # F5/HMR rehydration 从 SessionDB 重载会丢前端临时的 awaiting plan
     # 消息（[执行]/[取消] 按钮消失）。这三个方法把 awaiting plan 持久化到
     # session_plans sidecar 表，使面板重载后可恢复。不走 append_message →
@@ -898,7 +898,7 @@ class WorkItemMixin(SessionDBCore):
         return await self._with_retry(_do)
 
     # ─────────────────────────────────────────────────────────────────
-    # P5-S1: supervisor_hints — audit log for the watchdog's interventions.
+    # supervisor_hints — audit log for the watchdog's interventions.
     # Every nudge / ask_user / cancel_coerced action emitted by the
     # supervisor LLM gets a row here, plus a follow-up ``user_choice``
     # row when the user clicks a bubble button. Used for: debugging

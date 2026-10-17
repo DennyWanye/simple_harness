@@ -133,7 +133,7 @@ async def audio_channel(ws: WebSocket):
 
     # V5 §2.3 + S1: voice pipeline routes through agent_engine (not llm directly)
     # so that S2 memory / S3 tools flow uniformly through voice and text paths.
-    # P4-S21 #13: also pass the v2 tool stack (registry + permission gate +
+    # also pass the v2 tool stack (registry + permission gate +
     # raw LLM provider) so voice utterances run through AgentLoop and can
     # actually invoke tools — same code path text chat already uses.
     pipeline = VoicePipeline(

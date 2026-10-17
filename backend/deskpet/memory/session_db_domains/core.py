@@ -23,7 +23,7 @@ from deskpet.memory.schema import initialize_state_db
 
 from .support import log
 
-# P4-S2 hook 类型：(message_id, content) → awaitable None。
+# hook 类型：(message_id, content) → awaitable None。
 # MemoryManager / VectorWorker 在此接入 "消息落盘后异步跑 embedding"。
 OnMessageWritten = Callable[[int, str], Awaitable[None]]
 
@@ -160,7 +160,7 @@ class SessionDBCore:
         # 写锁：WAL 允许并发读，但应用层保证自己的写是串行化的更稳
         # （避免 aiosqlite 同 connection 被多 task 抢）
         self._write_lock = asyncio.Lock()
-        # P4-S2: append_message 落盘后的异步回调钩子。典型使用场景是
+        # append_message 落盘后的异步回调钩子。典型使用场景是
         # VectorWorker.enqueue —— 把新消息推进 embedding queue。
         # 设计约束（严格）：
         #   * 失败只 log，**不** re-raise 给 append_message 的调用方

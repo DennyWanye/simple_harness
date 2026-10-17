@@ -325,7 +325,7 @@ class SdkPreparedAuthorizationPolicy:
             call_id=prepared.call.call_id.value,
             effect_id=prepared.effect_id.value,
         )
-        # S5b Task 6 (AC-3⑤ / A5, design-freeze §4 step 7): ``explicit_only``
+        # ``explicit_only``
         # comes from the frozen EffectClass of the Tool.  A confirm-only class
         # (external_send / destructive / payment / credential / privacy /
         # unknown, or manifest-dangerous) is never covered by an existing grant

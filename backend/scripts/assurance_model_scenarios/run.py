@@ -188,7 +188,7 @@ SCENARIOS: dict[str, dict[str, Any]] = {
         "oracle": "billing",
         "expect": {"hash": sha(FACTS_V1)},
     },
-    # 补齐清单 V28：两条线共用一步、其中一条换做法。题目只给出结构上的共用机会（一份两条线都要依据的
+    # 两条线共用一步、其中一条换做法。题目只给出结构上的共用机会（一份两条线都要依据的
     # 明细文件 + 两份彼此独立的交付），不提"共用"二字；换做法的理由是客户线第一次交的 summary.md 被
     # 钩子换成合计写错的草稿（同 bad-draft-rework 的造法），审阅打回后由规划器自己判：重做、换做法还是别的。
     "shared-step-switch-method": {

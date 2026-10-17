@@ -227,8 +227,7 @@ async def _activate_product_sdk_runtime(
     # Runtime activation is independent of the current Provider chain. Fresh
     # installs can add their first Provider later without replacing the stack.
     #
-    # S5b Task 6 (AC-6①, Task 4 review F-9 / P0 real-desktop rehearsal): a
-    # composition failure is a startup failure.  Swallowing it as
+    # A composition failure is a startup failure.  Swallowing it as
     # `product_sdk_runtime_skipped` left the Host running with no SDK runtime
     # at all (every chat turn then fails later, far from the cause).
     try:

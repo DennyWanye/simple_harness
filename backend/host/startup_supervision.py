@@ -227,7 +227,7 @@ async def _startup_supervisor() -> None:
                 audit=_audit_action,
                 auto_mode_check=_supervisor_auto_mode_check,
                 auto_followup=_supervisor_auto_followup,
-                # P5-S2 G2 (2026-05-12): 30s→120s. supervisor was timing out
+                # 30s→120s. supervisor was timing out
                 # on deepseek-v4-pro thinking-mode calls — the model takes
                 # 30-60s just thinking before emitting the 300-token JSON
                 # spec. 120s covers reasoning + transit + the relay 15s SSE
@@ -236,7 +236,7 @@ async def _startup_supervisor() -> None:
             )
             service_context.register("supervisor", _supervisor_agent)
 
-            # P5-S2 Hook B probe: same logic as the agent_loop probe but
+            # idle-with-todos probe: same logic as the agent_loop probe but
             # captured at a different scope (lifespan vs per-chat). Maps
             # session id → SessionDB.get_session_todos → filter incomplete.
             # Returned to the watchdog so the (c) trigger
@@ -322,7 +322,7 @@ async def _startup_supervisor() -> None:
                     _sup_cfg.get("idle_with_todos_threshold_seconds", 60)
                 ),
                 incomplete_todos_probe=_watchdog_incomplete_todos_probe,
-                # P5-S2 Phase 6 rule (d): proactive death-loop trigger.
+                # rule (d): proactive death-loop trigger.
                 tool_signature_repeat_threshold=int(
                     _sup_cfg.get("tool_signature_repeat_threshold", 3)
                 ),
@@ -339,7 +339,7 @@ async def _startup_supervisor() -> None:
 
 async def _startup_auto_resume_and_model_context(_heal_cfg: Any) -> None:
     """启动：自动续跑编排、默认模型上下文窗口解析。"""
-    # P5-S2 Phase 4: AutoResumeOrchestrator — closes the
+    # AutoResumeOrchestrator — closes the
     # supervisor → main-agent loop. When the chat handler hits
     # max_iterations / circuit_open / permanent_tool_error /
     # hallucination, it forwards to ``orchestrator.handle_failure``;

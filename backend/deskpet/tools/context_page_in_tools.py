@@ -52,8 +52,8 @@ CONTEXT_PAGE_IN_SCHEMA: dict[str, Any] = {
         "the body, not a page index and not always a multiple of page_size; never invent or "
         "drop it — use the summary's valid_offsets, a page's next_reference_id, or a "
         "rejection's retry_reference_id. "
-        # 事件 AG：第 12 次第 6 轮里用户只问「标题和总行数」，模型却翻了 13 页并把
-        # 整个 Run 的预算耗尽。descriptor 现在自带答案，工具说明必须点破这一点。
+        # 实测里用户只问「标题和总行数」，模型却翻了 13 页并耗尽整个 Run 的预算。
+        # descriptor 自带答案，工具说明必须点破这一点。
         "A summary's excerpt is the body's first line and its text_stats gives line_count and "
         "char_count: answer questions about a result's title or length from those, never by paging."
     ),

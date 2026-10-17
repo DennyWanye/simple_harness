@@ -131,11 +131,11 @@ class ToolSpec:
     resource_scope_resolver: ResourceScopeResolver | None = None
     resource_scope_resolver_id: str = ""
     resource_scope_resolver_version: str = ""
-    # P5-S1: per-tool hard timeout in seconds. ``execute_tool`` enforces
+    # per-tool hard timeout in seconds. ``execute_tool`` enforces
     # via ``asyncio.wait_for``. Defaults to 60s; bash_run / long-running
     # MCP tools should override on registration (e.g. 300.0).
     timeout_seconds: float = 60.0
-    # WI-T4.1 v3 D11: explicit consent for "this name may be replaced".
+    # explicit consent for "this name may be replaced".
     # ToolNameConflictError 抛 iff 同名重复注册且两边都没 opt-in。
     # 历史 stubs.py "register replaces on duplicate" 行为现改为：
     #   - stubs.py 用 "if not registry.has(name): register"（守卫模式）

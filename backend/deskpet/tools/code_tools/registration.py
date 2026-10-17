@@ -170,7 +170,7 @@ def register_code_tools(
         replace_allowed=True,
     )
 
-    # P5-S2 G1: fetch_tool_result — retrieve full body of a truncated
+    # fetch_tool_result — retrieve full body of a truncated
     # tool_result via the ref_id embedded in the "[truncated …]" marker.
     # Companion to B1 (tool_result_truncator); without this the marker
     # advertises a capability that doesn't exist and the LLM gets

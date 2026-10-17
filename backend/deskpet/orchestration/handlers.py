@@ -145,7 +145,7 @@ async def handle(
     status = {} if service is None else service.status()
     # review P2-1: a degraded loop still answers reads, cancel, decisions and takeovers so a
     # person can stop the damage; the service itself refuses new Missions while degraded.
-    # 第 2 批 A02 / A40：保证通道根隔离时只开非披露诊断与隔离只读分支（原计划 §10.1 / §10.3），
+    # 保证通道根隔离时只开非披露诊断与隔离只读分支（原计划 §10.1 / §10.3），
     # 任务列表、通知等一律不开——不披露任务标题与正文。
     open_states = ("available", "degraded")
     if msg_type in QUARANTINE_READS:
@@ -164,7 +164,7 @@ async def handle(
             data = action(service, body)
             if hasattr(data, "__await__"):
                 data = await data  # type: ignore[misc]
-            # 推后第 2 批 U03：有公开合同的读动词，回复只经投影出门（核合同 + 新拷贝）
+            # 有公开合同的读动词，回复只经投影出门（核合同 + 新拷贝）
             if msg_type in CONTRACT_VERBS:
                 data = project_reply(msg_type, data)
             return _ok(msg_type, request_id, data)
@@ -332,7 +332,7 @@ _ACTIONS: dict[str, Callable[[Any, Mapping[str, Any]], Any | Awaitable[Any]]] = 
     "mission_assurance_snapshot": lambda service, body: service.assurance_read("snapshot", body),
     "mission_assurance_review": lambda service, body: service.assurance_read("review", body),
     "mission_assurance_use_check": lambda service, body: service.assurance_read("use_check", body),
-    # 第 2 批 A40：保证通道根的非披露诊断（原计划 §10.3），根隔离时也开
+    # 保证通道根的非披露诊断（原计划 §10.3），根隔离时也开
     "mission_assurance_root_diagnostic": _root_diagnostic,
     "mission_create": _create,
     "mission_create_with_sources": _create_with_sources,
@@ -356,7 +356,7 @@ _ACTIONS: dict[str, Callable[[Any, Mapping[str, Any]], Any | Awaitable[Any]]] = 
     # 阶段 B 裁决第 3 类：结果不明 / 失败未证实的动作，人点"已生效 / 没生效"
     "mission_action_resolve": _resolve_unknown,
     "mission_comment": _comment,
-    # HTN 补齐阶段 B 第 1 条：主对话里的任务结束通知卡片；"已收到"只由人点
+    # 主对话里的任务结束通知卡片；"已收到"只由人点
     "mission_notices": lambda service, body: service.pending_notices(body),
     "mission_notice_ack": lambda service, body: service.ack_notice(body),
     "mission_artifact_read": _artifact,

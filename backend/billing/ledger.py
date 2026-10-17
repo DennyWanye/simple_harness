@@ -28,7 +28,7 @@ logger = structlog.get_logger()
 # logic all agree on what "local means zero-cost, skip the budget gate".
 _LOCAL_ROUTE = "local"
 
-# WI-R5 (beta-100 relay): the 80%-budget warning embeds a recharge hint
+# the 80%-budget warning embeds a recharge hint
 # pointing at the 中转站 console. Kept here so the message stays in one
 # place; the frontend renders it verbatim.
 RECHARGE_HINT_URL = "https://your-llm-relay.example.com/console/billing"
@@ -77,7 +77,7 @@ class BillingLedger:
         self._daily_budget = daily_budget_cny
         self._tz = tz
         self._lock = asyncio.Lock()
-        # WI-04 (beta-100): the 80%-budget early-warning is fired at most
+        # the 80%-budget early-warning is fired at most
         # once per local day. We remember the last day we warned in-process
         # — a backend restart resets it, which is acceptable (re-warning
         # once after a restart is harmless, and never warning is worse).

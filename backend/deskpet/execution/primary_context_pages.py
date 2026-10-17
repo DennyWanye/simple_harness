@@ -32,8 +32,7 @@ HISTORY_SUFFIX = (
 )
 # 2026-09-09 事件 AG：页大小从 1024 提到 4096。
 #
-# HM-TO-A6 第 12 次第 6 轮（证据 `.local-test-evidence/2026-09-09/native-a6-run12/
-# primary-ui-z9j48osx/`，失败 Run ``product-sdk-015ad2fe…``）：用户只问一份
+# 实测：用户只问一份
 # 40 003 B 文件的「标题和总行数」，模型顺着事件 AF 的 ``next_offset`` 链一页页翻，
 # 13 次 ``context_page_in`` 全部成功（offset 0/1024/2046/3069/…/12278），进度还不到
 # 三分之一，第 19 次装配就以 ``sdk_context_budget_exceeded planned=27202

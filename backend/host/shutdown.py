@@ -183,7 +183,7 @@ async def _shutdown_services() -> None:
             await asyncio.wait_for(_workflow_service.close(), timeout=5.0)
         except Exception as exc:  # noqa: BLE001
             logger.warning("workflow_owner_shutdown_failed", error=str(exc), exc_info=True)
-    # P5-S1: stop the watchdog cleanly so its task doesn't dangle past
+    # stop the watchdog cleanly so its task doesn't dangle past
     # shutdown and produce "Task was destroyed but it is pending!" noise.
     _wd = service_context.get("watchdog")
     if _wd is not None:
@@ -191,7 +191,7 @@ async def _shutdown_services() -> None:
             await _wd.stop()
         except Exception as exc:
             logger.warning("p5_supervisor_watchdog_stop_failed", error=str(exc), exc_info=True)
-    # P4-S15: stop in reverse-dependency order — MCP servers first (so they
+    # stop in reverse-dependency order — MCP servers first (so they
     # don't keep firing tool_invoke writes), then VectorWorker (drain
     # outstanding embeds), then SkillLoader's watchdog thread.
     _mcp = service_context.get("mcp_manager")

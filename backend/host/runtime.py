@@ -23,7 +23,7 @@ install_crash_reporter()
 # 不带名字时取第一次打日志的模块，拆分后会变成别的模块名（2026-10-13）。
 logger = structlog.get_logger("main")
 
-# P3-S7: ensure user data / cache / models directories exist before any
+# ensure user data / cache / models directories exist before any
 # subsystem tries to write into them. Also seeds <user_data>/config.toml
 # from the bundle default on first run (via resolve_config_path).
 _paths.ensure_user_dirs()

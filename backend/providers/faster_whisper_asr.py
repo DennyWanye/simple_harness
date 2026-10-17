@@ -54,7 +54,7 @@ class FasterWhisperASR:
         if self._model is not None:
             return
 
-        # P4-S18 friendly-error: caller (main.py) typically passes
+        # friendly-error: caller (main.py) typically passes
         # ``local_dir = resolve_model_dir("faster-whisper-large-v3-turbo")``
         # without checking it exists. faster-whisper then mistakes the
         # absolute path for a model size and raises ``ValueError("Invalid

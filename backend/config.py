@@ -167,7 +167,7 @@ class ASRConfig:
     # "一个消化" by nudging beam search away from pinyin-adjacent high-
     # frequency words.
     hotwords: list[str] = field(default_factory=list)
-    # P3-S1: subfolder under paths.model_root() containing the bundled
+    # subfolder under paths.model_root() containing the bundled
     # faster-whisper model. Empty → provider falls back to HuggingFace
     # cache / model name resolution.
     model_dir: str = "faster-whisper-large-v3-turbo"
@@ -177,7 +177,7 @@ class ASRConfig:
 class TTSConfig:
     provider: str = "edge-tts"
     voice: str = "zh-CN-XiaoyiNeural"
-    # P3-S1: bare subfolder name under paths.model_root(). Was
+    # bare subfolder name under paths.model_root(). Was
     # "./assets/cosyvoice2" (relative-to-CWD, fragile under PyInstaller).
     # load_config() still accepts the legacy "./assets/..." form and
     # auto-strips it with a WARNING.
@@ -313,7 +313,7 @@ class MemoryV2Config:
 
 @dataclass
 class MemoryConfig:
-    # P3-S7: empty string = "auto-resolve to <user_data_dir>/data/memory.db".
+    # empty string = "auto-resolve to <user_data_dir>/data/memory.db".
     # Previously defaulted to "./data/memory.db" which was CWD-relative and
     # fragile under PyInstaller (CWD = wherever Tauri launched us from).
     # load_config() rewrites empty/relative values to the user data dir;
@@ -374,7 +374,7 @@ class ToolsVerifierConfig:
     run_build: bool = False  # D7 build verifier
     run_tests: bool = False  # D7 test verifier
     claim_patterns_file: str = "verify/claim_patterns.yaml"
-    # v3 WI-T2.1 接电 + M5 ToolsConfig 扩展：build_agent 工厂从这里读 nudge 上限
+    # build_agent 工厂从这里读 nudge 上限
     # （PRD §3 D6：failure_count == 3 时调度 ephemeral；默认 2 表示连续 2 次
     # unmatched 才触发救援）
     max_verify_nudges: int = 2
@@ -413,7 +413,6 @@ class ToolsConfig:
 
     last_mile: ToolsLastMileConfig = field(default_factory=ToolsLastMileConfig)
     verifier: ToolsVerifierConfig = field(default_factory=ToolsVerifierConfig)
-    # ─── WI-T5.1 v3 ─────────────────────────────────────────────
     disabled_toolsets: list[str] = field(default_factory=list)
     disabled_toolsets_schema_only: list[str] = field(default_factory=list)
     dangerous_tools_allowlist: list[str] = field(default_factory=list)
@@ -772,14 +771,14 @@ class AppConfig:
     search_gateway: SearchGatewayConfig = field(default_factory=SearchGatewayConfig)
     context: ContextSettingsConfig = field(default_factory=ContextSettingsConfig)
     companion: CompanionConfig = field(default_factory=CompanionConfig)
-    # P4-S15: capture the raw TOML so layers that don't have a dataclass
+    # capture the raw TOML so layers that don't have a dataclass
     # yet (P4 [mcp], [agent], [context.assembler], [memory.l3], [tools.web])
     # can read their config without us having to migrate all of them at once.
     # Always a dict — empty when no config.toml exists. Treat as read-only.
     raw: dict = field(default_factory=dict)
 
 
-# P4-S15: 这些 key 是 P4 通过 ``AppConfig.raw`` 读取的（[memory.l1] / [memory.l3]
+# 这些 key 是通过 ``AppConfig.raw`` 读取的（[memory.l1] / [memory.l3]
 # 等），不属于旧 dataclass 的 schema，但**有意保留在 config.toml 里**。
 # 把它们登记下来 → _load_section 不再为它们打 warning，启动日志保持安静。
 # 真正的"用户拼错 key"仍然会触发 warning。
@@ -787,8 +786,8 @@ _KNOWN_EXTRAS_BY_DATACLASS: dict[str, frozenset[str]] = {
     # MemoryConfig — 旧 dataclass 只有 db_path / embedding_model；
     # P4 三层记忆的子段都通过 AppConfig.raw["memory"] 直读。
     "MemoryConfig": frozenset({"l1", "l2", "l3", "rrf"}),
-    # LLMRoutingConfig — P4-S6 引入的多 provider 段也走 raw 读。
-    # P4-S20-LLM-Unified: 顶层 [llm] 直配 endpoint 字段，dataclass 没跟进
+    # LLMRoutingConfig — 多 provider 段也走 raw 读。
+    # 顶层 [llm] 直配 endpoint 字段，dataclass 没跟进
     # 但这些键由 config.raw["llm"][...] 兜底使用，不该每次启动都 warn。
     "LLMRoutingConfig": frozenset(
         {
@@ -835,12 +834,11 @@ def _load_section(cls, raw_dict: dict):
 # ─── tools last-mile 加载 + invariant 校验 ─────────────────────
 #
 # 详情见 plans/2026-05-23-tool-last-mile-upgrade/00-PRD.md §3 D10 表。
-# Stage 0 WI-T0.3 落地。
 
 _VALID_VERIFY_GATE_MODES: frozenset[str] = frozenset({"off", "shadow", "strict"})
 
 # 已注册 ephemeral subagent 模型白名单。运行时 llm_registry 才能 full lookup，
-# 启动期用保守白名单挡明显错的 (TG-1 T1-11)。后续 WI-T2.4b 可在 registry
+# 启动期用保守白名单挡明显错的。之后可在 registry
 # 构造后调 register_ephemeral_model() 动态扩。
 _KNOWN_EPHEMERAL_MODELS: frozenset[str] = frozenset(
     {
@@ -866,7 +864,7 @@ def _load_tools(raw_tools: dict) -> ToolsConfig:
     raw.pop("web", None)  # [tools.web] 由 tools/_config.py 单独加载，非 ToolsConfig 字段
     last_mile = _load_section(ToolsLastMileConfig, raw_lm)
     verifier = _load_section(ToolsVerifierConfig, raw_v)
-    # WI-T5.1 v3: 顶层 [tools] 字段（disabled_toolsets 等）此前被漏读 → 配了不生效。
+    # 顶层 [tools] 字段（disabled_toolsets 等）不在子段里，漏读就配了不生效。
     # 显式补读，使 config.toml 的 toolset 门控 / dangerous 白名单 / 默认超时真正生效。
     return ToolsConfig(
         last_mile=last_mile,
@@ -981,7 +979,7 @@ def _bundle_default_config_path() -> Path | None:
     * Dev: ``<repo>/config.toml`` — ``backend/../config.toml``.
     """
     if getattr(sys, "frozen", False):
-        # P4-S21 #12: prefer _MEIPASS — that's where the spec ships
+        # prefer _MEIPASS — that's where the spec ships
         # `../config.toml` to. Without this, frozen builds with no
         # `<exe_dir>/config.toml` were returning None and
         # seed_user_config_if_missing() couldn't migrate legacy schemas
@@ -1226,7 +1224,7 @@ def seed_user_config_if_missing() -> Path | None:
     """
     user_target = _paths.user_data_dir() / "config.toml"
 
-    # P4-S21 #12: legacy-schema migration. Runs once per upgrade — after
+    # legacy-schema migration. Runs once per upgrade — after
     # the swap, the file no longer matches the legacy detector so we
     # never touch it again. Existing llm_runtime.json (the user's actual
     # base_url/model/api_key) is intentionally NOT touched: those are
@@ -1589,7 +1587,7 @@ def _resolve_memory_db_path(raw: str) -> Path:
     return _paths.user_data_dir() / rel
 
 
-# WI-T5.1 v3 子项：process-wide cache + mtime 失效（TDD §A12 P1-2）.
+# process-wide cache + mtime 失效。
 # 原 load_config 每次 import 都重读 toml — 现网无影响（main.py 顶层只调一次），
 # 但 build_agent 等工厂调用 + pytest fixtures 反复 import 累计 IO 浪费。
 # Cache 行为：
@@ -1599,7 +1597,7 @@ def _resolve_memory_db_path(raw: str) -> Path:
 #   - 文件不存在 → 不缓存（保持每次重建默认 AppConfig，方便 test fixture
 #     反复 monkeypatch _resolve_memory_db_path）
 #
-# WI-T5.1 v3.1 — cache key 同时纳入 st_size（不只 mtime）：
+# cache key 同时纳入 st_size（不只 mtime）：
 # Windows 文件系统 mtime 精度有限，**同一路径在同一 mtime tick 内连续重写两次**
 # （rsync/make 同款陷阱）会让 mtime-only 比对误判"未变"→ 返回 stale config。
 # 这正是 test_t1_11 在 warm 进程下偶发 "DID NOT RAISE VG-INVARIANT-5" 的根因：
@@ -1704,7 +1702,7 @@ def _load_config_impl(path: str | Path = "config.toml") -> AppConfig:
                     "(set via SettingsPanel → 云端账号). Remove this line "
                     "from config.toml once migrated. (P2-1-S3)"
                 )
-        # P4-S20-LLM-Unified: pre-P2-1-S2 schema 警告 deprecated —
+        # 旧 schema 的 deprecation 警告不再发 —
         # 新统一格式正好用这些 key (model/base_url/api_key/...) 在 [llm] 段下，
         # 旧 deprecation warning 反而会误报。新 schema 下面会明确 promote 这些
         # 字段到 routing.local。
@@ -1714,7 +1712,7 @@ def _load_config_impl(path: str | Path = "config.toml") -> AppConfig:
         if raw_cloud is not None:
             routing.cloud = _load_section(LLMEndpointConfig, raw_cloud)
 
-        # P4-S20-LLM-Unified: 新统一格式 — [llm] 段直接含 endpoint 字段
+        # 新统一格式 — [llm] 段直接含 endpoint 字段
         # (model/base_url/api_key/temperature/max_tokens)，没有 [llm.local]
         # 也没有 [llm.cloud]。此处是关键迁移点：如果用户的 [llm] 段直接
         # 含 endpoint 字段（且 [llm.local] 缺失），把这些字段抽出来填到
@@ -1744,7 +1742,7 @@ def _load_config_impl(path: str | Path = "config.toml") -> AppConfig:
         config.asr = _load_section(ASRConfig, raw["asr"])
     if "tts" in raw:
         config.tts = _load_section(TTSConfig, raw["tts"])
-        # P3-S1: strip legacy './assets/...' / 'assets/...' / './' prefixes
+        # strip legacy './assets/...' / 'assets/...' / './' prefixes
         # so everything downstream is a bare subfolder name paths.resolve_model_dir
         # can join onto model_root(). Loud WARNING nudges users to update
         # their config.toml.
@@ -1806,7 +1804,7 @@ def _load_config_impl(path: str | Path = "config.toml") -> AppConfig:
         raw_v2 = dict(raw_mem.pop("v2", {}) or {})
         config.memory = _load_section(MemoryConfig, raw_mem)
         config.memory.v2 = _load_memory_v2(raw_v2)
-    # P3-S7: always funnel memory.db_path through the AppData resolver, so
+    # always funnel memory.db_path through the AppData resolver, so
     # empty/relative values become absolute user_data_dir paths and absolute
     # ones pass through. This also catches the AppConfig() defaults when
     # no [memory] section is present.
@@ -1938,7 +1936,7 @@ def _load_config_impl(path: str | Path = "config.toml") -> AppConfig:
         )
     if config.workflows.orphan_grace_hours < 1:
         raise ConfigError("[workflows].orphan_grace_hours must be at least 1")
-    # P4-S15: stash the raw parsed TOML so consumers (MCP bootstrap, agent
+    # stash the raw parsed TOML so consumers (MCP bootstrap, agent
     # bootstrap, etc.) can pick out their sections without us bolting on
     # a dataclass for each one.
     config.raw = dict(raw)

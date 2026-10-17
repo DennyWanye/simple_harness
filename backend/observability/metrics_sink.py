@@ -57,17 +57,16 @@ VALID_EVENTS = frozenset(
         "llm_call_failed",
         "skill_invoked",
         "crash",
-        # WI-T1.7 last-mile artifact button clicks (PRD §5 G1 度量).
+        # last-mile artifact button clicks (PRD §5 G1 度量).
         "artifact_action",
-        # WI-T2.4 verify metrics (PRD §5 健康区间).
+        # verify metrics (PRD §5 健康区间).
         "verify_extractor.fallback_used",
         "verify.ephemeral_rescued",
         "verify.sig_invalid_filtered",
         "verifier.skipped_due_to_missing_toolchain",
-        # WI-T2.1 v3 build_agent 工厂接电 — chat 启动时 emit；MR-T-1 硬证据
-        # （用户 goal："必须有 boot smoke + metrics.jsonl 真出现 verify_* event"）.
+        # build_agent 工厂接电 — chat 启动时 emit。
         "verify_gate_init",
-        # WI-T2.6 agent_loop 触发 nudge（fake-completion 拦截事件）.
+        # agent_loop 触发 nudge（fake-completion 拦截事件）.
         "verify_gate_nudge_injected",
         # WI-HM-1 自我纠错闭环观测 — agent_loop 已埋点但此前不在白名单被静默丢弃：
         #   verify_replan_stagnant: 连续重规划无进展（stagnation 检测命中）.
@@ -144,13 +143,13 @@ _ALLOWED_DETAIL_KEYS = frozenset(
         "attempt",  # retry attempt number
         "ratio",  # generic fraction
         "ok",  # generic bool
-        # WI-T1.7 last-mile artifact_action detail keys (脱敏:无 path / 无 url).
+        # last-mile artifact_action detail keys (脱敏:无 path / 无 url).
         "action_id",  # open / show_in_folder / copy_path / save_as / preview
         "tool_name",  # ppt_create / excel_create / doc_create / ...
-        # WI-T2.4/T2.5 verify metric details (无敏感内容).
+        # verify metric details (无敏感内容).
         "verifier",  # file_exists / git_diff / build / test
         "missing",  # missing toolchain name (npm / pytest / git)
-        # WI-T2.1 v3 verify_gate_init detail (脱敏: mode 是枚举, count 是数字).
+        # verify_gate_init detail (脱敏: mode 是枚举, count 是数字).
         "mode",  # verify_gate_init: off / shadow / strict
         "patterns_loaded",  # verify_gate_init: 加载的 ClaimPattern 数
         "session_id",  # verify_gate_nudge_injected: hash 后 sid（caller 自管脱敏）

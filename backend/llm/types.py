@@ -56,7 +56,7 @@ class ToolCall(BaseModel):
     id: str
     name: str
     arguments: dict[str, Any] = Field(default_factory=dict)
-    # P5-S2: populated only when args JSON parse failed; otherwise None.
+    # populated only when args JSON parse failed; otherwise None.
     args_parse_error: str | None = None
     args_raw: str | None = None
 

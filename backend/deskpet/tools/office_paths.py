@@ -200,7 +200,7 @@ def resolve_for_write(
 
 
 # ---------------------------------------------------------------------------
-# WI-T1.5 last-mile artifact 默认保存路径 + title_slug
+# last-mile artifact 默认保存路径 + title_slug
 # 详见 plans/2026-05-23-tool-last-mile-upgrade/00-PRD.md §3 D4 (v2.1)
 # ---------------------------------------------------------------------------
 
@@ -310,7 +310,6 @@ __all__ = [
     "resolve_for_read",
     "resolve_for_write",
     "auto_temp_path",
-    # WI-T1.5
     "artifact_default_path",
     "title_slug",
 ]

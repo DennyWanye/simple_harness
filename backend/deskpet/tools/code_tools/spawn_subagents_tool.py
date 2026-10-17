@@ -18,7 +18,7 @@ from .spawn_team_tool import _SCHEMA as team
 _MAX = 8
 _KIND_ENUM = ["general", "research", "code", "fileops", "doc", "web"]
 _FORBIDDEN = {"agent", "agent_parallel", "spawn_team", "spawn_subagents", "await_subagents"}
-#: NEXT-TG-1.0 §9 收口第 4 项（2026-09-29）：五个委派工具已接到真实 SDK 子运行
+#: 五个委派工具已接到真实 SDK 子运行
 #: （``deskpet.sdk_adapters.delegation``），全部回到模型可见目录。名单保留为"接线未完成
 #: 就不给模型看"的开关位：以后新增的委派工具没接通前放进来。
 UNWIRED_DELEGATION_TOOL_NAMES: frozenset[str] = frozenset()

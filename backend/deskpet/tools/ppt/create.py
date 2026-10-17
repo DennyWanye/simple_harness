@@ -198,7 +198,7 @@ def ppt_create(
             ),
         }
 
-    # WI-T1.6: dry_run 预览模式（PRD §3 D9）。返回 outline markdown 作为
+    # dry_run 预览模式（PRD §3 D9）。返回 outline markdown 作为
     # text artifact，不写 .pptx — 用户/LLM 可先看大纲再决定是否真生成。
     # 显式 emit artifacts[] 走 D1 一等公民路径。
     if dry_run:
@@ -476,7 +476,7 @@ def _render_fromscratch(
     except Exception:  # noqa: BLE001 - 文档属性写不进去时跳过，不影响出文件
         log.debug("ppt_core_properties_failed", exc_info=True)
     prs.save(out_path)
-    # WI-T1.2 D1：显式 emit artifacts[]（一等公民路径，前端按 kind=file
+    # 显式 emit artifacts[]（一等公民路径，前端按 kind=file
     # 渲染 ArtifactCard；保留 path 字段保 BC）。
     return {
         "ok": True,

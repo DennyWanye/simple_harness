@@ -159,7 +159,7 @@ class VoicePipeline:
         vad_threshold_during_tts: float = 0.65,
         min_speech_ms_during_tts: int = 400,
         tts_cooldown_ms: int = 300,
-        # P4-S21 #13 fix: optional handles for the tool-use path. When all
+        # optional handles for the tool-use path. When all
         # three are present, _process_utterance routes through AgentLoop
         # instead of plain agent.chat_stream — meaning voice input can
         # actually trigger tools (e.g. "make me a todo.txt on the desktop"

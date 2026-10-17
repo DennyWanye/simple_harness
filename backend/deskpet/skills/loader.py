@@ -84,9 +84,9 @@ class SkillMeta:
     task_types: list[str] = field(default_factory=list)
     requires_script: bool = False
     # Any frontmatter keys beyond the known set land here so the UI
-    # (P4-S11 MemoryPanel) can surface them without a loader change.
+    # (MemoryPanel) can surface them without a loader change.
     meta: dict[str, Any] = field(default_factory=dict)
-    # P4-S20 v1 fields
+    # v1 fields
     when_to_use: str = ""
     # TC-5.1 (2026-06-11)：显式触发词表 — query 含任一触发词即视为强匹配
     # （混合匹配的 lexical 路，embedding 兜 paraphrase）。
@@ -116,7 +116,7 @@ class SkillMeta:
             "requires_script": bool(self.requires_script),
             # meta preserves unknown keys without leaking internals.
             "meta": dict(self.meta),
-            # P4-S20 v1 fields
+            # v1 fields
             "when_to_use": self.when_to_use,
             "triggers": list(self.triggers),
             "disable_model_invocation": self.disable_model_invocation,
@@ -629,7 +629,7 @@ class SkillLoader:
             logger.warning("skill.invalid_frontmatter", path=str(skill_md), error="missing")
             return None
 
-        # P4-S20: dispatch by frontmatter shape.
+        # dispatch by frontmatter shape.
         # - Has both `version` AND `author` → legacy DeskPet skill format
         #   (strict required-field validation kept for backward compat)
         # - Else → Claude Code v1 (only `description` required;
@@ -818,9 +818,7 @@ class SkillLoader:
         ordered: list[SkillMeta] = []
         seen: set[str] = set()
 
-        # 1. Explicit skill:name preferences (P4-S11 will wire these
-        #    through policy YAML; for now they can arrive via
-        #    prefer=[...]).
+        # 1. 显式的 skill:name 偏好（目前经 prefer=[...] 传入）。
         for p in prefer:
             if not isinstance(p, str) or not p.startswith("skill:"):
                 continue

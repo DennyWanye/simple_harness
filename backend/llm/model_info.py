@@ -216,9 +216,9 @@ BUILTIN: dict[str, ModelContextInfo] = {
     #
     # ── 2026-09-09 事件 W(F-BUDGET-BYPASS):这三个数**不再变动**,理由如下 ──
     #
-    # HM-TO-A6 第 9 次证伪了 Incident O 的「flash 不产 reasoning / 残差会饱和」:
-    # 同型号同中转站,第 17 轮那条 Run(product-sdk-4996b84d…,14 次 provider
-    # 调用)累计 reasoning 达 38 215、单轮最高 5713。事故形态与 Incident O 相反:
+    # 实测证伪了 Incident O 的「flash 不产 reasoning / 残差会饱和」:
+    # 同型号同中转站的一条 Run(14 次 provider 调用)累计 reasoning 达 38 215、
+    # 单轮最高 5713。事故形态与 Incident O 相反:
     #   ordinal   Host planned   provider input_tokens
     #        1          20954                   13005
     #        6          26420                   45565
@@ -256,7 +256,7 @@ BUILTIN: dict[str, ModelContextInfo] = {
     #
     # ── 2026-09-09 事件 W-c(CJK 估算):这三个数**仍然不动**,改的是分母 ──
     #
-    # 第 11 次第 17 轮死在文本估算上,而不是死在这三个倍率上:一段 18 KB 中文
+    # 实测有一轮死在文本估算上,而不是死在这三个倍率上:一段 18 KB 中文
     # 被估成 31 246 token(effective 26 752)而拒发,按实测密度外推真发出去约 22.7 K。
     # 成因在 `sdk_adapters/context_partitions.py::text_tokens`,不在这里 ——
     # 那里把一个 CJK 字记 1 token(实测 1.54–2.04 字/token),并且把工具调用

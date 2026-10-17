@@ -124,7 +124,7 @@ class PrimaryForegroundContextPort(TaskScopeForegroundContextPort):
             raise TypeError("clock must be callable")
         self._clock = clock
         self._clock_timezone = ZoneInfo(clock_timezone)
-        # HTN 补齐阶段 B 第 1 条：后台任务结束、用户还没点"已收到"的通知，每轮现读交给主 Agent
+        # 后台任务结束、用户还没点"已收到"的通知，每轮现读交给主 Agent
         self._notices = notices
 
     def _trusted_clock_text(self):

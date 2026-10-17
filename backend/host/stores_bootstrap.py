@@ -135,7 +135,7 @@ service_context.register("vector_worker", None)
 service_context.register("embedder", None)
 service_context.register("skill_loader", _skill_loader)
 service_context.register("managed_skill_discovery_projection", _managed_skill_projection)
-# P4-S13: ContextPageInStore 是请求作用域的 page-in 引用权威（Context OS），不依赖
+# ContextPageInStore 是请求作用域的 page-in 引用权威（Context OS），不依赖
 # 记忆 SDK；product SDK tool catalog 的 context_page_in handler 需要它作为 provider。
 from deskpet.tools.context_page_in_tools import ContextPageInStore as _ContextPageInStore
 

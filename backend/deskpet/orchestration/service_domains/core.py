@@ -137,18 +137,18 @@ class OrchestrationServiceCore:
         # Assurance 1.1 (plan §13): the SDK deployment installed on the current
         # Orchestrator lifetime.
         self._assurance: Any = None
-        # 第 2 批 A02 / A40：保证通道根隔离时 SDK 的非披露诊断（原计划 §10.1 / §10.3）；NATIVE 时为 None。
+        # 保证通道根隔离时 SDK 的非披露诊断（原计划 §10.1 / §10.3）；NATIVE 时为 None。
         # 隔离的编排只开管理模式：这里不绑职责、不开驱动、不当"可用"。
         self._quarantine: dict[str, Any] | None = None
         # H01：SDK 恢复协议的只读诊断（state / failed_step / 八步结果）；降级时服务进 degraded_recovery
         self._recovery: dict[str, Any] | None = None
-        # HTN 补齐阶段 B 第 1 条：任务结束通知的唯一 Host 记录（主对话卡片、主 Agent 上下文都读它）
+        # 任务结束通知的唯一 Host 记录（主对话卡片、主 Agent 上下文都读它）
 
         self._notices = MissionNotices(self.root)
         # 2026-09-25 UI 全量点击：自动模式下每轮"授权本轮规划"都要人点，不点任务就一直卡着。
         # 读当前权限模式（每轮现读；读不到按手动处理，照旧等人点）。
         self._permission_mode_reader = permission_mode_reader
-        # 用户任务的部署（安装、建任务、每轮职责）在 SDK 里只有一份（HTN 补齐阶段 A′）；Host 交出
+        # 用户任务的部署（安装、建任务、每轮职责）在 SDK 里只有一份；Host 交出
         # 桌面规划世界、认证身份、通知去处与构建指纹，并告诉它"现在是不是自动模式"。
 
         def notify(payload: Mapping[str, Any]) -> None:
@@ -196,7 +196,7 @@ class OrchestrationServiceCore:
                     },
                 )
                 raise RuntimeError("实际导入的 SDK 与钉版不一致（见 deployment-manifest.json）")
-            # 执行图原计划 §0.3 / §16（补齐第 1 批 V12）：部署验收门没通过就不开生产开关。安装包里的
+            # 执行图原计划 §0.3 / §16：部署验收门没通过就不开生产开关。安装包里的
             # 部署清单只有带门报告哈希的 VALIDATED 才算通过；NOT_RUN 不是通过，这里不替它放行。
             acceptance = self._taskgraph_acceptance_status()
             if acceptance != "VALIDATED":
@@ -303,7 +303,7 @@ class OrchestrationServiceCore:
             deployment_policy=self._deployment,
             sandbox_executor=self._executor,  # P3.2 D2: required when sandboxed
             task_max_tokens=self.settings.task_max_tokens,  # fixed per-leaf allowance
-            # 第 2 批 H11 / 车道 P：§18.2 Global → Mission → Task；全局预算是月配额，
+            # §18.2 Global → Mission → Task；全局预算是月配额，
             # 当月总账在当月第一个任务建立时打开
             global_budget=Budget(max_tokens=self.settings.global_monthly_max_tokens),
             **knobs,
@@ -348,7 +348,7 @@ class OrchestrationServiceCore:
             self._control = control
             return
         self._bind_host_duties(self._orchestrator)
-        self._notices.catch_up(self._orchestrator.store)  # U04: from the last read seq
+        self._notices.catch_up(self._orchestrator.store)  # from the last read seq
         self._taskgraph = self._user_missions.taskgraph
         self._assurance = self._user_missions.assurance
         self._control = control

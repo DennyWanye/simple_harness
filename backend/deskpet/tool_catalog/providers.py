@@ -152,7 +152,7 @@ class ToolCatalogDependencies:
     execution_context_getter: Callable[[], Any]
     capability_bridge_service: Any
     search_gateway: Any
-    #: 收口第 4 项：五个委派工具的执行方（``deskpet.sdk_adapters.delegation``）。
+    #: 五个委派工具的执行方（``deskpet.sdk_adapters.delegation``）。
     delegation_service_provider: Callable[[], Any] | None = None
 
     def __post_init__(self) -> None:

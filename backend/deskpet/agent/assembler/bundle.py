@@ -284,7 +284,7 @@ class AssemblyDecisions:
     planned_tools: list[str] = field(default_factory=list)
     used_tools: list[str] = field(default_factory=list)
     final_response_len: int = 0
-    # P4-S14: caller-stamped fields used by the Context Trace UI.
+    # caller-stamped fields used by the Context Trace UI.
     # ``timestamp`` is wall-clock seconds (float, ``time.time()``);
     # ``session_id`` lets the panel filter by session if needed.
     # Both default None so the existing IPC contract stays backward
@@ -355,7 +355,7 @@ class ContextBundle:
     tool_schemas: list[dict[str, Any]] = field(default_factory=list)
     decisions: AssemblyDecisions = field(default_factory=AssemblyDecisions)
     cost_hint: dict[str, int] = field(default_factory=dict)
-    # P4-S21 #16 fix: L2 recent conversation as a real OpenAI messages[] array.
+    # L2 recent conversation as a real OpenAI messages[] array.
     # MemoryComponent populates this from raw L2 rows; main.py's chat handler
     # passes it to build_messages(history=...) so the LLM sees actual
     # role=user/assistant turns (not a textual "近期对话" summary inside a

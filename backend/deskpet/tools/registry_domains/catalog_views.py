@@ -220,7 +220,7 @@ class CatalogViewMixin(ToolRegistryCore):
         """
         allowed: set[str] | None = set(enabled_toolsets) if enabled_toolsets is not None else None
 
-        # WI-T5.1 v3：cfg.tools 字段（cfg provider 已注入）
+        # cfg.tools 字段（cfg provider 已注入）
         cfg_disabled: set[str] = set()
         cfg_disabled_schema_only: set[str] = set()
         dangerous_allowlist: set[str] = set()
@@ -251,12 +251,12 @@ class CatalogViewMixin(ToolRegistryCore):
                 continue
             if allowed is not None and spec.toolset not in allowed:
                 continue
-            # WI-T5.1 v3：cfg.disabled_toolsets / _schema_only 双层挡
+            # cfg.disabled_toolsets / _schema_only 双层挡
             if spec.toolset in cfg_disabled:
                 continue
             if spec.toolset in cfg_disabled_schema_only:
                 continue
-            # WI-T5.1 v3：dangerous allowlist — 非空时仅 allowlist 中 dangerous 工具
+            # dangerous allowlist — 非空时仅 allowlist 中 dangerous 工具
             if dangerous_allowlist and spec.dangerous and spec.name not in dangerous_allowlist:
                 continue
             out.append({"type": "function", "function": dict(spec.schema)})

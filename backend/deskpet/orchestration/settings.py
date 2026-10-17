@@ -27,7 +27,7 @@ from typing import Any
 class OrchestrationSettings:
     enabled: bool = True  # CLAUDE.md: capabilities that passed testing ship on
     # NEXT-TG-1.0 §9 多任务并发 (2026-09-29): the SDK's own defaults.  The slot count is
-    # no longer part of a frozen request's admission identity (SDK opt.85), so an
+    # no longer part of a frozen request's admission identity, so an
     # existing library keeps starting; a smaller provider quota is set in config.toml.
     max_concurrency: int = 2
     max_concurrent_model_calls: int = 2
@@ -50,12 +50,12 @@ class OrchestrationSettings:
     # the whole context, counted at full price) plus a 295k review reserve.
     default_mission_max_tokens: int = 20_000_000
     # 2026-10-10 user decision: 10M per leaf.  parse (NL2Repo) used 3M over four attempts of one
-    # step once thinking calls of 30k–96k tokens became possible (opt.178/180); the allowance
+    # step once thinking calls of 30k–96k tokens became possible; the allowance
     # bounds spending, it is not the expected spend.  The Mission total stays 20M.
     task_max_tokens: int = 10_000_000
     default_mission_max_attempts: int = 12
-    # 第 2 批 H11（原计划 §18.2 Global Budget、§28 "多 Mission 配额"，2026-10-06）+ 车道 P（同日晚
-    # 用户定）：这台机器上所有任务每个自然月合计的 token 上限（月配额）。SDK 每月一个全局总账
+    # 原计划 §18.2 Global Budget、§28 "多 Mission 配额"：
+    # 这台机器上所有任务每个自然月合计的 token 上限（月配额）。SDK 每月一个全局总账
     # （``budget:global:YYYY-MM``，本机本地时间的月份），任务账户挂在建立当月的总账下（子不超父），
     # 任务的全部用量按任务建立月份计，月初自然是新的空账。当月用完后新任务第一轮规划就以
     # budget_exhausted（scope=global）停下，当月建立、在跑的任务同样停下；调大这个数并重启，

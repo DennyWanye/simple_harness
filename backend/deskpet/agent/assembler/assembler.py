@@ -372,7 +372,7 @@ class ContextAssembler:
         bundle.fragments = fragments
         bundle.tool_exposure_intent = tool_exposure_intent
 
-        # P4-S21 #16 fix: pull L2 raw history out of MemoryComponent's slice
+        # pull L2 raw history out of MemoryComponent's slice
         # meta and promote to bundle.history (real OpenAI messages[]).
         # The MemoryComponent is the only producer right now; if a future
         # component also wants to inject history (e.g. multi-session merge),

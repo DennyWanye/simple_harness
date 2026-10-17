@@ -96,7 +96,7 @@ class SessionActivity:
     # Set True when a chat_v2_error was emitted; cleared by the watchdog
     # when it scans this sid (prevents repeat-firing on the same error).
     error_pending_supervisor: bool = False
-    # P5-S2 Phase 4: how many times the AutoResumeOrchestrator has spawned
+    # how many times the AutoResumeOrchestrator has spawned
     # a fresh chat task for this sid since the last user-initiated turn.
     # Reset to 0 by main.py on user message arrival; capped by
     # ``[supervisor].max_auto_resume_attempts`` (default 2).
@@ -218,7 +218,7 @@ class SessionActivityStore:
         async with self._lock:
             self._states.pop(sid, None)
 
-    # ─── P5-S2 Phase 4: auto-resume attempt counter ───────────────────
+    # ─── auto-resume attempt counter ───────────────────
 
     async def increment_auto_resume_attempts(self, sid: str) -> int:
         """Bump the auto-resume attempt counter for sid.

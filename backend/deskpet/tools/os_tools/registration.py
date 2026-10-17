@@ -98,7 +98,7 @@ def register_os_tools(registry) -> None:  # type: ignore[no-untyped-def]
         resource_scope_resolver=run_shell_scope,
         resource_scope_resolver_id="builtin:os:run_shell",
         dangerous=True,
-        # P5-S1: shell commands can legitimately take a while (pip install,
+        # shell commands can legitimately take a while (pip install,
         # cargo build). 5 minutes is the operative wall — the supervisor
         # watchdog still sits one level above this and will catch true
         # hangs at the 15-minute session-inactivity threshold.
@@ -115,7 +115,7 @@ def register_os_tools(registry) -> None:  # type: ignore[no-untyped-def]
     if existing is not None and existing.permission_category != "network":
         # Re-register through the public API so the warning appears
         # once per startup (matches the existing convention).
-        # WI-T4.1 v3 (MR-T-11-6): 这是一次「显式覆盖」（patch 既有 spec
+        # 这是一次「显式覆盖」（patch 既有 spec
         # 的 permission_category），双方必须有一方 opt-in replace_allowed
         # 否则 register 会抛 ToolNameConflictError → 整个 v2 init 失败
         # → plugin/permission gate 一并降级（main.py:508-516 except 分支）。

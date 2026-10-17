@@ -334,7 +334,7 @@ async def _cc_session_messages_load(conn: _ControlConnection, raw: dict, msg_typ
                 }
             )
             return
-    # FEAT-A4: 带回 awaiting plan（不塞进被白名单 3659 过滤的 messages
+    # 带回 awaiting plan（不塞进被白名单 3659 过滤的 messages
     # 流，单独挂 payload.plan）。前端 rehydration 据此重建 plan card +
     # [执行]/[取消] 栏。只在 awaiting 时附；否则字段缺省 → 旧行为不变。
     _plan_payload: dict[str, Any] | None = None

@@ -73,7 +73,7 @@ class OpenAICompatibleAgentLLM:
         # rather than re-binding model on the fly.)
         max_tokens = int(kwargs.get("max_tokens", 2048))
         temperature = kwargs.get("temperature")
-        # P4-S25: structured output pass-through (response_format), so
+        # structured output pass-through (response_format), so
         # callers like the plan-mode phase can demand JSON schema.
         response_format = kwargs.get("response_format")
         method = (
@@ -237,7 +237,7 @@ def _raw_to_response(raw: dict) -> ChatResponse:
                 id=tc.get("id", "") or "",
                 name=tc.get("name", "") or "",
                 arguments=tc.get("arguments", {}) or {},
-                # P5-S2: forward malformed-args metadata if present so
+                # forward malformed-args metadata if present so
                 # AgentLoop can short-circuit dispatch with a useful
                 # error message back to the model.
                 args_parse_error=tc.get("_args_parse_error"),

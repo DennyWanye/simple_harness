@@ -559,7 +559,7 @@ async def control_channel(ws: WebSocket):
     connection_registry_key = (
         f"companion-aux:{session_id}:{uuid.uuid4()}" if is_companion_aux else session_id
     )
-    # P4-S20: gracefully kick the previous holder of this session_id
+    # gracefully kick the previous holder of this session_id
     # (e.g. an old E2E client) so its disconnect callback doesn't
     # later pop OUR entry. Don't kill ourselves if we're the holder.
     if not is_companion_aux:
@@ -572,7 +572,7 @@ async def control_channel(ws: WebSocket):
     _control_connections[connection_registry_key] = ws
     _chat_peer_groups[connection_registry_key] = _initial_chat_peer_group(session_id)
     logger.info("control channel connected", session_id=session_id)
-    # P3-S2: first frame after handshake reports startup-error state so the
+    # first frame after handshake reports startup-error state so the
     # UI can render "CUDA 缺失" / "模型缺失" banners without polling /health.
     try:
         await ws.send_json(
@@ -695,7 +695,7 @@ async def control_channel(ws: WebSocket):
 
     except WebSocketDisconnect:
         _cancel_harness_inspector_tasks(ws)
-        # P4-S20: only clear the dict entry if it's still pointing at
+        # only clear the dict entry if it's still pointing at
         # OUR ws — a later connection may have replaced us already.
         if _control_connections.get(connection_registry_key) is ws:
             _control_connections.pop(connection_registry_key, None)

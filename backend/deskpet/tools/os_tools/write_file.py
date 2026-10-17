@@ -118,7 +118,7 @@ def write_file(
             "如果你想追加而不是覆盖现有文件，请传 mode='append'。",
             received_keys=_received_keys,
         )
-    # P5-S2 Phase 0 fix: require content key explicitly. Defaulting to
+    # require content key explicitly. Defaulting to
     # "" silently writes empty files which is rarely intended; force
     # the LLM to be explicit.
     if "content" not in args:
@@ -138,7 +138,7 @@ def write_file(
             got=type(content).__name__,
         )
 
-    # P5-S2 G3 (2026-05-12): hard cap content length at the tool layer.
+    # hard cap content length at the tool layer.
     # Models (deepseek-v4-pro etc.) corrupt JSON escapes in long tool_call
     # args ~30-40% of the time when streaming — we've observed parse_ok=
     # False on 6882/7150/7552/7850-char write_file args in production.

@@ -19,7 +19,7 @@ health_router = APIRouter()
 
 @health_router.get("/health")
 async def health():
-    # P3-S2: surface startup failures (esp. CUDA unavailable / model dir
+    # surface startup failures (esp. CUDA unavailable / model dir
     # missing) so the Rust supervisor and future frontend banner can
     # react instead of treating a crippled backend as "ready".
     errors = startup_errors.snapshot()
@@ -27,7 +27,7 @@ async def health():
         "status": "degraded" if errors else "ok",
         "secret_hint": SHARED_SECRET[:4] + "...",
         "strategy": llm._strategy.value,
-        # P4-S20-LLM-Unified 修: 旧 `llm._cloud` 是 HybridRouter 的废弃字段,
+        # 旧 `llm._cloud` 是 HybridRouter 的废弃字段,
         # unified schema 重构后恒为 None → /health 永远误报 cloud_configured=false
         # (即便 backend 实际有云端 key)。改为读真实生效的 local_llm: base_url
         # 非本地 + 有真 key(非 ollama 占位) = 已配云端。

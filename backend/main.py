@@ -39,18 +39,6 @@ from host.runtime import (
 # isort: split
 
 
-# P4-S25 (2026-05-09): cross-endpoint Ollama fallback removed at
-# user request. Single-endpoint mode — errors surface directly
-# instead of auto-swapping to a different model with a different
-# voice mid-turn.
-
-
-# P4-S25 (2026-05-09): cross-endpoint Ollama fallback removed at user
-# request — they don't want auto-swap to gemma4:e4b mid-turn because
-# the model-style mismatch produces ugly mixed responses. Errors from
-# the configured LLM endpoint now surface directly to the user.
-
-
 # isort: split
 # 语音装配模块在导入期登记语音引擎占位；保持原来的导入位置，登记顺序不变。
 import host.voice_bootstrap  # noqa: F401
@@ -104,7 +92,7 @@ async def lifespan(app: FastAPI):
     await _startup_vector_worker(_sdb, _vw)
     await _startup_curation_image_and_mcp()
     _heal_cfg = await _startup_self_healing()
-    # P5-S1/S2: supervisor watchdog + LLM agent. Starts after the rest of
+    # supervisor watchdog + LLM agent. Starts after the rest of
     # startup is done so the 30s grace can run while normal startup races
     # finish. Disabled when [supervisor].enabled = false; in that case we
     # skip construction entirely so the asyncio.Task isn't even created.
@@ -165,7 +153,7 @@ app.add_middleware(
 # before the human-memory foreground ports.
 
 
-# S5b Task 1: process-local memo of whole-Run fault codes.  The authorities
+# process-local memo of whole-Run fault codes.  The authorities
 # that raise a Run fault (TaskExecutionEnvelope authority, run Tool exposure)
 # record the stable code; the SDK terminal observer copies it into the
 # ``run_terminal`` evidence ``public_payload.error_code`` on durable FAILED.
@@ -178,23 +166,18 @@ app.add_middleware(
 # execute.  Advisory only; every authority check downstream is unchanged.
 
 
-# S5b Task 2: single owner of Harness evidence reservations / same-transaction
+# single owner of Harness evidence reservations / same-transaction
 # objective events over the human-memory state.db.  Shared by the effect
 # executor (tool_invocation + host.file/host.test), the provider coordinator
 # (provider_invocation) and the v45 route ledger (snapshot / route facts); the
 # terminal observer drains it through the SDK runtime stack's fact reader.
 
 
-# S5b Task 3: the `task_scope_update` handler shared by the Tool registration and
+# the `task_scope_update` handler shared by the Tool registration and
 # the terminal closure fallback (process-wide, like the binding resolver above).
 
 
 # isort: split
-
-
-# 2026-09-10：S5b Task 4 的 Host↔Memory 异步面（HostEvidenceAuthority /
-# HostMemoryAnalysisExecutor / MemoryIngestionOutboxWorker / MemoryAnalysisLane）
-# 整条随认知记忆 SDK 移除，不再有可组装的槽位。
 
 
 # isort: split

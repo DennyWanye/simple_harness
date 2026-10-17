@@ -524,7 +524,7 @@ def _build_drivers_and_dependencies(st: _SdkRuntimeStackBuild) -> None:
         route_state_memo=_ensure_run_route_state_memo(),
     )
 
-    # NEXT-TG-1.0 §9 收口第 4 项：五个委派工具跑在真实 SDK 子运行上（DETACHED，
+    # 五个委派工具跑在真实 SDK 子运行上（DETACHED，
     # 授权 = 父目录只读子集，每个子运行一个监视器负责收尾与取消）。执行账本在
     # ports_factory 里才拿得到，这里先放一个占位。
 
@@ -836,7 +836,7 @@ def _register_context_route_tools(st: _SdkRuntimeStackBuild) -> None:
             },
         ),
     )
-    # S5b Task 3 — semantic closure Tool (host-composed, direct kernel, always
+    # semantic closure Tool (host-composed, direct kernel, always
     # exposed; the Host handler gates scope_unbound / nothing_to_close).
 
     st._closure_tool_service = _ensure_task_scope_update_service()
@@ -1199,7 +1199,7 @@ def _prepare_reconciliation_and_gates(st: _SdkRuntimeStackBuild) -> None:
 
     st.close_projection_pump = close_projection_pump
 
-    # S5b Task 1: per-effect workspace EffectGate in front of every physical
+    # per-effect workspace EffectGate in front of every physical
     # PROJECT_EFFECT dispatch (envelope echo → frozen Run authority → S4
     # verify_task_execution_envelope over the durable v45 route receipt →
     # strict head revision → TaskScope active).  Constructed at stack build so
@@ -1393,7 +1393,7 @@ def _register_runtime_services(st: _SdkRuntimeStackBuild) -> None:
     # 随 Prospective 一并移除；该参数在下游本就是 Optional。
     st._occurrence_reconcile = None
 
-    # S5b Task 3 review F-2: the protected "closure required" instruction of the
+    # the protected "closure required" instruction of the
     # next Run (pending merge / dirty admission scope) is a production fact, not
     # a test-harness one — the reader is a composition slot (missing → startup fail).
     service_context.register(
@@ -1415,7 +1415,7 @@ def _register_runtime_services(st: _SdkRuntimeStackBuild) -> None:
             ledger=st.context_route_ledger, reconcile=st._occurrence_reconcile
         ),
     )
-    # S5b Task 1: PROJECT_EFFECT envelopes resolve their exact single root
+    # PROJECT_EFFECT envelopes resolve their exact single root
     # from the route receipt's immutable binding-set receipt (never the live
     # head, never a default root); zero/multi root is a whole-Run fault whose
     # stable code is memoised for the terminal evidence.
@@ -1478,7 +1478,7 @@ def _build_production_ports(st, database, uow):
             pp.uow, exclude={str(record.run_id) for record in pp.recoverable}
         ),
     )
-    # 收口第 4 项：停在委派调用上的等待运行也要先恢复绑定与授权（启动后会被唤醒）。
+    # 停在委派调用上的等待运行也要先恢复绑定与授权（启动后会被唤醒）。
     pp.recoverable = (
         *pp.recoverable,
         *waiting_runs_blocked_on_delegation(

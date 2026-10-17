@@ -101,7 +101,7 @@ def legacy_execution_context(
             ),
             write_scope_root=(active.write_scope_root or (str(write_root) if write_root else None)),
         )
-    # This is the sole compatibility reader for P4-S22's historical merge.
+    # 这是旧版参数合并方式的唯一兼容读取点。
     # Values created here are never accepted by registry.execute_call.
     session_id = str(args.get("_session_id") or args.get("session_id") or "default")
     project_root = args.get("_project_root")

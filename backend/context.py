@@ -45,20 +45,20 @@ _VALID_SERVICES = frozenset(
         "legacy_frozen_skill_instruction_resolver",  # legacy-only fallback
         "managed_skill_discovery_projection",  # discovery-only managed Skill view
         "mcp_manager",  # MCPManager (stdio/sse/streamable_http clients)
-        # --- P4-S16 公开化（之前挂在 _p4_* 私有属性上）---------------------------
+        # --- 公开化（之前挂在 _p4_* 私有属性上）---------------------------
         # Embedder / VectorWorker / SessionDB 在 S15 wire-in 时是直接挂私有属性，
         # 这里转成正式 register 路径，避免 getattr(sc, "_p4_xxx") 这种隐式约定。
         "embedder",  # BGE-M3 Embedder (with mock fallback)
         "vector_worker",  # VectorWorker draining embedding queue → vec0
         "session_db",  # P4 canonical L2 SessionDB (state.db)
-        # --- P5-S1 Pet Supervisor ------------------------------------------------
+        # --- Pet Supervisor ------------------------------------------------
         "session_activity",  # SessionActivityStore — per-sid recent events + sig window
         "watchdog",  # WatchdogLoop — periodic supervisor scan
         "supervisor",  # SupervisorAgent — LLM-based diagnosis dispatcher
-        # --- P5-S2 Self-Healing Harness ------------------------------------------
+        # --- Self-Healing Harness ------------------------------------------
         "auto_resume",  # AutoResumeOrchestrator — closes supervisor loop
         "tool_circuit_breaker",  # ToolCircuitBreaker — per-(sid, tool) 3-state breaker
-        # --- P5-S2 multi-provider-management Phase 2 -----------------------------
+        # --- multi-provider-management ------------------------------------
         "provider_registry",  # LLMProviderRegistry — owns [[llm.providers]] list
         "provider_routing_readiness",  # fail-closed startup latch
         # --- Option A (2026-06-05) — 瘦包首启模型下载 ----------------------------
@@ -194,18 +194,18 @@ class ServiceContext:
     legacy_frozen_skill_instruction_resolver: Any | None = None
     managed_skill_discovery_projection: Any | None = None
     mcp_manager: Any | None = None
-    # --- P4-S16 公开化 -------------------------------------------------------
+    # --- 公开化 -------------------------------------------------------
     embedder: Any | None = None
     vector_worker: Any | None = None
     session_db: Any | None = None
-    # --- P5-S1 Pet Supervisor ------------------------------------------------
+    # --- Pet Supervisor ------------------------------------------------
     session_activity: Any | None = None
     watchdog: Any | None = None
     supervisor: Any | None = None
-    # --- P5-S2 Self-Healing Harness ------------------------------------------
+    # --- Self-Healing Harness ------------------------------------------
     auto_resume: Any | None = None
     tool_circuit_breaker: Any | None = None
-    # --- P5-S2 multi-provider-management Phase 2 -----------------------------
+    # --- multi-provider-management ------------------------------------
     provider_registry: Any | None = None
     provider_routing_readiness: Any | None = None
     # --- Option A — 瘦包首启模型下载 -----------------------------------------

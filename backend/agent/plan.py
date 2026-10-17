@@ -251,7 +251,7 @@ async def _maybe_extract_general_plan(
         },
     ]
     try:
-        # P5-S1 D fix: bumped 800 → 2048. thinking-mode models
+        # bumped 800 → 2048. thinking-mode models
         # (deepseek-v4-pro etc.) commonly use 800-1500 tokens just
         # for <think>...</think> chain-of-thought before producing the
         # JSON plan. The original 800 cap meant `stop_reason='length'`

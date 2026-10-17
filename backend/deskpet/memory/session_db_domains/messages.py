@@ -36,7 +36,7 @@ _BASE_COLUMNS = (
     "audio_file_path",
     "tool_call_id",
     "tool_calls",
-    # P4-S24: chain-of-thought from thinking-mode LLMs (DeepSeek V4 Pro,
+    # chain-of-thought from thinking-mode LLMs (DeepSeek V4 Pro,
     # Qwen3 thinking, etc.). NULL for non-thinking models. Round-tripped
     # back into LLM payloads via MemoryComponent so the API doesn't 400.
     "reasoning_content",
@@ -138,7 +138,7 @@ class MessageMixin(SessionDBCore):
 
         msg_id, inserted = await self._with_retry(_do)
 
-        # P4-S2 hook：消息已落盘，异步通知订阅者（典型：VectorWorker）。
+        # hook：消息已落盘，异步通知订阅者（典型：VectorWorker）。
         # 契约：
         #   * hook 在写锁**之外**触发——避免 hook 阻塞主写路径
         #   * hook 抛异常只 log warn，不影响返回值
@@ -876,7 +876,7 @@ class MessageMixin(SessionDBCore):
 
         await self._with_retry(_do)
 
-    # ---- P4-S17 MemoryStore Protocol compatibility --------------------
+    # ---- MemoryStore Protocol compatibility --------------------
 
     async def get_recent(self, session_id: str, limit: int = 10) -> list[ConversationTurn]:
         """Implement ``MemoryStore.get_recent`` via ``get_messages``."""

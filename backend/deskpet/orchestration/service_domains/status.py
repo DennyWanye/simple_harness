@@ -109,7 +109,7 @@ class StatusMixin(OrchestrationServiceCore):
             self._state, self._reason = "quarantined", QUARANTINE_REASON
             return
         self._bind_host_duties(candidate)
-        self._notices.catch_up(candidate.store)  # U04: a rebuild is a reconnect; resume from seq
+        self._notices.catch_up(candidate.store)  # a rebuild is a reconnect; resume from seq
         self._control = control
         self._user_missions.bind(candidate, control)
         self._diagnostics_available = self._detect_diagnostics()
@@ -309,7 +309,7 @@ class StatusMixin(OrchestrationServiceCore):
             "publish": dict(self._publish),
             "diagnostics_available": self._diagnostics_available,
             "assurance_available": self._assurance is not None,
-            # 第 2 批 A40：保证通道根的非披露诊断；隔离时如实写明，上面的 available 为 False
+            # 保证通道根的非披露诊断；隔离时如实写明，上面的 available 为 False
             "assurance_root": self._assurance_root_status(),
             # H01：SDK 重启恢复协议的只读诊断；降级恢复时上面的 state 为 degraded_recovery
             "recovery": self._recovery_status(),

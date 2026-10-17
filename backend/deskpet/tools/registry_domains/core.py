@@ -58,32 +58,32 @@ class ToolRegistryCore:
         self._context_os_enabled_provider: Callable[[], bool] = lambda: False
         self._context_os_e2e_hooks: Any | None = None
         self._mcp_catalog_stale_callback: Callable[[str], None] | None = None
-        # P4-S20: optional permission gate. When set, ``execute_tool``
+        # optional permission gate. When set, ``execute_tool``
         # awaits ``gate.check(...)`` before running the handler. Tests
         # and legacy ``dispatch()`` paths leave it unset (no gating).
         self._gate = None  # type: Optional[Any]  # PermissionGate
-        # P4-S22: per-session tool-arg context. ``execute_tool`` merges
+        # per-session tool-arg context. ``execute_tool`` merges
         # this dict into the LLM-supplied params before invoking the
         # handler, so tools like ``glob`` / ``grep`` can read
         # ``_project_root`` without the LLM having to repeat it every
         # call. Keys conventionally start with underscore so they don't
         # collide with LLM-supplied ones.
         self._session_context: dict[str, dict[str, Any]] = {}
-        # P5-S2 Phase 3: optional circuit breaker. When set, every
+        # optional circuit breaker. When set, every
         # ``execute_tool`` call first asks the breaker whether the tool
         # is currently allowed for this session, and records the outcome
         # afterwards. Defaults to None for backward compat with tests
         # and legacy callers that don't want breaker semantics.
         self._breaker = None  # type: Optional[Any]  # ToolCircuitBreaker
-        # WI-T1.1 (last-mile): optional ToolsConfig provider for D1 信封包装。
+        # 可选的 ToolsConfig provider，用于信封包装。
         # 默认 None → execute_tool 不加 artifacts 键（BC + 字节级一致硬保证）。
         # 启动期 main.py 调 set_tools_config_provider(lambda: cfg.tools)。
         self._tools_config_provider: Callable[[], Any] | None = None
-        # WI-T2.2 (last-mile P0 修): optional ReceiptStore provider 真正插电。
+        # 可选的 ReceiptStore provider。
         # 默认 None → 不产 receipt（BC）；main.py 启动时按 cfg.verifier.emit_receipts
         # 决定是否构造 ReceiptStore 并注入。
         self._receipt_store_provider: Callable[[], Any] | None = None
-        # WI-T2.3 session iteration 计数 (per session_id) — receipt.iteration 字段
+        # session iteration 计数 (per session_id) — receipt.iteration 字段
         self._session_iteration: dict[str, int] = {}
         # WI-CC-2 (plan mode 物理只读): per-session 规划期只读开关。
         # main.py 在 plan-confirm 硬门挂起前置 True、用户点[执行]/取消/超时后置
@@ -241,7 +241,7 @@ class ToolRegistryCore:
         return session_id in self._plan_read_only_sessions
 
     # ------------------------------------------------------------------
-    # P4-S20 v2: tool_use protocol schema generation + gated execution
+    # tool_use protocol schema generation + gated execution
     # ------------------------------------------------------------------
     def to_openai_schema(
         self,

@@ -37,13 +37,13 @@ DEFAULT_SCAN_INTERVAL_SECONDS = 60
 DEFAULT_STUCK_THRESHOLD_SECONDS = 900  # 15 min
 DEFAULT_DEDUP_SECONDS = 720  # 12 min
 DEFAULT_STARTUP_GRACE_SECONDS = 30
-# P5-S2 Hook B: idle-with-incomplete-todos.
+# idle-with-incomplete-todos.
 # Shorter threshold than the running-stuck one because "idle with work
 # pending" is a stronger signal than "running but quiet" — the agent
 # explicitly said it was done. 60s gives just enough time for legitimate
 # end-of-turn user reads / scroll-back.
 DEFAULT_IDLE_WITH_TODOS_THRESHOLD_SECONDS = 60
-# P5-S2 Phase 6 rule (d): tool signature repeat — if the same
+# rule (d): tool signature repeat — if the same
 # (tool_name, args_hash) signature appears ≥ N consecutive times in
 # session_activity.tool_signature_window, fire supervisor regardless
 # of stuck age. Catches death-loops mid-flight (the agent is "running"
@@ -106,14 +106,14 @@ class WatchdogLoop:
         self._stuck_threshold = float(stuck_threshold_seconds)
         self._dedup = float(dedup_seconds)
         self._grace = float(startup_grace_seconds)
-        # P5-S2 Hook B: when set, watchdog scans idle sessions and
+        # when set, watchdog scans idle sessions and
         # triggers a supervisor pass if todos are still pending past
         # ``idle_with_todos_threshold_seconds``. Caller (main.py)
         # supplies this closure that reads the session todo projection
         # and filters incomplete items.
         self._idle_with_todos_threshold = float(idle_with_todos_threshold_seconds)
         self._incomplete_todos_probe = incomplete_todos_probe
-        # P5-S2 Phase 6 rule (d) — see DEFAULT_TOOL_SIGNATURE_REPEAT_THRESHOLD
+        # rule (d) — see DEFAULT_TOOL_SIGNATURE_REPEAT_THRESHOLD
         # docstring above. Set to 0 / negative to disable rule (d).
         self._tool_sig_repeat_threshold = int(tool_signature_repeat_threshold)
         self._clock = clock

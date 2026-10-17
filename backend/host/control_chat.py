@@ -269,7 +269,7 @@ async def _cc_chat(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
     # 签名未随 SDK 0.1.3 变更），继续走它只会报 identity mismatch。因此
     # 忽略 target_root_run_id/task_scope_id，直接落入下方 fresh run 分支。
 
-    # P5-S2 Phase 4: a fresh user-initiated chat message means
+    # a fresh user-initiated chat message means
     # the user has implicitly granted a new auto-resume budget.
     # Reset the attempts counter so subsequent failures may
     # auto-resume up to ``max_attempts`` times again. Skipped

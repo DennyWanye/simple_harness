@@ -278,7 +278,7 @@ class _WorkflowStartupState:
 
 async def _startup_workflow_services() -> Any:
     """启动：会话库检查与工作流服务接线（单条 1421 行的语句整段搬家，拆分在后面的阶段）。"""
-    # P4-S13: async initialisers for the P4 read-only stack. Each failure is
+    # async initialisers for the read-only stack. Each failure is
     # isolated — MemoryManager needing a base dir doesn't prevent SkillLoader
     # from scanning the built-in dir, etc.
     st = _WorkflowStartupState()

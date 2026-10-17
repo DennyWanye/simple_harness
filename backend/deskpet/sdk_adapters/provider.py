@@ -1128,7 +1128,7 @@ class ProductProviderAdapter:
         # deadline 负责（analysis 车道 = AnalysisBudget.deadline_ms，经
         # post_turn_invoker 的 asyncio.wait_for 生效；前台 = chat_turn_timeout_minutes）。
         # 因此它必须**大于任何车道的 deadline**——比车道 deadline 短就让后者永远够不着。
-        # 实测教训：A16 把 analysis 预算提到 6144 token / deadline 180s，但这里仍是 60s，
+        # 实测教训：analysis 预算提到 6144 token / deadline 180s 后，这里若仍是 60s，
         # 于是模型一写长就在 60003ms 撞 transport_timeout → sent_unknown → 记忆零物化
         # （.local-test-evidence/real-ui-channel/20260904T165832、T170608）。
         # 取 240s：高于当前最大车道 deadline（analysis 180s）并留余量。

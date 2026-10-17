@@ -223,7 +223,7 @@ async def _startup_search_and_voice() -> None:
                 logger.info("loaded", engine=name)
             except Exception as exc:
                 logger.warning("failed_to_load", engine=name, error=str(exc), exc_info=True)
-                # P3-S2: persist structured error so /health + WS startup_status
+                # persist structured error so /health + WS startup_status
                 # can surface "degraded" state instead of silently accepting
                 # requests that will later 500.
                 startup_errors.record(name, exc)

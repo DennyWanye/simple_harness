@@ -260,7 +260,7 @@ def _format_providers_section(entries: list[ProviderEntry]) -> str:
         out.append(f'id = "{_escape_toml_string(e.id)}"')
         out.append(f'name = "{_escape_toml_string(e.name)}"')
         out.append(f'base_url = "{_escape_toml_string(e.base_url)}"')
-        # P5-S2 v2: models is the canonical array; emit empty list if unset
+        # models is the canonical array; emit empty list if unset
         # to keep schema explicit (loader expects array-of-string).
         models_payload = "[" + ", ".join(f'"{_escape_toml_string(m)}"' for m in e.models) + "]"
         out.append(f"models = {models_payload}")
@@ -375,15 +375,14 @@ class LLMProviderRegistry:
             logger.warning("provider_registry: failed to load toml: %s", exc)
             return
         raw_list = (data.get("llm") or {}).get("endpoints") or []
-        # Defensive: P4-S6 era config.toml uses `[llm.providers]` as a table
-        # (dict of model-tier knobs). If user's toml predates this rename and
-        # has a non-list under `[llm.endpoints]`, ignore it gracefully.
+        # 防御：旧版 config.toml 把 `[llm.providers]` 写成表（模型档位参数的 dict）；
+        # 用户的 toml 早于这次改名、`[llm.endpoints]` 下不是列表时，安静地忽略。
         if not isinstance(raw_list, list):
             raw_list = []
         self._entries = []
         for raw in raw_list:
             try:
-                # P5-S2 v2: prefer `models` array; fall back to legacy `model`
+                # prefer `models` array; fall back to legacy `model`
                 # scalar (single-model row pre-v2) and coerce.
                 raw_models = raw.get("models")
                 if isinstance(raw_models, list) and raw_models:
@@ -684,7 +683,7 @@ class LLMProviderRegistry:
         """
         provider_id = fields.get("id", "")
         _validate_provider_id(provider_id)
-        # P5-S2 v2: accept either `models: list[str]` (preferred) or
+        # accept either `models: list[str]` (preferred) or
         # legacy `model: str` (single model). At least one must be set.
         raw_models = fields.get("models")
         if isinstance(raw_models, list) and raw_models:
@@ -865,7 +864,7 @@ class LLMProviderRegistry:
                 elif k in ("name", "base_url"):
                     setattr(entry, k, str(v))
                 elif k == "models":
-                    # P5-S2 v2: replace the models list. Filter empties.
+                    # replace the models list. Filter empties.
                     if isinstance(v, list):
                         new_models = [str(m).strip() for m in v if str(m).strip()]
                         if new_models:
@@ -1136,9 +1135,8 @@ def _migrate_legacy_provider_config(config_path: Path | str) -> bool:
         return False
 
     llm = data.get("llm") or {}
-    # P4-S6 era `[llm.providers]` is a table (dict of budget knobs) — NOT
-    # our endpoints list. Check the new `[llm.endpoints]` key instead so
-    # we don't bail out incorrectly on a P4-S6-era config.
+    # 旧版 `[llm.providers]` 是表（预算参数的 dict），不是我们的 endpoints 列表。
+    # 改查新的 `[llm.endpoints]` 键，免得在旧版配置上误判退出。
     endpoints = llm.get("endpoints")
     if isinstance(endpoints, list) and endpoints:
         return False  # already migrated

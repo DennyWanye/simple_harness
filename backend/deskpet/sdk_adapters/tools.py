@@ -166,7 +166,7 @@ PROJECTLESS_SAFE_TOOL_NAMES = frozenset(
         "context_page_in",
         "context_route",
         "task_scope_search",
-        # S5b Task 3: semantic closure never touches the workspace.
+        # semantic closure never touches the workspace.
         "task_scope_update",
         "gold_price_lookup",
         "todo_complete",
@@ -179,7 +179,7 @@ PROJECTLESS_SAFE_TOOL_NAMES = frozenset(
         "web_fetch",
         "web_read_sitemap",
         "web_search",
-        # 收口第 4 项：委派本身不碰工作区；子运行继承父运行的（无）项目绑定，
+        # 委派本身不碰工作区；子运行继承父运行的（无）项目绑定，
         # 只拿父目录里的只读工具，所以无项目的对话也能委派（查资料、并行搜索）。
         "agent",
         "agent_parallel",
@@ -594,7 +594,7 @@ class ProductEffectExecutor(EffectExecutor):
         # F-Z1: read-class file Tools exposed in a route-capable projectless
         # Run are admitted per call, never per Run.
         self._read_gate = read_gate
-        # S5b Task 2: Harness evidence reservation before the physical
+        # Harness evidence reservation before the physical
         # dispatch, objective event + evidence row + tool_invocation import in
         # one state.db transaction after the SDK settled the effect.
         self._evidence_ingress = evidence_ingress

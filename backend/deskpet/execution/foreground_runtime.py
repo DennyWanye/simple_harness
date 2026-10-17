@@ -68,7 +68,7 @@ from .foreground_runtime_domains.claimed_drive import ClaimedDriveMixin, Foregro
 logger = logging.getLogger(__name__)
 
 
-# S5b Task 6 (review F-9): the only shape a FAILED terminal's public
+# the only shape a FAILED terminal's public
 # ``error_code`` may take; everything else degrades to the SDK public code.
 TERMINAL_ERROR_CODE_TOKEN = re.compile(r"[a-z][a-z0-9_]{2,63}")
 TERMINAL_ERROR_CODE_FALLBACK = "driver_failed"
@@ -378,10 +378,10 @@ class ForegroundRuntimeExecutionAuthority(ClaimedDriveMixin):
         self._conversation_entrypoint = conversation_entrypoint
         self._audit = audit_sink
         self._effect_gate = effect_gate
-        # S5b Task 3: semantic-closure fallback between the SDK terminal
+        # semantic-closure fallback between the SDK terminal
         # observation and the Host terminal commit (lease-fenced, replayable).
         self._closure_fallback = closure_fallback
-        # S5b Task 4: the durable Run binding (``SdkRunBindingV1`` record) and the
+        # the durable Run binding (``SdkRunBindingV1`` record) and the
         # Provider endpoint identity feed the terminal-commit Memory ingestion
         # outbox row (same transaction as the Host terminal).
         self._run_binding_reader = run_binding_reader
@@ -1415,7 +1415,7 @@ class SqliteSdkTerminalObserver:
             raise ForegroundRuntimeError("foreground_primary_message_reader_unavailable")
         async with aiosqlite.connect(self._db_path) as db:
             db.row_factory = aiosqlite.Row
-            # S5b Task 6 (review F-6): the durable run_terminal row is looked up
+            # the durable run_terminal row is looked up
             # WITHOUT requiring the gate receipt, so a retry after a crash
             # between ingest and authorize_terminal never rebuilds the
             # evidence (the memo may be gone; a rebuilt payload would conflict)
@@ -1600,7 +1600,7 @@ class SqliteSdkTerminalObserver:
         if row is None:
             if authority is None or effective_scope is None:
                 raise ForegroundRuntimeError("foreground_terminal_task_scope_authority_missing")
-            # S5b Task 2 (design-freeze §3): the terminal observer is the
+            # the terminal observer is the
             # single drainer.  Every still-reserved Harness row is resolved
             # first — ingested from the SDK ledger when its fact is readable
             # (objective event included), otherwise a same-kind tombstone —
@@ -1653,7 +1653,7 @@ class SqliteSdkTerminalObserver:
                 idempotency_key=f"foreground-terminal:{sdk_evidence.event_id}",
                 occurred_at=float(sdk_evidence.occurred_at),
             )
-            # S5b Task 6 (Task 2 review F-6): run_terminal is reserved
+            # run_terminal is reserved
             # (``terminal:{sdk_run_id}``) and ingested in ONE transaction —
             # the sequence is allocated under the write lock, never read
             # outside a transaction.

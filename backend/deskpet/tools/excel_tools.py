@@ -420,7 +420,7 @@ def excel_create(
         log.warning("excel_create failed: %s", exc, exc_info=True)
         return {"ok": False, "error": f"render failed: {exc}", "retriable": True}
 
-    # WI-T1.2 D1：显式 emit artifacts[]（一等公民路径，保 BC）
+    # 显式 emit artifacts[]（一等公民路径，保 BC）
     return {
         "ok": True,
         "path": str(out_path),

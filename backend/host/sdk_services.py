@@ -356,7 +356,7 @@ def _build_run_context_authority(  # type: ignore[no-untyped-def]
         # HM-TO-A6 incident A: publish this turn's route state to the
         # capability-discovery surface (same value that shrinks the specs).
         route_state_memo=_ensure_run_route_state_memo(),
-        # S5b Task 6 (AC-3⑥): ≥2-root scopes never see PROJECT_EFFECT Tools.
+        # ≥2-root scopes never see PROJECT_EFFECT Tools.
         binding_store=WorkspaceBindingAuthorityStore(
             db_path, configured_workspace_root=configured_workspace_root
         ),

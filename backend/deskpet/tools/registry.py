@@ -119,7 +119,7 @@ def _default_parser_id(name: str, source: str, permission_category: str) -> str:
     return "json_error_envelope_v1"
 
 
-# WI-T4.1 v3 D11: 显式 conflict 错误（registry spec gap 修复）。
+# 显式 conflict 错误。
 # 历史 ``registry.register replaces on duplicate`` 是反模式 — late-loaded
 # stubs 会无声覆盖真实现，错误极难调试（last-mile / stage2 都踩过）。
 # v3 行为：name 冲突时若双方都未 opt-in `replace_allowed=True` → 抛此异常；
@@ -393,7 +393,7 @@ class ToolRegistry(RegistrationMixin, CatalogViewMixin, ExecutionMixin, Prepared
         if bool(dispatch_adapter_id) != bool(dispatch_adapter_version):
             raise ValueError("dispatch adapter id and version must be set together")
 
-        # WI-T4.2 v3 spec D3：plugin 工具自动加 ``<plugin>:`` 前缀防 namespace
+        # plugin 工具自动加 ``<plugin>:`` 前缀防 namespace
         # 冲突（两个 plugin 注册同名 tool 时第二个会因 ToolNameConflictError 崩）。
         # 触发条件：source 形如 ``plugin:<name>`` 或 ``mcp:<server>`` 且 name 还
         # 没带前缀。schema["name"] 也同步改，让 LLM 看到的就是 qualified name。
@@ -407,7 +407,7 @@ class ToolRegistry(RegistrationMixin, CatalogViewMixin, ExecutionMixin, Prepared
                 # 已有以下任一前缀时跳过（防重复 / 兼容历史命名）：
                 #   1. expected_prefix (本逻辑加过)
                 #   2. f"{prefix_kind}:"  (理论 caller 已用 dotted 形式)
-                #   3. f"{prefix_id}:"    (P4-S20 旧约定 <plugin_id>:<tool>)
+                #   3. f"{prefix_id}:"    (旧约定 <plugin_id>:<tool>)
                 #   4. f"{prefix_id}_"    (mcp/manager.py 真实加的 mcp_<name>_<tool>
                 #                          会落到 prefix_kind="mcp"+prefix_id=<name>,
                 #                          name 已是 mcp_<name>_<tool> → 含 prefix_id_)
@@ -553,7 +553,7 @@ class ToolRegistry(RegistrationMixin, CatalogViewMixin, ExecutionMixin, Prepared
         with self._lock:
             existing = self._tools.get(name)
             if existing is not None:
-                # WI-T4.1 v3 D11: 同名重注册策略
+                # 同名重注册策略
                 if not (existing.replace_allowed or replace_allowed):
                     raise ToolNameConflictError(
                         f"Tool {name!r} already registered "

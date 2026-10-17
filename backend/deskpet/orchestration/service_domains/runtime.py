@@ -227,7 +227,7 @@ class RuntimeDriveMixin(OrchestrationServiceCore):
                 if self._orchestrator is None:
                     await self._rebuild()
                 if self._quarantine is not None:
-                    return  # 根隔离：不派发任何任务（第 2 批 A02）
+                    return  # 根隔离：不派发任何任务
                 await self._orchestrator.run()
                 if self._degraded_recovery():
                     return  # 降级恢复：SDK 不进周期，这里也不再驱动（H01）

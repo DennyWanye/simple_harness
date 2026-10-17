@@ -31,7 +31,7 @@ class AgentEvent:
 @dataclass
 class FinalEvent(AgentEvent):
     content: str = ""
-    # P4-S24: passed through so `_run_chat` can persist it on the final
+    # passed through so `_run_chat` can persist it on the final
     # assistant turn (DB row's reasoning_content column).
     reasoning_content: str = ""
     stop_reason: str = "end_turn"
@@ -78,7 +78,7 @@ class PipelineEvent(AgentEvent):
 @dataclass
 class AssistantMessageEvent(AgentEvent):
     content: str = ""
-    # P4-S24: chain-of-thought from thinking-mode models. Persisted to
+    # chain-of-thought from thinking-mode models. Persisted to
     # SessionDB so cross-session history rebuilds satisfy the
     # "reasoning_content must be passed back" API constraint. Empty
     # for non-thinking models — safe to ignore.

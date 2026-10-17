@@ -14,7 +14,7 @@ from tools.registry import ToolRegistry
 from host.llm_providers import _context_os_e2e_boot_hooks
 from host.runtime import config, logger, service_context
 
-# P4-S17: SessionDB is the single conversation source of truth.
+# SessionDB is the single conversation source of truth.
 # The P4 wire-in below wraps it in RedactingMemoryStore, then agent_engine
 # is constructed with that final memory_store.
 memory_store = None
@@ -27,7 +27,7 @@ tool_registry.register(get_time_tool)
 tool_registry.register(read_clipboard_tool)
 service_context.register("tool_router", tool_registry)
 
-# P4-S20: v2 deskpet.tools.registry singleton — full schema-aware
+# v2 deskpet.tools.registry singleton — full schema-aware
 # registry used by the new tool_use agent loop. Hosts the 7 OS tools
 # (read/write/edit/list/shell/web/desktop_create_file) plus the
 # auto-discovered file/web/memory tools from earlier slices.
@@ -68,7 +68,7 @@ try:
         )
     )
     deskpet_tool_registry_v2.set_permission_gate(permission_gate_v2)
-    # WI-T3.1 last-mile wiring: provider 模式注入 ToolsConfig 到 registry。
+    # provider 模式注入 ToolsConfig 到 registry。
     # 2026-05-23 测试阶段决策：config.toml 默认全 ON（不走灰度），
     # 用户/管理员可在 config.toml 改 flag 个别关闭。
     deskpet_tool_registry_v2.set_tools_config_provider(lambda: getattr(config, "tools", None))
@@ -100,7 +100,7 @@ try:
             _ToolCapabilityBridgeService(deskpet_tool_registry_v2, _tool_capability_scope_store),
         )
 
-    # WI-T1.5 last-mile: 解析 default_artifact_dir 空字符串 → 默认
+    # 解析 default_artifact_dir 空字符串 → 默认
     # <user_data>/artifacts/。这样 config.toml 用户留空也能拿到合理默认；
     # 显式填路径则按用户配置走（office_paths.artifact_default_path 直接读）。
     if hasattr(config, "tools") and config.tools.last_mile.default_artifact_dir == "":
@@ -113,7 +113,7 @@ try:
             "last_mile.default_artifact_dir resolved to %s",
             config.tools.last_mile.default_artifact_dir,
         )
-    # WI-T2.2 P0 修：按 cfg.tools.verifier.emit_receipts 构造 ReceiptStore
+    # 按 cfg.tools.verifier.emit_receipts 构造 ReceiptStore
     # 并通过 provider 注入。flag OFF 时 box[0]=None 永不产 receipt（BC）；
     # flag ON 时每次 execute_tool 都 emit + 写盘。
     # 注：用 list[Any] 容器避免 nonlocal (此处在 module 顶层 try-block)。
@@ -126,10 +126,8 @@ try:
             return None
         if _receipt_store_box[0] is None:
             try:
-                # WI-T2.2 v3 P0 修：取消 min(retention, 7) 截断（last-mile
-                # round2 P0-2）。原代码把用户配的 30 天硬压成 7 天，回放窗口
-                # 残缺。按 ToolsLastMileConfig.artifact_dir_retention_days
-                # 默认 30 + 用户 cfg 真值。
+                # 保留期按 ToolsLastMileConfig.artifact_dir_retention_days（默认 30）与用户 cfg 真值，
+                # 不截断到 7 天，否则回放窗口残缺。
                 retention = int(
                     getattr(
                         getattr(cfg, "last_mile", None),
@@ -158,7 +156,7 @@ try:
     # we don't want to extend just for this).
     # Accessed by the chat handler when it instantiates AgentLoop.
 
-    # P4-S20 Stage C — marketplace installer + registry client.
+    # marketplace installer + registry client.
     from deskpet.skills.marketplace import (
         RegistryClient as _RegistryClient,
     )
@@ -183,7 +181,7 @@ try:
         staging_dir=_staging_dir,
         known_tools=set(deskpet_tool_registry_v2.list_tools()),
     )
-    # P4-S20 Stage D — plugin system.
+    # plugin system.
     from deskpet.plugins import PluginManager as _PluginManager
 
     _plugins_dir = _paths.user_data_dir() / "plugins"

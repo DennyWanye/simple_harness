@@ -18,7 +18,7 @@ from router.hybrid_router import HybridRouter, RoutingStrategy
 from host.runtime import config, logger, service_context
 from host.state import host_state
 
-# P4-S20-LLM-Unified: runtime overrides — settings panel 里改的会写到这个文件，
+# runtime overrides — settings panel 里改的会写到这个文件，
 # 启动时读它覆盖 config.toml [llm] 段（只 base_url / model / temperature；
 # api_key 走 keychain 不进文件）。允许用户改完不动 config.toml 也保留。
 LLM_RUNTIME_PATH = _paths.user_data_dir() / "llm_runtime.json"
@@ -95,7 +95,7 @@ if _llm_overrides:
     )
 
 
-# P4-S20-LLM-Unified: 统一 LLM endpoint。api_key 解析三档优先级：
+# 统一 LLM endpoint。api_key 解析三档优先级：
 #   1. 配置值如果以 "$" 开头 → 视作环境变量名，从 env 读 (e.g. "$OPENAI_API_KEY")
 #   2. config.llm.local.api_key 是 "ollama" / "from-keychain" / 空 → 尝试从
 #      keychain 通过 DESKPET_CLOUD_API_KEY env 读（向后兼容 P2-1-S3 的 Tauri
@@ -184,7 +184,7 @@ billing_ledger = BillingLedger(
 )
 service_context.register("billing_ledger", billing_ledger)
 
-# P5-S2 multi-provider-management Phase 2: LLMProviderRegistry
+# LLMProviderRegistry
 # 单一 source of truth for [[llm.providers]] 列表。Phase 0/1 已实现底层,
 # 这里在启动时执行 legacy migration + 构造 registry,放到 service_context
 # 供 ws handler (`settings_providers_*`) 读写。

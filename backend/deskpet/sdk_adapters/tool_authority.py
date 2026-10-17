@@ -83,7 +83,7 @@ PROJECT_EFFECT_TOOL_NAMES: tuple[str, ...] = (
 SDK_TOOL_EXECUTION_POLICY_OVERRIDES: dict[str, tuple[str, str, str]] = {
     "context_route": ("context_control", "forbidden", "forbidden"),
     **{name: ("project_effect", "required", "required") for name in PROJECT_EFFECT_TOOL_NAMES},
-    # S5b Task 3 (design-freeze §1/§7): semantic closure is always exposed as a
+    # semantic closure is always exposed as a
     # direct kernel Tool; route/TaskScope REQUIRED makes an UNROUTED call a
     # model-visible ROUTE_BARRIER_NOT_OBSERVED rejection rather than a whole-Run
     # fault, and the Host handler gates the rest (scope_unbound / nothing_to_close).
@@ -132,7 +132,7 @@ SDK_DIRECT_TOOL_KERNEL = frozenset(
         # cheap to request in the same conversation.
         "context_route",
         "task_scope_search",
-        # S5b Task 3: semantic closure must be reachable every provider turn
+        # semantic closure must be reachable every provider turn
         # (a hidden Tool call is a whole-Run fault in the frozen SDK).
         "task_scope_update",
         # NEXT-TG-1.0 §9: starting a background Mission from chat must never be a
@@ -265,7 +265,7 @@ class _FrozenCapabilitySpec:
     execution_identity: str
     projectless_admission: str = "requires_project"
     dangerous: bool = False
-    # S5b Task 6 (AC-3⑤ / A5): the frozen EffectClass of the Tool (inventory
+    # the frozen EffectClass of the Tool (inventory
     # attribute, else the real Tool manifest, else ``unknown``) and whether the
     # manifest marks it dangerous.  ``confirm_only`` (EffectClass ∈
     # ``_CONFIRM_ONLY`` or manifest-dangerous) is what ``decide`` feeds into
@@ -459,7 +459,7 @@ class SdkRunToolAuthorityV1:
                     "permission_policy_version": spec.permission_policy_version,
                     "projectless_admission": spec.projectless_admission,
                     "dangerous": spec.dangerous,
-                    # S5b Task 6: the frozen EffectClass travels with the Run so a
+                    # the frozen EffectClass travels with the Run so a
                     # WAITING restart never re-classifies from a newer manifest.
                     "effect_class": spec.effect_class,
                     "manifest_dangerous": spec.manifest_dangerous,
@@ -1592,7 +1592,7 @@ class SdkRunToolAuthorityRegistry:
         self.scope_store.purge(record.prepared_tool_set.scope_id)
         for listener in tuple(self._terminal_listeners):
             listener(record)
-        # S5b Task 6 (review F-6): every terminal path — foreground observer or
+        # every terminal path — foreground observer or
         # not — releases the process-local whole-Run fault memo of this Run.
         release = getattr(self._run_fault_sink, "release", None)
         if callable(release):

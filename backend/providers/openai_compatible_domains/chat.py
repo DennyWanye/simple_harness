@@ -403,14 +403,14 @@ class ChatMixin(OpenAICompatibleCore):
             tool_choice=tool_choice,
         )
         self._prepare_nonstream_payload(state)
-        # P4-S22 fix: wrap httpx errors so AgentLoop's existing
+        # wrap httpx errors so AgentLoop's existing
         # `except LLMProviderError` catches them and emits a clean
         # ErrorEvent instead of the bare ConnectError bubbling all the
         # way up to the chat handler (which surfaces as "chat_v2 错误:
         # unknown" in the UI because httpx.ConnectError on Windows
         # often has empty `str(exc)` when the remote sends RST mid
         # keep-alive). the relay specifically does this between turns.
-        # P4-S24: thinking-mode round-trip requirement. Some endpoints
+        # thinking-mode round-trip requirement. Some endpoints
         # (DeepSeek V4 Pro / your-llm-relay.example.com proxy / Qwen3 thinking) reject
         # with HTTP 400 if a prior assistant message in `messages` is
         # missing its `reasoning_content`. This happens for rows
@@ -419,7 +419,7 @@ class ChatMixin(OpenAICompatibleCore):
         # rows and retry once. If the retry succeeds we move on; if it
         # fails again we surface the original error so the user sees
         # something stable.
-        # P4-S24 transient-retry: your-llm-relay.example.com / sealos / various OpenAI-
+        # transient-retry: your-llm-relay.example.com / sealos / various OpenAI-
         # compat proxies sometimes drop the connection mid-request
         # (httpx surfaces this as RemoteProtocolError "Server
         # disconnected without sending a response" — common right
@@ -495,7 +495,7 @@ class ChatMixin(OpenAICompatibleCore):
                 httpx.PoolTimeout,
             )
             last_exc: Exception | None = None
-            # P4-S25: 3 attempts with growing backoff. RemoteProtocolError
+            # 3 attempts with growing backoff. RemoteProtocolError
             # / connection drops on the relay come in clusters — first 0.5s
             # backoff was too short. Failed attempts after the first
             # typically RST quickly so the worst-case wait stays bounded
@@ -641,7 +641,7 @@ class ChatMixin(OpenAICompatibleCore):
             httpx.PoolTimeout,
         ) as exc:
             # Network-layer failure — typical when the relay keep-alive
-            # socket gets reset between turns. P5-S2 A2: classify by
+            # socket gets reset between turns. Classify by
             # phase so supervisor / UI can show actionable hints.
             state._human_type = type(exc).__name__
             state._human_msg = (str(exc) or state._human_type).replace("\n", " ")[:300]
@@ -693,7 +693,7 @@ class ChatMixin(OpenAICompatibleCore):
         if tools:
             payload["tools"] = tools
             payload["tool_choice"] = tool_choice or "auto"
-        # P4-S25: structured output. OpenAI / the relay / DashScope use
+        # structured output. OpenAI / the relay / DashScope use
         # `response_format`; Ollama ignores that and reads `format`.
         # We pass the OpenAI-shape through and ALSO emit Ollama's
         # `format` so users can switch endpoints without code changes.
@@ -702,7 +702,7 @@ class ChatMixin(OpenAICompatibleCore):
             rf_type = response_format.get("type") if isinstance(response_format, dict) else None
             if rf_type in ("json_object", "json_schema"):
                 payload["format"] = "json"
-        # P4-S25 A4: prompt caching — Anthropic-style cache_control
+        # prompt caching — Anthropic-style cache_control
         # marker only fires for Anthropic-native endpoints. the relay and
         # some sealos proxies treat unknown message fields strictly
         # and respond with empty content; OpenAI gpt-4o auto-caches
@@ -729,7 +729,7 @@ class ChatMixin(OpenAICompatibleCore):
         c0 = choices[0]
         msg = c0.get("message") or {}
         finish = c0.get("finish_reason", "stop")
-        # P4-S24: thinking-mode models (DeepSeek V4 Pro, Qwen3 thinking,
+        # thinking-mode models (DeepSeek V4 Pro, Qwen3 thinking,
         # GLM-4.5, etc.) return a `reasoning_content` field alongside
         # `content`. Multi-turn chats MUST round-trip this field back to
         # the API or it rejects with HTTP 400 ("The reasoning_content

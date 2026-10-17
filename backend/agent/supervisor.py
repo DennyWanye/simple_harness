@@ -96,7 +96,7 @@ _SYSTEM_PROMPT = (
 _JSON_FENCE_PATTERN = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL | re.IGNORECASE)
 # Thinking-mode models (deepseek-v4-pro, GLM-4.5, etc.) sometimes prefix
 # their JSON output with a ``<think>...</think>`` chain-of-thought block.
-# We strip those before parsing — same defensive cleanup the P4-S25 plan
+# We strip those before parsing — same defensive cleanup the plan
 # extractor uses.
 _THINK_BLOCK_PATTERN = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
 
@@ -277,7 +277,7 @@ class SupervisorAgent:
         # Call LLM
         action = await self._call_llm(snap, alert_id=alert_id)
 
-        # P5-S2 Phase 7: max_iterations rescue — bias toward concrete
+        # max_iterations rescue — bias toward concrete
         # nudge instead of supervisor's default conservatism. The LLM
         # already burned 50 turns; what we KNOW it needs to do is commit
         # to a finish, not ask the user permission to keep grinding.
@@ -338,7 +338,7 @@ class SupervisorAgent:
             },
         ]
         try:
-            # P5-S1 D fix: bumped max_tokens 512 → 2048. thinking-mode
+            # bumped max_tokens 512 → 2048. thinking-mode
             # models (deepseek-v4-pro etc.) can use 800-1500 tokens just
             # for the <think>...</think> chain-of-thought block before
             # they emit the JSON. 512 led to stop_reason='length' and
@@ -359,7 +359,7 @@ class SupervisorAgent:
                 self._timeout,
                 snapshot.get("session_id"),
             )
-            # P5-S1 D fix: do NOT silently fall back to wait. The user
+            # do NOT silently fall back to wait. The user
             # sees a stuck session and supervisor also failed; tell the
             # user explicitly so they can decide rather than left
             # wondering. Yellow severity = noticed but uncertain.
@@ -381,7 +381,7 @@ class SupervisorAgent:
                 exc,
                 exc_info=True,
             )
-            # P5-S1 D fix: same as above — surface "supervisor saw it
+            # same as above — surface "supervisor saw it
             # but couldn't diagnose" instead of silent wait. Often the
             # main agent's failures are network/provider issues that
             # ALSO affect supervisor's LLM call; the user needs to know.

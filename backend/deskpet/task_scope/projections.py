@@ -548,7 +548,7 @@ class TaskScopeProjectionStore:
             )
             roots = [dict(row) for row in await root_cursor.fetchall()]
             await root_cursor.close()
-        # S5b Task 3: open semantic-closure debt is projected explicitly (STATUS)
+        # open semantic-closure debt is projected explicitly (STATUS)
         # so a pending closure is never presented as a consistent state.
         try:
             # 按需导入：导入隔离

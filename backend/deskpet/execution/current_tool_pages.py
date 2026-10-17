@@ -107,8 +107,7 @@ SUMMARY_MIN_BYTES = 400
 PAGE_WORTH_MIN_BYTES = SUMMARY_MIN_BYTES * PAGE_SAVING_DIVISOR
 
 # --- 事件 AF：offset 必须自解释 -------------------------------------------
-# HM-TO-A6 短旅程 run12b 第 13 轮（证据 `.local-test-evidence/2026-09-09/
-# native-a6-run12b/primary-ui-9iyw1map/`）：模型对同一个 47 KB 的 read_file 结果
+# 实测：模型对同一个 47 KB 的 read_file 结果
 # 发了 16 次 ``context_page_in``，9 成 7 败，7 次全是 ``primary_page_offset_invalid``。
 # 没有一次越界，也没有一次是引用失效：正文是中文，48 272 B 里只有 21 227 个
 # （44 %）字节位置落在 UTF-8 码点边界上，而模型按 1024 / 8192 的等距步长猜 offset，
@@ -415,7 +414,7 @@ def _summary_excerpt(content):
 
 
 # --- 事件 AG：文本结果的确定性统计 ---------------------------------------
-# 第 12 次第 6 轮里用户要的只是一份 40 003 B 文件的「标题和总行数」。descriptor 有
+# 实测里用户要的只是一份 40 003 B 文件的「标题和总行数」。descriptor 有
 # ``content_bytes``，却没有任何一个字段能回答这两个问题——``content_bytes`` 是 JSON
 # 封套的字节数，既不是行数也不是字符数——于是模型只能顺着 ``next_offset`` 一页页
 # 翻，13 页之后整个 Run 被预算打死，用户一个字也没拿到。

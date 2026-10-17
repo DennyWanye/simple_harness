@@ -31,7 +31,7 @@ FACADE_CODES = {
     "integrity_error": "integrity_error",
     "refused": "sdk_refused",
 }
-#: 码原样透给界面与主对话；要给人看的话按码换成 Host 的一句（N3-27：被隔离任务的推进类写入被 SDK 拒绝）
+#: 码原样透给界面与主对话；要给人看的话按码换成 Host 的一句（被隔离任务的推进类写入被 SDK 拒绝）
 FACADE_MESSAGES = {"MISSION_RECOVERY_ISOLATED": RECOVERY_ISOLATED_NOTE}
 
 
@@ -296,7 +296,7 @@ class CommandMixin(OrchestrationServiceCore):
         self._refuse_new_work("编排循环异常，暂不接受改要求")
         self._refuse_secrets(request)
         changes = [dict(item) for item in request.get("changes") or () if isinstance(item, Mapping)]
-        # 第 2 批车道 L（H19）：``{op: "goal", statement}`` 换的是任务目标文本，不是一条要求，不按要求格式查
+        # ``{op: "goal", statement}`` 换的是任务目标文本，不是一条要求，不按要求格式查
         statements = [
             str(item.get("statement") or "").strip()
             for item in changes
@@ -418,7 +418,7 @@ class CommandMixin(OrchestrationServiceCore):
         """Notices the person has not acknowledged yet, newest last, with the Mission's
         current status (a notice names the final event; the status is read now)."""
 
-        # 第 2 批 U04：每次拉列表（前端重连后会重新拉）先从已读序号续读，断线期间丢的推送补回来
+        # 每次拉列表（前端重连后会重新拉）先从已读序号续读，断线期间丢的推送补回来
         self._notices.catch_up(self._orchestrator.store)
         rows = []
         for notice in self._notices.pending():

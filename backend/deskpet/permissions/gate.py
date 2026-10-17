@@ -87,13 +87,13 @@ class PermissionGate:
         # Session-scoped allow cache.
         # Key = (session_id, category, params_shape_hash)
         self._allow_cache: dict[tuple[str, str, str], bool] = {}
-        # P4-S21 #13: when True, every permission request is auto-allowed.
+        # when True, every permission request is auto-allowed.
         # Toggled from the Settings panel; default OFF (safe). Useful for
         # voice-driven sessions where the user can't easily reach the
         # PermissionPopup, or for power users who trust their own LLM
         # config.
         #
-        # P4-S25: now persisted to a small JSON file under the user data
+        # now persisted to a small JSON file under the user data
         # dir so the choice survives backend restart. (Originally stored
         # only in process state — caused user-confusion when popups
         # reappeared after a tauri dev restart even though they'd
@@ -102,7 +102,7 @@ class PermissionGate:
         # data dir lives.
         self.auto_mode: bool = False
         self._auto_mode_path: Path | None = None
-        # P4-S21 #13: caller-provided source tag, used by `_prompt` to
+        # caller-provided source tag, used by `_prompt` to
         # decide whether to also speak the prompt out loud. Voice pipeline
         # sets this to "voice" before running AgentLoop; main chat handler
         # leaves it as None ("text" implicit).
@@ -288,7 +288,7 @@ class PermissionGate:
             dangerous=category in {"shell", "skill_install"},
             session_id=session_id,
         )
-        # P4-S21 #13: voice-source prompt narration. If the request was
+        # voice-source prompt narration. If the request was
         # triggered by a voice utterance, we ALSO speak a short cue so
         # the user reaches for the mouse. Best effort: TTS errors are
         # logged once and the popup still goes ahead.

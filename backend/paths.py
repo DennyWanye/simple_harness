@@ -356,7 +356,7 @@ def model_root() -> Path:
     override = os.environ.get("DESKPET_MODEL_ROOT")
     if override:
         return Path(override)
-    # P3-S6: check the production (LocalAppData) path first, but only
+    # check the production (LocalAppData) path first, but only
     # if it has been provisioned. This lets dev mode keep resolving to
     # backend/models/ without forcing devs to populate LocalAppData.
     user_dir = user_models_dir()
@@ -429,7 +429,7 @@ def ensure_user_dirs() -> None:
     for d in (
         user_data_dir(),
         user_data_dir() / "data",
-        user_data_dir() / "workspace",  # P4-S22: MCP filesystem root
+        user_data_dir() / "workspace",  # MCP filesystem root
         user_log_dir(),
         user_cache_dir(),
         user_models_dir(),

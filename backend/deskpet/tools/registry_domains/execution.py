@@ -545,7 +545,7 @@ class ExecutionMixin(ToolRegistryCore):
                 )
                 return {"ok": False, "result": None, "error": "capability_stale"}
 
-        # WI-T5.1 v3：disabled_toolsets 双层挡 — strict 模式下 execute_tool
+        # disabled_toolsets 双层挡 — strict 模式下 execute_tool
         # 也拒绝（schema_only 仅 schemas() 过滤，execute_tool 仍可调）。
         # Context OS already evaluated the immutable strict snapshot above.
         if not context_os_on and self._tools_config_provider is not None:
@@ -614,7 +614,7 @@ class ExecutionMixin(ToolRegistryCore):
                 ),
             }
 
-        # P5-S2 Phase 3: per-(session, tool) circuit breaker. If the
+        # per-(session, tool) circuit breaker. If the
         # breaker is OPEN we synthesize a structured ``circuit_open``
         # envelope so the LLM sees a real tool_result with a hint and
         # alternatives — much better than silently retrying the broken
@@ -637,7 +637,7 @@ class ExecutionMixin(ToolRegistryCore):
                     "error": f"permission denied (source={decision.source})",
                 }
 
-        # P4-S22: merge per-session context into params. LLM-supplied
+        # merge per-session context into params. LLM-supplied
         # values win on key collision so the LLM can override (e.g.
         # explicitly passing ``path`` to glob the user's home dir
         # instead of the project root).
@@ -649,7 +649,7 @@ class ExecutionMixin(ToolRegistryCore):
         # schema and explicitly supplied by the model.
         _started_at = self._sanitize_mcp_arguments(merged_params, params, session_id, spec)
         try:
-            # WI-T5.1 v3 default_timeout_seconds：cfg 兜底 ToolSpec 未配 timeout
+            # default_timeout_seconds：cfg 兜底 ToolSpec 未配 timeout
             # 时的默认值。ToolSpec.timeout_seconds 默认 60.0，cfg 60.0 → 与
             # 现状字节级一致；用户在 [tools] default_timeout_seconds=30 时
             # 全局缩短未显式 override 的工具 timeout。
@@ -718,7 +718,7 @@ class ExecutionMixin(ToolRegistryCore):
             merged_params.update(self._session_context.get(session_id, {}))
         merged_params.update(dict(params or {}))
 
-        # P4-S22: run sync handlers in a thread executor. Some new
+        # run sync handlers in a thread executor. Some new
         # Code-mode tools (todo_write, agent) need to bridge sync→async
         # via ``asyncio.run_coroutine_threadsafe``, which deadlocks when
         # called from the main event-loop thread (the handler blocks
@@ -726,14 +726,13 @@ class ExecutionMixin(ToolRegistryCore):
         # blocked). Running every sync handler in a worker thread is
         # cheap and uniformly safe; handlers that are already async
         # (rare) get awaited directly.
-        # P5-S1: tool-level hard timeout. Default 60s; specific tools may
+        # tool-level hard timeout. Default 60s; specific tools may
         # override via ``ToolSpec.timeout_seconds`` (e.g. bash_run = 300s).
         # On timeout: return a uniform ``tool_timeout`` error envelope so
         # the agent loop carries on instead of dying with TimeoutError.
         #
-        # WI-T2.3 v3 P0 修：dispatch 真实开始时间。原 emit_receipt 处用了两次
-        # datetime.now() → duration_ms 永远 ~0μs（last-mile round2 P0-3）。
-        # 这里捕真 started_at，emit_receipt 时用它对账 ended_at。
+        # dispatch 真实开始时间：emit_receipt 时用它对账 ended_at 算 duration_ms，
+        # 不能在 emit_receipt 处连取两次 datetime.now()（那样 duration_ms 恒为 ~0）。
 
         _started_at = _dt.now(UTC)
         return _started_at
@@ -755,7 +754,7 @@ class ExecutionMixin(ToolRegistryCore):
                 return envelope_bad
         envelope = {"ok": True, "result": result, "error": None}
 
-        # WI-T1.1 last-mile: 信封包装（PRD §3 D1）。
+        # 信封包装（PRD §3 D1）。
         # 仅在 provider 已设 + cfg.tools.last_mile.artifact_envelope=True
         # 且 result 含可推断 path/url 时，追加 ``artifacts`` 键。
         # 字节级一致硬保证：flag OFF 时 envelope dict 不含 ``artifacts`` 键
@@ -780,7 +779,7 @@ class ExecutionMixin(ToolRegistryCore):
                     exc_info=True,
                 )
 
-        # WI-T2.2 P0 修：emit receipt（PRD §3 D5 + 二轮 P0-1 接电）。
+        # emit receipt（PRD §3 D5）。
         # ReceiptStore 在 main.py 启动期按 cfg.verifier.emit_receipts 构造并
         # set_receipt_store_provider 注入；未注入则 BC 路径不产 receipt。
         if self._receipt_store_provider is not None:
@@ -796,9 +795,8 @@ class ExecutionMixin(ToolRegistryCore):
                     # structured domain failure without raising, so receipts
                     # use the same outcome classifier as the breaker.
                     envelope_ok = _envelope_indicates_success(result)
-                    # WI-T2.3 v3 P0 修：用真实 _started_at（dispatch 开始时记
-                    # 录）+ now() 算 duration_ms。原 v2.1 用两次 now() 间隔仅
-                    # 微秒，导致 receipt duration_ms ~0 → p95 监控失效。
+                    # 用真实 _started_at（dispatch 开始时记录）+ now() 算 duration_ms；
+                    # 两次 now() 的间隔只有微秒，receipt duration_ms 会恒为 ~0，p95 监控失效。
                     receipt_args = {
                         k: v
                         for k, v in dict(merged_params or {}).items()
@@ -864,7 +862,7 @@ class ExecutionMixin(ToolRegistryCore):
                     exc_info=True,
                 )
 
-        # P5-S2 Phase 3: record success/failure to the breaker. The
+        # record success/failure to the breaker. The
         # handler returned a JSON string (typically an envelope itself)
         # — if THAT envelope says ``ok=false`` we count it as a failure
         # even though the Python call didn't raise.

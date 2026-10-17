@@ -131,7 +131,7 @@ async def _activate_human_memory_host_ports(
         def record(self, event: str, payload: Mapping[str, object]) -> None:
             logger.info(event, **dict(payload))
 
-    # S5b Task 3: lease-fenced semantic-closure fallback.  The Provider adapter
+    # lease-fenced semantic-closure fallback.  The Provider adapter
     # is rebuilt from the durable Run binding through the same resolver the SDK
     # Run used (no new client); the handler is the same one behind the
     # `task_scope_update` Tool; run facts come from the SDK runtime stack.

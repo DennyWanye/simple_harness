@@ -11,7 +11,7 @@ import logging
 logger = logging.getLogger("deskpet.orchestration.service")
 WORKSPACE_TOOLS = ("workspace_read_file", "workspace_write_file", "workspace_list")
 TERMINAL = frozenset({"COMPLETED", "FAILED", "CANCELLED"})
-#: 第 2 批 A02：保证通道根隔离时服务状态里的说明（原计划 §10.1：标记缺失 / 不符 → 隔离，只开非披露诊断）
+#: 保证通道根隔离时服务状态里的说明（原计划 §10.1：标记缺失 / 不符 → 隔离，只开非披露诊断）
 QUARANTINE_REASON = (
     "保证通道根已隔离（库标记不符或状态文件缺失）：只开非披露诊断，不派发任务，不自动写回"
 )
@@ -24,7 +24,7 @@ class OrchestrationRequestError(RuntimeError):
 
 
 #: 重启恢复第 3 步把"库与自己历史对不上"的任务单独隔离（SDK ``recovery_status().isolated_missions``）；
-#: 列表、详情、主对话都用这一句告诉人（第 2 批车道 R）。
+#: 列表、详情、主对话都用这一句告诉人。
 RECOVERY_ISOLATED_NOTE = "重启核对没通过，已隔离，不再推进；可以取消"
 
 

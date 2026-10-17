@@ -302,7 +302,7 @@ class StreamingToolMixin(OpenAICompatibleCore):
             httpx.WriteTimeout,
             httpx.PoolTimeout,
         )
-        # P4-S25 streaming retry: the relay / sealos proxies sometimes drop
+        # streaming retry: the relay / sealos proxies sometimes drop
         # the connection mid-stream (RemoteProtocolError "Server
         # disconnected without sending a response"). Two attempts
         # weren't enough — log captured a real run with both retries
@@ -326,7 +326,7 @@ class StreamingToolMixin(OpenAICompatibleCore):
         if state.flow == "stop":
             return
         assert state.last_exc is not None
-        # P5-S2 A2: include actionable diagnosis in the user-facing error.
+        # include actionable diagnosis in the user-facing error.
         # The base "LLM 调用失败 (ConnectError)" was opaque — users couldn't
         # tell apart "base_url wrong" from "upstream proxy dropped me".
         state._human_type = type(state.last_exc).__name__
@@ -434,7 +434,7 @@ class StreamingToolMixin(OpenAICompatibleCore):
     async def _fallback_to_nonstream(self, state: _StreamToolsCallState):
         """流式中途断开时退回非流式调用补出最终结果。"""
 
-        # P5-S2 D1: stream → non-stream same-provider fallback.
+        # stream → non-stream same-provider fallback.
         # Relay-style OpenAI-compatible proxies idle-timeout long SSE streams (>~30s) and reset
         # the connection. A single POST that returns the whole completion
         # in one body completes inside the idle window, so falling back to
@@ -546,7 +546,7 @@ class StreamingToolMixin(OpenAICompatibleCore):
                     state.body = exc.response.text[:600]
                 except Exception:  # noqa: BLE001 - 错误响应正文读不出来时不带
                     logger.debug("provider_error_body_read_failed", exc_info=True)
-                # P4-S24 mirror in streaming: 400 reasoning_content →
+                # mirror in streaming: 400 reasoning_content →
                 # strip stale assistant rows + retry once. Only retry
                 # if we haven't already stripped (avoid infinite loop
                 # if the retry also 400s for a different reason).
@@ -606,7 +606,7 @@ class StreamingToolMixin(OpenAICompatibleCore):
                 ) from exc
             except state.transient as exc:
                 state.last_exc = exc
-                # P5-S2 A2: classify transient errors so callers (supervisor,
+                # classify transient errors so callers (supervisor,
                 # UI, user) see a real cause instead of a bare "ConnectError".
                 # Phase tags map to actionable user advice:
                 #   pre-handshake   : DNS / TCP / TLS handshake fail → base_url
@@ -705,7 +705,7 @@ class StreamingToolMixin(OpenAICompatibleCore):
         state.final_model = self.model
         state.final_usage: dict = {}
         state.tool_batch_overflow = False
-        # P4-S25 diagnostic
+        # diagnostic
         state.sse_lines = 0
         state.delta_keys_seen: set[str] = set()
 
@@ -713,7 +713,7 @@ class StreamingToolMixin(OpenAICompatibleCore):
             async for _event in _phase:
                 yield _event
 
-        # P4-S25 fix-2: post-loop manual SSE parser.
+        # post-loop manual SSE parser.
         #
         # Root cause discovered 2026-05-09: httpx.aiter_lines() against
         # your-llm-relay.example.com sometimes returns the ENTIRE SSE body as a single
@@ -734,7 +734,7 @@ class StreamingToolMixin(OpenAICompatibleCore):
             async for _event in _phase:
                 yield _event
 
-        # P5-S2 Phase 1 — diagnostic dump for every accumulated tool_call
+        # diagnostic dump for every accumulated tool_call
         # buffer. the relay / sealos sometimes truncate the SSE mid-frame
         # leaving us with half-baked args (e.g. `{"path": "fo`); without
         # this log we can't tell at debug-time whether the model emitted
@@ -761,7 +761,7 @@ class StreamingToolMixin(OpenAICompatibleCore):
 
         # Assemble tool_calls from buffers.
         #
-        # P5-S2 (2026-05-11) fix: when the model emits malformed JSON for
+        # when the model emits malformed JSON for
         # tool_call.arguments (deepseek-v4-pro on long markdown content
         # frequently mis-escapes \n / " / \\), we used to silently swallow
         # the JSONDecodeError and pass `args = {}` to the dispatcher. The
@@ -840,7 +840,7 @@ class StreamingToolMixin(OpenAICompatibleCore):
                 if state.response.status_code >= 400:
                     await state.response.aread()
                 state.response.raise_for_status()
-                # P4-S25 fix: the relay / sealos / DashScope sometimes ignore
+                # the relay / sealos / DashScope sometimes ignore
                 # `stream: True` for thinking-mode models and return a
                 # plain JSON body (Content-Type: application/json) holding
                 # the complete response. aiter_lines() yields ONE line of
@@ -854,7 +854,7 @@ class StreamingToolMixin(OpenAICompatibleCore):
                 async with aclosing(self._handle_non_sse_response(state)) as _phase:
                     async for _event in _phase:
                         yield _event
-                # P4-S25 fix-2: capture every raw line so we can fall
+                # capture every raw line so we can fall
                 # back to "treat the whole body as JSON" if the SSE loop
                 # produces nothing useful. Some the relay responses come
                 # back with Content-Type: text/event-stream but the body
@@ -963,7 +963,7 @@ class StreamingToolMixin(OpenAICompatibleCore):
                 continue
             state.delta = state.choices[0].get("delta") or {}
             state.delta_keys_seen.update(state.delta.keys())
-            # P4-S25 diagnostic: some non-conforming proxies put
+            # some non-conforming proxies put
             # the full message in `choices[0].message` (only at
             # the end) instead of streaming via `delta`. Capture
             # that as a fallback so we don't end up with empty

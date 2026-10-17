@@ -638,7 +638,7 @@ def _handle_generate_image_sync(args: dict[str, Any], task_id: str = "") -> str:
         log.debug("handle_generate_image_sync_save_image_failed", exc_info=True)
         return _err("save failed", f"写入 workspace 失败：{exc}", error_kind="unknown")
     opened = _open_file(out)
-    # WI-T1.2 D1：显式 emit artifacts[]（kind=image 用于前端区分文件 vs 图像）
+    # 显式 emit artifacts[]（kind=image 用于前端区分文件 vs 图像）
     # 注：audit follow-up — _open_file 已自动打开图片；当
     # tools.last_mile.frontend_artifact_card=true 时建议禁用 _open_file 避免双重打开
     # （留作 follow-up），本期保 BC 不动 opened 行为。

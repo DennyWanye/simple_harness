@@ -494,7 +494,7 @@ class EffectGate:
 
 
 # ---------------------------------------------------------------------------
-# Objective event mapping (S5b Task 2, design-freeze §2) — deterministic:
+# Objective event mapping — deterministic:
 # tool name + exit code + registered test-runner allowlist; no keywords, no
 # regex.  Every PROJECT_EFFECT tool (§1) has exactly one rule (exhaustiveness
 # is asserted by tests/sdk_adapters/test_objective_events.py).

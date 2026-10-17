@@ -32,7 +32,7 @@ class CloudConfigRequest(BaseModel):
     model: str
     api_key: str | None = None  # absent or empty = keep current key
     strategy: str | None = None  # absent = keep current strategy
-    # WI-R2 (beta-100 relay): when False, the api_key is applied to the
+    # when False, the api_key is applied to the
     # live in-memory provider but NEVER written to llm_runtime.json.
     # The relay edition uses this for the rotating `tsk_xxx` device key
     # — it must not be persisted in plaintext. Defaults True so manual
@@ -63,7 +63,7 @@ class CloudConfigRequest(BaseModel):
     @field_validator("api_key")
     @classmethod
     def validate_api_key(cls, v: str | None) -> str | None:
-        # P4-S20-LLM-Unified: 接受短占位符如 "ollama"（本地 Ollama 不验 key）
+        # 接受短占位符如 "ollama"（本地 Ollama 不验 key）
         # 同时排除常见的 placeholder 值（避免被误当真 key 入库）。
         if v is None:
             return None

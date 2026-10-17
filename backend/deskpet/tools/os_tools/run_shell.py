@@ -62,7 +62,7 @@ from ..context_adapter import legacy_execution_context
 logger = logging.getLogger(__name__)
 
 
-# P5-S2 Phase 0: sensor-style error responses include hint + examples
+# sensor-style error responses include hint + examples
 # so the LLM can self-correct without supervisor escalation.
 _EXAMPLES = [
     {"command": "echo hello"},

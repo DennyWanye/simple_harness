@@ -41,7 +41,7 @@ class SileroVAD:
         if self._model is not None:
             return
         logger.info("loading silero-vad v5")
-        # P3-S4: use the PyPI `silero-vad` package instead of
+        # use the PyPI `silero-vad` package instead of
         # `torch.hub.load("snakers4/silero-vad", ...)`. The hub path
         # needs network + a writable `~/.cache/torch/hub/` which is a
         # non-starter inside a frozen PyInstaller exe. The PyPI package

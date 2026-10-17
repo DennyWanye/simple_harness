@@ -28,7 +28,7 @@ class ProviderBindingMixin(SessionDBCore):
 
     __slots__ = ()
 
-    # ---- P5-S2 code_session_provider binding -------------------------
+    # ---- code_session_provider binding -------------------------
 
     async def get_session_provider_binding(self, session_id: str) -> dict[str, Any]:
         """Return the provider/model override for an ordinary session.

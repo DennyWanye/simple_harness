@@ -58,7 +58,7 @@ DUTY_FIELDS = (
     "settled_tokens",
     "unknown_usage_attempts",
 )
-#: 每个义务下逐步骤的花费（TaskGraph 补全第六批），同样不含 ``label``。
+#: 每个义务下逐步骤的花费，同样不含 ``label``。
 STEP_FIELDS = (
     "task_id",
     "branches",
@@ -223,7 +223,7 @@ def _attribution(value: object, snapshot: Mapping[str, Any]) -> dict[str, Any]:
     }
     return {
         **_pick(source, ("version", "mission_id", "mission_status", "success_path")),
-        # attribution-v2（第 2 批车道 H，T10）：根结论贡献链。行里全是编号与布尔，没有自由文本。
+        # attribution-v2：根结论贡献链。行里全是编号与布尔，没有自由文本。
         "goal_chain": [
             {
                 **_pick(row, ("resolution_id", "goal_task_id", "obligation_id", "is_mission_root")),
@@ -495,13 +495,13 @@ def build_diagnostics(
     replay = _replay(verify_mission(store, mission_id))
     report = {
         "mission_id": mission_id,
-        # 全业务重放 v3：每张业务表能否由事件重建、与库里一致否（HTN 补齐阶段 G 取代 v2）
+        # 全业务重放 v3：每张业务表能否由事件重建、与库里一致否
         "replay": replay,
         "failure_timeline": _timeline(failure_timeline(store, mission_id)),
         "attribution": attribution_report,
-        # 指标统计的唯一入口（HTN 补齐阶段 B）。编排只记 token，不记金额。
+        # 指标统计的唯一入口。编排只记 token，不记金额。
         "metrics": metrics(store, mission_id),
-        # 推后第 3 批 U05：全库的任务成功率与每成功任务成本——只有按结局的计数与 token 合计，
+        # 全库的任务成功率与每成功任务成本——只有按结局的计数与 token 合计，
         # 不含别的任务的编号或任何内容
         "deployment_outcomes": deployment_outcomes(store),
         "verification": _verification(snapshot),

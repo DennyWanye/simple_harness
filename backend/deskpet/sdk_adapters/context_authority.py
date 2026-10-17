@@ -384,7 +384,7 @@ class ContextRouteLedgerStore:
 
         self._db_path = Path(db_path)
         self._clock = clock or _time.time
-        # S5b Task 2 (design-freeze §3): state.db facts are reserved + imported
+        # state.db facts are reserved + imported
         # as Harness evidence inside this ledger's own write transaction.
         self._evidence_ingress = evidence_ingress
 
@@ -1379,11 +1379,11 @@ class ProductRunContextAuthority:
         self._exposure_resolver = exposure_resolver
         self._ledger = ledger
         self._reconcile = reconcile
-        # S5b Task 3: ``async (run_id) -> Message | None`` — the protected
+        # ``async (run_id) -> Message | None`` — the protected
         # "closure required" instruction when the Run's admission scope is
         # dirty or has pending receipts.  Text only; never Tool visibility.
         self._closure_reader = closure_reader
-        # S5b Task 6 (AC-3⑥ / A6, OOS-MULTI-ROOT-SELECTION): the S4 binding
+        # the binding
         # store lets the snapshot hide PROJECT_EFFECT Tools when the routed
         # scope's exact binding set holds ≥2 roots — the multi-root selection
         # protocol is out of scope, so a write there is a whole-Run fault
@@ -1587,11 +1587,8 @@ class ProductRunContextAuthority:
         # Step 4 (Incident Z / 事件 AG): wrap up instead of walking into a turn
         # that cannot exist.
         #
-        # 事件 AG 之前这一步整个嵌在上面那个 ``headroom < 0`` 分支里，也就是「只有
-        # 有界计划已经装不下时才考虑收尾」。第 12 次第 6 轮的证据显示这道门开得太
-        # 晚：第 14–18 轮的最终余量分别是 1078 / 95 / 2316 / 1105 / 373——四轮都在
-        # 一个 react 步（1200）以下，请求却都装得下，于是这个分支根本不进，模型被
-        # 照常邀请「再翻一页」，第 19 轮就以超出 450 token 打死了整个 Run。
+        # 收尾不能只在「有界计划已经装不下」时才考虑：实测连续几轮的最终余量都在一个 react 步
+        # （1200）以下、请求却还装得下，这时模型仍被邀请「再翻一页」，下一轮就超出预算打死整个 Run。
         #
         # 判据因此改成：**在所有降级步骤跑完之后**，只要计划仍然装不下，或者余量
         # 已经不够下一个 react 步，就收尾。装不下的那一支照旧动用 open group 的

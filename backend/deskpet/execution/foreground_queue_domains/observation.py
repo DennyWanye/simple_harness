@@ -34,7 +34,7 @@ class EffectBoundary(StrEnum):
     SDK_START = "sdk_start"
     SDK_CONTROL = "sdk_control"
     TOOL = "tool"
-    # S5b Task 3: the post-turn closure Provider call (after the SDK terminal,
+    # the post-turn closure Provider call (after the SDK terminal,
     # before the Host terminal) is an external side effect of the current lease
     # owner only; same admitted states as TOOL.
     CLOSURE = "closure"
@@ -223,7 +223,7 @@ class ObservationMixin(ForegroundQueueCore):
                     )
                     if gate is None:
                         raise ForegroundQueueError("foreground_terminal_gate_pending")
-                    # S5b Task 3 — third watermark (semantic closure): every material
+                    # third watermark (semantic closure): every material
                     # event of the admission scope must be covered by a closing
                     # receipt, or this Run must have recorded a `pending` receipt.
                     # Applies to COMPLETED / FAILED / CANCELLED / STOPPED alike.

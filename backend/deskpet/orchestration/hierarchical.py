@@ -82,7 +82,7 @@ def planning_world(loop: Any, mission: Any) -> Any:
     # 根目标 0 层，第一层子目标的做法里还能放第二层子目标，第二层只能放普通步骤；层数上限
     # 就是这里注册了几层，由 SDK 的注册检查保证，Host 不另写计数。子目标声明一个 delivery 输出
     # 端口：一步执行时只铺通过输入端口接进来的上游产出，后面的步骤要用子目标里做出来的文件，
-    # 就接这个端口——SDK 把它对到子目标收尾步骤的 delivery（真机第 5 局：不声明端口时最后一步
+    # 就接这个端口——SDK 把它对到子目标收尾步骤的 delivery（不声明端口时最后一步
     # 看不到子目标下写出的文件）。
     levels = {"desktop.user-goal": 0, "desktop.sub-goal-1": 1, "desktop.sub-goal-2": 2}
     for name, form in (

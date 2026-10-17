@@ -105,7 +105,7 @@ class OpenAICompatibleCore:
         # Default on; caller (provider registry) passes the config value.
         # False = byte-for-byte legacy passthrough (demo rollback).
         self.sanitize_inline_cot_dsml = sanitize_inline_cot_dsml
-        # P4-S25 / P5-S2: timeout is a tuple-style budget instead of a single
+        # timeout is a tuple-style budget instead of a single
         # number:
         #   * connect = 10s — TCP + TLS handshake. Bumped 5→10s on 2026-05-11
         #                     after seeing real ConnectTimeout failures while
@@ -126,7 +126,7 @@ class OpenAICompatibleCore:
         #   * write   = 5s  — POST body is small; anything past this is dead.
         #   * pool    = 5s  — connection-pool acquisition.
         # Caller can still pass a scalar/Timeout; we honour that verbatim.
-        # P5-S2 F1 (2026-05-12) — bumped read 60→120 and write 5→10 per
+        # bumped read 60→120 and write 5→10 per
         # the relay's integration guide (docs/中转站建议.md). the relay's PR #27
         # ships a 15s SSE keep-alive comment that resets read timers on
         # every hop, so a 120s read budget is generous + safe and covers
@@ -248,7 +248,7 @@ class OpenAICompatibleCore:
         headers.update(self.extra_headers)
 
         headers.update(trusted_provider_headers(self.base_url))
-        # P5-S2 F1 (2026-05-12) — the relay integration guide root cause for
+        # the relay integration guide root cause for
         # "succeeds then next request ConnectError" (docs/中转站建议.md
         # Failure Mode 2):
         #

@@ -43,8 +43,8 @@ class ComponentContext:
     # Injected dependencies — may be None when unit tests swap in fakes.
     memory_manager: Any = None
     tool_registry: Any = None
-    skill_registry: Any = None  # P4-S10 wire-in; None-safe for S7.
-    mcp_manager: Any = None  # P4-S9 wire-in; None-safe for S7.
+    skill_registry: Any = None  # 可为 None
+    mcp_manager: Any = None  # 可为 None
     config: dict[str, Any] = field(default_factory=dict)
     # Wall-clock deadline for slow components; assembler enforces timeout
     # at the registry level but components can pre-cut work if very

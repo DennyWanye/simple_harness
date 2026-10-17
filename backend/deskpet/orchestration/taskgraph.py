@@ -186,7 +186,7 @@ def operate_taskgraph(service: Any, verb: str, request: Mapping[str, Any]) -> di
                 reason=request["reason"],
             )
     except StoreError as error:  # StoreConflict is a StoreError
-        # 只读异常上的类型码，不从文字里切（第 1 批 T02）；没带码的拒绝如实说"原因未具名"并记日志。
+        # 只读异常上的类型码，不从文字里切；没带码的拒绝如实说"原因未具名"并记日志。
         code = getattr(error, "code", None)
         if not isinstance(code, str) or not code:
             logger.warning(
