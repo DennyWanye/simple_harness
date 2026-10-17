@@ -3,6 +3,7 @@
 
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { useDepsChanged } from "../hooks/useDepsChanged";
+import { sendWhenConnected } from "../ws/sendWhenConnected";
 import { Icon } from "./Icon";
 import { ReplayDialog, type ReplayForkInput } from "./workflows/ReplayDialog";
 import { RunInspectorPanel, type InspectorView } from "./workflows/RunInspectorPanel";
@@ -108,18 +109,22 @@ export function ContextTracePanel({ open, onClose, getChannel }: Props) {
   // 只记请求号并发出，不写状态（effect 与下面的 refresh* 共用）。
   const sendRunsList = useCallback(() => {
     const channel = getChannel();
-    if (!channel) return;
+    if (!channel) return false;
     const requestId = nextRequestId("runs");
     listRequestRef.current = requestId;
-    channel.send({ type: "workflow_runs_list", request_id: requestId, payload: { limit: 100 } });
+    return channel.send({
+      type: "workflow_runs_list",
+      request_id: requestId,
+      payload: { limit: 100 },
+    });
   }, [getChannel]);
   const sendRunDetail = useCallback(
     (target: string) => {
       const channel = getChannel();
-      if (!channel) return;
+      if (!channel) return false;
       const requestId = nextRequestId("detail");
       detailRequestRef.current = requestId;
-      channel.send({
+      return channel.send({
         type: "workflow_run_detail",
         request_id: requestId,
         payload: { run_id: target },
@@ -165,13 +170,18 @@ export function ContextTracePanel({ open, onClose, getChannel }: Props) {
     setLoadError(hasChannel ? null : "控制通道尚未连接");
   }
 
+  // 没连上就等连上再发（换通道时新通道还没连），等待期间保持读取中，不报错。
   useEffect(() => {
-    if (open) sendRunsList();
-  }, [open, sendRunsList]);
+    const channel = getChannel();
+    if (!open || !channel) return;
+    return sendWhenConnected(channel, sendRunsList);
+  }, [getChannel, open, sendRunsList]);
 
   useEffect(() => {
-    if (open && selectedRunId) sendRunDetail(selectedRunId);
-  }, [open, sendRunDetail, selectedRunId]);
+    const channel = getChannel();
+    if (!open || !selectedRunId || !channel) return;
+    return sendWhenConnected(channel, () => sendRunDetail(selectedRunId));
+  }, [getChannel, open, sendRunDetail, selectedRunId]);
 
   const beginAction = (action: PendingAction) => {
     if (pendingRef.current) return false;
@@ -524,8 +534,7 @@ function LegacyContextTrace({
   const sendList = useCallback(() => {
     const channel = getChannel();
     if (!channel) return false;
-    channel.send({ type: "decisions_list", payload: { limit } });
-    return true;
+    return channel.send({ type: "decisions_list", payload: { limit } });
   }, [getChannel, limit]);
   const refresh = () => {
     if (getChannel()) setLoading(true);
@@ -550,8 +559,12 @@ function LegacyContextTrace({
       setReason(payload.reason ?? null);
       setLoading(false);
     });
-    sendList();
-    return unsubscribe;
+    // 没连上就等连上再发，等待期间保持读取中。
+    const cancelRead = sendWhenConnected(channel, sendList);
+    return () => {
+      unsubscribe();
+      cancelRead();
+    };
   }, [active, getChannel, sendList]);
   const ordered = useMemo(
     () => [...decisions].sort((a, b) => cmpTimestamp(b.timestamp, a.timestamp)),

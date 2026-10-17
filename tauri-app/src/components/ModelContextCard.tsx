@@ -3,6 +3,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ControlChannel } from "../ws/ControlChannel";
+import { sendWhenConnected } from "../ws/sendWhenConnected";
 import type {
   ContextCompactionGetResponse,
   ContextCompactionSetAck,
@@ -132,14 +133,21 @@ export function ModelContextCard({ getChannel }: Props) {
         }
       }
     });
-    if (selectedModel.current) requestGet(selectedModel.current);
-    // Ask the active provider catalog before choosing the initial model.
-    ch.send({ type: "models_list" } as never);
-    ch.send(buildContextCompactionGetMessage());
-    return unsub;
-    // model 变化时重新拉取在 onModelChange 里手动触发，这里只挂一次。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [getChannel]);
+    // 挂载（或换通道）读一次：没连上就等连上再发，等待期间保留现有画面。
+    // model 变化时重新拉取在 onModelChange 里手动触发。
+    const cancelRead = sendWhenConnected(ch, () => {
+      if (selectedModel.current && !ch.send(buildModelContextGetMessage(selectedModel.current)))
+        return false;
+      // Ask the active provider catalog before choosing the initial model.
+      if (!ch.send({ type: "models_list" } as never)) return false;
+      ch.send(buildContextCompactionGetMessage());
+      return true;
+    });
+    return () => {
+      unsub();
+      cancelRead();
+    };
+  }, [getChannel, requestGet]);
 
   const onModelChange = useCallback(
     (m: string) => {

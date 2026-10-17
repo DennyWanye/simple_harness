@@ -992,30 +992,40 @@ export function PublishDirSection({ getChannel }: { getChannel: () => ControlCha
   const [confirmDialog, ask] = useConfirm();
   const [data, setData] = useState<PublishDirData | null>(null);
   const [path, setPath] = useState("");
-  const [busy, setBusy] = useState(false);
+  // 有通道就在挂载时读一次，所以首次渲染就是读取中。
+  const [busy, setBusy] = useState(() => getChannel() !== null);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
   const pending = useRef<string | null>(null);
   const counter = useRef(0);
   const filled = useRef(false);
 
-  const send = useCallback(
+  // 只发请求，不写状态；返回是否发出。
+  const sendRequest = useCallback(
     (next?: string) => {
       const ch = getChannel();
-      if (!ch) {
+      if (!ch) return false;
+      const id = `publish-dir-${Date.now()}-${++counter.current}`;
+      pending.current = id;
+      return ch.send(buildPublishDirMessage(id, next));
+    },
+    [getChannel],
+  );
+  // 用户操作：先设处理中，发不出去就报错。
+  const send = useCallback(
+    (next?: string) => {
+      if (!getChannel()) {
         setError("连接不可用");
         return;
       }
-      const id = `publish-dir-${Date.now()}-${++counter.current}`;
-      pending.current = id;
       setBusy(true);
       setError(null);
-      if (!ch.send(buildPublishDirMessage(id, next))) {
+      if (!sendRequest(next)) {
         setBusy(false);
         setError("连接不可用，请求未发送");
       }
     },
-    [getChannel],
+    [getChannel, sendRequest],
   );
 
   useEffect(() => {
@@ -1051,12 +1061,13 @@ export function PublishDirSection({ getChannel }: { getChannel: () => ControlCha
         setDone(payload.data.configured ? "已授权，新建带发布的任务可以用了" : "已撤销授权");
       }
     });
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- the first read starts on mount (sets "读取中…")
-    send();
+    // 挂载（或换通道）读一次：没连上就等连上再发，等待期间不报错。
+    const cancelRead = sendWhenConnected(ch, () => sendRequest());
     return () => {
       off();
+      cancelRead();
     };
-  }, [getChannel, send]);
+  }, [getChannel, sendRequest]);
 
   const pick = useCallback(async () => {
     try {
@@ -1237,29 +1248,39 @@ export function SkillCatalogueSection({ getChannel }: { getChannel: () => Contro
   const [confirmDialog, ask] = useConfirm();
   const [data, setData] = useState<SkillCatalogueData | null>(null);
   const [path, setPath] = useState("");
-  const [busy, setBusy] = useState(false);
+  // 有通道就在挂载时读一次目录，所以首次渲染就是读取中。
+  const [busy, setBusy] = useState(() => getChannel() !== null);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
   const pending = useRef<string | null>(null);
   const counter = useRef(0);
 
-  const send = useCallback(
+  // 只发请求，不写状态；返回是否发出。
+  const sendRequest = useCallback(
     (type: string, payload: Record<string, unknown>) => {
       const ch = getChannel();
-      if (!ch) {
+      if (!ch) return false;
+      const id = `skill-${Date.now()}-${++counter.current}`;
+      pending.current = id;
+      return ch.send({ type, request_id: id, payload });
+    },
+    [getChannel],
+  );
+  // 用户操作：先设处理中，发不出去就报错。
+  const send = useCallback(
+    (type: string, payload: Record<string, unknown>) => {
+      if (!getChannel()) {
         setError("连接不可用");
         return;
       }
-      const id = `skill-${Date.now()}-${++counter.current}`;
-      pending.current = id;
       setBusy(true);
       setError(null);
-      if (!ch.send({ type, request_id: id, payload })) {
+      if (!sendRequest(type, payload)) {
         setBusy(false);
         setError("连接不可用，请求未发送");
       }
     },
-    [getChannel],
+    [getChannel, sendRequest],
   );
 
   useEffect(() => {
@@ -1299,12 +1320,15 @@ export function SkillCatalogueSection({ getChannel }: { getChannel: () => Contro
       }
       setDone(SKILL_DONE[msg.type] ?? "已完成，各档位同步生效");
     });
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- the first read starts on mount (sets "读取中…")
-    send("orchestration_skill_catalogue", {});
+    // 挂载（或换通道）读一次目录：没连上就等连上再发，等待期间不报错。
+    const cancelRead = sendWhenConnected(ch, () =>
+      sendRequest("orchestration_skill_catalogue", {}),
+    );
     return () => {
       off();
+      cancelRead();
     };
-  }, [getChannel, send]);
+  }, [getChannel, sendRequest]);
 
   const act = useCallback(
     async (row: SkillCatalogueRow, action: "SUSPEND" | "RESUME" | "RETIRE") => {
