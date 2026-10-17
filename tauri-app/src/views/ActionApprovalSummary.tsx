@@ -6,22 +6,15 @@
  */
 import React from "react";
 
-import { tokens } from "../theme/tokens";
-import { dark } from "../theme/components";
 import { asRecord as record, asText as text } from "../stores/missionsStore";
 import { actionHeadline } from "./actionHeadline";
+import "./ActionApprovalSummary.styles.css";
 
 /** 阶段 B 裁决第 1 类：上一次为什么没生效（系统按原内容重交时卡片上写明）。 */
 const PREVIOUS_OUTCOME: Record<string, string> = {
   service_refused: "发布服务拒绝了",
   not_delivered: "请求没有送到发布服务",
   human_ruled_not_applied: "你裁定它没有生效",
-};
-
-const note: React.CSSProperties = {
-  marginLeft: tokens.space.xs,
-  color: dark.textMuted,
-  fontSize: tokens.text.xs.size,
 };
 
 export const ActionApprovalSummary: React.FC<{ summary: unknown; action: unknown }> = ({
@@ -34,16 +27,16 @@ export const ActionApprovalSummary: React.FC<{ summary: unknown; action: unknown
     const reason = record(record(action).reason);
     return (
       <>
-        <div style={{ fontWeight: tokens.weight.semibold }}>
+        <div className="sh-ActionApprovalSummary-1">
           动作审批：{written.text}
-          <span style={note}>
+          <span className="sh-ActionApprovalSummary-2">
             {text(written.source) === "system" ? "（系统生成）" : "（模型生成，未核实）"}
           </span>
         </div>
         {text(reason.text) ? (
           <div>
             理由：{text(reason.text)}
-            <span style={note}>
+            <span className="sh-ActionApprovalSummary-2">
               {text(reason.source) === "system" ? "（系统生成）" : "（模型生成，未核实）"}
             </span>
           </div>
@@ -59,13 +52,13 @@ export const ActionApprovalSummary: React.FC<{ summary: unknown; action: unknown
   const previousOutcome = PREVIOUS_OUTCOME[text(previous.outcome)];
   return (
     <>
-      <div style={{ fontWeight: tokens.weight.semibold }}>
-        动作审批：{actionHeadline(summary, action)}
-      </div>
+      <div className="sh-ActionApprovalSummary-1">动作审批：{actionHeadline(summary, action)}</div>
       {reasonText ? (
         <div>
           理由：{reasonText}
-          <span style={note}>{system ? "（系统生成）" : "（模型生成，未核实）"}</span>
+          <span className="sh-ActionApprovalSummary-2">
+            {system ? "（系统生成）" : "（模型生成，未核实）"}
+          </span>
         </div>
       ) : null}
       {previousOutcome ? (

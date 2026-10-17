@@ -1,0 +1,191 @@
+/* 生成文件，不要手改：src/views/MissionDetailPanel.tsx 里静态内联样式的等价类（9I）。
+   重新生成：node scripts/code_quality/ts_inline_to_class.mjs convert src/views/MissionDetailPanel.tsx */
+
+.sh-MissionDetailPanel-1 {
+  background: var(--sh-card, #1C2026);
+  border: 1px solid var(--sh-hairline, rgba(255,255,255,0.075));
+  border-radius: var(--sh-radius-md);
+  padding: var(--sh-space-md);
+}
+
+.sh-MissionDetailPanel-2 {
+  font-size: var(--sh-text-lg-size);
+  font-weight: var(--sh-weight-semibold);
+}
+
+.sh-MissionDetailPanel-3 {
+  color: var(--sh-text-2, #A7A29A);
+}
+
+.sh-MissionDetailPanel-4 {
+  color: var(--sh-text-2, #A7A29A);
+  font-size: var(--sh-text-xs-size);
+}
+
+.sh-MissionDetailPanel-5 {
+  margin-top: var(--sh-space-sm);
+}
+
+.sh-MissionDetailPanel-6 {
+  height: var(--sh-control-height);
+  padding: 0 12px;
+  border-radius: var(--sh-radius-md);
+  border: 1px solid var(--sh-hairline, rgba(255,255,255,0.075));
+  background: var(--sh-surface, #15181C);
+  color: var(--sh-text, #E8E5DF);
+  font-family: var(--sh-font-ui);
+  font-size: var(--sh-text-base-size);
+  cursor: pointer;
+  margin-top: var(--sh-space-sm);
+}
+
+.sh-MissionDetailPanel-7 {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+
+.sh-MissionDetailPanel-8 {
+  height: var(--sh-control-height);
+  padding: 0 12px;
+  border-radius: var(--sh-radius-md);
+  border: 1px solid var(--sh-hairline, rgba(255,255,255,0.075));
+  background: var(--sh-surface, #15181C);
+  color: var(--sh-text, #E8E5DF);
+  font-family: var(--sh-font-ui);
+  font-size: var(--sh-text-base-size);
+  cursor: pointer;
+}
+
+.sh-MissionDetailPanel-9 {
+  flex-basis: 100%;
+}
+
+.sh-MissionDetailPanel-10 {
+  background: var(--sh-card, #1C2026);
+  border: 1px solid var(--sh-hairline, rgba(255,255,255,0.075));
+  border-radius: var(--sh-radius-md);
+  padding: var(--sh-space-md);
+  border-color: var(--sh-warning, #D9A441);
+}
+
+.sh-MissionDetailPanel-11 {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 64px;
+  padding: var(--sh-space-sm);
+  border-radius: var(--sh-radius-md);
+  border: 1px solid var(--sh-hairline, rgba(255,255,255,0.075));
+  background: var(--sh-card, #1C2026);
+  color: var(--sh-text, #E8E5DF);
+  font-family: var(--sh-font-ui);
+  font-size: var(--sh-text-base-size);
+}
+
+.sh-MissionDetailPanel-12 {
+  display: flex;
+  gap: var(--sh-space-sm);
+}
+
+.sh-MissionDetailPanel-13 {
+  background: var(--sh-card, #1C2026);
+  border: 1px solid var(--sh-hairline, rgba(255,255,255,0.075));
+  border-radius: var(--sh-radius-md);
+  padding: var(--sh-space-md);
+  min-width: 0;
+  overflow-wrap: anywhere;
+  border-color: var(--sh-accent-border, rgba(127,178,170,0.34));
+}
+
+.sh-MissionDetailPanel-14 {
+  font-weight: var(--sh-weight-semibold);
+}
+
+.sh-MissionDetailPanel-15 {
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.sh-MissionDetailPanel-16 {
+  display: flex;
+  gap: var(--sh-space-sm);
+  flex-wrap: wrap;
+}
+
+.sh-MissionDetailPanel-17 {
+  color: var(--sh-text-2, #A7A29A);
+  font-size: var(--sh-text-xs-size);
+  margin-top: var(--sh-space-xs);
+}
+
+.sh-MissionDetailPanel-18 {
+  display: flex;
+  gap: var(--sh-space-xs);
+}
+
+.sh-MissionDetailPanel-19 {
+  cursor: pointer;
+  color: var(--sh-text-2, #A7A29A);
+}
+
+.sh-MissionDetailPanel-20 {
+  overflow-wrap: anywhere;
+}
+
+.sh-MissionDetailPanel-21 {
+  display: flex;
+  gap: var(--sh-space-xs);
+  flex-wrap: wrap;
+}
+
+.sh-MissionDetailPanel-22 {
+  height: auto;
+  padding: 2px 8px;
+  border-radius: var(--sh-radius-md);
+  border: 1px solid var(--sh-hairline, rgba(255,255,255,0.075));
+  background: var(--sh-surface, #15181C);
+  color: var(--sh-text-2, #A7A29A);
+  font-family: var(--sh-font-ui);
+  font-size: var(--sh-text-base-size);
+  cursor: pointer;
+  margin-top: var(--sh-space-xs);
+}
+
+.sh-MissionDetailPanel-23 {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.sh-MissionDetailPanel-24 {
+  min-width: 0;
+}
+
+.sh-MissionDetailPanel-25 {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 64px;
+  padding: var(--sh-space-sm);
+  border-radius: var(--sh-radius-md);
+  border: 1px solid var(--sh-hairline, rgba(255,255,255,0.075));
+  background: var(--sh-card, #1C2026);
+  color: var(--sh-text, #E8E5DF);
+  font-family: var(--sh-font-ui);
+  font-size: var(--sh-text-base-size);
+  margin-top: var(--sh-space-sm);
+}
+
+.sh-MissionDetailPanel-26 {
+  height: var(--sh-control-height);
+  padding: 0 12px;
+  border-radius: var(--sh-radius-md);
+  border: 1px solid var(--sh-hairline, rgba(255,255,255,0.075));
+  background: var(--sh-surface, #15181C);
+  color: var(--sh-text, #E8E5DF);
+  font-family: var(--sh-font-ui);
+  font-size: var(--sh-text-base-size);
+  cursor: pointer;
+  margin-left: var(--sh-space-sm);
+}

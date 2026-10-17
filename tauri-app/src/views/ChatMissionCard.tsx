@@ -7,8 +7,6 @@
  */
 import React, { useCallback, useContext, useEffect, useRef, useState } from "react";
 
-import { tokens } from "../theme/tokens";
-import { dark } from "../theme/components";
 import {
   asList as list,
   asRecord as record,
@@ -20,6 +18,7 @@ import { MissionsChannelContext } from "./chatMission";
 import { OperationWorkspace } from "./OperationWorkspace";
 import { PlanningQuestions } from "./PlanningQuestions";
 import { PROTOCOL_ERROR, STALE_NOTE } from "../ws/orchestrationContracts";
+import "./ChatMissionCard.styles.css";
 
 type Json = Record<string, unknown>;
 
@@ -34,27 +33,6 @@ const STATUS_LABEL: Record<string, string> = {
 const TERMINAL = new Set(["COMPLETED", "FAILED", "CANCELLED"]);
 const DONE_TASKS = new Set(["COMPLETED", "SUCCEEDED", "ACCEPTED"]);
 const REFRESH_MS = 5000;
-
-const box: React.CSSProperties = {
-  border: `1px solid ${tokens.color.accent.border}`,
-  borderRadius: tokens.radius.md,
-  padding: tokens.space.sm,
-  background: dark.inset,
-  color: dark.text,
-  display: "grid",
-  gap: tokens.space.xs,
-  minWidth: 0,
-  overflowWrap: "anywhere",
-};
-const button: React.CSSProperties = {
-  padding: `${tokens.space.xs}px ${tokens.space.sm}px`,
-  borderRadius: tokens.radius.sm,
-  border: `1px solid ${tokens.color.surface.hairline}`,
-  background: "transparent",
-  color: dark.text,
-  cursor: "pointer",
-};
-const muted: React.CSSProperties = { color: dark.textMuted, fontSize: tokens.text.xs.size };
 
 export function ChatMissionCard({ missionId }: { missionId: string }): React.JSX.Element {
   const channel = useContext(MissionsChannelContext);
@@ -163,18 +141,22 @@ export function ChatMissionCard({ missionId }: { missionId: string }): React.JSX
   const requirementsRevision = Number(record(workspace.requirements_ref).revision) || 0;
 
   return (
-    <section aria-label="后台任务" style={box} data-testid={`chat-mission-${missionId}`}>
-      <div style={{ fontWeight: tokens.weight.semibold }}>
+    <section
+      aria-label="后台任务"
+      className="sh-ChatMissionCard-1"
+      data-testid={`chat-mission-${missionId}`}
+    >
+      <div className="sh-ChatMissionCard-2">
         后台任务：{status ? (STATUS_LABEL[status] ?? status) : channel ? "读取中…" : "连接未就绪"}
       </div>
       {text(mission.goal) ? <div>{text(mission.goal)}</div> : null}
       {requirementsRevision > 1 ? (
-        <div style={muted} data-testid="chat-mission-requirements-revision">
+        <div className="sh-ChatMissionCard-3" data-testid="chat-mission-requirements-revision">
           要求第 {requirementsRevision} 版
         </div>
       ) : null}
       {work.length ? (
-        <div style={muted}>
+        <div className="sh-ChatMissionCard-3">
           步骤：已完成 {done} / {work.length}
         </div>
       ) : null}
@@ -196,7 +178,7 @@ export function ChatMissionCard({ missionId }: { missionId: string }): React.JSX
         return (
           <div
             key={approvalId}
-            style={{ ...box, borderColor: tokens.color.surface.hairline }}
+            className="sh-ChatMissionCard-4"
             data-testid={`chat-approval-${approvalId}`}
           >
             {text(approval.kind) === "action" ? (
@@ -218,12 +200,12 @@ export function ChatMissionCard({ missionId }: { missionId: string }): React.JSX
                   placeholder="拒绝时写一句理由"
                   value={reason}
                   onChange={(event) => setReasons({ ...reasons, [approvalId]: event.target.value })}
-                  style={{ ...button, cursor: "text" }}
+                  className="sh-ChatMissionCard-5"
                 />
-                <div style={{ display: "flex", gap: tokens.space.sm }}>
+                <div className="sh-ChatMissionCard-6">
                   <button
                     type="button"
-                    style={button}
+                    className="sh-ChatMissionCard-7"
                     disabled={busy}
                     onClick={() => decide(approvalId, "approve")}
                   >
@@ -231,7 +213,7 @@ export function ChatMissionCard({ missionId }: { missionId: string }): React.JSX
                   </button>
                   <button
                     type="button"
-                    style={button}
+                    className="sh-ChatMissionCard-7"
                     disabled={busy || !reason.trim()}
                     onClick={() => decide(approvalId, "reject")}
                   >
@@ -249,14 +231,14 @@ export function ChatMissionCard({ missionId }: { missionId: string }): React.JSX
         </div>
       ))}
       {status === "FAILED" && text(mission.stop_reason) ? (
-        <div style={muted}>停止原因：{text(mission.stop_reason)}</div>
+        <div className="sh-ChatMissionCard-3">停止原因：{text(mission.stop_reason)}</div>
       ) : null}
       {error ? (
-        <div role="alert" style={{ color: tokens.color.danger.fg }}>
+        <div role="alert" className="sh-ChatMissionCard-8">
           {error}
         </div>
       ) : null}
-      <div style={muted}>完整过程在「任务编排」页。</div>
+      <div className="sh-ChatMissionCard-3">完整过程在「任务编排」页。</div>
     </section>
   );
 }

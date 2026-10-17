@@ -11,6 +11,7 @@ import { useState } from "react";
 import { tokens } from "../theme/tokens";
 import { dark } from "../theme/components";
 import { plainPublishMention, publishCriterion } from "./publishCriterion";
+import "./PublishCriterionHelper.styles.css";
 
 export function PublishCriterionHelper({
   criteria,
@@ -36,8 +37,8 @@ export function PublishCriterionHelper({
   };
   const muted = { color: dark.textMuted, fontSize: tokens.text.sm.size };
   return (
-    <div data-testid="publish-criterion-helper" style={{ display: "grid", gap: 4 }}>
-      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+    <div data-testid="publish-criterion-helper" className="sh-PublishCriterionHelper-1">
+      <div className="sh-PublishCriterionHelper-2">
         <label htmlFor="publish-file" style={muted}>
           完成后发布文件（可选）
         </label>
@@ -54,14 +55,7 @@ export function PublishCriterionHelper({
               add();
             }
           }}
-          style={{
-            flex: 1,
-            padding: "4px 8px",
-            borderRadius: 4,
-            border: `1px solid ${dark.border}`,
-            background: dark.card,
-            color: dark.text,
-          }}
+          className="sh-PublishCriterionHelper-3"
         />
         <button type="button" disabled={disabled || !enabled || !file.trim()} onClick={add}>
           加入成功条件
@@ -74,7 +68,7 @@ export function PublishCriterionHelper({
         </div>
       )}
       {enabled && plainPublishMention(criteria) && (
-        <div role="status" style={{ color: dark.warning, fontSize: tokens.text.sm.size }}>
+        <div role="status" className="sh-PublishCriterionHelper-4">
           成功条件里提到了发布，但系统只认"完成后发布文件"加进去的那一行；想真的发布，请在上面填文件名加进去。
         </div>
       )}

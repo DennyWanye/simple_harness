@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useDepsChanged } from "../hooks/useDepsChanged";
 import { asRecord, asText, newRequestKey, type MissionsChannel } from "../stores/missionsStore";
+import "./PlanningAuthorization.styles.css";
 
 type Json = Record<string, unknown>;
 
@@ -105,7 +106,9 @@ function Request({
   };
   return (
     <div>
-      <p style={{ margin: "4px 0" }}>授权后任务开始规划；涉及外部操作时仍会按原有权限再问你。</p>
+      <p className="sh-PlanningAuthorization-1">
+        授权后任务开始规划；涉及外部操作时仍会按原有权限再问你。
+      </p>
       <button type="button" disabled={pending || !channel} onClick={authorize}>
         {pending ? "正在授权…" : "授权本轮规划"}
       </button>

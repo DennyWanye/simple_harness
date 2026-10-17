@@ -6,8 +6,6 @@
  */
 import React, { useCallback, useContext, useEffect, useRef, useState } from "react";
 
-import { tokens } from "../theme/tokens";
-import { dark } from "../theme/components";
 import {
   asList as list,
   asRecord as record,
@@ -16,6 +14,7 @@ import {
 } from "../stores/missionsStore";
 import { MissionsChannelContext } from "./chatMission";
 import { PROTOCOL_ERROR, STALE_NOTE } from "../ws/orchestrationContracts";
+import "./ChatMissionNotices.styles.css";
 
 type Settled = { operation: string; target: string; applied: boolean };
 type Notice = {
@@ -31,33 +30,6 @@ type Notice = {
   action_settled: Settled | null;
 };
 
-const box: React.CSSProperties = {
-  border: `1px solid ${tokens.color.accent.border}`,
-  borderRadius: tokens.radius.md,
-  padding: tokens.space.sm,
-  background: dark.inset,
-  color: dark.text,
-  display: "flex",
-  alignItems: "center",
-  gap: tokens.space.sm,
-  minWidth: 0,
-  overflowWrap: "anywhere",
-};
-const button: React.CSSProperties = {
-  padding: `${tokens.space.xs}px ${tokens.space.sm}px`,
-  borderRadius: tokens.radius.sm,
-  border: `1px solid ${tokens.color.surface.hairline}`,
-  background: "transparent",
-  color: dark.text,
-  cursor: "pointer",
-  flexShrink: 0,
-};
-const oneLine: React.CSSProperties = {
-  whiteSpace: "nowrap",
-  overflow: "hidden",
-  textOverflow: "ellipsis",
-};
-const muted: React.CSSProperties = { color: dark.textMuted, fontSize: tokens.text.xs.size };
 /** 只摆最新几条；旧库里攒下的一批通知由人点一次"全部已收到"清掉。 */
 const SHOWN = 3;
 const ALL = "__all__";
@@ -172,42 +144,39 @@ export function ChatMissionNotices(): React.JSX.Element | null {
 
   if (!notices.length && !error && !listError) return null;
   return (
-    <div
-      aria-label="后台任务通知"
-      style={{ display: "grid", gap: tokens.space.xs, margin: `${tokens.space.xs}px 0` }}
-    >
+    <div aria-label="后台任务通知" className="sh-ChatMissionNotices-1">
       {notices.slice(-SHOWN).map((notice) => (
-        <div key={notice.notice_id} style={box} data-testid={`chat-notice-${notice.notice_id}`}>
-          <div style={{ flex: 1, minWidth: 0 }}>
+        <div
+          key={notice.notice_id}
+          className="sh-ChatMissionNotices-2"
+          data-testid={`chat-notice-${notice.notice_id}`}
+        >
+          <div className="sh-ChatMissionNotices-3">
             {/* 目标原文可能很长：只摆一行，悬停看全文。 */}
             {notice.action_settled ? (
               <>
-                <div style={oneLine} title={notice.goal || notice.mission_id}>
+                <div className="sh-ChatMissionNotices-4" title={notice.goal || notice.mission_id}>
                   后台任务的对外操作有结果了：{notice.goal || notice.mission_id}
                 </div>
-                <div
-                  style={muted}
-                >{`${notice.action_settled.operation} ${notice.action_settled.target} 核对结果：${notice.action_settled.applied ? "已生效" : "未生效"}`}</div>
+                <div className="sh-ChatMissionNotices-5">{`${notice.action_settled.operation} ${notice.action_settled.target} 核对结果：${notice.action_settled.applied ? "已生效" : "未生效"}`}</div>
               </>
             ) : (
               <>
-                <div style={oneLine} title={notice.goal || notice.mission_id}>
+                <div className="sh-ChatMissionNotices-4" title={notice.goal || notice.mission_id}>
                   后台任务{notice.status_zh}：{notice.goal || notice.mission_id}
                 </div>
                 {notice.status === "FAILED" && notice.stop_reason ? (
-                  <div style={muted}>停止原因：{notice.stop_reason}</div>
+                  <div className="sh-ChatMissionNotices-5">停止原因：{notice.stop_reason}</div>
                 ) : null}
                 {notice.unresolved_actions > 0 ? (
-                  <div
-                    style={muted}
-                  >{`还有 ${notice.unresolved_actions} 个对外操作结果不明，系统会继续核对`}</div>
+                  <div className="sh-ChatMissionNotices-5">{`还有 ${notice.unresolved_actions} 个对外操作结果不明，系统会继续核对`}</div>
                 ) : null}
               </>
             )}
           </div>
           <button
             type="button"
-            style={button}
+            className="sh-ChatMissionNotices-6"
             disabled={busy[notice.notice_id] === true}
             onClick={() => acknowledge(notice.notice_id)}
           >
@@ -216,11 +185,13 @@ export function ChatMissionNotices(): React.JSX.Element | null {
         </div>
       ))}
       {notices.length > SHOWN ? (
-        <div style={{ display: "flex", alignItems: "center", gap: tokens.space.sm }}>
-          <span style={muted}>还有 {notices.length - SHOWN} 条较早的通知</span>
+        <div className="sh-ChatMissionNotices-7">
+          <span className="sh-ChatMissionNotices-5">
+            还有 {notices.length - SHOWN} 条较早的通知
+          </span>
           <button
             type="button"
-            style={button}
+            className="sh-ChatMissionNotices-6"
             disabled={busy[ALL] === true}
             onClick={() => acknowledge(ALL)}
           >
@@ -229,12 +200,12 @@ export function ChatMissionNotices(): React.JSX.Element | null {
         </div>
       ) : null}
       {listError ? (
-        <div role="alert" style={{ color: tokens.color.danger.fg }}>
+        <div role="alert" className="sh-ChatMissionNotices-8">
           {listError}
         </div>
       ) : null}
       {error ? (
-        <div role="alert" style={{ color: tokens.color.danger.fg }}>
+        <div role="alert" className="sh-ChatMissionNotices-8">
           {error}
         </div>
       ) : null}

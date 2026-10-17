@@ -8,6 +8,7 @@ import {
   newRequestKey,
   type MissionsChannel,
 } from "../stores/missionsStore";
+import "./MissionDiagnostics.styles.css";
 
 type Json = Record<string, unknown>;
 type Props = { missionId: string; channel: MissionsChannel | null };
@@ -118,7 +119,7 @@ const DiagnosticsSession: React.FC<Props> = ({ missionId, channel }) => {
     usage.reserved_tokens !== 0 ||
     ledger.unsettled_usage_tokens !== 0;
   return (
-    <section aria-label="任务回放与支持报告" style={{ marginBlock: 16 }}>
+    <section aria-label="任务回放与支持报告" className="sh-MissionDiagnostics-1">
       <h3>任务回放与支持报告</h3>
       <p>只读取当前任务的历史，不调用模型或重新执行任务。支持报告保存在本机。</p>
       <button
@@ -173,7 +174,7 @@ const DiagnosticsSession: React.FC<Props> = ({ missionId, channel }) => {
           <p>未知记录数只统计已入账数据，不包含尚未入账的在途调用。</p>
           <h4>尝试与贡献</h4>
           {asList(attribution.attempts).map((attempt) => (
-            <div key={asText(attempt.attempt_id)} style={{ marginBlock: 8 }}>
+            <div key={asText(attempt.attempt_id)} className="sh-MissionDiagnostics-2">
               <div>
                 {asText(attempt.task_id)} / {asText(attempt.attempt_id)}
               </div>
@@ -196,7 +197,7 @@ const DiagnosticsSession: React.FC<Props> = ({ missionId, channel }) => {
                 <summary>
                   #{asText(event.seq)} {asText(event.type)} · {asText(event.task_id)}
                 </summary>
-                <pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+                <pre className="sh-MissionDiagnostics-3">
                   {JSON.stringify(event.detail, null, 2)}
                 </pre>
               </details>
@@ -204,21 +205,12 @@ const DiagnosticsSession: React.FC<Props> = ({ missionId, channel }) => {
           )}
           <details>
             <summary>查看完整诊断与覆盖范围</summary>
-            <pre
-              style={{
-                whiteSpace: "pre-wrap",
-                overflowWrap: "anywhere",
-                maxHeight: 400,
-                overflow: "auto",
-              }}
-            >
-              {JSON.stringify(report, null, 2)}
-            </pre>
+            <pre className="sh-MissionDiagnostics-4">{JSON.stringify(report, null, 2)}</pre>
           </details>
         </div>
       )}
       {receipt && (
-        <div aria-label="本地支持报告回执" style={{ overflowWrap: "anywhere" }}>
+        <div aria-label="本地支持报告回执" className="sh-MissionDiagnostics-5">
           <p>已保存：{asText(receipt.path)}</p>
           <p>
             SHA-256：{asText(receipt.sha256)} · {asText(receipt.size_bytes)} bytes

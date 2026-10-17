@@ -21,8 +21,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useDepsChanged } from "../hooks/useDepsChanged";
 import { useShallow } from "zustand/react/shallow";
-import { tokens } from "../theme/tokens";
-import { dark } from "../theme/components";
 import type { ControlMessage, IncomingMessage } from "../types/messages";
 import { type SourceDraft } from "./MissionSources";
 import { useConfirm } from "../components/useConfirm";
@@ -45,12 +43,12 @@ import {
   NOISE_EVENTS,
   MAX_AUTO_PAGES,
   TIMELINE_SIZE,
-  box,
 } from "./missionsViewShared";
 import type { Json, Flight } from "./missionsViewShared";
 import { MissionListAside } from "./MissionListAside";
 import { MissionCreateForm } from "./MissionCreateForm";
 import { MissionDetailPanel } from "./MissionDetailPanel";
+import "./MissionsView.styles.css";
 
 export interface MissionsViewProps {
   channel: MissionsChannel | null;
@@ -626,12 +624,8 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
 
   if (status && !status.available) {
     return (
-      <section
-        data-testid="view-missions"
-        aria-label="任务编排"
-        style={{ flex: 1, padding: tokens.space.lg, color: dark.text }}
-      >
-        <div role="alert" style={box}>
+      <section data-testid="view-missions" aria-label="任务编排" className="sh-MissionsView-1">
+        <div role="alert" className="sh-MissionsView-2">
           编排服务不可用：{status.reason ?? status.state}
         </div>
       </section>
@@ -639,18 +633,7 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
   }
 
   return (
-    <section
-      data-testid="view-missions"
-      aria-label="任务编排"
-      style={{
-        flex: 1,
-        minWidth: 0,
-        minHeight: 0,
-        display: "flex",
-        color: dark.text,
-        fontFamily: tokens.font.ui,
-      }}
-    >
+    <section data-testid="view-missions" aria-label="任务编排" className="sh-MissionsView-3">
       {confirmDialog}
       <MissionListAside
         status={status}
@@ -664,19 +647,9 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
         drift={drift}
       />
 
-      <div
-        style={{
-          flex: 1,
-          minWidth: 0,
-          overflowY: "auto",
-          padding: tokens.space.lg,
-          display: "flex",
-          flexDirection: "column",
-          gap: tokens.space.md,
-        }}
-      >
+      <div className="sh-MissionsView-4">
         {store.error ? (
-          <div role="alert" style={{ ...box, borderColor: tokens.color.danger.bg }}>
+          <div role="alert" className="sh-MissionsView-5">
             {store.error}
           </div>
         ) : null}

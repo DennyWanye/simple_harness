@@ -17,8 +17,6 @@
  */
 import React, { useCallback, useEffect, useRef, useState } from "react";
 
-import { tokens } from "../theme/tokens";
-import { dark } from "../theme/components";
 import {
   asList as list,
   asRecord as record,
@@ -28,6 +26,7 @@ import {
 } from "../stores/missionsStore";
 import { PROTOCOL_ERROR } from "../ws/orchestrationContracts";
 import { sendWhenConnected } from "../ws/sendWhenConnected";
+import "./PlanChangePanel.styles.css";
 
 type Job = { job_id: string; state: string; row_version: number };
 type Blocked = {
@@ -41,25 +40,6 @@ type View = { jobs: Job[]; blocked: Blocked[] };
 
 const READ = "taskgraph.convergence";
 const LIVE = new Set(["FENCED", "WAITING", "READY"]);
-const box: React.CSSProperties = {
-  border: `1px solid ${tokens.color.accent.border}`,
-  borderRadius: tokens.radius.md,
-  padding: tokens.space.sm,
-  background: dark.inset,
-  color: dark.text,
-  display: "grid",
-  gap: tokens.space.xs,
-  marginTop: tokens.space.sm,
-};
-const button: React.CSSProperties = {
-  padding: `${tokens.space.xs}px ${tokens.space.sm}px`,
-  borderRadius: tokens.radius.sm,
-  border: `1px solid ${tokens.color.surface.hairline}`,
-  background: "transparent",
-  color: dark.text,
-  cursor: "pointer",
-};
-const muted: React.CSSProperties = { color: dark.textMuted, fontSize: tokens.text.xs.size };
 
 function parse(data: unknown): View {
   const body = record(data);
@@ -176,31 +156,31 @@ export function PlanChangePanel({
 
   if (!view || (!view.jobs.length && !view.blocked.length)) return null;
   return (
-    <section aria-label="改计划进度" style={box} data-testid="plan-change-panel">
+    <section
+      aria-label="改计划进度"
+      className="sh-PlanChangePanel-1"
+      data-testid="plan-change-panel"
+    >
       <strong>
         改计划进度
-        {stale ? <span style={muted}>（已过期：{stale}，显示的是上次的情况）</span> : null}
+        {stale ? (
+          <span className="sh-PlanChangePanel-2">（已过期：{stale}，显示的是上次的情况）</span>
+        ) : null}
       </strong>
       {view.jobs.map((job) => (
-        <div key={job.job_id} style={{ display: "grid", gap: tokens.space.xs }}>
+        <div key={job.job_id} className="sh-PlanChangePanel-3">
           <div>这次改计划卡住了：{reasonOf(job)}</div>
           <textarea
             aria-label="放弃理由"
             placeholder="写一句为什么放弃（会告诉规划器，避免它再提同样的改法）"
             value={reason}
             onChange={(event) => setReason(event.target.value)}
-            style={{
-              width: "100%",
-              boxSizing: "border-box",
-              minHeight: 48,
-              background: dark.inset,
-              color: dark.text,
-            }}
+            className="sh-PlanChangePanel-4"
           />
           <div>
             <button
               type="button"
-              style={button}
+              className="sh-PlanChangePanel-5"
               disabled={busy || !reason.trim()}
               onClick={() =>
                 act("taskgraph.abandon_convergence", {
@@ -216,17 +196,14 @@ export function PlanChangePanel({
         </div>
       ))}
       {view.blocked.map((row) => (
-        <div
-          key={row.message_id}
-          style={{ display: "flex", alignItems: "center", gap: tokens.space.sm }}
-        >
+        <div key={row.message_id} className="sh-PlanChangePanel-6">
           <span>
             推进通知连续失败 {row.attempts} 次，被挡住了
-            <span style={muted}>（{row.error_code}）</span>
+            <span className="sh-PlanChangePanel-2">（{row.error_code}）</span>
           </span>
           <button
             type="button"
-            style={button}
+            className="sh-PlanChangePanel-5"
             disabled={busy}
             onClick={() =>
               act("taskgraph.retry_notification", {
@@ -241,7 +218,7 @@ export function PlanChangePanel({
         </div>
       ))}
       {error ? (
-        <div role="alert" style={{ color: tokens.color.danger.fg }}>
+        <div role="alert" className="sh-PlanChangePanel-7">
           {error}
         </div>
       ) : null}

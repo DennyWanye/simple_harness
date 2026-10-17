@@ -1,0 +1,12 @@
+/* 生成文件，不要手改：src/views/ActionApprovalSummary.tsx 里静态内联样式的等价类（9I）。
+   重新生成：node scripts/code_quality/ts_inline_to_class.mjs convert src/views/ActionApprovalSummary.tsx */
+
+.sh-ActionApprovalSummary-1 {
+  font-weight: var(--sh-weight-semibold);
+}
+
+.sh-ActionApprovalSummary-2 {
+  margin-left: var(--sh-space-xs);
+  color: var(--sh-text-2, #A7A29A);
+  font-size: var(--sh-text-xs-size);
+}

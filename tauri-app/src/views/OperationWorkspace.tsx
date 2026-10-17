@@ -8,6 +8,7 @@ import {
   newRequestKey,
   type MissionsChannel,
 } from "../stores/missionsStore";
+import "./OperationWorkspace.styles.css";
 
 type Json = Record<string, unknown>;
 type Effect = { key: string; criteria: string[]; obligation: string; milestone: string };
@@ -231,7 +232,7 @@ function Workspace({
     );
   };
   return (
-    <section aria-label="完成要求与操作" style={{ margin: "16px 0", overflowWrap: "anywhere" }}>
+    <section aria-label="完成要求与操作" className="sh-OperationWorkspace-1">
       <h3>完成要求与操作</h3>
       {w.state === "WAITING_REQUIREMENTS" ? (
         <p>等待任务生成明确的完成要求。</p>
@@ -278,7 +279,7 @@ function Workspace({
                     return (
                       <button
                         type="button"
-                        style={{ marginBottom: 4 }}
+                        className="sh-OperationWorkspace-2"
                         onClick={() => setContent(all ? [] : free)}
                       >
                         {all ? "全部取消" : "全选"}
@@ -286,7 +287,7 @@ function Workspace({
                     );
                   })()}
                 {criteria.map((c) => (
-                  <label key={asText(c.id)} style={{ display: "block" }}>
+                  <label key={asText(c.id)} className="sh-OperationWorkspace-3">
                     <input
                       type="checkbox"
                       checked={content.includes(asText(c.id))}
@@ -308,7 +309,7 @@ function Workspace({
                     <fieldset>
                       <legend>这一次效果覆盖的要求（可多选）</legend>
                       {criteria.map((c) => (
-                        <label key={asText(c.id)} style={{ display: "block" }}>
+                        <label key={asText(c.id)} className="sh-OperationWorkspace-3">
                           <input
                             type="checkbox"
                             checked={e.criteria.includes(asText(c.id))}
@@ -330,7 +331,7 @@ function Workspace({
                     <fieldset role="radiogroup" aria-label="效果所属目标">
                       <legend>所属目标</legend>
                       {obligations.map((o) => (
-                        <label key={asText(o.id)} style={{ display: "block" }}>
+                        <label key={asText(o.id)} className="sh-OperationWorkspace-3">
                           <input
                             type="radio"
                             name={`obligation-${e.key}`}
@@ -345,7 +346,7 @@ function Workspace({
                     <fieldset role="radiogroup" aria-label="效果完成标准">
                       <legend>完成标准</legend>
                       {milestones.map((m) => (
-                        <label key={asText(m.id)} style={{ display: "block" }}>
+                        <label key={asText(m.id)} className="sh-OperationWorkspace-3">
                           <input
                             type="radio"
                             name={`milestone-${e.key}`}
@@ -404,7 +405,7 @@ function Workspace({
               const targets = [...actionTargets(statements)];
               const state = heads.length ? asText(heads[heads.length - 1].state) : "";
               return (
-                <div key={key} style={{ marginTop: 12 }}>
+                <div key={key} className="sh-OperationWorkspace-4">
                   <p>操作要求：{statements.join("；")}</p>
                   <p>
                     {state

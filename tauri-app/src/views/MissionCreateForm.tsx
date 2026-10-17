@@ -3,12 +3,10 @@
 
 import React from "react";
 import type { MissionRow, OrchestrationStatus } from "../stores/missionsStore";
-import { tokens } from "../theme/tokens";
-import { dark } from "../theme/components";
 import { SourceDrafts, type SourceDraft } from "./MissionSources";
 import { PublishCriterionHelper } from "./PublishCriterionHelper";
 import { type MissionEvent } from "../stores/missionsStore";
-import { button, field, muted } from "./missionsViewShared";
+import "./MissionCreateForm.styles.css";
 
 export interface MissionCreateFormProps {
   createPending: boolean;
@@ -105,12 +103,12 @@ export function MissionCreateForm({
   missingMaterialHint,
 }: MissionCreateFormProps) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: tokens.space.sm }}>
+    <div className="sh-MissionCreateForm-1">
       <label htmlFor="mission-goal">任务目标</label>
       <textarea
         id="mission-goal"
         aria-label="任务目标"
-        style={field}
+        className="sh-MissionCreateForm-2"
         disabled={createPending}
         value={goal}
         onChange={(e) => setGoal(e.target.value)}
@@ -119,7 +117,7 @@ export function MissionCreateForm({
       <textarea
         id="mission-criteria"
         aria-label="成功条件"
-        style={field}
+        className="sh-MissionCreateForm-2"
         disabled={createPending}
         value={criteria}
         onChange={(e) => setCriteria(e.target.value)}
@@ -130,23 +128,20 @@ export function MissionCreateForm({
         disabled={createPending}
         publish={store.status?.publish}
       />
-      <div style={muted}>
+      <div className="sh-MissionCreateForm-3">
         普通文字写要求即可；以 pytest: 开头的行会当作测试命令运行，后面写测试路径，例如 pytest:
         tests/
       </div>
       {badPytestLines.length > 0 && (
-        <div role="alert" style={{ color: dark.danger }}>
+        <div role="alert" className="sh-MissionCreateForm-4">
           「{badPytestLines[0]}」会被当作测试命令运行，但 pytest: 后面不是测试路径。要写说明就去掉
           pytest: 前缀。
         </div>
       )}
       {canAttachSources && (
-        <div
-          data-testid="create-sources"
-          style={{ display: "flex", flexDirection: "column", gap: tokens.space.xs }}
-        >
-          <div style={{ fontWeight: tokens.weight.semibold }}>参考资料（可选）</div>
-          <div style={muted}>
+        <div data-testid="create-sources" className="sh-MissionCreateForm-5">
+          <div className="sh-MissionCreateForm-6">参考资料（可选）</div>
+          <div className="sh-MissionCreateForm-3">
             给任务附上会议纪要、需求文档等，执行时可以读取。目标里提到的资料要在这里附上，系统不会自己去找。
           </div>
           <SourceDrafts
@@ -158,19 +153,10 @@ export function MissionCreateForm({
         </div>
       )}
       <details data-testid="create-advanced" open={strictQuotes || undefined}>
-        <summary style={{ cursor: "pointer", color: dark.textMuted }}>
-          高级设置（可选，一般不用改）
-        </summary>
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: tokens.space.sm,
-            marginTop: tokens.space.sm,
-          }}
-        >
+        <summary className="sh-MissionCreateForm-7">高级设置（可选，一般不用改）</summary>
+        <div className="sh-MissionCreateForm-8">
           {canAttachSources && (
-            <label style={{ display: "flex", alignItems: "flex-start", gap: tokens.space.xs }}>
+            <label className="sh-MissionCreateForm-9">
               <input
                 aria-label="严格引用模式"
                 type="checkbox"
@@ -184,11 +170,11 @@ export function MissionCreateForm({
             </label>
           )}
           {!!status?.context_profiles?.length && (
-            <label style={muted}>
+            <label className="sh-MissionCreateForm-3">
               输入上下文容量
               <select
                 aria-label="输入上下文容量"
-                style={field}
+                className="sh-MissionCreateForm-2"
                 value={selectedContextId}
                 disabled={createPending}
                 onChange={(e) => setContextProfile(e.target.value)}
@@ -208,14 +194,14 @@ export function MissionCreateForm({
               </span>
             </label>
           )}
-          <div style={{ display: "flex", gap: tokens.space.sm }}>
+          <div className="sh-MissionCreateForm-10">
             <input
               aria-label="Token 上限"
               inputMode="numeric"
               placeholder={
                 defaultTokenCap ? `Token 上限（留空=${defaultTokenCap}）` : "Token 上限（可选）"
               }
-              style={{ ...field, minHeight: 0, height: tokens.controlHeight }}
+              className="sh-MissionCreateForm-11"
               value={maxTokens}
               onChange={(e) => setMaxTokens(e.target.value)}
             />
@@ -227,28 +213,33 @@ export function MissionCreateForm({
                   ? `尝试次数上限（留空=${status.mission_budget_defaults.max_attempts}）`
                   : "尝试次数上限（可选）"
               }
-              style={{ ...field, minHeight: 0, height: tokens.controlHeight }}
+              className="sh-MissionCreateForm-11"
               value={maxAttempts}
               onChange={(e) => setMaxAttempts(e.target.value)}
             />
           </div>
           {!validCaps && (
-            <div role="alert" style={{ color: dark.danger }}>
+            <div role="alert" className="sh-MissionCreateForm-4">
               Token 上限和尝试次数上限要填正整数，或者留空用默认值。
             </div>
           )}
         </div>
       </details>
-      <button type="button" style={button} disabled={!submittable} onClick={submit}>
+      <button
+        type="button"
+        className="sh-MissionCreateForm-12"
+        disabled={!submittable}
+        onClick={submit}
+      >
         提交任务
       </button>
       {submitBlocker && (
-        <div role="status" data-testid="submit-blocker" style={muted}>
+        <div role="status" data-testid="submit-blocker" className="sh-MissionCreateForm-3">
           还不能提交：{submitBlocker}
         </div>
       )}
       {!submitBlocker && missingMaterialHint && (
-        <div role="status" data-testid="material-hint" style={{ color: dark.warning }}>
+        <div role="status" data-testid="material-hint" className="sh-MissionCreateForm-13">
           {missingMaterialHint}
         </div>
       )}

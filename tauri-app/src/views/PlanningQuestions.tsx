@@ -8,8 +8,7 @@ import {
   newRequestKey,
   type MissionsChannel,
 } from "../stores/missionsStore";
-import { dark } from "../theme/components";
-import { tokens } from "../theme/tokens";
+import "./PlanningQuestions.styles.css";
 
 type Json = Record<string, unknown>;
 
@@ -107,13 +106,7 @@ function PlanningQuestion({
     setError("连接不可用，回答尚未确认；请重试");
   };
   return (
-    <div
-      style={{
-        padding: tokens.space.md,
-        marginBottom: tokens.space.sm,
-        border: `1px solid ${dark.border}`,
-      }}
-    >
+    <div className="sh-PlanningQuestions-1">
       <div>模型请求确认</div>
       <p>{asText(question.question)}</p>
       {state === "PENDING" ? (
@@ -141,7 +134,7 @@ function PlanningQuestion({
                 value={answer}
                 onChange={(e) => setAnswer(e.target.value)}
               />
-              <label style={{ display: "block", fontSize: 12, color: dark.textMuted }}>
+              <label className="sh-PlanningQuestions-2">
                 <input
                   type="checkbox"
                   aria-label="作为资料附上"

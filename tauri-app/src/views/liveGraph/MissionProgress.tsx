@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 /** 任务列表的 5 段进度条：创建 → 规划 → 执行 → 验证 → 完成（live-view 方案第 6 步）。 */
 import { STAGES, progressOf } from "./progress";
+import "./MissionProgress.styles.css";
 
 export function MissionProgress({
   status,
@@ -21,9 +22,9 @@ export function MissionProgress({
       data-testid="mission-progress"
       aria-label={"进度：" + label}
       title={"进度：" + label}
-      style={{ display: "flex", alignItems: "center", gap: 6, width: "100%" }}
+      className="sh-MissionProgress-1"
     >
-      <span style={{ display: "flex", gap: 2, flex: 1 }}>
+      <span className="sh-MissionProgress-2">
         {STAGES.map((name, index) => (
           <span
             key={name}
@@ -44,7 +45,7 @@ export function MissionProgress({
         ))}
       </span>
       {counts && counts.total > 0 && (
-        <span style={{ fontSize: 11, opacity: 0.75 }}>{counts.completed + "/" + counts.total}</span>
+        <span className="sh-MissionProgress-3">{counts.completed + "/" + counts.total}</span>
       )}
     </span>
   );

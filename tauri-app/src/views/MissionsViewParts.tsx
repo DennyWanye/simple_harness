@@ -2,29 +2,17 @@
 // SPDX-License-Identifier: BUSL-1.1
 
 import React, { useState } from "react";
-import { tokens } from "../theme/tokens";
-import { dark } from "../theme/components";
 import { asList as list, asRecord as record, asText as text } from "../stores/missionsStore";
-import {
-  formatBytes,
-  shortHash,
-  plain,
-  box,
-  button,
-  field,
-  muted,
-  BUDGET_ROWS_SHOWN,
-  spendLine,
-  heading,
-} from "./missionsViewShared";
+import { formatBytes, shortHash, plain, BUDGET_ROWS_SHOWN, spendLine } from "./missionsViewShared";
 import type { Json } from "./missionsViewShared";
+import "./MissionsViewParts.styles.css";
 
 /** 已通过验收、但在现行要求下不再算数的步骤（多是按旧版要求通过的）。没有就不显示。 */
 export function StepsNoLongerCounting({ rows }: { rows: unknown[] }) {
   const steps = rows.map(record);
   if (!steps.length) return null;
   return (
-    <div style={muted} data-testid="mission-steps-no-longer-counting">
+    <div className="sh-MissionsViewParts-1" data-testid="mission-steps-no-longer-counting">
       {`不再算数：${steps.map((step) => `${text(step.label)}（按第 ${text(step.requirements_revision)} 版要求通过）`).join("；")}——要求改过，规划器会决定重做还是沿用`}
     </div>
   );
@@ -37,7 +25,7 @@ export function BudgetByDuty({ rows }: { rows: unknown[] }) {
   if (!spent.length) return null;
   const shown = spent.slice(0, BUDGET_ROWS_SHOWN);
   return (
-    <details data-testid="mission-budget-by-duty" style={muted}>
+    <details data-testid="mission-budget-by-duty" className="sh-MissionsViewParts-1">
       <summary>预算去向</summary>
       {shown.map((row) => {
         const steps = list(row.steps)
@@ -50,15 +38,13 @@ export function BudgetByDuty({ rows }: { rows: unknown[] }) {
               <details data-testid="mission-budget-steps">
                 <summary>{line}</summary>
                 {steps.slice(0, BUDGET_ROWS_SHOWN).map((step) => (
-                  <div key={text(step.task_id)} style={{ paddingLeft: 12 }}>
+                  <div key={text(step.task_id)} className="sh-MissionsViewParts-2">
                     {spendLine(step, text(step.label) || text(step.task_id))}
                     {Number(step.branches) > 1 ? `（${Number(step.branches)} 个分支共用）` : ""}
                   </div>
                 ))}
                 {steps.length > BUDGET_ROWS_SHOWN ? (
-                  <div
-                    style={{ paddingLeft: 12 }}
-                  >{`其余 ${steps.length - BUDGET_ROWS_SHOWN} 步`}</div>
+                  <div className="sh-MissionsViewParts-2">{`其余 ${steps.length - BUDGET_ROWS_SHOWN} 步`}</div>
                 ) : null}
               </details>
             ) : (
@@ -75,11 +61,7 @@ export function BudgetByDuty({ rows }: { rows: unknown[] }) {
 export const ModelText: React.FC<{ value: unknown }> = ({ value }) => (
   <span>
     {plain(value)}
-    <span
-      style={{ marginLeft: tokens.space.xs, color: dark.textMuted, fontSize: tokens.text.xs.size }}
-    >
-      （模型生成，未核实）
-    </span>
+    <span className="sh-MissionsViewParts-3">（模型生成，未核实）</span>
   </span>
 );
 
@@ -99,37 +81,22 @@ export const ArtifactPanel: React.FC<{ artifact: Json; verified?: boolean }> = (
   const content = typeof artifact.content === "string" ? artifact.content : null;
   const readable = encoding !== "binary" && content !== null;
   return (
-    <section aria-label="产物内容" style={{ ...box, minWidth: 0 }}>
-      <div style={{ ...heading, minWidth: 0, overflowWrap: "anywhere", wordBreak: "break-word" }}>
-        产物：{text(artifact.path)}
-      </div>
-      <div style={{ ...muted, minWidth: 0, overflowWrap: "anywhere", wordBreak: "break-word" }}>
+    <section aria-label="产物内容" className="sh-MissionsViewParts-4">
+      <div className="sh-MissionsViewParts-5">产物：{text(artifact.path)}</div>
+      <div className="sh-MissionsViewParts-6">
         {`hash：${text(artifact.content_hash)} · 大小：${formatBytes(artifact.size_bytes)}`}
       </div>
       {readable ? (
         <>
-          <div style={muted}>
+          <div className="sh-MissionsViewParts-1">
             {/* 2026-09-26 真机：列表写"已验证"，预览却一律写"未核实"。 */}
             {verified ? "（已通过核验）" : "（模型生成，未核实）"}
             {artifact.truncated === true ? " · 内容过长，已截断" : ""}
           </div>
-          <pre
-            style={{
-              margin: `${tokens.space.sm}px 0 0`,
-              maxHeight: 360,
-              overflow: "auto",
-              whiteSpace: "pre-wrap",
-              overflowWrap: "anywhere",
-              wordBreak: "break-word",
-              minWidth: 0,
-              fontSize: tokens.text.xs.size,
-            }}
-          >
-            {content}
-          </pre>
+          <pre className="sh-MissionsViewParts-7">{content}</pre>
         </>
       ) : (
-        <div style={{ ...muted, marginTop: tokens.space.sm }}>
+        <div className="sh-MissionsViewParts-8">
           {encoding === "binary" ? "二进制内容，未显示" : "没有返回内容"}
         </div>
       )}
@@ -151,11 +118,7 @@ export function ActionOutcome({
   const label =
     state === "SUCCEEDED" ? "已发布" : state === "UNKNOWN" ? "核对中" : "已生成，未发布";
   return (
-    <div
-      style={{ ...muted, minWidth: 0, overflowWrap: "anywhere", wordBreak: "break-word" }}
-      data-testid="action-outcome"
-      data-action-state={state}
-    >
+    <div className="sh-MissionsViewParts-6" data-testid="action-outcome" data-action-state={state}>
       {label}
       {path ? ` · ${path}` : ""}
       {hash ? ` · 内容 ${shortHash(hash)}` : ""}
@@ -174,20 +137,22 @@ export const ResolveOutcomeBox: React.FC<{
 }> = ({ actionKey, failed, send }) => {
   const [basis, setBasis] = useState("");
   return (
-    <div style={{ ...box, marginTop: tokens.space.xs }} data-testid={`resolve-${actionKey}`}>
-      <div style={{ color: dark.textMuted }}>系统判断不了这次发布有没有生效，请你查看后裁定：</div>
+    <div className="sh-MissionsViewParts-9" data-testid={`resolve-${actionKey}`}>
+      <div className="sh-MissionsViewParts-10">
+        系统判断不了这次发布有没有生效，请你查看后裁定：
+      </div>
       <textarea
         aria-label="裁定依据"
         placeholder="写一句你依据什么判断（例如：查了发布目录）"
-        style={field}
+        className="sh-MissionsViewParts-11"
         value={basis}
         onChange={(e) => setBasis(e.target.value)}
       />
-      <div style={{ display: "flex", gap: tokens.space.sm }}>
+      <div className="sh-MissionsViewParts-12">
         {failed ? null : (
           <button
             type="button"
-            style={button}
+            className="sh-MissionsViewParts-13"
             disabled={!basis.trim()}
             onClick={() =>
               send("mission_action_resolve", { action_key: actionKey, outcome: "succeeded", basis })
@@ -198,7 +163,7 @@ export const ResolveOutcomeBox: React.FC<{
         )}
         <button
           type="button"
-          style={button}
+          className="sh-MissionsViewParts-13"
           disabled={!basis.trim()}
           onClick={() =>
             send("mission_action_resolve", { action_key: actionKey, outcome: "failed", basis })
@@ -223,27 +188,23 @@ export const TakeoverBox: React.FC<{
   const [basis, setBasis] = useState("");
   if (!open) {
     return (
-      <button
-        type="button"
-        style={{ ...button, marginLeft: tokens.space.sm }}
-        onClick={() => setOpen(true)}
-      >
+      <button type="button" className="sh-MissionsViewParts-14" onClick={() => setOpen(true)}>
         接管这个 Task
       </button>
     );
   }
   return (
-    <div style={{ ...box, marginTop: tokens.space.xs }}>
+    <div className="sh-MissionsViewParts-9">
       <textarea
         aria-label="接管依据"
-        style={field}
+        className="sh-MissionsViewParts-11"
         value={basis}
         onChange={(e) => setBasis(e.target.value)}
       />
-      <div style={{ display: "flex", gap: tokens.space.sm }}>
+      <div className="sh-MissionsViewParts-12">
         <button
           type="button"
-          style={button}
+          className="sh-MissionsViewParts-13"
           disabled={!basis.trim()}
           onClick={() =>
             send("mission_takeover", { task_id: taskId, action: "retry_with_note", basis })
@@ -253,7 +214,7 @@ export const TakeoverBox: React.FC<{
         </button>
         <button
           type="button"
-          style={button}
+          className="sh-MissionsViewParts-13"
           disabled={!basis.trim()}
           onClick={() => send("mission_takeover", { task_id: taskId, action: "stop", basis })}
         >

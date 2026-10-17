@@ -8,12 +8,11 @@
  * 2026-10-02 (strict citation option A): the document panel's citation review is gone;
  * what remains is the source lifecycle every Mission with material needs.
  */
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { asText, newRequestKey, type MissionsChannel } from "../stores/missionsStore";
 import { useDepsChanged } from "../hooks/useDepsChanged";
 import { useLatestRef } from "../hooks/useLatestRef";
-import { dark } from "../theme/components";
-import { tokens } from "../theme/tokens";
+import "./MissionSources.styles.css";
 
 type Json = Record<string, unknown>;
 type Channel = MissionsChannel | null;
@@ -22,30 +21,6 @@ export interface SourceDraft {
   content: string;
   kind: string;
 }
-const panel: React.CSSProperties = {
-  padding: 12,
-  borderRadius: 8,
-  border: `1px solid ${tokens.color.surface.hairline}`,
-  background: dark.inset,
-  overflowWrap: "anywhere",
-};
-const field: React.CSSProperties = {
-  width: "100%",
-  boxSizing: "border-box",
-  background: dark.inset,
-  color: dark.text,
-  border: `1px solid ${tokens.color.surface.hairline}`,
-  padding: 8,
-  borderRadius: 6,
-};
-const button: React.CSSProperties = {
-  background: dark.panel,
-  color: dark.text,
-  border: `1px solid ${tokens.color.surface.hairline}`,
-  borderRadius: 6,
-  padding: "6px 10px",
-  cursor: "pointer",
-};
 const lifecycle = (source: Json) =>
   source.revoked === true ? "已撤销" : source.superseded_by ? "已被新版本替代" : "当前版本";
 
@@ -112,13 +87,13 @@ export function SourceDrafts({
     }
   };
   return (
-    <section aria-label="来源资料" style={{ display: "grid", gap: 8 }}>
+    <section aria-label="来源资料" className="sh-MissionSources-1">
       {!fixedPath && (
         <div>
           {!single && (
             <button
               type="button"
-              style={button}
+              className="sh-MissionSources-2"
               disabled={disabled || loading}
               onClick={() =>
                 onChange([...sources, { path: "sources/", content: "", kind: "markdown" }])
@@ -127,7 +102,7 @@ export function SourceDrafts({
               添加来源
             </button>
           )}
-          <label style={{ marginLeft: 12 }}>
+          <label className="sh-MissionSources-3">
             导入来源文件{" "}
             <input
               aria-label="导入来源文件"
@@ -147,13 +122,13 @@ export function SourceDrafts({
       {loading && <div role="status">正在导入来源…</div>}
       {error && <div role="alert">{error}</div>}
       {sources.map((source, index) => (
-        <fieldset key={index} style={panel} disabled={disabled}>
+        <fieldset key={index} className="sh-MissionSources-4" disabled={disabled}>
           <legend>来源 {index + 1}</legend>
           <label>
             来源路径 {index + 1}
             <input
               aria-label={`来源路径 ${index + 1}`}
-              style={field}
+              className="sh-MissionSources-5"
               value={source.path}
               readOnly={fixedPath}
               onChange={(e) => update(index, { path: e.target.value })}
@@ -163,7 +138,7 @@ export function SourceDrafts({
             来源格式 {index + 1}
             <select
               aria-label={`来源格式 ${index + 1}`}
-              style={field}
+              className="sh-MissionSources-5"
               value={source.kind}
               onChange={(e) => update(index, { kind: e.target.value })}
             >
@@ -175,7 +150,7 @@ export function SourceDrafts({
             来源正文 {index + 1}
             <textarea
               aria-label={`来源正文 ${index + 1}`}
-              style={{ ...field, minHeight: 140 }}
+              className="sh-MissionSources-6"
               value={source.content}
               onChange={(e) => update(index, { content: e.target.value })}
             />
@@ -183,7 +158,7 @@ export function SourceDrafts({
           {!fixedPath && !single && (
             <button
               type="button"
-              style={button}
+              className="sh-MissionSources-2"
               onClick={() => onChange(sources.filter((_, i) => i !== index))}
             >
               移除来源 {index + 1}
@@ -325,10 +300,10 @@ export function MissionSources({
   } as const;
 
   return (
-    <section aria-label="参考资料" style={panel}>
+    <section aria-label="参考资料" className="sh-MissionSources-4">
       <h3>参考资料</h3>
       {sources.map((source, i) => (
-        <div key={i} style={{ ...panel, marginBottom: 8 }}>
+        <div key={i} className="sh-MissionSources-7">
           <strong>{asText(source.path)}</strong>
           <div>
             {lifecycle(source)} · 第 {asText(source.revision)} 版 · 版本{" "}
@@ -338,7 +313,7 @@ export function MissionSources({
             <div>
               <button
                 type="button"
-                style={button}
+                className="sh-MissionSources-2"
                 disabled={!channel || sourcePending}
                 onClick={() => startSource("supersede", source)}
               >
@@ -346,7 +321,7 @@ export function MissionSources({
               </button>
               <button
                 type="button"
-                style={button}
+                className="sh-MissionSources-2"
                 disabled={!channel || sourcePending}
                 onClick={() => startSource("revoke", source)}
               >
@@ -358,7 +333,7 @@ export function MissionSources({
       ))}
       <button
         type="button"
-        style={button}
+        className="sh-MissionSources-2"
         disabled={!channel || sourcePending}
         onClick={() => startSource("register")}
       >
@@ -367,7 +342,7 @@ export function MissionSources({
       {sourceError && <div role="alert">{sourceError}</div>}
       {sourceNotice && <div role="status">{sourceNotice}</div>}
       {operation && (
-        <div style={{ marginTop: 12 }}>
+        <div className="sh-MissionSources-8">
           <div>
             {OPERATION_LABEL[operation]}
             {expected ? ` · 原版本 ${expected.slice(0, 12)}` : ""}
@@ -377,7 +352,7 @@ export function MissionSources({
               撤销理由
               <textarea
                 aria-label="撤销理由"
-                style={field}
+                className="sh-MissionSources-5"
                 value={reason}
                 disabled={sourcePending}
                 onChange={(e) => setReason(e.target.value)}
@@ -395,7 +370,7 @@ export function MissionSources({
           )}
           <button
             type="button"
-            style={button}
+            className="sh-MissionSources-2"
             disabled={
               sourcePending ||
               importing ||
@@ -411,7 +386,7 @@ export function MissionSources({
           </button>
           <button
             type="button"
-            style={button}
+            className="sh-MissionSources-2"
             disabled={sourcePending}
             onClick={() => setOperation(null)}
           >

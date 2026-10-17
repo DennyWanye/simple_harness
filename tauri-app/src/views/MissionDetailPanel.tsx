@@ -39,9 +39,6 @@ import {
   eventLine,
   box,
   button,
-  field,
-  muted,
-  heading,
   nextStep,
   nextStepBlocksAuthorization,
   jumpTo,
@@ -58,6 +55,7 @@ import {
   ResolveOutcomeBox,
   TakeoverBox,
 } from "./MissionsViewParts";
+import "./MissionDetailPanel.styles.css";
 
 const LiveGraph = lazy(() =>
   import("./liveGraph/LiveGraph").then((m) => ({ default: m.LiveGraph })),
@@ -151,15 +149,13 @@ export function MissionDetailPanel({
 }: MissionDetailPanelProps) {
   return (
     <>
-      <div style={box}>
-        <div style={{ fontSize: tokens.text.lg.size, fontWeight: tokens.weight.semibold }}>
-          {text(mission.goal)}
-        </div>
+      <div className="sh-MissionDetailPanel-1">
+        <div className="sh-MissionDetailPanel-2">{text(mission.goal)}</div>
         <div
           data-testid="mission-state"
           data-status={text(mission.status)}
           data-ui-state={text(mission.ui_state) || undefined}
-          style={{ color: dark.textMuted }}
+          className="sh-MissionDetailPanel-3"
         >
           {`状态：${stateLabel(mission.ui_state, mission.status)}`}
           {mission.stop_reason
@@ -167,18 +163,18 @@ export function MissionDetailPanel({
             : ""}
           {` · 策略版本：${text(record(detail.mission_policy).version_id) || "—"}`}
         </div>
-        <div style={muted}>
+        <div className="sh-MissionDetailPanel-4">
           Token 已结算 {text(record(detail.usage).settled_tokens) || "未知"} · 当前预留{" "}
           {text(record(detail.usage).reserved_tokens) || "未知"}
           {Number(record(detail.usage).overrun_calls) > 0
             ? ` · 超出上限的调用 ${text(record(detail.usage).overrun_calls)} 次（超出总上限 ${text(record(detail.usage).overrun_tokens) || "0"}，已照实入账）`
             : ""}
         </div>
-        <div style={muted} data-testid="mission-budget">
+        <div className="sh-MissionDetailPanel-4" data-testid="mission-budget">
           {`预算：Token 上限 ${text(record(mission.budget).max_tokens) || "—"} · 尝试次数上限 ${text(record(mission.budget).max_attempts) || "—"}`}
         </div>
         {!!record(detail.runtime_context).max_input_tokens && (
-          <div style={muted} data-testid="mission-context">
+          <div className="sh-MissionDetailPanel-4" data-testid="mission-context">
             {record(detail.runtime_context).max_total_tokens
               ? `本任务总上下文 ${Number(record(detail.runtime_context).max_total_tokens) / 1024}K，输入最多 ${Number(record(detail.runtime_context).max_input_tokens) / 1024}K tokens`
               : `本任务输入上下文 ${Number(record(detail.runtime_context).max_input_tokens) / 1024}K tokens`}
@@ -187,14 +183,14 @@ export function MissionDetailPanel({
         <BudgetByDuty rows={list(detail.budget_by_duty)} />
         <StepsNoLongerCounting rows={list(detail.steps_no_longer_counting)} />
         {list(detail.unrefined_goals).length ? (
-          <div style={muted} data-testid="mission-unrefined-goals">
+          <div className="sh-MissionDetailPanel-4" data-testid="mission-unrefined-goals">
             {`还没细化：${list(detail.unrefined_goals)
               .map((goal) => text(record(goal).label))
               .join("；")}（规划器还没给它们定做法）`}
           </div>
         ) : null}
         {waiting.length ? (
-          <div aria-label="等待原因" style={{ marginTop: tokens.space.sm }}>
+          <div aria-label="等待原因" className="sh-MissionDetailPanel-5">
             {waiting.map((item, index) => (
               <div key={`${index}-${text(record(item).request_id)}`}>
                 {waitLine(item)}
@@ -220,7 +216,7 @@ export function MissionDetailPanel({
         {!TERMINAL.has(text(mission.status)) && (
           <button
             type="button"
-            style={{ ...button, marginTop: tokens.space.sm }}
+            className="sh-MissionDetailPanel-6"
             onClick={async () => {
               // 2026-09-25 UI 全量点击：取消不可撤销，以前一点就取消。
               if (
@@ -253,16 +249,20 @@ export function MissionDetailPanel({
               gap: tokens.space.sm,
             }}
           >
-            <span style={{ flex: "1 1 240px", minWidth: 0 }}>{step.text}</span>
+            <span className="sh-MissionDetailPanel-7">{step.text}</span>
             {step.target && (
-              <button type="button" style={button} onClick={() => jumpTo(step.target!)}>
+              <button
+                type="button"
+                className="sh-MissionDetailPanel-8"
+                onClick={() => jumpTo(step.target!)}
+              >
                 {step.action}
               </button>
             )}
             {/* 授权就在提示条里一键完成（2026-09-25 真机点击：跳转后还要再找按钮） */}
             {list(detail.planning_authorization_requests).length > 0 &&
               !nextStepBlocksAuthorization(detail) && (
-                <div style={{ flexBasis: "100%" }}>
+                <div className="sh-MissionDetailPanel-9">
                   <PlanningAuthorization
                     requests={list(detail.planning_authorization_requests)}
                     channel={channel}
@@ -278,18 +278,18 @@ export function MissionDetailPanel({
         const taskId = text(item.task_id);
         const basis = bases[taskId] ?? "";
         return (
-          <div key={taskId} role="alert" style={{ ...box, borderColor: tokens.color.warning.bg }}>
+          <div key={taskId} role="alert" className="sh-MissionDetailPanel-10">
             回合结果未知（进程在模型调用中途退出）：{taskId}
             <textarea
               aria-label="接管依据"
-              style={field}
+              className="sh-MissionDetailPanel-11"
               value={basis}
               onChange={(e) => setBases({ ...bases, [taskId]: e.target.value })}
             />
-            <div style={{ display: "flex", gap: tokens.space.sm }}>
+            <div className="sh-MissionDetailPanel-12">
               <button
                 type="button"
-                style={button}
+                className="sh-MissionDetailPanel-8"
                 disabled={!basis.trim()}
                 onClick={() =>
                   send("mission_takeover", {
@@ -303,7 +303,7 @@ export function MissionDetailPanel({
               </button>
               <button
                 type="button"
-                style={button}
+                className="sh-MissionDetailPanel-8"
                 disabled={!basis.trim()}
                 onClick={() => send("mission_takeover", { task_id: taskId, action: "stop", basis })}
               >
@@ -344,32 +344,20 @@ export function MissionDetailPanel({
         return (
           <div
             key={requestId}
-            style={{
-              ...box,
-              minWidth: 0,
-              overflowWrap: "anywhere",
-              borderColor: tokens.color.accent.border,
-            }}
+            className="sh-MissionDetailPanel-13"
             data-testid={`approval-${requestId}`}
           >
             {kind === "action" ? (
               <ActionApprovalSummary summary={approval.summary} action={action} />
             ) : (
-              <div style={heading}>
+              <div className="sh-MissionDetailPanel-14">
                 {WAIT_LABEL[kind] ?? `未知审批类型（${kind || "未提供"}）`}：
                 <ModelText value={approval.summary} />
               </div>
             )}
             {kind === "action" ? <ActionOutcome action={action} /> : null}
             {kind === "source_change" ? (
-              <pre
-                style={{
-                  minWidth: 0,
-                  whiteSpace: "pre-wrap",
-                  overflowWrap: "anywhere",
-                  wordBreak: "break-word",
-                }}
-              >
+              <pre className="sh-MissionDetailPanel-15">
                 {JSON.stringify(record(approval.source_change), null, 2)}
               </pre>
             ) : null}
@@ -377,14 +365,14 @@ export function MissionDetailPanel({
               <>
                 <textarea
                   aria-label="拒绝理由"
-                  style={field}
+                  className="sh-MissionDetailPanel-11"
                   value={reason}
                   onChange={(e) => setReasons({ ...reasons, [requestId]: e.target.value })}
                 />
-                <div style={{ display: "flex", gap: tokens.space.sm }}>
+                <div className="sh-MissionDetailPanel-12">
                   <button
                     type="button"
-                    style={button}
+                    className="sh-MissionDetailPanel-8"
                     onClick={() =>
                       send("mission_approval_decide", {
                         approval_id: requestId,
@@ -396,7 +384,7 @@ export function MissionDetailPanel({
                   </button>
                   <button
                     type="button"
-                    style={button}
+                    className="sh-MissionDetailPanel-8"
                     disabled={!reason.trim()}
                     onClick={() =>
                       send("mission_approval_decide", {
@@ -415,14 +403,14 @@ export function MissionDetailPanel({
                 <textarea
                   aria-label="复核理由"
                   placeholder="通过可选；未通过请说明原因"
-                  style={field}
+                  className="sh-MissionDetailPanel-11"
                   value={reason}
                   onChange={(e) => setReasons({ ...reasons, [requestId]: e.target.value })}
                 />
-                <div style={{ display: "flex", gap: tokens.space.sm }}>
+                <div className="sh-MissionDetailPanel-12">
                   <button
                     type="button"
-                    style={button}
+                    className="sh-MissionDetailPanel-8"
                     disabled={reviewPending[requestId] === true}
                     onClick={() => {
                       const note = reason.trim();
@@ -433,7 +421,7 @@ export function MissionDetailPanel({
                   </button>
                   <button
                     type="button"
-                    style={button}
+                    className="sh-MissionDetailPanel-8"
                     disabled={!reason.trim() || reviewPending[requestId] === true}
                     onClick={() => {
                       submitReviewDecision(requestId, "review_fail", reason.trim());
@@ -447,18 +435,18 @@ export function MissionDetailPanel({
               <>
                 <textarea
                   aria-label="仲裁依据"
-                  style={field}
+                  className="sh-MissionDetailPanel-11"
                   value={reason}
                   onChange={(e) => setReasons({ ...reasons, [requestId]: e.target.value })}
                 />
-                <div style={{ display: "flex", gap: tokens.space.sm, flexWrap: "wrap" }}>
+                <div className="sh-MissionDetailPanel-16">
                   {(Array.isArray(approval.options) ? approval.options : [])
                     .filter((option) => option === "met" || option === "unmet")
                     .map((option) => (
                       <button
                         key={text(option)}
                         type="button"
-                        style={button}
+                        className="sh-MissionDetailPanel-8"
                         disabled={!reason.trim()}
                         onClick={() =>
                           send("mission_approval_decide", {
@@ -476,7 +464,7 @@ export function MissionDetailPanel({
               </>
             ) : null}
             {list(approval.comments).map((item, index) => (
-              <div key={index} style={{ ...muted, marginTop: tokens.space.xs }}>
+              <div key={index} className="sh-MissionDetailPanel-17">
                 {`评论（${text(item.principal_id) || "未知"}）：${text(item.text)}`}
               </div>
             ))}
@@ -485,7 +473,7 @@ export function MissionDetailPanel({
       })}
 
       {/* 2026-09-27：默认看「任务过程」（模型每一步做了什么）；结构图（步骤之间的先后关系）按需打开 */}
-      <div role="tablist" aria-label="任务视图" style={{ display: "flex", gap: tokens.space.xs }}>
+      <div role="tablist" aria-label="任务视图" className="sh-MissionDetailPanel-18">
         {(
           [
             ["graph", "执行图"],
@@ -518,7 +506,7 @@ export function MissionDetailPanel({
           onStalled={onStalled}
         />
       ) : (
-        <Suspense fallback={<div style={muted}>正在加载执行图…</div>}>
+        <Suspense fallback={<div className="sh-MissionDetailPanel-4">正在加载执行图…</div>}>
           <LiveGraph
             key={selectedId + ":live-graph"}
             missionId={selectedId}
@@ -541,9 +529,7 @@ export function MissionDetailPanel({
       )}
 
       <details data-testid="mission-diagnostics-group">
-        <summary style={{ cursor: "pointer", color: dark.textMuted }}>
-          诊断信息（保证状态等，排查问题时用）
-        </summary>
+        <summary className="sh-MissionDetailPanel-19">诊断信息（保证状态等，排查问题时用）</summary>
 
         {status?.assurance_available === true && (
           <MissionAssurance
@@ -562,8 +548,8 @@ export function MissionDetailPanel({
         )}
       </details>
 
-      <div style={box}>
-        <div style={heading}>Task 与验证</div>
+      <div className="sh-MissionDetailPanel-1">
+        <div className="sh-MissionDetailPanel-14">Task 与验证</div>
         {list(detail.tasks).map((task) => {
           const taskId = text(task.id);
           const blockedIds = new Set(list(detail.blocked).map((item) => text(item.task_id)));
@@ -572,7 +558,7 @@ export function MissionDetailPanel({
             !TASK_ENDED.has(text(task.status)) &&
             !blockedIds.has(taskId);
           return (
-            <div key={taskId} data-testid={`task-${taskId}`} style={{ marginTop: tokens.space.sm }}>
+            <div key={taskId} data-testid={`task-${taskId}`} className="sh-MissionDetailPanel-5">
               <ModelText value={task.goal} /> ·{" "}
               {TASK_STATUS_LABEL[text(task.status)] ?? text(task.status)}
               {canTakeOver ? <TakeoverBox taskId={taskId} send={send} /> : null}
@@ -588,7 +574,7 @@ export function MissionDetailPanel({
           const rejection = failed ? record(result.final_rejection) : {};
           const reason = text(rejection.reason);
           return (
-            <div key={text(result.result_id) || attemptId} style={{ marginTop: tokens.space.sm }}>
+            <div key={text(result.result_id) || attemptId} className="sh-MissionDetailPanel-5">
               {(verdict || verificationState) && (
                 <div
                   data-testid={`result-final-${text(result.result_id) || attemptId}`}
@@ -606,7 +592,7 @@ export function MissionDetailPanel({
                     </div>
                   )}
                   {list(rejection.source_issues).map((issue, index) => (
-                    <div key={index} style={{ overflowWrap: "anywhere" }}>
+                    <div key={index} className="sh-MissionDetailPanel-20">
                       {text(issue.path) || "来源"} ·{" "}
                       {REJECTION_LABEL[text(issue.reason)] ?? text(issue.reason)}（
                       {text(issue.reason) || text(issue.code)}）
@@ -619,7 +605,7 @@ export function MissionDetailPanel({
                 结果摘要：
                 <ModelText value={result.summary} />
               </div>
-              <div style={{ display: "flex", gap: tokens.space.xs, flexWrap: "wrap" }}>
+              <div className="sh-MissionDetailPanel-21">
                 {layers.map((layer) => {
                   const layerStatus = text(layer.status);
                   const color =
@@ -646,7 +632,7 @@ export function MissionDetailPanel({
                   <div
                     key={text(layer.layer)}
                     data-testid={`layer-summary-${attemptId}-${text(layer.layer)}`}
-                    style={{ ...muted, marginTop: tokens.space.xs }}
+                    className="sh-MissionDetailPanel-17"
                   >
                     {text(layer.layer)}：<LayerSummary value={layer.summary} />
                   </div>
@@ -657,18 +643,12 @@ export function MissionDetailPanel({
       </div>
 
       {artifacts.length ? (
-        <div id="mission-step-artifacts" style={box}>
-          <div style={heading}>产物</div>
+        <div id="mission-step-artifacts" className="sh-MissionDetailPanel-1">
+          <div className="sh-MissionDetailPanel-14">产物</div>
           {internals.length > 0 && (
             <button
               type="button"
-              style={{
-                ...button,
-                height: "auto",
-                padding: `2px ${tokens.space.sm}px`,
-                marginTop: tokens.space.xs,
-                color: dark.textMuted,
-              }}
+              className="sh-MissionDetailPanel-22"
               onClick={() => setShowInternal((v) => !v)}
             >
               {showInternal
@@ -694,19 +674,12 @@ export function MissionDetailPanel({
                   minWidth: 0,
                 }}
               >
-                <span
-                  style={{
-                    flex: 1,
-                    minWidth: 0,
-                    overflowWrap: "anywhere",
-                    wordBreak: "break-word",
-                  }}
-                >
+                <span className="sh-MissionDetailPanel-23">
                   {`${text(item.path)} · ${formatBytes(item.size_bytes)} · 验证：${LAYER_LABEL[verification] ?? (verification || "—")} · ${shortHash(item.content_hash)}`}
                 </span>
                 <button
                   type="button"
-                  style={button}
+                  className="sh-MissionDetailPanel-8"
                   onClick={() => {
                     setArtifact(null);
                     const requestId = newKey();
@@ -731,7 +704,7 @@ export function MissionDetailPanel({
       ) : null}
 
       {artifact ? (
-        <div style={{ minWidth: 0 }}>
+        <div className="sh-MissionDetailPanel-24">
           <ArtifactPanel
             artifact={artifact}
             verified={[...deliverables, ...internals].some(
@@ -743,17 +716,17 @@ export function MissionDetailPanel({
         </div>
       ) : null}
 
-      <div style={box}>
-        <div style={heading}>评论</div>
+      <div className="sh-MissionDetailPanel-1">
+        <div className="sh-MissionDetailPanel-14">评论</div>
         <textarea
           aria-label="评论"
-          style={{ ...field, marginTop: tokens.space.sm }}
+          className="sh-MissionDetailPanel-25"
           value={comment}
           onChange={(e) => setComment(e.target.value)}
         />
         <button
           type="button"
-          style={{ ...button, marginTop: tokens.space.sm }}
+          className="sh-MissionDetailPanel-6"
           disabled={!comment.trim()}
           onClick={() => send("mission_comment", { target_id: selectedId, text: comment.trim() })}
         >
@@ -761,19 +734,19 @@ export function MissionDetailPanel({
         </button>
       </div>
 
-      <div style={box}>
-        <div style={heading}>原始事件记录</div>
-        <div style={muted}>
+      <div className="sh-MissionDetailPanel-1">
+        <div className="sh-MissionDetailPanel-14">原始事件记录</div>
+        <div className="sh-MissionDetailPanel-4">
           系统内部记录，排查问题时看；想了解模型做了什么，看上面的「任务过程」。
         </div>
         {events.length > TIMELINE_SIZE ? (
-          <div style={muted}>
+          <div className="sh-MissionDetailPanel-4">
             {allEventsShown
               ? `共 ${events.length} 条`
               : `共 ${events.length} 条，显示最近 ${TIMELINE_SIZE} 条`}
             <button
               type="button"
-              style={{ ...button, marginLeft: tokens.space.sm }}
+              className="sh-MissionDetailPanel-26"
               onClick={() => setAllEventsShown((v) => !v)}
             >
               {allEventsShown ? "只看最近" : "显示全部"}
@@ -781,14 +754,18 @@ export function MissionDetailPanel({
           </div>
         ) : null}
         {recentEvents.map((event) => (
-          <div key={event.seq} data-testid={`event-${event.seq}`} style={muted}>
+          <div
+            key={event.seq}
+            data-testid={`event-${event.seq}`}
+            className="sh-MissionDetailPanel-4"
+          >
             {eventLine(event)}
           </div>
         ))}
         {showMore ? (
           <button
             type="button"
-            style={{ ...button, marginTop: tokens.space.sm }}
+            className="sh-MissionDetailPanel-6"
             onClick={() => fetchEvents(selectedId, true)}
           >
             加载更多事件

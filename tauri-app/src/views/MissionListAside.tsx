@@ -3,22 +3,12 @@
 
 import React from "react";
 import type { MissionRow, OrchestrationStatus } from "../stores/missionsStore";
-import { tokens } from "../theme/tokens";
-import { dark } from "../theme/components";
 import { MissionProgress } from "./liveGraph/MissionProgress";
 import { asText as text, backgroundTrouble, type MissionEvent } from "../stores/missionsStore";
 import { STALE_NOTE } from "../ws/orchestrationContracts";
-import {
-  TERMINAL,
-  RECOVERY_ISOLATED_TEXT,
-  stateLabel,
-  show,
-  box,
-  button,
-  muted,
-  heading,
-} from "./missionsViewShared";
+import { TERMINAL, RECOVERY_ISOLATED_TEXT, stateLabel, show } from "./missionsViewShared";
 import type { Json } from "./missionsViewShared";
+import "./MissionListAside.styles.css";
 
 export interface MissionListAsideProps {
   status: OrchestrationStatus | null;
@@ -58,31 +48,16 @@ export function MissionListAside({
   drift,
 }: MissionListAsideProps) {
   return (
-    <aside
-      style={{
-        width: 280,
-        flexShrink: 0,
-        borderRight: `1px solid ${tokens.color.surface.hairline}`,
-        padding: tokens.space.md,
-        display: "flex",
-        flexDirection: "column",
-        gap: tokens.space.sm,
-        overflowY: "auto",
-      }}
-    >
+    <aside className="sh-MissionListAside-1">
       {backgroundTrouble(status) ? (
-        <div
-          role="alert"
-          data-testid="background-trouble"
-          style={{ ...box, borderColor: tokens.color.warning.bg, flexShrink: 0 }}
-        >
+        <div role="alert" data-testid="background-trouble" className="sh-MissionListAside-2">
           {backgroundTrouble(status)}
         </div>
       ) : null}
       {/* flexShrink 0: with many rows the column scrolls instead of squashing them (2026-09-25) */}
       <button
         type="button"
-        style={{ ...button, flexShrink: 0 }}
+        className="sh-MissionListAside-3"
         onClick={() => {
           setCreating(true);
           store.select(null);
@@ -93,17 +68,13 @@ export function MissionListAside({
         新建任务
       </button>
       {store.listError ? (
-        <div
-          role="alert"
-          data-testid="mission-list-error"
-          style={{ ...box, borderColor: tokens.color.warning.bg, flexShrink: 0 }}
-        >
+        <div role="alert" data-testid="mission-list-error" className="sh-MissionListAside-2">
           {store.listError}
           {store.missions.length > 0 ? STALE_NOTE : ""}
         </div>
       ) : null}
       {store.missions.length === 0 ? (
-        <div style={{ color: dark.textMuted }}>还没有任务。点「新建任务」开始。</div>
+        <div className="sh-MissionListAside-4">还没有任务。点「新建任务」开始。</div>
       ) : (
         store.missions.map((row) => (
           <button
@@ -114,19 +85,10 @@ export function MissionListAside({
             data-ui-state={row.ui_state || undefined}
             aria-current={selectedId === row.id ? "true" : undefined}
             onClick={() => open(row.id)}
-            style={{
-              ...button,
-              height: "auto",
-              flexShrink: 0,
-              padding: tokens.space.sm,
-              textAlign: "left",
-              display: "flex",
-              flexDirection: "column",
-              gap: 2,
-            }}
+            className="sh-MissionListAside-5"
           >
             <span>{row.goal}</span>
-            <span style={muted}>
+            <span className="sh-MissionListAside-6">
               {stateLabel(row.ui_state, row.status)}
               {row.pending_approvals ? ` · 待审批：${row.pending_approvals}` : ""}
               {row.blocked && row.ui_state !== "unknown" ? " · 结果未知" : ""}
@@ -135,7 +97,7 @@ export function MissionListAside({
             {row.recovery_isolated && !TERMINAL.has(row.status) && (
               <span
                 data-testid={`mission-isolated-${row.id}`}
-                style={{ color: dark.warning }}
+                className="sh-MissionListAside-7"
                 title={`对不上的表：${row.recovery_isolated.tables.join("、") || "未知"}`}
               >
                 {RECOVERY_ISOLATED_TEXT}
@@ -145,21 +107,13 @@ export function MissionListAside({
           </button>
         ))
       )}
-      <div style={{ ...box, marginTop: "auto", flexShrink: 0 }} aria-label="策略状态">
-        <div style={heading}>策略（只读）</div>
-        <div style={muted}>当前版本：{text(store.policy?.active_version_id) || "—"}</div>
+      <div className="sh-MissionListAside-8" aria-label="策略状态">
+        <div className="sh-MissionListAside-9">策略（只读）</div>
+        <div className="sh-MissionListAside-6">
+          当前版本：{text(store.policy?.active_version_id) || "—"}
+        </div>
         {drift.map((item) => (
-          <div
-            key={text(item.name)}
-            role="status"
-            style={{
-              ...box,
-              borderColor: tokens.color.warning.bg,
-              padding: tokens.space.sm,
-              marginTop: tokens.space.sm,
-              fontSize: tokens.text.xs.size,
-            }}
-          >
+          <div key={text(item.name)} role="status" className="sh-MissionListAside-10">
             {`配置与生效策略不一致：${text(item.name)} 配置 ${show(item.config)}，生效 ${show(item.active)}（修改要经策略晋级才生效）`}
           </div>
         ))}
