@@ -16,31 +16,70 @@
  */
 import { invoke } from "@tauri-apps/api/core";
 import { BACKEND_PORT } from "../backendPort";
-import { chatErrorMessage } from "../chatErrorMessage";
 import { useSessionsStore } from "../stores/sessionsStore";
-import { type Message, type WorkflowEventEnvelope } from "../stores/sessionTypes";
+import type { SessionsStore } from "../stores/sessionTypes";
 import { withClientTurnIdentity } from "../ws/clientTurnIdentity";
 import {
   getWindowControlCredential,
   type WindowControlCredential,
 } from "../auth/windowControlCredential";
 import type { CanonicalJson } from "../auth/controlCommandCanonical";
-import { useSubagentStore } from "./subagentStore";
 import { useProvidersStore, type ProviderEntry } from "./providersStore";
-import { useSessionModelsStore } from "./sessionModelsStore";
 // P5-S2 Phase 4 — settings panel provider mutation events
 import { dispatchProviderEvent, type ProviderEventMessage } from "../components/providersStore";
-import type { CompanionEvent, ContextUsageSnapshot } from "../types/messages";
-import type { ControlWireMessage, HistoryRow, SlashCommandResult } from "./controlWsTypes";
+import type { ControlHandler, ControlWireMessage } from "./controlWsTypes";
+import { pendingRunStatusQueries } from "./controlWsShared";
 import {
-  pendingRunStatusQueries,
-  companionEventFrom,
-  persistedWorkflowFileArtifact,
-  publicToolErrorText,
-  persistedToolOutcome,
-  format_slash_result,
-  selectNewestInflightRunAfterTerminal,
-} from "./controlWsShared";
+  onCompanionIdentityUnready,
+  onCompanionEvent,
+  onCompanionProjectionRetracted,
+  onCompanionProvisionalDelta,
+} from "./controlWsCompanion";
+import {
+  onSessionTodoUpdate,
+  onChatV2ContinuationAccepted,
+  onChatV2ContinuationStatus,
+  onChatResponse,
+  onChatV2Delta,
+  onContextUsage,
+  onChatV2UserEcho,
+  onChatV2ReasoningActivity,
+  onChatV2ReasoningSummary,
+  onChatV2Final,
+  onChatV2Error,
+  onChatV2Interrupted,
+  onSessionRunStatusAck,
+} from "./controlWsStream";
+import {
+  onTaskProjectionsResponse,
+  onTaskProjectionUpdated,
+  onSessionSwitched,
+  onWorkflowEvent,
+  onChatV2Plan,
+  onPptOutlineProposed,
+  onPptOutlineResolved,
+  onChatV2PlanCancelled,
+  onSubagentProgress,
+  onSlashCommandResult,
+  onToolCall,
+  onToolResult,
+  onPermissionRequest,
+  onExternalWaitRequest,
+  onAutoResumeStarted,
+  onAutoResumeSucceeded,
+  onAutoResumeExhausted,
+  onSupervisorAlert,
+  onSupervisorToggleAck,
+} from "./controlWsTasks";
+import { onSessionMessagesError, onSessionMessagesResponse } from "./controlWsHistory";
+import {
+  onSettingsProvidersListResponse,
+  onSettingsProvidersReordered,
+  onSessionProviderBinding,
+  onModelsListResponse,
+  onModelContextSetAck,
+  onSessionModelSet,
+} from "./controlWsSettings";
 
 const RECONNECT_BASE_MS = 1000;
 const RECONNECT_MAX_MS = 15000;
@@ -402,6 +441,217 @@ function flushDeferredMessages(
     }),
   );
 }
+function onCompanionProfileBound(
+  msg: ControlWireMessage,
+  store: SessionsStore,
+  _sid: string,
+): void {
+  const p = msg.payload || {};
+  const profileId = String(p.profile_id || "");
+  const profileGeneration = Number(p.profile_generation || 0);
+  if (profileId && Number.isInteger(profileGeneration) && profileGeneration > 0) {
+    const inboxSessionId = String(p.session_id || "").trim();
+    store.set_companion_owner({
+      profile_id: profileId,
+      profile_generation: profileGeneration,
+    });
+    if (inboxSessionId) {
+      store.ensure(inboxSessionId);
+      store.set_active(inboxSessionId);
+    }
+    ws?.send(
+      JSON.stringify({
+        type: "session_messages_load",
+        payload: {
+          session_id: inboxSessionId || store.active_sid,
+          limit: 200,
+        },
+      }),
+    );
+  }
+}
+
+function onCompanionIdentityStatus(
+  msg: ControlWireMessage,
+  store: SessionsStore,
+  _sid: string,
+): void {
+  const p = msg.payload || {};
+  if (p.ready === false || p.status === "unready") {
+    store.set_companion_owner(null);
+    return;
+  }
+  const profileId = String(p.profile_id || "");
+  const profileGeneration = Number(p.profile_generation || 0);
+  if (profileId && Number.isInteger(profileGeneration) && profileGeneration > 0) {
+    const inboxSessionId = String(p.session_id || "").trim();
+    store.set_companion_owner({
+      profile_id: profileId,
+      profile_generation: profileGeneration,
+    });
+    if (inboxSessionId) {
+      store.ensure(inboxSessionId);
+      store.set_active(inboxSessionId);
+    }
+    ws?.send(
+      JSON.stringify({
+        type: "session_messages_load",
+        payload: {
+          session_id: inboxSessionId || store.active_sid,
+          limit: 200,
+        },
+      }),
+    );
+  }
+}
+
+function onChatV2RunReserved(msg: ControlWireMessage, store: SessionsStore, sid: string): void {
+  const p = msg.payload || {};
+  const runId = String(p.run_id || "").trim();
+  if (runId) {
+    const session = useSessionsStore.getState().sessions[sid];
+    const requestId = String(p.request_id || "").trim();
+    const taskScopeId = String(p.task_scope_id || "");
+    bindDeferredMessagesToRun(sid, requestId, runId, taskScopeId);
+    const refreshedSession = useSessionsStore.getState().sessions[sid];
+    const selectedRunId = session?.selected_run_id;
+    const selectedProjection = selectedRunId
+      ? refreshedSession?.run_projections[selectedRunId]
+      : undefined;
+    const locallyOriginated = Boolean(
+      requestId &&
+        refreshedSession?.messages.some(
+          (message) =>
+            message.role === "user" &&
+            message.request_id === requestId &&
+            (!message.run_id || message.run_id === runId),
+        ),
+    );
+    const shouldSelect =
+      locallyOriginated ||
+      !selectedRunId ||
+      selectedRunId === runId ||
+      Boolean(
+        selectedProjection &&
+          ["completed", "failed", "cancelled"].includes(selectedProjection.status),
+      );
+    store.upsert_run_projection(sid, runId, {
+      task_scope_id: taskScopeId,
+      request_id: requestId || undefined,
+      turn_id: String(p.turn_id || "") || undefined,
+      conversation_boundary_ref: String(p.conversation_boundary_ref || "") || undefined,
+      conversation_boundary_version:
+        typeof p.conversation_boundary_version === "number"
+          ? p.conversation_boundary_version
+          : undefined,
+      version: typeof p.projection_version === "number" ? p.projection_version : 0,
+      status: msg.type === "chat_v2_run_reserved" ? "starting" : "running",
+      inflight: true,
+      ui_state: shouldSelect ? "open" : "background",
+    });
+    if (shouldSelect) {
+      useSessionsStore.getState().select_run_projection(sid, runId);
+    }
+    if (
+      requestId &&
+      useSessionsStore.getState().sessions[sid]?.pending_root_request_id === requestId
+    ) {
+      store.upsert(sid, {
+        pending_root_request_id: undefined,
+        pending_root_turn_id: undefined,
+      });
+    }
+    if (msg.type === "chat_v2_run_started") {
+      flushDeferredMessages(
+        sid,
+        runId,
+        taskScopeId,
+        typeof p.conversation_boundary_version === "number"
+          ? p.conversation_boundary_version
+          : undefined,
+      );
+    }
+  }
+}
+
+// P5-S2 Phase 5 — code session binding events
+function onProvidersChanged(msg: ControlWireMessage, _store: SessionsStore, _sid: string): void {
+  // Settings-side mutation broadcast refreshes the registry snapshot.
+  // Session bindings are durable tombstones and must not be silently
+  // rewritten when a provider disappears.
+  const incoming = Array.isArray(msg.payload?.providers) ? msg.payload.providers : [];
+  useProvidersStore.getState().set_providers(incoming as ProviderEntry[]);
+  // Mirror into Phase 4 settings store so SettingsProviders re-renders.
+  dispatchProviderEvent(msg as ProviderEventMessage);
+  // The model catalog is a derived view of the active Provider chain.
+  // Refresh it from the backend authority whenever that chain changes;
+  // otherwise a catalog fetched before Provider setup remains empty for
+  // the lifetime of the socket and the model picker only shows "default".
+  ws?.send(JSON.stringify({ type: "models_list" }));
+}
+
+/** 控制通道消息类型 → 处理函数（9G：原 dispatch 的 switch 分支，同一分支的多个类型共用一个函数）。 */
+const CONTROL_HANDLERS = new Map<string, ControlHandler>([
+  ["companion_profile_bound", onCompanionProfileBound],
+  ["companion_identity_status", onCompanionIdentityStatus],
+  ["companion_identity_unready", onCompanionIdentityUnready],
+  ["companion_event", onCompanionEvent],
+  ["companion_projection_retracted", onCompanionProjectionRetracted],
+  ["companion_provisional_delta", onCompanionProvisionalDelta],
+  ["session_todo_update", onSessionTodoUpdate],
+  ["chat_v2_run_reserved", onChatV2RunReserved],
+  ["chat_v2_run_started", onChatV2RunReserved],
+  ["chat_v2_continuation_accepted", onChatV2ContinuationAccepted],
+  ["chat_v2_continuation_status", onChatV2ContinuationStatus],
+  ["task_projections_response", onTaskProjectionsResponse],
+  ["task_projection_updated", onTaskProjectionUpdated],
+  ["session_switched", onSessionSwitched],
+  ["task_session_started", onSessionSwitched],
+  ["chat_response", onChatResponse],
+  ["chat_v2_delta", onChatV2Delta],
+  ["context_usage", onContextUsage],
+  ["chat_v2_user_echo", onChatV2UserEcho],
+  ["chat_v2_reasoning_activity", onChatV2ReasoningActivity],
+  ["chat_v2_reasoning_summary", onChatV2ReasoningSummary],
+  ["chat_v2_final", onChatV2Final],
+  ["workflow_event", onWorkflowEvent],
+  ["workflow_final", onWorkflowEvent],
+  ["chat_v2_error", onChatV2Error],
+  ["chat_v2_plan", onChatV2Plan],
+  ["ppt_outline_proposed", onPptOutlineProposed],
+  ["ppt_outline_resolved", onPptOutlineResolved],
+  ["chat_v2_plan_cancelled", onChatV2PlanCancelled],
+  ["chat_v2_interrupted", onChatV2Interrupted],
+  ["session_run_status_ack", onSessionRunStatusAck],
+  ["subagent_progress", onSubagentProgress],
+  ["slash_command_result", onSlashCommandResult],
+  ["tool_call", onToolCall],
+  ["tool_result", onToolResult],
+  ["session_messages_error", onSessionMessagesError],
+  ["sessions_list_error", onSessionMessagesError],
+  ["session_messages_response", onSessionMessagesResponse],
+  ["permission_request", onPermissionRequest],
+  ["external_wait_request", onExternalWaitRequest],
+  ["project_directory_request", onExternalWaitRequest],
+  ["auto_resume_started", onAutoResumeStarted],
+  ["auto_resume_succeeded", onAutoResumeSucceeded],
+  ["auto_resume_exhausted", onAutoResumeExhausted],
+  ["supervisor_alert", onSupervisorAlert],
+  ["supervisor_toggle_ack", onSupervisorToggleAck],
+  ["providers_changed", onProvidersChanged],
+  ["settings_providers_list_response", onSettingsProvidersListResponse],
+  ["settings_providers_reordered", onSettingsProvidersReordered],
+  ["settings_providers_added", onSettingsProvidersReordered],
+  ["settings_providers_updated", onSettingsProvidersReordered],
+  ["settings_providers_removed", onSettingsProvidersReordered],
+  ["settings_providers_error", onSettingsProvidersReordered],
+  ["session_provider_binding", onSessionProviderBinding],
+  ["session_provider_set", onSessionProviderBinding],
+  ["models_list_response", onModelsListResponse],
+  ["model_context_set_ack", onModelContextSetAck],
+  ["session_model_set", onSessionModelSet],
+]);
+
 function dispatch(msg: ControlWireMessage) {
   if (msg?.type === "companion_identity_status" || msg?.type === "companion_identity_unready") {
     latestCompanionIdentityStatus = msg;
@@ -410,1405 +660,9 @@ function dispatch(msg: ControlWireMessage) {
   const store = useSessionsStore.getState();
   const sid: string = (msg?.payload && msg.payload.session_id) || store.active_sid;
 
-  switch (msg.type) {
-    case "companion_profile_bound": {
-      const p = msg.payload || {};
-      const profileId = String(p.profile_id || "");
-      const profileGeneration = Number(p.profile_generation || 0);
-      if (profileId && Number.isInteger(profileGeneration) && profileGeneration > 0) {
-        const inboxSessionId = String(p.session_id || "").trim();
-        store.set_companion_owner({
-          profile_id: profileId,
-          profile_generation: profileGeneration,
-        });
-        if (inboxSessionId) {
-          store.ensure(inboxSessionId);
-          store.set_active(inboxSessionId);
-        }
-        ws?.send(
-          JSON.stringify({
-            type: "session_messages_load",
-            payload: {
-              session_id: inboxSessionId || store.active_sid,
-              limit: 200,
-            },
-          }),
-        );
-      }
-      break;
-    }
-    case "companion_identity_status": {
-      const p = msg.payload || {};
-      if (p.ready === false || p.status === "unready") {
-        store.set_companion_owner(null);
-        break;
-      }
-      const profileId = String(p.profile_id || "");
-      const profileGeneration = Number(p.profile_generation || 0);
-      if (profileId && Number.isInteger(profileGeneration) && profileGeneration > 0) {
-        const inboxSessionId = String(p.session_id || "").trim();
-        store.set_companion_owner({
-          profile_id: profileId,
-          profile_generation: profileGeneration,
-        });
-        if (inboxSessionId) {
-          store.ensure(inboxSessionId);
-          store.set_active(inboxSessionId);
-        }
-        ws?.send(
-          JSON.stringify({
-            type: "session_messages_load",
-            payload: {
-              session_id: inboxSessionId || store.active_sid,
-              limit: 200,
-            },
-          }),
-        );
-      }
-      break;
-    }
-    case "companion_identity_unready": {
-      store.set_companion_owner(null);
-      break;
-    }
-    case "companion_event": {
-      const event = companionEventFrom(msg.payload);
-      if (event) {
-        store.reduce_companion_event(event);
-        if (event.decision?.kind === "action_confirmation") {
-          store.clear_companion_provisional(event.decision.run_id);
-        }
-      }
-      break;
-    }
-    case "companion_projection_retracted": {
-      const p = msg.payload || {};
-      store.retract_companion_projection({
-        event_id: String(p.event_id || p.projection_event_id || ""),
-        notification_id: String(p.notification_id || ""),
-        profile_id: String(p.profile_id || ""),
-        profile_generation: Number(p.profile_generation || 0),
-        session_id: String(p.session_id || store.active_sid),
-        seq: Number(p.seq ?? 0),
-        route_version: p.route_version === undefined ? undefined : Number(p.route_version),
-        redaction_version: Number(p.redaction_version || 0),
-        occurred_at: typeof p.occurred_at === "string" ? p.occurred_at : undefined,
-        received_at: Date.now(),
-      });
-      break;
-    }
-    case "companion_provisional_delta": {
-      const p = msg.payload || {};
-      const runId = String(p.run_id || "");
-      const invocationId = String(p.invocation_id || "");
-      const streamEpoch = String(p.stream_epoch || "");
-      if (p.retract === true || p.cancelled === true || p.unknown === true) {
-        store.clear_companion_provisional(runId, invocationId, streamEpoch);
-      } else {
-        store.upsert_companion_provisional(
-          runId,
-          invocationId,
-          streamEpoch,
-          String(p.content || ""),
-        );
-      }
-      break;
-    }
-    case "session_todo_update": {
-      const items = Array.isArray(msg.payload?.items) ? msg.payload.items : [];
-      store.upsert_todos(sid, items);
-      break;
-    }
-    case "chat_v2_run_reserved":
-    case "chat_v2_run_started": {
-      const p = msg.payload || {};
-      const runId = String(p.run_id || "").trim();
-      if (runId) {
-        const session = useSessionsStore.getState().sessions[sid];
-        const requestId = String(p.request_id || "").trim();
-        const taskScopeId = String(p.task_scope_id || "");
-        bindDeferredMessagesToRun(sid, requestId, runId, taskScopeId);
-        const refreshedSession = useSessionsStore.getState().sessions[sid];
-        const selectedRunId = session?.selected_run_id;
-        const selectedProjection = selectedRunId
-          ? refreshedSession?.run_projections[selectedRunId]
-          : undefined;
-        const locallyOriginated = Boolean(
-          requestId &&
-            refreshedSession?.messages.some(
-              (message) =>
-                message.role === "user" &&
-                message.request_id === requestId &&
-                (!message.run_id || message.run_id === runId),
-            ),
-        );
-        const shouldSelect =
-          locallyOriginated ||
-          !selectedRunId ||
-          selectedRunId === runId ||
-          Boolean(
-            selectedProjection &&
-              ["completed", "failed", "cancelled"].includes(selectedProjection.status),
-          );
-        store.upsert_run_projection(sid, runId, {
-          task_scope_id: taskScopeId,
-          request_id: requestId || undefined,
-          turn_id: String(p.turn_id || "") || undefined,
-          conversation_boundary_ref: String(p.conversation_boundary_ref || "") || undefined,
-          conversation_boundary_version:
-            typeof p.conversation_boundary_version === "number"
-              ? p.conversation_boundary_version
-              : undefined,
-          version: typeof p.projection_version === "number" ? p.projection_version : 0,
-          status: msg.type === "chat_v2_run_reserved" ? "starting" : "running",
-          inflight: true,
-          ui_state: shouldSelect ? "open" : "background",
-        });
-        if (shouldSelect) {
-          useSessionsStore.getState().select_run_projection(sid, runId);
-        }
-        if (
-          requestId &&
-          useSessionsStore.getState().sessions[sid]?.pending_root_request_id === requestId
-        ) {
-          store.upsert(sid, {
-            pending_root_request_id: undefined,
-            pending_root_turn_id: undefined,
-          });
-        }
-        if (msg.type === "chat_v2_run_started") {
-          flushDeferredMessages(
-            sid,
-            runId,
-            taskScopeId,
-            typeof p.conversation_boundary_version === "number"
-              ? p.conversation_boundary_version
-              : undefined,
-          );
-        }
-      }
-      break;
-    }
-    case "chat_v2_continuation_accepted": {
-      const p = msg.payload || {};
-      const runId = String(p.run_id || "").trim();
-      const requestId = String(p.request_id || "").trim();
-      if (requestId) {
-        store.set_continuation_status(sid, requestId, p.queued === true ? "waiting" : "bound");
-      }
-      if (runId) {
-        store.upsert_run_projection(sid, runId, {
-          task_scope_id: String(p.task_scope_id || ""),
-          conversation_boundary_ref: String(p.conversation_boundary_ref || "") || undefined,
-          conversation_boundary_version:
-            typeof p.conversation_boundary_version === "number"
-              ? p.conversation_boundary_version
-              : undefined,
-        });
-      }
-      break;
-    }
-    case "chat_v2_continuation_status": {
-      const p = msg.payload || {};
-      const requestId = String(p.request_id || "").trim();
-      const continuationStatus = String(p.status || "").trim();
-      if (requestId && (continuationStatus === "bound" || continuationStatus === "failed")) {
-        store.set_continuation_status(
-          sid,
-          requestId,
-          continuationStatus,
-          String(p.error || "").trim() || undefined,
-        );
-      }
-      break;
-    }
-    case "task_projections_response": {
-      const projections = Array.isArray(msg.payload?.projections) ? msg.payload.projections : [];
-      projections.forEach((projection) => {
-        const runId = String(projection?.run_id || "").trim();
-        if (!runId) return;
-        const existing = useSessionsStore.getState().sessions[sid]?.run_projections?.[runId];
-        const durableStatus = String(projection.status || "");
-        const status =
-          durableStatus === "waiting"
-            ? "waiting"
-            : durableStatus === "completed"
-              ? "completed"
-              : durableStatus === "failed"
-                ? "failed"
-                : durableStatus === "cancelled"
-                  ? "cancelled"
-                  : durableStatus
-                    ? "running"
-                    : (existing?.status ?? "waiting");
-        const inflight =
-          durableStatus === "created" ||
-          durableStatus === "queued" ||
-          durableStatus === "running" ||
-          durableStatus === "cancel_requested";
-        store.upsert_run_projection(sid, runId, {
-          projection_id: String(projection.projection_id || "") || undefined,
-          task_scope_id: String(projection.task_scope_id || ""),
-          version: Number(projection.version || 0),
-          conversation_boundary_ref:
-            String(projection.conversation_boundary_ref || "") || undefined,
-          conversation_boundary_version:
-            typeof projection.conversation_boundary_version === "number"
-              ? projection.conversation_boundary_version
-              : undefined,
-          ui_state:
-            projection.ui_state === "background" || projection.ui_state === "closed"
-              ? projection.ui_state
-              : "open",
-          status,
-          inflight: durableStatus ? inflight : (existing?.inflight ?? false),
-          started_at:
-            typeof projection.started_at === "number"
-              ? projection.started_at * 1000
-              : existing?.started_at,
-          last_activity:
-            typeof projection.updated_at === "number"
-              ? projection.updated_at * 1000
-              : existing?.last_activity,
-        });
-      });
-      break;
-    }
-    case "task_projection_updated": {
-      const p = msg.payload || {};
-      const runId = String(p.run_id || "").trim();
-      if (runId) {
-        store.upsert_run_projection(sid, runId, {
-          projection_id: String(p.projection_id || "") || undefined,
-          task_scope_id: String(p.task_scope_id || ""),
-          version: Number(p.version || 0),
-          ui_state: p.ui_state === "background" || p.ui_state === "closed" ? p.ui_state : "open",
-        });
-      }
-      break;
-    }
-    case "session_switched":
-    case "task_session_started": {
-      const p = msg.payload || {};
-      const next_sid = typeof p.new_sid === "string" ? p.new_sid : "";
-      if (next_sid) {
-        store.ensure(next_sid);
-        store.upsert(next_sid, {
-          provider_id: p.provider_id === undefined ? null : p.provider_id,
-          preferred_model: p.preferred_model === undefined ? null : p.preferred_model,
-          model_params: p.model_params === undefined ? null : p.model_params,
-        });
-        store.set_active(next_sid);
-      }
-      break;
-    }
-    case "chat_response": {
-      // Mid-loop assistant text (with tool calls). Render as assistant bubble.
-      const p = msg.payload || {};
-      const text = p.text;
-      if (text) {
-        store.push_message(sid, {
-          role: "assistant",
-          text,
-          run_id: String(p.run_id || "").trim() || undefined,
-          task_scope_id: String(p.task_scope_id || "").trim() || undefined,
-        });
-      }
-      break;
-    }
-    case "chat_v2_delta": {
-      // P4-S25 A1: token chunk during streaming. Append to the in-progress
-      // assistant bubble. We track the last "assistant" message in the
-      // session and append to it; if the previous message isn't an
-      // assistant (e.g. first delta of the turn), create a new one.
-      const p = msg.payload || {};
-      const kind = p.kind || "content";
-      const chunk: string = p.content || "";
-      const invocationId = String(p.invocation_id || "").trim();
-      const streamEpoch = String(p.stream_epoch || "").trim();
-      const runId = String(p.run_id || "").trim();
-      if (p.retract_provisional) {
-        store.clear_companion_provisional(runId, invocationId, streamEpoch);
-        const cur = store.sessions[sid];
-        if (cur) {
-          store.set_messages(
-            sid,
-            cur.messages.filter(
-              (message) =>
-                !(
-                  message.provisional === true &&
-                  (!runId || message.run_id === runId) &&
-                  (!invocationId || message.invocation_id === invocationId)
-                ),
-            ),
-          );
-        }
-        break;
-      }
-      if (!chunk) break;
-      if (p.provisional === true) {
-        // Provisional provider output never enters ordinary Message history.
-        // A malformed delta without the full triple is fail-closed.
-        if (runId && invocationId && streamEpoch) {
-          store.upsert_companion_provisional(runId, invocationId, streamEpoch, chunk);
-        }
-        break;
-      }
-      // Reasoning chunks are visually muted in the UI; stash them on a
-      // separate role for now. (Could fold into one bubble in B2.)
-      const role = kind === "reasoning" ? "reasoning_delta" : "assistant_delta";
-      const taskScopeId = String(p.task_scope_id || "").trim();
-      const cur = store.sessions[sid];
-      const last = cur?.messages.findLast(
-        (message) =>
-          message.role === role &&
-          (!runId || message.run_id === runId) &&
-          (!invocationId || message.invocation_id === invocationId),
-      );
-      if (last && last.role === role) {
-        // Append to existing partial bubble in-place.
-        last.text = (last.text || "") + chunk;
-        // Trigger zustand re-render via a no-op upsert.
-        store.upsert(sid, { last_activity: Date.now() });
-      } else {
-        store.push_message(sid, {
-          role,
-          text: chunk,
-          run_id: runId || undefined,
-          task_scope_id: taskScopeId || undefined,
-          invocation_id: invocationId || undefined,
-          stream_epoch: streamEpoch || undefined,
-        });
-      }
-      break;
-    }
-    case "context_usage": {
-      // 2026-05-31 restore — Claude-Code-style ring gauge update.
-      const p = msg.payload || {};
-      // Authority frames without their own Session identity are unsafe:
-      // active_sid may have changed while a reconnect response was in flight.
-      store.upsert_context_usage(p as ContextUsageSnapshot);
-      break;
-    }
-    case "chat_v2_user_echo": {
-      // 2026-05-31 restore — multi-window sync: a peer window typed a user
-      // message. Backend skips originator, so receiving means peer-origin
-      // → directly push to local store.
-      const p = msg.payload || {};
-      const text = p.text;
-      if (text) {
-        store.push_message(sid, {
-          role: "user",
-          text,
-          run_id: String(p.run_id || "") || undefined,
-          task_scope_id: String(p.task_scope_id || "") || undefined,
-          request_id: String(p.request_id || "") || undefined,
-        });
-      }
-      break;
-    }
-    case "chat_v2_reasoning_activity": {
-      // Provider reasoning tokens are intentionally not exposed as raw
-      // chain-of-thought. The durable public summary arrives separately.
-      const p = msg.payload || {};
-      const runId = String(p.run_id || "").trim();
-      if (runId) {
-        store.upsert_run_projection(sid, runId, {
-          task_scope_id: String(p.task_scope_id || ""),
-          status: "running",
-          inflight: true,
-        });
-      }
-      break;
-    }
-    case "chat_v2_reasoning_summary": {
-      const p = msg.payload || {};
-      const summaryId = String(p.summary_id || "").trim();
-      const text = String(p.text || "").trim();
-      if (!summaryId || !text) break;
-      let current = store.sessions[sid];
-      if (current) {
-        const runId = String(p.run_id || "").trim();
-        const runProjection = runId ? current.run_projections?.[runId] : undefined;
-        const runIsKnownNonTerminal =
-          runProjection !== undefined &&
-          runProjection.status !== "completed" &&
-          runProjection.status !== "failed" &&
-          runProjection.status !== "cancelled";
-        const lastUserIndex = current.messages.findLastIndex((message) => message.role === "user");
-        const withoutLiveDuplicate = current.messages.filter(
-          (message, index) =>
-            !(
-              index > lastUserIndex &&
-              runIsKnownNonTerminal &&
-              (message.role === "assistant_delta" || message.role === "assistant") &&
-              String(message.text || "").trim() === text &&
-              message.run_id === runId
-            ),
-        );
-        if (withoutLiveDuplicate.length !== current.messages.length) {
-          store.set_messages(sid, withoutLiveDuplicate);
-          current = store.sessions[sid];
-        }
-      }
-      const existingIndex =
-        current?.messages.findIndex(
-          (message) =>
-            message.role === "reasoning_summary" && message.reasoning_summary_id === summaryId,
-        ) ?? -1;
-      const summary: Omit<Message, "id" | "ts"> = {
-        role: "reasoning_summary" as const,
-        text,
-        reasoning_summary_id: summaryId,
-        reasoning_phase: p.phase === "observation" || p.phase === "status" ? p.phase : "planning",
-        reasoning_status: p.status === "failed" || p.status === "completed" ? p.status : "running",
-        run_id: String(p.run_id || "") || undefined,
-        task_scope_id: String(p.task_scope_id || "") || undefined,
-      };
-      if (existingIndex >= 0 && current) {
-        store.set_messages(
-          sid,
-          current.messages.map((message, index) =>
-            index === existingIndex ? { ...message, ...summary } : message,
-          ),
-        );
-      } else {
-        store.push_message(sid, { id: summaryId, ...summary });
-      }
-      break;
-    }
-    case "chat_v2_final": {
-      const p = msg.payload || {};
-      const text = p.text;
-      const runId = String(p.run_id || "").trim();
-      const taskScopeId = String(p.task_scope_id || "").trim();
-      store.clear_companion_provisional(
-        runId,
-        String(p.invocation_id || ""),
-        String(p.stream_epoch || ""),
-      );
-      // P4-S25 A1: final text replaces any partial deltas. Drop trailing
-      // assistant_delta + reasoning_delta bubbles (they were the streaming
-      // preview); the canonical assistant bubble lands here.
-      const cur = store.sessions[sid];
-      if (cur) {
-        let cleaned = cur.messages.filter(
-          (m) =>
-            !(
-              (m.role === "assistant_delta" || m.role === "reasoning_delta") &&
-              (!runId || m.run_id === runId)
-            ),
-        );
-        if (text) {
-          const lastUserIdx = cleaned.findLastIndex(
-            (m) => m.role === "user" && (!runId || m.run_id === runId),
-          );
-          const hasSameTurnPreview = cleaned.some(
-            (m, idx) =>
-              idx > lastUserIdx &&
-              m.role === "assistant" &&
-              (!runId || m.run_id === runId) &&
-              m.text === text,
-          );
-          if (hasSameTurnPreview) {
-            cleaned = cleaned.filter(
-              (m, idx) =>
-                !(
-                  idx > lastUserIdx &&
-                  m.role === "assistant" &&
-                  (!runId || m.run_id === runId) &&
-                  m.text === text
-                ),
-            );
-          }
-        }
-        store.set_messages(sid, cleaned);
-      }
-      if (text) {
-        store.push_message(sid, {
-          role: "assistant",
-          text,
-          run_id: runId || undefined,
-          task_scope_id: taskScopeId || undefined,
-        });
-      }
-      if (runId) {
-        store.upsert_run_projection(sid, runId, {
-          task_scope_id: taskScopeId,
-          status: "completed",
-          inflight: false,
-        });
-        selectNewestInflightRunAfterTerminal(sid, runId);
-
-        // 2026-08-17 Bug fix: 检查是否还有其他正在运行的任务
-        // 如果没有，重置主会话状态为 idle
-        const session = store.sessions[sid];
-        if (session) {
-          const hasOtherInflightRuns = Object.values(session.run_projections || {}).some(
-            (proj) => proj.run_id !== runId && proj.inflight && proj.ui_state !== "closed",
-          );
-          if (!hasOtherInflightRuns) {
-            store.upsert(sid, {
-              status: "idle",
-              inflight: false,
-              active_run_id: null,
-            });
-          }
-        }
-      } else {
-        store.upsert(sid, {
-          status: "idle",
-          inflight: false,
-          active_run_id: null,
-        });
-      }
-      break;
-    }
-    case "workflow_event":
-    case "workflow_final": {
-      const event = (msg.payload || {}) as WorkflowEventEnvelope;
-      const eventId = String(event.event_id || "");
-      const eventType = String(event.event_type || "");
-      const body = event.payload || {};
-      const nested = (body.payload || {}) as { text?: unknown };
-      const text = String(nested.text || body.text || "").trim();
-      const currentBefore = store.sessions[sid];
-      const projectionRunId = String(event.root_run_id || event.task_root_run_id || "").trim();
-      const finishesTaskProjection =
-        eventType === "workflow.final" &&
-        !!projectionRunId &&
-        !!currentBefore?.run_projections?.[projectionRunId];
-      if (store.reduce_workflow_event(sid, event)) {
-        if (finishesTaskProjection) {
-          store.upsert_run_projection(sid, projectionRunId, {
-            status: "completed",
-            inflight: false,
-          });
-          selectNewestInflightRunAfterTerminal(sid, projectionRunId);
-        } else {
-          store.upsert(sid, { last_activity: Date.now() });
-        }
-        break;
-      }
-      const current = store.sessions[sid];
-      if (eventId && current?.messages.some((message) => message.id === eventId)) break;
-      if (text) {
-        store.push_message(sid, {
-          id: eventId || undefined,
-          role: "assistant",
-          text,
-          run_id: projectionRunId || undefined,
-        });
-      }
-      if (finishesTaskProjection) {
-        store.upsert_run_projection(sid, projectionRunId, {
-          status: "completed",
-          inflight: false,
-        });
-        selectNewestInflightRunAfterTerminal(sid, projectionRunId);
-      } else {
-        store.upsert(sid, { last_activity: Date.now() });
-      }
-      break;
-    }
-    case "chat_v2_error": {
-      const p = msg.payload || {};
-      // Empty-state creation failures have no durable Session to own an
-      // error bubble. App.tsx renders the same frame in its global banner;
-      // do not manufacture a store entry with the empty-string id.
-      if (!sid) break;
-      const runId = String(p.run_id || "").trim();
-      const taskScopeId = String(p.task_scope_id || "").trim();
-      const requestId = String(p.request_id || "").trim();
-      store.clear_companion_provisional(runId);
-      // 这一轮失败了：若它就是本会话正在等待的 root turn，必须解除等待。
-      // pending_root_request_id 原先只在 chat_v2_run_reserved/started 里清，
-      // 而 Run 预约之前就夭折的拒绝（companion_identity_not_ready、只读会话等）
-      // 走不到那里 → 该字段永远挂着 → InputBar 的 shouldDefer 恒真 → 此后每条
-      // 消息只 push 到本地流、根本不 send，永久停在「等待 Agent 读取…」。
-      // 实测：r4 S18 删除当前会话后自动切到 default，default 正是被这样卡死的。
-      // requestId 缺失时（老后端/未覆盖的拒绝分支）按会话级兜底清除——一轮 root
-      // turn 失败后继续把后续消息挂起，没有任何可用语义。
-      {
-        const pending = store.sessions[sid]?.pending_root_request_id;
-        if (pending && (!requestId || pending === requestId)) {
-          store.upsert(sid, {
-            pending_root_request_id: undefined,
-            pending_root_turn_id: undefined,
-          });
-        }
-      }
-      const current = store.sessions[sid];
-      const continuationError = Boolean(
-        requestId &&
-          current?.messages.some(
-            (message) =>
-              message.role === "user" &&
-              message.request_id === requestId &&
-              message.continuation_status,
-          ),
-      );
-      if (current) {
-        store.set_messages(
-          sid,
-          current.messages.filter(
-            (message) => !(message.provisional === true && (!runId || message.run_id === runId)),
-          ),
-        );
-      }
-      if (continuationError) {
-        store.set_continuation_status(
-          sid,
-          requestId,
-          "failed",
-          String(p.error || p.detail || p.reason || "续接失败"),
-        );
-      }
-      const txt = chatErrorMessage(p);
-      store.push_message(sid, {
-        role: "error",
-        text: txt,
-        run_id: runId || undefined,
-        task_scope_id: taskScopeId || undefined,
-      });
-      if (runId && !continuationError) {
-        store.upsert_run_projection(sid, runId, {
-          task_scope_id: taskScopeId,
-          status: "failed",
-          inflight: false,
-        });
-        const latest = useSessionsStore.getState().sessions[sid];
-        if (latest) {
-          store.set_messages(
-            sid,
-            latest.messages.map((message) =>
-              message.run_id === runId && message.deferred_send
-                ? {
-                    ...message,
-                    deferred_send: false,
-                    continuation_status: "failed",
-                    continuation_error: txt,
-                  }
-                : message,
-            ),
-          );
-        }
-        selectNewestInflightRunAfterTerminal(sid, runId);
-      } else if (!continuationError) {
-        store.upsert(sid, {
-          status: "error",
-          inflight: false,
-          active_run_id: null,
-        });
-      }
-      // Run 预约前就夭折时没有 runId，上面那条按 run_id 收尾 deferred 消息的
-      // 分支走不到（continuationError 分支同样走不到）。这些消息挂的是"等 root
-      // run 出生"，而 root turn 已经失败，不落到 failed 就会永久停在
-      // 「等待 Agent 读取…」。放在 if/else 之外，两条路径都覆盖。
-      if (!runId) {
-        const latest = useSessionsStore.getState().sessions[sid];
-        const stuck = latest?.messages.some(
-          (message) => message.deferred_send || message.continuation_status === "waiting",
-        );
-        if (latest && stuck) {
-          store.set_messages(
-            sid,
-            latest.messages.map((message) =>
-              message.deferred_send || message.continuation_status === "waiting"
-                ? {
-                    ...message,
-                    deferred_send: false,
-                    continuation_status: "failed",
-                    continuation_error: txt,
-                  }
-                : message,
-            ),
-          );
-        }
-      }
-      break;
-    }
-    case "chat_v2_plan": {
-      // P4-S25 A2: Plan card from the planner phase. Render it as a
-      // dedicated bubble in the chat stream so the user can see the
-      // intended steps before / during execution.
-      const p = msg.payload || {};
-      store.push_message(sid, {
-        role: "plan",
-        plan_rationale: p.rationale,
-        plan_steps: p.steps,
-        plan_target_directory: p.target_directory,
-        plan_action_categories: Array.isArray(p.action_categories)
-          ? p.action_categories.map(String)
-          : [],
-        plan_auto_confirmed: !!p.auto_confirmed,
-        // superpowers 决策2: 硬门开 → 渲染 [执行]/[取消] 按钮等确认
-        plan_awaiting_confirm: !!p.awaiting_confirm,
-        plan_sid: sid,
-        plan_run_id: p.run_id,
-        plan_decision_id: p.decision_id,
-        plan_nonce: p.nonce,
-        plan_version: p.version,
-        run_id: String(p.run_id || "") || undefined,
-        task_scope_id: String(p.task_scope_id || "") || undefined,
-      });
-      break;
-    }
-    case "ppt_outline_proposed": {
-      const p = msg.payload || {};
-      const targetSid = typeof p.session_id === "string" && p.session_id ? p.session_id : sid;
-      store.push_message(targetSid, {
-        role: "ppt_outline",
-        ppt_outline_awaiting: true,
-        outline_id: p.outline_id,
-        topic: p.topic,
-        outline_md: p.outline_md,
-        sources_count: typeof p.sources_count === "number" ? p.sources_count : 0,
-        no_research: !!p.no_research,
-        history: Array.isArray(p.history) ? p.history : [],
-      });
-      break;
-    }
-    case "ppt_outline_resolved": {
-      const p = msg.payload || {};
-      const outlineId = typeof p.outline_id === "string" ? p.outline_id : "";
-      if (outlineId) {
-        const targetSession = typeof p.session_id === "string" && p.session_id ? p.session_id : sid;
-        const decisionStatus =
-          typeof p.decision_status === "string" ? p.decision_status : undefined;
-        const targets = new Set<string>([targetSession]);
-        for (const [sessionId, session] of Object.entries(store.sessions)) {
-          if (
-            session.messages.some((m) => m.role === "ppt_outline" && m.outline_id === outlineId)
-          ) {
-            targets.add(sessionId);
-          }
-        }
-        targets.forEach((targetSid) =>
-          store.resolve_ppt_outline(targetSid, outlineId, decisionStatus),
-        );
-      }
-      break;
-    }
-    case "chat_v2_plan_cancelled": {
-      // superpowers 决策2: 用户点[取消] 或 后端超时 → 清按钮 + 回 idle
-      store.resolve_plan(sid);
-      const runId = String(msg.payload?.run_id || "").trim();
-      if (runId) {
-        store.upsert_run_projection(sid, runId, {
-          status: "cancelled",
-          inflight: false,
-        });
-        selectNewestInflightRunAfterTerminal(sid, runId);
-      } else {
-        store.upsert(sid, {
-          status: "idle",
-          inflight: false,
-          active_run_id: null,
-        });
-      }
-      break;
-    }
-    case "chat_v2_interrupted": {
-      const p = msg.payload || {};
-      const runId = String(p.run_id || p.root_run_id || "").trim();
-      const state = String(p.state || "").toLowerCase();
-      const version = Number(p.run_version || 0);
-      const terminal = ["completed", "failed", "cancelled"].includes(state);
-      const current = runId ? store.sessions[sid]?.run_projections?.[runId] : undefined;
-      if (runId && terminal && version >= (current?.version ?? 0)) {
-        store.upsert_run_projection(sid, runId, {
-          version,
-          status: state as "completed" | "failed" | "cancelled",
-          inflight: false,
-        });
-        selectNewestInflightRunAfterTerminal(sid, runId);
-      } else if (
-        runId &&
-        version >= (current?.version ?? 0) &&
-        (state === "running" || state === "waiting")
-      ) {
-        store.upsert_run_projection(sid, runId, {
-          version,
-          status: state,
-          inflight: state === "running",
-        });
-        if (state === "waiting") {
-          store.upsert(sid, { active_run_id: runId });
-        }
-      }
-      break;
-    }
-    case "session_run_status_ack": {
-      const p = msg.payload || {};
-      const queryId = String(p.query_id || "");
-      const pending = pendingRunStatusQueries.get(queryId);
-      if (!pending) break;
-      const ackSid = String(p.session_id || sid);
-      const ackRunId = String(p.root_run_id || p.run_id || "").trim();
-      if (ackSid !== pending.sid || ackRunId !== pending.runId) break;
-      clearTimeout(pending.timer);
-      pendingRunStatusQueries.delete(queryId);
-      const runId = String(p.root_run_id || p.run_id || pending?.runId || "").trim();
-      if (!runId) break;
-      const current = store.sessions[sid]?.run_projections?.[runId];
-      const version = Number(p.run_version || 0);
-      if (version < (current?.version ?? 0)) break;
-      const state = String(p.state || "").toLowerCase();
-      if (["completed", "failed", "cancelled"].includes(state)) {
-        store.upsert_run_projection(sid, runId, {
-          version,
-          status: state as "completed" | "failed" | "cancelled",
-          inflight: false,
-        });
-        selectNewestInflightRunAfterTerminal(sid, runId);
-      } else if (state === "waiting") {
-        // WAITING is durable and actionable. Keep the active Run identity;
-        // the UI may offer resume/cancel without pretending the Run is idle.
-        store.upsert_run_projection(sid, runId, {
-          version,
-          status: "waiting",
-          inflight: false,
-        });
-        store.upsert(sid, {
-          status: "idle",
-          inflight: false,
-          active_run_id: runId,
-        });
-      } else if (["created", "queued", "running", "cancel_requested"].includes(state)) {
-        store.upsert_run_projection(sid, runId, {
-          version,
-          status: "running",
-          inflight: true,
-        });
-        store.upsert(sid, {
-          status: "running",
-          inflight: true,
-          active_run_id: runId,
-        });
-      }
-      break;
-    }
-    case "subagent_progress": {
-      // subagent-concurrency-driver WI-3.4 — 子代理并发实时进度
-      // （queued→running→completed/failed）。喂独立 subagentStore，
-      // 由 SubagentProgressPanel 渲染（不碰消息流）。
-      const p = msg.payload || {};
-      if (p && p.run_id) {
-        const sub = useSubagentStore.getState();
-        sub.upsert({
-          run_id: String(p.run_id),
-          task_id: String(p.task_id || ""),
-          kind: String(p.kind || ""),
-          status: String(p.status || "queued"),
-          // 排队中被取消时后端发 reason="cancelled" → 前端区分「已取消」与「失败」。
-          reason: typeof p.reason === "string" ? p.reason : undefined,
-          summary: typeof p.summary === "string" ? p.summary : undefined,
-          ts: typeof p.ts === "number" ? p.ts : Date.now(),
-        });
-        // WI-OC-2：每条进度事件附带调度器累计快照（peak/total_queued/
-        // total_rejected）。旧后端不推这些 key → setMetrics 忽略 → 缺省 0 降级。
-        sub.setMetrics({
-          peak_concurrent: typeof p.peak_concurrent === "number" ? p.peak_concurrent : undefined,
-          total_queued: typeof p.total_queued === "number" ? p.total_queued : undefined,
-          total_rejected: typeof p.total_rejected === "number" ? p.total_rejected : undefined,
-        });
-      }
-      break;
-    }
-    case "slash_command_result": {
-      // FEAT-A2: /help /goal /prefs /skill 结果。此前 ws.ts 无此 case →
-      // 所有 slash 结果被静默丢弃。现在格式化成一条 slash_result bubble。
-      const p = msg.payload || {};
-      const text = format_slash_result(p.result as SlashCommandResult | undefined);
-      store.push_message(sid, { role: "slash_result", text });
-      // slash 是同步请求-响应：结果到达即结束本轮。不清 inflight 会让
-      // InputBar 永卡"思考中"（发送钮变停止钮，后续输入无法提交）。
-      store.upsert(sid, { status: "idle", inflight: false });
-      break;
-    }
-    case "tool_call": {
-      const p = msg.payload || {};
-      store.push_message(sid, {
-        role: "tool_call",
-        tool_name: p.name,
-        tool_args: p.arguments,
-        run_id: String(p.run_id || "") || undefined,
-        task_scope_id: String(p.task_scope_id || "") || undefined,
-        request_id: String(p.request_id || "") || undefined,
-        invocation_id: String(p.invocation_id || "") || undefined,
-        stream_epoch: String(p.stream_epoch || "") || undefined,
-      });
-      store.upsert(sid, { status: "running" });
-      break;
-    }
-    case "tool_result": {
-      const p = msg.payload || {};
-      const workflowEventId = typeof p.workflow_event_id === "string" ? p.workflow_event_id : "";
-      const messageId = workflowEventId ? `workflow-artifact:${workflowEventId}` : undefined;
-      if (messageId && store.sessions[sid]?.messages.some((message) => message.id === messageId)) {
-        break;
-      }
-      const baseResultRaw =
-        Array.isArray(p.artifacts) && p.artifacts.length > 0
-          ? JSON.stringify(p)
-          : (p.result as string | undefined);
-      const liveError =
-        publicToolErrorText(p.error) ??
-        (p.ok === false && typeof p.status === "string" ? p.status : undefined);
-      const resultRaw =
-        p.ok === false && liveError
-          ? JSON.stringify({
-              status: typeof p.status === "string" ? p.status : "failed",
-              error: p.error ?? liveError,
-              result: baseResultRaw,
-            })
-          : baseResultRaw;
-      store.push_message(sid, {
-        id: messageId,
-        role: "tool_result",
-        tool_name: p.tool,
-        tool_ok: p.ok,
-        tool_result: resultRaw,
-        tool_error: liveError,
-        workflow_event_id: workflowEventId || undefined,
-        run_id: String(p.run_id || "") || undefined,
-        task_scope_id: String(p.task_scope_id || "") || undefined,
-        request_id: String(p.request_id || "") || undefined,
-        invocation_id: String(p.invocation_id || "") || undefined,
-        stream_epoch: String(p.stream_epoch || "") || undefined,
-      });
-      break;
-    }
-    case "session_messages_error":
-    case "sessions_list_error": {
-      // Fail closed: retain the last known local view. Replacing it with an
-      // empty response would make a projection outage look like data loss.
-      store.upsert(sid, { status: "idle", inflight: false });
-      break;
-    }
-    case "session_messages_response": {
-      // F5 rehydration response. Backend returned the message list
-      // for a given session_id; replace whatever's in the store so
-      // we don't end up with duplicates after reconnect.
-      //
-      // P6 bugfix 2026-05-14 (history persistence): backend rows may now
-      // include role='assistant' with tool_calls JSON (means agent called
-      // a tool — UI renders as tool_call bubble) or role='tool' with
-      // tool_call_id (the tool's reply — render as tool_result bubble).
-      // Pre-fix the frontend只 expected user/assistant, so even after the
-      // backend persists everything UI would still drop them.
-      const target = msg.payload?.session_id || sid;
-      const items: HistoryRow[] = msg.payload?.messages ?? [];
-      const restored: Message[] = [];
-      const workflowEvents: WorkflowEventEnvelope[] = [];
-      const companionEvents: CompanionEvent[] = [];
-      for (const rawEvent of msg.payload?.companion_events ?? []) {
-        const event = companionEventFrom(rawEvent);
-        if (event) companionEvents.push(event);
-      }
-      // P6 bugfix 2026-05-14: build tool_call_id → tool_name map first pass
-      // so the subsequent tool reply row can show the right tool name
-      // (instead of "(unknown)"). Backend SessionDB schema doesn't store
-      // tool_name on the tool row; only the prior assistant row knows it
-      // via tool_calls[].function.name.
-      const tcid_to_name = new Map<string, string>();
-      for (const m of items) {
-        const tcs = Array.isArray(m.tool_calls) ? m.tool_calls : null;
-        if (!tcs) continue;
-        for (const tc of tcs) {
-          const id = tc?.id;
-          const name = tc?.function?.name || tc?.name;
-          if (id && name) tcid_to_name.set(id, name);
-        }
-      }
-      for (const [itemIndex, m] of items.entries()) {
-        const ts = m.ts || Date.now();
-        const base_id = m.id || `history:${target}:${itemIndex}:${ts}`;
-        const role = m.role || "assistant";
-        const tool_calls = Array.isArray(m.tool_calls) ? m.tool_calls : null;
-        const workflowEvent = m.workflow_event;
-        let companionSource: unknown = m.companion_event;
-        if (!companionSource && m.projection_kind === "companion_event") {
-          try {
-            companionSource = JSON.parse(String(m.text || ""));
-          } catch {
-            companionSource = null;
-          }
-        }
-        const companionEvent = companionEventFrom(companionSource);
-        if (companionEvent) {
-          companionEvents.push(companionEvent);
-          continue;
-        }
-        if (workflowEvent && typeof workflowEvent === "object") {
-          const eventType = String(workflowEvent.event_type || "");
-          if (
-            eventType === "workflow.accepted" ||
-            eventType === "workflow.progress" ||
-            eventType === "workflow.decision" ||
-            eventType === "workflow.final"
-          ) {
-            workflowEvents.push(workflowEvent);
-            continue;
-          }
-          // final_assistant and unknown workflow projections retain their
-          // ordinary persisted message row for backward compatibility.
-        }
-        if (
-          m.projection_kind === "workflow_progress" &&
-          String(m.workflow_event_id || "").startsWith("reasoning-summary:")
-        ) {
-          restored.push({
-            id: base_id,
-            role: "reasoning_summary",
-            text: m.text || "",
-            reasoning_summary_id: m.workflow_event_id || m.projection_event_id || base_id,
-            reasoning_phase: "status",
-            reasoning_status: "completed",
-            run_id: m.run_id || undefined,
-            task_scope_id: m.task_scope_id || undefined,
-            ts,
-          });
-          continue;
-        }
-
-        // Durable workflow artifacts are persisted as assistant rows carrying
-        // the public artifact_create envelope. The live path receives the
-        // same envelope as a tool_result, but history hydration previously
-        // treated it as ordinary assistant text and exposed raw JSON after a
-        // restart. Restore the live shape so ArtifactCard rendering and the
-        // workflow-event idempotency key stay identical across reconnects.
-        if (role === "assistant" && !tool_calls) {
-          let artifactEnvelope: Record<string, unknown> | null = null;
-          try {
-            const parsed = JSON.parse(String(m.text || ""));
-            if (
-              parsed &&
-              typeof parsed === "object" &&
-              parsed.tool === "artifact_create" &&
-              Array.isArray(parsed.artifacts) &&
-              parsed.artifacts.length > 0
-            ) {
-              const legacyFileArtifact =
-                parsed.artifacts.length === 1 && parsed.artifacts[0]?.kind === "text"
-                  ? persistedWorkflowFileArtifact(workflowEvent)
-                  : null;
-              artifactEnvelope = legacyFileArtifact
-                ? { ...parsed, artifacts: [legacyFileArtifact] }
-                : parsed;
-            }
-          } catch {
-            artifactEnvelope = null;
-          }
-          if (artifactEnvelope) {
-            restored.push({
-              id: `workflow-artifact:${base_id}`,
-              role: "tool_result",
-              tool_name: "artifact_create",
-              tool_ok: artifactEnvelope.ok !== false,
-              tool_result: JSON.stringify(artifactEnvelope),
-              workflow_event_id: base_id,
-              run_id: m.run_id || undefined,
-              task_scope_id: m.task_scope_id || undefined,
-              ts,
-            });
-            continue;
-          }
-        }
-
-        if (role === "tool") {
-          // Tool reply row → tool_result bubble. Reverse-map tool name
-          // via the previously-built tcid → name dictionary.
-          const tcid: string | undefined = m.tool_call_id;
-          const durableOutcome = persistedToolOutcome(m.text);
-          restored.push({
-            id: base_id,
-            role: "tool_result",
-            tool_name: (tcid && tcid_to_name.get(tcid)) || durableOutcome.toolName,
-            tool_ok: durableOutcome.ok,
-            tool_result: m.text || "",
-            tool_error: durableOutcome.error,
-            run_id: m.run_id || undefined,
-            task_scope_id: m.task_scope_id || undefined,
-            ts,
-          });
-          continue;
-        }
-        if (role === "assistant" && tool_calls && tool_calls.length > 0) {
-          // assistant turn that issued one or more tool_calls. Expand each
-          // tc into a tool_call bubble; if the row ALSO has text content
-          // (rare — content + tool_calls in same turn), prepend that too.
-          if (m.text && m.text.length > 0) {
-            restored.push({
-              id: `${base_id}-pre`,
-              role: "assistant",
-              text: m.text,
-              run_id: m.run_id || undefined,
-              task_scope_id: m.task_scope_id || undefined,
-              ts,
-            });
-          }
-          tool_calls.forEach((tc, idx) => {
-            let args: unknown = tc?.function?.arguments;
-            if (typeof args === "string") {
-              try {
-                args = JSON.parse(args);
-              } catch {
-                /* keep raw */
-              }
-            }
-            restored.push({
-              id: `${base_id}-tc${idx}`,
-              role: "tool_call",
-              tool_name: tc?.function?.name || tc?.name || "unknown",
-              tool_args:
-                typeof args === "object" && args !== null
-                  ? (args as Record<string, unknown>)
-                  : undefined,
-              run_id: m.run_id || undefined,
-              task_scope_id: m.task_scope_id || undefined,
-              ts,
-            });
-          });
-          continue;
-        }
-        // Plain user / assistant (text) / etc.
-        restored.push({
-          id: base_id,
-          role,
-          text: m.text,
-          run_id: m.run_id || undefined,
-          task_scope_id: m.task_scope_id || undefined,
-          ts,
-        });
-      }
-      store.merge_history_messages(target, restored, workflowEvents);
-      companionEvents
-        .sort((a, b) => a.seq - b.seq || a.event_id.localeCompare(b.event_id))
-        .forEach((event) => store.reduce_companion_event(event));
-      // FEAT-A4: rehydration 重建 awaiting plan card。后端在 payload.plan
-      // 单独带回（不混进被白名单过滤的 messages），awaiting 时重建 plan
-      // bubble + [执行]/[取消] 栏（对齐 chat_v2_plan handler 的字段）。
-      const _plan = msg.payload?.plan;
-      if (_plan && _plan.awaiting) {
-        store.push_message(target, {
-          role: "plan",
-          plan_rationale: _plan.rationale,
-          plan_steps: _plan.steps,
-          plan_target_directory: _plan.target_directory,
-          plan_action_categories: Array.isArray(_plan.action_categories)
-            ? _plan.action_categories.map(String)
-            : [],
-          plan_auto_confirmed: !!_plan.auto_confirmed,
-          plan_awaiting_confirm: true,
-          plan_sid: target,
-        });
-      }
-      break;
-    }
-    case "permission_request": {
-      const runId = String(msg.payload?.run_id || "").trim();
-      let waitingForPermission = true;
-      if (runId) {
-        store.upsert_run_projection(sid, runId, {
-          task_scope_id: String(msg.payload?.task_scope_id || ""),
-          status: "waiting",
-          inflight: false,
-        });
-        waitingForPermission =
-          useSessionsStore.getState().sessions[sid]?.run_projections?.[runId]?.status === "waiting";
-      }
-      // Code panel doesn't host the popup (the pet window does), but
-      // we mark the session so the tile shows a "🔒 waiting" pill.
-      // A delayed permission event for an already terminal Run is stale and
-      // must not put the whole session back into a waiting state.
-      if (waitingForPermission) {
-        store.upsert(sid, { status: "permission" });
-      }
-      break;
-    }
-    case "external_wait_request":
-    case "project_directory_request": {
-      const runId = String(msg.payload?.run_id || "").trim();
-      if (runId) {
-        store.upsert_run_projection(sid, runId, {
-          task_scope_id: String(msg.payload?.task_scope_id || ""),
-          status: "waiting",
-          inflight: false,
-        });
-      }
-      break;
-    }
-    case "auto_resume_started": {
-      // P5-S2 Phase 5: backend's AutoResumeOrchestrator started a self-healing
-      // attempt for this session. Bump auto_resume_attempts so AutoResumeBanner
-      // shows "🔄 agent 自愈中... (尝试 N/2)".
-      const p = msg.payload || {};
-      const target = p.session_id || sid;
-      const attempt = typeof p.attempt === "number" ? p.attempt : 1;
-      store.ensure(target);
-      store.upsert(target, {
-        auto_resume_attempts: attempt,
-        inflight: true,
-        status: "running",
-      });
-      break;
-    }
-    case "auto_resume_succeeded": {
-      // P5-S2 Phase 5: orchestrator landed a final response. Reset counter so
-      // banner dismisses; the regular chat_v2_final (which fires alongside)
-      // will handle status/inflight cleanup.
-      const p = msg.payload || {};
-      const target = p.session_id || sid;
-      store.upsert(target, { auto_resume_attempts: 0 });
-      break;
-    }
-    case "auto_resume_exhausted": {
-      // P5-S2 Phase 5: orchestrator gave up after max_attempts. Reset counter,
-      // surface a red error message so the user sees what failed (mirrors
-      // chat_v2_error semantics — supervisor_alert popup may also fire from a
-      // separate ws message; here we just guarantee an error bubble lands).
-      const p = msg.payload || {};
-      const target = p.session_id || sid;
-      const final_error = String(p.final_error ?? "auto-resume exhausted");
-      const attempts_n = typeof p.attempts === "number" ? p.attempts : 0;
-      store.upsert(target, {
-        auto_resume_attempts: 0,
-        status: "error",
-        inflight: false,
-      });
-      store.push_message(target, {
-        role: "error",
-        text: `自愈失败（${attempts_n} 次尝试）: ${final_error}`,
-      });
-      break;
-    }
-    case "supervisor_alert": {
-      // P5-S3: supervisor flagged this session. The pet window owns
-      // the bubble UI; the panel uses this to colour the tile border.
-      const p = msg.payload || {};
-      const target_sid = p.session_id || sid;
-      store.ensure(target_sid);
-      store.apply_supervisor_alert(target_sid, {
-        alert_id: String(p.alert_id || ""),
-        severity: (p.severity as "green" | "yellow" | "red") || "yellow",
-        action: (p.action as "nudge" | "ask_user") || "nudge",
-        diagnosis: String(p.diagnosis || ""),
-        user_message: String(p.user_message || ""),
-        suggested_buttons: Array.isArray(p.suggested_buttons)
-          ? p.suggested_buttons.map((b: unknown) => String(b)).slice(0, 2)
-          : [],
-        received_at: Date.now(),
-      });
-      break;
-    }
-    case "supervisor_toggle_ack": {
-      // Settings panel may listen separately; nothing to do here.
-      break;
-    }
-    // P5-S2 Phase 5 — code session binding events
-    case "providers_changed": {
-      // Settings-side mutation broadcast refreshes the registry snapshot.
-      // Session bindings are durable tombstones and must not be silently
-      // rewritten when a provider disappears.
-      const incoming = Array.isArray(msg.payload?.providers) ? msg.payload.providers : [];
-      useProvidersStore.getState().set_providers(incoming as ProviderEntry[]);
-      // Mirror into Phase 4 settings store so SettingsProviders re-renders.
-      dispatchProviderEvent(msg as ProviderEventMessage);
-      // The model catalog is a derived view of the active Provider chain.
-      // Refresh it from the backend authority whenever that chain changes;
-      // otherwise a catalog fetched before Provider setup remains empty for
-      // the lifetime of the socket and the model picker only shows "default".
-      ws?.send(JSON.stringify({ type: "models_list" }));
-      break;
-    }
-    case "settings_providers_list_response": {
-      // Initial provider list (frontend asks on panel mount). Same shape as
-      // the broadcast — populate the store without binding reconciliation
-      // (no UI state to reconcile yet on first load).
-      const incoming = Array.isArray(msg.payload?.providers) ? msg.payload.providers : [];
-      useProvidersStore.getState().set_providers(incoming as ProviderEntry[]);
-      // Mirror into Phase 4 settings store.
-      dispatchProviderEvent(msg as ProviderEventMessage);
-      break;
-    }
-    // P5-S2 Phase 4 — individual provider mutation events route to
-    // SettingsProviders' internal store only (no per-session reconciliation
-    // needed — the upstream `providers_changed` broadcast handles that).
-    case "settings_providers_reordered":
-    case "settings_providers_added":
-    case "settings_providers_updated":
-    case "settings_providers_removed":
-    case "settings_providers_error": {
-      dispatchProviderEvent(msg as ProviderEventMessage);
-      break;
-    }
-    case "session_provider_binding":
-    case "session_provider_set": {
-      // Ack from backend for a session_set_provider request. Mirror the
-      // authoritative provider_id + preferred_model back into the store.
-      // session_provider_binding is also the cold-start/history hydration
-      // path, so a persisted Kimi selection cannot visually fall back to the
-      // provider default after a restart.
-      const p = msg.payload || {};
-      const target = p.session_id || sid;
-      store.ensure(target);
-      store.upsert(target, {
-        provider_id: p.provider_id === undefined ? null : p.provider_id,
-        preferred_model: p.preferred_model === undefined ? null : p.preferred_model,
-        // Backend's set_provider path preserves + echoes model_params.
-        ...(p.model_params !== undefined ? { model_params: p.model_params } : {}),
-        provider_incarnation_id: p.provider_incarnation_id ?? null,
-        provider_config_revision: p.provider_config_revision ?? null,
-        binding_epoch: Number(p.binding_epoch ?? 0),
-      });
-      break;
-    }
-    case "models_list_response": {
-      // Live model catalog + per-model capabilities.
-      const p = msg.payload || {};
-      useSessionModelsStore
-        .getState()
-        .set_catalog(
-          Array.isArray(p.models) ? p.models : [],
-          typeof p.source === "string" ? p.source : "none",
-          typeof p.default_model === "string" ? p.default_model : "",
-        );
-      break;
-    }
-    case "model_context_set_ack": {
-      // 上下文覆盖保存 ack(p4_ipc 完整版)。catalog 刷新由 modal 保存时
-      // 紧随的 models_list 请求完成,这里只记失败。
-      const p = msg.payload || {};
-      if (!p.ok) {
-        console.warn("[ws] model_context_set rejected:", p.reason);
-      }
-      break;
-    }
-    case "session_model_set": {
-      // Ack from backend for session_set_model. Same merge as above —
-      // backend echoes provider_id + preferred_model + model_params so we
-      // keep all three in sync even if the user only changed the model.
-      const p = msg.payload || {};
-      const target = p.session_id || sid;
-      store.ensure(target);
-      store.upsert(target, {
-        provider_id: p.provider_id === undefined ? null : p.provider_id,
-        preferred_model: p.preferred_model === undefined ? null : p.preferred_model,
-        // code-session-model-params S2: dict ⇒ active params; null ⇒
-        // binding cleared. undefined (legacy backend) ⇒ leave untouched.
-        ...(p.model_params !== undefined ? { model_params: p.model_params } : {}),
-        provider_incarnation_id: p.provider_incarnation_id ?? null,
-        provider_config_revision: p.provider_config_revision ?? null,
-        binding_epoch: Number(p.binding_epoch ?? 0),
-      });
-      break;
-    }
-    default:
-      // Unknown event types are fine — the pet shell may handle them.
-      break;
-  }
+  // 按消息类型查处理函数；表里没有的类型不处理（the pet shell may handle them）。
+  const handler = typeof msg.type === "string" ? CONTROL_HANDLERS.get(msg.type) : undefined;
+  if (handler) handler(msg, store, sid);
 }
 // Bug#2 修复 (2026-06-11)：断连时的出站消息排队(原实现直接丢弃 — 用户
 // 消息静默消失)。重连 onopen 时 flush。上限防泄漏:超出丢最旧并告警。

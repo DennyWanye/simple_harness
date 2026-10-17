@@ -6,6 +6,7 @@ import {
   type PlanStep,
   type SessionModelParams,
   type WorkflowEventEnvelope,
+  type SessionsStore,
 } from "../stores/sessionTypes";
 import type { PPTOutlineHistoryItem } from "../types/skillPlatform";
 
@@ -188,3 +189,6 @@ export interface SlashCommandResult {
   message?: string;
   hint?: string;
 }
+
+/** 一类控制通道消息的处理函数（store 与 sid 是 dispatch 开头取好的当前快照与目标会话）。 */
+export type ControlHandler = (msg: ControlWireMessage, store: SessionsStore, sid: string) => void;
