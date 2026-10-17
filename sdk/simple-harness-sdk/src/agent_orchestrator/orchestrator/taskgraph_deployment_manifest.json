@@ -1,6 +1,6 @@
 {
   "acceptance_evidence": null,
-  "deployment_id": "e49f1f77d96b472f82eeda39c52147e54c0f5bbff66972c0501223e1d10563da",
+  "deployment_id": "ac521461460c2363ed4f341be5b708eb7c87f7600f4fbea0f5697bc086789a91",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -448,7 +448,7 @@
     "agent_orchestrator/storage/assurance_schema.py": "1d6bb0318e6620abf4c877d5f8af47a76f406185d1834f4953821a02f530c0f8",
     "agent_orchestrator/storage/assurance_schema.sql": "eca9b297cba873c2a35dee516c4807cac2c962df04b9873b33e14c7f3e422226",
     "agent_orchestrator/storage/assurance_source_inventory.py": "f3ef69fc25281c58977d087cb458606a4bae47affe4328dedcb11c9eaa143d71",
-    "agent_orchestrator/storage/assurance_store.py": "f77a962b7f91120ca3ddf8bab21be5ec7de05c6026f976b56b766c8d696f7a77",
+    "agent_orchestrator/storage/assurance_store.py": "a9d2d18d3bb374b705fbccc17cac1ef4004f5db8cd22a7bc2c59bcb7c89d40a1",
     "agent_orchestrator/storage/assurance_upgrade.py": "1c6bd6f50a69fc8c8558deedd3f17fd0ea78e00a78780c147e57c2253d2caeb0",
     "agent_orchestrator/storage/assurance_work.py": "35156402f37e9328c64efc3b2c2016211f0a47904e57410b7cd7ba9ffeb0eab9",
     "agent_orchestrator/storage/fragment_schema.py": "bfd9c7fd12fa8da8ad5d3aa7a9c4b91609dbc69426a1d8b66c595ac0ae19e550",
