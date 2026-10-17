@@ -15,7 +15,8 @@ import type {
 import { useSessionsStore } from "../stores/sessionsStore";
 import { __test_dispatch } from "../code-panel/controlWs";
 import type { HarnessInspectorSnapshot, PublicRunSnapshotV3 } from "../types/messages";
-import { MessageStreamPanel, type ChatStreamMessage } from "./MessageStreamPanel";
+import { MessageStreamPanel } from "./MessageStreamPanel";
+import { type ChatStreamMessage } from "./messageStreamTypes";
 
 afterEach(cleanup);
 

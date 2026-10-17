@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { controlWS } from "../code-panel/controlWs";
 import { PermissionPopup } from "../components/PermissionPopup";
-import { ProjectDirectoryCard } from "../components/MessageStreamPanel";
+import { ProjectDirectoryCard } from "../components/ProjectDirectoryCard";
 import { usePermissionRequests } from "../hooks/usePermissionRequests";
 import type { ProjectDirectoryRequest } from "../types/skillPlatform";
 import type { PrimaryRun, PrimaryPort } from "./controller";

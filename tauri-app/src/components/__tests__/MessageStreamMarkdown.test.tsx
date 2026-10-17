@@ -9,7 +9,8 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { MessageStreamPanel, type ChatStreamMessage } from "../MessageStreamPanel";
+import { MessageStreamPanel } from "../MessageStreamPanel";
+import { type ChatStreamMessage } from "../messageStreamTypes";
 
 afterEach(cleanup);
 

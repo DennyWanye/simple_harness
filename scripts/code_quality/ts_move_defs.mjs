@@ -141,7 +141,9 @@ const license = (header.match(/^(?:\/\/ SPDX[^\n]*\n)+/) ?? [""])[0];
 const exportize = (s, st) => {
   const mods = ts.canHaveModifiers(st) ? ts.getModifiers(st) ?? [] : [];
   if (mods.some((m) => m.kind === ts.SyntaxKind.ExportKeyword)) return s;
-  // 搬到新模块后要被源模块或导入方引用 → 加 export（ts_move_check 去掉 export 修饰后比较）
+  // 原来没导出的：只有源模块还要用才加 export（导入方只可能导入原本就导出的名字）；
+  // 只在新模块内部用的辅助保持不导出，免得组件文件里多出非组件导出。ts_move_check 去掉 export 修饰后比较。
+  if (!bound(st).some((x) => restUsesMoved.includes(x))) return s;
   const lead = s.match(/^(\s*(?:\/\/[^\n]*\n|\/\*[\s\S]*?\*\/\s*)*)/)[0];
   return lead + "export " + s.slice(lead.length);
 };

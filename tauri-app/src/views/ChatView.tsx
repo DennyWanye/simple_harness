@@ -36,11 +36,8 @@ import { useSessionsStore } from "../stores/sessionsStore";
 import { collect_inbox, type InboxItem } from "../stores/sessionSelectors";
 import { type Message, type WorkflowV5ControlAction } from "../stores/sessionTypes";
 import { forPet } from "../petText";
-import {
-  MessageStreamPanel,
-  type ChatStreamMessage,
-  type StreamFilter,
-} from "../components/MessageStreamPanel";
+import { MessageStreamPanel } from "../components/MessageStreamPanel";
+import { type ChatStreamMessage, type StreamFilter } from "../components/messageStreamTypes";
 import { InputBar } from "../code-panel/InputBar";
 import { ChangeModelModal } from "../code-panel/ChangeModelModal";
 import { PermissionPopup } from "../components/PermissionPopup";
