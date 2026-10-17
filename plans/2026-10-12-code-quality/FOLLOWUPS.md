@@ -144,3 +144,15 @@
 - `tauri-app/src/theme/components.ts` 的 6 个导出在 9I 之前就没有引用：`tokensExport`、`segGroup`、`sectionTitleText`、`drawerScrim`、`DRAWER_WIDTH`、`drawerSurface`。
 - 9I 转换后新变成没人用的 17 个样式常量已在 9I 删除（components.ts 10 个及随之没用的类型 `DarkBtnVariant`、settingsStyles.ts 4 个、messageStreamStyles.ts 2 个、chatViewStyles.ts 1 个），另把只在本文件用的 `btnStyle` 改成不导出。
 - 下一步：上面这些按删除清单统一删（裁决要求 App.css 另走删除清单，不在 9I 顺手删）。
+
+## F-20 旧系统上 4 处毛玻璃会开始生效（2026-10-17 阶段 9I 核验提示，待用户知悉）
+
+- 生成类 FeedbackPanel-1、SkillStorePanel-12、SkillStorePanel-38、ConfirmDialog-1 原内联只写无前缀 `backdrop-filter`。发版压缩时补上 `-webkit-backdrop-filter`。
+- WebKit 26.5 两种写法都认，比对无差别；Safari 18 之前的 WebKit（发版最低 macOS 13）原内联不生效，转类后会出现毛玻璃。方向与作者本意一致、影响小。
+- 下一步：用户知悉即可；如要保持旧系统原样，再议。
+
+## F-21 9K 漏列的运行时不可达模块（2026-10-17 阶段 9I 核验提示）
+
+- 19 个已转换文件的生成类不在发版产物里：这些模块只被 `import type` 引用，运行时不可达。例如 ChatView、MessageStreamPanel、SubagentProgressPanel、MessageBubble、SessionList。
+- 《阶段9-偏差单-前端不可达模块》只按 13 个模块处理，漏了这一批。
+- 下一步：按前端真实导入可达性（值导入，不算 `import type`）重扫一遍，出清单；做好但没接线的功能按规则记待用户定，其余走删除清单。
