@@ -2,6 +2,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PrimaryChatView } from "./PrimaryChatView";
 import type { ControlChannel } from "../ws/ControlChannel";
+import { styleOf } from "../test/generatedStyle";
 vi.mock("../primary/PrimaryRunPanel", () => ({ PrimaryRunPanel: () => <div>运行权限面板</div> }));
 vi.mock("../code-panel/controlWs", () => ({
   controlWS: { send: vi.fn(), state: () => "connected", on_message: () => () => {} },
@@ -213,10 +214,10 @@ it("renders user / assistant / tool with distinct roles and a collapsible tool r
   const assistant = screen.getByTestId("primary-message-assistant");
   const tool = screen.getByTestId("primary-message-tool");
   expect(user.getAttribute("data-role")).toBe("user");
-  expect(user.style.textAlign).toBe("right");
-  expect(assistant.style.textAlign).toBe("left");
-  expect(user.style.background).not.toBe(assistant.style.background);
-  expect(tool.style.background).not.toBe(assistant.style.background);
+  expect(styleOf(user).textAlign).toBe("right");
+  expect(styleOf(assistant).textAlign).toBe("left");
+  expect(styleOf(user).background).not.toBe(styleOf(assistant).background);
+  expect(styleOf(tool).background).not.toBe(styleOf(assistant).background);
   // 折叠时正文不渲染，但标题写明是哪个工具。
   const toggle = screen.getByRole("button", { name: /工具 · read_file/ });
   expect(toggle.getAttribute("aria-expanded")).toBe("false");

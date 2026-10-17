@@ -5,6 +5,7 @@ import type { Message, WorkflowV5ProgressProjection } from "../../stores/session
 import type { CapabilityOperation } from "../../types/capabilities";
 import type { WorkflowTaskTrace } from "../AgentActivityMessage";
 import { WorkflowProgressGroup } from "./WorkflowProgressGroup";
+import { styleOf } from "../../test/generatedStyle";
 
 afterEach(() => {
   cleanup();
@@ -427,7 +428,7 @@ describe("WorkflowProgressGroup", () => {
     expect(screen.getByText("4/13 · 已用时 1 分 2 秒")).toBeTruthy();
     expect(screen.getByText("⚠ 1")).toBeTruthy();
     const toggle = screen.getByRole("button", { name: "查看阶段 (2)" });
-    expect(screen.getByTestId("workflow-progress-run-group").style.flexShrink).toBe("0");
+    expect(styleOf(screen.getByTestId("workflow-progress-run-group")).flexShrink).toBe("0");
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
     expect(screen.getByTestId("workflow-compact-timeline-run-group")).toBeTruthy();
     expect(screen.getAllByText("执行 search").length).toBeGreaterThan(0);
@@ -637,7 +638,7 @@ describe("WorkflowProgressGroup", () => {
       'button[aria-controls^="workflow-skipped-"]',
     );
     expect(skippedToggle).toBeTruthy();
-    expect(skippedToggle?.closest("div")?.getAttribute("style")).not.toContain("52, 211, 153");
+    expect(styleOf(skippedToggle?.closest("div") as Element).cssText).not.toContain("52, 211, 153");
     const skippedDetails = document.getElementById(skippedToggle!.getAttribute("aria-controls")!);
     expect(skippedDetails?.hidden).toBe(true);
     fireEvent.click(skippedToggle!);

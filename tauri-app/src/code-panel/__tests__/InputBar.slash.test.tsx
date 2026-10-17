@@ -20,6 +20,7 @@ import { _testing } from "../slashCommands";
 import { SlashDropdown, type SlashCommand } from "../SlashDropdown";
 import { ArgHintBar } from "../ArgHintBar";
 import { controlWS } from "../controlWs";
+import { styleOf } from "../../test/generatedStyle";
 
 // Auto cleanup（替代 @testing-library/jest-dom/vitest 自动 cleanup）
 afterEach(() => {
@@ -291,8 +292,8 @@ describe("ArgHintBar", () => {
     );
     const src = screen.getByTestId("arg-src");
     const dst = screen.getByTestId("arg-dst");
-    expect(src.style.textDecoration).toBe("line-through");
-    expect(dst.style.fontWeight).toBe("600");
+    expect(styleOf(src).textDecoration).toBe("line-through");
+    expect(styleOf(dst).fontWeight).toBe("600");
   });
 
   it("optional args show with brackets", () => {

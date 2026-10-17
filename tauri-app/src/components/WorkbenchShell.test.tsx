@@ -34,6 +34,7 @@ afterEach(cleanup);
 import { WorkbenchShell, type WorkbenchView } from "./WorkbenchShell";
 import { SIDEBAR_WIDTH } from "./Sidebar";
 import { dark } from "../theme/components";
+import { styleOf } from "../test/generatedStyle";
 
 function Harness({ initial = "chat" as WorkbenchView }) {
   const [view, setView] = useState<WorkbenchView>(initial);
@@ -70,7 +71,7 @@ describe("WorkbenchShell 视图切换（WB-3）", () => {
     expect(screen.getByTestId("view-skills")).toBeTruthy();
     // D3：chat 常挂载 — 切走后仍在 DOM，仅容器 display:none。
     const chatWrap = screen.getByTestId("view-chat").parentElement as HTMLElement;
-    expect(chatWrap.style.display).toBe("none");
+    expect(styleOf(chatWrap).display).toBe("none");
 
     fireEvent.click(screen.getByTestId("nav-artifacts"));
     expect(screen.getByTestId("view-artifacts")).toBeTruthy();
@@ -82,7 +83,7 @@ describe("WorkbenchShell 视图切换（WB-3）", () => {
 
     fireEvent.click(screen.getByTestId("nav-chat"));
     const chatWrapBack = screen.getByTestId("view-chat").parentElement as HTMLElement;
-    expect(chatWrapBack.style.display).not.toBe("none");
+    expect(styleOf(chatWrapBack).display).not.toBe("none");
     expect(screen.queryByTestId("view-settings")).toBeNull();
   });
 
@@ -95,20 +96,20 @@ describe("WorkbenchShell 视图切换（WB-3）", () => {
     // 改为 `.sh-nav-item` 的左侧 2px 强调条 + accentSoft 面色 + 正文色。
     expect(chatBtn.getAttribute("aria-current")).toBe("page");
     expect(chatBtn.className).toContain("sh-nav-item");
-    expect(chatBtn.style.background).toBe(dark.accentSoft);
-    expect(chatBtn.style.color).toBe(dark.text);
+    expect(styleOf(chatBtn).background).toBe(dark.accentSoft);
+    expect(styleOf(chatBtn).color).toBe(dark.text);
 
     expect(skillsBtn.getAttribute("aria-current")).toBeNull();
-    expect(skillsBtn.style.background).toBe("transparent");
-    expect(skillsBtn.style.color).toBe(dark.textMuted);
+    expect(styleOf(skillsBtn).background).toBe("transparent");
+    expect(styleOf(skillsBtn).color).toBe(dark.textMuted);
 
     // 所有项统一高度 36，hover/active/focus 由 CSS 三态负责（不再挂 JS）。
-    expect(chatBtn.style.height).toBe("36px");
+    expect(styleOf(chatBtn).height).toBe("36px");
     expect(skillsBtn.className).toContain("sh-interactive");
 
     fireEvent.click(skillsBtn);
     expect(skillsBtn.getAttribute("aria-current")).toBe("page");
-    expect(skillsBtn.style.background).toBe(dark.accentSoft);
+    expect(styleOf(skillsBtn).background).toBe(dark.accentSoft);
     expect(chatBtn.getAttribute("aria-current")).toBeNull();
   });
 });
@@ -118,21 +119,21 @@ describe("WorkbenchShell 紧凑尺寸样式（WB-3 min 800×560）", () => {
     render(<Harness />);
 
     const sidebar = screen.getByTestId("workbench-sidebar");
-    expect(sidebar.style.width).toBe(`${SIDEBAR_WIDTH}px`);
-    expect(sidebar.style.minWidth).toBe(`${SIDEBAR_WIDTH}px`);
-    expect(sidebar.style.maxWidth).toBe(`${SIDEBAR_WIDTH}px`);
+    expect(styleOf(sidebar).width).toBe(`${SIDEBAR_WIDTH}px`);
+    expect(styleOf(sidebar).minWidth).toBe(`${SIDEBAR_WIDTH}px`);
+    expect(styleOf(sidebar).maxWidth).toBe(`${SIDEBAR_WIDTH}px`);
 
     const content = screen.getByTestId("workbench-content");
     // flex:1 shorthand 在 jsdom 中展开为 flexGrow=1；min-width:0 防
     // 子内容把布局撑破 —— 紧凑尺寸下布局不破的关键约束。
-    expect(content.style.flexGrow).toBe("1");
+    expect(styleOf(content).flexGrow).toBe("1");
     // jsdom 对 0 长度可能省略单位 — 两种规格化都接受。
-    expect(["0", "0px"]).toContain(content.style.minWidth);
+    expect(["0", "0px"]).toContain(styleOf(content).minWidth);
 
     const shell = screen.getByTestId("workbench-shell");
-    expect(shell.style.overflow).toBe("hidden");
-    expect(shell.style.display).toBe("flex");
-    expect(shell.style.flexDirection).toBe("row");
+    expect(styleOf(shell).overflow).toBe("hidden");
+    expect(styleOf(shell).display).toBe("flex");
+    expect(styleOf(shell).flexDirection).toBe("row");
   });
 
   it("banner 插槽：传入 banner 时渲染在内容区顶部", () => {

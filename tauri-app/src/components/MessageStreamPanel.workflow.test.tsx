@@ -17,6 +17,7 @@ import { __test_dispatch } from "../code-panel/controlWs";
 import type { HarnessInspectorSnapshot, PublicRunSnapshotV3 } from "../types/messages";
 import { MessageStreamPanel } from "./MessageStreamPanel";
 import { type ChatStreamMessage } from "./messageStreamTypes";
+import { styleOf } from "../test/generatedStyle";
 
 afterEach(cleanup);
 
@@ -251,11 +252,11 @@ describe("WorkflowProgressRow (AC-23)", () => {
     view(progress(status));
     const message = screen.getByTestId("workflow-progress-run-ui");
     expect(message.getAttribute("data-status")).toBe(status);
-    expect(message.style.height).toBe("");
-    expect(message.style.minHeight).toBe("");
-    expect(message.style.maxHeight).toBe("");
-    expect(message.style.background).toBe("");
-    expect(message.style.border).toBe("");
+    expect(styleOf(message).height).toBe("");
+    expect(styleOf(message).minHeight).toBe("");
+    expect(styleOf(message).maxHeight).toBe("");
+    expect(styleOf(message).background).toBe("");
+    expect(styleOf(message).border).toBe("");
     expect(screen.getByText(label)).toBeTruthy();
     const bar = screen.getByRole("progressbar");
     expect(bar.getAttribute("aria-valuemin")).toBe("0");
@@ -690,8 +691,8 @@ describe("ThinkingProcessGroup (AC-9)", () => {
     );
 
     const body = screen.getByTestId("thinking-process-body-run-long");
-    expect(body.style.maxHeight).toBe("360px");
-    expect(body.style.overflowY).toBe("auto");
+    expect(styleOf(body).maxHeight).toBe("360px");
+    expect(styleOf(body).overflowY).toBe("auto");
   });
 
   it("deduplicates repeated Run events but leaves legacy messages without runId flat", () => {

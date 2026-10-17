@@ -13,6 +13,7 @@ import {
 } from "../types/capabilities";
 import { CapabilityCenterPanel } from "./CapabilityCenterPanel";
 import { SkillStorePanel } from "./SkillStorePanel";
+import { styleOf } from "../test/generatedStyle";
 
 class FakeCapabilityChannel {
   readonly sent: ControlMessage[] = [];
@@ -262,9 +263,9 @@ describe("CapabilityCenterPanel", () => {
 
     // 填满内容区（非 fixed 定位 + 100% 宽高）。
     const region = screen.getByRole("region", { name: "能力中心" });
-    expect(region.style.position).toBe("");
-    expect(region.style.width).toBe("100%");
-    expect(region.style.height).toBe("100%");
+    expect(styleOf(region).position).toBe("");
+    expect(styleOf(region).width).toBe("100%");
+    expect(styleOf(region).height).toBe("100%");
 
     // 列表/详情与快照请求行为与 overlay 完全一致（能力不减）。
     expect(screen.getByTestId("capability-list")).toBeTruthy();

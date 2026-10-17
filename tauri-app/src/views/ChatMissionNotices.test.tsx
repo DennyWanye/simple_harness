@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { ChatMissionNotices } from "./ChatMissionNotices";
 import { MissionsChannelContext } from "./chatMission";
 import { PROTOCOL_ERROR_TEXT, STALE_NOTE, guardIncoming } from "../ws/orchestrationContracts";
+import { styleOf } from "../test/generatedStyle";
 
 type Sent = { type: string; request_id: string; payload: Record<string, unknown> };
 
@@ -74,7 +75,7 @@ describe("主对话里的后台任务结束通知", () => {
     expect(screen.getByText("后台任务已完成：写 NOTES.md")).toBeTruthy();
     expect(screen.getByText("停止原因：planning_failed")).toBeTruthy();
     const goal = screen.getByText("后台任务已完成：写 NOTES.md");
-    expect(goal.style.whiteSpace).toBe("nowrap");
+    expect(styleOf(goal).whiteSpace).toBe("nowrap");
     expect(goal.getAttribute("title")).toBe("写 NOTES.md");
     expect(fake.sent.some((m) => m.type === "mission_notice_ack")).toBe(false);
 
