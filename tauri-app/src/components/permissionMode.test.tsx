@@ -6,7 +6,13 @@ describe("permission mode production wiring", () => {
   // ——那正是「后端 auto 而界面显示未勾选」的成因。这里把「设置面板不读
   // 缓存作为初始值」锁住；能力中心仍保留缓存默认 auto（只做占位展示）。
   it("keeps the settings checkbox off any cached default", () => {
-    const settings = readFileSync("src/components/SettingsPanel.tsx", "utf8");
+    // 9H-4 拆分后，自动模式复选框（AutoModeToggle）在 SettingsSystemSections.tsx；两份一起查。
+    const settings = [
+      "src/components/SettingsPanel.tsx",
+      "src/components/SettingsSystemSections.tsx",
+    ]
+      .map((f) => readFileSync(f, "utf8"))
+      .join("\n");
     expect(settings).not.toContain("cached === null ? true");
     expect(settings).not.toContain('localStorage.getItem("deskpet.auto_mode")');
     // 加载中 = 无权威快照 → 不可交互，且写入携带显式目标模式。
