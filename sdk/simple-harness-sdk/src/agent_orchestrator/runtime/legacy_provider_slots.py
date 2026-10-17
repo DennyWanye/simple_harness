@@ -3,7 +3,7 @@
 """Deployment slot accounting for original, unguarded Orchestrator pools.
 
 This does not supply token authority, change frozen intent identity, or settle
-usage. See plans/2026-09-12-phase3/p34/legacy-context-coexistence.md.
+usage.
 """
 
 from __future__ import annotations

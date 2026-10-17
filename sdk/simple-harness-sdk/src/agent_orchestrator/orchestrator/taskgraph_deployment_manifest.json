@@ -1,6 +1,6 @@
 {
   "acceptance_evidence": null,
-  "deployment_id": "9bd947a7795b0ccf420564efb8671b19eead980dcd7c41505a0a319f18af5334",
+  "deployment_id": "e49f1f77d96b472f82eeda39c52147e54c0f5bbff66972c0501223e1d10563da",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -414,7 +414,7 @@
     "agent_orchestrator/runtime/domain_tools.py": "7747470470e5573ba7ac334f2cc2a836e87ad20f2c8df302f029b7cb772def13",
     "agent_orchestrator/runtime/first_request_budget.py": "611bbd377a1b6d33ccd208cf53e26a6cd4a538875a9aca294b56cc32a88ee1e0",
     "agent_orchestrator/runtime/hf_chat_tokens.py": "8cac8f5a7d97c58e73297ca68de60fbaac92afee3e8ab44b51d97156a0968f5f",
-    "agent_orchestrator/runtime/legacy_provider_slots.py": "48e8eb2db1dabb7d4d17e52fd2ec7ce8715a560dd77fbdc743da4e7d02829010",
+    "agent_orchestrator/runtime/legacy_provider_slots.py": "f62c0f96739976a7fe9d6d581493f6b3417e91eaab965f015cc4936835a4091b",
     "agent_orchestrator/runtime/mission_sources.py": "c3b5e63fc14febcd9629f66cf6b3faa865e19425f6fa160c6f5803fa5b7244a3",
     "agent_orchestrator/runtime/model_router.py": "a128ba51f9f610993289ba6c2bba7a876e5c467e03e9054360a28082642fa548",
     "agent_orchestrator/runtime/native_plane.py": "8e830cbfaf36e0f1320025bde2a3dd1a50c777cd71a793480128755cc29410ce",
