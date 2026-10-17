@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 DennyWanye
+// SPDX-License-Identifier: BUSL-1.1
+
 // 画廊场景的小工具（非组件模块）。
 import "./tauriStub";
 import { useState } from "react";

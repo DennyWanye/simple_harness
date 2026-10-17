@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 DennyWanye
+# SPDX-License-Identifier: BUSL-1.1
+
 """代码质量整治阶段 9（9I）：WebKit + 产物构建上逐元素比对计算样式（裁决条件 1）。
 
 子命令（在仓库根目录运行，用装了 Playwright 与 WebKit 的 Python）：

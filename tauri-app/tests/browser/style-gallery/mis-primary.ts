@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 DennyWanye
+// SPDX-License-Identifier: BUSL-1.1
+
 // 任务范围面板（PrimaryTaskPanel）的画廊驱动：
 // 面板内部自己 new 一个 TaskScopeRequests，外面拿不到。这里在场景首次渲染前包一层 connect：
 // 原 connect 照常执行后，按 primaryRef 选一条固定剧本，依次调用客户端自己的公开方法

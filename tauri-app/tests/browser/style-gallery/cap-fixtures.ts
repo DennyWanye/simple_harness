@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 DennyWanye
+// SPDX-License-Identifier: BUSL-1.1
+
 // cap 车道的固定夹具数据与假通道应答（技能商店、能力中心、上下文、审批、伙伴成长）。
 // 数据抄自各组件的 vitest 测试夹具；不连后端，回包都在微任务里发出。
 import type { CapabilityDescriptor, CapabilityOperation } from "../../../src/types/capabilities";

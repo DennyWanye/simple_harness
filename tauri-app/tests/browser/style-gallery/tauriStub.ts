@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 DennyWanye
+// SPDX-License-Identifier: BUSL-1.1
+
 // 画廊用的假 Tauri 内核：组件里的 invoke(...) 在浏览器里没有原生层，这里按命令名返回固定夹具值。
 // 必须在任何组件模块求值前导入（scenes.tsx 的第一个导入）。未登记的命令一律返回 null。
 type Answer = unknown | ((args: Record<string, unknown> | undefined) => unknown);

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 DennyWanye
+// SPDX-License-Identifier: BUSL-1.1
+
 // 设置车道（set）的固定夹具：控制通道回包、Tauri 命令返回值、状态库数据。全部是假数据，不含真实凭据。
 import { useState } from "react";
 import type { ControlChannel } from "../../../src/ws/ControlChannel";

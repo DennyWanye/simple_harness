@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 DennyWanye
+// SPDX-License-Identifier: BUSL-1.1
+
 // chat 车道场景（二）：工作流进度、执行步骤、消息流。
 // 场景 → 挂载的组件文件（src/ 下）：
 //   workflow-progress       → components/workflow/WorkflowProgressGroup.tsx（无详情紧凑态、时间线、跳过阶段、失败重试等）

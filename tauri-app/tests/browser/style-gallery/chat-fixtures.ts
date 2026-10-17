@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 DennyWanye
+// SPDX-License-Identifier: BUSL-1.1
+
 // chat 车道画廊夹具：消息、工作流进度、执行步骤、产物、会话列表等固定数据（不连后端）。
 // 画廊固定"现在" = 2026-10-01T08:00:00Z（NOW）。
 import type { Message, WorkflowV5ProgressProjection } from "../../../src/stores/sessionTypes";

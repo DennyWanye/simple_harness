@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 DennyWanye
+// SPDX-License-Identifier: BUSL-1.1
+
 // 任务编排车道（mis）：任务详情面板场景。
 //   mission-detail-active   src/views/MissionDetailPanel.tsx（进行中：用量超限/预算去向/等待原因含裁定框/改计划进度/取消/
 //                           提示条内授权/接管卡/各类审批卡/Task 与验证各判定/产物含系统记录展开/产物内容（文本已核验）/评论/

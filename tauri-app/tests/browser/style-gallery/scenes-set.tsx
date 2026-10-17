@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 DennyWanye
+// SPDX-License-Identifier: BUSL-1.1
+
 // 设置车道（set）场景之一：设置页与其各分区。
 //   settings-page           views/SettingsView.tsx + components/SettingsPanel.tsx（页面形态，自启开关）
 //                           + SettingsProviders.tsx（有数据）+ ModelContextCard.tsx（就绪）

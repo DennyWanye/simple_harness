@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 DennyWanye
+// SPDX-License-Identifier: BUSL-1.1
+
 // 画廊用的假控制通道：send 返回 true，回包在微任务里发出；onMessage/onStateChange 返回退订函数；state 恒为 connected。
 // responder 按收到的请求返回零到多条回包（固定夹具），返回 null/undefined 表示不回。
 import type { ControlChannel } from "../../../src/ws/ControlChannel";

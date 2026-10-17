@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 DennyWanye
+// SPDX-License-Identifier: BUSL-1.1
+
 // 工作流检查面板车道（wf）场景。
 //   wf-inspector-runs     components/workflows/RunInspectorPanel.tsx（运行视图：报错/恢复/重试时间/节点尝试/待恢复交付）
 //                         + DecisionPanel.tsx + WorkflowGraph.tsx + RunList.tsx + components/Icon.tsx

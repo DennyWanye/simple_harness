@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 DennyWanye
+// SPDX-License-Identifier: BUSL-1.1
+
 import { useState, type CSSProperties } from "react";
 import { useDepsChanged } from "../hooks/useDepsChanged";
 import { invoke } from "@tauri-apps/api/core";

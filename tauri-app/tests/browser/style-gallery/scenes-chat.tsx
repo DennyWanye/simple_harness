@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 DennyWanye
+// SPDX-License-Identifier: BUSL-1.1
+
 // chat 车道场景（一）：消息气泡、产物卡、PPT 大纲、Markdown、输入栏与小组件。
 // 场景 → 挂载的组件文件（src/ 下）：
 //   message-bubbles   → code-panel/MessageBubble.tsx（含 ArtifactCard / PPTOutlineCard / MarkdownMessage / CodeBlock）

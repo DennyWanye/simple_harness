@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 DennyWanye
+// SPDX-License-Identifier: BUSL-1.1
+
 // 基础小组件场景。
 import { RuntimeBackendBanner } from "../../../src/components/RuntimeBackendBanner";
 import { noop } from "./galleryUtil";

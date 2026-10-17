@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 DennyWanye
+// SPDX-License-Identifier: BUSL-1.1
+
 // 设置车道（set）场景之二：弹窗、启动/引导浮层、项目相关卡片与小部件。
 //   add-provider-modal   components/AddProviderModal.tsx（新建空白 / 新建带探测结果+探测失败 / 编辑带保存错误+保存中+探测失败）
 //   change-model-modal   code-panel/ChangeModelModal.tsx（思考+快速+可选窗口 / 推理强度+只读窗口 / 无可调参数 / 跟随默认 / 未知模型 / 只有思考）

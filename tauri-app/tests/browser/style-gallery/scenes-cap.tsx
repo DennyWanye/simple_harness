@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 DennyWanye
+// SPDX-License-Identifier: BUSL-1.1
+
 // cap 车道场景（一）：技能商店、能力中心、能力操作卡。
 //   skill-store                → src/components/SkillStorePanel.tsx（page 形态：已安装列表、空态、提示 info/warning/error）
 //   skill-store-confirm        → src/components/SkillStorePanel.tsx（安装确认弹层：敏感权限 / 普通两种）

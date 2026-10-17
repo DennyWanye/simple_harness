@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 DennyWanye
+// SPDX-License-Identifier: BUSL-1.1
+
 // 任务编排车道（mis）：任务页外壳、列表、新建表单、资料、对话卡片、任务范围与零件场景。
 //   missions-view              src/views/MissionsView.tsx（可用：列表+错误条，无选中）+ MissionListAside.tsx（后台出错提示/列表读取出错/
 //                              各种状态行/策略漂移）+ liveGraph/MissionProgress.tsx

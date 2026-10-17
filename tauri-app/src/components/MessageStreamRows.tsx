@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 DennyWanye
+// SPDX-License-Identifier: BUSL-1.1
+
 import { ChatMissionCard } from "../views/ChatMissionCard";
 import { MISSION_CARD_TOOLS, missionIdFromToolResult } from "../views/chatMission";
 import { useEffect, useRef, useState, type CSSProperties } from "react";

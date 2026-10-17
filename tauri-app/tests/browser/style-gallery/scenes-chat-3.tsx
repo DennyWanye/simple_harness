@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 DennyWanye
+// SPDX-License-Identifier: BUSL-1.1
+
 // chat 车道场景（三）：整页视图与外壳。
 // 场景 → 挂载的组件文件（src/ 下）：
 //   session-list / session-list-empty → components/SessionList.tsx（假响应走 controlWS 监听表）

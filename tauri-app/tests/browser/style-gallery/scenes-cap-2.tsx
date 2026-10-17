@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 DennyWanye
+// SPDX-License-Identifier: BUSL-1.1
+
 // cap 车道场景（二）：上下文构成、ContextTrace、权限弹窗、审批中心、澄清/外部等待弹窗、伙伴成长。
 //   context-breakdown        → src/components/ContextBreakdownModal.tsx（实测快照 + 构成条 + 变化折线图）
 //   context-breakdown-states → src/components/ContextBreakdownModal.tsx（仅绑定加载中、旧记录不完整 + 构成不可用、无快照）

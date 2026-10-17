@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 DennyWanye
+// SPDX-License-Identifier: BUSL-1.1
+
 // 画廊场景表：场景名 → 组件。每个场景只用固定夹具数据，渲染结果必须确定（不依赖时间、随机数、网络）。
 //
 // 约定：场景模块文件名为 scenes-<组>.tsx，只导出组件；名字以 Scene 结尾的导出就是一个场景，

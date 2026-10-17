@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 DennyWanye
+// SPDX-License-Identifier: BUSL-1.1
+
 // 样式画廊（9I 内联样式转类的浏览器核对夹具）。无后端、无服务商、无真实凭据；数据全是固定夹具。
 // 打开方式：style-gallery.html?scene=<场景名>&theme=dark|light；不带 scene 时列出全部场景名。
 // 核对脚本：scripts/code_quality/webkit_style_compare.py（WebKit + 产物构建，逐元素比对计算样式）。

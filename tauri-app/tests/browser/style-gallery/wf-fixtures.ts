@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 DennyWanye
+// SPDX-License-Identifier: BUSL-1.1
+
 // 工作流检查面板（components/workflows/*）的固定夹具。时间戳都是固定秒数；"现在"在 freezeTime.ts 里固定为 2026-10-01T08:00Z。
 import type {
   CheckpointView,

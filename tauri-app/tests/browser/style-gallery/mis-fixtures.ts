@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 DennyWanye
+// SPDX-License-Identifier: BUSL-1.1
+
 // 任务编排车道（mis）的夹具数据与假通道。只给 scenes-mis*.tsx 用。
 import type { OrchestrationStatus } from "../../../src/stores/missionsStore";
 import type { MissionEvent } from "../../../src/stores/missionsStore";
