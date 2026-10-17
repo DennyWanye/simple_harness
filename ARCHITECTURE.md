@@ -172,7 +172,7 @@ OSS 用户走 `manual`；维护者带 relay 服务的用 `relay`。两套共享�
 - macOS / 无卡机器：ASR `device`/`compute_type` = `"auto"` → CPU int8；
   torch 走 PyPI 默认渠道（mac arm64 自带 MPS）
 - 语音链路当前禁用，规划走中转站 Realtime（不再依赖本地 ASR 权重）
-- 历史取舍详见 [`HARDWARE_COMPROMISES.md`](./HARDWARE_COMPROMISES.md)（其
+- 历史取舍详见 [`HARDWARE_COMPROMISES.md`](./docs/archive/reports-2026-08/HARDWARE_COMPROMISES.md)（其
   CUDA-only 表述为 fork 前旧况）
 
 ---

@@ -387,7 +387,7 @@ WebSocket → 前端
 
 ## 8. 参考资料
 
-- **SDK 分析文档**: `SDK_VS_DESKPET_ANALYSIS.md`
+- **SDK 分析文档**: `docs/archive/reports-2026-08/SDK_VS_DESKPET_ANALYSIS.md`
 - **架构文档**: `ARCHITECTURE/AGENT_HARNESS.md`
 - **Ingress 实现**: `backend/deskpet/sdk_adapters/ingress.py`
 - **Stack 实现**: `backend/deskpet/sdk_adapters/composition.py`

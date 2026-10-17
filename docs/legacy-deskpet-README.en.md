@@ -108,7 +108,7 @@ Full diagram: [ARCHITECTURE.md](./ARCHITECTURE.md)
 ## Hardware support
 
 Currently **NVIDIA GPU (CUDA) only**. AMD / Intel / CPU-only paths are
-long-term backlog. See [HARDWARE_COMPROMISES.md](./HARDWARE_COMPROMISES.md).
+long-term backlog. See [HARDWARE_COMPROMISES.md](./archive/reports-2026-08/HARDWARE_COMPROMISES.md).
 
 ---
 
