@@ -1071,6 +1071,7 @@ const ConfirmModal: React.FC<{
           <summary
             style={{
               cursor: "pointer",
+              WebkitUserSelect: "none",
               userSelect: "none",
               color: dark.textMuted,
             }}

@@ -62,6 +62,7 @@ export function buttonStyle(
     borderRadius: radius.md,
     cursor: disabled ? "not-allowed" : "pointer",
     transition,
+    WebkitUserSelect: "none",
     userSelect: "none",
     opacity: disabled ? 0.45 : 1,
     display: "inline-flex",

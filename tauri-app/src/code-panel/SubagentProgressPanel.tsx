@@ -170,6 +170,7 @@ export function SubagentProgressPanel({ variant = "light" }: SubagentProgressPan
           fontWeight: 600,
           color: theme.headFg,
           cursor: "pointer",
+          WebkitUserSelect: "none",
           userSelect: "none",
         }}
       >

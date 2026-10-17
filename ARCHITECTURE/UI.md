@@ -1,3 +1,5 @@
+最后更新：2026-10-17 CST（代码质量整治阶段 9I，产品行为修正）。**按钮不可选在 WebKit 里落实**：用户 2026-09-26 要求"界面文字都能选中，按钮自身仍不可选"，但 WebKit 只认带前缀的 `-webkit-user-select`，原先只写 `userSelect: "none"` 的按钮在桌面程序里一直可选。现在 `theme/components.ts` 的 `buttonStyle()`、SettingsProviders 拖拽把手、SubagentProgressPanel 折叠头、PermissionPopup 与 SkillStorePanel 的摘要行都同时写 `WebkitUserSelect: "none"`；对话框与 `[data-bp-selectable]` 里仍由 `index.css` 的 `-webkit-user-select: text !important` 保持可选（记录 `plans/2026-10-12-code-quality/阶段9-偏差单-按钮不可选生效.md`）。
+
 最后更新：2026-10-07 CST（推后必补第 3 批，已发版 SDK `opt.171`；记录 `plans/2026-09-27-desktop-next/完成度严格评估-2026-10-06/推后第3批-*.md`）。
 - **更多编排消息按公开合同校验**：执行图主画面、回合详情、任务列表、任务详情、事件、待批准、通知也由前端控制通道按 SDK 同一批 schema 核对；坏消息保留上次内容并提示（U09）。
 

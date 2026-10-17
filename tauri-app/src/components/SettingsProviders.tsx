@@ -113,6 +113,7 @@ function SortableRow({
           style={{
             cursor: "grab",
             color: dark.textFaint,
+            WebkitUserSelect: "none",
             userSelect: "none",
             flexShrink: 0,
             lineHeight: "16px",

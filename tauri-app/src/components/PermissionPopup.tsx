@@ -257,6 +257,7 @@ export const PermissionPopup: React.FC<Props> = ({
                   fontSize: tokens.text.sm.size,
                   color: dark.textMuted,
                   cursor: "pointer",
+                  WebkitUserSelect: "none",
                   userSelect: "none",
                   paddingBottom: tokens.space.xs,
                 }}
