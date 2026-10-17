@@ -1,7 +1,7 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { BudgetByDuty } from "./MissionsView";
+import { BudgetByDuty } from "./MissionsViewParts";
 
 describe("任务详情里的预算去向", () => {
   afterEach(cleanup);

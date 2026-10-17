@@ -1,7 +1,7 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { StepsNoLongerCounting } from "./MissionsView";
+import { StepsNoLongerCounting } from "./MissionsViewParts";
 
 describe("任务详情里不再算数的步骤", () => {
   afterEach(cleanup);

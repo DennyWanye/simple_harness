@@ -17,7 +17,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ControlMessage, IncomingMessage } from "../types/messages";
 import { useMissionsStore } from "../stores/missionsStore";
 import { useMissionsFeed } from "../stores/useMissionsFeed";
-import { MissionsView, STRICT_QUOTES_CRITERION } from "./MissionsView";
+import { MissionsView } from "./MissionsView";
+import { STRICT_QUOTES_CRITERION } from "./missionsViewShared";
 import { PROTOCOL_ERROR_TEXT, STALE_NOTE, guardIncoming } from "../ws/orchestrationContracts";
 
 class FakeChannel {

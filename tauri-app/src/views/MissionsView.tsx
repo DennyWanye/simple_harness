@@ -21,7 +21,6 @@
 import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useDepsChanged } from "../hooks/useDepsChanged";
 import { useShallow } from "zustand/react/shallow";
-
 import { tokens } from "../theme/tokens";
 import { dark } from "../theme/components";
 import type { ControlMessage, IncomingMessage } from "../types/messages";
@@ -48,567 +47,57 @@ import {
   type MissionsChannel,
 } from "../stores/missionsStore";
 import { PROTOCOL_ERROR, STALE_NOTE } from "../ws/orchestrationContracts";
+import {
+  TERMINAL,
+  RECOVERY_ISOLATED_TEXT,
+  LAYER_LABEL,
+  REJECTION_LABEL,
+  WAIT_LABEL,
+  ERROR_TEXT,
+  OWN_RESPONSES,
+  EVENT_PAGE_LIMIT,
+  STRICT_QUOTES_CRITERION,
+  NOISE_EVENTS,
+  MAX_AUTO_PAGES,
+  TIMELINE_SIZE,
+  STOP_REASON_LABEL,
+  TASK_STATUS_LABEL,
+  stateLabel,
+  formatBytes,
+  shortHash,
+  show,
+  plain,
+  waitLine,
+  eventLine,
+  box,
+  button,
+  field,
+  muted,
+  heading,
+  nextStep,
+  nextStepBlocksAuthorization,
+  jumpTo,
+  TASK_ENDED,
+} from "./missionsViewShared";
+import type { Json, Flight } from "./missionsViewShared";
+import {
+  StepsNoLongerCounting,
+  BudgetByDuty,
+  ModelText,
+  LayerSummary,
+  ArtifactPanel,
+  ActionOutcome,
+  ResolveOutcomeBox,
+  TakeoverBox,
+} from "./MissionsViewParts";
 
 export interface MissionsViewProps {
   channel: MissionsChannel | null;
 }
-
-type Json = Record<string, unknown>;
-
-const TERMINAL = new Set(["COMPLETED", "FAILED", "CANCELLED"]);
-/** 重启恢复把"库与自己历史对不上"的任务单独隔离（后端 recovery_isolated）；列表与详情都用这一句。 */
-const RECOVERY_ISOLATED_TEXT = "重启核对没通过，已隔离，不再推进；可以取消";
-/** P3.1 §3.4 界面状态词汇；ui_state 由后端投影给出，界面不自己推断，缺失时回退原始 status。 */
-const UI_STATE_LABEL: Record<string, string> = {
-  received: "请求已接收",
-  queued: "排队",
-  running: "运行",
-  verifying: "待验证",
-  waiting_person: "等你处理",
-  unknown: "UNKNOWN（结果未知）",
-  delivered: "正式交付",
-  failed: "失败",
-  cancelled: "已取消",
-};
-const LAYER_LABEL: Record<string, string> = {
-  PASS: "通过",
-  FAIL: "未通过",
-  ERROR: "错误",
-  NOT_REQUIRED: "不需要",
-  SKIPPED: "跳过",
-  NEEDS_HUMAN: "待人工",
-  SUSPENDED: "待人工",
-  // 产物的验证状态（2026-09-26 真机：列表里直接显示英文 VERIFIED）
-  VERIFIED: "已验证",
-  UNVERIFIED: "未验证",
-  REJECTED: "未通过",
-};
-const REJECTION_LABEL: Record<string, string> = {
-  stale_source: "来源已失效",
-  source_unavailable: "来源不可用",
-  used_knowledge_stale: "引用的知识已失效",
-  revoked: "已撤销",
-  superseded: "已替代",
-  not_current: "非当前版本",
-};
-const WAIT_LABEL: Record<string, string> = {
-  source_change: "来源变更审批",
-  review: "人工复核",
-  action: "动作审批",
-  arbitration: "仲裁",
-};
-const ERROR_TEXT: Record<string, string> = {
-  local_tests_disabled: "本机执行测试代码已关闭：成功条件不能使用 pytest:",
-  action_criteria_disabled: "这个部署没有启用真实动作：成功条件不能使用 action:",
-  secret_rejected: "内容里有像密钥的文本，未接受",
-  orchestration_unavailable: "编排服务不可用",
-  not_found: "找不到这个对象",
-  conflict: "同一个请求键已经对应另一个不同的请求",
-  integrity_error: "产物内容与记录的哈希不一致",
-};
-/** 视图自己发、自己处理应答的消息类型；其余应答属于常驻订阅或别的视图。 */
-const OWN_RESPONSES = new Set([
-  "mission_get_response",
-  "mission_events_response",
-  "orchestration_policy_status_response",
-  "mission_create_response",
-  "mission_create_with_sources_response",
-  "mission_cancel_response",
-  "mission_approval_decide_response",
-  "mission_takeover_response",
-  "mission_action_resolve_response",
-  "mission_comment_response",
-  "mission_artifact_read_response",
-]);
-const EVENT_PAGE_LIMIT = 200;
-// 严格引用开关打开时追加的成功条件（2026-10-02 用户决定：交给审阅员按这条判断，程序不再逐条核对）。
-export const STRICT_QUOTES_CRITERION =
-  "每个结论都逐字引用所附资料里的原文，并注明出自哪份资料、哪一处；资料里找不到依据的内容不写成结论，而是明确说明资料未提及";
 /** 结构图（elkjs + React Flow）按需加载：默认看「任务过程」，不点结构图就不下载这两个库。 */
 const LiveGraph = lazy(() =>
   import("./liveGraph/LiveGraph").then((m) => ({ default: m.LiveGraph })),
 );
-/** 只说明"后台还活着"、不改变详情内容的事件：推送只带这些时不重拉详情（2026-09-27 性能：
- *  运行中每几秒一次心跳，每次都重拉整份详情并重画整页）。等人操作的变化由 5 秒兜底刷新接住。 */
-const NOISE_EVENTS = new Set([
-  "HeartbeatReceived",
-  "AssuranceEvidenceChanged",
-  "AssuranceUseValidityChecked",
-]);
-const MAX_AUTO_PAGES = 20;
-const TIMELINE_SIZE = 50;
-
-/** 一个 Mission 的请求在途状态（只在回调里读写）。 */
-interface Flight {
-  get: boolean;
-  getAgain: boolean;
-  events: boolean;
-  pages: number;
-  gap: boolean;
-}
-
-/** 推送里只带原始 status 时的中文（2026-09-25 真机点击：列表曾直接显示 PLANNING）。 */
-const STATUS_LABEL: Record<string, string> = {
-  CREATED: "请求已接收",
-  PLANNING: "规划中",
-  ACTIVE: "运行",
-  VERIFYING: "待验证",
-  COMPLETED: "正式交付",
-  FAILED: "失败",
-  CANCELLED: "已取消",
-  STOPPED: "已停止",
-};
-
-/** 停止原因与 Task 状态的中文（2026-09-25 真机点击：界面直接显示 verification_passed / BLOCKED）。 */
-const STOP_REASON_LABEL: Record<string, string> = {
-  verification_passed: "验证通过",
-  verification_failed: "验证未通过",
-  budget_exhausted: "预算用完",
-  cancelled: "已取消",
-  user_cancelled: "已取消",
-  planning_failed: "规划失败",
-  max_attempts: "尝试次数用完",
-  timeout: "超时",
-  human_override: "人工接管后停止",
-  no_dispatchable_work: "没有可继续执行的工作",
-  store_fault: "任务数据读写反复出错，已停止",
-  no_new_knowledge: "连续多轮没有新知识，已停止",
-  result_duplication: "结果重复率过高，已停止",
-  deadlock: "步骤之间互相等待成环（死锁），已停止",
-  runtime_unavailable: "运行环境或模型服务不可用，已停止",
-};
-const TASK_STATUS_LABEL: Record<string, string> = {
-  PENDING: "等待",
-  READY: "就绪",
-  ACTIVE: "执行中",
-  RUNNING: "执行中",
-  BLOCKED: "等待前置步骤",
-  VERIFYING: "检查中",
-  DONE: "完成",
-  COMPLETED: "完成",
-  FAILED: "失败",
-  CANCELLED: "已取消",
-  SKIPPED: "跳过",
-};
-
-function stateLabel(uiState: unknown, status: unknown): string {
-  const ui = text(uiState);
-  const raw = text(status);
-  return ui ? (UI_STATE_LABEL[ui] ?? ui) : (STATUS_LABEL[raw] ?? raw);
-}
-
-/** 时间戳（秒 / 毫秒 / ISO 字符串）→ 本地 HH:MM:SS；认不出就返回 null。 */
-function clock(value: unknown): string | null {
-  let ms: number;
-  if (typeof value === "number") ms = value < 1e12 ? value * 1000 : value;
-  else if (typeof value === "string" && value.trim()) {
-    const n = Number(value);
-    ms = Number.isFinite(n) ? (n < 1e12 ? n * 1000 : n) : Date.parse(value);
-  } else return null;
-  if (!Number.isFinite(ms)) return null;
-  const d = new Date(ms);
-  return [d.getHours(), d.getMinutes(), d.getSeconds()]
-    .map((n) => String(n).padStart(2, "0"))
-    .join(":");
-}
-
-function formatBytes(value: unknown): string {
-  const n = Number(value);
-  if (value == null || !Number.isFinite(n) || n < 0) return "大小未知";
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  return `${(n / 1024 / 1024).toFixed(1)} MB`;
-}
-
-function shortHash(value: unknown): string {
-  return text(value)
-    .replace(/^[a-z0-9]+:/i, "")
-    .slice(0, 12);
-}
-
-function show(value: unknown): string {
-  return value != null && typeof value === "object" ? JSON.stringify(value) : text(value);
-}
-
-/** `{text, source}` 或旧的纯字符串 → 文字。 */
-function plain(value: unknown): string {
-  return text(record(value).text ?? value);
-}
-
-function waitLine(item: unknown): string {
-  if (typeof item === "string") return `等待：${item}`;
-  const wait = record(item);
-  const kind = text(wait.kind);
-  const since = clock(wait.since);
-  return `等待：${WAIT_LABEL[kind] ?? (kind || "未知")}${since ? `（自 ${since}）` : ""}`;
-}
-
-function eventLine(event: MissionEvent): string {
-  const head = `#${event.seq} ${event.type}`;
-  if (event.type === "HumanCommentAdded" && event.summary != null)
-    return `${head}：${plain(event.summary)}`;
-  return head;
-}
-
-const box: React.CSSProperties = {
-  background: dark.inset,
-  border: `1px solid ${tokens.color.surface.hairline}`,
-  borderRadius: tokens.radius.md,
-  padding: tokens.space.md,
-};
-
-const button: React.CSSProperties = {
-  height: tokens.controlHeight,
-  padding: `0 ${tokens.space.md}px`,
-  borderRadius: tokens.radius.md,
-  border: `1px solid ${tokens.color.surface.hairline}`,
-  background: dark.panel,
-  color: dark.text,
-  fontFamily: tokens.font.ui,
-  fontSize: tokens.text.base.size,
-  cursor: "pointer",
-};
-
-const field: React.CSSProperties = {
-  width: "100%",
-  boxSizing: "border-box",
-  minHeight: 64,
-  padding: tokens.space.sm,
-  borderRadius: tokens.radius.md,
-  border: `1px solid ${tokens.color.surface.hairline}`,
-  background: dark.inset,
-  color: dark.text,
-  fontFamily: tokens.font.ui,
-  fontSize: tokens.text.base.size,
-};
-
-const muted: React.CSSProperties = { color: dark.textMuted, fontSize: tokens.text.xs.size };
-
-const BUDGET_ROWS_SHOWN = 8;
-
-/** 已通过验收、但在现行要求下不再算数的步骤（多是按旧版要求通过的）。没有就不显示。 */
-export function StepsNoLongerCounting({ rows }: { rows: unknown[] }) {
-  const steps = rows.map(record);
-  if (!steps.length) return null;
-  return (
-    <div style={muted} data-testid="mission-steps-no-longer-counting">
-      {`不再算数：${steps.map((step) => `${text(step.label)}（按第 ${text(step.requirements_revision)} 版要求通过）`).join("；")}——要求改过，规划器会决定重做还是沿用`}
-    </div>
-  );
-}
-
-/** 预算去向：这件事（含下级、含被换掉的做法）到现在花了多少、试了几次。默认收起；只列花过或试过的。 */
-/** 一行花费：已用 token、尝试次数（失败次数）、用量未知的次数。义务行与步骤行同一个写法。 */
-function spendLine(row: Json, label: string): string {
-  const unknown = Number(row.unknown_usage_attempts) || 0;
-  return (
-    `${label} · 已用 ${Number(row.settled_tokens) || 0} token · 尝试 ${Number(row.attempts) || 0} 次（失败 ${Number(row.failed_attempts) || 0} 次）` +
-    (unknown ? `，另有 ${unknown} 次用量未知` : "")
-  );
-}
-
-export function BudgetByDuty({ rows }: { rows: unknown[] }) {
-  const spent = rows
-    .map(record)
-    .filter((row) => Number(row.attempts) > 0 || Number(row.settled_tokens) > 0);
-  if (!spent.length) return null;
-  const shown = spent.slice(0, BUDGET_ROWS_SHOWN);
-  return (
-    <details data-testid="mission-budget-by-duty" style={muted}>
-      <summary>预算去向</summary>
-      {shown.map((row) => {
-        const steps = list(row.steps)
-          .map(record)
-          .filter((step) => Number(step.attempts) > 0 || Number(step.settled_tokens) > 0);
-        const line = spendLine(row, text(row.label) || text(row.obligation_id));
-        return (
-          <div key={text(row.obligation_id)} style={{ paddingLeft: (Number(row.depth) || 0) * 12 }}>
-            {steps.length ? (
-              <details data-testid="mission-budget-steps">
-                <summary>{line}</summary>
-                {steps.slice(0, BUDGET_ROWS_SHOWN).map((step) => (
-                  <div key={text(step.task_id)} style={{ paddingLeft: 12 }}>
-                    {spendLine(step, text(step.label) || text(step.task_id))}
-                    {Number(step.branches) > 1 ? `（${Number(step.branches)} 个分支共用）` : ""}
-                  </div>
-                ))}
-                {steps.length > BUDGET_ROWS_SHOWN ? (
-                  <div
-                    style={{ paddingLeft: 12 }}
-                  >{`其余 ${steps.length - BUDGET_ROWS_SHOWN} 步`}</div>
-                ) : null}
-              </details>
-            ) : (
-              line
-            )}
-          </div>
-        );
-      })}
-      {spent.length > shown.length ? <div>{`其余 ${spent.length - shown.length} 项`}</div> : null}
-    </details>
-  );
-}
-const heading: React.CSSProperties = { fontWeight: tokens.weight.semibold };
-
-const ModelText: React.FC<{ value: unknown }> = ({ value }) => (
-  <span>
-    {plain(value)}
-    <span
-      style={{ marginLeft: tokens.space.xs, color: dark.textMuted, fontSize: tokens.text.xs.size }}
-    >
-      （模型生成，未核实）
-    </span>
-  </span>
-);
-
-/** 验证层 summary：只有 source=model 才标注；source=system 或旧的纯字符串只显示文字。 */
-const LayerSummary: React.FC<{ value: unknown }> = ({ value }) =>
-  text(record(value).source) === "model" ? (
-    <ModelText value={value} />
-  ) : (
-    <span>{plain(value)}</span>
-  );
-
-/** 顶部"下一步"提示（2026-09-25 真机点击：要人操作的按钮埋在长页面中间，用户找不到）。
- *  只读投影：从详情推出当前最该做的一件事，按钮跳到对应区域；不代替那一步本身。 */
-function nextStep(
-  detail: Json,
-  approvals: number,
-): { text: string; target?: string; action?: string } {
-  const mission = record(detail.mission);
-  const status = text(mission.status);
-  const ws = record(detail.operation_workspace);
-  // 已结束的任务：留下的提问、授权请求都不再需要人处理（2026-09-29 取消后仍提示"去回答"）。
-  const ended = ["COMPLETED", "FAILED", "CANCELLED"].includes(status);
-  // 被隔离的任务不会再推进：别的"下一步"都不成立，先说这一句
-  if (!ended && detail.recovery_isolated) return { text: RECOVERY_ISOLATED_TEXT };
-  if (
-    !ended &&
-    text(ws.mission_id) &&
-    text(ws.state) &&
-    text(ws.state) !== "APPROVED" &&
-    ws.editable === true
-  )
-    return {
-      text: "下一步：在「完成要求」里勾选要交付的内容，再点「确认上述完成要求」。",
-      target: "mission-step-requirements",
-      action: "去确认",
-    };
-  if (!ended && list(detail.planning_authorization_requests).length)
-    return { text: "下一步：授权本轮规划，任务才会开始执行。" };
-  if (!ended && list(detail.planning_questions).some((q) => text(record(q).state) === "PENDING"))
-    return {
-      text: "下一步：回答任务提出的问题。",
-      target: "mission-step-questions",
-      action: "去回答",
-    };
-  if (approvals > 0)
-    return {
-      text: `下一步：有 ${approvals} 项等你审批或复核。`,
-      target: "mission-step-approvals",
-      action: "去处理",
-    };
-  if (status === "COMPLETED")
-    return {
-      text: "任务已完成，结果在下方「产物」里。",
-      target: "mission-step-artifacts",
-      action: "查看产物",
-    };
-  if (status === "FAILED" && text(mission.stop_reason).toLowerCase() === "human_override")
-    return { text: "任务已按你的接管操作停止。" };
-  if (status === "FAILED") return { text: "任务失败了，原因见上方状态和下方「Task 与验证」。" };
-  if (status === "CANCELLED") return { text: "任务已取消。" };
-  return { text: "任务正在自动进行，需要你操作时这里会提示。" };
-}
-
-/** 完成要求还没确认时，提示条先让人去确认；授权仍留在原位置，不会同时出现两份。 */
-function nextStepBlocksAuthorization(detail: Json): boolean {
-  const ws = record(detail.operation_workspace);
-  return !!(
-    text(ws.mission_id) &&
-    text(ws.state) &&
-    text(ws.state) !== "APPROVED" &&
-    ws.editable === true
-  );
-}
-
-function jumpTo(id: string): void {
-  const target = typeof document === "undefined" ? null : document.getElementById(id);
-  target?.scrollIntoView?.({ behavior: "smooth", block: "start" });
-}
-
-const ArtifactPanel: React.FC<{ artifact: Json; verified?: boolean }> = ({
-  artifact,
-  verified = false,
-}) => {
-  const encoding = text(artifact.encoding);
-  const content = typeof artifact.content === "string" ? artifact.content : null;
-  const readable = encoding !== "binary" && content !== null;
-  return (
-    <section aria-label="产物内容" style={{ ...box, minWidth: 0 }}>
-      <div style={{ ...heading, minWidth: 0, overflowWrap: "anywhere", wordBreak: "break-word" }}>
-        产物：{text(artifact.path)}
-      </div>
-      <div style={{ ...muted, minWidth: 0, overflowWrap: "anywhere", wordBreak: "break-word" }}>
-        {`hash：${text(artifact.content_hash)} · 大小：${formatBytes(artifact.size_bytes)}`}
-      </div>
-      {readable ? (
-        <>
-          <div style={muted}>
-            {/* 2026-09-26 真机：列表写"已验证"，预览却一律写"未核实"。 */}
-            {verified ? "（已通过核验）" : "（模型生成，未核实）"}
-            {artifact.truncated === true ? " · 内容过长，已截断" : ""}
-          </div>
-          <pre
-            style={{
-              margin: `${tokens.space.sm}px 0 0`,
-              maxHeight: 360,
-              overflow: "auto",
-              whiteSpace: "pre-wrap",
-              overflowWrap: "anywhere",
-              wordBreak: "break-word",
-              minWidth: 0,
-              fontSize: tokens.text.xs.size,
-            }}
-          >
-            {content}
-          </pre>
-        </>
-      ) : (
-        <div style={{ ...muted, marginTop: tokens.space.sm }}>
-          {encoding === "binary" ? "二进制内容，未显示" : "没有返回内容"}
-        </div>
-      )}
-    </section>
-  );
-};
-
-/** P3.2 P32-15：一个动作在世界上到底发生了什么。已发布时显示实际路径与回读的内容
- * hash；UNKNOWN 说成“核对中”，因为系统自己也还不知道，绝不写成失败或成功。 */
-function ActionOutcome({ action }: { action: Record<string, unknown> }): React.JSX.Element | null {
-  const state = text(action.state);
-  const path = text(action.published_path);
-  const hash = text(action.published_hash);
-  if (!state) return null;
-  const label =
-    state === "SUCCEEDED" ? "已发布" : state === "UNKNOWN" ? "核对中" : "已生成，未发布";
-  return (
-    <div
-      style={{ ...muted, minWidth: 0, overflowWrap: "anywhere", wordBreak: "break-word" }}
-      data-testid="action-outcome"
-      data-action-state={state}
-    >
-      {label}
-      {path ? ` · ${path}` : ""}
-      {hash ? ` · 内容 ${shortHash(hash)}` : ""}
-    </div>
-  );
-}
-
-/** Task 已经结束的状态：这些 Task 不再提供接管。 */
-const TASK_ENDED = new Set(["DONE", "COMPLETED", "FAILED", "CANCELLED", "SKIPPED"]);
-
-/**
- * 阶段 B 裁决第 3 类：一次对外动作结果不明（或失败了却证明不了没生效），系统判不了，由人裁定。
- * 依据必填；"没生效"之后系统会按原内容重新出一张审批卡。只能由人亲手点。
- */
-const ResolveOutcomeBox: React.FC<{
-  actionKey: string;
-  failed: boolean;
-  send: (type: string, payload?: Json) => unknown;
-}> = ({ actionKey, failed, send }) => {
-  const [basis, setBasis] = useState("");
-  return (
-    <div style={{ ...box, marginTop: tokens.space.xs }} data-testid={`resolve-${actionKey}`}>
-      <div style={{ color: dark.textMuted }}>系统判断不了这次发布有没有生效，请你查看后裁定：</div>
-      <textarea
-        aria-label="裁定依据"
-        placeholder="写一句你依据什么判断（例如：查了发布目录）"
-        style={field}
-        value={basis}
-        onChange={(e) => setBasis(e.target.value)}
-      />
-      <div style={{ display: "flex", gap: tokens.space.sm }}>
-        {failed ? null : (
-          <button
-            type="button"
-            style={button}
-            disabled={!basis.trim()}
-            onClick={() =>
-              send("mission_action_resolve", { action_key: actionKey, outcome: "succeeded", basis })
-            }
-          >
-            已生效
-          </button>
-        )}
-        <button
-          type="button"
-          style={button}
-          disabled={!basis.trim()}
-          onClick={() =>
-            send("mission_action_resolve", { action_key: actionKey, outcome: "failed", basis })
-          }
-        >
-          没生效
-        </button>
-      </div>
-    </div>
-  );
-};
-
-/**
- * 代码评审第 1 轮 P1-5⑤：卡住的 Task 不一定被判为 blocked（例如一直在跑、在排队），
- * 人也要能接管。依据必填，与「回合结果未知」卡片用同一套命令与可访问名称。
- */
-const TakeoverBox: React.FC<{
-  taskId: string;
-  send: (type: string, payload?: Json) => unknown;
-}> = ({ taskId, send }) => {
-  const [open, setOpen] = useState(false);
-  const [basis, setBasis] = useState("");
-  if (!open) {
-    return (
-      <button
-        type="button"
-        style={{ ...button, marginLeft: tokens.space.sm }}
-        onClick={() => setOpen(true)}
-      >
-        接管这个 Task
-      </button>
-    );
-  }
-  return (
-    <div style={{ ...box, marginTop: tokens.space.xs }}>
-      <textarea
-        aria-label="接管依据"
-        style={field}
-        value={basis}
-        onChange={(e) => setBasis(e.target.value)}
-      />
-      <div style={{ display: "flex", gap: tokens.space.sm }}>
-        <button
-          type="button"
-          style={button}
-          disabled={!basis.trim()}
-          onClick={() =>
-            send("mission_takeover", { task_id: taskId, action: "retry_with_note", basis })
-          }
-        >
-          接管：重试
-        </button>
-        <button
-          type="button"
-          style={button}
-          disabled={!basis.trim()}
-          onClick={() => send("mission_takeover", { task_id: taskId, action: "stop", basis })}
-        >
-          接管：停止
-        </button>
-      </div>
-    </div>
-  );
-};
-
 export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
   // 2026-09-27 性能：按字段订阅。以前订阅整个 store，任何任务的每秒推送都让整页重画。
   const store = useMissionsStore(
@@ -2163,5 +1652,4 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
     </section>
   );
 };
-
 export default MissionsView;

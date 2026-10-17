@@ -1,7 +1,7 @@
 // 代码质量整治阶段 9：前端"跨文件纯移动"核对（阶段 9 裁决执行条件 2）。
 // 用法：node scripts/code_quality/ts_move_check.mjs [ref]   （在仓库根目录运行，默认 ref=HEAD）
 // 取 ref 与工作区里改动、新增、删除的 tauri-app/src 下 .ts/.tsx 文件，收集顶层定义
-// （函数、类、变量、接口、类型别名、枚举），按"名字 + 种类"配对，去掉 export 修饰与注释后比较打印文本。
+// （函数、类、变量、接口、类型别名、枚举），按"名字 + 种类"配对，去掉 export 修饰后按语法树比较（与排版、注释无关）。
 // 报告：内容变了的定义、消失的定义、新增的定义。纯移动时三类都应为空（导入语句不算定义，不比较）。
 import { execFileSync } from "node:child_process";
 import { readFileSync, existsSync } from "node:fs";
@@ -17,28 +17,29 @@ const changed = new Set(
     ...git(["ls-files", "--others", "--exclude-standard", "--", "tauri-app/src"]).split("\n"),
   ].filter((f) => /\.(ts|tsx)$/.test(f)),
 );
-const printer = ts.createPrinter({ removeComments: true });
-
-function strip(node) {
-  const mods = ts.canHaveModifiers(node) ? ts.getModifiers(node) : undefined;
-  if (!mods) return node;
-  const kept = mods.filter(
-    (m) => m.kind !== ts.SyntaxKind.ExportKeyword && m.kind !== ts.SyntaxKind.DefaultKeyword,
-  );
-  if (ts.isFunctionDeclaration(node))
-    return ts.factory.updateFunctionDeclaration(node, kept, node.asteriskToken, node.name,
-      node.typeParameters, node.parameters, node.type, node.body);
-  if (ts.isClassDeclaration(node))
-    return ts.factory.updateClassDeclaration(node, kept, node.name, node.typeParameters,
-      node.heritageClauses, node.members);
-  if (ts.isVariableStatement(node)) return ts.factory.updateVariableStatement(node, kept, node.declarationList);
-  if (ts.isInterfaceDeclaration(node))
-    return ts.factory.updateInterfaceDeclaration(node, kept, node.name, node.typeParameters,
-      node.heritageClauses, node.members);
-  if (ts.isTypeAliasDeclaration(node))
-    return ts.factory.updateTypeAliasDeclaration(node, kept, node.name, node.typeParameters, node.type);
-  if (ts.isEnumDeclaration(node)) return ts.factory.updateEnumDeclaration(node, kept, node.name, node.members);
-  return node;
+// 定义按语法树序列化后比较（节点种类 + 标识符与字面量文本，每项一行）：与排版、注释、引号风格无关；
+// 去掉 export / default 修饰（搬到新模块要加 export）。JSX 文本按行去首尾空白后比较。
+function serialize(node, sf) {
+  const items = [];
+  const walk = (n) => {
+    if (n.kind === ts.SyntaxKind.ExportKeyword || n.kind === ts.SyntaxKind.DefaultKeyword) return;
+    const kind = ts.SyntaxKind[n.kind];
+    if (ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n) || ts.isTemplateHead(n) ||
+        ts.isTemplateMiddle(n) || ts.isTemplateTail(n)) { items.push(`${kind} ${JSON.stringify(n.text)}`); return; }
+    if (ts.isJsxText(n)) {
+      const t = n.text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean).join(" ");
+      if (t) items.push(`${kind} ${JSON.stringify(t)}`);
+      return;
+    }
+    const kids = [];
+    n.forEachChild((c) => { kids.push(c); });
+    const textual = ts.isIdentifier(n) || ts.isPrivateIdentifier(n) || ts.isNumericLiteral(n) ||
+      ts.isBigIntLiteral(n) || ts.isRegularExpressionLiteral(n);
+    if (kids.length === 0) items.push(textual ? `${kind} ${n.getText(sf)}` : kind);
+    else { items.push(kind); kids.forEach(walk); }
+  };
+  walk(node);
+  return items.join("\n");
 }
 
 function defs(text, file) {
@@ -53,7 +54,7 @@ function defs(text, file) {
     else if (ts.isVariableStatement(st))
       names = st.declarationList.declarations.filter((d) => ts.isIdentifier(d.name)).map((d) => d.name.text);
     else continue;
-    const body = printer.printNode(ts.EmitHint.Unspecified, strip(st), sf);
+    const body = serialize(st, sf);
     for (const n of names) {
       const key = `${kind}:${n}`;
       if (out.has(key)) out.set(key, out.get(key) + "\n" + body);  // 同名重载
