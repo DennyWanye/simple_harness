@@ -1044,14 +1044,6 @@ function App() {
           onClose={() => setFeedbackOpen(false)}
         />
       )}
-
-      {/* Pulse animation for recording button */}
-      <style>{`
-        @keyframes pulse {
-          0%, 100% { opacity: 1; transform: scale(1); }
-          50% { opacity: 0.7; transform: scale(1.1); }
-        }
-      `}</style>
     </div>
   );
 }

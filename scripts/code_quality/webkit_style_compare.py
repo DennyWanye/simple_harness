@@ -10,6 +10,7 @@
   compare <前.json> <后.json>                   逐元素比对，全等才通过
   smoke   --dist <目录>                         每个场景能渲染、无报错，打印元素数
 
+<style> 元素不计入逐元素比对（不渲染）；后一版运行时 <style> 只许 sh-theme。
 动画在取样前暂停并归零；时间与随机数在画廊里固定（style-gallery/freezeTime.ts）。
 只允许画廊自己的源（同一预览服务器）；其他请求一律中止，WebSocket 不连。
 """
@@ -39,7 +40,7 @@ COLLECT_JS = r"""
   const intern = (s) => { let i = index.get(s); if (i === undefined) { i = styles.length; styles.push(s); index.set(s, i); } return i; };
   const ser = (cs) => { const p = []; for (let i = 0; i < cs.length; i++) p.push(cs[i] + ':' + cs.getPropertyValue(cs[i])); return p.join(';'); };
   const elements = [];
-  const all = [document.documentElement, ...document.documentElement.querySelectorAll('*')];
+  const all = [document.documentElement, ...document.documentElement.querySelectorAll('*')].filter((e) => e.tagName !== 'STYLE');
   all.forEach((el, i) => {
     const rec = { i, tag: el.tagName.toLowerCase(), s: intern(ser(getComputedStyle(el))) };
     for (const pseudo of ['::before', '::after']) {
@@ -56,7 +57,7 @@ COLLECT_JS = r"""
 
 HOVER_TARGETS_JS = r"""
 (limit) => {
-  const all = [document.documentElement, ...document.documentElement.querySelectorAll('*')];
+  const all = [document.documentElement, ...document.documentElement.querySelectorAll('*')].filter((e) => e.tagName !== 'STYLE');
   const sel = 'button, a, [role=button], [role=tab], [role=option], .sh-interactive, input, select, textarea, summary, label';
   const out = [];
   all.forEach((el, i) => { if (out.length < limit && el.matches(sel)) out.push(i); });
@@ -66,7 +67,7 @@ HOVER_TARGETS_JS = r"""
 
 HOVER_ONE_JS = r"""
 (i) => {
-  const all = [document.documentElement, ...document.documentElement.querySelectorAll('*')];
+  const all = [document.documentElement, ...document.documentElement.querySelectorAll('*')].filter((e) => e.tagName !== 'STYLE');
   const el = all[i];
   if (!el) return null;
   el.scrollIntoView({ block: 'center', inline: 'center' });
@@ -79,7 +80,7 @@ HOVER_ONE_JS = r"""
 HOVER_READ_JS = r"""
 (i) => {
   for (const a of document.getAnimations()) { try { a.pause(); a.currentTime = 0; } catch (e) {} }
-  const all = [document.documentElement, ...document.documentElement.querySelectorAll('*')];
+  const all = [document.documentElement, ...document.documentElement.querySelectorAll('*')].filter((e) => e.tagName !== 'STYLE');
   const el = all[i];
   const cs = getComputedStyle(el);
   const p = []; for (let k = 0; k < cs.length; k++) p.push(cs[k] + ':' + cs.getPropertyValue(cs[k]));
@@ -221,7 +222,7 @@ def diff_styles(a, b):
 def compare(before, after, limit=40):
     A = json.loads(Path(before).read_text())
     B = json.loads(Path(after).read_text())
-    problems = []
+    problems, notes = [], []
     for key in sorted(set(A["scenes"]) | set(B["scenes"])):
         a, b = A["scenes"].get(key), B["scenes"].get(key)
         if not a or not b:
@@ -230,8 +231,10 @@ def compare(before, after, limit=40):
         for side, d in (("前", a), ("后", b)):
             if d["errors"]:
                 problems.append(f"{key}: {side}有报错 {d['errors'][:3]}")
+        if b["styleTags"] != ["sh-theme"]:
+            problems.append(f"{key}: 后一版运行时 <style> 不只 sh-theme：{b['styleTags']}")
         if a["styleTags"] != b["styleTags"]:
-            problems.append(f"{key}: 运行时 <style> 不同 前{a['styleTags']} 后{b['styleTags']}")
+            notes.append(f"{key}: 运行时 <style> 前{a['styleTags']} 后{b['styleTags']}")
         if len(a["elements"]) != len(b["elements"]):
             problems.append(f"{key}: 元素数不同 前 {len(a['elements'])} 后 {len(b['elements'])}")
             continue
@@ -255,6 +258,8 @@ def compare(before, after, limit=40):
     total = sum(len(d["elements"]) for d in A["scenes"].values())
     hovers = sum(len(d.get("hover", [])) for d in A["scenes"].values())
     print(f"引擎：前 {A.get('engine')}，后 {B.get('engine')}；场景×主题 {len(A['scenes'])}；元素 {total}；悬停 {hovers}")
+    if notes:
+        print(f"说明（不算差异）：{len(notes)} 个场景×主题的运行时 <style> 前后不同，例如 {notes[0]}")
     for p in problems[:limit]:
         print("  " + p)
     if len(problems) > limit:

@@ -92,15 +92,6 @@ function StartupOverlayImpl({
           </>
         )}
       </div>
-      <style>{`
-        @keyframes deskpet-splash-spin {
-          to { transform: rotate(360deg); }
-        }
-        @keyframes deskpet-splash-pulse {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.55; }
-        }
-      `}</style>
     </div>
   );
 }

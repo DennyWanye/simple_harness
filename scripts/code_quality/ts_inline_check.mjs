@@ -58,6 +58,13 @@ function serialize(node, sf, skip) {
       return;
     }
     if (ts.isParenthesizedExpression(n)) { walk(n.expression); return; }
+    if (ts.isJsxElement(n) || ts.isJsxFragment(n)) {
+      items.push(kind);
+      walk(ts.isJsxElement(n) ? n.openingElement : n.openingFragment);
+      jsxChildren(n.children, sf).forEach((c) => (typeof c === "string" ? items.push(`JsxText ${JSON.stringify(c)}`) : walk(c)));
+      walk(ts.isJsxElement(n) ? n.closingElement : n.closingFragment);
+      return;
+    }
     const kids = [];
     n.forEachChild((c) => { kids.push(c); });
     const textual = ts.isIdentifier(n) || ts.isPrivateIdentifier(n) || ts.isNumericLiteral(n) || ts.isBigIntLiteral(n) || ts.isRegularExpressionLiteral(n);
@@ -66,6 +73,39 @@ function serialize(node, sf, skip) {
   };
   walk(node);
   return items.join("\n");
+}
+
+/**
+ * JSX 子节点按 React 的空白规则规整（与 Babel 的 cleanJSXElementLiteralChild 相同）：文本按行去首尾空白、
+ * 去掉空行、行间用一个空格连接；{"…"} 字符串表达式当文本；相邻文本合并。prettier 改写 {" "} 与换行不影响结果。
+ */
+function jsxChildren(children, sf) {
+  const out = [];
+  const pushText = (t) => {
+    if (!t) return;
+    if (typeof out[out.length - 1] === "string") out[out.length - 1] += t;
+    else out.push(t);
+  };
+  for (const c of children) {
+    if (ts.isJsxText(c)) {
+      const lines = c.text.split(/\r\n|\n|\r/);
+      let last = 0;
+      lines.forEach((l, i) => { if (/[^ \t]/.test(l)) last = i; });
+      let str = "";
+      lines.forEach((line, i) => {
+        let t = line.replace(/\t/g, " ");
+        if (i !== 0) t = t.replace(/^[ ]+/, "");
+        if (i !== lines.length - 1) t = t.replace(/[ ]+$/, "");
+        if (t) str += t + (i !== last ? " " : "");
+      });
+      pushText(str);
+    } else if (ts.isJsxExpression(c) && c.expression && (ts.isStringLiteral(c.expression) || ts.isNoSubstitutionTemplateLiteral(c.expression))) {
+      pushText(c.expression.text);
+    } else if (ts.isJsxExpression(c) && !c.expression) {
+      continue; // {/* 注释 */}
+    } else out.push(c);
+  }
+  return out;
 }
 
 const attrsOf = (el) => (ts.isJsxElement(el) ? el.openingElement : el).attributes.properties;
@@ -212,8 +252,11 @@ for (const rel of files) {
   const skip = (n) => skipNodes.has(n);
   if (keepOld.length !== keepNew.length) problems.push(`${rel}：顶层语句数不同（去掉导入与被删常量后 ${keepOld.length} → ${keepNew.length}）`);
   else keepOld.forEach((st, i) => {
-    if (serialize(st, osf, skip) !== serialize(keepNew[i], nsf, skip))
-      problems.push(`${rel}:${osf.getLineAndCharacterOfPosition(st.getStart()).line + 1}：顶层语句的语法树变了`);
+    const x = serialize(st, osf, skip).split("\n"), y = serialize(keepNew[i], nsf, skip).split("\n");
+    if (x.join("\n") === y.join("\n")) return;
+    let k = 0;
+    while (k < x.length && x[k] === y[k]) k++;
+    problems.push(`${rel}:${osf.getLineAndCharacterOfPosition(st.getStart()).line + 1}：顶层语句的语法树变了（第 ${k + 1} 项：原 ${x[k] ?? "<无>"}；现 ${y[k] ?? "<无>"}）`);
   });
   // 导入：新文件的每条导入都来自旧文件（可少说明符），或是本文件的 .styles.css；删掉的名字不许再出现
   const base = path.basename(rel, ".tsx");

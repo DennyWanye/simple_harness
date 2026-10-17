@@ -4,8 +4,11 @@
 import { build } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "node:path";
+import { realpathSync } from "node:fs";
 
-const [appDir, outDir] = process.argv.slice(2).map((p) => path.resolve(p));
+// 用真实路径：macOS 临时目录 /var 是 /private/var 的符号链接，混用会让 Rolldown 算出相对路径的入口名。
+const appDir = realpathSync(path.resolve(process.argv[2]));
+const outDir = path.resolve(process.argv[3]);
 await build({
   root: appDir,
   configFile: false,

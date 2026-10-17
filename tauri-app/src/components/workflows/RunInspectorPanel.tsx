@@ -16,6 +16,7 @@ import type {
   WorkflowNodeView,
   WorkflowRunSummary,
 } from "./types";
+import "./RunInspectorPanel.css";
 
 export type InspectorView = "runs" | "trace" | "checkpoints" | "evaluations";
 
@@ -59,7 +60,6 @@ export function RunInspectorPanel(props: Props) {
 
   return (
     <div data-testid="run-inspector" className="workflow-inspector-layout" style={layoutStyle}>
-      <style>{responsiveCss}</style>
       <aside className="workflow-inspector-aside" style={asideStyle}>
         <div style={toolbarStyle}>
           <strong style={{ fontSize: 12 }}>运行</strong>
@@ -385,12 +385,6 @@ const viewLabel: Record<InspectorView, string> = {
   checkpoints: "Checkpoints",
   evaluations: "Evaluations",
 };
-const responsiveCss = `
-  @media (max-width: 560px) {
-    .workflow-inspector-layout { grid-template-columns: minmax(0, 1fr) !important; grid-template-rows: minmax(112px, 34%) minmax(0, 1fr) !important; }
-    .workflow-inspector-aside { border-right: 0 !important; border-bottom: 1px solid rgba(148,163,184,0.14); }
-  }
-`;
 const layoutStyle: React.CSSProperties = {
   minHeight: 0,
   height: "100%",
