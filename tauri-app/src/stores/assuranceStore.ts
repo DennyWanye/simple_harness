@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: BUSL-1.1
 /**
  * Session-local Assurance read models (host-*-v1 contracts). Read-only: no use grant.
- * 形状只由公开合同核一次：控制通道收到回复时按 SDK 的 host-*-v1 Schema 核（`ws/orchestrationContracts.ts`，
- * 推后第 2 批 U02），这里只留类型和给人看的文字，不再手抄一份解析器。
+ * 形状只由公开合同核一次：控制通道收到回复时按 SDK 的 host-*-v1 Schema 核（`ws/orchestrationContracts.ts`），
+ * 这里只留类型和给人看的文字，不再手抄一份解析器。
  */
 export type AssuranceRef = {
   kind: string;

@@ -85,7 +85,7 @@ function maybeStr(value: unknown): string | null {
 /**
  * 一页 `taskgraph.execution_snapshot` 回复 → 画面数据。
  *
- * 形状只核一次：控制通道收到回复时已按公开合同 `taskgraph-execution-view-v1` 核过（推后第 3 批 U09，
+ * 形状只核一次：控制通道收到回复时已按公开合同 `taskgraph-execution-view-v1` 核过（
  * `ws/orchestrationContracts.ts`），不合合同的回复到不了这里。这里只核请求对应关系（是不是这个任务的），
  * 再挑选、翻译。
  */

@@ -28,7 +28,7 @@ export async function fetchCommands(forceRefresh = false): Promise<SlashCommand[
   if (!forceRefresh && _cachedCommands !== null && _cachedCommands.length > 0)
     return _cachedCommands;
   try {
-    // WI-T2-B fix v2.1: backend 绝对 URL，复用 backendPort.ts 单一源.
+    // backend 绝对 URL，复用 backendPort.ts 单一源.
     // 相对路径在 Tauri WebView2 (tauri://) 或 vite dev 跨 5473→8400 都失效；
     // 必须显式 http://127.0.0.1:${BACKEND_PORT}/api/... 走 CORS.
     const resp = await fetch(`http://127.0.0.1:${BACKEND_PORT}/api/commands/help`);

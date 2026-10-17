@@ -19,16 +19,16 @@ import type {
 export type MessageRole =
   | "user"
   | "assistant"
-  | "assistant_delta" // P4-S25 A1: streaming partial assistant content
+  | "assistant_delta" // streaming partial assistant content
   | "reasoning_delta" // Legacy live-only provider reasoning; never render as public CoT
   | "reasoning_summary" // Durable public execution summary, excluded from model context
   | "tool_call"
   | "tool_result"
-  | "plan" // P4-S25 A2: plan card preceding execution
+  | "plan" // plan card preceding execution
   | "ppt_outline" // PPT Pro WI-4: 大纲确认卡（后端 propose → 用户确认/修改/复用）
   | "workflow_progress"
   | "workflow_stage"
-  | "slash_result" // FEAT-A2: /slash 命令结果（help/goal/prefs/skill/error）
+  | "slash_result" // /slash 命令结果（help/goal/prefs/skill/error）
   | "error";
 
 export type WorkflowProgressStatus = "running" | "waiting" | "completed" | "failed" | "cancelled";
@@ -158,7 +158,7 @@ export interface Message {
   tool_ok?: boolean;
   tool_result?: string;
   tool_error?: string;
-  // P4-S25 A2: plan-card payload
+  // plan-card payload
   plan_rationale?: string;
   plan_steps?: PlanStep[];
   plan_target_directory?: string;
@@ -237,7 +237,7 @@ export interface Todo {
 
 export type SessionStatus = "idle" | "thinking" | "running" | "permission" | "error";
 
-/** P5-S3-Inbox — single supervisor alert payload, kept in two places:
+/** single supervisor alert payload, kept in two places:
  *   • `supervisor_alert` (latest, drives PetStateMachine)
  *   • `supervisor_inbox`  (queue of unhandled, drives toolbar badge + MessageStreamPanel) */
 export interface SupervisorAlertEntry {
@@ -279,7 +279,7 @@ export interface SessionState {
   companion_events?: CompanionEvent[];
   /** Ephemeral detail pages. Cleared on owner switch and projection retract. */
   companion_detail_cache?: Record<string, unknown>;
-  // P5-S3: supervisor signals — fed by `supervisor_alert` ws event +
+  // supervisor signals — fed by `supervisor_alert` ws event +
   // local heuristics (recent tool-call repeat detection happens in
   // backend; here we only stash what the alert told us). Drives the
   // pet's visual state (PetStateMachine) + tile severity colour.
@@ -296,7 +296,7 @@ export interface SessionState {
    * Lives in the session so jumping to a session shows its history.
    * Cleared on dismiss / handle. */
   supervisor_inbox?: SupervisorAlertEntry[];
-  // P5-S2 Phase 5: 自愈尝试计数。0 = 未在自愈中；>0 表示
+  // 自愈尝试计数。0 = 未在自愈中；>0 表示
   // backend AutoResumeOrchestrator 正在第 N 次尝试。
   // ws.ts 收到 auto_resume_started 时设为 attempt 值；
   // succeeded / exhausted 时归 0。AutoResumeBanner 订阅此字段。
@@ -435,7 +435,7 @@ export interface SessionsStore {
   upsert_todos(sid: string, todos: Todo[]): void;
   remove(sid: string): void;
   set_inflight(delta: number): void;
-  // P5-S3: supervisor surface
+  // supervisor surface
   apply_supervisor_alert(sid: string, alert: SupervisorAlertEntry): void;
   clear_supervisor_alert(sid: string): void;
   /** Remove a single alert from the inbox (and clear `supervisor_alert`

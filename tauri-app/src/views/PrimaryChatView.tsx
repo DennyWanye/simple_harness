@@ -168,7 +168,7 @@ export function PrimaryChatView({ channel, onOpenSettings, active = true }: Prim
         </div>
       </div>
 
-      {/* HTN 补齐阶段 B 第 1 条：后台任务结束通知，人点"已收到"才算收到。 */}
+      {/* 后台任务结束通知，人点"已收到"才算收到。 */}
       {active && (
         <div className="sh-PrimaryChatView-13">
           <ChatMissionNotices />

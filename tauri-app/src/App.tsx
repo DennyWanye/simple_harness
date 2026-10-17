@@ -28,7 +28,7 @@ import { ProtectedPathCard } from "./components/ProtectedPathCard";
 import { useProtectedPathRequests } from "./hooks/useProtectedPathRequests";
 import { ApprovalCenterPanel } from "./components/ApprovalCenterPanel";
 import { ClarificationDialog } from "./components/ClarificationDialog";
-// WI-01/02 (beta-100): first-run onboarding wizard + in-app feedback.
+// first-run onboarding wizard + in-app feedback.
 import { OnboardingWizard } from "./components/OnboardingWizard";
 import { FeedbackPanel } from "./components/FeedbackPanel";
 import { onboardingStatus, onboardingComplete } from "./bindings/onboarding";
@@ -94,7 +94,7 @@ function App() {
   // polling; once populated, the WebSocket hooks reconnect with proper auth.
   const [secret, setSecret] = useState("");
 
-  // P3-S8 — visible startup state so users see a spinner / actionable
+  // visible startup state so users see a spinner / actionable
   // error instead of a silent black transparent window.
   const [bootState, setBootState] = useState<BootState>("starting");
   const [bootError, setBootError] = useState<string | null>(null);
@@ -118,7 +118,7 @@ function App() {
   // effects on the backend process. Safe to replay on HMR, F5, and the
   // backend-restarted supervisor event.
   const refreshSecret = useCallback(async () => {
-    // P4-S18 dev hatch: `?secret=xxx` URL param lets us run the SPA in
+    // dev hatch: `?secret=xxx` URL param lets us run the SPA in
     // a plain browser (Tauri runtime absent → no get_shared_secret).
     // No effect inside the real Tauri shell because the URL there has
     // no query string. Only honoured in dev (import.meta.env.DEV).
@@ -151,7 +151,7 @@ function App() {
   // 正是因为幂等，前端这里无需 useRef 守卫也无需 "先查后启" 两段式
   // 逻辑，直接 invoke 即可。
   //
-  // P3-S3: backend path 不再由前端传 —— Rust 侧 backend_launch::resolve
+  // backend path 不由前端传 —— Rust 侧 backend_launch::resolve
   // 按 bundle → env → dev-fallback 优先级自己定位，打包版走 Bundled
   // exe，dev 走 DESKPET_DEV_ROOT。前端 invoke 无参。
   useEffect(() => {
@@ -245,7 +245,7 @@ function App() {
     };
   }, [bootState]);
 
-  // P3-S8 — handlers bound to the startup error card buttons.
+  // handlers bound to the startup error card buttons.
   const handleBootRetry = useCallback(async () => {
     const core = await import("@tauri-apps/api/core").catch(() => null);
     if (core) {
@@ -292,7 +292,7 @@ function App() {
   }, [refreshSecret]);
 
   const handleBootExit = useCallback(async () => {
-    // P4-S21 #7: prefer the dedicated `app_exit` Rust command so the
+    // prefer the dedicated `app_exit` Rust command so the
     // backend supervisor gets a clean shutdown (no orphan deskpet-backend.exe
     // hanging onto port 8100). Falls through to window.close on older
     // builds that don't have the command registered yet.
@@ -527,7 +527,7 @@ function App() {
             inflight: false,
           });
         }
-        // P4-S22 fix: render whatever the backend sent — `error`
+        // render whatever the backend sent — `error`
         // (catch-all path), `detail` (AgentLoop ErrorEvent), or `reason`.
         // 2026-08-09：relay error_class 的中文翻译层随 relay 移除；
         // 手动 provider 的错误直接呈现后端原文（用户自己配的 baseUrl，
@@ -539,7 +539,7 @@ function App() {
         break;
       }
       case "supervisor_alert": {
-        // P5-S2/S3 — supervisor pushed a diagnosis. Cache it on the
+        // supervisor pushed a diagnosis. Cache it on the
         // session store（消息面板/后续视图消费）。T4：桌宠气泡与
         // PetStateMachine 已删，仅保留 store 缓存链路。
         const p = (message as AppControlMessage).payload || {};
@@ -711,11 +711,8 @@ function App() {
   // （消息/Run 投影/上下文/provider）统一由常挂载的 ChatView 经
   // controlWS（chat_v2 实际通道）发起，避免双通道双份加载。
 
-  // P4-S20: toggle to route chat through the new tool_use loop
-  // P4-S20-LLM-Unified: chat 路径已统一 — backend `chat` 和 `chat_v2`
-  // msg_type 都走 tool_use AgentLoop。
-  // P4-S21 #14: 删掉 useToolUseLoop 状态 + Toolbar toggle。前端永远走
-  // chat_v2 路径（即 sendChatV2）。
+  // chat 路径已统一：backend `chat` 和 `chat_v2` msg_type 都走 tool_use AgentLoop，
+  // 前端永远走 chat_v2 路径（即 sendChatV2）。
 
   // Reset route kind when disconnected.（初值 null，挂载时无需重置）
   if (useDepsChanged([state]) && state !== "connected") setRouteKind(null);
@@ -723,14 +720,14 @@ function App() {
   // S14 — memory management panel toggle.
   // T13：contextModalOpen 删除 —— 上下文钻取模态与其环形入口都在
   // ChatView（T8）；App 层不再有打开点。
-  // P4-S11 §16.5 — ContextTrace panel (decision timeline + token budget)
+  // ContextTrace panel (decision timeline + token budget)
   const [traceOpen, setTraceOpen] = useState(false);
 
   // T6 (workbench-ui) — 工作台视图 state（D2：App 层 useState 下传
   // WorkbenchShell，不引路由库）。设置/技能中心由浮层改为视图页面。
   const [view, setView] = useState<WorkbenchView>("chat");
 
-  // WI-01 (beta-100): first-run onboarding. `onboardingNeeded` flips
+  // first-run onboarding. `onboardingNeeded` flips
   // true only when Rust reports no completion marker. Conservative on
   // error (stay false) so a path-resolution hiccup never traps the
   // user in a wizard.
@@ -749,7 +746,7 @@ function App() {
     };
   }, []);
 
-  // WI-02 (beta-100): in-app feedback panel visibility.
+  // in-app feedback panel visibility.
   const [feedbackOpen, setFeedbackOpen] = useState(false);
 
   // P2-1-S8 — budget-exceeded toast. Auto-clears after 6s.
@@ -902,7 +899,7 @@ function App() {
       {/* T13：App 层 ContextBreakdownModal 退役 —— 环形入口与钻取模态
           都在 ChatView（T8，controlWS 传输），Toolbar 环随 Toolbar 收走。 */}
 
-      {/* P4-S11 ContextTrace overlay */}
+      {/* ContextTrace overlay */}
       <ContextTracePanel
         open={traceOpen}
         onClose={() => setTraceOpen(false)}
@@ -944,7 +941,7 @@ function App() {
         </div>
       )}
 
-      {/* P3-S8 — splash / error overlay. Renders above everything while
+      {/* splash / error overlay. Renders above everything while
           the backend is still starting or has failed to start. */}
       <StartupOverlay
         state={bootState}
@@ -954,7 +951,7 @@ function App() {
         onExit={handleBootExit}
       />
 
-      {/* WI-01 (beta-100) — first-run onboarding wizard. Shows only on a
+      {/* first-run onboarding wizard. Shows only on a
           brand-new install (no completion marker). "Test connection"
           reuses the existing update_cloud_config IPC — a successful
           test also persists the config, so the user isn't asked to
@@ -984,7 +981,7 @@ function App() {
         />
       )}
 
-      {/* WI-02 (beta-100) — in-app feedback / diagnostic bundle panel. */}
+      {/* in-app feedback / diagnostic bundle panel. */}
       {feedbackOpen && (
         <FeedbackPanel
           onBuildBundle={(note) => buildDiagnosticBundle(note)}

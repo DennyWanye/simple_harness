@@ -63,7 +63,7 @@ export async function fetchDailyBudget(
 }
 
 // ----------------------------------------------------------------------
-// P4-S21 #13 — Auto mode toggle.
+// Auto mode toggle.
 //
 // MM-D4（2026-09-09）：复选框只渲染后端权威策略（workflow.db 的
 // CapabilityStore，见 backend/main.py `_authorization_policy_snapshot`）。

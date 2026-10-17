@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 
 /**
- * P3-S8 — Startup splash + error overlay（高级感重设计）.
+ * Startup splash + error overlay（高级感重设计）.
  *
  * 加载态：居中的深色玻璃卡片 + 双环旋转指示器 + 文案。
  * 失败态：换成错误卡片，配 alert 图标 + 重试 / 打开日志目录 / 退出。

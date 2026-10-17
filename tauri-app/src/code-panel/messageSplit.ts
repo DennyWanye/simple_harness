@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 DennyWanye
 // SPDX-License-Identifier: BUSL-1.1
 
-// P5-S2: split a content string on `<think>...</think>` boundaries.
+// split a content string on `<think>...</think>` boundaries.
 // Handles both well-formed (closed) and unclosed (streaming or
 // premature-end_turn) think tags. Returns a flat list of segments
 // in original order; consumer renders normal segments through markdown
@@ -44,7 +44,7 @@ export function splitThinkBlocks(text: string): ThinkSegment[] {
   return out;
 }
 
-// P5-S2 Phase 5.1: 把后端 os_tools 错误返回值（统一 schema）拆成
+// 把后端 os_tools 错误返回值（统一 schema）拆成
 //   { body, hint, examples }
 // 让 ToolResultCard 可以对 hint 做高亮渲染。后端 schema:
 //   { ok: false, error: "...", hint: "...", examples: [...] }

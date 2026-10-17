@@ -13,9 +13,9 @@ export interface Provider {
   account_ref?: string;
   name: string;
   base_url: string;
-  /** P5-S2 v2: canonical model list (a provider can serve multiple models). */
+  /** canonical model list (a provider can serve multiple models). */
   models: string[];
-  /** P5-S2 v2: which model in `models` is used by default for chain calls. */
+  /** which model in `models` is used by default for chain calls. */
   default_model?: string | null;
   /** Back-compat scalar — server includes it derived from models[0]/default_model. */
   model?: string;

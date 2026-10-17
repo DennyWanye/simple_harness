@@ -149,7 +149,7 @@ export function onWorkflowEvent(msg: ControlWireMessage, store: SessionsStore, s
 }
 
 export function onChatV2Plan(msg: ControlWireMessage, store: SessionsStore, sid: string): void {
-  // P4-S25 A2: Plan card from the planner phase. Render it as a
+  // Plan card from the planner phase. Render it as a
   // dedicated bubble in the chat stream so the user can see the
   // intended steps before / during execution.
   const p = msg.payload || {};
@@ -272,8 +272,7 @@ export function onSlashCommandResult(
   store: SessionsStore,
   sid: string,
 ): void {
-  // FEAT-A2: /help /goal /prefs /skill 结果。此前 ws.ts 无此 case →
-  // 所有 slash 结果被静默丢弃。现在格式化成一条 slash_result bubble。
+  // /help /goal /prefs /skill 结果：格式化成一条 slash_result bubble，不静默丢弃。
   const p = msg.payload || {};
   const text = format_slash_result(p.result as SlashCommandResult | undefined);
   store.push_message(sid, { role: "slash_result", text });
@@ -380,7 +379,7 @@ export function onAutoResumeStarted(
   store: SessionsStore,
   sid: string,
 ): void {
-  // P5-S2 Phase 5: backend's AutoResumeOrchestrator started a self-healing
+  // backend's AutoResumeOrchestrator started a self-healing
   // attempt for this session. Bump auto_resume_attempts so AutoResumeBanner
   // shows "🔄 agent 自愈中... (尝试 N/2)".
   const p = msg.payload || {};
@@ -399,7 +398,7 @@ export function onAutoResumeSucceeded(
   store: SessionsStore,
   sid: string,
 ): void {
-  // P5-S2 Phase 5: orchestrator landed a final response. Reset counter so
+  // orchestrator landed a final response. Reset counter so
   // banner dismisses; the regular chat_v2_final (which fires alongside)
   // will handle status/inflight cleanup.
   const p = msg.payload || {};
@@ -412,7 +411,7 @@ export function onAutoResumeExhausted(
   store: SessionsStore,
   sid: string,
 ): void {
-  // P5-S2 Phase 5: orchestrator gave up after max_attempts. Reset counter,
+  // orchestrator gave up after max_attempts. Reset counter,
   // surface a red error message so the user sees what failed (mirrors
   // chat_v2_error semantics — supervisor_alert popup may also fire from a
   // separate ws message; here we just guarantee an error bubble lands).
@@ -436,7 +435,7 @@ export function onSupervisorAlert(
   store: SessionsStore,
   sid: string,
 ): void {
-  // P5-S3: supervisor flagged this session. The pet window owns
+  // supervisor flagged this session. The pet window owns
   // the bubble UI; the panel uses this to colour the tile border.
   const p = msg.payload || {};
   const target_sid = p.session_id || sid;

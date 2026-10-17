@@ -47,7 +47,7 @@ export function collect_inbox(
 }
 
 // ----------------------------------------------------------------------
-// P5-S3 — severity score + pet focus selectors.
+// severity score + pet focus selectors.
 //
 // Pure functions over SessionState so they're trivial to unit-test and
 // to memoize at call sites. Backend's watchdog also computes a similar

@@ -7,13 +7,13 @@
  *
  * 只是投影：正式状态在编排库，改动只经控制通道命令。
  *
- * 两个 seq 分开存（代码评审第 1 轮 P1-1）：
+ * 两个 seq 分开存：
  * - `lastSeq`：`mission_changed` 推送里看到的最新 seq，只用来防倒退（迟到的旧推送不让
  *   状态回退）和判断有没有新事件；
  * - `eventCursor`：已合并事件的游标（已合并事件的最大 seq，或事件页的 `through_seq`，
  *   取大者），拉事件一律从它往后拉。推送不动它，所以推送之后的事件不会被跳过。
  *
- * 事件按 seq 合并去重；推送里出现未知 Mission 时标记列表需要重拉（P3.1-A05）。
+ * 事件按 seq 合并去重；推送里出现未知 Mission 时标记列表需要重拉。
  */
 import { create } from "zustand";
 import type { ControlChannel } from "../ws/ControlChannel";
@@ -71,7 +71,7 @@ export interface OrchestrationStatus {
   allowed_tools?: string[];
   /** 部署默认预算：表单留空的项由后端按它补齐（没有无上限的 Mission）。 */
   mission_budget_defaults?: { max_tokens: number; max_attempts: number } | null;
-  /** 第 2 批 H11 / 车道 P：本月全局预算——所有任务按建立月份合计的 token 月配额与用量（SDK 每月一个全局总账）。 */
+  /** 本月全局预算——所有任务按建立月份合计的 token 月配额与用量（SDK 每月一个全局总账）。 */
   global_budget?: {
     month: string;
     max_tokens: number;
@@ -186,7 +186,7 @@ interface MissionsState {
   /** 事件分页请求在途（在途时不显示「加载更多事件」）。 */
   eventsLoading: Record<string, boolean>;
   listStale: boolean;
-  /** 最近一次列表读到了坏消息（推后第 3 批 U09）：列表保留上次的行，上方显示这句话；下一次好的列表清掉。 */
+  /** 最近一次列表读到了坏消息：列表保留上次的行，上方显示这句话；下一次好的列表清掉。 */
   listError: string | null;
   listRequestId: string | null;
   selectedId: string | null;

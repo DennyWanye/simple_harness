@@ -1,16 +1,16 @@
 // SPDX-FileCopyrightText: 2026 DennyWanye
 // SPDX-License-Identifier: BUSL-1.1
 /**
- * 编排回复的公开合同核对（HTN §17.2 L856；Assurance §13.1 L354；推后第 2 批 U02）。
+ * 编排回复的公开合同核对（HTN §17.2；Assurance §13.1）。
  *
  * - 合同就是 SDK 随包发布的那几份 JSON Schema 文件本身：这里直接 import 仓库里
  *   `sdk/simple-harness-sdk/src/agent_orchestrator/...` 下的文件，不抄副本。Host 出门前按同一批
- *   合同核过一遍（`backend/deskpet/orchestration/projection.py`，U03），两边的动词表同名。
+ *   合同核过一遍（`backend/deskpet/orchestration/projection.py`），两边的动词表同名。
  * - 只实现这几份文件实际用到的 JSON Schema 关键字；碰到没实现的关键字直接报错，不猜。
  * - `ControlChannel` 收到消息先过 `guardIncoming` 再分发：不合合同的回复换成协议错
  *   （`ok:false`、`error_code:"protocol_error"`、一句大白话），数据不往下传，界面保留上次画面。
  * - 只核形状（秩序），不判断内容对错。
- * - 推后第 3 批 U09 加七个动词：执行图主画面与回合详情（`graph/schemas/` 两份）、任务列表、任务详情、
+ * - 另核七个动词：执行图主画面与回合详情（`graph/schemas/` 两份）、任务列表、任务详情、
  *   事件、待批准列表、任务结束通知（`assurance/contracts/` 里 Host DTO 合同处的 `host-mission-*-v1` 五份）。
  */
 import common from "../../../sdk/simple-harness-sdk/src/agent_orchestrator/assurance/contracts/common.schema.json";

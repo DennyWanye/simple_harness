@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 
 /**
- * P4-S20 Stage C — SkillStorePanel (UI-revamp)
+ * SkillStorePanel (UI-revamp)
  *
  * Three tabs: Installed / Marketplace / Add by URL.
  * 全部样式走 design tokens；列表卡片化 + 错误分级 (info / warn / error)。

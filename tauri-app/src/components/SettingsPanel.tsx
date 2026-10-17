@@ -89,10 +89,7 @@ export function SettingsPanel({
         )}
       </header>
 
-      {/* P5-S2 multi-provider-management: legacy single-provider LLM
-            configuration section was removed. All provider config now lives
-            under the "LLM Providers" section below (drag-drop reorder,
-            multiple endpoints, per-card pinning). */}
+      {/* 所有 provider 配置都在下面的 "LLM Providers" 区（拖拽排序、多端点、按卡片固定）。 */}
 
       {/* T11：「桌宠形象」区块删除（形象清单模块三件套随桌宠退役，
             acceptance only-add 显式删除例外清单）。 */}
@@ -114,13 +111,13 @@ export function SettingsPanel({
         </section>
       )}
 
-      {/* ================ LLM Providers (P5-S2 Phase 4) ================ */}
+      {/* ================ LLM Providers ================ */}
       <section className="sh-SettingsPanel-5">
         <h3 className="sh-SettingsPanel-6">LLM Providers</h3>
         <SettingsProviders getChannel={getChannel} />
       </section>
 
-      {/* ================ 模型状态 (P4-S16) ================ */}
+      {/* ================ 模型状态 ================ */}
       <section className="sh-SettingsPanel-5">
         <h3 className="sh-SettingsPanel-6">模型状态</h3>
         {/* 2026-09-10：BGE-M3 / WeMM 嵌入器状态卡随认知记忆 SDK 一并移除
@@ -129,7 +126,7 @@ export function SettingsPanel({
         <ModelContextCard getChannel={getChannel} />
       </section>
 
-      {/* ================ 自动模式 (P4-S21 #13) ================ */}
+      {/* ================ 自动模式 ================ */}
       <section className="sh-SettingsPanel-5">
         <h3 className="sh-SettingsPanel-6">权限</h3>
         <AutoModeToggle getChannel={getChannel} />
@@ -142,7 +139,7 @@ export function SettingsPanel({
       {/* ================ 任务与会话数据 (2026-09-25 条目 7：只统计、只提醒，不删除) ================ */}
       <StorageUsageSection getChannel={getChannel} />
 
-      {/* ================ 本月全局预算 (第 2 批 H11 / 车道 P，原计划 §18.2) ================ */}
+      {/* ================ 本月全局预算 (原计划 §18.2) ================ */}
       <GlobalBudgetSection getChannel={getChannel} />
 
       {/* ================ 任务发布目录 (NEXT-TG-1.0 §9) ================ */}
@@ -154,7 +151,7 @@ export function SettingsPanel({
       {/* ================ 关于与更新 (2026-06-05) ================ */}
       <UpdateSection />
 
-      {/* ================ 危险区 (P3-S9) ================ */}
+      {/* ================ 危险区 ================ */}
       <DangerZoneSection />
 
       {/* SettingsProviders directly persists each change; close with the

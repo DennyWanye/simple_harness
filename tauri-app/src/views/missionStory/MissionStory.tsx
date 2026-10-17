@@ -288,7 +288,7 @@ export function MissionStory({
         if (nodeId === undefined) return;
         detailInflight.current.delete(String(body.request_id));
         if (body.ok !== true) {
-          // 明细读不到：卡片保留摘要，下次展开或刷新再读。坏消息（推后第 3 批 U09）要说出来，不悄悄吞掉
+          // 明细读不到：卡片保留摘要，下次展开或刷新再读。坏消息要说出来，不悄悄吞掉
           if (body.error_code === PROTOCOL_ERROR)
             setError(
               typeof body.error === "string" && body.error ? body.error : PROTOCOL_ERROR_TEXT,

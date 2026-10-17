@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 
 /**
- * P5-S3-Inbox v2 鈥?Left-side message stream.
+ * Left-side message stream.
  *
  * Replaces the modal `ChatHistoryPanel` + the floating `PetSupervisorBubble`
  * with a single persistent panel that lives on the left side of the

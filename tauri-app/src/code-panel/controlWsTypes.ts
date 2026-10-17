@@ -10,7 +10,7 @@ import {
 } from "../stores/sessionTypes";
 import type { PPTOutlineHistoryItem } from "../types/skillPlatform";
 
-// P4-S23 fix: stash the live socket on globalThis so vite HMR (which
+// stash the live socket on globalThis so vite HMR (which
 // may swap this module while the old WebSocket is still mid-handshake)
 // can find and close the previous instance instead of stacking
 // sockets and getting kicked by the backend's "session replaced"

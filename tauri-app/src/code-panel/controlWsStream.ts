@@ -74,7 +74,7 @@ export function onChatResponse(msg: ControlWireMessage, store: SessionsStore, si
 }
 
 export function onChatV2Delta(msg: ControlWireMessage, store: SessionsStore, sid: string): void {
-  // P4-S25 A1: token chunk during streaming. Append to the in-progress
+  // token chunk during streaming. Append to the in-progress
   // assistant bubble. We track the last "assistant" message in the
   // session and append to it; if the previous message isn't an
   // assistant (e.g. first delta of the turn), create a new one.
@@ -252,7 +252,7 @@ export function onChatV2Final(msg: ControlWireMessage, store: SessionsStore, sid
     String(p.invocation_id || ""),
     String(p.stream_epoch || ""),
   );
-  // P4-S25 A1: final text replaces any partial deltas. Drop trailing
+  // final text replaces any partial deltas. Drop trailing
   // assistant_delta + reasoning_delta bubbles (they were the streaming
   // preview); the canonical assistant bubble lands here.
   const cur = store.sessions[sid];

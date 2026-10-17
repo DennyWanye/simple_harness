@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 DennyWanye
 // SPDX-License-Identifier: BUSL-1.1
 
-// WI-T1.4/T1.7 — ArtifactCard：按 kind 分发的产物卡片 + action 埋点
+// ArtifactCard：按 kind 分发的产物卡片 + action 埋点
 //
 // PRD §3 D2：MessageBubble.tsx 的 ToolResultCard 在 result 含 artifacts[]
 // 时分发到此组件；否则保留旧 ToolResultCard（字节级一致，TG-5 T5-5）。
@@ -12,7 +12,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { ToolArtifact, ArtifactKind, ArtifactAction, ActionId } from "./artifactExtract";
 import "./ArtifactCard.styles.css";
 
-// ─── Metric event helper (WI-T1.7 埋点) ─────────────────────
+// ─── Metric event helper ─────────────────────
 
 declare global {
   interface Window {

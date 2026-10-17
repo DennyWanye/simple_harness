@@ -95,7 +95,7 @@ export class ControlChannel {
 
     this.ws.onmessage = (event) => {
       try {
-        // 推后第 2 批 U02：编排回复先按公开合同核，不合合同的换成协议错再分发（唯一入口）
+        // 编排回复先按公开合同核，不合合同的换成协议错再分发（唯一入口）
         const msg: IncomingMessage = guardIncoming(JSON.parse(event.data) as IncomingMessage);
         // PRD §6.3: intercept server_hello to populate the v2 feature set.
         // This is layered ON TOP of normal listener fan-out so debug UIs that
@@ -202,7 +202,7 @@ export class ControlChannel {
     this.send({ type: "chat", payload: { text } });
   }
 
-  /** P4-S20: send via the new tool_use loop path. */
+  /** send via the new tool_use loop path. */
   sendChatV2(text: string) {
     this.send({ type: "chat_v2", payload: { text } });
   }

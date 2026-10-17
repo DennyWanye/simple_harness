@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 
 /**
- * P4-S23 — WebSocket dispatcher for the code panel window.
+ * WebSocket dispatcher for the code panel window.
  *
  * Both windows talk to the same backend on `ws://127.0.0.1:8100`.
  * The pet window already owns its WS via `useControlChannel`; the
@@ -25,7 +25,7 @@ import {
 } from "../auth/windowControlCredential";
 import type { CanonicalJson } from "../auth/controlCommandCanonical";
 import { useProvidersStore, type ProviderEntry } from "./providersStore";
-// P5-S2 Phase 4 — settings panel provider mutation events
+// settings panel provider mutation events
 import { dispatchProviderEvent, type ProviderEventMessage } from "../components/providersStore";
 import type { ControlHandler, ControlWireMessage } from "./controlWsTypes";
 import { pendingRunStatusQueries } from "./controlWsShared";
@@ -252,7 +252,7 @@ async function open_socket() {
     ws?.send(JSON.stringify({ type: "settings_providers_list_request" }));
     const store = useSessionsStore.getState();
     const sid = store.active_sid;
-    // P4-S23 F5 fix: rehydrate chat history for every known session
+    // rehydrate chat history for every known session
     // from SessionDB. Without this, refreshing the panel wipes the
     // user's scrollback even though the messages are persisted.
     // 2026-08-09：原先这里额外硬拉一次保留会话 "default"。保留会话已移除，
@@ -356,7 +356,7 @@ function schedule_reconnect() {
   if (reconnect_timer != null) return;
   const delay = Math.min(RECONNECT_MAX_MS, RECONNECT_BASE_MS * Math.pow(2, reconnect_attempt));
   reconnect_attempt++;
-  // P5-S2 Phase 5: globalThis.setTimeout works in both browser + node (vitest);
+  // globalThis.setTimeout works in both browser + node (vitest);
   // window.setTimeout would crash in the node test env when ws.ts is imported.
   reconnect_timer = globalThis.setTimeout(() => {
     reconnect_timer = null;
@@ -574,7 +574,7 @@ function onChatV2RunReserved(msg: ControlWireMessage, store: SessionsStore, sid:
   }
 }
 
-// P5-S2 Phase 5 — code session binding events
+// code session binding events
 function onProvidersChanged(msg: ControlWireMessage, _store: SessionsStore, _sid: string): void {
   // Settings-side mutation broadcast refreshes the registry snapshot.
   // Session bindings are durable tombstones and must not be silently
@@ -796,7 +796,7 @@ export const controlWS: ControlWS = {
     return current_state;
   },
 };
-// P5-S2 Phase 5: vitest hook. Production never imports this; tests use it to
+// vitest hook. Production never imports this; tests use it to
 // drive `dispatch` without spinning up a real WebSocket. Exported under a
 // `__test_` prefix to make the intent obvious at call sites.
 // 测试钩子：与真实通道一样，传入的消息不经校验。

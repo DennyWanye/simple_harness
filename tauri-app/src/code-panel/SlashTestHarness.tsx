@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 
 /**
- * WI-T2-B v2 真 UI 验证 harness — `#/slashtest` route.
+ * 真 UI 验证 harness — `#/slashtest` route.
  *
  * 独立渲染 InputBar，让真浏览器 E2E（claude-in-chrome）能真触发 / 命令
  * autocomplete 状态机（dropdown / ↑↓ / Tab / arg-hint / history），无需

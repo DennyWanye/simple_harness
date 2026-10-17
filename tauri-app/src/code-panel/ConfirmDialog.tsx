@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 
 /**
- * P4-S24 followup — minimal modal confirm dialog.
+ * minimal modal confirm dialog.
  *
  * No external deps; styled to match the dark code-panel chrome. Used
  * for destructive actions like "delete project session" so users

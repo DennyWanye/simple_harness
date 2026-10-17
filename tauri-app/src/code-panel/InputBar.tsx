@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 
 /**
- * P4-S23 / WI-T2-B1 v2 — bottom input bar for the code panel.
+ * bottom input bar for the code panel.
  *
  * Multi-line textarea with Enter-to-send (Shift+Enter newline).
  *

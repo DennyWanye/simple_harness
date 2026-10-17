@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 
 /**
- * P5-S2 Phase 4 — Add / Edit Provider modal.
+ * Add / Edit Provider modal.
  *
  * UI is dumb: parent owns the editing target, parent handles save
  * (sending ws). The modal collects + validates the draft client-side

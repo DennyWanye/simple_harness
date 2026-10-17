@@ -19,7 +19,7 @@ export interface StorageUsageData {
 }
 
 // ---------------------------------------------------------------------------
-// 本月全局预算（第 2 批 H11 / 车道 P，2026-10-06；原计划 §18.2 Global Budget）：这台机器所有任务
+// 本月全局预算（原计划 §18.2 Global Budget）：这台机器所有任务
 // 每个自然月合计的 token 上限（月配额）。只读说明：数值在 config.toml 的 [orchestration]
 // global_monthly_max_tokens 里改，重启后生效。
 

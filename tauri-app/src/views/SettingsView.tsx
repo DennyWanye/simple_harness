@@ -5,7 +5,7 @@
  * SettingsView（T11 实装，WB-8）— SettingsPanel variant:"page" 宿主。
  *
  * 六项 props 合同（T6 冻结；App :SettingsPanel 原浮层 props 原样下传 +
- * 第 7 轮补第六项 autostart —— useAutostart 状态下传，自启开关自
+ * 第六项 autostart —— useAutostart 状态下传，自启开关自
  * Toolbar 移入设置页，B12 保留换位置）：
  *   getChannel / secret / onConfigChanged /
  *   autostart。

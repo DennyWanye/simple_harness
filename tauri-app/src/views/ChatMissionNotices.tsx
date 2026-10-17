@@ -1,5 +1,5 @@
 /**
- * 主对话里的后台任务结束通知（HTN 补齐阶段 B 第 1 条，2026-10-03）。
+ * 主对话里的后台任务结束通知。
  *
  * 保证通道在任务结束时通知 Host；Host 记下通知，直到人在这里点"已收到"。主 Agent 下一轮会在
  * 上下文里看到还没收到的通知，但"已收到"只能由人亲手点——模型不能代点。
@@ -61,7 +61,7 @@ export function ChatMissionNotices(): React.JSX.Element | null {
   const [notices, setNotices] = useState<Notice[]>([]);
   const [busy, setBusy] = useState<Record<string, boolean>>({});
   const [error, setError] = useState("");
-  /** 最近一次通知列表读到坏消息（推后第 3 批 U09）：卡片保留上次的，下面显示这句话；好列表到了清掉。 */
+  /** 最近一次通知列表读到坏消息：卡片保留上次的，下面显示这句话；好列表到了清掉。 */
   const [listError, setListError] = useState("");
   const shown = useRef(false);
   const listRequest = useRef<string | null>(null);
@@ -115,7 +115,7 @@ export function ChatMissionNotices(): React.JSX.Element | null {
         }
       }
     });
-    // 第 2 批 U04：通道断开再连上就重新拉一次（Host 会从已读序号续读）；断线前没应答的请求作废，
+    // 通道断开再连上就重新拉一次（Host 会从已读序号续读）；断线前没应答的请求作废，
     // 不然 listRequest 一直占着，重连后永远不再拉。
     const offState = channel.onStateChange?.((state) => {
       if (state !== "connected") return;

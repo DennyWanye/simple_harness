@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 
 /**
- * WI-02 (beta-100) — diagnostic feedback bundle IPC bindings.
+ * diagnostic feedback bundle IPC bindings.
  *
  * Wraps the Rust `build_diagnostic_bundle` command
  * (`src-tauri/src/diagnostics.rs`), which gathers crash reports, recent

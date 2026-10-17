@@ -600,7 +600,7 @@ export interface HarnessInspectorDetailsResponse {
 
 // --- S14 memory management：2026-09-10 随认知记忆 SDK 一并移除 ---
 // （memory_list / memory_delete / memory_thumbs_up / memory_clear / memory_export，
-//  以及 P4-S11 的 memory_search / memory_l1_* 与 WI-S2.1b 的 facts / forget / undo）
+//  以及 memory_search / memory_l1_* 与 facts / forget / undo）
 
 // 记忆系统升级 WI-M1.1：评估反馈回路。点 👍/👎 后端落 memory_user_feedback。
 
@@ -641,7 +641,7 @@ export interface DailyBudgetStatus {
   percent_used: number;
 }
 
-// --- P4-S11 MemoryPanel + ContextTrace (L1 / L3 / Skills / Decisions) --------
+// --- MemoryPanel + ContextTrace (L1 / L3 / Skills / Decisions) --------
 //
 // Five new request→response pairs rendered on top of the existing control WS.
 // Backend handlers live in `backend/p4_ipc.py`; all of them degrade gracefully
@@ -792,7 +792,7 @@ export interface DecisionsListResponse {
 // 由 backend/p4_ipc.py 实现。embedding 列在后端已剥离（JSON 不接 bytes），
 // 因此 FactItem 不含 embedding 字段。
 
-// --- P4-S16 Embedder status (SettingsPanel BGE-M3 卡片) ---------------------
+// --- Embedder status (SettingsPanel BGE-M3 卡片) ---------------------
 //
 // 让用户在前端直接看见当前 BGE-M3 是真模型还是 mock。后端 handler 在
 // backend/p4_ipc.py::_handle_embedder_status；service_context._p4_embedder
@@ -885,7 +885,7 @@ export interface ModelContextSetAck {
   };
 }
 
-// P4-S20: skill platform — re-exported from skillPlatform.ts to keep
+// skill platform — re-exported from skillPlatform.ts to keep
 // the wire-contract definition close to the rest of the platform types.
 import type {
   ClarificationRequest,

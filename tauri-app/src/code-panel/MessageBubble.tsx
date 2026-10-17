@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 
 /**
- * P4-S23 — message bubble + tool-call card renderer.
+ * message bubble + tool-call card renderer.
  *
  * Three flavours:
  *   1. user / assistant text  → markdown via react-markdown
@@ -89,7 +89,7 @@ export function MessageBubble({ msg }: Props) {
     case "user":
       return <UserBubble text={msg.text ?? ""} />;
     case "assistant":
-      // P5-S2: render with <think>...</think> stripped → collapsed
+      // render with <think>...</think> stripped → collapsed
       // reasoning bubble + the rest as normal markdown. Some thinking-
       // mode models (deepseek-v4-pro) leak chain-of-thought into the
       // visible content stream as `<think>...</think>` instead of the
@@ -98,13 +98,13 @@ export function MessageBubble({ msg }: Props) {
       // tag is unclosed.
       return <AssistantBubbleWithThink text={msg.text ?? ""} streaming={false} />;
     case "assistant_delta":
-      // P4-S25 A1: streaming partial bubble. Same render as final but
+      // streaming partial bubble. Same render as final but
       // with a soft pulsing cursor — UNLESS the only content so far is
       // a still-open <think>, in which case we let AssistantBubbleWithThink
       // keep the reasoning bubble streaming (no main-bubble cursor).
       return <AssistantBubbleWithThink text={msg.text ?? ""} streaming={true} />;
     case "reasoning_delta":
-      // P4-S25 A1: thinking-mode chain-of-thought, rendered faded so
+      // thinking-mode chain-of-thought, rendered faded so
       // it's clear it's not the final answer.
       return <ReasoningBubble text={msg.text ?? ""} />;
     case "plan":
@@ -159,7 +159,7 @@ export function MessageBubble({ msg }: Props) {
         />
       );
     case "slash_result":
-      // FEAT-A2: /help /goal /prefs /skill 结果（ws.ts 已格式化成纯文本）。
+      // /help /goal /prefs /skill 结果（ws.ts 已格式化成纯文本）。
       return <SlashResultBubble text={msg.text ?? ""} />;
     case "error":
       return <ErrorBanner text={msg.text ?? "(unknown error)"} />;
@@ -261,7 +261,7 @@ export function ToolResultCard({
   ok: boolean;
   result: string;
 }) {
-  // WI-T1.4 last-mile: 优先走 ArtifactCard 分发（PRD §3 D2）。
+  // 优先走 ArtifactCard 分发（PRD §3 D2）。
   // 仅在 ok=true 且 result 含 artifacts[] 时启用 — 失败仍走旧路径
   // 显示错误细节。`artifacts` 字段不在 → 字节级回落旧渲染（TG-5 T5-5）。
   const artifacts = useMemo(() => (ok ? extractArtifactsFromResult(result) : []), [ok, result]);
@@ -292,7 +292,7 @@ export function ToolResultCard({
       </ToolCard>
     );
   }
-  // P5-S2 Phase 5.1: 走 splitToolError 提取 hint；保留原 pretty-print fallback。
+  // 走 splitToolError 提取 hint；保留原 pretty-print fallback。
   const { body: display, hint } = splitToolError(result);
   const lineCount = display.split("\n").length;
   const status = ok ? "✓ ok" : "✗ failed";
@@ -488,7 +488,7 @@ function ToolCard({
   open: boolean;
   onToggle: () => void;
   children: ReactNode;
-  /** P5-S2 Phase 5.1: optional emphasis border (e.g. golden when hint present). */
+  /** optional emphasis border (e.g. golden when hint present). */
   borderColor?: string;
 }) {
   const accent = borderColor ?? "rgba(148, 163, 184, 0.22)";

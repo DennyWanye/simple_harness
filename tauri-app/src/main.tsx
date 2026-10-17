@@ -27,7 +27,7 @@ document.addEventListener(
   true,
 );
 
-// WI-T1.7 last-mile: 全局 metric emit sink。
+// 全局 metric emit sink。
 // ArtifactCard 按钮点击会调 window.__deskpet_metrics_emit；这里 wire 到
 // backend POST /metrics/event，最终落地 <user_data>/metrics.jsonl。
 // 无 backend 时静默丢（dev/test 友好），不破 UI。
@@ -52,7 +52,7 @@ window.__deskpet_metrics_emit = (event: string, payload: Record<string, unknown>
   }
 };
 
-// v2 WI-T2-B 真 UI 验证 route — `#/slashtest` 独立渲染 InputBar 让真浏览器
+// 真 UI 验证 route — `#/slashtest` 独立渲染 InputBar 让真浏览器
 // E2E 能真触发 / 命令 autocomplete 状态机（无需 Tauri invoke 创 session）.
 const isSlashTest = window.location.hash.startsWith("#/slashtest");
 

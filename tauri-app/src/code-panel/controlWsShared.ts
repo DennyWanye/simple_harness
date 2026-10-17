@@ -168,7 +168,7 @@ export function persistedToolOutcome(text: unknown): {
 }
 
 /**
- * FEAT-A2 — 把 slash_command_result 的 result 对象格式化成一条可读文本。
+ * 把 slash_command_result 的 result 对象格式化成一条可读文本。
  * 8 种 result.type 全覆盖（help / goal_set / goal_status / goal_cleared /
  * skill_result / prefs_list / prefs_cleared / error）+ default 兜底（raw JSON），
  * 禁止任何 type 落空被静默丢弃。

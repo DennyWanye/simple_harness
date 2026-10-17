@@ -12,14 +12,14 @@
  * MessageStream 的 WS 订阅/滚动位置/运行投影不反复冷启动）；
  * skills/artifacts/settings 无常驻状态，按需挂载（unmount 即可）。
  *
- * ── 视图 props 合同（第 3 轮挑战 P0；组 V 各任务只在自己的 view
+ * ── 视图 props 合同（各视图只在自己的 view
  * 文件内填充实现，不回头改 App.tsx）──
  *   ChatView      ← { activeSid, secret }
  *   SkillsView    ← { channel: permissionChannel }（互跳 state 本地化）
  *   ArtifactsView ← 无 App props（invoke 自足）
  *   SettingsView  ← { getChannel, secret,
- *                     onConfigChanged, autostart }（六项，autostart 为
- *                     第 7 轮补入，供 T11 自启开关落位）
+ *                     onConfigChanged, autostart }（六项，autostart 供
+ *                     自启开关用）
  *
  * banner 插槽：顶部横幅区域（T4 把 petError 以 bannerStyle("error")
  * 形态搬迁进来；relay 供给分支保留）。

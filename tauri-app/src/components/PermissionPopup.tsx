@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 
 /**
- * P4-S20 Wave 1c — PermissionPopup (UI-revamp)
+ * PermissionPopup (UI-revamp)
  *
  * 权限请求模态框。三个按钮：拒绝 / 本会话始终允许 / 允许一次。ESC 也是拒绝。
  *

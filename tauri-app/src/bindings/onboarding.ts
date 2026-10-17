@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 
 /**
- * WI-01 (beta-100) — first-run onboarding IPC bindings.
+ * first-run onboarding IPC bindings.
  *
  * Thin typed wrappers over the Rust `onboarding_status` /
  * `onboarding_complete` commands (see `src-tauri/src/onboarding.rs`).

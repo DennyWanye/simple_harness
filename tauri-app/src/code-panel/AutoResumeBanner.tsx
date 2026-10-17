@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 
 /**
- * P5-S2 Phase 5.2 — AutoResumeBanner.
+ * AutoResumeBanner.
  *
  * 一个轻量 inline 横幅：当 backend 的 AutoResumeOrchestrator 决定自愈
  * 一个失败任务时（chat handler 返回 max_iterations / permanent_tool_error /

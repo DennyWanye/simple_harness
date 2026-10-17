@@ -22,7 +22,7 @@ export function onSettingsProvidersListResponse(
   dispatchProviderEvent(msg as ProviderEventMessage);
 }
 
-// P5-S2 Phase 4 — individual provider mutation events route to
+// individual provider mutation events route to
 // SettingsProviders' internal store only (no per-session reconciliation
 // needed — the upstream `providers_changed` broadcast handles that).
 export function onSettingsProvidersReordered(

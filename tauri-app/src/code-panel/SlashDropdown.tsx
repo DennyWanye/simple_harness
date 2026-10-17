@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 
 /**
- * WI-T2-B2 v2 — Slash command autocomplete dropdown.
+ * Slash command autocomplete dropdown.
  *
  * 受控组件：父 InputBar 传入 candidates + selectedIdx + onAccept。
  * 自身不管 filter / 状态机，纯渲染 + click 转发。

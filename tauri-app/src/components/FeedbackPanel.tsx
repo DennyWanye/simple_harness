@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 
 /**
- * WI-02 (beta-100) — in-app feedback panel.
+ * in-app feedback panel.
  *
  * Lets a beta user describe a problem and one-click package a redacted
  * diagnostic zip (crash reports + recent logs + anonymous metrics).

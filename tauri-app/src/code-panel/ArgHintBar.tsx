@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 
 /**
- * WI-T2-B3 v2 — argument hint bar.
+ * argument hint bar.
  *
  * 跟随 InputBar 显示在输入框上方（顶部小条），告诉用户当前 `/cmd` 还需要
  * 哪些参数 + 当前在填第几个。

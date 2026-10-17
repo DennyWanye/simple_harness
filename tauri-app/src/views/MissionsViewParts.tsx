@@ -177,7 +177,7 @@ export const ResolveOutcomeBox: React.FC<{
 };
 
 /**
- * 代码评审第 1 轮 P1-5⑤：卡住的 Task 不一定被判为 blocked（例如一直在跑、在排队），
+ * 卡住的 Task 不一定被判为 blocked（例如一直在跑、在排队），
  * 人也要能接管。依据必填，与「回合结果未知」卡片用同一套命令与可访问名称。
  */
 export const TakeoverBox: React.FC<{

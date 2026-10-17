@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 
 /**
- * useMissionsFeed — 任务编排的常驻订阅（代码评审第 1 轮 P2-5）。
+ * useMissionsFeed — 任务编排的常驻订阅。
  *
  * 在 App 层挂一次，始终挂载，与编排视图是否打开无关：
  * - 连上控制通道时发 `orchestration_status`、`mission_list`；
@@ -114,7 +114,7 @@ export function useMissionsFeed(channel: MissionsChannel | null): void {
         case "mission_list_response":
           if (payload.request_id !== state.listRequestId) break;
           if (payload.ok === true) state.setMissions(asList(asRecord(payload.data).missions));
-          // 推后第 3 批 U09：坏消息（通道已按公开合同换成协议错）不动上次的列表，只记下这句话给列表上方显示
+          // 坏消息（通道已按公开合同换成协议错）不动上次的列表，只记下这句话给列表上方显示
           else if (payload.error_code === PROTOCOL_ERROR)
             state.setListError(asText(payload.error) || PROTOCOL_ERROR_TEXT);
           break;

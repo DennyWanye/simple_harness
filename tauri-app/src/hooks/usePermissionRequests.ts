@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 
 /**
- * P4-S20 Wave 1c — usePermissionRequests hook
+ * usePermissionRequests hook
  *
  * Subscribes to the ControlChannel for `permission_request` messages,
  * exposes a single "currently-shown" request and a resolver callback.

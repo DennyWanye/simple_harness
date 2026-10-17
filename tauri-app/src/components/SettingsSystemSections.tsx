@@ -462,7 +462,7 @@ export function ChatTurnTimeoutSetting({
 }
 
 // ----------------------------------------------------------------------
-// P3-S9 — Danger Zone: 完全卸载（清除用户数据）.
+// Danger Zone: 完全卸载（清除用户数据）.
 //
 // `完全卸载` wipes the resolved Simple Harness data dir (config / SQLite / logs). A
 // second opt-in checkbox additionally wipes %LocalAppData%\deskpet\

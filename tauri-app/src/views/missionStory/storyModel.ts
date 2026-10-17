@@ -8,7 +8,7 @@
  * 修补请求、操作是节点事件），卡片明细来自 `taskgraph.execution_detail`——SDK 只读模型回复与
  * 工具结果、去掉思考内容、不读系统提示/上下文包/系统提醒，并对全部文字做密钥脱敏。
  * 这里只挑选和翻译，不推导状态；未知取值原样显示。两种回复的形状由控制通道按公开合同核过
- * （推后第 3 批 U09，`ws/orchestrationContracts.ts`），这里不再逐字段核。
+ * （`ws/orchestrationContracts.ts`），这里不再逐字段核。
  */
 import {
   DECISION_TYPE,

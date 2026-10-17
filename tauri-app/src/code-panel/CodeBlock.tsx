@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 
 /**
- * P4-S23 — code block renderer.
+ * code block renderer.
  *
  * react-syntax-highlighter's Prism *light* build has been shipping
  * a broken `register` export in recent versions; trying to register

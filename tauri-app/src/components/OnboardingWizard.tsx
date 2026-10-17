@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 
 /**
- * WI-01 (beta-100) — first-run onboarding wizard.
+ * first-run onboarding wizard.
  *
  * 步骤列表是**数据驱动**的（而非硬编码 `1 | 2 | 3`）：
  * `stepsForEdition()` 返回 [welcome, connectModel, ready] 三步。

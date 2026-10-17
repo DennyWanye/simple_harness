@@ -4,12 +4,9 @@
 /**
  * P2-1: push cloud config changes to a running backend.
  *
- * P4-S21 #1 — was a direct `fetch("http://127.0.0.1:8100/config/cloud")`,
- * which webview blocks in release builds: the production webview origin
- * is `https://tauri.localhost`, and browsers refuse https→http fetches
- * (mixed-content). We now route through a Rust IPC command that proxies
- * to the backend on our behalf — Rust holds the SHARED_SECRET, frontend
- * doesn't need to touch it.
+ * 走 Rust IPC 命令代理到后端，不直接 `fetch("http://127.0.0.1:8100/config/cloud")`：
+ * 正式版 webview 的源是 `https://tauri.localhost`，浏览器拒绝 https→http 请求（混合内容）。
+ * SHARED_SECRET 由 Rust 持有，前端不用碰。
  */
 
 import { invoke } from "@tauri-apps/api/core";

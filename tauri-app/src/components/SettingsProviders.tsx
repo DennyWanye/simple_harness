@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 
 /**
- * P5-S2 Phase 4 — LLM Provider settings UI (drag-drop reorderable list).
+ * LLM Provider settings UI (drag-drop reorderable list).
  *
  * Pairs with `LLMProviderRegistry` (backend phase 1) + the
  * `settings_providers_*` ws messages (backend phase 2). The component

@@ -225,7 +225,7 @@ export function onSessionMessagesResponse(
   companionEvents
     .sort((a, b) => a.seq - b.seq || a.event_id.localeCompare(b.event_id))
     .forEach((event) => store.reduce_companion_event(event));
-  // FEAT-A4: rehydration 重建 awaiting plan card。后端在 payload.plan
+  // rehydration 重建 awaiting plan card。后端在 payload.plan
   // 单独带回（不混进被白名单过滤的 messages），awaiting 时重建 plan
   // bubble + [执行]/[取消] 栏（对齐 chat_v2_plan handler 的字段）。
   const _plan = msg.payload?.plan;

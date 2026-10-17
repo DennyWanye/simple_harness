@@ -80,7 +80,7 @@ export function ChatMissionCard({ missionId }: { missionId: string }): React.JSX
           setDetail(record(payload.data));
           setError("");
         } else {
-          // 推后第 3 批 U09：坏消息保留上次内容，标明下面是旧的
+          // 坏消息保留上次内容，标明下面是旧的
           const stale = payload.error_code === PROTOCOL_ERROR && shown.current;
           setError((text(payload.error) || "读取任务失败") + (stale ? STALE_NOTE : ""));
         }
