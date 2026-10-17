@@ -19,8 +19,9 @@ import React, { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 
 import type { PermissionRequest, PermissionCategory } from "../types/skillPlatform";
-import { backdropStyle, bannerStyle, buttonStyle, dark, surfaceModal } from "../theme/components";
+import { bannerStyle, buttonStyle, surfaceModal } from "../theme/components";
 import { tokens } from "../theme/tokens";
+import "./PermissionPopup.styles.css";
 
 type Decision = "allow" | "allow_session" | "deny";
 
@@ -151,7 +152,7 @@ export const PermissionPopup: React.FC<Props> = ({
 
   const popup = (
     <div
-      style={{ ...backdropStyle, zIndex: 9999 }}
+      className="sh-PermissionPopup-1"
       role="dialog"
       aria-modal="true"
       aria-labelledby="permission-popup-title"
@@ -170,14 +171,7 @@ export const PermissionPopup: React.FC<Props> = ({
         }}
       >
         {/* Header */}
-        <div
-          style={{
-            padding: `${tokens.space.lg}px ${tokens.space.lg}px ${tokens.space.sm}px`,
-            display: "flex",
-            alignItems: "center",
-            gap: tokens.space.sm,
-          }}
-        >
+        <div className="sh-PermissionPopup-2">
           <span
             aria-hidden
             style={{
@@ -191,48 +185,17 @@ export const PermissionPopup: React.FC<Props> = ({
           >
             {meta.icon}
           </span>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div
-              style={{
-                fontSize: tokens.text.xs.size,
-                color: dark.textMuted,
-                fontWeight: tokens.weight.medium,
-                marginBottom: 2,
-              }}
-            >
-              权限请求
-            </div>
-            <h3
-              id="permission-popup-title"
-              style={{
-                margin: 0,
-                fontSize: tokens.text.lg.size,
-                fontWeight: tokens.weight.semibold,
-                color: dark.text,
-                lineHeight: 1.2,
-              }}
-            >
+          <div className="sh-PermissionPopup-3">
+            <div className="sh-PermissionPopup-4">权限请求</div>
+            <h3 id="permission-popup-title" className="sh-PermissionPopup-5">
               {meta.label}
             </h3>
           </div>
         </div>
 
         {/* Summary + hint */}
-        <div
-          style={{
-            padding: `0 ${tokens.space.lg}px`,
-          }}
-        >
-          <div
-            style={{
-              fontSize: tokens.text.md.size,
-              color: dark.text,
-              lineHeight: 1.55,
-              marginBottom: tokens.space.sm,
-            }}
-          >
-            {request.summary}
-          </div>
+        <div className="sh-PermissionPopup-6">
+          <div className="sh-PermissionPopup-7">{request.summary}</div>
           <div
             style={{
               ...bannerStyle(meta.level),
@@ -246,67 +209,22 @@ export const PermissionPopup: React.FC<Props> = ({
 
         {/* Params details (collapsible) */}
         {Object.keys(request.params || {}).length > 0 && (
-          <div
-            style={{
-              padding: `${tokens.space.md}px ${tokens.space.lg}px 0`,
-            }}
-          >
+          <div className="sh-PermissionPopup-8">
             <details>
-              <summary
-                style={{
-                  fontSize: tokens.text.sm.size,
-                  color: dark.textMuted,
-                  cursor: "pointer",
-                  WebkitUserSelect: "none",
-                  userSelect: "none",
-                  paddingBottom: tokens.space.xs,
-                }}
-              >
-                查看详细参数
-              </summary>
-              <pre
-                style={{
-                  background: dark.inset,
-                  border: `1px solid ${dark.insetBorder}`,
-                  padding: tokens.space.sm,
-                  borderRadius: tokens.radius.md,
-                  fontFamily: tokens.font.mono,
-                  fontSize: tokens.text.xs.size,
-                  lineHeight: 1.5,
-                  color: dark.textMuted,
-                  whiteSpace: "pre-wrap",
-                  wordBreak: "break-all",
-                  margin: 0,
-                  maxHeight: 180,
-                  overflow: "auto",
-                }}
-              >
-                {JSON.stringify(request.params, null, 2)}
-              </pre>
+              <summary className="sh-PermissionPopup-9">查看详细参数</summary>
+              <pre className="sh-PermissionPopup-10">{JSON.stringify(request.params, null, 2)}</pre>
             </details>
           </div>
         )}
 
         {/* Footer / actions */}
-        <div
-          style={{
-            padding: tokens.space.lg,
-            display: "flex",
-            justifyContent: "flex-end",
-            gap: tokens.space.sm,
-            flexWrap: "wrap",
-          }}
-        >
+        <div className="sh-PermissionPopup-11">
           {request.run_id && onStopRun && (
             <button
               type="button"
               disabled={resolving}
-              className="bp-btn-secondary"
+              className="bp-btn-secondary sh-PermissionPopup-12"
               onClick={onStopRun}
-              style={{
-                ...buttonStyle("secondary", "md"),
-                marginRight: "auto",
-              }}
             >
               停止当前任务
             </button>
@@ -314,19 +232,17 @@ export const PermissionPopup: React.FC<Props> = ({
           <button
             type="button"
             disabled={resolving}
-            className="bp-btn-secondary"
+            className="bp-btn-secondary sh-PermissionPopup-13"
             onClick={() => onResolve("deny")}
-            style={buttonStyle("secondary", "md")}
           >
-            拒绝<span style={{ opacity: 0.5, marginLeft: 6 }}>Esc</span>
+            拒绝<span className="sh-PermissionPopup-14">Esc</span>
           </button>
           {allowSession && (
             <button
               type="button"
               disabled={resolving}
-              className="bp-btn-secondary"
+              className="bp-btn-secondary sh-PermissionPopup-13"
               onClick={() => onResolve("allow_session")}
-              style={buttonStyle("secondary", "md")}
               title="本会话内同类操作不再询问"
             >
               本会话始终允许
@@ -344,14 +260,7 @@ export const PermissionPopup: React.FC<Props> = ({
           </button>
         </div>
         {resolveError && (
-          <div
-            role="alert"
-            style={{
-              color: tokens.color.danger.fg,
-              background: tokens.color.danger.soft,
-              padding: `${tokens.space.sm}px ${tokens.space.lg}px`,
-            }}
-          >
+          <div role="alert" className="sh-PermissionPopup-15">
             {resolveError}
           </div>
         )}

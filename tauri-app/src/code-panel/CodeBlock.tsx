@@ -18,6 +18,7 @@
  */
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import vscDarkPlus from "react-syntax-highlighter/dist/esm/styles/prism/vsc-dark-plus";
+import "./CodeBlock.styles.css";
 
 interface Props {
   language?: string;
@@ -28,21 +29,8 @@ export function CodeBlock({ language, children }: Props) {
   // Strip trailing newline that markdown parsers commonly tack on.
   const code = children.replace(/\n$/, "");
   return (
-    <div style={{ position: "relative", margin: "8px 0" }}>
-      {language && (
-        <span
-          style={{
-            position: "absolute",
-            top: 4,
-            right: 8,
-            fontSize: 10,
-            color: "#94a3b8",
-            opacity: 0.7,
-          }}
-        >
-          {language}
-        </span>
-      )}
+    <div className="sh-CodeBlock-1">
+      {language && <span className="sh-CodeBlock-2">{language}</span>}
       <SyntaxHighlighter
         language={language || "text"}
         style={vscDarkPlus}
@@ -64,18 +52,5 @@ export function CodeBlock({ language, children }: Props) {
 
 /** Inline `code` (no language, single line). */
 export function InlineCode({ children }: { children: React.ReactNode }) {
-  return (
-    <code
-      style={{
-        background: "rgba(148, 163, 184, 0.16)",
-        color: "#e2e8f0",
-        padding: "1px 5px",
-        borderRadius: 3,
-        fontSize: "0.92em",
-        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace',
-      }}
-    >
-      {children}
-    </code>
-  );
+  return <code className="sh-CodeBlock-3">{children}</code>;
 }

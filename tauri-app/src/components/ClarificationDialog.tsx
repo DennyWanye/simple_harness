@@ -4,8 +4,8 @@
 import React, { useEffect, useRef, useState } from "react";
 
 import type { ClarificationRequest } from "../types/skillPlatform";
-import { backdropStyle, buttonStyle, dark, inputStyle, surfaceModal } from "../theme/components";
-import { tokens } from "../theme/tokens";
+import { inputStyle } from "../theme/components";
+import "./ClarificationDialog.styles.css";
 
 interface Props {
   current: ClarificationRequest["payload"] | null;
@@ -38,85 +38,28 @@ export const ClarificationDialog: React.FC<Props> = ({ current, onResolve }) => 
 
   return (
     <div
-      style={{ ...backdropStyle, zIndex: 9998 }}
+      className="sh-ClarificationDialog-1"
       role="dialog"
       aria-modal="true"
       aria-labelledby="clarification-dialog-title"
     >
-      <div
-        style={{
-          ...surfaceModal,
-          width: 440,
-          maxWidth: "92vw",
-          maxHeight: "92vh",
-          overflow: "hidden",
-          display: "flex",
-          flexDirection: "column",
-          animation: `bp-pop-in ${tokens.duration.base}ms ${tokens.easing.out}`,
-          borderTop: `4px solid ${tokens.color.accent.bg}`,
-        }}
-      >
-        <div
-          style={{
-            padding: `${tokens.space.lg}px ${tokens.space.lg}px ${tokens.space.sm}px`,
-          }}
-        >
-          <div
-            style={{
-              fontSize: tokens.text.xs.size,
-              color: dark.textMuted,
-              fontWeight: tokens.weight.medium,
-              marginBottom: tokens.space.xs,
-            }}
-          >
-            澄清请求
-          </div>
-          <h3
-            id="clarification-dialog-title"
-            style={{
-              margin: 0,
-              fontSize: tokens.text.lg.size,
-              fontWeight: tokens.weight.semibold,
-              color: dark.text,
-              lineHeight: 1.35,
-              whiteSpace: "pre-wrap",
-              overflowWrap: "anywhere",
-            }}
-          >
+      <div className="sh-ClarificationDialog-2">
+        <div className="sh-ClarificationDialog-3">
+          <div className="sh-ClarificationDialog-4">澄清请求</div>
+          <h3 id="clarification-dialog-title" className="sh-ClarificationDialog-5">
             {current.question}
           </h3>
         </div>
 
-        <div
-          style={{
-            padding: `0 ${tokens.space.lg}px ${tokens.space.lg}px`,
-            display: "flex",
-            flexDirection: "column",
-            gap: tokens.space.md,
-          }}
-        >
+        <div className="sh-ClarificationDialog-6">
           {options.length > 0 && (
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: tokens.space.sm,
-              }}
-            >
+            <div className="sh-ClarificationDialog-7">
               {options.map((option) => (
                 <button
                   key={option}
                   type="button"
-                  className="bp-btn-secondary"
+                  className="bp-btn-secondary sh-ClarificationDialog-8"
                   onClick={() => onResolve(option)}
-                  style={{
-                    ...buttonStyle("secondary", "md"),
-                    justifyContent: "flex-start",
-                    lineHeight: 1.35,
-                    whiteSpace: "normal",
-                    textAlign: "left",
-                    width: "100%",
-                  }}
                 >
                   {option}
                 </button>
@@ -124,13 +67,7 @@ export const ClarificationDialog: React.FC<Props> = ({ current, onResolve }) => 
             </div>
           )}
 
-          <div
-            style={{
-              display: "flex",
-              gap: tokens.space.sm,
-              alignItems: "stretch",
-            }}
-          >
+          <div className="sh-ClarificationDialog-9">
             <input
               ref={inputRef}
               value={answer}
@@ -146,9 +83,8 @@ export const ClarificationDialog: React.FC<Props> = ({ current, onResolve }) => 
             />
             <button
               type="button"
-              className="bp-btn-primary"
+              className="bp-btn-primary sh-ClarificationDialog-10"
               onClick={submit}
-              style={buttonStyle("primary", "md")}
             >
               确认
             </button>

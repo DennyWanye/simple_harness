@@ -5,6 +5,7 @@ import ReactMarkdown from "react-markdown";
 
 import type { PPTOutlineDecision, PPTOutlineHistoryItem } from "../types/skillPlatform";
 import { controlWS } from "./controlWs";
+import "./PPTOutlineCard.styles.css";
 
 export interface PPTOutlineCardProps {
   outlineId: string;
@@ -89,36 +90,36 @@ export function PPTOutlineCard({
   };
 
   return (
-    <div data-testid="ppt-outline-card" style={cardStyle}>
-      <div style={titleStyle}>PPT 大纲确认 · {topic || "未命名主题"}</div>
-      <div style={metaStyle}>📚 {sourcesCount} 个调研来源</div>
-      {noResearch && <div style={warningStyle}>⚠️ 本次未取得调研来源，基于通用知识</div>}
+    <div data-testid="ppt-outline-card" className="sh-PPTOutlineCard-1">
+      <div className="sh-PPTOutlineCard-2">PPT 大纲确认 · {topic || "未命名主题"}</div>
+      <div className="sh-PPTOutlineCard-3">📚 {sourcesCount} 个调研来源</div>
+      {noResearch && <div className="sh-PPTOutlineCard-4">⚠️ 本次未取得调研来源，基于通用知识</div>}
 
-      <div style={outlineStyle}>
+      <div className="sh-PPTOutlineCard-5">
         <ReactMarkdown>{outlineMd || "（暂无大纲内容）"}</ReactMarkdown>
       </div>
 
       {history.length > 0 && (
-        <div style={historyWrapStyle}>
+        <div className="sh-PPTOutlineCard-6">
           <button
             type="button"
             onClick={() => setHistoryOpen((v) => !v)}
-            style={secondaryButtonStyle}
+            className="sh-PPTOutlineCard-7"
           >
             📜 历史大纲
           </button>
           {historyOpen && (
-            <div data-testid="ppt-outline-history" style={historyListStyle}>
+            <div data-testid="ppt-outline-history" className="sh-PPTOutlineCard-8">
               {history.map((item) => (
                 <button
                   key={item.outline_id}
                   type="button"
                   disabled={!effectiveAwaiting}
                   onClick={() => reuse(item.outline_id)}
-                  style={historyItemStyle}
+                  className="sh-PPTOutlineCard-9"
                 >
-                  <span style={{ fontWeight: 600 }}>{item.topic || "未命名大纲"}</span>
-                  <span style={{ color: "#94a3b8", fontSize: 11 }}>
+                  <span className="sh-PPTOutlineCard-10">{item.topic || "未命名大纲"}</span>
+                  <span className="sh-PPTOutlineCard-11">
                     {formatTime(item.created_at)} · {item.sources_count} 个来源
                   </span>
                 </button>
@@ -131,8 +132,8 @@ export function PPTOutlineCard({
       {effectiveAwaiting ? (
         <>
           {editing && (
-            <div style={editWrapStyle}>
-              <label htmlFor={`ppt-outline-feedback-${outlineId}`} style={labelStyle}>
+            <div className="sh-PPTOutlineCard-12">
+              <label htmlFor={`ppt-outline-feedback-${outlineId}`} className="sh-PPTOutlineCard-13">
                 说说想改哪里
               </label>
               <textarea
@@ -140,7 +141,7 @@ export function PPTOutlineCard({
                 aria-label="说说想改哪里"
                 value={feedback}
                 onChange={(event) => setFeedback(event.currentTarget.value)}
-                style={textareaStyle}
+                className="sh-PPTOutlineCard-14"
                 rows={4}
               />
               <button
@@ -157,12 +158,12 @@ export function PPTOutlineCard({
               </button>
             </div>
           )}
-          <div style={buttonBarStyle}>
+          <div className="sh-PPTOutlineCard-15">
             <button
               type="button"
               disabled={submitting}
               onClick={() => decide("accept")}
-              style={primaryButtonStyle}
+              className="sh-PPTOutlineCard-16"
             >
               ✅ 确认生成
             </button>
@@ -170,7 +171,7 @@ export function PPTOutlineCard({
               type="button"
               disabled={submitting}
               onClick={() => setEditing(true)}
-              style={secondaryButtonStyle}
+              className="sh-PPTOutlineCard-7"
             >
               ✏️ 修改
             </button>
@@ -178,14 +179,14 @@ export function PPTOutlineCard({
               type="button"
               disabled={submitting}
               onClick={() => decide("cancel")}
-              style={dangerButtonStyle}
+              className="sh-PPTOutlineCard-17"
             >
               ✖ 取消
             </button>
           </div>
         </>
       ) : (
-        <div data-testid="ppt-outline-resolved" style={resolvedStyle}>
+        <div data-testid="ppt-outline-resolved" className="sh-PPTOutlineCard-18">
           {persistedDecisionStatus ?? "已提交决定"}
         </div>
       )}
@@ -205,50 +206,6 @@ function formatTime(value: string) {
   });
 }
 
-const cardStyle: CSSProperties = {
-  margin: "8px 0",
-  padding: "12px 14px",
-  background: "rgba(15, 118, 110, 0.14)",
-  color: "#dffcf6",
-  border: "1px solid rgba(45, 212, 191, 0.45)",
-  borderRadius: 8,
-  fontSize: 12.5,
-};
-
-const titleStyle: CSSProperties = {
-  fontWeight: 700,
-  color: "#5eead4",
-  marginBottom: 6,
-};
-
-const metaStyle: CSSProperties = {
-  color: "#bae6fd",
-  marginBottom: 6,
-};
-
-const warningStyle: CSSProperties = {
-  color: "#fde68a",
-  marginBottom: 8,
-};
-
-const outlineStyle: CSSProperties = {
-  maxHeight: "40vh",
-  overflow: "auto",
-  whiteSpace: "normal",
-  background: "rgba(2, 6, 23, 0.35)",
-  border: "1px solid rgba(148, 163, 184, 0.24)",
-  borderRadius: 6,
-  padding: "8px 10px",
-  lineHeight: 1.55,
-};
-
-const buttonBarStyle: CSSProperties = {
-  display: "flex",
-  flexWrap: "wrap",
-  gap: 8,
-  marginTop: 10,
-};
-
 const primaryButtonStyle: CSSProperties = {
   background: "#0d9488",
   color: "#ffffff",
@@ -258,77 +215,6 @@ const primaryButtonStyle: CSSProperties = {
   fontSize: 12.5,
   fontWeight: 700,
   cursor: "pointer",
-};
-
-const secondaryButtonStyle: CSSProperties = {
-  background: "rgba(148, 163, 184, 0.18)",
-  color: "#e2e8f0",
-  border: "1px solid rgba(148, 163, 184, 0.35)",
-  borderRadius: 6,
-  padding: "6px 12px",
-  fontSize: 12.5,
-  cursor: "pointer",
-};
-
-const dangerButtonStyle: CSSProperties = {
-  ...secondaryButtonStyle,
-  color: "#fecaca",
-  border: "1px solid rgba(248, 113, 113, 0.42)",
-};
-
-const editWrapStyle: CSSProperties = {
-  display: "flex",
-  flexDirection: "column",
-  gap: 6,
-  marginTop: 10,
-};
-
-const labelStyle: CSSProperties = {
-  color: "#cbd5e1",
-  fontSize: 12,
-  fontWeight: 600,
-};
-
-const textareaStyle: CSSProperties = {
-  width: "100%",
-  boxSizing: "border-box",
-  resize: "vertical",
-  minHeight: 86,
-  borderRadius: 6,
-  border: "1px solid rgba(148, 163, 184, 0.35)",
-  background: "rgba(15, 23, 42, 0.86)",
-  color: "#e5e7eb",
-  padding: "8px 10px",
-  fontSize: 12.5,
-  lineHeight: 1.5,
-};
-
-const historyWrapStyle: CSSProperties = {
-  marginTop: 10,
-};
-
-const historyListStyle: CSSProperties = {
-  display: "flex",
-  flexDirection: "column",
-  gap: 6,
-  marginTop: 8,
-};
-
-const historyItemStyle: CSSProperties = {
-  ...secondaryButtonStyle,
-  display: "flex",
-  flexDirection: "column",
-  alignItems: "flex-start",
-  gap: 3,
-  textAlign: "left",
-  width: "100%",
-};
-
-const resolvedStyle: CSSProperties = {
-  marginTop: 10,
-  color: "#94a3b8",
-  fontSize: 12,
-  fontWeight: 600,
 };
 
 export default PPTOutlineCard;

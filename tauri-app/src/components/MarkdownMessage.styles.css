@@ -1,0 +1,44 @@
+/* 生成文件，不要手改：src/components/MarkdownMessage.tsx 里静态内联样式的等价类（9I）。
+   重新生成：node scripts/code_quality/ts_inline_to_class.mjs convert src/components/MarkdownMessage.tsx */
+
+.sh-MarkdownMessage-1 {
+  margin: 4px 0;
+}
+
+.sh-MarkdownMessage-2 {
+  margin: 6px 0;
+  padding-left: 22px;
+}
+
+.sh-MarkdownMessage-3 {
+  overflow-x: auto;
+  margin: 8px 0;
+}
+
+.sh-MarkdownMessage-4 {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.92em;
+}
+
+.sh-MarkdownMessage-5 {
+  border: 1px solid rgba(148,163,184,0.3);
+  padding: 4px 8px;
+  background: rgba(148,163,184,0.12);
+  text-align: left;
+  font-weight: 600;
+}
+
+.sh-MarkdownMessage-6 {
+  border: 1px solid rgba(148,163,184,0.22);
+  padding: 4px 8px;
+}
+
+.sh-MarkdownMessage-7 {
+  color: #67e8f9;
+  cursor: pointer;
+}
+
+.sh-MarkdownMessage-8 {
+  color: #67e8f9;
+}

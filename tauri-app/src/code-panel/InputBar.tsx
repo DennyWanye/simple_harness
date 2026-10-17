@@ -27,6 +27,7 @@ import { Icon } from "../components/Icon";
 import { INTERACTIVE_CLASS, dark, transition } from "../theme/components";
 import { tokens } from "../theme/tokens";
 import { _slashInputHistory, pushHistory, fetchCommands, filterCommands } from "./slashCommands";
+import "./InputBar.styles.css";
 
 const ATTACHMENT_BLOCK_LIMIT = 8 * 1024 * 1024;
 const ATTACHMENT_RUN_LIMIT = 16 * 1024 * 1024;
@@ -627,41 +628,18 @@ export function InputBar({
         />
       )}
       {attachments.length > 0 && (
-        <div
-          data-testid="attachment-list"
-          style={{ display: "flex", flexWrap: "wrap", gap: tokens.space.xs }}
-        >
+        <div data-testid="attachment-list" className="sh-InputBar-1">
           {attachments.map((attachment) => (
-            <span
-              key={attachment.id}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: tokens.space.xs + 2,
-                padding: "3px 8px",
-                borderRadius: tokens.radius.pill,
-                background: "transparent",
-                border: `1px solid ${dark.borderStrong}`,
-                color: dark.textMuted,
-                fontSize: tokens.text.sm.size,
-              }}
-            >
+            <span key={attachment.id} className="sh-InputBar-2">
               {attachment.name}
               <button
                 type="button"
                 aria-label={`移除附件 ${attachment.name}`}
                 disabled={inputDisabled}
-                className={INTERACTIVE_CLASS}
+                className={`${INTERACTIVE_CLASS} sh-InputBar-3`}
                 onClick={() =>
                   setAttachments((current) => current.filter((item) => item.id !== attachment.id))
                 }
-                style={{
-                  border: 0,
-                  padding: 0,
-                  background: "transparent",
-                  color: dark.textFaint,
-                  lineHeight: 1,
-                }}
               >
                 ×
               </button>
@@ -670,23 +648,12 @@ export function InputBar({
         </div>
       )}
       {composerError && (
-        <div
-          role="alert"
-          data-testid="composer-error"
-          style={{ color: dark.danger, fontSize: tokens.text.sm.size }}
-        >
+        <div role="alert" data-testid="composer-error" className="sh-InputBar-4">
           {composerError}
         </div>
       )}
       {/* 输入行：附件 · 文本域 · 发送，三者内嵌在同一张卡片里。 */}
-      <div
-        style={{
-          display: "flex",
-          gap: tokens.space.xs,
-          alignItems: "flex-end",
-          position: "relative",
-        }}
-      >
+      <div className="sh-InputBar-5">
         <SlashDropdown
           candidates={candidates}
           selectedIdx={selectedIdx}
@@ -788,46 +755,15 @@ export function InputBar({
         </button>
       </div>
       {/* 第二排：低调的单行 meta（12 / 次级色）。 */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: tokens.space.md,
-          padding: `0 ${tokens.space.xs}px`,
-        }}
-      >
+      <div className="sh-InputBar-6">
         {continuationTarget && (
-          <span
-            data-testid="continuation-target"
-            style={{
-              color: tokens.color.accent.fg,
-              fontSize: tokens.text.sm.size,
-              whiteSpace: "nowrap",
-            }}
-          >
+          <span data-testid="continuation-target" className="sh-InputBar-7">
             ↳ 发送到当前任务 · 将在安全边界读取
           </span>
         )}
-        <div
-          style={{
-            marginLeft: "auto",
-            display: "flex",
-            alignItems: "center",
-            gap: tokens.space.md,
-            fontSize: tokens.text.sm.size,
-            fontVariantNumeric: tokens.font.numeric,
-            color: dark.textFaint,
-            minWidth: 0,
-          }}
-        >
+        <div className="sh-InputBar-8">
           <StatusPill status={status} />
-          <span
-            style={{
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-            }}
-          >
+          <span className="sh-InputBar-9">
             {primary
               ? "Enter 发送 · Shift+Enter 换行"
               : "Enter 发送 · Shift+Enter 换行 · 文本附件 · / 命令"}
@@ -848,15 +784,7 @@ function StatusPill({ status }: { status: string }) {
   };
   const m = map[status] ?? { label: status, color: dark.textFaint };
   return (
-    <span
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 6,
-        color: dark.textMuted,
-        whiteSpace: "nowrap",
-      }}
-    >
+    <span className="sh-InputBar-10">
       <span
         aria-hidden
         style={{ width: 6, height: 6, borderRadius: "50%", background: m.color, flexShrink: 0 }}

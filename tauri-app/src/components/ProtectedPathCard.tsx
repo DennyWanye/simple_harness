@@ -6,8 +6,7 @@ import type {
   ProtectedPathDecision,
   ProtectedPathRequest,
 } from "../hooks/useProtectedPathRequests";
-import { buttonStyle, dark, surfaceModal } from "../theme/components";
-import { tokens } from "../theme/tokens";
+import "./ProtectedPathCard.styles.css";
 
 interface Props {
   queue: ProtectedPathRequest[];
@@ -23,53 +22,37 @@ export const ProtectedPathCard: React.FC<Props> = ({ queue, onDecide }) => {
       role="alertdialog"
       aria-labelledby="protected-path-title"
       data-testid="protected-path-card"
-      style={{
-        ...surfaceModal,
-        position: "fixed",
-        right: 20,
-        bottom: 20,
-        zIndex: 9999,
-        width: 420,
-        maxWidth: "92vw",
-        padding: tokens.space.lg,
-        borderTop: `4px solid ${tokens.color.warning.bg}`,
-        display: "flex",
-        flexDirection: "column",
-        gap: tokens.space.sm,
-      }}
+      className="sh-ProtectedPathCard-1"
     >
-      <div id="protected-path-title" style={{ color: dark.text, fontWeight: 600 }}>
+      <div id="protected-path-title" className="sh-ProtectedPathCard-2">
         {`助手想${action}一个受保护的文件`}
         {queue.length > 1 && (
-          <span
-            style={{ color: dark.textMuted, fontWeight: 400 }}
-          >{`（还有 ${queue.length - 1} 个）`}</span>
+          <span className="sh-ProtectedPathCard-3">{`（还有 ${queue.length - 1} 个）`}</span>
         )}
       </div>
-      <div style={{ color: dark.textMuted, fontSize: tokens.text.xs.size }}>{request.reason}</div>
-      <code style={{ overflowWrap: "anywhere", color: dark.text }}>{request.path}</code>
-      <div style={{ color: dark.textMuted, fontSize: tokens.text.xs.size }}>
+      <div className="sh-ProtectedPathCard-4">{request.reason}</div>
+      <code className="sh-ProtectedPathCard-5">{request.path}</code>
+      <div className="sh-ProtectedPathCard-4">
         任务没有停下来等你。允许后，助手再试一次就能用；拒绝后它会换别的办法。
       </div>
-      <div style={{ display: "flex", gap: tokens.space.sm, flexWrap: "wrap" }}>
+      <div className="sh-ProtectedPathCard-6">
         <button
           type="button"
-          className="bp-btn-primary"
-          style={buttonStyle("primary", "sm")}
+          className="bp-btn-primary sh-ProtectedPathCard-7"
           onClick={() => onDecide(request.request_id, "allow_once")}
         >
           允许这一次
         </button>
         <button
           type="button"
-          style={buttonStyle("secondary", "sm")}
+          className="sh-ProtectedPathCard-8"
           onClick={() => onDecide(request.request_id, "allow_session")}
         >
           本会话都允许
         </button>
         <button
           type="button"
-          style={buttonStyle("ghost", "sm")}
+          className="sh-ProtectedPathCard-9"
           onClick={() => onDecide(request.request_id, "deny")}
         >
           拒绝

@@ -19,6 +19,7 @@ import remarkGfm from "remark-gfm";
 import { invoke } from "@tauri-apps/api/core";
 
 import { CodeBlock, InlineCode } from "../code-panel/CodeBlock";
+import "./MarkdownMessage.styles.css";
 
 // 判断 markdown 链接 href 是否指向本地文件（而非 http(s)/mailto 等网络链接）。
 // 命中：Windows 盘符路径 (C:\... / C:/...)、UNC (\\server\...)、file:// 协议、POSIX 绝对路径 (/...)。
@@ -68,46 +69,17 @@ export function MarkdownMessage({ children }: { children: string }) {
           }
           return <InlineCode>{children}</InlineCode>;
         },
-        p: ({ children }) => <p style={{ margin: "4px 0" }}>{children}</p>,
-        ul: ({ children }) => <ul style={{ margin: "6px 0", paddingLeft: 22 }}>{children}</ul>,
-        ol: ({ children }) => <ol style={{ margin: "6px 0", paddingLeft: 22 }}>{children}</ol>,
+        p: ({ children }) => <p className="sh-MarkdownMessage-1">{children}</p>,
+        ul: ({ children }) => <ul className="sh-MarkdownMessage-2">{children}</ul>,
+        ol: ({ children }) => <ol className="sh-MarkdownMessage-2">{children}</ol>,
         // GFM 表格：深色主题描边 + 横向滚动（宽表不撑爆气泡）。
         table: ({ children }) => (
-          <div style={{ overflowX: "auto", margin: "8px 0" }}>
-            <table
-              style={{
-                borderCollapse: "collapse",
-                width: "100%",
-                fontSize: "0.92em",
-              }}
-            >
-              {children}
-            </table>
+          <div className="sh-MarkdownMessage-3">
+            <table className="sh-MarkdownMessage-4">{children}</table>
           </div>
         ),
-        th: ({ children }) => (
-          <th
-            style={{
-              border: "1px solid rgba(148,163,184,0.3)",
-              padding: "4px 8px",
-              background: "rgba(148,163,184,0.12)",
-              textAlign: "left",
-              fontWeight: 600,
-            }}
-          >
-            {children}
-          </th>
-        ),
-        td: ({ children }) => (
-          <td
-            style={{
-              border: "1px solid rgba(148,163,184,0.22)",
-              padding: "4px 8px",
-            }}
-          >
-            {children}
-          </td>
-        ),
+        th: ({ children }) => <th className="sh-MarkdownMessage-5">{children}</th>,
+        td: ({ children }) => <td className="sh-MarkdownMessage-6">{children}</td>,
         a: ({ href, children }) => {
           const url = typeof href === "string" ? href : "";
           if (isLocalFilePath(url)) {
@@ -123,7 +95,7 @@ export function MarkdownMessage({ children }: { children: string }) {
                     console.error("[artifact_open] failed", err),
                   );
                 }}
-                style={{ color: "#67e8f9", cursor: "pointer" }}
+                className="sh-MarkdownMessage-7"
                 title={localPath}
               >
                 {children}
@@ -131,7 +103,12 @@ export function MarkdownMessage({ children }: { children: string }) {
             );
           }
           return (
-            <a href={url} target="_blank" rel="noreferrer noopener" style={{ color: "#67e8f9" }}>
+            <a
+              href={url}
+              target="_blank"
+              rel="noreferrer noopener"
+              className="sh-MarkdownMessage-8"
+            >
               {children}
             </a>
           );

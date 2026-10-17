@@ -19,6 +19,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useSubagentStore, type SubagentRunView } from "./subagentStore";
 import { isInternalDeepResearchAttempt } from "./subagentProgress";
+import "./SubagentProgressPanel.styles.css";
 
 const KIND_LABEL: Record<string, string> = {
   research: "调研",
@@ -174,22 +175,10 @@ export function SubagentProgressPanel({ variant = "light" }: SubagentProgressPan
           userSelect: "none",
         }}
       >
-        <span style={{ fontSize: 11, opacity: 0.7, transition: "transform .15s" }}>
-          {collapsed ? "▸" : "▾"}
-        </span>
+        <span className="sh-SubagentProgressPanel-1">{collapsed ? "▸" : "▾"}</span>
         <span>🤖 子代理并发</span>
         {active > 0 && (
-          <span
-            className="deskpet-subagent-dot"
-            aria-hidden
-            style={{
-              width: 7,
-              height: 7,
-              borderRadius: "50%",
-              background: "#22c55e",
-              display: "inline-block",
-            }}
-          />
+          <span className="deskpet-subagent-dot sh-SubagentProgressPanel-2" aria-hidden />
         )}
         <span style={{ marginLeft: 2, fontWeight: 500, color: theme.subFg }}>
           {active > 0 ? `运行中 ${active}/${total}` : `全部完成 (${total})`}
@@ -216,7 +205,7 @@ export function SubagentProgressPanel({ variant = "light" }: SubagentProgressPan
       </div>
 
       {!collapsed && (
-        <div style={{ marginTop: 5, display: "flex", flexDirection: "column", gap: 2 }}>
+        <div className="sh-SubagentProgressPanel-3">
           {list.map((r) => {
             const phase = phaseOf(r);
             const running = phase === "running";

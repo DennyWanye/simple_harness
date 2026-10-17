@@ -1,0 +1,63 @@
+/* 生成文件，不要手改：src/components/ProjectDirectoryCard.tsx 里静态内联样式的等价类（9I）。
+   重新生成：node scripts/code_quality/ts_inline_to_class.mjs convert src/components/ProjectDirectoryCard.tsx */
+
+.sh-ProjectDirectoryCard-1 {
+  align-self: flex-start;
+  width: min(96%, 520px);
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(125, 211, 252, 0.24);
+  background: rgba(15, 23, 42, 0.72);
+  color: #e2e8f0;
+  display: grid;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.sh-ProjectDirectoryCard-2 {
+  font-weight: 650;
+}
+
+.sh-ProjectDirectoryCard-3 {
+  color: #94a3b8;
+  line-height: 1.45;
+}
+
+.sh-ProjectDirectoryCard-4 {
+  display: flex;
+  gap: 7px;
+}
+
+.sh-ProjectDirectoryCard-5 {
+  min-width: 0;
+  flex: 1;
+  border: 1px solid rgba(148,163,184,0.24);
+  border-radius: 7px;
+  background: rgba(2,6,23,0.55);
+  color: #e2e8f0;
+  padding: 6px 8px;
+}
+
+.sh-ProjectDirectoryCard-6 {
+  border: 1px solid rgba(125,211,252,0.3);
+  border-radius: 7px;
+  background: rgba(14,116,144,0.22);
+  color: #bae6fd;
+  padding: 6px 9px;
+  cursor: pointer;
+}
+
+.sh-ProjectDirectoryCard-7 {
+  color: #bae6fd;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sh-ProjectDirectoryCard-8 {
+  color: #86efac;
+}
+
+.sh-ProjectDirectoryCard-9 {
+  color: #fca5a5;
+}

@@ -14,6 +14,7 @@
  *  - click 单行 → onAccept(idx)
  */
 import type { CSSProperties } from "react";
+import "./SlashDropdown.styles.css";
 
 export interface SlashCommand {
   name: string;
@@ -87,30 +88,18 @@ export function SlashDropdown({
             >
               /{cmd.name}
               {cmd.args_schema && cmd.args_schema.length > 0 && (
-                <span style={{ opacity: 0.55, marginLeft: 6, fontSize: 11 }}>
+                <span className="sh-SlashDropdown-1">
                   {cmd.args_schema
                     .map((a) => (a.required ? `<${a.name}>` : `[${a.name}]`))
                     .join(" ")}
                 </span>
               )}
             </div>
-            {cmd.description && (
-              <div style={{ color: "#94a3b8", fontSize: 11 }}>{cmd.description}</div>
-            )}
+            {cmd.description && <div className="sh-SlashDropdown-2">{cmd.description}</div>}
           </div>
         );
       })}
-      <div
-        style={{
-          padding: "4px 12px",
-          fontSize: 10,
-          color: "#64748b",
-          borderTop: "1px solid rgba(148, 163, 184, 0.15)",
-          background: "rgba(15, 18, 28, 0.6)",
-        }}
-      >
-        ↑↓ 选择 · Tab/Enter 接受 · ESC 关闭
-      </div>
+      <div className="sh-SlashDropdown-3">↑↓ 选择 · Tab/Enter 接受 · ESC 关闭</div>
     </div>
   );
 }

@@ -15,6 +15,7 @@ import { useEffect } from "react";
 
 import { useSessionsStore } from "../stores/sessionsStore";
 import { InputBar } from "./InputBar";
+import "./SlashTestHarness.styles.css";
 
 export function SlashTestHarness() {
   useEffect(() => {
@@ -33,17 +34,8 @@ export function SlashTestHarness() {
   }, []);
 
   return (
-    <div
-      style={{
-        position: "fixed",
-        bottom: 0,
-        left: 0,
-        right: 0,
-        background: "#0f1218",
-      }}
-      data-testid="slash-test-harness"
-    >
-      <div style={{ padding: 12, color: "#94a3b8", fontSize: 12 }}>
+    <div className="sh-SlashTestHarness-1" data-testid="slash-test-harness">
+      <div className="sh-SlashTestHarness-2">
         Slash command UI 真测 harness — 输入 / 触发命令补全
       </div>
       <InputBar sessionId="slashtest" />

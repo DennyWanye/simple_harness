@@ -1,4 +1,4 @@
-﻿// SPDX-FileCopyrightText: 2026 DennyWanye
+// SPDX-FileCopyrightText: 2026 DennyWanye
 // SPDX-License-Identifier: BUSL-1.1
 
 /**
@@ -38,6 +38,7 @@ import type { StreamFilter, MessageStreamPanelProps } from "./messageStreamTypes
 import { buildRows } from "./buildStreamRows";
 import { ChatRow, ThinkingProcessGroup, AlertRow } from "./MessageStreamRows";
 import { ProjectDirectoryCard } from "./ProjectDirectoryCard";
+import "./MessageStreamPanel.styles.css";
 
 // 娑堟伅娴佹粴鍔ㄤ綅缃寔涔呴敭(杩涘叆娑堟伅鐣岄潰鎭㈠涓婃浣嶇疆,瑙佷笅 useLayoutEffect)銆?
 const MSGSTREAM_SCROLL_KEY = "deskpet.msgstream.scroll.v1";
@@ -160,7 +161,7 @@ export function MessageStreamPanel({
 
       <div ref={listRef} data-testid="msgstream-list" style={listStyle} onScroll={handleListScroll}>
         {rows.length === 0 ? (
-          <div style={emptyStyle}>{emptyMessage(filter)}</div>
+          <div className="sh-MessageStreamPanel-1">{emptyMessage(filter)}</div>
         ) : (
           rows.map((r) =>
             r.kind === "chat" ? (
@@ -274,11 +275,4 @@ const listStyle: CSSProperties = {
   display: "flex",
   flexDirection: "column",
   gap: 12,
-};
-const emptyStyle: CSSProperties = {
-  textAlign: "center",
-  color: "#9ca3af",
-  fontSize: 11.5,
-  padding: "16px 8px",
-  lineHeight: 1.6,
 };

@@ -10,6 +10,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { ToolArtifact, ArtifactKind, ArtifactAction, ActionId } from "./artifactExtract";
+import "./ArtifactCard.styles.css";
 
 // ─── Metric event helper (WI-T1.7 埋点) ─────────────────────
 
@@ -76,31 +77,6 @@ async function invokeSaveAs(src: string, suggestedName: string, toolName: string
 }
 // ─── Styles ──────────────────────────────────────────────────
 
-const cardStyle: React.CSSProperties = {
-  border: "1px solid #475569",
-  borderRadius: 6,
-  padding: "8px 12px",
-  marginTop: 4,
-  background: "#1e293b",
-  fontSize: 13,
-};
-const titleStyle: React.CSSProperties = {
-  fontWeight: 600,
-  color: "#e2e8f0",
-  marginBottom: 4,
-  wordBreak: "break-all",
-};
-const metaStyle: React.CSSProperties = {
-  color: "#94a3b8",
-  fontSize: 11,
-  marginBottom: 6,
-};
-const actionRowStyle: React.CSSProperties = {
-  display: "flex",
-  gap: 6,
-  flexWrap: "wrap",
-  marginTop: 6,
-};
 const buttonStyle: React.CSSProperties = {
   padding: "3px 10px",
   fontSize: 12,
@@ -206,14 +182,14 @@ function FileArtifactCard({ artifact, toolName }: { artifact: ToolArtifact; tool
   );
   const pendingId = currentAction?.status === "pending" ? currentAction.id : null;
   return (
-    <div style={cardStyle} data-testid="artifact-card-file">
-      <div style={titleStyle}>
+    <div className="sh-ArtifactCard-1" data-testid="artifact-card-file">
+      <div className="sh-ArtifactCard-2">
         {mimeIcon(artifact.mime, "file")} {artifact.title}
       </div>
-      <div style={metaStyle}>
+      <div className="sh-ArtifactCard-3">
         {artifact.mime ?? "file"} · {humanSize(artifact.size_bytes)}
       </div>
-      <div style={actionRowStyle}>
+      <div className="sh-ArtifactCard-4">
         {actions.map((a) => (
           <button
             key={a.id}
@@ -256,18 +232,18 @@ function FileArtifactCard({ artifact, toolName }: { artifact: ToolArtifact; tool
 function UrlArtifactCard({ artifact, toolName }: { artifact: ToolArtifact; toolName: string }) {
   const url = artifact.url || "";
   return (
-    <div style={cardStyle} data-testid="artifact-card-url">
-      <div style={titleStyle}>
+    <div className="sh-ArtifactCard-1" data-testid="artifact-card-url">
+      <div className="sh-ArtifactCard-2">
         🔗{" "}
-        <a href={url} target="_blank" rel="noopener noreferrer" style={{ color: "#7dd3fc" }}>
+        <a href={url} target="_blank" rel="noopener noreferrer" className="sh-ArtifactCard-5">
           {artifact.title || url}
         </a>
       </div>
-      <div style={metaStyle}>{url}</div>
-      <div style={actionRowStyle}>
+      <div className="sh-ArtifactCard-3">{url}</div>
+      <div className="sh-ArtifactCard-4">
         <button
           type="button"
-          style={buttonStyle}
+          className="sh-ArtifactCard-6"
           data-testid="artifact-action-copy_path"
           onClick={() => {
             void navigator.clipboard.writeText(url).then(
@@ -286,39 +262,22 @@ function TextArtifactCard({ artifact, toolName }: { artifact: ToolArtifact; tool
   const [open, setOpen] = useState(true);
   const preview = artifact.preview ?? "";
   return (
-    <div style={cardStyle} data-testid="artifact-card-text">
-      <div style={titleStyle}>
+    <div className="sh-ArtifactCard-1" data-testid="artifact-card-text">
+      <div className="sh-ArtifactCard-2">
         📝 {artifact.title}
-        <button
-          type="button"
-          onClick={() => setOpen((v) => !v)}
-          style={{ ...buttonStyle, marginLeft: 8, padding: "1px 8px", fontSize: 11 }}
-        >
+        <button type="button" onClick={() => setOpen((v) => !v)} className="sh-ArtifactCard-7">
           {open ? "收起" : "展开"}
         </button>
       </div>
       {open && (
-        <pre
-          data-bp-selectable=""
-          style={{
-            color: "#e2e8f0",
-            fontSize: 12,
-            background: "#0f172a",
-            padding: 8,
-            borderRadius: 4,
-            maxHeight: 320,
-            overflowY: "auto",
-            whiteSpace: "pre-wrap",
-            wordBreak: "break-word",
-          }}
-        >
+        <pre data-bp-selectable="" className="sh-ArtifactCard-8">
           {preview}
         </pre>
       )}
-      <div style={actionRowStyle}>
+      <div className="sh-ArtifactCard-4">
         <button
           type="button"
-          style={buttonStyle}
+          className="sh-ArtifactCard-6"
           data-testid="artifact-action-copy_path"
           onClick={() => {
             void navigator.clipboard.writeText(preview).then(
@@ -360,12 +319,12 @@ function ImageArtifactCard({ artifact, toolName }: { artifact: ToolArtifact; too
   );
   const pending = currentAction?.status === "pending";
   return (
-    <div style={cardStyle} data-testid="artifact-card-image">
-      <div style={titleStyle}>🖼️ {artifact.title}</div>
-      <div style={metaStyle}>
+    <div className="sh-ArtifactCard-1" data-testid="artifact-card-image">
+      <div className="sh-ArtifactCard-2">🖼️ {artifact.title}</div>
+      <div className="sh-ArtifactCard-3">
         {artifact.mime ?? "image"} · {humanSize(artifact.size_bytes)}
       </div>
-      <div style={actionRowStyle}>
+      <div className="sh-ArtifactCard-4">
         <button
           type="button"
           style={{ ...buttonStyle, cursor: pending ? "wait" : "pointer" }}
@@ -412,21 +371,9 @@ function ImageArtifactCard({ artifact, toolName }: { artifact: ToolArtifact; too
 }
 function TableArtifactCard({ artifact }: { artifact: ToolArtifact; toolName: string }) {
   return (
-    <div style={cardStyle} data-testid="artifact-card-table">
-      <div style={titleStyle}>📊 {artifact.title}</div>
-      <pre
-        data-bp-selectable=""
-        style={{
-          color: "#e2e8f0",
-          fontSize: 11,
-          background: "#0f172a",
-          padding: 6,
-          borderRadius: 4,
-          overflowX: "auto",
-          maxHeight: 240,
-          whiteSpace: "pre",
-        }}
-      >
+    <div className="sh-ArtifactCard-1" data-testid="artifact-card-table">
+      <div className="sh-ArtifactCard-2">📊 {artifact.title}</div>
+      <pre data-bp-selectable="" className="sh-ArtifactCard-9">
         {artifact.preview ?? "(no preview)"}
       </pre>
     </div>

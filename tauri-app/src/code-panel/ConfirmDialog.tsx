@@ -15,6 +15,7 @@
  */
 import { useEffect, useRef } from "react";
 import type React from "react";
+import "./ConfirmDialog.styles.css";
 
 export interface ConfirmDialogProps {
   title: string;
@@ -64,45 +65,14 @@ export function ConfirmDialog({
         if (e.key === "Escape") onCancel();
       }}
       tabIndex={-1}
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0, 0, 0, 0.55)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 1000,
-        backdropFilter: "blur(4px)",
-      }}
+      className="sh-ConfirmDialog-1"
     >
-      <div
-        style={{
-          minWidth: 320,
-          maxWidth: 480,
-          background: "#0f1218",
-          color: "#e2e8f0",
-          border: "1px solid rgba(148, 163, 184, 0.30)",
-          borderRadius: 10,
-          padding: "18px 20px 16px",
-          boxShadow: "0 10px 40px rgba(0, 0, 0, 0.5)",
-          fontFamily:
-            '-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif',
-        }}
-      >
-        <h3 id="confirm-dialog-title" style={{ fontSize: 14, margin: "0 0 10px", fontWeight: 600 }}>
+      <div className="sh-ConfirmDialog-2">
+        <h3 id="confirm-dialog-title" className="sh-ConfirmDialog-3">
           {title}
         </h3>
-        <div
-          style={{
-            fontSize: 12.5,
-            color: "#cbd5e1",
-            lineHeight: 1.55,
-            marginBottom: 16,
-          }}
-        >
-          {message}
-        </div>
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+        <div className="sh-ConfirmDialog-4">{message}</div>
+        <div className="sh-ConfirmDialog-5">
           <button
             ref={cancelRef}
             type="button"

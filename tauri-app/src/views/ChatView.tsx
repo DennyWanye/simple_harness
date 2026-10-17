@@ -74,7 +74,8 @@ import {
   storeProjectDirectoryRequest,
   type ProjectDirectoryRequestsBySession,
 } from "../chat/projectDirectoryState";
-import { iconBtnStyle, modelChipStyle } from "./chatViewStyles";
+import { iconBtnStyle } from "./chatViewStyles";
+import "./ChatView.styles.css";
 
 const EMPTY_COMPANION_EVENTS: CompanionEvent[] = [];
 /** 空态兜底必须是**模块级常量**，不能写成 `?? []`。
@@ -601,45 +602,10 @@ export function ChatView({ activeSid, secret, onSwitchSid = () => {} }: ChatView
   }, [activeSid]);
 
   return (
-    <section
-      data-testid="view-chat"
-      aria-label="会话"
-      style={{
-        flex: 1,
-        minWidth: 0,
-        minHeight: 0,
-        display: "flex",
-        flexDirection: "column",
-        fontFamily: tokens.font.ui,
-        color: dark.text,
-        position: "relative",
-      }}
-    >
+    <section data-testid="view-chat" aria-label="会话" className="sh-ChatView-1">
       {/* ── 头部条：标题 / 模型 / 可见性开关 / Harness / ContextRing ── */}
-      <header
-        data-testid="chat-header"
-        style={{
-          flexShrink: 0,
-          display: "flex",
-          alignItems: "center",
-          gap: tokens.space.sm,
-          padding: `${tokens.space.sm + 3}px ${tokens.space.md}px`,
-          borderBottom: `1px solid ${dark.hairline}`,
-          fontSize: tokens.text.base.size,
-          fontWeight: tokens.weight.semibold,
-        }}
-      >
-        <span
-          data-testid="chat-title"
-          style={{
-            flex: 1,
-            minWidth: 0,
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
-          title={activeTitle}
-        >
+      <header data-testid="chat-header" className="sh-ChatView-2">
+        <span data-testid="chat-title" className="sh-ChatView-3" title={activeTitle}>
           {activeTitle}
         </span>
         <button
@@ -648,15 +614,9 @@ export function ChatView({ activeSid, secret, onSwitchSid = () => {} }: ChatView
           onClick={() => setShowModelModal(true)}
           title={eff_model ? `模型与参数（当前 ${eff_model}）` : "选择模型与参数"}
           aria-label="模型与参数"
-          style={modelChipStyle}
+          className="sh-ChatView-4"
         >
-          <span
-            style={{
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-            }}
-          >
+          <span className="sh-ChatView-5">
             {eff_model ? (ctx_label ? `${eff_model}-${ctx_label}` : eff_model) : "选择模型"}
           </span>
           <Icon name="edit" size={11} style={{ flexShrink: 0 }} />
@@ -673,7 +633,7 @@ export function ChatView({ activeSid, secret, onSwitchSid = () => {} }: ChatView
             color: hideTools ? dark.textFaint : dark.accent,
           }}
         >
-          <span style={{ fontSize: tokens.text.sm.size, lineHeight: 1 }}>🔧</span>
+          <span className="sh-ChatView-6">🔧</span>
         </button>
         <button
           type="button"
@@ -686,7 +646,7 @@ export function ChatView({ activeSid, secret, onSwitchSid = () => {} }: ChatView
             color: hideProgress ? dark.textFaint : dark.accent,
           }}
         >
-          <span style={{ fontSize: tokens.text.sm.size, lineHeight: 1 }}>◌</span>
+          <span className="sh-ChatView-6">◌</span>
         </button>
         <button
           type="button"
@@ -702,7 +662,7 @@ export function ChatView({ activeSid, secret, onSwitchSid = () => {} }: ChatView
         >
           <Icon name="bug" size={13} />
         </button>
-        <span style={{ display: "inline-flex", alignItems: "center" }}>
+        <span className="sh-ChatView-7">
           <ContextRing
             snapshot={contextUsage}
             size={18}
@@ -726,7 +686,7 @@ export function ChatView({ activeSid, secret, onSwitchSid = () => {} }: ChatView
             flexShrink: 0,
           }}
         >
-          <span style={{ flex: 1, minWidth: 0 }}>
+          <span className="sh-ChatView-8">
             {!backendReady
               ? "后端启动中，聊天通道等待就绪…"
               : wsState === "connecting"
@@ -737,16 +697,7 @@ export function ChatView({ activeSid, secret, onSwitchSid = () => {} }: ChatView
             type="button"
             data-testid="chat-conn-retry"
             onClick={retryConnect}
-            style={{
-              flexShrink: 0,
-              background: "transparent",
-              border: `1px solid ${dark.borderStrong}`,
-              borderRadius: tokens.radius.sm,
-              color: "inherit",
-              cursor: "pointer",
-              font: "inherit",
-              padding: `2px ${tokens.space.sm}px`,
-            }}
+            className="sh-ChatView-9"
           >
             重试
           </button>
@@ -754,7 +705,7 @@ export function ChatView({ activeSid, secret, onSwitchSid = () => {} }: ChatView
       )}
 
       {/* ── 内容区：Harness 巡检面板 + 消息流 + 输入栏 ── */}
-      <div className="chat-project-layout" style={{ flex: 1, minHeight: 0, display: "flex" }}>
+      <div className="chat-project-layout sh-ChatView-10">
         <HarnessInspectorPanel
           open={harnessInspectorOpen}
           sessionId={activeSid}
@@ -766,16 +717,8 @@ export function ChatView({ activeSid, secret, onSwitchSid = () => {} }: ChatView
           subscribe={controlWS.on_message}
         />
 
-        <div
-          style={{
-            flex: 1,
-            minWidth: 0,
-            minHeight: 0,
-            display: "flex",
-            flexDirection: "column",
-          }}
-        >
-          <div style={{ flex: 1, minHeight: 0, position: "relative" }}>
+        <div className="sh-ChatView-11">
+          <div className="sh-ChatView-12">
             <MessageStreamPanel
               embedded
               filter={filter}
@@ -827,24 +770,17 @@ export function ChatView({ activeSid, secret, onSwitchSid = () => {} }: ChatView
                 {realtimeVoice.state === "error" &&
                   `通话失败（${realtimeVoice.errorCode ?? "internal"}），点击重试`}
                 {realtimeVoice.transcript && (
-                  <div style={{ marginTop: tokens.space.xs }}>你：{realtimeVoice.transcript}</div>
+                  <div className="sh-ChatView-13">你：{realtimeVoice.transcript}</div>
                 )}
                 {realtimeVoice.responseText && (
-                  <div style={{ marginTop: tokens.space.xs }}>AI：{realtimeVoice.responseText}</div>
+                  <div className="sh-ChatView-13">AI：{realtimeVoice.responseText}</div>
                 )}
               </div>
             )}
 
           {/* 文本输入保持可用；旁边只有一个电话式 Realtime 主按钮。 */}
-          <div
-            style={{
-              display: "flex",
-              alignItems: "flex-end",
-              flexShrink: 0,
-              minWidth: 0,
-            }}
-          >
-            <div style={{ flex: 1, minWidth: 0 }}>
+          <div className="sh-ChatView-14">
+            <div className="sh-ChatView-8">
               <InputBar
                 placeholder={companionIdentityReady ? "输入消息，Enter 发送…" : "正在恢复身份…"}
                 disabled={!companionIdentityReady}

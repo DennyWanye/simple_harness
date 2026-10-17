@@ -20,17 +20,7 @@ import type { ControlChannel } from "../ws/ControlChannel";
 import { InputBar } from "../code-panel/InputBar";
 import { MarkdownMessage } from "../components/MarkdownMessage";
 import { Icon } from "../components/Icon";
-import {
-  INTERACTIVE_CLASS,
-  MESSAGE_MAX_WIDTH,
-  buttonStyle,
-  dark,
-  emptyState,
-  metaText,
-  textLinkStyle,
-  titleText,
-  viewHeader,
-} from "../theme/components";
+import { INTERACTIVE_CLASS, dark, metaText, textLinkStyle } from "../theme/components";
 import { tokens } from "../theme/tokens";
 import { boundPrimaryPort } from "../primary/boundPort";
 import { PrimaryController, type PrimaryMessage, type PrimaryPort } from "../primary/controller";
@@ -38,6 +28,7 @@ import { PrimaryRunPanel } from "../primary/PrimaryRunPanel";
 import { PrimaryWorkspaceBindings } from "../primary/PrimaryWorkspaceBindings";
 import { PrimaryBindingRecovery } from "../primary/bindingRecovery";
 import { toolHeadline } from "./toolHeadline";
+import "./PrimaryChatView.styles.css";
 
 const disconnected: PrimaryPort = {
   state: () => "disconnected",
@@ -60,14 +51,6 @@ const runLabels: Record<string, string> = {
   CANCELLED: "已取消",
   STOPPED: "已停止",
 };
-/** 消息列 —— 最大宽 760 居中，是整个视图的版心。 */
-const column = {
-  width: "100%",
-  maxWidth: MESSAGE_MAX_WIDTH,
-  marginLeft: "auto",
-  marginRight: "auto",
-  boxSizing: "border-box",
-} as const;
 export function PrimaryChatView({ channel, onOpenSettings, active = true }: PrimaryChatViewProps) {
   const [controller] = useState(() => new PrimaryController(disconnected));
   const [bindingRecovery] = useState(() => new PrimaryBindingRecovery());
@@ -103,35 +86,20 @@ export function PrimaryChatView({ channel, onOpenSettings, active = true }: Prim
     ? `${runLabel} · 排队 ${snapshot.state?.queued_count_truncated ? "至少 " : ""}${snapshot.state?.queued_count ?? 0}`
     : "等待主对话就绪";
   return (
-    <section
-      data-testid="view-chat"
-      aria-label="主对话"
-      style={{
-        position: "relative",
-        display: "flex",
-        flexDirection: "column",
-        flex: 1,
-        minHeight: 0,
-        background: dark.bgSolid,
-        color: dark.text,
-        fontFamily: tokens.font.ui,
-      }}
-    >
-      <header data-testid="chat-header" style={viewHeader}>
-        <h1 data-testid="chat-title" style={{ ...titleText, flex: 1 }}>
+    <section data-testid="view-chat" aria-label="主对话" className="sh-PrimaryChatView-1">
+      <header data-testid="chat-header" className="sh-PrimaryChatView-2">
+        <h1 data-testid="chat-title" className="sh-PrimaryChatView-3">
           主对话
         </h1>
         <button
-          className={INTERACTIVE_CLASS}
-          style={buttonStyle("ghost", "md")}
+          className={`${INTERACTIVE_CLASS} sh-PrimaryChatView-4`}
           onClick={onOpenSettings}
           title="前台任务使用全局 Provider 模型与参数"
         >
           模型与设置
         </button>
         <button
-          className={INTERACTIVE_CLASS}
-          style={buttonStyle("ghost", "md")}
+          className={`${INTERACTIVE_CLASS} sh-PrimaryChatView-4`}
           disabled={!snapshot.ready || snapshot.loading}
           onClick={() => {
             setDecisionRefresh((value) => value + 1);
@@ -143,21 +111,14 @@ export function PrimaryChatView({ channel, onOpenSettings, active = true }: Prim
       </header>
 
       {/* 状态与通知：低调的单行 meta，不再是抢眼的横条。 */}
-      <div style={{ ...column, padding: `${tokens.space.md}px ${tokens.space.xl}px 0` }}>
-        <div role="status" aria-live="polite" style={metaText}>
+      <div className="sh-PrimaryChatView-5">
+        <div role="status" aria-live="polite" className="sh-PrimaryChatView-6">
           {status}
           {snapshot.loading ? " · 正在读取" : ""}
         </div>
-        {snapshot.notice && (
-          <p style={{ ...metaText, margin: `${tokens.space.xs}px 0 0`, color: dark.textFaint }}>
-            {snapshot.notice}
-          </p>
-        )}
+        {snapshot.notice && <p className="sh-PrimaryChatView-7">{snapshot.notice}</p>}
         {snapshot.error && (
-          <p
-            role="alert"
-            style={{ ...metaText, margin: `${tokens.space.xs}px 0 0`, color: dark.danger }}
-          >
+          <p role="alert" className="sh-PrimaryChatView-8">
             {snapshot.error}
           </p>
         )}
@@ -177,10 +138,10 @@ export function PrimaryChatView({ channel, onOpenSettings, active = true }: Prim
           padding: `${tokens.space.lg}px ${tokens.space.xl}px 0`,
         }}
       >
-        <div style={column}>
+        <div className="sh-PrimaryChatView-9">
           {/* 「查看更早消息」是消息区顶部的细文字链接，不是按钮块。 */}
           {snapshot.nextCursor && (
-            <div style={{ textAlign: "center", marginBottom: tokens.space.lg }}>
+            <div className="sh-PrimaryChatView-10">
               <button
                 className={INTERACTIVE_CLASS}
                 style={textLinkStyle(snapshot.loading)}
@@ -192,9 +153,9 @@ export function PrimaryChatView({ channel, onOpenSettings, active = true }: Prim
             </div>
           )}
           {snapshot.messages.length === 0 && canSend && !snapshot.loading && (
-            <div style={emptyState}>
+            <div className="sh-PrimaryChatView-11">
               <Icon name="message" size={28} strokeWidth={1.2} style={{ color: dark.textFaint }} />
-              <p style={{ margin: 0 }}>继续在这里交流，历史由主对话保存。</p>
+              <p className="sh-PrimaryChatView-12">继续在这里交流，历史由主对话保存。</p>
             </div>
           )}
           {snapshot.messages.map((message) => (
@@ -209,29 +170,13 @@ export function PrimaryChatView({ channel, onOpenSettings, active = true }: Prim
 
       {/* HTN 补齐阶段 B 第 1 条：后台任务结束通知，人点"已收到"才算收到。 */}
       {active && (
-        <div
-          style={{
-            ...column,
-            padding: `0 ${tokens.space.xl}px`,
-            maxHeight: "25%",
-            overflowY: "auto",
-            flexShrink: 0,
-          }}
-        >
+        <div className="sh-PrimaryChatView-13">
           <ChatMissionNotices />
         </div>
       )}
       {/* 2026-09-25 UI 全量点击：授权卡以前不限高，多张时把消息区挤没、压在消息上。 */}
       {active && snapshot.primaryRef && (
-        <div
-          style={{
-            ...column,
-            padding: `0 ${tokens.space.xl}px`,
-            maxHeight: "30%",
-            overflowY: "auto",
-            flexShrink: 0,
-          }}
-        >
+        <div className="sh-PrimaryChatView-14">
           <PrimaryWorkspaceBindings
             port={primaryPort}
             primaryRef={snapshot.primaryRef}
@@ -243,14 +188,7 @@ export function PrimaryChatView({ channel, onOpenSettings, active = true }: Prim
         </div>
       )}
       {snapshot.ready && snapshot.state && run?.execution_session_ref && run.sdk_run_ref && (
-        <div
-          style={{
-            ...column,
-            padding: `0 ${tokens.space.xl}px`,
-            maxHeight: "35%",
-            overflowY: "auto",
-          }}
-        >
+        <div className="sh-PrimaryChatView-15">
           <PrimaryRunPanel
             key={`${snapshot.draftEpoch}:${run.run_ref}:${run.generation}:${run.execution_session_ref}:${run.sdk_run_ref}`}
             run={run}
@@ -264,20 +202,12 @@ export function PrimaryChatView({ channel, onOpenSettings, active = true }: Prim
         </div>
       )}
       {run && (!run.execution_session_ref || !run.sdk_run_ref) && (
-        <div style={{ ...column, padding: `0 ${tokens.space.xl}px` }}>
-          <p style={{ ...metaText, margin: `${tokens.space.xs}px 0` }}>
-            正在等待执行绑定；权限与工具详情将在绑定后恢复。
-          </p>
+        <div className="sh-PrimaryChatView-16">
+          <p className="sh-PrimaryChatView-17">正在等待执行绑定；权限与工具详情将在绑定后恢复。</p>
         </div>
       )}
 
-      <div
-        style={{
-          ...column,
-          padding: `${tokens.space.md}px ${tokens.space.xl}px ${tokens.space.lg}px`,
-          flexShrink: 0,
-        }}
-      >
+      <div className="sh-PrimaryChatView-18">
         <InputBar
           key={snapshot.draftEpoch}
           disabled={!canSend}
@@ -389,7 +319,7 @@ function PrimaryMessageRow({
         </button>
       )}
       {detail && (
-        <div aria-label="消息详情" style={{ marginTop: tokens.space.sm }}>
+        <div aria-label="消息详情" className="sh-PrimaryChatView-19">
           <MarkdownMessage>{detail.text}</MarkdownMessage>
           {detail.offset !== null && (
             <button
@@ -402,8 +332,7 @@ function PrimaryMessageRow({
             </button>
           )}
           <button
-            className={INTERACTIVE_CLASS}
-            style={textLinkStyle()}
+            className={`${INTERACTIVE_CLASS} sh-PrimaryChatView-20`}
             onClick={() => {
               setDetail(null);
               setError("");
@@ -414,10 +343,7 @@ function PrimaryMessageRow({
         </div>
       )}
       {error && (
-        <p
-          role="alert"
-          style={{ ...metaText, color: dark.danger, margin: `${tokens.space.xs}px 0 0` }}
-        >
+        <p role="alert" className="sh-PrimaryChatView-8">
           {error}
         </p>
       )}
@@ -434,19 +360,7 @@ function PrimaryMessageRow({
       }}
     >
       {/* 助手的小头像点 —— 唯一强调色，直径 8，与首行文字对齐。 */}
-      {isAssistant && (
-        <span
-          aria-hidden
-          style={{
-            width: 8,
-            height: 8,
-            borderRadius: "50%",
-            background: dark.accent,
-            marginTop: 14,
-            flexShrink: 0,
-          }}
-        />
-      )}
+      {isAssistant && <span aria-hidden className="sh-PrimaryChatView-21" />}
       <article
         data-testid={`primary-message-${message.role}`}
         data-role={message.role}
@@ -506,18 +420,12 @@ function PrimaryMessageRow({
         {/* 气泡整体右对齐，但气泡内正文始终左对齐 —— 右对齐的多行中文
           会出现锯齿状左边缘，正是"难看"的来源。 */}
         {missionId && (
-          <div
-            style={{
-              marginTop: tokens.space.xs,
-              marginBottom: tokens.space.xs,
-              fontFamily: tokens.font.ui,
-            }}
-          >
+          <div className="sh-PrimaryChatView-22">
             <ChatMissionCard missionId={missionId} />
           </div>
         )}
         {(!isTool || toolOpen) && (
-          <div style={{ textAlign: "left" }}>
+          <div className="sh-PrimaryChatView-23">
             <MarkdownMessage>{isTool ? tool!.body : message.text}</MarkdownMessage>
             {body}
           </div>

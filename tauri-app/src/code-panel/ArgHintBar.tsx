@@ -14,6 +14,7 @@
  *  - 未填的 args 灰白
  */
 import type { CSSProperties } from "react";
+import "./ArgHintBar.styles.css";
 
 export interface ArgSchema {
   name: string;
@@ -47,7 +48,7 @@ export function ArgHintBar({
 
   return (
     <div style={bar} data-testid="arg-hint-bar">
-      <span style={{ color: "#60a5fa", fontWeight: 600 }}>/{commandName}</span>
+      <span className="sh-ArgHintBar-1">/{commandName}</span>
       {argSchema.map((arg, i) => {
         const filled = i < currentArgIndex;
         const current = i === currentArgIndex;
@@ -66,7 +67,7 @@ export function ArgHintBar({
           >
             {arg.required ? `<${arg.name}>` : `[${arg.name}]`}
             {arg.description && current && (
-              <span style={{ opacity: 0.6, marginLeft: 4, fontSize: 10 }}>— {arg.description}</span>
+              <span className="sh-ArgHintBar-2">— {arg.description}</span>
             )}
           </span>
         );

@@ -20,6 +20,7 @@
  */
 import { useSessionsStore } from "../stores/sessionsStore";
 import { buildAutoResumeBannerText, shouldShowAutoResumeBanner } from "./autoResumeBannerText";
+import "./AutoResumeBanner.styles.css";
 
 const DEFAULT_MAX_ATTEMPTS = 2;
 interface AutoResumeBannerProps {
@@ -47,18 +48,7 @@ export function AutoResumeBanner({
       role="status"
       aria-live="polite"
       data-testid="auto-resume-banner"
-      style={{
-        margin: "6px 0",
-        padding: "6px 12px",
-        background: "rgba(245, 158, 11, 0.15)",
-        color: "#fcd34d",
-        border: "1px solid rgba(245, 158, 11, 0.55)",
-        borderRadius: 6,
-        fontSize: 12.5,
-        // 500ms transition for the spec'd "smooth dismiss" — visibility flip
-        // is instant from React's view but opacity gives the eye a half-step.
-        transition: "opacity 500ms ease",
-      }}
+      className="sh-AutoResumeBanner-1"
     >
       {text}
     </div>

@@ -21,6 +21,7 @@ import { extractArtifactsFromResult } from "./artifactExtract";
 import { controlWS } from "./controlWs";
 import { PPTOutlineCard } from "./PPTOutlineCard";
 import { splitThinkBlocks, splitToolError } from "./messageSplit";
+import "./MessageBubble.styles.css";
 
 const LOCAL_FILE_EXTENSIONS = /\.(pptx?|pptm|xlsx?|docx?|pdf|png|jpe?g|gif|md|txt|csv)$/i;
 const isLocalFileLink = (href?: string) => {
@@ -125,7 +126,7 @@ export function MessageBubble({ msg }: Props) {
       );
     case "ppt_outline":
       return (
-        <div style={{ margin: "8px 0" }}>
+        <div className="sh-MessageBubble-1">
           <PPTOutlineCard
             outlineId={msg.outline_id ?? ""}
             topic={msg.topic ?? ""}
@@ -177,30 +178,8 @@ function findMessageSession(outlineId: string) {
 }
 function UserBubble({ text }: { text: string }) {
   return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "flex-end",
-        margin: "8px 0",
-      }}
-    >
-      <div
-        data-bp-selectable=""
-        style={{
-          maxWidth: "85%",
-          background: "linear-gradient(135deg, rgba(15, 76, 129, 0.96), rgba(12, 58, 105, 0.96))",
-          color: "#eaf6ff",
-          padding: "8px 12px",
-          borderRadius: "12px 12px 2px 12px",
-          fontSize: 13.5,
-          lineHeight: 1.55,
-          border: "1px solid rgba(125, 211, 252, 0.20)",
-          boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08), 0 8px 18px rgba(8,47,73,0.22)",
-          whiteSpace: "pre-wrap",
-          wordBreak: "break-word",
-        }}
-      >
+    <div className="sh-MessageBubble-2">
+      <div data-bp-selectable="" className="sh-MessageBubble-3">
         {text}
       </div>
       <CopyMessageButton text={text} align="right" tone="blue" />
@@ -238,30 +217,8 @@ function AssistantBubbleWithThink({ text, streaming }: { text: string; streaming
 }
 function AssistantBubble({ text }: { text: string }) {
   return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "flex-start",
-        margin: "8px 0",
-      }}
-    >
-      <div
-        data-bp-selectable=""
-        style={{
-          maxWidth: "92%",
-          background: "rgba(30, 35, 48, 0.95)",
-          color: "#e2e8f0",
-          padding: "10px 14px",
-          borderRadius: "12px 12px 12px 2px",
-          fontSize: 13.5,
-          lineHeight: 1.6,
-          border: "1px solid rgba(148, 163, 184, 0.18)",
-          // Markdown elements need their own spacing
-          fontFamily:
-            '-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif',
-        }}
-      >
+    <div className="sh-MessageBubble-4">
+      <div data-bp-selectable="" className="sh-MessageBubble-5">
         <MarkdownMessage>{text}</MarkdownMessage>
       </div>
       <CopyMessageButton text={text} tone="dark" />
@@ -282,16 +239,14 @@ export function ToolCallCard({ name, args }: { name: string; args: Record<string
     <ToolCard
       header={
         <>
-          <span style={{ color: "#67e8f9" }}>▶ {name}</span>
-          {arg_summary && (
-            <span style={{ marginLeft: 8, color: "#94a3b8", fontSize: 11 }}>{arg_summary}</span>
-          )}
+          <span className="sh-MessageBubble-6">▶ {name}</span>
+          {arg_summary && <span className="sh-MessageBubble-7">{arg_summary}</span>}
         </>
       }
       open={open}
       onToggle={() => setOpen((v) => !v)}
     >
-      <pre data-bp-selectable="" style={preStyle}>
+      <pre data-bp-selectable="" className="sh-MessageBubble-8">
         {JSON.stringify(args, null, 2)}
       </pre>
     </ToolCard>
@@ -319,11 +274,9 @@ export function ToolResultCard({
       <ToolCard
         header={
           <>
-            <span style={{ color: "#86efac" }}>✓ ok</span>
-            <span style={{ marginLeft: 6, color: "#94a3b8" }}>← {name}</span>
-            <span style={{ marginLeft: 8, color: "#64748b", fontSize: 11 }}>
-              {artifacts.length} 个产物
-            </span>
+            <span className="sh-MessageBubble-9">✓ ok</span>
+            <span className="sh-MessageBubble-10">← {name}</span>
+            <span className="sh-MessageBubble-11">{artifacts.length} 个产物</span>
           </>
         }
         open={true}
@@ -331,7 +284,7 @@ export function ToolResultCard({
           /* artifact 卡片本身可折叠 */
         }}
       >
-        <div data-testid="artifact-card-list" style={{ padding: "4px 8px" }}>
+        <div data-testid="artifact-card-list" className="sh-MessageBubble-12">
           {artifacts.map((a, i) => (
             <ArtifactCard key={i} artifact={a} toolName={name} />
           ))}
@@ -351,15 +304,9 @@ export function ToolResultCard({
       header={
         <>
           <span style={{ color: statusColor }}>{status}</span>
-          <span style={{ marginLeft: 6, color: "#94a3b8" }}>← {name}</span>
-          {!open && (
-            <span style={{ marginLeft: 8, color: "#64748b", fontSize: 11 }}>
-              {lineCount} 行 — 点击展开
-            </span>
-          )}
-          {hasHint && (
-            <span style={{ marginLeft: 8, color: "#f59e0b", fontSize: 11 }}>💡 有修复建议</span>
-          )}
+          <span className="sh-MessageBubble-10">← {name}</span>
+          {!open && <span className="sh-MessageBubble-11">{lineCount} 行 — 点击展开</span>}
+          {hasHint && <span className="sh-MessageBubble-13">💡 有修复建议</span>}
         </>
       }
       open={open}
@@ -367,26 +314,11 @@ export function ToolResultCard({
       borderColor={hasHint ? "#f59e0b" : undefined}
     >
       {hasHint && (
-        <div
-          data-bp-selectable=""
-          data-testid="tool-result-hint"
-          style={{
-            padding: "6px 12px",
-            background: "rgba(245, 158, 11, 0.12)",
-            color: "#fcd34d",
-            fontSize: 12,
-            borderTop: "1px solid #f59e0b",
-            borderLeft: "1px solid #f59e0b",
-            borderRight: "1px solid #f59e0b",
-            lineHeight: 1.5,
-            whiteSpace: "pre-wrap",
-            wordBreak: "break-word",
-          }}
-        >
+        <div data-bp-selectable="" data-testid="tool-result-hint" className="sh-MessageBubble-14">
           💡 {hint}
         </div>
       )}
-      <pre data-bp-selectable="" style={preStyle}>
+      <pre data-bp-selectable="" className="sh-MessageBubble-8">
         {display}
       </pre>
     </ToolCard>
@@ -448,25 +380,9 @@ export function PlanCard({
     }
   };
   return (
-    <div
-      data-bp-selectable=""
-      style={{
-        margin: "8px 0",
-        padding: "10px 14px",
-        background: "rgba(37, 99, 235, 0.10)",
-        color: "#dbeafe",
-        border: "1px solid rgba(37, 99, 235, 0.45)",
-        borderRadius: 8,
-        fontSize: 12.5,
-      }}
-    >
-      <div style={{ fontWeight: 600, marginBottom: 6, color: "#93c5fd" }}>
-        📋 计划 ({steps.length} 步)
-      </div>
-      <div
-        data-testid="plan-authorization-state"
-        style={{ fontSize: 11.5, color: "#bfdbfe", marginBottom: 6 }}
-      >
+    <div data-bp-selectable="" className="sh-MessageBubble-15">
+      <div className="sh-MessageBubble-16">📋 计划 ({steps.length} 步)</div>
+      <div data-testid="plan-authorization-state" className="sh-MessageBubble-17">
         {autoConfirmed
           ? "Auto · 自动执行"
           : awaiting
@@ -474,59 +390,32 @@ export function PlanCard({
             : "Manual · 无需额外授权"}
       </div>
       {targetDirectory && (
-        <div
-          data-testid="plan-target-directory"
-          style={{ fontSize: 11.5, color: "#cbd5e1", marginBottom: 4 }}
-        >
+        <div data-testid="plan-target-directory" className="sh-MessageBubble-18">
           目标目录：{targetDirectory}
         </div>
       )}
       {actionCategories.length > 0 && (
-        <div
-          data-testid="plan-action-categories"
-          style={{ fontSize: 11.5, color: "#cbd5e1", marginBottom: 8 }}
-        >
+        <div data-testid="plan-action-categories" className="sh-MessageBubble-19">
           主要动作：
           {actionCategories.map((item) => ACTION_CATEGORY_LABELS[item] ?? item).join("、")}
         </div>
       )}
-      {rationale && (
-        <div
-          style={{
-            fontSize: 11.5,
-            color: "#94a3b8",
-            marginBottom: 8,
-            fontStyle: "italic",
-          }}
-        >
-          {rationale}
-        </div>
-      )}
-      <ol style={{ margin: 0, paddingLeft: 22, lineHeight: 1.55 }}>
+      {rationale && <div className="sh-MessageBubble-20">{rationale}</div>}
+      <ol className="sh-MessageBubble-21">
         {steps.map((s, i) => (
-          <li key={i} style={{ marginBottom: 3 }}>
-            <strong style={{ color: "#e2e8f0" }}>{s.title}</strong>
-            {s.detail && <span style={{ color: "#94a3b8" }}> — {s.detail}</span>}
+          <li key={i} className="sh-MessageBubble-22">
+            <strong className="sh-MessageBubble-23">{s.title}</strong>
+            {s.detail && <span className="sh-MessageBubble-24"> — {s.detail}</span>}
           </li>
         ))}
       </ol>
       {awaiting && (
-        <div data-testid="plan-confirm-bar" style={{ display: "flex", gap: 8, marginTop: 10 }}>
+        <div data-testid="plan-confirm-bar" className="sh-MessageBubble-25">
           <button
             type="button"
             data-testid="plan-confirm-go"
             onClick={() => decide("go")}
-            style={{
-              flex: 1,
-              background: "#2563eb",
-              color: "#fff",
-              border: "none",
-              borderRadius: 6,
-              padding: "6px 12px",
-              fontSize: 12.5,
-              fontWeight: 600,
-              cursor: "pointer",
-            }}
+            className="sh-MessageBubble-26"
           >
             ▶ 执行
           </button>
@@ -534,15 +423,7 @@ export function PlanCard({
             type="button"
             data-testid="plan-confirm-cancel"
             onClick={() => decide("cancel")}
-            style={{
-              background: "rgba(148, 163, 184, 0.2)",
-              color: "#e2e8f0",
-              border: "1px solid rgba(148, 163, 184, 0.3)",
-              borderRadius: 6,
-              padding: "6px 14px",
-              fontSize: 12.5,
-              cursor: "pointer",
-            }}
+            className="sh-MessageBubble-27"
           >
             取消
           </button>
@@ -566,30 +447,8 @@ export function PlanCard({
 }
 function ReasoningBubble({ text }: { text: string }) {
   return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "flex-start",
-        margin: "4px 0",
-      }}
-    >
-      <div
-        data-bp-selectable=""
-        style={{
-          maxWidth: "92%",
-          background: "rgba(30, 35, 48, 0.55)",
-          color: "#94a3b8",
-          padding: "6px 12px",
-          borderRadius: "12px 12px 12px 2px",
-          fontSize: 12,
-          lineHeight: 1.5,
-          fontStyle: "italic",
-          border: "1px dashed rgba(148, 163, 184, 0.25)",
-          whiteSpace: "pre-wrap",
-          wordBreak: "break-word",
-        }}
-      >
+    <div className="sh-MessageBubble-28">
+      <div data-bp-selectable="" className="sh-MessageBubble-29">
         💭 {text}
       </div>
       <CopyMessageButton text={text} tone="dark" />
@@ -598,31 +457,8 @@ function ReasoningBubble({ text }: { text: string }) {
 }
 function SlashResultBubble({ text }: { text: string }) {
   return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "flex-start",
-        margin: "8px 0",
-      }}
-    >
-      <div
-        data-bp-selectable=""
-        data-testid="slash-result-bubble"
-        style={{
-          maxWidth: "92%",
-          background: "rgba(15, 23, 42, 0.85)",
-          color: "#cbd5e1",
-          padding: "8px 12px",
-          borderRadius: "12px 12px 12px 2px",
-          fontSize: 12.5,
-          lineHeight: 1.55,
-          border: "1px solid rgba(99, 102, 241, 0.35)",
-          whiteSpace: "pre-wrap",
-          wordBreak: "break-word",
-          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace',
-        }}
-      >
+    <div className="sh-MessageBubble-4">
+      <div data-bp-selectable="" data-testid="slash-result-bubble" className="sh-MessageBubble-30">
         {text}
       </div>
       <CopyMessageButton text={text} tone="dark" />
@@ -631,18 +467,8 @@ function SlashResultBubble({ text }: { text: string }) {
 }
 function ErrorBanner({ text }: { text: string }) {
   return (
-    <div style={{ margin: "8px 0" }}>
-      <div
-        data-bp-selectable=""
-        style={{
-          padding: "8px 12px",
-          borderRadius: 6,
-          background: "rgba(220, 38, 38, 0.18)",
-          color: "#fca5a5",
-          border: "1px solid rgba(220, 38, 38, 0.45)",
-          fontSize: 12.5,
-        }}
-      >
+    <div className="sh-MessageBubble-1">
+      <div data-bp-selectable="" className="sh-MessageBubble-31">
         ⚠ {text}
       </div>
       <CopyMessageButton text={text} tone="dark" />
@@ -699,18 +525,3 @@ function ToolCard({
     </div>
   );
 }
-const preStyle: React.CSSProperties = {
-  margin: 0,
-  padding: "8px 12px",
-  background: "#0d1117",
-  color: "#c9d1d9",
-  fontSize: 11.5,
-  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace',
-  border: "1px solid rgba(148, 163, 184, 0.22)",
-  borderTop: "none",
-  borderRadius: "0 0 6px 6px",
-  whiteSpace: "pre-wrap",
-  wordBreak: "break-word",
-  maxHeight: 320,
-  overflowY: "auto",
-};

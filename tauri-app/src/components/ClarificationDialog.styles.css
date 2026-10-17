@@ -1,0 +1,124 @@
+/* 生成文件，不要手改：src/components/ClarificationDialog.tsx 里静态内联样式的等价类（9I）。
+   重新生成：node scripts/code_quality/ts_inline_to_class.mjs convert src/components/ClarificationDialog.tsx */
+
+.sh-ClarificationDialog-1 {
+  position: fixed;
+  inset: 0;
+  background: var(--sh-scrim, rgba(6,8,10,0.56));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9998;
+  animation: bp-fade-in 160ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.sh-ClarificationDialog-2 {
+  background: var(--sh-surface, #15181C);
+  color: var(--sh-text, #E8E5DF);
+  border: 1px solid var(--sh-hairline, rgba(255,255,255,0.075));
+  border-radius: var(--sh-radius-lg);
+  box-shadow: var(--sh-shadow-overlay, 0 16px 48px rgba(0,0,0,0.44));
+  font-family: var(--sh-font-ui);
+  width: 440px;
+  max-width: 92vw;
+  max-height: 92vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  animation: bp-pop-in 160ms cubic-bezier(0.22, 1, 0.36, 1);
+  border-top: 4px solid var(--sh-accent, #7FB2AA);
+}
+
+.sh-ClarificationDialog-3 {
+  padding: 16px 16px 8px;
+}
+
+.sh-ClarificationDialog-4 {
+  font-size: var(--sh-text-xs-size);
+  color: var(--sh-text-2, #A7A29A);
+  font-weight: var(--sh-weight-medium);
+  margin-bottom: var(--sh-space-xs);
+}
+
+.sh-ClarificationDialog-5 {
+  margin: 0;
+  font-size: var(--sh-text-lg-size);
+  font-weight: var(--sh-weight-semibold);
+  color: var(--sh-text, #E8E5DF);
+  line-height: 1.35;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.sh-ClarificationDialog-6 {
+  padding: 0 16px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sh-space-md);
+}
+
+.sh-ClarificationDialog-7 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sh-space-sm);
+}
+
+.sh-ClarificationDialog-8 {
+  font-family: var(--sh-font-ui);
+  font-size: var(--sh-text-base-size);
+  font-weight: var(--sh-weight-medium);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.35;
+  height: var(--sh-control-height);
+  padding: 0 14px;
+  border: 1px solid transparent;
+  border-radius: var(--sh-radius-md);
+  cursor: pointer;
+  transition: background-color 120ms cubic-bezier(0.4, 0, 0.2, 1), border-color 120ms cubic-bezier(0.4, 0, 0.2, 1), color 120ms cubic-bezier(0.4, 0, 0.2, 1), opacity 120ms cubic-bezier(0.4, 0, 0.2, 1);
+  -webkit-user-select: none;
+  user-select: none;
+  opacity: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+  white-space: normal;
+  box-sizing: border-box;
+  background: transparent;
+  color: var(--sh-text, #E8E5DF);
+  border-color: var(--sh-hairline-strong, rgba(255,255,255,0.14));
+  text-align: left;
+  width: 100%;
+}
+
+.sh-ClarificationDialog-9 {
+  display: flex;
+  gap: var(--sh-space-sm);
+  align-items: stretch;
+}
+
+.sh-ClarificationDialog-10 {
+  font-family: var(--sh-font-ui);
+  font-size: var(--sh-text-base-size);
+  font-weight: var(--sh-weight-semibold);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  height: var(--sh-control-height);
+  padding: 0 14px;
+  border: 1px solid transparent;
+  border-radius: var(--sh-radius-md);
+  cursor: pointer;
+  transition: background-color 120ms cubic-bezier(0.4, 0, 0.2, 1), border-color 120ms cubic-bezier(0.4, 0, 0.2, 1), color 120ms cubic-bezier(0.4, 0, 0.2, 1), opacity 120ms cubic-bezier(0.4, 0, 0.2, 1);
+  -webkit-user-select: none;
+  user-select: none;
+  opacity: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  white-space: nowrap;
+  box-sizing: border-box;
+  background: var(--sh-accent, #7FB2AA);
+  color: var(--sh-on-accent, #0E1013);
+  border-color: transparent;
+}

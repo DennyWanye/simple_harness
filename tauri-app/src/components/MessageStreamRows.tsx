@@ -17,7 +17,8 @@ import type {
   MessageStreamPanelProps,
 } from "./messageStreamTypes";
 import { isLegacySyntheticToolProgress } from "./buildStreamRows";
-import { PALETTE, rowBaseStyle, bodyStyle, metaStyle, actionRowStyle } from "./messageStreamStyles";
+import { PALETTE, rowBaseStyle } from "./messageStreamStyles";
+import "./MessageStreamRows.styles.css";
 
 function toolArtifactStatus(toolName?: string): string {
   if ((toolName || "").toLowerCase() === "deepresearch") {
@@ -46,7 +47,7 @@ export function ChatRow({
   if (msg.role === "ppt_outline") {
     const m = msg.message;
     return (
-      <div style={{ width: "100%" }}>
+      <div className="sh-MessageStreamRows-1">
         <PPTOutlineCard
           outlineId={m.outline_id ?? ""}
           topic={m.topic ?? ""}
@@ -80,7 +81,7 @@ export function ChatRow({
   if (role === "tool") {
     if (msg.toolArgs) {
       return (
-        <div data-role="tool" style={{ alignSelf: "flex-start", maxWidth: "96%" }}>
+        <div data-role="tool" className="sh-MessageStreamRows-2">
           <ToolCallCard name={msg.toolName || "(工具)"} args={msg.toolArgs} />
         </div>
       );
@@ -92,7 +93,7 @@ export function ChatRow({
         : "";
     if (missionId) {
       return (
-        <div data-role="tool" style={{ alignSelf: "flex-start", width: "96%", maxWidth: "96%" }}>
+        <div data-role="tool" className="sh-MessageStreamRows-3">
           <ChatMissionCard missionId={missionId} />
         </div>
       );
@@ -103,33 +104,12 @@ export function ChatRow({
         : [];
     if (artifacts.length > 0) {
       return (
-        <div
-          style={{
-            ...rowBaseStyle,
-            alignSelf: "flex-start",
-            background: "rgba(20, 28, 40, 0.82)",
-            color: "#dbeafe",
-            borderColor: "rgba(103, 232, 249, 0.25)",
-            padding: 10,
-            maxWidth: "96%",
-          }}
-          data-role="tool"
-        >
-          <div
-            data-bp-selectable=""
-            style={{
-              marginBottom: 8,
-              fontSize: 12,
-              color: "#a5b4fc",
-              display: "flex",
-              justifyContent: "space-between",
-              gap: 8,
-            }}
-          >
+        <div className="sh-MessageStreamRows-4" data-role="tool">
+          <div data-bp-selectable="" className="sh-MessageStreamRows-5">
             <span>{toolArtifactStatus(msg.toolName)}</span>
-            <span style={{ opacity: 0.55 }}>{format_relative(ts)}</span>
+            <span className="sh-MessageStreamRows-6">{format_relative(ts)}</span>
           </div>
-          <div style={{ display: "grid", gap: 8 }}>
+          <div className="sh-MessageStreamRows-7">
             {artifacts.map((artifact, i) => (
               <ArtifactCard
                 key={`${artifact.path || artifact.url || artifact.title || i}`}
@@ -143,7 +123,7 @@ export function ChatRow({
     }
     if (msg.toolResultRaw !== undefined) {
       return (
-        <div data-role="tool" style={{ alignSelf: "flex-start", maxWidth: "96%" }}>
+        <div data-role="tool" className="sh-MessageStreamRows-2">
           <ToolResultCard
             name={msg.toolName || "(工具)"}
             ok={msg.toolOk !== false}
@@ -154,23 +134,10 @@ export function ChatRow({
     }
     // Tool trace rows are compact and do not expose a copy action.
     return (
-      <div
-        style={{
-          ...rowBaseStyle,
-          alignSelf: "flex-start",
-          background: "rgba(20, 28, 40, 0.7)",
-          color: "#94a3b8",
-          borderColor: "rgba(103, 232, 249, 0.18)",
-          padding: "4px 10px",
-          fontSize: 11.5,
-          fontFamily: "Consolas, 'Courier New', monospace",
-          maxWidth: "92%",
-        }}
-        data-role="tool"
-      >
-        <div data-bp-selectable="" style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+      <div className="sh-MessageStreamRows-8" data-role="tool">
+        <div data-bp-selectable="" className="sh-MessageStreamRows-9">
           {text || "(宸ュ叿)"}
-          <span style={{ marginLeft: 8, opacity: 0.5 }}>{format_relative(ts)}</span>
+          <span className="sh-MessageStreamRows-10">{format_relative(ts)}</span>
         </div>
       </div>
     );
@@ -205,11 +172,11 @@ export function ChatRow({
           assistant 鍥炲璧?markdown 娓叉煋锛堜唬鐮佸潡/鍒楄〃/鍔犵矖/鏈湴鏂囦欢閾炬帴锛夛紝
           涓?code 妯″紡涓€鑷达紱user 杈撳叆淇濇寔绾枃鏈紙pre-wrap 淇濈暀鎹㈣锛夈€?*/}
         {role === "assistant" && text ? (
-          <div data-bp-selectable="" style={{ ...bodyStyle, whiteSpace: "normal" }}>
+          <div data-bp-selectable="" className="sh-MessageStreamRows-11">
             <MarkdownMessage>{text}</MarkdownMessage>
           </div>
         ) : (
-          <div data-bp-selectable="" style={bodyStyle}>
+          <div data-bp-selectable="" className="sh-MessageStreamRows-12">
             {text || "(空)"}
           </div>
         )}
@@ -344,7 +311,7 @@ export function ThinkingProcessGroup({
     <section
       data-testid={`thinking-process-${runId}`}
       data-status={status}
-      style={{ alignSelf: "stretch", width: "100%", color: "#cbd5e1" }}
+      className="sh-MessageStreamRows-13"
     >
       <button
         type="button"
@@ -352,21 +319,7 @@ export function ThinkingProcessGroup({
         aria-controls={bodyId}
         aria-label={headerLabel}
         onClick={() => setExpanded((value) => !value)}
-        style={{
-          width: "100%",
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          padding: "8px 2px",
-          border: 0,
-          borderBottom: "1px solid rgba(148, 163, 184, 0.14)",
-          background: "transparent",
-          color: "#94a3b8",
-          cursor: "pointer",
-          font: "inherit",
-          fontSize: 13,
-          textAlign: "left",
-        }}
+        className="sh-MessageStreamRows-14"
       >
         <span>{headerLabel}</span>
         <span aria-hidden="true" style={{ transform: expanded ? "rotate(90deg)" : "none" }}>
@@ -377,13 +330,7 @@ export function ThinkingProcessGroup({
         <div
           id={bodyId}
           data-testid={`thinking-process-body-${runId}`}
-          style={{
-            display: "grid",
-            gap: 8,
-            padding: "10px 2px 12px",
-            maxHeight: 360,
-            overflowY: "auto",
-          }}
+          className="sh-MessageStreamRows-15"
         >
           {messages.map((message, index) => (
             <ChatRow key={`${message.role}:${message.ts}:${message.text}:${index}`} msg={message} />
@@ -406,41 +353,13 @@ export function PublicProgressRow({
         ? "状态更新"
         : "执行进度";
   return (
-    <div
-      data-role="progress"
-      style={{
-        alignSelf: "flex-start",
-        maxWidth: "84%",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "flex-start",
-      }}
-    >
-      <div
-        style={{
-          ...rowBaseStyle,
-          maxWidth: "100%",
-          padding: "9px 11px 10px",
-          background: "rgba(20, 28, 40, 0.76)",
-          borderColor: "rgba(103, 232, 249, 0.16)",
-          color: "#cbd5e1",
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            gap: 12,
-            marginBottom: 5,
-            color: "#67e8f9",
-            fontSize: 11,
-            lineHeight: 1.35,
-          }}
-        >
+    <div data-role="progress" className="sh-MessageStreamRows-16">
+      <div className="sh-MessageStreamRows-17">
+        <div className="sh-MessageStreamRows-18">
           <span>{phaseLabel}</span>
-          <span style={{ color: "#94a3b8", opacity: 0.55 }}>{format_relative(message.ts)}</span>
+          <span className="sh-MessageStreamRows-19">{format_relative(message.ts)}</span>
         </div>
-        <div data-bp-selectable="" style={{ fontSize: 12.5, lineHeight: 1.65 }}>
+        <div data-bp-selectable="" className="sh-MessageStreamRows-20">
           <MarkdownMessage>{message.text}</MarkdownMessage>
         </div>
       </div>
@@ -473,7 +392,9 @@ export function MessageActionRow({
         fontSize: 10.5,
       }}
     >
-      {typeof ts === "number" && <span style={{ opacity: 0.72 }}>{format_relative(ts)}</span>}
+      {typeof ts === "number" && (
+        <span className="sh-MessageStreamRows-21">{format_relative(ts)}</span>
+      )}
       <CopyMessageButton text={copyText} align={align} tone={tone} inline />
     </div>
   );
@@ -512,7 +433,7 @@ export function AlertRow({
         cursor: "pointer",
       }}
     >
-      <div style={metaStyle}>
+      <div className="sh-MessageStreamRows-22">
         <span
           style={{
             padding: "1px 5px",
@@ -525,16 +446,14 @@ export function AlertRow({
         >
           {severity === "yellow" ? "提醒" : "错误"} {sid_short}
         </span>
-        <span style={{ marginLeft: "auto", opacity: 0.6 }}>
-          {format_relative(item.received_at)}
-        </span>
+        <span className="sh-MessageStreamRows-23">{format_relative(item.received_at)}</span>
       </div>
       {/* data-bp-selectable: 鍛婅姝ｆ枃鍙鎷栭€夊鍒躲€傛嫋閫夋椂娴忚鍣ㄤ笉瑙﹀彂
           click锛岃绾?onClick 璺宠浆涓嶅彈褰卞搷銆?*/}
-      <div data-bp-selectable="" style={bodyStyle}>
+      <div data-bp-selectable="" className="sh-MessageStreamRows-12">
         {item.user_message || item.diagnosis || "(supervisor 未提供详情)"}
       </div>
-      <div style={actionRowStyle} onClick={(e) => e.stopPropagation()}>
+      <div className="sh-MessageStreamRows-24" onClick={(e) => e.stopPropagation()}>
         {item.suggested_buttons.slice(0, 2).map((b, i) => (
           <button
             key={i}
@@ -560,7 +479,7 @@ export function AlertRow({
             e.stopPropagation();
             onDismiss();
           }}
-          style={pillButton("#9ca3af", "rgba(148, 163, 184, 0.30)")}
+          className="sh-MessageStreamRows-25"
           title="标记已处理"
         >
           已知道
