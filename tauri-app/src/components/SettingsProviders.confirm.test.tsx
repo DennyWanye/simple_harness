@@ -25,8 +25,17 @@ class FakeProviderChannel {
   emit(message: unknown) {
     act(() => this.listeners.forEach((listener) => listener(message)));
   }
-  onStateChange() {
-    return () => undefined;
+  private states = new Set<(state: ConnectionState) => void>();
+  onStateChange(fn: (state: ConnectionState) => void) {
+    this.states.add(fn);
+    return () => this.states.delete(fn);
+  }
+  // 推"connected"：之后 send 照常记下消息。
+  connect() {
+    act(() => {
+      this.state = "connected";
+      this.states.forEach((fn) => fn("connected"));
+    });
   }
 }
 
@@ -170,5 +179,43 @@ describe("SettingsProviders delete confirmation", () => {
     expect(await screen.findByTestId("provider-edit-btn-delete-fixture")).toBeTruthy();
     second.emit({ type: "settings_providers_error", payload: { detail: "新通道上的错误" } });
     expect(screen.getAllByText("新通道上的错误").length).toBeGreaterThan(0);
+  });
+
+  // 复核要求：换到未连接的新通道 B 并连上后，保存回执与探测回执都从 B 读到。
+  it("通道换成新对象：新通道上的保存回执关掉弹窗，探测回执把模型显示到编辑框", async () => {
+    const first = new FakeProviderChannel();
+    const second = new FakeProviderChannel();
+    second.state = "connecting";
+    const view = render(
+      <SettingsProviders getChannel={() => first as unknown as ControlChannel} />,
+    );
+    first.emit({ type: "providers_changed", payload: { providers: [provider] } });
+
+    view.rerender(<SettingsProviders getChannel={() => second as unknown as ControlChannel} />);
+    second.connect();
+
+    fireEvent.click(await screen.findByTestId("provider-edit-btn-delete-fixture"));
+    fireEvent.click(
+      within(screen.getByRole("dialog", { name: "编辑 provider" })).getByTestId(
+        "provider-save-button",
+      ),
+    );
+    second.emit({ type: "settings_providers_updated", payload: { provider } });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "编辑 provider" })).toBeNull());
+
+    fireEvent.click(screen.getByTestId("provider-edit-btn-delete-fixture"));
+    const dialog = screen.getByRole("dialog", { name: "编辑 provider" });
+    fireEvent.click(within(dialog).getByTestId("provider-probe-models-button"));
+    expect(second.sent.some((message) => message.type === "settings_providers_probe_models")).toBe(
+      true,
+    );
+    second.emit({
+      type: "settings_providers_probe_models_response",
+      payload: { ok: true, models: ["new-channel-model"] },
+    });
+    expect(within(dialog).getByText("new-channel-model")).toBeTruthy();
+    expect(first.sent.some((message) => message.type === "settings_providers_probe_models")).toBe(
+      false,
+    );
   });
 });

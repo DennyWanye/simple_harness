@@ -419,4 +419,71 @@ describe("ContextTracePanel workflow integration", () => {
     render(<ContextTracePanel open onClose={vi.fn()} getChannel={() => null} />);
     expect(screen.getAllByText("控制通道尚未连接").length).toBeGreaterThan(0);
   });
+
+  // 复核问题 4：先挂在已连接通道 A，换成未连接通道 B，B 连上后要重读运行列表。
+  it("通道换成新对象：新通道连上后读运行列表，收到回执后离开读取中并显示运行", () => {
+    const first = new SwapChannel(true);
+    const second = new SwapChannel(false);
+    const { rerender } = render(
+      <ContextTracePanel open onClose={vi.fn()} getChannel={() => first.channel} />,
+    );
+    first.reply({ runs: [], next_cursor: null });
+
+    rerender(<ContextTracePanel open onClose={vi.fn()} getChannel={() => second.channel} />);
+    expect(screen.getByText("正在加载运行记录")).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
+    second.connect();
+    expect(second.sent.map((message) => message.type)).toContain("workflow_runs_list");
+
+    second.reply({ runs: [run], next_cursor: null });
+    expect(screen.queryByText("正在加载运行记录")).toBeNull();
+    expect(screen.getAllByText("deep-research").length).toBeGreaterThan(0);
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
 });
+
+// 假通道：没连上时 send 返回 false（同真实通道）；connect() 推"connected"；reply() 回运行列表。
+class SwapChannel {
+  connected: boolean;
+  sent: Array<{ type: string; request_id?: string }> = [];
+  private listeners = new Set<(message: IncomingMessage) => void>();
+  private states = new Set<(state: "connected") => void>();
+  readonly channel: ControlChannel;
+  constructor(connected: boolean) {
+    this.connected = connected;
+    this.channel = {
+      send: (message: { type: string; request_id?: string }) => {
+        if (!this.connected) return false;
+        this.sent.push(message);
+        return true;
+      },
+      onMessage: (fn: (message: IncomingMessage) => void) => {
+        this.listeners.add(fn);
+        return () => this.listeners.delete(fn);
+      },
+      onStateChange: (fn: (state: "connected") => void) => {
+        this.states.add(fn);
+        return () => this.states.delete(fn);
+      },
+    } as unknown as ControlChannel;
+  }
+  connect() {
+    act(() => {
+      this.connected = true;
+      this.states.forEach((fn) => fn("connected"));
+    });
+  }
+  reply(payload: Record<string, unknown>) {
+    const request = [...this.sent].reverse().find((m) => m.type === "workflow_runs_list");
+    act(() =>
+      this.listeners.forEach((fn) =>
+        fn({
+          type: "workflow_runs_list_response",
+          request_id: request?.request_id,
+          ok: true,
+          payload,
+        } as unknown as IncomingMessage),
+      ),
+    );
+  }
+}
