@@ -253,7 +253,6 @@ export function LiveGraph({ missionId, channel, detail, onLoadMoreEvents, onStal
   const timeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const shown = useRef<ExecutionView | null>(null);
   const signature = useRef<string | null>(null);
-  const autoCollapsed = useRef<number | null>(null);
   const [collapseReady, setCollapseReady] = useState<number | null>(null);
   const placedKey = useRef<string | null>(null);
   useEffect(() => {
@@ -302,7 +301,6 @@ export function LiveGraph({ missionId, channel, detail, onLoadMoreEvents, onStal
       request.current = null;
       again.current = false;
       placedKey.current = null;
-      autoCollapsed.current = null;
       signature.current = null;
       setView(null);
       setPlaced(null);
@@ -406,10 +404,10 @@ export function LiveGraph({ missionId, channel, detail, onLoadMoreEvents, onStal
     };
   }, [channel, missionId, refresh, sendPage]);
 
-  // 节点多时默认折叠：不含执行中/验收中步骤的复合步骤（每个计划版本只自动做一次）
-  useEffect(() => {
-    if (!view || view.plan_revision === autoCollapsed.current) return;
-    autoCollapsed.current = view.plan_revision;
+  // 节点多时默认折叠：不含执行中/验收中步骤的复合步骤（每个计划版本只自动做一次）。
+  // 渲染期按计划版本调整（collapseReady 记已处理的版本），不在 effect 里同步 setState。
+  if (view && view.plan_revision !== collapseReady) {
+    setCollapseReady(view.plan_revision);
     if (view.structure.length + view.nodes.length > AUTO_COLLAPSE_OVER) {
       const busy = new Set<string>();
       const parentOf = new Map(view.structure.map((n) => [n.occurrence_id, n.parent]));
@@ -418,7 +416,6 @@ export function LiveGraph({ missionId, channel, detail, onLoadMoreEvents, onStal
         if (tone !== "running" && tone !== "verifying") continue;
         for (let at = node.parent; at; at = parentOf.get(at) ?? null) busy.add(at);
       }
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- once per plan revision, not per render
       setCollapsed(
         new Set(
           view.structure
@@ -427,8 +424,7 @@ export function LiveGraph({ missionId, channel, detail, onLoadMoreEvents, onStal
         ),
       );
     }
-    setCollapseReady(view.plan_revision);
-  }, [view]);
+  }
 
   const layoutKey =
     view && collapseReady === view.plan_revision

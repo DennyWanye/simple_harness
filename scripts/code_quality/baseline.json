@@ -371,5 +371,5 @@
  "except_broad_unexplained": 0,
  "print_product_unexplained": 0,
  "ts_style_vars": 40,
- "ts_eslint_disable": 11
+ "ts_eslint_disable": 9
 }

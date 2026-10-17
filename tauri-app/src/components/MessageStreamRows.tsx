@@ -3,7 +3,7 @@
 
 import { ChatMissionCard } from "../views/ChatMissionCard";
 import { MISSION_CARD_TOOLS, missionIdFromToolResult } from "../views/chatMission";
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import type { InboxItem } from "../stores/sessionSelectors";
 import type { TaskRunProjectionState } from "../stores/sessionTypes";
 import { PPTOutlineCard } from "../code-panel/PPTOutlineCard";
@@ -269,15 +269,16 @@ export function ThinkingProcessGroup({
   const status = thinkingStatus(messages, runProjection);
   const terminal = TERMINAL_THINKING_STATUSES.has(status);
   const [expanded, setExpanded] = useState(() => !terminal);
-  const previousStatus = useRef(status);
+  const [previousStatus, setPreviousStatus] = useState(status);
   const [now, setNow] = useState(() => Date.now());
 
-  useEffect(() => {
-    const wasTerminal = TERMINAL_THINKING_STATUSES.has(previousStatus.current);
+  // 渲染期按上一次的状态调整展开（进入终态收起、离开终态展开），不在 effect 里同步 setState。
+  if (status !== previousStatus) {
+    setPreviousStatus(status);
+    const wasTerminal = TERMINAL_THINKING_STATUSES.has(previousStatus);
     if (!wasTerminal && terminal) setExpanded(false);
     if (wasTerminal && !terminal) setExpanded(true);
-    previousStatus.current = status;
-  }, [status, terminal]);
+  }
 
   useEffect(() => {
     if (terminal) return;

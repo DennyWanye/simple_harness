@@ -85,6 +85,58 @@ function mount() {
 }
 
 describe("LiveGraph（SDK 执行过程接口）", () => {
+  // 9 阶段 CI 补：自动折叠改在渲染期按计划版本调整（原在 effect 里同步 setState），锁住行为。
+  function bigSnapshot(busyChild: boolean) {
+    const base = snapshot() as { graph: { nodes: unknown[]; edges: unknown[] } };
+    const kids = Array.from({ length: 201 }, (_, i) => ({
+      occurrence_id: `k${i}`,
+      task_id: `task-k${i}`,
+      form: "primitive",
+      phase: busyChild && i === 0 ? "ACTIVE" : "COMPLETED",
+      readiness: "NOT_SELECTED",
+      reason_codes: [],
+    }));
+    base.graph.nodes = [
+      ...base.graph.nodes,
+      {
+        occurrence_id: "group",
+        task_id: "task-group",
+        form: "compound",
+        phase: busyChild ? "waiting_children" : "COMPLETED",
+        readiness: "NOT_SELECTED",
+        reason_codes: [],
+      },
+      ...kids,
+    ];
+    base.graph.edges = [
+      ...base.graph.edges,
+      { kind: "refinement", source: "root", target: "group", identity: "rg" },
+      ...kids.map((k, i) => ({
+        kind: "refinement",
+        source: "group",
+        target: k.occurrence_id,
+        identity: `rk${i}`,
+      })),
+    ];
+    return base;
+  }
+
+  it("节点超过 200 时，计划版本第一次出现就把没在执行的复合步骤折叠（根不折）", async () => {
+    const channel = mount();
+    channel.reply(SNAP, bigSnapshot(false));
+    await waitFor(() => expect(screen.getAllByRole("button", { name: /^展开：/ }).length).toBe(1));
+    expect(screen.getByText(/已折叠 201 项/)).toBeTruthy();
+  });
+
+  it("有子步骤在执行的复合步骤不自动折叠", async () => {
+    const channel = mount();
+    channel.reply(SNAP, bigSnapshot(true));
+    await waitFor(() =>
+      expect(screen.getAllByRole("button", { name: /^折叠：/ }).length).toBeGreaterThan(0),
+    );
+    expect(screen.queryAllByRole("button", { name: /^展开：/ })).toHaveLength(0);
+  });
+
   it("打开就读一次 SDK 执行过程；步骤标题用方法步骤职责，根用任务目标；不再用直读表的旧动词", async () => {
     const channel = mount();
     expect(channel.all(SNAP)).toHaveLength(1);

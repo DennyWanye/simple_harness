@@ -39,6 +39,7 @@ import {
   type ExecutionView,
 } from "../liveGraph/model";
 import { PROTOCOL_ERROR, PROTOCOL_ERROR_TEXT } from "../../ws/orchestrationContracts";
+import { useDepsChanged } from "../../hooks/useDepsChanged";
 import "./MissionStory.css";
 
 const SNAPSHOT_TYPE = "taskgraph.execution_snapshot";
@@ -362,13 +363,13 @@ export function MissionStory({
     if (ended) send();
   }, [ended, send]);
 
+  // 由两次读取派生，卡片按内容沿用旧对象；渲染期按读取结果变化重算，不在 effect 里同步 setState。
   const [story, setStory] = useState<Story | null>(null);
-  useEffect(() => {
-    if (!view) return;
+  const readsChanged = useDepsChanged([view, details], { onMount: true });
+  if (readsChanged && view) {
     const next = storyFromExecution(view, details);
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- derived from the two reads, cards reused by content
     setStory((previous) => ({ ...next, cards: reuseCards(previous?.cards, next.cards) }));
-  }, [view, details]);
+  }
 
   const stepsKey = story ? JSON.stringify(story.steps) : "";
   // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by content, not identity

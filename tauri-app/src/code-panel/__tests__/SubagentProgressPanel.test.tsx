@@ -6,7 +6,7 @@
  * 覆盖：空时不渲染、运行中摘要、取消态(🚫 vs ❌)、折叠/展开、清除、dark 变体。
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, cleanup, within } from "@testing-library/react";
+import { act, render, screen, fireEvent, cleanup, within } from "@testing-library/react";
 
 import { SubagentProgressPanel } from "../SubagentProgressPanel";
 import { useSubagentStore } from "../subagentStore";
@@ -60,6 +60,18 @@ describe("SubagentProgressPanel", () => {
     expect(screen.queryAllByTestId("subagent-run-row")).toHaveLength(0); // 收起
     fireEvent.click(screen.getByTestId("subagent-progress-header"));
     expect(screen.getAllByTestId("subagent-run-row")).toHaveLength(1); // 再展开
+  });
+
+  // 9 阶段 CI 补：自动收起/展开改在渲染期按上一次的活跃数调整（原在 effect 里同步 setState）。
+  it("auto-collapses when all runs finish and re-expands when a new run starts", () => {
+    const s = useSubagentStore.getState();
+    s.upsert({ run_id: "a", kind: "web", task_id: "bj", status: "running", ts: 1 });
+    render(<SubagentProgressPanel />);
+    expect(screen.getAllByTestId("subagent-run-row")).toHaveLength(1);
+    act(() => s.upsert({ run_id: "a", kind: "web", task_id: "bj", status: "completed", ts: 2 }));
+    expect(screen.queryAllByTestId("subagent-run-row")).toHaveLength(0);
+    act(() => s.upsert({ run_id: "b", kind: "web", task_id: "x", status: "running", ts: 3 }));
+    expect(screen.getAllByTestId("subagent-run-row")).toHaveLength(2);
   });
 
   it("shows clear button only when all terminal; clears terminal runs", () => {

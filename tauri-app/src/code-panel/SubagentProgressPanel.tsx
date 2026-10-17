@@ -16,7 +16,7 @@
  *     → 渲染成「🚫 已取消」而非「❌ 失败」（区分主动取消 vs 真失败）。
  *   • 出现/消失带淡入动画（index.css `@keyframes deskpet-subagent-*`）。
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useSubagentStore, type SubagentRunView } from "./subagentStore";
 import { isInternalDeepResearchAttempt } from "./subagentProgress";
 import "./SubagentProgressPanel.styles.css";
@@ -121,13 +121,14 @@ export function SubagentProgressPanel({ variant = "light" }: SubagentProgressPan
   const active = list.filter((r) => isActive(phaseOf(r))).length;
 
   // 折叠态：用户可手动切；全部跑完(active 由正→0)时自动收起减少干扰。
+  // 渲染期按上一次的活跃数调整（React"渲染期调整状态"写法，不在 effect 里同步 setState）。
   const [collapsed, setCollapsed] = useState(false);
-  const prevActive = useRef(active);
-  useEffect(() => {
-    if (prevActive.current > 0 && active === 0) setCollapsed(true);
-    if (prevActive.current === 0 && active > 0) setCollapsed(false);
-    prevActive.current = active;
-  }, [active]);
+  const [prevActive, setPrevActive] = useState(active);
+  if (active !== prevActive) {
+    setPrevActive(active);
+    if (prevActive > 0 && active === 0) setCollapsed(true);
+    if (prevActive === 0 && active > 0) setCollapsed(false);
+  }
 
   // 运行中实时计时：仅在有活跃子代理时每秒刷新（无活跃则不空转）。
   const [now, setNow] = useState(() => Date.now());
