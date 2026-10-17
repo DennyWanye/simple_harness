@@ -29,18 +29,3 @@ export const metaStyle: CSSProperties = {
   opacity: 0.65,
   color: "#9ca3af",
 };
-
-export const bodyStyle: CSSProperties = {
-  fontSize: 12.5,
-  lineHeight: 1.6,
-  color: "inherit",
-};
-
-export const actionRowStyle: CSSProperties = {
-  display: "flex",
-  flexWrap: "wrap",
-  gap: 4,
-  alignItems: "center",
-  justifyContent: "flex-end",
-  marginTop: 2,
-};

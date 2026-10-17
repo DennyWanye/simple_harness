@@ -4,30 +4,7 @@
 import { dark, transition } from "../theme/components";
 import { tokens } from "../theme/tokens";
 
-export const sectionStyle: React.CSSProperties = {
-  borderTop: `1px solid ${dark.hairline}`,
-  paddingTop: tokens.space.xl,
-  marginTop: tokens.space.xl,
-  display: "grid",
-  gap: tokens.space.md,
-  maxWidth: 760,
-};
-
-export const h3Style: React.CSSProperties = {
-  margin: 0,
-  fontSize: tokens.text.md.size,
-  color: dark.text,
-  fontWeight: tokens.weight.semibold,
-  letterSpacing: tokens.tracking.tight,
-};
-
-export const btnRowStyle: React.CSSProperties = {
-  display: "flex",
-  gap: 8,
-  flexWrap: "wrap",
-};
-
-export const btnStyle: React.CSSProperties = {
+const btnStyle: React.CSSProperties = {
   height: tokens.controlHeight,
   padding: `0 ${tokens.space.lg}px`,
   borderRadius: tokens.radius.md,
@@ -57,12 +34,5 @@ export const statusStyle: React.CSSProperties = {
   background: dark.card,
   border: `1px solid ${dark.insetBorder}`,
   borderRadius: tokens.radius.md,
-  lineHeight: tokens.text.sm.lh,
-};
-
-export const hintStyle: React.CSSProperties = {
-  fontSize: tokens.text.sm.size,
-  color: dark.textMuted,
-  margin: 0,
   lineHeight: tokens.text.sm.lh,
 };

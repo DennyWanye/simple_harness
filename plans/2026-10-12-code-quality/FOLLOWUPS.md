@@ -137,3 +137,10 @@
 - 前端旧音频路径（`ws/AudioChannel.ts`、`hooks/useAudioChannel.ts`）已在 9K 删除：Realtime 是唯一语音路径（`hooks/useRealtimeVoice.ts`，`voiceAvailability.ts` 注释写明旧路径关闭）。
 - 后端 `backend/host/routes_voice.py` 的 `/ws/audio` 与 `backend/pipeline/voice_pipeline.py` 仍在，前端已无调用方。
 - 下一步：确认没有其他客户端后另行删除（后端改动，不在 9K 范围）。
+
+## F-19 转换前就没人用的样式件（2026-10-17 阶段 9I 登记）
+
+- `tauri-app/src/App.css`：没有任何文件引入（9I 裁决核实），不进产物。
+- `tauri-app/src/theme/components.ts` 的 6 个导出在 9I 之前就没有引用：`tokensExport`、`segGroup`、`sectionTitleText`、`drawerScrim`、`DRAWER_WIDTH`、`drawerSurface`。
+- 9I 转换后新变成没人用的 17 个样式常量已在 9I 删除（components.ts 10 个及随之没用的类型 `DarkBtnVariant`、settingsStyles.ts 4 个、messageStreamStyles.ts 2 个、chatViewStyles.ts 1 个），另把只在本文件用的 `btnStyle` 改成不导出。
+- 下一步：上面这些按删除清单统一删（裁决要求 App.css 另走删除清单，不在 9I 顺手删）。

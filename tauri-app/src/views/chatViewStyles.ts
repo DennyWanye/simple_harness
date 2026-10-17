@@ -20,21 +20,3 @@ export const iconBtnStyle: CSSProperties = {
   cursor: "pointer",
   padding: 0,
 };
-
-export const modelChipStyle: CSSProperties = {
-  flexShrink: 0,
-  maxWidth: 170,
-  height: 28,
-  padding: `0 ${tokens.space.md - 1}px`,
-  display: "flex",
-  alignItems: "center",
-  gap: tokens.space.xs + 1,
-  background: dark.card,
-  color: dark.textMuted,
-  border: `1px solid ${dark.cardBorder}`,
-  borderRadius: tokens.radius.pill,
-  fontSize: tokens.text.xs.size,
-  fontWeight: tokens.weight.semibold,
-  fontFamily: tokens.font.ui,
-  cursor: "pointer",
-};

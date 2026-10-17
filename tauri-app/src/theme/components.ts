@@ -293,47 +293,6 @@ export const dark = {
   dangerGrad: color.danger.bg,
 } as const;
 
-/** 面板根容器 —— 覆盖式面板。 */
-export const darkPanelSurface: CSSProperties = {
-  position: "absolute",
-  inset: 0,
-  zIndex: 1000,
-  display: "flex",
-  flexDirection: "column",
-  background: dark.panel,
-  color: dark.text,
-  fontFamily: font.ui,
-  fontSize: text.base.size,
-  lineHeight: text.base.lh,
-  animation: `bp-fade-in ${duration.base}ms ${easing.out}`,
-};
-
-/** 面板顶栏 —— 标题 + 关闭，底部一条 hairline。 */
-export const darkPanelHeader: CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "space-between",
-  gap: space.md,
-  padding: `${space.md}px ${space.lg}px`,
-  borderBottom: `1px solid ${dark.hairline}`,
-  flexShrink: 0,
-};
-
-/** 关闭按钮（幽灵图标按钮）。 */
-export const darkCloseBtn: CSSProperties = {
-  width: controlHeight,
-  height: controlHeight,
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  borderRadius: radius.md,
-  background: "transparent",
-  border: `1px solid ${dark.border}`,
-  color: dark.textMuted,
-  cursor: "pointer",
-  transition,
-};
-
 /** 下划线 tab 组容器。 */
 export const segGroup: CSSProperties = {
   display: "inline-flex",
@@ -363,99 +322,6 @@ export function segTab(active: boolean): CSSProperties {
   };
 }
 
-type DarkBtnVariant = "primary" | "success" | "danger" | "neutral" | "ghost";
-
-/** 面板内的动作按钮 —— 只有一个主按钮用实心强调色，其余幽灵。 */
-export function darkButton(
-  variant: DarkBtnVariant = "neutral",
-  size: "sm" | "md" = "sm",
-): CSSProperties {
-  const height = size === "sm" ? 28 : controlHeight;
-  const padX = size === "sm" ? 10 : 14;
-  const fs = size === "sm" ? text.sm.size : text.base.size;
-  const base: CSSProperties = {
-    fontFamily: font.ui,
-    fontSize: fs,
-    fontWeight: weight.medium,
-    fontVariantNumeric: font.numeric,
-    height,
-    padding: `0 ${padX}px`,
-    borderRadius: radius.md,
-    cursor: "pointer",
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: space.xs + 1,
-    whiteSpace: "nowrap",
-    border: "1px solid transparent",
-    transition,
-    boxSizing: "border-box",
-  };
-  switch (variant) {
-    case "primary":
-      return {
-        ...base,
-        background: dark.accent,
-        color: dark.onAccent,
-        fontWeight: weight.semibold,
-      };
-    case "success":
-      return {
-        ...base,
-        background: "transparent",
-        color: dark.success,
-        borderColor: dark.borderStrong,
-      };
-    case "danger":
-      return {
-        ...base,
-        background: "transparent",
-        color: dark.danger,
-        borderColor: dark.borderStrong,
-      };
-    case "ghost":
-      return {
-        ...base,
-        background: "transparent",
-        color: dark.textMuted,
-        borderColor: "transparent",
-      };
-    case "neutral":
-    default:
-      return {
-        ...base,
-        background: "transparent",
-        color: dark.text,
-        borderColor: dark.borderStrong,
-      };
-  }
-}
-
-/** 内嵌列表/滚动区容器。 */
-export const darkListSurface: CSSProperties = {
-  flex: 1,
-  overflowY: "auto",
-  background: "transparent",
-  border: `1px solid ${dark.insetBorder}`,
-  borderRadius: radius.lg,
-  padding: space.sm,
-};
-
-/** 面板内文本输入。 */
-export const darkInput: CSSProperties = {
-  fontFamily: font.ui,
-  fontSize: text.base.size,
-  background: dark.card,
-  color: dark.text,
-  border: `1px solid ${dark.borderStrong}`,
-  borderRadius: radius.md,
-  height: controlHeight,
-  padding: `0 ${space.md}px`,
-  outline: "none",
-  transition,
-  boxSizing: "border-box",
-};
-
 // ============================================================
 // 新增：本轮改版引入的版式 / 空态 / 抽屉助手
 // ============================================================
@@ -470,17 +336,6 @@ export const metaText: CSSProperties = {
   letterSpacing: tracking.normal,
 };
 
-/** 视图标题（20/600，字距细微收紧）。 */
-export const titleText: CSSProperties = {
-  fontFamily: font.ui,
-  fontSize: text.xl.size,
-  lineHeight: text.xl.lh,
-  fontWeight: weight.semibold,
-  letterSpacing: tracking.tight,
-  color: dark.text,
-  margin: 0,
-};
-
 /** 小节标题（14/600）。 */
 export const sectionTitleText: CSSProperties = {
   fontFamily: font.ui,
@@ -490,31 +345,6 @@ export const sectionTitleText: CSSProperties = {
   letterSpacing: tracking.tight,
   color: dark.text,
   margin: 0,
-};
-
-/** 视图顶栏 —— 幽灵按钮排右，底部 hairline。 */
-export const viewHeader: CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  gap: space.sm,
-  padding: `${space.lg}px ${space.xl}px`,
-  borderBottom: `1px solid ${dark.hairline}`,
-  flexShrink: 0,
-  background: dark.panel,
-};
-
-/** 空态容器 —— 细线图标 + 一句提示。 */
-export const emptyState: CSSProperties = {
-  display: "flex",
-  flexDirection: "column",
-  alignItems: "center",
-  justifyContent: "center",
-  gap: space.md,
-  padding: `${space.xxxl}px ${space.xl}px`,
-  color: dark.textMuted,
-  textAlign: "center",
-  fontSize: text.base.size,
-  lineHeight: text.base.lh,
 };
 
 /** 抽屉遮罩（160ms 淡入）。 */
@@ -548,6 +378,3 @@ export const drawerSurface: CSSProperties = {
   lineHeight: text.base.lh,
   animation: `sh-drawer-in ${duration.base}ms ${easing.out}`,
 };
-
-/** 主对话消息区最大宽度（760，居中）。 */
-export const MESSAGE_MAX_WIDTH = 760;
