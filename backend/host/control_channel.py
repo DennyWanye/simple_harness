@@ -12,7 +12,6 @@ from deskpet.companion.control_ingress import (
     CompanionControlIngressError,
     is_privileged_control_kind,
 )
-from deskpet.companion.detail_query import CompanionDetailQueryError
 from deskpet.memory.control_binding import HumanMemoryControlBinding
 from deskpet.memory.primary_authority import assert_not_primary_authority
 from deskpet.orchestration.handlers import handle as _orchestration_handle
@@ -21,7 +20,6 @@ from observability.startup import registry as startup_errors
 
 from host.auth import _validate_secret
 from host.chat_delivery import _initial_chat_peer_group, _register_chat_peer
-from host.companion_services import _dispatch_companion_action_command
 from host.connections import _chat_peer_groups, _control_connections
 from host.control_capabilities import (
     _cc_capability_install,
@@ -281,14 +279,6 @@ async def _handle_privileged_companion_frame(
             )
         elif msg_type == "companion_profile_unbind":
             human_memory_control_binding.clear()
-        if msg_type in {
-            "companion_growth_evaluation_decision",
-            "companion_growth_activation_decision",
-            "companion_growth_action_decision",
-            "companion_rollback",
-            "companion_forget",
-        }:
-            await _dispatch_companion_action_command(msg_type, strict_raw)
         if msg_type == "companion_profile_bind":
             # 事件 AK：这一段必须有界。就绪帧在其后无条件下发，
             # 失败只降级成稳定码，不再让 UI 无限期停在
@@ -336,9 +326,6 @@ async def _handle_privileged_companion_frame(
                     profile_id=_resp_payload.get("profile_id"),
                     profile_generation=_resp_payload.get("profile_generation"),
                 )
-        elif msg_type == "companion_profile_unbind":
-            if host_state.companion_notification_service is not None:
-                host_state.companion_notification_service.close_history()
         await ws.send_json(response)
         payload = response.get("payload", {})
         companion_challenge = companion_challenge.advance(
@@ -417,58 +404,6 @@ async def _handle_privileged_companion_frame(
                     exc_info=True,
                 )
     return companion_challenge
-
-
-async def _cc_companion_detail_get(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
-    """控制消息：companion_detail_get。"""
-    ws = conn.ws
-    requested_scope = conn.requested_scope
-    companion_challenge = conn.companion_challenge
-    _detail_request_id = str(raw.get("request_id") or "")
-    try:
-        if (
-            host_state.companion_detail_query is None
-            or companion_challenge is None
-            or requested_scope != "companion_action"
-        ):
-            raise CompanionDetailQueryError("unavailable")
-        _detail_identity = host_state.companion_identity_gate.freeze()
-        if int(companion_challenge.binding_epoch) != int(_detail_identity.binding_epoch):
-            raise CompanionDetailQueryError("cursor_invalid")
-        _detail_payload = raw.get("payload")
-        if not isinstance(_detail_payload, dict):
-            raise CompanionDetailQueryError("unavailable")
-        _detail_response = await host_state.companion_detail_query.query(
-            frozen_identity=_detail_identity,
-            control_epoch=int(companion_challenge.binding_epoch),
-            request=_detail_payload,
-        )
-        await ws.send_json(
-            {
-                "type": "companion_detail_response",
-                "request_id": _detail_request_id,
-                "payload": _detail_response,
-            }
-        )
-    except Exception as _detail_exc:  # noqa: BLE001
-        logger.warning("cc_companion_detail_get_companion_detail_query_err_failed", exc_info=True)
-        _detail_code = getattr(_detail_exc, "code", "unavailable")
-        if _detail_code not in {
-            "unavailable",
-            "detail_changed",
-            "cursor_invalid",
-        }:
-            _detail_code = "unavailable"
-        await ws.send_json(
-            {
-                "type": "companion_detail_error",
-                "request_id": _detail_request_id,
-                "payload": {
-                    "code": _detail_code,
-                    **({"message": str(_detail_exc)} if str(_detail_exc) != _detail_code else {}),
-                },
-            }
-        )
 
 
 async def _dispatch_control_message(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
@@ -642,10 +577,6 @@ async def control_channel(ws: WebSocket):
                 companion_challenge = await _handle_privileged_companion_frame(
                     conn, wire_text, msg_type
                 )
-                continue
-
-            if msg_type == "companion_detail_get":
-                await _cc_companion_detail_get(conn, raw, msg_type)
                 continue
 
             if await _handle_control_ws_message(raw, session_id=session_id, ws=ws):

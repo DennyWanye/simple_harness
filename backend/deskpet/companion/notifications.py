@@ -8,7 +8,7 @@ import json
 import logging
 import time
 import uuid
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -59,97 +59,6 @@ def _trusted_owner(frozen_identity: Any) -> TrustedCompanionOwner:
     )
 
 
-class CompanionProjectionVisibilityPort:
-    """Fail-closed owner overlay used immediately before history serialization."""
-
-    def __init__(self, service: CompanionNotificationService) -> None:
-        self._service = service
-
-    async def project_history(
-        self,
-        frozen_identity: Any,
-        rows: Sequence[Mapping[str, Any]],
-    ) -> list[dict[str, Any]]:
-        if not self._service.history_ready(frozen_identity):
-            return []
-        owner = frozen_identity.owner
-        try:
-            notifications = {
-                str(item["notification_id"]): item
-                for item in self._service.store.list_projectable_notifications(owner)
-            }
-        except Exception:
-            logger.debug("project_history_str_failed", exc_info=True)
-            return []
-        events: list[dict[str, Any]] = []
-        for row in rows:
-            if str(row.get("projection_kind") or "") != "companion_event":
-                continue
-            if (
-                str(row.get("projection_owner_id") or "") != owner.profile_id
-                or int(row.get("projection_owner_generation") or 0) != owner.profile_generation
-            ):
-                continue
-            event_id = str(row.get("projection_event_id") or "")
-            current = notifications.get(event_id)
-            if current is None or str(current.get("status")) == "superseded":
-                continue
-            try:
-                current = await self._service.materialize_notification(frozen_identity, current)
-            except Exception as exc:
-                logger.warning(
-                    "companion_notification_materialize_failed notification_id=%s error=%s code=%s",
-                    event_id,
-                    type(exc).__name__,
-                    getattr(exc, "code", ""),
-                    exc_info=True,
-                )
-                continue
-            notification = dict(current["notification"])
-            redacted = str(current.get("status")) == "redacted"
-            current_projection_hash = (
-                COMPANION_REDACTION_TOMBSTONE_HASH if redacted else str(current["payload_hash"])
-            )
-            stale_projection = (
-                str(row.get("projection_payload_hash") or "") != current_projection_hash
-            )
-            if redacted or stale_projection:
-                notification = {
-                    "notification_id": event_id,
-                    "kind": "companion_projection_tombstone",
-                    "summary": "此成长记录已被遗忘。",
-                    "detail_ref": None,
-                    "detail_version": str(notification.get("detail_version") or ""),
-                    "available_actions": [],
-                }
-            if stale_projection:
-                self._service.wake_repair(
-                    frozen_identity,
-                    current,
-                    route_version=int(row.get("projection_route_version") or 0),
-                )
-            events.append(
-                {
-                    "event_id": event_id,
-                    "profile_id": owner.profile_id,
-                    "profile_generation": owner.profile_generation,
-                    "session_id": str(row.get("session_id") or ""),
-                    "seq": int(current.get("sequence") or row.get("id") or 0),
-                    "route_version": int(row.get("projection_route_version") or 0),
-                    "redaction_version": int(current.get("redaction_version") or 0),
-                    "notification": notification,
-                    **(
-                        {"decision": dict(current["decision"])}
-                        if not (redacted or stale_projection)
-                        and isinstance(current.get("decision"), Mapping)
-                        else {}
-                    ),
-                    "tombstone": redacted or stale_projection,
-                }
-            )
-        return events
-
-
 class CompanionNotificationService:
     """At-least-once cross-database dispatcher with owner/route/hash fences."""
 
@@ -159,7 +68,6 @@ class CompanionNotificationService:
         store: Any,
         session_db: Any,
         live_sink: LiveSink | None = None,
-        detail_query: Any | None = None,
         claim_owner: str | None = None,
         lease_seconds: float = 30.0,
         digest_period: str = "daily",
@@ -170,13 +78,10 @@ class CompanionNotificationService:
         self.store = store
         self.session_db = session_db
         self.live_sink = live_sink
-        self.detail_query = detail_query
         self.claim_owner = claim_owner or f"companion-projection:{uuid.uuid4().hex}"
         self.lease_seconds = float(lease_seconds)
         self.digest_period = digest_period
         self._clock = clock
-        self.visibility = CompanionProjectionVisibilityPort(self)
-        self._history_open: set[str] = set()
         self._drain_locks: dict[str, asyncio.Lock] = {}
 
     async def materialize_notification(
@@ -186,13 +91,7 @@ class CompanionNotificationService:
     ) -> dict[str, Any]:
         current = dict(notification)
         envelope = dict(current["notification"])
-        if self.detail_query is not None and str(current.get("status")) != "redacted":
-            envelope["detail_version"] = await self.detail_query.current_detail_version(
-                frozen_identity=frozen_identity,
-                notification=current,
-            )
-        else:
-            envelope["detail_version"] = str(envelope.get("detail_version") or "")
+        envelope["detail_version"] = str(envelope.get("detail_version") or "")
         current["notification"] = envelope
         detail = current.get("detail")
         if isinstance(detail, Mapping) and isinstance(detail.get("decision"), Mapping):
@@ -245,31 +144,13 @@ class CompanionNotificationService:
         except RuntimeError:
             pass
 
-    def history_ready(self, frozen_identity: Any) -> bool:
-        return _owner_key(frozen_identity.owner) in self._history_open
-
     async def bind_and_drain(self, frozen_identity: Any) -> bool:
-        """Open Companion hydration only after route and redaction repair drains."""
+        """Drain route and redaction repair for the bound Companion owner."""
 
-        owner = frozen_identity.owner
-        key = _owner_key(owner)
+        key = _owner_key(frozen_identity.owner)
         lock = self._drain_locks.setdefault(key, asyncio.Lock())
-        self._history_open.discard(key)
         async with lock:
-            try:
-                ok = await self.drain(frozen_identity)
-            except Exception:
-                self._history_open.discard(key)
-                raise
-            if ok:
-                self._history_open.add(key)
-            return ok
-
-    def close_history(self, owner: OwnerRef | None = None) -> None:
-        if owner is None:
-            self._history_open.clear()
-        else:
-            self._history_open.discard(_owner_key(owner))
+            return await self.drain(frozen_identity)
 
     async def drain(self, frozen_identity: Any, *, max_items: int = 1000) -> bool:
         owner = frozen_identity.owner
@@ -851,5 +732,4 @@ class CompanionNotificationService:
 
 __all__ = [
     "CompanionNotificationService",
-    "CompanionProjectionVisibilityPort",
 ]

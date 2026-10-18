@@ -430,56 +430,8 @@
    "ForegroundRuntimeExecutionAuthority"
   ],
   [
-   "companion_detail_query",
-   "CompanionDetailQueryPort"
-  ],
-  [
    "companion_notification_service",
    "CompanionNotificationService"
-  ],
-  [
-   "companion_projection_visibility",
-   "CompanionProjectionVisibilityPort"
-  ],
-  [
-   "companion_growth_action_decision_service",
-   "UnavailableCompanionGrowthControlService"
-  ],
-  [
-   "companion_growth_evaluation_decision_service",
-   "UnavailableCompanionGrowthControlService"
-  ],
-  [
-   "companion_growth_activation_decision_service",
-   "UnavailableCompanionGrowthControlService"
-  ],
-  [
-   "companion_rollback_service",
-   "UnavailableCompanionGrowthControlService"
-  ],
-  [
-   "companion_forget_service",
-   "UnavailableCompanionGrowthControlService"
-  ],
-  [
-   "companion_growth_evaluation_decision_service",
-   "CompanionEvaluationDecisionService"
-  ],
-  [
-   "companion_growth_activation_decision_service",
-   "CompanionActivationDecisionService"
-  ],
-  [
-   "companion_rollback_service",
-   "CompanionRollbackDecisionService"
-  ],
-  [
-   "companion_forget_service",
-   "CompanionForgetDecisionService"
-  ],
-  [
-   "companion_growth_action_decision_service",
-   "CompanionActionDecisionService"
   ]
  ],
  "services_after_startup": {
@@ -495,22 +447,15 @@
   "capability_refresh_staging": "CapabilityRefreshStagingService",
   "capability_store": "CapabilityStore",
   "companion_clock": "SystemClock",
-  "companion_detail_query": "CompanionDetailQueryPort",
-  "companion_forget_service": "CompanionForgetDecisionService",
-  "companion_growth_action_decision_service": "CompanionActionDecisionService",
-  "companion_growth_activation_decision_service": "CompanionActivationDecisionService",
-  "companion_growth_evaluation_decision_service": "CompanionEvaluationDecisionService",
   "companion_growth_pipeline": "GrowthProductionPipeline",
   "companion_identity_gate": "IdentityReadyGate",
   "companion_ingress_dispatcher": "CompanionIngressOutboxDispatcher",
   "companion_notification_service": "CompanionNotificationService",
   "companion_preference_resolver_dormant": "PreferenceResolver",
   "companion_profile_coordinator": "ProfileBindingCoordinator",
-  "companion_projection_visibility": "CompanionProjectionVisibilityPort",
   "companion_reminder_authority_selector": "_ReminderAuthoritySelector",
   "companion_reminder_registry_reconciler": "function",
   "companion_reminder_service": "ReminderService",
-  "companion_rollback_service": "CompanionRollbackDecisionService",
   "companion_runtime": "CompanionRuntime",
   "context_assembler": null,
   "context_page_in_store": "ContextPageInStore",

@@ -19,7 +19,6 @@ from host.context_usage import _handle_context_breakdown_request, _read_context_
 from host.control_connection import _ControlConnection
 from host.harness_chat import _launch_product_harness_chat
 from host.history_events import (
-    _attach_companion_history_events,
     _attach_workflow_history_events,
     _bind_companion_inbox_route,
 )
@@ -198,7 +197,6 @@ async def _cc_session_messages_load(conn: _ControlConnection, raw: dict, msg_typ
     _remap_chat_peer_group(session_id, str(target_sid))
     sdb = service_context.get("session_db")
     msgs: list = []
-    _companion_history_events: list[dict[str, Any]] = []
     if sdb is not None:
         try:
             try:
@@ -299,7 +297,6 @@ async def _cc_session_messages_load(conn: _ControlConnection, raw: dict, msg_typ
                 session_db=sdb,
                 execution_uow=service_context.get("execution_uow"),
             )
-            _companion_history_events = await _attach_companion_history_events(rows=rows)
         except Exception as exc:  # noqa: BLE001
             logger.warning(
                 "session_messages_consistency_failed",
@@ -345,7 +342,6 @@ async def _cc_session_messages_load(conn: _ControlConnection, raw: dict, msg_typ
         "session_id": target_sid,
         "messages": msgs,
     }
-    _msgs_payload["companion_events"] = _companion_history_events
     if _plan_payload is not None:
         _msgs_payload["plan"] = _plan_payload
     await ws.send_json(

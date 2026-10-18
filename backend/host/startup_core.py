@@ -25,7 +25,6 @@ from observability.startup import registry as startup_errors
 from host.capability_runtime import _initialize_capability_runtime
 from host.chat_delivery import _broadcast_control
 from host.companion_services import (
-    _initialize_companion_action_decision_service,
     _initialize_companion_projection_services,
 )
 from host.connections import _control_connections
@@ -256,6 +255,5 @@ async def _startup_runtime_and_desktop_bridge(startup_epoch: Any) -> None:
         await _complete_growth_authority_cutover()
         await _initialize_companion_projection_services()
         await _activate_companion_runtime_adapter_and_open_ingress()
-        _initialize_companion_action_decision_service()
 
     logger.info("startup complete")

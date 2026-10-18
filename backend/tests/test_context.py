@@ -94,15 +94,8 @@ def test_project_binding_and_session_creation_are_registered_services():
 @pytest.mark.parametrize(
     "name",
     [
-        "companion_detail_query",
         "companion_ingress_dispatcher",
         "companion_notification_service",
-        "companion_projection_visibility",
-        "companion_growth_action_decision_service",
-        "companion_growth_evaluation_decision_service",
-        "companion_growth_activation_decision_service",
-        "companion_rollback_service",
-        "companion_forget_service",
     ],
 )
 def test_companion_projection_and_action_services_are_registered(name: str):

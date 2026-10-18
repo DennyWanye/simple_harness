@@ -15,11 +15,6 @@ import { BACKEND_PORT } from "../backendPort";
 import { useSessionsStore } from "../stores/sessionsStore";
 import type { SessionsStore } from "../stores/sessionTypes";
 import { withClientTurnIdentity } from "../ws/clientTurnIdentity";
-import {
-  getWindowControlCredential,
-  type WindowControlCredential,
-} from "../auth/windowControlCredential";
-import type { CanonicalJson } from "../auth/controlCommandCanonical";
 import { useProvidersStore, type ProviderEntry } from "./providersStore";
 // settings panel provider mutation events
 import { dispatchProviderEvent, type ProviderEventMessage } from "../components/providersStore";
@@ -96,7 +91,6 @@ export const CONTROL_SESSION_ID = "message-panel-main";
 type GlobalWS = {
   __deskpet_panel_ws__?: WebSocket | null;
   __deskpet_panel_listeners__?: Set<(msg: unknown) => void>;
-  __deskpet_companion_challenge__?: CompanionActionChallenge | null;
   __deskpet_companion_identity_status__?: ControlWireMessage | null;
 };
 const G = globalThis as unknown as GlobalWS;
@@ -115,7 +109,6 @@ G.__deskpet_panel_listeners__ = listeners;
 export interface ControlWS {
   send(msg: { type: string; payload?: Record<string, unknown> }): boolean;
   send_command(msg: WorkflowCommand): boolean;
-  send_companion_action(commandKind: string, body: CanonicalJson): Promise<boolean>;
   on_message(fn: Listener): () => void;
   on_state_change(fn: (state: "disconnected" | "connecting" | "connected") => void): () => void;
   state(): "disconnected" | "connecting" | "connected";
@@ -125,17 +118,8 @@ export interface WorkflowCommand {
   request_id: string;
   payload: Record<string, unknown>;
 }
-interface CompanionActionChallenge {
-  connectionId: string;
-  controlEpoch: string;
-  challenge: string;
-  requestSeq: string;
-  bindingEpoch: string;
-}
-let companionChallenge: CompanionActionChallenge | null = G.__deskpet_companion_challenge__ ?? null;
 let latestCompanionIdentityStatus: ControlWireMessage | null =
   G.__deskpet_companion_identity_status__ ?? null;
-let companionActionInFlight = false;
 let current_state: ControlWS["state"] extends () => infer R ? R : never = "disconnected";
 const state_listeners = new Set<(state: typeof current_state) => void>();
 function set_control_state(next: typeof current_state) {
@@ -283,48 +267,6 @@ async function open_socket() {
     } catch {
       return;
     }
-    if (parsed?.type === "companion_control_challenge") {
-      const payload = parsed.payload ?? {};
-      const next: CompanionActionChallenge = {
-        connectionId: String(payload.connection_id ?? payload.connectionId ?? ""),
-        controlEpoch: String(payload.control_epoch ?? payload.controlEpoch ?? ""),
-        challenge: String(payload.challenge ?? ""),
-        requestSeq: String(payload.request_seq ?? payload.requestSeq ?? ""),
-        bindingEpoch: String(payload.binding_epoch ?? payload.bindingEpoch ?? ""),
-      };
-      if (
-        next.connectionId &&
-        next.controlEpoch &&
-        next.challenge &&
-        next.requestSeq &&
-        next.bindingEpoch
-      ) {
-        companionChallenge = next;
-        G.__deskpet_companion_challenge__ = next;
-      }
-    } else if (
-      parsed?.type === "companion_control_rechallenge" ||
-      parsed?.type === "companion_control_error"
-    ) {
-      companionChallenge = null;
-      companionActionInFlight = false;
-      G.__deskpet_companion_challenge__ = null;
-    } else if (parsed?.type === "companion_control_command_settled" && companionChallenge) {
-      const payload = parsed.payload ?? {};
-      companionChallenge = {
-        ...companionChallenge,
-        requestSeq: String(
-          payload.next_request_seq ??
-            payload.nextRequestSeq ??
-            BigInt(companionChallenge.requestSeq) + 1n,
-        ),
-        bindingEpoch: String(
-          payload.binding_epoch ?? payload.bindingEpoch ?? companionChallenge.bindingEpoch,
-        ),
-      };
-      companionActionInFlight = false;
-      G.__deskpet_companion_challenge__ = companionChallenge;
-    }
     dispatch(parsed);
     listeners.forEach((fn) => {
       try {
@@ -337,7 +279,6 @@ async function open_socket() {
   ws.onclose = () => {
     clear_connect_timeout();
     set_control_state("disconnected");
-    companionActionInFlight = false;
     useSessionsStore.getState().clear_companion_provisional();
     schedule_reconnect();
   };
@@ -714,47 +655,6 @@ export const controlWS: ControlWS = {
       return true;
     } catch (e) {
       console.warn("[session-control] workflow command send failed", e);
-      schedule_reconnect();
-      return false;
-    }
-  },
-  async send_companion_action(commandKind, body) {
-    const challenge = companionChallenge;
-    if (
-      !challenge ||
-      companionActionInFlight ||
-      current_state !== "connected" ||
-      !ws ||
-      ws.readyState !== WebSocket.OPEN
-    ) {
-      schedule_reconnect();
-      return false;
-    }
-    companionActionInFlight = true;
-    let credential: WindowControlCredential;
-    try {
-      credential = await getWindowControlCredential({
-        ...challenge,
-        commandKind,
-        body,
-        requestedScope: "companion_action",
-      });
-    } catch (error) {
-      companionActionInFlight = false;
-      console.warn("[companion-action] credential request rejected", error);
-      return false;
-    }
-    try {
-      ws.send(
-        JSON.stringify({
-          type: commandKind,
-          payload: { body, credential },
-        }),
-      );
-      return true;
-    } catch (error) {
-      companionActionInFlight = false;
-      console.warn("[companion-action] signed command send failed", error);
       schedule_reconnect();
       return false;
     }

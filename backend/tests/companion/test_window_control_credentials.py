@@ -265,7 +265,7 @@ def _ingress(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_two_window_leases_are_independent_and_main_reconnect_is_scoped(
+async def test_main_reconnect_revokes_only_the_prior_main_lease(
     tmp_path,
 ) -> None:
     private_key, store, gate, ingress = _ingress(tmp_path)
@@ -294,27 +294,6 @@ async def test_two_window_leases_are_independent_and_main_reconnect_is_scoped(
     )
     assert bind_ack["type"] == "companion_profile_bound"
     assert gate.ready is True
-
-    action = ingress.open_challenge(requested_window_label="main", requested_scope="identity_bind")
-    action_credential = _credential(
-        private_key,
-        action,
-        # Workbench 改版：companion_action 现由主窗（label=main）发起。
-        window_label="main",
-        scope="companion_action",
-        command_kind="companion_action_ready",
-        binding_epoch=gate.freeze().binding_epoch,
-        body={"ready": True},
-        nonce="action-1",
-    )
-    await ingress.execute(
-        {
-            "type": "companion_action_ready",
-            "ready": True,
-            "credential": asdict(action_credential),
-        },
-        challenge=action,
-    )
 
     main_reconnect = ingress.open_challenge(
         requested_window_label="main", requested_scope="identity_bind"
@@ -371,20 +350,15 @@ async def test_two_window_leases_are_independent_and_main_reconnect_is_scoped(
             challenge=skipped_seq,
         )
     with store.read() as db:
-        # Workbench 改版后两条活动租约同为 label=main，按 scope 排序区分。
         active = db.execute(
             """SELECT window_label,scope,connection_id
                FROM profile_control_leases WHERE status='active'
                ORDER BY scope"""
         ).fetchall()
         assert [(row["window_label"], row["scope"]) for row in active] == [
-            ("main", "companion_action"),
             ("main", "identity_bind"),
         ]
-        assert {row["connection_id"] for row in active} == {
-            main_reconnect.connection_id,
-            action.connection_id,
-        }
+        assert {row["connection_id"] for row in active} == {main_reconnect.connection_id}
 
 
 def test_shared_secret_only_challenges_are_bounded_and_mutate_nothing(

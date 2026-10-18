@@ -17,7 +17,6 @@ from deskpet.execution.contracts import (
     RunNotFound,
     RunRef,
 )
-from deskpet.execution.contracts import DecisionSignal as DurableDecisionSignal
 from deskpet.execution.delivery_contracts import RunEvent
 from deskpet.harness.contracts import PreparedRunContextV1
 from deskpet.harness.kernel import HostContext, RunKernel, RunRequest, root_run_identity
@@ -193,32 +192,6 @@ class KernelRunClient:
                 response,
                 nonce=(None if signal.get("nonce") is None else str(signal["nonce"])),
                 version=(None if signal.get("version") is None else int(signal["version"])),
-            ),
-        )
-
-    async def signal_decision(
-        self,
-        ref: RunRef,
-        actor: ActorContext,
-        signal: DurableDecisionSignal,
-    ) -> object:
-        """Submit a host-recovered decision without accepting product JSON fences."""
-
-        if signal.run_id != ref.run_id:
-            raise ValueError("decision run binding mismatch")
-        if signal.expected_session_id != ref.expected_session_id:
-            raise ValueError("decision session binding mismatch")
-        if actor.session_id != ref.expected_session_id:
-            raise ValueError("decision actor session mismatch")
-        return await self._kernel.signal(
-            ref,
-            actor,
-            DecisionSignal(
-                signal.run_id,
-                signal.decision_id,
-                dict(signal.response),
-                nonce=signal.nonce,
-                version=signal.expected_version,
             ),
         )
 

@@ -32,7 +32,6 @@ function resetStore() {
         run_projections: {},
         context_usage: null,
         companion_events: [],
-        companion_detail_cache: {},
       },
     },
     companion_owner: null,

@@ -15,7 +15,7 @@ from .core import CompanionStoreCore
 from .support import canonical_hash
 
 if TYPE_CHECKING:
-    from ..store import CompanionStore
+    pass
 
 
 class ProfileControlMixin(CompanionStoreCore):
@@ -576,32 +576,6 @@ class ProfileControlMixin(CompanionStoreCore):
                 "changed_owner": changed_owner,
                 "command": command,
             }
-
-    def claim_companion_action_control_command(
-        self,
-        *,
-        device_scope: str,
-        expected_owner: OwnerRef,
-        expected_binding_epoch: int,
-        control_facts: Mapping[str, Any],
-    ) -> Mapping[str, Any]:
-        now = self._now()
-        with self._write() as db:
-            binding = db.execute(
-                "SELECT * FROM profile_bindings WHERE device_scope=?",
-                (device_scope,),
-            ).fetchone()
-            if (
-                binding is None
-                or binding["status"] != "ready"
-                or binding["profile_id"] != expected_owner.profile_id
-                or int(binding["profile_generation"]) != expected_owner.profile_generation
-                or int(binding["binding_epoch"]) != expected_binding_epoch
-            ):
-                raise CompanionLeaseError("companion_identity_not_ready")
-            return self._claim_control_command_db(
-                db, device_scope=device_scope, now=now, **control_facts
-            )
 
     def mark_profile_binding_ready(
         self,

@@ -36,7 +36,6 @@ beforeEach(() => {
         ...base,
         messages: [],
         companion_events: [],
-        companion_detail_cache: {},
       },
     },
     companion_owner: null,
@@ -90,14 +89,13 @@ describe("Companion projection reducer", () => {
     ).toBe("新的单调投影");
   });
 
-  it("refreshes only a same-sequence detail fence and clears stale detail cache", () => {
+  it("refreshes only a same-sequence detail fence", () => {
     const store = useSessionsStore.getState();
     store.set_companion_owner({
       profile_id: "profile-a",
       profile_generation: 3,
     });
     expect(useSessionsStore.getState().reduce_companion_event(event())).toBe(true);
-    useSessionsStore.getState().set_companion_detail_cache("notice-1", { overview: ["stale"] });
 
     expect(
       useSessionsStore.getState().reduce_companion_event(
@@ -112,7 +110,6 @@ describe("Companion projection reducer", () => {
     ).toBe(true);
     let session = useSessionsStore.getState().sessions.default;
     expect(session.companion_events?.[0].notification.detail_version).toBe("v2");
-    expect(session.companion_detail_cache).toEqual({});
 
     expect(
       useSessionsStore.getState().reduce_companion_event(
@@ -129,7 +126,7 @@ describe("Companion projection reducer", () => {
     expect(session.companion_events?.[0].notification.detail_version).toBe("v2");
   });
 
-  it("retracts through the dedicated tombstone transition and clears detail/actions", () => {
+  it("retracts through the dedicated tombstone transition and clears actions", () => {
     let store = useSessionsStore.getState();
     store.set_companion_owner({
       profile_id: "profile-a",
@@ -137,7 +134,6 @@ describe("Companion projection reducer", () => {
     });
     store = useSessionsStore.getState();
     store.reduce_companion_event(event());
-    store.set_companion_detail_cache("notice-1", { secret: "must disappear" });
 
     expect(
       useSessionsStore.getState().retract_companion_projection({
@@ -162,7 +158,6 @@ describe("Companion projection reducer", () => {
         available_actions: [],
       },
     });
-    expect(session.companion_detail_cache).toEqual({});
   });
 
   it("moves one event across session routes and retracts without leaving an old copy", () => {

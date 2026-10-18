@@ -1,6 +1,6 @@
 # Companion 长期成长架构
 
-> 最后更新：2026-08-20
+> 最后更新：2026-10-18（伴侣卡片前后台删除，见 Task 13 一节之前的说明）
 > 当前状态：Task 0～16 已完成。committed message → 模型语义判定 → GrowthEvent →
 > reflection → candidate build → independent evaluation → activation/rollback 已接入唯一生产
 > 组合根；S-1～S-5、S-8 已通过真实 Tauri 主消息页点击/输入 E2E，S-6/S-7/S-9 已通过
@@ -394,21 +394,13 @@ provisional delta 只在内存中按 run/invocation/epoch 保存，断线、retr
 retriever、summarizer、reflection 与 QASet 均在数据读取层排除，人工残留的 excluded chunk
 也不能被召回；Task 6 的 readonly owner scope、as-of 上界和零写约束保持不变。
 
-`CompanionDetailQueryPort` 是 evidence、diff、evaluation、decision、operation receipt、
-current binding 与 audit 的唯一详情入口；内容从 owner-scoped 权威表重建，不信任通知
-预填详情。请求只接受五个业务字段，page size 最大 20、
-单项最大 8 KiB、响应最大 64 KiB；opaque cursor 由 canonical HMAC 绑定 owner、
-control epoch、notification、section、detail version 与 last sort key。每页都由 Companion
-`Vc` 与包含 absent key 的完整 Platform `VpVector` 前后双读包围，任一变化返回
-`detail_changed`，所有输出统一脱敏；无 Platform key 的详情使用确定性空向量，不依赖
-无关 Catalog readiness。
-
-主消息页已经接入成长卡片、分页详情 modal 与三类相互隔离的 decision。external action
-只发送 `{decision_id,allow}` 并恢复原 execution decision；evaluation 与 activation 使用
-不同 nonce，可执行激活还要求
-`persistent_local_code_no_os_sandbox`。Auto 模式不能越过这些确认。冷启动 identity
-challenge 会在 listener 注册后消费连接内缓存，Relay identity restore 采用有界重试；
-`ControlChannel` 每次重连清空 latest-message cache，旧 challenge 不会跨连接复用。
+2026-10-18 起伴侣卡片前后台都已删除（代码质量收尾 F-26）：没有详情查询、没有卡片上的
+评估／激活／动作确认、回滚、遗忘决定入口，控制通道不再收 `companion_detail_get` 与这五种
+决定消息，会话补读不再带 `companion_events`。通知投影服务仍按上面的规则写库与推送
+`companion_event`，但前端没有地方显示；需要用户确认的中、高风险成长候选会一直停在
+"等确认"。主窗控制连接仍声明 `companion_action` 作用域，只作连接身份，不再签名执行命令。
+冷启动 identity challenge 会在 listener 注册后消费连接内缓存，Relay identity restore
+采用有界重试；`ControlChannel` 每次重连清空 latest-message cache，旧 challenge 不会跨连接复用。
 
 ## Task 13 已完成的生产 authority cutover
 

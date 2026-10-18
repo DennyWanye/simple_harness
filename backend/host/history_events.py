@@ -68,36 +68,6 @@ async def _attach_workflow_history_events(
             message["workflow_event"] = event
 
 
-async def _attach_companion_history_events(
-    *,
-    rows: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
-    """Apply the current CompanionStore owner overlay before exposing history."""
-
-    if host_state.companion_notification_service is None:
-        return []
-    try:
-        frozen = host_state.companion_identity_gate.freeze()
-    except Exception:
-        logger.debug("attach_companion_history_events_freeze_failed", exc_info=True)
-        return []
-    try:
-        if not host_state.companion_notification_service.history_ready(frozen):
-            await host_state.companion_notification_service.bind_and_drain(frozen)
-        return await host_state.companion_notification_service.visibility.project_history(
-            frozen, rows
-        )
-    except Exception as exc:  # noqa: BLE001
-        # Companion is fail-closed, while the caller still returns ordinary
-        # conversation/workflow messages from SessionDB.
-        logger.warning(
-            "companion_history_overlay_closed",
-            error=type(exc).__name__,
-            exc_info=True,
-        )
-        return []
-
-
 async def _bind_companion_inbox_route(
     session_id: str,
     frozen_identity: Any,

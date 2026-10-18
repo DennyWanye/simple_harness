@@ -326,80 +326,6 @@
    ]
   ]
  },
- "companion_detail_get": {
-  "closed": null,
-  "frames": [
-   [
-    "startup_status"
-   ],
-   [
-    "companion_detail_error",
-    [
-     "code"
-    ],
-    [
-     "code",
-     "unavailable"
-    ]
-   ]
-  ]
- },
- "companion_forget": {
-  "closed": null,
-  "frames": [
-   [
-    "startup_status"
-   ],
-   [
-    "error",
-    [
-     "message"
-    ]
-   ]
-  ]
- },
- "companion_growth_action_decision": {
-  "closed": null,
-  "frames": [
-   [
-    "startup_status"
-   ],
-   [
-    "error",
-    [
-     "message"
-    ]
-   ]
-  ]
- },
- "companion_growth_activation_decision": {
-  "closed": null,
-  "frames": [
-   [
-    "startup_status"
-   ],
-   [
-    "error",
-    [
-     "message"
-    ]
-   ]
-  ]
- },
- "companion_growth_evaluation_decision": {
-  "closed": null,
-  "frames": [
-   [
-    "startup_status"
-   ],
-   [
-    "error",
-    [
-     "message"
-    ]
-   ]
-  ]
- },
  "companion_profile_bind": {
   "closed": null,
   "frames": [
@@ -415,20 +341,6 @@
   ]
  },
  "companion_profile_unbind": {
-  "closed": null,
-  "frames": [
-   [
-    "startup_status"
-   ],
-   [
-    "error",
-    [
-     "message"
-    ]
-   ]
-  ]
- },
- "companion_rollback": {
   "closed": null,
   "frames": [
    [
@@ -1110,7 +1022,6 @@
    [
     "session_messages_response",
     [
-     "companion_events",
      "messages",
      "session_id"
     ]

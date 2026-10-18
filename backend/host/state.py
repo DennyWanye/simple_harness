@@ -28,7 +28,6 @@ class HostState:
     companion_control_ingress: Any = None
     companion_runtime: Any = None
     companion_notification_service: Any = None
-    companion_detail_query: Any = None
     companion_ingress_dispatcher: Any = None
     companion_growth_pipeline: Any = None
     companion_activation_dispatcher: Any = None

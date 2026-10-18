@@ -19,7 +19,7 @@
 
 未做、转后续：
 
-- **F-26 伴侣卡片后台**（设计 §5.3）：前端卡片已随第 14 片删除，后台决定服务、详情查询仍在。删之前要用户知道两个后果：伴侣提醒没有地方显示；中、高风险成长候选永远停在"等确认"。待用户答复。
+- **F-26 伴侣卡片后台**（设计 §5.3）：2026-10-18 用户"同意，删伴侣卡片后台"（已知两个后果：伴侣提醒没有地方显示；中、高风险成长候选永远停在"等确认"）。分支 cq-companion-card 删除：五种决定服务（成长评估／激活／动作确认、回滚、遗忘）与 `companion_action_ready` 通用执行分支、详情查询 `detail_query.py`、`action_decisions.py`、控制通道 `companion_detail_get` 等 6 种消息、会话补读里的 `companion_events`、通知服务的历史开关；前端删没人调用的 `send_companion_action` 与签名挑战状态、详情消息类型与详情缓存。保留：通知投影服务与绑定后排空、`companion_action` 连接作用域、激活分发器（成长权威在用）。证明：后台相关测试 46 个文件、前端相关 12 个文件（156 条）全过；控制通道快照只少 6 种消息与 `companion_events` 字段；启动快照只少 7 个服务位；禁区比对只减不增（463 条字面量随删除消失，放行清单在 `.local-test-evidence/2026-10-18/cq-companion-card/`）；导入冒烟后台 681 个模块。
 - **F-27 PPT 大纲卡后台**（设计 §5.4）：已随"删后台工作流引擎"第 2、3 片删除（host/ppt_outline.py、大纲决定处理、大纲存储）。
 - **F-28 Service SDK 的 realtime 依赖**（设计 §5.1 末）：实时语音删后无人用。要改 pyproject.toml、vendor 轮子、打包清单与冻结包测试，需要 `uv lock`／`uv sync`，工作树里不跑，放到主检出单做。
 - **F-29 可能已无人用的依赖**：edge-tts、faster-whisper、silero-vad、torch/torchvision/torchaudio、FlagEmbedding、transformers、sentence-transformers、peft、qwen-vl-utils。删本地语音与旧模块后要逐个核实再删（牵动打包与安装时间）。

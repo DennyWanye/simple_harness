@@ -953,11 +953,7 @@ export interface CompanionNotificationEnvelope {
   available_actions: string[];
 }
 
-/**
- * History and live delivery use this identical owner-fenced envelope.
- * Large evidence, diffs, reports and audit rows are available only through
- * `companion_detail_get`.
- */
+/** History and live delivery use this identical owner-fenced envelope. */
 export interface CompanionEvent {
   event_id: string;
   profile_id: string;
@@ -985,59 +981,6 @@ export interface CompanionProjectionRetractedMessage {
     notification_id: string;
     redaction_version: number;
     notification?: CompanionNotificationEnvelope;
-  };
-}
-
-export type CompanionDetailSection =
-  | "overview"
-  | "evidence"
-  | "diff"
-  | "evaluation"
-  | "decision"
-  | "operation_receipt"
-  | "current_binding"
-  | "audit";
-
-export interface CompanionDetailGetRequest {
-  type: "companion_detail_get";
-  request_id: string;
-  payload: {
-    notification_id: string;
-    section: CompanionDetailSection;
-    cursor: string | null;
-    page_size: number;
-    expected_detail_version: string;
-  };
-}
-
-export interface CompanionDetailItem {
-  id: string;
-  title?: string;
-  summary?: string;
-  status?: string;
-  hash?: string;
-  occurred_at?: string;
-  [key: string]: unknown;
-}
-
-export interface CompanionDetailResponse {
-  type: "companion_detail_response";
-  request_id: string;
-  payload: {
-    notification_id: string;
-    section: CompanionDetailSection;
-    detail_version: string;
-    items: CompanionDetailItem[];
-    next_cursor: string | null;
-  };
-}
-
-export interface CompanionDetailErrorResponse {
-  type: "companion_detail_error";
-  request_id: string;
-  payload: {
-    code: "unavailable" | "detail_changed" | "cursor_invalid";
-    message?: string;
   };
 }
 
@@ -1069,8 +1012,6 @@ export type IncomingMessage =
   | WorkflowLifecycleEvent
   | CompanionEventMessage
   | CompanionProjectionRetractedMessage
-  | CompanionDetailResponse
-  | CompanionDetailErrorResponse
   | ContextCompactedMessage
   | { type: "context_usage"; payload: ContextUsageSnapshot };
 

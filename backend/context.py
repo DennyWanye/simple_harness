@@ -146,14 +146,7 @@ _VALID_SERVICES = frozenset(
         "growth_authority_cutover",
         # Task 12: durable notification projection/detail query and the exact
         # trusted action-decision service seams used by the main message window.
-        "companion_detail_query",
         "companion_notification_service",
-        "companion_projection_visibility",
-        "companion_growth_action_decision_service",
-        "companion_growth_evaluation_decision_service",
-        "companion_growth_activation_decision_service",
-        "companion_rollback_service",
-        "companion_forget_service",
         "window_control_credential_verifier",
         # 2026-09-11 Agent 编排接入（plans/2026-09-11-orchestrator-host-integration，用户
         # Phase3 P3.1）：编排服务与 mission_changed 推送。未登记会让 register 抛
@@ -260,14 +253,7 @@ class ServiceContext:
     companion_reminder_authority_selector: Any | None = None
     companion_reminder_registry_reconciler: Any | None = None
     growth_authority_cutover: Any | None = None
-    companion_detail_query: Any | None = None
     companion_notification_service: Any | None = None
-    companion_projection_visibility: Any | None = None
-    companion_growth_action_decision_service: Any | None = None
-    companion_growth_evaluation_decision_service: Any | None = None
-    companion_growth_activation_decision_service: Any | None = None
-    companion_rollback_service: Any | None = None
-    companion_forget_service: Any | None = None
     window_control_credential_verifier: Any | None = None
 
     def register(self, name: str, provider: Any) -> None:

@@ -55,7 +55,6 @@ const blank_session = (sid: string): SessionState => ({
   selected_run_id: null,
   run_projections: {},
   companion_events: [],
-  companion_detail_cache: {},
   current_iteration: 0,
   max_iterations: 50,
   tool_signature_repeat: 0,
@@ -622,7 +621,6 @@ export const useSessionsStore = create<SessionsStore>((set) => ({
           {
             ...session,
             companion_events: [],
-            companion_detail_cache: {},
           },
         ]),
       );
@@ -658,8 +656,6 @@ export const useSessionsStore = create<SessionsStore>((set) => ({
       const reduced = reduce_companion_events(reducerInput, event, state.companion_owner);
       handled = reduced.handled;
       const needsMove = occurrences.length > 1 || occurrences.some((item) => item.sid !== sid);
-      const detailVersionChanged =
-        previous?.notification.detail_version !== event.notification.detail_version;
       if (!reduced.handled || (reduced.events === targetEvents && !needsMove)) {
         return state;
       }
@@ -677,16 +673,11 @@ export const useSessionsStore = create<SessionsStore>((set) => ({
           const filtered = (candidate.companion_events ?? []).filter(
             (item) => item.event_id !== event.event_id,
           );
-          const detailCache = { ...(candidate.companion_detail_cache ?? {}) };
-          if (needsMove || detailVersionChanged) {
-            delete detailCache[event.notification.notification_id];
-          }
           return [
             candidateSid,
             {
               ...candidate,
               companion_events: candidateSid === sid ? reduced.events : filtered,
-              companion_detail_cache: detailCache,
               ...(candidateSid === sid ? { last_activity: Date.now() } : {}),
             },
           ];
@@ -696,7 +687,6 @@ export const useSessionsStore = create<SessionsStore>((set) => ({
         sessions[sid] = {
           ...session,
           companion_events: reduced.events,
-          companion_detail_cache: session.companion_detail_cache ?? {},
           last_activity: Date.now(),
         };
       }
@@ -739,8 +729,6 @@ export const useSessionsStore = create<SessionsStore>((set) => ({
       }
       const sessions = Object.fromEntries(
         Object.entries(state.sessions).map(([candidateSid, candidate]) => {
-          const detailCache = { ...(candidate.companion_detail_cache ?? {}) };
-          delete detailCache[event.notification_id];
           return [
             candidateSid,
             {
@@ -751,7 +739,6 @@ export const useSessionsStore = create<SessionsStore>((set) => ({
                   : (candidate.companion_events ?? []).filter(
                       (item) => item.event_id !== event.event_id,
                     ),
-              companion_detail_cache: detailCache,
               ...(candidateSid === sid ? { last_activity: Date.now() } : {}),
             },
           ];
@@ -761,32 +748,12 @@ export const useSessionsStore = create<SessionsStore>((set) => ({
         sessions[sid] = {
           ...session,
           companion_events: reduced.events,
-          companion_detail_cache: {},
           last_activity: Date.now(),
         };
       }
       return { sessions };
     });
     return handled;
-  },
-
-  set_companion_detail_cache(notificationId, value) {
-    set((state) => {
-      const sid = state.active_sid;
-      const session = state.sessions[sid] ?? blank_session(sid);
-      return {
-        sessions: {
-          ...state.sessions,
-          [sid]: {
-            ...session,
-            companion_detail_cache: {
-              ...(session.companion_detail_cache ?? {}),
-              [notificationId]: value,
-            },
-          },
-        },
-      };
-    });
   },
 
   upsert_companion_provisional(runId, invocationId, streamEpoch, content) {

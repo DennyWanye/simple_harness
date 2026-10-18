@@ -159,7 +159,6 @@
 | `_cc_chat_turn_timeout_set` | `host/control_settings.py` |
 | `_cc_chat_v2_interrupt` | `host/control_decisions.py` |
 | `_cc_clarification_response` | `host/control_decisions.py` |
-| `_cc_companion_detail_get` | `host/control_channel.py` |
 | `_cc_context_breakdown_request` | `host/control_sessions.py` |
 | `_cc_context_usage_request` | `host/control_sessions.py` |
 | `_cc_debug_dump_session_activity` | `host/control_settings.py` |

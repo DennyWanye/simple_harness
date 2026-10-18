@@ -631,52 +631,6 @@ class OutboxNotificationMixin(CompanionStoreCore):
             )
             return result
 
-    def get_activation_decision_challenge(
-        self,
-        owner: OwnerRef,
-        *,
-        nonce: str,
-    ) -> Mapping[str, Any] | None:
-        """Return the one server-issued activation card challenge."""
-
-        matches: list[Mapping[str, Any]] = []
-        for notification in self.list_projectable_notifications(owner):
-            if str(notification.get("status") or "") == "redacted":
-                continue
-            detail = notification.get("detail")
-            decision = detail.get("decision") if isinstance(detail, Mapping) else None
-            if (
-                isinstance(decision, Mapping)
-                and str(decision.get("kind") or "") == "activation"
-                and str(decision.get("nonce") or "") == str(nonce)
-            ):
-                matches.append(dict(decision))
-        if len(matches) > 1:
-            raise CompanionConflictError("activation_decision_challenge_not_unique")
-        return None if not matches else matches[0]
-
-    def list_projectable_notifications(
-        self,
-        owner: OwnerRef | tuple[str, int],
-    ) -> list[Mapping[str, Any]]:
-        resolved = self._owner(owner)
-        with self.read() as db:
-            self._require_owner(db, resolved)
-            rows = db.execute(
-                """SELECT * FROM notifications
-                   WHERE profile_id=? AND profile_generation=?
-                     AND status IN ('pending','projected','redacted')
-                   ORDER BY sequence,notification_id""",
-                (resolved.profile_id, resolved.profile_generation),
-            ).fetchall()
-        detail_version = str(self.get_detail_version(resolved)["detail_version"])
-        result: list[Mapping[str, Any]] = []
-        for row in rows:
-            item = dict(self._decode_notification(row))
-            item["notification"]["detail_version"] = detail_version
-            result.append(item)
-        return result
-
     def mark_notification_projected(
         self,
         owner: OwnerRef,

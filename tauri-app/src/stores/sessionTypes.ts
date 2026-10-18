@@ -277,8 +277,6 @@ export interface SessionState {
   pending_root_turn_id?: string;
   /** Durable, owner-fenced Companion cards projected into this message page. */
   companion_events?: CompanionEvent[];
-  /** Ephemeral detail pages. Cleared on owner switch and projection retract. */
-  companion_detail_cache?: Record<string, unknown>;
   // supervisor signals — fed by `supervisor_alert` ws event +
   // local heuristics (recent tool-call repeat detection happens in
   // backend; here we only stash what the alert told us). Drives the
@@ -412,7 +410,6 @@ export interface SessionsStore {
       notification?: CompanionEvent["notification"];
     },
   ): boolean;
-  set_companion_detail_cache(notificationId: string, value: unknown): void;
   upsert_companion_provisional(
     runId: string,
     invocationId: string,
