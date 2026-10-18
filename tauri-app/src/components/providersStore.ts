@@ -93,6 +93,33 @@ export function buildToggleEnabledMessage(
   };
 }
 
+/**
+ * 把某个提供方的默认模型改成 model。后台只接受模型列表里的默认模型，所以 model 不在
+ * 列表里时补丁先带追加后的 models，再带 default_model（后台按键顺序处理）。带版本号防并发覆盖。
+ */
+export function buildSetDefaultModelMessage(
+  provider: { id: string; models?: string[]; incarnation_id?: string; config_revision?: number },
+  model: string,
+): { type: "settings_providers_update"; payload: Record<string, unknown> } {
+  const models = Array.isArray(provider.models) ? provider.models : [];
+  const patch: Record<string, unknown> = models.includes(model)
+    ? { default_model: model }
+    : { models: [...models, model], default_model: model };
+  return {
+    type: "settings_providers_update",
+    payload: {
+      id: provider.id,
+      patch,
+      ...(provider.incarnation_id
+        ? {
+            expected_incarnation_id: provider.incarnation_id,
+            expected_config_revision: provider.config_revision,
+          }
+        : {}),
+    },
+  };
+}
+
 /** Build the ws message frontend sends to remove a provider. */
 export function buildRemoveMessage(
   id: string,

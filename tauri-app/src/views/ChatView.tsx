@@ -156,7 +156,6 @@ export function ChatView({ activeSid, secret, onSwitchSid = () => {} }: ChatView
     [messages, selectedRunId],
   );
   const preferred_model = useSessionsStore((s) => s.sessions[activeSid]?.preferred_model ?? null);
-  const model_params = useSessionsStore((s) => s.sessions[activeSid]?.model_params ?? null);
   const provider_id = useSessionsStore((s) => s.sessions[activeSid]?.provider_id ?? null);
   const providers = useProvidersStore((s) => s.providers);
   const catalog_default_model = useSessionModelsStore((s) => s.default_model);
@@ -847,14 +846,7 @@ export function ChatView({ activeSid, secret, onSwitchSid = () => {} }: ChatView
         <ProjectInspector activeSid={activeSid} onSwitchSid={onSwitchSid} />
       </div>
 
-      {showModelModal && (
-        <ChangeModelModal
-          session_id={activeSid}
-          current_model={preferred_model}
-          current_params={model_params}
-          onClose={() => setShowModelModal(false)}
-        />
-      )}
+      {showModelModal && <ChangeModelModal onClose={() => setShowModelModal(false)} />}
 
       {detailEvent && (
         <CompanionDetailModal

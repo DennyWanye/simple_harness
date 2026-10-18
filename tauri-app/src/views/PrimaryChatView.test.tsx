@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { PrimaryChatView } from "./PrimaryChatView";
 import type { ControlChannel } from "../ws/ControlChannel";
 import { styleOf } from "../test/generatedStyle";
+import { useProvidersStore } from "../code-panel/providersStore";
 vi.mock("../primary/PrimaryRunPanel", () => ({ PrimaryRunPanel: () => <div>运行权限面板</div> }));
 vi.mock("../code-panel/controlWs", () => ({
   controlWS: { send: vi.fn(), state: () => "connected", on_message: () => () => {} },
@@ -146,6 +147,28 @@ describe("primary product view", () => {
     render(<PrimaryChatView channel={h.channel} />);
     expect(await screen.findByLabelText("Context usage: 25%")).toBeTruthy();
     expect(h.sent.some((r) => r.operation === "primary.context.usage")).toBe(true);
+  });
+  it("shows the head provider's default model and opens the model switcher", async () => {
+    useProvidersStore
+      .getState()
+      .set_providers([
+        {
+          id: "relay",
+          name: "Relay",
+          enabled: true,
+          default_model: "deepseek-v4-flash",
+          models: ["deepseek-v4-flash"],
+        },
+      ]);
+    const h = fixture();
+    render(<PrimaryChatView channel={h.channel} />);
+    await screen.findByText("持久化的真实回复");
+    const button = screen.getByRole("button", { name: "切换模型" });
+    expect(button.textContent).toContain("deepseek-v4-flash");
+    expect(screen.getByRole("button", { name: "模型与设置" })).toBeTruthy();
+    fireEvent.click(button);
+    expect(screen.getByRole("dialog", { name: "切换模型" })).toBeTruthy();
+    useProvidersStore.getState().set_providers([]);
   });
   it("shows an unavailable ring when the latest run has no measurement", async () => {
     const h = fixture();

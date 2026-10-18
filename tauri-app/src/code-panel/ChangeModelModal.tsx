@@ -2,29 +2,19 @@
 // SPDX-License-Identifier: BUSL-1.1
 
 /**
- * Cursor-style per-session model and parameter picker.
+ * 主对话的「切换模型」弹窗。
  *
- * Layout mirrors Cursor's model switcher. The model dropdown is
- * data-driven from the relay's live /models catalog,
- * NOT a hardcoded preset list. Each model carries a capability map, so
- * the picker only renders the controls that model supports — gpt-5.x
- * shows Effort (reasoning_effort); claude opus/sonnet shows Thinking
- * (no Effort); an embedding model shows nothing. On 保存 we emit
- *   session_set_model { session_id, model, params }
- * with only the caps-supported keys of { thinking, fast, context, effort }.
- *
- * Back-compat: 清空 sends the legacy `{ session_id, model:null }` shape
- * (no `params` key) so the backend clears the binding and falls back to
- * the global chain / provider defaults — exactly the pre-S2 behaviour.
- *
- * Pre-fill: model from `current_model`, controls from `current_params`
- * (the backend echoes the raw picker dict back, so it round-trips).
+ * 主对话的前台运行固定使用提供方链首（排第一的启用提供方）的默认模型，不按会话记模型，
+ * 也不读推理参数。所以这里改的就是链首提供方的 default_model（与设置页同一处），对所有
+ * 对话生效：保存时发 settings_providers_update，所选模型不在该提供方的模型列表里时先追加
+ * 再设默认（后台只接受列表里的默认模型）；上下文档位照旧经 model_context_set 写全局覆盖。
  */
 import { useState, useEffect } from "react";
 import { useDepsChanged } from "../hooks/useDepsChanged";
 
 import { controlWS } from "./controlWs";
-import { buildSetModelMessage } from "../sessionModelMessages";
+import { buildListRequestMessage, buildSetDefaultModelMessage } from "../components/providersStore";
+import { effective_provider_model, useProvidersStore } from "./providersStore";
 import {
   useSessionModelsStore,
   capsForModel,
@@ -34,41 +24,22 @@ import {
   supportedWindowsForModel,
   formatContextWindow,
 } from "./sessionModelsStore";
-import { useSessionsStore } from "../stores/sessionsStore";
-import { type SessionModelParams } from "../stores/sessionTypes";
 import "./ChangeModelModal.styles.css";
 
-type EffortValue = "low" | "medium" | "high" | "extra_high" | "max";
-type ReasonMode = "default" | "thinking" | "fast";
-
-const EFFORT_OPTIONS: ReadonlyArray<{ value: EffortValue; label: string }> = [
-  { value: "low", label: "Low" },
-  { value: "medium", label: "Medium" },
-  { value: "high", label: "High" },
-  { value: "extra_high", label: "Extra High" },
-  { value: "max", label: "Max" },
-];
-
 export interface ChangeModelModalProps {
-  session_id: string;
-  /** Current preferred_model value (null/undefined → "follow default"). */
-  current_model: string | null | undefined;
-  /** Current persisted model_params (null/undefined → picker defaults). */
-  current_params?: SessionModelParams | null;
   onClose: () => void;
 }
 
-export function ChangeModelModal({
-  session_id,
-  current_model,
-  current_params,
-  onClose,
-}: ChangeModelModalProps) {
+export function ChangeModelModal({ onClose }: ChangeModelModalProps) {
   const catalog = useSessionModelsStore((s) => s.models);
   const default_model = useSessionModelsStore((s) => s.default_model);
-  const binding = useSessionsStore((s) => s.sessions[session_id]);
-  const model_opts = buildModelOptionsFromCatalog(current_model, catalog, default_model);
-  const [model, set_model] = useState<string>(current_model ?? "");
+  const providers = useProvidersStore((s) => s.providers);
+  // 链首：按优先级排第一的启用提供方（与后台 registry.get_chain()[0] 同口径）。
+  const head = providers.find((provider) => provider.enabled !== false) ?? null;
+  const current_model = effective_provider_model(null, providers) || default_model || null;
+  // 第一项（值为空）就是当前默认模型，表示不改；其余为目录里的其他模型。
+  const model_opts = buildModelOptionsFromCatalog(null, catalog, current_model);
+  const [model, set_model] = useState<string>("");
   const [model_filter, set_model_filter] = useState("");
   const filtered_model_opts = filterModelOptions(model_opts, model_filter);
   const selected_model = model_opts.some((o) => o.value === model) ? model : (current_model ?? "");
@@ -76,13 +47,6 @@ export function ChangeModelModal({
   const selected_model_is_visible = filtered_model_opts.some(
     (option) => option.value === selected_model,
   );
-  // Thinking (重推理/慢) and Fast (低延迟/快) are mutually exclusive —
-  // a single-select "推理模式" instead of two independent toggles.
-  // "默认" = neither (provider default).
-  const [reason_mode, set_reason_mode] = useState<ReasonMode>(
-    current_params?.thinking ? "thinking" : current_params?.fast ? "fast" : "default",
-  );
-  const [effort, set_effort] = useState<EffortValue>(current_params?.effort ?? "medium");
   // 用于查 caps / 上下文档位的「生效模型」：用户显式选了就用它,否则会话
   // 固定的 preferred_model,再否则 provider 默认。2026-06-26 修复:此前只取
   // `model || current_model`,「跟随 provider 默认」时两者皆空 → caps/档位
@@ -109,6 +73,7 @@ export function ChangeModelModal({
   // already-open selector without requiring a reconnect or app restart.
   useEffect(() => {
     controlWS.send({ type: "models_list" });
+    controlWS.send(buildListRequestMessage());
   }, []);
 
   // 切换模型 → 档位选择回到该模型当前值
@@ -132,64 +97,34 @@ export function ChangeModelModal({
   }, [onClose]);
 
   const submit = () => {
-    // Only emit the params the selected model supports — sending
-    // reasoning_effort to a claude model (or thinking to an embedding
-    // model) is meaningless. Backend mapper also clamps, but a clean
-    // payload keeps the binding honest per-model.
-    const params: SessionModelParams = {};
-    // Single-select reasoning mode → the two backend booleans. They are
-    // never both true (mutually exclusive by construction).
-    if (caps.thinking) params.thinking = reason_mode === "thinking";
-    if (caps.fast) params.fast = reason_mode === "fast";
-    if (caps.effort) params.effort = effort;
-    // 上下文档位变化 → 持久化为该模型的全局 override(非 per-session 参数:
-    // 窗口是模型属性,backend 压缩阈值/预算据此对齐),然后刷新 catalog。
+    // 上下文档位变化 → 持久化为该模型的全局 override（窗口是模型属性），然后刷新目录。
     const effective_ctx_choice = ctx_choice ?? ctx_default_choice;
     if (
       effective_ctx_choice != null &&
       effective_ctx_choice !== ctx_window &&
       ctx_options.includes(effective_ctx_choice)
     ) {
-      // 完整协议(p4_ipc): {scope, model, fields} — 2026-06-13 修复:
-      // 之前发的简版 {model, context_window} 走了一个抢路由的重复
-      // handler(已删),现统一走 p4_ipc 完整版。
       controlWS.send({
         type: "model_context_set",
         payload: {
           scope: "global",
-          // 用生效模型(含 default_model 兜底),否则跟随默认时拿空 id 被后端拒。
           model: ctx_model,
           fields: { context_window: effective_ctx_choice },
         },
       });
       controlWS.send({ type: "models_list" });
     }
-    controlWS.send(
-      buildSetModelMessage(session_id, model, params, {
-        expected_binding_epoch: binding?.binding_epoch ?? 0,
-        expected_provider_incarnation_id: binding?.provider_incarnation_id ?? null,
-        expected_provider_config_revision: binding?.provider_config_revision ?? null,
-      }),
-    );
-    onClose();
-  };
-
-  const clear_and_submit = () => {
-    // Legacy shape (no `params`) ⇒ backend clears the binding row.
-    controlWS.send(
-      buildSetModelMessage(session_id, null, undefined, {
-        expected_binding_epoch: binding?.binding_epoch ?? 0,
-        expected_provider_incarnation_id: binding?.provider_incarnation_id ?? null,
-        expected_provider_config_revision: binding?.provider_config_revision ?? null,
-      }),
-    );
+    const chosen = model.trim();
+    if (head && chosen && chosen !== (current_model ?? "")) {
+      controlWS.send(buildSetDefaultModelMessage(head, chosen));
+    }
     onClose();
   };
 
   return (
-    <div className="sh-ChangeModelModal-1" onClick={onClose} role="dialog" aria-label="改 model">
+    <div className="sh-ChangeModelModal-1" onClick={onClose} role="dialog" aria-label="切换模型">
       <div className="sh-ChangeModelModal-2" onClick={(e) => e.stopPropagation()}>
-        <header className="sh-ChangeModelModal-3">模型与参数</header>
+        <header className="sh-ChangeModelModal-3">切换模型</header>
 
         <div className="sh-ChangeModelModal-4">
           {/* Model dropdown */}
@@ -238,27 +173,6 @@ export function ChangeModelModal({
             </span>
           )}
 
-          {/* Reasoning mode — single-select (Thinking ⟺ Fast are
-              mutually exclusive: high reasoning/slow vs low latency).
-              Only the modes the model supports are offered. */}
-          {(caps.thinking || caps.fast) && (
-            <>
-              <label className="sh-ChangeModelModal-5">推理模式</label>
-              <Segmented
-                ariaLabel="推理模式"
-                options={[
-                  { value: "default" as ReasonMode, label: "默认" },
-                  ...(caps.thinking
-                    ? [{ value: "thinking" as ReasonMode, label: "Thinking" }]
-                    : []),
-                  ...(caps.fast ? [{ value: "fast" as ReasonMode, label: "Fast" }] : []),
-                ]}
-                value={reason_mode}
-                onChange={set_reason_mode}
-              />
-            </>
-          )}
-
           {/* Context window — 按型号可选档位(>1 档渲染下拉,保存时持久化
               为全局 override);单档/未知型号保持只读 chip。 */}
           {caps.context && ctx_options.length > 1 && (
@@ -295,33 +209,14 @@ export function ChangeModelModal({
             </>
           )}
 
-          {/* Effort segmented — gpt-5.x / OpenAI family only */}
-          {caps.effort && (
-            <>
-              <label className="sh-ChangeModelModal-5">推理强度（Effort）</label>
-              <Segmented
-                ariaLabel="推理强度"
-                options={EFFORT_OPTIONS}
-                value={effort}
-                onChange={set_effort}
-              />
-              <span className="sh-ChangeModelModal-8">
-                Extra High / Max 在仅支持 low/medium/high 的后端会收敛到 High
-              </span>
-            </>
-          )}
-
-          {!caps.thinking && !caps.fast && !caps.context && !caps.effort && (
-            <span className="sh-ChangeModelModal-8">该模型无可调参数（仅切换模型本身）</span>
-          )}
+          <span className="sh-ChangeModelModal-8">
+            改的是默认模型（排第一的提供方），所有对话都会使用它
+          </span>
         </div>
 
         <footer className="sh-ChangeModelModal-10">
           <button type="button" onClick={onClose} className="sh-ChangeModelModal-11">
             取消
-          </button>
-          <button type="button" onClick={clear_and_submit} className="sh-ChangeModelModal-11">
-            清空（回全局链）
           </button>
           <button type="button" onClick={submit} className="sh-ChangeModelModal-12">
             保存
@@ -331,49 +226,3 @@ export function ChangeModelModal({
     </div>
   );
 }
-
-function Segmented<T extends string>({
-  ariaLabel,
-  options,
-  value,
-  onChange,
-}: {
-  ariaLabel: string;
-  options: ReadonlyArray<{ value: T; label: string }>;
-  value: T;
-  onChange: (v: T) => void;
-}) {
-  return (
-    <div role="group" aria-label={ariaLabel} className="sh-ChangeModelModal-13">
-      {options.map((o) => {
-        const active = o.value === value;
-        return (
-          <button
-            key={o.value}
-            type="button"
-            aria-pressed={active}
-            onClick={() => onChange(o.value)}
-            style={{
-              ...segmentBtnStyle,
-              background: active ? "#2563eb" : "transparent",
-              color: active ? "#fff" : "#cbd5e1",
-              fontWeight: active ? 600 : 500,
-            }}
-          >
-            {o.label}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-const segmentBtnStyle: React.CSSProperties = {
-  flex: 1,
-  border: "none",
-  borderRadius: 4,
-  padding: "5px 6px",
-  fontSize: 11.5,
-  cursor: "pointer",
-  transition: "background 120ms",
-};

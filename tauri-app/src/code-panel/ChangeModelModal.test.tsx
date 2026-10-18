@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ChangeModelModal } from "./ChangeModelModal";
 import { controlWS } from "./controlWs";
 import { useSessionModelsStore } from "./sessionModelsStore";
+import { useProvidersStore } from "./providersStore";
 
 vi.mock("./controlWs", () => ({
   controlWS: {
@@ -14,9 +15,20 @@ vi.mock("./controlWs", () => ({
   },
 }));
 
+const head = (default_model: string, models: string[]) => ({
+  id: "relay",
+  name: "Relay",
+  enabled: true,
+  default_model,
+  models,
+  incarnation_id: "inc-1",
+  config_revision: 4,
+});
+
 describe("ChangeModelModal model filtering", () => {
   beforeEach(() => {
     vi.mocked(controlWS.send).mockClear();
+    useProvidersStore.getState().set_providers([]);
     useSessionModelsStore.getState().set_catalog(
       [
         {
@@ -43,7 +55,7 @@ describe("ChangeModelModal model filtering", () => {
   afterEach(() => cleanup());
 
   it("refreshes the authoritative model catalog whenever the picker opens", () => {
-    render(<ChangeModelModal session_id="session-1" current_model={null} onClose={vi.fn()} />);
+    render(<ChangeModelModal onClose={vi.fn()} />);
 
     expect(controlWS.send).toHaveBeenCalledWith({ type: "models_list" });
   });
@@ -63,7 +75,7 @@ describe("ChangeModelModal model filtering", () => {
       "gpt-5.6-sol",
     );
 
-    render(<ChangeModelModal session_id="session-1" current_model={null} onClose={vi.fn()} />);
+    render(<ChangeModelModal onClose={vi.fn()} />);
 
     expect((screen.getByRole("combobox", { name: "上下文窗口" }) as HTMLSelectElement).value).toBe(
       "256000",
@@ -81,7 +93,7 @@ describe("ChangeModelModal model filtering", () => {
   });
 
   it("filters the dropdown immediately by model id or display label", () => {
-    render(<ChangeModelModal session_id="session-1" current_model={null} onClose={vi.fn()} />);
+    render(<ChangeModelModal onClose={vi.fn()} />);
 
     const filter = screen.getByRole("searchbox", { name: "筛选模型" });
     const select = screen.getByRole("combobox", { name: "模型" });
@@ -109,7 +121,7 @@ describe("ChangeModelModal model filtering", () => {
   });
 
   it("shows an explicit empty state when no model matches", () => {
-    render(<ChangeModelModal session_id="session-1" current_model={null} onClose={vi.fn()} />);
+    render(<ChangeModelModal onClose={vi.fn()} />);
 
     fireEvent.change(screen.getByRole("searchbox", { name: "筛选模型" }), {
       target: { value: "does-not-exist" },
@@ -145,7 +157,8 @@ describe("ChangeModelModal model filtering", () => {
       "live",
       "model-a",
     );
-    render(<ChangeModelModal session_id="session-1" current_model="model-a" onClose={vi.fn()} />);
+    useProvidersStore.getState().set_providers([head("model-a", ["model-a", "model-b"])]);
+    render(<ChangeModelModal onClose={vi.fn()} />);
     const ctx = () => screen.getByRole("combobox", { name: "上下文窗口" }) as HTMLSelectElement;
     expect(ctx().value).toBe("512000");
     fireEvent.change(ctx(), { target: { value: "1000000" } });
@@ -160,6 +173,40 @@ describe("ChangeModelModal model filtering", () => {
     fireEvent.click(screen.getByRole("button", { name: "保存" }));
     expect(controlWS.send).not.toHaveBeenCalledWith(
       expect.objectContaining({ type: "model_context_set" }),
+    );
+  });
+
+  it("saves the chosen model as the head provider's default model, appending it to the list", () => {
+    useProvidersStore.getState().set_providers([head("sf-glm-5.2", ["sf-glm-5.2"])]);
+    render(<ChangeModelModal onClose={vi.fn()} />);
+    fireEvent.change(screen.getByRole("combobox", { name: "模型" }), {
+      target: { value: "kimi-k3" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    expect(controlWS.send).toHaveBeenCalledWith({
+      type: "settings_providers_update",
+      payload: {
+        id: "relay",
+        patch: { models: ["sf-glm-5.2", "kimi-k3"], default_model: "kimi-k3" },
+        expected_incarnation_id: "inc-1",
+        expected_config_revision: 4,
+      },
+    });
+    expect(controlWS.send).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: "session_set_model" }),
+    );
+  });
+
+  it("does not update the provider when the model is unchanged, and offers no reasoning controls", () => {
+    useProvidersStore.getState().set_providers([head("sf-glm-5.2", ["sf-glm-5.2", "kimi-k3"])]);
+    render(<ChangeModelModal onClose={vi.fn()} />);
+    expect(screen.queryByRole("group", { name: "推理模式" })).toBeNull();
+    expect(screen.queryByRole("group", { name: "推理强度" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /清空/ })).toBeNull();
+    expect(controlWS.send).toHaveBeenCalledWith({ type: "settings_providers_list_request" });
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    expect(controlWS.send).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: "settings_providers_update" }),
     );
   });
 });

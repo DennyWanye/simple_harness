@@ -18,6 +18,13 @@ import { MISSION_CARD_TOOLS, missionIdFromToolResult } from "./chatMission";
 import type { ControlChannel } from "../ws/ControlChannel";
 import { InputBar } from "../code-panel/InputBar";
 import { ContextRing } from "../components/ContextRing";
+import { ChangeModelModal } from "../code-panel/ChangeModelModal";
+import { effective_provider_model, useProvidersStore } from "../code-panel/providersStore";
+import {
+  contextWindowForModel,
+  formatContextWindow,
+  useSessionModelsStore,
+} from "../code-panel/sessionModelsStore";
 import { MarkdownMessage } from "../components/MarkdownMessage";
 import { Icon } from "../components/Icon";
 import { INTERACTIVE_CLASS, dark, metaText, textLinkStyle } from "../theme/components";
@@ -56,6 +63,14 @@ export function PrimaryChatView({ channel, onOpenSettings, active = true }: Prim
   const [bindingRecovery] = useState(() => new PrimaryBindingRecovery());
   const [decisionRefresh, setDecisionRefresh] = useState(0);
   const [bindingRefresh, setBindingRefresh] = useState(0);
+  const [showModelModal, setShowModelModal] = useState(false);
+  // 主对话的模型就是链首提供方的默认模型（前台运行不按会话记模型）。
+  const providers = useProvidersStore((s) => s.providers);
+  const catalog = useSessionModelsStore((s) => s.models);
+  const catalogDefault = useSessionModelsStore((s) => s.default_model);
+  const headModel = effective_provider_model(null, providers) || catalogDefault;
+  const headWindow = formatContextWindow(contextWindowForModel(headModel, catalog));
+  const modelLabel = headModel ? [headModel, headWindow].filter(Boolean).join(" · ") : "选择模型";
   const refreshBindings = useCallback(() => setBindingRefresh((value) => value + 1), []);
   const snapshot = useSyncExternalStore(controller.subscribe, controller.getSnapshot);
   const primaryPort = useMemo(
@@ -95,6 +110,14 @@ export function PrimaryChatView({ channel, onOpenSettings, active = true }: Prim
         <ContextRing snapshot={snapshot.contextUsage} size={18} showLabel />
         <button
           className={`${INTERACTIVE_CLASS} sh-PrimaryChatView-4`}
+          aria-label="切换模型"
+          title="改的是默认模型，所有对话都会使用它"
+          onClick={() => setShowModelModal(true)}
+        >
+          {modelLabel}
+        </button>
+        <button
+          className={`${INTERACTIVE_CLASS} sh-PrimaryChatView-4`}
           onClick={onOpenSettings}
           title="前台任务使用全局 Provider 模型与参数"
         >
@@ -111,6 +134,7 @@ export function PrimaryChatView({ channel, onOpenSettings, active = true }: Prim
           刷新状态
         </button>
       </header>
+      {showModelModal && <ChangeModelModal onClose={() => setShowModelModal(false)} />}
 
       {/* 状态与通知：低调的单行 meta，不再是抢眼的横条。 */}
       <div className="sh-PrimaryChatView-5">
