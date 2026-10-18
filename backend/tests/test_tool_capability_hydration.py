@@ -3,9 +3,7 @@ from __future__ import annotations
 from dataclasses import replace
 
 import pytest
-from deskpet.agent.context_budget import prepare_openai_tool_payload
 from deskpet.tools.capabilities import (
-    PreparedToolCapability,
     ToolCapabilityBridgeService,
     ToolCapabilityResolver,
     ToolCapabilityScopeStore,
@@ -279,16 +277,3 @@ class _HydrationLLM:
 def _tool_domain_result(content: str):
     outer = __import__("json").loads(content)
     return __import__("json").loads(outer["result"])
-
-
-def _activation_candidate(registry, prepared):
-    ref = next(item for item in prepared.deferred if item.name == "mcp_demo_lookup")
-    spec = registry.get(ref.name)
-    assert spec is not None
-    candidate = prepared.activate(
-        PreparedToolCapability(
-            ref,
-            {"type": "function", "function": spec.schema},
-        )
-    )
-    return candidate, prepare_openai_tool_payload(candidate)

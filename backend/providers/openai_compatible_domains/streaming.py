@@ -14,11 +14,6 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import httpx
-from llm.context_attempt_hooks import (
-    auto_context_attempt_iter,
-    mark_current_attempt_sent,
-    mark_current_attempt_transport_retry,
-)
 from llm.context_messages import current_provider_attempt_options, split_wire_messages
 from llm.errors import LLMProviderError
 
@@ -187,24 +182,16 @@ class StreamingToolMixin(OpenAICompatibleCore):
             raise ValueError(f"unsupported retry_mode: {retry_mode}")
         if current_dispatch_handoff() is not None:
             retry_mode = "at_most_once"
-        async for event in auto_context_attempt_iter(
-            provider=self,
-            messages=messages,
+        async for event in self._chat_stream_with_tools_impl(
+            messages,
             tools=tools,
-            model_id=self.model,
-            mark_sent_at_dispatch=False,
-            generation_reserve=max_tokens,
-            iterator=lambda: self._chat_stream_with_tools_impl(
-                messages,
-                tools=tools,
-                max_tokens=max_tokens,
-                temperature=temperature,
-                response_format=response_format,
-                tool_choice=tool_choice,
-                retry_mode=retry_mode,
-                launch_operation_id=launch_operation_id,
-                provider_launch_snapshot=provider_launch_snapshot,
-            ),
+            max_tokens=max_tokens,
+            temperature=temperature,
+            response_format=response_format,
+            tool_choice=tool_choice,
+            retry_mode=retry_mode,
+            launch_operation_id=launch_operation_id,
+            provider_launch_snapshot=provider_launch_snapshot,
         ):
             yield event
 
@@ -531,8 +518,6 @@ class StreamingToolMixin(OpenAICompatibleCore):
             if state.delay:
                 await _asyncio.sleep(state.delay)
             try:
-                if state.attempt > 0:
-                    mark_current_attempt_transport_retry()
                 async for state.ev in self._stream_one_attempt_with_deadline(
                     state.used_payload,
                     request_headers=state.launch_headers,
@@ -693,7 +678,6 @@ class StreamingToolMixin(OpenAICompatibleCore):
         state = _StreamAttemptState(
             payload=payload, transport_retries=transport_retries, request_headers=request_headers
         )
-        mark_current_attempt_sent()
 
         # Accumulators for assembling the final event.
         state.full_content = ""

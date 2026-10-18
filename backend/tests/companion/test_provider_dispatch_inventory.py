@@ -109,9 +109,6 @@ def test_ppt_image_provider_is_below_the_central_effect_dispatch_fence() -> None
 
 
 def test_retry_authority_is_not_hidden_below_the_coordinator() -> None:
-    openai_sdk = (ROOT / "backend/llm/openai_adapter.py").read_text(encoding="utf-8")
-    anthropic_sdk = (ROOT / "backend/llm/anthropic_adapter.py").read_text(encoding="utf-8")
-    gemini_sdk = (ROOT / "backend/llm/gemini_adapter.py").read_text(encoding="utf-8")
     # 提供方拆成 mixin 后，按门面加 openai_compatible_domains/ 整个包读
     compatible = "\n".join(
         path.read_text(encoding="utf-8")
@@ -122,12 +119,6 @@ def test_retry_authority_is_not_hidden_below_the_coordinator() -> None:
     )
     shim = (ROOT / "backend/agent/tool_use_shim.py").read_text(encoding="utf-8")
 
-    assert '"max_retries": 0' in openai_sdk
-    assert "DispatchAwareAsyncTransport" in openai_sdk
-    assert "self._max_retries != 0" in anthropic_sdk
-    assert "DispatchAwareAsyncTransport" in anthropic_sdk
-    assert "HttpRetryOptions(attempts=1)" in gemini_sdk
-    assert "DispatchAwareAsyncTransport" in gemini_sdk
     assert "transport_retries = 0" in compatible
     assert 'retry_mode = "at_most_once"' in compatible
     assert "chat_with_tools_at_most_once" in shim

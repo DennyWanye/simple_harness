@@ -140,17 +140,11 @@ async def _handle_decisions_list(
             limit = 50
 
     assembler = _get_service(sc, "context_assembler")
-    attempt_store = _get_service(sc, "context_attempt_store")
     if assembler is None:
-        response_payload: dict[str, Any] = {"decisions": []}
-        if attempt_store is not None:
-            response_payload["attempts"] = attempt_store.public_for_session(session_id)[-limit:]
-        else:
-            response_payload["reason"] = "context_assembler_not_registered"
         await ws.send_json(
             {
                 "type": "decisions_list_response",
-                "payload": response_payload,
+                "payload": {"decisions": [], "reason": "context_assembler_not_registered"},
             }
         )
         return
@@ -159,10 +153,9 @@ async def _handle_decisions_list(
     except Exception as exc:
         logger.warning("p4_ipc.decisions_list_failed", error=str(exc), exc_info=True)
         decisions = []
-    response_payload: dict[str, Any] = {"decisions": list(decisions)}
-    if attempt_store is not None:
-        response_payload["attempts"] = attempt_store.public_for_session(session_id)[-limit:]
-    await ws.send_json({"type": "decisions_list_response", "payload": response_payload})
+    await ws.send_json(
+        {"type": "decisions_list_response", "payload": {"decisions": list(decisions)}}
+    )
 
 
 # 2026-09-10：MemoryPanel 的三段式检索（memory_search）与 L1 文件记忆

@@ -31,7 +31,7 @@ LAYERS = [
 ]
 LEVEL = {name: i for i, group in enumerate(LAYERS) for name in group}
 SINGLE = {"main", "p4_ipc", "provider_test_connection", "config", "context", "paths"}
-# 分层契约的登记例外：阶段 8.7 依赖倒置后清空（上下文尝试经 llm.context_attempt_hooks 注册）；不许再加
+# 分层契约的登记例外：已清空，不许再加
 ALLOWED_EXCEPTIONS: set[str] = set()
 SKIP = {"tests", "scripts", ".venv", "vendor", "__pycache__", "build", "dist", "dist-1", "userdata"}
 

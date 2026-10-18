@@ -5,8 +5,7 @@
 
 边界（与 ``ARCHITECTURE/MEMORY_SDK_BOUNDARY.md`` 一致）：
 - 进 SDK：``MemoryBackend``、``Embedder``、``WorldModelPort``。
-- 留 host：ContextSnapshotStore（deskpet.agent）、CompanionMessageProjection
-  （deskpet.companion）、coverage 规划（deskpet.agent.context_segment_store）。
+- 留 host：CompanionMessageProjection（deskpet.companion）。
 """
 
 from __future__ import annotations

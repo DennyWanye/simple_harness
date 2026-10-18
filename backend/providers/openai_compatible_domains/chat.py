@@ -13,12 +13,6 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 
-from llm.context_attempt_hooks import (
-    auto_context_attempt_call,
-    auto_context_attempt_iter,
-    mark_current_attempt_sent,
-    mark_current_attempt_transport_retry,
-)
 from llm.context_messages import current_provider_attempt_options, split_wire_messages
 from llm.errors import LLMProviderError
 from providers._response_sanitizer import sanitize_response
@@ -85,16 +79,8 @@ class ChatMixin(OpenAICompatibleCore):
         temperature: float | None = None,
         max_tokens: int = 8192,
     ) -> AsyncIterator[str]:
-        async for token in auto_context_attempt_iter(
-            provider=self,
-            messages=messages,
-            tools=None,
-            model_id=self.model,
-            mark_sent_at_dispatch=False,
-            generation_reserve=max_tokens,
-            iterator=lambda: self._chat_stream_impl(
-                messages, temperature=temperature, max_tokens=max_tokens
-            ),
+        async for token in self._chat_stream_impl(
+            messages, temperature=temperature, max_tokens=max_tokens
         ):
             yield token
 
@@ -134,7 +120,6 @@ class ChatMixin(OpenAICompatibleCore):
             and _is_anthropic_endpoint(self.base_url)
         ):
             payload["messages"] = _stamp_cache_control(messages, boundary_index=_cache_boundary)
-        mark_current_attempt_sent()
         async with self._client(timeout=self.timeout) as client:
             async with client.stream(
                 "POST",
@@ -206,24 +191,16 @@ class ChatMixin(OpenAICompatibleCore):
         provider_launch_snapshot: ProviderLaunchSnapshot | None = None,
     ) -> dict:
         coordinated = current_dispatch_handoff() is not None
-        return await auto_context_attempt_call(
-            provider=self,
-            messages=messages,
+        return await self._chat_with_tools_impl(
+            messages,
             tools=tools,
-            model_id=self.model,
-            mark_sent_at_dispatch=False,
-            generation_reserve=max_tokens,
-            invoke=lambda: self._chat_with_tools_impl(
-                messages,
-                tools=tools,
-                max_tokens=max_tokens,
-                temperature=temperature,
-                response_format=response_format,
-                tool_choice=tool_choice,
-                launch_operation_id=launch_operation_id,
-                provider_launch_snapshot=provider_launch_snapshot,
-                retry_mode="at_most_once" if coordinated else "resilient",
-            ),
+            max_tokens=max_tokens,
+            temperature=temperature,
+            response_format=response_format,
+            tool_choice=tool_choice,
+            launch_operation_id=launch_operation_id,
+            provider_launch_snapshot=provider_launch_snapshot,
+            retry_mode="at_most_once" if coordinated else "resilient",
         )
 
     async def chat_with_tools_at_most_once(
@@ -246,24 +223,16 @@ class ChatMixin(OpenAICompatibleCore):
         its resilient retry and stream-to-nonstream fallback behaviour.
         """
 
-        return await auto_context_attempt_call(
-            provider=self,
-            messages=messages,
+        return await self._chat_with_tools_impl(
+            messages,
             tools=tools,
-            model_id=self.model,
-            mark_sent_at_dispatch=False,
-            generation_reserve=max_tokens,
-            invoke=lambda: self._chat_with_tools_impl(
-                messages,
-                tools=tools,
-                max_tokens=max_tokens,
-                temperature=temperature,
-                response_format=response_format,
-                tool_choice=tool_choice,
-                retry_mode="at_most_once",
-                launch_operation_id=launch_operation_id,
-                provider_launch_snapshot=provider_launch_snapshot,
-            ),
+            max_tokens=max_tokens,
+            temperature=temperature,
+            response_format=response_format,
+            tool_choice=tool_choice,
+            retry_mode="at_most_once",
+            launch_operation_id=launch_operation_id,
+            provider_launch_snapshot=provider_launch_snapshot,
         )
 
     async def _chat_with_tools_impl(
@@ -339,21 +308,13 @@ class ChatMixin(OpenAICompatibleCore):
         response_format: dict | None = None,
         tool_choice: str | None = None,
     ) -> dict:
-        return await auto_context_attempt_call(
-            provider=self,
-            messages=messages,
+        return await self._legacy_chat_with_tools_nonstream_impl(
+            messages,
             tools=tools,
-            model_id=self.model,
-            mark_sent_at_dispatch=False,
-            generation_reserve=max_tokens,
-            invoke=lambda: self._legacy_chat_with_tools_nonstream_impl(
-                messages,
-                tools=tools,
-                max_tokens=max_tokens,
-                temperature=temperature,
-                response_format=response_format,
-                tool_choice=tool_choice,
-            ),
+            max_tokens=max_tokens,
+            temperature=temperature,
+            response_format=response_format,
+            tool_choice=tool_choice,
         )
 
     async def _legacy_chat_with_tools_nonstream_impl(
@@ -512,13 +473,6 @@ class ChatMixin(OpenAICompatibleCore):
                     await _asyncio.sleep(delay)
                 try:
                     async with self._client(timeout=self.timeout) as _client:
-                        if attempt == 0:
-                            # Exact actual-send boundary: the transport
-                            # coroutine has control and is about to perform its
-                            # first network await/write.
-                            mark_current_attempt_sent()
-                        else:
-                            mark_current_attempt_transport_retry()
                         _r = await _client.post(
                             f"{self.base_url}/chat/completions",
                             json={**state.payload, "messages": _wire_msgs},

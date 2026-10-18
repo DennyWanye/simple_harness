@@ -143,34 +143,6 @@ def _snapshot_context_usage_event(
         logger.debug("snapshot_context_usage_event_import_failed", exc_info=True)
         _resolve_model = None  # type: ignore[assignment]
 
-    # Read Context OS attempts before inspecting legacy provider state.  Some
-    # adapters (including the strict E2E seam) intentionally do not expose a
-    # mutable ``last_usage`` attribute, while still reporting authoritative
-    # usage through ContextAttemptStore.
-    try:
-        _attempt_store = service_context.get("context_attempt_store")
-    except Exception:
-        logger.debug("snapshot_context_usage_event_get_failed", exc_info=True)
-        _attempt_store = None
-    _attempts: list[dict[str, Any]] = []
-    _latest_attempt: dict[str, Any] | None = None
-    if _attempt_store is not None:
-        try:
-            _attempts = _attempt_store.public_for_session(session_id)
-            _latest_attempt = next(
-                (
-                    attempt
-                    for attempt in reversed(_attempts)
-                    if attempt.get("purpose") == "agent_response"
-                    and attempt.get("state") == "succeeded"
-                ),
-                None,
-            )
-        except Exception:  # noqa: BLE001
-            logger.debug("snapshot_context_usage_event_public_for_session_failed", exc_info=True)
-            _attempts = []
-            _latest_attempt = None
-
     # Pick first provider with non-None last_usage.
     _picked = None
     _candidates: list[Any] = []
@@ -186,10 +158,10 @@ def _snapshot_context_usage_event(
         if _u:
             _picked = _p
             break
-    if _picked is None and _latest_attempt is None:
+    if _picked is None:
         return None
-    usage = getattr(_picked, "last_usage", None) or {} if _picked is not None else {}
-    model = getattr(_picked, "model", "") or "" if _picked is not None else ""
+    usage = getattr(_picked, "last_usage", None) or {}
+    model = getattr(_picked, "model", "") or ""
     prompt_tokens = int(usage.get("prompt_tokens") or 0)
     completion_tokens = int(usage.get("completion_tokens") or 0)
     cached_tokens = 0
@@ -200,22 +172,6 @@ def _snapshot_context_usage_event(
         cached_tokens = int(_details.get("cached_tokens") or 0)
     if not cached_tokens:
         cached_tokens = int(usage.get("cached_tokens") or 0)
-
-    # Context OS is the authoritative source for the actual attempt.  A
-    # provider chain may retain ``last_usage`` from an older/fallback provider,
-    # which previously made the header ring disagree with ContextTrace (for
-    # example, showing the configured 380k model while the request actually ran
-    # against an 8k fixture model).  Prefer the latest successful agent attempt
-    # for model/window/usage while retaining the provider snapshot as a legacy
-    # fallback when Context OS is disabled.
-    if _latest_attempt is not None:
-        model = str(_latest_attempt.get("model_id") or model)
-        if _latest_attempt.get("actual_input_tokens") is not None:
-            prompt_tokens = int(_latest_attempt["actual_input_tokens"])
-        if _latest_attempt.get("actual_output_tokens") is not None:
-            completion_tokens = int(_latest_attempt["actual_output_tokens"])
-        if _latest_attempt.get("actual_cache_read_tokens") is not None:
-            cached_tokens = int(_latest_attempt["actual_cache_read_tokens"])
 
     # Resolve model context window + thresholds.
     context_window = 32_000
@@ -231,8 +187,6 @@ def _snapshot_context_usage_event(
             recall_sweet = int(_info.recall_sweet_tokens)
         except Exception:  # noqa: BLE001 - 模型信息读不到时用默认值
             logger.debug("context_usage_model_info_failed", exc_info=True)
-    if _latest_attempt is not None and int(_latest_attempt.get("context_window") or 0) > 0:
-        context_window = int(_latest_attempt["context_window"])
     payload = {
         "session_id": session_id,
         "model": model,
@@ -245,8 +199,6 @@ def _snapshot_context_usage_event(
         "recall_sweet": recall_sweet,
         "updated_at": time.time(),
     }
-    if _attempts:
-        payload["attempts"] = _attempts
     return {"type": "context_usage", "payload": payload}
 
 
@@ -277,22 +229,14 @@ async def _emit_context_usage(
         if session_db is None or not hasattr(session_db, "record_context_usage_sample"):
             return
         if session_db is not None:
-            attempts = payload.get("attempts") or []
-            latest_attempt = (
-                attempts[-1]
-                if isinstance(attempts, list) and attempts and isinstance(attempts[-1], dict)
-                else {}
-            )
             try:
                 binding = (
                     await session_db.get_session_provider_binding(session_id)
                     if binding_epoch is None
                     else {}
                 )
-                stable_request_id = str(
-                    latest_attempt.get("request_id") or request_id or ""
-                ).strip()
-                stable_attempt_id = str(latest_attempt.get("attempt_id") or "legacy").strip()
+                stable_request_id = str(request_id or "").strip()
+                stable_attempt_id = "legacy"
                 if not stable_request_id:
                     raise ValueError("context usage provider sample lacks request identity")
                 await session_db.record_context_usage_sample(
@@ -312,11 +256,7 @@ async def _emit_context_usage(
                             if binding_epoch is None
                             else binding_epoch
                         ),
-                        "provider_id": (
-                            latest_attempt.get("provider_id")
-                            or frozen_provider_id
-                            or binding.get("provider_id")
-                        ),
+                        "provider_id": (frozen_provider_id or binding.get("provider_id")),
                         "model_id": (payload.get("model", "") or frozen_model_id),
                         "tokens_after": payload.get("prompt_tokens", 0),
                         "prompt_tokens": payload.get("prompt_tokens", 0),
@@ -324,19 +264,15 @@ async def _emit_context_usage(
                         "cached_tokens": payload.get("cached_tokens", 0),
                         "context_window": payload.get("context_window", 0),
                         "effective_ceiling": payload.get("effective_ceiling", 0),
-                        "estimate_method": (
-                            "provider_usage"
-                            if latest_attempt.get("actual_input_tokens") is not None
-                            else "legacy_provider_usage"
-                        ),
+                        "estimate_method": "legacy_provider_usage",
                         "completed_at": payload.get("updated_at", time.time()),
                         "created_at": payload.get("updated_at", time.time()),
                         "metadata": {
                             "model": payload.get("model", ""),
                             "cached_tokens": payload.get("cached_tokens", 0),
                             "completion_tokens": payload.get("completion_tokens", 0),
-                            "compression_source": latest_attempt.get("compression_source", ""),
-                            "compression_model": latest_attempt.get("actual_compression_model", ""),
+                            "compression_source": "",
+                            "compression_model": "",
                         },
                     }
                 )

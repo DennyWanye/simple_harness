@@ -75,8 +75,6 @@ except Exception as _skills_exc:  # noqa: BLE001
     logger.warning("skills_wiring_failed error=%s", str(_skills_exc)[:200], exc_info=True)
     _managed_skill_projection = None
     _skill_loader = None
-_context_snapshot_store = None
-_context_segment_store = None
 _session_history_planner = None
 _memory_manager = None
 _workspace_mem_store = None

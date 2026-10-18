@@ -159,23 +159,9 @@ async def test_chat_launcher_emits_terminal_error_when_failure_precedes_run_open
 @pytest.mark.asyncio
 async def test_provider_producer_persists_frozen_identity_and_sends_authority():
 
-    class _AttemptStore:
-        def public_for_session(self, session_id: str):  # noqa: ANN001
-            return [
-                {
-                    "session_id": session_id,
-                    "request_id": "request-7",
-                    "attempt_id": "attempt-2",
-                    "purpose": "agent_response",
-                    "state": "succeeded",
-                    "provider_id": "kimi",
-                    "model_id": "kimi-k3",
-                    "context_window": 131_072,
-                    "actual_input_tokens": 700,
-                    "actual_output_tokens": 20,
-                    "actual_cache_read_tokens": 4,
-                }
-            ]
+    class _Provider:
+        model = "kimi-k3"
+        last_usage = {"prompt_tokens": 700, "completion_tokens": 20, "cached_tokens": 4}
 
     class _SessionDB:
         def __init__(self) -> None:
@@ -213,16 +199,14 @@ async def test_provider_producer_persists_frozen_identity_and_sends_authority():
 
     db = _SessionDB()
     ws = _WS()
-    previous_attempts = host_runtime.service_context.get("context_attempt_store")
     previous_db = host_runtime.service_context.get("session_db")
     context_usage._session_context_state.pop("session-7", None)
     try:
-        host_runtime.service_context.register("context_attempt_store", _AttemptStore())
         host_runtime.service_context.register("session_db", db)
         await context_usage._emit_context_usage(
             ws,
             "session-7",
-            provider_chain=[],
+            provider_chain=[_Provider()],
             root_run_id="root-7",
             request_id="request-7",
             binding_epoch=9,
@@ -230,12 +214,12 @@ async def test_provider_producer_persists_frozen_identity_and_sends_authority():
             frozen_model_id="kimi-k3",
         )
     finally:
-        host_runtime.service_context.register("context_attempt_store", previous_attempts)
         host_runtime.service_context.register("session_db", previous_db)
 
     assert db.sample is not None
     assert db.binding_read is False
-    assert db.sample["source_event_id"] == ("context-attempt:root-7:request-7:attempt-2")
+    assert db.sample["source_event_id"] == ("context-attempt:root-7:request-7:legacy")
+    assert db.sample["estimate_method"] == "legacy_provider_usage"
     assert db.sample["binding_epoch"] == 9
     assert db.sample["provider_id"] == "kimi"
     assert db.sample["model_id"] == "kimi-k3"

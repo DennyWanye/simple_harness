@@ -29,5 +29,4 @@ layers =
     deskpet : agent
     llm : providers : memory : tools
     observability
-# 阶段 8.7：上下文尝试改为依赖倒置（下层经 llm.context_attempt_hooks 调用，agent.context_report 设置记录库时注册），
-# 原 4 行例外清空，不许再加。
+# 分层例外已清空，不许再加。

@@ -113,9 +113,6 @@ async def _cc_session_delete(conn: _ControlConnection, raw: dict, msg_type: str)
                     await _sd_creation.mark_deleted(_sd_sid)
                 else:
                     await _sd_sdb.clear(_sd_sid)
-            _sd_attempts = service_context.get("context_attempt_store")
-            if _sd_attempts is not None:
-                _sd_attempts.purge_session(_sd_sid)
             _sd_ok = True
             logger.info("session_deleted sid=%s", _sd_sid)
         except Exception as _sd_exc:  # noqa: BLE001

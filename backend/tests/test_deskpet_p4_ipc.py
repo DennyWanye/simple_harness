@@ -66,11 +66,6 @@ class FakeAssembler:
         return list(self._decisions)
 
 
-class FakeAttemptStore:
-    def public_for_session(self, session_id: str) -> list[dict[str, Any]]:
-        return [{"session_id": session_id, "attempt_id": "a1", "state": "succeeded"}]
-
-
 # ---------------------------------------------------------------------------
 # skills_list
 # ---------------------------------------------------------------------------
@@ -156,21 +151,7 @@ class TestDecisionsList:
         assert m["payload"]["decisions"] == []
         assert m["payload"]["reason"] == "context_assembler_not_registered"
 
-    @pytest.mark.asyncio
-    async def test_context_os_attempts_are_scoped_to_requested_session(self) -> None:
-        ws = FakeWebSocket()
-        sc = FakeServiceContext(context_attempt_store=FakeAttemptStore())
-        await p4_ipc.handle(ws, "session-a", "decisions_list", {"limit": 5}, sc)
-        payload = ws.sent[0]["payload"]
-        assert payload["attempts"] == [
-            {"session_id": "session-a", "attempt_id": "a1", "state": "succeeded"}
-        ]
-        assert "reason" not in payload
 
-
-# ---------------------------------------------------------------------------
-# Membership guard
-# ---------------------------------------------------------------------------
 def test_message_type_membership() -> None:
     """main.py dispatches via P4_IPC_MESSAGE_TYPES — keep this contract stable."""
     assert p4_ipc.P4_IPC_MESSAGE_TYPES == frozenset(

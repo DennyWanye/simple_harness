@@ -21,10 +21,8 @@ history 前缀的字节流跨轮稳定。本测试覆盖三件事，全部在 pr
    `prompt_tokens_details.cached_tokens` 防御式取值；字段缺失时
    记 `cached_tokens=unknown`，绝不崩。
 
-1.3.3 的 Anthropic `cache_control` 部分：`backend/llm/anthropic_adapter.py`
-已经实现（`_split_system_messages` / `_convert_tools` 给最后一个
-system block + 最后一个 tool 打 `cache_control={"type":"ephemeral"}`，
-并已读 cache_read/creation tokens）—— 无新增工作，详见 evidence。
+1.3.3 的 Anthropic `cache_control` 部分随旧 Anthropic 适配器于 2026-10-18 删除；
+现在只走 OpenAI 兼容提供方。
 本文件只覆盖 OpenAI-compat 这条线（the relay 是本项目唯一在跑的真 provider）。
 """
 

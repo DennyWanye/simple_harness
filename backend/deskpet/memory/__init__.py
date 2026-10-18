@@ -12,8 +12,6 @@ deskpet.memory — SDK 宿主接口 / 适配层。
 - :mod:`deskpet.memory.session_db` —— 宿主持久适配层（将薄封装 SDK 后端）。
 
 非记忆模块已 re-home：
-- context_snapshot_store → deskpet.agent.context_snapshot_store
-- context_segment_store  → deskpet.agent.context_segment_store
 - companion_message_projection → deskpet.companion.companion_message_projection
 
 SDK 仓库：simple-harness-memory-sdk（独立 git 仓库）。

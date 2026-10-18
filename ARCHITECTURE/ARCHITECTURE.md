@@ -1265,14 +1265,13 @@ text/code/voice ingress
        SessionHistoryPlanner coverage plan
        common-safe provider-chain budget
   -> optional CoverageCompactionJob[]
-       AgentLoop -> ContextCompressor -> ContextSegmentStore commit
+       AgentLoop -> ContextCompressor
        -> planner replan with the same PreparedToolSet
   -> AgentLoop
        exact prepared messages and logical tool set
        per-provider/model attempt re-budget
        provider transport
-  -> ContextAttemptStore / ContextTrace
-       planned -> sent -> terminal, matching usage and coverage facts
+  -> ContextTrace
 ```
 
 Ownership is deliberately narrow:
@@ -1295,7 +1294,7 @@ Attachments remain provider message content blocks. `attachment_budget` creates 
 `state.db` migration V18 owns two Context OS tables:
 
 - `session_context_snapshots` stores a derived `TaskContextSnapshot` and a bounded prepared-tool summary. Workflow/goal/receipt/artifact stores remain authoritative; the snapshot is a recoverable projection and cannot promote pending evidence to completed state.
-- `session_context_segments` stores raw/summary coverage nodes, continuous message-id ranges, source hashes, child lineage, token estimates and page-in references. `ContextSegmentStore` validates source hashes and commits summaries through CAS-safe operations.
+- `session_context_segments` stores raw/summary coverage nodes, continuous message-id ranges, source hashes, child lineage, token estimates and page-in references. （2026-10-18：`ContextSegmentStore`、快照存储从未在生产构造，已删除；表结构保留。）
 
 Snapshot writes use distinct DB row revisions and typed `ContextSnapshotHandle`/`SnapshotWriteReceipt` values. Initial projection, activation and provider-attempt adapter updates settle asynchronous CAS outcomes before scope activation or transport; cancellation after a DB commit cannot make an unknown write authoritative.
 
@@ -1311,7 +1310,7 @@ An authorized capability scope is pinned by the sole `EffectBatchExecutor` while
 
 ### 15.4 Attempt diagnostics and rollback
 
-`ContextAttemptStore` is a body-free, bounded in-memory diagnostic ring. It records `purpose`, Session/request/attempt identity, provider/model/window, adapter identity, message and tool hashes, fragment decisions, tool-set revisions, attachment/reserve attribution, compression resolution, Session coverage facts and matching authoritative usage. Auxiliary capability-gate/classifier/planner/compressor/research/workflow calls receive explicit purposes; provider bottom seams create an attempt if no complete outer attempt scope exists. The public transport coroutine changes `planned` to `sent` only after it obtains send control; completion, failure and cancellation close the same attempt.
+（2026-10-18 删除）上下文尝试记录库 `ContextAttemptStore` 与提供方底层的尝试挂钩从未在生产注册，挂钩恒为直通；记录库、挂钩、四个恒为空的服务槽位与读取分支已整族删除。用量环只取提供方 `last_usage`，写入会话库的样本标识仍为 `context-attempt:<根运行>:<请求>:legacy`、估算方法 `legacy_provider_usage`。
 
 ContextTrace renders these frozen facts, including raw/summary/reference coverage, gaps/overlaps/stale counts and page-in references, without credentials, full tool arguments, attachment bodies or sensitive file content.
 
@@ -1514,7 +1513,7 @@ resolver。这些调用只有 purpose 或没有完整 attempt 标签，没有 Se
 sample；该缺陷已由 SessionDB `ContextUsageStateV2` reducer 修复。当前无测量时只从 Session binding
 构造明确的 `binding_only` state，不再伪造全局 measured-zero。尚未修复的是：真实 SDK
 `provider_invocations.usage_json` 没有桥接到这份 V2 authority，终态采样仍探测 legacy
-`ContextAttemptStore/provider.last_usage`，所以状态会长期停在 binding-only 或误读旧 legacy sample。
+`provider.last_usage`，所以状态会长期停在 binding-only 或误读旧 legacy sample。
 
 Harness Inspector 的当前生产 authority 是 V3：
 `HarnessInspectorPanel -> harness_inspector_snapshot_request -> HarnessPublicReadService -> PublicRunSnapshotV3`。

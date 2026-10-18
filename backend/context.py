@@ -134,11 +134,7 @@ _VALID_SERVICES = frozenset(
         # --- Context OS V1 ------------------------------------------------------
         "tool_capability_scope_store",
         "tool_capability_resolver",
-        "context_snapshot_store",
-        "context_segment_store",
         "context_page_in_store",
-        "context_attempt_store",
-        "compression_model_resolver",
         "project_binding_service",
         "session_creation_service",
         # Companion Task 2: host-owned gate; absent/unready means retryable chat
@@ -262,11 +258,7 @@ class ServiceContext:
     search_gateway: Any | None = None
     tool_capability_scope_store: Any | None = None
     tool_capability_resolver: Any | None = None
-    context_snapshot_store: Any | None = None
-    context_segment_store: Any | None = None
     context_page_in_store: Any | None = None
-    context_attempt_store: Any | None = None
-    compression_model_resolver: Any | None = None
     project_binding_service: Any | None = None
     session_creation_service: Any | None = None
     companion_identity_gate: Any | None = None
