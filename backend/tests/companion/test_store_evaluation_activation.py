@@ -12,7 +12,6 @@ from deskpet.companion import (
     CandidatePackage,
     CandidatePackageBlob,
     CandidatePackageFile,
-    CapabilityGuardIncident,
     CapabilityMutationReceipt,
     CompanionConflictError,
     CompanionLeaseError,
@@ -1057,7 +1056,7 @@ def test_low_risk_decision_enqueues_exact_activation_request(
     )["decision_hash"]
 
 
-def test_mutation_receipt_settle_guard_and_incident_are_one_way(evaluation_store) -> None:
+def test_mutation_receipt_settle_opens_guard(evaluation_store) -> None:
     store, owner, _ = evaluation_store
     _issue_permit(store, owner)
     old_hash = _complete_variant(store, owner, variant="old", worker="old", launch_id="launch-old")
@@ -1156,181 +1155,6 @@ def test_mutation_receipt_settle_guard_and_incident_are_one_way(evaluation_store
                 "SELECT status FROM capability_activation_guards WHERE guard_id='guard-1'"
             ).fetchone()[0]
             == "open"
-        )
-
-    incident = CapabilityGuardIncident(
-        guard_id="guard-1",
-        incident_id="incident-1",
-        source_authority="runtime-health",
-        source_event_id="runtime-event-1",
-        binding_generation=1,
-        pack_id=request.pack_id,
-        version="1.0.0",
-        manifest_hash="manifest-1",
-        runtime_generation=1,
-        failure_class="runtime_contract",
-        failure_fingerprint="runtime-failure-1",
-        source_receipt_ref="runtime-receipt-1",
-        source_receipt_hash="runtime-receipt-hash-1",
-        observed_at=store._now(),
-        dedupe_hash="incident-dedupe-1",
-        rollback_request_id="rollback-1",
-        request_fingerprint="rollback-fingerprint-1",
-        reason_code="critical_runtime_contract",
-    )
-    triggered = store.record_capability_guard_incident(owner, incident)
-    assert triggered["status"] == "triggered"
-    assert store.record_capability_guard_incident(owner, incident)["status"] == "triggered"
-    with pytest.raises(CompanionConflictError, match="incident_conflict"):
-        store.record_capability_guard_incident(
-            owner, replace(incident, source_receipt_hash="drift")
-        )
-    with store.read() as db:
-        assert (
-            db.execute(
-                "SELECT status FROM capability_activation_guards WHERE guard_id='guard-1'"
-            ).fetchone()[0]
-            == "rollback_pending"
-        )
-        assert (
-            db.execute(
-                "SELECT status FROM capability_quarantines WHERE pack_id=?",
-                (request.pack_id,),
-            ).fetchone()[0]
-            == "rollback_pending"
-        )
-        rollback = db.execute(
-            """SELECT action,candidate_id,candidate_mode,rollback_kind,status
-               FROM capability_activation_requests
-               WHERE activation_request_id='rollback-1'"""
-        ).fetchone()
-        assert tuple(rollback) == (
-            "rollback",
-            None,
-            None,
-            "same_owner_version",
-            "pending",
-        )
-        assert (
-            db.execute(
-                """SELECT from_id FROM lineage_edges
-               WHERE to_kind='capability_mutation_request'
-                 AND to_id='rollback-1' AND relation='rollback'"""
-            ).fetchone()[0]
-            == "candidate-1"
-        )
-        assert (
-            db.execute(
-                "SELECT status FROM candidate_artifacts WHERE candidate_id='candidate-1'"
-            ).fetchone()[0]
-            == "rollback_pending"
-        )
-
-    claim = store.claim_capability_mutation_request(
-        owner,
-        request_id="rollback-1",
-        claim_owner="rollback-worker",
-        lease_seconds=30,
-    )
-    store.record_capability_mutation_prepared(
-        owner,
-        request_id="rollback-1",
-        claim_owner="rollback-worker",
-        claim_epoch=claim["claim_epoch"],
-        manager_operation_id="manager-op-rollback",
-        runtime_set_ref=None,
-        runtime_set_hash=None,
-        reason_code="rollback_prepared",
-    )
-    store.mark_capability_mutation_publishing(
-        owner,
-        request_id="rollback-1",
-        claim_owner="rollback-worker",
-        claim_epoch=claim["claim_epoch"],
-        reason_code="rollback_publishing",
-    )
-    store.settle_capability_mutation_receipt(
-        owner,
-        CapabilityMutationReceipt(
-            activation_request_id="rollback-1",
-            manager_operation_id="manager-op-rollback",
-            action=MutationAction.ROLLBACK,
-            pack_id=request.pack_id,
-            version="0.9.0",
-            manifest_hash="manifest-old",
-            source_fence_hash=canonical_hash(rollback_plan["source_fence"]),
-            binding_generation=2,
-            owner_binding_set_stamp="owner-stamp-rollback",
-            result_hash="rollback-result",
-            reason_code="rollback_committed",
-        ),
-    )
-    with store.read() as db:
-        assert (
-            db.execute(
-                "SELECT status FROM candidate_artifacts WHERE candidate_id='candidate-1'"
-            ).fetchone()[0]
-            == "rolled_back"
-        )
-        guard = db.execute(
-            """SELECT status,rollback_receipt_hash
-               FROM capability_activation_guards WHERE guard_id='guard-1'"""
-        ).fetchone()
-        assert tuple(guard) == ("rolled_back", "rollback-result")
-        assert (
-            db.execute(
-                "SELECT status FROM capability_quarantines WHERE pack_id=?",
-                (request.pack_id,),
-            ).fetchone()[0]
-            == "released"
-        )
-        settled_rollback = dict(
-            db.execute(
-                """SELECT * FROM capability_activation_requests
-                   WHERE activation_request_id='rollback-1'"""
-            ).fetchone()
-        )
-
-    replay = store.create_capability_mutation_request(
-        owner,
-        MutationRequest(
-            request_id="rollback-1",
-            request_fingerprint="rollback-fingerprint-1",
-            action=MutationAction.ROLLBACK,
-            candidate_id="candidate-1",
-            candidate_mode=CandidateMode.GENESIS,
-            target_owner_key=settled_rollback["target_owner_key"],
-            target_scope=settled_rollback["target_scope"],
-            target_scope_key=settled_rollback["target_scope_key"],
-            pack_id=settled_rollback["pack_id"],
-            target_version=settled_rollback["target_version"],
-            target_manifest_hash=settled_rollback["target_manifest_hash"],
-            source_fence=json.loads(settled_rollback["source_fence_json"]),
-            target_expected_absent=bool(settled_rollback["target_expected_absent"]),
-            target_expected_binding_generation=settled_rollback[
-                "target_expected_binding_generation"
-            ],
-            rollback_kind=settled_rollback["rollback_kind"],
-            activation_mode=settled_rollback["activation_mode"],
-            cause_ref=settled_rollback["cause_ref"],
-            reason_code="critical_runtime_contract",
-        ),
-    )
-    assert replay["status"] == "succeeded"
-    with store.read() as db:
-        assert (
-            db.execute(
-                """SELECT from_id FROM lineage_edges
-               WHERE to_kind='capability_mutation_request'
-                 AND to_id='rollback-1' AND relation='rollback'"""
-            ).fetchone()[0]
-            == "candidate-1"
-        )
-        assert (
-            db.execute(
-                "SELECT status FROM candidate_artifacts WHERE candidate_id='candidate-1'"
-            ).fetchone()[0]
-            == "rolled_back"
         )
 
 

@@ -288,30 +288,6 @@ class CapabilityMutationReceipt:
     schema_version: int = 1
 
 
-@dataclass(frozen=True, slots=True)
-class CapabilityGuardIncident:
-    guard_id: str
-    incident_id: str
-    source_authority: str
-    source_event_id: str
-    binding_generation: int
-    pack_id: str
-    version: str
-    manifest_hash: str
-    runtime_generation: int
-    failure_class: str
-    failure_fingerprint: str
-    source_receipt_ref: str
-    source_receipt_hash: str
-    observed_at: str
-    dedupe_hash: str
-    rollback_request_id: str
-    request_fingerprint: str
-    reason_code: str
-    severity: str = "critical"
-    schema_version: int = 1
-
-
 DETAIL_VISIBLE_TABLES: frozenset[str] = frozenset(
     {
         "growth_events",
