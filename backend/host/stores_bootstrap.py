@@ -22,7 +22,6 @@ _facts_store = None  # type: ignore[assignment]
 # 会被 Python 3.11+ GC 静默吞掉，引发"Task was destroyed but it is pending"
 # warning + 数据丢失。lifespan shutdown 时 gather 等所有 task 完成。
 _episodic_background_tasks: set = set()
-_workflow_ipc_background_tasks: set = set()
 _legacy_reflection_tasks: set = set()
 _provider_workload_maintenance_tasks: set = set()
 # 记忆系统升级 WI-M1.5: 长消息切块器。fanout 在 chunking flag 开时用它

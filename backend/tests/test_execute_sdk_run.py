@@ -1645,7 +1645,7 @@ async def test_waiting_continuation_uses_sync_sdk_signal_and_resumes(monkeypatch
         "service_context",
         SimpleNamespace(
             get=lambda name: {
-                "workflow_service": SimpleNamespace(execution_uow=execution_uow),
+                "execution_uow": execution_uow,
                 "session_db": session_db,
                 "sdk_context_staging": object(),
                 "sdk_context_source_repository": context_sources,

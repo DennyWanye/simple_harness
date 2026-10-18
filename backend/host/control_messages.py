@@ -12,14 +12,7 @@ from deskpet.execution.delivery_contracts import RunEvent, RunEventCandidate
 from deskpet.execution.run_read_model import PublicReadError
 from fastapi import WebSocket
 
-from host.chat_delivery import _broadcast_control
 from host.connections import _harness_inspector_tasks
-from host.harness_runs import _signal_product_harness_decision
-from host.ppt_outline import (
-    _ppt_notify_chat_bubble,
-    _ppt_outline_decision_notice,
-    _resolve_workflow_ppt_outline,
-)
 from host.runtime import logger, service_context
 from host.sdk_recovery import _project_open_sdk_authorizations
 
@@ -172,7 +165,7 @@ async def _handle_control_ws_message(raw: dict, *, session_id: str, ws: WebSocke
         return await _handle_task_projection_message(
             raw, session_id=session_id, ws=ws, msg_type=msg_type
         )
-    return await _handle_ppt_outline_decision(raw, session_id=session_id, msg_type=msg_type)
+    return False
 
 
 async def _handle_inspector_snapshot_request(raw, *, session_id, ws) -> bool:
@@ -330,8 +323,7 @@ async def _handle_inspector_snapshot(raw, *, session_id, ws) -> bool:
     request_id = str(raw.get("request_id") or "")
     target_session_id = str(payload.get("session_id") or session_id).strip() or session_id
     run_id = str(payload.get("run_id") or "").strip()
-    workflow_service = service_context.get("workflow_service")
-    execution_uow = getattr(workflow_service, "execution_uow", None)
+    execution_uow = service_context.get("execution_uow")
     try:
         if execution_uow is None:
             raise RuntimeError("execution_uow_unavailable")
@@ -379,8 +371,7 @@ async def _handle_inspector_snapshot(raw, *, session_id, ws) -> bool:
 async def _handle_task_projection_message(raw, *, session_id, ws, msg_type) -> bool:
     payload = raw.get("payload", {}) or {}
     target_session_id = str(payload.get("session_id") or session_id).strip() or session_id
-    workflow_service = service_context.get("workflow_service")
-    execution_uow = getattr(workflow_service, "execution_uow", None)
+    execution_uow = service_context.get("execution_uow")
     if execution_uow is None:
         await ws.send_json(
             {
@@ -494,77 +485,4 @@ async def _handle_task_projection_message(raw, *, session_id, ws, msg_type) -> b
                 },
             }
         )
-    return True
-
-
-async def _handle_ppt_outline_decision(raw, *, session_id, msg_type) -> bool:
-    if msg_type != "ppt_outline_decision":
-        return False
-    payload = raw.get("payload", {}) or {}
-    oid = str(payload.get("outline_id") or "")
-    decision = {
-        "action": str(payload.get("action") or "").strip().lower(),
-        "feedback": str(payload.get("feedback") or "").strip(),
-        "reuse_id": payload.get("reuse_id") or None,
-    }
-    if decision["action"] == "modify" and not decision["feedback"]:
-        await _ppt_notify_chat_bubble(
-            session_id,
-            "请先填写需要修改的大纲内容，再提交修改。",
-        )
-        logger.info("ppt_outline_decision_invalid_feedback", outline_id=oid)
-        return True
-    has_durable_fence = all(
-        (
-            str(payload.get("run_id") or "").strip(),
-            str(payload.get("decision_id") or "").strip(),
-            str(payload.get("nonce") or "").strip(),
-            payload.get("version") is not None,
-        )
-    )
-    target_session_id = str(payload.get("session_id") or session_id).strip() or session_id
-    if has_durable_fence:
-        try:
-            receipt = await _signal_product_harness_decision(
-                target_session_id,
-                payload,
-                decision,
-            )
-        except Exception as exc:
-            logger.warning(
-                "ppt_outline_decision_rejected",
-                outline_id=oid,
-                session_id=target_session_id,
-                error=str(exc),
-                exc_info=True,
-            )
-            return True
-        resolved = bool(
-            receipt.get("accepted")
-            if isinstance(receipt, dict)
-            else getattr(receipt, "accepted", False)
-        )
-        workflow_sid = target_session_id if resolved else None
-    else:
-        workflow_sid = await _resolve_workflow_ppt_outline(oid, decision) if oid else None
-        resolved = workflow_sid is not None
-    if resolved:
-        await _broadcast_control(
-            {
-                "type": "ppt_outline_resolved",
-                "payload": {
-                    "outline_id": oid,
-                    "session_id": workflow_sid,
-                    "decision_status": _ppt_outline_decision_notice(decision["action"]),
-                },
-            }
-        )
-        if workflow_sid is not None:
-            await _ppt_notify_chat_bubble(
-                workflow_sid,
-                _ppt_outline_decision_notice(decision["action"]),
-            )
-        logger.info("ppt_outline_decision_resolved", outline_id=oid)
-    else:
-        logger.info("ppt_outline_decision_no_pending", outline_id=oid)
     return True

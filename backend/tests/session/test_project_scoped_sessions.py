@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import ast
 import asyncio
 import os
 import sqlite3
@@ -21,7 +20,6 @@ from deskpet.session.project_binding import (
     resolve_registration,
 )
 from deskpet.workflows.startup_recovery import activate_and_recover_workflows
-from tests.host_source import host_source_tree
 
 
 async def _ready_db(path: Path) -> None:
@@ -750,50 +748,6 @@ async def test_startup_reconciles_deleted_sessions_before_any_workflow_recovery(
         "attempted": 1,
         "completed": 1,
         "failed": 0,
-    }
-
-
-def test_lifespan_uses_the_single_ordered_workflow_recovery_composition() -> None:
-    """Lock the production wiring, not only the orchestration helper."""
-
-    tree = host_source_tree()
-    # 生命周期已拆成有序的启动/关闭步骤函数（2026-10-13），一起检查
-    startup = [
-        node
-        for node in tree.body
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-        and (node.name == "lifespan" or node.name.startswith(("_startup_", "_shutdown_")))
-    ]
-    assert any(node.name == "lifespan" for node in startup)
-    calls = [node for fn in startup for node in ast.walk(fn) if isinstance(node, ast.Call)]
-
-    def call_name(call: ast.Call) -> str:
-        if isinstance(call.func, ast.Name):
-            return call.func.id
-        if isinstance(call.func, ast.Attribute):
-            return call.func.attr
-        return ""
-
-    names = [call_name(call) for call in calls]
-    assert names.count("activate_and_recover_workflows") == 1
-    assert not set(names).intersection(
-        {
-            "activate_runtime",
-            "recover_expired",
-            "recover_open_decision_events",
-            "recover_due_deliveries",
-            "recover_pending",
-            "start_dispatcher",
-        }
-    )
-    composition = next(
-        call for call in calls if call_name(call) == "activate_and_recover_workflows"
-    )
-    assert {keyword.arg for keyword in composition.keywords} == {
-        "project_bindings",
-        "workflow_service",
-        "workflow_launcher",
-        "required_runtime_identities",
     }
 
 

@@ -94,8 +94,7 @@ async def _initialize_companion_projection_services() -> None:
 def _initialize_companion_action_decision_service() -> None:
     """Bind all five trusted card actions to explicit production services."""
 
-    workflow_service = service_context.get("workflow_service")
-    uow = getattr(workflow_service, "execution_uow", None)
+    uow = service_context.get("execution_uow")
     unavailable = {
         "companion_growth_action_decision_service": "companion_action_decision_dependencies_unavailable",
         "companion_growth_evaluation_decision_service": "companion_evaluation_decision_dependencies_unavailable",

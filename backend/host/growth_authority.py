@@ -120,7 +120,6 @@ class _GrowthAuthorityInit:
     session_db: Any = None
     state_db_path: Any = None
     store: Any = None
-    workflow_service: Any = None
 
 
 async def _initialize_growth_authority() -> None:
@@ -157,8 +156,7 @@ async def _initialize_growth_authority() -> None:
 
     st.router = await _start_growth_router(st.preference_resolver, st.reminder_service, st.store)
     st.identity_gate = IdentityReadyGate()
-    st.workflow_service = service_context.get("workflow_service")
-    st.execution_state = None if st.workflow_service is None else st.workflow_service.execution_uow
+    st.execution_state = service_context.get("execution_uow")
     # A missing port keeps the dormant gate fail-closed. Task 13 must rebind
     # the live execution projection before enabling Companion authority.
 

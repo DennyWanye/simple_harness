@@ -54,8 +54,8 @@ from host.startup_core import (
 )
 
 # isort: split
-from host.startup_workflows import (
-    _startup_workflow_services,
+from host.startup_execution import (
+    _startup_execution_ledger,
 )
 
 # isort: split
@@ -82,7 +82,7 @@ async def lifespan(app: FastAPI):
     _provider_readiness, startup_epoch = await _startup_core_services()
     await _startup_provider_routing(_provider_readiness)
     await _startup_search_and_billing()
-    _sdb = await _startup_workflow_services()
+    _sdb = await _startup_execution_ledger()
     await _startup_restore_and_skill_prewarm()
     _vw = await _startup_embedder_and_workload_audit()
     await _startup_vector_worker(_sdb, _vw)

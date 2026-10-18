@@ -11,6 +11,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from dataclasses import replace as dataclass_replace
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import httpx
@@ -283,7 +284,7 @@ class _SdkRuntimeStackBuild:
     verification_driver_factory: Any = None
     visible_tool_names: Any = None
     workflow_metadata: Any = None
-    workflow_service: Any = None
+    execution_uow: Any = None
 
 
 async def _build_product_sdk_runtime_stack(
@@ -367,7 +368,7 @@ async def _prepare_tool_authorities(st: _SdkRuntimeStackBuild) -> None:
 
     # Build tool catalog dependencies
     st.todo_session_db = service_context.get("session_db")
-    st.workflow_service = service_context.get("workflow_service")
+    st.execution_uow = service_context.get("execution_uow")
     st.context_page_store = service_context.get("context_page_in_store")
     st.search_gateway = service_context.get("search_gateway")
     st.authorization_runtime = service_context.get("authorization_runtime")
@@ -547,7 +548,11 @@ def _build_drivers_and_dependencies(st: _SdkRuntimeStackBuild) -> None:
 
     st.dependencies = ToolCatalogDependencies(
         todo_session_db=st.todo_session_db,
-        workflow_service_provider=lambda: st.workflow_service,
+        # 等子代理工具（字节钉在冻结工具清单里，不能改）按 ``provider().execution_uow`` 取账本，
+        # 这里给它一个只带账本的对象。
+        workflow_service_provider=lambda: (
+            None if st.execution_uow is None else SimpleNamespace(execution_uow=st.execution_uow)
+        ),
         context_page_store=st.context_page_store,
         execution_context_getter=st.execution_context_getter,
         capability_bridge_service=st.capability_bridge,

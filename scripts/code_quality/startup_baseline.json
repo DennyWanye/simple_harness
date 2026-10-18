@@ -60,7 +60,7 @@
  ],
  "import_time_registrations": [
   [
-   "workflow_service",
+   "execution_uow",
    null
   ],
   [
@@ -178,8 +178,8 @@
    "SearchGateway"
   ],
   [
-   "workflow_service",
-   "WorkflowService"
+   "execution_uow",
+   "SqliteExecutionUnitOfWork"
   ],
   [
    "harness_public_read_service",
@@ -515,6 +515,7 @@
   "context_assembler": null,
   "context_page_in_store": "ContextPageInStore",
   "embedder": null,
+  "execution_uow": "SqliteExecutionUnitOfWork",
   "frozen_skill_instruction_resolver": "SkillPackSnapshotResolver",
   "growth_authority_cutover": "GrowthAuthorityCutoverCoordinator",
   "harness_public_read_service": "HarnessPublicReadService",
@@ -576,8 +577,7 @@
   "tool_router": "ToolRegistry",
   "vector_worker": null,
   "watchdog": null,
-  "window_control_credential_verifier": null,
-  "workflow_service": "WorkflowService"
+  "window_control_credential_verifier": null
  },
  "shutdown_registrations": [
   [

@@ -168,12 +168,12 @@ async def _shutdown_services() -> None:
             logger.warning("capability_platform_shutdown_failed", error=str(exc), exc_info=True)
         finally:
             service_context.register("capability_platform", None)
-    _workflow_service = service_context.get("workflow_service")
-    if _workflow_service is not None:
+    _execution_uow = service_context.get("execution_uow")
+    if _execution_uow is not None:
         try:
-            await asyncio.wait_for(_workflow_service.close(), timeout=5.0)
+            await asyncio.wait_for(_execution_uow.close(), timeout=5.0)
         except Exception as exc:  # noqa: BLE001
-            logger.warning("workflow_owner_shutdown_failed", error=str(exc), exc_info=True)
+            logger.warning("execution_ledger_shutdown_failed", error=str(exc), exc_info=True)
     # stop the watchdog cleanly so its task doesn't dangle past
     # shutdown and produce "Task was destroyed but it is pending!" noise.
     _wd = service_context.get("watchdog")

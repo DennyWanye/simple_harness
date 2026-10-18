@@ -47,7 +47,7 @@ PROJECT_ROOT = _CONFIG_PATH.parent
 SHARED_SECRET = secrets.token_hex(16)
 
 service_context = ServiceContext()
-service_context.register("workflow_service", None)
+service_context.register("execution_uow", None)
 service_context.register("run_execution_fence_acquirer", None)
 service_context.register("provider_invocation_coordinator", None)
 service_context.register("harness_public_read_service", None)

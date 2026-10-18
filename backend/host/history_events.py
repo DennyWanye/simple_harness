@@ -19,9 +19,13 @@ async def _attach_workflow_history_events(
     messages: list[dict[str, Any]],
     session_id: str,
     session_db: Any,
-    workflow_service: Any,
+    execution_uow: Any,
 ) -> None:
-    """Attach fenced durable envelopes to SessionDB history messages in place."""
+    """Attach fenced durable envelopes from the execution ledger to history messages in place.
+
+    会话库里引用的事件号只在执行账本（``execution_events``）里查；查不到的
+    （后台旧工作流引擎时代的旧引用）不附带。
+    """
 
     event_ids = list(
         dict.fromkeys(
@@ -30,27 +34,17 @@ async def _attach_workflow_history_events(
             if str(row.get("workflow_event_id") or "").strip()
         )
     )
-    if not event_ids or workflow_service is None:
+    if not event_ids or execution_uow is None:
         return
     delivery_state = await session_db.get_session_delivery_state(session_id)
     if delivery_state.get("deleted_at") is not None:
         return
 
-    # New production rows live only in execution_events.  Hydrate those first
-    # and use the legacy workflow service solely as a compatibility fallback
-    # for old SessionDB references that predate Kernel activation.
-
     events_by_id: dict[str, dict[str, Any]] = {}
-    missing_event_ids: list[str] = []
-    execution_uow = getattr(workflow_service, "execution_uow", None)
     for event_id in event_ids:
-        if execution_uow is None:
-            missing_event_ids.append(event_id)
-            continue
         try:
             canonical_event = await execution_uow.get_event(event_id)
         except EventNotFound:
-            missing_event_ids.append(event_id)
             continue
         if canonical_event.session_id != session_id:
             continue
@@ -68,37 +62,6 @@ async def _attach_workflow_history_events(
                     payload["status"] = decision.status.value
                     payload["version"] = decision.decision_version
         events_by_id[event_id] = envelope
-
-    # The service deliberately caps one hydration request at 100 ids.  Chat
-    # sessions can legitimately contain more than that, especially now that a
-    # DeepResearch run publishes one durable event per visible stage.  Hydrate
-    # in bounded batches instead of rejecting the entire session history.
-    hydrated_events: list[dict[str, Any]] = []
-    for offset in range(0, len(missing_event_ids), 100):
-        hydrated_page = await workflow_service.hydrate_session_history_event_ids(
-            session_id,
-            missing_event_ids[offset : offset + 100],
-            current_session_epoch=int(delivery_state.get("epoch", 0)),
-            session_deleted=False,
-        )
-        hydrated_events.extend(hydrated_page.get("events", []))
-    events_by_id.update({str(event.get("event_id") or ""): event for event in hydrated_events})
-    human_store = getattr(workflow_service, "human_store", None)
-    for event in events_by_id.values():
-        if event.get("event_type") != "workflow.decision" or human_store is None:
-            continue
-        payload = event.get("payload")
-        decision_id = str((payload or {}).get("decision_id") or "")
-        if not decision_id:
-            continue
-        decision = await human_store.get_decision(decision_id)
-        if decision is not None and isinstance(payload, dict):
-            run = await workflow_service.run_store.get_run(decision.run_id)
-            payload["status"] = (
-                decision.status.value
-                if run is not None and str(run.get("status") or "") == "waiting"
-                else str((run or {}).get("status") or "unavailable")
-            )
     for message in messages:
         event = events_by_id.get(str(message.get("id") or ""))
         if event is not None:

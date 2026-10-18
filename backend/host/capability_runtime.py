@@ -68,11 +68,10 @@ async def _initialize_capability_runtime(*, clock=time.time) -> None:
 
     if deskpet_tool_registry_v2 is None:
         raise RuntimeError("ToolRegistry V2 is unavailable")
-    workflow_service = service_context.get("workflow_service")
-    if workflow_service is None:
+    uow = service_context.get("execution_uow")
+    if uow is None:
         raise RuntimeError("workflow execution UoW is unavailable")
 
-    uow = workflow_service.execution_uow
     store = CapabilityStore(uow)
     await store.initialize()
     imported = await import_legacy_auto_mode_once(store, _automode_path)
@@ -338,7 +337,7 @@ async def _authorization_policy_snapshot() -> dict[str, object]:
     """MM-D4: authoritative authorization-policy view for the settings panel.
 
     The single source of truth is the ``CapabilityStore`` over
-    ``workflow_service.execution_uow`` (workflow.db ``authorization_policy_state``).
+    execution ledger ``execution_uow`` (workflow.db ``authorization_policy_state``).
     The identically named table in ``sdk-product-state.db`` is DDL residue
     (MM-D1) and is never read here. ``enabled`` stays for wire compatibility;
     ``mode``/``generation``/``provenance`` let the panel render what actually

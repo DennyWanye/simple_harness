@@ -65,8 +65,8 @@ _VALID_SERVICES = frozenset(
         # PermissionGate 注册成 service 让 p4_ipc 的只读「列 pending」接口拿到它，
         # 供 ApprovalCenterPanel 聚合展示。只读 — 不改 gate 决策路径。
         "permission_gate",  # PermissionGate — 只读 list_pending 供审批聚合面板
-        # Durable graph runtime and unified Trace/Replay/Eval facade.
-        "workflow_service",
+        # 执行账本（workflow.db 的 execution_* / capability_* 表），全产品共用。
+        "execution_uow",
         "run_execution_fence_acquirer",
         "provider_invocation_coordinator",
         "provider_workload_router",
@@ -198,7 +198,7 @@ class ServiceContext:
     subagent_scheduler: Any | None = None
     # --- WI-TG-2 审批 UX 聚合 -------------------------------------------------
     permission_gate: Any | None = None
-    workflow_service: Any | None = None
+    execution_uow: Any | None = None
     run_execution_fence_acquirer: Any | None = None
     provider_invocation_coordinator: Any | None = None
     provider_workload_router: Any | None = None

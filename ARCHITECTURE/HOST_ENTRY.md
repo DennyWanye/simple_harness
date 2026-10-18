@@ -16,7 +16,7 @@
 1. `_startup_core_services` → 返回提供方路由就绪状态、启动纪元
 2. `_startup_provider_routing(提供方路由就绪状态)`
 3. `_startup_search_and_billing`
-4. `_startup_workflow_services` → 返回会话库（单条 1421 行的语句，拆分在后面的阶段）
+4. `_startup_execution_ledger` → 返回会话库（执行账本独立构造并登记 `execution_uow`；后台旧工作流引擎 2026-10-18 起不再启动）
 5. `_startup_restore_and_skill_prewarm`
 6. `_startup_embedder_and_workload_audit` → 返回向量工作器
 7. `_startup_vector_worker(会话库, 向量工作器)`
@@ -87,7 +87,6 @@
 | `host/llm_providers.py` | 207 | 模型提供方的启动装配：设置页的运行时覆盖、密钥解析、本地与云端提供方、计费账本、混合路由。 |
 | `host/logging_setup.py` | 77 | 后端进程的日志配置：标准库日志写文件与控制台，structlog 输出 JSON，并做日志脱敏。导入本模块即完成配置。 |
 | `host/memory_messages.py` | 203 | 控制通道的记忆管理消息与设置页技能安装适配 |
-| `host/ppt_outline.py` | 231 | PPT 大纲与 PPT 生产接线：大纲卡片通知与恢复、大纲决定的提示、聊天气泡、启动时清理悬挂大纲、PPT 工作流适配器与渲染线程池。 |
 | `host/product_agent.py` | 248 | 产品 Agent：上下文系统恢复、伴侣后台请求判断、产品 Agent 主循环构造 |
 | `host/provider_chain.py` | 150 | 按会话选模型提供方链：代码工作流的提供方选择与恢复、持久任务的提供方快照、Agent 的提供方链构造与解析。 |
 | `host/routes_cloud_config.py` | 301 | HTTP 路由：云端模型配置（POST /config/cloud） |
@@ -107,7 +106,7 @@
 | `host/startup_background.py` | 351 | 启动步骤：恢复与技能预热、嵌入与负载审计、向量工作器、整理提示与图片工作器与 MCP |
 | `host/startup_core.py` | 292 | 启动步骤：核心服务与记忆纪元、提供方路由、检索网关与计费账本、桌面测试桥与实时语音 |
 | `host/startup_supervision.py` | 347 | 启动步骤：工具熔断与会话活跃度、监督 Agent、模型上下文窗口 |
-| `host/startup_workflows.py` | 1460 | 启动步骤：会话库检查与工作流服务接线 |
+| `host/startup_execution.py` | 130 | 启动步骤：会话库、执行账本、模型调用协调与负载路由、公开查看服务 |
 | `host/state.py` | 60 | 宿主进程的运行期单例：启动时创建，关闭时清空。 |
 | `host/stores_bootstrap.py` | 146 | 会话与存储的启动装配：会话账本、各存储的模块级占位、技能加载与托管技能投影、项目绑定与会话创建服务、基础 Agent。 |
 | `host/summary_quality.py` | 41 | 会话摘要质量辅助函数（生产代码已无调用，归阶段 8 删除） |
@@ -213,8 +212,6 @@
 | `CloudConfigRequest` | `host/routes_cloud_config.py` |
 | `_commit_product_preflight_block` | `host/harness_chat.py` |
 | `_complete_growth_authority_cutover` | `host/growth_authority.py` |
-| `_configure_ppt_production` | `host/ppt_outline.py` |
-| `_configure_ppt_workflow_adapter` | `host/ppt_outline.py` |
 | `_configured_context_compaction_model` | `host/context_projection.py` |
 | `control_channel` | `host/control_channel.py` |
 | `_ControlConnection` | `host/control_connection.py` |
@@ -231,7 +228,6 @@
 | `_ensure_sdk_recovery_watcher` | `host/sdk_recovery.py` |
 | `_ensure_task_scope_update_service` | `host/sdk_services.py` |
 | `_execute_sdk_run` | `host/sdk_execution.py` |
-| `_expire_ppt_outline_dangling_for_startup` | `host/ppt_outline.py` |
 | `_freeze_current_session_owner` | `host/stores_bootstrap.py` |
 | `_freeze_durable_task_provider_snapshot` | `host/provider_chain.py` |
 | `_freeze_sdk_catalog` | `host/sdk_services.py` |
@@ -265,9 +261,6 @@
 | `_make_str_llm_call` | `host/llm_calls.py` |
 | `metrics` | `host/routes_health.py` |
 | `_persist_supervisor_enabled` | `host/settings_persistence.py` |
-| `_ppt_notify_chat_bubble` | `host/ppt_outline.py` |
-| `_ppt_outline_decision_notice` | `host/ppt_outline.py` |
-| `_ppt_workflow_outline_notify` | `host/ppt_outline.py` |
 | `_prepare_sdk_context_snapshot` | `host/sdk_context.py` |
 | `_primary_history_policy` | `host/sdk_services.py` |
 | `_product_harness_has_live_attached_child` | `host/harness_runs.py` |
@@ -298,11 +291,9 @@
 | `_resolve_primary_registry_provider` | `host/llm_calls.py` |
 | `_resolve_sdk_provider_binding_resolver` | `host/sdk_execution.py` |
 | `_resolve_selected_project_directory` | `host/harness_chat.py` |
-| `_resolve_workflow_ppt_outline` | `host/ppt_outline.py` |
 | `_restart_orchestration` | `host/settings_persistence.py` |
 | `_restore_product_context_os` | `host/product_agent.py` |
 | `_restore_sdk_delivery_route` | `host/sdk_recovery.py` |
-| `_resume_workflow_ppt_outline` | `host/ppt_outline.py` |
 | `_run_product_harness_chat` | `host/harness_chat.py` |
 | `_run_product_harness_chat_with_timeout` | `host/harness_chat.py` |
 | `_run_product_harness_continuation` | `host/harness_runs.py` |
@@ -347,7 +338,7 @@
 | `_startup_self_healing` | `host/startup_supervision.py` |
 | `_startup_supervisor` | `host/startup_supervision.py` |
 | `_startup_vector_worker` | `host/startup_background.py` |
-| `_startup_workflow_services` | `host/startup_workflows.py` |
+| `_startup_execution_ledger` | `host/startup_execution.py` |
 | `_trigger_harness_recovery_after_identity_bind` | `host/sdk_execution.py` |
 | `_trusted_local_page_url_from_env` | `host/sdk_context.py` |
 | `_try_resolve_execution_workflow_decision` | `host/harness_runs.py` |

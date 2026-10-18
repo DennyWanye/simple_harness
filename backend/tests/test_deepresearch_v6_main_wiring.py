@@ -46,8 +46,6 @@ from deskpet.workflows.store.checkpointer import NativeCheckpointStore
 from deskpet.workflows.store.registered_blob_store import RegisteredBlobStore
 from deskpet.workflows.store.run_store import RunFence
 
-from tests.host_source import host_nested_function_source, host_source_text
-
 
 @pytest.mark.parametrize(
     "environment,expected,reason",
@@ -121,32 +119,6 @@ def test_explicit_v5_pin_remains_supported_for_new_roots() -> None:
         "v5",
         "configured",
     )
-
-
-def test_main_keeps_v6_and_defaults_new_roots_to_simplified_v7() -> None:
-    # 注册语句随代码拆分可能换了缩进层级：按去掉缩进后的文本查
-    source = "\n".join(line.strip() for line in host_source_text().splitlines())
-    registration = source.index('"deep_research",\n"v6",')
-    # 截到注册语句末尾（原来用函数内的一条导入作终点，该导入已上提到模块顶部）
-    marker = "context_factory=_deep_v7_context_factory"
-    registration_end = source.index(marker, registration) + len(marker)
-    assert "new_runs_enabled=True" in source[registration:registration_end]
-    assert '"v7",\nstate_factory=_deep_v7_state_factory' in source[registration:registration_end]
-    assert "context_factory=_deep_v7_context_factory" in source[registration:registration_end]
-
-    # R6 removed the product-specific production starter. New roots are routed
-    # through ProductVenue -> RunKernel -> WorkflowDriver; the tool keeps no
-    # second launch owner while historical workflow versions remain registered
-    # above for recovery.
-    assert "async def _start_deepresearch_graph" not in source
-    assert "_workflow_research_tools.set_deepresearch_workflow_starter(None)" in source
-    assert "_build_product_sdk_runtime_stack" in source
-    assert "build_production_runtime(config)" in source
-
-
-def test_main_websocket_delivery_returns_typed_best_effort_outcome() -> None:
-    handler = host_nested_function_source("_workflow_websocket_delivery")
-    assert "broadcast_websocket_best_effort" in handler
 
 
 class _RecordingWebSocket:

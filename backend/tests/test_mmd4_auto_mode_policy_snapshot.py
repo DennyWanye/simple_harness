@@ -83,10 +83,10 @@ async def test_snapshot_without_store_is_marked_non_authoritative(
     assert snapshot["generation"] == 0
 
 
-def test_capability_store_is_bound_to_workflow_execution_uow() -> None:
-    """结构锁：注册进 service_context 的 store 建在 workflow.db 的 uow 上。"""
+def test_capability_store_is_bound_to_execution_ledger() -> None:
+    """结构锁：注册进 service_context 的 store 建在执行账本（workflow.db）上。"""
     text = host_source_text()
-    assert "uow = workflow_service.execution_uow" in text
+    assert 'uow = service_context.get("execution_uow")' in text
     assert "store = CapabilityStore(uow)" in text
     assert 'service_context.register("capability_store", store)' in text
     # 回执由快照函数产生，而不是把请求里的 enabled 原样回显。

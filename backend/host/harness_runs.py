@@ -227,7 +227,7 @@ async def _try_resolve_execution_workflow_decision(
     *,
     session_id: str,
     raw: Mapping[str, Any],
-    workflow_service: Any,
+    execution_uow: Any,
 ) -> bool:
     """Route ContextTrace decisions owned by the execution ledger.
 
@@ -247,7 +247,6 @@ async def _try_resolve_execution_workflow_decision(
     decision_id = str(payload.get("decision_id") or "").strip()
     if not decision_id:
         return False
-    execution_uow = getattr(workflow_service, "execution_uow", None)
     if execution_uow is None or not hasattr(execution_uow, "list_open_decision_projections"):
         return False
     projection = next(
@@ -338,8 +337,7 @@ async def _run_product_harness_continuation(
 ) -> None:
     """Append one user message to an existing nonterminal root Run."""
 
-    workflow_service = service_context.get("workflow_service")
-    execution_uow = getattr(workflow_service, "execution_uow", None)
+    execution_uow = service_context.get("execution_uow")
     if (
         host_state.sdk_ingress is None
         or not host_state.sdk_ingress.accepting

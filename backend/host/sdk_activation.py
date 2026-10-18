@@ -181,40 +181,25 @@ async def _activate_product_sdk_runtime(
 ) -> None:
     """Activate SDK Runtime Stack and ingress (Slice C production)."""
 
-    workflow_service = service_context.get("workflow_service")
-    if workflow_service is None:
-        raise RuntimeError("workflow service is required for SDK Runtime activation")
-    uow = workflow_service.execution_uow
+    uow = service_context.get("execution_uow")
+    if uow is None:
+        raise RuntimeError("execution ledger is required for SDK Runtime activation")
 
     await uow.initialize()
     state = await uow.get_runtime_state()
     if state.phase == "legacy":
         state = await uow.activate_runtime(command=RuntimeActivationCommand.advance())
     if state.phase == "draining":
-        while lease := await uow.activate_runtime(
+        # 新库进到这一步时排空清单是空的，直接推进。后台旧工作流引擎已删除，
+        # 没有谁能把旧库里未结束的旧运行跑完，所以有残留就明确报错，不迁移。
+        lease = await uow.activate_runtime(
             command=RuntimeActivationCommand.claim(f"deskpet-sdk:{os.getpid()}", lease_seconds=30.0)
-        ):
-            try:
-                ref = lease.ref
-                launcher = getattr(workflow_service, "launcher", None)
-                if ref.source_kind == "workflow_run" and launcher is not None:
-                    await launcher.recover_pending(only_run_ids={ref.source_run_id})
-                if ref in await uow.scan_legacy_drain_manifest():
-                    raise RuntimeError(
-                        f"legacy durable run is still active: {ref.source_kind}/{ref.source_run_id}"
-                    )
-            except BaseException as exc:
-                await uow.activate_runtime(
-                    command=RuntimeActivationCommand.settle(
-                        lease, error=f"{type(exc).__name__}: {exc}"
-                    )
-                )
-                raise
-            if (
-                await uow.activate_runtime(command=RuntimeActivationCommand.settle(lease))
-                is not True
-            ):
-                raise RuntimeError("legacy drain lease was lost before settlement")
+        )
+        if lease:
+            ref = lease.ref
+            error = f"legacy durable run cannot be drained: {ref.source_kind}/{ref.source_run_id}"
+            await uow.activate_runtime(command=RuntimeActivationCommand.settle(lease, error=error))
+            raise RuntimeError(error)
         state = await uow.activate_runtime(command=RuntimeActivationCommand.advance())
     if state.phase not in {"activated", "open"}:
         raise RuntimeError(f"unsupported activation phase: {state.phase}")

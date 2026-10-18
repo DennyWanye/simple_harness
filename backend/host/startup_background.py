@@ -14,7 +14,6 @@ from deskpet.execution.provider_workloads import workload_context as _workload_c
 from deskpet.mcp.bootstrap import create_and_start_from_config as _mcp_bootstrap
 
 from host.llm_providers import _context_os_e2e_boot_hooks
-from host.ppt_outline import _expire_ppt_outline_dangling_for_startup
 from host.runtime import config, logger, service_context
 from host.stores_bootstrap import (
     _fact_extractor,
@@ -25,8 +24,7 @@ from host.tools_bootstrap import deskpet_tool_registry_v2
 
 
 async def _startup_restore_and_skill_prewarm() -> None:
-    """启动：PPT 大纲清理、技能目录启动。"""
-    _expire_ppt_outline_dangling_for_startup()
+    """启动：技能目录启动。"""
     _legacy_sl = service_context.get("skill_loader")
     _managed_sl = service_context.get("managed_skill_discovery_projection")
     for _skill_surface, _skill_surface_name in (

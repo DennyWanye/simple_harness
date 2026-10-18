@@ -96,23 +96,11 @@ async def _cc_session_delete(conn: _ControlConnection, raw: dict, msg_type: str)
     if _sd_sdb is not None and _sd_sid:
         try:
             await assert_not_primary_authority(_sd_sdb._db_path, _sd_sid)
-            _sd_workflows = service_context.get("workflow_service")
             _sd_creation = service_context.get("session_creation_service")
-            if _sd_workflows is not None:
-                async with _sd_workflows.session_lock(_sd_sid):
-                    if _sd_creation is not None:
-                        await _sd_creation.mark_deleted(_sd_sid)
-                    else:
-                        await _sd_sdb.clear(_sd_sid)
-                    await _sd_workflows.cancel_runs_for_session(
-                        _sd_sid,
-                        reason="session_deleted",
-                    )
+            if _sd_creation is not None:
+                await _sd_creation.mark_deleted(_sd_sid)
             else:
-                if _sd_creation is not None:
-                    await _sd_creation.mark_deleted(_sd_sid)
-                else:
-                    await _sd_sdb.clear(_sd_sid)
+                await _sd_sdb.clear(_sd_sid)
             _sd_ok = True
             logger.info("session_deleted sid=%s", _sd_sid)
         except Exception as _sd_exc:  # noqa: BLE001
@@ -304,13 +292,12 @@ async def _cc_session_messages_load(conn: _ControlConnection, raw: dict, msg_typ
                         )
                 msgs.append(_entry)
 
-            _workflow_history = service_context.get("workflow_service")
             await _attach_workflow_history_events(
                 rows=rows,
                 messages=msgs,
                 session_id=target_sid,
                 session_db=sdb,
-                workflow_service=_workflow_history,
+                execution_uow=service_context.get("execution_uow"),
             )
             _companion_history_events = await _attach_companion_history_events(rows=rows)
         except Exception as exc:  # noqa: BLE001

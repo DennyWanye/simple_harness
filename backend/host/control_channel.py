@@ -16,7 +16,6 @@ from deskpet.companion.detail_query import CompanionDetailQueryError
 from deskpet.memory.control_binding import HumanMemoryControlBinding
 from deskpet.memory.primary_authority import assert_not_primary_authority
 from deskpet.orchestration.handlers import handle as _orchestration_handle
-from deskpet.workflows.ipc import start_workflow_ipc_dispatch
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from observability.startup import registry as startup_errors
 
@@ -98,7 +97,6 @@ from host.sdk_execution import (
     _trigger_harness_recovery_after_identity_bind,
 )
 from host.state import host_state
-from host.stores_bootstrap import _workflow_ipc_background_tasks
 
 control_router = APIRouter()
 
@@ -143,35 +141,27 @@ async def _cc_workflow_routes(conn: _ControlConnection, raw: dict, msg_type: str
     ws = conn.ws
     session_id = conn.session_id
 
-    workflow_service = service_context.get("workflow_service")
-    if workflow_service is None:
-        await ws.send_json(
-            {
-                "type": "workflow_ipc_error",
-                "request_type": msg_type,
-                "request_id": raw.get("request_id"),
-                "ok": False,
-                "error": {
-                    "code": "workflow_service_unavailable",
-                    "message": "Durable workflow service is unavailable",
-                    "retryable": True,
-                },
-            }
-        )
-    else:
-        if await _try_resolve_execution_workflow_decision(
-            ws,
-            session_id=session_id,
-            raw=raw,
-            workflow_service=workflow_service,
-        ):
-            return
-        start_workflow_ipc_dispatch(
-            workflow_service,
-            raw,
-            ws.send_json,
-            _workflow_ipc_background_tasks,
-        )
+    # 执行账本里的决定仍按运行内核处理；后台旧工作流引擎已不启动，其余工作流消息一律回不可用。
+    if await _try_resolve_execution_workflow_decision(
+        ws,
+        session_id=session_id,
+        raw=raw,
+        execution_uow=service_context.get("execution_uow"),
+    ):
+        return
+    await ws.send_json(
+        {
+            "type": "workflow_ipc_error",
+            "request_type": msg_type,
+            "request_id": raw.get("request_id"),
+            "ok": False,
+            "error": {
+                "code": "workflow_service_unavailable",
+                "message": "Durable workflow service is unavailable",
+                "retryable": False,
+            },
+        }
+    )
 
 
 async def _cc_unknown(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
