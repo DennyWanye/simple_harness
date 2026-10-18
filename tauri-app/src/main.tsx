@@ -4,7 +4,6 @@
 import { createRoot } from "react-dom/client";
 import "./index.css";
 import { applyTheme, watchSystemTheme } from "./theme/applyTheme";
-import { BACKEND_PORT } from "./backendPort";
 import "./main.styles.css";
 
 // 设计令牌变量表必须先于任何组件渲染注入（深浅两套镜像）。
@@ -26,31 +25,6 @@ document.addEventListener(
   },
   true,
 );
-
-// 全局 metric emit sink。
-// ArtifactCard 按钮点击会调 window.__deskpet_metrics_emit；这里 wire 到
-// backend POST /metrics/event，最终落地 <user_data>/metrics.jsonl。
-// 无 backend 时静默丢（dev/test 友好），不破 UI。
-declare global {
-  interface Window {
-    __deskpet_metrics_emit?: (event: string, payload: Record<string, unknown>) => void;
-  }
-}
-window.__deskpet_metrics_emit = (event: string, payload: Record<string, unknown>) => {
-  try {
-    void fetch(`http://127.0.0.1:${BACKEND_PORT}/metrics/event`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ event, detail: payload }),
-      // fire-and-forget — 不阻 UI
-      keepalive: true,
-    }).catch(() => {
-      /* silent — backend down or offline */
-    });
-  } catch {
-    // Safari old / restricted env — never break UI
-  }
-};
 
 // 真 UI 验证 route — `#/slashtest` 独立渲染 InputBar 让真浏览器
 // E2E 能真触发 / 命令 autocomplete 状态机（无需 Tauri invoke 创 session）.

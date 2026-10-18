@@ -1,3 +1,5 @@
+最后更新：2026-10-18 CST（收尾补充：旧会话界面下线）。**会话视图只剩主对话**（`views/PrimaryChatView.tsx`）：旧会话界面 `views/ChatView.tsx` 整棵删除，连同会话列表 `SessionList`、消息流 `MessageStreamPanel`/`MessageStreamRows`、`code-panel/MessageBubble`、Harness 检查器、项目检查器与选择器、产物卡 `ArtifactCard`、PPT 大纲确认卡、伴侣卡片与详情、实时语音通话前端（共 59 个源文件、32 个测试文件；画廊相应场景删除，`project-inspector` 场景改为 `project-directory-cards`）。`main.tsx` 的度量上报（只服务产物卡）删除。主对话标题栏新增两项：**上下文用量环**（读 `primary.context.usage`，最近一轮运行；点开看明细，明细窗口 `components/ContextBreakdownModal.tsx` 由调用方传 `query()`，主对话发 `primary.context.breakdown`，按用量样本换代重读）和 **"切换模型"按钮**（`code-panel/ChangeModelModal.tsx`，改的是提供方链首的默认模型，与设置页同一处）。旧界面的其余前端残留（InputBar 非主对话分支、sessionsStore 收件箱与严重度、controlWs 会话补读等）下一轮重扫处理（设计 `plans/2026-10-12-code-quality/收尾补充-旧会话界面-设计.md` §6.4）。
+
 最后更新：2026-10-17 CST（代码质量整治阶段 9I：内联样式转生成类）。**样式分两层**：所有手写样式（`index.css`、各组件 `.css`、`@xyflow/react` 的样式经 `LiveGraph.css` 顶部 `@import … layer(sh-base)`）都在层叠层 `sh-base` 里；组件里可证明静态的内联样式由 `scripts/code_quality/ts_inline_to_class.mjs` 转成同目录生成文件 `<组件>.styles.css` 的类 `sh-<组件>-<序号>`（文件头写明"生成文件，不要手改"），这些类不分层，因此地位与原内联样式相同（压过层里的普通规则，输给层里的 `!important`）。运行时 `<style>` 只有主题变量 `sh-theme`；尺寸令牌（间距、圆角、控件高度、字号行高、字重、字体）也在其中生成 `--sh-*` 变量，生成类只在值直接来自令牌时引用变量。依赖运行时值的样式仍写内联（约 195 处）。新增或改样式：静态样式可以直接写类或继续写内联后重新运行转换工具；转换与核对流程见 `plans/2026-10-12-code-quality/阶段9-9I-批次记录.md`。测试读样式用 `src/test/generatedStyle.ts` 的 `styleOf(元素)`（生成类加内联）。浏览器样式画廊 `tauri-app/tests/browser/style-gallery*`（78 个场景）配 `scripts/code_quality/webkit_style_compare.py` 做 WebKit 产物逐元素比对。
 
 最后更新：2026-10-17 CST（代码质量整治阶段 9I，产品行为修正）。**按钮不可选在 WebKit 里落实**：用户 2026-09-26 要求"界面文字都能选中，按钮自身仍不可选"，但 WebKit 只认带前缀的 `-webkit-user-select`，原先只写 `userSelect: "none"` 的按钮在桌面程序里一直可选。现在 `theme/components.ts` 的 `buttonStyle()`、SettingsProviders 拖拽把手、SubagentProgressPanel 折叠头、PermissionPopup 与 SkillStorePanel 的摘要行都同时写 `WebkitUserSelect: "none"`；对话框与 `[data-bp-selectable]` 里仍由 `index.css` 的 `-webkit-user-select: text !important` 保持可选（记录 `plans/2026-10-12-code-quality/阶段9-偏差单-按钮不可选生效.md`）。
@@ -498,17 +500,16 @@ Realtime 等保留项也仍未接完。
 - `tauri.conf.json`、HTML/CSS 与 React 挂载前背景均为不透明工作台口径；前端依赖锁不再
   包含 Live2D/Cubism/Pixi，后端也不再解析或广播角色表情/动作标签。
 - 布局：App 层 `useState<WorkbenchView>` → `components/WorkbenchShell.tsx`
-  （Sidebar 240px + 内容区）；四视图 `views/`：ChatView（常挂载，消息面板内容区迁入，
-  含 Harness 巡检/模型切换/ContextRing/CompanionDetailModal/InputBar）、SkillsView、
-  ArtifactsView（Rust `list_artifacts` command 数据源）、SettingsView（SettingsPanel
-  page variant）。会话列表 `components/SessionList.tsx` 挂侧栏。
+  （Sidebar 240px + 内容区）；视图 `views/`：PrimaryChatView（主对话，含上下文用量环/明细、
+  切换模型、InputBar）、SkillsView、ArtifactsView（Rust `list_artifacts` command 数据源）、
+  SettingsView（SettingsPanel page variant）、MissionsView。旧 ChatView 与侧栏会话列表
+  2026-10-18 已删除。
 - 双控制连接保留：App ControlChannel（identity_bind）+ controlWs 单例
   （companion_action，label=main——五处硬编码已迁移：前端常量/Rust 白名单/
   Python 白名单/ingress 标签/companion.db 迁移 007）。连接徽章双源取最差态。
 - 托管账户登录及其 `AuthAdapter`/登录注册事件/侧栏账户入口均已删除。identity_bind 直接
   使用 Rust 签名的本地 profile 快照；Provider/API Key 新手引导是本地配置，不是账户登录。
-- message-panel/ 目录退役，公共件迁 `src/chat/`（sessionHydration/topicTitle/
-  messageVisibility/HarnessInspectorPanel/HarnessRunGraph/projectDirectoryState）。
+- message-panel/ 目录退役；迁到 `src/chat/` 的旧公共件随旧会话界面于 2026-10-18 删除。
 
 ## 1. 主题事实
 
@@ -521,7 +522,7 @@ simple_harness 的用户界面现在以暗色为默认外观。主窗口背景�
 
 ## 2. 当前覆盖范围
 
-- 主窗为普通工作台窗口（见 §0）；聊天/Harness 观察区即 ChatView，无独立消息窗。
+- 主窗为普通工作台窗口（见 §0）；聊天区即主对话 PrimaryChatView，无独立消息窗。
 - Memory、ContextTrace 和 Context usage 保留原有暗色布局。
 - 设置、Provider、新手引导、能力中心、Skill Store 和反馈页已统一为暗色。
 - 授权、澄清、外部等待和审批中心等共享弹窗使用同一套暗色面板、遮罩和控件。

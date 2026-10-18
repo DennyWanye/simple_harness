@@ -5,7 +5,6 @@ import { useState, type CSSProperties } from "react";
 import { useDepsChanged } from "../hooks/useDepsChanged";
 import { invoke } from "@tauri-apps/api/core";
 import type { ProjectDirectoryRequest } from "../types/skillPlatform";
-import type { MessageStreamPanelProps } from "./messageStreamTypes";
 import "./ProjectDirectoryCard.styles.css";
 
 export function ProjectDirectoryCard({
@@ -16,7 +15,7 @@ export function ProjectDirectoryCard({
 }: {
   request: ProjectDirectoryRequest["payload"];
   error?: string | null;
-  onConfirm?: MessageStreamPanelProps["onProjectDirectoryConfirm"];
+  onConfirm?: (parentDirectory: string, folderName: string) => boolean;
   submittedLabel?: string;
 }) {
   const [parent, setParent] = useState(request.parent_directory ?? "");

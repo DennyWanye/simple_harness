@@ -1,22 +1,15 @@
 // SPDX-FileCopyrightText: 2026 DennyWanye
 // SPDX-License-Identifier: BUSL-1.1
 
-// chat 车道场景（一）：消息气泡、产物卡、PPT 大纲、Markdown、输入栏与小组件。
+// chat 车道场景（一）：Markdown、输入栏与小组件。
 // 场景 → 挂载的组件文件（src/ 下）：
-//   message-bubbles   → code-panel/MessageBubble.tsx（含 ArtifactCard / PPTOutlineCard / MarkdownMessage / CodeBlock）
-//   artifact-cards    → code-panel/ArtifactCard.tsx
-//   ppt-outline-cards → code-panel/PPTOutlineCard.tsx
 //   markdown-message  → components/MarkdownMessage.tsx、code-panel/CodeBlock.tsx
 //   input-bars        → code-panel/InputBar.tsx
 //   slash-widgets     → code-panel/SlashDropdown.tsx、code-panel/ArgHintBar.tsx
 //   slash-test-harness→ code-panel/SlashTestHarness.tsx（内含 InputBar）
 //   confirm-dialogs   → code-panel/ConfirmDialog.tsx、components/useConfirm.tsx
-//   subagent-active / subagent-done → code-panel/SubagentProgressPanel.tsx
 import { useEffect } from "react";
 import "./chat-gallery.css";
-import { MessageBubble } from "../../../src/code-panel/MessageBubble";
-import { ArtifactCard } from "../../../src/code-panel/ArtifactCard";
-import { PPTOutlineCard } from "../../../src/code-panel/PPTOutlineCard";
 import { MarkdownMessage } from "../../../src/components/MarkdownMessage";
 import { CodeBlock, InlineCode } from "../../../src/code-panel/CodeBlock";
 import { InputBar } from "../../../src/code-panel/InputBar";
@@ -25,84 +18,9 @@ import { ArgHintBar } from "../../../src/code-panel/ArgHintBar";
 import { SlashTestHarness } from "../../../src/code-panel/SlashTestHarness";
 import { ConfirmDialog } from "../../../src/code-panel/ConfirmDialog";
 import { useConfirm } from "../../../src/components/useConfirm";
-import { SubagentProgressPanel } from "../../../src/code-panel/SubagentProgressPanel";
-import { useSubagentStore } from "../../../src/code-panel/subagentStore";
 import { useSessionsStore } from "../../../src/stores/sessionsStore";
 import { noop, noopAsync, useOnce } from "./galleryUtil";
-import {
-  ARTIFACTS,
-  MARKDOWN_RICH,
-  NOW,
-  PPT_HISTORY,
-  PPT_OUTLINE_MD,
-  bubbleMessages,
-} from "./chat-fixtures";
-
-const BUBBLE_SID = "sid-bubbles";
-
-export function MessageBubblesScene() {
-  useOnce(() => {
-    useSessionsStore.getState().upsert(BUBBLE_SID, { messages: bubbleMessages(BUBBLE_SID) });
-  });
-  const messages = bubbleMessages(BUBBLE_SID);
-  return (
-    <div className="chat-col">
-      {messages.map((msg) => (
-        <MessageBubble key={msg.id} msg={msg} />
-      ))}
-    </div>
-  );
-}
-
-export function ArtifactCardsScene() {
-  return (
-    <div className="chat-grid2">
-      {ARTIFACTS.map((artifact, index) => (
-        <div className="chat-cell" key={`${artifact.title}-${index}`}>
-          <ArtifactCard artifact={artifact} toolName="ppt_create" />
-        </div>
-      ))}
-    </div>
-  );
-}
-
-export function PptOutlineCardsScene() {
-  return (
-    <div className="chat-col">
-      <PPTOutlineCard
-        outlineId="o-await"
-        topic="年度回顾"
-        outlineMd={PPT_OUTLINE_MD}
-        sourcesCount={3}
-        noResearch
-        history={PPT_HISTORY}
-        awaiting
-        sessionId="sid-ppt"
-        runId="run-ppt"
-        decisionId="dec-ppt"
-        nonce="nonce"
-        version={1}
-      />
-      <PPTOutlineCard
-        outlineId="o-resolved"
-        topic=""
-        outlineMd=""
-        sourcesCount={0}
-        noResearch={false}
-        history={[]}
-        decisionStatus="已确认生成"
-      />
-      <PPTOutlineCard
-        outlineId="o-default"
-        topic="默认已提交"
-        outlineMd={PPT_OUTLINE_MD}
-        sourcesCount={1}
-        noResearch={false}
-        history={PPT_HISTORY}
-      />
-    </div>
-  );
-}
+import { MARKDOWN_RICH, NOW } from "./chat-fixtures";
 
 export function MarkdownMessageScene() {
   return (
@@ -264,76 +182,3 @@ export function ConfirmDialogsScene() {
   );
 }
 
-function seedSubagents(active: boolean) {
-  const runs = active
-    ? [
-        {
-          run_id: "r1",
-          task_id: "调研：行业现状",
-          kind: "research",
-          status: "running",
-          ts: NOW - 42_000,
-        },
-        { run_id: "r2", task_id: "", kind: "code", status: "queued", ts: NOW - 30_000 },
-        {
-          run_id: "r3",
-          task_id: "汇总数据",
-          kind: "unknown_kind",
-          status: "completed",
-          ts: NOW - 20_000,
-        },
-        { run_id: "r4", task_id: "失败任务", kind: "", status: "failed", ts: NOW - 10_000 },
-        {
-          run_id: "r5",
-          task_id: "取消任务",
-          kind: "research",
-          status: "failed",
-          reason: "cancelled",
-          ts: NOW - 5_000,
-        },
-      ]
-    : [
-        {
-          run_id: "d1",
-          task_id: "已完成任务一",
-          kind: "research",
-          status: "completed",
-          ts: NOW - 42_000,
-        },
-        {
-          run_id: "d2",
-          task_id: "已完成任务二",
-          kind: "code",
-          status: "completed",
-          ts: NOW - 30_000,
-        },
-      ];
-  const store = useSubagentStore.getState();
-  store.clear();
-  runs.forEach((run) => store.upsert(run));
-  store.setMetrics(
-    active
-      ? { peak_concurrent: 2, total_queued: 5, total_rejected: 1 }
-      : { peak_concurrent: 2, total_queued: 2, total_rejected: 0 },
-  );
-}
-
-export function SubagentActiveScene() {
-  useOnce(() => seedSubagents(true));
-  return (
-    <div className="chat-col">
-      <SubagentProgressPanel />
-      <SubagentProgressPanel variant="dark" />
-    </div>
-  );
-}
-
-export function SubagentDoneScene() {
-  useOnce(() => seedSubagents(false));
-  return (
-    <div className="chat-col">
-      <SubagentProgressPanel />
-      <SubagentProgressPanel variant="dark" />
-    </div>
-  );
-}

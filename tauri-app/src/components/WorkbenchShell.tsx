@@ -27,8 +27,6 @@
 import React from "react";
 
 import { Sidebar, type RouteKind, type SidebarMoreActions } from "./Sidebar";
-import type { SessionListProps } from "./SessionList";
-import type { ChatViewProps } from "../views/ChatView";
 import { PrimaryChatView } from "../views/PrimaryChatView";
 import type { ControlChannel } from "../ws/ControlChannel";
 import { SkillsView, type SkillsViewProps } from "../views/SkillsView";
@@ -46,15 +44,11 @@ export interface WorkbenchShellProps {
   banner?: React.ReactNode;
   /** 侧栏底部连接状态徽章占位输入（T13 迁入聚合逻辑）。 */
   connectionState?: "disconnected" | "connecting" | "connected";
-  /** 视图 props 通道 — 显式合同，见文件头注释。 */
-  chatProps: ChatViewProps;
   primaryChannel?: ControlChannel | null;
   skillsProps: SkillsViewProps;
   /** 任务编排视图（plans/2026-09-11-orchestrator-host-integration）：控制通道。 */
   missionsProps?: MissionsViewProps;
   settingsProps: SettingsViewProps;
-  /** T7（WB-5）：Sidebar「会话」展开区的会话列表 props。 */
-  sessionProps?: SessionListProps;
   /** T13：路由指示（cloud/local）— 侧栏连接徽章文案输入。 */
   routeKind?: RouteKind;
   /** T13：侧栏「更多」折叠组入口（记忆/Trace/反馈/账户）。 */

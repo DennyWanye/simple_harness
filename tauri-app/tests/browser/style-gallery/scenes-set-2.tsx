@@ -6,9 +6,7 @@
 //   change-model-modal   code-panel/ChangeModelModal.tsx（思考+快速+可选窗口 / 推理强度+只读窗口 / 无可调参数 / 跟随默认 / 未知模型 / 只有思考）
 //   startup-dialogs      components/OnboardingWizard.tsx（欢迎步）+ components/FeedbackPanel.tsx
 //                        + components/StartupOverlay.tsx（启动中 / 启动失败带信息 / 启动失败无信息 / 就绪不渲染）
-//   project-inspector    components/ProjectInspector.tsx（项目缺失+执行目录 / 可用+分离头 / 加载中 / 普通会话 / 无 Git / 未选会话）
-//                        + components/ProjectPickerDialog.tsx（项目 / 带默认目录）
-//                        + components/ProjectDirectoryCard.tsx（新建无位置 / 新建 Windows 路径 / 新建根目录 / 使用现有+报错）
+//   project-directory-cards components/ProjectDirectoryCard.tsx（新建无位置 / 新建 Windows 路径 / 新建根目录 / 使用现有+报错）
 //   context-ring-banners components/ContextRing.tsx（不可用/仅绑定/旧记录/各档用量/带标签/可点）
 //                        + components/ProtectedPathCard.tsx（单条读取 / 多条写入）
 import { AddProviderModal } from "../../../src/components/AddProviderModal";
@@ -17,20 +15,11 @@ import { useSessionModelsStore } from "../../../src/code-panel/sessionModelsStor
 import { OnboardingWizard } from "../../../src/components/OnboardingWizard";
 import { FeedbackPanel } from "../../../src/components/FeedbackPanel";
 import { StartupOverlay } from "../../../src/components/StartupOverlay";
-import { ProjectInspector } from "../../../src/components/ProjectInspector";
-import { ProjectPickerDialog } from "../../../src/components/ProjectPickerDialog";
 import { ProjectDirectoryCard } from "../../../src/components/ProjectDirectoryCard";
 import { ContextRing } from "../../../src/components/ContextRing";
 import { ProtectedPathCard } from "../../../src/components/ProtectedPathCard";
-import { useSessionsStore } from "../../../src/stores/sessionsStore";
 import { noop, useOnce } from "./galleryUtil";
-import {
-  SET_CATALOG,
-  SET_PROJECT_INSPECTIONS,
-  SET_PROJECT_PAGES,
-  SET_PROVIDERS,
-  snap,
-} from "./set-fixtures";
+import { SET_CATALOG, SET_PROVIDERS, snap } from "./set-fixtures";
 import "./set-gallery.css";
 
 const neverBundle = () => new Promise<never>(() => undefined);
@@ -175,32 +164,9 @@ const dirBase = {
   project_kind: "网站项目",
 };
 
-export function ProjectInspectorScene() {
-  useOnce(() =>
-    useSessionsStore.setState({
-      project_session_pages: SET_PROJECT_PAGES,
-      project_inspections: SET_PROJECT_INSPECTIONS,
-    } as unknown as Partial<ReturnType<typeof useSessionsStore.getState>>),
-  );
+export function ProjectDirectoryCardsScene() {
   return (
     <div className="set-row">
-      {["s-missing", "s-ok", "s-loading", "s-free", "s-nogit", ""].map((sid) => (
-        <div className="set-rail" key={sid || "none"}>
-          <ProjectInspector activeSid={sid} onSwitchSid={noop} />
-        </div>
-      ))}
-      <div className="set-frame">
-        <ProjectPickerDialog open onClose={noop} onProjectSelected={noop} />
-      </div>
-      <div className="set-frame">
-        <ProjectPickerDialog
-          open
-          onClose={noop}
-          onProjectSelected={noop}
-          onDefaultSelected={noop}
-        />
-      </div>
-      <ProjectPickerDialog open={false} onClose={noop} onProjectSelected={noop} />
       <div className="set-col">
         <ProjectDirectoryCard
           request={{ ...dirBase, title: "选择夹具网站的保存位置" }}

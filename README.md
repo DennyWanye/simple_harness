@@ -11,9 +11,10 @@
    （NVML 检查仅 Windows；ASR device/compute "auto"：Win+NVIDIA→CUDA fp16，
    Mac→CPU int8）。
 2. **Workbench 改版（2026-08-05）**：桌宠形态退役，改为普通窗口工作台——侧栏
-   （会话列表 + 技能中心 + 产物库 + 底部设置）+ 常挂载 ChatView（消息流/Harness
-   巡检/模型切换/ContextRing）；companion 特权链路整体迁移到主窗（五处硬编码
-   同步：前端常量/Rust 白名单/Python 白名单/ingress 标签/companion.db 迁移 007）。
+   （技能中心 + 产物库 + 任务 + 底部设置）+ 主对话（2026-10-18 起旧会话界面
+   ChatView 与会话列表删除，上下文用量环与切换模型接到主对话）；companion 特权
+   链路整体迁移到主窗（五处硬编码同步：前端常量/Rust 白名单/Python 白名单/ingress
+   标签/companion.db 迁移 007）。
 
 **技术栈：** Tauri 2 + React（工作台 UI：侧栏 + 会话/技能/产物/设置四视图）·
 Python FastAPI（后端；语音规划走中转站 Realtime）。

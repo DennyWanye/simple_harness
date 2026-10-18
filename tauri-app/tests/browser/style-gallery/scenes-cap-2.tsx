@@ -1,15 +1,13 @@
 // SPDX-FileCopyrightText: 2026 DennyWanye
 // SPDX-License-Identifier: BUSL-1.1
 
-// cap 车道场景（二）：上下文构成、ContextTrace、权限弹窗、审批中心、澄清/外部等待弹窗、伙伴成长。
+// cap 车道场景（二）：上下文构成、ContextTrace、权限弹窗、审批中心、澄清/外部等待弹窗。
 //   context-breakdown        → src/components/ContextBreakdownModal.tsx（实测快照 + 构成条 + 变化折线图）
 //   context-breakdown-states → src/components/ContextBreakdownModal.tsx（仅绑定加载中、旧记录不完整 + 构成不可用、无快照）
 //   context-trace            → src/components/ContextTracePanel.tsx（Runs 页签有数据、未连接、读取出错）
 //   permission-popup         → src/components/PermissionPopup.tsx（敏感/写入/读取/子任务/未知类别、提交中+报错、无参数）
 //   approval-center          → src/components/ApprovalCenterPanel.tsx（多条待审批）
 //   clarify-wait-dialogs     → src/components/ClarificationDialog.tsx、src/components/ExternalWaitDialog.tsx
-//   companion-cards          → src/components/companion/CompanionCard.tsx（评测授权/激活/操作确认/已失效/墓碑/重要/忙碌）
-//   companion-detail         → src/components/companion/CompanionDetailModal.tsx（有条目+下一页、出错、空章节）
 // 说明：ContextTrace 的旧 Context 页签与构成弹窗的段落展开都要点击，画廊不模拟点击，渲染不到。
 import { useState } from "react";
 import { ApprovalCenterPanel } from "../../../src/components/ApprovalCenterPanel";
@@ -18,23 +16,7 @@ import { ContextBreakdownModal } from "../../../src/components/ContextBreakdownM
 import { ContextTracePanel } from "../../../src/components/ContextTracePanel";
 import { ExternalWaitDialog } from "../../../src/components/ExternalWaitDialog";
 import { PermissionPopup } from "../../../src/components/PermissionPopup";
-import { CompanionCard } from "../../../src/components/companion/CompanionCard";
-import { CompanionDetailModal } from "../../../src/components/companion/CompanionDetailModal";
-import {
-  actionConfirmationDecision,
-  activationDecision,
-  approvalChannel,
-  bindingOnlySnapshot,
-  breakdownQuery,
-  companionEvent,
-  companionQuery,
-  evaluationDecision,
-  fullBreakdown,
-  legacySnapshot,
-  measuredSnapshot,
-  traceChannel,
-  unavailableBreakdown,
-} from "./cap-fixtures";
+import { approvalChannel, bindingOnlySnapshot, breakdownQuery, fullBreakdown, legacySnapshot, measuredSnapshot, traceChannel, unavailableBreakdown } from "./cap-fixtures";
 import { noop } from "./galleryUtil";
 import "./cap-gallery.css";
 
@@ -171,47 +153,3 @@ export function ClarifyWaitDialogsScene() {
   );
 }
 
-export function CompanionCardsScene() {
-  const events = [
-    companionEvent({ decision: evaluationDecision }),
-    companionEvent({ event_id: "e-2", importance: "important", decision: { ...evaluationDecision, status: "confirmed" } }),
-    companionEvent({ event_id: "e-3", decision: activationDecision }),
-    companionEvent({ event_id: "e-4", decision: { ...activationDecision, candidate_code_digest: "code-digest", status: "rejected" } }),
-    companionEvent({ event_id: "e-5", decision: actionConfirmationDecision }),
-    companionEvent({ event_id: "e-6" }),
-    companionEvent({
-      event_id: "e-7",
-      tombstone: true,
-      notification: { ...companionEvent().notification, notification_id: "notice-7", summary: "该成长记录已被遗忘" },
-    }),
-    companionEvent({
-      event_id: "e-8",
-      notification: { ...companionEvent().notification, notification_id: "notice-8", detail_ref: "", available_actions: [] },
-    }),
-  ];
-  return (
-    <div className="cap-column">
-      {events.map((event, index) => (
-        <CompanionCard key={event.event_id} event={event} onOpenDetail={noop} onAction={noop} busy={index === 5} />
-      ))}
-    </div>
-  );
-}
-
-export function CompanionDetailScene() {
-  const [queries] = useState(() => ({
-    items: companionQuery("items"),
-    error: companionQuery("error"),
-    empty: companionQuery("empty"),
-  }));
-  const event = companionEvent({
-    notification: { ...companionEvent().notification, kind: "growth_notice", summary: "成长详情", detail_version: "detail-v7" },
-  });
-  return (
-    <>
-      <CompanionDetailModal event={event} query={queries.empty} onClose={noop} />
-      <CompanionDetailModal event={event} query={queries.error} onClose={noop} />
-      <CompanionDetailModal event={event} query={queries.items} onClose={noop} />
-    </>
-  );
-}

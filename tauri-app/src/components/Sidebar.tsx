@@ -24,7 +24,6 @@ import React, { useState } from "react";
 import { tokens } from "../theme/tokens";
 import { dark, INTERACTIVE_CLASS, transition } from "../theme/components";
 import type { WorkbenchView } from "./WorkbenchShell";
-import type { SessionListProps } from "./SessionList";
 import { Icon, type IconName } from "./Icon";
 import { useMissionsStore } from "../stores/missionsStore";
 import {
@@ -49,8 +48,6 @@ interface SidebarProps {
   onViewChange: (view: WorkbenchView) => void;
   /** ControlChannel（identity_bind）连接状态 — 聚合的其一源。 */
   connectionState?: "disconnected" | "connecting" | "connected";
-  /** T7（WB-5）：「会话」导航项展开区的会话列表 props。 */
-  sessionProps?: SessionListProps;
   /** 路由指示（chat_response/transcript 捎带 provider）— cloud/local。 */
   routeKind?: RouteKind;
   /** T13：「更多」折叠组入口（Trace/反馈）。2026-09-10 记忆入口随认知记忆 SDK 移除。 */

@@ -5,12 +5,7 @@
 // 数据抄自各组件的 vitest 测试夹具；不连后端，回包都在微任务里发出。
 import type { CapabilityDescriptor, CapabilityOperation } from "../../../src/types/capabilities";
 import type { MarketplaceSkill, SkillMeta } from "../../../src/types/skillPlatform";
-import type {
-  CompanionDetailErrorResponse,
-  CompanionDetailResponse,
-  CompanionEvent,
-  ContextUsageSnapshot,
-} from "../../../src/types/messages";
+import type { ContextUsageSnapshot } from "../../../src/types/messages";
 import { makeFakeChannel, type Wire } from "./fakeChannel";
 
 // ---------------- 技能商店 ----------------
@@ -493,97 +488,3 @@ export function approvalChannel() {
   ).channel;
 }
 
-// ---------------- 伙伴成长 ----------------
-
-export function companionEvent(overrides: Partial<CompanionEvent> = {}): CompanionEvent {
-  return {
-    event_id: "event-1",
-    profile_id: "profile-a",
-    profile_generation: 1,
-    session_id: "default",
-    seq: 1,
-    notification: {
-      notification_id: "notice-1",
-      kind: "activation",
-      summary: "新增本地能力",
-      detail_ref: "detail-1",
-      detail_version: "detail-v1",
-      available_actions: ["confirm", "rollback", "forget"],
-    },
-    ...overrides,
-  };
-}
-
-export const evaluationDecision = {
-  kind: "evaluation_authorization" as const,
-  candidate_id: "candidate-1",
-  candidate_revision: 2,
-  candidate_package_hash: "package-hash",
-  candidate_code_digest: "evaluation-code-digest",
-  suite_hash: "suite-hash",
-  runner_policy_hash: "runner-policy-hash",
-  nonce: "evaluation-nonce",
-  decision_version: 4,
-  expires_at: "2026-07-26T00:00:00Z",
-  status: "open" as const,
-};
-
-export const activationDecision = {
-  kind: "activation" as const,
-  candidate_id: "candidate-1",
-  pack_id: "pack-1",
-  candidate_version: "1.0.0",
-  candidate_package_hash: "package-hash-exact",
-  evaluation_report_hash: "report-hash",
-  risk_assessment_hash: "risk-hash",
-  scope: "user" as const,
-  scope_key: "profile-a",
-  owner_key: "companion:profile-a:1",
-  expected_binding_generation: 8,
-  nonce: "activation-nonce",
-  decision_version: 2,
-  expires_at: "2026-07-26T00:00:00Z",
-  status: "open" as const,
-};
-
-export const actionConfirmationDecision = {
-  kind: "action_confirmation" as const,
-  decision_id: "decision-9",
-  run_id: "run-9",
-  call_id: "call-9",
-  effect_id: "effect-9",
-  tool_name: "send_email",
-  redacted_target_summary: "收件人 a***@example.com",
-  args_hash: "args-hash",
-  capability_hash: "cap-hash",
-  scope_hash: "scope-hash",
-  expires_at: "2026-07-26T00:00:00Z",
-  status: "open" as const,
-};
-
-type DetailReply = CompanionDetailResponse | CompanionDetailErrorResponse;
-
-export function companionQuery(kind: "items" | "error" | "empty") {
-  return async (request: { notification_id: string; section: CompanionDetailResponse["payload"]["section"] }): Promise<DetailReply> => {
-    if (kind === "error") {
-      return { type: "companion_detail_error", request_id: "request-err", payload: { code: "detail_changed" } };
-    }
-    return {
-      type: "companion_detail_response",
-      request_id: "request-1",
-      payload: {
-        notification_id: request.notification_id,
-        section: request.section,
-        detail_version: "detail-v7",
-        items:
-          kind === "empty"
-            ? []
-            : [
-                { id: "row-1", title: "变更", summary: "已完成", status: "applied", hash: "hash-1", occurred_at: "2026-07-25T10:00:00Z", extra_field: "附加元数据" },
-                { id: "row-2", title: "回执" },
-              ],
-        next_cursor: kind === "items" ? "opaque-cursor" : null,
-      },
-    };
-  };
-}

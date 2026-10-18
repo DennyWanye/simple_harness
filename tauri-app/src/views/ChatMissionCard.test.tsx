@@ -3,7 +3,6 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { ChatMissionCard } from "./ChatMissionCard";
 import { MISSION_CARD_TOOLS, MissionsChannelContext, missionIdFromToolResult } from "./chatMission";
-import { shouldHideToolTrace } from "../chat/messageVisibility";
 import { PROTOCOL_ERROR_TEXT, STALE_NOTE, guardIncoming } from "../ws/orchestrationContracts";
 
 type Sent = { type: string; request_id: string; payload: Record<string, unknown> };
@@ -109,38 +108,16 @@ describe("对话里的后台任务卡片", () => {
     expect(fake.sent.filter((m) => m.type === "mission_get").length).toBe(before + 1);
   });
 
-  it("从工具结果里认出任务号；任务卡片不会被「隐藏工具消息」藏掉", () => {
+  it("从工具结果里认出任务号", () => {
     expect(missionIdFromToolResult(JSON.stringify({ mission_id: "m-9", created: true }))).toBe(
       "m-9",
     );
     expect(missionIdFromToolResult(JSON.stringify({ value: { mission_id: "m-8" } }))).toBe("m-8");
     expect(missionIdFromToolResult("not json")).toBe("");
-    expect(
-      shouldHideToolTrace(
-        {
-          role: "tool_result",
-          tool_name: "mission_start",
-          tool_ok: true,
-          tool_result: JSON.stringify({ mission_id: "m-9" }),
-        } as never,
-        true,
-      ),
-    ).toBe(false);
   });
 
   it("改要求的工具结果也出任务卡片；要求改过之后卡片写明是第几版", () => {
     expect(MISSION_CARD_TOOLS.has("mission_amend")).toBe(true);
-    expect(
-      shouldHideToolTrace(
-        {
-          role: "tool_result",
-          tool_name: "mission_amend",
-          tool_ok: true,
-          tool_result: JSON.stringify({ mission_id: "m-1", requirements_revision: 2 }),
-        } as never,
-        true,
-      ),
-    ).toBe(false);
     mount();
     expect(screen.queryByTestId("chat-mission-requirements-revision")).toBeNull(); // 第 1 版不提
     cleanup();
@@ -158,17 +135,6 @@ describe("对话里的后台任务卡片", () => {
 
   it("换资料的工具结果也出任务卡片；资料变更在卡片上用一句话说明，由人批准", () => {
     expect(MISSION_CARD_TOOLS.has("mission_source_update")).toBe(true);
-    expect(
-      shouldHideToolTrace(
-        {
-          role: "tool_result",
-          tool_name: "mission_source_update",
-          tool_ok: true,
-          tool_result: JSON.stringify({ mission_id: "m-1", state: "PENDING" }),
-        } as never,
-        true,
-      ),
-    ).toBe(false);
     const fake = mount({
       ...DETAIL,
       approvals: [

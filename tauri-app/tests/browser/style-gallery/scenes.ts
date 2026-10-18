@@ -11,20 +11,19 @@
 //   scenes-set.tsx     设置页各分区：views/SettingsView、components/SettingsPanel、SettingsSystemSections、
 //                      SettingsOrchestrationSections、SettingsProviders、ModelContextCard
 //   scenes-set-2.tsx   components/AddProviderModal、code-panel/ChangeModelModal、components/OnboardingWizard、FeedbackPanel、
-//                      StartupOverlay、ProjectInspector、ProjectPickerDialog、ProjectDirectoryCard、ContextRing、
+//                      StartupOverlay、ProjectDirectoryCard、ContextRing、
 //                      ProtectedPathCard
 //   scenes-cap.tsx     components/SkillStorePanel、CapabilityCenterPanel、CapabilityOperationCard、views/SkillsView
 //   scenes-cap-2.tsx   components/ContextBreakdownModal、ContextTracePanel、PermissionPopup、ApprovalCenterPanel、
-//                      ClarificationDialog、ExternalWaitDialog、companion/CompanionCard、companion/CompanionDetailModal
+//                      ClarificationDialog、ExternalWaitDialog
 //   scenes-mis.tsx     views/MissionDetailPanel（+ MissionsViewParts、PlanChangePanel、OperationWorkspace、PlanningQuestions、
 //                      PlanningAuthorization、ActionApprovalSummary、MissionSources、MissionAssurance、MissionDiagnostics）
 //   scenes-mis-2.tsx   views/MissionsView、MissionListAside、MissionCreateForm、PublishCriterionHelper、MissionSources、
 //                      ChatMissionCard、ChatMissionNotices、PlanChangePanel、OperationWorkspace、MissionsViewParts、
 //                      liveGraph/MissionProgress 等
-//   scenes-chat.tsx    code-panel/MessageBubble、ArtifactCard、PPTOutlineCard、CodeBlock、InputBar、SlashDropdown、ArgHintBar、
-//                      SlashTestHarness、ConfirmDialog、SubagentProgressPanel、components/MarkdownMessage、useConfirm
-//   scenes-chat-2.tsx  components/workflow/WorkflowProgressGroup、DurableTaskSteps、components/MessageStreamPanel、MessageStreamRows
-//   scenes-chat-3.tsx  components/SessionList、Sidebar、WorkbenchShell、views/ChatView、PrimaryChatView、ArtifactsView、
+//   scenes-chat.tsx    code-panel/CodeBlock、InputBar、SlashDropdown、ArgHintBar、SlashTestHarness、ConfirmDialog、
+//                      components/MarkdownMessage、useConfirm
+//   scenes-chat-3.tsx  components/Sidebar、WorkbenchShell、views/PrimaryChatView、ArtifactsView、
 //                      primary/PrimaryWorkspaceBindings、App.tsx
 //   scenes-wf.tsx      components/workflows/RunInspectorPanel、DecisionPanel、EvaluationPanel、ReplayDialog、WorkflowGraph、
 //                      CheckpointTimeline、TraceTree、RunList

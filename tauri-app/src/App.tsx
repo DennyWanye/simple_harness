@@ -842,7 +842,6 @@ function App() {
               </div>
             ) : undefined
           }
-          chatProps={{ activeSid, secret, onSwitchSid: switchActiveSid }}
           primaryChannel={getControlChannel()}
           routeKind={routeKind}
           moreActions={{

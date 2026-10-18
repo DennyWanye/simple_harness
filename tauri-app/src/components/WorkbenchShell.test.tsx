@@ -43,7 +43,6 @@ function Harness({ initial = "chat" as WorkbenchView }) {
       view={view}
       onViewChange={setView}
       connectionState="connected"
-      chatProps={{ activeSid: "default", secret: "" }}
       skillsProps={{ channel: null }}
       settingsProps={{
         getChannel: () => null,
@@ -142,7 +141,6 @@ describe("WorkbenchShell 紧凑尺寸样式（WB-3 min 800×560）", () => {
         view="chat"
         onViewChange={() => undefined}
         banner={<div data-testid="test-banner">出错了</div>}
-        chatProps={{ activeSid: "default", secret: "" }}
         skillsProps={{ channel: null }}
         settingsProps={{
           getChannel: () => null,
@@ -176,7 +174,6 @@ describe("Sidebar T13 — 「更多」入口与连接徽章聚合（WB-3）", ()
         connectionState={overrides?.connectionState ?? "connected"}
         routeKind={overrides?.routeKind ?? null}
         moreActions={actions}
-        chatProps={{ activeSid: "default", secret: "" }}
         skillsProps={{ channel: null }}
         settingsProps={{
           getChannel: () => null,
