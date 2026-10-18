@@ -2,6 +2,30 @@
 
 整治只改形状、不改行为。整治中查出、但属于功能修复或另一阶段的事，登记在这里，不在当前切片里修。
 
+## 2026-10-18 收尾补充处理结果（用户逐项定，分支 cq-followups 第 1～15 片）
+
+| 项 | 用户决定 | 结果 |
+|---|---|---|
+| F-10 能力激活后安全监控 | HTN 之前的旧件，删 | 第 1 片删 |
+| F-12 上下文尝试账本 | 删 | 第 4、7 片删整族 |
+| F-16 主对话任务范围面板 | 删 | 第 6 片前后台删 |
+| F-17 自愈横幅 | 甲：整条删 | 第 8 片删自动续跑整条线（监工保留） |
+| F-18 旧音频通道 | 删 | 第 5 片删第一层；第 9 片删本地语音整层与首启下载器；第 15 片删实时语音通话 |
+| F-19 / F-24 死代码 | 清掉 | 第 3、7 片删（约 1.1 万行后台、6 个脚本、样式件） |
+| F-21 前端不可达模块 | 删旧会话界面 | 第 14 片删 ChatView 整棵（59 个源文件、32 个测试） |
+| F-22 前端依赖与锁文件 | 同意重装 | 主检出按锁文件 `npm ci` 重装（旧 pnpm 副本留在 `tauri-node_modules.pnpm-bak-20261018`，确认无用后删） |
+| F-23 V1 后缀 | 改 | 第 2 片改 9 个；GrowthSignalV1 等 3 个后缀与 schema_version 同号，按规范保留 |
+| 新：用量环与切换模型 | 接到主对话 | 第 10～13 片：后台补用量与明细（`primary.context.usage`、`primary.context.breakdown`），前端标题栏接环、明细窗口、切换模型 |
+
+未做、转后续：
+
+- **F-26 伴侣卡片后台**（设计 §5.3）：前端卡片已随第 14 片删除，后台决定服务、详情查询仍在。删之前要用户知道两个后果：伴侣提醒没有地方显示；中、高风险成长候选永远停在"等确认"。待用户答复。
+- **F-27 PPT 大纲卡后台**（设计 §5.4）：前端卡片已删。后台宿主函数依附后端工作流引擎（ppt_pro v1），随"删后台工作流引擎"（第二轮方案）一起删，不单做。
+- **F-28 Service SDK 的 realtime 依赖**（设计 §5.1 末）：实时语音删后无人用。要改 pyproject.toml、vendor 轮子、打包清单与冻结包测试，需要 `uv lock`／`uv sync`，工作树里不跑，放到主检出单做。
+- **F-29 可能已无人用的依赖**：edge-tts、faster-whisper、silero-vad、torch/torchvision/torchaudio、FlagEmbedding、transformers、sentence-transformers、peft、qwen-vl-utils。删本地语音与旧模块后要逐个核实再删（牵动打包与安装时间）。
+- **F-30 旧会话界面删后的二次重扫**（设计 §6.4）：InputBar 非主对话分支、sessionsStore 收件箱与严重度、controlWs 会话补读与 `chat_v2`、`session_set_model`、`harness_inspector_*`、`companion_action` 作用域等。规模大，先出方案。
+- **F-31 杂项尾巴**：ARCHITECTURE.md §15 整体过时；`scripts/e2e/fixtures/context-os-automation-manifest.json` 列了已删测试；生成样式里留下没人用的类（生成器只能内联转类）；`paths.resolve_model_dir` 与 `publish_models_to_cos.py`；`startup_profile_baseline.json` 有已删模块条目；`harness_parity_census.py` 已坏；工作树 `node_modules` 的 vite 是 8.0.8，与 `webkit_style_compare.py` 记录的 8.1.3 不同（前后同一压缩器比对时不受影响）。
+
 ## F-1 持久任务工作流引用了不存在的两个属性（缺陷，待修）
 
 - **登记**：2026-10-16，阶段 5 类型检查清零时查出（偏差单：阶段5-偏差单-类型清零.md 第二件，独立裁决选"本阶段不修，转交"）。
