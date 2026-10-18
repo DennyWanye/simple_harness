@@ -97,7 +97,7 @@ backend/
 │   ├── tools/                 # Tool implementations (ppt/web/OCR/etc)
 │   ├── skills/                # Skill loader + builtin skills
 │   ├── mcp/                   # MCP client
-│   ├── workflows/             # Workflow engine
+│   ├── workflows/             # 执行账本与工具效果类型（旧工作流引擎已删）
 │   └── companion/             # Companion growth system
 ├── llm/                       # LLM provider adapters
 ├── providers/                 # OpenAI-compatible LLM provider
@@ -179,7 +179,7 @@ When a feature/module passes acceptance (pytest/vitest/cargo/manual E2E):
 - 开发库里按旧契约建的任务不保证能跑：遇到时明确报错，不静默回落、不迁移。
 - 报告和取舍里不要拿"影响正常使用 / 老任务起不来"当理由。
 - 已知欠账：代码里仍有大量 `legacy` / 兼容分支（2026-10-01 盘点约 298 个文件；2026-10-17 阶段 8 分类清单见 `plans/2026-10-12-code-quality/阶段8-旧版字样清单.md`），要单独立项逐步删除；新改动不得再增加。
-- 已知欠账：两套持久工作流引擎并存——后端 `deskpet.workflows`（跑 v1～v7 定义）与 SDK `simple_harness.workflow`（经 sdk_v2/sdk_v7 定义与 sdk_adapters 使用），代码大段重复（约 1730 行）。合并等于引擎统一（错误类、执行控制上下文变量、定义清单哈希都会变），是行为变更，要单独立项决定后端引擎去留；新功能不得再往两边各写一份。
+- 2026-10-18 起后端旧持久工作流引擎（`deskpet.workflows` 的运行器、启动器、v1～v7 定义）已删除，只用 SDK `simple_harness.workflow`。`deskpet/workflows/` 只剩执行账本（`store/`）、工具效果类型（`contracts.py`、`effects.py`）与事件投影；包名因冻结工具清单不改。SDK 两份产品定义在 `deskpet/sdk_adapters/product_workflows/`，生产里只用来生成能力目录，尚未接执行器（要让深度研究或 PPT 持久运行是另一个功能项目）。
 
 **"做了功能又加一层兼容" = 违反本约束。**
 

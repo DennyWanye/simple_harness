@@ -46,7 +46,6 @@ def test_workflow_sources_do_not_import_removed_frameworks() -> None:
     for package_root in ("agent", "llm", "pipeline"):
         sources.extend(sorted((BACKEND_DIR / package_root).rglob("*.py")))
     sources.extend(sorted(BACKEND_DIR.glob("*.py")))
-    sources.append(REPO_ROOT / "scripts" / "workflow_eval_adapter.py")
     violations = {
         str(path.relative_to(REPO_ROOT)): sorted(_import_roots(path) & FORBIDDEN_IMPORT_ROOTS)
         for path in sources
@@ -80,25 +79,16 @@ def test_pyinstaller_spec_has_no_removed_framework_hooks() -> None:
     assert not (BACKEND_DIR / "pyinstaller_runtime_hook_langgraph.py").exists()
 
 
-def test_pyinstaller_keeps_workflow_definition_source_for_stable_manifests() -> None:
+def test_pyinstaller_keeps_product_workflow_source_for_stable_manifests() -> None:
+    """SDK 产品工作流的清单哈希按节点函数源码算，冻结包里要带 .py 源码。"""
     spec_text = (BACKEND_DIR / "deskpet-backend.spec").read_text(encoding="utf-8")
-    # c41bfc14a widened module_collection_mode into a multi-entry dict and
-    # 304a57a73 made resource sources repository-relative (backend/uv.lock).
     mode_block = spec_text[spec_text.index("module_collection_mode={") :]
     mode_block = mode_block[: mode_block.index("}")]
-    assert '"deskpet.workflows.definitions": "py"' in mode_block
+    assert '"deskpet.sdk_adapters.product_workflows": "pyz+py"' in mode_block
     assert '("backend/uv.lock", ".")' in spec_text
 
 
-def test_eval_adapter_uses_native_json_interrupt_contract() -> None:
-    adapter = (REPO_ROOT / "scripts" / "workflow_eval_adapter.py").read_text(encoding="utf-8")
-    assert "InMemorySaver" not in adapter
-    assert "__interrupt__" not in adapter
-    assert "selected.bind(checkpointer=None)" in adapter
-    assert 'output.get("interrupt")' in adapter
-
-
-def test_workflow_imports_when_removed_frameworks_are_blocked() -> None:
+def test_product_workflows_import_when_removed_frameworks_are_blocked() -> None:
     probe = textwrap.dedent(
         f"""
         import importlib.abc
@@ -117,16 +107,9 @@ def test_workflow_imports_when_removed_frameworks_are_blocked() -> None:
         sys.meta_path.insert(0, BlockRemovedFrameworks())
         sys.path.insert(0, {str(BACKEND_DIR)!r})
         import deskpet.workflows
-        from deskpet.workflows.definitions.v1 import (
-            CODE_COMPLEX_V1,
-            DEEP_RESEARCH_V1,
-            PPT_PRO_V1,
-        )
+        from deskpet.sdk_adapters.workflows import ACTIVE_PRODUCT_WORKFLOWS
 
-        for compiled in (CODE_COMPLEX_V1, DEEP_RESEARCH_V1, PPT_PRO_V1):
-            executable = compiled.bind(checkpointer=None)
-            assert callable(executable.ainvoke)
-            assert callable(executable.resume)
+        assert len(ACTIVE_PRODUCT_WORKFLOWS) == 2
         """
     )
     completed = subprocess.run(
@@ -140,8 +123,8 @@ def test_workflow_imports_when_removed_frameworks_are_blocked() -> None:
     assert completed.returncode == 0, completed.stderr or completed.stdout
 
 
-def test_frozen_verifier_checks_native_engine_and_removed_packages() -> None:
+def test_frozen_verifier_checks_ledger_and_removed_packages() -> None:
     verifier = (REPO_ROOT / "scripts" / "verify-frozen-backend.ps1").read_text(encoding="utf-8")
     assert "ForbiddenPackages" in verifier
-    assert "engine_kind=deskpet-native" in verifier
+    assert "execution_ledger_ready" in verifier
     assert "exit 1" in verifier

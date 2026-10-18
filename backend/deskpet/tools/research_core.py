@@ -1,8 +1,8 @@
 """Reentrant DeepResearch stages with explicit I/O ports.
 
 The functions in this module deliberately stop before persistence, artifact
-publication, receipts, and UI delivery.  They can therefore be called by the
-legacy blocking tool today and by a durable graph in a later task.
+publication, receipts, and UI delivery.  The ``deepresearch`` tool calls them
+directly.
 """
 
 from __future__ import annotations
@@ -15,6 +15,9 @@ from collections.abc import Awaitable, Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
+from deskpet.tools import research_scoring, research_sources, search_provider
+from deskpet.tools import research_tools as legacy
+from deskpet.tools.agent_reach_port import agent_reach_port
 from deskpet.tools.research_fetch import (
     _JS_RENDER_MAX_PER_RUN,
     _host,
@@ -35,48 +38,11 @@ from deskpet.tools.research_report import (
     parse_sub_questions,
 )
 
-from ...tools import research_scoring, research_sources, search_provider
-from ...tools import research_tools as legacy
-from ...tools.agent_reach_port import agent_reach_port
-from ..contracts import NodeExecutionIdentity
-from .deep_research_v5_contracts import ResearchLLMResult
-
 logger = logging.getLogger(__name__)
 
 
 class LLMCall(Protocol):
     async def __call__(self, prompt: str) -> str: ...
-
-
-class LLMCallV2(Protocol):
-    async def __call__(
-        self,
-        prompt: str,
-        *,
-        max_output_tokens: int,
-        stable_call_id: str,
-        response_format: Mapping[str, Any] | None = None,
-    ) -> ResearchLLMResult: ...
-
-
-class ResearchEffectCall(Protocol):
-    async def __call__(
-        self,
-        *,
-        role: str,
-        payload_ref: str,
-        max_output_tokens: int,
-        stable_call_id: str,
-        execution_identity: NodeExecutionIdentity,
-    ) -> ResearchLLMResult: ...
-
-
-class ResearchStageOutputError(ValueError):
-    """A committed provider response could not satisfy a stage output contract."""
-
-
-class ResearchStageCancelled(RuntimeError):
-    """A control fence cancelled an in-flight stage at a checkpoint-safe seam."""
 
 
 class SearchCall(Protocol):
@@ -89,17 +55,6 @@ class ExtractCall(Protocol):
 
 class DirectCall(Protocol):
     async def __call__(self, query: str, source: str) -> object: ...
-
-
-class ArtifactSaveCall(Protocol):
-    async def __call__(
-        self,
-        *,
-        topic: str,
-        report_md: str,
-        report_hash: str,
-        run_id: str,
-    ) -> Mapping[str, Any]: ...
 
 
 MaybeAsync = Callable[[], object | Awaitable[object]]
@@ -146,88 +101,6 @@ class ResearchLLMPort:
 
 
 @dataclass(frozen=True, slots=True)
-class ResearchLLMPortV2:
-    """Raw at-most-once LLM transport used behind the durable effect port."""
-
-    complete: LLMCallV2
-
-
-RESEARCH_LLM_ROLES = frozenset(
-    {
-        "modeling",
-        "query_strategy",
-        "dimension_analysis",
-        "report_synthesis",
-        "quality_audit",
-        "targeted_repair",
-        "evidence_candidate_extract",
-        "evidence_inference_synthesize",
-        "evidence_structured_repair",
-    }
-)
-
-
-@dataclass(frozen=True, slots=True)
-class ResearchCallEffectPort:
-    """Node-facing surface; durable implementation lands with the journal slice."""
-
-    complete_call: ResearchEffectCall
-
-    async def complete(
-        self,
-        *,
-        role: str,
-        payload_ref: str,
-        max_output_tokens: int,
-        stable_call_id: str,
-        execution_identity: NodeExecutionIdentity | None,
-    ) -> ResearchLLMResult:
-        if role not in RESEARCH_LLM_ROLES:
-            raise ValueError(f"unsupported research LLM role: {role}")
-        if not payload_ref:
-            raise ValueError("payload_ref is required")
-        if (
-            isinstance(max_output_tokens, bool)
-            or not isinstance(max_output_tokens, int)
-            or max_output_tokens < 1
-        ):
-            raise ValueError("max_output_tokens must be a positive integer")
-        if not stable_call_id:
-            raise ValueError("stable_call_id is required")
-        if not isinstance(execution_identity, NodeExecutionIdentity):
-            raise TypeError("research effect call requires context.identity")
-        return await self.complete_call(
-            role=role,
-            payload_ref=payload_ref,
-            max_output_tokens=max_output_tokens,
-            stable_call_id=stable_call_id,
-            execution_identity=execution_identity,
-        )
-
-
-@dataclass(frozen=True, slots=True)
-class ResearchArtifactPort:
-    """Run-owned adapter that persists the final Markdown report."""
-
-    save_call: ArtifactSaveCall
-
-    async def save(
-        self,
-        *,
-        topic: str,
-        report_md: str,
-        report_hash: str,
-        run_id: str,
-    ) -> Mapping[str, Any]:
-        return await self.save_call(
-            topic=topic,
-            report_md=report_md,
-            report_hash=report_hash,
-            run_id=run_id,
-        )
-
-
-@dataclass(frozen=True, slots=True)
 class DirectOutcome:
     source: str
     items: list[dict[str, Any]]
@@ -235,24 +108,6 @@ class DirectOutcome:
     backend: str | None = None
     reason_code: str | None = None
     observation: Mapping[str, Any] = field(default_factory=dict)
-
-
-class ResearchSearchResults(list[dict[str, Any]]):
-    """List-compatible search rows carrying request-local diagnostics.
-
-    The legacy workflow still sees a plain list contract, while concurrent v2
-    branches can inspect the observation that belongs to their own request
-    instead of racing on a shared "last search" dictionary.
-    """
-
-    def __init__(
-        self,
-        values: Iterable[dict[str, Any]] = (),
-        *,
-        observation: Mapping[str, Any] | None = None,
-    ) -> None:
-        super().__init__(values)
-        self.observation = dict(observation or {})
 
 
 @dataclass(frozen=True, slots=True)
@@ -292,24 +147,6 @@ class ResearchPorts:
     llm: ResearchLLMPort
     search: ResearchSearchPort
     fetch: FetchPort
-
-    @classmethod
-    def from_workflow_context(cls, context: object) -> ResearchPorts:
-        """Read the three research ports from a ``WorkflowContext``-like object."""
-
-        port = getattr(context, "port", None)
-        if port is None:
-            raise TypeError("workflow context must provide port(name)")
-        llm = port("llm")
-        search = port("search")
-        fetch = port("fetch")
-        if not isinstance(llm, ResearchLLMPort):
-            raise TypeError("workflow llm port must be ResearchLLMPort")
-        if not isinstance(search, ResearchSearchPort):
-            raise TypeError("workflow search port must be ResearchSearchPort")
-        if not isinstance(fetch, FetchPort):
-            raise TypeError("workflow fetch port must be FetchPort")
-        return cls(llm=llm, search=search, fetch=fetch)
 
 
 @dataclass(frozen=True, slots=True)

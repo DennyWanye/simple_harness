@@ -21,7 +21,6 @@ from deskpet.execution.contracts import (
     thaw_json,
 )
 from deskpet.execution.delivery_contracts import (
-    DeliveryRecord,
     DeliverySpec,
     RunEvent,
     RunEventCandidate,
@@ -320,14 +319,3 @@ class RunEventMixin(ExecutionUowCore):
                 )
             ).fetchall()
             return tuple(self._row_to_event(row) for row in rows)
-
-    async def list_event_deliveries(self, event_id: str) -> tuple[DeliveryRecord, ...]:
-        async with self._read_connection() as db:
-            rows = await (
-                await db.execute(
-                    """SELECT * FROM execution_deliveries WHERE event_id=?
-                    ORDER BY sink_kind,sink_instance,target_id""",
-                    (event_id,),
-                )
-            ).fetchall()
-            return tuple(self._row_to_delivery(row) for row in rows)

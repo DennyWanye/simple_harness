@@ -441,7 +441,6 @@ a = Analysis(
     # hash their actual callable source; never substitute bytecode fingerprints.
     # pyz+py retains normal imports plus the identical source for inspect.
     module_collection_mode={
-        "deskpet.workflows.definitions": "py",
         "deskpet.sdk_adapters.product_workflows": "pyz+py",
         "simple_harness.workflows": "pyz+py",
         # On-demand capability/MCP provenance hashes these exact adapters via

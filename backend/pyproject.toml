@@ -255,12 +255,9 @@ packages = [
     "deskpet.mcp",
     "deskpet.llm",
     "deskpet.workflows",
+    "deskpet.workflows.effects_domains",
     "deskpet.workflows.store",
-    "deskpet.workflows.trace",
-    "deskpet.workflows.evaluation",
-    "deskpet.workflows.adapters",
-    "deskpet.workflows.definitions",
-    "deskpet.workflows.definitions.v1",
+    "deskpet.workflows.store.execution_uow_domains",
 ]
 
 [tool.setuptools.package-data]

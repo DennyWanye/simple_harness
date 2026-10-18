@@ -13,10 +13,10 @@ from simple_harness.workflow import (
     build_registration,
 )
 
-from deskpet.workflows.definitions.sdk_v2.ppt_pro import PPT_PRO_V2_DEFINITION
-from deskpet.workflows.definitions.sdk_v7.deep_research import (
+from deskpet.sdk_adapters.product_workflows.deep_research_definition import (
     DEEP_RESEARCH_V7_SDK1_DEFINITION,
 )
+from deskpet.sdk_adapters.product_workflows.ppt_pro_definition import PPT_PRO_V2_DEFINITION
 
 ACTIVE_PRODUCT_WORKFLOWS = MappingProxyType(
     {

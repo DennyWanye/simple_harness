@@ -9,7 +9,6 @@ import logging
 import os
 import shutil
 import sys
-from collections.abc import Mapping
 from dataclasses import dataclass, field
 from dataclasses import fields as dc_fields
 from pathlib import Path
@@ -20,49 +19,6 @@ import platformdirs
 import tomli
 
 logger = logging.getLogger(__name__)
-
-
-def resolve_deep_research_workflow_version(
-    configured_version: str,
-    *,
-    environment: Mapping[str, str] | None = None,
-    platform_default_user_data_dir: str | Path | None = None,
-) -> tuple[str, str]:
-    """Resolve the new-run version while preserving the guarded dev override.
-
-    The released factory default is v7.  v5 and v6 remain supported explicit
-    pins for newly-created roots; v1-v4 stay registered only for persisted-run
-    recovery.  Invalid configured values fail back to the released factory
-    version instead of routing new work onto a recovery-only graph.
-    """
-
-    env = environment if environment is not None else os.environ
-    configured = str(configured_version or "").strip().lower()
-    configured_valid = configured in {"v5", "v6", "v7"}
-    selected = configured if configured_valid else "v7"
-    configured_reason = "configured" if configured_valid else "configured_invalid_factory_default"
-    requested = str(env.get("DESKPET_DEV_DEEPRESEARCH_VERSION") or "").strip().lower()
-    if not requested:
-        return selected, configured_reason
-    if requested != "v6":
-        return selected, "dev_override_unsupported"
-    if str(env.get("DESKPET_DEV_MODE") or "") != "1":
-        return selected, "dev_mode_required"
-    isolated = str(env.get("DESKPET_USER_DATA_DIR") or "").strip()
-    if not isolated:
-        return selected, "isolated_user_data_required"
-    default_path = Path(
-        platform_default_user_data_dir
-        or platformdirs.user_data_dir("deskpet", appauthor=False, roaming=True)
-    )
-    try:
-        isolated_path = Path(isolated).expanduser().resolve(strict=False)
-        default_path = default_path.expanduser().resolve(strict=False)
-    except (OSError, RuntimeError):
-        return selected, "isolated_user_data_invalid"
-    if os.path.normcase(str(isolated_path)) == os.path.normcase(str(default_path)):
-        return selected, "isolated_user_data_required"
-    return "v6", "dev_isolated_override"
 
 
 # ─── P6 agent-loop-refactor — process-wide feature flag ─────────
@@ -535,44 +491,6 @@ class FeaturesConfig:
 
 
 @dataclass
-class WorkflowsConfig:
-    """Durable graph routing, local trace and retention policy."""
-
-    enabled: bool = True
-    deep_research: bool = True
-    ppt_pro: bool = True
-    code_complex: bool = True
-    trace_enabled: bool = True
-    trace_detail: bool = True
-    eval_local_only: bool = True
-    terminal_retention_days: int = 30
-    evaluation_retention_days: int = 180
-    orphan_grace_hours: int = 24
-    # New DeepResearch runs use the simplified manager/child v7 workflow.
-    # v1-v6 stay registered for checkpoint/history recovery and explicit pins.
-    deep_research_version: str = "v7"
-    # One-time factory-default migration marker. Only exact inherited
-    # Exact inherited factory defaults are promoted one revision at a time;
-    # explicit pins remain respected.
-    deep_research_default_revision: int = 7
-    deep_research_max_parallel_tasks: int = 4
-
-
-@dataclass
-class ResearchV5Config:
-    """Runtime budgets only; product evidence/quality policy remains hashed."""
-
-    soft_checkpoint_seconds: int = 300
-    lease_seconds: int = 120
-    auto_cap_seconds: int = 900
-    plateau_rounds: int = 2
-    llm_input_token_budget: int = 120_000
-    llm_output_token_budget: int = 32_000
-    llm_cost_budget_micros: int = 20_000_000
-    io_operation_budget: int = 256
-
-
-@dataclass
 class SearchGatewayConfig:
     """In-process retrieval gateway. Enabled by default during test stage."""
 
@@ -697,8 +615,6 @@ class AppConfig:
     features: FeaturesConfig = field(default_factory=FeaturesConfig)
     # WI-4.1 Skills 分级披露.  全 flag 默认 OFF（字节级 BC）.
     skills: SkillsConfig = field(default_factory=SkillsConfig)
-    workflows: WorkflowsConfig = field(default_factory=WorkflowsConfig)
-    research_v5: ResearchV5Config = field(default_factory=ResearchV5Config)
     search_gateway: SearchGatewayConfig = field(default_factory=SearchGatewayConfig)
     context: ContextSettingsConfig = field(default_factory=ContextSettingsConfig)
     companion: CompanionConfig = field(default_factory=CompanionConfig)
@@ -998,8 +914,6 @@ _MIGRATABLE_SECTIONS: tuple[tuple[str, ...], ...] = (
     ("skills",),
     ("skills", "auto_disclosure"),
     ("skills", "codify"),
-    ("workflows",),
-    ("research_v5",),
     ("search_gateway",),
 )
 
@@ -1062,35 +976,6 @@ def _merge_missing_feature_flags(user_target: Path, bundle_source: Path) -> bool
 
     added: list[str] = []
 
-    # ``deep_research_version`` is a factory revision, not a normal preference.
-    # Promote only release transitions that shipped an explicit migration.
-    # Historical v4/v5 pairs remain ambiguous and are never inferred.
-    user_workflows = _dig_table(user_doc, ("workflows",))
-    bundle_workflows = _dig_table(bundle_doc, ("workflows",))
-    if _is_toml_table(user_workflows) and _is_toml_table(bundle_workflows):
-        revision_key = "deep_research_default_revision"
-        version_key = "deep_research_version"
-        bundle_revision = bundle_workflows.get(revision_key)  # type: ignore[union-attr]
-        user_revision = user_workflows.get(revision_key)  # type: ignore[union-attr]
-        transition = (
-            bundle_revision,
-            bundle_workflows.get(version_key),  # type: ignore[union-attr]
-            user_revision,
-            user_workflows.get(version_key),  # type: ignore[union-attr]
-        )
-        inherited_previous_factory_default = transition in {
-            (6, "v6", 5, "v5"),
-            (7, "v7", 6, "v6"),
-        }
-        if inherited_previous_factory_default:
-            user_workflows[version_key] = f"v{bundle_revision}"  # type: ignore[index]
-            user_workflows[revision_key] = bundle_revision  # type: ignore[index]
-            added.extend(
-                [
-                    f"workflows.deep_research_version(default->v{bundle_revision})",
-                    "workflows.deep_research_default_revision",
-                ]
-            )
     for path in _MIGRATABLE_SECTIONS:
         bundle_tbl = _dig_table(bundle_doc, path)
         if not _is_toml_table(bundle_tbl):
@@ -1748,23 +1633,6 @@ def _load_config_impl(path: str | Path = "config.toml") -> AppConfig:
             auto_disclosure=ad,
             codify=cd,
         )
-    if "workflows" in raw:
-        config.workflows = _load_section(WorkflowsConfig, dict(raw["workflows"]))
-    if "research_v5" in raw:
-        config.research_v5 = _load_section(ResearchV5Config, dict(raw["research_v5"]))
-    r5 = config.research_v5
-    r5.soft_checkpoint_seconds = max(30, min(900, int(r5.soft_checkpoint_seconds)))
-    r5.lease_seconds = max(30, min(600, int(r5.lease_seconds)))
-    r5.auto_cap_seconds = max(
-        r5.soft_checkpoint_seconds,
-        r5.lease_seconds,
-        min(3600, int(r5.auto_cap_seconds)),
-    )
-    r5.plateau_rounds = max(1, min(10, int(r5.plateau_rounds)))
-    r5.llm_input_token_budget = max(1_000, min(2_000_000, int(r5.llm_input_token_budget)))
-    r5.llm_output_token_budget = max(1_000, min(500_000, int(r5.llm_output_token_budget)))
-    r5.llm_cost_budget_micros = max(0, min(1_000_000_000, int(r5.llm_cost_budget_micros)))
-    r5.io_operation_budget = max(8, min(10_000, int(r5.io_operation_budget)))
     # Search Gateway values are typed. Legacy [research] aliases are read
     # only when the equivalent new key was not explicitly supplied.
     raw_gateway = dict(raw.get("search_gateway") or {})
@@ -1828,14 +1696,6 @@ def _load_config_impl(path: str | Path = "config.toml") -> AppConfig:
             raise ConfigError("SG-CONFIG-7: circuit probe_base must not exceed probe_max")
     if sg.circuit_rate_limit_retry_after_max_s <= 0:
         raise ConfigError("SG-CONFIG-6: circuit policy values must be positive")
-    if config.workflows.terminal_retention_days < 1:
-        raise ConfigError("[workflows].terminal_retention_days must be at least 1")
-    if config.workflows.evaluation_retention_days < config.workflows.terminal_retention_days:
-        raise ConfigError(
-            "[workflows].evaluation_retention_days must be >= terminal_retention_days"
-        )
-    if config.workflows.orphan_grace_hours < 1:
-        raise ConfigError("[workflows].orphan_grace_hours must be at least 1")
     # stash the raw parsed TOML so consumers (MCP bootstrap, agent
     # bootstrap, etc.) can pick out their sections without us bolting on
     # a dataclass for each one.

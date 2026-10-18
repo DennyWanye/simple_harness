@@ -18,17 +18,36 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from inner_imports import BACKEND  # noqa: E402
 
-_WORKFLOW_LEGACY = (
-    "deskpet.workflows.contracts", "deskpet.workflows.control", "deskpet.workflows.definition",
-    "deskpet.workflows.runner", "deskpet.workflows.definitions.v1", "deskpet.workflows.definitions.v7",
-    "deskpet.workflows.definitions.research_core", "deskpet.workflows.definitions.deep_research_v5_contracts",
+_WORKFLOW_LEGACY = ("deskpet.workflows", "deskpet.tools.research_core")
+_HANDLER_BLOCKED = (
+    "config",
+    "deskpet.tools.registry",
+    "deskpet.tools._catalog_compat",
+    "deskpet.harness",
+    "deskpet.workflows",
 )
-_HANDLER_BLOCKED = ("config", "deskpet.tools.registry", "deskpet.tools._catalog_compat",
-                    "deskpet.harness", "deskpet.workflows")
-_HANDLER_DYNAMIC = {"agent", "agent_parallel", "await_subagents", "context_page_in", "spawn_subagents",
-                    "spawn_team", "todo_write", "tool_activate", "tool_describe", "tool_search",
-                    "web_search"}
-_SDK_HEAVY = ("fastapi", "torch", "whisper", "playwright", "deskpet", "tauri", "simple_harness_memory")
+_HANDLER_DYNAMIC = {
+    "agent",
+    "agent_parallel",
+    "await_subagents",
+    "context_page_in",
+    "spawn_subagents",
+    "spawn_team",
+    "todo_write",
+    "tool_activate",
+    "tool_describe",
+    "tool_search",
+    "web_search",
+}
+_SDK_HEAVY = (
+    "fastapi",
+    "torch",
+    "whisper",
+    "playwright",
+    "deskpet",
+    "tauri",
+    "simple_harness_memory",
+)
 
 
 @dataclass(frozen=True)
@@ -40,7 +59,9 @@ class Contract:
 
 def _handler_modules() -> tuple[str, ...]:
     """真实工具清单里 60 个静态处理函数所在模块（test_each_of_60_static_handler_resolutions_is_import_pure）。"""
-    raw = json.loads((BACKEND / "deskpet/tool_catalog/real_tool_manifest.json").read_text(encoding="utf-8"))
+    raw = json.loads(
+        (BACKEND / "deskpet/tool_catalog/real_tool_manifest.json").read_text(encoding="utf-8")
+    )
     mods: set[str] = set()
     for item in raw.get("tools") or ():
         if str(item["name"]) in _HANDLER_DYNAMIC:
@@ -55,27 +76,57 @@ def _handler_modules() -> tuple[str, ...]:
 def contracts(tree: str) -> list[Contract]:
     if tree == "backend":
         return [
-            Contract(("deskpet.sdk_adapters.tools",),
-                     ("deskpet.tools.research_tools", "deskpet.workflows"),
-                     "sdk_adapters/test_product_host_ports.py"),
-            Contract(("deskpet.tool_catalog", "deskpet.tools.context_page_in_tools"),
-                     ("deskpet.harness", "deskpet.workflows", "deskpet.tools.registry", "config"),
-                     "sdk_adapters/test_tool_catalog.py（71 个处理函数）"),
-            Contract(_handler_modules(), _HANDLER_BLOCKED, "sdk_adapters/test_tool_catalog.py（60 个静态处理函数）"),
-            Contract(("deskpet.product_state",), ("deskpet.workflows", "deskpet.harness"),
-                     "sdk_adapters/test_authorization_saga.py"),
-            Contract(("deskpet.workflows.definitions.sdk_v7.deep_research", "deskpet.workflows.definitions.sdk_v2.ppt_pro"),
-                     _WORKFLOW_LEGACY, "sdk_adapters/test_product_workflows.py"),
+            Contract(
+                ("deskpet.sdk_adapters.tools",),
+                ("deskpet.tools.research_tools", "deskpet.workflows"),
+                "sdk_adapters/test_product_host_ports.py",
+            ),
+            Contract(
+                ("deskpet.tool_catalog", "deskpet.tools.context_page_in_tools"),
+                ("deskpet.harness", "deskpet.workflows", "deskpet.tools.registry", "config"),
+                "sdk_adapters/test_tool_catalog.py（71 个处理函数）",
+            ),
+            Contract(
+                _handler_modules(),
+                _HANDLER_BLOCKED,
+                "sdk_adapters/test_tool_catalog.py（60 个静态处理函数）",
+            ),
+            Contract(
+                ("deskpet.product_state",),
+                ("deskpet.workflows", "deskpet.harness"),
+                "sdk_adapters/test_authorization_saga.py",
+            ),
+            Contract(
+                (
+                    "deskpet.sdk_adapters.product_workflows.deep_research_definition",
+                    "deskpet.sdk_adapters.product_workflows.ppt_pro_definition",
+                ),
+                _WORKFLOW_LEGACY,
+                "sdk_adapters/test_product_workflows.py",
+            ),
         ]
     return [
-        Contract(("simple_harness.observability",),
-                 ("simple_harness.runtime", "simple_harness.execution", "simple_harness.providers",
-                  "simple_harness.tools", "sqlite3"),
-                 "unit/observability/test_observability_v1.py"),
-        Contract(("simple_harness.runtime.agent_turn",), ("simple_harness.agents",),
-                 "agents/test_config_contracts.py"),
-        Contract(("simple_harness",), ("simple_harness.agents", "simple_harness.execution.sqlite", *_SDK_HEAVY),
-                 "agents/test_build_agent_runtime.py、artifact/test_import_purity.py"),
+        Contract(
+            ("simple_harness.observability",),
+            (
+                "simple_harness.runtime",
+                "simple_harness.execution",
+                "simple_harness.providers",
+                "simple_harness.tools",
+                "sqlite3",
+            ),
+            "unit/observability/test_observability_v1.py",
+        ),
+        Contract(
+            ("simple_harness.runtime.agent_turn",),
+            ("simple_harness.agents",),
+            "agents/test_config_contracts.py",
+        ),
+        Contract(
+            ("simple_harness",),
+            ("simple_harness.agents", "simple_harness.execution.sqlite", *_SDK_HEAVY),
+            "agents/test_build_agent_runtime.py、artifact/test_import_purity.py",
+        ),
     ]
 
 

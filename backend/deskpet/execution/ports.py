@@ -62,8 +62,6 @@ from .contracts import (
     RunRef,
     RunStartSnapshotRecord,
     RunStatus,
-    WorkflowRunSeed,
-    WorkflowStartResult,
 )
 from .evidence import EvidenceContext, EvidenceSelection
 
@@ -399,10 +397,6 @@ class ExecutionUnitOfWork(Protocol):
         self, subject: str | Any, *, owner: str | None = None, lease_seconds: float | None = 30.0
     ) -> Any: ...
 
-    async def claim_workflow_recovery_handoff(
-        self, recovery_lease: Any, *, workflow_owner: str, ttl_seconds: float = 90.0
-    ) -> Any: ...
-
     async def assert_recovery_fence(self, lease: Any) -> None: ...
 
     async def get_event(self, event_id: str) -> RunEvent: ...
@@ -414,8 +408,6 @@ class ExecutionUnitOfWork(Protocol):
     async def list_events(
         self, run_id: str, *, after_durable_seq: int = 0
     ) -> tuple[RunEvent, ...]: ...
-
-    async def list_event_deliveries(self, event_id: str) -> tuple[DeliveryRecord, ...]: ...
 
     async def claim_delivery(
         self,
@@ -534,8 +526,6 @@ class ExecutionUnitOfWork(Protocol):
 
     async def initialize(self) -> None: ...
 
-    async def get_execution_owner(self, run_id: str) -> tuple[str, int] | None: ...
-
     async def commit_skill_scope_activation(
         self,
         run_id: str,
@@ -563,19 +553,6 @@ class ExecutionUnitOfWork(Protocol):
     async def load_continuation(self, run_id: str) -> Any | None: ...
 
     async def lookup_completion_evidence(self, context: EvidenceContext) -> EvidenceSelection: ...
-
-    async def start_workflow(
-        self,
-        spec: RunCreate,
-        workflow: WorkflowRunSeed,
-        *,
-        start_snapshot: RunStartSnapshotRecord | None = None,
-        start_commit_extensions: Sequence[Any] = (),
-        association_event: RunEventCandidate | None = None,
-        accepted_event: RunEventCandidate | None = None,
-        deliveries: Sequence[DeliverySpec] = (),
-        admission_launch: AdmissionLaunchClaim | None = None,
-    ) -> WorkflowStartResult: ...
 
     async def commit_child_command(
         self,

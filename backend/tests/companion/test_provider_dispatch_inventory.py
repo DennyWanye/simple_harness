@@ -42,18 +42,6 @@ def _inside_dispatch_wrapper(
 
 def test_production_provider_and_effect_calls_use_approved_dispatch_seams() -> None:
     inventory = {
-        "backend/deskpet/workflows/adapters/research_runtime.py": {
-            "self.llm.complete",
-        },
-        # 证据运行时拆成 mixin 后，检索调用在 retrieval 子模块
-        "backend/deskpet/workflows/adapters/deep_research_v6_evidence_domains/retrieval.py": {
-            "self.search_gateway.search",
-        },
-        "backend/deskpet/workflows/adapters/code_runtime.py": {
-            "self.llm_registry.chat_with_fallback",
-            "execute_prepared",
-            "execute_outcome",
-        },
         "backend/deskpet/harness/tool_executor.py": {
             "self._registry.execute_prepared",
         },
@@ -77,37 +65,6 @@ def test_production_provider_and_effect_calls_use_approved_dispatch_seams() -> N
     assert violations == []
 
 
-def test_ppt_image_provider_is_below_the_central_effect_dispatch_fence() -> None:
-    tree = _parse("backend/deskpet/workflows/adapters/ppt_runtime.py")
-    runtime = next(
-        node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "PptRuntime"
-    )
-    run_effect = next(
-        node
-        for node in runtime.body
-        if isinstance(node, ast.AsyncFunctionDef) and node.name == "_run_effect"
-    )
-    assert any(
-        isinstance(node, ast.Call) and _call_name(node).endswith("dispatch_with_run_fence")
-        for node in ast.walk(run_effect)
-    )
-    image_calls = [
-        node
-        for node in ast.walk(runtime)
-        if isinstance(node, ast.Call) and _call_name(node) == "ppt_tools.generate_images"
-    ]
-    assert image_calls
-    generate_method = next(
-        node
-        for node in runtime.body
-        if isinstance(node, ast.AsyncFunctionDef) and node.name == "generate_slide_image"
-    )
-    assert any(
-        isinstance(node, ast.Call) and _call_name(node).endswith("self._run_effect")
-        for node in ast.walk(generate_method)
-    )
-
-
 def test_retry_authority_is_not_hidden_below_the_coordinator() -> None:
     # 提供方拆成 mixin 后，按门面加 openai_compatible_domains/ 整个包读
     compatible = "\n".join(
@@ -117,16 +74,6 @@ def test_retry_authority_is_not_hidden_below_the_coordinator() -> None:
             *sorted((ROOT / "backend/providers/openai_compatible_domains").glob("*.py")),
         )
     )
-    shim = (ROOT / "backend/agent/tool_use_shim.py").read_text(encoding="utf-8")
 
     assert "transport_retries = 0" in compatible
     assert 'retry_mode = "at_most_once"' in compatible
-    assert "chat_with_tools_at_most_once" in shim
-
-
-def test_workflow_bootstrap_forwards_the_shared_fence_to_stage_ports() -> None:
-    source = (ROOT / "backend/deskpet/workflows/adapters/deep_research_v6_bootstrap.py").read_text(
-        encoding="utf-8"
-    )
-    assert source.count("dispatch_fence_acquirer=dispatch_fence_acquirer") >= 2
-    assert ("provider_invocation_coordinator=provider_invocation_coordinator") in source

@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: BUSL-1.1
 
-"""Durable, fenced side-effect facts for graph workflows."""
+"""工具效果的类型（准备好的调用、目标、结果）与暂存文件的提交和回滚。"""
 
 from __future__ import annotations
 
@@ -12,9 +12,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .contracts import JsonValue
-from .effects_domains.core import EffectExecutionContext, TargetReservationConflict
-from .effects_domains.idempotent_reads import IdempotentReadAttempt, IdempotentReadMixin
-from .effects_domains.reconciliation import BudgetLedgerSnapshot, EffectReconciliationMixin
 from .effects_domains.support import (
     BudgetReservationExceeded,
     BudgetReservationRecord,
@@ -41,8 +38,6 @@ from .effects_domains.support import (
 from .effects_domains.support import (
     PreparedToolArgumentsProjectionError as PreparedToolArgumentsProjectionError,
 )
-from .effects_domains.v6_budgets import V6DeadlineBudgetMixin
-from .effects_domains.writes import BeginEffectResult, EffectWriteMixin
 
 
 @dataclass(frozen=True, slots=True)
@@ -207,26 +202,15 @@ class StagedFileLifecycle:
             os.close(descriptor)
 
 
-class EffectJournal(
-    EffectWriteMixin, V6DeadlineBudgetMixin, IdempotentReadMixin, EffectReconciliationMixin
-):
-    """SQLite effect journal whose mutations are fenced by run ownership."""
-
-
 __all__ = [
-    "BeginEffectResult",
-    "BudgetLedgerSnapshot",
     "BudgetReservationExceeded",
     "BudgetReservationRecord",
     "CheckpointEffectLink",
     "EffectAction",
-    "EffectExecutionContext",
-    "EffectJournal",
     "EffectJournalError",
     "EffectRecord",
     "EffectStateConflict",
     "EffectStatus",
-    "IdempotentReadAttempt",
     "NormalizedToolOutcome",
     "PreparedTarget",
     "PreparedToolCall",
@@ -234,7 +218,6 @@ __all__ = [
     "StagedFileLifecycle",
     "StagingPreconditionFailed",
     "TargetMode",
-    "TargetReservationConflict",
     "ToolOutcomeState",
     "effect_fingerprint",
     "normalize_target_path",

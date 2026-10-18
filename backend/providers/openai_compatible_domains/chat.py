@@ -12,9 +12,9 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import httpx
-
 from llm.context_messages import current_provider_attempt_options, split_wire_messages
 from llm.errors import LLMProviderError
+
 from providers._response_sanitizer import sanitize_response
 from providers.dispatch_handoff import current_dispatch_handoff
 
@@ -201,38 +201,6 @@ class ChatMixin(OpenAICompatibleCore):
             launch_operation_id=launch_operation_id,
             provider_launch_snapshot=provider_launch_snapshot,
             retry_mode="at_most_once" if coordinated else "resilient",
-        )
-
-    async def chat_with_tools_at_most_once(
-        self,
-        messages: list[dict],
-        *,
-        tools: list[dict] | None = None,
-        max_tokens: int = 8192,
-        temperature: float | None = None,
-        response_format: dict | None = None,
-        tool_choice: str | None = None,
-        launch_operation_id: str | None = None,
-        provider_launch_snapshot: ProviderLaunchSnapshot | None = None,
-    ) -> dict:
-        """Aggregate one provider transport attempt without fallback retries.
-
-        Durable opaque effects use this entrypoint because retrying after an
-        ambiguous transport failure could duplicate a completed upstream LLM
-        call.  The regular :meth:`chat_with_tools` path intentionally retains
-        its resilient retry and stream-to-nonstream fallback behaviour.
-        """
-
-        return await self._chat_with_tools_impl(
-            messages,
-            tools=tools,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            response_format=response_format,
-            tool_choice=tool_choice,
-            retry_mode="at_most_once",
-            launch_operation_id=launch_operation_id,
-            provider_launch_snapshot=provider_launch_snapshot,
         )
 
     async def _chat_with_tools_impl(

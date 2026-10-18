@@ -512,11 +512,6 @@ class WorkflowDriverUnitOfWork(Protocol):
         recovery_lease: RecoveryLease,
     ) -> DecisionRecord: ...
 
-    async def read_workflow_resume_payload(
-        self,
-        run_id: str,
-    ) -> Mapping[str, JsonValue]: ...
-
 
 @runtime_checkable
 class ProductProjectionUnitOfWork(Protocol):

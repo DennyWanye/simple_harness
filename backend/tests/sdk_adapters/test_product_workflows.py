@@ -20,15 +20,11 @@ from deskpet.sdk_adapters.workflows import (
 from simple_harness.workflow import WorkflowContext
 from tests.conformance_host import _research_context, _WorkflowSeam
 
+# SDK 产品定义只依赖 SDK 与 product_workflows 包：不碰执行账本包，也不碰
+# deepresearch 工具自己的研究核心。
 FORBIDDEN = (
-    "deskpet.workflows.contracts",
-    "deskpet.workflows.control",
-    "deskpet.workflows.definition",
-    "deskpet.workflows.runner",
-    "deskpet.workflows.definitions.v1",
-    "deskpet.workflows.definitions.v7",
-    "deskpet.workflows.definitions.research_core",
-    "deskpet.workflows.definitions.deep_research_v5_contracts",
+    "deskpet.workflows",
+    "deskpet.tools.research_core",
 )
 
 
@@ -38,8 +34,8 @@ def test_active_product_workflow_identities_are_versioned_and_detached():
         "workflow.presentation": ("ppt_pro", "v2"),
     }
     before = set(sys.modules)
-    importlib.import_module("deskpet.workflows.definitions.sdk_v7.deep_research")
-    importlib.import_module("deskpet.workflows.definitions.sdk_v2.ppt_pro")
+    importlib.import_module("deskpet.sdk_adapters.product_workflows.deep_research_definition")
+    importlib.import_module("deskpet.sdk_adapters.product_workflows.ppt_pro_definition")
     loaded = set(sys.modules) - before
     assert not any(
         name == prefix or name.startswith(prefix + ".") for name in loaded for prefix in FORBIDDEN
@@ -54,8 +50,8 @@ def test_fresh_process_standard_import_does_not_load_legacy_workflow_authority()
         import sys
 
         forbidden = {FORBIDDEN!r}
-        importlib.import_module('deskpet.workflows.definitions.sdk_v7.deep_research')
-        importlib.import_module('deskpet.workflows.definitions.sdk_v2.ppt_pro')
+        importlib.import_module('deskpet.sdk_adapters.product_workflows.deep_research_definition')
+        importlib.import_module('deskpet.sdk_adapters.product_workflows.ppt_pro_definition')
         blocked = sorted(
             name for name in sys.modules
             if any(name == prefix or name.startswith(prefix + '.') for prefix in forbidden)
@@ -78,22 +74,6 @@ def test_fresh_process_standard_import_does_not_load_legacy_workflow_authority()
     assert json.loads(completed.stdout) == []
 
 
-def test_lazy_legacy_exports_preserve_first_access_identity():
-    from deskpet import workflows
-    from deskpet.workflows import definitions
-
-    contracts = importlib.import_module("deskpet.workflows.contracts")
-    legacy_definition = importlib.import_module("deskpet.workflows.definition")
-    research_core = importlib.import_module("deskpet.workflows.definitions.research_core")
-    v5_contracts = importlib.import_module(
-        "deskpet.workflows.definitions.deep_research_v5_contracts"
-    )
-    assert workflows.EffectKind is contracts.EffectKind
-    assert workflows.WorkflowDefinition is legacy_definition.WorkflowDefinition
-    assert definitions.ResearchCoreConfig is research_core.ResearchCoreConfig
-    assert definitions.ResearchBrief is v5_contracts.ResearchBrief
-
-
 def test_product_registrations_use_exact_active_identities():
     owner = object()
     registrations = build_product_workflow_registrations(generation=1, transaction_owner=owner)
@@ -111,7 +91,7 @@ def test_product_registrations_use_exact_active_identities():
 
 
 def test_ppt_v2_has_pure_barrier_and_separate_effect_node():
-    module = importlib.import_module("deskpet.workflows.definitions.sdk_v2.ppt_pro")
+    module = importlib.import_module("deskpet.sdk_adapters.product_workflows.ppt_pro_definition")
     definition = module.PPT_PRO_V2_DEFINITION
     nodes = {node.node_id: node for node in definition.nodes}
     assert nodes["wait_outline_decision"].interrupt_capable is True

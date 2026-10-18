@@ -30,7 +30,6 @@ from .execution_uow_domains.support import (
 )
 from .execution_uow_domains.task_context import TaskContextMixin
 from .execution_uow_domains.tool_calls import ToolCallMixin
-from .execution_uow_domains.workflow import WorkflowRunMixin
 
 # Stable crash windows exercised by the R1 restart matrix.  This is kept
 # separate from migration/compatibility fault points: changing this set is a
@@ -88,7 +87,6 @@ ATOMIC_OPERATIONS = (
 
 class SqliteExecutionUnitOfWork(
     RuntimeActivationMixin,
-    WorkflowRunMixin,
     RunLifecycleMixin,
     ProviderInvocationMixin,
     RunEventMixin,

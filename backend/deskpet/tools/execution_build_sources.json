@@ -118,6 +118,7 @@
       "authority_phase": "both",
       "lifecycle": "active",
       "artifacts": [
+        "backend/deskpet/tools/research_core.py",
         "backend/deskpet/tools/research_fetch.py",
         "backend/deskpet/tools/research_report.py",
         "backend/deskpet/tools/research_tools.py"

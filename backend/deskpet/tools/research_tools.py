@@ -43,7 +43,7 @@ import time
 import urllib.parse
 from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import httpx
 from llm.context_messages import provider_purpose_scope
@@ -82,11 +82,9 @@ from deskpet.tools.research_report import (
     _insert_row_after_header,
     _is_cjk,
     _LLMCall,
-    _LLMCallV2,
     _no_results_template,
     _parse_rerank_scores,
     _passages_only_fallback,
-    _research_llm_result_from_provider_response,
     _rewrite_local_refs,
     _Searcher,
     _strip_footnote_definitions,
@@ -96,17 +94,11 @@ from deskpet.tools.research_report import (
 )
 
 from . import research_cdp_edge as _ce
-from . import research_scoring
+from . import research_core, research_scoring
 from .capabilities import ToolExecutionContext
 from .context_adapter import bind_context_handler, legacy_execution_context
 from .office_paths import title_slug
 from .scrapling_tools import _scrapling_get_html
-
-if TYPE_CHECKING:
-    from ..workflows.definitions.deep_research_v5_contracts import ResearchLLMResult
-
-# 转出口：编解码钉死的 v7 定义按 legacy._PLAN_PROMPT 读取（阶段 8F 下沉后保留）
-from deskpet.tools.research_report import _PLAN_PROMPT  # noqa: F401
 
 log = logging.getLogger(__name__)
 _CHILD_PROGRESS_TIMEOUT = 5.0
@@ -117,16 +109,6 @@ _CHILD_PROGRESS_TIMEOUT = 5.0
 # [0,1]) so relevance uses real semantics. Unset → keyword coverage only
 # (graceful degrade, no embedder dependency in tests).
 _SEMANTIC_SCORER = None
-_WORKFLOW_STARTER: Callable[[dict[str, Any], str], Awaitable[dict[str, Any]]] | None = None
-
-
-def set_deepresearch_workflow_starter(
-    fn: Callable[[dict[str, Any], str], Awaitable[dict[str, Any]]] | None,
-) -> None:
-    """Route new deepresearch tool calls to the durable graph when wired."""
-
-    global _WORKFLOW_STARTER
-    _WORKFLOW_STARTER = fn
 
 
 # Optional LLM-as-reranker (默认精排手段)。main.py 注入一个【廉价模型】
@@ -996,9 +978,6 @@ async def _research_subdirection(
 ) -> ResearchReport:
     """Focused v7 child: search once, fetch, filter, and synthesize once."""
 
-    # 按需导入：测试替身（deskpet.workflows.definitions.research_core）
-    from ..workflows.definitions import research_core
-
     original_request = (parent_topic or request_topic).strip()
     errors: list[str] = []
     try:
@@ -1256,14 +1235,7 @@ async def deepresearch(
     handler below; the extracted core only performs research computation.
     """
 
-    # 按需导入：测试替身（deskpet.workflows.definitions.research_core）
-    from ..workflows.definitions.research_core import (
-        ResearchCoreConfig,
-        legacy_ports,
-        run_research_core,
-    )
-
-    config = ResearchCoreConfig.from_legacy(
+    config = research_core.ResearchCoreConfig.from_legacy(
         max_sub_questions=max_sub_questions,
         max_urls_per_query=max_urls_per_query,
         max_total_passages=max_total_passages,
@@ -1272,8 +1244,8 @@ async def deepresearch(
     )
     _ur = (user_request or "").strip()
     request_topic = _ur or topic.strip()
-    ports = legacy_ports(llm_call=llm_call, search=search, extract=extract)
-    return await run_research_core(
+    ports = research_core.legacy_ports(llm_call=llm_call, search=search, extract=extract)
+    return await research_core.run_research_core(
         topic,
         ports=ports,
         config=config,
@@ -1463,10 +1435,6 @@ async def _handle_deepresearch(
     user_request = str(args.get("user_request") or "").strip() or None
     context = legacy_execution_context(args, task_id, execution_context)
     sid = context.session_id
-    if _WORKFLOW_STARTER is not None:
-        accepted = await _WORKFLOW_STARTER(dict(args), task_id)
-        return json.dumps(accepted, ensure_ascii=False)
-
     # Resolve an LLM callable from the running provider chain. We import
     # lazily so test environments without an LLM still pass.
     try:
@@ -1553,20 +1521,12 @@ def _save_report(topic: str, report: ResearchReport) -> Path | None:
 # through the live relay instead of a config-rebuilt provider. When unset we
 # fall back to reconstructing from config below.
 _LIVE_LLM_CALL: _LLMCall | None = None
-_LIVE_LLM_CALL_V2: _LLMCallV2 | None = None
 
 
 def set_live_llm_call(fn: _LLMCall | None) -> None:
     """Wire the running agent's LLM into deep-research (called from main.py)."""
     global _LIVE_LLM_CALL
     _LIVE_LLM_CALL = fn
-
-
-def set_live_llm_call_v2(fn: _LLMCallV2 | None) -> None:
-    """Wire the usage-bearing, at-most-once research transport."""
-
-    global _LIVE_LLM_CALL_V2
-    _LIVE_LLM_CALL_V2 = fn
 
 
 async def _resolve_default_llm_call() -> _LLMCall:
@@ -1613,63 +1573,6 @@ async def _resolve_default_llm_call() -> _LLMCall:
                 max_tokens=4096,  # synthesis needs room (was 2048 → truncated long reports)
             )
         return (result or {}).get("content") or ""
-
-    return _call
-
-
-async def _resolve_default_llm_call_v2() -> _LLMCallV2:
-    """Resolve the usage-bearing transport for durable opaque LLM effects."""
-
-    if _LIVE_LLM_CALL_V2 is not None:
-        return _LIVE_LLM_CALL_V2
-
-    try:
-        # 按需导入：可选依赖
-        from config import load_config, resolve_cloud_api_key  # type: ignore
-        from providers.openai_compatible import (  # type: ignore
-            OpenAICompatibleProvider,
-        )
-    except ImportError as exc:
-        raise RuntimeError(f"provider modules unavailable: {exc}") from exc
-
-    cfg = load_config()
-    local = getattr(cfg.llm, "local", None)
-    if local is None or not getattr(local, "base_url", ""):
-        raise RuntimeError("no llm provider configured")
-    api_key = resolve_cloud_api_key() or getattr(local, "api_key", "") or ""
-    provider = OpenAICompatibleProvider(
-        base_url=local.base_url,
-        api_key=api_key,
-        model=getattr(local, "model", ""),
-    )
-
-    async def _call(
-        prompt: str,
-        *,
-        max_output_tokens: int,
-        stable_call_id: str,
-        response_format: Mapping[str, Any] | None = None,
-    ) -> ResearchLLMResult:
-        if not stable_call_id:
-            raise ValueError("stable_call_id is required")
-        if (
-            isinstance(max_output_tokens, bool)
-            or not isinstance(max_output_tokens, int)
-            or max_output_tokens < 1
-        ):
-            raise ValueError("max_output_tokens must be a positive integer")
-
-        with provider_purpose_scope("research"):
-            result = await provider.chat_with_tools_at_most_once(
-                messages=[{"role": "user", "content": prompt}],
-                tools=[],
-                max_tokens=max_output_tokens,
-                response_format=(dict(response_format) if response_format else None),
-            )
-        return _research_llm_result_from_provider_response(
-            result,
-            fallback_model=str(getattr(provider, "model", "") or "unknown"),
-        )
 
     return _call
 

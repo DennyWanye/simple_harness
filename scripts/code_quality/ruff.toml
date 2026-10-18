@@ -32,23 +32,6 @@ extend-exclude = [
   # 测试按字节冻结的起始快照文件（tests/agents/test_api_mode_fence.py FROZEN_FILES）
   "sdk/simple-harness-sdk/src/simple_harness/runtime/start_snapshot.py",
   "sdk/simple-harness-sdk/src/simple_harness/runtime/drivers/start_mode.py",
-  # 工作流定义用节点函数的源码文本计算身份，旧版本身份被测试冻结（2026-10-12 阶段 1 回归发现）
-  "backend/deskpet/workflows/definitions/v1/deep_research.py",
-  "backend/deskpet/workflows/definitions/v2/deep_research.py",
-  "backend/deskpet/workflows/definitions/v3/deep_research.py",
-  "backend/deskpet/workflows/definitions/v4/deep_research.py",
-  "backend/deskpet/workflows/definitions/v5/deep_research.py",
-  "backend/deskpet/workflows/definitions/v6/deep_research.py",
-  "backend/deskpet/workflows/definitions/v7/deep_research.py",
-  "backend/deskpet/workflows/definitions/v1/ppt_pro.py",
-  "backend/deskpet/workflows/definitions/code_nodes.py",
-  "backend/deskpet/workflows/definitions/deep_research_v2_nodes.py",
-  "backend/deskpet/workflows/definitions/deep_research_v3_nodes.py",
-  "backend/deskpet/workflows/definitions/deep_research_v4_nodes.py",
-  "backend/deskpet/workflows/definitions/deep_research_v5_nodes.py",
-  "backend/deskpet/workflows/definitions/deep_research_v6_production_nodes.py",
-  "backend/deskpet/workflows/definitions/deep_research_v6_terminal_nodes.py",
-  "backend/deskpet/workflows/definitions/personal_workflow.py",
   # 测试数据文件
   "**/fixtures/**", "**/testdata/**",
 ]

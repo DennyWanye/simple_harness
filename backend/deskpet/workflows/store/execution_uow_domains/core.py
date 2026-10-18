@@ -133,105 +133,6 @@ class ExecutionTx:
                 (root_run_id, tool_name, policy_json, policy_hash, created_at),
             )
 
-    async def consume_workflow_decisions(
-        self,
-        *,
-        run_id: str,
-        decisions: Sequence[str | Mapping[str, Any]],
-        checkpoint_id: str,
-        now: float,
-    ) -> list[str]:
-        return await self._unit_of_work._consume_workflow_decisions_tx(
-            self._db,
-            run_id=run_id,
-            decisions=decisions,
-            checkpoint_id=checkpoint_id,
-            now=now,
-        )
-
-    async def mark_workflow_running_on_claim(
-        self,
-        *,
-        run_id: str,
-        now: float,
-    ) -> bool:
-        """Advance a generic Workflow Run inside the caller-owned claim tx."""
-
-        return await self._unit_of_work._mark_workflow_running_on_claim_tx(
-            self._db,
-            run_id=run_id,
-            now=now,
-        )
-
-    async def open_workflow_decision(
-        self,
-        *,
-        run: Mapping[str, Any],
-        interrupt_id: str,
-        checkpoint_id: str,
-        task_id: str | None,
-        kind: str,
-        prompt: object,
-        expires_at: float | None,
-        now: float,
-    ) -> Mapping[str, Any]:
-        return await self._unit_of_work._open_workflow_decision_tx(
-            self._db,
-            run=run,
-            interrupt_id=interrupt_id,
-            checkpoint_id=checkpoint_id,
-            task_id=task_id,
-            kind=kind,
-            prompt=prompt,
-            expires_at=expires_at,
-            now=now,
-        )
-
-    async def append_workflow_event(
-        self, *, run: Mapping[str, Any], intent: Mapping[str, Any], now: float
-    ) -> str:
-        return await self._unit_of_work._append_workflow_event_tx(
-            self._db, run=run, intent=intent, now=now
-        )
-
-    async def link_workflow_effects(
-        self,
-        *,
-        run_id: str,
-        checkpoint_ns: str,
-        checkpoint_id: str,
-        links: Sequence[Mapping[str, Any]],
-        now: float,
-    ) -> None:
-        await self._unit_of_work._link_workflow_effects_tx(
-            self._db,
-            run_id=run_id,
-            checkpoint_ns=checkpoint_ns,
-            checkpoint_id=checkpoint_id,
-            links=links,
-            now=now,
-        )
-
-    async def finalize_workflow_run(
-        self,
-        *,
-        run: Mapping[str, Any],
-        terminal_status: str,
-        terminal_error: Mapping[str, Any] | None,
-        recovery_action: str | None,
-        event_ids: Sequence[str],
-        now: float,
-    ) -> str:
-        return await self._unit_of_work._finalize_workflow_run_tx(
-            self._db,
-            run=run,
-            terminal_status=terminal_status,
-            terminal_error=terminal_error,
-            recovery_action=recovery_action,
-            event_ids=event_ids,
-            now=now,
-        )
-
     async def insert_candidate_draft_receipt(
         self,
         values: Mapping[str, str],
@@ -957,10 +858,6 @@ class ExecutionUowCore:
     def _fault(self, point: str) -> None:
         if self._fault_injector is not None:
             self._fault_injector(point)
-
-    @staticmethod
-    def _checkpoint_stable_id(*parts: object) -> str:
-        return hashlib.sha256("|".join(str(part) for part in parts).encode("utf-8")).hexdigest()
 
     @staticmethod
     def _row_to_record(row: Mapping[str, Any]) -> RunRecord:

@@ -35,9 +35,7 @@ from deskpet.execution.evidence import (
 )
 from deskpet.execution.ports import RunView
 
-from ..run_store import RunFence
 from .core import ExecutionUowCore
-from .support import CheckpointExecutionError
 
 
 class RecoveryBudgetMixin(ExecutionUowCore):
@@ -654,83 +652,6 @@ class RecoveryBudgetMixin(ExecutionUowCore):
                 raise StaleRecoveryLease("recovery lease changed while being claimed")
             await db.commit()
             return RecoveryLease(run_id, owner, epoch, new_expiry)
-
-    async def claim_workflow_recovery_handoff(
-        self, recovery_lease: RecoveryLease, *, workflow_owner: str, ttl_seconds: float = 90.0
-    ) -> RunFence:
-        """Atomically validate execution ownership and claim the Native run lease."""
-
-        if not workflow_owner.strip() or ttl_seconds <= 0:
-            raise ValueError("workflow owner and positive ttl_seconds are required")
-        async with self._write_transaction() as db:
-            run_id = recovery_lease.run_id
-            await self._assert_recovery_fence_tx(db, recovery_lease, run_id=run_id)
-            execution = await (
-                await db.execute(
-                    """SELECT driver_kind,status,started_at
-                    FROM execution_runs WHERE run_id=?""",
-                    (run_id,),
-                )
-            ).fetchone()
-            if execution is None or str(execution["driver_kind"]) != "workflow":
-                raise CheckpointExecutionError(
-                    "execution_driver_conflict",
-                    "workflow recovery handoff cannot claim another driver",
-                )
-            now = float(self._clock())
-            expires_at = now + ttl_seconds
-            row = await (
-                await db.execute(
-                    """UPDATE workflow_runs SET lease_owner=:owner,
-                    lease_epoch=lease_epoch+CASE WHEN lease_owner=:owner
-                        AND lease_expires_at>:now THEN 0 ELSE 1 END,
-                    run_version=run_version+CASE WHEN lease_owner=:owner
-                        AND lease_expires_at>:now THEN 0 ELSE 1 END,
-                    lease_expires_at=:expiry,heartbeat_at=:now,status='running',
-                    started_at=COALESCE(started_at,:now),updated_at=:now
-                    WHERE run_id=:run_id
-                    AND (
-                        status IN ('created','retryable','running')
-                        OR (
-                            status='waiting'
-                            AND EXISTS (
-                                SELECT 1 FROM execution_decisions
-                                WHERE execution_decisions.run_id=workflow_runs.run_id
-                                AND execution_decisions.status IN ('allowed','denied')
-                                AND execution_decisions.consumed_at IS NULL
-                            )
-                        )
-                    )
-                    AND (lease_owner IS NULL OR lease_owner=:owner OR lease_expires_at<=:now)
-                    RETURNING lease_epoch,run_version""",
-                    {"owner": workflow_owner, "expiry": expires_at, "now": now, "run_id": run_id},
-                )
-            ).fetchone()
-            if row is None:
-                raise StaleRecoveryLease(
-                    "native workflow lease cannot be claimed by this recovery owner"
-                )
-            execution_cursor = await db.execute(
-                """UPDATE execution_runs
-                SET status='running',
-                    started_at=COALESCE(started_at,:now),
-                    version=version+CASE
-                        WHEN status!='running' OR started_at IS NULL THEN 1 ELSE 0
-                    END,
-                    updated_at=CASE
-                        WHEN status!='running' OR started_at IS NULL
-                        THEN :now ELSE updated_at
-                    END
-                WHERE run_id=:run_id AND terminal_event_id IS NULL
-                AND status IN ('created','queued','running','waiting')""",
-                {"now": now, "run_id": run_id},
-            )
-            if execution_cursor.rowcount != 1:
-                raise StaleRecoveryLease("generic workflow execution is no longer launchable")
-            await db.commit()
-            return RunFence(
-                run_id, workflow_owner, int(row["lease_epoch"]), int(row["run_version"])
-            )
 
     async def assert_recovery_fence(self, lease: RecoveryLease) -> None:
         async with self._read_connection() as db:

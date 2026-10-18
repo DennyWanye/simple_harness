@@ -116,7 +116,7 @@ try {
   Write-Host "`n===== startup probes ====="
   $started = Probe "config_loaded (backend started)" "config_loaded"
   [void](Probe "provider_registry_ready" "provider_registry_ready")
-  [void](Probe "native workflow invocation marker" "engine_kind=deskpet-native|engine_kind.{0,4}deskpet-native")
+  [void](Probe "execution_ledger_ready" "execution_ledger_ready")
   foreach ($package in $ForbiddenPackages) {
     if ($all | Select-String "ModuleNotFoundError.*$package|No module named.*$package") {
       Write-Host "[FAIL] startup attempted removed package: $package" -ForegroundColor Red

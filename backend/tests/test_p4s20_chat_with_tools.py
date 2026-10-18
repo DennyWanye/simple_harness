@@ -9,11 +9,6 @@ import json
 
 import httpx
 import pytest
-from agent.tool_use_shim import (
-    OpenAICompatibleAgentLLM,
-    OpenAICompatibleAgentLLMChain,
-)
-from llm.errors import LLMAuthError
 from providers.openai_compatible import OpenAICompatibleProvider
 
 
@@ -112,85 +107,6 @@ async def test_chat_with_tools_normal_text() -> None:
     assert out["content"] == "hello"
     assert out["stop_reason"] == "end_turn"
     assert out["tool_calls"] == []
-
-
-@pytest.mark.asyncio
-async def test_shim_returns_chatresponse() -> None:
-    body = {
-        "id": "x",
-        "model": "gpt-test",
-        "choices": [
-            {
-                "finish_reason": "tool_calls",
-                "message": {
-                    "tool_calls": [
-                        {
-                            "id": "c1",
-                            "function": {
-                                "name": "read_file",
-                                "arguments": '{"path":"a.txt"}',
-                            },
-                        }
-                    ],
-                    "content": None,
-                },
-            }
-        ],
-        "usage": {"prompt_tokens": 10, "completion_tokens": 0},
-    }
-    p = OpenAICompatibleProvider(base_url="https://stub", api_key="k", model="gpt-test")
-    p._test_transport = httpx.MockTransport(_mock_handler([], body))
-    shim = OpenAICompatibleAgentLLM(provider=p)
-    resp = await shim.chat_with_fallback(
-        [{"role": "user", "content": "x"}],
-        tools=[
-            {
-                "type": "function",
-                "function": {
-                    "name": "read_file",
-                    "description": "r",
-                    "parameters": {},
-                },
-            }
-        ],
-    )
-    assert resp.stop_reason == "tool_use"
-    assert resp.tool_calls[0].name == "read_file"
-    assert resp.tool_calls[0].arguments == {"path": "a.txt"}
-    assert resp.usage.input_tokens == 10
-
-
-@pytest.mark.asyncio
-async def test_chain_shim_falls_back_in_resolved_order() -> None:
-    calls: list[str] = []
-
-    class Provider:
-        def __init__(self, name: str, *, fail: bool) -> None:
-            self.name = name
-            self.model = f"{name}-model"
-            self.fail = fail
-
-        async def chat_with_tools(self, messages, **kwargs):
-            calls.append(self.name)
-            if self.fail:
-                raise LLMAuthError("expired", provider=self.name)
-            return {
-                "content": "fallback worked",
-                "tool_calls": [],
-                "stop_reason": "end_turn",
-                "model": self.model,
-                "usage": {},
-            }
-
-    chain = OpenAICompatibleAgentLLMChain(
-        [Provider("first", fail=True), Provider("second", fail=False)]
-    )
-    response = await chain.chat_with_fallback([{"role": "user", "content": "go"}])
-
-    assert calls == ["first", "second"]
-    assert response.content == "fallback worked"
-    assert chain.name == "second"
-    assert chain.model == "second-model"
 
 
 # Regression: your-llm-relay.example.com / sealos thinking-mode endpoints sometimes

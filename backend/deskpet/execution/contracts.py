@@ -1493,15 +1493,6 @@ class AdmissionLaunchUnknownFence:
 
 
 @dataclass(frozen=True, slots=True)
-class WorkflowStartResult:
-    record: RunRecord
-    execution_created: bool
-    workflow_created: bool
-    admission_consumed: bool
-    start_claimed: bool
-
-
-@dataclass(frozen=True, slots=True)
 class WorkflowSessionRef:
     session_kind: str
     session_id: str
@@ -1516,63 +1507,6 @@ class WorkflowSessionRef:
             raise ContractValidationError(
                 "invalid_session_epoch", "session_epoch must be non-negative"
             )
-
-
-@dataclass(frozen=True, slots=True)
-class WorkflowRunSeed:
-    request_key: str
-    workflow_name: str
-    workflow_version: str
-    manifest_hash: str
-    implementation_hash: str
-    capability_hash: str
-    capability_snapshot: Mapping[str, JsonValue]
-    state_schema_version: int
-    trace_id: str
-    thread_id: str
-    checkpoint_ns: str = ""
-    source_checkpoint_id: str | None = None
-    session_refs: Sequence[WorkflowSessionRef] = field(default_factory=tuple)
-    schema_version: int = CONTRACT_SCHEMA_VERSION
-
-    def __post_init__(self) -> None:
-        _schema_version(self.schema_version, name="WorkflowRunSeed")
-        for field_name in (
-            "request_key",
-            "workflow_name",
-            "workflow_version",
-            "manifest_hash",
-            "implementation_hash",
-            "trace_id",
-            "thread_id",
-        ):
-            object.__setattr__(
-                self, field_name, _required_text(getattr(self, field_name), field_name)
-            )
-        object.__setattr__(
-            self, "capability_hash", _fingerprint(self.capability_hash, "capability_hash")
-        )
-        if not isinstance(self.state_schema_version, int) or self.state_schema_version < 1:
-            raise ContractValidationError(
-                "invalid_state_schema", "state_schema_version must be positive"
-            )
-        object.__setattr__(
-            self,
-            "capability_snapshot",
-            _json_object(self.capability_snapshot, name="WorkflowRunSeed.capability_snapshot"),
-        )
-        object.__setattr__(self, "checkpoint_ns", str(self.checkpoint_ns or ""))
-        object.__setattr__(
-            self,
-            "source_checkpoint_id",
-            _optional_text(self.source_checkpoint_id, "source_checkpoint_id"),
-        )
-        refs = tuple(self.session_refs)
-        if len({ref.session_kind for ref in refs}) != len(refs):
-            raise ContractValidationError(
-                "duplicate_session_ref", "workflow session kinds must be unique"
-            )
-        object.__setattr__(self, "session_refs", refs)
 
 
 @dataclass(frozen=True, slots=True)
@@ -1760,9 +1694,7 @@ __all__ = [
     "TERMINAL_RUN_STATUSES",
     "TerminalConflict",
     "VersionConflict",
-    "WorkflowRunSeed",
     "WorkflowSessionRef",
-    "WorkflowStartResult",
     "canonical_json",
     "assert_idempotent_run_intent",
     "delegate_idempotency_key",

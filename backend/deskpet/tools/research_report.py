@@ -15,15 +15,12 @@ import os
 import re
 from collections.abc import Awaitable, Iterable
 from dataclasses import asdict, dataclass, field
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import Any, Protocol
 
 from paths import deepresearch_dir
 
 from deskpet.tools.office_paths import title_slug
 from deskpet.tools.research_fetch import _DEFAULT_AUTHORITY, authority_for_url
-
-if TYPE_CHECKING:
-    from deskpet.workflows.definitions.deep_research_v5_contracts import ResearchLLMResult
 
 _EXPAND_PROMPT = """\
 You are expanding search coverage for a research topic.
@@ -313,17 +310,6 @@ class FanoutCollection:
 
 class _LLMCall(Protocol):
     async def __call__(self, prompt: str) -> str: ...
-
-
-class _LLMCallV2(Protocol):
-    async def __call__(
-        self,
-        prompt: str,
-        *,
-        max_output_tokens: int,
-        stable_call_id: str,
-        response_format: Mapping[str, Any] | None = None,
-    ) -> ResearchLLMResult: ...
 
 
 class _Searcher(Protocol):
@@ -723,58 +709,3 @@ def save_workflow_report(
         "size_bytes": len(payload),
         "sha256": hashlib.sha256(payload).hexdigest(),
     }
-
-
-def _optional_usage_int(value: object) -> int | None:
-    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-        return None
-    return value
-
-
-def _research_llm_result_from_provider_response(
-    response: object,
-    *,
-    fallback_model: str,
-) -> ResearchLLMResult:
-    """Normalize OpenAI and relay token fields without inventing usage."""
-
-    # 按需导入：测试替身（deskpet.workflows.definitions.deep_research_v5_contracts）
-    from ..workflows.definitions.deep_research_v5_contracts import ResearchLLMResult
-
-    payload = response if isinstance(response, dict) else {}
-    usage = payload.get("usage")
-    usage = usage if isinstance(usage, dict) else {}
-    input_tokens = _optional_usage_int(
-        usage.get("input_tokens") if "input_tokens" in usage else usage.get("prompt_tokens")
-    )
-    output_tokens = _optional_usage_int(
-        usage.get("output_tokens") if "output_tokens" in usage else usage.get("completion_tokens")
-    )
-    details = usage.get("prompt_tokens_details")
-    if not isinstance(details, dict):
-        details = usage.get("input_tokens_details")
-    details = details if isinstance(details, dict) else {}
-    cache_tokens = _optional_usage_int(
-        details.get("cached_tokens") if "cached_tokens" in details else usage.get("cached_tokens")
-    )
-    usage_complete = input_tokens is not None and output_tokens is not None
-    if not usage_complete:
-        input_tokens = output_tokens = cache_tokens = None
-    usage_source = "provider" if usage_complete else "usage_unknown"
-    request_id_raw = payload.get("request_id") or payload.get("id")
-    request_id = (
-        str(request_id_raw).strip()
-        if isinstance(request_id_raw, (str, int)) and not isinstance(request_id_raw, bool)
-        else None
-    )
-    if request_id == "":
-        request_id = None
-    return ResearchLLMResult(
-        content=str(payload.get("content") or ""),
-        model=str(payload.get("model") or fallback_model or "unknown"),
-        input_tokens=input_tokens,
-        output_tokens=output_tokens,
-        cache_tokens=cache_tokens,
-        usage_source=usage_source,
-        request_id=request_id,
-    )

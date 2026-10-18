@@ -5,18 +5,14 @@ import json
 import os
 import threading
 import time
-from dataclasses import replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from unittest.mock import AsyncMock
 
 import httpx
 import pytest
-from config import SearchGatewayConfig
 from deskpet.retrieval.contracts import (
     FetchRequest,
-    RetrievalCandidate,
-    SearchRequest,
 )
 from deskpet.retrieval.fetch_extract import FetchExtractService
 from deskpet.retrieval.playwright_renderer import (
@@ -24,14 +20,6 @@ from deskpet.retrieval.playwright_renderer import (
     PlaywrightRendererPool,
     PlaywrightRenderError,
 )
-from deskpet.retrieval.search_gateway import SearchGateway
-from deskpet.workflows.contracts import WorkflowContext
-from deskpet.workflows.definitions.deep_research_v5_contracts import DimensionCoverage
-from deskpet.workflows.definitions.v5 import (
-    DEEP_RESEARCH_V5,
-    deep_research_initial_state,
-)
-from deskpet.workflows.native import InMemoryNativeCheckpointStore
 
 
 @pytest.mark.parametrize("system,machine", [("win32", "AMD64"), ("darwin", "arm64")])
@@ -622,245 +610,6 @@ async def test_static_transport_failure_can_recover_through_playwright(
     assert document.fetcher == "playwright"
     assert "dynamic evidence" in document.text
     edge.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_real_gateway_fetch_playwright_chain_feeds_v5_graph(
-    fixture_server: str, task0_browser_root: Path
-) -> None:
-    """One regression crosses the production component boundaries end to end.
-
-    The provider is deterministic and local, but the SearchGateway allocator,
-    FetchExtractService policy, bundled Playwright browser, and v5 graph are
-    the real implementations.  This prevents individually green component
-    tests from hiding a broken result/fetch/coverage contract between layers.
-    """
-
-    class FixtureProvider:
-        name = "duckduckgo"
-        capabilities = frozenset({"html"})
-
-        def __init__(self) -> None:
-            self.calls = 0
-
-        async def is_available(self) -> bool:
-            return True
-
-        async def search(self, request, budget, client):
-            del budget, client
-            self.calls += 1
-            url = f"{fixture_server}/dynamic"
-            return [
-                RetrievalCandidate(
-                    stable_id="fixture-dynamic",
-                    url=url,
-                    canonical_url=url,
-                    title=f"{request.query} dynamic source",
-                    snippet="A deterministic dynamic evidence source.",
-                    provider=self.name,
-                    providers=(self.name,),
-                    provider_rank=1,
-                    searched_at="2026-07-16T00:00:00+00:00",
-                )
-            ]
-
-    provider = FixtureProvider()
-    gateway_client = httpx.AsyncClient()
-    gateway = SearchGateway(
-        config=replace(
-            SearchGatewayConfig(),
-            providers=[provider.name],
-            research_target_results=1,
-            research_target_domains=1,
-        ),
-        providers=[provider],
-        client=gateway_client,
-    )
-    pool = _pool(task0_browser_root)
-    fetch_client = httpx.AsyncClient()
-    service = FetchExtractService(
-        transport=_StaticTransport(_shell()),
-        client=fetch_client,
-        respect_robots=False,
-        request_interval_ms=0,
-        playwright_renderer=pool,
-        render_call=AsyncMock(
-            side_effect=AssertionError("valid bundled Playwright output must stop Edge fallback")
-        ),
-    )
-
-    class SearchStage:
-        async def execute(self, *, stage, payload, identity):
-            del identity
-            if stage == "direct":
-                return {}
-            if stage == "gap_work":
-                query = str(payload["work_item"]["query"])
-            else:
-                query = str(payload["initial_queries"][0]["query"])
-            return (
-                await gateway.search(
-                    SearchRequest(
-                        query,
-                        max_results=3,
-                        mode="research",
-                        run_id="run-v5-real-retrieval",
-                    )
-                )
-            ).to_dict()
-
-    class FetchStage:
-        fetcher = ""
-
-        async def execute(self, *, stage, payload, identity):
-            del identity
-            assert stage == "fetch"
-            rows = payload["search_result"]["results"]
-            document = await service.fetch(FetchRequest(str(rows[0]["url"]), render_policy="auto"))
-            self.fetcher = document.fetcher
-            coverages = []
-            candidates = []
-            for item in payload["research_brief"]["dimensions"]:
-                dimension_id = str(item["dimension_id"])
-                ids = (
-                    f"{document.content_hash}-{dimension_id}-1",
-                    f"{document.content_hash}-{dimension_id}-2",
-                )
-                coverages.append(
-                    DimensionCoverage(
-                        dimension_id,
-                        "covered",
-                        ids,
-                        ids,
-                        (f"fixture-family-{dimension_id}-1", f"fixture-family-{dimension_id}-2"),
-                        True,
-                        0.95,
-                    ).to_json()
-                )
-                for index, candidate_id in enumerate(ids, 1):
-                    candidates.append(
-                        {
-                            "candidate_id": candidate_id,
-                            "dimension_id": dimension_id,
-                            "url": document.url,
-                            "canonical_url": document.canonical_url,
-                            "title": document.title,
-                            "body_text": document.text,
-                            "span_text": "dynamic evidence",
-                            "relevance": 0.95,
-                            "source_type": "official_document",
-                            "source_tier": "first_party",
-                            "content_hash": document.content_hash,
-                            "published_date": None,
-                            "invalid_reason": None,
-                            "page_flags": [],
-                            "family_id": f"fixture-family-{dimension_id}-{index}",
-                            "admitted": True,
-                        }
-                    )
-            return {
-                "documents": [document.to_dict()],
-                "coverages": coverages,
-                "evidence_candidates": candidates,
-                "passage_blob_refs": [document.content_hash],
-                "quality_score": 95.0,
-            }
-
-    class LLMStage:
-        async def execute(self, *, stage, payload, identity):
-            del identity
-            if stage == "report_synthesis":
-                analyses = []
-                claims = []
-                for index, coverage in enumerate(payload["dimension_coverages"]):
-                    dimension_id = str(coverage["dimension_id"])
-                    winning = list(coverage["winning_evidence_ids"])
-                    analyses.append(
-                        {
-                            "schema_version": 1,
-                            "dimension_id": dimension_id,
-                            "direct_answer": "dynamic evidence",
-                            "fact_claim_ids": [f"fact-{dimension_id}"],
-                            "inference_claim_ids": [],
-                            "limitation_claim_ids": [],
-                            "winning_evidence_ids": winning,
-                            "relevance_score": 0.95,
-                            "confidence": "high",
-                        }
-                    )
-                    for kind in ("current_state", "driver_change", "impact"):
-                        claims.append(
-                            {
-                                "claim_id": f"{kind}-{dimension_id}",
-                                "dimension_id": dimension_id,
-                                "text": "dynamic evidence",
-                                "kind": kind,
-                                "source_ids": winning[:1],
-                                "supported_fact_refs": winning[:1],
-                                "intent_tokens": ["教育"],
-                                "is_inference": False,
-                                "metadata_pseudo_judgment": False,
-                            }
-                        )
-                    if index < 6:
-                        claims.append(
-                            {
-                                "claim_id": f"key-{dimension_id}",
-                                "dimension_id": dimension_id,
-                                "text": "dynamic evidence",
-                                "kind": "key_judgment",
-                                "source_ids": winning[:1],
-                                "supported_fact_refs": winning[:1],
-                                "intent_tokens": ["教育"],
-                                "is_inference": False,
-                                "metadata_pseudo_judgment": False,
-                            }
-                        )
-                return {
-                    "analyses": analyses,
-                    "claims": claims,
-                }
-            if stage == "quality_audit":
-                return {"route": "persist"}
-            return {}
-
-    class ArtifactStage:
-        async def execute(self, *, stage, payload, identity):
-            del payload, identity
-            assert stage == "persist"
-            return {"report_ref": "artifact:dynamic-evidence-report"}
-
-    fetch_stage = FetchStage()
-    executable = DEEP_RESEARCH_V5.bind(checkpointer=InMemoryNativeCheckpointStore())
-    state = deep_research_initial_state(
-        topic="中国小学教育动态页面证据",
-        run_id="run-v5-real-retrieval",
-        thread_id="thread-v5-real-retrieval",
-    )
-    try:
-        result = await executable.ainvoke(
-            state,
-            WorkflowContext(
-                ports={
-                    "llm": LLMStage(),
-                    "search": SearchStage(),
-                    "fetch": fetch_stage,
-                    "artifact": ArtifactStage(),
-                }
-            ),
-            thread_id="thread-v5-real-retrieval",
-            run_id="run-v5-real-retrieval",
-        )
-    finally:
-        await service.close()
-        await fetch_client.aclose()
-        await gateway.shutdown()
-        await gateway_client.aclose()
-
-    assert provider.calls == 1
-    assert fetch_stage.fetcher == "playwright"
-    assert result["values"]["terminal_public"] == {"delivery_status": "completed"}
-    assert result["values"]["report_ref"] == "artifact:dynamic-evidence-report"
 
 
 @pytest.mark.asyncio

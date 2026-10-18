@@ -155,18 +155,6 @@ class RuntimeActivationMixin(ExecutionUowCore):
         async with self._read_connection() as db:
             return await self._runtime_state_tx(db)
 
-    async def get_execution_owner(self, run_id: str) -> tuple[str, int] | None:
-        """Return the authoritative owner only when an execution row exists."""
-
-        async with self._read_connection() as db:
-            row = await (
-                await db.execute(
-                    "SELECT owner_kind,owner_generation FROM execution_runs WHERE run_id=?",
-                    (run_id,),
-                )
-            ).fetchone()
-            return None if row is None else (str(row["owner_kind"]), int(row["owner_generation"]))
-
     @staticmethod
     def _manifest_hash(items: Sequence[LegacyDrainRef]) -> str:
         payload = [
@@ -208,12 +196,6 @@ class RuntimeActivationMixin(ExecutionUowCore):
         ) + tuple(
             sorted(LegacyDrainRef("workflow_run", str(row["run_id"])) for row in workflow_rows)
         )
-
-    async def scan_legacy_drain_manifest(self) -> tuple[LegacyDrainRef, ...]:
-        """Read the current set of active durable rows owned by legacy."""
-
-        async with self._read_connection() as db:
-            return await self._scan_legacy_drain_tx(db)
 
     async def _claim_legacy_drain_item_tx(
         self,

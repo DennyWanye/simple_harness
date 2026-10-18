@@ -26,8 +26,6 @@ on Windows occasionally takes 6-8s on first connect).
 from __future__ import annotations
 
 import httpx
-from agent.tool_use_shim import _raw_to_response
-from llm.types import ChatResponse
 from providers.openai_compatible import OpenAICompatibleProvider
 
 # ─────────────── connect timeout (Fix A) ───────────────
@@ -91,40 +89,3 @@ def _stub_response_with_malformed_tool_call(args_raw: str) -> dict:
         "model": "deepseek-v4-pro",
         "usage": {"prompt_tokens": 10, "completion_tokens": 5},
     }
-
-
-def test_raw_to_response_propagates_parse_error_metadata():
-    raw = _stub_response_with_malformed_tool_call('{"path": "fo')
-    resp = _raw_to_response(raw)
-    assert isinstance(resp, ChatResponse)
-    assert len(resp.tool_calls) == 1
-    tc = resp.tool_calls[0]
-    assert tc.args_parse_error is not None
-    assert "Expecting" in tc.args_parse_error
-    assert tc.args_raw == '{"path": "fo'
-    # Empty parsed args (since parse failed)
-    assert tc.arguments == {}
-
-
-def test_assembled_tool_call_omits_metadata_when_args_parse_ok():
-    """When args_buf parses cleanly, the assembled tool_call dict must
-    NOT contain ``_args_raw`` / ``_args_parse_error`` keys — those exist
-    only as the failure marker."""
-    raw = {
-        "content": "",
-        "tool_calls": [
-            {
-                "id": "c1",
-                "name": "read_file",
-                "arguments": {"path": "/x"},
-                # Note: NO _args_parse_error / _args_raw → clean parse
-            }
-        ],
-        "stop_reason": "tool_use",
-        "model": "m",
-        "usage": {},
-    }
-    resp = _raw_to_response(raw)
-    tc = resp.tool_calls[0]
-    assert tc.args_parse_error is None
-    assert tc.args_raw is None

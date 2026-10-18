@@ -6,7 +6,6 @@ from deskpet.execution.provider_workloads import SessionAwareLLMCall
 from deskpet.tools import image_tools as _image_tools
 from deskpet.tools import research_tools as _research_tools
 from deskpet.tools.research_fetch import _is_loopback_url
-from deskpet.tools.research_report import _research_llm_result_from_provider_response
 from llm.context_messages import provider_purpose_scope
 from providers.openai_compatible import OpenAICompatibleProvider
 
@@ -125,36 +124,6 @@ def _make_session_aware_llm_call(
     )
 
 
-def _make_research_llm_call_v2(provider):
-    """Adapt the active provider to the usage-bearing v5 research contract."""
-    if provider is None:
-        return None
-
-    async def _call(
-        prompt: str,
-        *,
-        max_output_tokens: int,
-        stable_call_id: str,
-        response_format=None,
-    ):
-        if not stable_call_id:
-            raise ValueError("stable_call_id is required")
-
-        with provider_purpose_scope("research"):
-            result = await provider.chat_with_tools_at_most_once(
-                messages=[{"role": "user", "content": prompt}],
-                tools=[],
-                max_tokens=max_output_tokens,
-                response_format=response_format,
-            )
-        return _research_llm_result_from_provider_response(
-            result,
-            fallback_model=str(getattr(provider, "model", "") or "unknown"),
-        )
-
-    return _call
-
-
 def _resolve_ephemeral_provider(base_provider, model_name: str):
     """Clone ``base_provider`` with its model overridden to ``model_name``.
 
@@ -210,7 +179,6 @@ try:
     _research_tools.set_live_llm_call(
         _make_str_llm_call(host_state.local_llm, max_tokens=4096, purpose="research")
     )
-    _research_tools.set_live_llm_call_v2(_make_research_llm_call_v2(host_state.local_llm))
 
     # LLM 重排桥: 用【廉价模型】(默认 gpt-4.1-mini,中转站有)做 research 召回后的
     # cross-encoder 式精排 —— 免下载本地 bge-reranker、免占本地内存,复用 relay。
@@ -305,7 +273,6 @@ def _refresh_research_live_llm(provider=None) -> None:
         _research_tools.set_live_llm_call(
             _make_str_llm_call(_provider, max_tokens=4096, purpose="research")
         )
-        _research_tools.set_live_llm_call_v2(_make_research_llm_call_v2(_provider))
 
         try:
             _r_base = str(getattr(_provider, "base_url", "") or "")

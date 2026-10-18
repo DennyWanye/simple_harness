@@ -32,34 +32,7 @@ def test_search_gateway_factory_defaults_on_without_external_service(tmp_path):
     assert cfg.search_gateway.provider_queue_max_wait_s == 8.0
     assert cfg.search_gateway.empty_rescue_enabled is True
     assert cfg.search_gateway.empty_rescue_max_per_request == 1
-    assert cfg.workflows.deep_research_version == "v7"
     assert cfg.search_gateway.playwright_renderer_enabled is True
-
-
-def test_research_v5_runtime_budgets_are_clamped_without_exposing_policy(tmp_path):
-    cfg = _load(
-        tmp_path,
-        """
-        [research_v5]
-        soft_checkpoint_seconds = 1
-        lease_seconds = 9999
-        auto_cap_seconds = 2
-        plateau_rounds = 99
-        llm_input_token_budget = 1
-        llm_output_token_budget = 9999999
-        llm_cost_budget_micros = -5
-        io_operation_budget = 1
-    """,
-    )
-    assert cfg.research_v5.soft_checkpoint_seconds == 30
-    assert cfg.research_v5.lease_seconds == 600
-    assert cfg.research_v5.auto_cap_seconds == 600
-    assert cfg.research_v5.plateau_rounds == 10
-    assert cfg.research_v5.llm_input_token_budget == 1000
-    assert cfg.research_v5.llm_output_token_budget == 500000
-    assert cfg.research_v5.llm_cost_budget_micros == 0
-    assert cfg.research_v5.io_operation_budget == 8
-    assert not hasattr(cfg.research_v5, "evidence_threshold")
 
 
 def test_legacy_alias_only_overrides_when_explicit(tmp_path):

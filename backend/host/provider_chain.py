@@ -15,56 +15,6 @@ def _select_code_workflow_provider(*, local_llm, cloud_llm):
     return local_llm or cloud_llm
 
 
-def _validate_code_recovery_capability_subset(
-    *,
-    prepared_names,
-    allowed_tools,
-) -> None:
-    """Require child workflow tools to be a narrowing of frozen Context OS."""
-
-    # Durable children intentionally remove widening controls such as
-    # workflow_spawn. ProposalPort exposes only ``allowed_tools`` and rejects
-    # every call outside that immutable child snapshot, so exact equality
-    # would reject the valid least-authority child. Still fail closed if the
-    # child names anything absent from the trusted prepared ToolSet.
-    if not set(allowed_tools).issubset(set(prepared_names)):
-        raise RuntimeError("code recovery capability snapshot mismatch")
-
-
-def _resolve_code_recovery_provider(*, provider_snapshot, model_snapshot, registry, fallback):
-    """Rebuild the exact frozen Code provider or fail recovery closed."""
-
-    provider_id = str(
-        provider_snapshot.get("provider_id") or provider_snapshot.get("provider") or ""
-    )
-    model = str(model_snapshot.get("model") or "")
-    if not provider_id or not model:
-        raise RuntimeError("code recovery provider/model snapshot is incomplete")
-    entry = registry.get_entry(provider_id) if registry is not None else None
-    if entry is not None:
-        api_key = registry.resolve_api_key(entry.id) or "ollama"
-        provider = OpenAICompatibleProvider(
-            base_url=entry.base_url,
-            api_key=api_key,
-            model=model,
-            temperature=getattr(entry, "temperature", 0.7),
-            sanitize_inline_cot_dsml=_sanitize_cot_dsml,
-            code_params=getattr(entry, "code_params", None),
-            is_relay=(entry.source == "relay"),
-        )
-        provider.provider_id = str(entry.id)
-        return provider
-    fallback_id = str(
-        getattr(fallback, "provider_id", "")
-        or getattr(fallback, "id", "")
-        or (type(fallback).__name__ if fallback is not None else "")
-    )
-    fallback_model = str(getattr(fallback, "model", "") or "")
-    if fallback is None or fallback_id != provider_id or fallback_model != model:
-        raise RuntimeError(f"frozen code provider unavailable:{provider_id}:{model}")
-    return fallback
-
-
 def _build_agent_provider_chain(*, entries, registry):
     """Build every provider resolved for a general-agent Run, in order."""
 

@@ -2,27 +2,19 @@ from __future__ import annotations
 
 import asyncio
 import copy
-import inspect
 import json
-from pathlib import Path
 
 import pytest
 from deskpet.tools import research_tools as legacy
-from deskpet.tools.research_report import Citation, Passage, ResearchReport
-from deskpet.workflows import WorkflowContext
-from deskpet.workflows.definitions import deep_research_nodes as nodes
-from deskpet.workflows.definitions.research_core import (
+from deskpet.tools.research_core import (
     FetchPort,
     ResearchCoreConfig,
     ResearchCoreState,
-    ResearchLLMPort,
-    ResearchPorts,
-    ResearchSearchPort,
     _passes_topic_anchor_gate,
     legacy_ports,
     run_research_core,
 )
-from deskpet.workflows.store.blob_store import BlobStore
+from deskpet.tools.research_report import Citation, Passage, ResearchReport
 
 
 class FakeLLM:
@@ -66,116 +58,6 @@ def _state() -> ResearchCoreState:
             "source_pack_queries": 0,
         },
     )
-
-
-@pytest.mark.asyncio
-async def test_stage_contracts_are_reentrant_and_product_side_effect_free() -> None:
-    llm = FakeLLM(
-        [
-            json.dumps(["question one?"]),
-            "# stable topic\n\n## TL;DR\n\nSupported finding [^1].",
-        ]
-    )
-
-    async def search(query: str, *, max_results: int):
-        assert query == "question one?"
-        assert max_results == 2
-        return [{"url": "https://example.com/a", "title": "A", "snippet": ""}]
-
-    async def extract(url: str):
-        return {
-            "ok": True,
-            "url": url,
-            "title": "A",
-            "text": "question one stable topic primary source evidence " * 20,
-            "fetched_at": 123.0,
-        }
-
-    ports = ResearchPorts(
-        llm=ResearchLLMPort(complete=llm),
-        search=ResearchSearchPort(search_call=search),
-        fetch=FetchPort(extractor=extract),
-    )
-    config = _config()
-    state = _state()
-    context = WorkflowContext(
-        ports={"llm": ports.llm, "search": ports.search, "fetch": ports.fetch}
-    )
-    assert ResearchPorts.from_workflow_context(context) == ports
-
-    stage_functions = [
-        nodes.plan_node,
-        nodes.expand_node,
-        nodes.search_node,
-        nodes.fetch_extract_node,
-        nodes.direct_node,
-        nodes.score_rerank_node,
-        nodes.gap_node,
-        nodes.synth_node,
-        nodes.citation_node,
-    ]
-    assert all(inspect.iscoroutinefunction(stage) for stage in stage_functions)
-
-    await nodes.plan_node(state, ports, config)
-    await nodes.expand_node(state, ports, config)
-    await nodes.search_node(state, ports, config)
-    await nodes.fetch_extract_node(state, ports, config)
-    await nodes.score_rerank_node(state, ports, config, finalize=False)
-    await nodes.direct_node(state, ports, config)
-    await nodes.gap_node(state, ports, config)
-    await nodes.score_rerank_node(state, ports, config)
-    await nodes.synth_node(state, ports, config)
-    await nodes.citation_node(state, ports, config)
-
-    assert state.sub_questions == ["question one?"]
-    assert [passage.citation.url for passage in state.passages] == ["https://example.com/a"]
-    assert state.cite_result["ok"] is True
-    assert "[^1]: [A](https://example.com/a)" in state.report_md
-    assert not hasattr(state, "artifact_refs")
-    assert not hasattr(state, "receipt_refs")
-
-
-@pytest.mark.asyncio
-async def test_rerank_failure_drops_unrelated_fallback_passages() -> None:
-    async def complete(prompt: str) -> str:
-        if "JSON" in prompt:
-            return json.dumps(["AI Agent Harness observability and recovery"])
-        return "# Report\n\nThis must not be synthesized from unrelated evidence."
-
-    async def rerank(prompt: str) -> str:
-        raise RuntimeError("LLM HTTP 503 Service Unavailable")
-
-    async def search(query: str, *, max_results: int):
-        return [{"url": "https://baike.sogou.com/banana", "title": "Banana"}]
-
-    async def extract(url: str):
-        return {
-            "ok": True,
-            "url": url,
-            "title": "Banana",
-            "text": "Bananas are fruit grown in tropical climates. " * 20,
-            "fetched_at": 123.0,
-        }
-
-    ports = ResearchPorts(
-        llm=ResearchLLMPort(complete=complete, rerank=rerank),
-        search=ResearchSearchPort(search_call=search),
-        fetch=FetchPort(extractor=extract),
-    )
-    state = ResearchCoreState(
-        request_topic="2026 AI Agent Harness best practices",
-        llm_topic="2026 AI Agent Harness best practices",
-        mode="deep",
-        route={"fallback": "test"},
-    )
-    await nodes.plan_node(state, ports, _config(rerank_mode="llm"))
-    await nodes.search_node(state, ports, _config(rerank_mode="llm"))
-    await nodes.fetch_extract_node(state, ports, _config(rerank_mode="llm"))
-    await nodes.score_rerank_node(state, ports, _config(rerank_mode="llm"))
-
-    assert state.reranker == "llm_failed"
-    assert state.passages == []
-    assert any(error.startswith("dropped_irrelevant:") for error in state.errors)
 
 
 def test_agent_harness_source_pack_targets_primary_ecosystem_sources() -> None:
@@ -242,55 +124,6 @@ def test_planner_drift_cannot_validate_its_own_cross_topic_evidence() -> None:
     )
 
     assert _passes_topic_anchor_gate(state, passage) is False
-
-
-@pytest.mark.asyncio
-async def test_partial_llm_rerank_verifies_only_scored_passages() -> None:
-    state = ResearchCoreState(
-        request_topic="alpha beta",
-        llm_topic="alpha beta",
-        mode="deep",
-        route={},
-    )
-    state.passages = [
-        Passage(
-            citation=Citation(
-                n=0,
-                url=f"https://example.com/{index}",
-                title=f"Unrelated {index}",
-                snippet="unrelated",
-                fetched_at=1.0,
-            ),
-            text="unrelated material " * 30,
-            score=5.0,
-            dims={"authority": 3.0, "recency": 3.0, "relevance": 8.0, "depth": 5.0},
-        )
-        for index in range(4)
-    ]
-
-    async def complete(prompt: str) -> str:
-        return "unused"
-
-    async def rerank(prompt: str) -> str:
-        return json.dumps([{"id": 1, "score": 8}, {"id": 2, "score": 8}])
-
-    async def search(query: str, *, max_results: int):
-        return []
-
-    ports = ResearchPorts(
-        llm=ResearchLLMPort(complete=complete, rerank=rerank),
-        search=ResearchSearchPort(search_call=search),
-        fetch=FetchPort(),
-    )
-
-    await nodes.score_rerank_node(state, ports, _config(rerank_mode="llm"))
-
-    assert state.reranker == "llm"
-    assert [passage.citation.url for passage in state.passages] == [
-        "https://example.com/0",
-        "https://example.com/1",
-    ]
-    assert all(passage.dims.get("llm_rerank_verified") for passage in state.passages)
 
 
 @pytest.mark.asyncio
@@ -672,43 +505,3 @@ async def test_agent_reach_timeout_does_not_start_queued_urls(monkeypatch) -> No
 
     assert calls == [urls[0]]
     assert any(error.startswith("direct_stage:") for error in report.errors)
-
-
-def test_large_payload_refs_and_stable_reducer(tmp_path: Path) -> None:
-    store = BlobStore(tmp_path / "blobs")
-    large = {"text": "evidence" * 100}
-    encoded = nodes.encode_large_value(large, blob_store=store, threshold_bytes=32)
-    assert isinstance(encoded, dict) and nodes.BLOB_REF_KEY in encoded
-    assert nodes.decode_large_value(encoded, blob_store=store) == large
-
-    state = _state()
-    state.search_specs = [("q", "q")]
-    state.url_to_question = {"https://example.com/a": "q"}
-    state.passages = [
-        Passage(
-            citation=Citation(
-                n=1,
-                url="https://example.com/a",
-                title="A",
-                snippet="evidence",
-                fetched_at=1.0,
-            ),
-            text="evidence" * 100,
-            score=1.0,
-        )
-    ]
-    checkpoint = nodes.checkpoint_payloads(state, blob_store=store, threshold_bytes=32)
-    assert nodes.BLOB_REF_KEY in checkpoint["passages"]
-
-    left = [{"stable_id": "b", "value": 2}]
-    right = [{"stable_id": "a", "value": 1}]
-    assert nodes.stable_record_reducer(left, right, id_key="stable_id") == [
-        {"stable_id": "a", "value": 1},
-        {"stable_id": "b", "value": 2},
-    ]
-    with pytest.raises(ValueError, match="conflicting research record"):
-        nodes.stable_record_reducer(
-            left,
-            [{"stable_id": "b", "value": 3}],
-            id_key="stable_id",
-        )
