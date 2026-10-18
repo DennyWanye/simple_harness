@@ -25,8 +25,6 @@
 //                      components/MarkdownMessage、useConfirm
 //   scenes-chat-3.tsx  components/Sidebar、WorkbenchShell、views/PrimaryChatView、ArtifactsView、
 //                      primary/PrimaryWorkspaceBindings、App.tsx
-//   scenes-wf.tsx      components/workflows/RunInspectorPanel、DecisionPanel、EvaluationPanel、ReplayDialog、WorkflowGraph、
-//                      CheckpointTimeline、TraceTree、RunList
 import "./tauriStub";
 import type { ComponentType } from "react";
 import "./gallery.css";

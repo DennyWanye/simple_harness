@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 
 from deskpet.memory.primary_decisions import is_primary_sdk_target
 from deskpet.sdk_adapters.causal_groups import plan_recent_causal_groups
@@ -220,109 +219,6 @@ async def _signal_product_harness_decision(
                 exc_info=True,
             )
     return receipt
-
-
-async def _try_resolve_execution_workflow_decision(
-    ws: WebSocket,
-    *,
-    session_id: str,
-    raw: Mapping[str, Any],
-    execution_uow: Any,
-) -> bool:
-    """Route ContextTrace decisions owned by the execution ledger.
-
-    ``workflow_runs`` and ``execution_runs`` intentionally share the same
-    public inspector, but their decision authorities are different.  The
-    legacy workflow IPC only knows ``workflow_decisions``; execution-owned
-    children must be fenced and resumed through RunKernel.  Return ``False``
-    when the id is not an open execution decision so legacy IPC remains the
-    compatibility fallback.
-    """
-
-    if str(raw.get("type") or "") != "workflow_decision_resolve":
-        return False
-    payload = raw.get("payload")
-    if not isinstance(payload, Mapping):
-        return False
-    decision_id = str(payload.get("decision_id") or "").strip()
-    if not decision_id:
-        return False
-    if execution_uow is None or not hasattr(execution_uow, "list_open_decision_projections"):
-        return False
-    projection = next(
-        (
-            item
-            for item in await execution_uow.list_open_decision_projections(session_id)
-            if item["decision"].request.decision_id == decision_id
-        ),
-        None,
-    )
-    if projection is None and hasattr(execution_uow, "get_open_decision_projection_by_id"):
-        projection = await execution_uow.get_open_decision_projection_by_id(decision_id)
-    if projection is None:
-        return False
-    decision = projection["decision"]
-    authoritative_session_id = str(projection["session_id"])
-    response = payload.get("response")
-    normalized_response = (
-        dict(response) if isinstance(response, Mapping) else {"action": str(response or "cancel")}
-    )
-    try:
-        receipt = await _signal_product_harness_decision(
-            authoritative_session_id,
-            {
-                "run_id": decision.request.run_id,
-                "decision_id": decision.request.decision_id,
-                "nonce": str(payload.get("nonce") or ""),
-                "version": payload.get("expected_version"),
-            },
-            normalized_response,
-        )
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("try_resolve_execution_workflow_decision_signal_pro_failed", exc_info=True)
-        await ws.send_json(
-            {
-                "type": "workflow_ipc_error",
-                "request_type": "workflow_decision_resolve",
-                "request_id": raw.get("request_id"),
-                "ok": False,
-                "error": {
-                    "code": getattr(exc, "code", type(exc).__name__),
-                    "message": str(exc),
-                    "retryable": False,
-                },
-                "payload": {
-                    "error": {
-                        "code": getattr(exc, "code", type(exc).__name__),
-                        "message": str(exc),
-                        "retryable": False,
-                    }
-                },
-            }
-        )
-        return True
-    await ws.send_json(
-        {
-            "type": "workflow_decision_resolve_response",
-            "request_id": raw.get("request_id"),
-            "ok": True,
-            "payload": {
-                "decision_id": decision.request.decision_id,
-                "run_id": decision.request.run_id,
-                "status": "accepted",
-                "audit": "Execution decision recorded by RunKernel",
-                "duplicate": bool(getattr(receipt, "duplicate", False)),
-            },
-        }
-    )
-    logger.info(
-        "execution_workflow_decision_resolved",
-        session_id=authoritative_session_id,
-        run_id=decision.request.run_id,
-        decision_id=decision.request.decision_id,
-        action=normalized_response.get("action"),
-    )
-    return True
 
 
 async def _run_product_harness_continuation(

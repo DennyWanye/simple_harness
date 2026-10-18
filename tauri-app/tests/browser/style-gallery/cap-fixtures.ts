@@ -392,86 +392,6 @@ export function breakdownQuery(payload: Record<string, unknown> | null) {
   return () => (payload ? Promise.resolve(payload) : new Promise<unknown>(() => {}));
 }
 
-// ---------------- ContextTrace ----------------
-
-export const traceRuns = [
-  {
-    run_id: "run-1",
-    workflow_name: "deep-research",
-    workflow_version: "1",
-    status: "waiting" as const,
-    created_at: 1,
-    updated_at: 2,
-    active_nodes: ["review"],
-    run_version: 7,
-    trace_id: "trace-1",
-  },
-  {
-    run_id: "run-2",
-    workflow_name: "code-review",
-    workflow_version: "2",
-    status: "completed" as const,
-    created_at: 3,
-    updated_at: 4,
-    active_nodes: [],
-    run_version: 2,
-    trace_id: "trace-2",
-  },
-];
-
-export const traceDetail = {
-  run_id: "run-1",
-  run_version: 7,
-  nodes: [
-    { id: "plan", label: "Plan", status: "completed", attempt: 1 },
-    { id: "review", label: "Review", status: "waiting", attempt: 1 },
-  ],
-  edges: [{ source: "plan", target: "review" }],
-  spans: [{ span_id: "span-1", name: "model call", kind: "model", status: "ok", redacted: true }],
-  checkpoints: [
-    {
-      checkpoint_id: "cp-1",
-      checkpoint_ns: "",
-      node_id: "review",
-      created_at: 1,
-      status: "safe",
-      can_fork: true,
-      requires_effect_confirmation: true,
-      effect_summary: "文件写入可能重新执行",
-    },
-  ],
-  evaluations: [],
-  decisions: [
-    {
-      decision_id: "decision-1",
-      run_id: "run-1",
-      kind: "approval",
-      status: "open" as const,
-      prompt: { title: "批准计划" },
-      nonce: "nonce-1",
-      version: 3,
-      created_at: 1,
-    },
-  ],
-  deliveries: [],
-};
-
-export function traceChannel(mode: "ok" | "error") {
-  return makeFakeChannel((msg: Wire) => {
-    if (mode === "error" && msg.type === "workflow_runs_list") {
-      const error = { code: "storage_unavailable", message: "运行记录暂时读不到（夹具错误）", retryable: true };
-      return { type: "workflow_ipc_error", request_type: msg.type, request_id: msg.request_id, ok: false, error, payload: { error } };
-    }
-    if (msg.type === "workflow_runs_list") {
-      return { type: "workflow_runs_list_response", request_id: msg.request_id, ok: true, payload: { runs: traceRuns, next_cursor: null } };
-    }
-    if (msg.type === "workflow_run_detail") {
-      return { type: "workflow_run_detail_response", request_id: msg.request_id, ok: true, payload: traceDetail };
-    }
-    return null;
-  }).channel;
-}
-
 // ---------------- 审批 / 弹窗 ----------------
 
 export const pendingPermissions = [
@@ -488,3 +408,21 @@ export function approvalChannel() {
   ).channel;
 }
 
+
+// ---------------- ContextTrace ----------------
+
+const traceDecisions = [
+  { timestamp: 1_700_000_120, classifier_path: "cloud", latency_ms: 2_300, total_tokens: 18_400, token_breakdown: { system: 2_000, history: 12_000, tools: 3_400, current: 1_000 }, reason: "需要工具与长历史（夹具）", session_id: "s-1" },
+  { timestamp: 1_700_000_060, classifier_path: "local", latency_ms: 640, total_tokens: 4_200, token_breakdown: { system: 2_000, history: 1_800, current: 400 }, reason: "短问答（夹具）", session_id: "s-1" },
+];
+
+/** ContextTrace 的假通道：ok 回两条决定记录；empty 回空清单并带原因。 */
+export function traceChannel(mode: "ok" | "empty") {
+  return makeFakeChannel((msg: Wire) => {
+    if (msg.type !== "decisions_list") return null;
+    return {
+      type: "decisions_list_response",
+      payload: mode === "ok" ? { decisions: traceDecisions } : { decisions: [], reason: "上下文记录暂时读不到（夹具）" },
+    };
+  }).channel;
+}

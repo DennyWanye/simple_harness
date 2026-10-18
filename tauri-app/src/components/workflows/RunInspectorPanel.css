@@ -1,7 +1,0 @@
-/* 运行检查面板的窄屏布局（原 RunInspectorPanel.tsx 的运行时 <style>，9I 移入 sh-base 层）。 */
-@layer sh-base {
-  @media (max-width: 560px) {
-    .workflow-inspector-layout { grid-template-columns: minmax(0, 1fr) !important; grid-template-rows: minmax(112px, 34%) minmax(0, 1fr) !important; }
-    .workflow-inspector-aside { border-right: 0 !important; border-bottom: 1px solid rgba(148,163,184,0.14); }
-  }
-}

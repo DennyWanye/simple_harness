@@ -89,7 +89,6 @@ from host.control_settings import (
     _cc_supervisor_toggle,
     _cc_supervisor_user_choice,
 )
-from host.harness_runs import _try_resolve_execution_workflow_decision
 from host.history_events import _ensure_companion_inbox_route, _settle_companion_bind_projection
 from host.runtime import logger, service_context
 from host.sdk_execution import (
@@ -133,34 +132,6 @@ async def _cc_p4_ipc(conn: _ControlConnection, raw: dict, msg_type: str) -> None
         msg_type,
         raw.get("payload", {}) or {},
         service_context,
-    )
-
-
-async def _cc_workflow_routes(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
-    """控制消息：工作流消息（workflow_ 前缀）。"""
-    ws = conn.ws
-    session_id = conn.session_id
-
-    # 执行账本里的决定仍按运行内核处理；后台旧工作流引擎已不启动，其余工作流消息一律回不可用。
-    if await _try_resolve_execution_workflow_decision(
-        ws,
-        session_id=session_id,
-        raw=raw,
-        execution_uow=service_context.get("execution_uow"),
-    ):
-        return
-    await ws.send_json(
-        {
-            "type": "workflow_ipc_error",
-            "request_type": msg_type,
-            "request_id": raw.get("request_id"),
-            "ok": False,
-            "error": {
-                "code": "workflow_service_unavailable",
-                "message": "Durable workflow service is unavailable",
-                "retryable": False,
-            },
-        }
     )
 
 
@@ -277,7 +248,6 @@ _CONTROL_ROUTES: list[tuple[Any, Any]] = [
     (frozenset(["budget_status"]), _cc_budget_status),
     (frozenset(["memory_clear", "memory_delete", "memory_export", "memory_list"]), _cc_memory_list),
     (lambda msg_type: msg_type in p4_ipc.P4_IPC_MESSAGE_TYPES, _cc_p4_ipc),
-    (lambda msg_type: msg_type.startswith("workflow_"), _cc_workflow_routes),
     (frozenset(["provider_test_connection"]), _cc_provider_test_connection),
     (frozenset(["supervisor_user_choice"]), _cc_supervisor_user_choice),
     (frozenset(["supervisor_toggle"]), _cc_supervisor_toggle),

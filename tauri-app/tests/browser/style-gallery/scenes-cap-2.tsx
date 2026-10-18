@@ -4,11 +4,11 @@
 // cap 车道场景（二）：上下文构成、ContextTrace、权限弹窗、审批中心、澄清/外部等待弹窗。
 //   context-breakdown        → src/components/ContextBreakdownModal.tsx（实测快照 + 构成条 + 变化折线图）
 //   context-breakdown-states → src/components/ContextBreakdownModal.tsx（仅绑定加载中、旧记录不完整 + 构成不可用、无快照）
-//   context-trace            → src/components/ContextTracePanel.tsx（Runs 页签有数据、未连接、读取出错）
+//   context-trace            → src/components/ContextTracePanel.tsx（有决定记录、未连接、空清单带原因）
 //   permission-popup         → src/components/PermissionPopup.tsx（敏感/写入/读取/子任务/未知类别、提交中+报错、无参数）
 //   approval-center          → src/components/ApprovalCenterPanel.tsx（多条待审批）
 //   clarify-wait-dialogs     → src/components/ClarificationDialog.tsx、src/components/ExternalWaitDialog.tsx
-// 说明：ContextTrace 的旧 Context 页签与构成弹窗的段落展开都要点击，画廊不模拟点击，渲染不到。
+// 说明：构成弹窗的段落展开要点击，画廊不模拟点击，渲染不到。
 import { useState } from "react";
 import { ApprovalCenterPanel } from "../../../src/components/ApprovalCenterPanel";
 import { ClarificationDialog } from "../../../src/components/ClarificationDialog";
@@ -52,7 +52,7 @@ export function ContextBreakdownStatesScene() {
 export function ContextTraceScene() {
   const [getters] = useState(() => {
     const ok = traceChannel("ok");
-    const failing = traceChannel("error");
+    const failing = traceChannel("empty");
     return { ok: () => ok, failing: () => failing, none: () => null };
   });
   return (
