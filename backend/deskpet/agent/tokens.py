@@ -8,7 +8,7 @@
     冻结正式包还要额外打包 —— 对"单机桌面应用 + 中国用户 + 瘦包"是负担。
   * 主力是中转站 gpt-5.x(OpenAI 兼容),但也可能接 deepseek/anthropic,tiktoken 的 BPE
     只精确匹配 OpenAI,跨 provider 本就不准。
-  * 现有 CJK-aware 启发式(``token_budget._weighted_chars``)已**真机校准 + 安全偏上**
+  * 现有 CJK-aware 启发式已**真机校准 + 安全偏上**
     (CJK×4≈1token/字,ASCII×8/7≈3.5char/token,宁可早压不可爆窗,FP-2 TC-2.1 实测),
     配合 relay 真实 ``usage.input_tokens`` 三刀制,实战足够。
 

@@ -56,7 +56,7 @@ def contracts(tree: str) -> list[Contract]:
     if tree == "backend":
         return [
             Contract(("deskpet.sdk_adapters.tools",),
-                     ("llm.openai_adapter", "deskpet.tools.research_tools", "deskpet.workflows"),
+                     ("deskpet.tools.research_tools", "deskpet.workflows"),
                      "sdk_adapters/test_product_host_ports.py"),
             Contract(("deskpet.tool_catalog", "deskpet.tools.context_page_in_tools"),
                      ("deskpet.harness", "deskpet.workflows", "deskpet.tools.registry", "config"),

@@ -20,7 +20,7 @@ import textwrap
 
 import pytest
 from llm.errors import LLMProviderError
-from llm.provider_registry import EmptyApiKeyError, LLMProviderRegistry
+from llm.provider_registry import LLMProviderRegistry
 from providers.openai_compatible import OpenAICompatibleProvider
 
 # ───────── 生产聊天 provider：providers.openai_compatible ─────────
@@ -72,28 +72,6 @@ async def test_openai_compatible_real_key_unaffected():
 
 
 # ───────── SDK 适配器 OpenAIAdapter：defense-in-depth ─────────
-
-
-def test_openai_adapter_placeholder_cloud_raises_empty_api_key_error():
-    from llm.openai_adapter import OpenAIAdapter
-
-    a = OpenAIAdapter(api_key="from-keychain", base_url="https://relay.example.com/v1")
-    with pytest.raises(EmptyApiKeyError):
-        a._ensure_api_key_usable()
-
-
-def test_openai_adapter_local_placeholder_allowed():
-    from llm.openai_adapter import OpenAIAdapter
-
-    a = OpenAIAdapter(api_key="ollama", base_url="http://localhost:11434/v1")
-    a._ensure_api_key_usable()  # 不应抛
-
-
-def test_openai_adapter_real_key_unaffected():
-    from llm.openai_adapter import OpenAIAdapter
-
-    a = OpenAIAdapter(api_key="sk-real-xxx", base_url="https://relay.example.com/v1")
-    a._ensure_api_key_usable()  # 不应抛
 
 
 # ───────── provider_registry_ready 可观测（Phase 5） ─────────

@@ -18,7 +18,6 @@ Module map (each submodule's ``__init__.py`` lists the owning slice):
 - ``deskpet.tools``           — P4-S5 built-in + web tool framework
 - ``deskpet.skills``          — P4-S10 SKILL.md loader + hot reload
 - ``deskpet.mcp``             — P4-S9 MCP client (filesystem, weather, ...)
-- ``deskpet.llm``             — P4-S6 multi-provider LLM adapters
 
 See ``openspec/changes/p4-poseidon-agent-harness/`` for the full spec.
 """

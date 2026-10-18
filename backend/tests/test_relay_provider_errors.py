@@ -8,7 +8,6 @@ from types import SimpleNamespace
 import httpx
 import pytest
 from llm.errors import LLMAuthError
-from llm.openai_adapter import OpenAIAdapter
 from llm.relay_errors import (
     INSUFFICIENT_BALANCE,
     RELAY_KEY_INVALID,
@@ -63,26 +62,6 @@ def _api_status_error(status: int, body: dict) -> Exception:
         body=body,
         response=SimpleNamespace(text="body text", headers={}),
     )
-
-
-def test_openai_adapter_maps_relay_auth_errors_with_error_class() -> None:
-    provider = OpenAIAdapter(api_key="sk-test", base_url="https://relay.example/v1", is_relay=True)
-
-    mapped = provider._map_error(_api_status_error(403, {"code": "INSUFFICIENT_BALANCE"}))
-
-    assert isinstance(mapped, LLMAuthError)
-    assert mapped.status_code == 403
-    assert mapped.error_class == INSUFFICIENT_BALANCE
-
-
-def test_openai_adapter_does_not_classify_non_relay_auth_errors() -> None:
-    provider = OpenAIAdapter(api_key="sk-test", base_url="https://api.example/v1")
-
-    mapped = provider._map_error(_api_status_error(401, {"code": "INVALID_TOKEN"}))
-
-    assert isinstance(mapped, LLMAuthError)
-    assert mapped.status_code == 401
-    assert mapped.error_class is None
 
 
 @pytest.mark.asyncio

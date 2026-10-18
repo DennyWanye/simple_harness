@@ -121,7 +121,7 @@ tauri-app/
   (`plans/2026-09-10-remove-memory-sdk/`). The Harness SDK's mandatory
   `AgentMemoryPort` is satisfied by an honest empty port that recalls
   nothing and retains nothing.
-- LLM providers: Anthropic / OpenAI / Google Gemini adapters with fallback chain
+- LLM 调用走 `llm/provider_registry.py`（用户配置的提供方列表）与 `providers/openai_compatible.py`（OpenAI 兼容协议）；旧的 Anthropic / OpenAI / Gemini 适配器族已于 2026-10-18 删除
 - Tools register via `deskpet.tools` with effect policies
 
 **Frontend:**

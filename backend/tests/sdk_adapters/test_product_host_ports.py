@@ -1438,7 +1438,7 @@ def test_importing_sdk_tool_adapter_has_no_product_provider_side_effect() -> Non
 import json, sys
 import deskpet.sdk_adapters.tools
 blocked = sorted(name for name in sys.modules if name.startswith(
-    ('llm.openai_adapter','deskpet.tools.research_tools','deskpet.workflows')
+    ('deskpet.tools.research_tools','deskpet.workflows')
 ))
 print(json.dumps(blocked))
 """

@@ -1,27 +1,16 @@
 # SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: BUSL-1.1
 
-"""P4-S6 LLM provider abstraction (Anthropic / OpenAI / Gemini).
+"""LLM 调用的公共类型与错误。
 
-Layered:
-    types.py        ChatResponse / ChatChunk / ToolCall / ChatUsage dataclasses
-    errors.py       LLMProviderError + 429 / timeout / auth / budget subclasses
-    base.py         BaseLLMAdapter abstract + shared helpers
-    anthropic_adapter.py   prompt-caching aware, streaming
-    openai_adapter.py      function-calling tool_calls, streaming
-    gemini_adapter.py      google-genai Tool/FunctionDeclaration conversion
-    registry.py     LLMRegistry + fallback chain (primary + 2 backups)
-    budget.py       DailyBudget with USD cap + warning thresholds
-    pricing.py      per-model per-1M-token USD price table
-    keys.py         env > keyring resolution + mask_key helper
+    types.py              ChatResponse / ChatChunk / ToolCall / ChatUsage
+    errors.py             LLMProviderError 及 429 / 超时 / 鉴权 / 预算子类
+    provider_registry.py  用户配置的提供方列表（config.toml ``[[llm.endpoints]]``，密钥在系统钥匙串）
+    pricing.py            按模型的每百万 token 价格表
+    model_info.py         模型窗口等元数据
+    context_messages.py   提供方调用的用途与尝试上下文变量
 
-Why a new top-level package instead of reusing backend/providers/:
-    backend/providers/ holds ASR/TTS/VAD provider adapters + the
-    OpenAI-compatible *ollama* client used by the P3 HybridRouter. Those
-    assume a single base_url and a single vendor protocol. P4 introduces
-    a multi-provider cloud LLM layer (Anthropic prompt caching, OpenAI
-    function calling, Gemini FunctionDeclaration) with fallback chain and
-    budget cap — that's a separate concern and a separate package.
+实际发请求走 ``providers/openai_compatible.py``（OpenAI 兼容协议）。
 """
 
 from llm.errors import (

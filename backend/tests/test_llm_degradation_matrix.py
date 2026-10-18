@@ -5,7 +5,6 @@
 
 覆盖：
   2.3 GoalChecker 超时/失败 → (False, "goal_check=skipped")  + metric
-  2.1 反思 parse 失败 → None (机械 nudge) + metric reflection_parse_failed
   2.4 ExternalEvaluator timeout/error → conservative (revise) on high-consequence
       + metric evaluator_skipped
   无崩溃保证（所有注入场景不抛异常）
@@ -18,7 +17,6 @@
 
 from __future__ import annotations
 
-import pytest
 
 # ─── GoalChecker 降级矩阵 ─────────────────────────────────────
 
@@ -58,92 +56,8 @@ def _make_timeout_llm():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# T-D2: Reflection parse failure → None + metric reflection_parse_failed
-# ─────────────────────────────────────────────────────────────────────────────
-
-
-def test_reflection_parse_failure_returns_none():
-    """R-T3 2.1: malformed JSON → parse_reflection returns None (mechanical nudge)."""
-    from deskpet.agent.reflection import parse_reflection
-
-    result = parse_reflection("absolutely no json here")
-    assert result is None
-
-
-def test_reflection_parse_empty_string_returns_none():
-    """R-T3: empty string → None."""
-    from deskpet.agent.reflection import parse_reflection
-
-    result = parse_reflection("")
-    assert result is None
-
-
-def test_reflection_parse_valid_json_still_works():
-    """BC: valid structured reflection JSON still parses correctly."""
-    import json
-
-    from deskpet.agent.reflection import parse_reflection
-
-    raw = json.dumps(
-        {
-            "error_analysis": "missed tool call",
-            "execution_critique": "took shortcut",
-            "task_replanning": "call ppt_create properly",
-            "next_action": "ppt_create({...})",
-            "confidence": 0.7,
-        }
-    )
-    result = parse_reflection(raw)
-    assert result is not None
-    assert result.confidence == pytest.approx(0.7)
-    assert result.error_analysis == "missed tool call"
-
-
-def test_reflection_parse_failure_emits_metric(monkeypatch):
-    """R-T3: parse failure emits reflection_parse_failed metric."""
-    import observability.metrics_sink as _ms
-
-    sink = _RecordingMetricsSink()
-    monkeypatch.setattr(_ms, "record", sink.record)
-
-    from deskpet.agent.reflection import parse_reflection
-
-    result = parse_reflection("not json not json not json")
-    assert result is None
-
-    events = [e for e, _ in sink.events if e == "reflection_parse_failed"]
-    assert len(events) >= 1, f"Expected reflection_parse_failed metric, got: {sink.events}"
-
-
-def test_reflection_parse_truncated_json_emits_metric(monkeypatch):
-    """R-T3: truncated JSON (valid object key but not extractable) → metric."""
-    import observability.metrics_sink as _ms
-
-    sink = _RecordingMetricsSink()
-    monkeypatch.setattr(_ms, "record", sink.record)
-
-    from deskpet.agent.reflection import parse_reflection
-
-    # Provide something that has curly brace but is truncated / invalid
-    result = parse_reflection("{broken json here <<<")
-    assert result is None
-
-    events = [e for e, _ in sink.events if e == "reflection_parse_failed"]
-    assert len(events) >= 1
-
-
-# ─────────────────────────────────────────────────────────────────────────────
 # T-D4: No crash guarantee for all paths
 # ─────────────────────────────────────────────────────────────────────────────
-
-
-def test_reflection_never_crashes():
-    """R-T3: parse_reflection never raises — returns None or StructuredReflection."""
-    from deskpet.agent.reflection import parse_reflection
-
-    for text in ["", "   ", "{{{", "null", "[]", "x" * 10000, '{"done": true}']:
-        result = parse_reflection(text)
-        assert result is None or hasattr(result, "confidence")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

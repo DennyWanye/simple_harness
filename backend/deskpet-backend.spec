@@ -432,7 +432,7 @@ elif sys.platform == "win32":
 # P4-S20 MSI fat bundle: ship models inside the installer for true
 # zero-config "download → install → launch" UX. Set
 # DESKPET_BUNDLE_MODELS=0 to opt out (yields a thin bundle that relies
-# on first-run download via scripts/setup_models.py).
+# on first-run download by the model provisioner).
 if os.environ.get("DESKPET_BUNDLE_MODELS", "1") == "1":
     _BUNDLED_MODELS = [
         ("assets/bge-m3-int8", "models/bge-m3-int8"),
