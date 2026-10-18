@@ -20,13 +20,13 @@
 未做、转后续：
 
 - **F-26 伴侣卡片后台**（设计 §5.3）：前端卡片已随第 14 片删除，后台决定服务、详情查询仍在。删之前要用户知道两个后果：伴侣提醒没有地方显示；中、高风险成长候选永远停在"等确认"。待用户答复。
-- **F-27 PPT 大纲卡后台**（设计 §5.4）：前端卡片已删。后台宿主函数依附后端工作流引擎（ppt_pro v1），随"删后台工作流引擎"（第二轮方案）一起删，不单做。
+- **F-27 PPT 大纲卡后台**（设计 §5.4）：已随"删后台工作流引擎"第 2、3 片删除（host/ppt_outline.py、大纲决定处理、大纲存储）。
 - **F-28 Service SDK 的 realtime 依赖**（设计 §5.1 末）：实时语音删后无人用。要改 pyproject.toml、vendor 轮子、打包清单与冻结包测试，需要 `uv lock`／`uv sync`，工作树里不跑，放到主检出单做。
 - **F-29 可能已无人用的依赖**：edge-tts、faster-whisper、silero-vad、torch/torchvision/torchaudio、FlagEmbedding、transformers、sentence-transformers、peft、qwen-vl-utils。删本地语音与旧模块后要逐个核实再删（牵动打包与安装时间）。
 - **F-30 旧会话界面删后的二次重扫**（设计 §6.4）：InputBar 非主对话分支、sessionsStore 收件箱与严重度、controlWs 会话补读与 `chat_v2`、`session_set_model`、`harness_inspector_*`、`companion_action` 作用域等。规模大，先出方案。
 - **F-31 杂项尾巴**：ARCHITECTURE.md §15 整体过时；`scripts/e2e/fixtures/context-os-automation-manifest.json` 列了已删测试；生成样式里留下没人用的类（生成器只能内联转类）；`paths.resolve_model_dir` 与 `publish_models_to_cos.py`；`startup_profile_baseline.json` 有已删模块条目；`harness_parity_census.py` 已坏；工作树 `node_modules` 的 vite 是 8.0.8，与 `webkit_style_compare.py` 记录的 8.1.3 不同（前后同一压缩器比对时不受影响）。
 
-## F-1 持久任务工作流引用了不存在的两个属性（缺陷，待修）
+## F-1 持久任务工作流引用了不存在的两个属性（缺陷，待修；2026-10-18 改写：SDK durable_task 宿主未接，接入前先修）
 
 - **登记**：2026-10-16，阶段 5 类型检查清零时查出（偏差单：阶段5-偏差单-类型清零.md 第二件，独立裁决选"本阶段不修，转交"）。
 - **位置**：SDK `simple_harness/workflows/durable_task/nodes.py`。
@@ -87,7 +87,7 @@
 - 下一步：阶段 8 确认哪份生效后删掉另一份。
 - **已删（阶段 8）**：类体里后定义的覆盖先定义的，前一份（转交给仓库的 `_..._tx(self._db, …)` 版）从来调不到；仓库类 `CapabilityStore` 经 setattr 转绑的也是后一份（自持事务版）。删掉前一份，行为不变。用例 backend/tests/capabilities/test_store_tx_install_methods.py 删前删后都通过（锁住"事务视图与仓库类上是同一个自持事务版函数"）。
 
-## F-8 工作流派发循环出错时可能原地空转（潜在缺陷，阶段 7 核验发现）
+## F-8 工作流派发循环出错时可能原地空转（2026-10-18 关闭：launcher.py 随后台旧工作流引擎删除）
 
 - 位置：backend/deskpet/workflows/launcher.py 的 `_dispatcher_loop`（约 975～990 行）。
 - 现象：`dispatch_due_work()` 一直抛异常、而下一个截止时间已经过去时，等待超时算出来是 0，循环原地反复转。原来异常被静默吞掉，看不出来。
@@ -108,7 +108,7 @@
 - 依据：阶段8-偏差单-不可达代码.md 独立裁决第 4 条；用户 2026-09-27 定"做好的功能都开启"。
 - 下一步：按功能开发流程接线并默认开启（先写能复现"激活后出事故被记录"的测试）。不在代码质量整治范围内。
 
-## F-11 代码恢复工作流的上下文工厂导入一个不存在的模块（缺陷，2026-10-17 登记）
+## F-11 代码恢复工作流的上下文工厂导入一个不存在的模块（2026-10-18 关闭：startup_workflows.py 整个删除）
 
 - 位置：`backend/host/startup_workflows.py` 的 `_build_code_recovery_context`，函数内 `from deskpet.harness.adapters.legacy_execution_migration import resolve_frozen_legacy_workspace`。该模块从 2026-08 分叉起就不存在。
 - 影响：code_complex、durable_task 两个工作流重启后恢复时，走到这里抛 ImportError。注释标的"死代码待删"是误标：函数在用，导入坏了。
@@ -122,7 +122,7 @@
 - 本阶段的处理：按"做好的功能都开启"规则不删，保留槽位与读取分支。
 - 下一步：由用户定——接线并默认开启（Context OS 上下文账本），还是整族删除。
 
-## F-13 v7 深度研究的恢复适配器每次都失败（归"删工作流线"第 2 片，2026-10-17 登记）
+## F-13 v7 深度研究的恢复适配器每次都失败（2026-10-18 关闭：v7 适配器随后台旧工作流引擎删除）
 
 - 位置：`backend/host/startup_workflows.py` 的 `_deep_v7_context_factory`。它读服务槽位 `subagent_scheduler`，该槽位从不登记，恢复 v7 运行时抛 `subagent_scheduler_unavailable`。
 - 生产不新开 v7 运行（深度研究工作流启动器恒为 None），只剩恢复入口。v7 定义是编解码钉死文件。

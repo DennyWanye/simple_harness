@@ -2,6 +2,8 @@
 
 # simple_harness Long-Running Agent Architecture Baseline
 
+> 2026-10-18 更新：后台旧持久工作流引擎（`deskpet.workflows` 的运行器、启动器、IPC 与 v1～v7 定义）已删除。`deskpet/workflows/` 只剩执行账本与工具效果类型；执行账本由 `host/startup_execution.py` 独立构造（服务键 `execution_uow`）。SDK 产品定义在 `deskpet/sdk_adapters/product_workflows/`，只用来生成能力目录。下文描述旧引擎的段落是历史记录。
+
 > 2026-10-13：宿主入口已拆成 `backend/main.py` + `backend/host/` 包，见 [HOST_ENTRY.md](HOST_ENTRY.md)；下文 `main.py` 及其行号指拆分前位置，按该文档索引查新位置。
 
 

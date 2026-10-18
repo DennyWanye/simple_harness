@@ -34,7 +34,7 @@
 
 - 端点 `host/control_channel.py:control_channel`：握手（密钥校验、连接登记、启动状态帧、伴侣挑战）→ 收消息循环。
 - 每条消息：伴侣特权帧走 `_handle_privileged_companion_frame`；伴侣详情查询；`host/control_messages.py:_handle_control_ws_message` 先处理一批；其余按 `_CONTROL_ROUTES` 有序路由表分发。
-- 路由表每项是"消息类型集合"或"判断函数"（编排 `mission_`/`orchestration_`/`taskgraph.` 前缀、P4 进程间消息、`workflow_` 前缀），顺序与原 if/elif 链一致；都不匹配回"未知类型"。
+- 路由表每项是"消息类型集合"或"判断函数"（编排 `mission_`/`orchestration_`/`taskgraph.` 前缀、P4 进程间消息；`workflow_` 前缀 2026-10-18 随后台旧工作流引擎删除），顺序与原 if/elif 链一致；都不匹配回"未知类型"。
 - 处理函数签名统一为 `_cc_<类型>(conn, raw, msg_type)`，`conn` 是 `host/control_connection.py:_ControlConnection`（WebSocket、会话号、请求范围、伴侣挑战、记忆控制绑定）。
 - 处理函数按领域分在 `control_memory`、`control_decisions`、`control_settings`、`control_capabilities`、`control_sessions`、`control_providers`、`control_chat`。
 
@@ -207,7 +207,6 @@
 | `_cc_supervisor_toggle` | `host/control_settings.py` |
 | `_cc_supervisor_user_choice` | `host/control_settings.py` |
 | `_cc_unknown` | `host/control_channel.py` |
-| `_cc_workflow_routes` | `host/control_channel.py` |
 | `_chat_turn_timeout_s` | `host/llm_providers.py` |
 | `CloudConfigRequest` | `host/routes_cloud_config.py` |
 | `_commit_product_preflight_block` | `host/harness_chat.py` |
@@ -341,7 +340,6 @@
 | `_startup_execution_ledger` | `host/startup_execution.py` |
 | `_trigger_harness_recovery_after_identity_bind` | `host/sdk_execution.py` |
 | `_trusted_local_page_url_from_env` | `host/sdk_context.py` |
-| `_try_resolve_execution_workflow_decision` | `host/harness_runs.py` |
 | `update_cloud_config` | `host/routes_cloud_config.py` |
 | `_validate_code_recovery_capability_subset` | `host/provider_chain.py` |
 | `_validate_secret` | `host/auth.py` |

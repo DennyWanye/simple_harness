@@ -1,5 +1,7 @@
 最后更新：2026-09-29 CST（委派工具接通真实子运行）；2026-09-26（权限改造：默认放行 + 核心文件会话内申请 + 永不卡住）。
 
+> 2026-10-18 更新：后台旧持久工作流引擎（`deskpet.workflows` 的运行器、启动器、IPC 与 deep_research v1～v7、ppt_pro v1、code_complex、durable_task、personal_workflow 定义）已删除。`deskpet/workflows/` 只剩执行账本（`store/`）与工具效果类型；执行账本由启动步骤 `host/startup_execution.py` 独立构造（服务键 `execution_uow`）。SDK 产品定义（deep_research v7-sdk1、ppt_pro v2）在 `deskpet/sdk_adapters/product_workflows/`，只用来生成能力目录，生产里没有持久工作流在跑；`deepresearch` 工具照常直接调用 `deskpet/tools/research_core.py`。下文描述旧引擎的段落是历史记录。
+
 用户 2026-09-26 的要求：
 - 主对话和编排除少数核心文件外都能用。
 - 核心文件在会话窗口里申请，同意后可用。
