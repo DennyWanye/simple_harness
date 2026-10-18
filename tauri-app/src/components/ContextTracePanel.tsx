@@ -21,7 +21,6 @@ import type {
 import { dark } from "../theme/components";
 import type { ControlChannel } from "../ws/ControlChannel";
 import type {
-  ContextAttemptSnapshot,
   DecisionRecord,
   DecisionsListResponse,
   IncomingMessage,
@@ -508,11 +507,10 @@ function LegacyContextTrace({
   active: boolean;
 }) {
   const [decisions, setDecisions] = useState<DecisionRecord[]>([]);
-  const [attempts, setAttempts] = useState<ContextAttemptSnapshot[]>([]);
   const [reason, setReason] = useState<string | null>(null);
   const [limit, setLimit] = useState(50);
   const [loading, setLoading] = useState(false);
-  const [contextWindow, setContextWindow] = useState(32_000);
+  const contextWindow = 32_000;
   // 只发请求不写状态；返回是否有通道。
   const sendList = useCallback(() => {
     const channel = getChannel();
@@ -534,11 +532,6 @@ function LegacyContextTrace({
       if (message.type !== "decisions_list_response") return;
       const payload = (message as DecisionsListResponse).payload;
       setDecisions(payload.decisions);
-      setAttempts(payload.attempts ?? []);
-      const latestAttempt = [...(payload.attempts ?? [])]
-        .filter((attempt) => Number(attempt.context_window) > 0)
-        .sort((a, b) => b.updated_at - a.updated_at)[0];
-      if (latestAttempt) setContextWindow(latestAttempt.context_window);
       setReason(payload.reason ?? null);
       setLoading(false);
     });
@@ -552,10 +545,6 @@ function LegacyContextTrace({
   const ordered = useMemo(
     () => [...decisions].sort((a, b) => cmpTimestamp(b.timestamp, a.timestamp)),
     [decisions],
-  );
-  const orderedAttempts = useMemo(
-    () => [...attempts].sort((a, b) => b.updated_at - a.updated_at),
-    [attempts],
   );
   const latest = ordered[0];
   const used = latest?.total_tokens ?? 0;
@@ -646,16 +635,6 @@ function LegacyContextTrace({
           </div>
         </div>
       )}
-      {orderedAttempts.length > 0 && (
-        <div data-testid="context-attempts" className="sh-ContextTracePanel-20">
-          {orderedAttempts.map((attempt) => (
-            <ContextAttemptRow
-              key={`${attempt.request_id}:${attempt.attempt_id}`}
-              attempt={attempt}
-            />
-          ))}
-        </div>
-      )}
       <div className="sh-ContextTracePanel-20">
         {ordered.length === 0 && !loading && (
           <div className="sh-ContextTracePanel-21">(无决策记录)</div>
@@ -669,93 +648,6 @@ function LegacyContextTrace({
           />
         ))}
       </div>
-    </div>
-  );
-}
-
-function ContextAttemptRow({ attempt }: { attempt: ContextAttemptSnapshot }) {
-  const compressionModel =
-    attempt.actual_compression_model ||
-    attempt.resolved_compression_model ||
-    attempt.requested_compression_model;
-  const shortHash = (value: string) => (value ? value.slice(0, 10) : "-");
-  return (
-    <div data-testid={`context-attempt-${attempt.attempt_id}`} className="sh-ContextTracePanel-22">
-      <div className="sh-ContextTracePanel-23">
-        <strong>
-          {attempt.purpose || "unclassified"} · {attempt.state}
-        </strong>
-        <span className="sh-ContextTracePanel-15">
-          {attempt.provider_id || attempt.adapter_id} / {attempt.model_id || "-"}
-        </span>
-      </div>
-      <div className="sh-ContextTracePanel-24">
-        <span>
-          planned <strong>{attempt.planned_tokens.toLocaleString()}</strong>
-        </span>
-        <span>
-          window <strong>{attempt.context_window.toLocaleString()}</strong>
-        </span>
-        <span>
-          budget <strong>{attempt.effective_input_budget.toLocaleString()}</strong>
-        </span>
-        <span>
-          reserve <strong>{attempt.reserve_tokens.toLocaleString()}</strong>
-        </span>
-        <span>
-          actual in/out{" "}
-          <strong>
-            {attempt.actual_input_tokens ?? "-"}/{attempt.actual_output_tokens ?? "-"}
-          </strong>
-        </span>
-        <span>
-          tools{" "}
-          <strong>
-            {attempt.direct_tool_count}+{attempt.activated_tool_count}
-          </strong>{" "}
-          deferred {attempt.deferred_tool_count}
-        </span>
-        <span>
-          retries <strong>{attempt.transport_retry_count}</strong>
-        </span>
-      </div>
-      <div className="sh-ContextTracePanel-25">
-        wire {shortHash(attempt.wire_tool_hash)} · schema {shortHash(attempt.schema_fingerprint)} ·
-        policy {shortHash(attempt.policy_fingerprint)} · cache{" "}
-        {shortHash(attempt.cache_fingerprint)}
-      </div>
-      {compressionModel && (
-        <div data-testid="context-attempt-compression" className="sh-ContextTracePanel-26">
-          compression {attempt.requested_compression_model || "-"} →{" "}
-          {attempt.resolved_compression_model || "-"} → {attempt.actual_compression_model || "-"}
-          {attempt.compression_failure ? ` · failed: ${attempt.compression_failure}` : ""}
-        </div>
-      )}
-      {attempt.fragments.length > 0 && (
-        <div data-testid="context-attempt-fragments" className="sh-ContextTracePanel-27">
-          {attempt.fragments.map((fragment) => (
-            <span key={fragment.fragment_id}>
-              {fragment.action} · {fragment.fragment_id} · {fragment.estimated_tokens}t
-              {fragment.reason ? ` · ${fragment.reason}` : ""}
-            </span>
-          ))}
-        </div>
-      )}
-      {attempt.coverage_valid != null && (
-        <div data-testid="context-attempt-coverage" className="sh-ContextTracePanel-28">
-          <span>
-            coverage {attempt.coverage_valid ? "valid" : "invalid"} · page-in refs{" "}
-            {attempt.coverage_page_in_refs} · gaps {attempt.coverage_gaps.length} · overlaps{" "}
-            {attempt.coverage_overlaps.length} · stale {attempt.coverage_stale_segment_ids.length}
-          </span>
-          {attempt.coverage_entries.map((entry, index) => (
-            <span key={`${entry.kind}:${entry.segment_id}:${index}`}>
-              {entry.kind} · ids {entry.message_ids.join(",") || "-"}
-              {entry.segment_id ? ` · segment ${entry.segment_id}` : ""}
-            </span>
-          ))}
-        </div>
-      )}
     </div>
   );
 }

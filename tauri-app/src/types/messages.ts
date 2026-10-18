@@ -102,7 +102,6 @@ export interface ContextUsageSnapshot {
   has_measurement?: boolean;
   legacy_incomplete?: boolean;
   updated_at: number;
-  attempts?: ContextAttemptSnapshot[];
 }
 
 export interface PongMessage {
@@ -709,79 +708,10 @@ export interface DecisionRecord {
   session_id?: string;
 }
 
-export interface ContextAttemptSnapshot {
-  session_id: string;
-  request_id: string;
-  attempt_id: string;
-  purpose: string;
-  state: "planned" | "sent" | "succeeded" | "failed" | "cancelled" | "cancelled_before_send";
-  provider_id: string;
-  model_id: string;
-  adapter_id: string;
-  adapter_version: string;
-  message_hash: string;
-  logical_tool_hash: string;
-  wire_tool_hash: string;
-  schema_fingerprint: string;
-  policy_fingerprint: string;
-  registry_revision: number;
-  tool_scope_revision: number;
-  direct_tool_count: number;
-  activated_tool_count: number;
-  deferred_tool_count: number;
-  schema_tokens_by_name: Array<[string, number]>;
-  selection_reasons: string[];
-  fragments: Array<{
-    fragment_id: string;
-    action: "loaded" | "trimmed" | "omitted";
-    reason: string;
-    estimated_tokens: number;
-    cache_scope: string;
-    cache_hash: string;
-  }>;
-  coverage_entries: Array<{
-    kind: string;
-    message_ids: number[];
-    segment_id: string;
-    source_hash: string;
-  }>;
-  coverage_valid?: boolean | null;
-  coverage_gaps: number[];
-  coverage_overlaps: number[];
-  coverage_stale_segment_ids: string[];
-  coverage_broken_causal_groups: string[];
-  coverage_page_in_refs: number;
-  tool_tokens: number;
-  message_tokens: number;
-  attachment_tokens: number;
-  reserve_tokens: number;
-  effective_input_budget: number;
-  context_window: number;
-  planned_tokens: number;
-  estimate_method: string;
-  cache_boundary?: number | null;
-  cache_fingerprint: string;
-  actual_input_tokens?: number | null;
-  actual_output_tokens?: number | null;
-  actual_cache_read_tokens?: number | null;
-  actual_cache_write_tokens?: number | null;
-  transport_retry_count: number;
-  requested_compression_model: string;
-  resolved_compression_model: string;
-  actual_compression_model: string;
-  compression_provider: string;
-  compression_source: string;
-  compression_failure: string;
-  reasons: string[];
-  created_at: number;
-  updated_at: number;
-}
-
 export interface DecisionsListResponse {
   type: "decisions_list_response";
   payload: {
     decisions: DecisionRecord[];
-    attempts?: ContextAttemptSnapshot[];
     reason?: string;
   };
 }

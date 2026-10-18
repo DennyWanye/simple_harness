@@ -1310,7 +1310,7 @@ An authorized capability scope is pinned by the sole `EffectBatchExecutor` while
 
 ### 15.4 Attempt diagnostics and rollback
 
-（2026-10-18 删除）上下文尝试记录库 `ContextAttemptStore` 与提供方底层的尝试挂钩从未在生产注册，挂钩恒为直通；记录库、挂钩、四个恒为空的服务槽位与读取分支已整族删除。用量环只取提供方 `last_usage`，写入会话库的样本标识仍为 `context-attempt:<根运行>:<请求>:legacy`、估算方法 `legacy_provider_usage`。
+（2026-10-18 删除）上下文尝试记录库 `ContextAttemptStore` 与提供方底层的尝试挂钩从未在生产注册，挂钩恒为直通；记录库、挂钩、四个恒为空的服务槽位与读取分支已整族删除。用量环只取提供方 `last_usage`，写入会话库的样本标识仍为 `context-attempt:<根运行>:<请求>:legacy`、估算方法 `legacy_provider_usage`。前台上下文追踪面板的尝试列表（`ContextAttemptSnapshot`）随之删除。
 
 ContextTrace renders these frozen facts, including raw/summary/reference coverage, gaps/overlaps/stale counts and page-in references, without credentials, full tool arguments, attachment bodies or sensitive file content.
 

@@ -247,8 +247,6 @@ export const backdropStyle: CSSProperties = {
   animation: `bp-fade-in ${duration.base}ms ${easing.out}`,
 };
 
-export const tokensExport = tokens;
-
 // ============================================================
 // 深色（主题感知）面板套件 —— 记忆抽屉 / 设置 / 技能中心 / 反馈…
 // 键名沿用历史命名以免大范围改写；值已全部换成主题令牌。
@@ -293,15 +291,6 @@ export const dark = {
   dangerGrad: color.danger.bg,
 } as const;
 
-/** 下划线 tab 组容器。 */
-export const segGroup: CSSProperties = {
-  display: "inline-flex",
-  gap: space.lg,
-  padding: 0,
-  background: "transparent",
-  borderBottom: `1px solid ${dark.hairline}`,
-};
-
 /** 下划线 tab 单项 —— 选中态 2px 强调下划线。 */
 export function segTab(active: boolean): CSSProperties {
   return {
@@ -323,7 +312,7 @@ export function segTab(active: boolean): CSSProperties {
 }
 
 // ============================================================
-// 新增：本轮改版引入的版式 / 空态 / 抽屉助手
+// 版式助手
 // ============================================================
 
 /** 单行低调 meta 文本（状态栏、脚注）。 */
@@ -334,47 +323,4 @@ export const metaText: CSSProperties = {
   fontVariantNumeric: font.numeric,
   color: dark.textMuted,
   letterSpacing: tracking.normal,
-};
-
-/** 小节标题（14/600）。 */
-export const sectionTitleText: CSSProperties = {
-  fontFamily: font.ui,
-  fontSize: text.md.size,
-  lineHeight: text.md.lh,
-  fontWeight: weight.semibold,
-  letterSpacing: tracking.tight,
-  color: dark.text,
-  margin: 0,
-};
-
-/** 抽屉遮罩（160ms 淡入）。 */
-export const drawerScrim: CSSProperties = {
-  position: "absolute",
-  inset: 0,
-  background: dark.scrim,
-  zIndex: 40,
-  animation: `bp-fade-in ${duration.base}ms ${easing.out}`,
-};
-
-/** 右侧抽屉容器（宽 420）。 */
-export const DRAWER_WIDTH = 420;
-
-export const drawerSurface: CSSProperties = {
-  position: "absolute",
-  top: 0,
-  right: 0,
-  bottom: 0,
-  width: DRAWER_WIDTH,
-  maxWidth: "100%",
-  zIndex: 41,
-  display: "flex",
-  flexDirection: "column",
-  background: dark.panel,
-  borderLeft: `1px solid ${dark.hairline}`,
-  boxShadow: shadow.overlay,
-  color: dark.text,
-  fontFamily: font.ui,
-  fontSize: text.base.size,
-  lineHeight: text.base.lh,
-  animation: `sh-drawer-in ${duration.base}ms ${easing.out}`,
 };
