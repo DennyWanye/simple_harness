@@ -93,7 +93,7 @@ def parse_skill_frontmatter_bytes(
 
 
 @dataclass(frozen=True, slots=True)
-class WorkflowDataflowValidationV1:
+class WorkflowDataflowValidation:
     graph_hash: str
     nodes_known: bool
     dataflow_safe: bool
@@ -102,7 +102,7 @@ class WorkflowDataflowValidationV1:
 
 
 @dataclass(frozen=True, slots=True)
-class CandidateImmutableRiskFactsV1:
+class CandidateImmutableRiskFacts:
     candidate: CandidateRiskInputV1
     receipt_id: str
     receipt_hash: str
@@ -155,7 +155,7 @@ class FixedWorkflowDataflowValidator:
         graph: object,
         *,
         tool_manifest: Mapping[str, Mapping[str, object]],
-    ) -> WorkflowDataflowValidationV1:
+    ) -> WorkflowDataflowValidation:
         used: dict[str, Mapping[str, object]] = {}
 
         def structural_resolver(tool_name: str) -> Mapping[str, object]:
@@ -188,7 +188,7 @@ class FixedWorkflowDataflowValidator:
             for _name, facts in sorted(used.items())
         )
         safe = all(item.effect_kind == "read_only" and item.idempotent for item in effects)
-        return WorkflowDataflowValidationV1(
+        return WorkflowDataflowValidation(
             graph_hash=parsed.graph_hash,
             nodes_known=True,
             dataflow_safe=safe,
@@ -218,7 +218,7 @@ class ImmutableCandidateRiskFactsBuilder:
         source_tool_refs: Sequence[str] = (),
         permissions_added: Sequence[str] | None = None,
         topology_expanded: bool = False,
-    ) -> CandidateImmutableRiskFactsV1:
+    ) -> CandidateImmutableRiskFacts:
         if not isinstance(package, CandidatePackage):
             raise CandidateRiskFactsError(
                 "candidate_package_required", "CandidatePackage is required"
@@ -298,7 +298,7 @@ class ImmutableCandidateRiskFactsBuilder:
             "effect_topology_hash": topology_hash,
             "workflow_graph_hashes": list(graph_hashes),
         }
-        return CandidateImmutableRiskFactsV1(
+        return CandidateImmutableRiskFacts(
             candidate=candidate,
             receipt_id=receipt.receipt_id,
             receipt_hash=receipt.receipt_hash,
@@ -694,10 +694,10 @@ class ImmutableCandidateRiskFactsBuilder:
 
 
 __all__ = [
-    "CandidateImmutableRiskFactsV1",
+    "CandidateImmutableRiskFacts",
     "CandidateRiskFactsError",
     "FixedWorkflowDataflowValidator",
     "ImmutableCandidateRiskFactsBuilder",
-    "WorkflowDataflowValidationV1",
+    "WorkflowDataflowValidation",
     "parse_skill_frontmatter_bytes",
 ]

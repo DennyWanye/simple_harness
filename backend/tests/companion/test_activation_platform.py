@@ -37,8 +37,8 @@ from deskpet.companion.activation_platform import (
     CompanionCapabilityMutationPlatform,
     CompanionStoreActivationDecisionProofResolver,
     CompanionStoreLifecycleCandidateSourceResolver,
-    TrustedActivationDecisionProofV1,
-    TrustedLifecycleCandidateSourceV1,
+    TrustedActivationDecisionProof,
+    TrustedLifecycleCandidateSource,
 )
 from deskpet.companion.contracts import CandidateMode, MutationAction
 from deskpet.companion.store import canonical_hash
@@ -85,8 +85,8 @@ def _proof(
     executable: bool = True,
     code_digest: str | None = "code-digest-1",
     decision_mode: str = "user_confirmed",
-) -> TrustedActivationDecisionProofV1:
-    return TrustedActivationDecisionProofV1.issue(
+) -> TrustedActivationDecisionProof:
+    return TrustedActivationDecisionProof.issue(
         authorization_hash=authorization.authorization_hash,
         decision_id=str(authorization.decision_id),
         candidate_id=str(authorization.candidate_id),
@@ -364,7 +364,7 @@ async def test_current_platform_fails_closed_without_static_manager_api() -> Non
 
 
 class _CandidateSources:
-    def __init__(self, source: TrustedLifecycleCandidateSourceV1) -> None:
+    def __init__(self, source: TrustedLifecycleCandidateSource) -> None:
         self.source = source
         self.calls = 0
 
@@ -412,7 +412,7 @@ def _lifecycle_source(
     request: CapabilityLifecycleStaticRequest,
     *,
     executable: bool = False,
-) -> TrustedLifecycleCandidateSourceV1:
+) -> TrustedLifecycleCandidateSource:
     source = PackSourceRequest(
         source_type="companion_growth",
         uri=str(Path("candidate.zip").resolve()),
@@ -431,7 +431,7 @@ def _lifecycle_source(
         "source_uri": source.uri,
         "source_revision": source.revision,
     }
-    return TrustedLifecycleCandidateSourceV1(
+    return TrustedLifecycleCandidateSource(
         candidate_id=str(request.candidate_id),
         pack_id=request.pack_id,
         version=str(request.target_version),

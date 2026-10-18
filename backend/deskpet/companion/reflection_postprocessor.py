@@ -77,7 +77,7 @@ class LiveGrowthTargetFactsV1:
 
 
 @dataclass(frozen=True, slots=True)
-class HostNeutralSemanticGrowthResultV1:
+class HostNeutralSemanticGrowthResult:
     """Model-authored semantics with no owner, generation, or fence authority."""
 
     decision: str
@@ -93,7 +93,7 @@ class HostNeutralSemanticGrowthResultV1:
     def from_mapping(
         cls,
         raw: Mapping[str, object],
-    ) -> HostNeutralSemanticGrowthResultV1:
+    ) -> HostNeutralSemanticGrowthResult:
         required = {
             "decision",
             "target_kind",
@@ -217,9 +217,7 @@ class ReflectionResultPostprocessor:
 
         raw_result = result.structured_result
         full_schema = "schema_id" in raw_result
-        semantic = (
-            None if full_schema else HostNeutralSemanticGrowthResultV1.from_mapping(raw_result)
-        )
+        semantic = None if full_schema else HostNeutralSemanticGrowthResult.from_mapping(raw_result)
         proposed = StructuredGrowthProposalV1.from_mapping(raw_result) if full_schema else None
         evidence_bundle = await _resolve(self._evidence_loader(result.owner, result.evidence_ids))
         if not isinstance(evidence_bundle, LiveReflectionEvidenceV1):
@@ -331,7 +329,7 @@ class ReflectionResultPostprocessor:
         self,
         result: BackgroundRunCanonicalResultV1,
         *,
-        semantic: HostNeutralSemanticGrowthResultV1,
+        semantic: HostNeutralSemanticGrowthResult,
         evidence_event_ids: tuple[str, ...],
     ) -> tuple[
         StructuredGrowthProposalV1,
@@ -409,7 +407,7 @@ __all__ = [
     "LiveGrowthTargetFactsV1",
     "LiveReflectionEvidenceV1",
     "LiveTargetFactsResolver",
-    "HostNeutralSemanticGrowthResultV1",
+    "HostNeutralSemanticGrowthResult",
     "ReflectionDecisionStorePort",
     "ReflectionResultPostprocessor",
 ]

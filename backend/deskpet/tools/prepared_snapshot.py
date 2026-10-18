@@ -60,7 +60,7 @@ def exact_tool_ref_hash(ref: ToolCapabilityRef) -> str:
 
 
 @dataclass(frozen=True, slots=True)
-class PreparedSkillToolIntersectionV1:
+class PreparedSkillToolIntersection:
     """Effective Skill tools derived only by narrowing a base ToolSet."""
 
     active_scope_ids: tuple[str, ...]
@@ -79,7 +79,7 @@ def intersect_prepared_skill_tools(
     scopes: tuple[Any, ...],
     *,
     exact_tool_facts: tuple[Mapping[str, Any], ...] | None = None,
-) -> PreparedSkillToolIntersectionV1:
+) -> PreparedSkillToolIntersection:
     """Intersect active Skill scopes with one immutable base ToolSet.
 
     Skill frontmatter is never a source of new capabilities. Unknown names are
@@ -175,7 +175,7 @@ def intersect_prepared_skill_tools(
             "effective_tool_ref_hashes": list(ref_hashes),
         }
     )
-    return PreparedSkillToolIntersectionV1(
+    return PreparedSkillToolIntersection(
         active_scope_ids=tuple(sorted(scope_ids)),
         active_scope_hashes=tuple(sorted(scope_hashes)),
         allowed_tool_names=tuple(sorted(allowed)),
@@ -195,7 +195,7 @@ def verify_prepared_skill_tool_intersection(
     active_scope_ids: tuple[str, ...],
     effective_tool_refs_hash: str,
     exact_tool_facts: tuple[Mapping[str, Any], ...] | None = None,
-) -> PreparedSkillToolIntersectionV1:
+) -> PreparedSkillToolIntersection:
     """Recompute the boundary intersection and fail closed on any drift."""
 
     computed = intersect_prepared_skill_tools(
@@ -382,7 +382,7 @@ def load_context_os_snapshot(
 
 
 __all__ = [
-    "PreparedSkillToolIntersectionV1",
+    "PreparedSkillToolIntersection",
     "dump_context_os_snapshot",
     "dump_eligibility",
     "dump_prepared_tool_set",

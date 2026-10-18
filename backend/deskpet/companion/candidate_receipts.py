@@ -83,7 +83,7 @@ END;
 
 
 @dataclass(frozen=True, slots=True)
-class CandidateFinalizeProofV1:
+class CandidateFinalizeProof:
     """Host query key for the terminal/finalize marker in the same UoW."""
 
     finalize_marker_ref: str
@@ -115,7 +115,7 @@ class CandidateFinalizeProofQueryPort(Protocol):
     def verify_exact_in_uow(
         self,
         db: sqlite3.Connection,
-        proof: CandidateFinalizeProofV1,
+        proof: CandidateFinalizeProof,
     ) -> bool: ...
 
 
@@ -158,7 +158,7 @@ class CandidateDraftReceiptRepository:
         db: sqlite3.Connection,
         receipt: CandidateDraftReceiptV1,
         *,
-        finalize_proof: CandidateFinalizeProofV1,
+        finalize_proof: CandidateFinalizeProof,
         created_at: str,
     ) -> CandidateDraftReceiptV1:
         if not isinstance(receipt, CandidateDraftReceiptV1):
@@ -531,7 +531,7 @@ __all__ = [
     "CandidateDraftReceiptBuildOutput",
     "CandidateDraftReceiptTerminalExtension",
     "CandidateFinalizeProofQueryPort",
-    "CandidateFinalizeProofV1",
+    "CandidateFinalizeProof",
     "SqliteCandidateDraftMaterialQuery",
     "SqliteCandidateDraftReceiptQuery",
 ]

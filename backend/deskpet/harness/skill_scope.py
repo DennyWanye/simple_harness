@@ -8,7 +8,7 @@ from typing import Any
 from deskpet.capabilities.refresh import context_os_snapshot_ref
 from deskpet.companion.skills import PreparedSkillInvocationScopeV1
 from deskpet.tools.prepared_snapshot import (
-    PreparedSkillToolIntersectionV1,
+    PreparedSkillToolIntersection,
     intersect_prepared_skill_tools,
     load_context_os_snapshot,
 )
@@ -20,7 +20,7 @@ def skill_tool_intersection_from_snapshot(
     *,
     active_scope_ids: tuple[str, ...] | None = None,
     activated_scopes: tuple[Mapping[str, Any], ...] = (),
-) -> PreparedSkillToolIntersectionV1 | None:
+) -> PreparedSkillToolIntersection | None:
     """Rebuild the exact Skill/Tool intersection from frozen launch inputs."""
 
     extensions = capability_snapshot.get("host_extensions")

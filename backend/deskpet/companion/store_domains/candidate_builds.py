@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from ..build_admission import CandidateDraftReceiptExpectationV1, GrowthCandidateBuildPermitV1
-from ..candidate_build_coordinator import CandidateBuildLaunchStateV1, CandidateBuildStatus
+from ..candidate_build_coordinator import CandidateBuildLaunchState, CandidateBuildStatus
 from ..contracts import (
     CompanionConflictError,
     CompanionLeaseError,
@@ -56,7 +56,7 @@ class CandidateBuildMixin(CompanionStoreCore):
                     for name in CandidateDraftReceiptExpectationV1.__dataclass_fields__
                 }
             )
-        return CandidateBuildLaunchStateV1(
+        return CandidateBuildLaunchState(
             build_id=str(row["build_id"]),
             status=str(row["status"]),
             permit_id=str(row["build_permit_ref"]),

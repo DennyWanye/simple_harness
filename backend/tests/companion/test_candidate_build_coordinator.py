@@ -10,7 +10,7 @@ from deskpet.companion.build_admission import (
 )
 from deskpet.companion.candidate_build_coordinator import (
     CandidateBuildCoordinationError,
-    CandidateBuildLaunchStateV1,
+    CandidateBuildLaunchState,
     CandidateBuildStatus,
     CompanionCandidateBuildCoordinator,
 )
@@ -77,7 +77,7 @@ class _States:
         self.crash_before_ack_built = False
 
     def _base(self, status, **kwargs):
-        return CandidateBuildLaunchStateV1(
+        return CandidateBuildLaunchState(
             build_id=self.permit.build_id,
             status=status,
             permit_id=self.permit.permit_id,

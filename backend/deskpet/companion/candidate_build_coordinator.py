@@ -55,7 +55,7 @@ class CandidateBuildCoordinationError(RuntimeError):
 
 
 @dataclass(frozen=True, slots=True)
-class CandidateBuildLaunchStateV1:
+class CandidateBuildLaunchState:
     build_id: str
     status: CandidateBuildStatus | str
     permit_id: str
@@ -112,7 +112,7 @@ class CandidateBuildStatePort(Protocol):
         permit: GrowthCandidateBuildPermitV1,
         *,
         task_workspace: str,
-    ) -> CandidateBuildLaunchStateV1: ...
+    ) -> CandidateBuildLaunchState: ...
 
     def ack_child_precreated(
         self,
@@ -121,7 +121,7 @@ class CandidateBuildStatePort(Protocol):
         builder_launch_id: str,
         child_run_id: str,
         child_start_hash: str,
-    ) -> CandidateBuildLaunchStateV1: ...
+    ) -> CandidateBuildLaunchState: ...
 
     def ack_running(
         self,
@@ -130,14 +130,14 @@ class CandidateBuildStatePort(Protocol):
         builder_launch_id: str,
         child_run_id: str,
         child_start_hash: str,
-    ) -> CandidateBuildLaunchStateV1: ...
+    ) -> CandidateBuildLaunchState: ...
 
     def ack_handoff_pending(
         self,
         permit: GrowthCandidateBuildPermitV1,
         *,
         expectation: CandidateDraftReceiptExpectationV1,
-    ) -> CandidateBuildLaunchStateV1: ...
+    ) -> CandidateBuildLaunchState: ...
 
     def ack_built(
         self,
@@ -145,21 +145,21 @@ class CandidateBuildStatePort(Protocol):
         *,
         expectation: CandidateDraftReceiptExpectationV1,
         handoff: Mapping[str, JsonValue],
-    ) -> CandidateBuildLaunchStateV1: ...
+    ) -> CandidateBuildLaunchState: ...
 
     def mark_stale(
         self,
         permit: GrowthCandidateBuildPermitV1,
         *,
         reason_code: str,
-    ) -> CandidateBuildLaunchStateV1: ...
+    ) -> CandidateBuildLaunchState: ...
 
     def mark_failed(
         self,
         permit: GrowthCandidateBuildPermitV1,
         *,
         reason_code: str,
-    ) -> CandidateBuildLaunchStateV1: ...
+    ) -> CandidateBuildLaunchState: ...
 
 
 class CompanionCandidateBuildCoordinator:
@@ -187,7 +187,7 @@ class CompanionCandidateBuildCoordinator:
         claim_owner: str,
         claim_epoch: int,
         task_workspace: str,
-    ) -> CandidateBuildLaunchStateV1:
+    ) -> CandidateBuildLaunchState:
         permit = self._permits.issue_for_claim(
             build_id=build_id,
             claim_owner=claim_owner,
@@ -200,7 +200,7 @@ class CompanionCandidateBuildCoordinator:
         permit: GrowthCandidateBuildPermitV1,
         *,
         task_workspace: str,
-    ) -> CandidateBuildLaunchStateV1:
+    ) -> CandidateBuildLaunchState:
         state = self._states.prepare_launch_pending(permit, task_workspace=task_workspace)
         self._validate_state(permit, state, task_workspace)
         for _ in range(8):
@@ -294,7 +294,7 @@ class CompanionCandidateBuildCoordinator:
     @staticmethod
     def _validate_state(
         permit: GrowthCandidateBuildPermitV1,
-        state: CandidateBuildLaunchStateV1,
+        state: CandidateBuildLaunchState,
         task_workspace: str,
     ) -> None:
         if (
@@ -308,7 +308,7 @@ class CompanionCandidateBuildCoordinator:
 
     @staticmethod
     def _validate_child(
-        state: CandidateBuildLaunchStateV1,
+        state: CandidateBuildLaunchState,
         observed: Mapping[str, JsonValue],
         *,
         allowed_statuses: set[str],
@@ -323,7 +323,7 @@ class CompanionCandidateBuildCoordinator:
 
     @staticmethod
     def _expectation(
-        state: CandidateBuildLaunchStateV1,
+        state: CandidateBuildLaunchState,
         observed: Mapping[str, JsonValue],
     ) -> CandidateDraftReceiptExpectationV1:
         raw = observed.get("draft_receipt")
@@ -361,7 +361,7 @@ class CompanionCandidateBuildCoordinator:
 
 __all__ = [
     "CandidateBuildCoordinationError",
-    "CandidateBuildLaunchStateV1",
+    "CandidateBuildLaunchState",
     "CandidateBuildStatePort",
     "CandidateBuildStatus",
     "CompanionCandidateBuildCoordinator",

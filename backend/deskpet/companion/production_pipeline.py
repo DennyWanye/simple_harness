@@ -206,7 +206,7 @@ def _evaluation_baseline_fields(
 
 
 @dataclass(frozen=True, slots=True)
-class FirstPartySkillTemplateV1:
+class FirstPartySkillTemplate:
     target: GrowthTargetIdentityV1
     candidate_mode: CandidateMode
     source_fence: CandidateBindingFenceV1 | None
@@ -218,7 +218,7 @@ class FirstPartySkillTemplateV1:
 
 
 def _source_risk_refs(
-    template: FirstPartySkillTemplateV1,
+    template: FirstPartySkillTemplate,
     tool_manifest: Mapping[str, Mapping[str, object]],
     *,
     effect_topology: Mapping[str, object] | None = None,
@@ -319,7 +319,7 @@ def _tool_effect_topology(
 
 
 def _candidate_manifest_template(
-    template: FirstPartySkillTemplateV1,
+    template: FirstPartySkillTemplate,
     *,
     allowed_tools: tuple[str, ...],
     tool_registry: Any,
@@ -512,7 +512,7 @@ class FirstPartyGrowthTargetResolver:
         self,
         owner: OwnerRef,
         proposal: StructuredGrowthProposalV1,
-    ) -> FirstPartySkillTemplateV1:
+    ) -> FirstPartySkillTemplate:
         if proposal.target is None:
             raise ValueError("candidate_target_required")
         facts = await self(
@@ -531,7 +531,7 @@ class FirstPartyGrowthTargetResolver:
         for derived in ("version", "source", "files"):
             manifest.pop(derived, None)
         relative_path = item.skill_path.relative_to(item.pack_root).as_posix()
-        return FirstPartySkillTemplateV1(
+        return FirstPartySkillTemplate(
             target=facts.target,
             candidate_mode=CandidateMode(facts.candidate_mode),
             source_fence=facts.source_fence,
@@ -550,7 +550,7 @@ class CandidateBuildTerminalExtension:
     execution_run_id: str
     permit: Any
     proposal: StructuredGrowthProposalV1
-    template: FirstPartySkillTemplateV1
+    template: FirstPartySkillTemplate
     created_at: str
     tool_registry: Any | None = None
 
@@ -1952,6 +1952,6 @@ class GrowthProductionPipeline:
 __all__ = [
     "CandidateBuildTerminalExtension",
     "FirstPartyGrowthTargetResolver",
-    "FirstPartySkillTemplateV1",
+    "FirstPartySkillTemplate",
     "GrowthProductionPipeline",
 ]

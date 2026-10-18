@@ -62,7 +62,7 @@ _CONFIRMATION_AUTHORITY = object()
 
 
 @dataclass(frozen=True, slots=True)
-class TrustedActivationDecisionProofV1:
+class TrustedActivationDecisionProof:
     """Exact decision facts returned by the trusted Companion decision store."""
 
     authorization_hash: str
@@ -96,7 +96,7 @@ class TrustedActivationDecisionProofV1:
         decision_mode: Literal["safe_auto", "user_confirmed"],
         code_digest: str | None,
         activation_risk_ack: str,
-    ) -> TrustedActivationDecisionProofV1:
+    ) -> TrustedActivationDecisionProof:
         facts = {
             "schema_version": 1,
             "authorization_hash": authorization_hash,
@@ -149,7 +149,7 @@ class ActivationDecisionProofResolverPort(Protocol):
     async def resolve_activation_decision(
         self,
         authorization: CapabilityMutationAuthorization,
-    ) -> TrustedActivationDecisionProofV1 | None: ...
+    ) -> TrustedActivationDecisionProof | None: ...
 
 
 class CompanionStoreActivationDecisionProofResolver:
@@ -161,7 +161,7 @@ class CompanionStoreActivationDecisionProofResolver:
     async def resolve_activation_decision(
         self,
         authorization: CapabilityMutationAuthorization,
-    ) -> TrustedActivationDecisionProofV1 | None:
+    ) -> TrustedActivationDecisionProof | None:
         identity = _owner_identity(authorization.target_owner_key)
         if identity is None or authorization.decision_id is None:
             return None
@@ -238,7 +238,7 @@ class CompanionStoreActivationDecisionProofResolver:
             decision_mode = "user_confirmed"
         else:
             return None
-        return TrustedActivationDecisionProofV1.issue(
+        return TrustedActivationDecisionProof.issue(
             authorization_hash=authorization.authorization_hash,
             decision_id=str(facts["decision_id"]),
             candidate_id=str(facts["candidate_id"]),
@@ -257,7 +257,7 @@ class CompanionStoreActivationDecisionProofResolver:
 
 
 @dataclass(frozen=True, slots=True)
-class TrustedLifecycleCandidateSourceV1:
+class TrustedLifecycleCandidateSource:
     """Exact immutable archive selected from the Companion candidate store."""
 
     candidate_id: str
@@ -311,7 +311,7 @@ class LifecycleCandidateSourceResolverPort(Protocol):
     async def resolve_candidate_source(
         self,
         request: CapabilityLifecycleStaticRequest,
-    ) -> TrustedLifecycleCandidateSourceV1: ...
+    ) -> TrustedLifecycleCandidateSource: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -334,7 +334,7 @@ class CompanionStoreLifecycleCandidateSourceResolver:
     async def resolve_candidate_source(
         self,
         request: CapabilityLifecycleStaticRequest,
-    ) -> TrustedLifecycleCandidateSourceV1:
+    ) -> TrustedLifecycleCandidateSource:
         identity = _owner_identity(request.owner_key)
         if identity is None or request.candidate_id is None:
             raise CapabilityManagerError(
@@ -447,7 +447,7 @@ class CompanionStoreLifecycleCandidateSourceResolver:
             "source_uri": source.uri,
             "source_revision": source.revision,
         }
-        resolved = TrustedLifecycleCandidateSourceV1(
+        resolved = TrustedLifecycleCandidateSource(
             candidate_id=str(request.candidate_id),
             pack_id=str(row["pack_id"]),
             version=str(row["version"]),
@@ -481,7 +481,7 @@ class CapabilityManagerStaticLifecyclePort(CapabilityLifecycleStaticPort):
         self._manager = manager
         self._candidate_sources = candidate_sources
         self._management_policy = management_policy
-        self._prepared: dict[tuple[str, str], TrustedLifecycleCandidateSourceV1] = {}
+        self._prepared: dict[tuple[str, str], TrustedLifecycleCandidateSource] = {}
         self._prepared_remove_overrides: dict[tuple[str, str], _PreparedRemoveOverride] = {}
 
     async def prepare_static(
@@ -793,7 +793,7 @@ class CapabilityManagerStaticLifecyclePort(CapabilityLifecycleStaticPort):
     @staticmethod
     def _validate_install_result(
         prepared: PreparedCapabilityLifecycleMutation,
-        source: TrustedLifecycleCandidateSourceV1,
+        source: TrustedLifecycleCandidateSource,
         result: CapabilityInstallResult,
     ) -> None:
         request = prepared.request
@@ -1295,6 +1295,6 @@ __all__ = [
     "CompanionStoreActivationDecisionProofResolver",
     "CompanionStoreLifecycleCandidateSourceResolver",
     "LifecycleCandidateSourceResolverPort",
-    "TrustedActivationDecisionProofV1",
-    "TrustedLifecycleCandidateSourceV1",
+    "TrustedActivationDecisionProof",
+    "TrustedLifecycleCandidateSource",
 ]

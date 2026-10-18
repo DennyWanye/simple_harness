@@ -16,7 +16,7 @@ from deskpet.companion.growth import (
 from deskpet.companion.production_pipeline import (
     CandidateBuildTerminalExtension,
     FirstPartyGrowthTargetResolver,
-    FirstPartySkillTemplateV1,
+    FirstPartySkillTemplate,
     GrowthProductionPipeline,
     _CandidatePermitView,
     _evaluation_baseline_fields,
@@ -237,7 +237,7 @@ async def test_candidate_terminal_extension_persists_model_authored_skill():
             child_start_hash="d" * 64,
         ),
         proposal=proposal,
-        template=FirstPartySkillTemplateV1(
+        template=FirstPartySkillTemplate(
             target=target,
             candidate_mode="builtin_override",
             source_fence=source,
@@ -418,7 +418,7 @@ def test_evaluation_baseline_fields_match_store_contract():
 
 def test_source_risk_refs_include_readonly_package_effect_for_golden_update():
     proposal = _candidate_retry_proposal()
-    template = FirstPartySkillTemplateV1(
+    template = FirstPartySkillTemplate(
         target=proposal.target,
         candidate_mode=proposal.candidate_mode,
         source_fence=proposal.source_fence,

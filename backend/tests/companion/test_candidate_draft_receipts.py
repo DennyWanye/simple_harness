@@ -14,7 +14,7 @@ from deskpet.companion.candidate_receipts import (
     CANDIDATE_DRAFT_RECEIPT_SCHEMA_SQL,
     CandidateDraftReceiptRepository,
     CandidateDraftReceiptTerminalExtension,
-    CandidateFinalizeProofV1,
+    CandidateFinalizeProof,
     SqliteCandidateDraftMaterialQuery,
     SqliteCandidateDraftReceiptQuery,
 )
@@ -46,7 +46,7 @@ class FinalizeMarkerQuery:
     def verify_exact_in_uow(
         self,
         db: sqlite3.Connection,
-        proof: CandidateFinalizeProofV1,
+        proof: CandidateFinalizeProof,
     ) -> bool:
         return (
             db.execute(
@@ -103,8 +103,8 @@ def receipt(
     )
 
 
-def proof() -> CandidateFinalizeProofV1:
-    return CandidateFinalizeProofV1(
+def proof() -> CandidateFinalizeProof:
+    return CandidateFinalizeProof(
         finalize_marker_ref="finalize-1",
         finalize_marker_hash=DIGEST_C,
         builder_launch_id="launch-1",
@@ -132,7 +132,7 @@ def expectation(value: CandidateDraftReceiptV1):
     )
 
 
-def insert_marker(db: sqlite3.Connection, value: CandidateFinalizeProofV1) -> None:
+def insert_marker(db: sqlite3.Connection, value: CandidateFinalizeProof) -> None:
     db.execute(
         """INSERT INTO execution_child_finalize_markers(
              marker_ref,marker_hash,builder_launch_id,child_run_id,child_start_hash
