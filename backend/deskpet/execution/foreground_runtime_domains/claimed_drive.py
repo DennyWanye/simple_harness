@@ -5,12 +5,12 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import json
 import uuid
 
 from simple_harness import ContextRouteOrigin, ContextRouteReceipt, TaskScopeRoute, thaw_json
 
+from deskpet.execution.foreground_identity import foreground_execution_session_id
 from deskpet.execution.foreground_queue import (
     ContextLineage,
     EffectBoundary,
@@ -30,11 +30,6 @@ class ForegroundRuntimeError(RuntimeError):
 
 def _uuid(label: str) -> str:
     return str(uuid.uuid5(uuid.NAMESPACE_URL, f"simple-harness:{label}"))
-
-
-def _execution_session_id(host_run_id: str) -> str:
-    digest = hashlib.sha256(host_run_id.encode("utf-8")).hexdigest()
-    return f"foreground-execution-{digest}"
 
 
 def _candidate_turn_payload(candidate: PreparationCandidate) -> dict[str, object]:
@@ -65,7 +60,7 @@ class ClaimedDriveMixin:
             owner_id=self._owner_id,
             generation=snapshot.generation,
         )
-        execution_session_id = _execution_session_id(host_run_id)
+        execution_session_id = foreground_execution_session_id(host_run_id)
         request_id = f"foreground-request-{claimed.candidate.turn_id}"
         sdk_run_id = SdkRuntimeIngress._compute_run_id(
             execution_session_id,
@@ -390,6 +385,10 @@ class ClaimedDriveMixin:
                 "tool_authority_ref": tools.authority_ref,
                 "tool_authority_hash": tools.authority_hash,
                 "snapshot_id": context.snapshot_id,
+                # 用量投影按这三个值判断样本可信；可用上限与有任务范围的路径同口径，等于窗口。
+                "binding_epoch": int(run_binding.binding_epoch),
+                "context_window": int(run_binding.context_window),
+                "effective_ceiling": int(run_binding.context_window),
                 "run_binding": run_binding.to_record(),
                 "tool_authority": dict(tools.run_start_record),
                 "initial_route_receipt_id": None if route is None else route.receipt_id,

@@ -20,6 +20,7 @@ from pathlib import Path
 import aiosqlite
 
 from deskpet.execution import admission_rejection
+from deskpet.execution.foreground_identity import foreground_execution_session_id
 from deskpet.execution.preparation_rejection import read_preparation_rejection_tx
 from deskpet.execution.terminal_identity import read_primary_terminal_identity_tx
 from deskpet.memory.primary_visibility import (
@@ -96,10 +97,13 @@ class PrimaryReadModel:
         subject: str,
         settled_run_reader=None,
         run_binding_reader=None,
+        context_usage_reader=None,
     ):
         self.path, self.subject = Path(db_path), subject
         self.reader = settled_run_reader
         self.run_binding_reader = run_binding_reader
+        # 宿主注入：按执行会话号读用量状态（SessionDB.get_context_usage_state），可为空。
+        self.context_usage_reader = context_usage_reader
         self.history_policy = PrimaryHistoryPolicy(db_path, subject)
 
     async def _subject_visible(self):
@@ -172,6 +176,48 @@ class PrimaryReadModel:
             )
         except PrimaryVisibilityError as exc:
             raise PrimaryReadError(exc.code, exc) from exc
+
+    async def context_usage(self, *, primary_ref, disclosure_context):
+        """本主对话最近一轮已绑定 SDK 的运行（含已结束）的上下文用量。
+
+        执行会话号按运行号算回（与执行层同一函数）；这一轮的来源消息对当前读者不可见时不返回用量。
+        """
+        async with self._snapshot(primary_ref) as (db, primary):
+            rows = await _rows(
+                db,
+                (
+                    "SELECT h.host_run_id,t.evidence_id FROM foreground_run_heads h "
+                    "JOIN foreground_turns t ON t.turn_id=h.turn_id AND t.subject=h.subject "
+                    "AND t.primary_conversation_id=h.primary_conversation_id "
+                    "WHERE h.subject=? AND h.primary_conversation_id=? "
+                    "AND h.sdk_run_id IS NOT NULL "
+                    "ORDER BY t.enqueue_sequence DESC LIMIT 1"
+                ),
+                (self.subject, primary),
+            )
+            empty = {
+                "primary_ref": primary,
+                "run_ref": None,
+                "execution_session_ref": None,
+                "usage": None,
+            }
+            if not rows:
+                return empty
+            evidence_id = rows[0]["evidence_id"]
+            visible = await self._check_sources(db, primary, [evidence_id], disclosure_context)
+            if not visible[evidence_id]:
+                return empty
+            run_ref = rows[0]["host_run_id"]
+        session = foreground_execution_session_id(run_ref)
+        usage = None
+        if self.context_usage_reader is not None:
+            usage = await _resolved(self.context_usage_reader(session))
+        return {
+            "primary_ref": primary,
+            "run_ref": run_ref,
+            "execution_session_ref": session,
+            "usage": dict(usage) if isinstance(usage, Mapping) else None,
+        }
 
     async def state(self, *, disclosure_context):
         async with self._snapshot() as (db, primary):

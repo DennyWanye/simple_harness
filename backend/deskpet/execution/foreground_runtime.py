@@ -156,6 +156,8 @@ class ForegroundRunBinding(Protocol):
     catalog_generation: int
     catalog_fingerprint: str
     budget_fingerprint: str
+    binding_epoch: int
+    context_window: int
 
     def to_record(self) -> Mapping[str, object]: ...
 

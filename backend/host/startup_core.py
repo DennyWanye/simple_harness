@@ -56,6 +56,14 @@ from host.stores_bootstrap import (
 from host.window_control import _WINDOW_CONTROL_BOOTSTRAP
 
 
+async def _primary_context_usage_reader(execution_session_id: str) -> Any:
+    """主对话读用量：按执行会话号读 SessionDB 的用量状态；会话库还没就绪时返回空。"""
+    session_db = service_context.get("session_db")
+    if session_db is None:
+        return None
+    return await session_db.get_context_usage_state(execution_session_id)
+
+
 async def _startup_core_services() -> tuple[Any, Any]:
     """启动：受保护路径通知、提供方路由就绪状态、人类记忆启动纪元与宿主服务工厂登记。"""
     # 2026-09-26 诊断：`kill -USR1 <pid>` 把所有线程的调用栈打到 stderr（排查 CPU 占满/卡住）
@@ -97,6 +105,7 @@ async def _startup_core_services() -> tuple[Any, Any]:
                 run_binding_reader=lambda run_id: (
                     host_state.sdk_runtime_stack.read_closure_run_facts(run_id).binding_record
                 ),
+                context_usage_reader=_primary_context_usage_reader,
                 decision_ingress_getter=lambda: host_state.sdk_ingress,
                 display_invalidation=memory_display_invalidation,
             )

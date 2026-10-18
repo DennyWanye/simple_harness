@@ -501,3 +501,43 @@ async def test_product_provider_rejects_placeholder_zero_pricing() -> None:
             )
     finally:
         await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_foreground_shaped_start_metadata_writes_trusted_usage(tmp_path) -> None:
+    """主对话运行的启动元数据（带绑定版本、窗口、可用上限）能写出可信用量样本。"""
+    metadata = {
+        "session_id": "foreground-execution-a",
+        "root_run_id": "host-run-a",
+        "request_id": "request-a",
+        "snapshot_id": "snapshot-a",
+        "binding_epoch": 3,
+        "context_window": 65_536,
+        "effective_ceiling": 65_536,
+        "run_binding": {"binding_epoch": 3, "context_window": 65_536},
+    }
+    source = _Source(
+        [
+            _receipt(
+                1, "succeeded", usage={"input_tokens": 40, "output_tokens": 5, "total_tokens": 45}
+            )
+        ]
+    )
+    db = SessionDB(tmp_path / "state.db")
+    committed: list[str] = []
+
+    async def on_committed(context: ProviderProjectionContextV1) -> None:
+        committed.append(context.session_id)
+
+    pump = SdkProviderProjectionPump(
+        source,
+        db,
+        context_resolver=lambda _receipt: ProviderProjectionContextV1.from_value(metadata),
+        on_committed=on_committed,
+    )
+    assert await pump.run_until_idle() == 1
+    history = await db.list_context_usage_history("foreground-execution-a")
+    assert len(history) == 1
+    assert history[0]["prompt_tokens"] == 40
+    assert committed == ["foreground-execution-a"]
+    await db.close()

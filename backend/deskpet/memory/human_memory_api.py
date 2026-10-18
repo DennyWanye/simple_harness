@@ -100,6 +100,7 @@ async def handle_human_memory_command(
         payload = await _dispatch(service, operation, dict(request), request_id)
         if operation in {
             "primary.state",
+            "primary.context.usage",
             "primary.messages.page",
             "primary.messages.detail",
             "primary.bindings.pending",
@@ -173,11 +174,13 @@ async def _dispatch(  # type: ignore[no-untyped-def]
         return await service.open_primary()
     if operation in {
         "primary.state",
+        "primary.context.usage",
         "primary.messages.page",
         "primary.messages.detail",
     }:
         allowed, required = {
             "primary.state": (set(), set()),
+            "primary.context.usage": ({"primary_ref"}, {"primary_ref"}),
             "primary.messages.page": (
                 {"primary_ref", "cursor", "limit"},
                 {"primary_ref"},
@@ -191,6 +194,8 @@ async def _dispatch(  # type: ignore[no-untyped-def]
             raise PrimaryReadError("primary_read_request_invalid")
         if operation == "primary.state":
             return await service.read_primary_state(request_id=request_id)
+        if operation == "primary.context.usage":
+            return await service.read_primary_context_usage(request_id=request_id, **request)
         if operation == "primary.messages.page":
             return await service.read_primary_messages(request_id=request_id, **request)
         return await service.read_primary_message_detail(request_id=request_id, **request)

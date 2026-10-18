@@ -10,6 +10,7 @@ from types import SimpleNamespace
 from urllib.parse import unquote, urlparse
 
 import pytest
+from deskpet.execution.foreground_identity import foreground_execution_session_id
 from deskpet.execution.foreground_queue import ForegroundQueueStore
 from deskpet.execution.foreground_runtime import (
     BoundProviderAuthority,
@@ -617,6 +618,58 @@ async def test_primary_real_runtime_terminal_outbox_history_reopen(tmp_path):
                 ).fetchone()[0]
                 == 2
             )
+    finally:
+        await runtime.close()
+        await stack.close()
+
+
+@pytest.mark.asyncio
+async def test_primary_run_start_carries_bound_context_window_for_usage(tmp_path):
+    """主对话运行的启动元数据要带绑定版本、模型窗口与可用上限，用量投影才写得出样本；
+    读用量接口按运行号算回同一个执行会话号，交给宿主注入的读取器。"""
+    state = tmp_path / "state.db"
+    startup = await dispatch_startup_epoch(state, approved_fresh_lane=True)
+    usage_reads: list[str] = []
+
+    async def usage_reader(execution_session_id: str):
+        usage_reads.append(execution_session_id)
+        return {"session_id": execution_session_id, "has_measurement": True, "prompt_tokens": 7}
+
+    service = HumanMemoryHostServiceFactory(state, startup, context_usage_reader=usage_reader).bind(
+        local_owner_auth()
+    )
+    primary = (await service.open_primary())["primary_ref"]
+    empty = await service.read_primary_context_usage(request_id="usage-0", primary_ref=primary)
+    assert empty == {
+        "primary_ref": primary,
+        "run_ref": None,
+        "execution_session_ref": None,
+        "usage": None,
+    }
+    runtime, stack, _queue = await build(tmp_path, state, Provider())
+    try:
+        await service.enqueue_turn(QueueTurnRequest(None, "one", "First actual user turn"))
+        assert await asyncio.wait_for(runtime._drive_once(), 15)
+        with sqlite3.connect(state) as db:
+            sdk_run_id = db.execute(
+                "SELECT sdk_run_id FROM foreground_terminal_receipts"
+            ).fetchone()[0]
+        start, _effects = stack.read_primary_dependency_facts(sdk_run_id)
+        metadata = start["input"]["context_metadata"]
+        binding = metadata["run_binding"]
+        assert metadata["binding_epoch"] == binding["binding_epoch"]
+        assert metadata["context_window"] == binding["context_window"] == 32768
+        assert metadata["effective_ceiling"] == metadata["context_window"]
+        with sqlite3.connect(state) as db:
+            host_run_id = db.execute(
+                "SELECT host_run_id FROM foreground_terminal_receipts"
+            ).fetchone()[0]
+        result = await service.read_primary_context_usage(request_id="usage-1", primary_ref=primary)
+        assert result["run_ref"] == host_run_id
+        assert result["execution_session_ref"] == metadata["session_id"]
+        assert result["execution_session_ref"] == foreground_execution_session_id(host_run_id)
+        assert result["usage"]["prompt_tokens"] == 7
+        assert usage_reads == [metadata["session_id"]]
     finally:
         await runtime.close()
         await stack.close()

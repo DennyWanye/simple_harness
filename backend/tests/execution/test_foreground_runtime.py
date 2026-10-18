@@ -282,6 +282,8 @@ class _Context:
 @dataclass
 class _Binding:
     catalog_generation: int = 7
+    binding_epoch: int = 1
+    context_window: int = 32768
     catalog_fingerprint: str = "catalog-1"
     budget_fingerprint: str = "budget-1"
 
