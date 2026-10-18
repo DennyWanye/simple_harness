@@ -237,13 +237,26 @@ def reduce_context_usage_state(
 ) -> ContextUsageStateV2:
     """Monotonically reduce one immutable history fact.
 
-    Non-current epochs and late provider facts stay in history but cannot
+    Older epochs and late provider facts stay in history but cannot
     change the public authority.  Compaction is accepted only for the exact
     sample it compacted.
     """
 
-    if int(sample["binding_epoch"]) != current.binding_epoch:
+    epoch = int(sample["binding_epoch"])
+    if epoch < current.binding_epoch:
         return current
+    if epoch > current.binding_epoch:
+        # 改绑定会在同一事务里推进状态纪元，所以样本纪元更新只说明这个会话没有绑定记录
+        # （主对话每轮一个执行会话），状态从没跟上：样本自带的就是这次运行的绑定。
+        current = binding_only_state(
+            session_id=current.session_id,
+            state_version=current.state_version,
+            binding_epoch=epoch,
+            provider_id=sample.get("provider_id"),
+            model_id=sample.get("model_id"),
+            availability="available",
+            updated_at=current.updated_at,
+        )
     event_type = str(sample["event_type"])
     if event_type == "provider_attempt":
         incoming_order = (
