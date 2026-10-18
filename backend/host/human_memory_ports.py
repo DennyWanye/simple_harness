@@ -8,6 +8,7 @@ import time
 import uuid
 from collections.abc import Mapping
 from pathlib import Path
+from typing import Any
 
 import paths as _paths
 from deskpet.execution.closure_request_guard import (
@@ -31,11 +32,13 @@ from deskpet.execution.semantic_closure import ClosureFallback
 from deskpet.memory.recovery_fence import build_recovery_lifecycle_port
 from deskpet.memory.schema import StartupCompositionMode
 from deskpet.operation_audit.composition import compose_terminal_audit
-from deskpet.sdk_adapters.context_authority import ContextRouteLedgerStore
+from deskpet.sdk_adapters.context_authority import (
+    ContextRouteLedgerStore,
+    DefaultDenySnapshotRedactor,
+)
 from deskpet.sdk_adapters.post_turn_invoker import RunBoundInvoker
 from deskpet.sdk_adapters.run_bindings import SdkRunBindingV1
 from deskpet.task_scope.runtime_binding_authority import WorkspaceBindingRuntimeAuthority
-
 from host.chat_delivery import _broadcast_control
 from host.runtime import logger, service_context
 from host.sdk_execution import _provider_endpoint_identity_for_binding
@@ -49,6 +52,14 @@ from host.sdk_services import (
 )
 from host.state import host_state
 from host.stores_bootstrap import _state_db_path
+
+
+async def _publish_foreground_context_snapshot(snapshot: Any) -> None:
+    """主对话运行冻结的上下文快照脱敏后存为公开快照，供用量明细读取。"""
+    session_db = service_context.get("session_db")
+    if session_db is None:
+        return
+    await session_db.put_sdk_context_public_snapshot(DefaultDenySnapshotRedactor().redact(snapshot))
 
 
 async def _activate_terminal_operation_audit():
@@ -275,6 +286,7 @@ async def _activate_human_memory_host_ports(
             settled_run_reader=lambda run_id, **kwargs: (
                 host_state.sdk_runtime_stack.read_settled_primary_run(run_id, **kwargs)
             ),
+            public_snapshot_sink=_publish_foreground_context_snapshot,
         ),
         provider=ProductForegroundProviderPort(
             host_state.provider_registry,

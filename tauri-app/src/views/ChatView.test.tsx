@@ -130,16 +130,6 @@ describe("ChatView（WB-4）", () => {
     expect(hydration).toEqual([]);
   });
 
-  it("切换会话时关掉为上一个会话打开的上下文详情", () => {
-    const { rerender } = render(<ChatView activeSid="s-a" secret="s3cret" />);
-    fireEvent.click(screen.getByRole("button", { name: /Context usage/ }));
-    expect(screen.getByTestId("stub-context-modal").textContent).toBe("s-a");
-    rerender(<ChatView activeSid="s-a" secret="s3cret" />);
-    expect(screen.getByTestId("stub-context-modal")).toBeTruthy();
-    rerender(<ChatView activeSid="s-b" secret="s3cret" />);
-    expect(screen.queryByTestId("stub-context-modal")).toBeNull();
-  });
-
   it("挂载即按会话发 hydration 四连发（消息/投影/上下文/provider）", () => {
     render(<ChatView activeSid="default" secret="s3cret" />);
     const types = vi.mocked(controlWS.send).mock.calls.map(([m]) => (m as { type: string }).type);

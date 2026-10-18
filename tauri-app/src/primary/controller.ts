@@ -167,6 +167,14 @@ export class PrimaryController {
     this.update({ ready });
     return this.refresh();
   };
+  /** 读最近一轮运行的上下文明细（primary.context.breakdown），给明细窗口用；没有运行时为 null。 */
+  contextBreakdown = async (): Promise<unknown> => {
+    const primary_ref = this.snapshot.state?.primary_ref;
+    if (!primary_ref || !this.client || !this.snapshot.ready) throw new Error("主对话未就绪");
+    const result = await this.client.request("primary.context.breakdown", { primary_ref });
+    if (result.primary_ref !== primary_ref) throw new Error("主对话明细归属不匹配");
+    return result.breakdown ?? null;
+  };
   detail = async (message_ref: string, offset: number) => {
     const primary_ref = this.snapshot.state?.primary_ref;
     const epoch = this.epoch;

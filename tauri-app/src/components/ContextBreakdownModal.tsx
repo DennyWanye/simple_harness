@@ -10,18 +10,13 @@
  *   2. Stacked bar by section (system / memory / tools / history).
  *   3. Each section row — token count, preview snippet (expandable).
  *
- * Pulls its data via WS request `context_breakdown_request` and waits
- * for `context_breakdown_response`. Caller passes a `sessionId` + a
- * `send` + `onMessage` plumbing pair.
+ * 数据由调用方传入的 `query()` 读取（主对话发 `primary.context.breakdown`，
+ * 取最近一轮运行的公开快照明细）；每次打开或用量样本换代时重读一次。
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { ContextUsageSnapshot } from "../stores/sessionsStore";
-import {
-  canonicalJson,
-  contextDisplayState,
-  newContextRequestId,
-} from "../context/contextAuthority";
+import { contextDisplayState } from "../context/contextAuthority";
 import { ringColor, ringPercent } from "./contextRingMath";
 import { useDepsChanged } from "../hooks/useDepsChanged";
 import "./ContextBreakdownModal.styles.css";
@@ -57,15 +52,12 @@ interface ContextHistorySample {
 
 interface BreakdownResponse {
   session_id: string;
-  correlation_id: string;
   snapshot_id: string | null;
   sample_id: string | null;
   snapshot_version: number | null;
-  usage_version: number;
+  usage_version: number | null;
   snapshot_fingerprint: string;
   availability: "available" | "unavailable";
-  project_name?: string | null;
-  project_root?: string | null;
   model: string;
   sections: BreakdownSection[];
   total_estimated_tokens: number;
@@ -96,20 +88,18 @@ function normalizeBreakdownResponse(value: unknown): BreakdownResponse | null {
   const raw = value as Record<string, unknown>;
   if (!("snapshot_version" in raw) || !("usage_version" in raw)) return null;
   const sessionId = optionalIdentity(raw.session_id);
-  const correlationId = optionalIdentity(raw.correlation_id);
   const snapshotId = optionalIdentity(raw.snapshot_id);
   const sampleId = optionalIdentity(raw.sample_id);
   const version = raw.snapshot_version === null ? null : finiteNonNegative(raw.snapshot_version);
-  const usageVersion = finiteNonNegative(raw.usage_version);
+  const usageVersion = raw.usage_version === null ? null : finiteNonNegative(raw.usage_version);
   if (
     !sessionId ||
-    !correlationId ||
     snapshotId === undefined ||
     sampleId === undefined ||
     version === undefined ||
     (version !== null && !Number.isInteger(version)) ||
-    usageVersion === null ||
-    !Number.isInteger(usageVersion) ||
+    usageVersion === undefined ||
+    (usageVersion !== null && !Number.isInteger(usageVersion)) ||
     !Array.isArray(raw.sections)
   )
     return null;
@@ -168,7 +158,6 @@ function normalizeBreakdownResponse(value: unknown): BreakdownResponse | null {
 
   return {
     session_id: sessionId,
-    correlation_id: correlationId,
     snapshot_id: snapshotId,
     sample_id: sampleId,
     snapshot_version: version,
@@ -176,8 +165,6 @@ function normalizeBreakdownResponse(value: unknown): BreakdownResponse | null {
     snapshot_fingerprint:
       typeof raw.snapshot_fingerprint === "string" ? raw.snapshot_fingerprint.slice(0, 160) : "",
     availability: raw.availability === "available" ? "available" : "unavailable",
-    project_name: typeof raw.project_name === "string" ? raw.project_name.slice(0, 160) : null,
-    project_root: null,
     model: typeof raw.model === "string" ? raw.model.slice(0, 160) : "",
     sections,
     total_estimated_tokens: finiteNonNegative(raw.total_estimated_tokens) ?? 0,
@@ -191,25 +178,13 @@ function normalizeBreakdownResponse(value: unknown): BreakdownResponse | null {
   };
 }
 
-export /** 控制通道推来的一条消息（未经校验；本组件只认 context_breakdown_response）。 */
-interface BreakdownChannelMessage {
-  type?: string;
-  payload?: unknown;
-}
-
 interface ContextBreakdownModalProps {
   open: boolean;
   onClose(): void;
-  sessionId: string;
-  projectName?: string;
-  projectRoot?: string | null;
-  /** Live snapshot — drives the header gauge while we wait for the
-   *  breakdown response. */
+  /** 当前用量（环上那份），等明细回来前先画顶部进度条。 */
   snapshot: ContextUsageSnapshot | null | undefined;
-  /** Sender. */
-  send(msg: { type: string; payload?: Record<string, unknown> }): void;
-  /** Subscriber — returns an unsubscribe. */
-  onMessage(fn: (msg: unknown) => void): () => void;
+  /** 读一次明细；没有运行或读不到时给 null，失败时抛错。 */
+  query(): Promise<unknown>;
 }
 
 function fmtTokens(n: number): string {
@@ -379,54 +354,22 @@ const SECTION_COLOR: Record<string, string> = {
 export function ContextBreakdownModal({
   open,
   onClose,
-  sessionId,
-  projectName,
-  projectRoot,
   snapshot,
-  send,
-  onMessage,
+  query,
 }: ContextBreakdownModalProps) {
   const [data, setData] = useState<BreakdownResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
-  // 2026-05-31 restore — parent commonly passes inline lambdas for send /
-  // onMessage which change identity every render. If we depended on them in
-  // our effect, each re-render (e.g. ws lastMessage tick) would unsubscribe
-  // + resubscribe, racing with the response arrival. Pin the latest
-  // callbacks in refs and only re-run the effect on open/sessionId changes.
-  const sendRef = useRef(send);
-  const onMessageRef = useRef(onMessage);
-  const acceptedRef = useRef<{ fingerprint: string } | null>(null);
+  // query 由调用方每次渲染新建；只认最新一份，按打开与样本换代重读。
+  const queryRef = useRef(query);
   useEffect(() => {
-    sendRef.current = send;
-  }, [send]);
-  useEffect(() => {
-    onMessageRef.current = onMessage;
-  }, [onMessage]);
+    queryRef.current = query;
+  }, [query]);
 
-  // 这次读取要对上的快照身份（渲染期算好，effect 与重置都按它们比对）。
-  const expectedSnapshotId = snapshot?.snapshot_id?.trim() || null;
-  const expectedSampleId = snapshot?.sample_id?.trim() || null;
-  const expectedUsageVersion =
-    Number.isInteger(snapshot?.version) && (snapshot?.version ?? -1) >= 0
-      ? snapshot!.version!
-      : null;
-  const expectedSnapshotVersion =
-    Number.isInteger(snapshot?.snapshot_version) && (snapshot?.snapshot_version ?? -1) >= 0
-      ? snapshot!.snapshot_version!
-      : null;
-
-  // 打开、换会话或换快照：渲染期重置画面（含挂载），effect 只订阅并发请求。
-  const requestDeps = [
-    open,
-    sessionId,
-    expectedSnapshotId,
-    expectedSampleId,
-    expectedUsageVersion,
-    expectedSnapshotVersion,
-  ];
-  if (useDepsChanged(requestDeps, { onMount: true })) {
+  // 新样本到了就重读一次，明细跟环上的用量同代。
+  const sampleId = snapshot?.sample_id?.trim() || null;
+  if (useDepsChanged([open, sampleId], { onMount: true })) {
     setData(null);
     if (open) setLoading(true);
     else setExpanded({});
@@ -434,62 +377,22 @@ export function ContextBreakdownModal({
 
   useEffect(() => {
     if (!open) return;
-    acceptedRef.current = null;
-    const requestId = newContextRequestId();
     let active = true;
-    const off = onMessageRef.current((msg) => {
-      if (
-        (msg as BreakdownChannelMessage | null | undefined)?.type === "context_breakdown_response"
-      ) {
-        const p = normalizeBreakdownResponse((msg as BreakdownChannelMessage).payload);
-        if (
-          !active ||
-          !p ||
-          p.session_id !== sessionId ||
-          p.correlation_id !== requestId ||
-          p.snapshot_id !== expectedSnapshotId ||
-          p.sample_id !== expectedSampleId ||
-          expectedUsageVersion === null ||
-          p.usage_version !== expectedUsageVersion ||
-          p.snapshot_version !== expectedSnapshotVersion
-        )
-          return;
-        const fingerprint = canonicalJson(p);
-        const accepted = acceptedRef.current;
-        if (accepted && accepted.fingerprint !== fingerprint) return;
-        acceptedRef.current = { fingerprint };
-        setData(p);
-        setLoading(false);
-      }
-    });
-    try {
-      sendRef.current({
-        type: "context_breakdown_request",
-        payload: {
-          session_id: sessionId,
-          request_id: requestId,
-          expected_snapshot_id: expectedSnapshotId,
-          expected_sample_id: expectedSampleId,
-          expected_usage_version: expectedUsageVersion,
-          expected_snapshot_version: expectedSnapshotVersion,
-        },
+    queryRef
+      .current()
+      .then((raw) => {
+        if (active) setData(normalizeBreakdownResponse(raw));
+      })
+      .catch((error) => {
+        console.warn("[context-breakdown] read failed", error);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
       });
-    } catch (error) {
-      // 唯一的发送方（controlWS.send）自己吞掉异常、只返回成败，这里只留防御性日志。
-      console.warn("[context-breakdown] request send failed", error);
-    }
     return () => {
       active = false;
-      off();
     };
-  }, [
-    open,
-    sessionId,
-    expectedSnapshotId,
-    expectedSampleId,
-    expectedUsageVersion,
-    expectedSnapshotVersion,
-  ]);
+  }, [open, sampleId]);
 
   const displayState = contextDisplayState(snapshot);
   const measured = displayState === "measured";
@@ -499,9 +402,6 @@ export function ContextBreakdownModal({
     () => (data?.sections || []).reduce((a, s) => a + (s.tokens ?? 0), 0),
     [data],
   );
-  const effectiveProjectName =
-    projectName && projectName !== "(untitled)" ? projectName : data?.project_name || "当前项目";
-  const effectiveProjectRoot = projectRoot || data?.project_root;
 
   if (!open) return null;
 
@@ -518,17 +418,10 @@ export function ContextBreakdownModal({
       <div className="sh-ContextBreakdownModal-9">
         <header className="sh-ContextBreakdownModal-10">
           <div className="sh-ContextBreakdownModal-11">
-            <h3 title={`Context usage · ${sessionId}`} className="sh-ContextBreakdownModal-12">
-              Context usage · <span className="sh-ContextBreakdownModal-13">{sessionId}</span>
-            </h3>
+            <h3 className="sh-ContextBreakdownModal-12">上下文用量</h3>
             <div className="sh-ContextBreakdownModal-14">
-              {effectiveProjectName} · {snapshot?.model?.trim() || "模型信息不可用"}
+              {snapshot?.model?.trim() || data?.model || "模型信息不可用"}
             </div>
-            {effectiveProjectRoot && (
-              <div title={effectiveProjectRoot} className="sh-ContextBreakdownModal-15">
-                {effectiveProjectRoot}
-              </div>
-            )}
           </div>
           <button onClick={onClose} aria-label="关闭" className="sh-ContextBreakdownModal-16">
             ✕

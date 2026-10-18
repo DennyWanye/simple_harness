@@ -271,6 +271,23 @@ describe("primary durable controller", () => {
     expect(h.controller.getSnapshot().contextUsage).toBeNull();
     h.stop();
   });
+  it("reads the latest run breakdown for this primary and unwraps it", async () => {
+    const h = setup();
+    h.emit(bound);
+    await tick();
+    const pending = h.controller.contextBreakdown();
+    await tick();
+    const request = h.wire[h.wire.length - 1];
+    expect(request.operation).toBe("primary.context.breakdown");
+    expect(request.request).toEqual({ primary_ref: "primary-real" });
+    h.reply(request, { primary_ref: "primary-real", breakdown: { session_id: "s-1" } });
+    await expect(pending).resolves.toEqual({ session_id: "s-1" });
+    const other = h.controller.contextBreakdown();
+    await tick();
+    h.reply(h.wire[h.wire.length - 1], { primary_ref: "primary-other", breakdown: null });
+    await expect(other).rejects.toThrow("主对话明细归属不匹配");
+    h.stop();
+  });
   it("drops old content on disconnect and does not reuse global ready to rehydrate", async () => {
     const h = setup();
     h.emit(bound);

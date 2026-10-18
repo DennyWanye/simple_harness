@@ -392,19 +392,9 @@ export const unavailableBreakdown = {
   history: [],
 };
 
-/** 上下文构成弹窗的 send/onMessage：收到请求就按请求号回给定构成（payload 为 null 时不回）。 */
-export function breakdownPlumbing(payload: Record<string, unknown> | null) {
-  const fake = makeFakeChannel((msg: Wire) => {
-    if (msg.type !== "context_breakdown_request" || !payload) return null;
-    const req = msg.payload as { request_id: string };
-    return { type: "context_breakdown_response", payload: { ...payload, correlation_id: req.request_id } };
-  });
-  return {
-    send: (msg: { type: string; payload?: Record<string, unknown> }) => {
-      fake.channel.send(msg as never);
-    },
-    onMessage: (fn: (msg: unknown) => void) => fake.channel.onMessage(fn as never),
-  };
+/** 上下文构成弹窗的读取函数：给定构成就立即返回；payload 为 null 时一直不回（停在加载中）。 */
+export function breakdownQuery(payload: Record<string, unknown> | null) {
+  return () => (payload ? Promise.resolve(payload) : new Promise<unknown>(() => {}));
 }
 
 // ---------------- ContextTrace ----------------

@@ -18,6 +18,7 @@ import { MISSION_CARD_TOOLS, missionIdFromToolResult } from "./chatMission";
 import type { ControlChannel } from "../ws/ControlChannel";
 import { InputBar } from "../code-panel/InputBar";
 import { ContextRing } from "../components/ContextRing";
+import { ContextBreakdownModal } from "../components/ContextBreakdownModal";
 import { ChangeModelModal } from "../code-panel/ChangeModelModal";
 import { effective_provider_model, useProvidersStore } from "../code-panel/providersStore";
 import {
@@ -64,6 +65,7 @@ export function PrimaryChatView({ channel, onOpenSettings, active = true }: Prim
   const [decisionRefresh, setDecisionRefresh] = useState(0);
   const [bindingRefresh, setBindingRefresh] = useState(0);
   const [showModelModal, setShowModelModal] = useState(false);
+  const [showBreakdown, setShowBreakdown] = useState(false);
   // 主对话的模型就是链首提供方的默认模型（前台运行不按会话记模型）。
   const providers = useProvidersStore((s) => s.providers);
   const catalog = useSessionModelsStore((s) => s.models);
@@ -106,8 +108,13 @@ export function PrimaryChatView({ channel, onOpenSettings, active = true }: Prim
         <h1 data-testid="chat-title" className="sh-PrimaryChatView-3">
           主对话
         </h1>
-        {/* 最近一轮运行的上下文用量；没有测量时环显示"不可用"。 */}
-        <ContextRing snapshot={snapshot.contextUsage} size={18} showLabel />
+        {/* 最近一轮运行的上下文用量；没有测量时环显示"不可用"；点开看各部分明细。 */}
+        <ContextRing
+          snapshot={snapshot.contextUsage}
+          size={18}
+          showLabel
+          onClick={() => setShowBreakdown(true)}
+        />
         <button
           className={`${INTERACTIVE_CLASS} sh-PrimaryChatView-4`}
           aria-label="切换模型"
@@ -135,6 +142,12 @@ export function PrimaryChatView({ channel, onOpenSettings, active = true }: Prim
         </button>
       </header>
       {showModelModal && <ChangeModelModal onClose={() => setShowModelModal(false)} />}
+      <ContextBreakdownModal
+        open={showBreakdown}
+        onClose={() => setShowBreakdown(false)}
+        snapshot={snapshot.contextUsage}
+        query={controller.contextBreakdown}
+      />
 
       {/* 状态与通知：低调的单行 meta，不再是抢眼的横条。 */}
       <div className="sh-PrimaryChatView-5">

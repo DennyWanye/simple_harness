@@ -36,6 +36,7 @@ from host.companion_services import (
     _initialize_companion_projection_services,
 )
 from host.connections import _control_connections
+from host.context_usage import _read_context_breakdown_authority
 from host.growth_authority import _complete_growth_authority_cutover, _initialize_growth_authority
 from host.human_memory_ports import _activate_human_memory_host_ports
 from host.llm_providers import billing_ledger
@@ -62,6 +63,11 @@ async def _primary_context_usage_reader(execution_session_id: str) -> Any:
     if session_db is None:
         return None
     return await session_db.get_context_usage_state(execution_session_id)
+
+
+async def _primary_context_breakdown_reader(execution_session_id: str) -> Any:
+    """主对话读明细：按执行会话号读公开快照的上下文明细（与旧会话界面同一份读取）。"""
+    return await _read_context_breakdown_authority(execution_session_id)
 
 
 async def _startup_core_services() -> tuple[Any, Any]:
@@ -106,6 +112,7 @@ async def _startup_core_services() -> tuple[Any, Any]:
                     host_state.sdk_runtime_stack.read_closure_run_facts(run_id).binding_record
                 ),
                 context_usage_reader=_primary_context_usage_reader,
+                context_breakdown_reader=_primary_context_breakdown_reader,
                 decision_ingress_getter=lambda: host_state.sdk_ingress,
                 display_invalidation=memory_display_invalidation,
             )

@@ -5,11 +5,11 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping, Sequence
+import logging
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from llm.model_catalog import model_context_window
 from simple_harness import ContextRouteReceipt
 
 from deskpet.execution.foreground_queue import (
@@ -37,6 +37,7 @@ from deskpet.sdk_adapters.tools import filter_sdk_catalog_for_workspace
 from deskpet.task_scope.protocol import canonical_hash
 from deskpet.task_scope.search import TaskScopeSearchStore
 from deskpet.task_scope.workspace_bindings import WorkspaceBindingAuthorityStore
+from llm.model_catalog import model_context_window
 
 
 def _turn_text(candidate: PreparationCandidate) -> str:
@@ -51,6 +52,9 @@ def _turn_text(candidate: PreparationCandidate) -> str:
     return text
 
 
+logger = logging.getLogger(__name__)
+
+
 class TaskScopeForegroundContextPort:
     """Freeze the bounded TaskScope ResumePackage as foreground Context."""
 
@@ -60,8 +64,11 @@ class TaskScopeForegroundContextPort:
         *,
         subject: str,
         route_ledger: Any | None = None,
+        public_snapshot_sink: Callable[[Any], Awaitable[None]] | None = None,
     ) -> None:
         self._subject = subject
+        # 宿主注入：把冻结的上下文快照脱敏后存一份公开快照，供用量明细读取。
+        self._public_snapshot_sink = public_snapshot_sink
         self._search = TaskScopeSearchStore(db_path)
         self._bindings = WorkspaceBindingAuthorityStore(db_path)
         # Host 自签的首轮 HOST_INITIAL 路由回执此前只做校验、不落账
@@ -71,6 +78,15 @@ class TaskScopeForegroundContextPort:
         # 必得 ``context_route_no_active_task_scope``——实测连挂 10 次直到 Run 失败
         # （证据 ``.local-test-evidence/real-ui-channel/probe-04``）。
         self._route_ledger = route_ledger
+
+    async def _publish_snapshot(self, snapshot: Any) -> None:
+        """存公开快照只为诊断明细，失败不挡运行，记日志。"""
+        if self._public_snapshot_sink is None:
+            return
+        try:
+            await self._public_snapshot_sink(snapshot)
+        except Exception:  # noqa: BLE001 - 明细缺失只让明细显示不可用
+            logger.warning("foreground_public_snapshot_write_failed", exc_info=True)
 
     async def _open(
         self,
@@ -168,6 +184,7 @@ class TaskScopeForegroundContextPort:
             if ordinary_projection is None
             else ordinary_projection,
         )
+        await self._publish_snapshot(snapshot)
         private = snapshot.private_record()
         messages = tuple(
             dict(item) for item in private["provider_messages"] if isinstance(item, Mapping)

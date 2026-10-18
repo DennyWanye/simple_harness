@@ -98,12 +98,14 @@ class PrimaryReadModel:
         settled_run_reader=None,
         run_binding_reader=None,
         context_usage_reader=None,
+        context_breakdown_reader=None,
     ):
         self.path, self.subject = Path(db_path), subject
         self.reader = settled_run_reader
         self.run_binding_reader = run_binding_reader
         # 宿主注入：按执行会话号读用量状态（SessionDB.get_context_usage_state），可为空。
         self.context_usage_reader = context_usage_reader
+        self.context_breakdown_reader = context_breakdown_reader
         self.history_policy = PrimaryHistoryPolicy(db_path, subject)
 
     async def _subject_visible(self):
@@ -177,10 +179,11 @@ class PrimaryReadModel:
         except PrimaryVisibilityError as exc:
             raise PrimaryReadError(exc.code, exc) from exc
 
-    async def context_usage(self, *, primary_ref, disclosure_context):
-        """本主对话最近一轮已绑定 SDK 的运行（含已结束）的上下文用量。
+    async def _latest_run_session(self, primary_ref, disclosure_context):
+        """本主对话最近一轮已绑定 SDK 的运行（含已结束）：(主对话, 运行号, 执行会话号)。
 
-        执行会话号按运行号算回（与执行层同一函数）；这一轮的来源消息对当前读者不可见时不返回用量。
+        执行会话号按运行号算回（与执行层同一函数）；这一轮的来源消息对当前读者不可见时
+        当作没有运行。
         """
         async with self._snapshot(primary_ref) as (db, primary):
             rows = await _rows(
@@ -195,28 +198,39 @@ class PrimaryReadModel:
                 ),
                 (self.subject, primary),
             )
-            empty = {
-                "primary_ref": primary,
-                "run_ref": None,
-                "execution_session_ref": None,
-                "usage": None,
-            }
             if not rows:
-                return empty
+                return primary, None, None
             evidence_id = rows[0]["evidence_id"]
             visible = await self._check_sources(db, primary, [evidence_id], disclosure_context)
             if not visible[evidence_id]:
-                return empty
+                return primary, None, None
             run_ref = rows[0]["host_run_id"]
-        session = foreground_execution_session_id(run_ref)
+        return primary, run_ref, foreground_execution_session_id(run_ref)
+
+    async def context_usage(self, *, primary_ref, disclosure_context):
+        """最近一轮运行的上下文用量（宿主注入的读取器按执行会话号读）。"""
+        primary, run_ref, session = await self._latest_run_session(primary_ref, disclosure_context)
         usage = None
-        if self.context_usage_reader is not None:
+        if session is not None and self.context_usage_reader is not None:
             usage = await _resolved(self.context_usage_reader(session))
         return {
             "primary_ref": primary,
             "run_ref": run_ref,
             "execution_session_ref": session,
             "usage": dict(usage) if isinstance(usage, Mapping) else None,
+        }
+
+    async def context_breakdown(self, *, primary_ref, disclosure_context):
+        """最近一轮运行的上下文明细（宿主注入的读取器按执行会话号读公开快照）。"""
+        primary, run_ref, session = await self._latest_run_session(primary_ref, disclosure_context)
+        breakdown = None
+        if session is not None and self.context_breakdown_reader is not None:
+            breakdown = await _resolved(self.context_breakdown_reader(session))
+        return {
+            "primary_ref": primary,
+            "run_ref": run_ref,
+            "execution_session_ref": session,
+            "breakdown": dict(breakdown) if isinstance(breakdown, Mapping) else None,
         }
 
     async def state(self, *, disclosure_context):

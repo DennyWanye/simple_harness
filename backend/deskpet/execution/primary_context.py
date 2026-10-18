@@ -110,8 +110,14 @@ class PrimaryForegroundContextPort(TaskScopeForegroundContextPort):
         clock=time.time,
         clock_timezone="Asia/Shanghai",
         notices=None,
+        public_snapshot_sink=None,
     ):
-        super().__init__(db_path, subject=subject, route_ledger=route_ledger)
+        super().__init__(
+            db_path,
+            subject=subject,
+            route_ledger=route_ledger,
+            public_snapshot_sink=public_snapshot_sink,
+        )
         self._history = (
             PrimaryHistoryStore(db_path, settled_run_reader=settled_run_reader, policy=policy)
             if history_reader is None
@@ -311,6 +317,7 @@ class PrimaryForegroundContextPort(TaskScopeForegroundContextPort):
                 or protected_tokens + estimate(canonical_json(rows)) > budget
             )
 
+        before_trim = len(complete)
         while complete and over_cap():
             # Trim whole groups only; retain exact tool call/result ordering.
             complete.pop(0)
@@ -351,7 +358,42 @@ class PrimaryForegroundContextPort(TaskScopeForegroundContextPort):
                     ),
                 )
                 raise RuntimeError("primary_context_dependencies_not_visible")
-        messages = [protected[0], *(m for g in complete for m in project(g)), current]
+        history_rows = [m for g in complete for m in project(g)]
+        messages = [protected[0], *history_rows, current]
+        # 明细口径：与上面裁剪用同一个估算器；可用上限与窗口同值（同有任务范围的路径）。
+        sections = {
+            "system": {
+                "label": "System prompt",
+                "count": 1,
+                "estimated_tokens": estimate(canonical_json([protected[0]])),
+                "availability": "estimated",
+            },
+            "history": {
+                "label": "Conversation history",
+                "count": len(history_rows),
+                "estimated_tokens": estimate(canonical_json(history_rows)) if history_rows else 0,
+                "availability": "estimated",
+            },
+            "tools": {
+                "label": "Tool definitions",
+                "count": len(tools.catalog.get("tool_names") or ()),
+                "estimated_tokens": charged_schema_tokens,
+                "availability": "estimated",
+            },
+            "current": {
+                "label": "Current message",
+                "count": 1,
+                "estimated_tokens": estimate(canonical_json([current])),
+                "availability": "estimated",
+            },
+        }
+        context_budget = {
+            "estimated_prompt_tokens": sum(item["estimated_tokens"] for item in sections.values()),
+            "context_window": max(0, int(provider.context_window)),
+            "effective_ceiling": max(0, int(provider.context_window)),
+            "compact_at": 0,
+            "truncated": len(complete) < before_trim,
+        }
         binding = {
             "provider_id": provider.provider_id,
             "model_id": provider.model_id,
@@ -371,6 +413,8 @@ class PrimaryForegroundContextPort(TaskScopeForegroundContextPort):
             provider_messages=messages,
             catalog=tools.catalog,
             current_message=current,
+            sections=sections,
+            budget=context_budget,
             lineage={
                 "visibility_dependencies": proof,
                 "primary_history_ref": lineage.context_snapshot_id,
@@ -380,6 +424,7 @@ class PrimaryForegroundContextPort(TaskScopeForegroundContextPort):
                 ],
             },
         )
+        await self._publish_snapshot(snapshot)
         return FrozenContextAuthority(
             host_run_id=claimed.host_run_id,
             sdk_run_id=sdk_run_id,

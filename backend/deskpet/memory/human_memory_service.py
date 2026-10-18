@@ -434,6 +434,7 @@ class HumanMemoryHostService:
         settled_run_reader: object | None = None,
         run_binding_reader: object | None = None,
         context_usage_reader: object | None = None,
+        context_breakdown_reader: object | None = None,
         decision_ingress_getter: object | None = None,
         display_invalidation: object | None = None,
     ) -> None:
@@ -459,6 +460,7 @@ class HumanMemoryHostService:
             settled_run_reader=settled_run_reader,
             run_binding_reader=run_binding_reader,
             context_usage_reader=context_usage_reader,
+            context_breakdown_reader=context_breakdown_reader,
         )
 
         self._primary_decisions = PrimaryDecisions(
@@ -505,6 +507,13 @@ class HumanMemoryHostService:
         self, *, request_id: str, primary_ref: str
     ) -> Mapping[str, object]:
         return await self._primary_read.context_usage(
+            primary_ref=primary_ref, disclosure_context=self._history_disclosure(request_id)
+        )
+
+    async def read_primary_context_breakdown(
+        self, *, request_id: str, primary_ref: str
+    ) -> Mapping[str, object]:
+        return await self._primary_read.context_breakdown(
             primary_ref=primary_ref, disclosure_context=self._history_disclosure(request_id)
         )
 
@@ -1426,6 +1435,7 @@ class HumanMemoryHostServiceFactory:
     settled_run_reader: object | None = None
     run_binding_reader: object | None = None
     context_usage_reader: object | None = None
+    context_breakdown_reader: object | None = None
     decision_ingress_getter: object | None = None
     display_invalidation: object | None = None
 
@@ -1449,6 +1459,7 @@ class HumanMemoryHostServiceFactory:
             settled_run_reader=self.settled_run_reader,
             run_binding_reader=self.run_binding_reader,
             context_usage_reader=self.context_usage_reader,
+            context_breakdown_reader=self.context_breakdown_reader,
             decision_ingress_getter=self.decision_ingress_getter,
             display_invalidation=self.display_invalidation,
         )

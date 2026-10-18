@@ -87,7 +87,9 @@ function fixture(
                     }
                   : r.operation === "primary.context.usage"
                     ? { primary_ref: "primary", usage: usageResult }
-                    : state,
+                    : r.operation === "primary.context.breakdown"
+                      ? { primary_ref: "primary", breakdown: null }
+                      : state,
           },
         }),
       );
@@ -147,19 +149,22 @@ describe("primary product view", () => {
     render(<PrimaryChatView channel={h.channel} />);
     expect(await screen.findByLabelText("Context usage: 25%")).toBeTruthy();
     expect(h.sent.some((r) => r.operation === "primary.context.usage")).toBe(true);
+    expect(h.sent.some((r) => r.operation === "primary.context.breakdown")).toBe(false);
+    fireEvent.click(screen.getByLabelText("Context usage: 25%"));
+    expect(screen.getByRole("dialog", { name: "Context usage breakdown" })).toBeTruthy();
+    expect(await screen.findByText("暂无数据")).toBeTruthy();
+    expect(h.sent.some((r) => r.operation === "primary.context.breakdown")).toBe(true);
   });
   it("shows the head provider's default model and opens the model switcher", async () => {
-    useProvidersStore
-      .getState()
-      .set_providers([
-        {
-          id: "relay",
-          name: "Relay",
-          enabled: true,
-          default_model: "deepseek-v4-flash",
-          models: ["deepseek-v4-flash"],
-        },
-      ]);
+    useProvidersStore.getState().set_providers([
+      {
+        id: "relay",
+        name: "Relay",
+        enabled: true,
+        default_model: "deepseek-v4-flash",
+        models: ["deepseek-v4-flash"],
+      },
+    ]);
     const h = fixture();
     render(<PrimaryChatView channel={h.channel} />);
     await screen.findByText("持久化的真实回复");

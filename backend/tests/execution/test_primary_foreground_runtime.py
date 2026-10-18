@@ -194,6 +194,7 @@ async def build(
     context_clock=None,
     provider_reconciliation=None,
     audit_sink=None,
+    public_snapshot_sink=None,
 ):
     from deskpet.execution.primary_context import ForegroundConversationEntrypoint
     from deskpet.memory.identity import ValidatedLocalMemoryIdentityAuthority
@@ -539,6 +540,7 @@ async def build(
             route_ledger=ledger,
             policy=history_policy,
             stack_getter=lambda: stack,
+            public_snapshot_sink=public_snapshot_sink,
             **({"clock": context_clock} if context_clock is not None else {}),
         ),
         provider=ProviderPort(binding, provider_context_window),
@@ -626,18 +628,31 @@ async def test_primary_real_runtime_terminal_outbox_history_reopen(tmp_path):
 @pytest.mark.asyncio
 async def test_primary_run_start_carries_bound_context_window_for_usage(tmp_path):
     """主对话运行的启动元数据要带绑定版本、模型窗口与可用上限，用量投影才写得出样本；
-    读用量接口按运行号算回同一个执行会话号，交给宿主注入的读取器。"""
+    读用量、读明细接口按运行号算回同一个执行会话号，交给宿主注入的读取器；
+    冻结的上下文快照带各部分估算与预算，并交给公开快照出口。"""
     state = tmp_path / "state.db"
     startup = await dispatch_startup_epoch(state, approved_fresh_lane=True)
     usage_reads: list[str] = []
+    breakdown_reads: list[str] = []
+    published: list = []
 
     async def usage_reader(execution_session_id: str):
         usage_reads.append(execution_session_id)
         return {"session_id": execution_session_id, "has_measurement": True, "prompt_tokens": 7}
 
-    service = HumanMemoryHostServiceFactory(state, startup, context_usage_reader=usage_reader).bind(
-        local_owner_auth()
-    )
+    async def breakdown_reader(execution_session_id: str):
+        breakdown_reads.append(execution_session_id)
+        return {"session_id": execution_session_id, "sections": []}
+
+    async def snapshot_sink(snapshot):
+        published.append(snapshot)
+
+    service = HumanMemoryHostServiceFactory(
+        state,
+        startup,
+        context_usage_reader=usage_reader,
+        context_breakdown_reader=breakdown_reader,
+    ).bind(local_owner_auth())
     primary = (await service.open_primary())["primary_ref"]
     empty = await service.read_primary_context_usage(request_id="usage-0", primary_ref=primary)
     assert empty == {
@@ -646,7 +661,12 @@ async def test_primary_run_start_carries_bound_context_window_for_usage(tmp_path
         "execution_session_ref": None,
         "usage": None,
     }
-    runtime, stack, _queue = await build(tmp_path, state, Provider())
+    assert (await service.read_primary_context_breakdown(request_id="bd-0", primary_ref=primary))[
+        "breakdown"
+    ] is None
+    runtime, stack, _queue = await build(
+        tmp_path, state, Provider(), public_snapshot_sink=snapshot_sink
+    )
     try:
         await service.enqueue_turn(QueueTurnRequest(None, "one", "First actual user turn"))
         assert await asyncio.wait_for(runtime._drive_once(), 15)
@@ -670,6 +690,24 @@ async def test_primary_run_start_carries_bound_context_window_for_usage(tmp_path
         assert result["execution_session_ref"] == foreground_execution_session_id(host_run_id)
         assert result["usage"]["prompt_tokens"] == 7
         assert usage_reads == [metadata["session_id"]]
+        detail = await service.read_primary_context_breakdown(
+            request_id="bd-1", primary_ref=primary
+        )
+        assert detail["execution_session_ref"] == metadata["session_id"]
+        assert detail["breakdown"] == {"session_id": metadata["session_id"], "sections": []}
+        assert breakdown_reads == [metadata["session_id"]]
+        assert len(published) == 1
+        snapshot = published[0].private_record()
+        assert snapshot["session_id"] == metadata["session_id"]
+        assert set(snapshot["sections"]) == {"system", "history", "tools", "current"}
+        assert all(item["estimated_tokens"] >= 0 for item in snapshot["sections"].values())
+        assert snapshot["sections"]["current"]["estimated_tokens"] > 0
+        budget = snapshot["budget"]
+        assert budget["context_window"] == budget["effective_ceiling"] == 32768
+        assert budget["estimated_prompt_tokens"] == sum(
+            item["estimated_tokens"] for item in snapshot["sections"].values()
+        )
+        assert budget["truncated"] is False
     finally:
         await runtime.close()
         await stack.close()

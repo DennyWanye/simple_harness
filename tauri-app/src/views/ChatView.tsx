@@ -28,7 +28,6 @@ import { tokens } from "../theme/tokens";
 import { dark, bannerStyle, buttonStyle } from "../theme/components";
 import { Icon } from "../components/Icon";
 import { ContextRing } from "../components/ContextRing";
-import { ContextBreakdownModal } from "../components/ContextBreakdownModal";
 import { ProjectInspector } from "../components/ProjectInspector";
 import { useSessionsStore } from "../stores/sessionsStore";
 import { collect_inbox, type InboxItem } from "../stores/sessionSelectors";
@@ -112,7 +111,7 @@ export function ChatView({ activeSid, secret, onSwitchSid = () => {} }: ChatView
   const [projectDirectoryErrors, setProjectDirectoryErrors] = useState<
     Record<string, string | undefined>
   >({});
-  const [contextModalOpen, setContextModalOpen] = useState(false);
+  const [, setContextModalOpen] = useState(false);
   const contextUsage = useSessionsStore((s) => s.sessions[activeSid]?.context_usage ?? null);
   const workflowRetryDeferreds = useRef(new Map<string, WorkflowRetryDeferred>());
 
@@ -855,17 +854,6 @@ export function ChatView({ activeSid, secret, onSwitchSid = () => {} }: ChatView
           onClose={() => setDetailEvent(null)}
         />
       )}
-
-      <ContextBreakdownModal
-        open={contextModalOpen}
-        onClose={() => setContextModalOpen(false)}
-        sessionId={activeSid}
-        projectName={sessions[activeSid]?.project_name}
-        projectRoot={sessions[activeSid]?.project_root}
-        snapshot={contextUsage}
-        send={(m) => controlWS.send(m)}
-        onMessage={(fn) => controlWS.on_message(fn)}
-      />
 
       <PermissionPopup
         request={permissionRequests.current}

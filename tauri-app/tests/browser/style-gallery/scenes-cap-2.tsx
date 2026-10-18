@@ -25,7 +25,7 @@ import {
   activationDecision,
   approvalChannel,
   bindingOnlySnapshot,
-  breakdownPlumbing,
+  breakdownQuery,
   companionEvent,
   companionQuery,
   evaluationDecision,
@@ -39,53 +39,30 @@ import { noop } from "./galleryUtil";
 import "./cap-gallery.css";
 
 export function ContextBreakdownScene() {
-  const [plumbing] = useState(() => breakdownPlumbing(fullBreakdown));
-  return (
-    <ContextBreakdownModal
-      open
-      onClose={noop}
-      sessionId="session-1"
-      projectName="deskpet"
-      projectRoot="/Users/demo/projects/deskpet"
-      snapshot={measuredSnapshot}
-      send={plumbing.send}
-      onMessage={plumbing.onMessage}
-    />
-  );
+  const [query] = useState(() => breakdownQuery(fullBreakdown));
+  return <ContextBreakdownModal open onClose={noop} snapshot={measuredSnapshot} query={query} />;
 }
 
 export function ContextBreakdownStatesScene() {
-  const [plumbing] = useState(() => ({
-    silent: breakdownPlumbing(null),
-    unavailable: breakdownPlumbing(unavailableBreakdown),
+  const [queries] = useState(() => ({
+    silent: breakdownQuery(null),
+    unavailable: breakdownQuery(unavailableBreakdown),
   }));
   return (
     <>
       <ContextBreakdownModal
         open
         onClose={noop}
-        sessionId="session-1"
         snapshot={bindingOnlySnapshot}
-        send={plumbing.silent.send}
-        onMessage={plumbing.silent.onMessage}
+        query={queries.silent}
       />
       <ContextBreakdownModal
         open
         onClose={noop}
-        sessionId="session-1"
-        projectName="(untitled)"
         snapshot={legacySnapshot}
-        send={plumbing.unavailable.send}
-        onMessage={plumbing.unavailable.onMessage}
+        query={queries.unavailable}
       />
-      <ContextBreakdownModal
-        open
-        onClose={noop}
-        sessionId="session-2"
-        snapshot={null}
-        send={plumbing.silent.send}
-        onMessage={plumbing.silent.onMessage}
-      />
+      <ContextBreakdownModal open onClose={noop} snapshot={null} query={queries.silent} />
     </>
   );
 }
