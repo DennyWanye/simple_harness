@@ -17,6 +17,7 @@ import { ChatMissionNotices } from "./ChatMissionNotices";
 import { MISSION_CARD_TOOLS, missionIdFromToolResult } from "./chatMission";
 import type { ControlChannel } from "../ws/ControlChannel";
 import { InputBar } from "../code-panel/InputBar";
+import { ContextRing } from "../components/ContextRing";
 import { MarkdownMessage } from "../components/MarkdownMessage";
 import { Icon } from "../components/Icon";
 import { INTERACTIVE_CLASS, dark, metaText, textLinkStyle } from "../theme/components";
@@ -90,6 +91,8 @@ export function PrimaryChatView({ channel, onOpenSettings, active = true }: Prim
         <h1 data-testid="chat-title" className="sh-PrimaryChatView-3">
           主对话
         </h1>
+        {/* 最近一轮运行的上下文用量；没有测量时环显示"不可用"。 */}
+        <ContextRing snapshot={snapshot.contextUsage} size={18} showLabel />
         <button
           className={`${INTERACTIVE_CLASS} sh-PrimaryChatView-4`}
           onClick={onOpenSettings}

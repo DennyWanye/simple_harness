@@ -23,6 +23,19 @@ const item = {
   has_more: false,
   total_chars: 6,
 };
+const usage = {
+  session_id: "foreground-execution-1",
+  model: "deepseek-v4-flash",
+  prompt_tokens: 1200,
+  completion_tokens: 30,
+  cached_tokens: 0,
+  context_window: 131072,
+  effective_ceiling: 131072,
+  compact_at: 0,
+  recall_sweet: 16000,
+  has_measurement: true,
+  source: "measured",
+};
 const tick = async () => {
   for (let i = 0; i < 10; ++i) await Promise.resolve();
 };
@@ -63,7 +76,12 @@ function setup(running = false) {
       if (refuseEnqueue && request.operation === "queue.enqueue") return false;
       if (
         autoRead &&
-        ["primary.open", "primary.state", "primary.messages.page"].includes(request.operation)
+        [
+          "primary.open",
+          "primary.state",
+          "primary.messages.page",
+          "primary.context.usage",
+        ].includes(request.operation)
       ) {
         const result =
           request.operation === "primary.messages.page"
@@ -73,7 +91,9 @@ function setup(running = false) {
                 items: [item],
                 next_cursor: null,
               }
-            : readState;
+            : request.operation === "primary.context.usage"
+              ? { primary_ref: state.primary_ref, usage }
+              : readState;
         queueMicrotask(() =>
           emit({
             type: "human_memory_response",
@@ -204,9 +224,51 @@ describe("primary durable controller", () => {
       "primary.open",
       "primary.state",
       "primary.messages.page",
+      "primary.context.usage",
     ]);
     expect(h.wire[2].request).toEqual({ primary_ref: "primary-real", limit: 20 });
+    expect(h.wire[3].request).toEqual({ primary_ref: "primary-real" });
     expect(h.controller.getSnapshot().messages[0].text).toBe("真实终态文本");
+    expect(h.controller.getSnapshot().contextUsage?.prompt_tokens).toBe(1200);
+    h.stop();
+  });
+  it("clears the usage ring on disconnect and keeps history when the usage read fails", async () => {
+    const h = setup();
+    h.emit(bound);
+    await tick();
+    expect(h.controller.getSnapshot().contextUsage).not.toBeNull();
+    h.connect(false);
+    expect(h.controller.getSnapshot().contextUsage).toBeNull();
+    h.connect(true);
+    h.reads(false);
+    h.emit(bound);
+    await tick();
+    for (let i = 4; i < h.wire.length; ++i) {
+      const request = h.wire[i];
+      if (request.operation === "primary.context.usage") {
+        h.emit({
+          type: "human_memory_response",
+          request_id: request.request_id,
+          payload: { ok: false, operation: request.operation, error: { code: "boom" } },
+        });
+      } else {
+        h.reply(
+          request,
+          request.operation === "primary.messages.page"
+            ? {
+                primary_ref: state.primary_ref,
+                revision: state.revision,
+                items: [item],
+                next_cursor: null,
+              }
+            : state,
+        );
+      }
+      await tick();
+    }
+    await tick();
+    expect(h.controller.getSnapshot().messages[0].text).toBe("真实终态文本");
+    expect(h.controller.getSnapshot().contextUsage).toBeNull();
     h.stop();
   });
   it("drops old content on disconnect and does not reuse global ready to rehydrate", async () => {
@@ -220,10 +282,10 @@ describe("primary durable controller", () => {
     h.connect(true);
     h.emit({ ...bound, type: "companion_identity_status" });
     await tick();
-    expect(h.wire).toHaveLength(3);
+    expect(h.wire).toHaveLength(4);
     h.emit(bound);
     await tick();
-    expect(h.wire).toHaveLength(6);
+    expect(h.wire).toHaveLength(8);
     h.stop();
   });
   it("clears privacy payloads immediately and discards pre-invalidation late pages", async () => {
@@ -391,27 +453,28 @@ describe("primary durable controller", () => {
     await vi.advanceTimersByTimeAsync(0);
     // No running/queued state: no polling at all.
     await vi.advanceTimersByTimeAsync(60_000);
-    expect(h.wire).toHaveLength(3);
+    expect(h.wire).toHaveLength(4);
     h.emit({ type: "human_memory_changed" });
     await vi.advanceTimersByTimeAsync(100);
-    expect(h.wire).toHaveLength(6);
+    expect(h.wire).toHaveLength(8);
     h.stop();
     await vi.advanceTimersByTimeAsync(60_000);
-    expect(h.wire).toHaveLength(6);
+    expect(h.wire).toHaveLength(8);
   });
   it("ends active-run fallback after twelve reads without failing the run, and wakes on a real event", async () => {
     vi.useFakeTimers();
     const h = setup(true);
     h.emit(bound);
     await vi.advanceTimersByTimeAsync(60_000);
-    expect(h.wire).toHaveLength(27);
+    // 首次 4 个请求（打开、状态、历史、用量）+ 12 次补读各 3 个（状态、历史、用量）
+    expect(h.wire).toHaveLength(40);
     expect(h.controller.getSnapshot().state?.current_run?.state).toBe("CLAIMED");
     expect(h.controller.getSnapshot().error).toBe("");
     expect(h.controller.getSnapshot().notice).toContain("自动补读已暂停");
     expect(vi.getTimerCount()).toBe(0);
     h.emit({ type: "human_memory_changed" });
     await vi.advanceTimersByTimeAsync(100);
-    expect(h.wire).toHaveLength(30);
+    expect(h.wire).toHaveLength(44);
     expect(h.controller.getSnapshot().state?.current_run?.state).toBe("CLAIMED");
     h.stop();
   });

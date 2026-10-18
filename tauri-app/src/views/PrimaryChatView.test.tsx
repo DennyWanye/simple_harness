@@ -11,7 +11,10 @@ afterEach(() => {
   cleanup();
   vi.useRealTimers();
 });
-function fixture(messageItems?: Array<Record<string, unknown>>) {
+function fixture(
+  messageItems?: Array<Record<string, unknown>>,
+  usageResult: Record<string, unknown> | null = null,
+) {
   const listeners = new Set<(message: unknown) => void>();
   const bound = {
     type: "companion_profile_bound",
@@ -81,7 +84,9 @@ function fixture(messageItems?: Array<Record<string, unknown>>) {
                       items: messageItems ?? [item],
                       next_cursor: null,
                     }
-                  : state,
+                  : r.operation === "primary.context.usage"
+                    ? { primary_ref: "primary", usage: usageResult }
+                    : state,
           },
         }),
       );
@@ -123,6 +128,31 @@ function fixture(messageItems?: Array<Record<string, unknown>>) {
   };
 }
 describe("primary product view", () => {
+  it("shows the latest run's context usage ring in the header", async () => {
+    const h = fixture(undefined, {
+      session_id: "foreground-execution-1",
+      model: "deepseek-v4-flash",
+      prompt_tokens: 32768,
+      completion_tokens: 10,
+      cached_tokens: 0,
+      context_window: 131072,
+      effective_ceiling: 131072,
+      compact_at: 0,
+      recall_sweet: 16000,
+      has_measurement: true,
+      source: "measured",
+      availability: "available",
+    });
+    render(<PrimaryChatView channel={h.channel} />);
+    expect(await screen.findByLabelText("Context usage: 25%")).toBeTruthy();
+    expect(h.sent.some((r) => r.operation === "primary.context.usage")).toBe(true);
+  });
+  it("shows an unavailable ring when the latest run has no measurement", async () => {
+    const h = fixture();
+    render(<PrimaryChatView channel={h.channel} />);
+    await screen.findByText("持久化的真实回复");
+    expect(screen.getByLabelText("Context usage unavailable")).toBeTruthy();
+  });
   it("shows durable text, bounded count and clears draft only on real enqueue ACK", async () => {
     const h = fixture(),
       settings = vi.fn();

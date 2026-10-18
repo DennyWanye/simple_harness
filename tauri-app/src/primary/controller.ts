@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 import { PrimaryRequestError, PrimaryRequests, record, type PrimaryRequestPort } from "./requests";
 import { PRIMARY_TURN_TEXT_TOO_LARGE, turnTextRejection } from "./turnText";
+import type { ContextUsageSnapshot } from "../types/messages";
 
 export interface PrimaryPort extends PrimaryRequestPort {
   state(): "connected" | "connecting" | "disconnected";
@@ -47,6 +48,8 @@ export interface PrimarySnapshot {
   notice: string;
   viewEpoch: number;
   draftEpoch: number;
+  /** 本主对话最近一轮运行的上下文用量（primary.context.usage）；没有测量或读失败时为 null。 */
+  contextUsage: ContextUsageSnapshot | null;
 }
 const empty = (): PrimarySnapshot => ({
   ready: false,
@@ -60,6 +63,7 @@ const empty = (): PrimarySnapshot => ({
   notice: "正在恢复主对话身份…",
   viewEpoch: 0,
   draftEpoch: 0,
+  contextUsage: null,
 });
 
 /**
@@ -153,6 +157,7 @@ export class PrimaryController {
       notice,
       viewEpoch: this.snapshot.viewEpoch + 1,
       draftEpoch: this.snapshot.draftEpoch + (forgetOwner ? 1 : 0),
+      contextUsage: null,
     });
   }
   refreshLatest = () => {
@@ -343,6 +348,8 @@ export class PrimaryController {
         error: "",
         viewEpoch: mode === "prepend" ? this.snapshot.viewEpoch : this.snapshot.viewEpoch + 1,
       });
+      // 用量是辅助信息：另发一条读，不挡历史显示；读失败只把用量环置为不可用。
+      void this.readContextUsage(state.primary_ref, epoch);
       if (state.current_run || state.queued_count) {
         if (this.followups < 12) {
           ++this.followups;
@@ -368,6 +375,17 @@ export class PrimaryController {
       }
     }
   };
+  private async readContextUsage(primaryRef: string, epoch: number): Promise<void> {
+    const client = this.client;
+    if (!client) return;
+    try {
+      const result = await client.request("primary.context.usage", { primary_ref: primaryRef });
+      if (epoch !== this.epoch) return;
+      this.update({ contextUsage: parseContextUsage(result, primaryRef) });
+    } catch {
+      if (epoch === this.epoch) this.update({ contextUsage: null });
+    }
+  }
   submit = async (text: string, attachments: Record<string, unknown>[]): Promise<void> => {
     if (attachments.length) throw new Error("主对话附件接线尚未就绪；草稿与附件已保留。");
     // A draft the Host can never admit is rejected here, before the wire, so the
@@ -481,6 +499,19 @@ export class PrimaryController {
       this.controlling = false;
     }
   };
+}
+function parseContextUsage(
+  raw: Record<string, unknown>,
+  primaryRef: string,
+): ContextUsageSnapshot | null {
+  if (raw.primary_ref !== primaryRef) throw new Error("主对话用量归属不匹配");
+  const usage = raw.usage;
+  if (usage === null || usage === undefined) return null;
+  const u = record(usage);
+  const numeric = ["prompt_tokens", "context_window", "effective_ceiling"].every((key) =>
+    Number.isFinite(u[key]),
+  );
+  return numeric ? (u as unknown as ContextUsageSnapshot) : null;
 }
 function parseState(raw: Record<string, unknown>): PrimaryState {
   const run = record(raw.current_run);
