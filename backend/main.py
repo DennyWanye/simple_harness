@@ -48,8 +48,8 @@ from host.shutdown import (
 # isort: split
 from host.startup_core import (
     _startup_core_services,
-    _startup_desktop_and_realtime_voice,
     _startup_provider_routing,
+    _startup_runtime_and_desktop_bridge,
     _startup_search_and_billing,
 )
 
@@ -94,7 +94,7 @@ async def lifespan(app: FastAPI):
     # skip construction entirely so the asyncio.Task isn't even created.
     await _startup_supervisor()
     await _startup_model_context()
-    await _startup_desktop_and_realtime_voice(startup_epoch)
+    await _startup_runtime_and_desktop_bridge(startup_epoch)
     yield
     await _shutdown_runtimes_and_tasks()
     await _shutdown_services()
@@ -207,11 +207,6 @@ app.add_middleware(
 
 
 # isort: split
-from host.routes_voice import (
-    voice_router,
-)
-
-# isort: split
 from host.routes_cloud_config import (
     cloud_config_router,
 )
@@ -249,7 +244,6 @@ from host.control_channel import (
 
 
 app.include_router(control_router)
-app.include_router(voice_router)
 
 
 def main():

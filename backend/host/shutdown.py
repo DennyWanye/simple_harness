@@ -24,16 +24,7 @@ from host.stores_bootstrap import (
 
 
 async def _shutdown_runtimes_and_tasks() -> None:
-    """关闭：实时语音、检索网关、前台运行时、审计、SDK 入口与恢复任务、伴侣运行时与各类后台任务。"""
-    if host_state.realtime_voice_service is not None:
-        try:
-            await host_state.realtime_voice_service.close()
-            logger.info("realtime_voice_stopped")
-        except Exception:  # noqa: BLE001
-            logger.warning("realtime_voice_shutdown_failed", exc_info=True)
-        finally:
-            host_state.realtime_voice_service = None
-
+    """关闭：检索网关、前台运行时、审计、SDK 入口与恢复任务、伴侣运行时与各类后台任务。"""
     await shutdown_default_gateway()
     _foreground_runtime = service_context.get("human_memory_foreground_runtime_execution_authority")
     if _foreground_runtime is not None:

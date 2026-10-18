@@ -37,7 +37,6 @@ class HostState:
     legacy_growth_owner: tuple[str, int] = ("legacy_local_profile", 1)
     # —— 会话 ——
     session_creation_service: Any = None
-    realtime_voice_service: Any = None
     # —— SDK 运行时 ——
     sdk_runtime_stack: Any = None
     sdk_ingress: Any = None

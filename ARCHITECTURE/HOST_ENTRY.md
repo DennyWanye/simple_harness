@@ -24,7 +24,7 @@
 9. `_startup_self_healing`（工具熔断与会话活动记录）
 10. `_startup_supervisor`
 11. `_startup_model_context`
-12. `_startup_desktop_and_realtime_voice(启动纪元)`
+12. `_startup_runtime_and_desktop_bridge(启动纪元)`
 13. `yield`
 14. `_shutdown_runtimes_and_tasks`、`_shutdown_services`
 
@@ -265,7 +265,6 @@
 | `_make_str_llm_call` | `host/llm_calls.py` |
 | `metrics` | `host/routes_health.py` |
 | `_persist_supervisor_enabled` | `host/settings_persistence.py` |
-| `post_metrics_event` | `host/routes_health.py` |
 | `_ppt_notify_chat_bubble` | `host/ppt_outline.py` |
 | `_ppt_outline_decision_notice` | `host/ppt_outline.py` |
 | `_ppt_workflow_outline_notify` | `host/ppt_outline.py` |
@@ -281,7 +280,6 @@
 | `_public_context_section` | `host/context_usage.py` |
 | `_read_context_breakdown_authority` | `host/context_usage.py` |
 | `_read_context_usage_authority` | `host/context_usage.py` |
-| `realtime_voice_channel` | `host/routes_voice.py` |
 | `_reconcile_incomplete_providers` | `host/human_memory_ports.py` |
 | `_recovered_sdk_noop_broadcast` | `host/sdk_recovery.py` |
 | `_recovered_sdk_send_final` | `host/sdk_recovery.py` |
@@ -338,12 +336,11 @@
 | `_sql_build_reinject_msg` | `host/summary_quality.py` |
 | `_sql_latest_task_snapshot` | `host/summary_quality.py` |
 | `_sql_user_is_confused` | `host/summary_quality.py` |
-| `_StarletteRealtimeSocket` | `host/routes_voice.py` |
 | `_startup_core_services` | `host/startup_core.py` |
 | `_startup_curation_image_and_mcp` | `host/startup_background.py` |
-| `_startup_desktop_and_realtime_voice` | `host/startup_core.py` |
 | `_startup_embedder_and_workload_audit` | `host/startup_background.py` |
 | `_startup_model_context` | `host/startup_supervision.py` |
+| `_startup_runtime_and_desktop_bridge` | `host/startup_core.py` |
 | `_startup_provider_routing` | `host/startup_core.py` |
 | `_startup_restore_and_skill_prewarm` | `host/startup_background.py` |
 | `_startup_search_and_billing` | `host/startup_core.py` |

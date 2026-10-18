@@ -826,8 +826,10 @@ second agent owner:
 - The legacy `/ws/audio` Voice path (VoicePipeline, barge-in filter) was
   deleted on 2026-10-18, and so was the local VAD/ASR/TTS layer (Silero,
   faster-whisper, CosyVoice/edge-TTS providers, voice runtime, first-run model
-  downloader). The candidate
-  `/ws/realtime-voice` path uses the versioned Service SDK local protocol and
+  downloader). On 2026-10-18 the realtime voice call was also taken offline
+  with the old chat view: `/ws/realtime-voice`, `deskpet/realtime_voice.py` and
+  the frontend call button are deleted. Historical note: the candidate
+  `/ws/realtime-voice` path used the versioned Service SDK local protocol and
   provider-native Realtime transport, starts only after an explicit UI action,
   and does not create an Agent Run. Real-provider multi-turn E2E remains open.
   If voice later gains Tools, Workflows or product Context, that agent work must

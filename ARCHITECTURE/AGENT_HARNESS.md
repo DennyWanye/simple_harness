@@ -622,7 +622,7 @@ IntentTriage。当前直接路径以 `none` 结算语义优先级，后续 refle
 
 旧 Voice（VAD → ASR → Harness → TTS）入口已于 2026-07-28 关闭，
 2026-10-18 起 `/ws/audio` 路由、语音管线与整个本地语音层（Silero VAD、faster-whisper、
-EdgeTTS/CosyVoice 提供方、旧语音运行时、`[voice]`/`[asr]`/`[tts]`/`[vad]` 配置、首启模型下载器）已删除。2026-08-30 当前候选另行接入 `/ws/realtime-voice`：Service SDK `0.3.12`
+EdgeTTS/CosyVoice 提供方、旧语音运行时、`[voice]`/`[asr]`/`[tts]`/`[vad]` 配置、首启模型下载器）已删除。2026-10-18 实时语音通话随旧会话界面下线，`/ws/realtime-voice` 也已删除。（历史）2026-08-30 候选另行接入 `/ws/realtime-voice`：Service SDK `0.3.12`
 拥有本地 loopback protocol、provider transport 与 Realtime lifecycle，前端只在显式开始通话后连接和申请
 麦克风。它目前只承载 provider-native voice，不创建 Agent Run；真实 Provider 连续多轮 E2E 尚未重新验收。
 如果后续语音请求需要 Tool、Workflow 或产品 Context，则必须进入 `ProductTurnPreparer`/RunKernel，不能让

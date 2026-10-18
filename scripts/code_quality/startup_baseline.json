@@ -8,11 +8,6 @@
    "control_channel"
   ],
   [
-   "APIWebSocketRoute",
-   "/ws/realtime-voice",
-   "realtime_voice_channel"
-  ],
-  [
    "GET",
    "/api/commands/help",
    "api_commands_help"
@@ -61,11 +56,6 @@
    "POST",
    "/config/cloud",
    "update_cloud_config"
-  ],
-  [
-   "POST",
-   "/metrics/event",
-   "post_metrics_event"
   ]
  ],
  "import_time_registrations": [

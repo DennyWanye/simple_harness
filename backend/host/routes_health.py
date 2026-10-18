@@ -10,7 +10,7 @@ from observability.startup import registry as startup_errors
 
 from host.auth import DEV_MODE
 from host.llm_providers import llm
-from host.runtime import SHARED_SECRET, logger
+from host.runtime import SHARED_SECRET
 from host.state import host_state
 
 health_router = APIRouter()
@@ -38,49 +38,7 @@ async def health():
             and getattr(host_state.local_llm, "api_key", "") != "ollama"
         ),
         "startup_errors": errors,
-        "realtime_voice": (
-            host_state.realtime_voice_service.health_payload()
-            if host_state.realtime_voice_service is not None
-            else {"enabled": False, "path": "/ws/realtime-voice"}
-        ),
     }
-
-
-@health_router.post("/metrics/event")
-async def post_metrics_event(request: Request):
-    """WI-T1.7 last-mile: 前端 ArtifactCard 按钮点击 → 此端点 → metrics.jsonl。
-
-    Body: {event: str, detail: dict}
-    Auth: 同 /metrics — SHARED_SECRET 在 DEV_MODE 下放行。
-    PRD §5 健康区间 metric (artifact_action click rate) 的入口。
-    """
-    if not DEV_MODE:
-        secret = request.headers.get("x-shared-secret", "")
-        if not secret or not secrets.compare_digest(secret, SHARED_SECRET):
-            return Response(
-                status_code=401,
-                headers={"WWW-Authenticate": 'Bearer realm="metrics"'},
-            )
-    try:
-        body = await request.json()
-    except Exception:
-        logger.debug("post_metrics_event_json_failed", exc_info=True)
-        return Response(status_code=400, content="invalid json")
-    event = body.get("event")
-    detail = body.get("detail") or {}
-    if not isinstance(event, str) or not event:
-        return Response(status_code=400, content="missing 'event' field")
-    if not isinstance(detail, dict):
-        return Response(status_code=400, content="'detail' must be dict")
-    try:
-        # 按需导入：测试替身（observability.metrics_sink）
-        from observability.metrics_sink import record as _metric_record
-
-        _metric_record(event, detail)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("metrics event drop: %s", exc, exc_info=True)
-        return Response(status_code=500, content="sink error")
-    return Response(status_code=204)
 
 
 @health_router.get("/metrics")

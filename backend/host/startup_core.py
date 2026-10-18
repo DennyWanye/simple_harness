@@ -1,25 +1,18 @@
-"""启动步骤：核心服务与记忆纪元、提供方路由、检索网关与语音引擎、桌面测试桥与实时语音"""
+"""启动步骤：核心服务与记忆纪元、提供方路由、检索网关、SDK 运行时与桌面测试桥"""
 
 from __future__ import annotations
 
 import faulthandler as _faulthandler
-import os
 import signal as _signal
 from pathlib import Path
 
 import paths
 import paths as _paths
-from config import resolve_cloud_api_key as _resolve_cloud_api_key
 from deskpet.memory.display_invalidation import MemoryDisplayInvalidation
 from deskpet.memory.human_memory_service import HumanMemoryHostServiceFactory
 from deskpet.memory.schema import StartupCompositionMode, dispatch_startup_epoch
 from deskpet.orchestration.wiring import activate_orchestration
 from deskpet.permissions import protected_paths as _protected_paths
-from deskpet.realtime_voice import (
-    REALTIME_VOICE_ENABLED,
-    RealtimeVoiceService,
-    allowed_realtime_origins,
-)
 from deskpet.retrieval.runtime import build_search_gateway, set_default_gateway
 from deskpet.session.project_binding import (
     SessionCreationService as _SessionCreationService,
@@ -41,7 +34,7 @@ from host.growth_authority import _complete_growth_authority_cutover, _initializ
 from host.human_memory_ports import _activate_human_memory_host_ports
 from host.llm_providers import billing_ledger
 from host.routes_cloud_config import _seed_registry_from_runtime_overrides
-from host.runtime import _CONFIG_PATH, SHARED_SECRET, config, logger, service_context
+from host.runtime import _CONFIG_PATH, config, logger, service_context
 from host.sdk_activation import (
     _activate_companion_runtime_adapter_and_open_ingress,
     _activate_product_sdk_runtime,
@@ -233,8 +226,8 @@ async def _startup_search_and_billing() -> None:
         logger.warning("billing_ledger_init_failed", error=str(exc), exc_info=True)
 
 
-async def _startup_desktop_and_realtime_voice(startup_epoch: Any) -> None:
-    """启动：桌面测试桥、实时语音服务。"""
+async def _startup_runtime_and_desktop_bridge(startup_epoch: Any) -> None:
+    """启动：SDK 运行时与编排（或桌面测试桥）。"""
     if _sdk_desktop_test_enabled():
         # This local acceptance mode exists to validate the new SDK itself.
         # Do not make it depend on the legacy Workflow/Harness cutover gates.
@@ -265,29 +258,4 @@ async def _startup_desktop_and_realtime_voice(startup_epoch: Any) -> None:
         await _activate_companion_runtime_adapter_and_open_ingress()
         _initialize_companion_action_decision_service()
 
-    try:
-        _realtime_vite_port = int(os.getenv("DESKPET_VITE_PORT", "5173"))
-    except ValueError:
-        _realtime_vite_port = 5173
-    if REALTIME_VOICE_ENABLED:
-        host_state.realtime_voice_service = RealtimeVoiceService(
-            shared_secret=SHARED_SECRET,
-            relay_endpoint_supplier=lambda: str(
-                getattr(host_state.local_llm, "base_url", config.llm.local.base_url)
-            ),
-            api_key_supplier=lambda: host_state.current_cloud_api_key or _resolve_cloud_api_key(),
-            allowed_origins=allowed_realtime_origins(_realtime_vite_port),
-        )
-        logger.info(
-            "realtime_voice_ready",
-            path="/ws/realtime-voice",
-            protocol_version="2026-08-27.1",
-        )
-    else:
-        host_state.realtime_voice_service = None
-        logger.info(
-            "realtime_voice_disabled",
-            path="/ws/realtime-voice",
-            reason="temporarily_disabled_by_product",
-        )
     logger.info("startup complete")

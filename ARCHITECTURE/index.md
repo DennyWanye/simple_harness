@@ -940,7 +940,7 @@ Harness SDK `0.6.4` candidate（source `21f3c7a…`，wheel SHA-256 `ecb6e85c…
 0.6.4 尚未 tag/release，所以当前不标记为官方三 SDK release unit。上一次干净 macOS 实例是
 0.6.2 组合的历史证据；本次 rebase 后的 0.6.4 构建仍需重新完成真实 UI/provider 验收。
 
-2026-08-30 Realtime 消费端现状：旧 `/ws/audio` 通道与本地 VAD/ASR/TTS 层（含首启模型下载器）已于 2026-10-18 删除；新的
+（2026-10-18：实时语音通话随旧会话界面下线，`/ws/realtime-voice` 路由、`deskpet/realtime_voice.py` 与前端通话按钮已删除；下文为历史记录。）2026-08-30 Realtime 消费端现状：旧 `/ws/audio` 通道与本地 VAD/ASR/TTS 层（含首启模型下载器）已于 2026-10-18 删除；新的
 `/ws/realtime-voice` 由 Service SDK `0.3.12` 的 loopback protocol、Realtime client 和 provider transport
 负责，前端只有一个电话式开始/挂断入口，并且只在用户点击后申请麦克风、创建 AudioContext 和连接后端。
 本轮自动化覆盖本地鉴权、origin、PCM framing、barge-in、挂断和资源释放；真实 Provider 连续多轮通话尚未
