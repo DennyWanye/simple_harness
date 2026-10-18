@@ -10,7 +10,6 @@
 //                        + components/ProjectPickerDialog.tsx（项目 / 带默认目录）
 //                        + components/ProjectDirectoryCard.tsx（新建无位置 / 新建 Windows 路径 / 新建根目录 / 使用现有+报错）
 //   context-ring-banners components/ContextRing.tsx（不可用/仅绑定/旧记录/各档用量/带标签/可点）
-//                        + components/ModelDownloadBanner.tsx（检查中/下载中有进度/下载中未知总量/出错）
 //                        + components/ProtectedPathCard.tsx（单条读取 / 多条写入）
 import { AddProviderModal } from "../../../src/components/AddProviderModal";
 import { ChangeModelModal } from "../../../src/code-panel/ChangeModelModal";
@@ -22,10 +21,8 @@ import { ProjectInspector } from "../../../src/components/ProjectInspector";
 import { ProjectPickerDialog } from "../../../src/components/ProjectPickerDialog";
 import { ProjectDirectoryCard } from "../../../src/components/ProjectDirectoryCard";
 import { ContextRing } from "../../../src/components/ContextRing";
-import { ModelDownloadBanner } from "../../../src/components/ModelDownloadBanner";
 import { ProtectedPathCard } from "../../../src/components/ProtectedPathCard";
 import { useSessionsStore } from "../../../src/stores/sessionsStore";
-import type { Responder } from "./fakeChannel";
 import { noop, useOnce } from "./galleryUtil";
 import {
   SET_CATALOG,
@@ -33,7 +30,6 @@ import {
   SET_PROJECT_PAGES,
   SET_PROVIDERS,
   snap,
-  useFakeGetter,
 } from "./set-fixtures";
 import "./set-gallery.css";
 
@@ -80,16 +76,31 @@ export function ChangeModelModalScene() {
   return (
     <div className="set-row">
       <div className="set-frame">
-        <ChangeModelModal session_id="s-1" current_model="kimi-k3" current_params={{ thinking: true }} onClose={noop} />
+        <ChangeModelModal
+          session_id="s-1"
+          current_model="kimi-k3"
+          current_params={{ thinking: true }}
+          onClose={noop}
+        />
       </div>
       <div className="set-frame">
-        <ChangeModelModal session_id="s-2" current_model="gpt-5.5" current_params={{ effort: "high" }} onClose={noop} />
+        <ChangeModelModal
+          session_id="s-2"
+          current_model="gpt-5.5"
+          current_params={{ effort: "high" }}
+          onClose={noop}
+        />
       </div>
       <div className="set-frame">
         <ChangeModelModal session_id="s-3" current_model="embed-x" onClose={noop} />
       </div>
       <div className="set-frame">
-        <ChangeModelModal session_id="s-4" current_model={null} current_params={{ fast: true }} onClose={noop} />
+        <ChangeModelModal
+          session_id="s-4"
+          current_model={null}
+          current_params={{ fast: true }}
+          onClose={noop}
+        />
       </div>
       <div className="set-frame">
         <ChangeModelModal session_id="s-5" current_model="custom-unknown" onClose={noop} />
@@ -111,7 +122,13 @@ export function StartupDialogsScene() {
         <FeedbackPanel onBuildBundle={neverBundle} onClose={noop} />
       </div>
       <div className="set-frame">
-        <StartupOverlay state="starting" errorMessage={null} onRetry={noop} onOpenLogDir={noop} onExit={noop} />
+        <StartupOverlay
+          state="starting"
+          errorMessage={null}
+          onRetry={noop}
+          onOpenLogDir={noop}
+          onExit={noop}
+        />
       </div>
       <div className="set-frame">
         <StartupOverlay
@@ -123,9 +140,21 @@ export function StartupDialogsScene() {
         />
       </div>
       <div className="set-frame">
-        <StartupOverlay state="failed" errorMessage={null} onRetry={noop} onOpenLogDir={noop} onExit={noop} />
+        <StartupOverlay
+          state="failed"
+          errorMessage={null}
+          onRetry={noop}
+          onOpenLogDir={noop}
+          onExit={noop}
+        />
       </div>
-      <StartupOverlay state="ready" errorMessage={null} onRetry={noop} onOpenLogDir={noop} onExit={noop} />
+      <StartupOverlay
+        state="ready"
+        errorMessage={null}
+        onRetry={noop}
+        onOpenLogDir={noop}
+        onExit={noop}
+      />
     </div>
   );
 }
@@ -164,36 +193,40 @@ export function ProjectInspectorScene() {
         <ProjectPickerDialog open onClose={noop} onProjectSelected={noop} />
       </div>
       <div className="set-frame">
-        <ProjectPickerDialog open onClose={noop} onProjectSelected={noop} onDefaultSelected={noop} />
+        <ProjectPickerDialog
+          open
+          onClose={noop}
+          onProjectSelected={noop}
+          onDefaultSelected={noop}
+        />
       </div>
       <ProjectPickerDialog open={false} onClose={noop} onProjectSelected={noop} />
       <div className="set-col">
-        <ProjectDirectoryCard request={{ ...dirBase, title: "选择夹具网站的保存位置" }} onConfirm={() => true} />
         <ProjectDirectoryCard
-          request={{ ...dirBase, directory_mode: "create_new", parent_directory: "C:\\Users\\fixture\\Projects\\" }}
+          request={{ ...dirBase, title: "选择夹具网站的保存位置" }}
           onConfirm={() => true}
         />
-        <ProjectDirectoryCard request={{ ...dirBase, directory_mode: "create_new", parent_directory: "/" }} />
         <ProjectDirectoryCard
-          request={{ ...dirBase, directory_mode: "use_existing", parent_directory: "/Users/fixture/code/existing/" }}
+          request={{
+            ...dirBase,
+            directory_mode: "create_new",
+            parent_directory: "C:\\Users\\fixture\\Projects\\",
+          }}
+          onConfirm={() => true}
+        />
+        <ProjectDirectoryCard
+          request={{ ...dirBase, directory_mode: "create_new", parent_directory: "/" }}
+        />
+        <ProjectDirectoryCard
+          request={{
+            ...dirBase,
+            directory_mode: "use_existing",
+            parent_directory: "/Users/fixture/code/existing/",
+          }}
           error="这个文件夹不可写（夹具）"
           submittedLabel="已确认"
         />
       </div>
-    </div>
-  );
-}
-
-const provision =
-  (payload: Record<string, unknown>): Responder =>
-  (msg) =>
-    msg.type === "model_provision_status" ? { type: "model_provision_status_response", payload } : null;
-
-function Banner({ responder }: { responder: Responder }) {
-  const getChannel = useFakeGetter(responder);
-  return (
-    <div className="set-frame-short">
-      <ModelDownloadBanner getChannel={getChannel} />
     </div>
   );
 }
@@ -213,32 +246,36 @@ export function ContextRingBannersScene() {
       <div className="set-row">
         <ContextRing snapshot={null} />
         <ContextRing snapshot={null} showLabel />
-        <ContextRing snapshot={snap({ source: "binding_only", has_measurement: false })} showLabel />
-        <ContextRing snapshot={snap({ legacy_incomplete: true } as Partial<ReturnType<typeof snap>>)} />
-        <ContextRing snapshot={snap({ availability: "unavailable" } as Partial<ReturnType<typeof snap>>)} />
-        <ContextRing snapshot={snap({ prompt_tokens: 95_000, cached_tokens: 12_000 })} showLabel onClick={noop} />
+        <ContextRing
+          snapshot={snap({ source: "binding_only", has_measurement: false })}
+          showLabel
+        />
+        <ContextRing
+          snapshot={snap({ legacy_incomplete: true } as Partial<ReturnType<typeof snap>>)}
+        />
+        <ContextRing
+          snapshot={snap({ availability: "unavailable" } as Partial<ReturnType<typeof snap>>)}
+        />
+        <ContextRing
+          snapshot={snap({ prompt_tokens: 95_000, cached_tokens: 12_000 })}
+          showLabel
+          onClick={noop}
+        />
         <ContextRing snapshot={snap({ prompt_tokens: 600_000 })} size={22} showLabel />
         <ContextRing snapshot={snap({ prompt_tokens: 800_000 })} showLabel onClick={noop} />
         <ContextRing snapshot={snap({ prompt_tokens: 940_000 })} size={28} showLabel />
-        <ContextRing snapshot={snap({ prompt_tokens: 990_000, recall_sweet: 0 })} showLabel style={{ marginLeft: 8 }} />
+        <ContextRing
+          snapshot={snap({ prompt_tokens: 990_000, recall_sweet: 0 })}
+          showLabel
+          style={{ marginLeft: 8 }}
+        />
       </div>
-      <Banner responder={provision({ state: "checking" })} />
-      <Banner
-        responder={provision({
-          state: "downloading",
-          index: 1,
-          total: 2,
-          current: "bge-m3",
-          downloaded_bytes: 1_200_000_000,
-          total_bytes: 2_300_000_000,
-        })}
-      />
-      <Banner responder={provision({ state: "downloading", index: 2, total: 2, downloaded_bytes: 0, total_bytes: 0 })} />
-      <Banner responder={provision({ state: "error", error: "连接 hf-mirror 超时（夹具）" })} />
-      <Banner responder={provision({ state: "ready" })} />
       <div className="set-row">
         <div className="set-frame">
-          <ProtectedPathCard queue={[ppRequest("r1", "read", "/Users/fixture/.ssh/config")]} onDecide={noop} />
+          <ProtectedPathCard
+            queue={[ppRequest("r1", "read", "/Users/fixture/.ssh/config")]}
+            onDecide={noop}
+          />
         </div>
         <div className="set-frame">
           <ProtectedPathCard

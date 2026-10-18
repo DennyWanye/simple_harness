@@ -142,51 +142,6 @@ self_check_heterogeneous = true
 convergence_report_on_stop = true
 observability_events = true
 
-[asr]
-provider = "faster-whisper"
-model = "large-v3-turbo"
-# P3-S1: subfolder under paths.model_root() containing the bundled
-# faster-whisper checkpoints. In dev mode resolves to backend/models/<this>;
-# under PyInstaller it resolves to <_MEIPASS>/models/<this>.
-model_dir = "faster-whisper-large-v3-turbo"
-# "auto"：有 CUDA 用 CUDA（fp16），Mac/无卡机器自动落到 CPU（int8）。
-device = "auto"
-compute_type = "auto"
-# P2-2-F1: 热词偏置 —— 对这些常用短语的 logit 加权，减轻短音频
-# (< 3s) 上的拼音近似幻觉（典型：讲个笑话 → 一个消化）。
-# 空列表 = 不加偏置（与旧行为一致）。配合 transcribe() 里的
-# 300ms 静音 pad 使用。
-hotwords = [
-    # 2026-04-22 修订：hotwords 必须是"短消歧词"（生僻字/专名/高混淆短词），
-    # 不能塞整句。之前把"请给我讲一个笑话"整句塞进来，导致 Whisper 在弱/短
-    # 音频上直接把 hotwords 当 transcript 吐出来（decoder 的 prefix bias
-    # 在 no-speech 边界会回退到 prompt tokens 本身）。
-    # 规则：每条 ≤4 字、只含真正易混淆的字词。
-    "笑话",
-    "散文",
-    "故事",
-    "你好",
-    "谢谢",
-    "再见",
-]
-
-[tts]
-provider = "edge-tts"
-voice = "zh-CN-XiaoyiNeural"
-model_dir = "cosyvoice2"  # P3-S1: subfolder under paths.model_root() (backend/models/ in dev, sys._MEIPASS/models/ frozen)
-
-[vad]
-threshold = 0.5
-min_speech_ms = 250
-# P2-2 hot-fix (2026-04-20): 回归到 500ms —— Whisper 侧删 initial_prompt
-# + no_speech_threshold=0.4 之后，短片段不再会幻觉成"谢谢大家"，可以
-# 换更低的句末感知延迟（800ms 等近 1 秒才反应，太拖）。
-min_silence_ms = 500
-
-[voice]
-# 旧的 /ws/audio 语音通道已删除；enabled 只决定是否装载本地 VAD/ASR/TTS 运行时。
-enabled = false
-
 # P5-S1: pet supervisor — Watchdog + LLM self-check for stuck Code-mode
 # sessions. Disabled = no scan loop, no LLM calls, no broadcasts (degrades
 # DeskPet to its P4 behaviour). When enabled, scan_interval_seconds caps

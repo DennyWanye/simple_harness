@@ -35,11 +35,10 @@
 ┌─────────────────────────────────────────────────────────────┐
 │            Backend (Python FastAPI, backend/)               │
 │                                                              │
-│   ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌──────────────┐   │
-│   │  ASR    │  │  VAD    │  │  LLM    │  │     TTS      │   │
-│   │ whisper │  │ silero  │  │ adapters│  │   edge-tts   │   │
-│   └────┬────┘  └────┬────┘  └────┬────┘  └──────┬───────┘   │
-│        └────────────┴───────────┬┴──────────────┘           │
+│                            ┌─────────┐                       │
+│                            │  LLM    │                       │
+│                            │ adapters│                       │
+│                            └────┬────┘                       │
 │                                 │                            │
 │                     ┌───────────▼────────────┐               │
 │                     │  Agent Loop + Memory   │               │
@@ -102,8 +101,7 @@ deskpet/
 │   ├── acceptance/           验收脚本
 │   ├── e2e_*.py              端到端 smoke
 │   ├── dev-start.ps1         Win 启动脚本
-│   ├── setup.sh / dev.sh     mac/Linux 源码运行主路径（README 快速开始入口）
-│   └── setup_models.py       OSS 用户首次模型下载
+│   └── setup.sh / dev.sh     mac/Linux 源码运行主路径（README 快速开始入口）
 │
 ├── docs/                     技术 / 架构文档
 ├── openspec/                 OpenSpec 工程规范 + change proposals

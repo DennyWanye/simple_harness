@@ -372,8 +372,7 @@ def model_root() -> Path:
 def resolve_model_dir(subdir: str) -> Path:
     """Return absolute path for a named model subfolder, with multi-source fallback.
 
-    ``subdir`` examples: ``"faster-whisper-large-v3-turbo"``, ``"cosyvoice2"``,
-    ``"silero_vad"``, ``"bge-m3-int8"``.
+    ``subdir`` example: ``"bge-m3-int8"``.
 
     Priority (first **existing** directory wins so user-installed weights
     override the bundle, and bundled weights override "nothing"):

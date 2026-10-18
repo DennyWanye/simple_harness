@@ -32,8 +32,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 BACKEND = REPO / "backend"
 RUNTIME_SOURCE = (
-    Path.home()
-    / "Library/Application Support/com.dennywanye.simpleharness/llm_runtime.json"
+    Path.home() / "Library/Application Support/com.dennywanye.simpleharness/llm_runtime.json"
 )
 
 
@@ -69,7 +68,7 @@ async def _chat(port: int, text: str, timeout: float = 240.0) -> dict:
                     await asyncio.sleep(3)
                     break
                 if '"error"' in blob and msg.get("type") not in {
-                    "model_provision_status", "budget_status",
+                    "budget_status",
                 }:
                     raise RuntimeError(f"chat error: {blob[:300]}")
 
@@ -84,9 +83,7 @@ def main() -> int:
         print("SKIP: no llm_runtime.json provider config")
         return 2
 
-    scratch = os.environ.get(
-        "S5A_COLDSTART_ROOT", "/private/tmp/s5a-coldstart"
-    )
+    scratch = os.environ.get("S5A_COLDSTART_ROOT", "/private/tmp/s5a-coldstart")
     Path(scratch).mkdir(parents=True, exist_ok=True)
     user_dir = Path(tempfile.mkdtemp(prefix="run-", dir=scratch)).resolve()
     (user_dir).mkdir(parents=True, exist_ok=True)
@@ -134,9 +131,7 @@ def main() -> int:
                 )
             )
             text = str(reply.get("payload", {}).get("text", ""))
-            checks.append(
-                ("chat_response", bool(text.strip()), f"text[:60]={text[:60]!r}")
-            )
+            checks.append(("chat_response", bool(text.strip()), f"text[:60]={text[:60]!r}"))
             chat_ran = True
         except TimeoutError:
             log_tail = log_path.read_text()
@@ -175,25 +170,17 @@ def main() -> int:
                 snapshots = db.execute(
                     "SELECT COUNT(*) FROM run_context_snapshot_receipts"
                 ).fetchone()[0]
-                checks.append(
-                    ("per_turn_snapshot_receipts", snapshots >= 1, f"rows={snapshots}")
-                )
+                checks.append(("per_turn_snapshot_receipts", snapshots >= 1, f"rows={snapshots}"))
                 equal = db.execute(
                     "SELECT COUNT(*) FROM run_context_snapshot_receipts "
                     "WHERE payload_hash != expected_request_fingerprint"
                 ).fetchone()[0]
-                checks.append(
-                    ("snapshot_hash_equality", equal == 0, f"mismatch={equal}")
-                )
+                checks.append(("snapshot_hash_equality", equal == 0, f"mismatch={equal}"))
                 decisions = db.execute(
                     "SELECT route,origin FROM context_route_decisions"
                 ).fetchall()
-                checks.append(
-                    ("durable_route_decision", len(decisions) >= 1, f"{decisions[:4]}")
-                )
-            presented = db.execute(
-                "SELECT COUNT(*) FROM occurrence_presented"
-            ).fetchone()[0]
+                checks.append(("durable_route_decision", len(decisions) >= 1, f"{decisions[:4]}"))
+            presented = db.execute("SELECT COUNT(*) FROM occurrence_presented").fetchone()[0]
             checks.append(("presented_table_empty", presented == 0, f"rows={presented}"))
     finally:
         process.terminate()
@@ -202,9 +189,7 @@ def main() -> int:
         except subprocess.TimeoutExpired:
             process.kill()
         if not args.keep:
-            evidence = (
-                REPO / ".local-test-evidence" / "s5a-cold-start"
-            )
+            evidence = REPO / ".local-test-evidence" / "s5a-cold-start"
             evidence.mkdir(parents=True, exist_ok=True)
             stamp = int(time.time())
             shutil.copy2(log_path, evidence / f"backend-{stamp}.log")
@@ -213,9 +198,13 @@ def main() -> int:
                 shutil.copy2(state_db, evidence / f"state-{stamp}.db")
             shutil.rmtree(user_dir, ignore_errors=True)
 
-    print(json.dumps({"checks": [
-        {"name": name, "ok": ok, "detail": detail} for name, ok, detail in checks
-    ]}, ensure_ascii=False, indent=2))
+    print(
+        json.dumps(
+            {"checks": [{"name": name, "ok": ok, "detail": detail} for name, ok, detail in checks]},
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
     passed = all(ok for _, ok, _ in checks)
     print("PASS" if passed else "FAIL")
     return 0 if passed else 1

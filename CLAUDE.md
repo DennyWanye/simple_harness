@@ -100,7 +100,7 @@ backend/
 │   ├── workflows/             # Workflow engine
 │   └── companion/             # Companion growth system
 ├── llm/                       # LLM provider adapters
-├── providers/                 # ASR/TTS providers
+├── providers/                 # OpenAI-compatible LLM provider
 └── tests/                     # pytest test suite
 
 tauri-app/

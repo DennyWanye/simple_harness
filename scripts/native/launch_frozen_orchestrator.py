@@ -90,9 +90,7 @@ def _resource_identity(root: Path, internal: Path) -> dict[str, str]:
                 try:
                     target = item.resolve(strict=True)
                 except (OSError, RuntimeError):
-                    raise LauncherError(
-                        "broken or cyclic frozen resource link"
-                    ) from None
+                    raise LauncherError("broken or cyclic frozen resource link") from None
                 if not target.is_relative_to(root):
                     raise LauncherError("frozen resource link escapes bundle")
                 row.update(
@@ -131,8 +129,7 @@ def _resource_identity(root: Path, internal: Path) -> dict[str, str]:
             [
                 row
                 for row in rows
-                if row["path"] == internal_prefix
-                or row["path"].startswith(internal_prefix + "/")
+                if row["path"] == internal_prefix or row["path"].startswith(internal_prefix + "/")
             ]
         ),
     }
@@ -145,12 +142,7 @@ def inspect_bundle(path: Path) -> dict:
     info = plistlib.loads((root / "Contents/Info.plist").read_bytes())
     name = info.get("CFBundleExecutable", "")
     bundle_id = info.get("CFBundleIdentifier", "")
-    if (
-        not isinstance(name, str)
-        or not name
-        or name in {".", ".."}
-        or re.search(r"[/\\]", name)
-    ):
+    if not isinstance(name, str) or not name or name in {".", ".."} or re.search(r"[/\\]", name):
         raise LauncherError("unsafe bundle executable")
     if (
         not isinstance(bundle_id, str)
@@ -164,9 +156,7 @@ def inspect_bundle(path: Path) -> dict:
     for item in (binary, backend, internal):
         if not item.resolve().is_relative_to(root):
             raise LauncherError("frozen resource escapes bundle")
-    if any(
-        not item.is_file() or not os.access(item, os.X_OK) for item in (binary, backend)
-    ):
+    if any(not item.is_file() or not os.access(item, os.X_OK) for item in (binary, backend)):
         raise LauncherError("native executable or macOS frozen backend missing")
     if not internal.is_dir():
         raise LauncherError("frozen backend _internal missing")
@@ -191,17 +181,9 @@ def read_key() -> str:
                 try:
                     words = shlex.split(match.group(1), comments=True, posix=True)
                 except ValueError:
-                    raise LauncherError(
-                        "dedicated credential field is malformed"
-                    ) from None
-                if (
-                    len(words) != 1
-                    or not words[0]
-                    or any(c.isspace() for c in words[0])
-                ):
-                    raise LauncherError(
-                        "dedicated credential field is empty or malformed"
-                    )
+                    raise LauncherError("dedicated credential field is malformed") from None
+                if len(words) != 1 or not words[0] or any(c.isspace() for c in words[0]):
+                    raise LauncherError("dedicated credential field is empty or malformed")
                 found.append(words[0])
     if len(found) != 1:
         raise LauncherError("exactly one DEEPSEEKER_APIKEY field is required")
@@ -227,9 +209,7 @@ def prepare_run(path: Path, bundle: dict, port: int, resume: bool) -> Path:
     run = path.resolve()
     evidence = (HOST_ROOT / ".local-test-evidence").resolve()
     if run == evidence or not run.is_relative_to(evidence) or not is_ignored(run):
-        raise LauncherError(
-            "run-dir must be under the Host ignored .local-test-evidence directory"
-        )
+        raise LauncherError("run-dir must be under the Host ignored .local-test-evidence directory")
     marker = {"owner": OWNER, "run_dir": str(run), "bundle": bundle, "port": port}
     user = run / "userdata"
     if resume:
@@ -261,9 +241,7 @@ def prepare_run(path: Path, bundle: dict, port: int, resume: bool) -> Path:
         except (OSError, KeyError, ValueError) as error:
             if isinstance(error, LauncherError):
                 raise
-            raise LauncherError(
-                "resume requires intact launcher-prepared user data"
-            ) from None
+            raise LauncherError("resume requires intact launcher-prepared user data") from None
     else:
         if run.exists():
             raise LauncherError(
@@ -274,9 +252,9 @@ def prepare_run(path: Path, bundle: dict, port: int, resume: bool) -> Path:
         config_path = user / "config.toml"
         config_path.write_text(
             f'[backend]\nhost = "127.0.0.1"\nport = {port}\n\n'
-            f'[llm]\nbase_url = {json.dumps(base_url)}\nmodel = {json.dumps(model)}\n'
+            f"[llm]\nbase_url = {json.dumps(base_url)}\nmodel = {json.dumps(model)}\n"
             'api_key = "$DESKPET_CLOUD_API_KEY"\n\n'
-            "[voice]\nenabled = false\n\n[supervisor]\nenabled = false\n\n"
+            "[supervisor]\nenabled = false\n\n"
             "[orchestration]\nenabled = true\n",
             encoding="utf-8",
         )
@@ -435,9 +413,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         drained = drain_log(child, output, key)
         returncode = child.wait()
-    _write_json(
-        run / f"exit-{stamp}.json", {"returncode": returncode, "log_drain": drained}
-    )
+    _write_json(run / f"exit-{stamp}.json", {"returncode": returncode, "log_drain": drained})
     return returncode
 
 

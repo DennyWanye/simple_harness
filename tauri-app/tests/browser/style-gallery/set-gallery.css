@@ -21,14 +21,6 @@
   overflow: hidden;
   border: 1px dashed rgba(148, 163, 184, 0.35);
 }
-.set-frame-short {
-  position: relative;
-  transform: translateZ(0);
-  width: 600px;
-  height: 200px;
-  overflow: hidden;
-  border: 1px dashed rgba(148, 163, 184, 0.35);
-}
 /* 项目检查器：右侧栏绝对定位，需要相对定位的容器。 */
 .set-rail {
   position: relative;

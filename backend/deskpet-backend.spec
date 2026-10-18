@@ -177,9 +177,6 @@ hiddenimports += _collect_sdk_production_modules()
 # Domain adapters and runtime providers are selected dynamically by the SDK.
 # Collect from the verified installed wheel, never a sibling SDK checkout.
 hiddenimports += collect_submodules("agent_orchestrator", on_error="raise")
-hiddenimports += collect_submodules("faster_whisper")
-hiddenimports += collect_submodules("ctranslate2")
-hiddenimports += collect_submodules("silero_vad")
 # 2026-06-28: keyring backends are loaded through entry-points, so
 # PyInstaller's static import graph may miss them in frozen builds. Pin
 # keyring + Windows credential backends and their win32ctypes shims when
@@ -252,8 +249,6 @@ hiddenimports += [
     "uvicorn.protocols.websockets.auto",
     "uvicorn.protocols.websockets.websockets_impl",
     "uvicorn.lifespan.on",
-    # edge-tts uses aiohttp via optional import chain
-    "edge_tts",
     # deep-research CDP-Edge JS 渲染兜底(research_cdp_edge.py)直接 import websockets
     # 连本地无头 Edge → 显式入包,使冻结正式包也能用 js_render=cdp-edge(Windows)。
     "websockets",
@@ -357,10 +352,7 @@ for _source, _destination in _playwright_datas:
     else:
         datas.append((_source, _destination))
 hiddenimports += _playwright_hiddenimports
-datas += collect_data_files("silero_vad")          # silero_vad/data/*.jit
-datas += collect_data_files("faster_whisper")      # tokenizer.json
 datas += collect_data_files("tzdata")              # IANA tz db
-datas += collect_data_files("ctranslate2")         # any shipped configs
 datas += collect_data_files("sqlite_vec", includes=["*.dll", "*.dylib", "*.so"])
 for _pkg in ["scrapling", "browserforge", "apify_fingerprint_datapoints"]:
     try:
@@ -397,46 +389,13 @@ elif sys.platform == "win32":
         "Run scripts/download_busybox.ps1 to enable bundled fallback."
     )
 
-# --- 2b. Bundled model weights (P4-S20+ install bundle) -----------------
-# Ship BGE-M3 (vector embedder, ~2.2 GB) and faster-whisper-large-v3-turbo
-# INT8 (ASR, ~1.5 GB) inside the frozen bundle. Lands at
-# `_internal/models/<subdir>/...` and is picked up by paths.resolve_model_dir
-# when the user has not provisioned `%LocalAppData%/deskpet/models/<subdir>/`.
-#
-# Together these add ~3.7 GB to the bundle. NSIS LZMA compression usually
-# halves it, so the final installer is ~2 GB. Acceptable for "download &
-# run, no further setup" UX.
-#
-# Sources are populated by the dev workflow:
-#   - assets/bge-m3-int8/                        (robocopy from %LocalAppData%/deskpet/models/)
-#   - assets/faster-whisper-large-v3-turbo/      (copied from HF cache,
-#                                                 mobiuslabsgmbh INT8 ct2 build)
-# Both directories are gitignored — see backend/.gitignore.
-# P4-S20 install bundle Plan A (post-NSIS-mmap-failure):
-# We previously bundled BGE-M3 (1.1 GB fp16) + faster-whisper INT8 (1.5 GB)
-# directly into the PyInstaller dist. Tauri NSIS makensis is 32-bit and
-# its cumulative mmap address space caps out around ~3.5 GB; bundling
-# 7.7 GB of resources blows that limit with `Internal compiler error
-# #12345: error mmapping file (...) is out of range`. NSIS amd64-Unicode
-# builds exist as community forks (e.g. negrutiu/nsis) but introduce a
-# trust dependency we'd rather avoid.
-#
-# Plan A: ship a thin (~1.5 GB) bundle, rely on first-run download.
-# `paths.resolve_model_dir` already does multi-source fallback
-# (user_models_dir → _MEIPASS/models → backend/assets), so:
-#  - Frozen bundle: models NOT bundled → first-run code (or user-run
-#    download script) populates `%LocalAppData%/deskpet/models/`.
-#  - Dev mode: backend/assets/ still has the weights → resolves there.
-# Either way the runtime path is identical.
-#
-# P4-S20 MSI fat bundle: ship models inside the installer for true
-# zero-config "download → install → launch" UX. Set
-# DESKPET_BUNDLE_MODELS=0 to opt out (yields a thin bundle that relies
-# on first-run download by the model provisioner).
+# --- 2b. Bundled model weights -----------------------------------------
+# 只剩 BGE-M3 一项可选内嵌（源目录 assets/bge-m3-int8/，已被 gitignore）。
+# 本地语音（faster-whisper 等）与首启模型下载器已于 2026-10-18 删除。
+# DESKPET_BUNDLE_MODELS=0 时不内嵌任何模型。
 if os.environ.get("DESKPET_BUNDLE_MODELS", "1") == "1":
     _BUNDLED_MODELS = [
         ("assets/bge-m3-int8", "models/bge-m3-int8"),
-        ("assets/faster-whisper-large-v3-turbo", "models/faster-whisper-large-v3-turbo"),
     ]
     for _src, _dest in _BUNDLED_MODELS:
         if os.path.isdir(_src):
@@ -506,10 +465,8 @@ a.datas += [
 # --- 3b. Defensive torch CUDA DLL strip ---------------------------------
 # REQUIRED SETUP: the backend venv MUST install torch's CPU-only wheel
 #   pip install --index-url https://download.pytorch.org/whl/cpu torch torchaudio
-# torch is used ONLY for VRAM detection (observability/vram.py), which
-# wraps every call in try/except and falls back to vram_gb = 0.0 (→ CPU
-# tier) when CUDA is unavailable. faster-whisper's GPU path uses
-# ctranslate2's independent CUDA DLLs under _internal/ctranslate2/.
+# 2026-10-18 起后端代码不再导入 torch（显存探测随本地语音删除）；
+# 依赖清单里的 torch 待另行清理。
 # If someone accidentally installs torch+cu124 (3.5 GB of CUDA DLLs under
 # torch/lib/), the filter below strips the biggest offenders at build
 # time so the bundle stays under P3-G2's 3.5 GB budget. On a CPU-only
@@ -540,39 +497,10 @@ def _is_torch_cuda_bloat(entry):
 # P4-S20 thin bundle: re-enabled strip. We keep c10_cuda + cudart in
 # torch/lib/ (removed from `_CUDA_DLL_PREFIXES`) so shm.dll's deps
 # resolve, while everything else (cudnn family, cufft, curand,
-# cusolver, cusparse — collectively ~3 GB) is dropped. main.py
-# registers `_MEIPASS/ctranslate2/` in the DLL search path BEFORE any
-# `import torch`, so torch's `_load_dll_libraries` finds cudart/cublas
-# there. Without the strip, dist is ~5 GB (vs ~1.5 GB with strip),
+# cusolver, cusparse — collectively ~3 GB) is dropped.
+# Without the strip, dist is ~5 GB (vs ~1.5 GB with strip),
 # which blows NSIS 32-bit makensis's cumulative mmap budget.
 a.binaries = [b for b in a.binaries if not _is_torch_cuda_bloat(b)]
-
-# --- 3c. Re-bundle the minimal CUDA DLLs ctranslate2 actually needs -----
-# After the torch CUDA strip above (saves ~2.9 GB), ctranslate2's GPU
-# path dlopen's a small set of NVIDIA DLLs that torch's filter removed:
-#   cublas64_12.dll, cublasLt64_12.dll  — matrix kernels (~370 MB together)
-#   cudart64_12.dll                     — CUDA runtime shim (~600 KB)
-#   nvrtc64_120_0.dll, nvrtc-builtins64_129.dll — runtime kernel compile
-# ctranslate2 already ships cudnn64_9.dll in its own wheel.
-#
-# These DLLs come from the standalone pip packages:
-#   pip install nvidia-cublas-cu12 nvidia-cuda-runtime-cu12 nvidia-cuda-nvrtc-cu12
-# Dropped into `_internal/ctranslate2/` alongside cudnn64_9.dll so they
-# resolve via ctranslate2's own AddDllDirectory registration.
-_NVIDIA_DLL_DIRS = [
-    os.path.join(_site_packages, "nvidia", "cublas", "bin"),
-    os.path.join(_site_packages, "nvidia", "cuda_runtime", "bin"),
-    os.path.join(_site_packages, "nvidia", "cuda_nvrtc", "bin"),
-]
-for _dir in _NVIDIA_DLL_DIRS:
-    if not os.path.isdir(_dir):
-        continue
-    for _dll in glob.glob(os.path.join(_dir, "*.dll")):
-        # Dest "ctranslate2/<name>.dll" → ends up next to cudnn64_9.dll
-        # inside the ctranslate2 search dir registered by the wheel.
-        a.binaries.append(
-            (f"ctranslate2/{os.path.basename(_dll)}", _dll, "BINARY")
-        )
 
 # Recursive data trees and third-party hooks must not carry private workspace
 # files into the onedir artifact. Check the expanded destinations before COLLECT;

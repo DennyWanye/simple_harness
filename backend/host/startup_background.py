@@ -12,7 +12,6 @@ import paths as _paths
 from deskpet.execution.provider_workload_audit import provider_workload_audit_retention_loop
 from deskpet.execution.provider_workloads import workload_context as _workload_context
 from deskpet.mcp.bootstrap import create_and_start_from_config as _mcp_bootstrap
-from deskpet.model_provisioner import ModelProvisioner
 
 from host.llm_providers import _context_os_e2e_boot_hooks
 from host.ppt_outline import _expire_ppt_outline_dangling_for_startup
@@ -68,17 +67,6 @@ async def _startup_embedder_and_workload_audit() -> Any:
 
         # fire-and-forget; we deliberately don't await
         asyncio.create_task(_embedder_warmup_bg())
-    # Option A (2026-06-05): 首启模型下载。瘦包(DESKPET_BUNDLE_MODELS=0)不内嵌
-    # 模型 → 后台 daemon 线程从 hf-mirror 拉缺失的 bge-m3 / faster-whisper。
-    # 注册到 service_context 供 p4_ipc 的 model_provision_status 探针读取；
-    # start_background 幂等。失败不阻塞启动（ASR/记忆各自有降级）。
-    try:
-        _provisioner = ModelProvisioner()
-        service_context.register("model_provisioner", _provisioner)
-        _provisioner.start_background()
-        logger.info("model_provisioner_started")
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("model_provisioner_start_failed", error=str(exc), exc_info=True)
     # Task 13 retires the JSON PreferenceMemory writer. The existing
     # preference_memory.json file is imported once by the authority cutover
     # reader and remains read-only upgrade residue.

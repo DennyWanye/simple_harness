@@ -62,14 +62,9 @@ def test_health_preserves_existing_fields(client):
     """Regression: secret_hint / strategy / cloud_configured must stay."""
     resp = client.get("/health")
     body = resp.json()
-    for key in ("status", "secret_hint", "strategy", "cloud_configured", "startup_errors", "voice"):
+    for key in ("status", "secret_hint", "strategy", "cloud_configured", "startup_errors"):
         assert key in body
-    assert body["voice"] == {
-        "enabled": False,
-        "mode": "disabled",
-        "reason": "voice_temporarily_disabled",
-        "realtime": "pending",
-    }
+    assert "voice" not in body
 
 
 # ---------------------------------------------------------------------------

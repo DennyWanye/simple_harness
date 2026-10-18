@@ -40,10 +40,6 @@ from host.runtime import (
 
 
 # isort: split
-# 语音装配模块在导入期登记语音引擎占位；保持原来的导入位置，登记顺序不变。
-import host.voice_bootstrap  # noqa: F401
-
-# isort: split
 from host.shutdown import (
     _shutdown_runtimes_and_tasks,
     _shutdown_services,
@@ -54,7 +50,7 @@ from host.startup_core import (
     _startup_core_services,
     _startup_desktop_and_realtime_voice,
     _startup_provider_routing,
-    _startup_search_and_voice,
+    _startup_search_and_billing,
 )
 
 # isort: split
@@ -85,7 +81,7 @@ async def lifespan(app: FastAPI):
     """Preload models on startup (best-effort — failures logged but don't block)."""
     _provider_readiness, startup_epoch = await _startup_core_services()
     await _startup_provider_routing(_provider_readiness)
-    await _startup_search_and_voice()
+    await _startup_search_and_billing()
     _sdb = await _startup_workflow_services()
     await _startup_restore_and_skill_prewarm()
     _vw = await _startup_embedder_and_workload_audit()

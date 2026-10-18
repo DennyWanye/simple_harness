@@ -77,53 +77,6 @@ def _build_router_with(local_handler, cloud_handler) -> HybridRouter:
     return HybridRouter(local=local, cloud=cloud)
 
 
-def _stub_heavy_modules() -> None:
-    """Provide in-memory stubs for heavyweight optional deps that ``main``
-    imports at module load (faster_whisper, edge_tts, silero_vad). These
-    packages aren't part of the dev env's required install; the fallback
-    E2E suite only exercises the LLM path and never touches ASR/TTS/VAD.
-
-    Stubs are idempotent -- re-installing just overwrites ``sys.modules``
-    entries. We stub the *dependency* modules, not the local
-    ``providers.faster_whisper_asr`` wrappers, so import machinery succeeds
-    but the wrapper code paths remain real (none get called in these tests).
-    """
-    import sys
-    import types
-
-    def _ensure(name: str, **attrs) -> None:
-        mod = sys.modules.get(name)
-        if mod is None:
-            mod = types.ModuleType(name)
-            sys.modules[name] = mod
-        for k, v in attrs.items():
-            setattr(mod, k, v)
-
-    class _FakeWhisperModel:
-        def __init__(self, *a, **kw) -> None:
-            pass
-
-        def transcribe(self, *a, **kw):  # pragma: no cover - never invoked
-            return iter(()), None
-
-    _ensure("faster_whisper", WhisperModel=_FakeWhisperModel)
-
-    class _FakeCommunicate:
-        def __init__(self, *a, **kw) -> None:
-            pass
-
-        async def stream(self):  # pragma: no cover - never invoked
-            if False:
-                yield
-
-    _ensure("edge_tts", Communicate=_FakeCommunicate)
-
-    def _fake_load_vad(*a, **kw):  # pragma: no cover - never invoked
-        return None, None
-
-    _ensure("silero_vad", load_silero_vad=_fake_load_vad, get_speech_timestamps=_fake_load_vad)
-
-
 @pytest.fixture
 def app_with_router(monkeypatch):
     """Build the real FastAPI app, then replace its llm_engine + agent_engine
@@ -136,7 +89,6 @@ def app_with_router(monkeypatch):
     fallback slice exercises only ``/ws/control``, so ASR/TTS/VAD loads are
     not required.
     """
-    _stub_heavy_modules()
     import importlib
 
     import main as main_mod

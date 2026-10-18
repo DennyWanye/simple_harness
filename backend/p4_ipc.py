@@ -3,12 +3,11 @@
 
 """控制通道里技能、决策、模型上下文、权限这几类消息的处理函数。
 
-本模块处理 ``P4_IPC_MESSAGE_TYPES`` 里的八种消息：
+本模块处理 ``P4_IPC_MESSAGE_TYPES`` 里的七种消息：
 
 - ``skills_list`` / ``decisions_list`` — 列技能、列决策；
 - ``model_context_get`` / ``model_context_set`` — 读写每个模型的上下文窗口覆盖；
 - ``context_compaction_get`` / ``context_compaction_set`` — 读写上下文压缩用的模型；
-- ``model_provision_status`` — 首启模型下载进度；
 - ``permissions_pending_list`` — 列当前会话待批的权限请求。
 
 依赖的服务没注册时，处理函数返回空结果（附原因），不报错。
@@ -51,8 +50,6 @@ P4_IPC_MESSAGE_TYPES = frozenset(
         # overrides.  ``follow_session`` keeps the historical behaviour.
         "context_compaction_get",
         "context_compaction_set",
-        # Option A (2026-06-05) — 瘦包首启模型下载进度探针。
-        "model_provision_status",
         # WI-TG-2 — ApprovalCenterPanel 只读「列当前 session pending 权限请求」。
         "permissions_pending_list",
     }
@@ -75,8 +72,6 @@ async def handle(
             await _handle_skills_list(ws, payload, service_context)
         elif msg_type == "decisions_list":
             await _handle_decisions_list(ws, session_id, payload, service_context)
-        elif msg_type == "model_provision_status":
-            await _handle_model_provision_status(ws, payload, service_context)
         elif msg_type == "model_context_get":
             await _handle_model_context_get(ws, payload)
         elif msg_type == "model_context_set":
@@ -165,35 +160,6 @@ async def _handle_decisions_list(
 # 2026-09-10：``embedder_status``（SettingsPanel 的 BGE-M3 状态卡）随认知记忆
 # SDK 一并移除——本构建不再注册任何 embedder，留一个恒定报「未注册」的探针
 # 只会误导用户。
-
-
-async def _handle_model_provision_status(ws: Any, payload: dict[str, Any], sc: Any) -> None:
-    """Option A: 首启模型下载进度探针，供前端进度卡片轮询。
-
-    返回 provisioner.status()（state/current/index/total/downloaded_bytes/
-    total_bytes/error）。未注册（如非瘦包构建从不下载）→ state="ready"，前端
-    据此不显示进度卡片。任何异常都退到 ready，绝不阻断前端。
-    """
-    prov = _get_service(sc, "model_provisioner")
-    if prov is None:
-        await ws.send_json(
-            {
-                "type": "model_provision_status_response",
-                "payload": {"state": "ready", "total": 0},
-            }
-        )
-        return
-    try:
-        status = prov.status()
-    except Exception as exc:  # noqa: BLE001
-        logger.warning(
-            "p4_ipc.model_provision_status_failed",
-            error=str(exc),
-            error_type=type(exc).__name__,
-            exc_info=True,
-        )
-        status = {"state": "ready", "total": 0}
-    await ws.send_json({"type": "model_provision_status_response", "payload": status})
 
 
 # ---------------------------------------------------------------------------

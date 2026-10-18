@@ -188,8 +188,8 @@ async def _startup_provider_routing(_provider_readiness: Any) -> None:
         logger.exception("provider_routing_startup_failed: %s", _provider_start_exc)
 
 
-async def _startup_search_and_voice() -> None:
-    """启动：检索网关、模型预加载、语音引擎占位。"""
+async def _startup_search_and_billing() -> None:
+    """启动：检索网关、工作区记忆回绑主循环、计费账本。"""
 
     _search_gateway = build_search_gateway(config)
     set_default_gateway(_search_gateway)
@@ -215,18 +215,6 @@ async def _startup_search_and_voice() -> None:
         logger.info("billing_ledger_ready", db_path=str(config.billing.db_path))
     except Exception as exc:
         logger.warning("billing_ledger_init_failed", error=str(exc), exc_info=True)
-    for name in ("vad_engine", "asr_engine", "tts_engine"):
-        engine = service_context.get(name)
-        if engine and hasattr(engine, "load"):
-            try:
-                await engine.load()
-                logger.info("loaded", engine=name)
-            except Exception as exc:
-                logger.warning("failed_to_load", engine=name, error=str(exc), exc_info=True)
-                # persist structured error so /health + WS startup_status
-                # can surface "degraded" state instead of silently accepting
-                # requests that will later 500.
-                startup_errors.record(name, exc)
 
 
 async def _startup_desktop_and_realtime_voice(startup_epoch: Any) -> None:

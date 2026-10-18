@@ -5,7 +5,6 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { MissionsChannelContext } from "./views/chatMission";
 import { V2_CLIENT_VERSION } from "./ws/ControlChannel";
 void V2_CLIENT_VERSION; // silence unused import (re-exported for diagnostics later)
-import { ModelDownloadBanner } from "./components/ModelDownloadBanner";
 import { ContextTracePanel } from "./components/ContextTracePanel";
 import { WorkbenchShell, type WorkbenchView } from "./components/WorkbenchShell";
 import { StartupOverlay, type BootState } from "./components/StartupOverlay";
@@ -892,9 +891,6 @@ function App() {
 
       {/* 2026-09-10：S14 MemoryPanel（记忆检索/L1 文件记忆/facts）随
           认知记忆 SDK 一并下线。 */}
-
-      {/* Option A: 首启模型下载进度（瘦包后台从 hf-mirror 拉模型时显示） */}
-      <ModelDownloadBanner getChannel={getControlChannel} />
 
       {/* T13：App 层 ContextBreakdownModal 退役 —— 环形入口与钻取模态
           都在 ChatView（T8，controlWS 传输），Toolbar 环随 Toolbar 收走。 */}

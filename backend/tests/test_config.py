@@ -20,7 +20,7 @@ from pathlib import Path
 from textwrap import dedent
 
 import tomli
-from config import TTSConfig, load_config
+from config import load_config
 
 
 def test_load_config_ignores_unknown_toml_keys(tmp_path: Path) -> None:
@@ -149,92 +149,6 @@ def test_load_config_promotes_unified_llm_schema(tmp_path, caplog):
     assert cfg.llm.cloud is None
     # info 日志会汇报这次 promote
     assert any("llm_unified_schema_loaded" in r.message for r in caplog.records)
-
-
-# ---------------------------------------------------------------------------
-# P3-S1: TTSConfig.model_dir default + legacy './assets/...' migration
-# ---------------------------------------------------------------------------
-
-
-def test_tts_config_model_dir_default() -> None:
-    """P3-S1: TTSConfig.model_dir now defaults to a bare subfolder name,
-    not the legacy relative path './assets/cosyvoice2'."""
-    cfg = TTSConfig()
-    assert cfg.model_dir == "cosyvoice2"
-
-
-def test_load_config_tts_reads_model_dir(tmp_path: Path) -> None:
-    cfg_path = tmp_path / "config.toml"
-    cfg_path.write_text(
-        dedent("""
-        [tts]
-        model_dir = "cosyvoice2-instruct"
-    """).strip(),
-        encoding="utf-8",
-    )
-    cfg = load_config(cfg_path)
-    assert cfg.tts.model_dir == "cosyvoice2-instruct"
-
-
-def test_load_config_tts_legacy_model_dir_normalized(tmp_path, caplog):
-    """P3-S1: old config with `./assets/cosyvoice2` is auto-stripped to
-    `cosyvoice2` and a WARNING is logged. Hardcoded-relative paths break
-    under PyInstaller, so we nudge users off them without crashing."""
-    import logging
-
-    cfg_path = tmp_path / "config.toml"
-    cfg_path.write_text(
-        dedent("""
-        [tts]
-        model_dir = "./assets/cosyvoice2"
-    """).strip(),
-        encoding="utf-8",
-    )
-
-    with caplog.at_level(logging.WARNING):
-        cfg = load_config(cfg_path)
-
-    assert cfg.tts.model_dir == "cosyvoice2"
-    assert any("legacy" in r.message.lower() for r in caplog.records)
-
-
-def test_load_config_tts_legacy_bare_assets_prefix(tmp_path, caplog):
-    """Also handle `assets/cosyvoice2` (no leading ./)."""
-    import logging
-
-    cfg_path = tmp_path / "config.toml"
-    cfg_path.write_text(
-        dedent("""
-        [tts]
-        model_dir = "assets/cosyvoice2"
-    """).strip(),
-        encoding="utf-8",
-    )
-
-    with caplog.at_level(logging.WARNING):
-        cfg = load_config(cfg_path)
-
-    assert cfg.tts.model_dir == "cosyvoice2"
-
-
-def test_load_config_tts_non_legacy_value_unchanged(tmp_path, caplog):
-    """A plain subfolder name must NOT be mangled and must not warn."""
-    import logging
-
-    cfg_path = tmp_path / "config.toml"
-    cfg_path.write_text(
-        dedent("""
-        [tts]
-        model_dir = "cosyvoice2"
-    """).strip(),
-        encoding="utf-8",
-    )
-
-    with caplog.at_level(logging.WARNING):
-        cfg = load_config(cfg_path)
-
-    assert cfg.tts.model_dir == "cosyvoice2"
-    assert not any("legacy" in r.message.lower() for r in caplog.records)
 
 
 def test_load_config_parses_skills_codify_flag(tmp_path: Path) -> None:

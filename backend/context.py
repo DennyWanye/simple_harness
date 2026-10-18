@@ -11,9 +11,6 @@ from typing import Any
 _VALID_SERVICES = frozenset(
     {
         "llm_engine",
-        "asr_engine",
-        "tts_engine",
-        "vad_engine",
         "agent_engine",
         "tool_router",
         # P2-1-S8: BillingLedger registered so per-session handlers can read the
@@ -60,8 +57,6 @@ _VALID_SERVICES = frozenset(
         # --- multi-provider-management ------------------------------------
         "provider_registry",  # LLMProviderRegistry — owns [[llm.providers]] list
         "provider_routing_readiness",  # fail-closed startup latch
-        # --- Option A (2026-06-05) — 瘦包首启模型下载 ----------------------------
-        "model_provisioner",  # ModelProvisioner — 首启从 hf-mirror 下载缺失模型
         # --- 子代理并发驱动 (plans/2026-06-21-subagent-concurrency-driver/) -------
         # flag OFF（默认）时 lifespan 不 register（None 占位无需），但加进白名单
         # 防 get()/register() 抛 "Unknown service"。
@@ -172,9 +167,6 @@ _VALID_SERVICES = frozenset(
 @dataclass
 class ServiceContext:
     llm_engine: Any | None = None
-    asr_engine: Any | None = None
-    tts_engine: Any | None = None
-    vad_engine: Any | None = None
     agent_engine: Any | None = None
     tool_router: Any | None = None
     billing_ledger: Any | None = None
@@ -202,8 +194,6 @@ class ServiceContext:
     # --- multi-provider-management ------------------------------------
     provider_registry: Any | None = None
     provider_routing_readiness: Any | None = None
-    # --- Option A — 瘦包首启模型下载 -----------------------------------------
-    model_provisioner: Any | None = None
     # --- 子代理并发驱动 (plans/2026-06-21-subagent-concurrency-driver/) -------
     subagent_scheduler: Any | None = None
     # --- WI-TG-2 审批 UX 聚合 -------------------------------------------------

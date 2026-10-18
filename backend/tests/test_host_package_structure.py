@@ -30,13 +30,6 @@ def test_host_modules_do_not_look_up_names_through_globals() -> None:
     assert offenders == []
 
 
-def test_voice_runtime_receives_the_shared_permission_gate() -> None:
-    import main  # noqa: F401  按生产顺序装配
-    from host import tools_bootstrap, voice_bootstrap
-
-    assert voice_bootstrap.permission_gate_v2 is tools_bootstrap.permission_gate_v2
-
-
 def test_importing_main_writes_nothing_to_stdout() -> None:
     """后端标准输出交给外壳读共享密钥；导入主入口不许往标准输出写任何东西。
 

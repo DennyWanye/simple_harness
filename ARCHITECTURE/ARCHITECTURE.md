@@ -824,7 +824,9 @@ Ingress transports still have transport-specific responsibilities, but no
 second agent owner:
 
 - The legacy `/ws/audio` Voice path (VoicePipeline, barge-in filter) was
-  deleted on 2026-10-18; startup does not load VAD/ASR/TTS. The candidate
+  deleted on 2026-10-18, and so was the local VAD/ASR/TTS layer (Silero,
+  faster-whisper, CosyVoice/edge-TTS providers, voice runtime, first-run model
+  downloader). The candidate
   `/ws/realtime-voice` path uses the versioned Service SDK local protocol and
   provider-native Realtime transport, starts only after an explicit UI action,
   and does not create an Agent Run. Real-provider multi-turn E2E remains open.
@@ -1091,7 +1093,7 @@ privacy boundary of anonymous metrics.
 | Desktop | Tauri/Rust, WebView2(Win)/WKWebView(mac), React/TypeScript，单窗 Workbench（Chat/Skills/Artifacts/Settings）；桌宠 sprite/Canvas2D 与 Live2D 渲染均已退休。 |
 | Backend | Python asyncio/FastAPI/WebSocket adapters. |
 | Persistence | SQLite/aiosqlite, WAL, optional sqlite-vec. |
-| Models/audio | Torch/CUDA, BGE-M3, Silero, faster-whisper, CosyVoice/edge-TTS. |
+| Models/audio | BGE-M3 (optional bundle); local voice providers removed on 2026-10-18, voice goes through Service SDK Realtime. |
 | LLM/secrets | OpenAI-compatible provider registry (user-supplied baseUrl + apiKey), OS keychain and per-session resolution. 2026-08-09: the hosted-account relay path was removed entirely. |
 | Research/browser | Search providers, Scrapling/trafilatura, browser-use/Chromium or system Edge CDP, optional Jina/direct-source adapters. |
 | PPT/Office | python-pptx, image generation provider, LibreOffice plus WPS/Office COM rendering on Windows. |

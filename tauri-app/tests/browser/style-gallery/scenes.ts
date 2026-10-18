@@ -12,7 +12,7 @@
 //                      SettingsOrchestrationSections、SettingsProviders、ModelContextCard
 //   scenes-set-2.tsx   components/AddProviderModal、code-panel/ChangeModelModal、components/OnboardingWizard、FeedbackPanel、
 //                      StartupOverlay、ProjectInspector、ProjectPickerDialog、ProjectDirectoryCard、ContextRing、
-//                      ModelDownloadBanner、ProtectedPathCard
+//                      ProtectedPathCard
 //   scenes-cap.tsx     components/SkillStorePanel、CapabilityCenterPanel、CapabilityOperationCard、views/SkillsView
 //   scenes-cap-2.tsx   components/ContextBreakdownModal、ContextTracePanel、PermissionPopup、ApprovalCenterPanel、
 //                      ClarificationDialog、ExternalWaitDialog、companion/CompanionCard、companion/CompanionDetailModal

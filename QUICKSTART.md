@@ -1,6 +1,6 @@
 # QUICKSTART — 5 分钟跑起 simple_harness
 
-最短路径让 simple_harness 在你机器上跑起来。第一次跑预计 15-30 分钟（含依赖下载 + 模型下载）。
+最短路径让 simple_harness 在你机器上跑起来。第一次跑预计 15-30 分钟（含依赖下载）。
 
 ---
 
@@ -54,19 +54,7 @@ cd ..
 
 ---
 
-## Step 2: 下载模型（首次必须）
-
-simple_harness 需要本地 ASR（faster-whisper）+ embedding（BGE-M3）+ VAD（Silero）三个模型。
-
-```bash
-python scripts/setup_models.py
-```
-
-脚本会引导你下载这三个模型到 `%APPData%\deskpet\models\`（Win）或 `~/Library/Application Support/deskpet/models/`（Mac）。总计约 1.5GB。
-
----
-
-## Step 3: 配置 LLM Provider
+## Step 2: 配置 LLM Provider
 
 打开 `config.toml`：
 
@@ -87,7 +75,7 @@ api_key = ""
 
 ---
 
-## Step 4: 启动！
+## Step 3: 启动！
 
 ### 单条命令（推荐）
 
@@ -118,7 +106,7 @@ npm run tauri:dev
 
 ---
 
-## Step 5: 试用
+## Step 4: 试用
 
 1. **打字聊天**：右上角对话框输入文字
 2. **语音聊天**：点麦克风按钮（会请求权限）

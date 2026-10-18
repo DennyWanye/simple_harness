@@ -102,14 +102,6 @@ class PermissionGate:
         # data dir lives.
         self.auto_mode: bool = False
         self._auto_mode_path: Path | None = None
-        # caller-provided source tag, used by `_prompt` to
-        # decide whether to also speak the prompt out loud. Voice pipeline
-        # sets this to "voice" before running AgentLoop; main chat handler
-        # leaves it as None ("text" implicit).
-        self.current_source: str | None = None
-        # Optional TTS engine for voice prompts. Wired by main.py at
-        # startup via `set_tts_engine`.
-        self._tts_engine: Any | None = None
 
     # -----------------------------------------------------------------
     # Wiring
@@ -167,16 +159,6 @@ class PermissionGate:
             )
         except Exception as exc:  # noqa: BLE001
             logger.warning("auto_mode_save_failed: %s", exc, exc_info=True)
-
-    def set_tts_engine(self, tts: Any) -> None:
-        """Install a TTS engine used for voice-context prompt narration.
-
-        When ``current_source == 'voice'`` and a popup is about to fire,
-        the gate also queues a synthesized line like "我需要确认才能执行
-        ..." so the user knows to look at the screen. Best-effort: TTS
-        failures are swallowed; the popup still fires either way.
-        """
-        self._tts_engine = tts
 
     # -----------------------------------------------------------------
     # Public API
@@ -288,28 +270,6 @@ class PermissionGate:
             dangerous=category in {"shell", "skill_install"},
             session_id=session_id,
         )
-        # voice-source prompt narration. If the request was
-        # triggered by a voice utterance, we ALSO speak a short cue so
-        # the user reaches for the mouse. Best effort: TTS errors are
-        # logged once and the popup still goes ahead.
-        if self.current_source == "voice" and self._tts_engine is not None:
-            try:
-                # Don't await: we don't want the popup blocked on TTS.
-                # synthesize_pcm_stream is the streaming API; .synthesize
-                # is one-shot; we use whichever exists.
-                tts = self._tts_engine
-                voice_msg = f"我需要确认才能执行{request.summary}，请点击屏幕上的允许按钮"
-                if hasattr(tts, "synthesize"):
-                    asyncio.create_task(tts.synthesize(voice_msg))
-                elif hasattr(tts, "synthesize_pcm_stream"):
-
-                    async def _drain():
-                        async for _ in tts.synthesize_pcm_stream(voice_msg):
-                            pass
-
-                    asyncio.create_task(_drain())
-            except Exception:  # noqa: BLE001 - 语音提示失败不阻断授权流程
-                logger.debug("permission_prompt_tts_failed", exc_info=True)
         try:
             response: PermissionResponse = await asyncio.wait_for(
                 self._responder(request), timeout=self.config.timeout_s

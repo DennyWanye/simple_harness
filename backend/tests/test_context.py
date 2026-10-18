@@ -19,8 +19,6 @@ class FakeLLM:
 def test_service_context_creation():
     ctx = ServiceContext()
     assert ctx.llm_engine is None
-    assert ctx.asr_engine is None
-    assert ctx.tts_engine is None
 
 
 def test_service_context_register_and_get():

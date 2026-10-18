@@ -163,7 +163,6 @@ def test_message_type_membership() -> None:
             "model_context_set",
             "context_compaction_get",
             "context_compaction_set",
-            "model_provision_status",
             # WI-TG-2：ApprovalCenterPanel 只读「列 pending 权限请求」。
             "permissions_pending_list",
         }

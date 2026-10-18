@@ -78,7 +78,6 @@ except Exception as _skills_exc:  # noqa: BLE001
 _session_history_planner = None
 _memory_manager = None
 _workspace_mem_store = None
-_nudge_queue = None
 service_context.register("context_assembler", None)
 service_context.register("session_db", _session_db)
 

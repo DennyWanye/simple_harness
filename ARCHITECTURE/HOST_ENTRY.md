@@ -15,7 +15,7 @@
 
 1. `_startup_core_services` → 返回提供方路由就绪状态、启动纪元
 2. `_startup_provider_routing(提供方路由就绪状态)`
-3. `_startup_search_and_voice`
+3. `_startup_search_and_billing`
 4. `_startup_workflow_services` → 返回会话库（单条 1421 行的语句，拆分在后面的阶段）
 5. `_startup_restore_and_skill_prewarm`
 6. `_startup_embedder_and_workload_audit` → 返回向量工作器
@@ -105,14 +105,13 @@
 | `host/settings_persistence.py` | 51 | 设置页触发的持久化与重启：重启编排服务、把监工开关写回 config.toml。 |
 | `host/shutdown.py` | 254 | 关闭步骤：运行时与后台任务、各项服务 |
 | `host/startup_background.py` | 351 | 启动步骤：恢复与技能预热、嵌入与负载审计、向量工作器、整理提示与图片工作器与 MCP |
-| `host/startup_core.py` | 292 | 启动步骤：核心服务与记忆纪元、提供方路由、检索网关与语音引擎、桌面测试桥与实时语音 |
+| `host/startup_core.py` | 292 | 启动步骤：核心服务与记忆纪元、提供方路由、检索网关与计费账本、桌面测试桥与实时语音 |
 | `host/startup_supervision.py` | 347 | 启动步骤：工具熔断与会话活跃度、监督 Agent、模型上下文窗口 |
 | `host/startup_workflows.py` | 1460 | 启动步骤：会话库检查与工作流服务接线 |
 | `host/state.py` | 60 | 宿主进程的运行期单例：启动时创建，关闭时清空。 |
 | `host/stores_bootstrap.py` | 146 | 会话与存储的启动装配：会话账本、各存储的模块级占位、技能加载与托管技能投影、项目绑定与会话创建服务、基础 Agent。 |
 | `host/summary_quality.py` | 41 | 会话摘要质量辅助函数（生产代码已无调用，归阶段 8 删除） |
 | `host/tools_bootstrap.py` | 226 | 工具层的启动装配：基础工具注册表、v2 工具注册表、权限与自动模式、插件、能力范围存储与解析器。 |
-| `host/voice_bootstrap.py` | 29 | 启动时记录硬件档位，并按配置装好旧版语音运行时。 |
 | `host/window_control.py` | 21 | 窗口控制凭证的一次性引导：Rust 外壳只在启动时从标准输入传一行凭证。手动或测试启动没有这个标记，绝不读标准输入；此时伴侣的特权变更保持关闭，其他功能照常。 |
 
 ### 函数与类所在模块（原在 main.py）
@@ -347,7 +346,7 @@
 | `_startup_model_context` | `host/startup_supervision.py` |
 | `_startup_provider_routing` | `host/startup_core.py` |
 | `_startup_restore_and_skill_prewarm` | `host/startup_background.py` |
-| `_startup_search_and_voice` | `host/startup_core.py` |
+| `_startup_search_and_billing` | `host/startup_core.py` |
 | `_startup_self_healing` | `host/startup_supervision.py` |
 | `_startup_supervisor` | `host/startup_supervision.py` |
 | `_startup_vector_worker` | `host/startup_background.py` |

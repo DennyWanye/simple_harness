@@ -122,18 +122,6 @@
    "ToolCapabilityResolver"
   ],
   [
-   "vad_engine",
-   null
-  ],
-  [
-   "asr_engine",
-   null
-  ],
-  [
-   "tts_engine",
-   null
-  ],
-  [
    "context_assembler",
    null
   ],
@@ -222,10 +210,6 @@
   [
    "provider_workload_router",
    "ProviderWorkloadRouter"
-  ],
-  [
-   "model_provisioner",
-   "ModelProvisioner"
   ],
   [
    "mcp_manager",
@@ -511,7 +495,6 @@
  "services_after_startup": {
   "admission_task_grant_runtime": "AdmissionTaskGrantRuntime",
   "agent_engine": "ToolUsingAgent",
-  "asr_engine": null,
   "authorization_runtime": "PreparedAuthorizationRuntime",
   "billing_ledger": "BillingLedger",
   "capability_builder_host": "CapabilityBuilderHost",
@@ -557,7 +540,6 @@
   "memory_display_invalidation": "MemoryDisplayInvalidation",
   "memory_identity_authority": "ValidatedLocalMemoryIdentityAuthority",
   "memory_identity_resolver": "ProductMemoryIdentityResolver",
-  "model_provisioner": "ModelProvisioner",
   "orchestration": "OrchestrationService",
   "orchestration_pump": "MissionChangePump",
   "permission_gate": "PermissionGate",
@@ -602,8 +584,6 @@
   "tool_capability_scope_store": "ToolCapabilityScopeStore",
   "tool_circuit_breaker": "ToolCircuitBreaker",
   "tool_router": "ToolRegistry",
-  "tts_engine": null,
-  "vad_engine": null,
   "vector_worker": null,
   "watchdog": null,
   "window_control_credential_verifier": null,

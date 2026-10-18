@@ -12,7 +12,7 @@ const JITTER_BUFFER_SIZE = 2;
  * P2-2-M2: PCM 流式播放器（替代 M1 的"累积 MP3 → tts_end 再一次性 decode"
  * 模式）。
  *
- * 后端走 EdgeTTSProvider.synthesize_pcm_stream 产出 PCM16 24kHz mono，
+ * 输入是 PCM16 24kHz mono 音频块，
  * 每块 8192 bytes (4096 samples, ~170ms)。本 hook 把每块 decode 成
  * AudioBuffer 挂在 WebAudio 时间轴上连续播放，形成流式播放；bargeIn()
  * 做 50ms 线性 fade-out + 停所有在途 source + 清队列。

@@ -80,7 +80,7 @@ def test_dry_run_prepares_only_keyfree_local_configuration(launcher, bundle, tmp
         "model": "deepseek-flash",
         "api_key": "$DESKPET_CLOUD_API_KEY",
     }
-    assert config["voice"]["enabled"] is False
+    assert "voice" not in config
     assert config["orchestration"]["enabled"] is True
     assert "local" not in config["llm"] and "endpoints" not in config["llm"]
     assert json.loads((run / "userdata/llm_runtime.json").read_text()) == {

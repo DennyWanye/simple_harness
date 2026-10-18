@@ -12,7 +12,6 @@ from host.auth import DEV_MODE
 from host.llm_providers import llm
 from host.runtime import SHARED_SECRET, logger
 from host.state import host_state
-from host.voice_bootstrap import _voice_runtime
 
 health_router = APIRouter()
 
@@ -39,7 +38,6 @@ async def health():
             and getattr(host_state.local_llm, "api_key", "") != "ollama"
         ),
         "startup_errors": errors,
-        "voice": _voice_runtime.health_payload(),
         "realtime_voice": (
             host_state.realtime_voice_service.health_payload()
             if host_state.realtime_voice_service is not None

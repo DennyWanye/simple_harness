@@ -153,56 +153,6 @@ class LLMRoutingConfig:
 
 
 @dataclass
-class ASRConfig:
-    provider: str = "faster-whisper"
-    model: str = "large-v3-turbo"
-    # 跨平台默认：CTranslate2 的 "auto" 有 CUDA 用 CUDA，否则 CPU；
-    # compute_type "auto" 选当前设备最快的受支持精度（CUDA→fp16，
-    # Apple Silicon/CPU→int8）。Windows+NVIDIA 机器行为与旧默认一致。
-    device: str = "auto"
-    compute_type: str = "auto"
-    # P2-2-F1: hotwords list for faster-whisper logit bias. Joined with
-    # spaces at provider init. Empty list = no bias (current behaviour).
-    # Keeps short-audio phrases like "讲个笑话" from being misheard as
-    # "一个消化" by nudging beam search away from pinyin-adjacent high-
-    # frequency words.
-    hotwords: list[str] = field(default_factory=list)
-    # subfolder under paths.model_root() containing the bundled
-    # faster-whisper model. Empty → provider falls back to HuggingFace
-    # cache / model name resolution.
-    model_dir: str = "faster-whisper-large-v3-turbo"
-
-
-@dataclass
-class TTSConfig:
-    provider: str = "edge-tts"
-    voice: str = "zh-CN-XiaoyiNeural"
-    # bare subfolder name under paths.model_root(). Was
-    # "./assets/cosyvoice2" (relative-to-CWD, fragile under PyInstaller).
-    # load_config() still accepts the legacy "./assets/..." form and
-    # auto-strips it with a WARNING.
-    model_dir: str = "cosyvoice2"
-
-
-@dataclass
-class VADConfig:
-    threshold: float = 0.5
-    min_speech_ms: int = 250
-    min_silence_ms: int = 500
-
-
-@dataclass
-class VoiceConfig:
-    """旧本地语音设置。
-
-    旧的 VAD -> ASR -> Harness -> TTS 通道（`/ws/audio`）已删除；``enabled``
-    只决定后台是否装载本地 VAD/ASR/TTS 运行时，关闭时不导入、不构造、不加载。
-    """
-
-    enabled: bool = False
-
-
-@dataclass
 class MemoryV2FactsConfig:
     """``[memory.v2.facts]`` — facts 抽取调参（记忆系统升级）。"""
 
@@ -737,10 +687,6 @@ class CompanionConfig:
 class AppConfig:
     backend: BackendConfig = field(default_factory=BackendConfig)
     llm: LLMRoutingConfig = field(default_factory=LLMRoutingConfig)
-    asr: ASRConfig = field(default_factory=ASRConfig)
-    tts: TTSConfig = field(default_factory=TTSConfig)
-    vad: VADConfig = field(default_factory=VADConfig)
-    voice: VoiceConfig = field(default_factory=VoiceConfig)
     memory: MemoryConfig = field(default_factory=MemoryConfig)
     billing: BillingConfig = field(default_factory=BillingConfig)
     # 工具调用 last-mile 升级（plans/2026-05-23-tool-last-mile-upgrade/）。
@@ -1029,7 +975,6 @@ def _is_legacy_llm_schema(raw: dict) -> bool:
 #     a stale default model.
 #   * [backend] — host/port the user may have changed.
 #   * [billing] / [billing.pricing] — user spend caps / private pricing.
-#   * [asr] / [tts] / [vad] / [voice] — device + voice preferences.
 #   * [memory] (db_path) — a user filesystem path.
 #   * [[mcp.servers]] — array-of-tables the user may have customised; an
 #     additive *scalar* merge can't model array-of-tables safely.
@@ -1723,36 +1668,6 @@ def _load_config_impl(path: str | Path = "config.toml") -> AppConfig:
                     exc,
                 )
         config.llm = routing
-    if "asr" in raw:
-        config.asr = _load_section(ASRConfig, raw["asr"])
-    if "tts" in raw:
-        config.tts = _load_section(TTSConfig, raw["tts"])
-        # strip legacy './assets/...' / 'assets/...' / './' prefixes
-        # so everything downstream is a bare subfolder name paths.resolve_model_dir
-        # can join onto model_root(). Loud WARNING nudges users to update
-        # their config.toml.
-        legacy_prefixes = ("./assets/", "assets/", "./")  # p3-s1-allow-assets: legacy migration
-        original = config.tts.model_dir
-        if original.startswith(legacy_prefixes):
-            stripped = original
-            for prefix in legacy_prefixes:
-                if stripped.startswith(prefix):
-                    stripped = stripped[len(prefix) :]
-                    break
-            # Collapse any accidental nested './' remainders.
-            stripped = stripped.lstrip("./")
-            logger.warning(
-                "config [tts].model_dir uses legacy relative path %r; "
-                "normalizing to bare subfolder %r (P3-S1). Please update "
-                "config.toml to avoid this warning.",
-                original,
-                stripped,
-            )
-            config.tts.model_dir = stripped
-    if "vad" in raw:
-        config.vad = _load_section(VADConfig, raw["vad"])
-    if "voice" in raw:
-        config.voice = _load_section(VoiceConfig, raw["voice"])
     # Companion + Code 升级 v1 功能开关 [features] — 此前 load_config 漏读该段
     # (和 _load_tools 漏读 disabled_toolsets 同类 bug), 导致 slash_commands /
     # goal_mode / agent_parallel 在 config.toml 配了也不生效(config.features

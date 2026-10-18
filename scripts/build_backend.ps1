@@ -54,8 +54,8 @@ if ($LASTEXITCODE -ne 0) { throw "Pinned Playwright browser acquisition failed" 
 $env:PLAYWRIGHT_BROWSERS_PATH = Join-Path $BrowserCacheRoot "playwright-browsers"
 $env:PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD = "1"
 # The production NSIS artifact must stay below the 32-bit makensis mmap
-# ceiling.  Models are provisioned by ModelProvisioner on first run, while the
-# pinned Playwright browser remains part of the offline-capable installer.
+# ceiling.  Models are not bundled by default (no first-run downloader any more),
+# while the pinned Playwright browser remains part of the offline-capable installer.
 # MSI/fat-bundle jobs can opt back in explicitly with -BundleModels.
 $env:DESKPET_BUNDLE_MODELS = if ($BundleModels) { "1" } else { "0" }
 Write-Host ("[build_backend] bundle models: {0}" -f $env:DESKPET_BUNDLE_MODELS)
