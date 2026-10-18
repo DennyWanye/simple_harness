@@ -113,14 +113,17 @@ class ChatStream:
             # provisional id and repeat a 0/0/0 usage on every delta.  Such a chunk
             # carries nothing, so it pins neither the response identity nor billing.
             return
+        # 一次 HTTP 响应就是一次回复：id 只是标签，按第一次出现的记账（有的中转把正文片段改挂
+        # 临时 id、与真 id 交替出现）；模型名换了才说明串了别的回复。
         for name in ("id", "model"):
             part = value.get(name)
-            if part is not None:
-                if not isinstance(part, str) or (
-                    name in self.identity and self.identity[name] != part
-                ):
-                    raise _reject(f"{name} changed or is not a string")
-                self.identity[name] = part
+            if part is None:
+                continue
+            if not isinstance(part, str):
+                raise _reject(f"{name} is not a string")
+            if name == "model" and self.identity.get(name, part) != part:
+                raise _reject("model changed")
+            self.identity.setdefault(name, part)
         usage = value.get("usage")
         if usage is not None and not _billed(usage):
             usage = None  # an all-zero usage is a placeholder, never a billing statement

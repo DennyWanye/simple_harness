@@ -2156,6 +2156,17 @@
         "tests/orchestrator/full_target/test_small_fixes_v30_v43.py::test_v40_the_account_scope_is_read_from_the_accounts_table_not_the_id_prefix"
       ],
       "note": "按名字前缀猜账户范围"
+    },
+    {
+      "id": "SM-34",
+      "source": "2026-10-18 真机：中转把正文片段改挂临时 id，与真 id 交替，编排规划每轮被拒",
+      "file": "src/simple_harness/providers/chat_stream.py",
+      "original": "            self.identity.setdefault(name, part)",
+      "replacement": "            if self.identity.get(name, part) != part:\n                raise _reject(f\"{name} changed\")\n            self.identity.setdefault(name, part)",
+      "tests": [
+        "tests/providers/test_chat_stream_relay_placeholders.py::test_relay_that_alternates_response_ids_keeps_the_first_id"
+      ],
+      "note": "又因 id 改名拒收整条流"
     }
   ]
 }

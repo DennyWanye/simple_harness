@@ -86,7 +86,7 @@ def test_an_all_zero_usage_is_never_a_billing_statement() -> None:
     assert stream.payload()["usage"] is None  # zeros only: unknown, not zero
 
 
-def test_contradictory_real_usages_and_substantive_identity_changes_still_fail() -> None:
+def test_contradictory_real_usages_and_model_changes_still_fail() -> None:
     stream = ChatStream()
     _feed(stream, _chunk("c", {"content": "hi"}, usage=REAL))
     with pytest.raises(ProviderProtocolError):
@@ -103,4 +103,33 @@ def test_contradictory_real_usages_and_substantive_identity_changes_still_fail()
     other = ChatStream()
     _feed(other, _chunk("c", {"content": "hi"}))
     with pytest.raises(ProviderProtocolError):
-        _feed(other, _chunk("d", {"content": "there"}))
+        _feed(other, {**_chunk("c", {"content": "there"}), "model": "other"})
+
+
+def test_relay_that_alternates_response_ids_keeps_the_first_id() -> None:
+    """2026-10-18 真机：中转把正文片段改挂临时 id「chatcmpl-wb」，与真 id 的空片段交替出现。
+
+    一次 HTTP 响应就是一次回复，id 只是标签；按第一次出现的 id 记账，不因改名拒收。
+    """
+
+    stream = ChatStream()
+    events = (
+        _chunk("real", {"role": "assistant", "content": ""}),
+        _chunk("real", {"content": "", "reasoning_content": "想一想"}),
+        _chunk("chatcmpl-wb", {"content": "关灯"}, usage=None),
+        _chunk("real", {}),
+        _chunk("chatcmpl-wb", {"content": "省电。"}, usage=None),
+        _chunk("real", {}, finish="stop"),
+        {"id": "real", "model": "m", "choices": [], "usage": REAL},
+        "[DONE]",
+    )
+    try:
+        _feed(stream, *events)
+        rejected = None
+    except ProviderProtocolError as exc:
+        rejected = exc
+    assert rejected is None, rejected
+    payload = stream.payload()
+    assert payload["id"] == "real" and payload["usage"] == REAL
+    message = payload["choices"][0]["message"]
+    assert message["content"] == "关灯省电。" and message["reasoning_content"] == "想一想"
