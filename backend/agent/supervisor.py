@@ -11,8 +11,7 @@ session crosses a stuck threshold. The supervisor:
 3. Parses output into a ``SupervisorAction``; on any failure → ``wait/green``
 4. Coerces ``cancel`` to ``ask_user`` (P5 doesn't ship cancel yet)
 5. Persists to ``supervisor_hints`` (audit trail)
-6. Pushes hint to ``nudge_queue`` for ``action=nudge``
-7. Broadcasts ``supervisor_alert`` ws event for non-wait actions
+6. Broadcasts ``supervisor_alert`` ws event for non-wait actions
 
 The supervisor is **strictly best-effort**: any failure path falls back
 to ``wait/green`` and logs. It must never throw out to the watchdog.
@@ -205,7 +204,6 @@ def _parse_action(text: str, *, alert_id: str) -> SupervisorAction:
 
 
 HintAuditFn = Callable[[SupervisorAction, str], Awaitable[None]]
-NudgeQueuePush = Callable[[str, Any], Awaitable[None]]
 AlertBroadcast = Callable[[str, dict[str, Any]], Awaitable[None]]
 SnapshotBuilder = Callable[[str], Awaitable[dict[str, Any]]]
 
@@ -218,7 +216,6 @@ class SupervisorAgent:
         *,
         provider: Any,  # OpenAI-compatible provider
         snapshot_builder: SnapshotBuilder,  # async (sid) -> snapshot dict
-        nudge_queue_push: NudgeQueuePush | None = None,
         broadcast: AlertBroadcast | None = None,
         audit: HintAuditFn | None = None,
         auto_mode_check: Callable[[], bool] | None = None,
@@ -228,7 +225,6 @@ class SupervisorAgent:
     ) -> None:
         self._provider = provider
         self._build_snapshot = snapshot_builder
-        self._push_hint = nudge_queue_push
         self._broadcast = broadcast
         self._audit = audit
         # P6 bugfix 2026-05-14 (live-test): when auto-mode is on, the user
@@ -250,14 +246,6 @@ class SupervisorAgent:
 
         Returns the SupervisorAction even when action=wait (caller may
         inspect for telemetry). Never raises.
-
-        P5-S2 Phase 7: when the snapshot's reason is ``max_iterations``
-        and the LLM returned a wishy-washy ``ask_user`` (or wait), we
-        post-process to a concrete ``nudge`` with a "stop and commit"
-        hint. This unblocks the auto-resume path — orchestrator only
-        auto-spawns on nudge, so silent ask_user means user has to
-        click. For max_iterations specifically, we KNOW what to do
-        (tell the LLM to commit), so skip the popup.
         """
         alert_id = uuid.uuid4().hex
         try:
@@ -276,43 +264,6 @@ class SupervisorAgent:
 
         # Call LLM
         action = await self._call_llm(snap, alert_id=alert_id)
-
-        # max_iterations rescue — bias toward concrete
-        # nudge instead of supervisor's default conservatism. The LLM
-        # already burned 50 turns; what we KNOW it needs to do is commit
-        # to a finish, not ask the user permission to keep grinding.
-        _trigger_reason = (snap.get("reason") or "").strip() if isinstance(snap, dict) else ""
-        if _trigger_reason == "max_iterations" and action.action in ("ask_user", "wait"):
-            logger.info(
-                "supervisor_max_iter_rescue sid=%s original_action=%s",
-                sid,
-                action.action,
-            )
-            action = SupervisorAction(
-                action="nudge",
-                severity="yellow",
-                diagnosis="max_iterations 强制收尾"[:200],
-                hint_for_main_agent=(
-                    "你已经跑了所有可用迭代。立即停止任何新的 tool_call。\n"
-                    "在下一轮回复中：\n"
-                    "1. 用一段话总结你已完成的核心成果（具体说改了什么文件、做了什么测试）。\n"
-                    "2. 把所有未完成的子任务写到 todo_write 留给下次。\n"
-                    "3. 然后必须 stop_reason=end_turn 收尾，不要再调任何工具。"
-                ),
-                user_message="代码模型循环了，我让它强制收尾你之前的成果",
-                suggested_buttons=[],  # auto-resume, no user click needed
-                alert_id=alert_id,
-                raw_action=action.raw_action or action.action,
-            )
-            # Re-dispatch with the new action so audit + broadcast +
-            # nudge_queue all reflect the rescue decision.
-            try:
-                await self._dispatch(sid, action)
-            except Exception as exc:  # noqa: BLE001
-                logger.exception(
-                    "supervisor_max_iter_rescue_dispatch_failed sid=%s err=%s", sid, exc
-                )
-            return action
 
         # Dispatch
         try:
@@ -400,7 +351,7 @@ class SupervisorAgent:
         return _parse_action(content or "", alert_id=alert_id)
 
     async def _dispatch(self, sid: str, action: SupervisorAction) -> None:
-        """Side effects for non-wait actions: push hint, broadcast, audit."""
+        """Side effects for non-wait actions: audit, auto follow-up, broadcast."""
         if action.action == "wait":
             return
 
@@ -436,7 +387,7 @@ class SupervisorAgent:
                     sid,
                     action.alert_id,
                 )
-                # Convert to nudge so hint flows into queue normally.
+                # 转成 nudge，由下面的自动跟进接着推进。
                 action.action = "nudge"
                 _auto_bypassed = True
                 # If no hint was set (LLM only emitted user_message),
@@ -471,23 +422,7 @@ class SupervisorAgent:
             except Exception as exc:  # noqa: BLE001
                 logger.debug("supervisor_audit_failed sid=%s error=%s", sid, exc, exc_info=True)
 
-        # 2. nudge → push hint to queue
-        if action.action == "nudge" and self._push_hint is not None and action.hint_for_main_agent:
-            try:
-                # ``nudge_queue.push`` takes (sid, hint_obj); we pass the
-                # action itself so the queue caller can read alert_id.
-                await self._push_hint(sid, action)
-            except Exception as exc:  # noqa: BLE001
-                logger.warning(
-                    "supervisor_push_hint_failed sid=%s error=%s", sid, exc, exc_info=True
-                )
-
-        # 2b. P6 bugfix 2026-05-14 (live-test): if we converted ask_user
-        # → nudge above (auto mode), proactively spawn a follow-up chat
-        # task. Without this the hint sits in the queue waiting for the
-        # next user message — defeating auto mode. ``auto_followup``
-        # creates the same task ``supervisor_user_choice + _is_continue``
-        # would have, just driven by code instead of a UI click.
+        # 2. 自动模式下 nudge 直接起一轮跟进对话，不等用户点按钮。
         if (
             action.action == "nudge"
             and self._auto_followup is not None

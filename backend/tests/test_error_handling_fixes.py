@@ -70,7 +70,6 @@ async def test_present_error_send_both_failure_sends_fallback():
     context.run_id = "test_run_002"
     context.request_id = "test_request_002"
     context.task_scope_id = "test_scope_002"
-    context.services = {}
 
     # Mock websocket
     context.websocket = MagicMock()

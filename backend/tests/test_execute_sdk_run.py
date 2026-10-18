@@ -720,7 +720,6 @@ def _presentation_context(*, websocket, session_db, root_run_id):
         session_id="race-session",
         text="read the project",
         websocket=websocket,
-        services={},
         config=SimpleNamespace(tools=SimpleNamespace(last_mile=None)),
         messages=[],
         session_db=session_db,

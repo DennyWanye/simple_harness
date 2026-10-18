@@ -56,7 +56,6 @@ _VALID_SERVICES = frozenset(
         "watchdog",  # WatchdogLoop — periodic supervisor scan
         "supervisor",  # SupervisorAgent — LLM-based diagnosis dispatcher
         # --- Self-Healing Harness ------------------------------------------
-        "auto_resume",  # AutoResumeOrchestrator — closes supervisor loop
         "tool_circuit_breaker",  # ToolCircuitBreaker — per-(sid, tool) 3-state breaker
         # --- multi-provider-management ------------------------------------
         "provider_registry",  # LLMProviderRegistry — owns [[llm.providers]] list
@@ -199,7 +198,6 @@ class ServiceContext:
     watchdog: Any | None = None
     supervisor: Any | None = None
     # --- Self-Healing Harness ------------------------------------------
-    auto_resume: Any | None = None
     tool_circuit_breaker: Any | None = None
     # --- multi-provider-management ------------------------------------
     provider_registry: Any | None = None

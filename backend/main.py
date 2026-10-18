@@ -72,7 +72,7 @@ from host.startup_background import (
 
 # isort: split
 from host.startup_supervision import (
-    _startup_auto_resume_and_model_context,
+    _startup_model_context,
     _startup_self_healing,
     _startup_supervisor,
 )
@@ -91,13 +91,13 @@ async def lifespan(app: FastAPI):
     _vw = await _startup_embedder_and_workload_audit()
     await _startup_vector_worker(_sdb, _vw)
     await _startup_curation_image_and_mcp()
-    _heal_cfg = await _startup_self_healing()
+    await _startup_self_healing()
     # supervisor watchdog + LLM agent. Starts after the rest of
     # startup is done so the 30s grace can run while normal startup races
     # finish. Disabled when [supervisor].enabled = false; in that case we
     # skip construction entirely so the asyncio.Task isn't even created.
     await _startup_supervisor()
-    await _startup_auto_resume_and_model_context(_heal_cfg)
+    await _startup_model_context()
     await _startup_desktop_and_realtime_voice(startup_epoch)
     yield
     await _shutdown_runtimes_and_tasks()

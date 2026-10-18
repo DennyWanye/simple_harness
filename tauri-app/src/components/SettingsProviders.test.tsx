@@ -6,8 +6,7 @@
  *
  * The project's vitest environment is `node` (see vitest.config.ts), so
  * we test pure render-related helpers + ws dispatch integration rather
- * than mounting the React tree. This matches the existing convention
- * in AutoResumeBanner.test.tsx / SettingsToggle.test.tsx.
+ * than mounting the React tree.
  *
  * Each test name maps 1-to-1 to the task in
  * openspec/changes/multi-provider-management/tasks.md Phase 4.

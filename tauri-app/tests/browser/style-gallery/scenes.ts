@@ -22,7 +22,7 @@
 //                      ChatMissionCard、ChatMissionNotices、PlanChangePanel、OperationWorkspace、MissionsViewParts、
 //                      liveGraph/MissionProgress 等
 //   scenes-chat.tsx    code-panel/MessageBubble、ArtifactCard、PPTOutlineCard、CodeBlock、InputBar、SlashDropdown、ArgHintBar、
-//                      SlashTestHarness、ConfirmDialog、AutoResumeBanner、SubagentProgressPanel、components/MarkdownMessage、useConfirm
+//                      SlashTestHarness、ConfirmDialog、SubagentProgressPanel、components/MarkdownMessage、useConfirm
 //   scenes-chat-2.tsx  components/workflow/WorkflowProgressGroup、DurableTaskSteps、components/MessageStreamPanel、MessageStreamRows
 //   scenes-chat-3.tsx  components/SessionList、Sidebar、WorkbenchShell、views/ChatView、PrimaryChatView、ArtifactsView、
 //                      primary/PrimaryWorkspaceBindings、App.tsx

@@ -11,7 +11,6 @@
 //   slash-widgets     → code-panel/SlashDropdown.tsx、code-panel/ArgHintBar.tsx
 //   slash-test-harness→ code-panel/SlashTestHarness.tsx（内含 InputBar）
 //   confirm-dialogs   → code-panel/ConfirmDialog.tsx、components/useConfirm.tsx
-//   auto-resume-banner→ code-panel/AutoResumeBanner.tsx
 //   subagent-active / subagent-done → code-panel/SubagentProgressPanel.tsx
 import { useEffect } from "react";
 import "./chat-gallery.css";
@@ -26,12 +25,18 @@ import { ArgHintBar } from "../../../src/code-panel/ArgHintBar";
 import { SlashTestHarness } from "../../../src/code-panel/SlashTestHarness";
 import { ConfirmDialog } from "../../../src/code-panel/ConfirmDialog";
 import { useConfirm } from "../../../src/components/useConfirm";
-import { AutoResumeBanner } from "../../../src/code-panel/AutoResumeBanner";
 import { SubagentProgressPanel } from "../../../src/code-panel/SubagentProgressPanel";
 import { useSubagentStore } from "../../../src/code-panel/subagentStore";
 import { useSessionsStore } from "../../../src/stores/sessionsStore";
 import { noop, noopAsync, useOnce } from "./galleryUtil";
-import { ARTIFACTS, MARKDOWN_RICH, NOW, PPT_HISTORY, PPT_OUTLINE_MD, bubbleMessages } from "./chat-fixtures";
+import {
+  ARTIFACTS,
+  MARKDOWN_RICH,
+  NOW,
+  PPT_HISTORY,
+  PPT_OUTLINE_MD,
+  bubbleMessages,
+} from "./chat-fixtures";
 
 const BUBBLE_SID = "sid-bubbles";
 
@@ -103,8 +108,14 @@ export function MarkdownMessageScene() {
   return (
     <div className="chat-col">
       <MarkdownMessage>{MARKDOWN_RICH}</MarkdownMessage>
-      <MarkdownMessage>{"[file 协议](file:///C:/Users/demo/a.pptx) 与 [盘符路径](C:\\demo\\b.docx) 与 [UNC](\\\\server\\share\\c.md)"}</MarkdownMessage>
-      <CodeBlock language="typescript">{"const answer: number = 42;\nconsole.log(answer);\n"}</CodeBlock>
+      <MarkdownMessage>
+        {
+          "[file 协议](file:///C:/Users/demo/a.pptx) 与 [盘符路径](C:\\demo\\b.docx) 与 [UNC](\\\\server\\share\\c.md)"
+        }
+      </MarkdownMessage>
+      <CodeBlock language="typescript">
+        {"const answer: number = 42;\nconsole.log(answer);\n"}
+      </CodeBlock>
       <CodeBlock>{"纯文本代码块，没有语言标签"}</CodeBlock>
       <div>
         行内：<InlineCode>npm test</InlineCode>
@@ -220,7 +231,11 @@ export function SlashTestHarnessScene() {
 function ConfirmAsker() {
   const [dialog, ask] = useConfirm();
   useEffect(() => {
-    void ask({ title: "卸载 Skill？", message: "卸载后需要重新安装。\n第二行说明。", confirm_label: "卸载" });
+    void ask({
+      title: "卸载 Skill？",
+      message: "卸载后需要重新安装。\n第二行说明。",
+      confirm_label: "卸载",
+    });
   }, [ask]);
   return <>{dialog}</>;
 }
@@ -228,7 +243,13 @@ function ConfirmAsker() {
 export function ConfirmDialogsScene() {
   return (
     <div className="chat-col">
-      <ConfirmDialog title="删除会话？" message="该会话将从历史列表移除。" confirm_label="删除" onConfirm={noop} onCancel={noop} />
+      <ConfirmDialog
+        title="删除会话？"
+        message="该会话将从历史列表移除。"
+        confirm_label="删除"
+        onConfirm={noop}
+        onCancel={noop}
+      />
       <ConfirmDialog
         title="迁移数据目录？"
         message={<b>迁移期间请勿关闭程序。</b>}
@@ -243,39 +264,58 @@ export function ConfirmDialogsScene() {
   );
 }
 
-export function AutoResumeBannerScene() {
-  useOnce(() => {
-    const store = useSessionsStore.getState();
-    store.upsert("ar-sid", { auto_resume_attempts: 1, inflight: true });
-    store.upsert("ar-hidden", { auto_resume_attempts: 0, inflight: false });
-    useSessionsStore.setState({ active_sid: "ar-sid" });
-  });
-  return (
-    <div className="chat-col">
-      <AutoResumeBanner />
-      <AutoResumeBanner sessionId="ar-sid" maxAttempts={3} />
-      <AutoResumeBanner sessionId="ar-hidden" />
-    </div>
-  );
-}
-
 function seedSubagents(active: boolean) {
   const runs = active
     ? [
-        { run_id: "r1", task_id: "调研：行业现状", kind: "research", status: "running", ts: NOW - 42_000 },
+        {
+          run_id: "r1",
+          task_id: "调研：行业现状",
+          kind: "research",
+          status: "running",
+          ts: NOW - 42_000,
+        },
         { run_id: "r2", task_id: "", kind: "code", status: "queued", ts: NOW - 30_000 },
-        { run_id: "r3", task_id: "汇总数据", kind: "unknown_kind", status: "completed", ts: NOW - 20_000 },
+        {
+          run_id: "r3",
+          task_id: "汇总数据",
+          kind: "unknown_kind",
+          status: "completed",
+          ts: NOW - 20_000,
+        },
         { run_id: "r4", task_id: "失败任务", kind: "", status: "failed", ts: NOW - 10_000 },
-        { run_id: "r5", task_id: "取消任务", kind: "research", status: "failed", reason: "cancelled", ts: NOW - 5_000 },
+        {
+          run_id: "r5",
+          task_id: "取消任务",
+          kind: "research",
+          status: "failed",
+          reason: "cancelled",
+          ts: NOW - 5_000,
+        },
       ]
     : [
-        { run_id: "d1", task_id: "已完成任务一", kind: "research", status: "completed", ts: NOW - 42_000 },
-        { run_id: "d2", task_id: "已完成任务二", kind: "code", status: "completed", ts: NOW - 30_000 },
+        {
+          run_id: "d1",
+          task_id: "已完成任务一",
+          kind: "research",
+          status: "completed",
+          ts: NOW - 42_000,
+        },
+        {
+          run_id: "d2",
+          task_id: "已完成任务二",
+          kind: "code",
+          status: "completed",
+          ts: NOW - 30_000,
+        },
       ];
   const store = useSubagentStore.getState();
   store.clear();
   runs.forEach((run) => store.upsert(run));
-  store.setMetrics(active ? { peak_concurrent: 2, total_queued: 5, total_rejected: 1 } : { peak_concurrent: 2, total_queued: 2, total_rejected: 0 });
+  store.setMetrics(
+    active
+      ? { peak_concurrent: 2, total_queued: 5, total_rejected: 1 }
+      : { peak_concurrent: 2, total_queued: 2, total_rejected: 0 },
+  );
 }
 
 export function SubagentActiveScene() {

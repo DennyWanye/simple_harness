@@ -269,20 +269,6 @@ async def _cc_chat(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
     # 签名未随 SDK 0.1.3 变更），继续走它只会报 identity mismatch。因此
     # 忽略 target_root_run_id/task_scope_id，直接落入下方 fresh run 分支。
 
-    # a fresh user-initiated chat message means
-    # the user has implicitly granted a new auto-resume budget.
-    # Reset the attempts counter so subsequent failures may
-    # auto-resume up to ``max_attempts`` times again. Skipped
-    # for synthetic re-entry texts (`<<supervisor_followup>>`,
-    # `<<auto_resume>>`) so they consume the existing budget.
-    if not (text or "").startswith("<<"):
-        _sa_for_reset = service_context.get("session_activity")
-        if _sa_for_reset is not None:
-            try:
-                await _sa_for_reset.reset_auto_resume_attempts(_msg_sid)
-            except Exception as _ex:  # noqa: BLE001
-                logger.debug("auto_resume_reset_failed sid=%s err=%s", _msg_sid, _ex, exc_info=True)
-
     _chat_task = _launch_product_harness_chat(
         ws,
         text,

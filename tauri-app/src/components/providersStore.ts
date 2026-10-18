@@ -243,5 +243,5 @@ export function dispatchProviderEvent(msg: ProviderEventMessage): void {
   }
 }
 
-/** Test-only alias mirroring AutoResumeBanner's `__test_dispatch` convention. */
+/** 只给测试用的别名。 */
 export const __test_dispatch_provider_event = dispatchProviderEvent;

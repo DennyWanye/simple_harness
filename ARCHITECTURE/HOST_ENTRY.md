@@ -21,9 +21,9 @@
 6. `_startup_embedder_and_workload_audit` → 返回向量工作器
 7. `_startup_vector_worker(会话库, 向量工作器)`
 8. `_startup_curation_image_and_mcp`
-9. `_startup_self_healing` → 返回自愈配置
+9. `_startup_self_healing`（工具熔断与会话活动记录）
 10. `_startup_supervisor`
-11. `_startup_auto_resume_and_model_context(自愈配置)`
+11. `_startup_model_context`
 12. `_startup_desktop_and_realtime_voice(启动纪元)`
 13. `yield`
 14. `_shutdown_runtimes_and_tasks`、`_shutdown_services`
@@ -79,7 +79,7 @@
 | `host/control_sessions.py` | 479 | 控制消息：会话列表、删除、改名、加载消息、项目会话、上下文用量与明细、斜杠命令 |
 | `host/control_settings.py` | 322 | 控制消息：授权模式、发布目录、对话超时、预算、监督开关与选择、调试、提供方连通测试 |
 | `host/growth_authority.py` | 710 | 成长权威：初始化与切换（整段搬家，658 行的初始化函数拆步骤在后面的阶段） |
-| `host/harness_chat.py` | 965 | 产品对话：项目目录解析、预检拦截提交、桌面 SDK 对话、产品对话主流程与超时、对话启动、自动续跑提示 |
+| `host/harness_chat.py` | 965 | 产品对话：项目目录解析、预检拦截提交、桌面 SDK 对话、产品对话主流程与超时、对话启动 |
 | `host/harness_runs.py` | 546 | 产品运行控制：取消运行、权威运行投影、在途子运行判断、决定信号、执行工作流决定、续跑与续跑启动 |
 | `host/history_events.py` | 281 | 历史事件与伴侣收件箱：工作流与伴侣历史事件附加、伴侣收件箱路由绑定与投影结算 |
 | `host/human_memory_ports.py` | 326 | 人类记忆宿主端口与终端操作审计激活、未完成提供方对账 |
@@ -106,7 +106,7 @@
 | `host/shutdown.py` | 254 | 关闭步骤：运行时与后台任务、各项服务 |
 | `host/startup_background.py` | 351 | 启动步骤：恢复与技能预热、嵌入与负载审计、向量工作器、整理提示与图片工作器与 MCP |
 | `host/startup_core.py` | 292 | 启动步骤：核心服务与记忆纪元、提供方路由、检索网关与语音引擎、桌面测试桥与实时语音 |
-| `host/startup_supervision.py` | 466 | 启动步骤：工具熔断与会话活跃度、监督 Agent、自动续跑与模型上下文窗口 |
+| `host/startup_supervision.py` | 347 | 启动步骤：工具熔断与会话活跃度、监督 Agent、模型上下文窗口 |
 | `host/startup_workflows.py` | 1460 | 启动步骤：会话库检查与工作流服务接线 |
 | `host/state.py` | 60 | 宿主进程的运行期单例：启动时创建，关闭时清空。 |
 | `host/stores_bootstrap.py` | 146 | 会话与存储的启动装配：会话账本、各存储的模块级占位、技能加载与托管技能投影、项目绑定与会话创建服务、基础 Agent。 |
@@ -223,7 +223,6 @@
 | `_dispatch_companion_action_command` | `host/companion_services.py` |
 | `_dispatch_control_message` | `host/control_channel.py` |
 | `_emit_context_usage` | `host/context_usage.py` |
-| `_enqueue_auto_resume_hint` | `host/harness_chat.py` |
 | `_ensure_companion_inbox_route` | `host/history_events.py` |
 | `_ensure_evidence_ingress` | `host/sdk_services.py` |
 | `_ensure_foreground_effect_gate` | `host/sdk_services.py` |
@@ -341,11 +340,11 @@
 | `_sql_latest_task_snapshot` | `host/summary_quality.py` |
 | `_sql_user_is_confused` | `host/summary_quality.py` |
 | `_StarletteRealtimeSocket` | `host/routes_voice.py` |
-| `_startup_auto_resume_and_model_context` | `host/startup_supervision.py` |
 | `_startup_core_services` | `host/startup_core.py` |
 | `_startup_curation_image_and_mcp` | `host/startup_background.py` |
 | `_startup_desktop_and_realtime_voice` | `host/startup_core.py` |
 | `_startup_embedder_and_workload_audit` | `host/startup_background.py` |
+| `_startup_model_context` | `host/startup_supervision.py` |
 | `_startup_provider_routing` | `host/startup_core.py` |
 | `_startup_restore_and_skill_prewarm` | `host/startup_background.py` |
 | `_startup_search_and_voice` | `host/startup_core.py` |

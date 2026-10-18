@@ -1,11 +1,9 @@
-"""启动步骤：工具熔断与会话活跃度、监督 Agent、自动续跑与模型上下文窗口"""
+"""启动步骤：工具熔断与会话活跃度、监督 Agent、模型上下文窗口"""
 
 from __future__ import annotations
 
 import time as _t
 
-from agent.auto_resume import AutoResumeOrchestrator as _AROrch
-from agent.auto_resume import DeterministicResumePolicy as _DetPolicy
 from agent.circuit_breaker import ToolCircuitBreaker as _ToolBreaker
 from agent.session_activity import default_store as _sa_default_store
 from agent.snapshot import build_snapshot as _build_snap_func
@@ -23,11 +21,10 @@ from host.state import host_state
 from host.tools_bootstrap import deskpet_tool_registry_v2, permission_gate_v2
 
 
-async def _startup_self_healing() -> Any:
+async def _startup_self_healing() -> None:
     """启动：工具熔断与会话活跃度。"""
-    # NEXT-TG-1.0 §9：工具熔断与自动续跑不再挂在监工开关下（用户关了监工 Agent，
-    # 但这两项是确定性的自我修复，应当照常工作）。开关在 [self_healing]，默认开；
-    # 阈值等旧参数仍从 [supervisor] 读，写在 [self_healing] 的优先。
+    # 工具熔断不挂在监工开关下（监工 Agent 关着它也照常工作）。开关在 [self_healing]，默认开；
+    # 阈值等参数也可写在 [supervisor]，写在 [self_healing] 的优先。
     _sup_cfg_all = (config.raw.get("supervisor") if hasattr(config, "raw") else None) or {}
     _heal_cfg = {
         **_sup_cfg_all,
@@ -50,11 +47,9 @@ async def _startup_self_healing() -> Any:
         except Exception as _exc:  # noqa: BLE001
             logger.warning("p5s2_circuit_breaker_wire_failed err=%s", _exc, exc_info=True)
 
-    # 会话活动记录：自动续跑按会话计次（上限 max_auto_resume_attempts）、
-    # 监工看门狗读会话状态都靠它；监工开关与它无关，总是注册。
+    # 会话活动记录：运行状态与监工看门狗都读它；监工开关与它无关，总是注册。
     if service_context.get("session_activity") is None:
         service_context.register("session_activity", _sa_default_store())
-    return _heal_cfg
 
 
 async def _startup_supervisor() -> None:
@@ -190,13 +185,7 @@ async def _startup_supervisor() -> None:
                     return False
 
             async def _supervisor_auto_followup(sid: str, trigger_text: str) -> None:
-                # Spawn a chat task with the synthetic trigger text. We
-                # look up the most recent control WS for this sid and
-                # use the registered re-dispatcher closure (set by chat
-                # handler each user turn through the durable Harness ingress).
-                # If no dispatcher is registered yet, we silently no-op
-                # — the queued hint will be consumed when the user (or
-                # auto_resume) next pokes the agent.
+                # 用合成触发文字在这个会话的控制连接上起一轮对话；没有连接就不做。
                 _target_ws = _control_connections.get(sid)
                 if _target_ws is None:
                     # Fall back to ANY control WS — supervisor alerts are
@@ -337,85 +326,8 @@ async def _startup_supervisor() -> None:
         logger.warning("p5_supervisor_watchdog_start_failed", error=str(exc), exc_info=True)
 
 
-async def _startup_auto_resume_and_model_context(_heal_cfg: Any) -> None:
-    """启动：自动续跑编排、默认模型上下文窗口解析。"""
-    # AutoResumeOrchestrator — closes the
-    # supervisor → main-agent loop. When the chat handler hits
-    # max_iterations / circuit_open / permanent_tool_error /
-    # hallucination, it forwards to ``orchestrator.handle_failure``;
-    # the orchestrator asks supervisor for a hint and (if action
-    # is ``nudge``) automatically spawns a fresh chat task on the
-    # same sid via the per-sid re-dispatcher closure populated
-    # by the chat handler itself.
-    try:
-        # Dispatcher closure: orchestrator passes (sid, msgs)
-        # where ``msgs`` ends in a system msg with the supervisor
-        # hint. Production trampoline: call the per-sid re-dispatcher with the
-        # synthetic trigger ``<<auto_resume>>`` so a fresh run starts.
-        async def _resume_through_harness(_sid: str, _msgs: list[dict]) -> None:
-            _ws_for_sid = _control_connections.get(_sid) or _control_connections.get("default")
-            if _ws_for_sid is None:
-                logger.warning("auto_resume_no_transport sid=%s", _sid)
-                return
-            try:
-                _launch_product_harness_chat(_ws_for_sid, "<<auto_resume>>", _sid)
-            except Exception as _ex:  # noqa: BLE001
-                logger.warning(
-                    "auto_resume_redispatch_failed sid=%s err=%s", _sid, _ex, exc_info=True
-                )
-
-        # ws emitter — broadcast auto_resume_* events to all control conns.
-        async def _auto_resume_emit(_typ: str, _payload: dict) -> None:
-            if not _control_connections:
-                return
-            _msg = {"type": _typ, "payload": _payload}
-            for _sid_key, _ws_obj in list(_control_connections.items()):
-                try:
-                    await _ws_obj.send_json(_msg)
-                except Exception as _bex:
-                    logger.debug(
-                        "auto_resume_emit_failed sid=%s err=%s", _sid_key, _bex, exc_info=True
-                    )
-
-        # Audit writer — bridge to SessionDB.append_supervisor_hint.
-        async def _auto_resume_audit(_record: dict) -> None:
-            _sdb = service_context.get("session_db")
-            if _sdb is None:
-                return
-            try:
-                await _sdb.append_supervisor_hint(
-                    session_id=_record.get("session_id", ""),
-                    alert_id=_record.get("alert_id", ""),
-                    hint_text=_record.get("hint_text", ""),
-                    action=_record.get("action", "auto_resumed"),
-                    severity=_record.get("severity", "yellow"),
-                    diagnosis=_record.get("diagnosis", ""),
-                )
-            except Exception as _ex:  # noqa: BLE001
-                logger.debug("auto_resume_audit_failed err=%s", _ex, exc_info=True)
-
-        # 监工开着就让监工模型给提示；关着用按失败原因的固定提示（不调模型）
-
-        _resume_policy = service_context.get("supervisor") or _DetPolicy()
-        _orch = _AROrch(
-            supervisor=_resume_policy,
-            chat_dispatcher=_resume_through_harness,
-            activity_store=service_context.get("session_activity"),
-            max_attempts=int(_heal_cfg.get("max_auto_resume_attempts", 2)),
-            enabled=bool(_heal_cfg.get("auto_resume_enabled", True)),
-            ws_emitter=_auto_resume_emit,
-            audit_writer=_auto_resume_audit,
-        )
-        service_context.register("auto_resume", _orch)
-        logger.info(
-            "p5s2_auto_resume_started enabled=%s max_attempts=%d policy=%s",
-            _orch._enabled,
-            _orch.max_attempts,
-            type(_resume_policy).__name__,
-        )
-    except Exception as _exc:  # noqa: BLE001
-        logger.warning("p5s2_auto_resume_start_failed err=%s", _exc, exc_info=True)
-
+async def _startup_model_context() -> None:
+    """启动：默认模型上下文窗口解析。"""
     # Phase 1.1.5 — 启动落一行 model_context_resolved，让用户/日志一眼
     # 看到当前默认模型解析出的有效窗口 + 来源链。每次 chat 会话另会按
     # session 的实际 model + project_root 再 resolve（resolve() 自带日志）。

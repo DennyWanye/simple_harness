@@ -781,7 +781,6 @@ def _build_turn_presentation(st: _HarnessChatState) -> None:
         session_id=st.session_id,
         text=st.text,
         websocket=st.websocket,
-        services=service_context,
         config=config,
         messages=[],
         session_db=st.session_db,

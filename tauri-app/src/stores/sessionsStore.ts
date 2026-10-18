@@ -62,7 +62,6 @@ const blank_session = (sid: string): SessionState => ({
   supervisor_severity: "green",
   supervisor_alert: null,
   supervisor_inbox: [],
-  auto_resume_attempts: 0,
   // multi-provider-management Phase 5: default = no binding ⇒ "Global Chain".
   provider_id: null,
   preferred_model: null,

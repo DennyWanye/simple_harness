@@ -146,7 +146,6 @@ def _restore_sdk_delivery_route(record: Any, start: Mapping[str, Any], session_d
         session_id=session_id,
         text=text,
         websocket=websocket,
-        services=service_context,
         config=config,
         messages=[],
         session_db=session_db,

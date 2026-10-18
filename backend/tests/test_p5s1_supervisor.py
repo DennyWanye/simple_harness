@@ -10,7 +10,6 @@ import json
 from typing import Any
 
 import pytest
-from agent.nudge_queue import Hint, NudgeQueue
 from agent.supervisor import (
     SupervisorAction,
     SupervisorAgent,
@@ -168,12 +167,6 @@ async def _empty_snapshot_builder(sid: str) -> dict[str, Any]:
 
 @pytest.mark.asyncio
 async def test_diagnose_wait_no_dispatch():
-    nq = NudgeQueue()
-    pushed: list = []
-
-    async def push(sid, hint):
-        pushed.append((sid, hint))
-
     broadcast: list = []
 
     async def bc(typ, payload):
@@ -187,14 +180,12 @@ async def test_diagnose_wait_no_dispatch():
     agent = SupervisorAgent(
         provider=_FakeProvider(response={"content": '{"action":"wait","severity":"green"}'}),
         snapshot_builder=_stub_snapshot_builder,
-        nudge_queue_push=push,
         broadcast=bc,
         audit=audit_fn,
     )
     a = await agent.diagnose("sid-A")
     assert a.action == "wait"
     # NO side effects on wait
-    assert pushed == []
     assert broadcast == []
     assert audit == []
 
@@ -211,13 +202,8 @@ async def test_diagnose_nudge_full_dispatch():
             "suggested_buttons": ["go", "stop"],
         }
     )
-    nq = NudgeQueue()
-    pushed: list = []
     broadcast: list = []
     audit: list = []
-
-    async def push(sid, h):
-        pushed.append((sid, h))
 
     async def bc(typ, p):
         broadcast.append((typ, p))
@@ -228,15 +214,12 @@ async def test_diagnose_nudge_full_dispatch():
     agent = SupervisorAgent(
         provider=_FakeProvider(response={"content": raw}),
         snapshot_builder=_stub_snapshot_builder,
-        nudge_queue_push=push,
         broadcast=bc,
         audit=audit_fn,
     )
     a = await agent.diagnose("sid-A")
     assert a.action == "nudge"
-    assert len(pushed) == 1
-    assert pushed[0][0] == "sid-A"
-    assert pushed[0][1].hint_for_main_agent == "swap mirror"
+    assert a.hint_for_main_agent == "swap mirror"
     # Broadcast fired with right payload
     assert len(broadcast) == 1
     assert broadcast[0][0] == "supervisor_alert"
@@ -280,17 +263,10 @@ async def test_diagnose_llm_error_surfaces_to_user():
 
 @pytest.mark.asyncio
 async def test_diagnose_empty_snapshot_skips():
-    pushed: list = []
-
-    async def push(sid, h):
-        pushed.append((sid, h))
-
     agent = SupervisorAgent(
         provider=_FakeProvider(),
         snapshot_builder=_empty_snapshot_builder,
-        nudge_queue_push=push,
     )
     a = await agent.diagnose("sid-A")
     assert a.action == "wait"
     assert "empty" in a.diagnosis.lower()
-    assert pushed == []

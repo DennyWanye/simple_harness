@@ -240,10 +240,6 @@
    "SessionActivityStore"
   ],
   [
-   "auto_resume",
-   "AutoResumeOrchestrator"
-  ],
-  [
    "project_skill_install_settings_authorizer",
    "SettingsSkillInstallAuthorizerFactory"
   ],
@@ -517,7 +513,6 @@
   "agent_engine": "ToolUsingAgent",
   "asr_engine": null,
   "authorization_runtime": "PreparedAuthorizationRuntime",
-  "auto_resume": "AutoResumeOrchestrator",
   "billing_ledger": "BillingLedger",
   "capability_builder_host": "CapabilityBuilderHost",
   "capability_center": "CapabilityCenterService",

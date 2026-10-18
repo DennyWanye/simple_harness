@@ -40,7 +40,6 @@ function resetStore() {
         supervisor_severity: "green",
         supervisor_alert: null,
         supervisor_inbox: [],
-        auto_resume_attempts: 0,
         provider_id: null,
         preferred_model: null,
         model_params: null,

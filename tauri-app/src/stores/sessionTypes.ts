@@ -296,11 +296,6 @@ export interface SessionState {
    * Lives in the session so jumping to a session shows its history.
    * Cleared on dismiss / handle. */
   supervisor_inbox?: SupervisorAlertEntry[];
-  // 自愈尝试计数。0 = 未在自愈中；>0 表示
-  // backend AutoResumeOrchestrator 正在第 N 次尝试。
-  // ws.ts 收到 auto_resume_started 时设为 attempt 值；
-  // succeeded / exhausted 时归 0。AutoResumeBanner 订阅此字段。
-  auto_resume_attempts?: number;
   // multi-provider-management Phase 5: per-session provider binding.
   // `provider_id == null` 表示走全局 chain；非空时表示 pin 到某 provider。
   // `preferred_model` 可选 model 覆盖，独立于 provider 选择。

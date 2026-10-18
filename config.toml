@@ -193,11 +193,9 @@ enabled = false
 # the watchdog tick rate; stuck_threshold_seconds is the inactivity
 # trigger; max_hints_per_session caps queued supervisor hints to prevent
 # context bloat.
-# NEXT-TG-1.0 §9：工具熔断与自动续跑独立于监工 Agent（监工关着它们也工作）。
-# 监工关闭时，自动续跑按失败原因给固定提示，不调模型；阈值与次数仍可写在 [supervisor]。
+# 工具熔断独立于监工 Agent（监工关着它也工作）；阈值也可写在 [supervisor]。
 [self_healing]
 circuit_breaker_enabled = true
-auto_resume_enabled = true
 
 [supervisor]
 enabled = false
@@ -213,18 +211,6 @@ llm_provider = "default"
 # Hard timeout per supervisor LLM call. 30s tracks the spec — anything
 # longer and the supervisor itself is suspect.
 llm_timeout_seconds = 30
-
-# ─── P5-S2: self-healing harness knobs ───────────────────────────────
-# When `auto_resume_enabled = true`, the AutoResumeOrchestrator closes
-# the supervisor → main-agent loop: on max_iterations / circuit_open /
-# permanent_tool_error / hallucination, it asks the supervisor for a
-# hint and (if action=nudge) automatically spawns a fresh chat task on
-# the same sid — no user click required. Capped by
-# `max_auto_resume_attempts` per user-initiated turn (counter resets on
-# the next user message). Set false to fall through to the P5-S1 popup
-# path.
-auto_resume_enabled = true
-max_auto_resume_attempts = 2
 
 # Per-(session, tool) circuit breaker (CLOSED → OPEN → HALF_OPEN). The
 # tool registry checks `can_call(sid, name)` before every dispatch and

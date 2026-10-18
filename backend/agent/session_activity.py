@@ -6,7 +6,7 @@
 纯数据，不做 I/O，不调 LLM。``host/startup_supervision.py`` 把默认实例注册为
 ``session_activity`` 服务；``deskpet/agent/run_presenter.py`` 投影运行事件时写入，
 ``deskpet/agent/product_domain_sink.py`` 把会话置为空闲；``agent/watchdog.py``、
-``agent/auto_resume.py``、``agent/snapshot.py`` 读取。
+``agent/snapshot.py`` 读取。
 
 Design notes:
 - in-memory only (rebuilt on backend restart); Code-mode session state
@@ -98,11 +98,6 @@ class SessionActivity:
     # Set True when a chat_v2_error was emitted; cleared by the watchdog
     # when it scans this sid (prevents repeat-firing on the same error).
     error_pending_supervisor: bool = False
-    # how many times the AutoResumeOrchestrator has spawned
-    # a fresh chat task for this sid since the last user-initiated turn.
-    # Reset to 0 by main.py on user message arrival; capped by
-    # ``[supervisor].max_auto_resume_attempts`` (default 2).
-    auto_resume_attempts: int = 0
     # Last sig signature seen (for "consecutive only" reset).
     _last_sig: str = ""
 
@@ -219,35 +214,6 @@ class SessionActivityStore:
     async def drop(self, sid: str) -> None:
         async with self._lock:
             self._states.pop(sid, None)
-
-    # ─── auto-resume attempt counter ───────────────────
-
-    async def increment_auto_resume_attempts(self, sid: str) -> int:
-        """Bump the auto-resume attempt counter for sid.
-
-        Returns the new counter value. Auto-creates a SessionActivity
-        entry if missing (orchestrator should never lose count just
-        because the WS forwarder hasn't seen any events yet).
-        """
-        async with self._lock:
-            sa = self._states.get(sid)
-            if sa is None:
-                sa = SessionActivity(session_id=sid)
-                self._states[sid] = sa
-            sa.auto_resume_attempts += 1
-            return sa.auto_resume_attempts
-
-    async def reset_auto_resume_attempts(self, sid: str) -> None:
-        """Reset the auto-resume attempt counter for sid back to 0.
-
-        Called by main.py when a fresh user chat message arrives — the
-        user implicitly granted a new auto-resume budget. No-op when sid
-        has no SessionActivity yet.
-        """
-        async with self._lock:
-            sa = self._states.get(sid)
-            if sa is not None:
-                sa.auto_resume_attempts = 0
 
     async def get(self, sid: str) -> SessionActivity | None:
         async with self._lock:

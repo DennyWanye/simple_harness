@@ -71,12 +71,21 @@ SCOPES = (
 
 _CURRENT_SYMBOLS = {
     "_run_chat": "_run_product_harness_chat",
-    "_auto_resume_dispatch": "_resume_through_harness",
 }
+# 已删除的能力在当前代码里没有对应符号：技能固化、自愈（2026-10-18 整条删除）
+_RETIRED_SYMBOLS = frozenset(
+    {
+        "_maybe_codify_skill",
+        "_auto_resume_dispatch",
+        "_auto_resume_emit",
+        "_auto_resume_audit",
+        "AutoResumeOrchestrator",
+    }
+)
 CURRENT_SCOPES = tuple(
     Scope(scope.path, _CURRENT_SYMBOLS.get(scope.symbol, scope.symbol))
     for scope in SCOPES
-    if scope.symbol != "_maybe_codify_skill"
+    if scope.symbol not in _RETIRED_SYMBOLS
 ) + (
     Scope("backend/deskpet/agent/turn_preparer.py", "ProductTurnPreparer"),
     Scope("backend/deskpet/agent/run_presenter.py", "RunPresenter"),
@@ -97,7 +106,7 @@ CURRENT_SCOPES = tuple(
     Scope("backend/deskpet/agent/product_domain_sink.py", "LegacyProductDomainSink"),
 )
 
-RETIRED_CAPABILITIES = frozenset({"skill.codify"})
+RETIRED_CAPABILITIES = frozenset({"skill.codify", "auto_resume"})
 
 
 CAPABILITIES: dict[str, dict[str, object]] = {
@@ -546,12 +555,12 @@ def build_census(
         validate_dual_send_helper(parsed["backend/deskpet/agent/product_domain_sink.py"][0])
         validate_presenter_dual_send_helper(parsed["backend/deskpet/agent/run_presenter.py"][0])
 
-    auto_roots = _functions(parsed["backend/agent/auto_resume.py"][1], "AutoResumeOrchestrator")
-    param_contracts = {
-        ("backend/main.py", "_auto_resume_emit", "_typ"): _literal_call_arguments(
+    param_contracts = {}
+    if "backend/agent/auto_resume.py" in parsed:  # 只在历史基线里存在
+        auto_roots = _functions(parsed["backend/agent/auto_resume.py"][1], "AutoResumeOrchestrator")
+        param_contracts[("backend/main.py", "_auto_resume_emit", "_typ")] = _literal_call_arguments(
             auto_roots, "_emit", 0
-        ),
-    }
+        )
 
     items: list[dict[str, object]] = []
     sources: list[dict[str, object]] = []

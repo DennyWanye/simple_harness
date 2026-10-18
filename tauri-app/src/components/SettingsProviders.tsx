@@ -10,8 +10,7 @@
  * `getChannel()` (same pattern as the rest of SettingsPanel).
  *
  * Pure helpers below are exported so vitest can test them without
- * needing a DOM — matches the project's existing test convention
- * (see AutoResumeBanner.test.tsx / SettingsToggle.test.tsx).
+ * needing a DOM — matches the project's existing test convention.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {

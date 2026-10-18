@@ -31,7 +31,6 @@ from agent.agent_events import (
     ToolCallEvent,
     ToolResultEvent,
 )
-from agent.auto_resume import is_auto_resume_trigger
 from llm.types import ToolCall
 
 from deskpet.agent.product_domain_sink import ProductDomainSink
@@ -317,7 +316,6 @@ class RunPresentationContext:
     session_id: str
     text: str
     websocket: Any
-    services: Mapping[str, Any]
     config: Any
     messages: list[dict[str, Any]]
     session_db: Any | None
@@ -898,95 +896,55 @@ async def _present_final(
             error_type=type(exc).__name__,
             exc_info=True,
         )
-    try:
-        activity = context.services.get("session_activity")
-        if activity is not None:
-            snapshot = await activity.get(context.session_id)
-            if snapshot is not None and snapshot.auto_resume_attempts > 0:
-                await context.websocket.send_json(
-                    {
-                        "type": "auto_resume_succeeded",
-                        "payload": {
-                            "session_id": context.session_id,
-                            "attempts": snapshot.auto_resume_attempts,
-                        },
-                    }
-                )
-    except Exception as exc:
-        logger.debug(
-            "auto_resume_success_emit_failed", sid=context.session_id, error=str(exc), exc_info=True
-        )
 
 
 async def _present_error(
     event: AgentEvent, context: RunPresentationContext, state: PresentationState
 ) -> None:
     assert isinstance(event, ErrorEvent)
-    handled = False
     try:
-        if is_auto_resume_trigger(event.reason or ""):
-            orchestrator = context.services.get("auto_resume")
-            if orchestrator is not None:
-                result = await orchestrator.handle_failure(
-                    context.session_id,
-                    event.reason or "",
+        await _send_both(
+            context,
+            {
+                "type": "chat_v2_error",
+                "payload": _task_payload(
+                    context,
                     {
-                        "session_id": context.session_id,
                         "reason": event.reason,
                         "detail": event.detail,
-                        "iteration": event.iteration,
+                        "error_class": event.error_class or "",
+                        "retract_all_provisional": True,
                     },
-                    context.messages,
-                )
-                handled = result.action in {"spawned", "exhausted"}
-    except Exception as exc:
-        logger.debug(
-            "auto_resume_handle_failed", sid=context.session_id, error=str(exc), exc_info=True
+                ),
+            },
         )
-    if not handled:
+    except Exception as exc:
+        logger.error(
+            "run_presenter_error_delivery_failed_CRITICAL",
+            session_id=context.session_id,
+            run_id=context.run_id,
+            request_id=context.request_id,
+            error_type=type(exc).__name__,
+            error=str(exc),
+            exc_info=True,
+        )
+        # Last resort: try raw WebSocket send
         try:
-            await _send_both(
-                context,
+            await context.websocket.send_json(
                 {
                     "type": "chat_v2_error",
-                    "payload": _task_payload(
-                        context,
-                        {
-                            "reason": event.reason,
-                            "detail": event.detail,
-                            "error_class": event.error_class or "",
-                            "retract_all_provisional": True,
-                        },
-                    ),
-                },
+                    "payload": {
+                        "session_id": context.session_id,
+                        "request_id": context.request_id,
+                        "run_id": context.run_id,
+                        "task_scope_id": getattr(context, "task_scope_id", None),
+                        "reason": event.reason or "unknown",
+                        "detail": event.detail or "Error delivery failed",
+                    },
+                }
             )
-        except Exception as exc:
-            logger.error(
-                "run_presenter_error_delivery_failed_CRITICAL",
-                session_id=context.session_id,
-                run_id=context.run_id,
-                request_id=context.request_id,
-                error_type=type(exc).__name__,
-                error=str(exc),
-                exc_info=True,
-            )
-            # Last resort: try raw WebSocket send
-            try:
-                await context.websocket.send_json(
-                    {
-                        "type": "chat_v2_error",
-                        "payload": {
-                            "session_id": context.session_id,
-                            "request_id": context.request_id,
-                            "run_id": context.run_id,
-                            "task_scope_id": getattr(context, "task_scope_id", None),
-                            "reason": event.reason or "unknown",
-                            "detail": event.detail or "Error delivery failed",
-                        },
-                    }
-                )
-            except Exception:  # noqa: BLE001 - 兜底错误帧也发不出去时由健康检查恢复
-                logger.warning("error_delivery_fallback_failed", exc_info=True)
+        except Exception:  # noqa: BLE001 - 兜底错误帧也发不出去时由健康检查恢复
+            logger.warning("error_delivery_fallback_failed", exc_info=True)
 
 
 async def _present_compacted(

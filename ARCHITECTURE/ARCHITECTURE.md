@@ -1028,7 +1028,7 @@ The UI interactions are genuine Human-in-the-loop, but the suspension mechanism 
 Recovery is reactive:
 
 - Session messages, goals, todos, plans, artifacts and receipts survive restart.
-- `AutoResumeOrchestrator` classifies selected `ErrorEvent` reasons, asks the supervisor for a nudge, then dispatches a new chat run.
+- Run failures are reported to the user as `chat_v2_error`; the automatic resume path (`AutoResumeOrchestrator`) was removed on 2026-10-18.
 - Supervisor follow-up can enqueue another synthetic turn.
 - Tool circuit breakers, termination gates and convergence controls stop local failure loops.
 - A new message for the same session cancels the previous chat task, but cancellation does not guarantee that threadpool-backed side effects have stopped.

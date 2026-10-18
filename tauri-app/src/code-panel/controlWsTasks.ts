@@ -374,62 +374,6 @@ export function onExternalWaitRequest(
   }
 }
 
-export function onAutoResumeStarted(
-  msg: ControlWireMessage,
-  store: SessionsStore,
-  sid: string,
-): void {
-  // backend's AutoResumeOrchestrator started a self-healing
-  // attempt for this session. Bump auto_resume_attempts so AutoResumeBanner
-  // shows "🔄 agent 自愈中... (尝试 N/2)".
-  const p = msg.payload || {};
-  const target = p.session_id || sid;
-  const attempt = typeof p.attempt === "number" ? p.attempt : 1;
-  store.ensure(target);
-  store.upsert(target, {
-    auto_resume_attempts: attempt,
-    inflight: true,
-    status: "running",
-  });
-}
-
-export function onAutoResumeSucceeded(
-  msg: ControlWireMessage,
-  store: SessionsStore,
-  sid: string,
-): void {
-  // orchestrator landed a final response. Reset counter so
-  // banner dismisses; the regular chat_v2_final (which fires alongside)
-  // will handle status/inflight cleanup.
-  const p = msg.payload || {};
-  const target = p.session_id || sid;
-  store.upsert(target, { auto_resume_attempts: 0 });
-}
-
-export function onAutoResumeExhausted(
-  msg: ControlWireMessage,
-  store: SessionsStore,
-  sid: string,
-): void {
-  // orchestrator gave up after max_attempts. Reset counter,
-  // surface a red error message so the user sees what failed (mirrors
-  // chat_v2_error semantics — supervisor_alert popup may also fire from a
-  // separate ws message; here we just guarantee an error bubble lands).
-  const p = msg.payload || {};
-  const target = p.session_id || sid;
-  const final_error = String(p.final_error ?? "auto-resume exhausted");
-  const attempts_n = typeof p.attempts === "number" ? p.attempts : 0;
-  store.upsert(target, {
-    auto_resume_attempts: 0,
-    status: "error",
-    inflight: false,
-  });
-  store.push_message(target, {
-    role: "error",
-    text: `自愈失败（${attempts_n} 次尝试）: ${final_error}`,
-  });
-}
-
 export function onSupervisorAlert(
   msg: ControlWireMessage,
   store: SessionsStore,

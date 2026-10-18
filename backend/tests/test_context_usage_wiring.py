@@ -384,7 +384,6 @@ async def test_compaction_producer_uses_exact_lineage_and_real_window():
         session_id="session-c",
         text="",
         websocket=ws,
-        services={},
         config=object(),
         messages=[],
         session_db=db,
