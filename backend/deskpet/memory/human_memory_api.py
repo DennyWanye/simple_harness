@@ -20,14 +20,8 @@ from deskpet.memory.human_memory_service import (
     ExactControlRunRequest,
     HumanMemoryHostServiceError,
     HumanMemoryHostServiceFactory,
-    ListEvidenceGroupsRequest,
-    ListTaskScopesRequest,
     MutateTaskScopeRequest,
-    OpenTaskScopeRequest,
     QueueTurnRequest,
-    ReadEvidencePageRequest,
-    ReadTaskScopeViewRequest,
-    SearchTaskScopesRequest,
 )
 from deskpet.memory.primary_read_model import PrimaryReadError
 from deskpet.memory.primary_workspace_bindings import IDENTITY_FIELDS
@@ -36,7 +30,7 @@ from deskpet.memory.writer_fence import human_memory_request_boundary
 HUMAN_MEMORY_COMMAND = "human_memory_request"
 # 2026-09-10：认知记忆审计（``primary.audit.*``）与认知记忆读写
 # （``primary.memory.list/graph/forget``）随记忆 SDK 一并下线；本适配器不再
-# 受理这两族操作，未知 operation 走既有的 ``human_memory_unknown_operation``。
+# 受理这两族操作，未知 operation 回 ``human_memory_operation_unavailable``。
 _AUTHORITY_FIELDS = frozenset(
     {
         "subject",
@@ -243,67 +237,6 @@ async def _dispatch(  # type: ignore[no-untyped-def]
                 str(request["title"]),
                 str(request["goal"]),
                 request_id,
-            )
-        )
-    if operation == "task_scope.search":
-        return await service.search_task_scopes(
-            SearchTaskScopesRequest(
-                str(request["query"]),
-                int(request.get("max_candidates", 8)),
-                None if request.get("cursor") is None else str(request["cursor"]),
-            )
-        )
-    if operation == "task_scope.list":
-        if not set(request) <= {"limit", "cursor"}:
-            raise HumanMemoryHostServiceError("human_memory_request_invalid")
-        limit, cursor = request.get("limit", 20), request.get("cursor")
-        if (
-            isinstance(limit, bool)
-            or not isinstance(limit, int)
-            or (cursor is not None and not isinstance(cursor, str))
-        ):
-            raise HumanMemoryHostServiceError("human_memory_request_invalid")
-        try:
-            return await service.list_task_scopes(ListTaskScopesRequest(limit, cursor))
-        except (TypeError, ValueError) as exc:
-            raise HumanMemoryHostServiceError("human_memory_request_invalid") from exc
-    if operation == "task_scope.open_exact":
-        # The public HUMAN channel never accepts a client-reported live_probe:
-        # freshness evidence is the Host's to produce, not the UI's to assert.
-        if not set(request) <= {"scope_ref", "expected_source_hash"}:
-            raise HumanMemoryHostServiceError("human_memory_request_invalid")
-        return await service.open_task_scope(
-            OpenTaskScopeRequest(
-                str(request["scope_ref"]),
-                None,
-                None
-                if request.get("expected_source_hash") is None
-                else str(request["expected_source_hash"]),
-            )
-        )
-    if operation == "task_scope.view":
-        return await service.read_view(
-            ReadTaskScopeViewRequest(str(request["scope_ref"]), str(request["kind"]))
-        )
-    if operation == "task_scope.evidence_groups":
-        return await service.list_evidence_groups(
-            ListEvidenceGroupsRequest(
-                scope_ref=str(request["scope_ref"]),
-                source_ref=str(request["source_ref"]),
-                source_hash=str(request["source_hash"]),
-                cursor=None if request.get("cursor") is None else str(request["cursor"]),
-                limit=int(request.get("limit", 8)),
-            )
-        )
-    if operation == "task_scope.evidence_page":
-        return await service.read_evidence_page(
-            ReadEvidencePageRequest(
-                scope_ref=str(request["scope_ref"]),
-                source_ref=str(request["source_ref"]),
-                source_hash=str(request["source_hash"]),
-                group_ref=str(request["group_ref"]),
-                group_hash=str(request["group_hash"]),
-                cursor=None if request.get("cursor") is None else str(request["cursor"]),
             )
         )
     if operation == "task_scope.mutate":

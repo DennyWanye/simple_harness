@@ -20,7 +20,7 @@
 //                      PlanningAuthorization、ActionApprovalSummary、MissionSources、MissionAssurance、MissionDiagnostics）
 //   scenes-mis-2.tsx   views/MissionsView、MissionListAside、MissionCreateForm、PublishCriterionHelper、MissionSources、
 //                      ChatMissionCard、ChatMissionNotices、PlanChangePanel、OperationWorkspace、MissionsViewParts、
-//                      liveGraph/MissionProgress、components/PrimaryTaskPanel 等
+//                      liveGraph/MissionProgress 等
 //   scenes-chat.tsx    code-panel/MessageBubble、ArtifactCard、PPTOutlineCard、CodeBlock、InputBar、SlashDropdown、ArgHintBar、
 //                      SlashTestHarness、ConfirmDialog、AutoResumeBanner、SubagentProgressPanel、components/MarkdownMessage、useConfirm
 //   scenes-chat-2.tsx  components/workflow/WorkflowProgressGroup、DurableTaskSteps、components/MessageStreamPanel、MessageStreamRows

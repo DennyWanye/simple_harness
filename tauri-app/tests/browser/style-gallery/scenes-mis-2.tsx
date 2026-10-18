@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 DennyWanye
 // SPDX-License-Identifier: BUSL-1.1
 
-// 任务编排车道（mis）：任务页外壳、列表、新建表单、资料、对话卡片、任务范围与零件场景。
+// 任务编排车道（mis）：任务页外壳、列表、新建表单、资料、对话卡片与零件场景。
 //   missions-view              src/views/MissionsView.tsx（可用：列表+错误条，无选中）+ MissionListAside.tsx（后台出错提示/列表读取出错/
 //                              各种状态行/策略漂移）+ liveGraph/MissionProgress.tsx
 //   missions-view-unavailable  src/views/MissionsView.tsx（编排服务不可用）
@@ -12,22 +12,26 @@
 //   chat-mission-card          src/views/ChatMissionCard.tsx（待确认+步骤+问题+各类审批+已发布、失败、已完成、读取失败、连接未就绪、未知状态）
 //                              + OperationWorkspace.tsx + PlanningQuestions.tsx + ActionApprovalSummary.tsx
 //   chat-mission-notices       src/views/ChatMissionNotices.tsx（5 条通知只显示最新 3 条+全部已收到、格式错误提示）
-//   primary-task-panel         src/components/PrimaryTaskPanel.tsx（候选+最近任务+已打开+四个视图+证据分组与证据页；漂移/空结果；
-//                              无漂移/无标题候选；状态不可读；打开出错；等待身份确认）
 //   plan-change-panel          src/views/PlanChangePanel.tsx（卡住的改计划+被挡通知；已过期（读取失败/数据格式不对）；无内容）
 //   operation-workspace        src/views/OperationWorkspace.tsx（等待要求、待确认多目标/单目标、只读无完成标准、已确认内容/效果、无通道）
 //   mission-parts              src/views/MissionsViewParts.tsx、ActionApprovalSummary.tsx、PublishCriterionHelper.tsx、
 //                              liveGraph/MissionProgress.tsx、PlanningQuestions.tsx、PlanningAuthorization.tsx、MissionDiagnostics.tsx、
 //                              MissionAssurance.tsx 的独立形态
-import { PrimaryTaskPanel } from "../../../src/components/PrimaryTaskPanel";
-import { useMissionsStore, type MissionRow, type OrchestrationStatus } from "../../../src/stores/missionsStore";
+import {
+  useMissionsStore,
+  type MissionRow,
+  type OrchestrationStatus,
+} from "../../../src/stores/missionsStore";
 import { ActionApprovalSummary } from "../../../src/views/ActionApprovalSummary";
 import { ChatMissionCard } from "../../../src/views/ChatMissionCard";
 import { ChatMissionNotices } from "../../../src/views/ChatMissionNotices";
 import { MissionsChannelContext } from "../../../src/views/chatMission";
 import { MissionProgress } from "../../../src/views/liveGraph/MissionProgress";
 import { MissionAssurance } from "../../../src/views/MissionAssurance";
-import { MissionCreateForm, type MissionCreateFormProps } from "../../../src/views/MissionCreateForm";
+import {
+  MissionCreateForm,
+  type MissionCreateFormProps,
+} from "../../../src/views/MissionCreateForm";
 import { MissionDiagnostics } from "../../../src/views/MissionDiagnostics";
 import { MissionListAside } from "../../../src/views/MissionListAside";
 import { MissionSources, SourceDrafts } from "../../../src/views/MissionSources";
@@ -71,12 +75,15 @@ import {
   misWorkspaceReadonly,
   misWorkspaceWaiting,
 } from "./mis-fixtures";
-import { installTaskScopeDriver, misPrimaryPort } from "./mis-primary";
 
 type Json = Record<string, unknown>;
 const dispatchNoop = noop;
 
-function asideStore(status: OrchestrationStatus | null, missions: MissionRow[], extra: Partial<MissionCreateFormProps["store"]> = {}) {
+function asideStore(
+  status: OrchestrationStatus | null,
+  missions: MissionRow[],
+  extra: Partial<MissionCreateFormProps["store"]> = {},
+) {
   return {
     selectedId: null,
     detail: null,
@@ -103,7 +110,10 @@ export function MissionsViewScene() {
     store.reset();
     store.setStatus(MIS_STATUS);
     store.setMissions(MIS_ROWS);
-    useMissionsStore.setState({ listError: "列表读取失败：收到的数据格式不对", error: "上一次操作失败：连接已变化" });
+    useMissionsStore.setState({
+      listError: "列表读取失败：收到的数据格式不对",
+      error: "上一次操作失败：连接已变化",
+    });
   });
   return (
     <div className="mis-shell">
@@ -237,7 +247,8 @@ export function MissionCreateFormScene() {
             selectedContextId: "ctx-256k",
             selectedContext: ctx256,
             defaultTokenCap: undefined,
-            missingMaterialHint: "目标里提到了参考资料，但还没有附上任何资料；需要的话请在上面「参考资料」里添加",
+            missingMaterialHint:
+              "目标里提到了参考资料，但还没有附上任何资料；需要的话请在上面「参考资料」里添加",
           })}
         />
       </div>
@@ -252,7 +263,8 @@ export function MissionCreateFormScene() {
             selectedContext: undefined,
             defaultTokenCap: undefined,
             submittable: true,
-            missingMaterialHint: "目标里提到了参考资料，但还没有附上任何资料；需要的话请在上面「参考资料」里添加",
+            missingMaterialHint:
+              "目标里提到了参考资料，但还没有附上任何资料；需要的话请在上面「参考资料」里添加",
           })}
         />
       </div>
@@ -268,7 +280,12 @@ export function MissionSourcesScene() {
   return (
     <div className="mis-row">
       <div className="mis-cell">
-        <MissionSources missionId="mission-a" sources={sources} channel={channel} onChanged={noop} />
+        <MissionSources
+          missionId="mission-a"
+          sources={sources}
+          channel={channel}
+          onChanged={noop}
+        />
         <MissionSources missionId="mission-z" sources={[]} channel={null} onChanged={noop} />
       </div>
       <div className="mis-cell">
@@ -278,7 +295,12 @@ export function MissionSourcesScene() {
           fixedPath
           single
         />
-        <SourceDrafts sources={[{ path: "sources/", content: "", kind: "text" }]} onChange={noop} single disabled />
+        <SourceDrafts
+          sources={[{ path: "sources/", content: "", kind: "text" }]}
+          onChange={noop}
+          single
+          disabled
+        />
         <SourceDrafts
           sources={[
             { path: "sources/a.md", content: "第一份", kind: "markdown" },
@@ -327,24 +349,6 @@ export function ChatMissionNoticesScene() {
         <ChatMissionNotices />
       </MissionsChannelContext.Provider>
       <ChatMissionNotices />
-    </div>
-  );
-}
-
-// ---------- 任务范围 ----------
-
-export function PrimaryTaskPanelScene() {
-  useOnce(installTaskScopeDriver);
-  return (
-    <div className="mis-row">
-      {["full", "drift", "clean", "nostatus", "error"].map((name) => (
-        <div className="mis-cell" key={name}>
-          <PrimaryTaskPanel port={misPrimaryPort(name)} primaryRef={name} verifiedOwnerKey="owner:1" ready />
-        </div>
-      ))}
-      <div className="mis-cell">
-        <PrimaryTaskPanel port={misPrimaryPort("none")} primaryRef="none" verifiedOwnerKey={null} ready={false} />
-      </div>
     </div>
   );
 }
@@ -402,20 +406,46 @@ export function MissionPartsScene() {
   return (
     <div className="mis-row">
       <div className="mis-cell">
-        <ActionApprovalSummary summary={{ text: "旧格式摘要（系统）", source: "system" }} action={{ reason: { text: "系统理由", source: "system" } }} />
-        <ActionApprovalSummary summary={{ text: "旧格式摘要（模型）", source: "model" }} action={{ reason: { text: "模型理由" } }} />
+        <ActionApprovalSummary
+          summary={{ text: "旧格式摘要（系统）", source: "system" }}
+          action={{ reason: { text: "系统理由", source: "system" } }}
+        />
+        <ActionApprovalSummary
+          summary={{ text: "旧格式摘要（模型）", source: "model" }}
+          action={{ reason: { text: "模型理由" } }}
+        />
         <ActionApprovalSummary summary={{ text: "旧格式无理由" }} action={{}} />
         <ActionApprovalSummary
-          summary={{ connector: "file_publish", operation: "publish", target: "A.md", params: { artifact_path: "A.md" }, previous_attempt: { outcome: "not_delivered", reason: "内部码" } }}
+          summary={{
+            connector: "file_publish",
+            operation: "publish",
+            target: "A.md",
+            params: { artifact_path: "A.md" },
+            previous_attempt: { outcome: "not_delivered", reason: "内部码" },
+          }}
           action={{ reason: "动作理由", reason_source: "system" }}
         />
         <ActionApprovalSummary
           summary={{ previous_attempt: { outcome: "human_ruled_not_applied" } }}
-          action={{ connector: "mail", operation: "send", target: "boss@example.com", reason: { text: "模型写的理由", source: "model" } }}
+          action={{
+            connector: "mail",
+            operation: "send",
+            target: "boss@example.com",
+            reason: { text: "模型写的理由", source: "model" },
+          }}
         />
         <ActionApprovalSummary summary={undefined} action={{ connector: "x" }} />
-        <ActionApprovalSummary summary={{ previous_attempt: { outcome: "service_refused" } }} action={{}} />
-        <ActionOutcome action={{ state: "SUCCEEDED", published_path: "/srv/a.md", published_hash: "sha256:1234567890abcdef" }} />
+        <ActionApprovalSummary
+          summary={{ previous_attempt: { outcome: "service_refused" } }}
+          action={{}}
+        />
+        <ActionOutcome
+          action={{
+            state: "SUCCEEDED",
+            published_path: "/srv/a.md",
+            published_hash: "sha256:1234567890abcdef",
+          }}
+        />
         <ActionOutcome action={{ state: "UNKNOWN" }} />
         <ActionOutcome action={{ state: "PROPOSED", published_path: "/srv/b.md" }} />
         <ActionOutcome action={{}} />
@@ -439,9 +469,24 @@ export function MissionPartsScene() {
         <ArtifactPanel artifact={{ ...MIS_ARTIFACT_TEXT, truncated: false }} />
         <ArtifactPanel artifact={MIS_ARTIFACT_BINARY} />
         <ArtifactPanel artifact={MIS_ARTIFACT_EMPTY} />
-        <PublishCriterionHelper criteria="" onChange={noop} disabled={false} publish={{ enabled: true }} />
-        <PublishCriterionHelper criteria="完成后上传到网盘" onChange={noop} disabled={false} publish={{ enabled: true }} />
-        <PublishCriterionHelper criteria="" onChange={noop} disabled publish={{ enabled: false, reason: "目录不存在" }} />
+        <PublishCriterionHelper
+          criteria=""
+          onChange={noop}
+          disabled={false}
+          publish={{ enabled: true }}
+        />
+        <PublishCriterionHelper
+          criteria="完成后上传到网盘"
+          onChange={noop}
+          disabled={false}
+          publish={{ enabled: true }}
+        />
+        <PublishCriterionHelper
+          criteria=""
+          onChange={noop}
+          disabled
+          publish={{ enabled: false, reason: "目录不存在" }}
+        />
         <PublishCriterionHelper criteria="" onChange={noop} disabled={false} publish={null} />
       </div>
       <div className="mis-cell">
@@ -454,7 +499,12 @@ export function MissionPartsScene() {
         <MissionProgress status="CANCELLED" uiState="verifying" />
         <PlanningQuestions
           questions={[
-            { decision_id: "pq-1", state: "PENDING", question: "选一个", options: [{ key: "a", label: "甲" }] },
+            {
+              decision_id: "pq-1",
+              state: "PENDING",
+              question: "选一个",
+              options: [{ key: "a", label: "甲" }],
+            },
             { decision_id: "pq-2", state: "PENDING", question: "自由回答", options: [] },
             { decision_id: "pq-3", state: "ANSWERED", question: "已答", answer: "乙" },
             { decision_id: "pq-4", state: "SUPERSEDED", question: "失效" },
@@ -462,9 +512,21 @@ export function MissionPartsScene() {
           channel={channel}
           onAnswered={noop}
         />
-        <PlanningQuestions questions={[{ decision_id: "pq-5", state: "PENDING", question: "无通道" }]} channel={null} onAnswered={noop} />
-        <PlanningAuthorization requests={[{ request_id: "pa-1", mission_id: "m" }]} channel={channel} onChanged={noop} />
-        <PlanningAuthorization requests={[{ request_id: "pa-2", mission_id: "m" }]} channel={null} onChanged={noop} />
+        <PlanningQuestions
+          questions={[{ decision_id: "pq-5", state: "PENDING", question: "无通道" }]}
+          channel={null}
+          onAnswered={noop}
+        />
+        <PlanningAuthorization
+          requests={[{ request_id: "pa-1", mission_id: "m" }]}
+          channel={channel}
+          onChanged={noop}
+        />
+        <PlanningAuthorization
+          requests={[{ request_id: "pa-2", mission_id: "m" }]}
+          channel={null}
+          onChanged={noop}
+        />
         <MissionDiagnostics missionId="mission-a" channel={channel} />
         <MissionDiagnostics missionId="mission-a" channel={null} />
         <MissionAssurance missionId="mission-a" channel={channel} />
