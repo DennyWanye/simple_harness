@@ -13,7 +13,6 @@ from host.harness_runs import (
     _cancel_product_harness_run,
     _signal_product_harness_decision,
 )
-from host.routes_voice import _voice_transports
 from host.runtime import logger, service_context
 from host.state import host_state
 
@@ -296,9 +295,6 @@ async def _cc_interrupt(conn: _ControlConnection, raw: dict, msg_type: str) -> N
     ws = conn.ws
     session_id = conn.session_id
     payload = raw.get("payload", {}) or {}
-    voice_transport = _voice_transports.get(session_id)
-    if voice_transport is not None:
-        voice_transport.interrupt()
     await _cancel_product_harness_run(
         session_id,
         str(payload.get("run_id") or "").strip(),

@@ -569,7 +569,7 @@ simple_harness 的用户界面现在以暗色为默认外观。主窗口背景�
 - 主题层只负责视觉样式，不拥有业务状态、Harness 状态或权限决策。
 - 隐藏的 provider reasoning 不会因为 UI 改造而展示；消息页只显示用户可见的公开执行进度。
 - 消息页当前只有一个电话式 Realtime 开始/挂断按钮；应用挂载不会申请麦克风或连接，显式点击后才创建
-  音频资源并连接 `/ws/realtime-voice`。旧 `/ws/audio` 不会恢复。自动化已覆盖开始、barge-in、挂断与清理，
+  音频资源并连接 `/ws/realtime-voice`。旧 `/ws/audio` 已删除。自动化已覆盖开始、barge-in、挂断与清理，
   真实 Provider 连续多轮通话仍待验收，因此 UI 接线不等于 release PASS。
 - 新页面应优先复用语义化 token 和共享组件样式，避免重新写独立的纯白背景。
 - 左侧运行图、消息流 Agent activity 和右侧 durable steps 现在按 `(session_id, root_run_id)`

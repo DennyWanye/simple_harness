@@ -62,7 +62,6 @@ SCOPES = (
     Scope("backend/main.py", "_auto_resume_dispatch"),
     Scope("backend/main.py", "_auto_resume_emit"),
     Scope("backend/main.py", "_auto_resume_audit"),
-    Scope("backend/pipeline/voice_pipeline.py", "VoicePipeline"),
     Scope("backend/agent/auto_resume.py", "AutoResumeOrchestrator"),
     Scope(
         "backend/deskpet/workflows/adapters/product_delivery.py",
@@ -354,9 +353,7 @@ def _assignment_env(scope: ast.AST, param_values: dict[str, set[str]]) -> dict[s
     return env
 
 
-def _literal_call_arguments(
-    roots: Iterable[ast.AST], call_suffix: str, index: int
-) -> set[str]:
+def _literal_call_arguments(roots: Iterable[ast.AST], call_suffix: str, index: int) -> set[str]:
     values: set[str] = set()
     for root in roots:
         for node in ast.walk(root):
@@ -381,13 +378,19 @@ def _capability_for(*, event_types: set[str], call: str, symbol: str) -> str | N
         return "persistence.delivery" if "workflow" in symbol.lower() else "tool.lifecycle"
     if "chat_v2_user_echo" in joined:
         return "voice.transport" if "VoicePipeline" in symbol else "text.user_echo"
-    if any(value in joined for value in ("chat_v2_plan", "chat_v2_plan_cancelled", "chat_v2_error", "error")):
+    if any(
+        value in joined
+        for value in ("chat_v2_plan", "chat_v2_plan_cancelled", "chat_v2_error", "error")
+    ):
         return "text.plan_cancel_error"
     if any(value in joined for value in ("chat_v2_delta", "chat_response", "chat_v2_final")):
         return "voice.transport" if "VoicePipeline" in symbol else "text.assistant"
     if "auto_resume" in joined or "AutoResume" in symbol or "auto_resume" in symbol:
         return "auto_resume"
-    if any(value in joined for value in ("emotion_change", "action_trigger", "lip_sync", "tts_", "vad_event")):
+    if any(
+        value in joined
+        for value in ("emotion_change", "action_trigger", "lip_sync", "tts_", "vad_event")
+    ):
         return "voice.presentation"
     if any(value in joined for value in ("transcript", "run_event")):
         return "voice.transport"
@@ -487,9 +490,9 @@ def _git_source(root: Path, path: str, commit: str) -> str:
         Path.home()
         / ".cache/codex-runtimes/codex-primary-runtime/dependencies/native/git/cmd/git.exe"
     )
-    return subprocess.check_output(
-        [git, "-C", str(root), "show", f"{commit}:{path}"]
-    ).decode("utf-8")
+    return subprocess.check_output([git, "-C", str(root), "show", f"{commit}:{path}"]).decode(
+        "utf-8"
+    )
 
 
 def validate_dual_send_helper(source: str) -> None:
@@ -501,9 +504,10 @@ def validate_dual_send_helper(source: str) -> None:
         for node in (ast.walk(emit[0]) if len(emit) == 1 else ())
         if isinstance(node, ast.Call)
     ]
-    if sum(call.endswith("send_json") for call in calls) != 1 or sum(
-        call.endswith("_broadcast") for call in calls
-    ) != 1:
+    if (
+        sum(call.endswith("send_json") for call in calls) != 1
+        or sum(call.endswith("_broadcast") for call in calls) != 1
+    ):
         raise RuntimeError(
             "LegacyProductDomainSink.emit must call send_json and peer broadcast once"
         )
@@ -516,9 +520,10 @@ def validate_presenter_dual_send_helper(source: str) -> None:
         for node in (ast.walk(helpers[0]) if len(helpers) == 1 else ())
         if isinstance(node, ast.Call)
     ]
-    if sum(call.endswith("send_json") for call in calls) != 1 or sum(
-        call.endswith("broadcast") for call in calls
-    ) != 1:
+    if (
+        sum(call.endswith("send_json") for call in calls) != 1
+        or sum(call.endswith("broadcast") for call in calls) != 1
+    ):
         raise RuntimeError("_send_both must call send_json and peer broadcast once")
 
 
@@ -542,16 +547,10 @@ def build_census(
         validate_presenter_dual_send_helper(parsed["backend/deskpet/agent/run_presenter.py"][0])
 
     auto_roots = _functions(parsed["backend/agent/auto_resume.py"][1], "AutoResumeOrchestrator")
-    voice_roots = _functions(parsed["backend/pipeline/voice_pipeline.py"][1], "VoicePipeline")
     param_contracts = {
         ("backend/main.py", "_auto_resume_emit", "_typ"): _literal_call_arguments(
             auto_roots, "_emit", 0
         ),
-        (
-            "backend/pipeline/voice_pipeline.py",
-            "VoicePipeline._broadcast_chat_v2",
-            "msg_type",
-        ): _literal_call_arguments(voice_roots, "_broadcast_chat_v2", 0),
     }
 
     items: list[dict[str, object]] = []
@@ -614,7 +613,9 @@ def build_census(
                     continue
                 call = _call_name(node)
                 rendered = ast.unparse(node)
-                if analysis_symbol == "LegacyProductDomainSink.emit" and call.rsplit(".", 1)[-1] in {"send_json", "_broadcast"}:
+                if analysis_symbol == "LegacyProductDomainSink.emit" and call.rsplit(".", 1)[
+                    -1
+                ] in {"send_json", "_broadcast"}:
                     continue
                 kind = _kind_for_call(call, rendered)
                 if kind is None:
@@ -639,13 +640,13 @@ def build_census(
                     continue
                 seen.add(key)
                 item = _item(
-                        path=spec.path,
-                        symbol=analysis_symbol,
-                        node=node,
-                        kind=kind,
-                        event_types=event_types,
-                        call=call,
-                    )
+                    path=spec.path,
+                    symbol=analysis_symbol,
+                    node=node,
+                    kind=kind,
+                    event_types=event_types,
+                    call=call,
+                )
                 items.append(item)
                 if call.rsplit(".", 1)[-1] in {"emit", "_send_both"}:
                     peer_item = dict(item)
@@ -702,9 +703,7 @@ def build_census(
 
     inventory = []
     for capability in REQUIRED_CAPABILITIES:
-        callsites = [
-            str(row["callsite"]) for row in items if row["capability"] == capability
-        ]
+        callsites = [str(row["callsite"]) for row in items if row["capability"] == capability]
         inventory.append(
             {
                 "capability": capability,
@@ -741,9 +740,7 @@ def build_migration_mapping(root: Path = ROOT) -> dict[str, object]:
         - RETIRED_CAPABILITIES
     )
     if missing_capabilities:
-        raise RuntimeError(
-            f"current parity is missing capabilities: {missing_capabilities}"
-        )
+        raise RuntimeError(f"current parity is missing capabilities: {missing_capabilities}")
     grouped: dict[str, list[dict[str, object]]] = {}
     for item in current["items"]:
         grouped.setdefault(str(item["capability"]), []).append(item)

@@ -36,8 +36,6 @@ ROOT_SPECS = (
     ("backend/main.py", "lifespan._auto_resume_dispatch"),
     ("backend/agent/legacy_agent_loop_tool_runtime.py", "LegacyAgentLoopToolRuntime.run_round"),
     ("backend/agent/legacy_subagent_bridge.py", "LegacySubagentBridge.drain"),
-    ("backend/pipeline/voice_pipeline.py", "VoicePipeline._run_legacy_chat_stream"),
-    ("backend/pipeline/voice_pipeline.py", "VoicePipeline._run_with_tools"),
     ("backend/deskpet/agent/subagent_registry.py", "SubagentRegistry"),
     ("backend/main.py", "_maybe_codify_skill"),
     ("backend/main.py", "_ppt_outline_propose"),
@@ -177,9 +175,7 @@ def _direct_callees(node: ast.AST) -> tuple[str, ...]:
     )
 
 
-def _symbols(
-    source: str, path: str, tree: ast.AST | None = None
-) -> dict[str, tuple[ast.AST, str]]:
+def _symbols(source: str, path: str, tree: ast.AST | None = None) -> dict[str, tuple[ast.AST, str]]:
     tree = tree or ast.parse(source, filename=path)
     lines = source.splitlines()
     found: dict[str, tuple[ast.AST, str]] = {}
@@ -270,9 +266,12 @@ def _span(path: str, qualname: str, node: ast.AST, source: str, *, root: bool) -
     return Span(
         path=path,
         qualname=qualname,
-        kind=("owner" if qualname.startswith("<module>.") or not isinstance(
-            node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
-        ) else type(node).__name__),
+        kind=(
+            "owner"
+            if qualname.startswith("<module>.")
+            or not isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
+            else type(node).__name__
+        ),
         line=int(getattr(node, "lineno", 0)),
         end_line=int(getattr(node, "end_lineno", getattr(node, "lineno", 0))),
         source_hash=_hash(source),
@@ -289,7 +288,11 @@ def _owner_specs(
     if source_commit is None:
         payload = json.loads(AUTHORITY_MANIFEST.read_text(encoding="utf-8"))
     else:
-        payload = json.loads(_normalized(_content(source_commit, AUTHORITY_MANIFEST.relative_to(ROOT).as_posix(), repo=repo)))
+        payload = json.loads(
+            _normalized(
+                _content(source_commit, AUTHORITY_MANIFEST.relative_to(ROOT).as_posix(), repo=repo)
+            )
+        )
     owners = [
         (str(item["path"]), str(item["symbol"]))
         for item in payload.get("items", ())
@@ -369,8 +372,7 @@ def generate_manifest(
     missing_dynamic = sorted(dynamic_keys - set(selected))
     if missing_dynamic:
         raise CutoverAuditError(
-            "dynamic legacy frames are absent from static manifest: "
-            + ", ".join(missing_dynamic)
+            "dynamic legacy frames are absent from static manifest: " + ", ".join(missing_dynamic)
         )
     paths = sorted({item.path for item in selected.values()})
     files = [
@@ -385,9 +387,7 @@ def generate_manifest(
         "schema_version": 1,
         "source_commit": source_commit,
         "owner_count": 15,
-        "roots": [
-            {"path": path, "qualname": qualname} for path, qualname in ROOT_SPECS
-        ],
+        "roots": [{"path": path, "qualname": qualname} for path, qualname in ROOT_SPECS],
         "files": files,
         "spans": [asdict(selected[key]) for key in sorted(selected)],
         "dynamic_evidence": dynamic,
@@ -405,9 +405,7 @@ def _load_manifest(path: Path) -> dict[str, Any]:
 
 def audit_dormant_factories(*, repo: Path = ROOT) -> dict[str, Any]:
     main = (repo / "backend/main.py").read_text(encoding="utf-8-sig")
-    schema = (repo / "backend/deskpet/workflows/store/schema.py").read_text(
-        encoding="utf-8-sig"
-    )
+    schema = (repo / "backend/deskpet/workflows/store/schema.py").read_text(encoding="utf-8-sig")
     direct_mentions = sorted(name for name in FACTORY_SYMBOLS if name in main)
     module_mentions = sorted(path for path in FACTORY_MODULES if path in main)
     imports: dict[str, set[str]] = {}
@@ -452,7 +450,9 @@ def audit_dormant_factories(*, repo: Path = ROOT) -> dict[str, Any]:
         "direct_factory_mentions": direct_mentions,
         "direct_module_mentions": module_mentions,
         "reachable_factory_modules": reached_factories,
-        "production_owner": "kernel/1" if activation_wired and product_factory_reachable else "unknown",
+        "production_owner": "kernel/1"
+        if activation_wired and product_factory_reachable
+        else "unknown",
         "schema_starts_fail_closed": legacy_default,
         "passed": (
             legacy_default
@@ -499,20 +499,29 @@ def audit_readiness(manifest: Mapping[str, Any], *, repo: Path = ROOT) -> dict[s
         "dormant_factories_unreachable_from_main": dormant["passed"],
         "production_owner_is_legacy_0": dormant["production_owner"] == "legacy/0",
     }
-    return {"mode": "readiness", "checks": checks, "dormant": dormant, "passed": all(checks.values())}
+    return {
+        "mode": "readiness",
+        "checks": checks,
+        "dormant": dormant,
+        "passed": all(checks.values()),
+    }
 
 
 def audit_cutover(
     manifest: Mapping[str, Any], *, live_stacks: Path, repo: Path = ROOT
 ) -> dict[str, Any]:
     protected = {
-        f"{path}::{name}" for path, name in (
+        f"{path}::{name}"
+        for path, name in (
             *ROOT_SPECS,
             *_owner_specs(str(manifest["source_commit"]), repo=repo),
         )
     }
-    locked = [item for item in manifest.get("spans", ())
-              if f"{item['path']}::{item['qualname']}" in protected]
+    locked = [
+        item
+        for item in manifest.get("spans", ())
+        if f"{item['path']}::{item['qualname']}" in protected
+    ]
     current: list[tuple[str, str, ast.AST, str, list[str], Counter[str]]] = []
     sources: dict[str, str] = {}
     line_index: dict[str, set[int]] = {}
@@ -540,8 +549,13 @@ def audit_cutover(
     references: list[str] = []
     for old in locked:
         old_key = f"{old['path']}::{old['qualname']}"
-        old_source = _normalized(_content(str(manifest["source_commit"]), str(old["path"]), repo=repo))
-        old_symbols = {**_symbols(old_source, str(old["path"])), **_assignment_symbols(old_source, str(old["path"]))}
+        old_source = _normalized(
+            _content(str(manifest["source_commit"]), str(old["path"]), repo=repo)
+        )
+        old_symbols = {
+            **_symbols(old_source, str(old["path"])),
+            **_assignment_symbols(old_source, str(old["path"])),
+        }
         old_segment = old_symbols[str(old["qualname"])][1]
         old_lines = [line.strip() for line in old_segment.splitlines() if line.strip()]
         old_counts = Counter(old_lines)
@@ -549,15 +563,19 @@ def audit_cutover(
         for index in candidates:
             path, name, node, segment, new_lines, new_counts = current[index]
             key = f"{path}::{name}"
-            if (int(old["statement_count"]) < 4
-                    and str(old["qualname"]).rsplit(".", 1)[-1] != name.rsplit(".", 1)[-1]):
+            if (
+                int(old["statement_count"]) < 4
+                and str(old["qualname"]).rsplit(".", 1)[-1] != name.rsplit(".", 1)[-1]
+            ):
                 continue
             if _ast_hash(node) == old["normalized_ast_hash"]:
                 exact.append(f"{old_key}->{key}")
                 continue
             common = sum((old_counts & new_counts).values())
-            if (2 * common / max(1, len(old_lines) + len(new_lines)) < 0.70
-                    and common / max(1, len(old_lines)) < 0.60):
+            if (
+                2 * common / max(1, len(old_lines) + len(new_lines)) < 0.70
+                and common / max(1, len(old_lines)) < 0.60
+            ):
                 continue
             matcher = difflib.SequenceMatcher(a=old_lines, b=new_lines, autojunk=False)
             contiguous = matcher.find_longest_match().size / max(1, len(old_lines))
@@ -574,7 +592,8 @@ def audit_cutover(
                 token, paths = leaf, set(sources)
             symbol_pattern = re.compile(rf"(?<!\w){re.escape(token)}(?!\w)")
             references.extend(
-                f"{old_key}->{path}" for path, source in sources.items()
+                f"{old_key}->{path}"
+                for path, source in sources.items()
                 if path in paths and symbol_pattern.search(source)
             )
     live = json.loads(live_stacks.read_text(encoding="utf-8")) if live_stacks.is_file() else {}
@@ -589,7 +608,8 @@ def audit_cutover(
         "similar_fingerprint_absent": not similar,
         "legacy_symbol_references_absent": not references,
         "legacy_roots_unreachable": all(key not in locked_keys for key in live_keys),
-        "live_stack_complete_and_clean": live.get("complete") is True and not (live_keys & locked_keys),
+        "live_stack_complete_and_clean": live.get("complete") is True
+        and not (live_keys & locked_keys),
     }
     return {
         "mode": "cutover",

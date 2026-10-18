@@ -11,11 +11,10 @@ service_context mutation, so the tests stay fast and hermetic.
 
 Coverage goals (R20):
 1. End-to-end chat roundtrip through agent + memory + tool registry.
-2. Session isolation — two sessions don't share VoicePipeline state.
-3. Cross-channel interrupt dispatch (control WS → audio WS pipeline).
-4. Redacting memory wrapper actually catches secrets on the write path.
-5. Tool registry confirmation gate rejects high-risk tools by default.
-6. Unknown message type returns a structured error, not a crash.
+2. Control-channel interrupt cancels the session run and acks.
+3. Redacting memory wrapper actually catches secrets on the write path.
+4. Tool registry confirmation gate rejects high-risk tools by default.
+5. Unknown message type returns a structured error, not a crash.
 """
 
 from __future__ import annotations
@@ -25,10 +24,8 @@ from collections.abc import AsyncIterator
 import pytest
 from fastapi.testclient import TestClient
 from host.connections import _control_connections
-from host.routes_voice import _voice_transports
 from host.runtime import SHARED_SECRET, service_context
 from main import app
-from starlette.websockets import WebSocketDisconnect
 
 # ---------------------------------------------------------------------
 # Fakes — keep tests hermetic, no Ollama / Whisper / edge-tts required.
@@ -114,73 +111,25 @@ def test_unknown_message_type_returns_error(fake_llm_agent):
     assert "nonsense_xyz" in msg["payload"]["message"]
 
 
-def test_audio_ws_rejects_without_secret():
-    """Audio channel has the same gate as control."""
-    client = TestClient(app)
-    with pytest.raises(WebSocketDisconnect) as exc_info:
-        with client.websocket_connect("/ws/audio") as ws:
-            ws.receive_bytes()
-    assert exc_info.value.code == 4001
+def test_interrupt_acks_and_cancels_run(fake_llm_agent, monkeypatch):
+    """控制通道的 interrupt 取消本会话的运行并回 interrupt_ack。"""
+    import host.control_decisions as control_decisions
 
+    cancelled: list[tuple[str, str, str]] = []
 
-def test_audio_ws_reports_legacy_voice_disabled():
-    """Authenticated callers get a stable disabled contract, not model load."""
-    client = TestClient(app)
-    with client.websocket_connect(
-        f"/ws/audio?secret={SHARED_SECRET}&session_id=voice-disabled"
-    ) as ws:
-        message = ws.receive_json()
-        assert message == {
-            "type": "error",
-            "payload": {
-                "code": "voice_temporarily_disabled",
-                "message": "语音功能暂时关闭，后续将接入 Realtime。",
-                "realtime": "pending",
-            },
-        }
-        with pytest.raises(WebSocketDisconnect) as exc_info:
-            ws.receive_bytes()
-        assert exc_info.value.code == 4403
+    async def _fake_cancel(session_id: str, run_id: str, *, reason: str) -> None:
+        cancelled.append((session_id, run_id, reason))
 
-
-def test_interrupt_dispatched_when_pipeline_present(fake_llm_agent):
-    """Control-channel interrupt must reach the registered audio pipeline."""
-
-    # Manually plant a fake pipeline for the session so we don't need
-    # to spin up /ws/audio (which would require a live VAD/ASR/TTS).
-    class _FakePipeline:
-        def __init__(self):
-            self.interrupted = False
-
-        def interrupt(self):
-            self.interrupted = True
-
-    fake_pipe = _FakePipeline()
-    _voice_transports["e2e_interrupt"] = fake_pipe
-    try:
-        client = TestClient(app)
-        with client.websocket_connect(
-            f"/ws/control?secret={SHARED_SECRET}&session_id=e2e_interrupt"
-        ) as ws:
-            ws.receive_json()  # P3-S2: drain startup_status
-            ws.send_json({"type": "interrupt"})
-            ack = ws.receive_json()
-        assert ack["type"] == "interrupt_ack"
-        assert fake_pipe.interrupted is True
-    finally:
-        _voice_transports.pop("e2e_interrupt", None)
-
-
-def test_interrupt_without_pipeline_still_acks(fake_llm_agent):
-    """No active pipeline → log + ack, not a crash."""
+    monkeypatch.setattr(control_decisions, "_cancel_product_harness_run", _fake_cancel)
     client = TestClient(app)
     with client.websocket_connect(
-        f"/ws/control?secret={SHARED_SECRET}&session_id=e2e_no_pipe"
+        f"/ws/control?secret={SHARED_SECRET}&session_id=e2e_interrupt"
     ) as ws:
         ws.receive_json()  # P3-S2: drain startup_status
-        ws.send_json({"type": "interrupt"})
+        ws.send_json({"type": "interrupt", "payload": {"run_id": "run-1"}})
         ack = ws.receive_json()
     assert ack["type"] == "interrupt_ack"
+    assert cancelled == [("e2e_interrupt", "run-1", "voice_interrupt")]
 
 
 @pytest.mark.skip(
@@ -267,8 +216,7 @@ def test_tool_registry_denies_high_risk_by_default():
 
 def test_control_connection_tracked_and_released(fake_llm_agent):
     """The control connection must register itself in _control_connections
-    for the session and vanish on disconnect — this is how the audio
-    pipeline finds its lip-sync sink."""
+    for the session and vanish on disconnect."""
     session = "e2e_track"
     client = TestClient(app)
     with client.websocket_connect(f"/ws/control?secret={SHARED_SECRET}&session_id={session}") as ws:

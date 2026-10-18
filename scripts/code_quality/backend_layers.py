@@ -3,7 +3,7 @@
 
 import-linter 的 root_packages 只收目录包，main、p4_ipc、provider_test_connection、config、
 context、paths 这六个单文件模块由这里检查，层次与 backend/.importlinter 一致：
-  0 main → 1 host → 2 上层适配（pipeline、router、billing、p4_ipc、provider_test_connection）
+  0 main → 1 host → 2 上层适配（router、billing、p4_ipc、provider_test_connection）
   → 3 deskpet、agent → 4 llm、providers、memory、tools → 5 observability、config、context → 6 paths
 下层不许引用上层（含函数内导入，不含只在类型检查时生效的导入）。只报牵涉单文件模块的违例，
 目录包之间的由 import-linter 管。
@@ -23,7 +23,7 @@ BACKEND = Path(__file__).resolve().parents[2] / "backend"
 LAYERS = [
     {"main"},
     {"host"},
-    {"pipeline", "router", "billing", "p4_ipc", "provider_test_connection"},
+    {"router", "billing", "p4_ipc", "provider_test_connection"},
     {"deskpet", "agent"},
     {"llm", "providers", "memory", "tools"},
     {"observability", "config", "context"},

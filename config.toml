@@ -184,17 +184,8 @@ min_speech_ms = 250
 min_silence_ms = 500
 
 [voice]
-# The legacy VAD -> ASR -> Harness -> TTS path is temporarily disabled.
-# A future release will replace this transport with Realtime.
+# 旧的 /ws/audio 语音通道已删除；enabled 只决定是否装载本地 VAD/ASR/TTS 运行时。
 enabled = false
-# P2-2-M3: TTS-phase barge-in overrides. Normal VAD threshold / min_speech_ms
-# live in [vad] above — these apply only while TTS is actively playing, so
-# speaker echo is less likely to retrigger speech_start.
-vad_threshold_during_tts = 0.65
-min_speech_ms_during_tts = 400
-# After TTS ends, ignore speech_start for this many ms — covers the tail
-# of the audio being played out the speakers.
-tts_cooldown_ms = 300
 
 # P5-S1: pet supervisor — Watchdog + LLM self-check for stuck Code-mode
 # sessions. Disabled = no scan loop, no LLM calls, no broadcasts (degrades

@@ -14,7 +14,6 @@ BACKEND = Path(__file__).resolve().parents[2]
 
 PRODUCTION_AUTHORITY_FILES = (
     *host_source_files(),
-    BACKEND / "pipeline" / "voice_pipeline.py",
     BACKEND / "deskpet" / "agent" / "run_presenter.py",
     BACKEND / "context.py",
 )
@@ -49,36 +48,6 @@ def test_legacy_codifier_and_tool_path_authority_is_absent_from_production() -> 
             if token in source:
                 findings.append(f"{path.relative_to(BACKEND)}:{token}")
     assert findings == []
-
-
-def test_voice_pipeline_has_no_private_codifier_worker_or_saved_config() -> None:
-    path = BACKEND / "pipeline" / "voice_pipeline.py"
-    tree = ast.parse(_source(path), filename=str(path))
-    function_names = {
-        node.name
-        for node in ast.walk(tree)
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-    }
-    assigned_names = {
-        target.id
-        for node in ast.walk(tree)
-        if isinstance(node, (ast.Assign, ast.AnnAssign))
-        for target in (node.targets if isinstance(node, ast.Assign) else (node.target,))
-        if isinstance(target, ast.Name)
-    }
-    assigned_attributes = {
-        target.attr
-        for node in ast.walk(tree)
-        if isinstance(node, (ast.Assign, ast.AnnAssign))
-        for target in (node.targets if isinstance(node, ast.Assign) else (node.target,))
-        if isinstance(target, ast.Attribute)
-    }
-    assert {
-        "_maybe_codify_voice",
-        "_codify_worker",
-    }.isdisjoint(function_names)
-    assert "_codify_tasks" not in assigned_names | assigned_attributes
-    assert "app_config" not in assigned_names | assigned_attributes
 
 
 def test_removed_authority_names_are_not_reintroduced_as_dynamic_strings() -> None:

@@ -193,28 +193,13 @@ class VADConfig:
 
 @dataclass
 class VoiceConfig:
-    """Legacy local voice settings.
+    """旧本地语音设置。
 
-    The old VAD -> ASR -> Harness -> TTS path is disabled by default while
-    DeskPet prepares a Realtime replacement.  ``enabled`` is the single
-    persistent backend switch; when false, voice providers are not imported,
-    constructed, or loaded.
-
-    Echo suppression is a time-domain state machine (see BargeInFilter):
-      IDLE        — speech_start → immediate barge-in allowed
-      TTS_PLAYING — speech_start must sustain >= min_speech_ms_during_tts
-                    AND VAD uses the raised threshold (vad_threshold_during_tts)
-      COOLDOWN    — for tts_cooldown_ms after TTS ends, any speech_start is
-                    ignored; prevents the pet's own audio tail from retriggering
-
-    The "normal" threshold / min_speech_ms live in [vad] — this section only
-    holds the TTS-phase overrides so pipeline can swap them dynamically.
+    旧的 VAD -> ASR -> Harness -> TTS 通道（`/ws/audio`）已删除；``enabled``
+    只决定后台是否装载本地 VAD/ASR/TTS 运行时，关闭时不导入、不构造、不加载。
     """
 
     enabled: bool = False
-    vad_threshold_during_tts: float = 0.65
-    min_speech_ms_during_tts: int = 400
-    tts_cooldown_ms: int = 300
 
 
 @dataclass

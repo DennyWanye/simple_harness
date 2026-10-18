@@ -8,7 +8,6 @@
 [importlinter]
 root_packages =
     host
-    pipeline
     router
     billing
     deskpet
@@ -25,7 +24,7 @@ name = 后端分层：host → 上层适配 → deskpet 与旧 agent → 模型�
 type = layers
 layers =
     host
-    pipeline : router : billing
+    router : billing
     deskpet : agent
     llm : providers : memory : tools
     observability

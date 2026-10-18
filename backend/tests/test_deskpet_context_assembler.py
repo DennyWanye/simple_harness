@@ -908,7 +908,7 @@ async def test_assemble_merges_default_config_when_caller_omits_skills(tmp_path:
         classifier=TaskClassifier(embedder=FakeEmbedder()),
         default_config={"skills": {"auto_disclosure": {"enabled": True}}},
     )
-    # Caller passes ONLY llm (mirrors voice_pipeline.py) — no skills key.
+    # 调用方只传 llm、不带 skills 键。
     await asm.assemble("你好", config={"llm": {"model": "m"}}, task_type_override="chat")
     assert seen["config"].get("skills") == {"auto_disclosure": {"enabled": True}}, (
         f"default_config 的 skills 未兜底合并: {seen['config']}"

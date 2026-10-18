@@ -4,11 +4,6 @@
  "routes": [
   [
    "APIWebSocketRoute",
-   "/ws/audio",
-   "audio_channel"
-  ],
-  [
-   "APIWebSocketRoute",
    "/ws/control",
    "control_channel"
   ],

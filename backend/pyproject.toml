@@ -229,7 +229,6 @@ packages = [
     "memory.migrations",
     "tests",
     "agent",
-    "pipeline",
     "tools",
     "observability",
     "router",

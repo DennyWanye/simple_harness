@@ -26,7 +26,6 @@ from simple_harness import RunId as SdkRunId
 from host.chat_delivery import _broadcast_default_chat_peers, _send_chat_error
 from host.logging_setup import _sdk_observability
 from host.runtime import logger, service_context
-from host.sdk_activation import _issue_product_harness_host
 from host.sdk_recovery import _project_open_sdk_authorizations
 from host.sdk_registry import (
     _sdk_cancel_requested_run_ids,
@@ -172,15 +171,6 @@ async def _snapshot_context_usage_basis_for_run(session_db: Any, session_id: str
     if not bool(authority.get("has_measurement")):
         return None
     return str(authority.get("sample_id") or "").strip() or None
-
-
-async def _voice_run_host(session_id: str):
-    if host_state.sdk_ingress is None:
-        raise RuntimeError("SDK Runtime is unavailable")
-    host, _provider, _providers, _provider_snapshot = await _issue_product_harness_host(
-        session_id=session_id, workspace=None
-    )
-    return host
 
 
 @dataclass

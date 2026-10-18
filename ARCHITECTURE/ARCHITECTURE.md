@@ -823,8 +823,8 @@ cannot override the model/ticket decision.
 Ingress transports still have transport-specific responsibilities, but no
 second agent owner:
 
-- The legacy `/ws/audio` Voice path remains disabled and returns
-  `voice_temporarily_disabled`; startup does not load VAD/ASR/TTS. The candidate
+- The legacy `/ws/audio` Voice path (VoicePipeline, barge-in filter) was
+  deleted on 2026-10-18; startup does not load VAD/ASR/TTS. The candidate
   `/ws/realtime-voice` path uses the versioned Service SDK local protocol and
   provider-native Realtime transport, starts only after an explicit UI action,
   and does not create an Agent Run. Real-provider multi-turn E2E remains open.

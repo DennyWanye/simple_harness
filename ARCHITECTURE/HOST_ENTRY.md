@@ -72,7 +72,7 @@
 | `host/control_channel.py` | 701 | 控制通道：连接握手、伴侣特权帧、伴侣详情查询、有序路由表与分发、编排与工作流转发 |
 | `host/control_chat.py` | 325 | 控制消息：对话 |
 | `host/control_connection.py` | 19 | 控制连接状态对象 |
-| `host/control_decisions.py` | 306 | 控制消息：运行状态查询、授权与受保护路径决定、外部等待与项目目录回复、澄清、计划确认、中断 |
+| `host/control_decisions.py` | 303 | 控制消息：运行状态查询、授权与受保护路径决定、外部等待与项目目录回复、澄清、计划确认、中断 |
 | `host/control_memory.py` | 165 | 控制消息：记忆整理、点赞、归档列表、记忆管理转发、人类记忆请求 |
 | `host/control_messages.py` | 544 | 控制通道消息处理：控制消息分发、未决决定重放、运行检查任务调度 |
 | `host/control_providers.py` | 690 | 控制消息：模型列表、会话提供方与模型、设置页提供方管理与模型探测 |
@@ -93,11 +93,11 @@
 | `host/routes_cloud_config.py` | 301 | HTTP 路由：云端模型配置（POST /config/cloud） |
 | `host/routes_commands.py` | 266 | HTTP 路由：技能列表、命令帮助与命令参数结构 |
 | `host/routes_health.py` | 105 | HTTP 路由：健康检查、前端指标上报与指标查询 |
-| `host/routes_voice.py` | 179 | 语音 WebSocket：实时语音通道、音频通道与在途语音管线登记 |
+| `host/routes_voice.py` | 72 | 语音 WebSocket：实时语音通道 |
 | `host/runtime.py` | 54 | 宿主进程的全局单例：崩溃上报钩子、日志器、配置、共享密钥、服务注册表。这些对象在导入时创建、之后不再重新绑定。 |
 | `host/sdk_activation.py` | 422 | SDK 运行时激活：提供方链检查、产品运行宿主签发、产品 SDK 运行时激活、伴侣运行适配器与入口开放 |
 | `host/sdk_context.py` | 327 | SDK 上下文快照准备：意图提示、SDK 系统提示词、可信本地页面、历史截断与上下文快照 |
-| `host/sdk_execution.py` | 525 | SDK 执行：单次运行执行、提供方授权冻结与绑定解析、上下文用量绑定快照、桌面测试桥、身份绑定后恢复、本机所有者认证 |
+| `host/sdk_execution.py` | 605 | SDK 执行：单次运行执行、提供方授权冻结与绑定解析、上下文用量绑定快照、桌面测试桥、身份绑定后恢复、本机所有者认证 |
 | `host/sdk_recovery.py` | 348 | SDK 运行恢复：保留运行的看护、恢复看护器、恢复后的投递通道、无法恢复的工具授权隔离、未决授权投影 |
 | `host/sdk_registry.py` | 14 | SDK 运行的进程内登记表：根会话到运行、请求取消的运行、保留中的展示、恢复监视任务、工具授权不可用的运行。只改内容、不重新绑定。 |
 | `host/sdk_runtime_stack.py` | 1426 | SDK 运行栈组装（整段搬家，拆函数在后面的阶段）与装配槽位检查 |
@@ -133,7 +133,6 @@
 | `_attach_context_snapshot_metadata` | `host/context_usage.py` |
 | `_attach_task_snapshot_to_request` | `host/context_projection.py` |
 | `_attach_workflow_history_events` | `host/history_events.py` |
-| `audio_channel` | `host/routes_voice.py` |
 | `_authoritative_sdk_run_projection` | `host/harness_runs.py` |
 | `_authorization_auto_mode` | `host/capability_runtime.py` |
 | `_authorization_policy_snapshot` | `host/capability_runtime.py` |
@@ -360,5 +359,4 @@
 | `update_cloud_config` | `host/routes_cloud_config.py` |
 | `_validate_code_recovery_capability_subset` | `host/provider_chain.py` |
 | `_validate_secret` | `host/auth.py` |
-| `_voice_run_host` | `host/sdk_execution.py` |
 | `_watch_retained_sdk_run` | `host/sdk_recovery.py` |

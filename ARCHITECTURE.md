@@ -181,7 +181,7 @@ OSS 用户走 `manual`；维护者带 relay 服务的用 `relay`。两套共享�
 
 ```
 文字：React /ws/control -> main.py text-chat adapter -> Harness/AgentLoop
-语音：React /ws/audio   -> VoicePipeline -> ContextAssembler/AgentLoop -> TTS
+语音：React /ws/realtime-voice -> Service SDK Realtime（不创建 Agent Run）
 控制：slash/admin/Tauri commands 可走独立 handler，不保证经过 AgentLoop
 ```
 
