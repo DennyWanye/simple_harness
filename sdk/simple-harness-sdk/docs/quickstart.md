@@ -1,6 +1,7 @@
 # Quick Start Guide
 
-Get started with Simple Harness SDK 0.3.0 in 10 minutes.
+Get started with the Simple Harness SDK agent runtime in 10 minutes. (Task orchestration for
+Python applications has its own guide: [`orchestration-host.md`](orchestration-host.md).)
 
 > **Code block convention in this document:** exactly **one** code block is a
 > complete, self-contained, runnable program — the plain ` ```python ` block in
@@ -18,19 +19,21 @@ Get started with Simple Harness SDK 0.3.0 in 10 minutes.
 ## Installation
 
 The SDK is not published to PyPI or as a GitHub Release. The only way to get
-the 0.3.0 candidate wheel is to clone the SDK repository and build it locally:
+the wheel is to build it from the SDK source directory (`sdk/simple-harness-sdk` in the
+Simple Harness repository):
 
 ```bash
 git clone <sdk-repo-url>
 cd simple-harness-sdk
 uv build
 uv venv --seed --python 3.11 .venv
-.venv/bin/pip install dist/simple_harness_sdk-0.3.0-py3-none-any.whl
+.venv/bin/pip install dist/simple_harness_sdk-*-py3-none-any.whl
 ```
 
 Notes:
 
-- `uv build` produces `dist/simple_harness_sdk-0.3.0-py3-none-any.whl`.
+- `uv build` produces `dist/simple_harness_sdk-<version>-py3-none-any.whl`; the version is
+  the one in `src/simple_harness/version.py`.
 - If your `python3` is already ≥ 3.11, `python3 -m venv .venv` works instead of
   the `uv venv` line.
 - All commands above run from the repository root; the install line uses a
@@ -45,7 +48,7 @@ Notes:
 Expected output:
 
 ```text
-0.3.0
+<the version in src/simple_harness/version.py, e.g. 0.13.0.dev20260925+opt.193>
 ```
 
 ---
@@ -60,7 +63,7 @@ Save this complete program as `demo.py` (outside the SDK repository, e.g. in
 your own project directory):
 
 ```python
-"""Minimal Simple Harness SDK 0.3.0 example (self-contained, runnable).
+"""Minimal Simple Harness SDK example (self-contained, runnable).
 
 Exit code 0 only when the run reaches the COMPLETED terminal state.
 """

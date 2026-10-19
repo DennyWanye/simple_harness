@@ -1,5 +1,9 @@
 最后更新：2026-09-23。此目录是私有仓库的 HTN + TaskGraph23 + Assurance 开发源码快照，版本 `0.13.0.dev20260923+assurance.1`。Assurance 尚未 BODY_WIRED/整体验收，Host 仍消费旧 HTN wheel。交接与全部未完成项见 [仓库 HANDOFF](../../../docs/archive/reports-2026-08/HANDOFF-2026-09-23.md)。下文仅为相应历史阶段事实。
 
+## 宿主入口（2026-10-19）
+
+外部 Python 应用用任务编排只经 `agent_orchestrator.host`（公开模块）：`OrchestrationHost.open(root, principal=, model=ModelConfig(...), tokenizer_path=)` 按桌面产品的接法拼装并启动——实例锁 → 部署验收门（`InstalledHtnWiringAcceptance` 须 VALIDATED）→ 发布连接器 → 沙箱探测 → `DeploymentPolicy` → 原生执行池（`deployment.native_pools.pool_options`，每池一个认证 DeepSeek 计数器）→ `UserMissionDeployment`（规划世界 `deployment.goal_world.goal_world(domain)`、执行图、保证通道）→ `Orchestrator` → `MissionControlV1`。命令全走门面；门口检查（空目标、密钥、`pytest:`/`action:` 能否做到、补 `file:` 来源、默认运行档与预算）在 `host.door`。驱动：`run_forever` / `run_until_settled` / `run_once`；自动模式由 `auto_mode` 决定（布尔或每轮现读的函数）。只支持 DeepSeek（没有认证计数器就没有池）。桌面端后端从同一入口接（`backend/deskpet/orchestration`），只补桌面自己的东西（配置读取、钉版核对、进度推送、通知存档、界面投影）。测试：`tests/orchestrator/host/`；例子：`examples/orchestration-host/`；说明：`docs/orchestration-host.md`。
+
 ## 验收资产（HTN 补齐阶段 F1，2026-10-04）
 
 G（全业务事件重放）与联测（F2）共用，只此一份：

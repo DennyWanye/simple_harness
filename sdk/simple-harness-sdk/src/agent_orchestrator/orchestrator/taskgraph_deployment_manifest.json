@@ -1,11 +1,6 @@
 {
-  "acceptance_evidence": {
-    "gate_run_at": "2026-10-18T15:59:46+00:00",
-    "gate_sha256": "956374d9f7ebc6a1da544784e1de5f7c542cb4ee295c4124e5fa5467f5f1927f",
-    "gate_status": "PASS",
-    "source_files_sha256": "27782c420d7ae814260ba76b807e05afefbd3c58b4416ee6c1a0806647d8ee8a"
-  },
-  "deployment_id": "9e205f7578a2ece3bf3e275b29e14f7a455d4b5306ad67be058c8c388a737531",
+  "acceptance_evidence": null,
+  "deployment_id": "b3304a6db369fd7fac54ad2bb4c3bc5dd895c1a974a5ed54ac41e0d33c87096d",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -99,6 +94,7 @@
     "agent_orchestrator/deployment/__init__.py": "65b22949daeaf41aee6b7c663e5b1138f48257c1d14cb25266cacb91d7dfb430",
     "agent_orchestrator/deployment/assembly.py": "8f1077c5a943389334c2d191f3b0f04832cc378e759f2943e64723cb58e5b569",
     "agent_orchestrator/deployment/duties.py": "9a0d379225810225e462e07de4883b67e2eeb1017288b6d3cb517052ae992097",
+    "agent_orchestrator/deployment/goal_world.py": "0f117e617d403d679547172b0c8b4ebc4413315692fc5e67f61cadcb5be19da1",
     "agent_orchestrator/deployment/native_pools.py": "b548b37733beb688392cabfb9b06382b3df9cbe535de4ab4ec70383edc22606d",
     "agent_orchestrator/deployment/root.py": "06e47ffd1481678a43164a8bf5adffa01343357853a848ebffc4fb822472a14b",
     "agent_orchestrator/domains/__init__.py": "8fc9e932a491ce64f5e687a047a71b0e191c49b9e89a45a1011dd7771ea4b711",
@@ -164,6 +160,14 @@
     "agent_orchestrator/graph/taskgraph_validation.py": "0d1ddd1f88e0b9f0544beaa7e14fe7fd34e74c7527498bbd14354c095125f283",
     "agent_orchestrator/graph/terminal.py": "267a54cdef4567712c3ee9992396d67d5cc50d900f285ed4626240ceeec8196e",
     "agent_orchestrator/graph/view_contracts.py": "105cee92bc3ecaa21c6db44e8a32ac086199d98037540fa13d781b724560830f",
+    "agent_orchestrator/host/__init__.py": "af078f67e906296c1bcad1272b4be7b12f43372418dc58aeee64da352e7bec6d",
+    "agent_orchestrator/host/embedding.py": "ac37172e30842aec43c0af0ac81a4a7b35094fadda0c5fcae8f8efddcef22d48",
+    "agent_orchestrator/host/host.py": "06583dec0c280cba8cd9592a6a5145a576b11e44f7e1ae996cb6b96a755f27a8",
+    "agent_orchestrator/host/instance_lock.py": "de30c4b0c87ac371fdf200f14a9f2e519efbf9194249743e128e3e0cd34d03d9",
+    "agent_orchestrator/host/provider.py": "4382662b95c8faa052f6a624392180da3deba8ff30655ac6903ded836477c950",
+    "agent_orchestrator/host/script_runner.py": "9ac0b54f3487b6367a7f7b7f4f1a5d9acbc177b9620b7d35aceba2c89fa74736",
+    "agent_orchestrator/host/settings.py": "d7335b71c22e0910ffd77e3a6647c4bf160d90ec379769073bbe963cca0208b8",
+    "agent_orchestrator/host/tokenizer.py": "16202b9e11fe32533837e89fc5adc8d20438bf6a6c8b74c7ff659d715e0714a1",
     "agent_orchestrator/knowledge/__init__.py": "730b121824f258c1f0f9d0531d52a428562530d498ad14623081b9a154b86a21",
     "agent_orchestrator/knowledge/assurance_sources.py": "f65220d97a588bf87437196ba38b251cd7245bf50eeef88972f01ceb899d9d82",
     "agent_orchestrator/knowledge/bounded_closure.py": "83f740483e395942de7a0cb9c4b1d6170c62c831545bec594788a0cb15a8de32",
@@ -402,7 +406,7 @@
     "agent_orchestrator/planning/htn/world.py": "6703e0d7fd82bfe50923089ffd3df5459d18ba2a607bc0aad6df0d20d93ea4e0",
     "agent_orchestrator/planning/plan_preview.py": "b1ec39b18aee1d59bdac55ca4d31aab1b9b1fbdd263b992bb2e09fda6f4dd319",
     "agent_orchestrator/planning/unknown_fields.py": "026d7001b072e00a4c843845277d039804ffe7d3328180caf3c3fd2a131269a2",
-    "agent_orchestrator/public_api.py": "2a002323d810ffb91098bb097db2a8146766ec8cba5a7a590f0d26cf9afc65c5",
+    "agent_orchestrator/public_api.py": "a4118beb45e3e685c4113be9c64e51f3f32d61d3e14fac6c3b977ff11d2a7b0a",
     "agent_orchestrator/py.typed": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "agent_orchestrator/runtime/__init__.py": "3119afdfd9b30ef3ba26e597ff8d8c980c22ca3e2540b1eadd844ac380047815",
     "agent_orchestrator/runtime/action_schema.py": "4df45e18b4acf1484a05e8cded03bbc9607ac1448dce11b645037b7842f16a35",
@@ -827,7 +831,7 @@
     "simple_harness/workflows/personal_v1/ports.py": "1e5ec7df071b3ab19729f0768811fcc5544fd6a89421b4b34f7f5dde28ead1de",
     "simple_harness/workflows/personal_v1/selection.py": "c65c5e41abebfacc359bff6fe79f39b3cd87f0ff2739e2b398215ccd9dde033f"
   },
-  "taskgraph_acceptance": "VALIDATED",
+  "taskgraph_acceptance": "NOT_RUN",
   "upstream": {
     "business_replay": "CONSISTENT",
     "business_replay_receipt_sha256": "ba06c71d6123c2726041d11fe385cfec01cb57bef29ff9b22f6d9551cda05887",

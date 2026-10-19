@@ -26,7 +26,7 @@ walkthrough):
 ```bash
 git clone <sdk-repo-url> && cd simple-harness-sdk
 uv build
-pip install dist/simple_harness_sdk-0.3.0-py3-none-any.whl
+pip install dist/simple_harness_sdk-*-py3-none-any.whl
 ```
 
 ## Project Structure

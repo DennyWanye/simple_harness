@@ -2,7 +2,7 @@
 
 Complete step-by-step guide for integrating Simple Harness SDK into your application.
 
-> **Recommended integration path (0.3.0):** most consumers should start with
+> **Recommended integration path:** most consumers should start with
 > `build_consumer_runtime` — implement 3 Protocols (`ProviderPort`,
 > `ToolExecutorPort`, `AuthorizationPort`) and the SDK adapts them to the full
 > kernel. See the runnable walkthrough in [Quickstart](quickstart.md) and
@@ -63,7 +63,7 @@ Your Application
 ### Step 1: Install SDK
 
 The SDK is not published to PyPI or as a GitHub Release. Clone the SDK
-repository, build the 0.3.0 candidate wheel locally, and install it (identical to the
+repository, build the wheel locally, and install it (identical to the
 [Quickstart](quickstart.md) installation — that document is the single source
 of truth for install commands):
 
@@ -72,7 +72,7 @@ git clone <sdk-repo-url>
 cd simple-harness-sdk
 uv build
 uv venv --seed --python 3.11 .venv
-.venv/bin/pip install dist/simple_harness_sdk-0.3.0-py3-none-any.whl
+.venv/bin/pip install dist/simple_harness_sdk-*-py3-none-any.whl
 ```
 
 ### Step 2: Implement ProviderPort
@@ -671,7 +671,7 @@ Review conformance report and fix failures:
 
 **Solution:**
 ```bash
-.venv/bin/pip install dist/simple_harness_sdk-0.3.0-py3-none-any.whl
+.venv/bin/pip install dist/simple_harness_sdk-*-py3-none-any.whl
 .venv/bin/pip list | grep simple-harness
 ```
 
