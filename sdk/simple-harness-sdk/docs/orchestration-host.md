@@ -164,7 +164,7 @@ host = await OrchestrationHost.open(root, principal=..., model=..., tools=[tool]
 | `ToolCallRejected` | 没授权、参数不合格、预算用完 | `tool`、`reason`、`stage` |
 
 事件按 `seq` 排序，`events(mission_id, after_seq=上次的 through_seq)` 续读；同一调用的事件共用 `call_key`，
-可以拿它去重。`on_write` 只是"有新写入"的提醒，内容从事件续读。可运行的例子（用公开模块 `agent_orchestrator.host.offline` 的脚本模型，不联网）见
+可以拿它去重；同一调用号有多条结束事件时（极少见：记完结果后、交回模型前进程崩溃，重启对账又补一条），以 `seq` 最大的那条为准。`on_write` 只是"有新写入"的提醒，内容从事件续读。可运行的例子（用公开模块 `agent_orchestrator.host.offline` 的脚本模型，不联网）见
 `examples/orchestration-host/tools_readonly.py`（同步工具）与 `tools_async.py`（异步工具：抛错一次、超时一次、再成功）。
 
 ## 5. 要求怎么写

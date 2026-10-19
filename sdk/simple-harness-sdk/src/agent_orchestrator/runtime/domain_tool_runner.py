@@ -74,8 +74,8 @@ def _check_result(value: Any) -> Mapping[str, Any]:
 
     if not isinstance(value, Mapping):
         raise TypeError("tool result must be a JSON object")
-    result = dict(value)
     try:
+        result = dict(value)  # 自定义 Mapping 取值时也可能抛错，同样按"结果不合格"
         encoded = canonical_json(result)
     except (TypeError, ValueError, KeyError) as error:
         raise ValueError("tool result is not canonical JSON") from error
