@@ -18,11 +18,13 @@ SDK 没有发到 PyPI。在 SDK 目录构建安装包，再装到你的应用环
 ```bash
 cd sdk/simple-harness-sdk
 uv build
-pip install "dist/simple_harness_sdk-<版本>-py3-none-any.whl[deepseek-tokenizer]"
+pip install "dist/simple_harness_sdk-<版本>-py3-none-any.whl"
 ```
 
-`deepseek-tokenizer` 扩展装的是 DeepSeek 官方的计数配方（`deepseek-recipe`）。向量检索可选：另装
-`onnxruntime`、`tokenizers`、`numpy`，并把 BGE-M3 INT8 模型目录经 `models_dir=` 传入；不装就按词检索。
+只装这一个包：pytest（核对任务要求）与 DeepSeek 计数配方（`deepseek-recipe`）随它一起装；钉死的
+DeepSeek 分词文件在宿主第一次启动时自动下载到数据目录（哈希核对，之后不再下载）；也可以自己传
+`tokenizer_path=`。向量检索可选：另装 `onnxruntime`、`tokenizers`、`numpy`，并把 BGE-M3 INT8 模型
+目录经 `models_dir=` 传入；不装就按词检索。
 
 要求 Python 3.11 以上。`pytest` 随 SDK 一起装：任务的 `file:` / `pytest:` 要求都在沙箱里用宿主自己的
 解释器跑 pytest 核对，所以要装在同一个虚拟环境。沙箱（跑模型写的代码、核对要求）目前只在 macOS 上可用；
@@ -35,11 +37,9 @@ import asyncio
 from pathlib import Path
 
 from agent_orchestrator.host import ModelConfig, OrchestrationHost, Principal
-from agent_orchestrator.host.tokenizer import ensure_deepseek_tokenizer
 
 
 async def main() -> None:
-    tokenizer = ensure_deepseek_tokenizer(Path("./deepseek-v41-tokenizer.json"))  # 没有就下载
     host = await OrchestrationHost.open(
         Path("./orchestration-data"),
         principal=Principal("user-1", "我"),
@@ -48,7 +48,6 @@ async def main() -> None:
             model="deepseek-flash",
             api_key="<你的密钥>",
         ),
-        tokenizer_path=tokenizer,
         auto_mode=True,  # 自动授权每轮规划、自动确认纯内容要求
     )
     try:
@@ -144,5 +143,5 @@ SDK 没有推送。定时调 `events(mission_id, after_seq=上次的 through_seq
 | `另一个实例正在使用编排目录` | 同目录已有进程在用 |
 | `执行图部署验收门没有通过` | 安装包不是发版脚本产出的；重新按 `docs/build-and-release.md` 构建 |
 | `DeepSeek tokenizer bytes differ…` | 分词文件不是钉死的那份；用 `ensure_deepseek_tokenizer` 重新取 |
-| `DeepSeek 端点缺钉死的分词文件…` | 配了 DeepSeek 但没传 `tokenizer_path`；先 `ensure_deepseek_tokenizer` 再传 |
+| `取 DeepSeek 分词文件失败…` | 第一次启动要联网下载分词文件；或自己下载后传 `tokenizer_path` |
 | 任务停在"等授权" | `auto_mode=False` 且没人调 `planning_authorization` |

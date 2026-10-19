@@ -12,7 +12,7 @@
   经转发站：再给 SH_COMPATIBLE_HOSTS=转发主机名（逗号分隔）；转发站回显的模型名不同时给
   SH_RESPONSE_MODEL_ALIASES=回显名（逗号分隔）。
 
-  分词文件不存在时先按钉死的哈希下载到 ``SH_TOKENIZER``。
+  SH_TOKENIZER 可不给：宿主第一次启动时把钉死的分词文件下载到数据目录。
 * 脚本模型（``--scripted``）：不联网，用 SDK 自带的脚本化模型回复与测试计数器，只证明接线。
 
 任务：在工作区写一份 NOTES.md。跑完打印任务状态、产物内容与用量。
@@ -61,9 +61,6 @@ async def main(args: argparse.Namespace) -> int:
         if not base_url or not api_key:
             print("缺 SH_BASEURL / SH_APIKEY（或用 --scripted 跑脚本模型）", file=sys.stderr)
             return 2
-        from agent_orchestrator.host.tokenizer import ensure_deepseek_tokenizer
-
-        tokenizer = ensure_deepseek_tokenizer(_env("SH_TOKENIZER", "deepseek-v41-tokenizer.json"))
         options.update(
             model=ModelConfig(
                 base_url=base_url,
@@ -78,7 +75,8 @@ async def main(args: argparse.Namespace) -> int:
                 ),
                 allow_private_http=base_url.startswith("http://"),
             ),
-            tokenizer_path=tokenizer,
+            # 不给就由宿主第一次启动时下载到数据目录
+            tokenizer_path=_env("SH_TOKENIZER"),
         )
     try:
         host = await OrchestrationHost.open(root, **options)

@@ -146,3 +146,44 @@ def test_a_new_mission_takes_the_thinking_pool_only_when_asked_and_present(tmp_p
     assert default_for("disabled", both) == native_profile_id(614_400)
     assert default_for("enabled", both) == native_profile_id(614_400, thinking=True)
     assert default_for("enabled", {native_profile_id(614_400)}) == native_profile_id(614_400)
+
+
+def test_a_deepseek_host_fetches_the_pinned_tokenizer_into_its_root_once(tmp_path, monkeypatch):
+    """没给分词文件也没给计数器：启动时下载到数据目录；非 DeepSeek 或给了路径就不下载。"""
+    from agent_orchestrator.host import host as host_module
+
+    fetched: list[Path] = []
+
+    def fake_fetch(dest, **_kwargs):
+        fetched.append(Path(dest))
+        Path(dest).write_text("{}")
+        return Path(dest)
+
+    monkeypatch.setattr(host_module, "ensure_deepseek_tokenizer", fake_fetch)
+    host = OrchestrationHost(
+        tmp_path / "a", principal=Principal("p"), model=DEEPSEEK, settings=HostSettings()
+    )
+    (tmp_path / "a").mkdir()
+    host._ensure_tokenizer()
+    assert fetched == [tmp_path / "a" / "deepseek-v41-tokenizer.json"]
+    assert host._tokenizer_path == fetched[0]
+    host._ensure_tokenizer()  # 已有路径不再下载
+    given = OrchestrationHost(
+        tmp_path / "b",
+        principal=Principal("p"),
+        model=DEEPSEEK,
+        settings=HostSettings(),
+        tokenizer_path=tmp_path / "mine.json",
+    )
+    other = OrchestrationHost(tmp_path / "c", principal=Principal("p"), model=OTHER)
+    given._ensure_tokenizer()
+    other._ensure_tokenizer()
+    assert len(fetched) == 1 and other._tokenizer_path is None
+
+    def broken(dest, **_kwargs):
+        raise OSError("no network")
+
+    monkeypatch.setattr(host_module, "ensure_deepseek_tokenizer", broken)
+    fresh = OrchestrationHost(tmp_path / "d", principal=Principal("p"), model=DEEPSEEK)
+    with pytest.raises(host_module.HostUnavailable, match="分词文件"):
+        fresh._ensure_tokenizer()

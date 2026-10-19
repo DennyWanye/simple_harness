@@ -21,7 +21,7 @@ Simple Harness 桌面产品内嵌的两层运行时，可以单独装进别的 P
 
 ```bash
 uv build
-pip install "dist/simple_harness_sdk-<版本>-py3-none-any.whl[deepseek-tokenizer]"
+pip install "dist/simple_harness_sdk-<版本>-py3-none-any.whl"
 ```
 
 版本号在 `src/simple_harness/version.py`。构建、冻结、验收与分发的正式流程见

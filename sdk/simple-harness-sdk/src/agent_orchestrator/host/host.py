@@ -59,6 +59,7 @@ from .instance_lock import InstanceLock
 from .provider import build_providers, deepseek_counter, is_deepseek, requested_model
 from .script_runner import SandboxScriptRunner
 from .settings import ONLY_DEEPSEEK_REASON, HostSettings, ModelConfig
+from .tokenizer import ensure_deepseek_tokenizer
 
 logger = logging.getLogger(__name__)
 
@@ -278,6 +279,7 @@ class OrchestrationHost:
             return
         try:
             self.root.mkdir(parents=True, exist_ok=True)
+            self._ensure_tokenizer()
             if not self.lock.acquire():
                 self.state, self.reason = "unavailable", "另一个实例正在使用编排目录"
                 return
@@ -442,6 +444,25 @@ class OrchestrationHost:
         )
         if not self.runtime_options["profiles"]:
             raise HostUnavailable(self._no_pool_reason())
+
+    def _ensure_tokenizer(self) -> None:
+        """DeepSeek 端点没给分词文件就按钉死的哈希下载到数据目录（只下载一次）；
+        给了计数器就不需要。"""
+
+        if (
+            self._tokenizer_path is not None
+            or self._given_counter is not None
+            or self.model is None
+            or not is_deepseek(self.model)
+        ):
+            return
+        target = self.root / "deepseek-v41-tokenizer.json"
+        try:
+            self._tokenizer_path = ensure_deepseek_tokenizer(target)
+        except Exception as error:
+            raise HostUnavailable(
+                f"取 DeepSeek 分词文件失败（{target}）：{type(error).__name__}: {error}"[:300]
+            ) from error
 
     def _no_pool_reason(self) -> str:
         """没有一个执行池能起来的原因：DeepSeek 端点缺分词文件，或者端点不是 DeepSeek。"""
