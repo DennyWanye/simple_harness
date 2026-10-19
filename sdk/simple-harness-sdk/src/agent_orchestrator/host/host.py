@@ -56,7 +56,7 @@ from ..runtime.sandbox import SandboxUnavailable, SeatbeltExecutor
 from ..version import __version__
 from .embedding import embedding_port
 from .instance_lock import InstanceLock
-from .provider import build_providers, deepseek_counter, requested_model
+from .provider import build_providers, deepseek_counter, is_deepseek, requested_model
 from .script_runner import SandboxScriptRunner
 from .settings import ONLY_DEEPSEEK_REASON, HostSettings, ModelConfig
 
@@ -226,6 +226,8 @@ class OrchestrationHost:
         self.on_write: Callable[[], None] | None = None
         #: 重建成功后的回调（宿主应用续读事件、重新探测诊断）。
         self.on_rebuilt: Callable[[], None] | None = None
+        # 每轮驱动后的回调（宿主应用自己的轻量杂务，例如存储用量刷新）
+        self.on_round: Callable[[], Any] | None = None
         self._wake = asyncio.Event()
         self._closing = False
         self._failures = 0
@@ -439,7 +441,19 @@ class OrchestrationHost:
             thinking_counter=thinking_counter,
         )
         if not self.runtime_options["profiles"]:
-            raise HostUnavailable(ONLY_DEEPSEEK_REASON)
+            raise HostUnavailable(self._no_pool_reason())
+
+    def _no_pool_reason(self) -> str:
+        """没有一个执行池能起来的原因：DeepSeek 端点缺分词文件，或者端点不是 DeepSeek。"""
+
+        if (
+            self._given_counter is None
+            and self.model is not None
+            and is_deepseek(self.model)
+            and self._tokenizer_path is None
+        ):
+            return "DeepSeek 端点缺钉死的分词文件：请传 tokenizer_path（见接入说明）"
+        return ONLY_DEEPSEEK_REASON
 
     def _new_orchestrator(self) -> Any:
         def assemble_startup(orchestrator: Any) -> None:
@@ -661,7 +675,7 @@ class OrchestrationHost:
             store = self.orchestrator.store
             active = [m for m in store.list_missions() if str(m.status) not in TERMINAL]
         except Exception:  # noqa: BLE001 - 读不到就按忙的节拍，下一轮再读
-            logger.warning("mission list unreadable; keeping the active tick", exc_info=True)
+            logger.debug("mission list unreadable; keeping the active tick", exc_info=True)
             return self.settings.tick_active_seconds
         if not active:
             return self.settings.tick_idle_seconds
@@ -695,6 +709,8 @@ class OrchestrationHost:
                     return
                 await self._host_duties()
                 self._note_quiet_round()
+                if self.on_round is not None:
+                    self.on_round()
                 self._failures = 0
                 if self.state == "degraded":
                     self.state, self.reason = "available", None
@@ -1151,8 +1167,8 @@ class OrchestrationHost:
                 str(mission_id): {"tables": [str(n) for n in (item or {}).get("tables") or ()]}
                 for mission_id, item in dict(isolated).items()
             }
-        except Exception:  # noqa: BLE001 - 状态视图不抛；隔离表读不到就当没有
-            logger.exception("recovery isolation table unreadable")
+        except Exception:  # noqa: BLE001 - 状态视图不抛；没起来时每次列任务都会走到这里
+            logger.debug("recovery isolation table unreadable", exc_info=True)
             return {}
 
     def global_budget_status(self) -> dict[str, Any]:

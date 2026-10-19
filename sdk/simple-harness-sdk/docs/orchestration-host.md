@@ -24,8 +24,9 @@ pip install "dist/simple_harness_sdk-<版本>-py3-none-any.whl[deepseek-tokenize
 `deepseek-tokenizer` 扩展装的是 DeepSeek 官方的计数配方（`deepseek-recipe`）。向量检索可选：另装
 `onnxruntime`、`tokenizers`、`numpy`，并把 BGE-M3 INT8 模型目录经 `models_dir=` 传入；不装就按词检索。
 
-要求 Python 3.11 以上。沙箱（跑模型写的代码、`pytest:` 要求）目前只在 macOS 上可用；别的系统宿主
-照常启动，只是不跑模型写的代码。
+要求 Python 3.11 以上。`pytest` 随 SDK 一起装：任务的 `file:` / `pytest:` 要求都在沙箱里用宿主自己的
+解释器跑 pytest 核对，所以要装在同一个虚拟环境。沙箱（跑模型写的代码、核对要求）目前只在 macOS 上可用；
+别的系统宿主照常启动，只是不跑模型写的代码、要求也核对不了。
 
 ## 2. 最短程序
 
@@ -143,4 +144,5 @@ SDK 没有推送。定时调 `events(mission_id, after_seq=上次的 through_seq
 | `另一个实例正在使用编排目录` | 同目录已有进程在用 |
 | `执行图部署验收门没有通过` | 安装包不是发版脚本产出的；重新按 `docs/build-and-release.md` 构建 |
 | `DeepSeek tokenizer bytes differ…` | 分词文件不是钉死的那份；用 `ensure_deepseek_tokenizer` 重新取 |
+| `DeepSeek 端点缺钉死的分词文件…` | 配了 DeepSeek 但没传 `tokenizer_path`；先 `ensure_deepseek_tokenizer` 再传 |
 | 任务停在"等授权" | `auto_mode=False` 且没人调 `planning_authorization` |

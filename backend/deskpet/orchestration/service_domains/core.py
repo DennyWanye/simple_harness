@@ -127,6 +127,9 @@ class OrchestrationServiceCore:
             else (provider_snapshot.api_key,),
         )
         self._host.on_rebuilt = self._after_rebuild
+        self._host.on_round = (
+            self._storage.schedule_if_stale
+        )  # 每轮看一眼存储用量是否该刷新
 
     # ------------------------------------------------------------ host forwarding
     @property
