@@ -2,6 +2,7 @@
 
 import pytest
 from agent_orchestrator.testing.word_counter import FixtureWordCounter
+
 from deskpet.orchestration.service import OrchestrationService, OrchestrationSettings
 
 
@@ -41,7 +42,8 @@ def _service(tmp_path, mode, control):
     # opt.169 起部署职责逐任务先问"是否被重启恢复隔离"（SDK 3466f6e38）；桩照真编排器给出这个判断
     service._duties.bind(
         SimpleNamespace(
-            store=SimpleNamespace(connection=db), recovery_isolated=lambda _mission_id: False
+            store=SimpleNamespace(connection=db),
+            recovery_isolated=lambda _mission_id: False,
         ),
         control,
     )
@@ -49,7 +51,12 @@ def _service(tmp_path, mode, control):
 
 
 PENDING = [
-    {"mission_id": "m1", "request_id": "r1", "intent_id": "i1", "state": "AUTHORIZATION_REQUIRED"}
+    {
+        "mission_id": "m1",
+        "request_id": "r1",
+        "intent_id": "i1",
+        "state": "AUTHORIZATION_REQUIRED",
+    }
 ]
 
 
@@ -67,7 +74,9 @@ async def test_auto_mode_issues_once_as_host_auto_permission(tmp_path):
             "approval_source": "HOST_AUTO_PERMISSION",
         }
     ]
-    assert await service._auto_authorize_planning() == 0  # same request is not re-issued
+    assert (
+        await service._auto_authorize_planning() == 0
+    )  # same request is not re-issued
     assert len(control.issued) == 1
 
 
@@ -78,27 +87,6 @@ async def test_manual_or_unreadable_mode_leaves_the_button(tmp_path, mode):
     service = _service(tmp_path, mode, control)
     assert await service._auto_authorize_planning() == 0
     assert control.issued == []
-
-
-@pytest.mark.asyncio
-async def test_host_duties_are_bound_to_run_between_loop_cycles(tmp_path):
-    """NEXT-TG-1.0 2A.1g: one Mission's long turn kept ``run()`` from returning and
-    held a new Mission's planning grant for eleven minutes; the Host duties now run
-    between the loop's cycles too."""
-
-    control = _Control(PENDING)
-    service = _service(tmp_path, "auto", control)
-    bound = {}
-
-    class _Loop:
-        def set_between_cycles(self, duty, *, every_seconds):
-            bound["duty"], bound["every"] = duty, every_seconds
-
-    service._bind_host_duties(_Loop())
-    assert bound["every"] == service.settings.tick_active_seconds
-    await bound["duty"]()
-    assert [c["request_id"] for c in control.issued] == ["r1"]
-    service._bind_host_duties(object())  # an SDK without the hook is left alone
 
 
 def test_a_round_that_changed_nothing_waits_the_long_tick(tmp_path):
@@ -128,4 +116,6 @@ def test_a_round_that_changed_nothing_waits_the_long_tick(tmp_path):
     service._note_quiet_round()
     assert service._tick() == service.settings.tick_waiting_seconds  # nothing changed
     service._note_quiet_round()
-    assert service._tick() == service.settings.tick_active_seconds  # a write: busy again
+    assert (
+        service._tick() == service.settings.tick_active_seconds
+    )  # a write: busy again

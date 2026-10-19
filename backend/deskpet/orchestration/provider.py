@@ -1,32 +1,28 @@
 # SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: BUSL-1.1
 
-"""The model the orchestration runtime uses (plan §3.3, decision D9, HA-17).
-
-At service start the Host's provider chain is read once (the first enabled entry, the same
-source the chat uses) into a :class:`ProviderSnapshot`; a later change of provider affects
-new Attempts only after a restart.  A fresh install has no chain: the service is then
-unavailable with "未配置模型" and the chat still starts.
-
-DeepSeek's official endpoint names its flash model ``deepseek-flash``; a configuration that
-says ``deepseek-v4-flash`` there is mapped and the status shows both ids.  The API key lives
-only inside the SDK ``Secret``; it is never in a repr, a log line, a payload or the manifest.
+"""编排用哪个模型：启动时读一次提供方链的首项（与聊天同一来源）成 ``ProviderSnapshot``，再换成
+SDK 宿主的 ``ModelConfig``。换提供方要重启才对新任务生效。全新安装没有链：服务不可用，原因
+"未配置模型"，聊天照常。密钥只进 SDK 的 ``Secret``，不进 repr、日志、回执与清单。
 """
 
 from __future__ import annotations
 
-import inspect
+import logging
+import os
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
 
-import httpx
-from providers.extra_headers import install_httpx_extra_headers_hook
-from simple_harness.providers import OpenAICompatibleProvider, Secret
+from agent_orchestrator.host import ModelConfig
+from agent_orchestrator.host.settings import DEEPSEEK_OFFICIAL_HOSTS, MODEL_ALIASES
 
-DEEPSEEK_OFFICIAL_HOSTS = frozenset({"api.deepseek.com"})
-MODEL_ALIASES = {"deepseek-v4-flash": "deepseek-flash"}
+from .settings import compatible_hosts
+
 NO_MODEL = "未配置模型"
+TOKENIZER_PATH_ENV = "DESKPET_ORCH_TOKENIZER_PATH"
+
+logger = logging.getLogger(__name__)
 
 
 class ProviderUnavailable(RuntimeError):
@@ -40,9 +36,6 @@ class ProviderSnapshot:
     configured_model: str
     requested_model: str
     api_key: str = field(repr=False)
-    # Spellings under which a relay echoes this very model (e.g. a vendor-prefixed
-    # "deepseek-ai/DeepSeek-V4.1-Flash").  Declared, never guessed: an undeclared echo
-    # keeps usage untrusted, which only ever over-counts (2026-09-24 relay).
     response_model_aliases: tuple[str, ...] = ()
 
     def public(self) -> dict[str, Any]:
@@ -54,6 +47,8 @@ class ProviderSnapshot:
 
 
 def requested_model(base_url: str, configured: str) -> str:
+    from urllib.parse import urlparse
+
     host = (urlparse(base_url).hostname or "").lower()
     if host in DEEPSEEK_OFFICIAL_HOSTS:
         return MODEL_ALIASES.get(configured, configured)
@@ -72,7 +67,9 @@ def snapshot_from_registry(registry: Any) -> ProviderSnapshot:
     entry = dict(chain[0])
     models = list(entry.get("models") or ())
     configured = str(
-        entry.get("default_model") or entry.get("model") or (models[0] if models else "")
+        entry.get("default_model")
+        or entry.get("model")
+        or (models[0] if models else "")
     )
     base_url = str(entry.get("base_url") or "")
     provider_id = str(entry.get("id") or "")
@@ -90,59 +87,58 @@ def snapshot_from_registry(registry: Any) -> ProviderSnapshot:
     )
 
 
-def build_provider(
-    snapshot: ProviderSnapshot,
-    *,
-    timeout: float = 180.0,
-    allow_private_http: bool = False,
-    thinking: str | None = None,
-) -> tuple[Any, Any]:
-    """``(provider, http_client)`` — the caller closes the client on shutdown."""
+def model_config(snapshot: ProviderSnapshot, settings: Any) -> ModelConfig:
+    """SDK 宿主的模型配置：转发主机、回显别名与思考开关来自设置。"""
 
-    client = install_httpx_extra_headers_hook(httpx.AsyncClient())
-    provider = provider_on_client(
-        client, snapshot, timeout=timeout, allow_private_http=allow_private_http, thinking=thinking
+    return ModelConfig(
+        base_url=snapshot.base_url,
+        model=snapshot.requested_model,
+        api_key=snapshot.api_key,
+        compatible_hosts=tuple(sorted(compatible_hosts(settings))),
+        response_model_aliases=tuple(snapshot.response_model_aliases),
+        thinking=str(getattr(settings, "thinking", "enabled") or "enabled"),
     )
-    return provider, client
 
 
-def provider_on_client(
-    client: Any,
-    snapshot: ProviderSnapshot,
-    *,
-    timeout: float = 180.0,
-    allow_private_http: bool = False,
-    thinking: str | None = None,
-    reasoning_effort: str | None = None,
-) -> Any:
-    """An adapter on an existing client (the thinking-mode pools share the Host's client)."""
+def tokenizer_path() -> Path | None:
+    """钉死的 DeepSeek 分词文件：``DESKPET_ORCH_TOKENIZER_PATH``（绝对路径），否则模型目录下的
+    ``deepseek-v41/tokenizer.json``。"""
 
-    options: dict[str, Any] = {"allow_private_http": True} if allow_private_http else {}
-    # SDKs that implement complete SSE assembly can keep long model calls alive.
-    # Older pinned wheels retain their existing transport until upgraded.
-    if "stream" in inspect.signature(OpenAICompatibleProvider).parameters:
-        options["stream"] = True
-    if thinking is not None:  # DeepSeek only; see runtime_profile.deepseek_thinking
-        options["thinking"] = thinking
-    if reasoning_effort is not None:
-        options["reasoning_effort"] = reasoning_effort
-    if snapshot.response_model_aliases:
-        options["response_model_aliases"] = tuple(snapshot.response_model_aliases)
-    return OpenAICompatibleProvider(
-        client,
-        snapshot.base_url,
-        snapshot.requested_model,
-        Secret(snapshot.api_key),
-        timeout=timeout,
-        **options,
-    )
+    configured = os.environ.get(TOKENIZER_PATH_ENV)
+    if configured:
+        path = Path(configured)
+        return path if path.is_absolute() else None
+    try:
+        # 按需导入：可选依赖
+        from paths import user_models_dir
+    except ImportError:
+        return None
+    candidate = Path(user_models_dir()) / "deepseek-v41" / "tokenizer.json"
+    return candidate if candidate.is_file() else None
+
+
+def models_dir() -> Path | None:
+    try:
+        # 按需导入：可选依赖
+        from paths import user_models_dir
+    except ImportError:
+        return None
+    try:
+        return Path(user_models_dir())
+    except Exception:
+        logger.warning(
+            "user models dir unavailable; vector lane stays closed", exc_info=True
+        )
+        return None
 
 
 __all__ = (
     "NO_MODEL",
     "ProviderSnapshot",
     "ProviderUnavailable",
-    "build_provider",
+    "model_config",
+    "models_dir",
     "requested_model",
     "snapshot_from_registry",
+    "tokenizer_path",
 )

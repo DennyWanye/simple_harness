@@ -20,9 +20,17 @@
 from __future__ import annotations
 
 import pytest
-from agent_orchestrator.orchestrator.commit_service import global_account_id, mission_account
+from agent_orchestrator.host import OrchestrationHost
+from agent_orchestrator.orchestrator.commit_service import (
+    global_account_id,
+    mission_account,
+)
 from agent_orchestrator.testing.word_counter import FixtureWordCounter
-from deskpet.orchestration.service import OrchestrationRequestError, OrchestrationService
+
+from deskpet.orchestration.service import (
+    OrchestrationRequestError,
+    OrchestrationService,
+)
 from deskpet.orchestration.settings import OrchestrationSettings, load_settings
 
 from ._support import notes_provider, notes_request
@@ -34,7 +42,9 @@ def test_the_setting_has_a_default_a_floor_and_a_ceiling():
     assert OrchestrationSettings().global_monthly_max_tokens == DEFAULT_GLOBAL
     assert load_settings(None).global_monthly_max_tokens == DEFAULT_GLOBAL
     assert (
-        load_settings({"global_monthly_max_tokens": 50_000_000}).global_monthly_max_tokens
+        load_settings(
+            {"global_monthly_max_tokens": 50_000_000}
+        ).global_monthly_max_tokens
         == 50_000_000
     )
     # 比单任务默认上限还小的月配额会让默认任务一个都建不了：抬到单任务默认上限
@@ -50,18 +60,24 @@ def test_the_setting_has_a_default_a_floor_and_a_ceiling():
         load_settings({"global_monthly_max_tokens": True}).global_monthly_max_tokens
         == DEFAULT_GLOBAL
     )
-    assert load_settings({"global_monthly_max_tokens": 10**15}).global_monthly_max_tokens == 10**12
+    assert (
+        load_settings({"global_monthly_max_tokens": 10**15}).global_monthly_max_tokens
+        == 10**12
+    )
     # 旧名直接删：开发期不兼容旧配置，写旧名等于没写（仍是默认月配额）
     assert not hasattr(OrchestrationSettings(), "global_max_tokens")
     assert (
-        load_settings({"global_max_tokens": 50_000_000}).global_monthly_max_tokens == DEFAULT_GLOBAL
+        load_settings({"global_max_tokens": 50_000_000}).global_monthly_max_tokens
+        == DEFAULT_GLOBAL
     )
 
 
 async def _service(root, principal, monkeypatch, **overrides):  # type: ignore[no-untyped-def]
-    # 工作树里装的是 opt.164 轮子，没有部署验收门的读法；按 test_deployment_manifest.py 的做法当作 VALIDATED
+    # 门口检查是 SDK 宿主的；这条检验的是全局预算，按 test_deployment_manifest.py 的做法当作 VALIDATED
     monkeypatch.setattr(
-        OrchestrationService, "_taskgraph_acceptance_status", staticmethod(lambda: "VALIDATED")
+        OrchestrationHost,
+        "taskgraph_acceptance_status",
+        staticmethod(lambda: "VALIDATED"),
     )
     service = OrchestrationService(
         root,
@@ -83,7 +99,9 @@ async def test_the_global_pool_is_handed_to_the_sdk_and_opens_above_the_first_mi
     try:
         assert service._config.global_budget is not None
         assert service._config.global_budget.max_tokens == DEFAULT_GLOBAL
-        assert service._orchestrator.commit._global_budget == service._config.global_budget
+        assert (
+            service._orchestrator.commit._global_budget == service._config.global_budget
+        )
         month = global_account_id(service._orchestrator.store.now)
         before = service.status()["global_budget"]
         assert before == {
@@ -142,7 +160,9 @@ async def test_a_mission_budget_above_the_global_pool_is_refused_on_the_existing
         assert "§18.2" in str(refused.value)  # SDK 原话：子预算超过父预算
         assert service.list_missions() == []
         # 没超的照常建
-        service.create_mission(notes_request("global-fits", budget={"max_tokens": 30_000_000}))
+        service.create_mission(
+            notes_request("global-fits", budget={"max_tokens": 30_000_000})
+        )
         assert len(service.list_missions()) == 1
     finally:
         await service.close()
@@ -158,7 +178,9 @@ async def test_a_raised_monthly_quota_reaches_the_open_pool_on_restart(
         orchestration_root, principal, monkeypatch, global_monthly_max_tokens=30_000_000
     )
     try:
-        service.create_mission(notes_request("global-restart", budget={"max_tokens": 20_000_000}))
+        service.create_mission(
+            notes_request("global-restart", budget={"max_tokens": 20_000_000})
+        )
         assert service.status()["global_budget"]["max_tokens"] == 30_000_000
     finally:
         await service.close()
@@ -171,7 +193,9 @@ async def test_a_raised_monthly_quota_reaches_the_open_pool_on_restart(
             pool = service._orchestrator.commit.ledger.account(month)
         assert pool.limits.max_tokens == 90_000_000
         status = service.status()["global_budget"]
-        assert status["opened"] is True and status["max_tokens"] == pool.limits.max_tokens
+        assert (
+            status["opened"] is True and status["max_tokens"] == pool.limits.max_tokens
+        )
         assert len(service.list_missions()) == 1  # 没有新任务建立
     finally:
         await service.close()

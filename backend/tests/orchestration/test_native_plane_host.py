@@ -14,14 +14,15 @@ from __future__ import annotations
 import asyncio
 
 import pytest
+from agent_orchestrator.host import ONLY_DEEPSEEK_REASON
 from agent_orchestrator.testing.word_counter import FixtureWordCounter
-from deskpet.orchestration.handlers import handle
-from deskpet.orchestration.provider import ProviderSnapshot
-from deskpet.orchestration.runtime_profile import ONLY_DEEPSEEK_REASON
-from deskpet.orchestration.service import OrchestrationService, OrchestrationSettings
 from simple_harness.agents.arp.pins import Pin
 from simple_harness.agents.arp.profile import default_policy
 from simple_harness.agents.arp.strict import digest
+
+from deskpet.orchestration.handlers import handle
+from deskpet.orchestration.provider import ProviderSnapshot
+from deskpet.orchestration.service import OrchestrationService, OrchestrationSettings
 
 from ._support import notes_provider, notes_request
 
@@ -53,18 +54,32 @@ def _asking_planner():  # type: ignore[no-untyped-def]
             "rationale": "fixture",
             "reason_refs": [],
             "assumptions": [],
-            "payload": {"question": "fixture question", "options": [], "blocking": True},
+            "payload": {
+                "question": "fixture question",
+                "options": [],
+                "blocking": True,
+            },
             "uncertainties": [],
             "alternatives": [],
             "replan_triggers": [],
         }
-        return "<planning_decision>" + json.dumps(body, ensure_ascii=False) + "</planning_decision>"
+        return (
+            "<planning_decision>"
+            + json.dumps(body, ensure_ascii=False)
+            + "</planning_decision>"
+        )
 
     return RoleScriptedProvider({"planner": [ask]})
 
 
 def _request(
-    verb: str, *, subject_id: str, payload, command_id=None, expected_revision=None, request_id="r"
+    verb: str,
+    *,
+    subject_id: str,
+    payload,
+    command_id=None,
+    expected_revision=None,
+    request_id="r",
 ):  # type: ignore[no-untyped-def]
     return {
         "request_id": request_id,
@@ -90,7 +105,9 @@ async def test_native_pools_answer_runtime_plane_reads_writes_and_replays(
         status = service.status()
         assert status["state"] == "available", status["reason"]
         native = status["native_plane"]
-        assert native["available"] is True and {p["profile_id"] for p in native["profiles"]} == {
+        assert native["available"] is True and {
+            p["profile_id"] for p in native["profiles"]
+        } == {
             "deepseek-native-256k-v1",
             "deepseek-native-512k-v1",
             "deepseek-native-600k-v1",
@@ -103,7 +120,9 @@ async def test_native_pools_answer_runtime_plane_reads_writes_and_replays(
             for p in native["profiles"]
         )
         assert all(
-            row["consecutive_failures"] == 0 for p in native["profiles"] for row in p["background"]
+            row["consecutive_failures"] == 0
+            for p in native["profiles"]
+            for row in p["background"]
         )
         # 2026-10-04 用户定（H-9 bbce635bd）：默认窗口 512K，256K 可选
         assert (
@@ -130,7 +149,10 @@ async def test_native_pools_answer_runtime_plane_reads_writes_and_replays(
                 }
             )
         pool = service._orchestrator.assembled.pool("deepseek-native-256k-v1")
-        assert pool.runtime.arp.protocol == "ARP_V1_1_1" and pool.bridge.native_plane is True
+        assert (
+            pool.runtime.arp.protocol == "ARP_V1_1_1"
+            and pool.bridge.native_plane is True
+        )
         # NEXT-TG-1.0 §10: orchestrator pools create Agents in MISSION owner mode from the
         # SDK's own Mission source reader (profile revision 2; revision 1 rows stay as they are).
         assert (
@@ -157,7 +179,9 @@ async def test_native_pools_answer_runtime_plane_reads_writes_and_replays(
             assert reader.store is service._orchestrator.store
             assert (
                 reader.dispatches.__self__
-                is service._orchestrator.assembled.pool(profile_id).runtime.arp.lifecycle
+                is service._orchestrator.assembled.pool(
+                    profile_id
+                ).runtime.arp.lifecycle
             )
         # The deployment authorization port allows the deployment's tools and the Assurance
         # reviewers' read-only evidence tools, and denies everything else by policy name.
@@ -170,7 +194,9 @@ async def test_native_pools_answer_runtime_plane_reads_writes_and_replays(
         async def decision(name: str) -> str:
             return (
                 await port.request_authorization(
-                    AuthorizationRequest(SimpleNamespace(name=name, arguments={}), run_id="r")
+                    AuthorizationRequest(
+                        SimpleNamespace(name=name, arguments={}), run_id="r"
+                    )
                 )
             ).decision
 
@@ -181,9 +207,9 @@ async def test_native_pools_answer_runtime_plane_reads_writes_and_replays(
         )
         assert await decision("shell_exec") == "deny"
         namespace = pool.runtime.arp.catalogue.namespace_id
-        assert {p["profile_id"]: p["catalogue_namespace_id"] for p in native["profiles"]}[
-            "deepseek-native-256k-v1"
-        ] == namespace
+        assert {
+            p["profile_id"]: p["catalogue_namespace_id"] for p in native["profiles"]
+        }["deepseek-native-256k-v1"] == namespace
 
         # READ: the catalogue page of this deployment's namespace.
         read = await handle(
@@ -193,7 +219,12 @@ async def test_native_pools_answer_runtime_plane_reads_writes_and_replays(
                 "agent_skills_list",
                 subject_id=namespace,
                 request_id="r1",
-                payload={"namespace_id": namespace, "kind": "SKILL", "cursor": None, "limit": 10},
+                payload={
+                    "namespace_id": namespace,
+                    "kind": "SKILL",
+                    "cursor": None,
+                    "limit": 10,
+                },
             ),
         )
         assert read["payload"]["ok"] is True and read["payload"]["request_id"] == "r1"
@@ -230,26 +261,44 @@ async def test_native_pools_answer_runtime_plane_reads_writes_and_replays(
             subject_id=namespace,
             command_id="cmd-policy-1",
             expected_revision=0,
-            payload={"schema_version": 1, "policy": policy, "expected_policy_ref": None},
+            payload={
+                "schema_version": 1,
+                "policy": policy,
+                "expected_policy_ref": None,
+            },
         )
-        first = (await handle(service, "agent_runtime_request", dict(submit)))["payload"]["data"]
+        first = (await handle(service, "agent_runtime_request", dict(submit)))[
+            "payload"
+        ]["data"]
         assert (
             first["error"] is None
             and first["items"][0]["policy_ref"]["revision"] == 1
             and first["command_receipt"] is not None
         )
-        again = (await handle(service, "agent_runtime_request", dict(submit)))["payload"]["data"]
+        again = (await handle(service, "agent_runtime_request", dict(submit)))[
+            "payload"
+        ]["data"]
         assert again["items"][0]["policy_ref"] == first["items"][0]["policy_ref"]
-        assert again["command_receipt"]["command_hash"] == first["command_receipt"]["command_hash"]
+        assert (
+            again["command_receipt"]["command_hash"]
+            == first["command_receipt"]["command_hash"]
+        )
         reused = dict(submit)
-        reused["payload"] = {**submit["payload"], "policy": {**policy, "max_recall_items": 16}}
-        conflict = (await handle(service, "agent_runtime_request", reused))["payload"]["data"]
+        reused["payload"] = {
+            **submit["payload"],
+            "policy": {**policy, "max_recall_items": 16},
+        }
+        conflict = (await handle(service, "agent_runtime_request", reused))["payload"][
+            "data"
+        ]
         assert conflict["error"]["code"] == "EXPECTED_REVISION_MISMATCH"
         # The submission is on the native pool's own library, not the legacy one: a request
         # without ``profile_id`` goes to the default pool (512K since H-9 bbce635bd).
         from simple_harness.agents.arp import store as arp_store
 
-        default_pool = service._orchestrator.assembled.pool(status["default_context_profile_id"])
+        default_pool = service._orchestrator.assembled.pool(
+            status["default_context_profile_id"]
+        )
         assert (
             arp_store.latest_policy_revision(
                 default_pool.runtime.uow.database.connection, "host-test-policy"
@@ -280,18 +329,29 @@ async def test_a_non_deepseek_deployment_without_a_counter_is_refused_as_only_de
     await service.start()
     try:
         status = service.status()
-        assert status["state"] == "unavailable" and status["reason"] == ONLY_DEEPSEEK_REASON
-        assert status["native_plane"]["available"] is False and not status["native_plane"].get(
-            "profiles"
+        assert (
+            status["state"] == "unavailable"
+            and status["reason"] == ONLY_DEEPSEEK_REASON
         )
-        assert status["context_profiles"] == [] and status["default_context_profile_id"] is None
+        assert status["native_plane"]["available"] is False and not status[
+            "native_plane"
+        ].get("profiles")
+        assert (
+            status["context_profiles"] == []
+            and status["default_context_profile_id"] is None
+        )
         refused = await handle(
             service,
             "agent_runtime_request",
             _request(
                 "agent_skills_list",
                 subject_id="x",
-                payload={"namespace_id": "x", "kind": "SKILL", "cursor": None, "limit": 1},
+                payload={
+                    "namespace_id": "x",
+                    "kind": "SKILL",
+                    "cursor": None,
+                    "limit": 1,
+                },
             ),
         )
         assert refused["payload"]["ok"] is False
@@ -309,20 +369,29 @@ async def test_an_evaluation_mission_carries_the_evaluation_key_and_the_dispatch
     await service.start()
     try:
         evaluation = Pin(
-            "evaluation", "skill-eval:demo@1:0123456789abcdef:cmd-trial-1", 1, digest({"demo": 1})
+            "evaluation",
+            "skill-eval:demo@1:0123456789abcdef:cmd-trial-1",
+            1,
+            digest({"demo": 1}),
         )
         body = {
             "request_id": "m1",
             "evaluation_ref": evaluation.to_json(),
-            **{k: v for k, v in notes_request("ignored").items() if k != "idempotency_key"},
+            **{
+                k: v
+                for k, v in notes_request("ignored").items()
+                if k != "idempotency_key"
+            },
         }
-        created = (await handle(service, "agent_skill_evaluation_mission", dict(body)))["payload"]
+        created = (await handle(service, "agent_skill_evaluation_mission", dict(body)))[
+            "payload"
+        ]
         assert created["ok"] is True and created["data"]["created"] is True
         assert created["data"]["idempotency_key"] == evaluation_mission_key(evaluation)
         mission_id = created["data"]["mission_id"]
-        replay = (await handle(service, "agent_skill_evaluation_mission", dict(body)))["payload"][
-            "data"
-        ]
+        replay = (await handle(service, "agent_skill_evaluation_mission", dict(body)))[
+            "payload"
+        ]["data"]
         assert replay["created"] is False and replay["mission_id"] == mission_id
         mission = service._orchestrator.store.get_mission(mission_id)
         assert mission.idempotency_key == evaluation_mission_key(evaluation)
@@ -366,13 +435,17 @@ async def test_an_evaluation_mission_carries_the_evaluation_key_and_the_dispatch
                         "content_hash": ref.content_hash,
                     },
                     "mode": "CONTENT_ONLY",
-                    "content_criterion_ids": [c.criterion_id for c in requirements.criteria],
+                    "content_criterion_ids": [
+                        c.criterion_id for c in requirements.criteria
+                    ],
                     "effects": [],
                 },
             }
         )
         assert approved["authority"]["kind"] == "USER_CONFIRMED"
-        await asyncio.wait_for(loop.run(max_cycles=10), timeout=240)  # opens the Planner request
+        await asyncio.wait_for(
+            loop.run(max_cycles=10), timeout=240
+        )  # opens the Planner request
         # the Host's per-round duties, as its loop would run them: the planning authority
         # the person (auto permission) grants this request, and the strict TaskGraph
         for pending in service._call("pending_planning_authorizations"):
@@ -386,14 +459,18 @@ async def test_an_evaluation_mission_carries_the_evaluation_key_and_the_dispatch
                     "approval_source": "HOST_AUTO_PERMISSION",
                 },
             )
-        await service._host_duties()  # binds the strict TaskGraph the granted request waits for
+        await (
+            service._host_duties()
+        )  # binds the strict TaskGraph the granted request waits for
         await asyncio.wait_for(loop.run(max_cycles=40), timeout=240)
         assert loop.store.get_mission(mission_id).status.value == "PLANNING"
         pool = loop.assembled.pool(
             "deepseek-native-600k-v1"
         )  # 默认窗口建的任务在 600K 池（H-9；2026-10-10）
         connection = pool.runtime.uow.database.connection
-        sessions = connection.execute("SELECT agent_id, state FROM arp_agent_sessions").fetchall()
+        sessions = connection.execute(
+            "SELECT agent_id, state FROM arp_agent_sessions"
+        ).fetchall()
         assert len(sessions) == 1 and sessions[0][1] == "ACTIVE"
         intents = connection.execute(
             "SELECT state, original_receipt_ref_json FROM arp_creation_intents"
@@ -424,7 +501,9 @@ async def test_an_evaluation_mission_carries_the_evaluation_key_and_the_dispatch
         }
         [frozen] = [
             arp_store.read_context_by_request_key(connection, str(r[0])).manifest
-            for r in connection.execute("SELECT original_request_key FROM arp_context_requests")
+            for r in connection.execute(
+                "SELECT original_request_key FROM arp_context_requests"
+            )
         ]
         assert (
             mission_sources.record_pin(session.session_id, record).to_json()
@@ -444,11 +523,15 @@ async def test_an_evaluation_mission_carries_the_evaluation_key_and_the_dispatch
             "task_id": "t",
             "command_id": "cmd-dispatch-1",
         }
-        wrong = (await handle(service, "agent_skill_evaluation_dispatch", dict(link)))["payload"]
+        wrong = (await handle(service, "agent_skill_evaluation_dispatch", dict(link)))[
+            "payload"
+        ]
         assert wrong["ok"] is False and wrong["error_code"] == "invalid_request"
         no_task = (
             await handle(
-                service, "agent_skill_evaluation_dispatch", {**link, "mission_id": mission_id}
+                service,
+                "agent_skill_evaluation_dispatch",
+                {**link, "mission_id": mission_id},
             )
         )["payload"]
         assert no_task["ok"] is False and no_task["error_code"] == "not_found"

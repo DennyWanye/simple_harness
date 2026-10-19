@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 
 import pytest
+from agent_orchestrator.host import OrchestrationHost
 from agent_orchestrator.testing.word_counter import FixtureWordCounter
 
 from deskpet.orchestration.manifest import MANIFEST_NAME, MANIFEST_SCHEMA
@@ -37,7 +38,9 @@ async def test_manifest_records_the_imported_sdk_and_the_fixed_policy(
     )
     await service.start()
     try:
-        manifest = json.loads((orchestration_root / MANIFEST_NAME).read_text(encoding="utf-8"))
+        manifest = json.loads(
+            (orchestration_root / MANIFEST_NAME).read_text(encoding="utf-8")
+        )
         assert manifest == service.status()["deployment_manifest"]
         assert manifest["schema"] == MANIFEST_SCHEMA
         assert "host_commit" in manifest and "host_dirty" in manifest
@@ -45,7 +48,10 @@ async def test_manifest_records_the_imported_sdk_and_the_fixed_policy(
         dists = manifest["distributions"]
         assert dists["consistent"] is True
         assert dists["simple_harness"]["version"] == SDK_VERSION
-        assert dists["pin"] == {"version": SDK_VERSION, "wheel_sha256": SDK_WHEEL_SHA256}
+        assert dists["pin"] == {
+            "version": SDK_VERSION,
+            "wheel_sha256": SDK_WHEEL_SHA256,
+        }
         policy = manifest["features"]["deployment_policy"]
         # P3.2 (plan D9): the probe decides — sandboxed when it passed here, off otherwise,
         # and never process_only (an unisolated child process is for trusted code only)
@@ -85,8 +91,12 @@ async def test_a_version_that_differs_from_the_pin_never_opens_the_library(
         status = service.status()
         assert status["available"] is False and status["state"] == "unavailable"
         assert "钉版不一致" in (status["reason"] or "")
-        assert not (orchestration_root / "orchestrator.db").exists()  # nothing was migrated
-        manifest = json.loads((orchestration_root / MANIFEST_NAME).read_text(encoding="utf-8"))
+        assert not (
+            orchestration_root / "orchestrator.db"
+        ).exists()  # nothing was migrated
+        manifest = json.loads(
+            (orchestration_root / MANIFEST_NAME).read_text(encoding="utf-8")
+        )
         assert manifest["refused"] == "pin_mismatch"
         assert manifest["distributions"]["consistent"] is False
     finally:
@@ -102,7 +112,9 @@ async def test_a_deployment_whose_taskgraph_gate_is_not_validated_is_refused_bef
     **改坏检验**：启动时不看 ``acceptance_status`` → NOT_RUN 的部署照样可用 → 变红。"""
 
     monkeypatch.setattr(
-        OrchestrationService, "_taskgraph_acceptance_status", staticmethod(lambda: "NOT_RUN")
+        OrchestrationHost,
+        "taskgraph_acceptance_status",
+        staticmethod(lambda: "NOT_RUN"),
     )
     service = OrchestrationService(
         orchestration_root,
@@ -116,9 +128,15 @@ async def test_a_deployment_whose_taskgraph_gate_is_not_validated_is_refused_bef
     try:
         status = service.status()
         assert status["available"] is False and status["state"] == "unavailable"
-        assert "验收门" in (status["reason"] or "") and "NOT_RUN" in (status["reason"] or "")
-        assert not (orchestration_root / "orchestrator.db").exists()  # nothing was migrated
-        manifest = json.loads((orchestration_root / MANIFEST_NAME).read_text(encoding="utf-8"))
+        assert "验收门" in (status["reason"] or "") and "NOT_RUN" in (
+            status["reason"] or ""
+        )
+        assert not (
+            orchestration_root / "orchestrator.db"
+        ).exists()  # nothing was migrated
+        manifest = json.loads(
+            (orchestration_root / MANIFEST_NAME).read_text(encoding="utf-8")
+        )
         assert manifest["refused"] == "taskgraph_acceptance_not_validated"
         assert manifest["taskgraph_acceptance"] == "NOT_RUN"
     finally:
@@ -130,7 +148,9 @@ async def test_a_validated_taskgraph_gate_lets_the_deployment_start(
     orchestration_root, principal, monkeypatch
 ):
     monkeypatch.setattr(
-        OrchestrationService, "_taskgraph_acceptance_status", staticmethod(lambda: "VALIDATED")
+        OrchestrationHost,
+        "taskgraph_acceptance_status",
+        staticmethod(lambda: "VALIDATED"),
     )
     service = OrchestrationService(
         orchestration_root,

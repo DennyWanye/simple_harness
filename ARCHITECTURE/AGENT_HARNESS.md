@@ -60,17 +60,17 @@
 - 生产链：Host 原生思考池 `deepseek-native-256k/512k-v1` 默认 ON → SDK 装配层 `build_arp_runtime`（意图派生的认证创建调用方）→ ARP 会话 / 上下文装填 / 分区索引 / 召回（本地 BGE-M3 INT8 后台嵌入）→ 编排与保证审阅。新 Mission 默认开思考（high），不思考模式同样支持。
 - 保证审阅在原生池上：审阅导入按冻结清单重拼实际请求并核对哈希；执行器检查（`code_test`）按已记录回执参与判定；复核只比较访问与策略；验收采用被审阅的包，并与审阅读同一份批准检查策略视图。文档任务 `code_test` 无可证明内容时不挡验收；审阅者 JSON 前多写文字仍判格式错误（用户决定）。
 - 计量：DeepSeek 只算线上请求，可以多算不可以少算；结果未知的调用空出并发名额、额度按上限保留；保证通道规划轮遇到结果未知等满时限后走本角色失败出口（不重发）；准入被拒的调用记确定的 0（arp.17）。
-- SCRIPT 技能经 Host 沙箱执行（`deskpet/orchestration/skill_script_runner.py`，只允许 Python，输出不跟随链接）。
+- SCRIPT 技能经 Host 沙箱执行（SDK `agent_orchestrator/host/script_runner.py`（2026-10-19 从桌面端搬进 SDK），只允许 Python，输出不跟随链接）。
 - 验证：真实模型 12 局 12/12（少算 0）+ 关思考对照 3/3；产品后台真实链路 Mission 完成（12 调用全部结清，102,185 ≤ 186,991）；安装后导入核对通过；合并前全量回归与合并基点同条件对照无新增失败。**未做**：官方 DeepSeek 端点（用户决定不做）、UI 测试（前端零改动，未跑 vitest/原生点击）、向量模型首启自动下载。
 
 2026-09-24 ARP 遗留缺陷清理（SDK `0.13.0.dev20260924+arp.10` / 提交 `75a916dc`，记录 §7.17–§7.18）。
 - Assurance 检查策略：任务派生判据的必过检查不含 `critic_review`（它就是保证审阅本身）；只剩审阅层时为语义判据；`human_review` 仍报未解析。
 - 沙箱脚本输出文件：不跟随链接、只收普通文件、最多读上限+1 字节。
-- SCRIPT 技能：Host `skill_script_runner.SandboxScriptRunner` 用启动时探测通过的沙箱执行（只允许 Python，独立工作区，确认不了结束记 UNKNOWN）；SDK 的技能执行工具异步等待执行器。无沙箱时按名拒绝。
+- SCRIPT 技能：SDK `agent_orchestrator.host.script_runner.SandboxScriptRunner` 用启动时探测通过的沙箱执行（只允许 Python，独立工作区，确认不了结束记 UNKNOWN）；SDK 的技能执行工具异步等待执行器。无沙箱时按名拒绝。
 - 创建键按所有者区分；技能暂停/恢复/退役的崩溃重试按重放处理。
 
 2026-09-24 ARP 向量车道本地可用（SDK `0.13.0.dev20260924+arp.8` / 提交 `5755aa34`，记录 §7.16）。
-- 模型：BGE-M3 INT8（本机从官方 ONNX 动态量化，外部数据格式），放在用户模型目录 `models/bge-m3-int8/`；Host 端口 `native_plane.BgeM3EmbeddingPort` 只依赖 onnxruntime + tokenizers，1024 维归一化，常驻约 1.07 GB。缺文件时端口报出具体原因，向量车道关闭、召回走词法。
+- 模型：BGE-M3 INT8（本机从官方 ONNX 动态量化，外部数据格式），放在用户模型目录 `models/bge-m3-int8/`；SDK 端口 `agent_orchestrator.host.embedding.BgeM3EmbeddingPort`（2026-10-19 从桌面端搬进 SDK） 只依赖 onnxruntime + tokenizers，1024 维归一化，常驻约 1.07 GB。缺文件时端口报出具体原因，向量车道关闭、召回走词法。
 - 后台计算：端口声明 `prefers_background = True` 后，Turn 准备阶段不再同步跑嵌入；后台泵 `tick_async` 在线程里算向量，再走原有的已记录嵌入调用。未声明的端口行为不变。
 - 已知：模型文件目前需要手工放到模型目录（首启自动下载未做）。
 

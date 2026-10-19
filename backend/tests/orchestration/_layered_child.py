@@ -34,12 +34,12 @@ class _StopsInsideTheWorkerCall(LayeredScriptedProvider):
 
 
 async def main(root: Path, marker: Path) -> None:
-    import agent_orchestrator.orchestrator.event_handler as event_handler
-    import deskpet.orchestration.native_plane as native_plane
+    import agent_orchestrator.host.host as host_module
+    from agent_orchestrator.orchestrator import event_handler
 
     # 与 ``_layered_lane.quick_runtime`` 相同的两处提速（子进程里没有 monkeypatch）。
     event_handler.WAIT_BACKOFF_MAX = 0.05
-    native_plane.embedding_port = lambda _models_dir: (None, "测试里不装向量模型")
+    host_module.embedding_port = lambda _models_dir: (None, "测试里不装向量模型")
     service = layered_service(
         root,
         Principal("local-user:test", "本机用户"),

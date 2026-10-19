@@ -4,7 +4,8 @@
 """Decisive tests for the Host code review round 1 (reports/code-review-round1.md).
 
 * P1-2 — a rebuild that fails keeps the driver loop alive and says so (degraded).
-* P2-7 — the backoff exponent is capped, so a long failure streak never ends the loop.
+* P2-7 — a long failure streak never ends the loop (the capped backoff itself is the SDK
+  host's, pinned in its own tests).
 * P2-1 — a degraded loop still answers cancel (a person can stop the damage), refuses new
   Missions.
 * P2-6 — a payload that is not an object is answered, never raised into the socket loop.
@@ -17,12 +18,12 @@ import asyncio
 
 import pytest
 from agent_orchestrator.testing.word_counter import FixtureWordCounter
+
 from deskpet.orchestration.handlers import handle
 from deskpet.orchestration.service import (
     OrchestrationRequestError,
     OrchestrationService,
     OrchestrationSettings,
-    backoff_delay,
 )
 
 from ._support import notes_provider, notes_request
@@ -47,7 +48,9 @@ async def _eventually(predicate, seconds: float = 3.0) -> bool:  # type: ignore[
 
 
 @pytest.mark.asyncio
-async def test_a_failed_rebuild_keeps_the_loop_alive_and_degraded(orchestration_root, principal):
+async def test_a_failed_rebuild_keeps_the_loop_alive_and_degraded(
+    orchestration_root, principal
+):
     service = OrchestrationService(
         orchestration_root,
         FAST,
@@ -67,26 +70,21 @@ async def test_a_failed_rebuild_keeps_the_loop_alive_and_degraded(orchestration_
         raise RuntimeError("cannot reopen the library")
 
     try:
-        service._orchestrator.run = run  # noqa: SLF001 - white-box: force the failure path
-        service._rebuild = rebuild  # type: ignore[method-assign]  # noqa: SLF001
+        service._orchestrator.run = run
+        service._host._rebuild = rebuild  # type: ignore[method-assign]
         service.wake()
-        assert await _eventually(lambda: "重建失败" in (service.status()["reason"] or ""))
+        assert await _eventually(
+            lambda: "重建失败" in (service.status()["reason"] or "")
+        )
         await asyncio.sleep(0.1)  # many failed rounds later …
         assert service.status()["state"] == "degraded"
-        assert service._driver is not None and not service._driver.done()  # noqa: SLF001 - … still looping
+        assert service._driver is not None and not service._driver.done()
         runs["fail"] = False
         service.wake()
         assert await _eventually(lambda: service.status()["state"] == "available")
         assert runs["ok"] >= 1
     finally:
         await service.close()
-
-
-def test_the_backoff_delay_is_capped_and_never_overflows():
-    assert backoff_delay(1, 60.0) == 2.0
-    assert backoff_delay(3, 60.0) == 8.0
-    assert backoff_delay(5000, 60.0) == 60.0  # 2.0 ** 5000 would raise OverflowError
-    assert backoff_delay(0, 60.0) == 1.0
 
 
 @pytest.mark.asyncio
@@ -110,19 +108,21 @@ async def test_a_long_failure_streak_never_ends_the_loop(orchestration_root, pri
         return None
 
     try:
-        service._failures = 5000  # noqa: SLF001 - far past the float range of 2.0**n
-        service._orchestrator.run = run  # noqa: SLF001
-        service._rebuild = rebuild  # type: ignore[method-assign]  # noqa: SLF001
+        service._host._failures = 5000
+        service._orchestrator.run = run
+        service._host._rebuild = rebuild  # type: ignore[method-assign]
         service.wake()
-        assert await _eventually(lambda: service._failures >= 5003)  # noqa: SLF001
-        assert service._driver is not None and not service._driver.done()  # noqa: SLF001
+        assert await _eventually(lambda: service._failures >= 5003)
+        assert service._driver is not None and not service._driver.done()
         assert service.status()["state"] == "degraded"
     finally:
         await service.close()
 
 
 @pytest.mark.asyncio
-async def test_degraded_still_cancels_but_refuses_new_missions(orchestration_root, principal):
+async def test_degraded_still_cancels_but_refuses_new_missions(
+    orchestration_root, principal
+):
     service = OrchestrationService(
         orchestration_root,
         OrchestrationSettings(),
@@ -134,13 +134,18 @@ async def test_degraded_still_cancels_but_refuses_new_missions(orchestration_roo
     await service.start()
     try:
         created = service.create_mission(notes_request("k-degraded"))
-        service._state = "degraded"  # noqa: SLF001 - white-box: the loop is failing
+        service._state = "degraded"
         cancelled = await handle(
-            service, "mission_cancel", {"mission_id": created["mission_id"]}, request_id="r-1"
+            service,
+            "mission_cancel",
+            {"mission_id": created["mission_id"]},
+            request_id="r-1",
         )
         assert cancelled["payload"]["ok"] is True, cancelled
         assert cancelled["payload"]["data"]["status"] == "CANCELLED"
-        refused = await handle(service, "mission_create", notes_request("k-new"), request_id="r-2")
+        refused = await handle(
+            service, "mission_create", notes_request("k-new"), request_id="r-2"
+        )
         assert refused["payload"]["ok"] is False
         assert refused["payload"]["error_code"] == "orchestration_degraded"
         listed = await handle(service, "mission_list", {}, request_id="r-3")
@@ -151,7 +156,9 @@ async def test_degraded_still_cancels_but_refuses_new_missions(orchestration_roo
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("payload", [["mission-1"], "mission-1", 7])
-async def test_a_payload_that_is_not_an_object_is_answered(orchestration_root, principal, payload):
+async def test_a_payload_that_is_not_an_object_is_answered(
+    orchestration_root, principal, payload
+):
     service = OrchestrationService(
         orchestration_root,
         OrchestrationSettings(),
@@ -175,7 +182,9 @@ async def test_a_payload_that_is_not_an_object_is_answered(orchestration_root, p
 
 
 @pytest.mark.asyncio
-async def test_an_artifact_is_read_by_id_with_its_hash_checked(orchestration_root, principal):
+async def test_an_artifact_is_read_by_id_with_its_hash_checked(
+    orchestration_root, principal
+):
     from ._layered_lane import layered_service, notes_mission, run_until_settled
 
     service = layered_service(orchestration_root, principal)

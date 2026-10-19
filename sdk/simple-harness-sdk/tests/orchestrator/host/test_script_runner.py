@@ -10,12 +10,13 @@ import asyncio
 import sys
 
 import pytest
+
+from agent_orchestrator.host.script_runner import SandboxScriptRunner
 from agent_orchestrator.runtime.sandbox import (
     ProcessOnlyExecutor,
     SandboxUnavailable,
     SeatbeltExecutor,
 )
-from deskpet.orchestration.skill_script_runner import SandboxScriptRunner
 from simple_harness.agents.arp.pins import Pin
 from simple_harness.agents.arp.ports import ScriptRun
 
@@ -38,7 +39,8 @@ if data.get("mode") == "fifo":
     import os; os.mkfifo(sys.argv[2]); sys.exit(0)
 if data.get("mode") == "big":
     data["pad"] = "x" * 5000
-json.dump({"n": data["n"] + 1, **({"pad": data["pad"]} if "pad" in data else {})}, open(sys.argv[2], "w"))
+out = {"n": data["n"] + 1, **({"pad": data["pad"]} if "pad" in data else {})}
+json.dump(out, open(sys.argv[2], "w"))
 """
 
 
@@ -128,20 +130,23 @@ def test_sync_run_outside_a_loop(tmp_path) -> None:
 
 @pytest.mark.parametrize("with_sandbox", [True, False])
 def test_native_plane_binds_the_runner_only_with_a_proven_sandbox(tmp_path, with_sandbox) -> None:
+    from agent_orchestrator.deployment.native_pools import NativePools
     from agent_orchestrator.testing.word_counter import FixtureWordCounter
-    from deskpet.orchestration.native_plane import build_native_pools
 
     counter = FixtureWordCounter()
     executor = (
         ProcessOnlyExecutor(sys.executable, exec_root=tmp_path / "exec") if with_sandbox else None
     )
-    plane = build_native_pools(
+    # the host entry binds the runner only when the deployment proved a sandbox
+    plane = NativePools(
         tenant_id="t",
         principal_id="p",
         allowed_tools=(),
-        models_dir=None,
         meter_factory=counter.meter_factory,
-        script_executor=executor,
+        script_runner=None
+        if executor is None
+        else (lambda runs_dir: SandboxScriptRunner(executor, runs_dir)),
+        script_runner_label=None if executor is None else f"sandbox:{executor.kind}",
     )
     assembly = plane.assembly("deepseek-native-256k-v1", tokens=256_000, counter=counter)
     ports = assembly.arp_ports(tmp_path / "execution.sqlite3")
@@ -166,13 +171,13 @@ def test_output_file_is_never_followed_out_of_the_workspace(tmp_path) -> None:
         for executor in _executors(tmp_path):
             runner = SandboxScriptRunner(executor, tmp_path / f"runs-{executor.kind}")
             linked = await runner.run_async(
-                _run(('{"n": 1, "mode": "link", "target": "%s"}' % secret).encode())
+                _run(f'{{"n": 1, "mode": "link", "target": "{secret}"}}'.encode())
             )
             assert (
                 linked.terminal == "EXITED" and linked.exit_code == 0 and linked.output is None
             ), executor.kind
             hard = await runner.run_async(
-                _run(('{"n": 1, "mode": "hardlink", "target": "%s"}' % secret).encode())
+                _run(f'{{"n": 1, "mode": "hardlink", "target": "{secret}"}}'.encode())
             )
             assert hard.output is None, executor.kind
             fifo = await asyncio.wait_for(

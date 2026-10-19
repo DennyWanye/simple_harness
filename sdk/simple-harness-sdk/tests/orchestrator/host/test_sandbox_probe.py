@@ -1,4 +1,10 @@
-"""A frozen backend must not be executed as a Python interpreter probe."""
+# SPDX-FileCopyrightText: 2026 DennyWanye
+# SPDX-License-Identifier: Apache-2.0
+
+"""沙箱探测的准入（原桌面端 ``test_frozen_sandbox_admission``）：冻结成单文件的宿主不是
+Python 解释器，不拿它探测；源码模式照探测的结论放行或拒绝，并把结论落盘；驱动循环的退避有上限。"""
+
+from __future__ import annotations
 
 import asyncio
 import json
@@ -6,15 +12,16 @@ import sys
 from types import SimpleNamespace
 
 import pytest
+
+from agent_orchestrator.host import HostSettings, OrchestrationHost, Principal
+from agent_orchestrator.host.host import backoff_delay
 from agent_orchestrator.runtime import sandbox
-from deskpet.orchestration.service import OrchestrationService
 
 
-def service_at(root):
-    service = OrchestrationService.__new__(OrchestrationService)
-    service.root = root
-    service._executor = object()
-    return service
+def host_at(root) -> OrchestrationHost:
+    host = OrchestrationHost(root, principal=Principal("p"), settings=HostSettings())
+    host.executor = object()
+    return host
 
 
 def test_frozen_backend_never_enters_interpreter_probe(tmp_path, monkeypatch):
@@ -24,10 +31,10 @@ def test_frozen_backend_never_enters_interpreter_probe(tmp_path, monkeypatch):
         pytest.fail("frozen application was treated as a Python CLI")
 
     monkeypatch.setattr(sandbox.SeatbeltExecutor, "for_interpreter", forbidden)
-    service = service_at(tmp_path)
-    result = asyncio.run(service._probe_sandbox())
+    host = host_at(tmp_path)
+    result = asyncio.run(host._probe_sandbox())
     assert result == {"ok": False, "reason": "frozen_backend_is_not_a_python_interpreter"}
-    assert service._executor is None
+    assert host.executor is None
     assert list(tmp_path.iterdir()) == []
 
 
@@ -40,17 +47,17 @@ def test_source_mode_retains_interpreter_unavailable_reason(tmp_path, monkeypatc
         raise sandbox.SandboxUnavailable("unit interpreter unavailable")
 
     monkeypatch.setattr(sandbox.SeatbeltExecutor, "for_interpreter", unavailable)
-    service = service_at(tmp_path)
-    assert asyncio.run(service._probe_sandbox()) == {
+    host = host_at(tmp_path)
+    assert asyncio.run(host._probe_sandbox()) == {
         "ok": False,
         "reason": "unit interpreter unavailable",
     }
-    assert seen == [sys.executable] and service._executor is None
+    assert seen == [sys.executable] and host.executor is None
 
 
 @pytest.mark.parametrize("passed", [False, True])
 def test_source_mode_still_uses_probe_verdict_and_records_it(tmp_path, monkeypatch, passed):
-    # Wiring control only: this does not assert that real isolation passed.
+    # 只钉接线：这里不证明真的隔离住了
     monkeypatch.setattr(sys, "frozen", False, raising=False)
     executor = object()
     seen = []
@@ -67,8 +74,15 @@ def test_source_mode_still_uses_probe_verdict_and_records_it(tmp_path, monkeypat
 
     monkeypatch.setattr(sandbox.SeatbeltExecutor, "for_interpreter", make)
     monkeypatch.setattr(sandbox, "probe_sandbox", probe)
-    service = service_at(tmp_path)
-    assert asyncio.run(service._probe_sandbox()) == payload
+    host = host_at(tmp_path)
+    assert asyncio.run(host._probe_sandbox()) == payload
     assert seen == [sys.executable]
-    assert service._executor is (executor if passed else None)
+    assert host.executor is (executor if passed else None)
     assert json.loads((tmp_path / "sandbox-probe.json").read_text()) == payload
+
+
+def test_the_backoff_delay_is_capped_and_never_overflows():
+    assert backoff_delay(1, 60.0) == 2.0
+    assert backoff_delay(3, 60.0) == 8.0
+    assert backoff_delay(5000, 60.0) == 60.0  # 2.0 ** 5000 会抛 OverflowError
+    assert backoff_delay(0, 60.0) == 1.0

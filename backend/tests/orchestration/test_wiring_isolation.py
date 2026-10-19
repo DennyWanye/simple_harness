@@ -10,10 +10,16 @@ from __future__ import annotations
 
 from typing import Any
 
-import deskpet.orchestration.wiring as wiring
 import pytest
-from deskpet.orchestration.provider import NO_MODEL
-from deskpet.orchestration.wiring import activate_orchestration, deactivate_orchestration
+
+from deskpet.orchestration import wiring
+from deskpet.orchestration.provider import NO_MODEL, model_config
+from deskpet.orchestration.settings import load_settings
+from deskpet.orchestration.wiring import (
+    activate_orchestration,
+    deactivate_orchestration,
+    read_section,
+)
 
 
 class _Context:
@@ -34,7 +40,7 @@ def _activate(context: _Context, tmp_path, errors: list):  # type: ignore[no-unt
         context,
         config_path=tmp_path / "config.toml",
         user_data=user_data,
-        broadcast_targets=lambda: [],
+        broadcast_targets=list,
         record_startup_error=lambda name, error: errors.append((name, error)),
     )
 
@@ -53,7 +59,10 @@ async def test_no_model_is_unavailable_but_not_a_startup_error(tmp_path):
         assert context.get("orchestration_pump") is not None
     finally:
         await deactivate_orchestration(context)
-    assert context.get("orchestration") is None and context.get("orchestration_pump") is None
+    assert (
+        context.get("orchestration") is None
+        and context.get("orchestration_pump") is None
+    )
 
 
 @pytest.mark.asyncio
@@ -72,7 +81,9 @@ async def test_a_failing_activation_is_recorded_and_never_raises(tmp_path, monke
 
 @pytest.mark.asyncio
 async def test_a_disabled_section_is_honoured_without_an_error(tmp_path):
-    (tmp_path / "config.toml").write_text("[orchestration]\nenabled = false\n", encoding="utf-8")
+    (tmp_path / "config.toml").write_text(
+        "[orchestration]\nenabled = false\n", encoding="utf-8"
+    )
     errors: list = []
     context = _Context(provider_registry=None)
     service = await _activate(context, tmp_path, errors)
@@ -115,18 +126,25 @@ async def test_the_declared_relay_echo_alias_reaches_the_app_provider(
     or every call's usage stays untrusted; an undeclared alias is never guessed."""
 
     seen: list = []
+    real_service = wiring.OrchestrationService
 
-    def capture(snapshot, **_kwargs):  # type: ignore[no-untyped-def]
-        seen.append(snapshot)
-        raise wiring.ProviderUnavailable("captured")
+    def capture(*args, provider_snapshot=None, http_client=None, **kwargs):  # type: ignore[no-untyped-def]
+        # 记下交给服务的快照，然后按"没有模型"启动：这条检验的是声明的回显别名有没有上快照，
+        # 别名从快照到每个池的提供方由 SDK 宿主负责（SDK 的 test_provider 钉着）
+        seen.append(provider_snapshot)
+        return real_service(*args, provider_snapshot=None, http_client=None, **kwargs)
 
-    monkeypatch.setattr(wiring, "build_provider", capture)
-    (tmp_path / "config.toml").write_text("[orchestration]\n" + section, encoding="utf-8")
+    monkeypatch.setattr(wiring, "OrchestrationService", capture)
+    (tmp_path / "config.toml").write_text(
+        "[orchestration]\n" + section, encoding="utf-8"
+    )
     errors: list = []
     context = _Context(provider_registry=_Registry())
-    service = await _activate(context, tmp_path, errors)
+    await _activate(context, tmp_path, errors)
     try:
         assert errors == [] and len(seen) == 1
         assert seen[0].response_model_aliases == expected
+        settings = load_settings(read_section(tmp_path / "config.toml"))
+        assert model_config(seen[0], settings).response_model_aliases == expected
     finally:
         await deactivate_orchestration(context)

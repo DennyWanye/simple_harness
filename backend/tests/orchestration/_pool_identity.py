@@ -56,7 +56,9 @@ def _plain(value: Any) -> Any:
     if hasattr(value, "to_json"):
         return _plain(value.to_json())
     if dataclasses.is_dataclass(value) and not isinstance(value, type):
-        return {f.name: _plain(getattr(value, f.name)) for f in dataclasses.fields(value)}
+        return {
+            f.name: _plain(getattr(value, f.name)) for f in dataclasses.fields(value)
+        }
     if isinstance(value, dict):
         return {str(k): _plain(v) for k, v in value.items() if k not in VOLATILE}
     if isinstance(value, (list, tuple)):
@@ -77,7 +79,9 @@ def identity(native: Any, options: dict[str, Any], scratch: Path) -> dict[str, A
         root_markers = {}
         for directory in execution_db.parent.iterdir():
             for path in sorted(directory.glob("*.json")) if directory.is_dir() else ():
-                root_markers[f"{directory.name}/{path.name}"] = json.loads(path.read_text())
+                root_markers[f"{directory.name}/{path.name}"] = json.loads(
+                    path.read_text()
+                )
         pools[profile_id] = {
             "runtime_profile": {
                 "model": profile.model,
@@ -91,7 +95,9 @@ def identity(native: Any, options: dict[str, Any], scratch: Path) -> dict[str, A
             "arp_profile": _plain(ports.profile),
             "activation_receipt": _plain(ports.activation_receipt),
             "embedding_resource_ref": _plain(ports.embedding_resource_ref),
-            "catalogue_authority": None if ports.catalogue_authority is None else "shared",
+            "catalogue_authority": None
+            if ports.catalogue_authority is None
+            else "shared",
             "script_runner": None
             if ports.script_runner is None
             else type(ports.script_runner).__name__,
@@ -102,7 +108,8 @@ def identity(native: Any, options: dict[str, Any], scratch: Path) -> dict[str, A
     read_caller = native.control_caller({"x": 1})
     status = native.status()
     status["profiles"] = [
-        {k: v for k, v in row.items() if k != "background"} for row in status["profiles"]
+        {k: v for k, v in row.items() if k != "background"}
+        for row in status["profiles"]
     ]
     return {
         "catalogue_owner": native.catalogue_owner_id,
@@ -115,49 +122,42 @@ def identity(native: Any, options: dict[str, Any], scratch: Path) -> dict[str, A
     }
 
 
-VARIANTS = tuple((models, snapshot) for models in (False, True) for snapshot in (False, True))
+VARIANTS = tuple(
+    (models, snapshot) for models in (False, True) for snapshot in (False, True)
+)
 
 
-def build(tmp: Path, *, models: bool, snapshot: bool, counter_factory: Any) -> dict[str, Any]:
-    """Assemble every pool of one variant through the Host's real entry points."""
+def build(
+    tmp: Path, *, models: bool, snapshot: bool, counter_factory: Any
+) -> dict[str, Any]:
+    """Assemble every pool of one variant through the SDK pieces the host entry uses."""
 
-    from types import SimpleNamespace
-
-    import deskpet.orchestration.runtime_profile as rp
+    from agent_orchestrator.deployment.native_pools import NativePools, pool_options
+    from agent_orchestrator.host.embedding import embedding_port
     from agent_orchestrator.runtime.assembly import OrchestratorConfig
-    from deskpet.orchestration.native_plane import build_native_pools
 
     class Provider:
         async def invoke(self, request: Any, *, cancel: Any = None) -> Any:
             raise RuntimeError("not used")
 
-    native = build_native_pools(
+    embedding, reason = embedding_port(fake_models_dir(tmp) if models else None)
+    native = NativePools(
         tenant_id=TENANT,
         principal_id=PRINCIPAL,
         allowed_tools=TOOLS,
-        models_dir=fake_models_dir(tmp) if models else None,
         meter_factory=stub_meter_factory,
+        embedding=embedding,
+        embedding_reason=reason,
         clock_ms=lambda: 1,
     )
     config = OrchestratorConfig(evidence_root=tmp / "root", model=MODEL)
-    original = rp.deepseek_counter_for
-    rp.deepseek_counter_for = lambda snap, settings=None, **kw: (
-        counter_factory() if snap is not None else None
+    options = pool_options(
+        config,
+        native=native,
+        provider=Provider(),
+        counter=counter_factory(),
+        provider_kind="env" if snapshot else "fixtures",
+        thinking_provider=Provider() if snapshot else None,
+        thinking_counter=counter_factory() if snapshot else None,
     )
-    try:
-        snap = (
-            SimpleNamespace(requested_model=MODEL, base_url="https://api.deepseek.com")
-            if snapshot
-            else None
-        )
-        options = rp.source_runtime_options(
-            config,
-            Provider(),
-            snap,
-            native=native,
-            native_test_counter=None if snapshot else counter_factory(),
-            thinking_provider=Provider() if snapshot else None,
-        )
-    finally:
-        rp.deepseek_counter_for = original
     return identity(native, options, tmp / "scratch")

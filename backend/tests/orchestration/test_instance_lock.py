@@ -19,8 +19,9 @@ import time
 from pathlib import Path
 
 import pytest
+from agent_orchestrator.host.instance_lock import InstanceLock
 from agent_orchestrator.testing.word_counter import FixtureWordCounter
-from deskpet.orchestration.lock import InstanceLock
+
 from deskpet.orchestration.service import (
     OrchestrationRequestError,
     OrchestrationService,
@@ -32,7 +33,7 @@ from ._support import mission_count, notes_provider, notes_request
 HOLD = (
     "import sys, time\n"
     "from pathlib import Path\n"
-    "from deskpet.orchestration.lock import InstanceLock\n"
+    "from agent_orchestrator.host.instance_lock import InstanceLock\n"
     "lock = InstanceLock(Path(sys.argv[1]))\n"
     "assert lock.acquire()\n"
     "Path(sys.argv[2]).write_text('held')\n"
@@ -41,7 +42,9 @@ HOLD = (
 
 
 @pytest.mark.asyncio
-async def test_second_service_on_the_same_directory_is_unavailable(orchestration_root, principal):
+async def test_second_service_on_the_same_directory_is_unavailable(
+    orchestration_root, principal
+):
     first = OrchestrationService(
         orchestration_root,
         OrchestrationSettings(),

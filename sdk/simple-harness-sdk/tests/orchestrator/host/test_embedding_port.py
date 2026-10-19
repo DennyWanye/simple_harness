@@ -10,7 +10,8 @@ import math
 from pathlib import Path
 
 import pytest
-from deskpet.orchestration.native_plane import BGE_M3_SUBDIR, BgeM3EmbeddingPort, embedding_port
+
+from agent_orchestrator.host.embedding import BGE_M3_SUBDIR, BgeM3EmbeddingPort, embedding_port
 
 MODELS = Path.home() / "Library/Application Support/com.dennywanye.simpleharness/models"
 
@@ -29,6 +30,8 @@ def test_missing_or_incomplete_models_are_named(tmp_path) -> None:
 
 
 def test_the_port_declares_background_computation(tmp_path) -> None:
+    for module in ("onnxruntime", "tokenizers", "numpy"):
+        pytest.importorskip(module)
     folder = tmp_path / BGE_M3_SUBDIR
     folder.mkdir()
     for name in ("model.int8.onnx", "model.int8.onnx.data", "tokenizer.json"):
@@ -47,6 +50,8 @@ def test_the_port_declares_background_computation(tmp_path) -> None:
     reason="BGE-M3 INT8 model not installed",
 )
 def test_real_model_vectors_are_normalised_and_semantic() -> None:
+    for module in ("onnxruntime", "tokenizers", "numpy"):
+        pytest.importorskip(module)
     port, reason = embedding_port(MODELS)
     assert reason is None
     docs = [

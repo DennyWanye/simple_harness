@@ -56,7 +56,7 @@ from ..runtime.sandbox import SandboxUnavailable, SeatbeltExecutor
 from ..version import __version__
 from .embedding import embedding_port
 from .instance_lock import InstanceLock
-from .provider import build_providers, deepseek_counter
+from .provider import build_providers, deepseek_counter, requested_model
 from .script_runner import SandboxScriptRunner
 from .settings import ONLY_DEEPSEEK_REASON, HostSettings, ModelConfig
 
@@ -167,6 +167,9 @@ class OrchestrationHost:
         require_acceptance: bool = True,
         taskgraph_ports: Any = None,
         owner: str | None = None,
+        model_name: str | None = None,
+        provider_kind: str | None = None,
+        extra_secrets: tuple[str, ...] = (),
     ) -> None:
         """
         ``model`` + ``tokenizer_path``：用 DeepSeek 端点（正常用法）。
@@ -189,6 +192,10 @@ class OrchestrationHost:
         self._given_thinking_provider = thinking_provider
         self._given_counter = counter
         self._given_thinking_counter = thinking_counter
+        # 自带提供方时的模型名与池种类（产品后端传真实的；默认按测试替身）
+        self._model_name = model_name
+        self._provider_kind = provider_kind
+        self._extra_secrets = tuple(extra_secrets)
         self._world_factory = world_factory or goal_world(world_domain)
         self._names = names or root_names(world_domain)
         self._notify = notify or (lambda _payload: None)
@@ -217,6 +224,8 @@ class OrchestrationHost:
         self.quarantine: dict[str, Any] | None = None
         self.recovery: dict[str, Any] | None = None
         self.on_write: Callable[[], None] | None = None
+        #: 重建成功后的回调（宿主应用续读事件、重新探测诊断）。
+        self.on_rebuilt: Callable[[], None] | None = None
         self._wake = asyncio.Event()
         self._closing = False
         self._failures = 0
@@ -300,6 +309,20 @@ class OrchestrationHost:
         self.state, self.reason = "unavailable", reason
         await self._close_runtime()
         self.lock.release()
+
+    @property
+    def taskgraph(self) -> Any:
+        """执行图的读写口；没起来或根隔离时是 None（隔离只开非披露诊断）。"""
+        if self.control is None or self.quarantine is not None:
+            return None
+        return self.deployment.taskgraph
+
+    @property
+    def assurance(self) -> Any:
+        """保证通道的读口；没起来或根隔离时是 None。"""
+        if self.control is None or self.quarantine is not None:
+            return None
+        return self.deployment.assurance
 
     def _build_providers(self) -> None:
         if self._given_provider is not None:
@@ -411,7 +434,7 @@ class OrchestrationHost:
             native=self.native,
             provider=self.provider,
             counter=counter,
-            provider_kind="env" if self.model is not None else "fixtures",
+            provider_kind=self._provider_kind or ("env" if self.model is not None else "fixtures"),
             thinking_provider=self.thinking_provider,
             thinking_counter=thinking_counter,
         )
@@ -463,7 +486,11 @@ class OrchestrationHost:
         )
         self.config = OrchestratorConfig(
             evidence_root=self.root,
-            model=self.model.model if self.model is not None else "agent-model",
+            model=(
+                requested_model(self.model)
+                if self.model is not None
+                else (self._model_name or "agent-model")
+            ),
             max_concurrency=self.settings.max_concurrency,
             max_concurrent_model_calls=self.settings.max_concurrent_model_calls,
             lease_seconds=self.settings.lease_seconds,
@@ -520,6 +547,9 @@ class OrchestrationHost:
         await self._enter(self._new_orchestrator())
         if self.quarantine is not None:
             self.state, self.reason = "quarantined", QUARANTINE_REASON
+            return
+        if self.on_rebuilt is not None:
+            self.on_rebuilt()
 
     async def _close_runtime(self) -> None:
         orchestrator, self.orchestrator = self.orchestrator, None
@@ -585,7 +615,7 @@ class OrchestrationHost:
     async def _host_duties(self) -> None:
         """每轮：保证通道检查策略投影、自动授权规划、自动确认纯内容完成要求。"""
 
-        if self.deployment.assurance is not None:
+        if self.assurance is not None:
             try:
                 self.duties.project_check_policies()
             except Exception:  # noqa: BLE001 - 不停循环，下一轮再试
@@ -630,7 +660,8 @@ class OrchestrationHost:
         try:
             store = self.orchestrator.store
             active = [m for m in store.list_missions() if str(m.status) not in TERMINAL]
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 - 读不到就按忙的节拍，下一轮再读
+            logger.warning("mission list unreadable; keeping the active tick", exc_info=True)
             return self.settings.tick_active_seconds
         if not active:
             return self.settings.tick_idle_seconds
@@ -735,7 +766,8 @@ class OrchestrationHost:
             )
 
     def secret_values(self) -> tuple[str, ...]:
-        return () if self.model is None else (self.model.api_key,)
+        own = () if self.model is None else (self.model.api_key,)
+        return (*own, *self._extra_secrets)
 
     def refuse_secrets(self, *values: Any) -> None:
         """请求里任何一个字符串像密钥（通用模式，或本部署自己的密钥）都拒绝。"""
@@ -1119,7 +1151,8 @@ class OrchestrationHost:
                 str(mission_id): {"tables": [str(n) for n in (item or {}).get("tables") or ()]}
                 for mission_id, item in dict(isolated).items()
             }
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 - 状态视图不抛；隔离表读不到就当没有
+            logger.exception("recovery isolation table unreadable")
             return {}
 
     def global_budget_status(self) -> dict[str, Any]:
@@ -1161,7 +1194,8 @@ class OrchestrationHost:
                     for m in self.orchestrator.store.list_missions()
                     if str(m.status) not in TERMINAL
                 )
-            except Exception:  # noqa: BLE001
+            except Exception:  # noqa: BLE001 - 状态视图不抛
+                logger.exception("active mission count unreadable")
                 active = 0
         assurance_root: dict[str, Any] | None = None
         if self.quarantine is not None:
@@ -1194,7 +1228,7 @@ class OrchestrationHost:
             "code_execution": None if self.policy is None else self.policy.code_execution,
             "sandbox": dict(self.sandbox or {"ok": False, "reason": "尚未探测"}),
             "publish": dict(self.publish),
-            "assurance_available": self.deployment.assurance is not None,
+            "assurance_available": self.assurance is not None,
             "assurance_root": assurance_root,
             "recovery": recovery,
             "context_profiles": self.context_profiles(),

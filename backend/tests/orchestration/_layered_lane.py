@@ -38,6 +38,7 @@ from agent_orchestrator.testing.scripted_replies import (  # noqa: F401 - the sh
     worker_reply,
 )
 from agent_orchestrator.testing.word_counter import FixtureWordCounter
+
 from deskpet.orchestration.service import OrchestrationService, OrchestrationSettings
 
 
@@ -51,12 +52,12 @@ def quick_runtime(monkeypatch: Any) -> None:
 
     只改这两处的耗时，不替换编排、执行图、保证通道里的任何东西。"""
 
-    import agent_orchestrator.orchestrator.event_handler as event_handler
-    import deskpet.orchestration.native_plane as native_plane
+    import agent_orchestrator.host.host as host_module
+    from agent_orchestrator.orchestrator import event_handler
 
     monkeypatch.setattr(event_handler, "WAIT_BACKOFF_MAX", 0.05)
     monkeypatch.setattr(
-        native_plane, "embedding_port", lambda _models_dir: (None, "测试里不装向量模型")
+        host_module, "embedding_port", lambda _models_dir: (None, "测试里不装向量模型")
     )
 
 
@@ -65,7 +66,12 @@ async def _auto_mode() -> str:
 
 
 def layered_service(
-    root: Path, principal: Any, provider: Any = None, *, drive: bool = False, **settings: Any
+    root: Path,
+    principal: Any,
+    provider: Any = None,
+    *,
+    drive: bool = False,
+    **settings: Any,
 ) -> OrchestrationService:
     """Host 默认部署的服务，自动模式，模型回复来自脚本；``drive`` 为真时由服务自己的主循环推进。"""
 
@@ -92,7 +98,11 @@ def notes_mission(key: str = "layered-notes-1", **overrides: Any) -> dict[str, A
 
 
 async def run_until_settled(
-    service: OrchestrationService, mission_id: str, *, rounds: int = 12, timeout: float = 30.0
+    service: OrchestrationService,
+    mission_id: str,
+    *,
+    rounds: int = 12,
+    timeout: float = 30.0,
 ) -> Any:
     """反复排空，直到任务到达终态；返回最后读到的任务行。"""
 

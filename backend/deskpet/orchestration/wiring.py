@@ -19,19 +19,15 @@ from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
 from typing import Any
 
+import httpx
 from agent_orchestrator.governance.permissions import Principal
 
 from deskpet.companion.identity import load_or_create_local_identity
+from providers.extra_headers import install_httpx_extra_headers_hook
 
 from .paths import orchestration_root
-from .provider import (
-    NO_MODEL,
-    ProviderUnavailable,
-    build_provider,
-    snapshot_from_registry,
-)
+from .provider import NO_MODEL, ProviderUnavailable, snapshot_from_registry
 from .pump import MissionChangePump
-from .runtime_profile import deepseek_thinking
 from .service import OrchestrationService
 from .settings import load_settings, response_model_aliases
 
@@ -60,7 +56,9 @@ def _principal(user_data: Path) -> Any:
     return Principal(f"local-user:{identity.profile_id}", "本机用户")
 
 
-def _broadcaster(targets: Callable[[], Iterable[Any]]) -> Callable[[dict[str, Any]], Any]:
+def _broadcaster(
+    targets: Callable[[], Iterable[Any]],
+) -> Callable[[dict[str, Any]], Any]:
     async def broadcast(envelope: dict[str, Any]) -> None:
         seen: set[int] = set()
         for socket in list(targets()):
@@ -87,22 +85,20 @@ async def activate_orchestration(
         settings = load_settings(read_section(config_path))
         data = Path(user_data)
         root = orchestration_root(data)
-        provider = snapshot = client = None
+        snapshot = client = None
         try:
             snapshot = snapshot_from_registry(service_context.get("provider_registry"))
             aliases = response_model_aliases(settings)
             if aliases:
                 snapshot = dataclasses.replace(snapshot, response_model_aliases=aliases)
-
-            thinking = deepseek_thinking(snapshot, settings)
-            provider, client = build_provider(snapshot, thinking=thinking)
+            # 模型连接由 SDK 宿主按快照建；桌面只给带每端点额外请求头钩子的客户端
+            client = install_httpx_extra_headers_hook(httpx.AsyncClient())
         except ProviderUnavailable as error:
             logger.info("orchestration_without_model reason=%s", error)
         service = OrchestrationService(
             root,
             settings,
             principal=_principal(data),
-            provider=provider,
             provider_snapshot=snapshot,
             http_client=client,
             permission_mode_reader=_permission_mode_reader(service_context),
@@ -113,7 +109,9 @@ async def activate_orchestration(
         record_startup_error("orchestration", error)
         return None
     status = service.status()
-    if status["state"] == "unavailable" and not str(status["reason"] or "").startswith(NO_MODEL):
+    if status["state"] == "unavailable" and not str(status["reason"] or "").startswith(
+        NO_MODEL
+    ):
         record_startup_error("orchestration", RuntimeError(str(status["reason"])))
     service_context.register("orchestration", service)
     pump = MissionChangePump(service, _broadcaster(broadcast_targets), interval=1.0)

@@ -31,7 +31,7 @@ class _Store:
 
 def _service(store: _Store) -> OrchestrationService:
     service = OrchestrationService.__new__(OrchestrationService)
-    service._orchestrator = SimpleNamespace(store=store)
+    service._host = SimpleNamespace(orchestrator=SimpleNamespace(store=store))
     return service
 
 
