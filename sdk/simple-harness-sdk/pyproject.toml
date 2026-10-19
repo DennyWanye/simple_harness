@@ -128,5 +128,5 @@ ignore_errors = true
 
 # 可选依赖：只在安装了对应附加包时才导入，没有类型存根。
 [[tool.mypy.overrides]]
-module = ["yaml", "unified_planning.*", "deepseek_recipe", "tiktoken"]
+module = ["yaml", "unified_planning.*", "deepseek_recipe", "tiktoken", "onnxruntime", "tokenizers"]
 ignore_missing_imports = true
