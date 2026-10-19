@@ -42,9 +42,7 @@ HOLD = (
 
 
 @pytest.mark.asyncio
-async def test_second_service_on_the_same_directory_is_unavailable(
-    orchestration_root, principal
-):
+async def test_second_service_on_the_same_directory_is_unavailable(orchestration_root, principal):
     first = OrchestrationService(
         orchestration_root,
         OrchestrationSettings(),

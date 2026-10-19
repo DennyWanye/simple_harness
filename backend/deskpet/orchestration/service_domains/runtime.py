@@ -58,9 +58,7 @@ class RuntimeDriveMixin(OrchestrationServiceCore):
         return self._duties.auto_authorize_planning(auto=await self._auto_mode())
 
     async def _auto_confirm_content_completion(self) -> int:
-        return self._duties.auto_confirm_content_completion(
-            auto=await self._auto_mode()
-        )
+        return self._duties.auto_confirm_content_completion(auto=await self._auto_mode())
 
     def _project_assurance_policies(self) -> int:
         if self._assurance is None:
@@ -103,9 +101,7 @@ class RuntimeDriveMixin(OrchestrationServiceCore):
         body = dict(request)
         profile_id = body.pop("profile_id", None)
         if profile_id is not None and not isinstance(profile_id, str):
-            raise OrchestrationRequestError(
-                "invalid_request", "profile_id 必须是字符串"
-            )
+            raise OrchestrationRequestError("invalid_request", "profile_id 必须是字符串")
         self._refuse_secrets(body)
 
         if body.get("verb") in SKILL_READ_VERBS | SKILL_WRITE_VERBS:
@@ -130,9 +126,7 @@ class RuntimeDriveMixin(OrchestrationServiceCore):
         except SkillCatalogueRefused as error:
             raise OrchestrationRequestError(error.code, str(error)) from error
         except ArpError as error:
-            raise OrchestrationRequestError(
-                "refused", f"{error.code}: {error}"
-            ) from error
+            raise OrchestrationRequestError("refused", f"{error.code}: {error}") from error
 
     async def skill_catalogue(self, request: Mapping[str, Any]) -> dict[str, Any]:
 
@@ -196,11 +190,7 @@ class RuntimeDriveMixin(OrchestrationServiceCore):
             raise OrchestrationRequestError("invalid_request", "请求必须是一个对象")
         pin = self._evaluation_pin(request)
         key = evaluation_mission_key(pin)
-        body = {
-            k: v
-            for k, v in request.items()
-            if k not in ("evaluation_ref", "idempotency_key")
-        }
+        body = {k: v for k, v in request.items() if k not in ("evaluation_ref", "idempotency_key")}
         body["idempotency_key"] = key
         receipt = self.create_mission(body)  # type: ignore[attr-defined]
         return {**receipt, "idempotency_key": key, "evaluation_ref": pin.to_json()}

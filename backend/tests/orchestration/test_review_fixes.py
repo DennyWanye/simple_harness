@@ -48,9 +48,7 @@ async def _eventually(predicate, seconds: float = 3.0) -> bool:  # type: ignore[
 
 
 @pytest.mark.asyncio
-async def test_a_failed_rebuild_keeps_the_loop_alive_and_degraded(
-    orchestration_root, principal
-):
+async def test_a_failed_rebuild_keeps_the_loop_alive_and_degraded(orchestration_root, principal):
     service = OrchestrationService(
         orchestration_root,
         FAST,
@@ -73,9 +71,7 @@ async def test_a_failed_rebuild_keeps_the_loop_alive_and_degraded(
         service._orchestrator.run = run
         service._host._rebuild = rebuild  # type: ignore[method-assign]
         service.wake()
-        assert await _eventually(
-            lambda: "重建失败" in (service.status()["reason"] or "")
-        )
+        assert await _eventually(lambda: "重建失败" in (service.status()["reason"] or ""))
         await asyncio.sleep(0.1)  # many failed rounds later …
         assert service.status()["state"] == "degraded"
         assert service._driver is not None and not service._driver.done()
@@ -120,9 +116,7 @@ async def test_a_long_failure_streak_never_ends_the_loop(orchestration_root, pri
 
 
 @pytest.mark.asyncio
-async def test_degraded_still_cancels_but_refuses_new_missions(
-    orchestration_root, principal
-):
+async def test_degraded_still_cancels_but_refuses_new_missions(orchestration_root, principal):
     service = OrchestrationService(
         orchestration_root,
         OrchestrationSettings(),
@@ -143,9 +137,7 @@ async def test_degraded_still_cancels_but_refuses_new_missions(
         )
         assert cancelled["payload"]["ok"] is True, cancelled
         assert cancelled["payload"]["data"]["status"] == "CANCELLED"
-        refused = await handle(
-            service, "mission_create", notes_request("k-new"), request_id="r-2"
-        )
+        refused = await handle(service, "mission_create", notes_request("k-new"), request_id="r-2")
         assert refused["payload"]["ok"] is False
         assert refused["payload"]["error_code"] == "orchestration_degraded"
         listed = await handle(service, "mission_list", {}, request_id="r-3")
@@ -156,9 +148,7 @@ async def test_degraded_still_cancels_but_refuses_new_missions(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("payload", [["mission-1"], "mission-1", 7])
-async def test_a_payload_that_is_not_an_object_is_answered(
-    orchestration_root, principal, payload
-):
+async def test_a_payload_that_is_not_an_object_is_answered(orchestration_root, principal, payload):
     service = OrchestrationService(
         orchestration_root,
         OrchestrationSettings(),
@@ -182,9 +172,7 @@ async def test_a_payload_that_is_not_an_object_is_answered(
 
 
 @pytest.mark.asyncio
-async def test_an_artifact_is_read_by_id_with_its_hash_checked(
-    orchestration_root, principal
-):
+async def test_an_artifact_is_read_by_id_with_its_hash_checked(orchestration_root, principal):
     from ._layered_lane import layered_service, notes_mission, run_until_settled
 
     service = layered_service(orchestration_root, principal)

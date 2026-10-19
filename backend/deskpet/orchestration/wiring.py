@@ -109,9 +109,7 @@ async def activate_orchestration(
         record_startup_error("orchestration", error)
         return None
     status = service.status()
-    if status["state"] == "unavailable" and not str(status["reason"] or "").startswith(
-        NO_MODEL
-    ):
+    if status["state"] == "unavailable" and not str(status["reason"] or "").startswith(NO_MODEL):
         record_startup_error("orchestration", RuntimeError(str(status["reason"])))
     service_context.register("orchestration", service)
     pump = MissionChangePump(service, _broadcaster(broadcast_targets), interval=1.0)

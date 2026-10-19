@@ -59,11 +59,7 @@ class StatusMixin(OrchestrationServiceCore):
         return self._h(self._host.assurance_root_diagnostic)
 
     def runtime_tool_names(self) -> tuple[str, ...]:
-        return (
-            tuple(self._deployment.allowed_tools)
-            if self._deployment is not None
-            else ()
-        )
+        return tuple(self._deployment.allowed_tools) if self._deployment is not None else ()
 
 
 __all__ = ("DEGRADED_RECOVERY_REASON", "StatusMixin")

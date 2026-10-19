@@ -59,20 +59,15 @@ async def test_host_roots_are_atomic_isolated_and_recoverable(
     await service.start()
     try:
         first = service.create_mission(notes_request("htn-first"))
-        second = service.create_mission(
-            notes_request("htn-second", goal="Write OTHER.md")
-        )
+        second = service.create_mission(notes_request("htn-second", goal="Write OTHER.md"))
         loop = service._orchestrator
         worlds = [
-            loop._dispatch_for(r["mission_id"]).require_planning_world()
-            for r in (first, second)
+            loop._dispatch_for(r["mission_id"]).require_planning_world() for r in (first, second)
         ]
         assert worlds[0] is not worlds[1]
         assert worlds[0].mission_id == first["mission_id"]
         assert worlds[1].mission_id == second["mission_id"]
-        requirements = HtnStore(loop.store).latest_requirements_revision(
-            first["mission_id"]
-        )
+        requirements = HtnStore(loop.store).latest_requirements_revision(first["mission_id"])
         assert requirements.criteria[0].statement == "file:NOTES.md"
         await loop._start_planning(loop.store.get_mission(first["mission_id"]))
         assert not loop.store.list_intents("PENDING", "CLAIMED", "AGENT_CREATED")
@@ -97,9 +92,7 @@ async def test_host_roots_are_atomic_isolated_and_recoverable(
             == requirements
         )
         assert (
-            recovered._dispatch_for(first["mission_id"])
-            .require_planning_world()
-            .mission_id
+            recovered._dispatch_for(first["mission_id"]).require_planning_world().mission_id
             == first["mission_id"]
         )
         assert len(recovered.store.list_missions()) == 2
@@ -108,9 +101,7 @@ async def test_host_roots_are_atomic_isolated_and_recoverable(
 
 
 @pytest.mark.asyncio
-async def test_the_desktop_registers_sub_goal_types_by_level(
-    orchestration_root, principal
-):
+async def test_the_desktop_registers_sub_goal_types_by_level(orchestration_root, principal):
     """HTN 精简 片 B：中间目标按层注册两个类型。类型不声明判据（子目标按上级做法交给它的要求
     审），层级决定能往下放什么——根目标 0 层，第一层子目标里还能再放第二层，第二层只能放步骤；
     层数上限就是注册了几层，由 SDK 的注册检查保证。"""
@@ -125,9 +116,7 @@ async def test_the_desktop_registers_sub_goal_types_by_level(
     await service.start()
     try:
         created = service.create_mission(notes_request("htn-levels"))
-        world = service._orchestrator._dispatch_for(
-            created["mission_id"]
-        ).require_planning_world()
+        world = service._orchestrator._dispatch_for(created["mission_id"]).require_planning_world()
         compound = {
             spec.task_type_ref.id: spec
             for spec in world.catalog.task_types()
@@ -141,13 +130,9 @@ async def test_the_desktop_registers_sub_goal_types_by_level(
         for name in ("desktop.sub-goal-1", "desktop.sub-goal-2"):
             assert compound[name].goal_signature.coverage_criteria == ()
             assert compound[name].operator_ref is None
-            assert (
-                world.schemas.resolve(compound[name].parameter_schema_ref) is not None
-            )
+            assert world.schemas.resolve(compound[name].parameter_schema_ref) is not None
             # a later step takes what the sub-goal produced through this port (its finalizer's delivery)
-            assert [port.port_key for port in compound[name].output_ports] == [
-                "delivery"
-            ]
+            assert [port.port_key for port in compound[name].output_ports] == ["delivery"]
         # the root type is the same for every Mission; the user's requirements are on the root binding
         assert compound["desktop.user-goal"].goal_signature.coverage_criteria == ()
     finally:
@@ -177,13 +162,9 @@ async def test_desktop_world_is_mission_independent(orchestration_root, principa
     await service.start()
     try:
         first = service.create_mission(notes_request("c3-first"))
-        second = service.create_mission(
-            notes_request("c3-second", goal="Write OTHER.md")
-        )
+        second = service.create_mission(notes_request("c3-second", goal="Write OTHER.md"))
         loop = service._orchestrator
-        missions = [
-            loop.store.get_mission(item["mission_id"]) for item in (first, second)
-        ]
+        missions = [loop.store.get_mission(item["mission_id"]) for item in (first, second)]
         worlds = [
             goal_world("desktop")(loop, missions[0]),
             goal_world("desktop")(
@@ -204,9 +185,7 @@ async def test_desktop_world_is_mission_independent(orchestration_root, principa
             network = loop._dispatch_for(mission.id).network(mission.id)
             [occurrence] = network.root_occurrence_ids
             roots.append(network.binding_for_occurrence(occurrence).goal_signature)
-        assert [root.statement for root in roots] == [
-            mission.goal for mission in missions
-        ]
+        assert [root.statement for root in roots] == [mission.goal for mission in missions]
         assert all(root.coverage_criteria for root in roots)
     finally:
         await service.close()

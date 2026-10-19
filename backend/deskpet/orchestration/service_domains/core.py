@@ -77,9 +77,7 @@ class OrchestrationServiceCore:
         self._snapshot = provider_snapshot
         self._http_client = http_client
         self._drive_enabled = drive
-        self._local_state: str | None = (
-            None  # 宿主起来之前桌面自己的状态（disabled / 钉版不符）
-        )
+        self._local_state: str | None = None  # 宿主起来之前桌面自己的状态（disabled / 钉版不符）
         self._local_reason: str | None = None
         self._diagnostics_available = False
         self._manifest: dict[str, Any] | None = None
@@ -96,11 +94,7 @@ class OrchestrationServiceCore:
             # change pump pushes ``mission_changed`` so the cards re-read.
             self._notices.record(payload)
 
-        model = (
-            None
-            if provider_snapshot is None
-            else model_config(provider_snapshot, settings)
-        )
+        model = None if provider_snapshot is None else model_config(provider_snapshot, settings)
         self._host = OrchestrationHost(
             self.root,
             principal=principal,
@@ -118,18 +112,12 @@ class OrchestrationServiceCore:
             models_dir=models_dir(),
             taskgraph_ports=taskgraph_deployment,
             owner=self.owner,
-            model_name=None
-            if provider_snapshot is None
-            else provider_snapshot.requested_model,
+            model_name=None if provider_snapshot is None else provider_snapshot.requested_model,
             provider_kind=None if provider_snapshot is None else "env",
-            extra_secrets=()
-            if provider_snapshot is None
-            else (provider_snapshot.api_key,),
+            extra_secrets=() if provider_snapshot is None else (provider_snapshot.api_key,),
         )
         self._host.on_rebuilt = self._after_rebuild
-        self._host.on_round = (
-            self._storage.schedule_if_stale
-        )  # 每轮看一眼存储用量是否该刷新
+        self._host.on_round = self._storage.schedule_if_stale  # 每轮看一眼存储用量是否该刷新
 
     # ------------------------------------------------------------ host forwarding
     @property
@@ -143,9 +131,7 @@ class OrchestrationServiceCore:
 
     @property
     def _reason(self) -> str | None:
-        return (
-            self._local_reason if self._local_state is not None else self._host.reason
-        )
+        return self._local_reason if self._local_state is not None else self._host.reason
 
     @_reason.setter
     def _reason(self, value: str | None) -> None:
@@ -315,9 +301,7 @@ class OrchestrationServiceCore:
                         "refused": "pin_mismatch",
                     },
                 )
-                raise RuntimeError(
-                    "实际导入的 SDK 与钉版不一致（见 deployment-manifest.json）"
-                )
+                raise RuntimeError("实际导入的 SDK 与钉版不一致（见 deployment-manifest.json）")
             await self._host.start()
             if self._host.state == "unavailable":
                 reason = str(self._host.reason or "")
@@ -345,9 +329,7 @@ class OrchestrationServiceCore:
             if self._host.quarantine is not None:
                 # 根隔离：服务起来了，但不是"可用"——只开非披露诊断与隔离只读分支，不驱动循环
                 return
-            self._notices.catch_up(
-                self._host.orchestrator.store
-            )  # from the last read seq
+            self._notices.catch_up(self._host.orchestrator.store)  # from the last read seq
             self._diagnostics_available = self._detect_diagnostics()
             if self._drive_enabled:
                 self._host.start_driver()
@@ -379,9 +361,9 @@ class OrchestrationServiceCore:
     def no_model(self) -> bool:
         """起不来的原因是不是"没配模型"（全新安装的正常情形，不记启动错误）。"""
 
-        return str(self._reason or "").startswith(NO_MODEL) or str(
-            self._reason or ""
-        ).startswith("未配置模型")
+        return str(self._reason or "").startswith(NO_MODEL) or str(self._reason or "").startswith(
+            "未配置模型"
+        )
 
     @property
     def sdk_version(self) -> str:

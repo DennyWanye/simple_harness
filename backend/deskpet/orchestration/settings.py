@@ -44,9 +44,7 @@ def _thinking(value: Any) -> str:
 
 def _csv(value: Any, *, lower: bool) -> str:
     items = (
-        value.split(",")
-        if isinstance(value, str)
-        else (value if isinstance(value, list) else [])
+        value.split(",") if isinstance(value, str) else (value if isinstance(value, list) else [])
     )
     out = []
     for item in items:
@@ -87,9 +85,7 @@ def load_settings(section: Mapping[str, Any] | None) -> OrchestrationSettings:
         storage_warn_bytes=_bounded_int(
             raw.get("storage_warn_bytes"), 5 * 1024**3, 1024**2, 1024**5
         ),
-        deepseek_compatible_hosts=_csv(
-            raw.get("deepseek_compatible_hosts"), lower=True
-        ),
+        deepseek_compatible_hosts=_csv(raw.get("deepseek_compatible_hosts"), lower=True),
         thinking=_thinking(raw.get("thinking")),
         response_model_aliases=_csv(raw.get("response_model_aliases"), lower=False),
     )

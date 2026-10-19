@@ -72,9 +72,7 @@ class CommandMixin(OrchestrationServiceCore):
     def retire_library_entry(self, request: Mapping[str, Any]) -> dict[str, Any]:
         return self._h(self._host.retire_library_entry, request)
 
-    def approve_operation_completion_spec(
-        self, request: Mapping[str, Any]
-    ) -> dict[str, Any]:
+    def approve_operation_completion_spec(self, request: Mapping[str, Any]) -> dict[str, Any]:
         return self._h(self._host.approve_operation_completion_spec, request)
 
     def submit_operation_intent(self, request: Mapping[str, Any]) -> dict[str, Any]:
@@ -83,9 +81,7 @@ class CommandMixin(OrchestrationServiceCore):
     def operation_intent_status(self, intent_id: str) -> dict[str, Any]:
         return self._h(self._host.operation_intent_status, intent_id)
 
-    def source_command(
-        self, operation: str, request: Mapping[str, Any]
-    ) -> dict[str, Any]:
+    def source_command(self, operation: str, request: Mapping[str, Any]) -> dict[str, Any]:
         return self._h(self._host.source_command, operation, request)
 
     def cancel_mission(self, mission_id: str) -> dict[str, Any]:
@@ -94,23 +90,17 @@ class CommandMixin(OrchestrationServiceCore):
     def decide(self, request_id: str, decision: str, **fields: str) -> dict[str, Any]:
         return self._h(self._host.decide, request_id, decision, **fields)
 
-    def takeover(
-        self, task_id: str, action: str, *, basis: str, note: str = ""
-    ) -> dict[str, Any]:
+    def takeover(self, task_id: str, action: str, *, basis: str, note: str = "") -> dict[str, Any]:
         return self._h(self._host.takeover, task_id, action, basis=basis, note=note)
 
-    def resolve_unknown(
-        self, action_key: str, outcome: str, *, basis: str
-    ) -> dict[str, Any]:
+    def resolve_unknown(self, action_key: str, outcome: str, *, basis: str) -> dict[str, Any]:
         return self._h(self._host.resolve_unknown, action_key, outcome, basis=basis)
 
     def comment(self, target_id: str, text: str) -> dict[str, Any]:
         return self._h(self._host.comment, target_id, text)
 
     # ------------------------------------------------------------ mission notices
-    def pending_notices(
-        self, _body: Mapping[str, Any] | None = None
-    ) -> list[dict[str, Any]]:
+    def pending_notices(self, _body: Mapping[str, Any] | None = None) -> list[dict[str, Any]]:
         """Notices the person has not acknowledged yet, newest last, with the Mission's
         current status (a notice names the final event; the status is read now)."""
 
@@ -127,9 +117,7 @@ class CommandMixin(OrchestrationServiceCore):
                 "status": status,
                 "status_zh": _STATUS_ZH.get(status, status),
                 "goal": str(mission.goal or "")[:200],
-                "stop_reason": None
-                if mission.stop_reason is None
-                else str(mission.stop_reason),
+                "stop_reason": None if mission.stop_reason is None else str(mission.stop_reason),
                 "unresolved_actions": len(
                     (mission.final_report or {}).get("unresolved_actions") or ()
                 ),

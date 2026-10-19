@@ -67,9 +67,7 @@ def snapshot_from_registry(registry: Any) -> ProviderSnapshot:
     entry = dict(chain[0])
     models = list(entry.get("models") or ())
     configured = str(
-        entry.get("default_model")
-        or entry.get("model")
-        or (models[0] if models else "")
+        entry.get("default_model") or entry.get("model") or (models[0] if models else "")
     )
     base_url = str(entry.get("base_url") or "")
     provider_id = str(entry.get("id") or "")
@@ -125,9 +123,7 @@ def models_dir() -> Path | None:
     try:
         return Path(user_models_dir())
     except Exception:
-        logger.warning(
-            "user models dir unavailable; vector lane stays closed", exc_info=True
-        )
+        logger.warning("user models dir unavailable; vector lane stays closed", exc_info=True)
         return None
 
 

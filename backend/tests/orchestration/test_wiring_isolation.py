@@ -59,10 +59,7 @@ async def test_no_model_is_unavailable_but_not_a_startup_error(tmp_path):
         assert context.get("orchestration_pump") is not None
     finally:
         await deactivate_orchestration(context)
-    assert (
-        context.get("orchestration") is None
-        and context.get("orchestration_pump") is None
-    )
+    assert context.get("orchestration") is None and context.get("orchestration_pump") is None
 
 
 @pytest.mark.asyncio
@@ -81,9 +78,7 @@ async def test_a_failing_activation_is_recorded_and_never_raises(tmp_path, monke
 
 @pytest.mark.asyncio
 async def test_a_disabled_section_is_honoured_without_an_error(tmp_path):
-    (tmp_path / "config.toml").write_text(
-        "[orchestration]\nenabled = false\n", encoding="utf-8"
-    )
+    (tmp_path / "config.toml").write_text("[orchestration]\nenabled = false\n", encoding="utf-8")
     errors: list = []
     context = _Context(provider_registry=None)
     service = await _activate(context, tmp_path, errors)
@@ -135,9 +130,7 @@ async def test_the_declared_relay_echo_alias_reaches_the_app_provider(
         return real_service(*args, provider_snapshot=None, http_client=None, **kwargs)
 
     monkeypatch.setattr(wiring, "OrchestrationService", capture)
-    (tmp_path / "config.toml").write_text(
-        "[orchestration]\n" + section, encoding="utf-8"
-    )
+    (tmp_path / "config.toml").write_text("[orchestration]\n" + section, encoding="utf-8")
     errors: list = []
     context = _Context(provider_registry=_Registry())
     await _activate(context, tmp_path, errors)

@@ -74,9 +74,7 @@ async def test_auto_mode_issues_once_as_host_auto_permission(tmp_path):
             "approval_source": "HOST_AUTO_PERMISSION",
         }
     ]
-    assert (
-        await service._auto_authorize_planning() == 0
-    )  # same request is not re-issued
+    assert await service._auto_authorize_planning() == 0  # same request is not re-issued
     assert len(control.issued) == 1
 
 
@@ -116,6 +114,4 @@ def test_a_round_that_changed_nothing_waits_the_long_tick(tmp_path):
     service._note_quiet_round()
     assert service._tick() == service.settings.tick_waiting_seconds  # nothing changed
     service._note_quiet_round()
-    assert (
-        service._tick() == service.settings.tick_active_seconds
-    )  # a write: busy again
+    assert service._tick() == service.settings.tick_active_seconds  # a write: busy again

@@ -56,9 +56,7 @@ def _plain(value: Any) -> Any:
     if hasattr(value, "to_json"):
         return _plain(value.to_json())
     if dataclasses.is_dataclass(value) and not isinstance(value, type):
-        return {
-            f.name: _plain(getattr(value, f.name)) for f in dataclasses.fields(value)
-        }
+        return {f.name: _plain(getattr(value, f.name)) for f in dataclasses.fields(value)}
     if isinstance(value, dict):
         return {str(k): _plain(v) for k, v in value.items() if k not in VOLATILE}
     if isinstance(value, (list, tuple)):
@@ -79,9 +77,7 @@ def identity(native: Any, options: dict[str, Any], scratch: Path) -> dict[str, A
         root_markers = {}
         for directory in execution_db.parent.iterdir():
             for path in sorted(directory.glob("*.json")) if directory.is_dir() else ():
-                root_markers[f"{directory.name}/{path.name}"] = json.loads(
-                    path.read_text()
-                )
+                root_markers[f"{directory.name}/{path.name}"] = json.loads(path.read_text())
         pools[profile_id] = {
             "runtime_profile": {
                 "model": profile.model,
@@ -95,9 +91,7 @@ def identity(native: Any, options: dict[str, Any], scratch: Path) -> dict[str, A
             "arp_profile": _plain(ports.profile),
             "activation_receipt": _plain(ports.activation_receipt),
             "embedding_resource_ref": _plain(ports.embedding_resource_ref),
-            "catalogue_authority": None
-            if ports.catalogue_authority is None
-            else "shared",
+            "catalogue_authority": None if ports.catalogue_authority is None else "shared",
             "script_runner": None
             if ports.script_runner is None
             else type(ports.script_runner).__name__,
@@ -108,8 +102,7 @@ def identity(native: Any, options: dict[str, Any], scratch: Path) -> dict[str, A
     read_caller = native.control_caller({"x": 1})
     status = native.status()
     status["profiles"] = [
-        {k: v for k, v in row.items() if k != "background"}
-        for row in status["profiles"]
+        {k: v for k, v in row.items() if k != "background"} for row in status["profiles"]
     ]
     return {
         "catalogue_owner": native.catalogue_owner_id,
@@ -122,14 +115,10 @@ def identity(native: Any, options: dict[str, Any], scratch: Path) -> dict[str, A
     }
 
 
-VARIANTS = tuple(
-    (models, snapshot) for models in (False, True) for snapshot in (False, True)
-)
+VARIANTS = tuple((models, snapshot) for models in (False, True) for snapshot in (False, True))
 
 
-def build(
-    tmp: Path, *, models: bool, snapshot: bool, counter_factory: Any
-) -> dict[str, Any]:
+def build(tmp: Path, *, models: bool, snapshot: bool, counter_factory: Any) -> dict[str, Any]:
     """Assemble every pool of one variant through the SDK pieces the host entry uses."""
 
     from agent_orchestrator.deployment.native_pools import NativePools, pool_options
