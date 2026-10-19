@@ -4,8 +4,6 @@
 use tauri::Manager;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
-#[cfg(target_os = "windows")]
-use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 
 mod artifact_ops;
 mod backend_launch;
@@ -14,8 +12,6 @@ mod control_command_canonical;
 mod crash_reports;
 mod device;
 mod diagnostics;
-#[cfg(target_os = "windows")]
-mod gpu_check;
 mod job_object;
 mod onboarding;
 mod paths;
@@ -34,7 +30,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        // P3-S2: dialog plugin for the "no NVIDIA GPU" fatal-error path.
+        // 产物"另存为"对话框用（artifact_ops::artifact_save_as）。
         .plugin(tauri_plugin_dialog::init())
         // WI-T1.3 last-mile: clipboard for artifact_copy_path command.
         .plugin(tauri_plugin_clipboard_manager::init())
@@ -102,28 +98,6 @@ pub fn run() {
             window_geometry::set_window_geometry,
         ])
         .setup(|app| {
-            // P3-S2: NVIDIA precheck — Windows only. The Windows Phase-3
-            // contract is CUDA-only (faster-whisper fp16 latency targets),
-            // so on Windows we bail before the Python backend ever spawns
-            // if no NVIDIA GPU is present. On macOS there is no NVML/CUDA;
-            // the backend runs the CPU/MPS tier instead, so no precheck.
-            #[cfg(target_os = "windows")]
-            if let Err(e) = gpu_check::detect_nvidia_gpu() {
-                eprintln!("[setup] gpu_check failed: {e:?}");
-                let msg = gpu_check::format_user_message(&e);
-                app.dialog()
-                    .message(msg)
-                    .title("硬件不支持")
-                    .kind(MessageDialogKind::Error)
-                    .buttons(MessageDialogButtons::Ok)
-                    .blocking_show();
-                app.handle().exit(1);
-                // Still return Ok — the exit above will terminate the
-                // process; returning Err here would just print a panic
-                // trace on top of the dialog the user already saw.
-                return Ok(());
-            }
-
             // Auto-grant microphone permission on the main WebView2 so
             // getUserMedia works inside the desktop-pet window.
             if let Some(win) = app.get_webview_window("main") {

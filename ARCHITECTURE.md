@@ -167,7 +167,7 @@ OSS 用户走 `manual`；维护者带 relay 服务的用 `relay`。两套共享�
 ### 6. 硬件分层（fork 后按平台自动选档）
 
 - 后端已不依赖显卡：本地语音（2026-10-18）与 PyTorch 系列依赖（2026-10-19）都已删除，向量检索走 ONNX Runtime CPU
-- Windows 外壳仍保留 NVML 前置检查（`tauri-app/src-tauri/src/gpu_check.rs`），是否删除见代码质量整治 FOLLOWUPS F-32
+- Windows 外壳的 NVIDIA 显卡前置检查（原 `gpu_check.rs` 与 `nvml-wrapper`）已于 2026-10-19 删除，任何机器都不再因显卡拒绝启动
 - 历史取舍详见 [`HARDWARE_COMPROMISES.md`](./docs/archive/reports-2026-08/HARDWARE_COMPROMISES.md)（其
   CUDA-only 表述为 fork 前旧况）
 

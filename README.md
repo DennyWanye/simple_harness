@@ -7,9 +7,8 @@
 
 由 [DeskPet](https://github.com/DennyWanye/deskpet-private) 分叉而来，经两次改版：
 
-1. **fork（2026-08-04）**：移除 Live2D 全链路（零第三方版权资产）+ macOS 支持
-   （NVML 检查仅 Windows；ASR device/compute "auto"：Win+NVIDIA→CUDA fp16，
-   Mac→CPU int8）。
+1. **fork（2026-08-04）**：移除 Live2D 全链路（零第三方版权资产）+ macOS 支持。
+   本地语音与显卡要求已于 2026-10-18／19 删除，不再需要 NVIDIA 显卡。
 2. **Workbench 改版（2026-08-05）**：桌宠形态退役，改为普通窗口工作台——侧栏
    （技能中心 + 产物库 + 任务 + 底部设置）+ 主对话（2026-10-18 起旧会话界面
    ChatView 与会话列表删除，上下文用量环与切换模型接到主对话）；companion 特权
@@ -92,7 +91,6 @@ pkill -f "python main.py"
   产物库（Rust `list_artifacts` command）；窗口几何真持久化（用户拖拽尺寸）。
 - companion 特权链路：仅主窗（`main` label）可发起——前端常量/Rust 白名单/
   Python 白名单/ingress 标签/companion.db 迁移 007 五处一体迁移。
-- `gpu_check`（NVML）模块与 `nvml-wrapper` 依赖挂 `cfg(windows)`。
 - `tauri.conf.json`：普通窗口（decorations，1000×700，进 Dock）；`macOSPrivateApi`
   已随透明窗退役移除；updater 暂时停用（原 DeskPet 更新源不适用）。
 

@@ -12,7 +12,6 @@
 | Node.js | 20+ | `node --version` |
 | Rust + Cargo | stable (2021 edition) | `cargo --version` |
 | Git | 任意现代版本 | `git --version` |
-| NVIDIA GPU | ≥ 8GB VRAM（CUDA-only，目前不支持 AMD / Intel / CPU-only） | `nvidia-smi` |
 
 **Windows 用户额外需要**：
 - Visual Studio Build Tools 2022（C++ workload，编译 Rust 用）
@@ -116,7 +115,6 @@ npm run tauri:dev
 
 | 现象 | 解决 |
 |---|---|
-| `nvidia-smi: not found` | 装 NVIDIA 显卡驱动；simple_harness 当前只跑 CUDA |
 | 桌宠窗口空白 / 黑 | Tauri WebView2 没装好（Win10）；从微软官方装一下 |
 | 后端 100% CPU 但前端转圈 | 模型还在首次加载；等 30-60 秒 |
 | `Address already in use: 8100` | 上次 dev 留的孤儿后端进程没杀干净。Windows: `taskkill /F /IM python.exe` |

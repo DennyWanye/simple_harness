@@ -60,7 +60,6 @@ All listed crates are dual-licensed MIT OR Apache-2.0 unless noted.
 | `uuid` | MIT / Apache-2.0 | |
 | `keyring` | MIT / Apache-2.0 | OS keychain (Windows DPAPI / macOS Keychain). |
 | `window-vibrancy` | MIT / Apache-2.0 | |
-| `nvml-wrapper` | MIT | NVIDIA Management Library binding. |
 | `webview2-com` | MIT / Apache-2.0 | Windows-only WebView2 integration. |
 
 The full transitive crate license inventory can be regenerated with
