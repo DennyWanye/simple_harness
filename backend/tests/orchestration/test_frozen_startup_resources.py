@@ -100,7 +100,6 @@ def test_host_startup_resource_inventory_has_no_unclassified_data(resource_map):
     [
         ("simple_harness", "simple-harness-sdk"),
         ("agent_orchestrator", "simple-harness-sdk"),
-        ("simple_harness_service", "simple-harness-service-sdk"),
     ],
 )
 def test_every_sdk_package_data_file_is_collected(resource_map, package, distribution):

@@ -15,9 +15,7 @@ import hashlib
 import json
 import os
 import sys
-from importlib import metadata
 from pathlib import Path
-from urllib.parse import unquote, urlparse
 
 from deskpet.sdk_adapters.runtime_paths import (
     SdkCandidateIdentity,
@@ -44,19 +42,6 @@ SDK_SOURCE_ATTESTATION_ENV = "DESKPET_SDK_SOURCE_ATTESTATION"
 # 2026-09-10：认知记忆 SDK（simple-harness-memory-sdk 0.6.38）已从 Host 整条
 # 移除，其 candidate 常量与 ``verify_memory_candidate`` 一并删除。
 
-SDK_SERVICE_VERSION = "0.3.13"
-SDK_SERVICE_WHEEL_FILENAME = "simple_harness_service_sdk-0.3.13-py3-none-any.whl"
-SDK_SERVICE_WHEEL_SHA256 = "26205f89854e27bd7ed8cbd6f7ac1f6b621603f973a081823bc6b707ae0784a8"
-SDK_SERVICE_SOURCE_COMMIT = "74a622572602bf3b6973f5d8a55c09bf62ff08ba"
-SDK_SERVICE_AUTHORITY_ROOT_SHA256 = (
-    "b9675a5c64136bb9ba7064cc78b3cc39662f7f374629bcd4731a833bbff2873d"
-)
-SDK_SERVICE_CANDIDATE_MANIFEST_FILENAME = (
-    "simple_harness_service_sdk-0.3.13.candidate-manifest.json"
-)
-SDK_SERVICE_CANDIDATE_MANIFEST_SHA256 = (
-    "eac1aa553aebe97df145eb257bbd06b930e5b57b25ada3c38fa632b84b87d319"
-)
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 
@@ -101,20 +86,6 @@ def verify_sdk_candidate_manifest() -> None:
         or artifact_hash != SDK_WHEEL_SHA256
     ):
         raise RuntimeError("SDK candidate manifest identity mismatch")
-
-
-def _service_vendor_root() -> Path:
-    return _sdk_artifact_root()
-
-
-def sdk_service_wheel_path() -> Path:
-    """Exact Service SDK release artifact bundled with this product."""
-
-    return _service_vendor_root() / SDK_SERVICE_WHEEL_FILENAME
-
-
-def sdk_service_candidate_manifest_path() -> Path:
-    return _service_vendor_root() / SDK_SERVICE_CANDIDATE_MANIFEST_FILENAME
 
 
 def build_candidate_identity() -> SdkCandidateIdentity:
@@ -179,74 +150,12 @@ def runtime_identity_report() -> dict[str, object]:
     }
 
 
-def verify_service_candidate() -> None:
-    """Verify Service SDK bytes, metadata, release unit and authority root."""
-
-    wheel = sdk_service_wheel_path().resolve()
-    manifest_path = sdk_service_candidate_manifest_path().resolve()
-    if (
-        not wheel.is_file()
-        or hashlib.sha256(wheel.read_bytes()).hexdigest() != SDK_SERVICE_WHEEL_SHA256
-    ):
-        raise RuntimeError("Service SDK candidate wheel SHA-256 mismatch")
-    if (
-        not manifest_path.is_file()
-        or hashlib.sha256(manifest_path.read_bytes()).hexdigest()
-        != SDK_SERVICE_CANDIDATE_MANIFEST_SHA256
-    ):
-        raise RuntimeError("Service SDK candidate manifest SHA-256 mismatch")
-    try:
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        service = next(
-            member
-            for member in manifest["sdk_release_unit"]["members"]
-            if member["role"] == "service"
-        )
-    except (OSError, UnicodeError, ValueError, KeyError, TypeError, StopIteration) as exc:
-        raise RuntimeError("Service SDK candidate manifest invalid") from exc
-    if (
-        manifest.get("schema") != "simple-harness-service-candidate-manifest-v2"
-        or manifest.get("source", {}).get("commit") != SDK_SERVICE_SOURCE_COMMIT
-        or manifest.get("authority", {}).get("root_sha256") != SDK_SERVICE_AUTHORITY_ROOT_SHA256
-        or service.get("version") != SDK_SERVICE_VERSION
-        or service.get("wheel") != SDK_SERVICE_WHEEL_FILENAME
-        or service.get("sha256") != SDK_SERVICE_WHEEL_SHA256
-    ):
-        raise RuntimeError("Service SDK candidate manifest binding mismatch")
-    distribution = metadata.distribution("simple-harness-service-sdk")
-    if distribution.version != SDK_SERVICE_VERSION:
-        raise RuntimeError("Service SDK candidate installed version mismatch")
-    # A frozen executable has already proven the bundled release wheel and
-    # candidate manifest bytes above. PyInstaller may copy the build venv's
-    # direct_url.json into dist-info, but that build-host path is neither
-    # authoritative nor meaningful after extraction under ``sys._MEIPASS``.
-    if getattr(sys, "frozen", False):
-        return
-    direct_url_raw = distribution.read_text("direct_url.json")
-    if direct_url_raw is None:
-        raise RuntimeError("Service SDK candidate installed origin unavailable")
-    try:
-        parsed = urlparse(str(json.loads(direct_url_raw)["url"]))
-        installed_path = Path(unquote(parsed.path)).resolve()
-    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
-        raise RuntimeError("Service SDK candidate installed origin invalid") from exc
-    if parsed.scheme != "file" or installed_path != wheel:
-        raise RuntimeError("Service SDK candidate installed origin mismatch")
-
-
 __all__ = (
     "SDK_CANDIDATE_MANIFEST_FILENAME",
     "SDK_CANDIDATE_MANIFEST_SHA256",
     "SDK_CI_ARTIFACT_ID",
     "SDK_CI_RUN_ID",
     "SDK_RUNTIME_MODE_ENV",
-    "SDK_SERVICE_AUTHORITY_ROOT_SHA256",
-    "SDK_SERVICE_CANDIDATE_MANIFEST_FILENAME",
-    "SDK_SERVICE_CANDIDATE_MANIFEST_SHA256",
-    "SDK_SERVICE_SOURCE_COMMIT",
-    "SDK_SERVICE_VERSION",
-    "SDK_SERVICE_WHEEL_FILENAME",
-    "SDK_SERVICE_WHEEL_SHA256",
     "SDK_SOURCE_ATTESTATION_ENV",
     "SDK_SOURCE_COMMIT",
     "SDK_VERSION",
@@ -256,9 +165,6 @@ __all__ = (
     "build_runtime_identity",
     "runtime_identity_report",
     "sdk_candidate_manifest_path",
-    "sdk_service_candidate_manifest_path",
-    "sdk_service_wheel_path",
     "sdk_wheel_path",
     "verify_sdk_candidate_manifest",
-    "verify_service_candidate",
 )

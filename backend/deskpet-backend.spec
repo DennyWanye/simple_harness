@@ -24,7 +24,6 @@ import sys
 import sysconfig
 from pathlib import Path
 
-import PyInstaller.building.build_main as _pyi_build_main
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules, copy_metadata
 from PyInstaller.building.utils import format_binaries_and_datas
 
@@ -87,22 +86,18 @@ _host_identity_path = Path(workpath) / "host-build-identity.json"
 _host_identity_path.parent.mkdir(parents=True, exist_ok=True)
 _host_identity_path.write_text(json.dumps(_host_build_identity, sort_keys=True, indent=2) + "\n", encoding="utf-8")
 
-# Resolve both SDK artifacts through the product SSOT. Verify the immutable
-# wheel/manifest bytes and installed wheel origins before collecting anything;
+# Resolve the SDK artifact through the product SSOT. Verify the immutable
+# wheel/manifest bytes and installed wheel origin before collecting anything;
 # a source checkout or a stale installed candidate must not become a release.
 sys.path.insert(0, str(_repo_root / "backend"))
 from deskpet.sdk_adapters.runtime_paths import verify_sdk_candidate
 from deskpet.sdk_adapters.sdk_candidate import (
     build_candidate_identity,
     sdk_candidate_manifest_path,
-    sdk_service_candidate_manifest_path,
-    sdk_service_wheel_path,
     sdk_wheel_path,
-    verify_service_candidate,
 )
 
 verify_sdk_candidate(build_candidate_identity())
-verify_service_candidate()
 
 # Durable core tools must be built from the exact checked manifest.  Release
 # wrappers regenerate with --write; PyInstaller itself is deliberately
@@ -120,24 +115,6 @@ _execution_manifest_check = subprocess.run(
 if _execution_manifest_check.returncode != 0:
     raise RuntimeError("execution build manifest check failed")
 
-
-_orig_find_binary_dependencies = _pyi_build_main.find_binary_dependencies
-
-
-def _find_binary_dependencies_skip_flagembedding(binaries, import_packages, symlink_suppression_patterns):
-    # FlagEmbedding is pure Python at the package level; importing it in
-    # PyInstaller's isolated DLL scan can crash on Windows in this venv.
-    import_packages = [
-        p for p in import_packages if not (p == "FlagEmbedding" or p.startswith("FlagEmbedding."))
-    ]
-    return _orig_find_binary_dependencies(
-        binaries,
-        import_packages,
-        symlink_suppression_patterns,
-    )
-
-
-_pyi_build_main.find_binary_dependencies = _find_binary_dependencies_skip_flagembedding
 
 # --- 0. mypyc runtime shims ---------------------------------------------
 # `tomli` (and a few other deps) are compiled with mypyc. Mypyc emits a
@@ -158,14 +135,13 @@ def _collect_sdk_production_modules():
     # Public SDK __getattr__ exports can traverse another lazy mapping before
     # importing the leaf module. Static imports (or just agent_orchestrator)
     # miss those leaves, e.g. runtime.workspace_binding_protocol at startup.
-    # Both distributions have already passed candidate verification above.
+    # The distribution has already passed candidate verification above.
     def production_module(name):
         parts = name.split(".")
         return len(parts) == 1 or parts[1] not in {"testing", "cli", "__main__"}
 
     modules = []
-    for package in ("simple_harness", "simple_harness_service"):
-        modules.extend(collect_submodules(package, filter=production_module, on_error="raise"))
+    modules.extend(collect_submodules("simple_harness", filter=production_module, on_error="raise"))
     return sorted(set(modules))
 
 
@@ -215,19 +191,6 @@ for _pkg in ["scrapling", "curl_cffi", "browserforge", "w3lib", "protego"]:
     except Exception:
         print(f"[spec] WARN: {_pkg} not importable, skip")
 hiddenimports += collect_submodules("agent_reach")
-# NOTE(2026-06-28, RESOLVED): the frozen embedder subprocess worker used to die
-# with "No module named 'datasets'" → silently fall back to MOCK embedder in
-# every shipped build. ROOT CAUSE (located on the real exe, see
-# plans/2026-06-28-frozen-embedder-datasets-fix/): FlagEmbedding's *inference*
-# import chain hard-`import datasets` (a training-only dep) in
-# abc/finetune/embedder/AbsDataset.py, plus two more frozen-only transformers
-# quirks (inspect.getsource on docstring decorators; dynamic import of
-# transformers.models.* during tokenizer autodetection). The fix is NOT a spec
-# change — it was the (now removed) frozen embedder worker's compat patch, which
-# injected a tiny `datasets` stub + patched the two transformers code paths
-# right before `import FlagEmbedding`. Keep datasets EXCLUDED below (bundling it
-# drags ~150MB of pyarrow/pandas and historically crashed build-time analysis).
-# Do NOT add collect_submodules("datasets") — it does nothing useful here.
 hiddenimports += ["sqlite_vec"]                    # P4-S20: L3 vector recall
 hiddenimports += [
     "deskpet.playwright_bundle",  # product browser resolver / diagnostics
@@ -307,7 +270,7 @@ def _collect_startup_resources(repository):
             entries.append((str(path), str(target)))
     # collect_submodules does not collect importlib.resources SQL/JSON data.
     # These packages were already verified against their immutable wheel pins.
-    for package in ("simple_harness", "simple_harness_service", "agent_orchestrator"):
+    for package in ("simple_harness", "agent_orchestrator"):
         entries.extend(collect_data_files(package))
     return entries
 
@@ -360,11 +323,6 @@ for _pkg in ["scrapling", "browserforge", "apify_fingerprint_datapoints"]:
     except Exception:
         print(f"[spec] WARN: {_pkg} data not importable, skip")
 datas += collect_data_files("agent_reach")
-datas += copy_metadata("simple-harness-service-sdk")
-datas += [
-    (str(sdk_service_wheel_path()), "vendor"),
-    (str(sdk_service_candidate_manifest_path()), "vendor"),
-]
 
 # --- 2a-bis. busybox-w32 (P5-S2 — 2026-05-10) --------------------------
 # Ship the ~700KB busybox.exe so end users without Git for Windows still
@@ -416,7 +374,7 @@ a = Analysis(
     hookspath=[],
     runtime_hooks=[],
     excludes=[
-        # Things torch/transformers sometimes drag in that we never use.
+        # Things heavy third-party packages sometimes drag in that we never use.
         # Keep this conservative — overzealous excludes cause runtime
         # ImportError deep in a stack trace.
         "tkinter",
@@ -426,11 +384,6 @@ a = Analysis(
         "jupyter",
         "pytest",
         "_pytest",
-        # FlagEmbedding 推理经 transformers.trainer 拉入 datasets(训练用)，
-        # 但推理 lazy `is_datasets_available()` 可选；其 PyInstaller 隔离
-        # 子进程 bindepend 导入会崩(SubprocessDiedError)→ 排除即修复 +
-        # 减体积，运行时 is_datasets_available()→False 安全降级。
-        "datasets",
     ],
     noarchive=False,
     # WorkflowDefinition hashes callable source text. PyInstaller normally
@@ -460,46 +413,6 @@ a.datas += [
     (destination, source, "DATA")
     for destination, source in format_binaries_and_datas(_immutable_browser_datas)
 ]
-
-# --- 3b. Defensive torch CUDA DLL strip ---------------------------------
-# REQUIRED SETUP: the backend venv MUST install torch's CPU-only wheel
-#   pip install --index-url https://download.pytorch.org/whl/cpu torch torchaudio
-# 2026-10-18 起后端代码不再导入 torch（显存探测随本地语音删除）；
-# 依赖清单里的 torch 待另行清理。
-# If someone accidentally installs torch+cu124 (3.5 GB of CUDA DLLs under
-# torch/lib/), the filter below strips the biggest offenders at build
-# time so the bundle stays under P3-G2's 3.5 GB budget. On a CPU-only
-# install this filter is a no-op.
-_CUDA_DLL_PREFIXES = (
-    # P4-S20 fat MSI bundle: empty strip list — keep the full torch
-    # CUDA stack. shm.dll directly imports torch_cuda.dll which in
-    # turn lazily binds cudnn / cublas / cufft / etc., so cherry-
-    # picking what to strip is fragile (broke on first try).
-    # MSI (vs NSIS) handles 7+ GB dist sizes natively, so we don't
-    # need the strip dance.
-    # Original aggressive list (kept for reference, was active in
-    # P3-S5's NSIS-only era):
-    #   "torch_cuda", "cudnn", "cublas", "cufft", "cusparse",
-    #   "cusolver", "curand", "nvrtc", "nvjitlink", "cupti",
-    #   "nvtoolsext", "c10_cuda", "caffe2_nvrtc", "cudart",
-)
-
-
-def _is_torch_cuda_bloat(entry):
-    dest = entry[0].replace("\\", "/").lower()
-    if not dest.startswith("torch/lib/"):
-        return False
-    name = dest.rsplit("/", 1)[-1]
-    return any(name.startswith(p) for p in _CUDA_DLL_PREFIXES)
-
-
-# P4-S20 thin bundle: re-enabled strip. We keep c10_cuda + cudart in
-# torch/lib/ (removed from `_CUDA_DLL_PREFIXES`) so shm.dll's deps
-# resolve, while everything else (cudnn family, cufft, curand,
-# cusolver, cusparse — collectively ~3 GB) is dropped.
-# Without the strip, dist is ~5 GB (vs ~1.5 GB with strip),
-# which blows NSIS 32-bit makensis's cumulative mmap budget.
-a.binaries = [b for b in a.binaries if not _is_torch_cuda_bloat(b)]
 
 # Recursive data trees and third-party hooks must not carry private workspace
 # files into the onedir artifact. Check the expanded destinations before COLLECT;

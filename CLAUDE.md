@@ -29,7 +29,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ./scripts/setup.sh
 ```
 
-Installs all dependencies: frontend npm packages + backend Python venv (includes PyTorch download, takes 15-30 min first run).
+Installs all dependencies: frontend npm packages + backend Python venv.
 
 **Prerequisites:** Node.js ≥20, Rust toolchain, [uv](https://docs.astral.sh/uv/)
 
@@ -241,13 +241,7 @@ Main config: `config.toml` at repository root. LLM providers configured in Setti
 
 ### Python Dependencies
 
-PyTorch version strictly pinned (torch 2.7.1 + torchvision 0.22.1 + torchaudio 2.7.1). **All three must match minor versions.** See `backend/pyproject.toml` for detailed version rationale.
-
-GPU deployment uses cu128 channel for Blackwell GPU support (sm_120):
-```bash
-pip install --index-url https://download.pytorch.org/whl/cu128 \
-    torch==2.7.1 torchvision==0.22.1 torchaudio==2.7.1
-```
+后端不再依赖 PyTorch（2026-10-19 依赖清理删除 torch 三件套、transformers 系列、本地语音包与 Service SDK）。向量检索的 BGE-M3 走 ONNX Runtime + tokenizers。Harness SDK 只用 `backend/vendor/` 里当前钉版的那一个轮子，身份写在 `deskpet/sdk_adapters/sdk_candidate.py`，换版本只走 `scripts/release_sdk_opt.sh`。
 
 ### Key Documentation
 

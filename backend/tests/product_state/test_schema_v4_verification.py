@@ -11,7 +11,6 @@ from deskpet.capabilities.store import (
     initialize_capability_database,
 )
 from deskpet.product_state.database import ProductStateDatabase
-from deskpet.product_state.downgrade import execute_product_v4_to_v3_downgrade
 from deskpet.product_state.schema import SCHEMA_V3_PARTS
 from deskpet.product_state.schema_integrity import expected_semantic_fingerprint
 
@@ -240,30 +239,3 @@ def test_v4_faults_roll_back_exactly_to_v3(tmp_path: Path, point: str) -> None:
         )
     ProductStateDatabase._validate_v3_connection(owner.connection)
     owner.close()
-
-
-def test_offline_dual_database_v4_to_v3_restore(tmp_path: Path) -> None:
-    product = tmp_path / "product.db"
-    db = _v3(product)
-    db.commit()
-    db.close()
-    owner = ProductStateDatabase(product)
-    owner.initialize()
-    owner.close()
-    pre_v4 = next(tmp_path.glob("product.db.pre-v4.*.sqlite3"))
-    execution = tmp_path / "execution.db"
-    sqlite3.connect(execution).close()
-    receipt = execute_product_v4_to_v3_downgrade(
-        product_database=product,
-        execution_database=execution,
-        product_pre_v4_backup=pre_v4,
-        ingress_closed=True,
-        app_stopped=True,
-        run_probe=lambda _attempt: None,
-        sdk_reopen_probe=lambda _path: (True, "sdk-reopen-ok"),
-    )
-    restored = sqlite3.connect(product)
-    ProductStateDatabase._validate_v3_connection(restored)
-    restored.close()
-    assert receipt.outcome == "restored"
-    assert receipt.execution_backup.exists()

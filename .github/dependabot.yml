@@ -3,8 +3,6 @@
 #
 # Manual review is still required for:
 #   - Major version bumps (auto-grouped under `major-updates` per ecosystem)
-#   - PyTorch / CUDA toolchain (pinned for ABI stability — see backend/pyproject.toml)
-#   - FlagEmbedding / transformers / peft (pinned together for BGE-M3 stability)
 #
 # Disable a single update line by deleting it; disable an ecosystem by
 # removing its top-level entry.
@@ -70,24 +68,9 @@ updates:
         update-types:
           - "patch"
           - "minor"
-        exclude-patterns:
-          - "torch*"
-          - "FlagEmbedding"
-          - "transformers"
-          - "peft"
       major-updates:
         update-types:
           - "major"
-    ignore:
-      # PyTorch CUDA wheel pinning — manual upgrade only (ABI stability)
-      - dependency-name: "torch"
-      - dependency-name: "torchvision"
-      - dependency-name: "torchaudio"
-      # FlagEmbedding family — Windows 3.11 ACCESS_VIOLATION at FE 1.4 + transformers 5
-      # See backend/pyproject.toml comment around line 46
-      - dependency-name: "FlagEmbedding"
-      - dependency-name: "transformers"
-      - dependency-name: "peft"
 
   # ─── GitHub Actions ─────────────────────────────────────────────────
   # Keep our own workflow actions current (actions/checkout, setup-python, etc.)

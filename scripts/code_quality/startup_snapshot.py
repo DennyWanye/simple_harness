@@ -50,7 +50,7 @@ if _rebase:
             return t.replace(_src, _dst) if (name == "direct_url.json" and t) else t
     def _distribution(name):
         d = _orig_dist(name)
-        return _Dist(d) if name in ("simple-harness-sdk", "simple-harness-service-sdk") else d
+        return _Dist(d) if name == "simple-harness-sdk" else d
     _md.distribution = _distribution
 import context as _ctx
 order = []

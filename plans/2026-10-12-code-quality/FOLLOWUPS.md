@@ -21,8 +21,9 @@
 
 - **F-26 伴侣卡片后台**（设计 §5.3）：2026-10-18 用户"同意，删伴侣卡片后台"（已知两个后果：伴侣提醒没有地方显示；中、高风险成长候选永远停在"等确认"）。分支 cq-companion-card 删除：五种决定服务（成长评估／激活／动作确认、回滚、遗忘）与 `companion_action_ready` 通用执行分支、详情查询 `detail_query.py`、`action_decisions.py`、控制通道 `companion_detail_get` 等 6 种消息、会话补读里的 `companion_events`、通知服务的历史开关；前端删没人调用的 `send_companion_action` 与签名挑战状态、详情消息类型与详情缓存。保留：通知投影服务与绑定后排空、`companion_action` 连接作用域、激活分发器（成长权威在用）。证明：后台相关测试 46 个文件、前端相关 12 个文件（156 条）全过；控制通道快照只少 6 种消息与 `companion_events` 字段；启动快照只少 7 个服务位；禁区比对只减不增（463 条字面量随删除消失，放行清单在 `.local-test-evidence/2026-10-18/cq-companion-card/`）；导入冒烟后台 681 个模块。
 - **F-27 PPT 大纲卡后台**（设计 §5.4）：已随"删后台工作流引擎"第 2、3 片删除（host/ppt_outline.py、大纲决定处理、大纲存储）。
-- **F-28 Service SDK 的 realtime 依赖**（设计 §5.1 末）：实时语音删后无人用。要改 pyproject.toml、vendor 轮子、打包清单与冻结包测试，需要 `uv lock`／`uv sync`，工作树里不跑，放到主检出单做。
-- **F-29 可能已无人用的依赖**：edge-tts、faster-whisper、silero-vad、torch/torchvision/torchaudio、FlagEmbedding、transformers、sentence-transformers、peft、qwen-vl-utils。删本地语音与旧模块后要逐个核实再删（牵动打包与安装时间）。
+- **F-28 Service SDK 的 realtime 依赖**：2026-10-19 完成。核实后整个 Service SDK 在运行时都没人导入（只有打包时核对与带进包），所以整个依赖删除：`pyproject.toml` 与锁文件、`sdk_candidate.py` 的核对函数与常量、打包清单里的核对与带入、三份测试里的条目、代码质量脚本里的包名；`backend/vendor/` 只留当前 SDK 轮子与清单（历史轮子 78 个文件一并删，约 68M）。记录 `依赖清理-实施记录.md`。
+- **F-29 可能已无人用的依赖**：2026-10-19 完成。逐个核实导入（含按字符串导入、打包清单、脚本、测试）后删 edge-tts、faster-whisper、silero-vad、FlagEmbedding、transformers、sentence-transformers、peft、qwen-vl-utils、torch/torchvision/torchaudio；锁文件少 53 个包，后端虚拟环境 1.7G → 979M。anthropic、openai、google-genai、ollama 也没有直接导入，但 browser-use 自己依赖它们，删声明不减安装，保留。记录 `依赖清理-实施记录.md`。
+- **F-32 Windows 外壳的 NVIDIA 显卡前置检查**（新，待用户定）：`tauri-app/src-tauri/src/gpu_check.rs` 在 Windows 上没有 NVIDIA 显卡就弹框并退出，理由是本地语音要 CUDA。本地语音与 PyTorch 都已删除，这道检查已没有依据，但只影响 Windows（当前只做 macOS），不在这次改。
 - **F-30 旧会话界面删后的二次重扫**（设计 §6.4）：InputBar 非主对话分支、sessionsStore 收件箱与严重度、controlWs 会话补读与 `chat_v2`、`session_set_model`、`harness_inspector_*`、`companion_action` 作用域等。规模大，先出方案。
 - **F-31 杂项尾巴**：ARCHITECTURE.md §15 整体过时；`scripts/e2e/fixtures/context-os-automation-manifest.json` 列了已删测试；生成样式里留下没人用的类（生成器只能内联转类）；`paths.resolve_model_dir` 与 `publish_models_to_cos.py`；`startup_profile_baseline.json` 有已删模块条目；`harness_parity_census.py` 已坏；工作树 `node_modules` 的 vite 是 8.0.8，与 `webkit_style_compare.py` 记录的 8.1.3 不同（前后同一压缩器比对时不受影响）。
 

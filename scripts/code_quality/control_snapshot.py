@@ -85,7 +85,7 @@ if _rebase:
         def read_text(self, n):
             t = self._d.read_text(n)
             return t.replace(_src, _dst) if (n == "direct_url.json" and t) else t
-    _md.distribution = lambda name: _D(_orig(name)) if name in ("simple-harness-sdk", "simple-harness-service-sdk") else _orig(name)
+    _md.distribution = lambda name: _D(_orig(name)) if name == "simple-harness-sdk" else _orig(name)
 from starlette.websockets import WebSocketDisconnect
 import main
 

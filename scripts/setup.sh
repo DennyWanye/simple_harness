@@ -61,8 +61,8 @@ fi
 info "installing frontend deps (tauri-app/) ..."
 (cd tauri-app && npm install)
 
-info "syncing backend venv (backend/, first run downloads torch — 会比较久) ..."
-# torch/scipy 等大 wheel 在慢网络下容易撞 uv 默认 30s 超时（实测），放宽。
+info "syncing backend venv (backend/) ..."
+# 大 wheel（onnxruntime、playwright 等）在慢网络下容易撞 uv 默认 30s 超时（实测），放宽。
 (cd backend && UV_HTTP_TIMEOUT="${UV_HTTP_TIMEOUT:-600}" uv sync)
 
 ok "done. 启动应用：./scripts/dev.sh"

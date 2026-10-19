@@ -7,9 +7,7 @@
 # Preconditions (script self-checks, errors early if missing):
 #   1. `powershell scripts/build_backend.ps1` was run;
 #      backend/dist/deskpet-backend/deskpet-backend.exe exists.
-#   2. backend/models/ contains faster-whisper-large-v3-turbo/ and cosyvoice2/
-#      OR %LocalAppData%\deskpet\models\ already populated.
-#   3. tauri-app/node_modules/ is installed.
+#   2. tauri-app/node_modules/ is installed.
 #
 # What it does:
 #   * Kills stale deskpet.exe / deskpet-backend.exe only -- does NOT kill
@@ -63,12 +61,6 @@ Write-Host "[e2e] running setup_user_data.ps1..."
 & powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "setup_user_data.ps1")
 if ($LASTEXITCODE -ne 0) {
     Write-Host "[e2e] FAIL: setup_user_data.ps1 returned $LASTEXITCODE" -ForegroundColor Red
-    exit 2
-}
-$userModelsDir = Join-Path $env:LOCALAPPDATA "deskpet\models"
-if (-not (Test-Path (Join-Path $userModelsDir "faster-whisper-large-v3-turbo"))) {
-    Write-Host "[e2e] MISSING: $userModelsDir\faster-whisper-large-v3-turbo" -ForegroundColor Red
-    Write-Host "[e2e] Junction from repo failed; populate $userModelsDir manually." -ForegroundColor Red
     exit 2
 }
 

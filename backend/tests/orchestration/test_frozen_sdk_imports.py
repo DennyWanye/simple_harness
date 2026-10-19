@@ -12,7 +12,6 @@ import pytest
 SPEC = Path(__file__).parents[2] / "deskpet-backend.spec"
 PACKAGES = {
     "simple_harness": "simple-harness-sdk",
-    "simple_harness_service": "simple-harness-service-sdk",
 }
 
 
@@ -76,13 +75,14 @@ def test_public_lazy_exports_resolve_using_only_collected_sdk_modules(
     script = r"""
 import importlib
 import importlib.abc
+import importlib.util
 import json
 import sys
 
 allowed = set(json.loads(sys.argv[1]))
 class CollectedOnly(importlib.abc.MetaPathFinder):
     def find_spec(self, fullname, path=None, target=None):
-        if fullname.split(".")[0] in {"simple_harness", "simple_harness_service"}:
+        if fullname.split(".")[0] == "simple_harness":
             if fullname not in allowed:
                 raise ModuleNotFoundError("SDK module missing from hiddenimports: " + fullname)
 sys.meta_path.insert(0, CollectedOnly())
@@ -90,7 +90,6 @@ harness = importlib.import_module("simple_harness")
 # Reproduce the actual Host startup API before enumerating other exports.
 getattr(harness, "WorkspaceBindingAuthorityGrant")
 runtime = importlib.import_module("simple_harness.runtime")
-service = importlib.import_module("simple_harness_service")
 assert runtime._EXPORT_TO_MODULE
 assert harness._RUNTIME_EXPORTS
 for name, relative in runtime._EXPORT_TO_MODULE.items():
@@ -99,8 +98,6 @@ for name, relative in runtime._EXPORT_TO_MODULE.items():
     getattr(runtime, name)
 for name in harness._RUNTIME_EXPORTS | harness._AGENT_EXPORTS:
     getattr(harness, name)
-for name in service.__all__:
-    getattr(service, name)
 assert harness.WorkspaceBindingAuthorityGrant is runtime.WorkspaceBindingAuthorityGrant
 assert "simple_harness.runtime.workspace_binding_protocol" in sys.modules
 """

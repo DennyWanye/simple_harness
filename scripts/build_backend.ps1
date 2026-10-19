@@ -62,11 +62,6 @@ Write-Host ("[build_backend] bundle models: {0}" -f $env:DESKPET_BUNDLE_MODELS)
 Remove-BuildTree $DistPath
 Remove-BuildTree $WorkPath
 
-$torchVer = & $BuildPython -c "import torch; print(torch.__version__)" 2>$null
-if ($torchVer -and $torchVer -notmatch "\+cpu$") {
-    throw "Detected torch '$torchVer'; production backend bundling requires the CPU-only wheel."
-}
-
 Push-Location $backendDir
 try {
     $t0 = Get-Date

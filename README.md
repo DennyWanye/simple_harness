@@ -40,7 +40,7 @@ Python FastAPI（后端；语音规划走中转站 Realtime）。
 ```bash
 git clone git@github.com:DennyWanye/simple_harness.git
 cd simple_harness
-./scripts/setup.sh   # 一次性：检查 node/cargo/uv，装前端依赖 + 后端 venv（首次下 torch 较久）
+./scripts/setup.sh   # 一次性：检查 node/cargo/uv，装前端依赖 + 后端 venv
 ```
 
 ```bash

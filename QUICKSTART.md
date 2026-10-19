@@ -41,9 +41,6 @@ source .venv/bin/activate
 
 pip install -e ".[dev]"
 
-# PyTorch CUDA wheel（默认 PyPI 是 CPU-only）
-pip install --index-url https://download.pytorch.org/whl/cu124 torch torchvision torchaudio
-
 cd ..
 
 # 前端
@@ -120,7 +117,6 @@ npm run tauri:dev
 | 现象 | 解决 |
 |---|---|
 | `nvidia-smi: not found` | 装 NVIDIA 显卡驱动；simple_harness 当前只跑 CUDA |
-| `Error loading torch_cuda_dll` | PyTorch CUDA wheel 没装好；按 Step 1 重装 |
 | 桌宠窗口空白 / 黑 | Tauri WebView2 没装好（Win10）；从微软官方装一下 |
 | 后端 100% CPU 但前端转圈 | 模型还在首次加载；等 30-60 秒 |
 | `Address already in use: 8100` | 上次 dev 留的孤儿后端进程没杀干净。Windows: `taskkill /F /IM python.exe` |

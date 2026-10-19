@@ -12,7 +12,7 @@ import importlib.metadata as _md
 import os
 
 _REBASE = os.environ.get("CQ_ORIGIN_REBASE")
-_PACKAGES = ("simple-harness-sdk", "simple-harness-service-sdk")
+_PACKAGES = ("simple-harness-sdk",)
 
 if _REBASE:
     _src, _dst = _REBASE.split("|")
