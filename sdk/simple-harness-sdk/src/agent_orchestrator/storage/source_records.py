@@ -112,7 +112,12 @@ def _columns(connection: sqlite3.Connection, table: str) -> list[str]:
 
 
 def install(connection: sqlite3.Connection) -> None:
-    """Per-connection temporary bookkeeping; nothing is written to the main database."""
+    """Per-connection temporary bookkeeping; nothing is written to the main database.
+
+    触发器体内被 INSERT 的目标表一律不带库名：SQLite 规定触发器内的 INSERT/UPDATE/DELETE 目标不能
+    是限定名（3.53 放宽了，3.50/3.51 仍拒）；不带库名时先解析到 temp，这些表只在 temp 里有。
+    ``ON main.<table>`` 与 SELECT 子句里的限定名不受此限，照旧写明。
+    """
 
     live = {
         row[0]
@@ -126,13 +131,13 @@ def install(connection: sqlite3.Connection) -> None:
         "CREATE TEMP TABLE IF NOT EXISTS rows_tx_events(mission_id TEXT NOT NULL, type TEXT NOT NULL)",
         f"CREATE TEMP TRIGGER IF NOT EXISTS rows_tx_events AFTER INSERT ON main.events"
         f" WHEN NEW.type NOT IN ({ignored})"
-        " BEGIN INSERT INTO temp.rows_tx_events VALUES (NEW.mission_id, NEW.type); END",
+        " BEGIN INSERT INTO rows_tx_events VALUES (NEW.mission_id, NEW.type); END",
     ]
     for table in named_tables():
         if table in live:
             script.append(
                 f"CREATE TEMP TRIGGER IF NOT EXISTS rows_named_{table} AFTER INSERT ON main.{table}"
-                f" BEGIN INSERT INTO temp.rows_named VALUES ('{table}', NEW.rowid); END"
+                f" BEGIN INSERT INTO rows_named VALUES ('{table}', NEW.rowid); END"
             )
     for table in folded_tables():
         if table not in live:
@@ -149,7 +154,7 @@ def install(connection: sqlite3.Connection) -> None:
         # 触发器里不用 OR IGNORE：外层语句（如 upsert）的冲突策略会盖过触发器里的，写成"不存在才插"
         def mark(alias: str, existed: int) -> str:
             return (
-                f"INSERT INTO temp.rows_touched SELECT '{table}', {key(alias)}, {existed}"
+                f"INSERT INTO rows_touched SELECT '{table}', {key(alias)}, {existed}"
                 f" WHERE NOT EXISTS ({touched.format(key(alias))});"
             )
 
@@ -160,7 +165,7 @@ def install(connection: sqlite3.Connection) -> None:
         ]
         for operation in ("UPDATE", "DELETE"):
             body = (
-                f"INSERT INTO temp.shadow_{table} SELECT {old_image}"
+                f"INSERT INTO shadow_{table} SELECT {old_image}"
                 f" WHERE NOT EXISTS ({touched.format(key('OLD'))}); {mark('OLD', 1)}"
             )
             if operation == "UPDATE":
