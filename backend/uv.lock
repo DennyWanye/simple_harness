@@ -6880,7 +6880,7 @@ requires-dist = [
     { name = "rapidocr-onnxruntime", specifier = ">=1.3" },
     { name = "scrapling", extras = ["fetchers"], specifier = ">=0.4" },
     { name = "selectolax", specifier = ">=0.3" },
-    { name = "simple-harness-sdk", path = "vendor/simple_harness_sdk-0.13.0.dev20260925+opt.195-py3-none-any.whl" },
+    { name = "simple-harness-sdk", path = "vendor/simple_harness_sdk-0.13.0.dev20260925+opt.196-py3-none-any.whl" },
     { name = "sqlite-vec", specifier = ">=0.1" },
     { name = "structlog", specifier = ">=24.0" },
     { name = "tokenizers", specifier = ">=0.20" },
@@ -6896,15 +6896,15 @@ provides-extras = ["dev"]
 
 [[package]]
 name = "simple-harness-sdk"
-version = "0.13.0.dev20260925+opt.195"
-source = { path = "vendor/simple_harness_sdk-0.13.0.dev20260925+opt.195-py3-none-any.whl" }
+version = "0.13.0.dev20260925+opt.196"
+source = { path = "vendor/simple_harness_sdk-0.13.0.dev20260925+opt.196-py3-none-any.whl" }
 dependencies = [
     { name = "deepseek-recipe", marker = "sys_platform != 'win32'" },
     { name = "httpx" },
     { name = "pytest" },
 ]
 wheels = [
-    { filename = "simple_harness_sdk-0.13.0.dev20260925+opt.195-py3-none-any.whl", hash = "sha256:bbae818a77a977853bf77fd160c0379b52f2928e3da91dbb7950861c65c5c6b2" },
+    { filename = "simple_harness_sdk-0.13.0.dev20260925+opt.196-py3-none-any.whl", hash = "sha256:fb49def883d6de020990f36103ea3bf45d4b99a64312f3bc55bd6f0ee28c3f4a" },
 ]
 
 [package.metadata]
