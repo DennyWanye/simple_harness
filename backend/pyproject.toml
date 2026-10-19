@@ -113,7 +113,7 @@ dependencies = [
     # 2026-08-29: vendored exact Agent Runtime candidate bytes.
     # Wheel identity single source of truth:
     # deskpet/sdk_adapters/sdk_candidate.py
-    "simple-harness-sdk==0.13.0.dev20260925+opt.193",
+    "simple-harness-sdk==0.13.0.dev20260925+opt.194",
     # ARP-EXEC-1.1.1: the pinned official DeepSeek V4.1 counting recipe (the SDK's
     # deepseek-tokenizer extra); the tokenizer bytes live in the user models directory.
     "deepseek-recipe==0.1.1",
@@ -130,7 +130,7 @@ dependencies = [
 # simple-harness-sdk = { path = "../../simple-harness-sdk", editable = true }
 #
 # Production (vendored immutable candidate):
-simple-harness-sdk = { path = "vendor/simple_harness_sdk-0.13.0.dev20260925+opt.193-py3-none-any.whl" }
+simple-harness-sdk = { path = "vendor/simple_harness_sdk-0.13.0.dev20260925+opt.194-py3-none-any.whl" }
 
 [project.optional-dependencies]
 dev = [
