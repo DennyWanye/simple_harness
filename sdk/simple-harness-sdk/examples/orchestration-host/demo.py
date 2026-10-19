@@ -9,6 +9,8 @@
 
       SH_BASEURL=https://api.deepseek.com/v1 SH_APIKEY=... SH_MODEL=deepseek-flash \\
       SH_TOKENIZER=./deepseek-v41-tokenizer.json python demo.py
+  经转发站：再给 SH_COMPATIBLE_HOSTS=转发主机名（逗号分隔）；转发站回显的模型名不同时给
+  SH_RESPONSE_MODEL_ALIASES=回显名（逗号分隔）。
 
   分词文件不存在时先按钉死的哈希下载到 ``SH_TOKENIZER``。
 * 脚本模型（``--scripted``）：不联网，用 SDK 自带的脚本化模型回复与测试计数器，只证明接线。
@@ -69,6 +71,10 @@ async def main(args: argparse.Namespace) -> int:
                 api_key=api_key,
                 compatible_hosts=tuple(
                     h for h in (_env("SH_COMPATIBLE_HOSTS") or "").split(",") if h.strip()
+                ),
+                # 转发站回显的模型名与请求的不同时在这里声明，否则每次调用的用量都算不可信
+                response_model_aliases=tuple(
+                    a for a in (_env("SH_RESPONSE_MODEL_ALIASES") or "").split(",") if a.strip()
                 ),
                 allow_private_http=base_url.startswith("http://"),
             ),
