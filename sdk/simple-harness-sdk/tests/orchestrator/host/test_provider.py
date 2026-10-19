@@ -184,6 +184,13 @@ def test_a_deepseek_host_fetches_the_pinned_tokenizer_once_to_the_given_or_root_
     asyncio.run(other._ensure_tokenizer())
     assert len(fetched) == 2 and other._tokenizer_path is None
 
+    wrong = tmp_path / "wrong.json"
+    wrong.write_text("not the pinned bytes")
+    keep = make("f", model=DEEPSEEK, tokenizer_path=wrong)
+    with pytest.raises(host_module.HostUnavailable, match="哈希不符"):
+        asyncio.run(keep._ensure_tokenizer())
+    assert wrong.read_text() == "not the pinned bytes" and len(fetched) == 2  # 没被覆盖
+
     def broken(dest, **_kwargs):
         raise OSError("no network")
 

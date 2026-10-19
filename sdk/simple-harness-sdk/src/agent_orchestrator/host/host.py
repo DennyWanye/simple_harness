@@ -59,7 +59,7 @@ from .instance_lock import InstanceLock
 from .provider import build_providers, deepseek_counter, is_deepseek, requested_model
 from .script_runner import SandboxScriptRunner
 from .settings import ONLY_DEEPSEEK_REASON, HostSettings, ModelConfig
-from .tokenizer import ensure_deepseek_tokenizer
+from .tokenizer import ensure_deepseek_tokenizer, tokenizer_matches
 
 logger = logging.getLogger(__name__)
 
@@ -452,6 +452,9 @@ class OrchestrationHost:
         if self._given_counter is not None or self.model is None or not is_deepseek(self.model):
             return
         target = self._tokenizer_path or self.root / "deepseek-v41-tokenizer.json"
+        if target.exists() and not tokenizer_matches(target):
+            # 调用方给的文件不是钉死的那份：不覆盖它，如实拒绝
+            raise HostUnavailable(f"DeepSeek 分词文件不是钉死的那份（哈希不符）：{target}")
         try:
             self._tokenizer_path = await asyncio.to_thread(ensure_deepseek_tokenizer, target)
         except Exception as error:
