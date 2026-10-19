@@ -84,7 +84,7 @@ jobs:
           else
             PYTHON=.candidate-venv/bin/python
           fi
-          uv pip install --python "$PYTHON" "${WHEEL}[testing]" "$MEMORY_WHEEL"
+          uv pip install --python "$PYTHON" "${WHEEL}" "$MEMORY_WHEEL"
           EXPECTED_VERSION="$(python -c 'import runpy; print(runpy.run_path("src/simple_harness/version.py")["__version__"])')"
           "$PYTHON" -I - "$EXPECTED_VERSION" "$EXPECTED_MEMORY_VERSION" <<'PY'
           import sys

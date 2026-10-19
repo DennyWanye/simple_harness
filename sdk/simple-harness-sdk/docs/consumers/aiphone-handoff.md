@@ -69,7 +69,7 @@ sha256sum simple_harness_sdk-0.1.1-py3-none-any.whl
 pip install simple_harness_sdk-0.1.1-py3-none-any.whl
 
 # With testing extras (for conformance validation)
-pip install "simple_harness_sdk-0.1.1-py3-none-any.whl[testing]"
+pip install "simple_harness_sdk-0.1.1-py3-none-any.whl"
 
 # Verify installation
 python -c "import simple_harness; print(simple_harness.__version__)"

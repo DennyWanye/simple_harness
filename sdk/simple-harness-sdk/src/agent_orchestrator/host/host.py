@@ -226,7 +226,7 @@ class OrchestrationHost:
         self.on_write: Callable[[], None] | None = None
         #: 重建成功后的回调（宿主应用续读事件、重新探测诊断）。
         self.on_rebuilt: Callable[[], None] | None = None
-        # 每轮驱动后的回调（宿主应用自己的轻量杂务，例如存储用量刷新）
+        # 每轮驱动后的回调（宿主应用自己的轻量杂务，例如存储用量刷新）；只收同步函数，出错只记日志
         self.on_round: Callable[[], Any] | None = None
         self._wake = asyncio.Event()
         self._closing = False
@@ -710,7 +710,10 @@ class OrchestrationHost:
                 await self._host_duties()
                 self._note_quiet_round()
                 if self.on_round is not None:
-                    self.on_round()
+                    try:
+                        self.on_round()
+                    except Exception:  # noqa: BLE001 - 应用自己的杂务出错不算驱动循环失败
+                        logger.exception("on_round callback failed")
                 self._failures = 0
                 if self.state == "degraded":
                     self.state, self.reason = "available", None

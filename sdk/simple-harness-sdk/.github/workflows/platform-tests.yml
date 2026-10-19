@@ -115,7 +115,7 @@ jobs:
           fi
 
           WHEEL=$(ls release-dist/*.whl)
-          uv pip install --python "$PYTHON" "${WHEEL}[testing]"
+          uv pip install --python "$PYTHON" "${WHEEL}"
 
       - name: Test SDK imports
         shell: bash
