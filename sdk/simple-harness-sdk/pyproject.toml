@@ -26,7 +26,7 @@ dependencies = [
   # 任务的 `file:` / `pytest:` 要求都由沙箱里的 pytest 核对，宿主解释器必须装它
   "pytest>=8.3,<9",
   # DeepSeek 认证计数配方（可多算不可少算的上界计数靠它）；没有它一个执行池也起不来
-  "deepseek-recipe==0.1.1",
+  "deepseek-recipe==0.1.1; platform_system != 'Windows'",
 ]
 
 [project.optional-dependencies]

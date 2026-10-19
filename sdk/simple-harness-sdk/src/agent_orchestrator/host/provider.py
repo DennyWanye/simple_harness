@@ -16,6 +16,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 import httpx
+
 from simple_harness.providers import OpenAICompatibleProvider, Secret
 
 from ..runtime.deepseek_meter import (

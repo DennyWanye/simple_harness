@@ -1757,7 +1757,7 @@ wheels = [
 name = "simple-harness-sdk"
 source = { editable = "." }
 dependencies = [
-    { name = "deepseek-recipe" },
+    { name = "deepseek-recipe", marker = "sys_platform != 'win32'" },
     { name = "httpx" },
     { name = "pytest" },
 ]
@@ -1790,7 +1790,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "deepseek-recipe", specifier = "==0.1.1" },
+    { name = "deepseek-recipe", marker = "sys_platform != 'win32'", specifier = "==0.1.1" },
     { name = "httpx", specifier = ">=0.27,<1" },
     { name = "jinja2", marker = "extra == 'hf-tokenizer'", specifier = ">=3.1,<4" },
     { name = "psutil", marker = "extra == 'local-capacity'", specifier = ">=7.2.2,<8" },

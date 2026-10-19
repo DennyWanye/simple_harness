@@ -101,8 +101,8 @@ def model_config(snapshot: ProviderSnapshot, settings: Any) -> ModelConfig:
 
 
 def tokenizer_path() -> Path | None:
-    """钉死的 DeepSeek 分词文件：``DESKPET_ORCH_TOKENIZER_PATH``（绝对路径），否则模型目录下的
-    ``deepseek-v41/tokenizer.json``。"""
+    """钉死的 DeepSeek 分词文件的位置：``DESKPET_ORCH_TOKENIZER_PATH``（绝对路径），否则模型目录下的
+    ``deepseek-v41/tokenizer.json``。文件不在时宿主启动会按钉死哈希下载到这里。"""
 
     configured = os.environ.get(TOKENIZER_PATH_ENV)
     if configured:
@@ -113,8 +113,7 @@ def tokenizer_path() -> Path | None:
         from paths import user_models_dir
     except ImportError:
         return None
-    candidate = Path(user_models_dir()) / "deepseek-v41" / "tokenizer.json"
-    return candidate if candidate.is_file() else None
+    return Path(user_models_dir()) / "deepseek-v41" / "tokenizer.json"
 
 
 def models_dir() -> Path | None:

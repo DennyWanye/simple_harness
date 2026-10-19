@@ -33,7 +33,10 @@ def ensure_deepseek_tokenizer(dest: str | Path, *, timeout: float = 120.0) -> Pa
     target = Path(dest)
     if tokenizer_matches(target):
         return target
-    response = httpx.get(TOKENIZER_URL, timeout=timeout, follow_redirects=True)
+    # 连不上要快点报（10 秒），正文大（6 MB）给足时间
+    response = httpx.get(
+        TOKENIZER_URL, timeout=httpx.Timeout(timeout, connect=10.0), follow_redirects=True
+    )
     response.raise_for_status()
     raw = response.content
     if hashlib.sha256(raw).hexdigest() != TOKENIZER_SHA256:

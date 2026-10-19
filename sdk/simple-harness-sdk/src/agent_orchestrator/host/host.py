@@ -279,10 +279,10 @@ class OrchestrationHost:
             return
         try:
             self.root.mkdir(parents=True, exist_ok=True)
-            self._ensure_tokenizer()
             if not self.lock.acquire():
                 self.state, self.reason = "unavailable", "另一个实例正在使用编排目录"
                 return
+            await self._ensure_tokenizer()
             if self._require_acceptance:
                 acceptance = self.taskgraph_acceptance_status()
                 if acceptance != "VALIDATED":
@@ -445,20 +445,15 @@ class OrchestrationHost:
         if not self.runtime_options["profiles"]:
             raise HostUnavailable(self._no_pool_reason())
 
-    def _ensure_tokenizer(self) -> None:
-        """DeepSeek 端点没给分词文件就按钉死的哈希下载到数据目录（只下载一次）；
-        给了计数器就不需要。"""
+    async def _ensure_tokenizer(self) -> None:
+        """DeepSeek 端点的钉死分词文件：给了路径就核对那份（不在就下载到那里），没给就下载到
+        数据目录；只下载一次，在线程里下载不卡事件循环。给了计数器就不需要。"""
 
-        if (
-            self._tokenizer_path is not None
-            or self._given_counter is not None
-            or self.model is None
-            or not is_deepseek(self.model)
-        ):
+        if self._given_counter is not None or self.model is None or not is_deepseek(self.model):
             return
-        target = self.root / "deepseek-v41-tokenizer.json"
+        target = self._tokenizer_path or self.root / "deepseek-v41-tokenizer.json"
         try:
-            self._tokenizer_path = ensure_deepseek_tokenizer(target)
+            self._tokenizer_path = await asyncio.to_thread(ensure_deepseek_tokenizer, target)
         except Exception as error:
             raise HostUnavailable(
                 f"取 DeepSeek 分词文件失败（{target}）：{type(error).__name__}: {error}"[:300]

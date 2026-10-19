@@ -1,6 +1,6 @@
 {
   "acceptance_evidence": null,
-  "deployment_id": "90a67a787fdabcec1c553c18f0cb50eb22f222d9b5271862dc8102f78ac1d09e",
+  "deployment_id": "052899371eb45be0a53371f35fb547381c8cdb6bd4f0124e65b0f0ddbac56512",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -162,12 +162,12 @@
     "agent_orchestrator/graph/view_contracts.py": "105cee92bc3ecaa21c6db44e8a32ac086199d98037540fa13d781b724560830f",
     "agent_orchestrator/host/__init__.py": "af078f67e906296c1bcad1272b4be7b12f43372418dc58aeee64da352e7bec6d",
     "agent_orchestrator/host/embedding.py": "ac37172e30842aec43c0af0ac81a4a7b35094fadda0c5fcae8f8efddcef22d48",
-    "agent_orchestrator/host/host.py": "7430a32c731a78a1d51dc961a6defd7ab442fca601702ba18d876a6b4bafc1e4",
+    "agent_orchestrator/host/host.py": "b91dbc628f91577b06754c9ae9954bb61566abcf2abdeb3dc2d63382e35fe904",
     "agent_orchestrator/host/instance_lock.py": "de30c4b0c87ac371fdf200f14a9f2e519efbf9194249743e128e3e0cd34d03d9",
-    "agent_orchestrator/host/provider.py": "4382662b95c8faa052f6a624392180da3deba8ff30655ac6903ded836477c950",
+    "agent_orchestrator/host/provider.py": "822a71baa477526b5cd9d5c3e4e331969db2c340ff4d3d765ee142f47a3f0ee1",
     "agent_orchestrator/host/script_runner.py": "9ac0b54f3487b6367a7f7b7f4f1a5d9acbc177b9620b7d35aceba2c89fa74736",
     "agent_orchestrator/host/settings.py": "cc4e8379229a975f4088e85609af843877c473bf53a42793eb08245467238fda",
-    "agent_orchestrator/host/tokenizer.py": "16202b9e11fe32533837e89fc5adc8d20438bf6a6c8b74c7ff659d715e0714a1",
+    "agent_orchestrator/host/tokenizer.py": "2ac9133c33a53afbd00799348a17921541dea0b2b45c995aac65c62e67eef339",
     "agent_orchestrator/knowledge/__init__.py": "730b121824f258c1f0f9d0531d52a428562530d498ad14623081b9a154b86a21",
     "agent_orchestrator/knowledge/assurance_sources.py": "f65220d97a588bf87437196ba38b251cd7245bf50eeef88972f01ceb899d9d82",
     "agent_orchestrator/knowledge/bounded_closure.py": "83f740483e395942de7a0cb9c4b1d6170c62c831545bec594788a0cb15a8de32",
