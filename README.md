@@ -57,6 +57,20 @@ Linux 另需 Tauri 系统库（webkit2gtk 等，`setup.sh` 检测不到会给出
 > 本地 profile 身份路径，不存在账户登录、注册或登出入口。历史 DeskPet 构建说明不代表
 > 当前可用产品入口。
 
+## 把 SDK 接到别的 Python 应用
+
+桌面端内嵌的 SDK 可以单独装进你自己的 Python 应用做任务编排（这一版只支持 DeepSeek，沙箱只在 macOS）。
+
+```bash
+pip install backend/vendor/simple_harness_sdk-<版本>-py3-none-any.whl
+```
+
+然后几行代码：`OrchestrationHost.open(...)` 建宿主 → `create_mission(...)` 建任务 → `run_until_settled(...)` 等结果。
+DeepSeek 分词文件首次启动自动下载到数据目录。完整说明与可运行例子：
+[`sdk/simple-harness-sdk/docs/orchestration-host.md`](sdk/simple-harness-sdk/docs/orchestration-host.md)、
+[`sdk/simple-harness-sdk/examples/orchestration-host/demo.py`](sdk/simple-harness-sdk/examples/orchestration-host/demo.py)
+（`--scripted` 不联网也能跑通）。SDK 自己的说明在 [`sdk/simple-harness-sdk/README.md`](sdk/simple-harness-sdk/README.md)。
+
 ## 常见问题
 
 ### ⚠️ 端口 8100 冲突错误
