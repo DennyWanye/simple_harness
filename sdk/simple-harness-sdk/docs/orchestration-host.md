@@ -145,10 +145,11 @@ host = await OrchestrationHost.open(root, principal=..., model=..., tools=[tool]
 | 注册时就拒 | 名字不合法、与内置工具或技能工具同名、重复注册、schema 不是对象或没写 `description`、超时不是正数 |
 | 参数校验 | 模型给的参数先按 schema 校验，不合格不会调到你的函数 |
 | 串行 | 同一任务内的工具调用一个接一个（每任务一把锁），任务之间并行 |
+| 忙 | 上一次超时的调用还没结束、锁还占着：这次最多等 `timeout_seconds`，然后判"失败"（`tool_busy`），不发起调用 |
 | 超时 | 记为"失败"（`tool_timeout`）交回模型，模型可以再调；**SDK 不自动重试**。async 工具会被取消；普通函数停不下来，锁等它真正结束才放（事件里 `still_running: true`） |
-| 被重启打断 | 只读工具外部什么都没改，重启后这次调用按"失败"（`tool_interrupted`）交回模型，不会把步骤挂在"不确定"上 |
+| 被重启打断 | 只读工具外部什么都没改，重启后这次调用按"失败"（`tool_interrupted`）交回模型，并补一条失败事件收尾，不会把步骤挂在"不确定"上 |
 | 异常 | 记为"失败"，只记异常类型名，异常文字不回给模型、不进事件（可能带凭据） |
-| 返回值 | 必须是 JSON 对象，序列化后不超过 1 MB；否则记为"失败" |
+| 返回值 | 必须是规范 JSON 对象（列表别用元组，不要 NaN/Infinity，键必须是字符串），序列化后不超过 1 MB；否则记为"失败"（`tool_result_invalid`） |
 | async 工具 | 跑在宿主的事件循环上：里面不要做阻塞操作（会卡住整个宿主，包括租约续期） |
 | 换工具集合 | 同一数据目录换了工具集合照常启动；在途任务再调已删的工具会被拒并记 `ToolCallRejected` 事件，任务继续 |
 
@@ -156,9 +157,9 @@ host = await OrchestrationHost.open(root, principal=..., model=..., tools=[tool]
 
 | 事件 | 何时 | 载荷 |
 |---|---|---|
-| `ExternalToolCallStarted` | 调用前 | `tool`、`call_key`（= `context.call_id`）、`argument_keys` |
+| `ExternalToolCallStarted` | 拿到锁、真正发起调用时（等锁时被取消或判忙的不算开始） | `tool`、`call_key`（= `context.call_id`）、`argument_keys` |
 | `ExternalToolCallSucceeded` | 成功 | 上面几项 + `result`（32 KB 以内原样；更大时只留预览并 `truncated: true`）、`duration_ms` |
-| `ExternalToolCallFailed` | 抛异常、结果不合格、超时 | `error_code`（`tool_failed` / `tool_result_invalid` / `tool_timeout`）、`error_type`、超时时 `still_running` |
+| `ExternalToolCallFailed` | 抛异常、结果不合格、超时、忙、被重启打断 | `error_code`（`tool_failed` / `tool_result_invalid` / `tool_timeout` / `tool_busy` / `tool_interrupted`）、`error_type`、超时时 `still_running` |
 | `ExternalToolCallUnknown` | 这一步被取消时调用还在进行 | `error_code`（`tool_cancelled`） |
 | `ToolCallRejected` | 没授权、参数不合格、预算用完 | `tool`、`reason`、`stage` |
 

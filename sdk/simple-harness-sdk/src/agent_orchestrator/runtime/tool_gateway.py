@@ -587,8 +587,26 @@ class WorkspaceToolGateway:
         registered = self._domain_tools.get(effect.tool_name)
         if registered is not None and registered.read_only:
             # 应用注册的只读工具：外部什么都没改，被重启打断的调用就是"没拿到结果"，交回模型可再调；
-            # 不能永远停在"不确定"上把这一步挂住
+            # 不能永远停在"不确定"上把这一步挂住。事件流补一条"失败"给这次调用收尾。
             key = f"{effect.run_id.value}:{effect.call_id.value}"
+            binding = self._bindings.get(effect.run_id.value)
+            arguments = effect.arguments if isinstance(effect.arguments, Mapping) else {}
+            self._external(
+                effect.run_id.value,
+                "failed",
+                {
+                    "run_id": effect.run_id.value,
+                    "tool": effect.tool_name,
+                    "call_id": str(effect.call_id.value),
+                    "call_key": key,
+                    "attempt_id": None if binding is None else binding.attempt_id,
+                    "argument_keys": sorted(arguments),
+                    "outcome": "failed",
+                    "stage": "reconcile",
+                    "error_code": "tool_interrupted",
+                    "error_type": None,
+                },
+            )
             return ReconciliationObservation(
                 ReconciliationState.COMPLETED,
                 f"read-only-tool:interrupted:{key}",
@@ -986,21 +1004,32 @@ class WorkspaceToolGateway:
         )
         record["call_key"] = call_key
         record["argument_keys"] = sorted(arguments)
-        self._external(run_id, "started", record)
+        started: list[bool] = []
+
+        def on_start() -> None:
+            started.append(True)
+            self._external(run_id, "started", record)
+
         lock = self._domain_locks.setdefault(binding.mission_id, asyncio.Lock())
         try:
-            outcome = await run_domain_tool(tool, arguments, context, lock=lock)
+            outcome = await run_domain_tool(tool, arguments, context, lock=lock, on_start=on_start)
         except asyncio.CancelledError:
-            record["outcome"] = "unknown"
             record["stage"] = "execute"
-            record["error_code"] = "tool_cancelled"
-            self._external(run_id, "unknown", record)
+            if started:
+                record["outcome"] = "unknown"
+                record["error_code"] = "tool_cancelled"
+                self._external(run_id, "unknown", record)
+            else:  # 还在等锁就被取消：调用根本没发出去
+                record["outcome"] = "rejected:cancelled"
+                record["error_code"] = "tool_not_started"
             raise
         record["duration_ms"] = outcome.duration_ms
         if outcome.status == "succeeded":
             record["_value"] = dict(outcome.value or {})
             record["result"] = record["_value"]
             self._external(run_id, "succeeded", record)
+            # 结果只进事件与交回模型；网关自己的调用记录不留它（长期运行不涨内存）
+            del record["result"]
             return None
         record["stage"] = "execute"
         record["error_code"] = outcome.error_code

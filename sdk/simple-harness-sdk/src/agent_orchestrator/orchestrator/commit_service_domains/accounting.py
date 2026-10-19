@@ -232,7 +232,11 @@ class AccountingCommitsMixin(CommitServiceCore):
             payload["result"] = (
                 dict(record.get("result") or {})
                 if not truncated
-                else {"_truncated_preview": encoded[:EXTERNAL_RESULT_LIMIT]}
+                else {
+                    "_truncated_preview": encoded.encode("utf-8")[:EXTERNAL_RESULT_LIMIT].decode(
+                        "utf-8", "ignore"
+                    )
+                }
             )
             payload["truncated"] = truncated
         elif phase in ("failed", "unknown"):

@@ -370,6 +370,13 @@ class PolicyRoutingMixin(OrchestratorCore):
         """应用注册的工具每个阶段都是任务时间线上的事实（开始 / 成功 / 失败 / 不确定）。"""
 
         attempt = self.store.get_attempt(str(record.get("attempt_id") or ""))
+        if attempt is None and run_id:  # 重启后对账：绑定还没恢复，按派发记录找这一轮的尝试
+            for intent in self.store.list_intents(
+                "PENDING", "CLAIMED", "AGENT_CREATED", "SUBMITTED", "SETTLED", "FAILED"
+            ):
+                if intent.agent_id == run_id:
+                    attempt = self.store.get_attempt(intent.subject_id)
+                    break
         if attempt is None:
             return
         self.commit.record_external_tool(

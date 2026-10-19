@@ -10,19 +10,24 @@
   等到宽限期结束就交给后台任务继续等，结果记为"不确定"。
 - 普通函数在线程里跑：线程停不下来，超时/取消时结果记为"不确定"，后台任务等线程结束再放锁。
 - 工具抛异常 → "失败"，只记异常类型名，不记文字（可能带凭据）。
-- 返回值必须是 JSON 可序列化的对象（Mapping），否则 → "失败"（``tool_result_invalid``）。
+- 返回值必须是规范 JSON 对象（与事件、账本同一套校验：不收元组、NaN、非字符串键），否则 →
+  "失败"（``tool_result_invalid``）。
+- 等锁也有上限（``timeout_seconds``）：上一次超时的调用还没结束、锁还占着时，这次直接判"失败"
+  （``tool_busy``），不发起调用，模型/人可稍后再试；锁本身照旧等物理调用结束才放。
+- ``on_start`` 在拿到锁、真正发起调用前回调一次（审计"开始"用）；没开始就被取消的调用不算开始。
 """
 
 from __future__ import annotations
 
 import asyncio
 import inspect
-import json
 import logging
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
+
+from simple_harness.contracts import canonical_json
 
 from .domain_tools import DomainTool, ToolCallContext
 
@@ -65,12 +70,18 @@ def _release_when_done(
 
 
 def _check_result(value: Any) -> Mapping[str, Any]:
+    """与事件、账本同一套 JSON 规则：过不了这里，就不会出现"执行器说成功、事件写不进去"。"""
+
     if not isinstance(value, Mapping):
         raise TypeError("tool result must be a JSON object")
-    encoded = json.dumps(dict(value), ensure_ascii=False)
+    result = dict(value)
+    try:
+        encoded = canonical_json(result)
+    except (TypeError, ValueError, KeyError) as error:
+        raise ValueError("tool result is not canonical JSON") from error
     if len(encoded.encode("utf-8")) > MAX_RESULT_BYTES:
         raise ValueError("tool result exceeds the size limit")
-    return dict(value)
+    return result
 
 
 async def run_domain_tool(
@@ -79,11 +90,27 @@ async def run_domain_tool(
     context: ToolCallContext,
     *,
     lock: asyncio.Lock,
+    on_start: Callable[[], None] | None = None,
 ) -> DomainCallOutcome:
     """拿锁 → 跑 ``invoke`` → 结果；锁在物理调用结束时放（可能晚于返回）。"""
 
-    await lock.acquire()
+    waited = time.monotonic()
+    try:
+        async with asyncio.timeout(tool.timeout_seconds):
+            await lock.acquire()
+    except TimeoutError:
+        return DomainCallOutcome(
+            status="failed",
+            error_code="tool_busy",
+            public_message=f"{tool.name} is still busy with an earlier call; try again later",
+            duration_ms=_elapsed(waited),
+        )
     started = time.monotonic()
+    if on_start is not None:
+        try:
+            on_start()
+        except Exception:  # noqa: BLE001 - 审计失败不挡调用
+            logger.exception("domain tool start audit failed")
     loop = asyncio.get_running_loop()
     pending: asyncio.Future[Any]
     in_thread = not inspect.iscoroutinefunction(tool.invoke)
@@ -129,7 +156,8 @@ async def run_domain_tool(
             status="failed",
             error_code="tool_result_invalid",
             error_type=type(problem).__name__,
-            public_message=f"{tool.name} returned an invalid result: {problem}",
+            # 不回显内容：结果里可能有敏感字段
+            public_message=f"{tool.name} returned a result that is not a JSON object within limits",
             duration_ms=_elapsed(started),
         )
     if inspect.isawaitable(value):  # pragma: no cover - _check_result already refused non-mappings

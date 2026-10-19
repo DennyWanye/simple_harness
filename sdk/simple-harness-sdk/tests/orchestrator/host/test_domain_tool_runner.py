@@ -201,3 +201,71 @@ def test_calls_of_one_mission_run_one_at_a_time() -> None:
 def test_registration_validates_name_schema_and_timeout(name, schema, timeout, message) -> None:
     with pytest.raises(ValueError, match=message):
         DomainTool(name=name, schema=schema, invoke=lambda a, c: {}, timeout_seconds=timeout)
+
+
+@pytest.mark.parametrize(
+    "value",
+    [{"items": (1, 2)}, {"x": float("nan")}, {1: "int key"}],
+    ids=["tuple", "nan", "int-key"],
+)
+def test_results_the_event_log_cannot_store_are_refused(value) -> None:
+    """与事件、账本同一套 JSON 规则：执行器说成功的，事件一定写得进去。"""
+
+    outcome, lock = _run(_tool(lambda a, c: value))
+    assert outcome.status == "failed" and outcome.error_code == "tool_result_invalid"
+    assert not lock.locked()
+
+
+def test_a_call_waiting_behind_a_stuck_thread_is_busy_not_hung(monkeypatch) -> None:
+    """上一次超时的线程还占着锁：这次在 timeout_seconds 内判 tool_busy、不发起调用；
+    线程结束后再调成功。"""
+
+    monkeypatch.setattr(runner, "CANCEL_GRACE_SECONDS", 0.05)
+    release = threading.Event()
+    calls: list[int] = []
+
+    def stuck_once(arguments, context):
+        calls.append(1)
+        if len(calls) == 1:
+            release.wait(5)
+        return {"n": len(calls)}
+
+    async def case():
+        lock = asyncio.Lock()
+        tool = _tool(stuck_once, timeout=0.1)
+        first = await runner.run_domain_tool(tool, {}, CONTEXT, lock=lock)
+        assert first.status == "unknown" and first.error_code == "tool_timeout"
+        started = time.monotonic()
+        second = await runner.run_domain_tool(tool, {}, CONTEXT, lock=lock)
+        assert second.status == "failed" and second.error_code == "tool_busy"
+        assert time.monotonic() - started < 1.0 and len(calls) == 1
+        release.set()
+        for _ in range(100):
+            if not lock.locked():
+                break
+            await asyncio.sleep(0.02)
+        third = await runner.run_domain_tool(tool, {}, CONTEXT, lock=lock)
+        assert third.status == "succeeded" and third.value == {"n": 2}
+
+    asyncio.run(case())
+
+
+def test_a_call_cancelled_while_waiting_for_the_lock_never_starts() -> None:
+    starts: list[str] = []
+
+    async def case():
+        lock = asyncio.Lock()
+        await lock.acquire()  # 别人占着
+        task = asyncio.create_task(
+            runner.run_domain_tool(
+                _tool(lambda a, c: {}), {}, CONTEXT, lock=lock, on_start=lambda: starts.append("s")
+            )
+        )
+        await asyncio.sleep(0.05)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert starts == [] and lock.locked()  # 锁还是原主人的
+        lock.release()
+
+    asyncio.run(case())

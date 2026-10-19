@@ -274,8 +274,16 @@ def test_an_interrupted_read_only_call_reconciles_to_a_failure() -> None:
             arguments={},
         )
 
+    audited: list[tuple[str, str, dict]] = []
+    gateway.on_external_tool = lambda run_id, phase, record: audited.append(
+        (run_id, phase, dict(record))
+    )
     seen = asyncio.run(gateway.observe(effect("app_list")))
     assert seen.state is ReconciliationState.COMPLETED
     assert seen.result is not None and seen.result.error_code == "tool_interrupted"
+    # 事件流给这次调用收尾：同一个 call_key，一条"失败"
+    assert [(r, p, a["call_key"], a["error_code"]) for r, p, a in audited] == [
+        ("run-1", "failed", "run-1:c-1", "tool_interrupted")
+    ]
     other = asyncio.run(gateway.observe(effect("run_tests")))
     assert other.state is ReconciliationState.STILL_UNKNOWN

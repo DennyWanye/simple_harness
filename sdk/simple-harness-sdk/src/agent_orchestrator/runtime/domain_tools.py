@@ -34,7 +34,6 @@ class ToolCallContext:
     mission_id: str
     attempt_id: str
     call_id: str  # 稳定调用号（``<run_id>:<call_id>``），重启后不变；副作用去重用它
-    task_id: str | None = None
     principal_id: str | None = None
     tenant_id: str | None = None
 
