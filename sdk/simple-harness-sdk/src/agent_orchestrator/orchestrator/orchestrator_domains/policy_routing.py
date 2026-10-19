@@ -366,6 +366,20 @@ class PolicyRoutingMixin(OrchestratorCore):
         if record.get("error_code") == "read_only_leaf_kept_writing" and attempt is not None:
             self._schedule_read_only_kept_writing_stop(attempt)
 
+    def _audit_external_tool(self, run_id: str, phase: str, record: Mapping[str, Any]) -> None:
+        """应用注册的工具每个阶段都是任务时间线上的事实（开始 / 成功 / 失败 / 不确定）。"""
+
+        attempt = self.store.get_attempt(str(record.get("attempt_id") or ""))
+        if attempt is None:
+            return
+        self.commit.record_external_tool(
+            attempt.mission_id,
+            task_id=attempt.task_id,
+            attempt_id=attempt.id,
+            phase=phase,
+            record=record,
+        )
+
     def _record_tool_call(self, run_id: str, record: Mapping[str, Any]) -> None:
         """Review P1-3: an executed Worker tool call is a durable fact (once per SDK call id)."""
 

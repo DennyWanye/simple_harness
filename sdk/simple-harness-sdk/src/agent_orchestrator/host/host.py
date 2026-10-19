@@ -24,7 +24,7 @@ import os
 import secrets
 import sys
 import time
-from collections.abc import Awaitable, Callable, Iterator, Mapping
+from collections.abc import Awaitable, Callable, Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -51,8 +51,10 @@ from ..runtime import sandbox
 from ..runtime.assembly import OrchestratorConfig
 from ..runtime.connectors_publish import FilePublishConnector
 from ..runtime.deepseek_meter import deepseek_meter_binding
+from ..runtime.domain_tools import DomainTool
 from ..runtime.planning_operations import SourceUnavailable
 from ..runtime.sandbox import SandboxUnavailable, SeatbeltExecutor
+from ..runtime.tool_gateway import ASSURANCE_REVIEWER_TOOLS, TOOL_NAMES
 from ..version import __version__
 from .embedding import embedding_port
 from .instance_lock import InstanceLock
@@ -87,6 +89,26 @@ class HostRequestError(RuntimeError):
 
 class HostUnavailable(RuntimeError):
     """宿主没有起来（没有模型、没有认证计数器、目录被占、验收门没过……）。"""
+
+
+def _checked_tools(tools: Sequence[DomainTool]) -> dict[str, DomainTool]:
+    """注册时就把能拒的拒掉：类型、重名、与内置/技能工具同名、副作用。"""
+
+    checked: dict[str, DomainTool] = {}
+    reserved = set(TOOL_NAMES) | set(SKILL_TOOL_NAMES) | set(ASSURANCE_REVIEWER_TOOLS)
+    for tool in tools:
+        if not isinstance(tool, DomainTool):
+            raise ValueError(f"tools must be DomainTool instances, got {type(tool).__name__}")
+        if not tool.read_only:
+            raise ValueError(
+                f"tool {tool.name!r} has side effects; register side effects as a connector"
+            )
+        if tool.name in reserved:
+            raise ValueError(f"tool {tool.name!r} collides with a built-in tool name")
+        if tool.name in checked:
+            raise ValueError(f"tool {tool.name!r} is registered twice")
+        checked[tool.name] = tool
+    return checked
 
 
 def backoff_delay(failures: int, maximum: float) -> float:
@@ -171,6 +193,7 @@ class OrchestrationHost:
         model_name: str | None = None,
         provider_kind: str | None = None,
         extra_secrets: tuple[str, ...] = (),
+        tools: Sequence[DomainTool] = (),
     ) -> None:
         """
         ``model`` + ``tokenizer_path``：用 DeepSeek 端点（正常用法）。
@@ -178,7 +201,10 @@ class OrchestrationHost:
         提供方与认证计数器（测试替身，或别的接法）；给了就不再按 ``model`` 构建。
         ``auto_mode``：自动模式下 SDK 代签"授权本轮规划"与"确认纯内容完成要求"；可以是布尔，
         也可以是每轮现读的函数。
+        ``tools``：应用注册的只读工具（:class:`DomainTool`）。名字不能与内置工具、技能工具重复；
+        有副作用的工具（``read_only=False``）在这里被拒——副作用走连接器。
         """
+        self.tools = _checked_tools(tools)
 
         self.root = Path(root)
         self.settings = settings or HostSettings()
@@ -504,9 +530,12 @@ class OrchestrationHost:
             if sandboxed
             else (*WORKSPACE_TOOLS, *KNOWLEDGE_TOOLS)
         )
+        tool_names = tuple(self.tools)
         self.policy = DeploymentPolicy(
-            allowed_tools=(*base_tools, *skill_tools),
+            allowed_tools=(*base_tools, *skill_tools, *tool_names),
             skill_tools=skill_tools,
+            domain_tools=tool_names,
+            domain_read_only_tools=tool_names,
             code_execution="sandboxed" if sandboxed else "off",
             enabled_connectors=enabled_connectors,
             max_action_level=self.settings.max_action_level,
@@ -529,6 +558,9 @@ class OrchestrationHost:
             lease_seconds=self.settings.lease_seconds,
             deployment_policy=self.policy,
             sandbox_executor=self.executor,
+            domain_tools=dict(self.tools),
+            tool_call_tenant_id=self.tenant_id,
+            tool_call_principal_id=str(getattr(self.principal, "principal_id", "") or "") or None,
             task_max_tokens=self.settings.task_max_tokens,
             global_budget=Budget(max_tokens=self.settings.global_monthly_max_tokens),
             **knobs,

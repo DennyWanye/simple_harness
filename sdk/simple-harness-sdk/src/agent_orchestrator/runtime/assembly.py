@@ -111,6 +111,9 @@ class OrchestratorConfig:
     domain_tools: Mapping[str, DomainTool] = field(
         default_factory=dict, kw_only=True, repr=False, compare=False
     )
+    # 交给领域工具的可信身份（宿主的租户与当事人）
+    tool_call_tenant_id: str | None = field(default=None, kw_only=True)
+    tool_call_principal_id: str | None = field(default=None, kw_only=True)
     # step 5 (D5-2 / D5-6 / D5-7 / D5-8 / D5-15)
     planning_backend: PlanningBackend | None = field(
         default=None, repr=False, compare=False, kw_only=True
@@ -489,6 +492,8 @@ def assemble_orchestrator_runtime(
         executor=executor,
         appworld_execute=config.appworld_execute,
         domain_tools=config.domain_tools,
+        tenant_id=config.tool_call_tenant_id,
+        principal_id=config.tool_call_principal_id,
     )
     pools: dict[str, RuntimePool] = {}
     if provider_admissions is not None and (
@@ -513,6 +518,9 @@ def assemble_orchestrator_runtime(
         native = profile.native_plane
         if native is None:
             raise ValueError(f"profile {profile_id!r} has no native plane; every pool runs on it")
+        if hasattr(native.authorization, "on_denied"):
+            # 授权口拒掉的调用与网关拒掉的同样进任务事件
+            native.authorization.on_denied = gateway.audit_policy_refusal
         ports = AgentRuntimePorts(
             provider=profile.provider,
             # ARP-EXEC-1.1.1: a native-plane pool runs under the deployment's real
@@ -523,7 +531,7 @@ def assemble_orchestrator_runtime(
             tool_names=(*TOOL_NAMES, *config.domain_tools),
             tool_schemas={
                 **read_tool_schemas(large=profile.context_policy is not None),
-                **{name: tool.schema for name, tool in config.domain_tools.items()},
+                **{name: dict(tool.schema) for name, tool in config.domain_tools.items()},
             },
             context_policy=profile.context_policy or ContextPolicy(),
             tokenizer=profile.tokenizer,

@@ -111,6 +111,61 @@ asyncio.run(main())
 `local_tests_disabled`、`action_criteria_disabled`、`orchestration_unavailable`、`orchestration_degraded`、
 `sdk_refused` 等。
 
+## 4a. 注册应用自己的工具
+
+应用把自己的**只读**能力（查设备状态、搜 NAS、列应用……）交给宿主，模型在执行步骤时就能调用：
+
+```python
+from agent_orchestrator.host import DomainTool, OrchestrationHost, ToolCallContext
+
+async def device_status(arguments, context: ToolCallContext):
+    # context 由 SDK 填写：mission_id、attempt_id、call_id（稳定调用号）、principal_id、tenant_id；
+    # 模型参数里的同名字段不算数。用它做你自己的授权判断。
+    status = await my_device_client.status(arguments["device"])
+    return {"device": arguments["device"], "battery": status.battery}   # JSON 对象
+
+tool = DomainTool(
+    name="device_status",                      # 小写标识符；不能与内置工具同名
+    schema={                                   # 参数的 JSON Schema；模型读的说明写在顶层 description
+        "type": "object",
+        "description": "读一台设备的当前状态（电量、网络）",
+        "properties": {"device": {"type": "string", "description": "设备名"}},
+        "required": ["device"],
+        "additionalProperties": False,
+    },
+    invoke=device_status,                      # 普通函数（线程里跑）或 async def（事件循环上跑）
+    timeout_seconds=30,
+)
+host = await OrchestrationHost.open(root, principal=..., model=..., tools=[tool])
+```
+
+| 规则 | 说明 |
+|---|---|
+| 只收只读工具 | `read_only=False` 在构造时被拒。有副作用的操作走连接器（有审批、去重号、对账），见下一版说明 |
+| 注册时就拒 | 名字不合法、与内置工具或技能工具同名、重复注册、schema 不是对象或没写 `description`、超时不是正数 |
+| 参数校验 | 模型给的参数先按 schema 校验，不合格不会调到你的函数 |
+| 串行 | 同一任务内的工具调用一个接一个（每任务一把锁），任务之间并行 |
+| 超时 | 记为"失败"（`tool_timeout`）交回模型，模型可以再调；**SDK 不自动重试**。async 工具会被取消；普通函数停不下来，锁等它真正结束才放（事件里 `still_running: true`） |
+| 被重启打断 | 只读工具外部什么都没改，重启后这次调用按"失败"（`tool_interrupted`）交回模型，不会把步骤挂在"不确定"上 |
+| 异常 | 记为"失败"，只记异常类型名，异常文字不回给模型、不进事件（可能带凭据） |
+| 返回值 | 必须是 JSON 对象，序列化后不超过 1 MB；否则记为"失败" |
+| async 工具 | 跑在宿主的事件循环上：里面不要做阻塞操作（会卡住整个宿主，包括租约续期） |
+| 换工具集合 | 同一数据目录换了工具集合照常启动；在途任务再调已删的工具会被拒并记 `ToolCallRejected` 事件，任务继续 |
+
+每次调用在任务事件流（`events(mission_id, ...)`）里留下：
+
+| 事件 | 何时 | 载荷 |
+|---|---|---|
+| `ExternalToolCallStarted` | 调用前 | `tool`、`call_key`（= `context.call_id`）、`argument_keys` |
+| `ExternalToolCallSucceeded` | 成功 | 上面几项 + `result`（32 KB 以内原样；更大时只留预览并 `truncated: true`）、`duration_ms` |
+| `ExternalToolCallFailed` | 抛异常、结果不合格、超时 | `error_code`（`tool_failed` / `tool_result_invalid` / `tool_timeout`）、`error_type`、超时时 `still_running` |
+| `ExternalToolCallUnknown` | 这一步被取消时调用还在进行 | `error_code`（`tool_cancelled`） |
+| `ToolCallRejected` | 没授权、参数不合格、预算用完 | `tool`、`reason`、`stage` |
+
+事件按 `seq` 排序，`events(mission_id, after_seq=上次的 through_seq)` 续读；同一调用的事件共用 `call_key`，
+可以拿它去重。`on_write` 只是"有新写入"的提醒，内容从事件续读。可运行的例子（用公开模块 `agent_orchestrator.host.offline` 的脚本模型，不联网）见
+`examples/orchestration-host/tools_readonly.py`（同步工具）与 `tools_async.py`（异步工具：抛错一次、超时一次、再成功）。
+
 ## 5. 要求怎么写
 
 - 每行一条，普通文字就行；规划器按它拆步骤，审阅员按它审。

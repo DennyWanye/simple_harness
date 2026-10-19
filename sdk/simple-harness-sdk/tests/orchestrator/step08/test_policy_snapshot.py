@@ -13,6 +13,7 @@ import json
 from pathlib import Path
 
 import pytest
+
 from agent_orchestrator.governance.policies import SNAPSHOT_FIELDS, policy_snapshot, snapshot_diff
 from agent_orchestrator.runtime.assembly import OrchestratorConfig
 from agent_orchestrator.runtime.model_router import RoutingRules
@@ -43,6 +44,9 @@ def test_s8_07_every_configuration_field_is_classified(tmp_path):
         # 后加的能力字段：只在配置了时把公开身份写进 config，其余情况列为不入快照
         "domain_tools",
         "planning_backend",
+        # 交给应用工具的宿主身份：谁在用，不是行为参数
+        "tool_call_tenant_id",
+        "tool_call_principal_id",
     }
 
 

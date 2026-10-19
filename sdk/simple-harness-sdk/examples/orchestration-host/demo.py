@@ -51,10 +51,9 @@ async def main(args: argparse.Namespace) -> int:
         "auto_mode": True,  # 自动授权每轮规划、自动确认纯内容要求；人要把关就改成 False
     }
     if args.scripted:
-        from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider
-        from agent_orchestrator.testing.word_counter import FixtureWordCounter
+        from agent_orchestrator.host.offline import FixtureWordCounter, ScriptedProvider
 
-        options.update(provider=LayeredScriptedProvider(), counter=FixtureWordCounter())
+        options.update(provider=ScriptedProvider(), counter=FixtureWordCounter())
         options["require_acceptance"] = False
     else:
         base_url, api_key = _env("SH_BASEURL"), _env("SH_APIKEY")

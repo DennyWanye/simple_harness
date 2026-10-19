@@ -94,7 +94,8 @@ class TaskGraphExecutionImports:
                 if binding is not None:
                     role = orchestrator._hierarchical_worker_template(role, mission_id)
                 read_only = binding is not None and read_only_leaf(binding)
-                role_tools = tuple(role.tool_names)
+                # 与派发时同一种算法：角色工具 + 应用注册的工具（见 attempt_judgment）
+                role_tools = (*role.tool_names, *orchestrator._config.domain_tools)
                 tasks.append(
                     {
                         "task_id": task.id,

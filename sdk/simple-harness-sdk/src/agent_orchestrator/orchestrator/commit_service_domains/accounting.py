@@ -9,6 +9,8 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from simple_harness.contracts import canonical_json
+
 from ...contracts import Event
 from ...contracts.models import jsonable
 from ...governance.budgets import AccountSnapshot, BudgetError
@@ -25,6 +27,16 @@ from ...scheduling.backpressure import (
 from ..budget_accounts import GLOBAL_ACCOUNT_PREFIX, global_account_id, is_global_account
 from ..resource_requests import LAPSED
 from .core import CommitServiceCore
+
+#: 应用注册的工具每个阶段对应的任务事件名
+EXTERNAL_TOOL_EVENTS = {
+    "started": "ExternalToolCallStarted",
+    "succeeded": "ExternalToolCallSucceeded",
+    "failed": "ExternalToolCallFailed",
+    "unknown": "ExternalToolCallUnknown",
+}
+#: 成功结果写进事件的上限（字节）；更大的结果只在执行账本里
+EXTERNAL_RESULT_LIMIT = 32 * 1024
 
 
 class AccountingCommitsMixin(CommitServiceCore):
@@ -191,6 +203,51 @@ class AccountingCommitsMixin(CommitServiceCore):
                     else None,
                     "run_id": run_id,
                 },
+            )
+
+    def record_external_tool(
+        self,
+        mission_id: str,
+        *,
+        task_id: str | None,
+        attempt_id: str | None,
+        phase: str,
+        record: Mapping[str, Any],
+    ) -> Event:
+        """应用注册的工具的一次调用在任务时间线上的事实（开始 / 成功 / 失败 / 不确定），
+        消费方据此画工具卡。结果带上限：超过 ``EXTERNAL_RESULT_LIMIT`` 字节只留前半并标 truncated。"""
+
+        call_key = str(record.get("call_key") or "")
+        payload: dict[str, Any] = {
+            "tool": record.get("tool"),
+            "call_key": call_key,
+            "run_id": record.get("run_id"),
+            "argument_keys": list(record.get("argument_keys") or []),
+        }
+        if phase != "started":
+            payload["duration_ms"] = record.get("duration_ms")
+        if phase == "succeeded":
+            encoded = canonical_json(dict(record.get("result") or {}))
+            truncated = len(encoded.encode("utf-8")) > EXTERNAL_RESULT_LIMIT
+            payload["result"] = (
+                dict(record.get("result") or {})
+                if not truncated
+                else {"_truncated_preview": encoded[:EXTERNAL_RESULT_LIMIT]}
+            )
+            payload["truncated"] = truncated
+        elif phase in ("failed", "unknown"):
+            payload["error_code"] = record.get("error_code")
+            payload["error_type"] = record.get("error_type")  # 只记类型名，不记异常文字
+            if "still_running" in record:
+                payload["still_running"] = bool(record.get("still_running"))
+        with self._store.transaction():
+            return self._emit(
+                EXTERNAL_TOOL_EVENTS[phase],
+                mission_id,
+                key=f"{call_key}:{phase}",
+                task_id=task_id,
+                attempt_id=attempt_id,
+                payload=payload,
             )
 
     def record_tool_call(

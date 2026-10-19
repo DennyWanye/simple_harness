@@ -21,6 +21,7 @@
 """
 
 from ..governance.permissions import Principal
+from ..runtime.domain_tools import DomainTool, ToolCallContext
 from .host import (
     HostRequestError,
     HostUnavailable,
@@ -39,11 +40,13 @@ __all__ = (
     "CONTEXT_INPUT_CHOICES",
     "ONLY_DEEPSEEK_REASON",
     "HostRequestError",
+    "DomainTool",
     "HostSettings",
     "HostUnavailable",
     "ModelConfig",
     "OrchestrationHost",
     "Principal",
+    "ToolCallContext",
     "host_settings_from_mapping",
     "with_publish_sources",
 )

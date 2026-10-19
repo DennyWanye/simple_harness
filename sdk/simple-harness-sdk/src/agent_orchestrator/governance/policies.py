@@ -345,6 +345,9 @@ SNAPSHOT_FIELDS: dict[str, str] = {
         "capability: callback presence only; environment frozen in experiment manifest"
     ),
     "domain_tools": "capability: public schemas and read-only flags; no callback serialization",
+    # 交给领域工具的宿主身份：谁在用，不是行为参数
+    "tool_call_tenant_id": "excluded: the host identity handed to domain tools",
+    "tool_call_principal_id": "excluded: the host identity handed to domain tools",
     "planning_backend": "capability: backend identity; no runtime object serialization",
     **{
         name: "include"

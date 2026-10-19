@@ -22,7 +22,7 @@ from ..contracts.models import ContractError
 from ..contracts.semantic_base import content_hash_of
 from ..planning.htn.observers import COMPLETE_COVERAGE, observed, unavailable
 from ..planning.htn.world import build_planning_world
-from ..runtime.domain_tools import DomainTool
+from ..runtime.domain_tools import DomainTool, ToolCallContext
 
 DOMAIN_ID = "drone-sim-v1"
 PREDICATES = ("connected", "battery-safe", "zone-clear", "airborne", "landed", "capture-exists")
@@ -65,9 +65,8 @@ class DroneSimulator:
             raise ContractError("vehicle is outside the bound simulator episode")
         return state
 
-    def command(
-        self, arguments: Mapping[str, Any], mission_id: str, call_id: str
-    ) -> Mapping[str, Any]:
+    def command(self, arguments: Mapping[str, Any], context: ToolCallContext) -> Mapping[str, Any]:
+        mission_id, call_id = context.mission_id, context.call_id
         if not call_id:
             raise ContractError("simulation command requires its actual gateway call ID")
         fields = {"vehicle", "command", "expected_version", "x", "y", "z"}
@@ -156,12 +155,11 @@ class DroneSimulator:
             return receipt
 
     def telemetry(
-        self, arguments: Mapping[str, Any], mission_id: str, call_id: str
+        self, arguments: Mapping[str, Any], context: ToolCallContext
     ) -> Mapping[str, Any]:
-        del call_id
         if set(arguments) != {"vehicle"}:
             raise ContractError("telemetry requires only vehicle")
-        state = self.read(mission_id, str(arguments["vehicle"]))
+        state = self.read(context.mission_id, str(arguments["vehicle"]))
         if state["fault"] == "unreachable":
             raise RuntimeError("simulator transport unavailable")
         return {"state": state, "state_hash": content_hash_of(state), "simulated": True}
@@ -169,18 +167,22 @@ class DroneSimulator:
     def tools(self) -> dict[str, DomainTool]:
         return {
             "drone_sim_telemetry": DomainTool(
-                {
+                name="drone_sim_telemetry",
+                schema={
                     "type": "object",
+                    "description": "读一架模拟无人机的当前状态",
                     "properties": {"vehicle": {"type": "string"}},
                     "required": ["vehicle"],
                     "additionalProperties": False,
                 },
-                self.telemetry,
-                True,
+                invoke=self.telemetry,
+                read_only=True,
             ),
             "drone_sim_command": DomainTool(
-                {
+                name="drone_sim_command",
+                schema={
                     "type": "object",
+                    "description": "给一架模拟无人机下一条指令（起飞/移动/拍照/降落）",
                     "properties": {
                         "vehicle": {"type": "string"},
                         "command": {
@@ -193,7 +195,8 @@ class DroneSimulator:
                     "required": ["vehicle", "command", "expected_version"],
                     "additionalProperties": False,
                 },
-                self.command,
+                invoke=self.command,
+                read_only=False,
             ),
         }
 

@@ -25,7 +25,8 @@ import re
 from simple_harness.tools.reconciliation import ReconciliationObservation, ReconciliationState
 
 from ..contracts.models import SEARCH_TOOL_NAMES
-from .domain_tools import DomainTool
+from .domain_tool_runner import run_domain_tool
+from .domain_tools import DomainTool, ToolCallContext
 
 logger = logging.getLogger(__name__)
 
@@ -519,6 +520,8 @@ class WorkspaceToolGateway:
         executor: SandboxExecutorPort | None = None,
         appworld_execute: Callable[[str], Mapping[str, Any]] | None = None,
         domain_tools: Mapping[str, DomainTool] | None = None,
+        tenant_id: str | None = None,
+        principal_id: str | None = None,
     ) -> None:
         self._workspaces = workspaces
         self._bindings: dict[str, WorkspaceBinding] = {}
@@ -535,6 +538,12 @@ class WorkspaceToolGateway:
         if set(self._domain_tools) & set(TOOL_NAMES):
             raise ValueError("domain tools cannot replace existing tool names")
         self._domain_locks: dict[str, asyncio.Lock] = {}
+        # 交给领域工具的可信身份（宿主的租户与当事人），模型参数里的同名字段不算数
+        self._tenant_id = tenant_id
+        self._principal_id = principal_id
+        #: 领域工具调用的审计回调：``(run_id, phase, record)``，phase 是
+        #: started / succeeded / failed / unknown；编排器把它写成任务事件。
+        self.on_external_tool: Callable[[str, str, Mapping[str, Any]], None] | None = None
         # The fourth argument names the reader (attempt, this tool call, review key):
         # content is handed over through the use-certificate issuer.
         self.knowledge_reader: (
@@ -575,6 +584,21 @@ class WorkspaceToolGateway:
         unknown = ReconciliationObservation(
             ReconciliationState.STILL_UNKNOWN, "workspace-write:proof-unavailable"
         )
+        registered = self._domain_tools.get(effect.tool_name)
+        if registered is not None and registered.read_only:
+            # 应用注册的只读工具：外部什么都没改，被重启打断的调用就是"没拿到结果"，交回模型可再调；
+            # 不能永远停在"不确定"上把这一步挂住
+            key = f"{effect.run_id.value}:{effect.call_id.value}"
+            return ReconciliationObservation(
+                ReconciliationState.COMPLETED,
+                f"read-only-tool:interrupted:{key}",
+                ToolResult.failed(
+                    effect.call_id,
+                    "tool_interrupted",
+                    f"{effect.tool_name} was interrupted before it returned;"
+                    " call it again if needed",
+                ),
+            )
         if effect.tool_name != "workspace_write_file" or self.executed_lookup is None:
             return unknown
         key = f"{effect.run_id.value}:{effect.call_id.value}"
@@ -825,21 +849,17 @@ class WorkspaceToolGateway:
                 if binding.mission_id is None:
                     raise WorkspaceError("domain tool requires a Mission binding")
                 tool = self._domain_tools[call.name]
-                lock = self._domain_locks.setdefault(binding.mission_id, asyncio.Lock())
-                async with lock:
-                    refusal = (
-                        None
-                        if self.execution_refusal is None
-                        else self.execution_refusal(binding.attempt_id)
-                    )
-                    if refusal is not None:
-                        raise WorkspaceError(refusal)
-                    pending = asyncio.create_task(
-                        asyncio.to_thread(
-                            tool.invoke, arguments, binding.mission_id, f"{run_id}:{call.call_id}"
-                        )
-                    )
-                    value = dict(await _await_physical_call(pending))
+                refusal = (
+                    None
+                    if self.execution_refusal is None
+                    else self.execution_refusal(binding.attempt_id)
+                )
+                if refusal is not None:
+                    raise WorkspaceError(refusal)
+                settled = await self._run_domain_tool(tool, arguments, binding, run_id, record)
+                if settled is not None:
+                    return settled
+                value = record.pop("_value")
             elif call.name == "appworld_execute":
                 if (
                     not binding.writable
@@ -943,6 +963,102 @@ class WorkspaceToolGateway:
             except Exception as error:  # noqa: BLE001 - accounting must never break the call path
                 record["accounting_error"] = str(error)[:200]
         return ToolResult.succeeded(call.call_id, value)
+
+    async def _run_domain_tool(
+        self,
+        tool: DomainTool,
+        arguments: Mapping[str, Any],
+        binding: WorkspaceBinding,
+        run_id: str,
+        record: dict[str, Any],
+    ) -> ToolResult | None:
+        """跑一个领域工具：成功把值放进 ``record["_value"]`` 返回 None；失败/不确定直接给结果。
+        每个阶段都经 ``on_external_tool`` 审计（成功的在 ``on_executed`` 之外再记一次，带结果）。"""
+
+        assert binding.mission_id is not None
+        call_key = f"{run_id}:{record['call_id']}"
+        context = ToolCallContext(
+            mission_id=binding.mission_id,
+            attempt_id=binding.attempt_id,
+            call_id=call_key,
+            principal_id=self._principal_id,
+            tenant_id=self._tenant_id,
+        )
+        record["call_key"] = call_key
+        record["argument_keys"] = sorted(arguments)
+        self._external(run_id, "started", record)
+        lock = self._domain_locks.setdefault(binding.mission_id, asyncio.Lock())
+        try:
+            outcome = await run_domain_tool(tool, arguments, context, lock=lock)
+        except asyncio.CancelledError:
+            record["outcome"] = "unknown"
+            record["stage"] = "execute"
+            record["error_code"] = "tool_cancelled"
+            self._external(run_id, "unknown", record)
+            raise
+        record["duration_ms"] = outcome.duration_ms
+        if outcome.status == "succeeded":
+            record["_value"] = dict(outcome.value or {})
+            record["result"] = record["_value"]
+            self._external(run_id, "succeeded", record)
+            return None
+        record["stage"] = "execute"
+        record["error_code"] = outcome.error_code
+        record["error_type"] = outcome.error_type
+        if outcome.status == "unknown" and tool.read_only:
+            # 只读工具外部什么都没改：超时就是"没拿到结果"，按失败交回模型（它可以再调），
+            # 不留"不确定"把这一步挂在对账上
+            record["outcome"] = "failed"
+            record["still_running"] = outcome.still_running
+            self._external(run_id, "failed", record)
+            return ToolResult.failed(
+                CallId(record["call_id"]), str(outcome.error_code), outcome.public_message
+            )
+        if outcome.status == "unknown":
+            record["outcome"] = "unknown"
+            record["still_running"] = outcome.still_running
+            self._external(run_id, "unknown", record)
+            return ToolResult.unknown(CallId(record["call_id"]), outcome.public_message)
+        record["outcome"] = "failed"
+        self._external(run_id, "failed", record)
+        return ToolResult.failed(
+            CallId(record["call_id"]), str(outcome.error_code), outcome.public_message
+        )
+
+    def audit_policy_refusal(self, run_id: str, call: Any, message: str) -> None:
+        """部署策略在网关之前拒掉的调用（授权口）也记一笔，与网关自己的拒绝同一条审计路径。"""
+
+        binding = self._bindings.get(run_id)
+        record: dict[str, Any] = {
+            "run_id": run_id,
+            "tool": str(getattr(call, "name", "")),
+            "arguments": dict(getattr(call, "arguments", {}) or {}),
+            "attempt_id": None if binding is None else binding.attempt_id,
+            "call_id": str(
+                getattr(getattr(call, "call_id", ""), "value", getattr(call, "call_id", ""))
+            ),
+            "view": None if binding is None else binding.view,
+        }
+        self.calls.append(record)
+        record["outcome"] = "rejected:not_allowed"
+        record["stage"] = "permission"
+        record["error_code"] = "tool_not_allowed"
+        if self.on_rejected is not None:
+            try:
+                self.on_rejected(run_id, dict(record))
+            except Exception as error:  # noqa: BLE001 - auditing must never break the call path
+                record["audit_error"] = str(error)[:200]
+        del message  # 拒绝文字由授权口自己交给模型
+
+    def _external(self, run_id: str, phase: str, record: Mapping[str, Any]) -> None:
+        if self.on_external_tool is None:
+            return
+        try:
+            self.on_external_tool(run_id, phase, {k: v for k, v in record.items() if k != "_value"})
+        except Exception as error:  # noqa: BLE001 - auditing must never break the call path
+            logger.exception("external tool audit failed")
+            if isinstance(record, dict):
+                record["audit_error"] = str(error)[:200]
 
     def _refuse_workspace_path(
         self,

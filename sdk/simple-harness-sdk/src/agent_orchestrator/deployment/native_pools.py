@@ -88,12 +88,22 @@ class DeploymentToolAuthorization:
             ASSURANCE_REVIEWER_TOOLS
         )
         self.policy_id = "host-deployment-policy:" + digest(sorted(self._allowed))[:16]
+        #: 拒绝时的审计回调 ``(run_id, tool_call, message)``：编排把它写成任务事件
+        #: （例如应用删掉了一个工具，在途任务的模型还在调它）。不进身份。
+        self.on_denied: Any = None
 
     async def request_authorization(self, request: Any) -> AuthorizationResult:
-        name = getattr(getattr(request, "tool_call", None), "name", None)
+        call = getattr(request, "tool_call", None)
+        name = getattr(call, "name", None)
         if name in self._allowed:
             return AuthorizationResult.allow()
-        return AuthorizationResult.deny(f"tool {name!r} is outside {self.policy_id}")
+        message = f"tool {name!r} is outside {self.policy_id}"
+        if self.on_denied is not None and call is not None:
+            try:
+                self.on_denied(str(getattr(request, "run_id", "") or ""), call, message)
+            except Exception:  # noqa: BLE001 - 审计失败不改变拒绝
+                logger.exception("authorization denial audit failed")
+        return AuthorizationResult.deny(message)
 
 
 def _scaled_policy(

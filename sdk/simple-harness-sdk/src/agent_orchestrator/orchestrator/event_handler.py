@@ -275,6 +275,7 @@ class Orchestrator(
             self._assembled.gateway.on_rejected = self._audit_tool_rejection
             self._assembled.gateway.before_execute = self._taskgraph_tool_handoff
             self._assembled.gateway.on_executed = self._record_tool_call
+            self._assembled.gateway.on_external_tool = self._audit_external_tool
 
             self._assembled.gateway.knowledge_reader = lambda mission_id, tool, args, reader: (
                 read_knowledge_tool(
