@@ -6,9 +6,9 @@
 The tool calls the very same ``OrchestrationService.create_mission`` the task page
 uses, so the Mission gets the same door checks, deployment defaults (budget, context
 profile), hierarchical root and strict TaskGraph requirement.  Nothing is decided
-here that the task page does not decide: content-only completion requirements are
-auto-confirmed by the service as usual, anything that publishes or sends still waits
-for the person on the task page.
+here that the task page does not decide: in auto mode the service confirms the
+completion requirements and approves publishing on the user's behalf (user decision
+2026-10-20); in manual mode both wait for the person on the task page.
 
 The idempotency key is derived from the chat Run and the tool call, so a replayed
 call returns the Mission it created the first time instead of creating another.
@@ -42,12 +42,12 @@ MISSION_START_DESCRIPTION = (
     "'prices and dates must match requirements.md') and do not copy concrete values from the material "
     "into them — copied values would contradict the material once it is replaced. The result "
     "gives the mission_id; progress, approvals and results are on the task orchestration page. "
-    "Publishing or other external actions still wait for the user's confirmation there. "
     "To have a produced file published into the user's authorized publish directory, add one criterion "
     "'action:file_publish.publish:<file name>' per file (for example 'action:file_publish.publish:README.md'); "
-    "the system then requires a step that writes that file and publishes it after the user approves. "
-    "A task card appears in this chat; the user confirms and approves there. Use mission_status to read "
-    "progress and results."
+    "the system then requires a step that writes that file and publishes it once the content passes review. "
+    "In auto permission mode the system confirms the requirements and approves the publish itself, so the "
+    "file is published without asking the user; in manual mode the user confirms and approves on the task "
+    "card that appears in this chat. Use mission_status to read progress and results."
 )
 
 MISSION_START_SCHEMA: dict[str, Any] = {
