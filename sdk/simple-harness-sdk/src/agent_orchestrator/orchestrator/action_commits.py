@@ -33,6 +33,7 @@ from ..governance.permissions import (
 )
 from ..governance.policies import ActionDecision, DeploymentPolicy, action_decision
 from ..runtime import planning_operations
+from ..runtime.action_params import PUBLISH, bind_artifact_refs
 from ..runtime.action_schema import (
     BOUND_ARTIFACT_FIELDS,
     CANDIDATE_FIELDS,
@@ -207,6 +208,21 @@ def bind_artifact_params(params: Mapping[str, Any], artifacts: Mapping[str, Any]
     return bound
 
 
+def bind_operation_params(
+    candidate: Mapping[str, Any], artifacts: Mapping[str, Any]
+) -> dict[str, Any]:
+    """申请单参数的绑定，只这一处：文件发布按 ``bind_artifact_params`` 平铺绑定；应用连接器把
+    参数里的 ``{"$artifact": 路径}`` 换成产物引用（``bind_artifact_refs``）。准备申请单与建动作
+    两处都调它，两边算出的参数与哈希才对得上。"""
+
+    if (str(candidate["connector"]), str(candidate["operation"])) == PUBLISH:
+        return bind_artifact_params(candidate["params"], artifacts)
+    try:
+        return dict(bind_artifact_refs(candidate["params"], artifacts))
+    except ContractError as error:
+        raise CandidateRejected("artifact_not_in_result", str(error)) from error
+
+
 def judgment_key(tasks: Sequence[Any]) -> str:
     """D7-7' ①: the integrated tree is fixed by the live Tasks' accepted results."""
 
@@ -353,7 +369,7 @@ class ActionCommitsMixin:
                                 "artifact_not_in_result", "ambiguous accepted path"
                             )
                         artifacts[output.path] = output
-                effective = bind_artifact_params(cand["params"], artifacts)
+                effective = bind_operation_params(cand, artifacts)
                 if (
                     cand["connector"],
                     cand["operation"],

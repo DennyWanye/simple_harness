@@ -23,7 +23,6 @@ from ..contracts.operation_payloads import (
 from ..contracts.semantic_base import TypedRef, TypedRefKind, VersionedRef, identifier
 from ..deployment.root import current_statements
 from ..governance.policies import DeploymentPolicy
-from ..runtime.action_params import PUBLISH, bind_artifact_refs
 from ..runtime.connectors import params_hash
 from ..runtime.operation_payloads import (
     ConnectorProfileRegistry,
@@ -32,7 +31,7 @@ from ..runtime.operation_payloads import (
     require_connector_profile,
 )
 from ..storage.store import Store
-from .action_commits import CandidateRejected, bind_artifact_params, check_candidate
+from .action_commits import CandidateRejected, bind_operation_params, check_candidate
 from .operation_intent_sources import PreparedOperationIntentSources
 
 
@@ -266,15 +265,7 @@ def build_operation_materialization_inputs(
             deployment=deployment,
         )
 
-        accepted = _actual_accepted_artifacts(store, sources)
-        if (str(candidate["connector"]), str(candidate["operation"])) == PUBLISH:
-            effective = bind_artifact_params(candidate["params"], accepted)
-        else:
-            # 应用连接器：参数里的产物引用换成它的路径、内容哈希、大小与存储位置（只绑引用）
-            try:
-                effective = bind_artifact_refs(candidate["params"], accepted)
-            except ContractError as error:
-                raise CandidateRejected("artifact_not_in_result", str(error)) from error
+        effective = bind_operation_params(candidate, _actual_accepted_artifacts(store, sources))
     except CandidateRejected as error:
         raise OperationMaterializationInputError(
             "OP_INTENT_CANDIDATE_REJECTED", error.reason

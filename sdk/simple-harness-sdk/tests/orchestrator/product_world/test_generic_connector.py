@@ -226,3 +226,34 @@ def test_an_unfenced_lookup_cannot_prove_nonapplication_and_waits_for_a_person(t
             assert photos.attempts == 1 and photos.executions == []  # 没有盲目重交
 
     asyncio.run(case())
+
+
+def test_an_artifact_reference_in_params_is_bound_and_executed(tmp_path):
+    """参数里的 ``{"$artifact": "NOTES.md"}`` 准备申请单与建动作两处按同一办法绑成产物引用
+    （2026-10-20 真实模型一局发现：建动作那一步按发布的办法绑，申请单永远被拒）。"""
+
+    import hashlib
+
+    photos = Photos()
+    photos.operations = {"move": OperationSpec("move", "L2", ("to", "file"))}
+
+    async def case():
+        async with _world(tmp_path, photos) as world:
+            request = _request("g-6")
+            request["success_criteria"][1]["params"] = {
+                "to": "/archive/a.jpg",
+                "file": {"$artifact": "NOTES.md"},
+            }
+            mission_id = world.create(request)["mission_id"]
+            mission = await world.run_until_settled(mission_id, rounds=10)
+            assert str(mission.status) == "COMPLETED"
+            assert len(photos.executions) == 1
+            [action] = world.store.list_actions(mission_id)
+            bound = action["params"]["file"]
+            assert set(bound) == {"artifact_path", "content_hash", "size", "storage_uri"}
+            assert bound["artifact_path"] == "NOTES.md"
+            data = Path(bound["storage_uri"]).read_bytes()
+            assert hashlib.sha256(data).hexdigest() == bound["content_hash"]
+            assert len(data) == bound["size"]
+
+    asyncio.run(case())
