@@ -16,6 +16,7 @@ SIGKILL 后隔离区随之结束，冷恢复按"开机号 + 第一个进程启�
 from __future__ import annotations
 
 import asyncio
+import errno
 import json
 import os
 import signal
@@ -108,7 +109,10 @@ def test_probe_passes_every_item_and_admits_the_executor():
         "daemon_reaped",
         "output_truncated",
         "cpu_killed",
+        "privileges",
     }
+    privileges = next(item for item in report.items if item["name"] == "privileges")
+    assert privileges["observed"]["new_user_namespace"] != "ALLOWED"
     network = next(item for item in report.items if item["name"] == "network")
     assert {"network_tcp", "network_unix", "network_abstract"} <= set(network["observed"])
     if sandbox._lan_address():  # 有局域网地址时还要证明连不上它（不是"连接被拒"）
@@ -121,6 +125,60 @@ def test_a_whitelist_that_exposes_home_fails_the_probe():
     report = _run(sandbox.probe_sandbox(executor))
     assert not report.ok and not sandbox.probe_passed(executor)
     assert "read_home" in {item["name"] for item in report.items if not item["ok"]}
+
+
+# 模拟 Droidian 4.14 内核：同一个 bwrap 既建用户命名空间又建进程命名空间时，挂 /proc 报 EBUSY
+# （AIPhone 手机实测）；分开建就行。只看 bwrap 自己的选项（第一个 "--" 之前），其余原样转给真的 bwrap。
+PHONE_KERNEL_BWRAP = """#!/bin/sh
+for arg in "$@"; do
+    [ "$arg" = "--" ] && break
+    case "$arg" in --unshare-user|--unshare-all) user=1;; esac
+    case "$arg" in --unshare-pid|--unshare-all) pid=1;; esac
+done
+if [ -n "$user" ] && [ -n "$pid" ]; then
+    echo "bwrap: Can't mount proc on /newroot/proc: Device or resource busy" >&2
+    exit 1
+fi
+exec REAL "$@"
+"""
+
+
+def _phone_kernel_bwrap(tmp_path: Path) -> str:
+    real = sandbox.shutil.which("bwrap")
+    assert real is not None
+    shim = tmp_path / "phone-bwrap"
+    shim.write_text(PHONE_KERNEL_BWRAP.replace("REAL", os.path.realpath(real)))
+    shim.chmod(0o755)
+    return str(shim)
+
+
+def test_the_sandbox_starts_where_user_and_pid_namespaces_cannot_be_created_together(
+    tmp_path, workspace
+):
+    bwrap = _phone_kernel_bwrap(tmp_path)
+    done = subprocess.run(
+        [bwrap, "--unshare-all", "--unshare-user", "--dev-bind", "/", "/", "--", "true"],
+        capture_output=True,
+        text=True,
+    )
+    assert done.returncode == 1 and "Device or resource busy" in done.stderr  # 模拟得像
+    executor = _executor(bwrap=bwrap)
+    report = _run(sandbox.probe_sandbox(executor))
+    assert report.ok, report.to_json()
+    receipt = _run(
+        executor.execute(
+            [executor.interpreter, "-c", "print('ok')"], cwd=str(workspace), spec=_spec()
+        )
+    )
+    assert receipt.exit_code == 0 and "ok" in receipt.output, receipt.output
+
+
+def test_a_bwrap_without_disable_userns_is_refused(tmp_path):
+    old = tmp_path / "old-bwrap"
+    old.write_text("#!/bin/sh\n[ \"$1\" = --version ] && echo 'bubblewrap 0.6.1'\nexit 0\n")
+    old.chmod(0o755)
+    with pytest.raises(sandbox.SandboxUnavailable, match="0.8 or newer"):
+        _executor(bwrap=str(old))
 
 
 def test_a_missing_bwrap_is_named():
@@ -315,6 +373,26 @@ BODIES = {
         sys.exit(0)
     """,
 }
+
+
+@pytest.fixture
+def no_pidfd(monkeypatch):
+    """4.14 内核没有 pidfd：调用报 ENOSYS。只换 SDK 的调用点——asyncio 在真内核上自己会改用别的办法。"""
+
+    def unavailable(_pid):
+        raise OSError(errno.ENOSYS, "Function not implemented")
+
+    monkeypatch.setattr(sandbox, "_open_pidfd", unavailable)
+
+
+@pytest.mark.parametrize("case", ["full-daemonize", "not-dumpable"])
+def test_no_process_survives_without_pidfd(case, workspace, no_pidfd):
+    test_no_process_of_the_run_survives(case, workspace)
+
+
+def test_cold_recovery_without_pidfd_reclaims_and_spares_strangers(tmp_path, no_pidfd):
+    test_killing_the_host_ends_the_sandbox_and_cold_recovery_reclaims_the_run(tmp_path / "a")
+    test_cold_recovery_never_signals_a_process_that_reused_the_pid(tmp_path / "b")
 
 
 @pytest.mark.parametrize("case", sorted(BODIES))
@@ -528,7 +606,7 @@ def _killed_host(tmp_path) -> tuple[Path, str]:
     """起一个子宿主跑一次隔离区，等后台进程起来后 SIGKILL 子宿主；返回数据目录与标记。"""
 
     root, token = tmp_path / "host", f"tok-{uuid.uuid4().hex}"
-    root.mkdir()
+    root.mkdir(parents=True)
     child = subprocess.Popen(
         [sys.executable, "-c", CHILD_HOST, str(root), token],
         env={**os.environ, "PYTHONPATH": str(SRC)},

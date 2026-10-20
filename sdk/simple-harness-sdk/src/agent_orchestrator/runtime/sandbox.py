@@ -40,6 +40,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import ctypes
+import errno
 import fcntl
 import hashlib
 import json
@@ -337,10 +338,26 @@ def _sigkill(pid: int) -> None:
         pass
 
 
-def _preexec(cpu_seconds: int, max_file_bytes: int) -> Callable[[], None]:
+#: ``prctl(PR_SET_NO_NEW_PRIVS, 1)``：此后 exec 不再因 setuid 位或文件能力提权，子孙都继承。
+PR_SET_NO_NEW_PRIVS = 38
+
+
+def _set_no_new_privs(prctl: Any) -> None:
+    if prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0:
+        raise OSError(ctypes.get_errno(), "prctl(PR_SET_NO_NEW_PRIVS) failed")
+
+
+def _preexec(
+    cpu_seconds: int, max_file_bytes: int, *, no_new_privs: bool = False
+) -> Callable[[], None]:
+    # 在父进程里先载入 C 库并取好 prctl：子进程在 fork 与 exec 之间只做系统调用
+    prctl = ctypes.CDLL(None, use_errno=True).prctl if no_new_privs else None
+
     def apply() -> None:  # runs in the child before exec: inherited by every descendant
         resource.setrlimit(resource.RLIMIT_CPU, (cpu_seconds, cpu_seconds + 1))
         resource.setrlimit(resource.RLIMIT_FSIZE, (max_file_bytes, max_file_bytes))
+        if prctl is not None:
+            _set_no_new_privs(prctl)
 
     return apply
 
@@ -530,6 +547,8 @@ def reclaim_recorded_executions(
 class _Executor:
     kind = ""
     isolated = False
+    #: 起子进程前设"不再提权"（见 :data:`PR_SET_NO_NEW_PRIVS`）。
+    no_new_privs = False
 
     def __init__(
         self,
@@ -680,7 +699,9 @@ class _Executor:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
             start_new_session=True,
-            preexec_fn=_preexec(spec.cpu_seconds, spec.max_file_bytes),
+            preexec_fn=_preexec(
+                spec.cpu_seconds, spec.max_file_bytes, no_new_privs=self.no_new_privs
+            ),
             **spawn_options,
         )
         run.root_pid = process.pid
@@ -1314,7 +1335,7 @@ SHM_DIR = ".shm"
 
 
 def _bwrap_features(bwrap: str) -> tuple[str, bool]:
-    """版本与是否支持 ``--disable-userns``（0.8 起；有就用，隔离区里不能再开用户命名空间）。"""
+    """版本与是否支持 ``--disable-userns``（0.8 起；隔离区里不能再开用户命名空间靠它）。"""
 
     try:
         version = subprocess.run(
@@ -1419,18 +1440,22 @@ def _pin_namespace(pid: int, namespace: str | None) -> int | None:
     return None
 
 
+def _open_pidfd(pid: int) -> int:
+    """钉住进程的 pidfd；Python 或内核没有 pidfd（4.14 这类 5.3 以前的内核报 ENOSYS）抛 OSError。"""
+
+    if not hasattr(os, "pidfd_open") or not hasattr(signal, "pidfd_send_signal"):
+        raise OSError(errno.ENOSYS, "pidfd is not available")
+    return os.pidfd_open(pid)
+
+
 def _signal_in_namespace(pid: int, namespace: str | None) -> None:
     """先用 pidfd 钉住进程、再核对它还在这个命名空间、再发 SIGKILL：进程号被复用也不误杀。
     内核没有 pidfd（5.3 以前）时退回"核对后直接发"。"""
 
     if namespace is None:
         return
-    open_pidfd = getattr(os, "pidfd_open", None)  # 只有 Linux 有
-    send_pidfd = getattr(signal, "pidfd_send_signal", None)
     try:
-        if open_pidfd is None or send_pidfd is None:
-            raise OSError("pidfd is not available")
-        handle = open_pidfd(pid)
+        handle = _open_pidfd(pid)
     except ProcessLookupError:
         return
     except OSError:
@@ -1439,7 +1464,7 @@ def _signal_in_namespace(pid: int, namespace: str | None) -> None:
         return
     try:
         if _pid_namespace(pid) == namespace:
-            send_pidfd(handle, signal.SIGKILL)
+            signal.pidfd_send_signal(handle, signal.SIGKILL)  # type: ignore[attr-defined,unused-ignore]
     except OSError:
         pass
     finally:
@@ -1449,14 +1474,22 @@ def _signal_in_namespace(pid: int, namespace: str | None) -> None:
 class BwrapExecutor(_Executor):
     """Linux 的隔离区（bubblewrap，非特权用户命名空间）。
 
-    每次运行：新的用户、进程、网络、IPC、UTS 命名空间，隔离区里不能再开用户命名空间（bwrap
-    支持时），丢掉全部能力；根目录是空的、只读的，只读挂系统位置和解释器白名单，可写的只有
-    本次的副本和草稿目录（宿主路径原样挂，回执里的路径和宿主看到的一致；``TMPDIR`` 指向草稿）；
-    ``/proc`` 只看得到隔离区自己的进程。没有网络：新的网络命名空间里只有回环，宿主的端口、
-    抽象 Unix 套接字、D-Bus 都够不着。"""
+    每次运行：新的用户、进程、网络、IPC、UTS 命名空间，隔离区里不能再开用户命名空间，丢掉全部
+    能力；根目录是空的、只读的，只读挂系统位置和解释器白名单，可写的只有本次的副本和草稿目录
+    （宿主路径原样挂，回执里的路径和宿主看到的一致；``TMPDIR`` 指向草稿）；``/proc`` 只看得到
+    隔离区自己的进程。没有网络：新的网络命名空间里只有回环，宿主的端口、抽象 Unix 套接字、
+    D-Bus 都够不着。
+
+    分两步建：外层 bwrap 只建用户命名空间（并禁止里面再建），内层 bwrap 在其中建进程、网络、
+    IPC、UTS 命名空间和隔离区本身。有的内核（Droidian 4.14）在同一次克隆里同时建用户与进程
+    命名空间后，挂 ``/proc`` 报 EBUSY；分两步在这些内核和普通发行版上都能建。两层都用 bwrap
+    （Ubuntu 的 AppArmor 只放行 bwrap 建用户命名空间），宿主给它设"不再提权"，setuid 版的
+    bwrap 也按非特权方式运行。隔离区里的身份是用户命名空间里的 0 号，没有能力位，exec 也拿不回
+    （启动检查实测）。"""
 
     kind = "bwrap"
     isolated = True
+    no_new_privs = True
 
     def __init__(
         self,
@@ -1477,7 +1510,11 @@ class BwrapExecutor(_Executor):
         options.setdefault("poll_interval", 0.25)
         super().__init__(interpreter, **options)
         self.bwrap = os.path.realpath(found)
-        self.bwrap_version, self._disable_userns = _bwrap_features(self.bwrap)
+        self.bwrap_version, disable_userns = _bwrap_features(self.bwrap)
+        if not disable_userns:
+            raise SandboxUnavailable(
+                f"{self.bwrap_version} has no --disable-userns; bubblewrap 0.8 or newer is needed"
+            )
         self._read_paths = tuple(dict.fromkeys(read_paths))
         self._python_version = python_version
         self._mounts = _bwrap_mounts(self._read_paths, _symlink_hops(self.interpreter))
@@ -1522,10 +1559,13 @@ class BwrapExecutor(_Executor):
     def _bwrap_argv(
         self, command: Sequence[str], *, cwd: Any, scratch: Any, info_fd: Any
     ) -> list[str]:
-        argv = [self.bwrap, "--unshare-all", "--unshare-user"]
-        if self._disable_userns:
-            argv.append("--disable-userns")
-        argv += ["--die-with-parent", "--new-session", "--cap-drop", "ALL"]
+        # 外层：只建用户命名空间，里面是 0 号、带全部能力（只在这个命名空间里），并禁止再建
+        # 用户命名空间；根目录照原样挂过去，内层 bwrap 才找得到自己和宿主的 /proc
+        argv = [self.bwrap, "--unshare-user", "--disable-userns", "--uid", "0", "--gid", "0"]
+        argv += ["--cap-add", "ALL", "--dev-bind", "/", "/", "--die-with-parent", "--"]
+        # 内层：不建用户命名空间，其余全部新建；丢掉全部能力
+        argv += [self.bwrap, "--unshare-pid", "--unshare-net", "--unshare-ipc", "--unshare-uts"]
+        argv += ["--unshare-cgroup-try", "--die-with-parent", "--new-session", "--cap-drop", "ALL"]
         if info_fd is not None:
             argv += ["--info-fd", str(info_fd)]
         argv += [*self._mounts, "--proc", "/proc", "--dev", "/dev"]
@@ -1550,6 +1590,7 @@ class BwrapExecutor(_Executor):
                 done = subprocess.run(
                     argv,
                     env={"PATH": DEFAULT_PATH},
+                    preexec_fn=_preexec(60, 1 << 30, no_new_privs=True),
                     stdin=subprocess.DEVNULL,
                     capture_output=True,
                     text=True,
@@ -1749,6 +1790,18 @@ def abstract():
 if cfg.get("abstract"):
     attempt("network_abstract", abstract)
 attempt("signal_host", lambda: os.kill(cfg["host_pid"], 0))
+if cfg.get("linux"):
+    import ctypes, subprocess
+    def new_user_namespace():
+        libc = ctypes.CDLL(None, use_errno=True)
+        if libc.unshare(0x10000000) != 0:  # CLONE_NEWUSER；3.11 没有 os.unshare
+            raise OSError(ctypes.get_errno(), "unshare")
+    attempt("new_user_namespace", new_user_namespace)
+    caps = "[l.split()[1] for l in open('/proc/self/status') if l.startswith('CapEff')][0]"
+    out["cap_eff"] = eval(caps)
+    # 隔离区里的身份可能是用户命名空间里的 0 号：再 exec 一次，看能力位是不是拿得回来
+    child = subprocess.run([sys.executable, "-c", f"print({caps})"], capture_output=True, text=True)
+    out["child_cap_eff"] = child.stdout.strip()
 open("probe.json", "w").write(json.dumps(out))
 """
 # 后台进程关掉全部描述符后再拿一把文件锁、写"就绪"：运行结束后宿主拿得到这把锁，才证明它真的
@@ -1855,6 +1908,7 @@ def _access_items(
     home_skeleton: set[str],
     abstract: bool,
     lan: bool = False,
+    linux: bool = False,
 ) -> list[dict[str, Any]]:
     def denied(name: str) -> bool:
         if name == "network_lan":
@@ -1881,6 +1935,21 @@ def _access_items(
         ("network", all(denied(n) for n in network_names), network_names),
         ("signal_host", denied("signal_host"), ("signal_host",)),
     )
+    if linux:
+
+        def no_caps(name: str) -> bool:
+            try:
+                return int(str(seen.get(name)), 16) == 0
+            except ValueError:
+                return False
+
+        checks += (
+            (
+                "privileges",
+                denied("new_user_namespace") and no_caps("cap_eff") and no_caps("child_cap_eff"),
+                ("new_user_namespace", "cap_eff", "child_cap_eff"),
+            ),
+        )
     return [
         {
             "name": name,
@@ -1892,8 +1961,10 @@ def _access_items(
 
 
 async def probe_sandbox(executor: Any) -> ProbeReport:
-    """Eight behavioural checks (plan v3 D1); any miss makes the adapter unusable.  Every
-    target is computed here, apart from the read whitelist, and must lie outside it.
+    """Eight behavioural checks (plan v3 D1), nine on Linux; any miss makes the adapter
+    unusable.  Every target is computed here, apart from the read whitelist, and must lie
+    outside it.  Linux 多一项"特权"：隔离区里开不了新的用户命名空间，自己和 exec 出来的子进程
+    都没有能力位。
 
     "拒绝"按行为判：尝试抛了错、目标没被改动就算拒绝（macOS 报无权限，Linux 报不存在或连接
     被拒，都是够不着）。应用自带的执行器也走这一套，通过了才准入。"""
@@ -1931,6 +2002,7 @@ async def probe_sandbox(executor: Any) -> ProbeReport:
                 "abstract": abstract_name,
                 "lan": lan_address or "",
                 "host_pid": os.getpid(),
+                "linux": LINUX,
             }
             script = workdir / "access_probe.py"
             script.write_text(_ACCESS_PROBE, encoding="utf-8")
@@ -1951,6 +2023,7 @@ async def probe_sandbox(executor: Any) -> ProbeReport:
                 home_skeleton=_home_skeleton(home, read_paths),
                 abstract=bool(abstract_name),
                 lan=bool(lan_address),
+                linux=LINUX,
             )
             script = workdir / "daemon_probe.py"
             script.write_text(_DAEMON_PROBE, encoding="utf-8")

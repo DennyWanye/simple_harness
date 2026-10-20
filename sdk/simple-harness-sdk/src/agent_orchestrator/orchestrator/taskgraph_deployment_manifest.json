@@ -1,11 +1,11 @@
 {
   "acceptance_evidence": {
-    "gate_run_at": "2026-10-20T15:24:20+00:00",
-    "gate_sha256": "e21f68ee05b61785d06b0b96a7222fa0356d5e48c2a421f14184e2e6500dbb35",
+    "gate_run_at": "2026-10-20T17:41:36+00:00",
+    "gate_sha256": "1f30ad28a1c7f4c2a6fb7b0baa120f8e3405c52eb9d01bdb9b9219905d022bef",
     "gate_status": "PASS",
-    "source_files_sha256": "e2e84d6310b7a623b4ea7ad59d7d096dafd3319acf9e5c2ec3d2b87d22a1bff5"
+    "source_files_sha256": "8720fe298eb5962fa16204d8a6d17877593ca6de58328ebc4e8e825ed901e6d3"
   },
-  "deployment_id": "e7c8c4081c84fc174cb4669dfbdf3ea73d3ae6c46e61856c087ca7a928434092",
+  "deployment_id": "28318c599b07397ac32cb15f0a8c2509c3cc45173291d4fb94448a21d4c795ab",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -448,7 +448,7 @@
     "agent_orchestrator/runtime/planning_operations.py": "4fa6e9c2acd79159e49e80a3972e422a474414cc1f7bcebd1e9a08df72bda843",
     "agent_orchestrator/runtime/provider_budget_guard.py": "4a6fa90e77c2ccf946994c866fb89363eed925a9e081479ae2f1f27d478c20c7",
     "agent_orchestrator/runtime/role_templates.py": "9433c4731efa8d971ea55a0575fa3b7278c36800726652e24534e3f900f29866",
-    "agent_orchestrator/runtime/sandbox.py": "278442def206e7daad6ee1b7d43898ec64c453328e3162ea84e1ba9037604b25",
+    "agent_orchestrator/runtime/sandbox.py": "808317beb153f446fb069a70a55d9c13f2836bb61e5f93ae884ad4df7e769fca",
     "agent_orchestrator/runtime/taskgraph_local_work.py": "b5c76926ec37f3762c7ab839c37bedca4c00bdab5bc2a549eea529af5283a3c6",
     "agent_orchestrator/runtime/taskgraph_operation_sources.py": "77cf3a968bb78617d4ec758901f84cc0b23729d3b3908e173593cb851d19c743",
     "agent_orchestrator/runtime/tool_gateway.py": "72e3ad4d55d1248dad2878b98f4c024f7e46e890081648b06b3975128b5e17fc",
@@ -539,7 +539,7 @@
     "agent_orchestrator/verification/scoped_acceptance.py": "02db198cfd02453f3f088bee948e6c8e57f164b304d075067ab4bbdcc6cc9d74",
     "agent_orchestrator/verification/scoped_composition.py": "faad4ea026a4ba07946e70c86145db477dad42c9091d066f27f37548d4c76780",
     "agent_orchestrator/verification/verifier_router.py": "a6ec5744f3c30d383a01ee3d724186c8cd56593091c7ac58e8b4bc9f49a068bd",
-    "agent_orchestrator/version.py": "ee47bc5cbad112ba7fbd20ad4a6529d36c6a7e29f11a15c7409c52748829101c",
+    "agent_orchestrator/version.py": "a9e19c0ef4755f05161d11b3641da7c07f9961c2735a1541650c58e07869168d",
     "simple_harness/__init__.py": "2f24cb8a8aa15852ef84f0f51c89f1dd9a98284d970e2f3f05508927daf52c11",
     "simple_harness/agents/__init__.py": "aefea08f7f250426246cc94e677630de2926a82c68b64c659ddd3abb775c3686",
     "simple_harness/agents/arp/__init__.py": "9f68be0f87b2fa155f7980bbc9be19dacc008b2f3ec1268b1f36f1ade42d21cf",
@@ -808,7 +808,7 @@
     "simple_harness/tools/runtime_catalog.py": "66622237882dafc52ee6df6d2e8058337a874afe1a98d0cd8a17b48c34f59010",
     "simple_harness/tools/schema.py": "c582e7b9e9da66428580a2c8495e32a0bd39a6cd250fc42a2aae48d0bdfe39fb",
     "simple_harness/tools/sidecar.py": "78a7335957d45fc1f202b68829c7cba5c1e9bb98e77b559634b8fba09dacf90d",
-    "simple_harness/version.py": "8a4b1053cb5f29d1625e4305ffd9f2f6baadd97a081102abcdd98d9c93eab156",
+    "simple_harness/version.py": "f970a1f2393d9c62a23ea418bbab2b9b55de9b698db9735c4f994cbc365fa7bb",
     "simple_harness/workflow/__init__.py": "2705ed448307b1cb05369b8ffa4a46ca70019e1b722665a711b594b30d520003",
     "simple_harness/workflow/checkpoint.py": "00612d57d0bda0146f9a38d59d3e0278decb6e2c91f7f096bfc56d6ab2d85c96",
     "simple_harness/workflow/compiler.py": "a5557881c05bf5869509f15b818a23058f65378fd080a299d28522d6ae9366b6",
