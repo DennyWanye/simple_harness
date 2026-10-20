@@ -14,7 +14,6 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-from agent_orchestrator.host import ONLY_DEEPSEEK_REASON
 from agent_orchestrator.testing.word_counter import FixtureWordCounter
 from simple_harness.agents.arp.pins import Pin
 from simple_harness.agents.arp.profile import default_policy
@@ -284,11 +283,11 @@ async def test_native_pools_answer_runtime_plane_reads_writes_and_replays(
 
 
 @pytest.mark.asyncio
-async def test_a_non_deepseek_deployment_without_a_counter_is_refused_as_only_deepseek(
+async def test_a_non_deepseek_deployment_gets_upper_bound_pools_without_thinking(
     orchestration_root, principal
 ):
-    # 2026-09-30 用户决定：旧式池删除后，没有认证计数器（非 DeepSeek 模型）就没有执行池，
-    # 服务明说"只支持 DeepSeek"，不再退回旧池。
+    # 2026-10-21 用户决定放开"只支持 DeepSeek"：别的 OpenAI 协议模型按字节上界计数建池
+    # （可以多算不可以少算），不开思考池。
     other = ProviderSnapshot(
         "luna", "https://example.test/v1", "gpt-5.6-luna", "gpt-5.6-luna", "fixture"
     )
@@ -303,26 +302,10 @@ async def test_a_non_deepseek_deployment_without_a_counter_is_refused_as_only_de
     await service.start()
     try:
         status = service.status()
-        assert status["state"] == "unavailable" and status["reason"] == ONLY_DEEPSEEK_REASON
-        assert status["native_plane"]["available"] is False and not status["native_plane"].get(
-            "profiles"
-        )
-        assert status["context_profiles"] == [] and status["default_context_profile_id"] is None
-        refused = await handle(
-            service,
-            "agent_runtime_request",
-            _request(
-                "agent_skills_list",
-                subject_id="x",
-                payload={
-                    "namespace_id": "x",
-                    "kind": "SKILL",
-                    "cursor": None,
-                    "limit": 1,
-                },
-            ),
-        )
-        assert refused["payload"]["ok"] is False
+        assert status["state"] == "available", status.get("reason")
+        profiles = status["context_profiles"]
+        assert profiles and status["default_context_profile_id"] is not None
+        assert all(not p["profile_id"].endswith("thinking") for p in profiles)
     finally:
         await service.close()
 
