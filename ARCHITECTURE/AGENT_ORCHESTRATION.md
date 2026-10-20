@@ -747,6 +747,9 @@ P3.3 G进行中：Host已接入原子文档创建、来源版本审批、绑定�
 - **快速聊天（2026-10-21，opt.204）**：`host.chat()` 一句话一个回合，不进任务编排（没有规划器、审阅员）。同一引擎：跑在一个单独的聊天执行池上（`STANDALONE_CHAT`，数据目录 `chat/`，池编号 `…-chat-v1`，任务选不到它）；一个会话一个 Agent，历史在执行库里；只有应用注册的只读工具，名单第一句定下；每回合先在全局月账预留（调用上限 ×（窗口 + 输出上限）），结束按真实用量结清，报告缺失按上限；`require_tool` 提醒一次、仍不调如实返回；取消在下一次模型调用前生效；台账 `chat-turns.jsonl`（`chat_history()`）；`HostSettings.chat_*` 三个上限。接入说明 §2b。
 - **逐字输出（2026-10-21，opt.204）**：提供方流里每段用户可见正文经 `delta_sink` 交给 `OutputStream`（`runtime/delta_router.py`），按运行号分发；最外层 `StreamSignals` 发 `end` / `error`。事件 v1：`kind` / `scope`（chat 带会话与回合、mission 带 mission_id / subject_id / view）/ `generation`（请求号）/ `seq`；片段不落盘、终稿以回执与产物为准。`host.chat(on_delta=)` 只看本回合并给 `first_output_ms`；`host.output_stream.subscribe()` 全局。接入说明 §2c。
 - **规划器看得到执行者能用什么（2026-10-21，opt.204）**：规划请求包新增 `executor_capabilities`（应用注册的只读工具带说明、能提议的外部动作目录，与执行者看到的同一张）；真实模型实测只给工具名时规划器以为没有相应步骤类型而反复问人。提示词 planner-hierarchical-v31。
+- **看计划、执行某步、跳过、停止（2026-10-21，opt.205）**：`host.plan(mission_id)` 一次拿齐执行图节点与步骤版本/状态/暂停；接管动作 `stop` / `retry_with_note` / `skip` / `run_now`，带 `expected_version`（过期拒 `stale_decision`）与 `command_id`（重复点击原样返回）；skip 取消开着的尝试、步骤 CANCELLED（不算成功）、规划器下一轮在请求包 `human_takeovers` 里看到（planner-hierarchical-v32）；run_now 置顶优先级并解除暂停。接入说明 §4d。
+- **子 Agent、多成员、完整结果（2026-10-21，opt.205）**：现有机制用测试钉住（工具只缩不放、一人一个宿主、换工具集重开宿主在途待批仍在）；超限工具结果回读修通三处堵点：部署策略放行 `session_history_read`（执行者提示词 worker-hierarchical-v9 写明分页读）、回读不再对模型隐藏 `journal_only` 记录、回读页压到单条工具结果预算内且 Context 端不再把回读页截成预览。接入说明 §4e。
+- **顺手修（2026-10-21，opt.205）**：非 DeepSeek 模型时聊天池起不来（上界计数器实例，宿主复用任务池那一个）；做法提案额度改为"固定上限 + 用户答过的规划提问数"（`proposal_allowance`，真实模型局里规划器用完额度后循环请人恢复，系统没这个口子）。
 - **快速聊天核验补改（2026-10-21，opt.204）**：0/0 用量记未知（与任务池同口径）；提醒回合预留两倍；回合在途时关宿主：结算失败按上限结清、启动时结清遗留预留并恢复在途回合；卡在结果不明模型调用上的 Agent 被放弃，会话换新一代 Agent 接着聊（回执 `history_reset=true`）。
   - **回收耗时受外部工具影响**：认进程要靠 `ps`，不隔离模式还要靠 `lsof`，两者都有单次超时，但极端情况下一次回收仍可能偏慢；正确性不受影响。
 
