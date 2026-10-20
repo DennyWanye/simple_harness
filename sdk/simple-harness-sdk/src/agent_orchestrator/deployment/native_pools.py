@@ -38,6 +38,7 @@ from ..runtime.deepseek_meter import CalibratingProvider, RelayDeepSeekCounter
 from ..runtime.mission_sources import MissionSourceReader
 from ..runtime.model_router import RuntimeProfile
 from ..runtime.native_plane import NativePlaneAssembly, intent_caller
+from ..runtime.openai_upper_bound_meter import MarginLearningProvider, OpenAIUpperBoundCounter
 from ..runtime.tool_gateway import ASSURANCE_REVIEWER_TOOLS
 
 logger = logging.getLogger(__name__)
@@ -54,11 +55,15 @@ NATIVE_OUTPUT_TOKENS = 131_072
 CONTEXT_INPUT_LIMITS = (262_144, 524_288, 614_400)
 
 
-def native_profile_id(tokens: int, *, thinking: bool = False) -> str:
+def native_profile_id(tokens: int, *, thinking: bool = False, model: str | None = None) -> str:
     """A native pool's id.  Thinking-mode pools are separate pools (own id, own execution
     library, own provider and counter): an Agent's thinking mode is frozen by the pool its
-    Mission was frozen on, so changing the deployment setting never breaks existing Agents."""
-    return f"{NATIVE_PROFILE_PREFIX}{tokens // 1024}k-{'thinking-' if thinking else ''}v1"
+    Mission was frozen on, so changing the deployment setting never breaks existing Agents.
+
+    非 DeepSeek 模型的池编号带模型（``model``）：计数器身份含模型名，同一数据目录换模型就开新的池，
+    旧池的数据留着不再用（2026-10-21 核验）。DeepSeek 与测试计数器的编号不变。"""
+    slot = f"{model}-" if model else ""
+    return f"{NATIVE_PROFILE_PREFIX}{tokens // 1024}k-{slot}{'thinking-' if thinking else ''}v1"
 
 
 def is_native_profile(profile_id: str | None) -> bool:
@@ -68,8 +73,8 @@ def is_native_profile(profile_id: str | None) -> bool:
 #: NEXT-TG-1.0 §11: the one pool whose catalogue is the deployment's Skill authority; every
 #: other native pool mirrors it.  Fixed (the first native pool), so it never moves between
 #: restarts.
-def catalogue_owner_profile_id() -> str:
-    return native_profile_id(CONTEXT_INPUT_LIMITS[0])
+def catalogue_owner_profile_id(model: str | None = None) -> str:
+    return native_profile_id(CONTEXT_INPUT_LIMITS[0], model=model)
 
 
 class DeploymentToolAuthorization:
@@ -143,6 +148,7 @@ class NativePools:
         script_runner: Callable[[Path], Any] | None = None,
         script_runner_label: str | None = None,
         clock_ms: Callable[[], int] = now_ms,
+        profile_model: str | None = None,
     ) -> None:
         self.tenant_id = tenant_id
         self.principal_id = principal_id
@@ -172,7 +178,7 @@ class NativePools:
         # pools are assembled before the Orchestrator exists).
         self.mission_sources = MissionSourceReader(lambda: self._orchestrator)
         # One Skill catalogue authority for all native pools (the owner pool's catalogue).
-        self.catalogue_owner_id = catalogue_owner_profile_id()
+        self.catalogue_owner_id = catalogue_owner_profile_id(profile_model)
         self.shared_catalogue = SharedSkillCatalogue(caller=mirror_caller(f"host:{tenant_id}"))
         self.profiles: dict[str, dict[str, Any]] = {}
         self._runtimes: dict[str, Any] = {}
@@ -417,9 +423,13 @@ class NativePools:
 def calibrated(provider: Any, counter: Any) -> Any:
     """A relay pool's provider learns the relay margin from every reported prompt count."""
 
-    if provider is None or not isinstance(counter, RelayDeepSeekCounter):
+    if provider is None:
         return provider
-    return CalibratingProvider(provider, counter)
+    if isinstance(counter, RelayDeepSeekCounter):
+        return CalibratingProvider(provider, counter)
+    if isinstance(counter, OpenAIUpperBoundCounter):
+        return MarginLearningProvider(provider, counter)
+    return provider
 
 
 def pool_options(
@@ -480,8 +490,11 @@ def pool_options(
             native_plane=native.assembly(identifier, tokens=tokens, counter=pool_counter),
         )
 
+    slug = getattr(counter, "profile_slug", None)  # 非 DeepSeek 计数器：池编号带模型
     for tokens in CONTEXT_INPUT_LIMITS:
-        register(native_profile_id(tokens), tokens, counter, provider, kind=provider_kind)
+        register(
+            native_profile_id(tokens, model=slug), tokens, counter, provider, kind=provider_kind
+        )
     # Thinking-mode pools (user decision 2026-09-24: both modes supported): a separate
     # provider (thinking enabled, reasoning replayed) and a counter bound to the same mode.
     if thinking_provider is not None and thinking_counter is not None:
@@ -489,7 +502,7 @@ def pool_options(
             # Reasoning shares the output limit: at 8192 a thinking reviewer spent the budget
             # thinking and its verdict JSON was cut mid-string (2026-09-25 desktop run).
             register(
-                native_profile_id(tokens, thinking=True),
+                native_profile_id(tokens, thinking=True, model=slug),
                 tokens,
                 thinking_counter,
                 thinking_provider,

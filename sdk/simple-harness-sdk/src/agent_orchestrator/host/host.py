@@ -53,15 +53,22 @@ from ..runtime.connectors import OperationSpec
 from ..runtime.connectors_publish import FilePublishConnector
 from ..runtime.deepseek_meter import deepseek_meter_binding
 from ..runtime.domain_tools import DomainTool
+from ..runtime.model_fallback import LEDGER_NAME, read_model_calls
 from ..runtime.planning_operations import SourceUnavailable
 from ..runtime.sandbox import SandboxUnavailable
 from ..runtime.tool_gateway import ASSURANCE_REVIEWER_TOOLS, TOOL_NAMES
 from ..version import __version__
 from .embedding import embedding_port
 from .instance_lock import InstanceLock
-from .provider import build_providers, deepseek_counter, is_deepseek, requested_model
+from .provider import (
+    build_providers,
+    deepseek_counter,
+    is_deepseek,
+    requested_model,
+    upper_bound_counter,
+)
 from .script_runner import SandboxScriptRunner
-from .settings import ONLY_DEEPSEEK_REASON, HostSettings, ModelConfig, SandboxOptions
+from .settings import NO_COUNTER_REASON, HostSettings, ModelConfig, SandboxOptions
 from .tokenizer import ensure_deepseek_tokenizer, tokenizer_matches
 
 logger = logging.getLogger(__name__)
@@ -310,6 +317,7 @@ class OrchestrationHost:
         self.orchestrator: Any = None
         self.control: Any = None
         self.provider: Any = None
+        self._profile_model: str | None = None
         self.thinking_provider: Any = None
         self.config: Any = None
         self.policy: Any = None  # DeploymentPolicy
@@ -436,14 +444,20 @@ class OrchestrationHost:
         if self._http_client is None:
             self._http_client = httpx.AsyncClient()
             self._own_client = True
-        self.provider, self.thinking_provider = build_providers(self.model, self._http_client)
+        self.provider, self.thinking_provider = build_providers(
+            self.model, self._http_client, state_dir=self.root
+        )
 
     def _counters(self) -> tuple[Any, Any]:
         """``(普通计数器, 思考计数器)``；没有认证计数器就 ``(None, None)``。"""
 
         if self._given_counter is not None:
             return self._given_counter, self._given_thinking_counter
-        if self.model is None or self._tokenizer_path is None:
+        if self.model is None:
+            return None, None
+        if not is_deepseek(self.model):
+            return upper_bound_counter(self.model, self.root), None
+        if self._tokenizer_path is None:
             return None, None
         plain = deepseek_counter(
             self.model, self._tokenizer_path, thinking="disabled", state_dir=self.root
@@ -520,10 +534,11 @@ class OrchestrationHost:
             self.executor = executor
         return result
 
-    def _build_native(self, meter_factory: Any) -> NativePools:
+    def _build_native(self, meter_factory: Any, *, profile_model: str | None = None) -> NativePools:
         embedding, reason = embedding_port(self._models_dir)
         executor = self.executor
         return NativePools(
+            profile_model=profile_model,
             tenant_id=self.tenant_id,
             principal_id=str(self.principal.principal_id),
             allowed_tools=tuple(self.policy.allowed_tools),
@@ -545,7 +560,8 @@ class OrchestrationHost:
             if counter is not None and hasattr(counter, "meter_factory")
             else deepseek_meter_binding
         )
-        self.native = self._build_native(meter_factory)
+        self._profile_model = getattr(counter, "profile_slug", None)
+        self.native = self._build_native(meter_factory, profile_model=self._profile_model)
         self.runtime_options = pool_options(
             self.config,
             native=self.native,
@@ -585,7 +601,7 @@ class OrchestrationHost:
             and self._tokenizer_path is None
         ):
             return "DeepSeek 端点缺钉死的分词文件：请传 tokenizer_path（见接入说明）"
-        return ONLY_DEEPSEEK_REASON
+        return NO_COUNTER_REASON
 
     def _new_orchestrator(self) -> Any:
         def assemble_startup(orchestrator: Any) -> None:
@@ -989,7 +1005,10 @@ class OrchestrationHost:
         profiles = self.runtime_options.get("profiles", {})
         rows = []
         for tokens in CONTEXT_INPUT_LIMITS:
-            for identifier in (native_profile_id(tokens), native_profile_id(tokens, thinking=True)):
+            for identifier in (
+                native_profile_id(tokens, model=self._profile_model),
+                native_profile_id(tokens, thinking=True, model=self._profile_model),
+            ):
                 if identifier not in profiles:
                     continue
                 rows.append(
@@ -1009,8 +1028,10 @@ class OrchestrationHost:
         available = {p["profile_id"] for p in self.context_profiles()}
         thinking = self.model is not None and self.model.thinking == "enabled"
         for selected in (
-            native_profile_id(self.settings.context_input_tokens, thinking=thinking),
-            native_profile_id(self.settings.context_input_tokens),
+            native_profile_id(
+                self.settings.context_input_tokens, thinking=thinking, model=self._profile_model
+            ),
+            native_profile_id(self.settings.context_input_tokens, model=self._profile_model),
         ):
             if selected in available:
                 return selected
@@ -1025,7 +1046,7 @@ class OrchestrationHost:
         self._require()
         native = self.native_profile_ids()
         if self.native is None or not native:
-            raise HostRequestError("native_plane_unavailable", ONLY_DEEPSEEK_REASON)
+            raise HostRequestError("native_plane_unavailable", NO_COUNTER_REASON)
         selected = profile_id or self.context_default()
         if selected not in native:
             raise HostRequestError("invalid_request", "所选运行配置不在原生运行平面上")
@@ -1126,6 +1147,11 @@ class OrchestrationHost:
                 raise HostRequestError(
                     "invalid_request", f"allowed_actions 里的 {item!r} 不是已注册连接器的操作"
                 )
+
+    def model_calls(self, *, limit: int = 100) -> list[dict[str, Any]]:
+        """模型回退台账：换用备用模型的每次调用（实际模型、原因、请求号、用量），最新的在后。"""
+
+        return read_model_calls(self.root / LEDGER_NAME, limit=limit)
 
     def step_actions(self, mission_id: str) -> list[dict[str, Any]]:
         """一个任务里步骤中途提议过的动作（含被拒、已结案），按提出顺序。"""
@@ -1425,7 +1451,7 @@ class OrchestrationHost:
                 else {
                     "enabled": True,
                     "available": False,
-                    "reason": self.reason or ONLY_DEEPSEEK_REASON,
+                    "reason": self.reason or NO_COUNTER_REASON,
                 }
             ),
             "default_context_profile_id": self.context_default(),

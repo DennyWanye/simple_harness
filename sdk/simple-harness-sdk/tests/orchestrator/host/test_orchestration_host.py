@@ -14,8 +14,9 @@ import asyncio
 from pathlib import Path
 
 import pytest
+
 from agent_orchestrator.host import (
-    ONLY_DEEPSEEK_REASON,
+    NO_COUNTER_REASON,
     HostRequestError,
     HostSettings,
     HostUnavailable,
@@ -157,7 +158,7 @@ def test_without_a_certified_counter_there_is_no_pool(tmp_path):
     async def case():
         host = _host(tmp_path / "root", counter=None)
         await host.start()
-        assert host.state == "unavailable" and host.reason == ONLY_DEEPSEEK_REASON
+        assert host.state == "unavailable" and host.reason == NO_COUNTER_REASON
         with pytest.raises(HostUnavailable):
             await OrchestrationHost.open(
                 tmp_path / "other",

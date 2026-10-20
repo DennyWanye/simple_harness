@@ -55,6 +55,8 @@ PUBLIC_MODULES: tuple[str, ...] = (
     "agent_orchestrator.runtime.connectors_publish",
     "agent_orchestrator.runtime.deepseek_meter",
     "agent_orchestrator.runtime.domain_tools",
+    "agent_orchestrator.runtime.model_fallback",
+    "agent_orchestrator.runtime.openai_upper_bound_meter",
     "agent_orchestrator.runtime.planning_operations",
     "agent_orchestrator.runtime.sandbox",
     "agent_orchestrator.storage.htn_store",

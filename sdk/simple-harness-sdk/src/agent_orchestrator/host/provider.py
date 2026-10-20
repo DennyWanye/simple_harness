@@ -11,11 +11,13 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
 import httpx
+
 from simple_harness.providers import OpenAICompatibleProvider, Secret
 
 from ..runtime.deepseek_meter import (
@@ -23,6 +25,8 @@ from ..runtime.deepseek_meter import (
     RelayDeepSeekCounter,
     RelayToolMargin,
 )
+from ..runtime.model_fallback import LEDGER_NAME, FallbackProvider
+from ..runtime.openai_upper_bound_meter import OpenAIUpperBoundCounter, RelayMargin
 from .settings import (
     DEEPSEEK_COUNTER_MODELS,
     DEEPSEEK_OFFICIAL_HOSTS,
@@ -79,11 +83,30 @@ def provider_on_client(
     )
 
 
-def build_providers(config: ModelConfig, client: httpx.AsyncClient) -> tuple[Any, Any]:
-    """``(普通提供方, 思考提供方)``；不是 DeepSeek 时思考提供方为 None（也不会有池）。"""
+def build_providers(
+    config: ModelConfig, client: httpx.AsyncClient, *, state_dir: Path | None = None
+) -> tuple[Any, Any]:
+    """``(普通提供方, 思考提供方)``；不是 DeepSeek 时思考提供方为 None，只有普通池。
+    配了 ``fallback_model`` 时普通提供方外面套一层回退（台账落在 ``state_dir``）。"""
 
     deepseek = is_deepseek(config)
-    plain = provider_on_client(client, config, thinking="disabled" if deepseek else None)
+    # DeepSeek 默认思考而不回放思考的工具循环会被拒：名字像 DeepSeek 的（哪怕没有认证计数器）
+    # 普通池也显式关思考
+    plain_thinking = "disabled" if deepseek or "deepseek" in config.model.lower() else None
+    plain = provider_on_client(client, config, thinking=plain_thinking)
+    if config.fallback_model is not None:
+        backup = provider_on_client(
+            client,
+            replace(config, model=config.fallback_model, fallback_model=None),
+            thinking="disabled" if "deepseek" in config.fallback_model.lower() else None,
+        )
+        plain = FallbackProvider(
+            plain,
+            backup,
+            primary_model=requested_model(config),
+            fallback_model=config.fallback_model,
+            ledger_path=None if state_dir is None else Path(state_dir) / LEDGER_NAME,
+        )
     if not deepseek:
         return plain, None
     thinking = provider_on_client(
@@ -108,6 +131,15 @@ def relay_tool_margin(host: str, state_dir: Path | None) -> Any:
         path = None if state_dir is None else Path(state_dir) / "relay-tool-margin" / f"{key}.json"
         margin = _RELAY_MARGINS[key] = RelayToolMargin(state_path=path)
     return margin
+
+
+def upper_bound_counter(config: ModelConfig, state_dir: Path | None) -> OpenAIUpperBoundCounter:
+    """非 DeepSeek 模型的上界计数器：字节上界 + 这条线路学到的前言边际（按主机落盘）。"""
+
+    host = (urlparse(config.base_url).hostname or "").lower() or "unknown-host"
+    path = None if state_dir is None else Path(state_dir) / "relay-margin" / f"{host}.json"
+    margin = RelayMargin(floor=config.relay_margin_floor_tokens, state_path=path)
+    return OpenAIUpperBoundCounter(requested_model(config), margin=margin)
 
 
 def deepseek_counter(
@@ -142,6 +174,7 @@ __all__ = (
     "build_providers",
     "deepseek_counter",
     "is_deepseek",
+    "upper_bound_counter",
     "provider_on_client",
     "relay_tool_margin",
     "requested_model",

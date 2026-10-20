@@ -30,7 +30,7 @@ from .host import (
 )
 from .settings import (
     CONTEXT_INPUT_CHOICES,
-    ONLY_DEEPSEEK_REASON,
+    NO_COUNTER_REASON,
     HostSettings,
     ModelConfig,
     SandboxOptions,
@@ -39,7 +39,7 @@ from .settings import (
 
 __all__ = (
     "CONTEXT_INPUT_CHOICES",
-    "ONLY_DEEPSEEK_REASON",
+    "NO_COUNTER_REASON",
     "HostRequestError",
     "DomainTool",
     "HostSettings",

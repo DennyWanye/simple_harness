@@ -55,7 +55,7 @@ def _go(coro):
 
 
 def test_transport_failure_falls_back_once_sticks_per_run_and_normalises_the_echo(tmp_path):
-    luna = Stub("gpt-5.6-luna", [ProviderTimeoutError(public_message="timeout")])
+    luna = Stub("gpt-5.6-luna", [ProviderServerError(public_message="502")])
     sol = Stub("gpt-6.1-sol")
     provider = FallbackProvider(
         luna,
@@ -77,8 +77,21 @@ def test_transport_failure_falls_back_once_sticks_per_run_and_normalises_the_ech
     )  # 新运行回首选
     rows = read_model_calls(tmp_path / "model-calls.jsonl")
     assert [r["outcome"] for r in rows] == ["fallback_used", "fallback_used"]
-    assert rows[0]["actual_model"] == "gpt-6.1-sol" and "ProviderTimeoutError" in rows[0]["reason"]
+    assert rows[0]["actual_model"] == "gpt-6.1-sol" and "ProviderServerError" in rows[0]["reason"]
     assert rows[0]["usage"]["input_tokens"] == 10 and rows[0]["provider_request_id"] == "prov-1"
+
+
+def test_a_timeout_is_left_to_the_kernel_as_unknown_not_fallen_back():
+    """超时可能已经计费、已经输出了一部分：不换，交给内核记"结果不明"。"""
+
+    luna = Stub("gpt-5.6-luna", [ProviderTimeoutError(public_message="timeout")])
+    sol = Stub("gpt-6.1-sol")
+    provider = FallbackProvider(
+        luna, sol, primary_model="gpt-5.6-luna", fallback_model="gpt-6.1-sol"
+    )
+    with pytest.raises(ProviderTimeoutError):
+        _go(provider.invoke(_req("run-t", 1), cancel=CancelToken()))
+    assert sol.calls == []
 
 
 def test_a_rejected_request_is_not_retried_on_the_fallback():

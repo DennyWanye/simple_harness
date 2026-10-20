@@ -72,7 +72,13 @@ def test_the_counter_binds_a_certified_meter():
     assert binding.count_mode == "CERTIFIED_UPPER_BOUND"
     assert binding.model_limits["model_ref"] == "gpt-6.1-sol"
     assert binding.model_limits["counter_id"] == "openai-chat-byte-upper-bound"
-    assert counter.fingerprint.endswith(f"gpt-6.1-sol:floor-{DEFAULT_MARGIN_FLOOR}")
+    assert (
+        counter.fingerprint.endswith(":gpt-6.1-sol")
+        and counter.margin.floor == DEFAULT_MARGIN_FLOOR
+    )
+    assert counter.profile_slug.startswith("gpt-6-1-sol-") and len(counter.profile_slug) == 18
+    other = OpenAIUpperBoundCounter("gpt-6-1-sol", margin=RelayMargin())
+    assert other.profile_slug != counter.profile_slug  # 规范化后同名也不撞
     with pytest.raises(TypeError):
         counter.meter_factory(object(), input_limit_tokens=1, max_output_tokens=1)  # type: ignore[arg-type]
 

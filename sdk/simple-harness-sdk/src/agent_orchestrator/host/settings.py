@@ -3,8 +3,9 @@
 
 """宿主入口的配置：模型（``ModelConfig``）、运行参数（``HostSettings``）与隔离区（``SandboxOptions``）。
 
-只支持 DeepSeek（这一版的用户决定，2026-10-19）：编排的每个执行池都要一个经过认证的用量计数器，
-目前只有 DeepSeek V4.1 的官方分词器与请求渲染器做到了精确计数；别的模型没有计数器，就没有执行池。
+编排的每个执行池都要一个经过认证的用量计数器：DeepSeek V4.1 用官方分词器精确计数；别的
+OpenAI 协议模型（Luna / Sol 这类，2026-10-21 用户决定放开）用按字节的上界计数器（可以多算
+不可以少算），不开思考池。
 """
 
 from __future__ import annotations
@@ -27,12 +28,13 @@ THINKING_EFFORT = "high"
 #: 新任务上下文窗口可选的三档（token）。
 CONTEXT_INPUT_CHOICES = (262_144, 524_288, 614_400)
 
-ONLY_DEEPSEEK_REASON = "编排只支持 DeepSeek：当前模型没有经过认证的用量计数器，请改用 DeepSeek 模型"
+NO_COUNTER_REASON = "当前模型没有可用的用量计数器"
 
 
 @dataclass(frozen=True)
 class ModelConfig:
-    """一个 OpenAI 兼容端点上的 DeepSeek 模型。密钥只进 SDK 的 ``Secret``，不进任何日志与回执。"""
+    """一个 OpenAI 兼容端点上的模型（DeepSeek 精确计数；其余按上界计数）。密钥只进 SDK 的
+    ``Secret``，不进任何日志与回执。"""
 
     base_url: str
     model: str
@@ -47,15 +49,32 @@ class ModelConfig:
     timeout: float = 180.0
     #: 允许明文 http 的私网端点（本机转发）。
     allow_private_http: bool = False
+    #: 首选模型传输层失败时换用的备用模型（同一端点、同一密钥）；每请求最多换一次，同一运行黏住。
+    fallback_model: str | None = None
+    #: 非 DeepSeek 模型的线路前言边际起点（token）；按报告用量只升不降。
+    relay_margin_floor_tokens: int = 8192
 
     def __post_init__(self) -> None:
         if not self.base_url or not self.model or not self.api_key:
             raise ValueError("ModelConfig 需要 base_url、model 与 api_key")
         if self.thinking not in ("enabled", "disabled"):
             raise ValueError("thinking 只能是 'enabled' 或 'disabled'")
+        if self.fallback_model is not None and (
+            not isinstance(self.fallback_model, str)
+            or not self.fallback_model.strip()
+            or self.fallback_model == self.model
+        ):
+            raise ValueError("fallback_model 必须是另一个模型名")
+        if type(self.relay_margin_floor_tokens) is not int or self.relay_margin_floor_tokens < 0:
+            raise ValueError("relay_margin_floor_tokens 必须是非负整数")
 
     def public(self) -> dict[str, Any]:
-        return {"base_url": self.base_url, "model": self.model, "thinking": self.thinking}
+        return {
+            "base_url": self.base_url,
+            "model": self.model,
+            "thinking": self.thinking,
+            "fallback_model": self.fallback_model,
+        }
 
 
 @dataclass(frozen=True)
@@ -181,7 +200,7 @@ __all__ = (
     "DEEPSEEK_COUNTER_MODELS",
     "DEEPSEEK_OFFICIAL_HOSTS",
     "MODEL_ALIASES",
-    "ONLY_DEEPSEEK_REASON",
+    "NO_COUNTER_REASON",
     "THINKING_EFFORT",
     "HostSettings",
     "ModelConfig",

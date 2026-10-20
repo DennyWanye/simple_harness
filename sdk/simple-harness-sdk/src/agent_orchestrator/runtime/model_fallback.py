@@ -4,8 +4,9 @@
 
 规则：
 
-- 只有传输层的失败才换：超时、断连、限流、5xx（提供方错误里 ``retryable`` 为真的那些）。请求被拒
-  （4xx）、认证、预算、取消都不换——换了也一样，或者不该换。
+- 只换内核本来就当作"确定失败、不计费"的错误：限流（429）与服务端错误（5xx）。超时、断连可能已经
+  计费、已经输出了一部分，内核把它们记成"结果不明"并按上界占住预算——这里不换，交给内核。请求被拒
+  （4xx）、认证、预算、取消也不换。
 - 每个请求最多换一次；换过之后同一次运行（同一个工具循环，按请求号里的运行号）的后续请求直接走
   备用，新运行回到首选。重试只在这里做一次：网关别再重试，否则次数相乘。
 - 回执里的 ``model`` 规范成首选的名字——内核按它核对回显、信任用量——实际用的模型、原因、请求号、
@@ -23,7 +24,11 @@ from pathlib import Path
 from typing import Any
 
 from simple_harness.providers import ProviderRequest
-from simple_harness.providers.errors import ProviderCancelledError, ProviderError
+from simple_harness.providers.errors import (
+    ProviderCancelledError,
+    ProviderRateLimitError,
+    ProviderServerError,
+)
 
 LEDGER_NAME = "model-calls.jsonl"
 
@@ -88,9 +93,11 @@ class FallbackProvider:
 
     @staticmethod
     def should_fall_back(error: BaseException) -> bool:
+        """只换确定没计费的失败：限流与服务端错误。超时、断连交给内核记"结果不明"。"""
+
         if isinstance(error, ProviderCancelledError):
             return False
-        return isinstance(error, ProviderError) and bool(getattr(error, "retryable", False))
+        return isinstance(error, (ProviderRateLimitError, ProviderServerError))
 
     def _record(self, body: Mapping[str, Any]) -> None:
         row = {"at": time.time(), **body}
@@ -124,6 +131,9 @@ class FallbackProvider:
                 reason = _error_text(error)
                 if self._sticky:
                     self._fallen[run] = reason
+                    if len(self._fallen) > 1000:  # 只记最近的运行
+                        for stale in list(self._fallen)[:-1000]:
+                            self._fallen.pop(stale, None)
         try:
             response = await self._fallback.invoke(request, cancel=cancel)
         except Exception as error:

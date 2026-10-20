@@ -8,8 +8,8 @@ SPDX-License-Identifier: Apache-2.0
 `agent_orchestrator.host` 是外部 Python 应用使用任务编排的唯一入口：建任务 → 分层规划 → 执行 →
 独立审阅 → 交付产物，全在 SDK 里。应用只提供模型配置、数据目录和一个身份。
 
-这一版只支持 DeepSeek 模型（2026-10-19 用户决定）：编排的每个执行池都要一个经过认证的用量计数器，
-目前只有 DeepSeek V4.1 有。别的模型没有计数器，宿主起不来，原因写在 `reason` 里。
+模型：DeepSeek V4.1 用官方分词器精确计数（有思考池）；别的 OpenAI 协议模型（Luna / Sol 这类，
+2026-10-21 起）用按字节的上界计数器——可以多算不可以少算，预算会消耗得快一些，不开思考池。见第 2a 节。
 
 ## 1. 安装
 
@@ -71,6 +71,36 @@ asyncio.run(main())
 
 完整可运行的例子在 [`examples/orchestration-host/demo.py`](../examples/orchestration-host/demo.py)；
 加 `--scripted` 不联网也能跑通（用 SDK 自带的脚本化模型）。
+
+## 2a. 模型：DeepSeek 与其他 OpenAI 协议模型
+
+```python
+model = ModelConfig(
+    base_url="https://relay.example.com/v1",
+    model="gpt-6.1-sol",            # 任何 OpenAI 协议端点上的模型
+    api_key="<密钥>",
+    fallback_model="gpt-5.6-luna",  # 可选：首选传输层失败时换它
+    relay_margin_floor_tokens=8192, # 可选：线路前言边际起点
+    thinking="disabled",
+)
+```
+
+| 项目 | DeepSeek（`deepseek-flash` / `deepseek-v4.1-flash`） | 其他模型 |
+|---|---|---|
+| 输入计数 | 官方分词器精确计数；转发线路加学到的工具前言边际 | 把线路上发出的 JSON 按 UTF-8 字节数计（字节级 BPE 的 token 数 ≤ 字节数，硬上界），再加线路前言边际（起点 `relay_margin_floor_tokens`，默认 8192；设得太小第一次学习之前会少算线路前言；按"报告用量 − 本机计数"只升不降，落盘在数据目录 `relay-margin/<主机>.json`；边际不进池身份） |
+| 输出与结算 | 按模型报告的真实用量；报告缺失记"未知"，不当零 | 同左 |
+| 执行池 | 池编号不含模型名 | 池编号含模型名（`…-gpt-6-1-sol-v1`）：同一数据目录换模型会开新的池，旧池的数据留着不再用 |
+| 思考池 | 有 | 没有 |
+| 误差 | 精确 | 输入上界通常是真实用量的 2～4 倍；预算会早一点碰上限 |
+
+**回退**（`fallback_model`）：首选模型限流（429）或服务端错误（5xx）时换备用——这两种内核本来就当作确定失败、
+不计费；每个请求最多换一次，换过之后同一次运行（同一个工具循环）的后续请求直接走备用，新运行回到首选。
+超时、断连可能已经计费、已经输出了一部分：不换，内核记"结果不明"并按上界占住预算。请求被拒（4xx）、
+认证、预算、取消也不换。回执里的
+`model` 规范成首选名（内核按它核对回显、信任用量），实际模型、原因、请求号、用量记在数据目录
+`model-calls.jsonl`，`host.model_calls(limit=)` 读取。重试只在这里做一次：网关别再重试，否则次数相乘。
+
+图片：不接多模态提供方；应用把"看图"做成只读工具（`DomainTool`）交给 SDK 调。
 
 ## 3. 入口做了什么
 
@@ -366,7 +396,8 @@ SDK 没有推送。定时调 `events(mission_id, after_seq=上次的 through_seq
 
 | 现象 | 原因 |
 |---|---|
-| `HostUnavailable: 编排只支持 DeepSeek…` | 模型名不是 `deepseek-flash` / `deepseek-v4.1-flash`，或主机既不是官方也没写进 `compatible_hosts` |
+| `HostUnavailable: 当前模型没有可用的用量计数器` | 没给 `model=` 也没给 `provider=`/`counter=` |
+| DeepSeek 模型却按上界计数 | 模型名不是 `deepseek-flash` / `deepseek-v4.1-flash`，或主机既不是官方也没写进 `compatible_hosts`：这时按"其他模型"处理 |
 | `另一个实例正在使用编排目录` | 同目录已有进程在用 |
 | `执行图部署验收门没有通过` | 安装包不是发版脚本产出的；重新按 `docs/build-and-release.md` 构建 |
 | `DeepSeek tokenizer bytes differ…` | 分词文件不是钉死的那份；用 `ensure_deepseek_tokenizer` 重新取 |

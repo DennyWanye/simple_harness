@@ -18,6 +18,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Callable
 from pathlib import Path
@@ -98,6 +99,12 @@ class RelayMargin:
         if self.state_path is None:
             return
         self.state_path.parent.mkdir(parents=True, exist_ok=True)
+        try:  # 别的进程已经写得更高：不往低写
+            saved = json.loads(self.state_path.read_text())
+            if type(saved.get("value")) is int and saved["value"] > self.value:
+                self.value = saved["value"]
+        except (OSError, ValueError, AttributeError):
+            pass
         tmp = self.state_path.with_suffix(".tmp")
         tmp.write_text(
             json.dumps({"value": self.value, "max_excess": self.max_excess, "floor": self.floor})
@@ -121,7 +128,13 @@ class OpenAIUpperBoundCounter:
             raise TypeError("OpenAIUpperBoundCounter needs a RelayMargin")
         self.model = model
         self.margin = margin
-        self.fingerprint = f"{COUNTER_ID}:v{COUNTER_REVISION}:{model}:floor-{margin.floor}"
+        # 身份只含模型：边际是学来的、可配的，不进身份（改起点不该让已有的池起不来）
+        self.fingerprint = f"{COUNTER_ID}:v{COUNTER_REVISION}:{model}"
+        #: 执行池编号里代表这个模型的一段（不同模型各用各的池）：可读的名字 + 短哈希，
+        #: 名字规范化后相撞（gpt-6.1-sol / gpt-6-1-sol）或为空也不会和别的池重名
+        readable = "".join(ch if ch.isalnum() else "-" for ch in model.lower()).strip("-")[:40]
+        tag = hashlib.sha256(model.encode("utf-8")).hexdigest()[:6]
+        self.profile_slug = f"{readable}-{tag}" if readable else tag
 
     def count_text(self, text: str) -> int:
         if not isinstance(text, str):
@@ -152,7 +165,6 @@ class OpenAIUpperBoundCounter:
             "tokenizer_fingerprint": self.fingerprint,
             "count_mode": self.count_mode,
             "input_limit_scope": "WIRE_ONLY",
-            "margin_floor": self.margin.floor,
         }
         return Pin("receipt", f"meter-certification:{COUNTER_ID}", 0, digest(body))
 
