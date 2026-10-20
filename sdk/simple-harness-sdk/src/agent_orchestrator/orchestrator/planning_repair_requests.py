@@ -661,6 +661,8 @@ def failure_fingerprint(event_type: str, payload: Any) -> str:
 def _is_step_failure(event: Any) -> bool:
     if event.type not in STEP_FAILURE_SOURCES or not event.task_id:
         return False
+    if event.type == "OutcomeRecorded" and event.payload.get("action_request"):
+        return False
     return event.type != "OutcomeRecorded" or event.payload.get("outcome") in {
         "blocked",
         "failure",
@@ -854,6 +856,9 @@ def collect_triggers(handler: Any, mission: Any) -> bool:
             "failure",
             "no_progress",
         }:
+            continue
+        if event.type == "OutcomeRecorded" and event.payload.get("action_request"):
+            # 为提议动作而停：动作结案后系统给同一步续做，不是要规划器修的失败
             continue
         if event.task_id and event.task_id not in active_tasks:
             continue

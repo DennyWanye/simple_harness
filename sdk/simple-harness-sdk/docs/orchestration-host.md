@@ -164,6 +164,7 @@ host = await OrchestrationHost.open(
 | 人工批准 | `decide(request_id, "approve"/"reject", reason=..., note=...)` |
 | 确认完成要求 | `approve_operation_completion_spec(body)`（自动模式下由 SDK 代签，每条 `action:` 配一个效果） |
 | 看操作走到哪 | `operation_intent_status(intent_id)`；快照里 `operation_workspace.intents` |
+| 中途提议的动作 | `step_actions(mission_id)`（4c 节） |
 | 改要求 | `amend_requirements({"mission_id", "changes": [{"op": "add"/"rewrite"/"remove"/"goal", ...}]})` |
 | 取消／接管 | `cancel(mission_id)`、`takeover(task_id, action, basis=)`、`resolve_unknown(action_key, outcome, basis=)` |
 | 取产物 | `artifact_read(artifact_id)`：只认产物编号，读前重算哈希，正文最多 256 KB |
@@ -203,7 +204,7 @@ host = await OrchestrationHost.open(root, principal=..., model=..., tools=[tool]
 
 | 规则 | 说明 |
 |---|---|
-| 只收只读工具 | `read_only=False` 在构造时被拒。有副作用的操作走连接器（有审批、去重号、对账），见 4b 节 |
+| 只收只读工具 | `read_only=False` 在构造时被拒。有副作用的操作走连接器（有审批、去重号、对账），见 4b、4c 节 |
 | 注册时就拒 | 名字不合法、与内置工具或技能工具同名、重复注册、schema 不是对象或没写 `description`、超时不是正数 |
 | 参数校验 | 模型给的参数先按 schema 校验，不合格不会调到你的函数 |
 | 串行 | 同一任务内的工具调用一个接一个（每任务一把锁），任务之间并行 |
@@ -231,8 +232,9 @@ host = await OrchestrationHost.open(root, principal=..., model=..., tools=[tool]
 
 ## 4b. 注册应用自己的连接器（有副作用的操作）
 
-发消息、移动文件、改设置这类会改变外部世界的操作，不给模型当工具调，而是写成任务要求，由系统在
-内容做完后按顺序执行：准备申请单 → 独立审阅 → 审批 → 执行 → 按回执核对 → 结果审阅。
+发消息、移动文件、改设置这类会改变外部世界的操作，不给模型当工具调。两种来源：建任务时写成要求
+（本节：系统在内容做完后按顺序执行：准备申请单 → 独立审阅 → 审批 → 执行 → 按回执核对 → 结果审阅），
+或执行中由模型提议（4c 节）。
 
 ```python
 from agent_orchestrator.runtime.connectors import OperationSpec, Receipt, params_hash
@@ -273,7 +275,7 @@ host.create_mission({
 | 自动模式 | 系统确认完成要求、准备申请单、审阅，并代批（记成 `HOST_AUTO_PERMISSION`，事件执行者是主机） |
 | 总要人批 | `always_needs_approval=True` 的操作自动模式也不代批，在 `approvals()` 里等人 `decide(..., "approve")` |
 | 手动模式 | 完成要求、审批都等人 |
-| 注册时就拒 | 重名（含内置 `file_publish`）、没有操作、只读操作（只读走工具）、不能去重或不能查询、`lookup_authority` 没写 |
+| 注册时就拒 | 重名（含内置 `file_publish`）、没有操作、只读操作（只读走工具）、不能去重或不能查询（`delivery="at_most_once"` 的除外，见 4c 节）、`lookup_authority` 没写 |
 | `kind="event"` | 每次执行都产生新事实的操作（付款、追加）；随注册启用 |
 | `execute` / `lookup` | 普通函数在线程里跑；`async def` 在宿主事件循环上跑，里面不能阻塞。`execute` 里不能"等人"，要人批就用审批 |
 | 明确拒绝 | 抛 `ConnectorRejected`：记"失败"，没有生效 |
@@ -290,6 +292,49 @@ host.create_mission({
 | 非权威 | 按回执结案 | 等人裁定；这类连接器只能做 L0/L1 |
 
 可运行的例子：`examples/orchestration-host/tools_effect.py`（自动代批执行一次；"总要人批"等人点批准）。
+
+## 4c. 步骤中途提议动作（执行时才知道要做什么）
+
+建任务时写不出来的动作——搜完照片才知道归档哪几张、看了屏幕才知道点哪里——由执行步骤的模型在
+中途提议，系统检查、批准、执行后把结果交回同一步，模型再决定下一步。连接器还是 4b 节那一套。
+
+```python
+host.create_mission({
+    "goal": "找出长颈鹿照片并归档，写 NOTES.md 说明做了什么",
+    "success_criteria": ["file:NOTES.md"],
+    "allowed_actions": ["photos.move"],      # 执行中可以提议的动作名单（连接器.操作）
+    "idempotency_key": "giraffe-1",
+})
+```
+
+一次提议怎么走：
+
+| 步 | 谁 | 做什么 |
+|---|---|---|
+| 提议 | 模型 | 结果块里写 `action_request: {connector, operation, target, params, reason}`，`outcome` 为 `blocked`；这次尝试到此结束，等批准不占模型 |
+| 整理 | 连接器 `prepare`（可选） | 应用自己的检查（路径、角色、设备能力）和参数规范化；抛 `ConnectorRejected` 就是拒绝 |
+| 冻结 | SDK | 与这次结果同一个事务写动作行：整理后的参数、哈希、风险等级；批准绑定这一份 |
+| 批准 | SDK / 人 | 名单内：自动模式代批，"总要人批"的等人；**名单外的一律要人批**，审批卡 `summary.out_of_scope=true` |
+| 执行 | SDK | 交接前再 `prepare` 一次，和冻结的不一致不执行（记 FAILED，原因 `prepare_mismatch`）；然后按 4b 节交接、回执、结果不明核对 |
+| 续做 | SDK | 动作结案（成功、失败、被拒、过期、取消、人裁定）后给同一步开新尝试，工作包 `action_results` 里是结构化结果；不问规划器。结果不明在人裁定前不续做 |
+
+规则：
+
+- 中途动作是完成既定目标的手段，不改完成要求；要改要求只能 `amend_requirements`。
+- 模型看到的动作目录（`available_actions`）来自注册的连接器：说明、参数说明、风险、要不要人批、在不在名单内。
+- 一次提议 = 一个逻辑动作（动作号由任务、结果、连接器、操作、目标算出）；同一结果重复提交不重复建。
+- 上限：`HostSettings(max_step_actions_per_mission=20)`，持久、跨尝试与重启累计；超了的提议记 `StepActionRefused`，模型下次看得到。中途动作不占要求动作的交接上限（`max_action_handoffs_per_mission`）。每次提议都结束一次尝试、续做再开一次，所以也受任务预算 `max_attempts`（默认 12）约束：提议多的任务把它调大。
+- 内置的文件发布（`file_publish`）不能中途提议，只走建任务时写的要求。
+- 形状、名单、连接器、必填参数、风险等级在门口核；判断"该不该做"归模型与批准的人。
+- 取消任务：没交接的提议取消；已交接的照样对账。
+
+**只交接一次的动作**（桌面点击这类既不能去重也不能查询的）：连接器声明 `delivery = "at_most_once"`，
+`lookup` 可以不实现。每个动作只交接一次，超时或断连记"结果不明"，**从不重发**，直接等人
+`resolve_unknown(action_key, "succeeded"/"failed", basis=...)`；裁定后这一步续做。
+
+读取：`host.step_actions(mission_id)` 列出这个任务里提议过的动作；`approvals(mission_id)` 里等批的卡；
+事件 `StepActionRequested`、`StepActionRefused`、`ActionHandedOff`、`ActionSucceeded`、`ActionFailed`、
+`ActionOutcomeUnknown`、`ActionReconciled`。可运行的例子：`examples/orchestration-host/tools_step_action.py`。
 
 ## 5. 要求怎么写
 

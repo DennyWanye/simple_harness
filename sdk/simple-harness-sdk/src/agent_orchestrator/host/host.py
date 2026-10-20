@@ -135,18 +135,33 @@ def _checked_connectors(connectors: Sequence[Any], settings: HostSettings) -> di
                 raise ValueError(f"{name}.{operation} must be an OperationSpec with that name")
             if not spec.mutates:
                 raise ValueError(f"{name}.{operation} is read-only; register reads as a DomainTool")
-        if not (
-            getattr(connector, "supports_idempotency", False)
-            and getattr(connector, "supports_reconciliation", False)
-        ):
-            raise ValueError(f"connector {name!r} must deduplicate by key and support lookup")
-        if getattr(connector, "lookup_authority", None) not in {"authoritative", "best_effort"}:
-            raise ValueError(f"connector {name!r} lookup_authority must be declared")
-        if not all(
-            callable(getattr(connector, method, None))
-            for method in ("execute", "lookup", "normalize_target")
-        ):
-            raise ValueError(f"connector {name!r} must implement execute/lookup/normalize_target")
+        delivery = getattr(connector, "delivery", None)
+        if delivery not in (None, "", "at_most_once"):
+            raise ValueError(f"connector {name!r} delivery must be omitted or 'at_most_once'")
+        at_most_once = delivery == "at_most_once"
+        required: tuple[str, ...]
+        if at_most_once:
+            # 只交接一次：不要求去重与查询；结果不明从不重发，等人裁定
+            for operation, spec in operations.items():
+                if spec.kind != "state":
+                    raise ValueError(
+                        f"{name}.{operation}: an at_most_once connector only does state operations"
+                    )
+            required = ("execute", "normalize_target")
+        else:
+            if not (
+                getattr(connector, "supports_idempotency", False)
+                and getattr(connector, "supports_reconciliation", False)
+            ):
+                raise ValueError(f"connector {name!r} must deduplicate by key and support lookup")
+            if getattr(connector, "lookup_authority", None) not in {"authoritative", "best_effort"}:
+                raise ValueError(f"connector {name!r} lookup_authority must be declared")
+            required = ("execute", "lookup", "normalize_target")
+        if not all(callable(getattr(connector, method, None)) for method in required):
+            raise ValueError(f"connector {name!r} must implement " + "/".join(required))
+        prepare = getattr(connector, "prepare", None)
+        if prepare is not None and not callable(prepare):
+            raise ValueError(f"connector {name!r} prepare must be callable")
         checked[name] = connector
     return checked
 
@@ -620,6 +635,8 @@ class OrchestrationHost:
             enabled_connectors=enabled_connectors,
             enabled_event_operations=event_operations,
             max_action_level=self.settings.max_action_level or "L2",
+            max_step_actions_per_mission=self.settings.max_step_actions_per_mission,
+            connector_timeout_seconds=float(self.settings.connector_timeout_seconds),
         )
         # 真实模型：思考与输出共用输出上限，8K 会把审阅结论截在信封闭合前；起步 16K，写满翻倍。
         knobs: dict[str, Any] = (
@@ -1046,6 +1063,7 @@ class OrchestrationHost:
         self.refuse_secrets(body)
         self.check_criteria([criterion_statement(c) for c in criteria])
         body["success_criteria"] = with_publish_sources(criteria)
+        self._check_allowed_actions(body.get("allowed_actions"))
         found = (
             self.orchestrator.store.find_mission(
                 self.tenant_id, str(body.get("idempotency_key", ""))
@@ -1093,6 +1111,27 @@ class OrchestrationHost:
                 raise HostRequestError("invalid_request", f"预算 {name} 必须是正整数")
         body["budget"] = budget
         return body
+
+    def _check_allowed_actions(self, value: Any) -> None:
+        """``allowed_actions``：``连接器.操作`` 名单，每一项都要是已注册连接器的有副作用操作。"""
+
+        if value is None:
+            return
+        if isinstance(value, str) or not all(isinstance(item, str) for item in value):
+            raise HostRequestError("invalid_request", "allowed_actions 必须是字符串列表")
+        for item in value:
+            name, _, operation = str(item).partition(".")
+            connector = self.connectors.get(name)
+            if connector is None or operation not in (getattr(connector, "operations", {}) or {}):
+                raise HostRequestError(
+                    "invalid_request", f"allowed_actions 里的 {item!r} 不是已注册连接器的操作"
+                )
+
+    def step_actions(self, mission_id: str) -> list[dict[str, Any]]:
+        """一个任务里步骤中途提议过的动作（含被拒、已结案），按提出顺序。"""
+
+        self._require()
+        return [dict(item) for item in self._call("step_actions", mission_id)]
 
     # ------------------------------------------------------------ commands
     def _deploy(self, method: str, body: Mapping[str, Any]) -> dict[str, Any]:

@@ -193,6 +193,11 @@ class MissionLifecycleCommitsMixin(CommitServiceCore):
                             }
                         }
                     ),
+                    **(
+                        {}
+                        if not spec.allowed_actions
+                        else {"allowed_actions": list(spec.allowed_actions)}
+                    ),
                     SEMANTICS_KEY: semantics_version,
                 },
             )

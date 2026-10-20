@@ -102,8 +102,10 @@ def connector_declaration(connector: Any) -> dict[str, Any]:
         "supports_reconciliation": bool(getattr(connector, "supports_reconciliation", False)),
         "lookup_authority": str(getattr(connector, "lookup_authority", "best_effort")),
         "lookup_fenced": bool(getattr(connector, "lookup_fenced", False)),
+        "delivery": str(getattr(connector, "delivery", "") or ""),
         "async_execute": is_async(connector.execute),
-        "async_lookup": is_async(connector.lookup),
+        # 只交接一次的连接器可以没有 lookup（从不查询、从不重发）
+        "async_lookup": is_async(getattr(connector, "lookup", None)),
     }
 
 

@@ -92,7 +92,7 @@ def spec_from_request(
 
     criteria, action_params = criteria_from_request(request.get("success_criteria", ()))
     # review round 2 P2-1: a string is not a list of strings (it would split into characters)
-    for name in ("stop_conditions", "untrusted_sources", "allowed_tools"):
+    for name in ("stop_conditions", "untrusted_sources", "allowed_tools", "allowed_actions"):
         value = request.get(name)
         if value is not None and (
             isinstance(value, str) or not all(isinstance(item, str) for item in value)
@@ -134,6 +134,9 @@ def spec_from_request(
             goal=str(request.get("goal", "")),
             success_criteria=criteria,
             action_params=action_params,
+            allowed_actions=tuple(
+                dict.fromkeys(str(item) for item in request.get("allowed_actions") or ())
+            ),
             tenant_id=tenant_id,
             idempotency_key=str(request.get("idempotency_key", "")),
             stop_conditions=tuple(

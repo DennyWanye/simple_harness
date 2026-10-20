@@ -20,7 +20,7 @@ from ..storage.assurance_store import AssuranceStore
 from ..storage.htn_store import HtnStore
 from ..storage.operation_completion_store import OperationCompletionStore
 from ..storage.operation_intent_store import OperationIntentStore
-from . import operation_outcomes
+from . import operation_outcomes, step_actions
 from .action_commits import HANDOFF_READY_STATES
 from .assurance_purpose_reviews import assurance_review_runtime, purpose_review_key
 from .operation_completion import OperationCompletionError
@@ -224,6 +224,27 @@ async def dispatch_materialized_operations(orchestrator: Any, mission_id: str) -
             await orchestrator._release_mission(mission_id)
         return True
     return False
+
+
+async def dispatch_step_actions(orchestrator: Any, mission_id: str) -> bool:
+    """步骤中途提议的动作：批准过期的先收掉，批准了的（或 L0/L1 不用批的）交接。交接前检查不过且
+    不是暂时性的：动作记失败，这一步照样续做（不停任务——是不是换个做法由模型判断）。"""
+
+    orchestrator.commit.expire_approvals(mission_id)
+    progressed = False
+    for action in orchestrator.store.list_actions(mission_id, *sorted(HANDOFF_READY_STATES)):
+        if not step_actions.is_step_action(action):
+            continue
+        key = str(action["action_key"])
+        await orchestrator.actions.hand_off(key)
+        after = orchestrator.store.get_action(key)
+        if after is not None and after["state"] in HANDOFF_READY_STATES:
+            reason = orchestrator.actions.last_refusal.get(key, "")
+            if handoff_refusal_transient(reason):
+                continue  # 下一轮再试
+            orchestrator.commit.refuse_step_before_handoff(key, "handoff_refused:" + reason)
+        progressed = True
+    return progressed
 
 
 def advance_operation_outcomes(orchestrator: Any, mission_id: str) -> bool:

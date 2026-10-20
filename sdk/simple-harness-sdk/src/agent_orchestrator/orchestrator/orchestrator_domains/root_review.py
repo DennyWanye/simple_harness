@@ -44,6 +44,7 @@ from ..hierarchical_dispatch import HierarchicalDispatch, append_hierarchical_ev
 from ..operation_runtime import (
     advance_operation_outcomes,
     dispatch_materialized_operations,
+    dispatch_step_actions,
     ensure_assured_proposal_reviews,
     recover_materializations,
 )
@@ -93,6 +94,8 @@ class RootReviewMixin(OrchestratorCore):
         if recover_materializations(self, mission.id):
             return True
         if await dispatch_materialized_operations(self, mission.id):
+            return True
+        if await dispatch_step_actions(self, mission.id):
             return True
         if advance_operation_outcomes(self, mission.id):
             return True

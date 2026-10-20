@@ -37,6 +37,7 @@ from ...deployment.root import current_statements
 from ...governance.budgets import BudgetExhausted
 from ...graph.projection_validation import GraphIntegrityError
 from ...memory.verified_knowledge import KnowledgeIndex
+from ...runtime.connectors import ActionPrepareContext
 from ...runtime.model_router import RoutingUnavailable, classify_turn_error
 from ...runtime.output_blocks import (
     BlockError,
@@ -58,7 +59,7 @@ from ...verification.human_review import (
     review_request_id,
 )
 from ...verification.verifier_router import VERIFIER_VERSION
-from .. import resource_requests
+from .. import resource_requests, step_actions
 from ..action_commits import ActionCommitError
 from ..assurance_review_import import carried_review_alive
 from ..budget_accounts import task_account
@@ -534,6 +535,7 @@ class VerificationMixin(OrchestratorCore):
         envelope: ResultEnvelope,
     ) -> None:
         request = self._attempts.resource_requests.pop(envelope.id, None)
+        proposal = self._attempts.action_requests.pop(envelope.id, None)
         self.commit.record_outcome_result(
             attempt.id,
             envelope=envelope,
@@ -542,6 +544,9 @@ class VerificationMixin(OrchestratorCore):
             resource_request=None
             if request is None
             else self._check_resource_request(mission, task, request),
+            action_request=None
+            if proposal is None
+            else await self._prepare_step_action(mission, task, attempt, proposal),
         )
         self._settle_intent(intent, "SETTLED")
         # Same order as every other outcome: close the intent, then settle (an
@@ -601,6 +606,7 @@ class VerificationMixin(OrchestratorCore):
         claims = self._port_claims_from(raw, attempt)
 
         resource_request = resource_requests.pop_request(raw)  # H10: shape errors are ContractError
+        action_request = step_actions.pop_request(raw)  # 形状不对同样是 ContractError
         client_ids = {raw.get("id"), raw.get("result_id")} - {None}
         if len(client_ids) > 1:
             raise ContractError("result carries both id and result_id with different values")
@@ -629,7 +635,42 @@ class VerificationMixin(OrchestratorCore):
                     "resource_request goes with a blocked / failure / no_progress result, not a candidate"
                 )
             self._attempts.resource_requests[result_id] = resource_request
+        if action_request is not None:
+            if str(envelope.outcome) != "blocked":
+                raise ContractError("action_request goes with a blocked result, not a candidate")
+            self._attempts.action_requests[result_id] = action_request
         return envelope, client_result_id
+
+    async def _prepare_step_action(
+        self, mission: Mission, task: Task, attempt: Attempt, request: Any
+    ) -> dict[str, Any]:
+        """提议进账本之前，在事务外先调连接器的 ``prepare``（应用自己的检查与参数整理）。"""
+
+        connector = self._connectors.get(request.connector)
+        prepared, refusal = (None, None)
+        if connector is not None:
+            prepared, refusal = await step_actions.run_prepare(
+                connector,
+                operation=request.operation,
+                target=request.target,
+                params=request.params,
+                context=ActionPrepareContext(
+                    mission_id=mission.id,
+                    task_id=task.id,
+                    attempt_id=attempt.id,
+                    phase="propose",
+                    principal_id=self._config.tool_call_principal_id,
+                    tenant_id=self._config.tool_call_tenant_id,
+                ),
+                timeout=float(self._config.deployment_policy.connector_timeout_seconds),
+            )
+        return {
+            "request": request,
+            "prepared_params": prepared,
+            "prepare_refusal": refusal,
+            "connectors": self._connectors,
+            "deployment": self._config.deployment_policy,
+        }
 
     def _port_claims_from(self, raw: dict[str, Any], attempt: Attempt) -> tuple[PortClaim, ...]:
         """Pop ``outputs`` off the block and check it, or refuse the block."""

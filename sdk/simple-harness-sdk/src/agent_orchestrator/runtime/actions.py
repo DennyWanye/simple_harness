@@ -26,10 +26,11 @@ from typing import TYPE_CHECKING, Any
 from simple_harness.contracts import canonical_json
 
 from ..observability.secrets import find_secrets
-from ..orchestrator.action_commits import ActionCommitError
+from ..orchestrator import step_actions
+from ..orchestrator.action_commits import MAX_HANDOFFS_PER_ACTION, ActionCommitError
 from ..storage.planning_admission_store import PlanningAdmissionStore
 from . import operation_reconciliation
-from .connectors import ConnectorRejected, Receipt
+from .connectors import ActionPrepareContext, ConnectorRejected, Receipt, params_hash
 from .operation_profiles_generic import is_async
 from .operation_reconciliation import context, stored_negative_proof
 
@@ -117,6 +118,8 @@ class ActionExecutor:
         lease_seconds: float | None = None,
         source_storage_roots: Sequence[Path | str] | None = None,
         require_execution_root: Callable[[], None] | None = None,
+        principal_id: str | None = None,
+        tenant_id: str | None = None,
     ) -> None:
         self._commit = commit
         self._connectors = dict(connectors)
@@ -129,6 +132,8 @@ class ActionExecutor:
             None if source_storage_roots is None else tuple(source_storage_roots)
         )
         self._timeout = float(deployment.connector_timeout_seconds)
+        self._principal_id = principal_id
+        self._tenant_id = tenant_id
         # the lease outlives the call's timeout: a live hand-off is never reconciled early
         self._lease = float(lease_seconds) if lease_seconds is not None else 2 * self._timeout + 5.0
         self._inflight: set[str] = set()
@@ -191,8 +196,40 @@ class ActionExecutor:
             return "source_publish_root_unavailable"
         return "source_publish_root_overlap" if overlaps else None
 
+    async def _step_prepare_before_handoff(self, action_key: str) -> bool:
+        """中途动作：交接前再让连接器整理一次参数，和冻结的不一致就不执行（批准绑定的是冻结的那份）。"""
+
+        action = self._commit.store.get_action(action_key)
+        if action is None or not step_actions.is_step_action(action):
+            return True
+        connector = self._connectors.get(str(action["connector"]))
+        params, refusal = await step_actions.run_prepare(
+            connector,
+            operation=str(action["operation"]),
+            target=str(action["target"]),
+            params=dict(action.get("params") or {}),
+            context=ActionPrepareContext(
+                mission_id=str(action["mission_id"]),
+                task_id=str(action.get("task_id") or ""),
+                attempt_id=str(action.get("attempt_id") or ""),
+                phase="handoff",
+                principal_id=self._principal_id,
+                tenant_id=self._tenant_id,
+            ),
+            timeout=self._timeout,
+        )
+        if refusal is None and params is not None and params_hash(params) != action["params_hash"]:
+            refusal = "prepare_mismatch"
+        if refusal is None:
+            return True
+        self.last_refusal[action_key] = refusal
+        self._commit.refuse_step_before_handoff(action_key, refusal)
+        return False
+
     async def hand_off(self, action_key: str, *, rehandoff: bool = False) -> dict[str, Any] | None:
         self._require_execution_root()
+        if not rehandoff and not await self._step_prepare_before_handoff(action_key):
+            return None
         action, _reason = self._commit.begin_handoff(
             action_key,
             owner=self._owner,
@@ -223,7 +260,12 @@ class ActionExecutor:
                 action_key, owner=self._owner, outcome="failed", error=error_text(error)
             )
         except Exception as error:  # noqa: BLE001 - transport, timeout: it may have happened
-            self._release_when_done(action_key, call)
+            if int(action.get("max_handoffs") or MAX_HANDOFFS_PER_ACTION) <= 1:
+                # 只交接一次：结果不明就等人裁定，从不重发——不必等这次调用真正结束才让循环空闲
+                self._inflight.discard(action_key)
+                self._release_when_done(f"{action_key}:detached", call)
+            else:
+                self._release_when_done(action_key, call)
             return self._commit.record_action_outcome(
                 action_key, owner=self._owner, outcome="unknown", error=error_text(error)
             )
@@ -339,6 +381,11 @@ class ActionExecutor:
             and float(action.get("lease_expires_at") or 0) > store.now
         ):
             return None  # a live hand-off may still be on its way
+        if int(action.get("max_handoffs") or MAX_HANDOFFS_PER_ACTION) <= 1 and not failed:
+            # 只交接一次的动作（没有去重与查询）：不问连接器、不重发，直接等人裁定
+            with store.transaction():
+                require_current()
+                return self._commit.record_reconciliation(key, verdict="STILL_UNKNOWN")
         runtime = getattr(self._commit, "_operation_materialization_runtime", None)
         if runtime is not None:
             if stored_negative_proof(self._commit.store, action):

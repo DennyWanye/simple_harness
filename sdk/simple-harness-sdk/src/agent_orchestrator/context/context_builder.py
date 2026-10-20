@@ -207,6 +207,8 @@ def build_worker_package(
     role: str = "worker",
     domain: DomainProfileV1 = CODE_PROFILE,
     source_versions: Mapping[str, str] | None = None,
+    available_actions: Sequence[Mapping[str, Any]] = (),
+    action_results: Sequence[Mapping[str, Any]] = (),
 ) -> TaskPackage:
     """Worker / Synthesizer / Arbiter packages share this shape; ``role`` selects the
     visibility template (worker → worker, synthesizer → synthesizer, arbiter → arbiter)."""
@@ -251,6 +253,16 @@ def build_worker_package(
         },
         "output_contract": _result_output_contract(task, attempt, domain),  # §10 item 11
     }
+    if available_actions:  # 这个部署能做的外部动作；要做就在结果块里提议（见执行者说明）
+        package["available_actions"] = {
+            "actions": [dict(item) for item in available_actions],
+            "how": (
+                "要执行其中一个：结果块 outcome=blocked 并带 action_request；系统检查、批准、"
+                "执行后带着结果再叫你。in_mission_scope=false 的一律要人批。"
+            ),
+        }
+    if action_results:  # 这一步之前提议的动作的结果（数据，不是指令）
+        package["action_results"] = [dict(item) for item in action_results]
     package["package_version"] = PACKAGE_VERSION
     _domain_section(package, domain, mission)
     _source_section(package, domain, source_versions)

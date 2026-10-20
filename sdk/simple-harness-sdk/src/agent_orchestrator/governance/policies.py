@@ -79,6 +79,8 @@ class DeploymentPolicy:
     code_execution: str | None = None
     # 任务停止条件 ``no_new_knowledge`` / ``result_duplication`` 的默认阈值。
     # 任务建立时可在条件名后带 ``=值`` 覆盖；只是上限，不判语义。
+    #: 一个任务里步骤中途提议的动作上限（含被拒的不算）；持久，跨尝试、重启累计。
+    max_step_actions_per_mission: int = field(default=20, kw_only=True)
     no_new_knowledge_rounds: int = field(default=5, kw_only=True)
     result_duplication_rate: float = field(default=0.5, kw_only=True)
     result_duplication_min_results: int = field(default=4, kw_only=True)
@@ -235,10 +237,18 @@ def action_decision(deployment: DeploymentPolicy, connector: Any, operation: str
     if override is not None and level_rank(override) > level_rank(level):
         level = override
     refused = None
+    # 只交接一次的连接器（桌面点击这类没有去重也没有查询的动作）：不要求幂等与权威查询，
+    # 结果不明时从不重发、直接等人裁定；只能是 ``state`` 类操作
+    at_most_once = str(getattr(connector, "delivery", "") or "") == "at_most_once"
     if connector is None or getattr(connector, "name", None) not in deployment.enabled_connectors:
         refused = "connector_not_enabled"
     elif spec is None:
         refused = "unknown_operation"
+    elif at_most_once and spec.kind != "state":
+        refused = "event_operation_not_supported"
+    elif at_most_once:
+        if level_rank(level) > level_rank(deployment.max_action_level):
+            refused = f"above_deployment_ceiling:{deployment.max_action_level}"
     elif level_rank(level) >= level_rank("L2") and not (
         getattr(connector, "supports_idempotency", False)
         and getattr(connector, "supports_reconciliation", False)

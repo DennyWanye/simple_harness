@@ -51,6 +51,7 @@ from ...runtime.role_templates import role_for_task
 from ...runtime.tool_gateway import TOOL_ANSWER_MARGIN, run_pytest
 from ...storage import htn_store
 from ...storage.store import StoreError
+from .. import step_actions
 from ..action_commits import HANDOFF_READY_STATES, judgment_key
 from ..assurance_point_use import context_claims
 from ..budget_accounts import Reservation, is_global_account, mission_account, task_account
@@ -429,6 +430,17 @@ class AttemptJudgmentMixin(OrchestratorCore):
                 role=role.name,
                 domain=self.commit.domain_for(mission.id),
                 source_versions=source_versions,
+                available_actions=step_actions.available_actions(
+                    self._connectors,
+                    self._config.deployment_policy,
+                    allowed=step_actions.scope_names(mission),
+                ),
+                action_results=[
+                    *step_actions.action_results(self.store, task.id),
+                    *step_actions.refused_request_views(
+                        self.store.list_events(mission.id), task.id
+                    ),
+                ],
             )
         except ContextRejected as error:
             self._commit_stop_task(
@@ -603,6 +615,8 @@ class AttemptJudgmentMixin(OrchestratorCore):
 
         if pending_block(self.store, mission.id) is not None:
             return True
+        if step_actions.pending_step_action(self.store, task.id) is not None:
+            return True  # 这一步提议的动作还没结案：等批准 / 在途 / 等人裁定，不开新尝试
 
         if (
             retry_decision_required(self.store, mission.id, task.id)

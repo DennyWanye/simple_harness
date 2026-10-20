@@ -68,6 +68,19 @@ class ResultCommitsMixin(CommitServiceCore):
             certificate: Any = None,
         ) -> list[dict[str, Any]]: ...
         def _release_attempt_charge(self, attempt: Attempt) -> bool: ...
+        def propose_step_action(
+            self,
+            request: Any,
+            *,
+            mission_id: str,
+            task_id: str,
+            attempt_id: str,
+            result_id: str,
+            prepared_params: Mapping[str, Any] | None,
+            prepare_refusal: str | None,
+            connectors: Mapping[str, Any],
+            deployment: Any,
+        ) -> tuple[dict[str, Any] | None, str | None]: ...
         def _settle_subject(
             self,
             subject_id: str,
@@ -239,6 +252,7 @@ class ResultCommitsMixin(CommitServiceCore):
         turn_id: str,
         usage_refs: Sequence[str],
         resource_request: Mapping[str, Any] | None = None,
+        action_request: Mapping[str, Any] | None = None,
     ) -> StoredResult:
         """A non-candidate Result Envelope (§13 blocked / failure / no_progress /
         proposed_subtasks; D5-5): kept as history (never verified), the Attempt ends in
@@ -298,13 +312,32 @@ class ResultCommitsMixin(CommitServiceCore):
                 self._store.upsert_claim(
                     next_claim(next_claim(claim, ClaimStatus.UNDER_REVIEW), ClaimStatus.REJECTED)
                 )
-            failure = {
+            failure: dict[str, Any] = {
                 "reason": f"outcome_{envelope.outcome}",
                 "summary": envelope.summary,
                 "proposed_tasks": [dict(item) for item in envelope.proposed_tasks],
                 "risks": list(envelope.risks),
                 "result_id": envelope.id,
             }
+            step_action_key: str | None = None
+            if action_request is not None:
+                # 中途提议的动作：和这次结果同一个事务进账本；记在失败里，续做时按它找结果
+                opened, refusal = self.propose_step_action(
+                    action_request["request"],
+                    mission_id=attempt.mission_id,
+                    task_id=attempt.task_id,
+                    attempt_id=attempt_id,
+                    result_id=envelope.id,
+                    prepared_params=action_request.get("prepared_params"),
+                    prepare_refusal=action_request.get("prepare_refusal"),
+                    connectors=action_request["connectors"],
+                    deployment=action_request["deployment"],
+                )
+                # 进了账本记动作号；门口拒了记原因——两种都是"为提议动作而停"，续做不问规划器
+                step_action_key = (
+                    str(opened["action_key"]) if opened is not None else f"refused:{refusal}"
+                )
+                failure["action_request"] = step_action_key
             self._store.update_attempt(
                 next_attempt(
                     attempt, AttemptStatus.RETRY_WAIT, result_id=envelope.id, failure=failure
@@ -333,7 +366,11 @@ class ResultCommitsMixin(CommitServiceCore):
                 key=envelope.id,
                 task_id=attempt.task_id,
                 attempt_id=attempt_id,
-                payload={"outcome": str(envelope.outcome), "summary": envelope.summary[:400]},
+                payload={
+                    "outcome": str(envelope.outcome),
+                    "summary": envelope.summary[:400],
+                    **({"action_request": step_action_key} if step_action_key else {}),
+                },
             )
             if resource_request is not None:
                 # 申请与核的结果，和这次结果同一个事务

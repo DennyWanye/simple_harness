@@ -75,6 +75,9 @@ class AttemptState:
     # 结果块上取下的资源申请，按结果编号暂存到记录这次结果为止
     resource_requests: dict[str, Any] = field(default_factory=dict)
 
+    # 结果块上取下的中途动作提议，同样按结果编号暂存
+    action_requests: dict[str, Any] = field(default_factory=dict)
+
     client_ids: dict[str, str | None] = field(default_factory=dict)
 
     released: set[str] = field(default_factory=set)

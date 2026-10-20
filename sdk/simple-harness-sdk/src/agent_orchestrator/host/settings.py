@@ -84,6 +84,10 @@ class HostSettings:
     publish_dir: str = ""
     #: 外部操作的最高风险等级（L0～L3）。注册了应用连接器时必须写明；没写时只有文件发布，按 L2。
     max_action_level: str | None = None
+    #: 一个任务里步骤中途可提议的动作上限（持久，跨尝试与重启累计）。
+    max_step_actions_per_mission: int = 20
+    #: 连接器一次执行 / 查询 / 整理参数的时限（秒）；超时记"结果不明"，不自动重做。
+    connector_timeout_seconds: float = 30.0
 
     def __post_init__(self) -> None:
         if self.context_input_tokens not in CONTEXT_INPUT_CHOICES:
@@ -96,6 +100,13 @@ class HostSettings:
             raise ValueError("月配额不能小于单个任务的默认上限")
         if self.max_action_level is not None and self.max_action_level not in LEVELS:
             raise ValueError(f"max_action_level 只能是 {LEVELS} 之一")
+        if (
+            type(self.max_step_actions_per_mission) is not int
+            or self.max_step_actions_per_mission < 1
+        ):
+            raise ValueError("max_step_actions_per_mission 必须是正整数")
+        if not float(self.connector_timeout_seconds) > 0:
+            raise ValueError("connector_timeout_seconds 必须是正数")
 
 
 @dataclass(frozen=True)

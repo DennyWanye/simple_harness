@@ -247,6 +247,8 @@ class Orchestrator(
                 self._config.deployment_policy,
                 owner=self._owner,
                 require_execution_root=self._require_assurance_execution_root,
+                principal_id=self._config.tool_call_principal_id,
+                tenant_id=self._config.tool_call_tenant_id,
                 source_storage_roots=(
                     self.assembled.workspaces.artifact_store.root,
                     self.assembled.workspaces.root,

@@ -30,6 +30,14 @@ def require_action_settlement(orchestrator: Any, subject_id: str, mission_id: st
     if len(matches) != 1:
         raise SourceUnavailable("taskgraph_action_settlement_source_missing")
     action = matches[0]
+    if action.get("origin") == "step":
+        # 步骤中途提议的动作没有操作身份链：它的物理结果就是动作行自己记的结案状态
+        # （连接器的回执、明确拒绝、人的裁定）；没结案就还不能结算。
+        if action.get("state") not in {"SUCCEEDED", "FAILED"}:
+            raise BudgetError("TASKGRAPH_ACTION_PHYSICAL_WORK_UNRESOLVED")
+        if orchestrator.commit.ledger.has_unknown_usage(subject_id):
+            raise BudgetError("TASKGRAPH_ACTION_ACCOUNTING_UNRESOLVED")
+        return
     snapshot = build_operation_snapshot(mission_id, reader=StoreOperationReader(store))
     read_operation_producers(store, snapshot)
     links = [link for link in snapshot.links if link.action_key == action["action_key"]]

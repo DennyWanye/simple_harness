@@ -86,6 +86,7 @@ OPEN_FIELDS = frozenset(
         "planning_protocol_version",
         "workspace_seed",
         "domain",  # P3.3 (D1): which domain profile this Mission freezes
+        "allowed_actions",  # 执行中可提议的动作名单（连接器.操作）；名单外的一律要人批
     }
 )
 CLOSED_FIELDS = {
@@ -94,7 +95,7 @@ CLOSED_FIELDS = {
     "task_kind": "not open on this surface",
 }
 OPEN_BUDGET = frozenset({"max_tokens", "max_attempts"})
-LIST_FIELDS = ("stop_conditions", "untrusted_sources")
+LIST_FIELDS = ("stop_conditions", "untrusted_sources", "allowed_actions")
 CLOSED_BUDGET = frozenset(
     {"max_runtime_seconds", "max_concurrency", "max_tool_calls", "max_agents", "max_search_calls"}
 )
@@ -1070,6 +1071,19 @@ class MissionControlV1:
         }
 
     @_native_root
+    def step_actions(self, mission_id: str) -> list[dict[str, Any]]:
+        """步骤中途提议的动作：动作行（去掉内部字段）按时间排序。"""
+
+        self._mission(mission_id)
+        rows = [
+            action
+            for action in self._store.list_actions(str(mission_id))
+            if action.get("origin") == "step"
+        ]
+        rows.sort(key=lambda row: (float(row.get("created_at") or 0.0), str(row["action_key"])))
+        hidden = {"history", "decision_receipts", "reservation_subject"}
+        return [{k: v for k, v in row.items() if k not in hidden} for row in rows]
+
     def approvals(self, mission_id: str | None = None) -> list[dict[str, Any]]:
         if mission_id is not None:
             self._mission(mission_id)

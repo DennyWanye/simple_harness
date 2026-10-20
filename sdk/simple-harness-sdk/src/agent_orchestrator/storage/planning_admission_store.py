@@ -119,8 +119,13 @@ class PlanningAdmissionStore:
         return [dict(row) for row in rows]
 
     def list_operation_actions(self, mission_id: str) -> list[dict[str, Any]]:
+        """按要求准备的动作（有操作身份与链接的那些）；步骤中途提议的动作不在这里——它们的
+        冻结凭据是动作行本身，不走操作身份链。"""
+
         rows = self._store.connection.execute(
-            "SELECT action_key,json FROM actions WHERE mission_id=? ORDER BY created_at,action_key",
+            "SELECT action_key,json FROM actions WHERE mission_id=?"
+            " AND COALESCE(json_extract(json, '$.origin'), '') != 'step'"
+            " ORDER BY created_at,action_key",
             (str(mission_id),),
         ).fetchall()
         return [json.loads(row[1]) for row in rows]

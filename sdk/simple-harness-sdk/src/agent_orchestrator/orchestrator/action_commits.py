@@ -50,6 +50,7 @@ from ..storage import htn_store
 from ..storage.operation_intent_store import OperationIntentStore
 from ..storage.planning_admission_store import PlanningAdmissionStore
 from ..storage.store import StoreConflict
+from . import step_actions
 from .assurance_point_use import (
     ACTION_CONSUMER,
     EvidenceClaim,
@@ -508,6 +509,198 @@ class ActionCommitsMixin:
                 self._link_planning_origin(opened, planning_origin)
             return opened
 
+    # ------------------------------------------------------------ step proposals
+    def propose_step_action(
+        self,
+        request: step_actions.ActionRequest,
+        *,
+        mission_id: str,
+        task_id: str,
+        attempt_id: str,
+        result_id: str,
+        prepared_params: Mapping[str, Any] | None,
+        prepare_refusal: str | None,
+        connectors: Mapping[str, Any],
+        deployment: DeploymentPolicy,
+    ) -> tuple[dict[str, Any] | None, str | None]:
+        """步骤中途提议的动作进账本（在记这次结果的同一个事务里调）：连接器与操作存在、风险不超上限、
+        每个任务的提议上限；名单（``allowed_actions``）外的一律要人批。返回 ``(动作行, None)`` 或
+        ``(None, 拒绝原因)``；拒绝写 ``StepActionRefused`` 事件，模型下次看得到。"""
+
+        mission = self._store.get_mission(mission_id)
+        if mission is None or mission.status is not MissionStatus.ACTIVE:
+            return self._refuse_step_action(
+                request, mission_id, task_id, attempt_id, "mission_not_active"
+            )
+        if prepare_refusal is not None:
+            return self._refuse_step_action(
+                request, mission_id, task_id, attempt_id, prepare_refusal
+            )
+        connector = connectors.get(request.connector)
+        if request.connector == PUBLISH[0]:
+            # 内置发布连接器的参数是按产物引用解析的，只走建任务时写的要求
+            return self._refuse_step_action(
+                request, mission_id, task_id, attempt_id, "connector_not_proposable"
+            )
+        decision = action_decision(deployment, connector, request.operation)
+        if decision.refused is not None:
+            return self._refuse_step_action(
+                request, mission_id, task_id, attempt_id, decision.refused
+            )
+        assert connector is not None  # 没拒就有连接器
+        spec = connector.operations[request.operation]
+        params = dict(prepared_params if prepared_params is not None else request.params)
+        missing = [name for name in getattr(spec, "required_params", ()) if name not in params]
+        if missing:
+            return self._refuse_step_action(
+                request, mission_id, task_id, attempt_id, "missing_params:" + ",".join(missing)
+            )
+        proposed = [
+            a
+            for a in self._store.list_actions(mission_id)
+            if step_actions.is_step_action(a) and a.get("state") != "REFUSED"
+        ]
+        action_id = step_actions.step_action_id(mission_id, result_id, request)
+        versions = self._store.list_action_versions(action_id)
+        if versions:
+            return versions[-1], None  # 同一结果再记一次：同一个动作
+        if len(proposed) >= int(deployment.max_step_actions_per_mission):
+            return self._refuse_step_action(
+                request, mission_id, task_id, attempt_id, "step_action_cap"
+            )
+        target = _normalize(connector, request.target)
+        in_scope = f"{request.connector}.{request.operation}" in step_actions.scope_names(mission)
+        if not in_scope:
+            # 超出任务授权范围：不丢，但必须有人批，自动模式也不代批
+            decision = ActionDecision(
+                level=decision.level,
+                required_approvals=max(1, decision.required_approvals),
+                refused=None,
+                person_required=True,
+            )
+        phash = params_hash(params)
+        record: dict[str, Any] = {
+            "action_key": f"{action_id}:v1",
+            "action_id": action_id,
+            "version": 1,
+            "origin": step_actions.ORIGIN,
+            "request_id": f"step-request-{result_id}",
+            "out_of_scope": not in_scope,
+            "mission_id": mission_id,
+            "task_id": task_id,
+            "result_id": result_id,
+            "attempt_id": attempt_id,
+            "artifact_id": "",
+            "artifact_hash": "",
+            "connector": request.connector,
+            "operation": request.operation,
+            "target": target,
+            "params": params,
+            "params_hash": phash,
+            "reason": request.reason,
+            "reason_source": "model (untrusted)",
+            "level": decision.level,
+            "required_approvals": decision.required_approvals,
+            "idempotency_key": f"{action_id}:v1",
+            "approval_request_id": None,
+            "after": None,
+            "handoffs": 0,
+            # 只交接一次的连接器：结果不明从不重发
+            "max_handoffs": (
+                1
+                if step_actions.delivery_of(connector) == step_actions.AT_MOST_ONCE
+                else MAX_HANDOFFS_PER_ACTION
+            ),
+            "receipt": None,
+            "history": [],
+            "created_at": self._store.now,
+        }
+        opened = self._open_action(
+            record,
+            decision,
+            deployment=deployment,
+            payload={"origin": step_actions.ORIGIN, "out_of_scope": not in_scope},
+        )
+        self._emit(
+            step_actions.REQUESTED,
+            mission_id,
+            key=record["request_id"],
+            task_id=task_id,
+            attempt_id=attempt_id,
+            payload={
+                "request_id": record["request_id"],
+                "action_key": record["action_key"],
+                "request": request.to_json(),
+                "params_hash": phash,
+                "level": decision.level,
+                "out_of_scope": not in_scope,
+                "person_required": decision.person_required,
+                "approval_request_id": opened.get("approval_request_id"),
+            },
+            actor_type="agent",
+            actor_id=attempt_id,
+        )
+        return opened, None
+
+    def _refuse_step_action(
+        self,
+        request: step_actions.ActionRequest,
+        mission_id: str,
+        task_id: str,
+        attempt_id: str,
+        reason: str,
+    ) -> tuple[None, str]:
+        self._emit(
+            step_actions.REFUSED,
+            mission_id,
+            key=f"step-refused-{attempt_id}-{hashlib.sha256(reason.encode()).hexdigest()[:8]}",
+            task_id=task_id,
+            attempt_id=attempt_id,
+            payload={"request": request.to_json(), "reason": reason},
+        )
+        return None, reason
+
+    def _step_handoff_refusal(self, action: Mapping[str, Any]) -> str | None:
+        """中途动作交接前：这一步还在当前计划里、没被验收、没被取消或暂停。"""
+
+        task = self._store.get_task(str(action["task_id"]))
+        if task is None or task.mission_id != action["mission_id"]:
+            return "step_task_missing"
+        if task.accepted_result_id:
+            return "step_task_accepted"
+        if str(task.status) not in {"READY", "ACTIVE", "VERIFYING"} or task.paused:
+            return f"step_task_not_active:{task.status}"
+        htn = htn_store.HtnStore(self._store)
+        active = htn.active_plan_revision(str(action["mission_id"]))
+        if active is None:
+            return "step_not_in_current_plan"
+        memberships = htn.list_plan_memberships(str(action["mission_id"]), int(active.revision))
+        if not any(str(spec.task_id) == task.id for spec in memberships):
+            return "step_not_in_current_plan"
+        return None
+
+    def refuse_step_before_handoff(self, action_key: str, reason: str) -> dict[str, Any]:
+        """一个中途动作在交接前就不能执行了（交接前检查不过、再次整理的参数对不上）：记 FAILED，
+        带原因；这一步照样续做，模型看得到为什么。"""
+
+        with self._store.transaction():
+            action = self._store.get_action(action_key)
+            if action is None:
+                raise ActionCommitError(f"unknown action {action_key}")
+            if action["state"] not in HANDOFF_READY_STATES:
+                return action
+            if action.get("approval_request_id"):
+                request = self._store.get_approval(str(action["approval_request_id"]))
+                if request is not None and request["state"] in {"PENDING", "GRANTED"}:
+                    request.update(
+                        state="SUPERSEDED",
+                        closed_at=self._store.now,
+                        version=int(request["version"]) + 1,
+                        reason=reason,
+                    )
+                    self._store.put_approval(request)
+            return self._resolve_action(action, "FAILED", error=reason)
+
     def _link_planning_origin(
         self, action: Mapping[str, Any], origin: BoundPlanningOperationOrigin
     ) -> dict[str, Any]:
@@ -625,6 +818,17 @@ class ActionCommitsMixin:
                         "reason": record["reason"],
                         # 2026-09-29：系统按已批准效果写的申请单理由不是模型写的，卡片不该标"未核实"
                         "reason_source": record.get("reason_source", "model (untrusted)"),
+                        # 步骤中途提议的动作：卡片要能看出来是哪一步提的、在不在任务授权范围内
+                        **(
+                            {
+                                "origin": record["origin"],
+                                "task_id": record.get("task_id"),
+                                "out_of_scope": bool(record.get("out_of_scope")),
+                                "request_id": record.get("request_id"),
+                            }
+                            if record.get("origin")
+                            else {}
+                        ),
                         **(
                             {"previous_attempt": record["previous_attempt"]}
                             if record.get("previous_attempt")
@@ -981,11 +1185,15 @@ class ActionCommitsMixin:
                 except StoreConflict:
                     reason = "taskgraph_target_fenced"
             start_use = None
-            if reason is None and action.get("task_id"):
+            step = step_actions.is_step_action(action)
+            if reason is None and step:
+                reason = self._step_handoff_refusal(action)
+            if reason is None and action.get("task_id") and not step:
                 start_use, reason = self._start_use(action)
-            # Every action is linked to the operation it was materialised from (2026-10-02:
-            # the flat mode, whose actions carried no link, was removed).
-            if reason is None:
+            # Every requirement action is linked to the operation it was materialised from
+            # (2026-10-02: the flat mode, whose actions carried no link, was removed); a step
+            # proposal is its own frozen request (the row), checked above.
+            if reason is None and not step:
                 bridge = PlanningAdmissionStore(self._store).get_operation_action_link_for_action(
                     str(action_key)
                 )
@@ -1053,7 +1261,6 @@ class ActionCommitsMixin:
                 reason = deployment_guard(action)
             subject = f"action:{action_key}"
             if reason is None:
-                spec = connectors[str(action["connector"])].operations[str(action["operation"])]
                 try:  # re-hand-off finds the held reservation (idempotent per subject)
                     self._ledger.reserve(
                         account_id=mission_account(str(action["mission_id"])),
@@ -1134,7 +1341,9 @@ class ActionCommitsMixin:
         if rehandoff:
             if action["state"] != "UNKNOWN" or action.get("reconcile") != "CONFIRMED_NOT_STARTED":
                 return "rehandoff_needs_confirmed_not_started"
-            if int(action.get("handoffs") or 0) >= MAX_HANDOFFS_PER_ACTION:
+            if int(action.get("handoffs") or 0) >= int(
+                action.get("max_handoffs") or MAX_HANDOFFS_PER_ACTION
+            ):
                 return "rehandoff_exhausted"
         elif action["state"] not in HANDOFF_READY_STATES:
             return f"not_ready:{action['state']}"
@@ -1162,11 +1371,12 @@ class ActionCommitsMixin:
                 return "approval_expired"
             if not binding_matches(request, action):
                 return "binding_mismatch"
-        if not rehandoff:
+        if not rehandoff and not step_actions.is_step_action(action):
+            # 要求动作的交接上限；步骤中途提议的动作有自己的上限（提议时核），不占这个额度
             started = sum(
                 1
                 for a in self._store.list_actions(str(action["mission_id"]))
-                if int(a.get("handoffs") or 0) > 0
+                if int(a.get("handoffs") or 0) > 0 and not step_actions.is_step_action(a)
             )
             if started >= int(deployment.max_action_handoffs_per_mission):
                 return "handoff_cap_reached"

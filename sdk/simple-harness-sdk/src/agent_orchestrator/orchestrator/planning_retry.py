@@ -21,6 +21,7 @@ from ..runtime.planning_operations import (
 from ..storage.htn_store import HtnStore
 from ..storage.planning_decision_store import PlanningDecisionStore
 from ..storage.store import StoreError
+from . import step_actions
 
 RETRY_AUTHORIZED = "PlanningRetryAuthorized"
 
@@ -168,6 +169,8 @@ def retry_decision_required(store: Any, mission_id: str, task_id: str) -> bool:
         and latest.failure
         and str(latest.status) not in {"CANCELLED", "SUPERSEDED"}
         and not _failed_in_an_older_generation(store, mission_id, task_id, latest)
+        # 为提议动作而停、动作已结案：原样续做是系统的事，不是规划器要批的失败修复
+        and not step_actions.continuation_ready(store, latest)
     )
 
 

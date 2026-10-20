@@ -742,6 +742,7 @@ P3.3 G进行中：Host已接入原子文档创建、来源版本审批、绑定�
   - **元数据可读**：放行 stat 才能让 venv 的软链解析正常，代价是沙箱里的代码能探测任意路径是否存在、大小与修改时间，但读不到内容。
   - **用到的是已废弃且无公开文档的接口**：seatbelt 与 `sandbox_check`（Chromium、WebKit 也在用）。每次启动由探针重新验证；探针不过就退回 `off`。
   - **Linux（bubblewrap，2026-10-20）**：要装 `bwrap` 且内核允许普通用户开用户命名空间；Ubuntu 23.10+ 要装只放行 bwrap 的 AppArmor 规则（SDK 不改系统设置，检查命令打印规则）。进程归属按进程命名空间，不靠 `ps`/`lsof`；内存与进程数同样是软限制，没用 cgroup。只在 Linux ARM64 虚拟机实测，手机真机未测。2026-10-21（opt.201）：隔离区改两步建——外层 bwrap 只建用户命名空间并禁止再建，内层 bwrap 建进程、网络、IPC、UTS 命名空间（AIPhone 报 Droidian 4.14 同时建用户与进程命名空间后挂 /proc 报 EBUSY）；宿主给 bwrap 设 no_new_privs；bwrap 需 0.8 以上；Linux 启动检查加"特权"一项（开不了新用户命名空间、自身与 exec 出的子进程无能力位），共 9 项；内核没有 pidfd 时收尾先核对命名空间再发信号（测试模拟 ENOSYS）。虚拟机用假 bwrap 模拟手机内核规则实测通过，手机待 AIPhone 实测。
+- **步骤中途提议动作（2026-10-21，opt.202）**：执行步骤的模型在结果块里写 `action_request`（outcome=blocked）提议外部动作；连接器可选 `prepare` 整理参数；与结果同一事务进动作账本（origin=step），批准绑定冻结的参数；建任务 `allowed_actions` 名单外的一律要人批；交接前再 `prepare` 一次，不一致不执行；动作结案后同一步续做、不问规划器；`delivery="at_most_once"` 连接器只交接一次、结果不明直接等人裁定；宿主 `step_actions()`、`max_step_actions_per_mission`、`connector_timeout_seconds`；执行者提示词 worker-hierarchical-v8。接入说明 §4c。
   - **回收耗时受外部工具影响**：认进程要靠 `ps`，不隔离模式还要靠 `lsof`，两者都有单次超时，但极端情况下一次回收仍可能偏慢；正确性不受影响。
 
 ## 11. NanoJev 决策接缝（PR-7，Shadow-only）

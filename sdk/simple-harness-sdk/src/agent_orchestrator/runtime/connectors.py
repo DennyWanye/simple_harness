@@ -166,6 +166,19 @@ def human_ruling_in(receipt: Receipt) -> Mapping[str, Any] | None:
     return None
 
 
+@dataclass(frozen=True, slots=True)
+class ActionPrepareContext:
+    """连接器 ``prepare`` 拿到的可信上下文（全部由 SDK 填写）。``phase`` 是 ``propose``（提议进账本
+    之前）或 ``handoff``（批准后、交给连接器执行之前）。"""
+
+    mission_id: str
+    task_id: str
+    attempt_id: str
+    phase: str
+    principal_id: str | None = None
+    tenant_id: str | None = None
+
+
 class Connector(Protocol):
     """``supports_reconciliation`` says a ``lookup`` can be asked at all; how much its
     answer is worth is ``lookup_authority`` (P3.2 plan v3 D7, review round 2 P2-6):
@@ -186,6 +199,15 @@ class Connector(Protocol):
 
     ``execute`` 与 ``lookup`` 可以是普通函数（在线程里跑）或 ``async def``（在宿主事件循环上
     跑，里面不能做阻塞操作）。``execute`` 里不能"等人"：要人批准用 SDK 的审批（manual 模式）。
+
+    ``delivery``（可选）：``"at_most_once"`` 表示这个连接器既不能去重也不能查询（桌面点击这类），
+    每个动作只交接一次，结果不明从不重发、直接等人裁定；``lookup`` 可以不实现。
+
+    ``prepare(operation, target, params, *, context)``（可选，普通函数或 ``async def``）：步骤中途
+    提议的动作进账本之前、以及批准后交接之前各调一次。应用在这里做自己的检查（路径、角色、设备
+    能力）并整理参数：返回整理后的参数（一个 JSON 对象）或 ``None``（原样）；抛
+    :class:`ConnectorRejected` 表示拒绝这个提议。两次整理结果必须一致，否则不执行。超时或别的
+    异常一律不执行。
     """
 
     name: str
@@ -205,6 +227,7 @@ class Connector(Protocol):
 
 __all__ = (
     "LEVELS",
+    "ActionPrepareContext",
     "Connector",
     "ConnectorRejected",
     "ConnectorTransportError",
