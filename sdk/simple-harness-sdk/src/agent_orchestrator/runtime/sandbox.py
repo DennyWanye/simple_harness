@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: Apache-2.0
 
-"""The sandbox executor port and its two adapters (P3.2 plan v3 D1 / D2; plan review
+"""The sandbox executor port and its adapters (P3.2 plan v3 D1 / D2; plan review
 round 1 P0-2 / P1-2 / P1-3 / P1-4, round 2 P1-2 / P2-1 / P2-9).
 
 Every piece of model-written code this build runs — ``run_tests``, the ``code_test`` layer,
@@ -22,15 +22,23 @@ closed descriptors).  ``ProcessOnlyExecutor`` is not a sandbox and says so
 (``isolated=False``): it follows the parent chain and the run's directory, and a full
 daemonize can leave it — for trusted code only.
 
+``BwrapExecutor``（Linux，bubblewrap）给同样的保证：每次运行一套新的用户/进程/网络/IPC
+命名空间，根目录是空的、只读的，只读挂解释器算出来的白名单，可写的只有本次的副本和草稿目录。
+进程归属按 *进程命名空间*：命名空间里的进程逃不出去（``setsid``、两次 fork 都还在里面），
+杀掉命名空间的第一个进程，内核就把里面的进程全部结束；宿主死了，``--die-with-parent``
+让整个隔离区跟着结束。
+
 Honest limits (plan §2): CPU time and file size are hard limits (``setrlimit``, inherited
 by every descendant); memory and the process count are *soft* limits — sampled while the
 run lasts and enforced by reaping, because this platform has no cgroups, ``RLIMIT_AS`` /
 ``RLIMIT_DATA`` cannot be set and ``RLIMIT_NPROC`` counts every process of the user.
+Linux 上同样按软限制做：手机上的 cgroup 一般不能委派给普通用户。
 """
 
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import ctypes
 import fcntl
 import hashlib
@@ -39,6 +47,7 @@ import logging
 import os
 import pwd
 import resource
+import select
 import shutil
 import signal
 import socket
@@ -65,6 +74,28 @@ DEFAULT_PATH = "/usr/bin:/bin"
 SYSTEM_READ_PATHS = ("/System", "/usr", "/bin", "/private/etc", "/private/var/db/timezone")
 DEVICE_READ_LITERALS = ("/dev/null", "/dev/zero", "/dev/random", "/dev/urandom")
 PROBE_SECRET = "P32-PROBE-SECRET"
+
+LINUX = sys.platform.startswith("linux")
+PROC = Path("/proc")
+# Linux 隔离区里只读挂的系统位置：动态链接器与库、时区、用户名解析；存在的才挂，是链接的照原样
+# 建链接。别的 /etc 内容（凭据、主机配置）不挂。
+LINUX_SYSTEM_READ_PATHS = (
+    "/usr",
+    "/bin",
+    "/sbin",
+    "/lib",
+    "/lib32",
+    "/lib64",
+    "/libx32",
+    "/etc/ld.so.cache",
+    "/etc/ld.so.conf",
+    "/etc/ld.so.conf.d",
+    "/etc/localtime",
+    "/etc/alternatives",
+    "/etc/nsswitch.conf",
+    "/etc/passwd",
+    "/etc/group",
+)
 
 
 class SandboxUnavailable(RuntimeError):
@@ -113,7 +144,7 @@ class SandboxSpec:
 @dataclass(frozen=True, slots=True)
 class ExecutionReceipt:
     execution_id: str
-    kind: str  # seatbelt | process_only
+    kind: str  # seatbelt | bwrap | process_only | 应用自带执行器的种类
     isolated: bool
     environment_digest: str
     effective_limits: Mapping[str, Any]
@@ -168,6 +199,8 @@ class _Proc:
 
 
 def _process_table(*, strict: bool = False, timeout: float = 10) -> list[_Proc]:
+    if LINUX:
+        return _linux_process_table(strict=strict)
     try:
         completed = subprocess.run(
             [PS, "-A", "-o", "pid=,ppid=,uid=,rss=,stat="],
@@ -202,6 +235,87 @@ def _process_table(*, strict: bool = False, timeout: float = 10) -> list[_Proc]:
     if strict and not any(proc.pid == os.getpid() for proc in table):
         raise SandboxUnavailable("process inventory incomplete")
     return table
+
+
+def _boot_id() -> str:
+    try:
+        return (PROC / "sys" / "kernel" / "random" / "boot_id").read_text().strip()
+    except OSError:
+        return ""
+
+
+def _proc_stat(pid: int) -> list[str] | None:
+    """``/proc/<pid>/stat`` 里命令名之后的字段（第 0 个是状态，第 1 个父进程号，第 2 个进程组，
+    第 3 个会话，第 19 个启动时刻，第 21 个常驻页数）；进程不在了返回 ``None``。命令名可能带空格
+    和括号，所以按最后一个右括号切。"""
+
+    try:
+        raw = (PROC / str(pid) / "stat").read_bytes().decode("utf-8", "replace")
+    except (FileNotFoundError, ProcessLookupError):
+        return None
+    return raw.rpartition(")")[2].split()
+
+
+def _linux_process_table(*, strict: bool) -> list[_Proc]:
+    """Linux 不靠 ``ps``（手机上可能是 busybox，不认 ``-o``）：直接读 ``/proc``。"""
+
+    page_kb = max(1, os.sysconf("SC_PAGE_SIZE") // 1024)
+    try:
+        names = os.listdir(PROC)
+    except OSError as error:
+        if strict:
+            raise SandboxUnavailable("process inventory unavailable") from error
+        return []
+    table = []
+    for name in names:
+        if not name.isdigit():
+            continue
+        try:
+            fields = _proc_stat(int(name))
+            uid = os.stat(PROC / name).st_uid
+        except OSError:
+            continue  # 刚结束，或被 hidepid 藏起来的别人的进程
+        if fields is None:
+            continue
+        try:
+            table.append(
+                _Proc(int(name), int(fields[1]), uid, int(fields[21]) * page_kb, fields[0] in "ZX")
+            )
+        except (IndexError, ValueError) as error:
+            if strict:
+                raise SandboxUnavailable("process inventory contains an invalid row") from error
+    if strict and not any(proc.pid == os.getpid() for proc in table):
+        raise SandboxUnavailable("process inventory incomplete")
+    return table
+
+
+def _pid_namespace(pid: int) -> str | None:
+    try:
+        return os.readlink(PROC / str(pid) / "ns" / "pid")
+    except OSError:
+        return None
+
+
+def _namespace_members(namespace: str) -> set[int]:
+    """此刻在进程命名空间 ``namespace``（``pid:[编号]``）里、还活着的进程（宿主视角的进程号）。
+    不按用户过滤：隔离区里的进程可以把自己设成不可转储，``/proc`` 属主就变成 root；读命名空间
+    链接仍然允许，因为宿主是那个用户命名空间的主人。"""
+
+    try:
+        names = os.listdir(PROC)
+    except OSError as error:
+        raise SandboxUnavailable("process inventory unavailable") from error
+    members = set()
+    for name in names:
+        if not name.isdigit() or _pid_namespace(int(name)) != namespace:
+            continue
+        try:
+            fields = _proc_stat(int(name))
+        except OSError:
+            fields = ["?"]  # 在命名空间里却读不到状态：按活着算，宁可多收
+        if fields is not None and fields[0] not in "ZX":
+            members.add(int(name))
+    return members
 
 
 def _descendants(table: Sequence[_Proc], root: int) -> set[int]:
@@ -267,9 +381,12 @@ class SandboxExecutionLedger(Protocol):
 
 
 def process_identity(pid: int) -> dict[str, Any] | None:
-    """这一刻进程号 ``pid`` 的身份（只做 macOS，用户决定 A#9）：进程组、会话、启动时间、命令行。
-    进程不在了返回 ``None``；``ps`` 本身不可用抛 :class:`SandboxUnavailable`。"""
+    """这一刻进程号 ``pid`` 的身份：进程组、会话、启动时间、命令行。进程不在了返回 ``None``；
+    查不了抛 :class:`SandboxUnavailable`。Linux 读 ``/proc``，启动时间是"开机号:开机后节拍数"，
+    重启后不会和旧记录相等。"""
 
+    if LINUX:
+        return _linux_process_identity(pid)
     try:
         completed = subprocess.run(
             [PS, "-p", str(int(pid)), "-o", "lstart=,command="],
@@ -299,6 +416,25 @@ def process_identity(pid: int) -> dict[str, Any] | None:
         "process_started_at": " ".join(parts[:5]),
         "command": " ".join(parts[5:]),
     }
+
+
+def _linux_process_identity(pid: int) -> dict[str, Any] | None:
+    try:
+        fields = _proc_stat(int(pid))
+        if fields is None or fields[0] in "ZX":
+            return None  # 僵尸进程已经结束，只差父进程收尸
+        try:
+            command = (PROC / str(int(pid)) / "cmdline").read_bytes()
+        except (FileNotFoundError, ProcessLookupError):
+            command = b""
+        return {
+            "process_group": int(fields[2]),
+            "session_id": int(fields[3]),
+            "process_started_at": f"{_boot_id()}:{fields[19]}",
+            "command": command.replace(b"\0", b" ").decode("utf-8", "replace").strip(),
+        }
+    except (OSError, IndexError, ValueError) as error:
+        raise SandboxUnavailable("process identity query unavailable") from error
 
 
 def identity_matches(recorded: Mapping[str, Any], current: Mapping[str, Any]) -> bool:
@@ -433,6 +569,20 @@ class _Executor:
     def _survivors(self, run: _Run) -> set[int]:
         raise NotImplementedError
 
+    def _spawn_options(self, run: _Run) -> dict[str, Any]:
+        """额外的启动参数（例如交给子进程的描述符）；在 ``_argv`` 之前调用。"""
+
+        return {}
+
+    async def _started(self, run: _Run) -> None:
+        """子进程起来之后、记账之前：读隔离区的归属信息。抛错 = 这次启动不能确认。"""
+
+    def _kill_member(self, run: _Run, pid: int) -> None:
+        self._kill(pid)
+
+    def _cpu_limited(self, returncode: int | None) -> bool:
+        return returncode == -signal.SIGXCPU
+
     # the run ----------------------------------------------------------------
     async def execute(
         self, command: Sequence[str], *, cwd: str, spec: SandboxSpec
@@ -456,17 +606,7 @@ class _Executor:
         residual: set[int] = set()
         recorded = False
         try:
-            process = await asyncio.create_subprocess_exec(
-                *self._argv(command, run),
-                cwd=str(run.cwd),
-                env=env,
-                stdin=asyncio.subprocess.DEVNULL,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.STDOUT,
-                start_new_session=True,
-                preexec_fn=_preexec(spec.cpu_seconds, spec.max_file_bytes),
-            )
-            run.root_pid = process.pid
+            process = await self._spawn(command, run, env, spec)
             recorded = self._record_start(run, command, process.pid)
             assert process.stdout is not None
             reader = asyncio.ensure_future(tail.drain(process.stdout))
@@ -503,10 +643,11 @@ class _Executor:
             except TimeoutError:  # a survivor still holds the pipe: keep what was read
                 reader.cancel()
         finally:
+            run.close_descriptors()
             run.close(clean=safe_to_delete)
             if recorded:
                 self._record_finish(run.execution_id, "residual" if residual else "exited")
-        if limit is None and returncode == -signal.SIGXCPU:
+        if limit is None and self._cpu_limited(returncode):
             limit = "cpu"
         output, truncated = tail.text()
         return ExecutionReceipt(
@@ -524,6 +665,34 @@ class _Executor:
             residual_pids=tuple(sorted(residual)),
             status="ok" if not residual else "error",
         )
+
+    async def _spawn(
+        self, command: Sequence[str], run: _Run, env: Mapping[str, str], spec: SandboxSpec
+    ) -> asyncio.subprocess.Process:
+        """起子进程并确认隔离区归属；确认不了就先收掉刚起的进程再报不可用。"""
+
+        spawn_options = self._spawn_options(run)
+        process = await asyncio.create_subprocess_exec(
+            *self._argv(command, run),
+            cwd=str(run.cwd),
+            env=dict(env),
+            stdin=asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+            start_new_session=True,
+            preexec_fn=_preexec(spec.cpu_seconds, spec.max_file_bytes),
+            **spawn_options,
+        )
+        run.root_pid = process.pid
+        try:
+            await self._started(run)
+        except asyncio.CancelledError:
+            await asyncio.shield(asyncio.to_thread(self._reap, run, root_alive=True))
+            raise
+        except Exception as error:  # noqa: BLE001 - 归属不明的运行不许继续
+            await asyncio.to_thread(self._reap, run, root_alive=True)
+            raise SandboxUnavailable("the sandbox start could not be confirmed") from error
+        return process
 
     def _record_start(self, run: _Run, command: Sequence[str], pid: int) -> bool:
         """子进程一起来就把身份与回收材料落账（§14.4）。账本写不进去：先把刚起的进程组收掉，
@@ -585,7 +754,7 @@ class _Executor:
             if not survivors:
                 return set()
             for pid in survivors:
-                self._kill(pid)
+                self._kill_member(run, pid)
             time.sleep(0.05)
         return self._survivors(run)
 
@@ -603,6 +772,13 @@ class _Run:
     index: Path | None = None
     owner_fd: int | None = None
     identity: dict[str, Any] | None = None
+    #: 交给子进程的描述符（Linux：bwrap 的信息管道），运行结束必关。
+    descriptors: list[int] = field(default_factory=list)
+    #: Linux：隔离区的进程命名空间（``pid:[编号]``）与它的第一个进程。
+    pid_namespace: str | None = None
+    init_pid: int | None = None
+    #: Linux：bwrap 写隔离区信息的管道（读端、写端）。
+    info_pipe: tuple[int, int] | None = None
 
     @property
     def canary(self) -> Path:
@@ -651,6 +827,11 @@ class _Run:
             os.close(self.owner_fd)
             self.owner_fd = None
             raise
+
+    def close_descriptors(self) -> None:
+        while self.descriptors:
+            with contextlib.suppress(OSError):
+                os.close(self.descriptors.pop())
 
     def close(self, *, clean: bool = True) -> None:
         try:
@@ -757,11 +938,12 @@ def recover_workspace_executions(
     max_sweeps: int = 6,
     timeout_seconds: float = 5,
 ) -> list[dict[str, Any]]:
-    """Cold seatbelt cleanup, with no PID/parent-tree authority from the dead host.
+    """Cold sandbox cleanup, with no PID/parent-tree authority from the dead host.
 
     Each active executor holds a non-inherited flock. Only an orphan can be claimed;
-    every signal is based on the original canary/decoy sandbox identity. Failed scans
-    or surviving members retain the identity and copy, with an explicit receipt.
+    every signal is based on the original sandbox identity (seatbelt: the canary/decoy
+    pair; bwrap: boot id + the namespace's first process + the pid namespace). Failed
+    scans or surviving members retain the identity and copy, with an explicit receipt.
     """
     reports: list[dict[str, Any]] = []
     root = root.resolve()
@@ -778,7 +960,7 @@ def recover_workspace_executions(
             cwd, scratch, marks = (Path(identity[key]) for key in ("cwd", "scratch", "marks"))
             if (
                 identity["schema_version"] != 1
-                or identity["kind"] != "seatbelt"
+                or identity["kind"] not in ("seatbelt", "bwrap")
                 or identity["uid"] != os.getuid()
                 or _digest(body) != identity["identity_sha256"]
                 or index.name != f"{execution_id}.run.json"
@@ -812,8 +994,11 @@ def recover_workspace_executions(
                 raise ValueError("sandbox recovery identity differs from original marks")
             if not all((marks / name).is_file() for name in ("canary", "decoy")):
                 raise ValueError("original sandbox identity marks are missing")
-            run = _Run(execution_id, cwd, scratch, marks, pwd.getpwuid(os.getuid()).pw_name)
             deadline = time.monotonic() + timeout_seconds
+            if identity["kind"] == "bwrap":
+                reports.append(_cold_bwrap_cleanup(index, identity, marks, deadline))
+                continue
+            run = _Run(execution_id, cwd, scratch, marks, pwd.getpwuid(os.getuid()).pw_name)
             for sweep in range(max_sweeps + 1):
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
@@ -889,6 +1074,8 @@ class ProcessOnlyExecutor(_Executor):
 def _holding(directory: Path) -> set[int]:
     """Processes of this user whose cwd or an open file lies in ``directory``."""
 
+    if LINUX:
+        return _linux_holding(directory)
     if not Path(LSOF).exists():
         return set()
     try:
@@ -905,6 +1092,32 @@ def _holding(directory: Path) -> set[int]:
     except (OSError, subprocess.SubprocessError):
         return set()
     return {int(line) for line in out.split() if line.strip().isdigit()}
+
+
+def _linux_holding(directory: Path) -> set[int]:
+    """Linux 没有 ``lsof`` 也行：读本用户进程的 ``cwd`` 与打开的描述符链接。"""
+
+    root = str(directory.resolve())
+    uid = os.getuid()
+    found: set[int] = set()
+    try:
+        names = os.listdir(PROC)
+    except OSError:
+        return found
+    for name in names:
+        if not name.isdigit():
+            continue
+        base = PROC / name
+        try:
+            if os.stat(base).st_uid != uid:
+                continue
+            links = [os.readlink(base / "cwd")]
+            links += [os.readlink(base / "fd" / fd) for fd in os.listdir(base / "fd")]
+        except OSError:
+            continue  # 刚结束，或读不到
+        if any(link == root or link.startswith(root + "/") for link in links):
+            found.add(int(name))
+    return found
 
 
 # ------------------------------------------------------------------ seatbelt
@@ -957,6 +1170,27 @@ def _interpreter_facts(interpreter: str) -> dict[str, Any]:
         raise SandboxUnavailable(message) from error
 
 
+def _read_whitelist(
+    interpreter: str, system: Sequence[str], extra: Sequence[str]
+) -> tuple[list[str], str]:
+    """只读白名单从运行用的解释器算（review round 2 P2-9）：它的前缀、基础前缀、真实可执行文件
+    所在目录、每个存在的 ``sys.path`` 条目（含 ``.pth`` 带进来的），再加系统位置。"""
+
+    facts = _interpreter_facts(interpreter)
+    paths: list[str] = list(system)
+    for raw in (
+        facts["prefix"],
+        facts["base"],
+        os.path.dirname(os.path.realpath(facts["executable"])),
+        os.path.dirname(os.path.realpath(interpreter)),
+        *facts["path"],
+    ):
+        if raw and raw != "/" and os.path.exists(raw):
+            paths.append(os.path.realpath(raw))
+    paths.extend(os.path.realpath(p) for p in extra)
+    return paths, str(facts["version"])
+
+
 class SeatbeltExecutor(_Executor):
     kind = "seatbelt"
     isolated = True
@@ -994,19 +1228,8 @@ class SeatbeltExecutor(_Executor):
         existing ``sys.path`` entry (``.pth`` paths included) — plus the system paths."""
 
         chosen = str(interpreter or sys.executable)
-        facts = _interpreter_facts(chosen)
-        paths: list[str] = list(SYSTEM_READ_PATHS)
-        for raw in (
-            facts["prefix"],
-            facts["base"],
-            os.path.dirname(os.path.realpath(facts["executable"])),
-            os.path.dirname(os.path.realpath(chosen)),
-            *facts["path"],
-        ):
-            if raw and raw != "/" and os.path.exists(raw):
-                paths.append(os.path.realpath(raw))
-        paths.extend(os.path.realpath(p) for p in extra_read_paths)
-        return cls(chosen, read_paths=paths, python_version=str(facts["version"]), **options)
+        paths, version = _read_whitelist(chosen, SYSTEM_READ_PATHS, extra_read_paths)
+        return cls(chosen, read_paths=paths, python_version=version, **options)
 
     @property
     def base_read_paths(self) -> tuple[str, ...]:
@@ -1062,6 +1285,420 @@ def _profile(cwd: Any, scratch: Any, canary: Any, read_paths: Sequence[str]) -> 
     )
 
 
+# ------------------------------------------------------------------ bubblewrap (Linux)
+def read_sysctl(name: str) -> str | None:
+    try:
+        return (PROC / "sys" / Path(*name.split("."))).read_text().strip()
+    except OSError:
+        return None
+
+
+def linux_userns_hint() -> str:
+    """bubblewrap 起不来时最可能的系统原因（只读系统设置，不改它们）。"""
+
+    hints = []
+    if read_sysctl("kernel.apparmor_restrict_unprivileged_userns") == "1":
+        hints.append(
+            "AppArmor restricts unprivileged user namespaces (Ubuntu 23.10+); install the"
+            " bwrap profile: python -m agent_orchestrator.host.sandbox_doctor --apparmor-profile"
+        )
+    if read_sysctl("kernel.unprivileged_userns_clone") == "0":
+        hints.append("kernel.unprivileged_userns_clone=0 forbids user namespaces")
+    if read_sysctl("user.max_user_namespaces") == "0":
+        hints.append("user.max_user_namespaces=0 forbids user namespaces")
+    return "; ".join(hints)
+
+
+#: 草稿目录下给隔离区当 ``/dev/shm`` 的子目录。
+SHM_DIR = ".shm"
+
+
+def _bwrap_features(bwrap: str) -> tuple[str, bool]:
+    """版本与是否支持 ``--disable-userns``（0.8 起；有就用，隔离区里不能再开用户命名空间）。"""
+
+    try:
+        version = subprocess.run(
+            [bwrap, "--version"], capture_output=True, text=True, timeout=10, check=False
+        ).stdout.strip()
+        usage = subprocess.run(
+            [bwrap, "--help"], capture_output=True, text=True, timeout=10, check=False
+        ).stdout
+    except (OSError, subprocess.SubprocessError) as error:
+        raise SandboxUnavailable(f"bubblewrap could not be inspected: {error}") from error
+    if not version:
+        raise SandboxUnavailable("bubblewrap did not report its version")
+    return version, "--disable-userns" in usage
+
+
+def _symlink_hops(path: str, *, limit: int = 40) -> list[tuple[str, str]]:
+    """解析 ``path`` 途中经过的每一个符号链接（链接所在路径、链接内容），按出现顺序。
+
+    例如 uv 建的虚拟环境：``venv/bin/python`` → ``…/uv/python/cpython-3.13-…/bin/python3.13``，
+    中间的 ``cpython-3.13-…`` 本身又是指向带小版本号目录的链接。白名单只有解析后的真实目录，
+    隔离区里要把这些链接照原样建出来，按原路径启动解释器才找得到。"""
+
+    hops: list[tuple[str, str]] = []
+    current = Path("/")
+    queue = list(Path(os.path.abspath(path)).parts[1:])
+    while queue and len(hops) < limit:
+        candidate = current / queue.pop(0)
+        if not candidate.is_symlink():
+            current = candidate
+            continue
+        target = os.readlink(candidate)
+        hops.append((str(candidate), target))
+        resolved = Path(os.path.normpath(current / target))  # current 只由真实目录组成
+        queue = list(resolved.parts[1:]) + queue
+        current = Path("/")
+    return hops
+
+
+def _bwrap_mounts(read_paths: Sequence[str], links: Sequence[tuple[str, str]] = ()) -> list[str]:
+    """只读挂载参数：系统位置（是链接的照原样建链接）+ 白名单；已被上级挂上的不重复挂；
+    再补上解释器路径途中、落在挂载之外的链接。"""
+
+    args: list[str] = []
+    covered: list[str] = []
+
+    def is_covered(path: str) -> bool:
+        return any(path == root or path.startswith(root.rstrip("/") + "/") for root in covered)
+
+    for path in (*LINUX_SYSTEM_READ_PATHS, *sorted(read_paths)):
+        if not os.path.lexists(path) or is_covered(path):
+            continue
+        if os.path.islink(path):
+            args += ["--symlink", os.readlink(path), path]
+        else:
+            args += ["--ro-bind", path, path]
+        covered.append(path)
+    for link, target in links:
+        if not is_covered(link):
+            args += ["--symlink", target, link]
+            covered.append(link)
+    return args
+
+
+def _read_until_eof(descriptor: int, timeout: float) -> bytes:
+    """读 bwrap 的信息管道直到它关掉；这个函数负责关读端（被取消的调用方不再碰它）。"""
+
+    deadline = time.monotonic() + timeout
+    chunks: list[bytes] = []
+    try:
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError("the sandbox did not report its namespaces in time")
+            ready, _, _ = select.select([descriptor], [], [], remaining)
+            if not ready:
+                continue
+            chunk = os.read(descriptor, 65536)
+            if not chunk:
+                return b"".join(chunks)
+            chunks.append(chunk)
+            if sum(len(c) for c in chunks) > 1024 * 1024:
+                raise ValueError("the sandbox information is too large")
+    finally:
+        os.close(descriptor)
+
+
+def _pin_namespace(pid: int, namespace: str | None) -> int | None:
+    """打开 ``pid`` 的进程命名空间并核对它就是 ``namespace``；返回持有它的描述符。"""
+
+    if namespace is None:
+        return None
+    try:
+        descriptor = os.open(PROC / str(pid) / "ns" / "pid", os.O_RDONLY | os.O_CLOEXEC)
+    except OSError:
+        return None
+    try:
+        if os.readlink(f"/proc/self/fd/{descriptor}") == namespace:
+            return descriptor
+    except OSError:
+        pass
+    os.close(descriptor)
+    return None
+
+
+def _signal_in_namespace(pid: int, namespace: str | None) -> None:
+    """先用 pidfd 钉住进程、再核对它还在这个命名空间、再发 SIGKILL：进程号被复用也不误杀。
+    内核没有 pidfd（5.3 以前）时退回"核对后直接发"。"""
+
+    if namespace is None:
+        return
+    open_pidfd = getattr(os, "pidfd_open", None)  # 只有 Linux 有
+    send_pidfd = getattr(signal, "pidfd_send_signal", None)
+    try:
+        if open_pidfd is None or send_pidfd is None:
+            raise OSError("pidfd is not available")
+        handle = open_pidfd(pid)
+    except ProcessLookupError:
+        return
+    except OSError:
+        if _pid_namespace(pid) == namespace:
+            _sigkill(pid)
+        return
+    try:
+        if _pid_namespace(pid) == namespace:
+            send_pidfd(handle, signal.SIGKILL)
+    except OSError:
+        pass
+    finally:
+        os.close(handle)
+
+
+class BwrapExecutor(_Executor):
+    """Linux 的隔离区（bubblewrap，非特权用户命名空间）。
+
+    每次运行：新的用户、进程、网络、IPC、UTS 命名空间，隔离区里不能再开用户命名空间（bwrap
+    支持时），丢掉全部能力；根目录是空的、只读的，只读挂系统位置和解释器白名单，可写的只有
+    本次的副本和草稿目录（宿主路径原样挂，回执里的路径和宿主看到的一致；``TMPDIR`` 指向草稿）；
+    ``/proc`` 只看得到隔离区自己的进程。没有网络：新的网络命名空间里只有回环，宿主的端口、
+    抽象 Unix 套接字、D-Bus 都够不着。"""
+
+    kind = "bwrap"
+    isolated = True
+
+    def __init__(
+        self,
+        interpreter: str,
+        *,
+        read_paths: Sequence[str],
+        python_version: str = "",
+        bwrap: str | None = None,
+        **options: Any,
+    ) -> None:
+        if not LINUX:
+            raise SandboxUnavailable("the bubblewrap sandbox needs Linux")
+        found = shutil.which(bwrap or "bwrap")
+        if found is None:
+            raise SandboxUnavailable(
+                "bubblewrap is not installed (no bwrap found); install the bubblewrap package"
+            )
+        options.setdefault("poll_interval", 0.25)
+        super().__init__(interpreter, **options)
+        self.bwrap = os.path.realpath(found)
+        self.bwrap_version, self._disable_userns = _bwrap_features(self.bwrap)
+        self._read_paths = tuple(dict.fromkeys(read_paths))
+        self._python_version = python_version
+        self._mounts = _bwrap_mounts(self._read_paths, _symlink_hops(self.interpreter))
+        self.probe_report: ProbeReport | None = None
+        self._preflight()
+
+    @classmethod
+    def for_interpreter(
+        cls,
+        interpreter: str | None = None,
+        *,
+        extra_read_paths: Sequence[str] = (),
+        **options: Any,
+    ) -> BwrapExecutor:
+        chosen = str(interpreter or sys.executable)
+        paths, version = _read_whitelist(chosen, LINUX_SYSTEM_READ_PATHS, extra_read_paths)
+        return cls(chosen, read_paths=paths, python_version=version, **options)
+
+    @property
+    def base_read_paths(self) -> tuple[str, ...]:
+        return self._read_paths
+
+    @property
+    def usable(self) -> bool:
+        return (
+            self.probe_report is not None
+            and self.probe_report.ok
+            and self.probe_report.environment_digest == self.environment_digest
+        )
+
+    def _identity(self) -> dict[str, Any]:
+        return {
+            "interpreter": os.path.realpath(self.interpreter),
+            "python": self._python_version,
+            "read_paths": list(self._read_paths),
+            "bwrap_version": self.bwrap_version,
+            "argv": self._bwrap_argv(
+                ["<command>"], cwd="<cwd>", scratch="<scratch>", info_fd="<fd>"
+            ),
+        }
+
+    def _bwrap_argv(
+        self, command: Sequence[str], *, cwd: Any, scratch: Any, info_fd: Any
+    ) -> list[str]:
+        argv = [self.bwrap, "--unshare-all", "--unshare-user"]
+        if self._disable_userns:
+            argv.append("--disable-userns")
+        argv += ["--die-with-parent", "--new-session", "--cap-drop", "ALL"]
+        if info_fd is not None:
+            argv += ["--info-fd", str(info_fd)]
+        argv += [*self._mounts, "--proc", "/proc", "--dev", "/dev"]
+        argv += ["--bind", str(cwd), str(cwd), "--bind", str(scratch), str(scratch)]
+        # /dev/shm 换成草稿目录下的磁盘目录：多进程的信号量要在这里建文件（macOS 上也能用）
+        argv += ["--bind", f"{scratch}/{SHM_DIR}", "/dev/shm"]
+        # 根目录与 /dev 是内存盘：写进去的文件占内存、不算进常驻内存采样，所以都改成只读
+        # （只读重挂不往下递归，上面的绑定照样可写）；临时文件走 TMPDIR = 草稿目录
+        argv += ["--remount-ro", "/dev", "--remount-ro", "/"]
+        return [*argv, "--chdir", str(cwd), "--", *command]
+
+    def _preflight(self) -> None:
+        """先起一个最小隔离区跑一下解释器：起不来就把 bwrap 的原话和最可能的系统原因带出去。"""
+
+        with tempfile.TemporaryDirectory(prefix="orch-bwrap-check-") as raw:
+            work = Path(raw).resolve()
+            (work / SHM_DIR).mkdir()
+            argv = self._bwrap_argv(
+                [self.interpreter, "-I", "-c", "pass"], cwd=work, scratch=work, info_fd=None
+            )
+            try:
+                done = subprocess.run(
+                    argv,
+                    env={"PATH": DEFAULT_PATH},
+                    stdin=subprocess.DEVNULL,
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                    check=False,
+                )
+            except (OSError, subprocess.SubprocessError) as error:
+                raise SandboxUnavailable(f"bubblewrap could not be started: {error}") from error
+        if done.returncode != 0:
+            detail = (done.stderr or done.stdout).strip()[-400:]
+            hint = linux_userns_hint()
+            raise SandboxUnavailable(
+                f"bubblewrap cannot create a sandbox here: {detail}"
+                + (f" ({hint})" if hint else "")
+            )
+
+    def _spawn_options(self, run: _Run) -> dict[str, Any]:
+        read_end, write_end = os.pipe()
+        run.descriptors += [read_end, write_end]
+        run.info_pipe = (read_end, write_end)
+        return {"pass_fds": (write_end,)}
+
+    def _argv(self, command: Sequence[str], run: _Run) -> list[str]:
+        assert run.info_pipe is not None
+        (run.scratch / SHM_DIR).mkdir(mode=0o700, exist_ok=True)
+        return self._bwrap_argv(command, cwd=run.cwd, scratch=run.scratch, info_fd=run.info_pipe[1])
+
+    async def _started(self, run: _Run) -> None:
+        """读 bwrap 报的隔离区信息（第一个进程、进程命名空间），落盘供冷恢复按身份回收。"""
+
+        assert run.info_pipe is not None
+        read_end, write_end = run.info_pipe
+        run.descriptors.remove(write_end)
+        os.close(write_end)
+        run.descriptors.remove(read_end)  # 从这里起由读线程关
+        raw = await asyncio.to_thread(_read_until_eof, read_end, 30.0)
+        if not raw.strip():
+            return  # 隔离区没建起来就结束了：bwrap 的原话在输出里
+        info = json.loads(raw)
+        init_pid = int(info["child-pid"])
+        namespace = (
+            f"pid:[{int(info['pid-namespace'])}]"
+            if "pid-namespace" in info
+            else _pid_namespace(init_pid)
+        )
+        run.init_pid = init_pid
+        # 钉住命名空间：持有它的描述符到运行收尾，命名空间结束后编号也不会被别的隔离区复用，
+        # 收尾时按编号找成员就不会找到别人的进程。钉不住 = 第一个进程已经结束、整个隔离区随它
+        # 结束了，不再按编号找成员。
+        pinned = _pin_namespace(init_pid, namespace)
+        if pinned is None:
+            return
+        run.descriptors.append(pinned)
+        run.pid_namespace = namespace
+        fields = _proc_stat(init_pid)
+        if fields is None or _pid_namespace(init_pid) != namespace:
+            return  # 第一个进程已经结束
+        record = {
+            "execution_id": run.execution_id,
+            "identity_sha256": (run.identity or {}).get("identity_sha256"),
+            "boot_id": _boot_id(),
+            "init_pid": init_pid,
+            "init_started": fields[19],
+            "pid_namespace": namespace,
+        }
+        await asyncio.to_thread(
+            _durable_json,
+            run.marks / "namespace.json",
+            {**record, "record_sha256": _digest(record)},
+        )
+
+    def _members(self, run: _Run) -> set[int]:
+        if run.pid_namespace is None:
+            run.table = []
+            return set()
+        members = _namespace_members(run.pid_namespace)
+        page_kb = max(1, os.sysconf("SC_PAGE_SIZE") // 1024)
+        table = []
+        for pid in members:
+            try:
+                fields = _proc_stat(pid)
+                if fields is not None:
+                    table.append(_Proc(pid, int(fields[1]), -1, int(fields[21]) * page_kb, False))
+            except (OSError, IndexError, ValueError):
+                continue
+        run.table = table
+        return members
+
+    def _survivors(self, run: _Run) -> set[int]:
+        return self._members(run)
+
+    def _kill_member(self, run: _Run, pid: int) -> None:
+        if self._kill is not _sigkill:  # 测试接缝：照样先核对命名空间
+            if _pid_namespace(pid) == run.pid_namespace:
+                self._kill(pid)
+            return
+        _signal_in_namespace(pid, run.pid_namespace)
+
+    def _cpu_limited(self, returncode: int | None) -> bool:
+        # bwrap 把"被信号结束"转成 128 + 信号号的退出码
+        return returncode in (-signal.SIGXCPU, 128 + signal.SIGXCPU)
+
+
+def _cold_bwrap_cleanup(
+    index: Path, identity: dict[str, Any], marks: Path, deadline: float
+) -> dict[str, Any]:
+    residual = _settle_bwrap_run(marks, identity, deadline)
+    if not residual:
+        return _finish_sandbox_cleanup(index, identity, mode="cold")
+    report = {"status": "residual", "identity": identity, "residual_pids": sorted(residual)}
+    _record_cleanup(index, report)
+    return report
+
+
+def _settle_bwrap_run(marks: Path, identity: Mapping[str, Any], deadline: float) -> set[int]:
+    """冷恢复一次 bwrap 运行：按落盘的"开机号 + 第一个进程的启动时刻 + 进程命名空间"核对，
+    对上了才结束它的第一个进程（内核随之结束整个命名空间），再等成员清空；对不上一个不碰。
+    返回仍在的成员。"""
+
+    path = marks / "namespace.json"
+    if not path.exists():
+        # 没记下命名空间：要么隔离区没建起来，要么宿主先死了——--die-with-parent 已让它结束
+        return set()
+    record = json.loads(path.read_text(encoding="utf-8"))
+    body = {key: value for key, value in record.items() if key != "record_sha256"}
+    if (
+        _digest(body) != record.get("record_sha256")
+        or record.get("execution_id") != identity["execution_id"]
+        or record.get("identity_sha256") != identity["identity_sha256"]
+    ):
+        raise ValueError("invalid sandbox namespace record")
+    if record["boot_id"] != _boot_id():
+        return set()  # 机器重启过：这次运行的进程都不在了
+    namespace, init_pid = str(record["pid_namespace"]), int(record["init_pid"])
+    fields = _proc_stat(init_pid)
+    if (
+        fields is None
+        or fields[19] != str(record["init_started"])
+        or _pid_namespace(init_pid) != namespace
+    ):
+        return set()  # 第一个进程不在了，命名空间也就不在了
+    _signal_in_namespace(init_pid, namespace)
+    while True:
+        members = _namespace_members(namespace)
+        if not members or time.monotonic() >= deadline:
+            return members
+        time.sleep(0.05)
+
+
 # ------------------------------------------------------------------ the capability probe
 @dataclass(frozen=True, slots=True)
 class ProbeReport:
@@ -1092,7 +1729,9 @@ def attempt(name, fn):
         out[name] = "ALLOWED"
     except Exception as error:
         out[name] = type(error).__name__
-attempt("read_home", lambda: os.listdir(cfg["home"]))
+def list_home():
+    out["home_entries"] = sorted(os.listdir(cfg["home"]))
+attempt("read_home", list_home)
 attempt("read_other_temp", lambda: open(cfg["secret"]).read())
 attempt("write_outside", lambda: open(cfg["escape"], "w").write("x"))
 attempt("network_tcp", lambda: socket.create_connection(("127.0.0.1", cfg["port"]), timeout=2))
@@ -1100,31 +1739,55 @@ def unix():
     s = socket.socket(socket.AF_UNIX)
     s.connect(cfg["unix"])
 attempt("network_unix", unix)
+def lan():
+    socket.create_connection((cfg["lan"], cfg["port"]), timeout=2)
+if cfg.get("lan"):
+    attempt("network_lan", lan)
+def abstract():
+    s = socket.socket(socket.AF_UNIX)
+    s.connect("\\0" + cfg["abstract"])
+if cfg.get("abstract"):
+    attempt("network_abstract", abstract)
 attempt("signal_host", lambda: os.kill(cfg["host_pid"], 0))
 open("probe.json", "w").write(json.dumps(out))
 """
+# 后台进程关掉全部描述符后再拿一把文件锁、写"就绪"：运行结束后宿主拿得到这把锁，才证明它真的
+# 结束了。不用进程号——Linux 隔离区有自己的进程号空间，里面的号在宿主那边是别的进程。
 _DAEMON_PROBE = """
-import os, sys, time
+import fcntl, os, sys, time
+lock_path, ready = os.path.abspath("daemon.lock"), os.path.abspath("daemon.ready")
 if os.fork() == 0:
     os.setsid()
     if os.fork() == 0:
-        open("daemon.pid", "w").write(str(os.getpid()))
         os.chdir("/")
         os.closerange(0, 256)
+        fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        open(ready, "w").write(str(os.getpid()))
         time.sleep(600)
     os._exit(0)
-time.sleep(0.5)
+deadline = time.monotonic() + 10
+while not os.path.exists(ready) and time.monotonic() < deadline:
+    time.sleep(0.01)
 """
 
 
-def _alive(pid: int) -> bool:
+def _lock_released(path: Path, seconds: float = 2.0) -> bool:
+    """拿得到 ``path`` 上的排他锁 = 持锁的进程都结束了。"""
+
+    deadline = time.monotonic() + seconds
+    descriptor = os.open(path, os.O_RDWR)
     try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    return True
+        while True:
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                return True
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    return False
+                time.sleep(0.05)
+    finally:
+        os.close(descriptor)
 
 
 def _under(path: str, roots: Sequence[str]) -> bool:
@@ -1132,11 +1795,111 @@ def _under(path: str, roots: Sequence[str]) -> bool:
     return any(resolved == Path(r) or Path(r) in resolved.parents for r in roots)
 
 
-async def probe_sandbox(executor: SeatbeltExecutor) -> ProbeReport:
+#: 通过了启动检查的执行器（按对象身份）及它当时的环境摘要；准入只认这里，不认执行器自己说的。
+_PROBE_PASSED: dict[int, tuple[Any, str]] = {}
+
+
+def probe_passed(executor: Any) -> bool:
+    """这个执行器在这台机器上通过了 :func:`probe_sandbox`，且之后环境没变。"""
+
+    entry = _PROBE_PASSED.get(id(executor))
+    return (
+        entry is not None
+        and entry[0] is executor
+        and entry[1] == getattr(executor, "environment_digest", None)
+    )
+
+
+def _home_skeleton(home: str, read_paths: Sequence[str]) -> set[str]:
+    """隔离区里列 HOME 能看到的最多是什么：白名单里落在 HOME 下的路径，bwrap 会为它们建出空的
+    上级目录（只有名字，没有内容）。列出来的超出这些名字，就是 HOME 漏进来了。"""
+
+    names = set()
+    for path in read_paths:
+        if _under(path, [home]) and Path(path).resolve() != Path(home):
+            names.add(Path(path).resolve().relative_to(home).parts[0])
+    return names
+
+
+def _abstract_listener() -> tuple[str, socket.socket | None]:
+    """Linux 的抽象 Unix 套接字不在文件系统里（D-Bus 常用），只有网络命名空间挡得住。"""
+
+    if not LINUX:
+        return "", None
+    name = f"orch-probe-{uuid.uuid4().hex}"
+    listener = socket.socket(socket.AF_UNIX)
+    listener.bind("\0" + name)
+    listener.listen(1)
+    return name, listener
+
+
+def _lan_address() -> str | None:
+    """本机一个非回环的 IPv4 地址（UDP 的 connect 只选路由、不发包）；没有网络就 ``None``。"""
+
+    probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        probe.connect(("192.0.2.1", 9))  # TEST-NET-1，只用来选出口地址
+        address = str(probe.getsockname()[0])
+    except OSError:
+        return None
+    finally:
+        probe.close()
+    return None if address.startswith("127.") or address == "0.0.0.0" else address
+
+
+def _access_items(
+    seen: Mapping[str, Any],
+    *,
+    ran: bool,
+    escaped: bool,
+    home_skeleton: set[str],
+    abstract: bool,
+    lan: bool = False,
+) -> list[dict[str, Any]]:
+    def denied(name: str) -> bool:
+        if name == "network_lan":
+            # 连本机局域网地址上没人听的端口：网络通就是"连接被拒"或超时，只有够不着
+            # （没有路由、被禁止）才算拒绝。宿主不在局域网地址上监听，免得触发防火墙询问。
+            return seen.get(name) not in (
+                None,
+                "ALLOWED",
+                "ConnectionRefusedError",
+                "TimeoutError",
+            )
+        return seen.get(name) not in (None, "ALLOWED")
+
+    home_hidden = denied("read_home") or set(seen.get("home_entries") or ()) <= home_skeleton
+    network_names = (
+        ("network_tcp", "network_unix")
+        + (("network_abstract",) if abstract else ())
+        + (("network_lan",) if lan else ())
+    )
+    checks: tuple[tuple[str, bool, tuple[str, ...]], ...] = (
+        ("read_home", home_hidden, ("read_home", "home_entries")),
+        ("read_other_temp", denied("read_other_temp"), ("read_other_temp",)),
+        ("write_outside", denied("write_outside") and not escaped, ("write_outside",)),
+        ("network", all(denied(n) for n in network_names), network_names),
+        ("signal_host", denied("signal_host"), ("signal_host",)),
+    )
+    return [
+        {
+            "name": name,
+            "ok": bool(ok) and ran,
+            "observed": {key: seen.get(key) for key in keys if key in seen},
+        }
+        for name, ok, keys in checks
+    ]
+
+
+async def probe_sandbox(executor: Any) -> ProbeReport:
     """Eight behavioural checks (plan v3 D1); any miss makes the adapter unusable.  Every
-    target is computed here, apart from the read whitelist, and must lie outside it."""
+    target is computed here, apart from the read whitelist, and must lie outside it.
+
+    "拒绝"按行为判：尝试抛了错、目标没被改动就算拒绝（macOS 报无权限，Linux 报不存在或连接
+    被拒，都是够不着）。应用自带的执行器也走这一套，通过了才准入。"""
 
     home = str(Path.home().resolve())
+    read_paths = tuple(getattr(executor, "base_read_paths", ()) or ())
     with (
         tempfile.TemporaryDirectory(prefix="orch-probe-other-") as raw_other,
         tempfile.TemporaryDirectory(prefix="orch-probe-ws-") as raw_ws,
@@ -1148,13 +1911,15 @@ async def probe_sandbox(executor: SeatbeltExecutor) -> ProbeReport:
         escape = other / "escape.txt"
         unix_path = other / "u.sock"
         targets = (home, str(other), str(secret), str(escape), str(unix_path))
-        disjoint = not any(_under(t, executor.base_read_paths) for t in targets)
+        disjoint = not any(_under(t, read_paths) for t in targets)
         listener = socket.socket()
         listener.bind(("127.0.0.1", 0))
         listener.listen(1)
         unix = socket.socket(socket.AF_UNIX)
         unix.bind(str(unix_path))
         unix.listen(1)
+        abstract_name, abstract = _abstract_listener()
+        lan_address = _lan_address()
         items: list[dict[str, Any]] = []
         try:
             cfg = {
@@ -1163,6 +1928,8 @@ async def probe_sandbox(executor: SeatbeltExecutor) -> ProbeReport:
                 "escape": str(escape),
                 "port": listener.getsockname()[1],
                 "unix": str(unix_path),
+                "abstract": abstract_name,
+                "lan": lan_address or "",
                 "host_pid": os.getpid(),
             }
             script = workdir / "access_probe.py"
@@ -1177,24 +1944,14 @@ async def probe_sandbox(executor: SeatbeltExecutor) -> ProbeReport:
             except (OSError, ValueError):
                 seen = {}
 
-            def denied(name: str) -> bool:
-                return seen.get(name) == "PermissionError"
-
-            for name, ok in (
-                ("read_home", denied("read_home")),
-                ("read_other_temp", denied("read_other_temp")),
-                ("write_outside", denied("write_outside") and not escape.exists()),
-                ("network", denied("network_tcp") and denied("network_unix")),
-                ("signal_host", denied("signal_host")),
-            ):
-                items.append(
-                    {
-                        "name": name,
-                        "ok": bool(ok) and receipt.exit_code == 0,
-                        "observed": {k: v for k, v in seen.items() if k.startswith(name[:7])}
-                        or seen.get(name),
-                    }
-                )
+            items += _access_items(
+                seen,
+                ran=receipt.exit_code == 0,
+                escaped=escape.exists(),
+                home_skeleton=_home_skeleton(home, read_paths),
+                abstract=bool(abstract_name),
+                lan=bool(lan_address),
+            )
             script = workdir / "daemon_probe.py"
             script.write_text(_DAEMON_PROBE, encoding="utf-8")
             receipt = await executor.execute(
@@ -1202,18 +1959,17 @@ async def probe_sandbox(executor: SeatbeltExecutor) -> ProbeReport:
                 cwd=str(workdir),
                 spec=SandboxSpec(cpu_seconds=30, wall_seconds=30),
             )
-            try:
-                daemon = int((workdir / "daemon.pid").read_text(encoding="utf-8"))
-            except (OSError, ValueError):
-                daemon = None
-            gone = daemon is not None and not _alive(daemon)
-            if daemon is not None and not gone:
-                _sigkill(daemon)
+            started = (workdir / "daemon.ready").exists()
+            gone = started and _lock_released(workdir / "daemon.lock")
             items.append(
                 {
                     "name": "daemon_reaped",
                     "ok": gone and receipt.tree_killed,
-                    "observed": {"pid": daemon, "tree_killed": receipt.tree_killed},
+                    "observed": {
+                        "started": started,
+                        "gone": gone,
+                        "tree_killed": receipt.tree_killed,
+                    },
                 }
             )
             receipt = await executor.execute(
@@ -1243,6 +1999,8 @@ async def probe_sandbox(executor: SeatbeltExecutor) -> ProbeReport:
         finally:
             listener.close()
             unix.close()
+            if abstract is not None:
+                abstract.close()
     report = ProbeReport(
         ok=disjoint and all(item["ok"] for item in items),
         items=tuple(items),
@@ -1250,31 +2008,56 @@ async def probe_sandbox(executor: SeatbeltExecutor) -> ProbeReport:
         disjoint=disjoint,
         environment_digest=executor.environment_digest,
     )
-    executor.probe_report = report
+    with contextlib.suppress(AttributeError):  # 应用自带的执行器可以不收这份报告
+        executor.probe_report = report
+    if report.ok:
+        _PROBE_PASSED[id(executor)] = (executor, report.environment_digest)
+    else:
+        _PROBE_PASSED.pop(id(executor), None)
     return report
 
 
 # ------------------------------------------------------------------ resolving a deployment
+def platform_executor(
+    interpreter: str | None = None,
+    *,
+    extra_read_paths: Sequence[str] = (),
+    bwrap: str | None = None,
+) -> SandboxExecutorPort:
+    """这台机器的隔离执行器：macOS → Seatbelt，Linux → bubblewrap；别的系统没有。
+    还没做启动检查——交给 :func:`probe_sandbox`，通过了才准入。"""
+
+    if sys.platform == "darwin":
+        return SeatbeltExecutor.for_interpreter(interpreter, extra_read_paths=extra_read_paths)
+    if LINUX:
+        return BwrapExecutor.for_interpreter(
+            interpreter, extra_read_paths=extra_read_paths, bwrap=bwrap
+        )
+    raise SandboxUnavailable(f"no sandbox for this platform ({sys.platform})")
+
+
 def resolve_executor(deployment: Any, executor: Any = None) -> SandboxExecutorPort | None:
     """The executor a deployment runs model-written code with (plan v3 D2): ``off`` →
-    none; ``process_only`` → the given one or a process executor; ``sandboxed`` → only a
-    seatbelt executor whose probe passed on this very environment."""
+    none; ``process_only`` → the given one or a process executor; ``sandboxed`` → only an
+    isolating executor whose probe passed on this very environment (Seatbelt, bubblewrap,
+    or an application's own — the probe decides, not the object's own claims)."""
 
     mode = getattr(deployment, "code_execution", "process_only")
     if mode == "off":
         return None
     if mode == "sandboxed":
-        if not isinstance(executor, SeatbeltExecutor):
+        if executor is None or getattr(executor, "isolated", False) is not True:
             raise SandboxUnavailable(
-                "code_execution='sandboxed' needs a SeatbeltExecutor whose probe passed"
+                "code_execution='sandboxed' needs an isolating executor whose probe passed"
             )
-        if not executor.usable:
-            raise SandboxUnavailable("the seatbelt executor has not passed its probe here")
+        if not probe_passed(executor):
+            raise SandboxUnavailable("the sandbox executor has not passed its probe here")
         return executor
     return executor if executor is not None else ProcessOnlyExecutor()
 
 
 __all__ = (
+    "BwrapExecutor",
     "ExecutionReceipt",
     "ProbeReport",
     "ProcessOnlyExecutor",
@@ -1285,8 +2068,12 @@ __all__ = (
     "SandboxUnavailable",
     "SeatbeltExecutor",
     "identity_matches",
+    "linux_userns_hint",
+    "platform_executor",
+    "probe_passed",
     "probe_sandbox",
     "process_identity",
+    "read_sysctl",
     "reclaim_recorded_executions",
     "resolve_executor",
 )

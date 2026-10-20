@@ -197,7 +197,9 @@ def test_live_residual_receipt_does_not_discard_cold_recovery_identity(tmp_path)
 
 
 @pytest.mark.parametrize("returncode", [0, 1])
-def test_missing_process_inventory_is_unknown_not_an_empty_success(monkeypatch, returncode):
+def test_missing_process_inventory_is_unknown_not_an_empty_success(
+    monkeypatch, tmp_path, returncode
+):
     from types import SimpleNamespace
 
     monkeypatch.setattr(
@@ -205,5 +207,7 @@ def test_missing_process_inventory_is_unknown_not_an_empty_success(monkeypatch, 
         "run",
         lambda *a, **kw: SimpleNamespace(returncode=returncode, stdout=""),
     )
+    # Linux 读 /proc：空目录（returncode 0）或不存在的目录（1）都不能当成"没有进程"
+    monkeypatch.setattr(sandbox, "PROC", tmp_path if returncode == 0 else tmp_path / "missing")
     with pytest.raises(sandbox.SandboxUnavailable):
         sandbox._process_table(strict=True)

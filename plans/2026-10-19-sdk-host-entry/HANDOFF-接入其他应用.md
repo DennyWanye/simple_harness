@@ -23,14 +23,14 @@
 - 不管界面。任务列表、进度、审批卡片由你的应用画；库提供读接口与写回调。
 - 不管模型配置界面。`base_url` / `model` / `api_key` 由你传入。
 - 这一版只支持 DeepSeek（每个执行池要一个经认证的用量计数器）。
-- 沙箱只在 macOS 可用（跑模型写的代码、核对 `file:` / `pytest:` 要求都靠沙箱）。别的系统能启动，但不跑代码、不核对要求。
+- 隔离区：macOS 用 Seatbelt，Linux 用 bubblewrap（要装 `bwrap`，Ubuntu 23.10+ 还要装 AppArmor 放行规则；先跑 `python -m agent_orchestrator.host.sandbox_doctor` 检查）。没有隔离区时 `file:` 照样核对，`pytest:` 要求被拒，模型拿不到 `run_tests`。
 
 ## 三、硬性前提（先对这张表）
 
 | 前提 | 说明 |
 |---|---|
 | 能跑 Python 3.11+ | 纯 Python 库。应用本身不是 Python 的，要起一个 Python 侧进程（参照：Simple Harness 是 Tauri 外壳 + Python 后台，前端经 WebSocket 控制通道调后台）。 |
-| macOS | 沙箱靠 macOS Seatbelt。Linux 能装能起，但不跑代码、不核对要求。Windows 装得上但起不了执行池。 |
+| macOS / Linux | 隔离区：macOS Seatbelt、Linux bubblewrap（已在 Ubuntu 24.04 ARM64 虚拟机实测，手机真机未测）。Windows 装得上但起不了执行池。 |
 | DeepSeek 线路 | 官方端点；或你在 `compatible_hosts` 里声明的转发站。 |
 | 首次启动能联网 | 宿主首启按钉死哈希下载 DeepSeek 分词文件（6 MB）到数据目录；也可自己放好传 `tokenizer_path`。 |
 | 依赖 | 轮子自动带上 `httpx`、`pytest>=8.3,<9`、`deepseek-recipe==0.1.1`（非 Windows）。环境里已有 pytest 9 会冲突。 |

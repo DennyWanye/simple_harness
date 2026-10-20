@@ -106,7 +106,7 @@ def test_sweep_failure_closes_all_pools_preserves_the_reservation_and_original_e
     with pytest.raises(sqlite3.ProgrammingError):
         captured["store"].connection.execute("SELECT 1")
     pools = captured["assembled"].pools
-    assert len(pools) == 2  # 部署的两个原生执行池（两档上下文尺寸）
+    assert len(pools) == 3  # 部署的三个原生执行池（三档上下文尺寸）
     for pool in pools.values():
         runtime = pool.runtime._assembled
         assert not runtime.database.is_open

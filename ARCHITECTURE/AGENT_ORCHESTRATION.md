@@ -657,7 +657,7 @@ P3.3 G进行中：Host已接入原子文档创建、来源版本审批、绑定�
 
 | 项 | 值 | 理由 |
 |---|---|---|
-| `code_execution` | 由启动时的探针决定：`sandboxed` 或 `off` | P3.2 §4.3：问题不再是"允不允许执行"，而是"隔离在这台机器上证明过没有"。每次启动跑 SDK 的能力探针（8 项：读家目录、读他人临时目录、写越界、联网、向宿主发信号、完整 daemonize 的回收、输出截断、CPU 上限）；**全过才是 `sandboxed`**，否则 `off`。Host **永不使用 `process_only`**——不隔离的子进程只适合可信代码，而模型写的代码不是。<br>`off` 时（与 P3.1 相同）：`code_test` 不是已部署层；`pytest:` 条件在入口被拒；旧 Task 的 `pytest:` 由规则层判 FAIL；冲突转 DEFERRED；`run_tests` 被拒。<br>`sandboxed` 时：这些重新开放，`run_tests` 进入 `allowed_tools`，模型写的代码只在一次性副本里、经 seatbelt 运行。探针报告写进部署清单与 `status()` |
+| `code_execution` | 由启动时的探针决定：`sandboxed` 或 `off` | P3.2 §4.3：问题不再是"允不允许执行"，而是"隔离在这台机器上证明过没有"。每次启动跑 SDK 的能力探针（8 项：读家目录、读他人临时目录、写越界、联网、向宿主发信号、完整 daemonize 的回收、输出截断、CPU 上限）；**全过才是 `sandboxed`**，否则 `off`。Host **永不使用 `process_only`**——不隔离的子进程只适合可信代码，而模型写的代码不是。<br>`off` 时（与 P3.1 相同）：`code_test` 不是已部署层；`pytest:` 条件在入口被拒；旧 Task 的 `pytest:` 由规则层判 FAIL；冲突转 DEFERRED；`run_tests` 被拒。<br>`sandboxed` 时：这些重新开放，`run_tests` 进入 `allowed_tools`，模型写的代码只在一次性副本里、经隔离区运行（macOS seatbelt；2026-10-20 起 SDK 宿主入口在 Linux 用 bubblewrap，桌面端仍是 macOS）。探针报告写进部署清单与 `status()`；准入只认在本机通过探针的执行器 |
 | `allowed_tools` | 三个工作区工具 | 编排 Agent 拿不到 Host 的任何工具（shell、MCP、文件系统、浏览器都没有） |
 | `enabled_connectors` | 默认空；授权发布目录后含 `file_publish`；`test_config` 仅测试场景 | P3.2 P32-14：只有用户在配置里指明了发布目录、该目录存在、**且能承载硬链接**（连接器唯一的原子提交点）时，`file_publish` 才启用。三者缺一就不启用，于是 Mission 连带 `action:file_publish…` 的成功条件都不能提交——拒绝发生在门口，而不是等模型产出候选之后。不支持硬链接的卷（exFAT、部分网络盘）在授权时就被挡下，不会变成运行期的 UNKNOWN |
 | `max_action_level` | L2 | 单机只有一个人，满足不了 L3 要求的两个不同的人 |
@@ -740,6 +740,7 @@ P3.3 G进行中：Host已接入原子文档创建、来源版本审批、绑定�
   - **没有 uid 隔离**：没有管理员权限，同一 uid 下的残余风险靠 seatbelt 规则收敛。
   - **元数据可读**：放行 stat 才能让 venv 的软链解析正常，代价是沙箱里的代码能探测任意路径是否存在、大小与修改时间，但读不到内容。
   - **用到的是已废弃且无公开文档的接口**：seatbelt 与 `sandbox_check`（Chromium、WebKit 也在用）。每次启动由探针重新验证；探针不过就退回 `off`。
+  - **Linux（bubblewrap，2026-10-20）**：要装 `bwrap` 且内核允许普通用户开用户命名空间；Ubuntu 23.10+ 要装只放行 bwrap 的 AppArmor 规则（SDK 不改系统设置，检查命令打印规则）。进程归属按进程命名空间，不靠 `ps`/`lsof`；内存与进程数同样是软限制，没用 cgroup。只在 Linux ARM64 虚拟机实测，手机真机未测。
   - **回收耗时受外部工具影响**：认进程要靠 `ps`，不隔离模式还要靠 `lsof`，两者都有单次超时，但极端情况下一次回收仍可能偏慢；正确性不受影响。
 
 ## 11. NanoJev 决策接缝（PR-7，Shadow-only）

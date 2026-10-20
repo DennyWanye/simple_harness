@@ -53,14 +53,14 @@ from ..runtime.connectors_publish import FilePublishConnector
 from ..runtime.deepseek_meter import deepseek_meter_binding
 from ..runtime.domain_tools import DomainTool
 from ..runtime.planning_operations import SourceUnavailable
-from ..runtime.sandbox import SandboxUnavailable, SeatbeltExecutor
+from ..runtime.sandbox import SandboxUnavailable
 from ..runtime.tool_gateway import ASSURANCE_REVIEWER_TOOLS, TOOL_NAMES
 from ..version import __version__
 from .embedding import embedding_port
 from .instance_lock import InstanceLock
 from .provider import build_providers, deepseek_counter, is_deepseek, requested_model
 from .script_runner import SandboxScriptRunner
-from .settings import ONLY_DEEPSEEK_REASON, HostSettings, ModelConfig
+from .settings import ONLY_DEEPSEEK_REASON, HostSettings, ModelConfig, SandboxOptions
 from .tokenizer import ensure_deepseek_tokenizer, tokenizer_matches
 
 logger = logging.getLogger(__name__)
@@ -194,6 +194,7 @@ class OrchestrationHost:
         provider_kind: str | None = None,
         extra_secrets: tuple[str, ...] = (),
         tools: Sequence[DomainTool] = (),
+        sandbox: SandboxOptions | None = None,
     ) -> None:
         """
         ``model`` + ``tokenizer_path``：用 DeepSeek 端点（正常用法）。
@@ -203,8 +204,10 @@ class OrchestrationHost:
         也可以是每轮现读的函数。
         ``tools``：应用注册的只读工具（:class:`DomainTool`）。名字不能与内置工具、技能工具重复；
         有副作用的工具（``read_only=False``）在这里被拒——副作用走连接器。
+        ``sandbox``：模型写的代码在哪个隔离区里跑（:class:`SandboxOptions`）；默认按系统自动选。
         """
         self.tools = _checked_tools(tools)
+        self._sandbox_options = sandbox or SandboxOptions()
 
         self.root = Path(root)
         self.settings = settings or HostSettings()
@@ -413,18 +416,33 @@ class OrchestrationHost:
         """每次启动都重新证明隔离（不信文件）：探测过不了就 ``ok=False``，部署不跑模型写的代码。"""
 
         self.executor = None
-        if getattr(sys, "frozen", False):
+        options = self._sandbox_options
+        if (
+            options.executor is None
+            and options.interpreter is None
+            and getattr(sys, "frozen", False)
+        ):
             return {"ok": False, "reason": "frozen_backend_is_not_a_python_interpreter"}
         try:
-            executor = SeatbeltExecutor.for_interpreter(sys.executable)
+            executor = options.executor or await asyncio.to_thread(
+                sandbox.platform_executor,
+                options.interpreter or sys.executable,
+                extra_read_paths=options.extra_read_paths,
+                bwrap=options.bwrap,
+            )
         except SandboxUnavailable as error:
-            return {"ok": False, "reason": str(error)[:300]}
+            return {"ok": False, "reason": str(error)[:600]}
         try:
             report = await sandbox.probe_sandbox(executor)
         except Exception as error:  # noqa: BLE001 - 探测跑不了不算通过
             logger.warning("sandbox probe failed to run: %s", error)
             return {"ok": False, "reason": f"{type(error).__name__}: {error}"[:300]}
-        result = report.to_json()
+        result = {**report.to_json(), "kind": getattr(executor, "kind", None)}
+        if not report.ok and "reason" not in result:
+            failed = [item.get("name") for item in result.get("items", ()) if not item.get("ok")]
+            result["reason"] = "隔离检查没通过：" + "、".join(
+                [*map(str, failed), *([] if result.get("disjoint", True) else ["白名单含检查目标"])]
+            )
         with contextlib.suppress(OSError):
             (self.root / "sandbox-probe.json").write_text(
                 json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8"

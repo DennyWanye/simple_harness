@@ -26,9 +26,8 @@ DeepSeek 分词文件在宿主第一次启动时自动下载到数据目录（�
 `tokenizer_path=`。向量检索可选：另装 `onnxruntime`、`tokenizers`、`numpy`，并把 BGE-M3 INT8 模型
 目录经 `models_dir=` 传入；不装就按词检索。
 
-要求 Python 3.11 以上。`pytest` 随 SDK 一起装：任务的 `file:` / `pytest:` 要求都在沙箱里用宿主自己的
-解释器跑 pytest 核对，所以要装在同一个虚拟环境。沙箱（跑模型写的代码、核对要求）目前只在 macOS 上可用；
-别的系统宿主照常启动，只是不跑模型写的代码、要求也核对不了。
+要求 Python 3.11 以上。`pytest` 随 SDK 一起装：模型写的测试与核对代码在隔离区里用宿主自己的解释器跑，
+所以要装在同一个虚拟环境。隔离区 macOS 用系统自带的 Seatbelt，Linux 用 bubblewrap（要先装，见 3a 节）。
 
 ## 2. 最短程序
 
@@ -82,12 +81,66 @@ asyncio.run(main())
 | 实例锁 | 一个数据目录同一时刻只许一个进程用（文件锁，进程死了内核释放） |
 | 部署验收门 | 安装包里的部署清单必须是 `VALIDATED`（发版脚本写的）；`require_acceptance=False` 可跳过，只用于测试 |
 | 发布连接器 | `HostSettings(publish_dir=...)` 给了存在且支持硬链接的目录，任务才能带 `action:file_publish.publish:` 要求 |
-| 沙箱探测 | 每次启动重新证明隔离；过了才给 `run_tests` 工具与 `pytest:` 要求 |
+| 沙箱探测 | 每次启动重新证明隔离（macOS Seatbelt / Linux bubblewrap，见 3a 节）；过了才给 `run_tests` 工具与 `pytest:` 要求 |
 | 执行池 | 每个上下文档（256K / 512K / 600K）一个池，开思考时另有思考池；每池一个认证计数器 |
 | 任务部署 | 规划世界（`deployment.goal_world`）、执行图、保证通道（独立审阅） |
 | 门面 | 所有命令走 `MissionControlV1`，身份固定为 `principal`，请求体永远不能冒名 |
 
 启动后 `host.state` 是 `available`；`host.status()` 给出模型、沙箱、发布、运行档、预算默认与全局月配额。
+
+## 3a. 隔离区（macOS / Linux）
+
+模型写的代码（`run_tests` 工具、`pytest:` 要求、核对代码）只在隔离区里跑。宿主每次启动都实际检查一遍：
+读不到 HOME 和别处的临时文件、写不出工作目录、连不上宿主的端口与 Unix 套接字、碰不到宿主进程、
+脱离进程树的后台进程会被收掉、输出与 CPU 有上限。全部通过才启用；结果在 `status()["sandbox"]`
+（`ok`、`kind`、没通过时的 `reason`），也写在数据目录的 `sandbox-probe.json`。
+
+| 系统 | 隔离方法 | 前提 |
+|---|---|---|
+| macOS | Seatbelt（`sandbox-exec`） | 系统自带 |
+| Linux | bubblewrap：新的用户/进程/网络/IPC 命名空间，根目录为空且只读，只读挂解释器白名单；可写的只有本次副本和草稿目录（`/dev/shm` 也落在草稿目录，多进程能用） | 装 `bwrap`（0.8 以上更好）；内核允许普通用户开用户命名空间 |
+| 其他 | 无 | — |
+
+Linux 要点：
+
+- Ubuntu 23.10 起（含 24.04）AppArmor 默认不让普通程序开用户命名空间，要装一份只放行 `bwrap` 的规则：
+  `python -m agent_orchestrator.host.sandbox_doctor --apparmor-profile` 打印规则文件和安装命令（Ubuntu 24.10
+  起系统自带同样的规则）。SDK 不改任何系统设置。
+- 在 systemd 服务里跑可以带 `NoNewPrivileges=yes`（bubblewrap 不用 setuid）。
+- 进程归属按进程命名空间：命名空间的第一个进程一结束，内核就把里面的进程全部结束；宿主被杀，
+  `--die-with-parent` 让隔离区一起结束；重启后按"开机号 + 第一个进程启动时刻 + 命名空间"认领，对不上的不碰。
+- 内存与进程数是软限制（运行中采样，超了就收掉）；CPU 时间与文件大小是硬限制。没用 cgroup。
+
+在要部署的机器上先跑检查命令，它和宿主启动时做的是同一套检查，输出一份 JSON（系统、内核、C 库、
+Python、bwrap 版本、用户命名空间相关设置、每一项检查结果），通过退出码 0：
+
+```bash
+python -m agent_orchestrator.host.sandbox_doctor
+```
+
+要换跑模型代码的解释器或加只读路径，用 `SandboxOptions`：
+
+```python
+from agent_orchestrator.host import OrchestrationHost, SandboxOptions
+
+host = await OrchestrationHost.open(
+    root,
+    ...,
+    sandbox=SandboxOptions(
+        interpreter="/opt/app/venv/bin/python",  # 默认是宿主自己的解释器
+        extra_read_paths=("/opt/app/deps",),     # 别放 HOME 或数据目录：检查会判不通过
+        bwrap="/usr/bin/bwrap",                  # 默认在 PATH 里找
+    ),
+)
+```
+
+应用有自己的隔离方法时，可以传 `SandboxOptions(executor=...)`：对象实现
+`agent_orchestrator.runtime.sandbox.SandboxExecutorPort` 且 `isolated=True`。SDK 对它做同一套检查，通过了才用，
+不看它自己怎么说。网络一项检查的是连不上宿主的回环端口、Unix 套接字和本机局域网地址；能不能连到外网，
+检查证明不了，由应用负责。它的重启后回收也由应用负责。
+
+没有隔离区时宿主照常启动：`file:` 要求照样核对（直接看文件在不在）；`pytest:` 要求建任务时就被拒
+（`local_tests_disabled`，原因带上）；模型拿不到 `run_tests` 工具。
 
 ## 4. 操作一览
 
@@ -201,3 +254,7 @@ SDK 没有推送。定时调 `events(mission_id, after_seq=上次的 through_seq
 | `DeepSeek tokenizer bytes differ…` | 分词文件不是钉死的那份；用 `ensure_deepseek_tokenizer` 重新取 |
 | `取 DeepSeek 分词文件失败…` | 第一次启动要联网下载分词文件；或自己下载后传 `tokenizer_path` |
 | 任务停在"等授权" | `auto_mode=False` 且没人调 `planning_authorization` |
+| `status()["sandbox"]["ok"]` 为假，原因含 `bubblewrap is not installed` | Linux 没装 `bwrap` |
+| 原因含 `AppArmor restricts unprivileged user namespaces` | Ubuntu 23.10+ 要装 bwrap 的 AppArmor 规则（见 3a 节） |
+| 原因含 `kernel.unprivileged_userns_clone=0` 或 `max_user_namespaces=0` | 内核不许普通用户开用户命名空间，要系统管理员放开 |
+| `local_tests_disabled` | 这台机器没有可用的隔离区，任务不能带 `pytest:` 要求 |

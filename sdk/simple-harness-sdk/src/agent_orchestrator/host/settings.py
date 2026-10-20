@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: Apache-2.0
 
-"""宿主入口的两份配置：模型（``ModelConfig``）与运行参数（``HostSettings``）。
+"""宿主入口的配置：模型（``ModelConfig``）、运行参数（``HostSettings``）与隔离区（``SandboxOptions``）。
 
 只支持 DeepSeek（这一版的用户决定，2026-10-19）：编排的每个执行池都要一个经过认证的用量计数器，
 目前只有 DeepSeek V4.1 的官方分词器与请求渲染器做到了精确计数；别的模型没有计数器，就没有执行池。
@@ -92,6 +92,27 @@ class HostSettings:
                 raise ValueError(f"{name} 必须在 1～4 之间")
         if self.global_monthly_max_tokens < self.default_mission_max_tokens:
             raise ValueError("月配额不能小于单个任务的默认上限")
+
+
+@dataclass(frozen=True)
+class SandboxOptions:
+    """模型写的代码（``run_tests``、``pytest:`` 要求、核验代码）在哪个隔离区里跑。
+
+    默认按系统自动选：macOS 用系统自带的 Seatbelt，Linux 用 bubblewrap（要先装 ``bwrap``）。
+    每次启动都实际检查一遍隔离（不能联网、读不到 HOME 和别处的文件、写不出工作目录、碰不到
+    宿主进程、脱离进程树的后台进程也会被收掉）；没通过就不跑模型写的代码，原因写在
+    ``status()["sandbox"]``。
+    """
+
+    #: 跑模型代码的 Python；默认是宿主自己的解释器。要用另一个（例如装了测试依赖的）就填它。
+    interpreter: str | None = None
+    #: 额外的只读路径（例如另一个依赖目录）。不要把 HOME 或数据目录放进来——检查会判不通过。
+    extra_read_paths: tuple[str, ...] = ()
+    #: Linux：``bwrap`` 的路径；默认在 ``PATH`` 里找。
+    bwrap: str | None = None
+    #: 应用自带的隔离执行器（实现 ``agent_orchestrator.runtime.sandbox.SandboxExecutorPort``，
+    #: ``isolated=True``）。SDK 照样对它做同一套启动检查，通过了才用；它的重启后回收归应用负责。
+    executor: Any = None
 
 
 def host_settings_from_mapping(section: Mapping[str, Any] | None) -> HostSettings:

@@ -59,7 +59,7 @@ Linux 另需 Tauri 系统库（webkit2gtk 等，`setup.sh` 检测不到会给出
 
 ## 把 SDK 接到别的 Python 应用
 
-桌面端内嵌的 SDK 可以单独装进你自己的 Python 应用做任务编排（这一版只支持 DeepSeek，沙箱只在 macOS）。
+桌面端内嵌的 SDK 可以单独装进你自己的 Python 应用做任务编排（这一版只支持 DeepSeek；隔离区 macOS 用 Seatbelt，Linux 用 bubblewrap）。
 
 ```bash
 pip install backend/vendor/simple_harness_sdk-<版本>-py3-none-any.whl

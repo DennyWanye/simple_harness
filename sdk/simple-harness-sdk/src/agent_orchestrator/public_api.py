@@ -34,6 +34,7 @@ PUBLIC_MODULES: tuple[str, ...] = (
     "agent_orchestrator.host.instance_lock",
     "agent_orchestrator.host.offline",
     "agent_orchestrator.host.provider",
+    "agent_orchestrator.host.sandbox_doctor",
     "agent_orchestrator.host.script_runner",
     "agent_orchestrator.host.settings",
     "agent_orchestrator.host.tokenizer",

@@ -33,6 +33,7 @@ from .settings import (
     ONLY_DEEPSEEK_REASON,
     HostSettings,
     ModelConfig,
+    SandboxOptions,
     host_settings_from_mapping,
 )
 
@@ -46,6 +47,7 @@ __all__ = (
     "ModelConfig",
     "OrchestrationHost",
     "Principal",
+    "SandboxOptions",
     "ToolCallContext",
     "host_settings_from_mapping",
     "with_publish_sources",
