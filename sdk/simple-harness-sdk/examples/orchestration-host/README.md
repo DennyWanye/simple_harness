@@ -18,3 +18,11 @@ SH_TOKENIZER=./deepseek-v41-tokenizer.json python demo.py --root ./orchestration
 ```
 
 经转发线路（本机网关）时加 `SH_COMPATIBLE_HOSTS=127.0.0.1`；`http://` 端点自动放行私网明文。
+
+其它例子（都不联网，用脚本模型）：
+
+```bash
+python tools_readonly.py   # 注册一个只读工具
+python tools_async.py      # 异步工具：抛错一次、超时一次、再成功
+python tools_effect.py     # 应用连接器：自动模式代批执行一次；"总要人批"的操作等人点批准
+```

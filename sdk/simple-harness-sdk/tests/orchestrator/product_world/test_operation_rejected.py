@@ -20,6 +20,7 @@ from typing import Any
 import pytest
 from agent_orchestrator.governance.policies import DeploymentPolicy
 from agent_orchestrator.runtime.connectors_publish import FilePublishConnector
+from agent_orchestrator.testing.connectors import person_approves
 from agent_orchestrator.testing.fixtures import package_of
 from agent_orchestrator.testing.product_world import product_world
 from agent_orchestrator.testing.scripted_replies import (
@@ -141,6 +142,7 @@ async def _rejected_once(tmp_path: Any, provider: _Provider) -> Any:
     published = tmp_path / "published"
     published.mkdir()
     connector = FilePublishConnector(published, tmp_path / "root" / "connectors" / "file_publish")
+    person_approves(connector)  # 测人拒绝：自动模式会代批（用户 2026-10-20），标成总要人批
     policy = DeploymentPolicy(enabled_connectors=("file_publish",), max_action_level="L2")
     world_cm = product_world(
         tmp_path / "root",
@@ -156,7 +158,7 @@ async def _rejected_once(tmp_path: Any, provider: _Provider) -> Any:
             "idempotency_key": "rejected-" + str(provider.rewrite),
         }
     )["mission_id"]
-    await world.drain()
+    # 自动模式会代签确认页（用户 2026-10-20）；这里由人在主循环开跑前先确认
     _confirm_completion(world, mission_id)
     card = await _until_card(world, mission_id, 0)
     world.control.decide(card["request_id"], "reject", reason=REASON)

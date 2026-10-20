@@ -32,6 +32,8 @@ from functools import wraps
 from pathlib import Path
 from typing import Any
 
+from simple_harness.contracts import canonical_json
+
 from ..artifacts.store import ArtifactStoreError, open_nofollow
 from ..assurance.checks import CriterionPolicy
 from ..assurance.codec import AssuranceError, array, fields
@@ -53,15 +55,17 @@ from ..orchestrator.operation_runtime import ensure_operation_runtime
 from ..orchestrator.planner_views import accepted_steps
 from ..orchestrator.requirements_amendment import RequirementsAmendmentError, amend_requirements
 from ..orchestrator.source_commits import SourceCommitError
+from ..orchestrator.system_operations import effect_operation
 from ..planning.htn.refinement import planning_frontier
-from ..runtime.operation_profiles import BuiltinOperationProfiles
+from ..runtime.operation_profiles_deployment import DeploymentOperationProfiles
 from ..storage import planning_decision_store, planning_human_store
+from ..storage.htn_store import HtnStore
 from ..storage.planning_admission_store import PlanningAdmissionStore
 from ..storage.store import StoreError
 from ..verification.conflicts import mission_disputes
 from .approvals import ApprovalApi, ApprovalRequestError
 from .assurance import AssuranceReadError
-from .missions import MissionRequestError
+from .missions import MissionRequestError, criteria_from_request
 from .operation_completion import OperationCompletionApi
 from .operation_intents import OperationIntentApi
 from .operation_workspace import operation_workspace
@@ -90,7 +94,7 @@ CLOSED_FIELDS = {
     "task_kind": "not open on this surface",
 }
 OPEN_BUDGET = frozenset({"max_tokens", "max_attempts"})
-LIST_FIELDS = ("success_criteria", "stop_conditions", "untrusted_sources")
+LIST_FIELDS = ("stop_conditions", "untrusted_sources")
 CLOSED_BUDGET = frozenset(
     {"max_runtime_seconds", "max_concurrency", "max_tool_calls", "max_agents", "max_search_calls"}
 )
@@ -465,20 +469,6 @@ class MissionControlV1:
             raise FacadeError("invalid_request", str(error)) from error
 
     @_native_root
-    def submit_operation_intent(self, command: Mapping[str, Any]) -> dict[str, Any]:
-
-        if isinstance(command, Mapping) and isinstance(command.get("mission_id"), str):
-            self._refuse_isolated(command["mission_id"])
-        try:
-            return OperationIntentApi(
-                self._orchestrator,
-                tenant_id=self._tenant,
-                principal=self._principal,
-            ).submit(command)
-        except (ContractError, ValueError, StoreError) as error:
-            raise FacadeError(getattr(error, "code", "invalid_request"), str(error)) from error
-
-    @_native_root
     def operation_intent_status(self, intent_id: str) -> dict[str, Any]:
 
         try:
@@ -499,15 +489,22 @@ class MissionControlV1:
         proposal = command.get("proposal") if isinstance(command, Mapping) else None
         if not isinstance(proposal, Mapping) or not proposal.get("effects"):
             return
-        effects = OperationCompletionRequirementsV1.from_json(proposal).effects
+        spec = OperationCompletionRequirementsV1.from_json(proposal)
+        requirements = HtnStore(self._orchestrator.store).get_requirements_revision(
+            str(command.get("mission_id")), int(spec.requirements_ref.revision)
+        )
+        if requirements is None:
+            raise FacadeError("OP_REF_UNAVAILABLE", "the confirmed requirements are unavailable")
         try:
             registry = getattr(
                 self._orchestrator, "_operation_profiles", None
-            ) or BuiltinOperationProfiles(self._orchestrator.connectors)
-            for effect in effects:
-                registry.require_effect_supported(effect)
+            ) or DeploymentOperationProfiles(self._orchestrator.connectors)
+            for effect in spec.effects:
+                registry.require_effect_supported(effect, effect_operation(effect, requirements))
         except OperationMaterializationInputError as error:
             raise FacadeError(error.code, str(error)) from error
+        except ContractError as error:
+            raise FacadeError("OP_REQUIREMENT_MAPPING_UNAPPROVED", str(error)) from error
 
     @_native_root
     def approve_operation_completion_spec(self, command: Mapping[str, Any]) -> dict[str, Any]:
@@ -748,6 +745,12 @@ class MissionControlV1:
                 or not all(isinstance(item, str) and item.strip() for item in value)
             ):
                 raise FacadeError("invalid_request", f"{name} must be a list of non-blank strings")
+        try:
+            statements, _ = criteria_from_request(command.get("success_criteria"))
+        except MissionRequestError as error:
+            raise FacadeError("invalid_request", str(error)) from error
+        if not all(statement.strip() for statement in statements):
+            raise FacadeError("invalid_request", "success_criteria must not be blank")
         seed = command.get("workspace_seed")
         if seed is not None and (
             not isinstance(seed, Mapping)
@@ -760,9 +763,11 @@ class MissionControlV1:
     def _texts(request: Mapping[str, Any]) -> list[str]:
         """Every caller-written text that can reach a model (review round 2 P2-7)."""
 
+        statements, params = criteria_from_request(request.get("success_criteria"))
         texts = [
             str(request.get("goal", "")),
-            *(str(c) for c in request.get("success_criteria", ()) or ()),
+            *statements,
+            *(canonical_json(value) for value in params.values()),
         ]
         for path, body in dict(request.get("workspace_seed") or {}).items():
             texts += [str(path), str(body)]
@@ -829,6 +834,30 @@ class MissionControlV1:
         except (ActionCommitError, StoreError, ContractError) as error:
             raise FacadeError("refused", str(error)) from error
         decided = dict(result.get("request") or self._store.get_approval(str(request_id)) or {})
+        return {
+            "request_id": str(request_id),
+            "request_state": decided.get("state"),
+            "receipt_hash": result.get("receipt_hash"),
+        }
+
+    def host_auto_approve_action(self, request_id: str) -> dict[str, Any]:
+        """自动模式：主机按用户选的模式代批一个动作（用户 2026-10-20），记成
+        ``HOST_AUTO_PERMISSION``。只给部署职责用，不是人点的按钮；"总要人批"的请求被拒。"""
+
+        request = self._store.get_approval(str(request_id))
+        if request is None:
+            raise FacadeError("not_found", NOT_FOUND)
+        self._mission(request.get("mission_id"))
+        self._refuse_isolated(request.get("mission_id"))
+        try:
+            result = self._approvals.approve(
+                str(request_id),
+                nonce=f"host-auto:{request_id}",
+                approval_source="HOST_AUTO_PERMISSION",
+            )
+        except (ActionCommitError, StoreError, ContractError) as error:
+            raise FacadeError("refused", str(error)) from error
+        decided = dict(result.get("request") or {})
         return {
             "request_id": str(request_id),
             "request_state": decided.get("state"),

@@ -24,7 +24,6 @@ def test_message_types_are_the_planned_set():
         "mission_create",
         "mission_create_with_sources",
         "mission_operation_completion_approve",
-        "mission_operation_intent_submit",
         "mission_operation_intent_status",
         "mission_planning_authorization",
         "mission_planning_answer",

@@ -179,12 +179,6 @@ class OperationCompletionCommitsMixin:
         mission_id = identifier(mission_id, "mission_id")
         if approval_source not in {"HUMAN", "HOST_AUTO_PERMISSION"}:
             raise OperationCompletionError("invalid_request", "unknown approval source")
-        if approval_source == "HOST_AUTO_PERMISSION" and proposal.to_json().get("effects"):
-            # Only content-only requirements are ever confirmed without a person.
-            raise OperationCompletionError(
-                "OP_REQUIREMENT_MAPPING_UNAPPROVED",
-                "an operation effect needs a person's confirmation",
-            )
         command_id = identifier(command_id, "command_id")
         if not isinstance(principal, Principal) or not isinstance(
             requirement_authority, ApprovedRequirementAuthority

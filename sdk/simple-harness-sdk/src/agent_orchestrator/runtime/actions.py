@@ -6,11 +6,13 @@
 It never writes the library itself.  Every state change goes through the Commit
 Service: ``begin_handoff`` re-checks the approval binding, reserves the budget and writes
 HANDED_OFF (the outbox) in one transaction *before* the connector is called; the call runs
-in a worker thread under ``connector_timeout_seconds`` so the event loop never blocks; a
-definite refusal is FAILED, anything after the hand-off that is not a matching receipt is
-UNKNOWN.  UNKNOWN is never handed off blindly: ``reconcile`` asks the connector by
-idempotency key and only a CONFIRMED_NOT_STARTED answer allows one more hand-off with the
-*same* key (ORCH §12.1–§12.2, §12.6; SDK effects / reconciliation semantics)."""
+in a worker thread (or, for an ``async def`` connector, as a task on the loop) under
+``connector_timeout_seconds`` so the event loop never blocks; a definite refusal is FAILED,
+anything after the hand-off that is not a matching receipt is UNKNOWN.  A call that outlives
+its timeout stays "in flight" until it really ends.  UNKNOWN is never handed off blindly:
+``reconcile`` asks the connector by idempotency key and only a CONFIRMED_NOT_STARTED answer
+allows one more hand-off with the *same* key (ORCH §12.1–§12.2, §12.6; SDK effects /
+reconciliation semantics)."""
 
 from __future__ import annotations
 
@@ -21,13 +23,41 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from simple_harness.contracts import canonical_json
+
+from ..observability.secrets import find_secrets
 from ..orchestrator.action_commits import ActionCommitError
 from ..storage.planning_admission_store import PlanningAdmissionStore
 from . import operation_reconciliation
 from .connectors import ConnectorRejected, Receipt
+from .operation_profiles_generic import is_async
 from .operation_reconciliation import context, stored_negative_proof
 
 logger = logging.getLogger(__name__)
+
+#: 一份回执规范 JSON 后的上限；超了或不是规范 JSON 的回执不算数（结果不明，去核对）。
+RECEIPT_LIMIT_BYTES = 64 * 1024
+#: 连接器报错文字进库前截到这么长。
+ERROR_TEXT_LIMIT = 500
+
+
+def checked_receipt(value: object) -> Receipt | None:
+    """连接器交回的回执：必须是 :class:`Receipt`、能规范成 JSON、不超过上限；否则 ``None``。"""
+
+    if not isinstance(value, Receipt):
+        return None
+    try:
+        encoded = canonical_json(value.to_json())
+    except (TypeError, ValueError):
+        return None
+    return value if len(encoded.encode("utf-8")) <= RECEIPT_LIMIT_BYTES else None
+
+
+def error_text(error: BaseException) -> str:
+    """连接器报错进库的样子：截短；像带密钥就只留异常类型名。"""
+
+    text = f"{type(error).__name__}: {error}"[:ERROR_TEXT_LIMIT]
+    return type(error).__name__ if find_secrets(text) else text
 
 
 if TYPE_CHECKING:
@@ -116,6 +146,19 @@ class ActionExecutor:
         self._require_execution_root()
         return callback(*args, **kwargs)
 
+    async def _external_async(self, callback, *args, **kwargs):
+        self._require_execution_root()
+        return await callback(*args, **kwargs)
+
+    def _start(self, callback: Any, *args: Any, **kwargs: Any) -> asyncio.Future[Any]:
+        """开始一次连接器调用：普通函数进线程，``async def`` 在本事件循环上跑。"""
+
+        if is_async(callback):
+            return asyncio.ensure_future(self._external_async(callback, *args, **kwargs))
+        return asyncio.ensure_future(
+            asyncio.to_thread(self._external_call, callback, *args, **kwargs)
+        )
+
     @property
     def inflight(self) -> frozenset[str]:
         """Hand-offs this process is waiting on right now (D7-5': the only in-flight kind)."""
@@ -165,38 +208,34 @@ class ActionExecutor:
         connector = self._connectors[str(action["connector"])]
         self._commit._store.fault("after_handoff_before_call", "action")  # 崩溃切点 K08
         self._inflight.add(action_key)
-        call = asyncio.ensure_future(
-            asyncio.to_thread(
-                self._external_call,
-                connector.execute,
-                str(action["operation"]),
-                str(action["target"]),
-                dict(action["params"]),
-                idempotency_key=str(action["idempotency_key"]),
-            )
+        call = self._start(
+            connector.execute,
+            str(action["operation"]),
+            str(action["target"]),
+            dict(action["params"]),
+            idempotency_key=str(action["idempotency_key"]),
         )
         try:
             receipt = await asyncio.wait_for(asyncio.shield(call), timeout=self._timeout)
         except ConnectorRejected as error:  # the service said no: nothing was applied
             self._inflight.discard(action_key)
             return self._commit.record_action_outcome(
-                action_key, owner=self._owner, outcome="failed", error=str(error)
+                action_key, owner=self._owner, outcome="failed", error=error_text(error)
             )
         except Exception as error:  # noqa: BLE001 - transport, timeout: it may have happened
             self._release_when_done(action_key, call)
             return self._commit.record_action_outcome(
-                action_key,
-                owner=self._owner,
-                outcome="unknown",
-                error=f"{type(error).__name__}: {error}",
+                action_key, owner=self._owner, outcome="unknown", error=error_text(error)
             )
         self._inflight.discard(action_key)
         self._commit._store.fault("after_external_effect", "action")  # 崩溃切点 K09
+        checked = checked_receipt(receipt)
+        if checked is None:
+            return self._commit.record_action_outcome(
+                action_key, owner=self._owner, outcome="unknown", error="receipt_invalid"
+            )
         return self._commit.record_action_outcome(
-            action_key,
-            owner=self._owner,
-            outcome="succeeded",
-            receipt=receipt if isinstance(receipt, Receipt) else None,
+            action_key, owner=self._owner, outcome="succeeded", receipt=checked
         )
 
     def _release_when_done(self, action_key: str, call: asyncio.Future[Any]) -> None:
@@ -214,14 +253,23 @@ class ActionExecutor:
             call.add_done_callback(finished)
 
     async def _rehandoff_scoped(self, key: str, runtime: Any) -> dict[str, Any]:
-        again = await self.hand_off(key, rehandoff=True)
-        if again is not None:
-            return again
+        action = self._commit.store.get_action(key) or {}
+        if self._fenced(action):
+            # 封口的连接器已经拒绝这个键：同键重交注定被拒。直接记"证实没生效"，
+            # 由系统按已批准的效果换新键重做。
+            reason = "lookup_fenced_key"
+        else:
+            again = await self.hand_off(key, rehandoff=True)
+            if again is not None:
+                return again
+            reason = self.last_refusal.get(key, "current_gate_refused")
         return self._commit.finish_proven_nonapplication(
-            key,
-            reason=self.last_refusal.get(key, "current_gate_refused"),
-            service_authority=runtime.service_authority,
+            key, reason=reason, service_authority=runtime.service_authority
         )
+
+    def _fenced(self, action: Mapping[str, Any]) -> bool:
+        connector = self._connectors.get(str(action.get("connector")))
+        return bool(getattr(connector, "lookup_fenced", False))
 
     def _failed_unproven(self, action: Mapping[str, Any]) -> bool:
         """FAILED, handed off at least once, operation-linked, no stored proof, and not
@@ -232,6 +280,25 @@ class ActionExecutor:
             and not action.get("needs_human")
             and operation_reconciliation.action_outcome_unresolved(self._commit.store, action)
         )
+
+    async def _lookup(
+        self, connector: Any, action: Mapping[str, Any]
+    ) -> tuple[str, Receipt | None, bool]:
+        """按幂等键问一次连接器：（判定，合格回执，这次查询有没有得到可信的答案）。"""
+
+        if connector is None or not getattr(connector, "supports_reconciliation", False):
+            return "STILL_UNKNOWN", None, False
+        try:
+            found = await asyncio.wait_for(
+                self._start(connector.lookup, str(action["idempotency_key"])),
+                timeout=self._timeout,
+            )
+        except Exception:  # noqa: BLE001 - the service cannot answer: still unknown
+            return "STILL_UNKNOWN", None, False
+        receipt = checked_receipt(found)
+        if receipt is None and found is not None:  # 交回了东西却不是合格回执：不能当"没有记录"
+            return "STILL_UNKNOWN", None, False
+        return lookup_verdict(connector, receipt), receipt, True
 
     async def reconcile_one(
         self, action_key: str, *, allow_rehandoff: bool = False
@@ -277,24 +344,13 @@ class ActionExecutor:
             if stored_negative_proof(self._commit.store, action):
                 return await self._rehandoff_scoped(key, runtime) if allow_rehandoff else action
         connector = self._connectors.get(str(action["connector"]))
-        receipt: Receipt | None = None
-        if failed:
-            verdict = "STILL_UNKNOWN"  # its outcome is booked; only a proof is sought below
-        elif connector is None or not getattr(connector, "supports_reconciliation", False):
-            verdict = "STILL_UNKNOWN"
+        if failed and not self._fenced(action):
+            verdict, receipt, looked_up = "STILL_UNKNOWN", None, False
         else:
-            try:
-                found = await asyncio.wait_for(
-                    asyncio.to_thread(
-                        self._external_call, connector.lookup, str(action["idempotency_key"])
-                    ),
-                    timeout=self._timeout,
-                )
-            except Exception:  # noqa: BLE001 - the service cannot answer: still unknown
+            # 封口证明要用执行器问到的答案（连接器的 lookup 可能是 async，适配器问不了）
+            verdict, receipt, looked_up = await self._lookup(connector, action)
+            if failed:  # a FAILED action's outcome is booked; only a proof is sought below
                 verdict = "STILL_UNKNOWN"
-            else:
-                receipt = found if isinstance(found, Receipt) else None
-                verdict = lookup_verdict(connector, receipt)
         # New Operation links require a scoped, registered proof. Empty lookup,
         # timeout and an expired local lease cannot establish nonapplication.
 
@@ -308,6 +364,12 @@ class ActionExecutor:
                         resolved, _profile, adapter, events = context(
                             self._commit.store, runtime, action
                         )
+                    # 通用连接器的封口证明用上面这次查询的答案，不再问第二遍
+                    lookup = (
+                        {"found": receipt, "looked_up": True}
+                        if looked_up and getattr(adapter, "takes_lookup", False)
+                        else {}
+                    )
                     evidence = await asyncio.wait_for(
                         asyncio.to_thread(
                             self._external_call,
@@ -316,6 +378,7 @@ class ActionExecutor:
                             resolved=resolved,
                             handoff_events=events,
                             now_ms=int(self._commit.store.now * 1000),
+                            **lookup,
                         ),
                         timeout=self._timeout,
                     )
@@ -361,4 +424,10 @@ class ActionExecutor:
         return updated
 
 
-__all__ = ("ActionExecutor", "lookup_verdict", "publication_overlaps_storage")
+__all__ = (
+    "ActionExecutor",
+    "checked_receipt",
+    "error_text",
+    "lookup_verdict",
+    "publication_overlaps_storage",
+)

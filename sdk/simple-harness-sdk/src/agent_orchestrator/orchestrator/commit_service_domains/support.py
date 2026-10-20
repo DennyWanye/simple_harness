@@ -100,6 +100,8 @@ class MissionSpec:
     # entry (facade, CLI, benchmark runner) can write a row.
     orchestration_semantics_version: str = HIERARCHICAL_SEMANTICS
     planning_protocol_version: str = PLANNING_DECISION_V1
+    #: ``action:`` 要求的参数，按要求编号（``c-user-<n>``，按位置）；进章程哈希，第 1 版要求从这里读。
+    action_params: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         normalise_semantics(self.orchestration_semantics_version)
@@ -132,6 +134,8 @@ class MissionSpec:
             data["domain"] = self.domain
         if self.runtime_profile_id is not None:
             data["runtime_profile_id"] = self.runtime_profile_id
+        if self.action_params:
+            data["action_params"] = {key: dict(value) for key, value in self.action_params.items()}
         data[SEMANTICS_KEY] = self.orchestration_semantics_version
         data["planning_protocol_version"] = self.planning_protocol_version
         return data

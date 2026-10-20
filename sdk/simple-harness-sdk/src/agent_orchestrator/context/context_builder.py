@@ -207,7 +207,6 @@ def build_worker_package(
     role: str = "worker",
     domain: DomainProfileV1 = CODE_PROFILE,
     source_versions: Mapping[str, str] | None = None,
-    action_candidate_contract: Mapping[str, Any] | None = None,
 ) -> TaskPackage:
     """Worker / Synthesizer / Arbiter packages share this shape; ``role`` selects the
     visibility template (worker → worker, synthesizer → synthesizer, arbiter → arbiter)."""
@@ -252,8 +251,6 @@ def build_worker_package(
         },
         "output_contract": _result_output_contract(task, attempt, domain),  # §10 item 11
     }
-    if action_candidate_contract is not None:
-        package["action_candidate_contract"] = dict(action_candidate_contract)
     package["package_version"] = PACKAGE_VERSION
     _domain_section(package, domain, mission)
     _source_section(package, domain, source_versions)

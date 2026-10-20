@@ -9,8 +9,11 @@
 - 发布哪个文件：当前已接受的内容产出里路径等于目标（其次文件名相同）的唯一产物。申请单里
   的候选引用仍是那份审过的真实文件本身，只有申请单 JSON 由系统生成，所以原有的来源、参数
   绑定、审阅与核对检查全部照旧成立，发布的一定是审过的字节。
-- 谁提交：确认页批准该规格的那个人（提交入口只接受人；规格含效果时不允许系统代为确认）。
-- 只准备需要人批准的操作（发布是 L2），人仍在批准卡片上逐个批准。
+- 谁提交：确认页批准该规格的那个人（自动模式下由主机按用户的模式代为确认，如实记来源）。
+- 应用注册的连接器（第 2 片，2026-10-20）：参数是建任务时写在要求上的那一份；参数引用了产物
+  （``{"$artifact": 路径}``）就以那份产物为候选，没有引用就以该义务下最下游已接受步骤的产出为
+  锚点产物——它不是操作的内容，只把申请单钉在审过的那一步上。L1 操作照样由系统准备，按等级
+  规则不要人批，直接执行。
 """
 
 from __future__ import annotations
@@ -30,9 +33,9 @@ from ..contracts.operation_intents import (
 )
 from ..contracts.semantic_base import TypedRef, TypedRefKind, content_hash_of
 from ..governance.permissions import Principal
-from ..governance.policies import DeploymentPolicy, action_decision
 from ..planning.htn.grounding import derive_id
-from ..runtime.action_schema import is_operation_candidate_path, parse_action_criterion
+from ..runtime.action_params import PUBLISH, artifact_paths
+from ..runtime.action_schema import parse_action_criterion
 from ..runtime.operation_reconciliation import nonapplication_outcome, stored_negative_proof
 from ..storage import planning_human_store
 from ..storage.htn_store import HtnStore
@@ -45,6 +48,7 @@ if TYPE_CHECKING:
     from ..contracts.resolution import Acceptance
 
 SYSTEM_REASON = "用户在确认页批准的操作：发布 {source} 到 {target}"
+GENERIC_REASON = "用户在建任务时写明、确认页批准的操作：{operation}（目标 {target}）"
 
 
 def effect_operation(effect: Any, requirements: Any) -> tuple[str, str, str]:
@@ -61,19 +65,49 @@ def effect_operation(effect: Any, requirements: Any) -> tuple[str, str, str]:
     return found[0]
 
 
+def effect_params(effect: Any, requirements: Any) -> dict[str, Any]:
+    """The parameters written on the one ``action:`` requirement an effect covers."""
+
+    statements = {item.criterion_id: item for item in requirements.criteria}
+    for criterion in effect.criterion_ids:
+        item = statements.get(criterion)
+        if item is not None and parse_action_criterion(str(item.statement)) is not None:
+            return dict(item.action_params or {})
+    return {}
+
+
+def is_publish(operation: tuple[str, str, str]) -> bool:
+    return (operation[0], operation[1]) == PUBLISH
+
+
 def source_matches(path: str, target: str) -> bool:
     return path == target or path.rsplit("/", 1)[-1] == target.rsplit("/", 1)[-1]
 
 
-def system_candidate_bytes(operation: tuple[str, str, str], source_path: str) -> bytes:
+def system_candidate_bytes(
+    operation: tuple[str, str, str], source_path: str, params: dict[str, Any] | None = None
+) -> bytes:
+    """The application form JSON the system writes: for a publish the file to send, for any
+    other operation the parameters frozen on its requirement."""
+
     connector, name, target = operation
-    candidate = {
-        "connector": connector,
-        "operation": name,
-        "target": target,
-        "params": {"artifact_path": source_path},
-        "reason": SYSTEM_REASON.format(source=source_path, target=target),
-    }
+    candidate = (
+        {
+            "connector": connector,
+            "operation": name,
+            "target": target,
+            "params": {"artifact_path": source_path},
+            "reason": SYSTEM_REASON.format(source=source_path, target=target),
+        }
+        if is_publish(operation)
+        else {
+            "connector": connector,
+            "operation": name,
+            "target": target,
+            "params": dict(params or {}),
+            "reason": GENERIC_REASON.format(operation=f"{connector}.{name}", target=target),
+        }
+    )
     return json.dumps(candidate, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode(
         "utf-8"
     )
@@ -149,8 +183,47 @@ def _leaves(store: Any, htn: HtnStore, mission_id: str) -> list[Any] | None:
     return tasks or None
 
 
+def _current_acceptances(htn: HtnStore, mission_id: str) -> dict[tuple[str, str], Any]:
+    current: dict[tuple[str, str], Any] = {}
+    for acceptance in htn.list_acceptances(mission_id):
+        if str(acceptance.validity) == "CURRENT":
+            for ref in acceptance.artifact_refs:
+                current.setdefault((ref.id, ref.content_hash), acceptance)
+    return current
+
+
+def _anchor(store: Any, htn: HtnStore, mission_id: str, leaves: list[Any]) -> list[Any]:
+    """没有引用产物的操作的锚点：最下游的已接受步骤（不在任何别的步骤上游）里按任务号排第一个、
+    它被接受的结果里按路径排第一份的已核产物。只做锚点，不是操作内容；找不到就是空。"""
+
+    upstream = set().union(*(leaf.upstream for leaf in leaves))
+    current = _current_acceptances(htn, mission_id)
+    for leaf in sorted(
+        (leaf for leaf in leaves if str(leaf.task.id) not in upstream),
+        key=lambda leaf: str(leaf.task.id),
+    ):
+        result = store.get_result(leaf.task.accepted_result_id)
+        artifacts = [
+            artifact
+            for artifact_id in (() if result is None else result.artifacts)
+            if (artifact := store.get_artifact(artifact_id)) is not None
+            and artifact.verification_status == "VERIFIED"
+        ]
+        for artifact in sorted(artifacts, key=lambda item: str(item.path)):
+            acceptance = current.get((artifact.id, artifact.content_hash))
+            if acceptance is not None:
+                return [(artifact, acceptance, leaf)]
+    return []
+
+
 def _sources(
-    store: Any, htn: HtnStore, mission_id: str, leaves: list[Any], target: str
+    store: Any,
+    htn: HtnStore,
+    mission_id: str,
+    leaves: list[Any],
+    target: str,
+    *,
+    exact: bool = False,
 ) -> list[tuple[Any, Any, Any]]:
     """(artifact, acceptance, task) — only the current plan's leaves, only the result each
     leaf finally had accepted (审阅 2026-09-29：旧步骤、旧版本的接受记录一直算"当前"，
@@ -160,38 +233,31 @@ def _sources(
     # 只在它和它下游的步骤里、按路径完全相同找（下游续写步骤可以改它，取最下游的一版）；
     # 没有声明或声明不唯一时照旧按路径/文件名在全部步骤里找。
     declared = [leaf for leaf in leaves if target in tuple(leaf.task.outputs)]
-    exact_only = len(declared) == 1
-    if exact_only:
+    exact_only = exact or len(declared) == 1
+    if len(declared) == 1:
         producer = str(declared[0].task.id)
         leaves = [
             leaf for leaf in leaves if str(leaf.task.id) == producer or producer in leaf.upstream
         ]
-    current: dict[tuple[str, str], Any] = {}
+    current = _current_acceptances(htn, mission_id)
     acceptance: Acceptance | None
-    for acceptance in htn.list_acceptances(mission_id):
-        if str(acceptance.validity) == "CURRENT":
-            for ref in acceptance.artifact_refs:
-                current.setdefault((ref.id, ref.content_hash), acceptance)
-    exact, by_name = [], []
+    matches: list[tuple[Any, Any, Any]] = []
+    by_name: list[tuple[Any, Any, Any]] = []
     for leaf in leaves:
         task = leaf.task
         result = store.get_result(task.accepted_result_id)
         for artifact_id in () if result is None else result.artifacts:
             artifact = store.get_artifact(artifact_id)
-            if (
-                artifact is None
-                or is_operation_candidate_path(artifact.path)
-                or artifact.verification_status != "VERIFIED"
-            ):
+            if artifact is None or artifact.verification_status != "VERIFIED":
                 continue
             acceptance = current.get((artifact.id, artifact.content_hash))
             if acceptance is None:
                 continue
             if artifact.path == target:
-                exact.append((artifact, acceptance, leaf))
+                matches.append((artifact, acceptance, leaf))
             elif not exact_only and source_matches(artifact.path, target):
                 by_name.append((artifact, acceptance, leaf))
-    found = exact or by_name
+    found = matches or by_name
     if len(found) > 1:
         # 续写链上多个版本：取最下游的那一版（其余版本都在它的上游）。
         downstream = [
@@ -264,24 +330,41 @@ def _ask_planner_once(
 
 
 def _ask_planner_for_source(
-    orch: Any, mission: Any, htn: HtnStore, effect_key: str, target: str, matches: list[str]
+    orch: Any,
+    mission: Any,
+    htn: HtnStore,
+    effect_key: str,
+    target: str,
+    matches: list[str],
+    *,
+    operation: str = "",
+    reference: str | None = None,
 ) -> bool:
-    """找不到要发布的文件（或判断不了用哪一版）：请规划器补/改步骤；它回应过仍不行就停。"""
+    """找不到要发布的文件、操作引用的产物（或判断不了用哪一版），或没有可做锚点的已接受产出：
+    请规划器补/改步骤；它回应过仍不行就停。"""
 
     active = htn.active_plan_revision(mission.id)
     if active is None:  # 5E 显式判空：这类提问只在有现行计划时生成（_leaves）
         raise ContractError("a system operation source question needs the active plan")
     prefix = f"system-operation-source:{effect_key}:"
-    reason = (
-        f"已批准的发布 {target} 找不到"
-        + ("唯一的" if matches else "")
-        + "来源文件："
-        + (
-            "、".join(matches) + " 都匹配，需指定其中一个步骤的产出"
-            if matches
-            else f"当前计划里没有任何步骤产出 {target}，需要补一个写出它的步骤"
+    wanted = reference or target
+    if operation and reference is None:
+        reason = (
+            f"已批准的操作 {operation}（目标 {target}）还没有任何已接受的步骤产出可以作为依据，"
+            "需要一个写出说明或准备材料的步骤"
         )
-    )
+    else:
+        reason = (
+            (f"已批准的操作 {operation} 引用的产物 " if operation else "已批准的发布 ")
+            + f"{wanted} 找不到"
+            + ("唯一的" if matches else "")
+            + "来源文件："
+            + (
+                "、".join(matches) + " 都匹配，需指定其中一个步骤的产出"
+                if matches
+                else f"当前计划里没有任何步骤产出 {wanted}，需要补一个写出它的步骤"
+            )
+        )
 
     def stop(why: str) -> bool:
         return _stop(
@@ -357,15 +440,6 @@ def _ask_planner_after_rejection(orch: Any, mission: Any, rejected: dict[str, An
     )
 
 
-def _needs_approval(orch: Any, operation: tuple[str, str, str]) -> bool:
-
-    connectors = getattr(orch, "_connectors", None) or {}
-    config = getattr(orch, "_config", None)
-    deployment = getattr(config, "deployment_policy", None) or DeploymentPolicy()
-    decision = action_decision(deployment, connectors.get(operation[0]), operation[1])
-    return decision.refused is None and decision.required_approvals >= 1
-
-
 def pending_system_operations(orch: Any, mission_id: str) -> list[dict[str, Any]]:
     """What the system would do now for each approved effect (read-only).
 
@@ -406,11 +480,17 @@ def pending_system_operations(orch: Any, mission_id: str) -> list[dict[str, Any]
         except ContractError as error:
             plans.append({"effect_key": effect.effect_key, "skip": str(error)})
             continue
-        if not _needs_approval(orch, operation):
-            # 只代办需要人批准的操作；不需要批准的会被自动执行，不由系统代为提交。
-            plans.append({"effect_key": effect.effect_key, "skip": "operation_needs_no_approval"})
-            continue
-        found = _sources(store, htn, mission_id, leaves, operation[2])
+        reference: str | None = None
+        if is_publish(operation):
+            found = _sources(store, htn, mission_id, leaves, operation[2])
+        else:
+            references = artifact_paths(effect_params(effect, requirements))
+            reference = references[0] if references else None
+            found = (
+                _sources(store, htn, mission_id, leaves, reference, exact=True)
+                if reference is not None
+                else _anchor(store, htn, mission_id, leaves)
+            )
         if len(found) != 1:
             plans.append(
                 {
@@ -418,6 +498,11 @@ def pending_system_operations(orch: Any, mission_id: str) -> list[dict[str, Any]
                     "target": operation[2],
                     "ask": True,
                     "matches": sorted(artifact.path for artifact, _, _ in found),
+                    **(
+                        {}
+                        if is_publish(operation)
+                        else {"operation": f"{operation[0]}.{operation[1]}", "reference": reference}
+                    ),
                 }
             )
             continue
@@ -773,6 +858,8 @@ def prepare_system_operations(orch: Any, mission_id: str) -> bool:
                 plan["effect_key"],
                 plan["target"],
                 plan["matches"],
+                operation=plan.get("operation", ""),
+                reference=plan.get("reference"),
             ):
                 return True
             continue
@@ -780,10 +867,9 @@ def prepare_system_operations(orch: Any, mission_id: str) -> bool:
         if command is None:
             continue
         try:
-            # 人手动提交的入口（``Orchestrator.submit_operation_intent``）先装配操作运行时再提交；
-            # 系统代办直接调底层提交，必须自己先装，否则进程里没人手动提交过时每轮都被
-            # "operation runtime is unavailable" 拒掉、任务空转（2026-09-29 真机）。只在真要
-            # 提交时装：没有发布效果的任务所在环境可能根本没注册发布连接器。
+            # 提交前先装配操作运行时，否则每轮都被"operation runtime is unavailable"拒掉、
+            # 任务空转（2026-09-29 真机）。只在真要提交时装：没有操作效果的任务所在环境可能
+            # 根本没注册连接器。
             # 按需导入：循环依赖（system_operations ↔ operation_runtime）
             from .operation_runtime import ensure_operation_runtime
 

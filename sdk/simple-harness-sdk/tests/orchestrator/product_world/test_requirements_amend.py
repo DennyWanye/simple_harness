@@ -11,6 +11,7 @@ import pytest
 from agent_orchestrator.api.facade import FacadeError
 from agent_orchestrator.storage.htn_store import HtnStore
 from agent_orchestrator.storage.obligation_store import ObligationStore
+from agent_orchestrator.testing.connectors import person_approves
 from agent_orchestrator.testing.fixtures import package_of
 from agent_orchestrator.testing.product_world import TENANT, product_world
 from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider, planner_reply
@@ -1288,6 +1289,7 @@ def test_amend_that_adds_a_publish_is_judged_as_an_operation_mission(tmp_path):
         connector = FilePublishConnector(
             published, tmp_path / "root" / "connectors" / "file_publish"
         )
+        person_approves(connector)  # 测人批准：自动模式会代批（用户 2026-10-20），标成总要人批
         policy = DeploymentPolicy(enabled_connectors=("file_publish",), max_action_level="L2")
         async with product_world(
             tmp_path / "root",
@@ -1303,8 +1305,7 @@ def test_amend_that_adds_a_publish_is_judged_as_an_operation_mission(tmp_path):
                 }
             )["mission_id"]
             amend(world, mission_id, [{"op": "add", "statement": operation.PUBLISH}])
-            await world.drain()
-            # 带操作的那一版系统不代确认：等人
+            # 自动模式会代签带操作的那一版（用户 2026-10-20）；这里由人在主循环再跑前先确认
             assert operation._workspace(world, mission_id)["state"] == "CONFIRMATION_REQUIRED"
             operation._confirm_completion(world, mission_id)
             approvals: list[dict[str, Any]] = []
@@ -1417,7 +1418,9 @@ def _reconfirm(world: Any, mission_id: str, workspace: dict[str, Any], command_i
     actions = [c["id"] for c in workspace["criteria"] if c["statement"].startswith("action:")]
     content = [c["id"] for c in workspace["criteria"] if c["required"] and c["id"] not in actions]
     [obligation] = workspace["obligations"]
-    milestone = next(m for m in workspace["milestones"] if m["id"] == "CONTENT_HASH_VERIFIED")
+    milestone = next(
+        m for m in workspace["operations"][0]["milestones"] if m["id"] == "CONTENT_HASH_VERIFIED"
+    )
     ref = workspace["requirements_ref"]
     world.control.approve_operation_completion_spec(
         {
@@ -1472,6 +1475,7 @@ def test_requirements_amended_after_the_publish_never_publish_again(tmp_path):
         connector = FilePublishConnector(
             published, tmp_path / "root" / "connectors" / "file_publish"
         )
+        person_approves(connector)  # 测人批准：自动模式会代批（用户 2026-10-20），标成总要人批
         policy = DeploymentPolicy(enabled_connectors=("file_publish",), max_action_level="L2")
         provider = _HoldFinalReview(planner=replanning_planner(seen))
         async with product_world(
@@ -1487,7 +1491,7 @@ def test_requirements_amended_after_the_publish_never_publish_again(tmp_path):
                     "idempotency_key": "amend-after-publish",
                 }
             )["mission_id"]
-            await world.drain()
+            # 自动模式会代签确认页（用户 2026-10-20）；这里由人在主循环开跑前先确认
             operation._confirm_completion(world, mission_id)
 
             def files() -> list[str]:
@@ -1515,6 +1519,11 @@ def test_requirements_amended_after_the_publish_never_publish_again(tmp_path):
             assert len(deliveries) == 1
 
             amend(world, mission_id, [{"op": "add", "statement": extra}])
+            # 带操作的新一版要求：自动模式会代签（用户 2026-10-20），这里由人在主循环再跑前先确认
+            seen["reconfirm"] = 1
+            _reconfirm(
+                world, mission_id, operation._workspace(world, mission_id), "confirm-again-1"
+            )
             provider.release.set()
             status, asked_again = "", 0
             for _ in range(60):
@@ -1641,6 +1650,7 @@ def _amend_after_publish_variant(
         connector = FilePublishConnector(
             published, tmp_path / "root" / "connectors" / "file_publish"
         )
+        person_approves(connector)  # 测人批准：自动模式会代批（用户 2026-10-20），标成总要人批
         policy = DeploymentPolicy(enabled_connectors=("file_publish",), max_action_level="L2")
         provider = _HoldFinalReview(planner=planner, worker=worker, reviewer=reviewer)
         async with product_world(
@@ -1656,7 +1666,7 @@ def _amend_after_publish_variant(
                     "idempotency_key": "amend-after-publish-variant",
                 }
             )["mission_id"]
-            await world.drain()
+            # 自动模式会代签确认页（用户 2026-10-20）；这里由人在主循环开跑前先确认
             operation._confirm_completion(world, mission_id)
             for _ in range(40):
                 try:
@@ -1671,8 +1681,12 @@ def _amend_after_publish_variant(
             assert provider.entered.is_set()
             amend(world, mission_id, [{"op": "add", "statement": "file:reports/extra.md"}])
             seen["amended"] = True
+            # 带操作的新一版要求：自动模式会代签（用户 2026-10-20），这里由人在主循环再跑前先确认
+            _reconfirm(
+                world, mission_id, operation._workspace(world, mission_id), "confirm-again-1"
+            )
             provider.release.set()
-            status, confirmed = "", 0
+            status, confirmed = "", 1
             for _ in range(60):
                 try:
                     await world.drain(timeout=20)
@@ -1819,7 +1833,7 @@ def test_apply_changes_refuses_with_a_typed_code_not_by_slicing_text():
         build_requirements,
     )
 
-    previous = build_requirements("m-1", 1, (("c-user-1", 1, "file:a.md"),), "local-user")
+    previous = build_requirements("m-1", 1, (("c-user-1", 1, "file:a.md", None),), "local-user")
     with pytest.raises(AmendmentRefused) as refused:
         apply_changes(previous, [{"op": "remove", "criterion_id": "c-user-9"}], highest_used=1)
     assert refused.value.code == "AMEND_UNKNOWN_CRITERION"

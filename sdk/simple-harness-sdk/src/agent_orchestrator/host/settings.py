@@ -13,6 +13,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
+from ..runtime.connectors import LEVELS
+
 #: DeepSeek 官方端点；只有它（和 ``compatible_hosts`` 里声明的转发主机）才有认证计数器。
 DEEPSEEK_OFFICIAL_HOSTS = frozenset({"api.deepseek.com"})
 #: 官方端点把 flash 模型叫 ``deepseek-flash``；配置写成 ``deepseek-v4-flash`` 的按这张表改名。
@@ -80,8 +82,8 @@ class HostSettings:
     context_input_tokens: int = 614_400
     #: 发布文件的目录（用户授权的那一个）；空字符串表示不发布，任务不能带发布要求。
     publish_dir: str = ""
-    #: 没有沙箱时是否仍启动（只是不跑模型写的代码）。
-    max_action_level: str = "L2"
+    #: 外部操作的最高风险等级（L0～L3）。注册了应用连接器时必须写明；没写时只有文件发布，按 L2。
+    max_action_level: str | None = None
 
     def __post_init__(self) -> None:
         if self.context_input_tokens not in CONTEXT_INPUT_CHOICES:
@@ -92,6 +94,8 @@ class HostSettings:
                 raise ValueError(f"{name} 必须在 1～4 之间")
         if self.global_monthly_max_tokens < self.default_mission_max_tokens:
             raise ValueError("月配额不能小于单个任务的默认上限")
+        if self.max_action_level is not None and self.max_action_level not in LEVELS:
+            raise ValueError(f"max_action_level 只能是 {LEVELS} 之一")
 
 
 @dataclass(frozen=True)

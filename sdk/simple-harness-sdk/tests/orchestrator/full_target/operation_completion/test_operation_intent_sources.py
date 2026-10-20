@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import json
 
 import pytest
 from agent_orchestrator.contracts.models import ContractError
@@ -21,7 +22,11 @@ def _wire() -> dict[str, object]:
         "schema_version": 2,
         "mission_id": "mission-oc3",
         "idempotency_key": "submit-1",
-        "intent_source": {"kind": "USER_COMMAND"},
+        "intent_source": {
+            "kind": "AUTHORIZED_SLOT",
+            "origin_receipt_id": "receipt-1",
+            "slot_key": "slot-1",
+        },
         "candidate_artifact_ref": TypedRef(
             TypedRefKind.ARTIFACT, "artifact-1", 1, HASH_A, Provenance.TOOL
         ).to_json(),
@@ -36,7 +41,7 @@ def _wire() -> dict[str, object]:
 def test_submit_operation_intent_v2_is_strict_and_contains_no_caller_authority() -> None:
     command = SubmitOperationIntentV2.from_json(_wire())
 
-    assert command.intent_source.kind is OperationIntentSourceKind.USER_COMMAND
+    assert command.intent_source.kind is OperationIntentSourceKind.AUTHORIZED_SLOT
     assert command.completion_slot.effect_key == "send-report"
     assert "principal" not in command.to_json()
     assert "tenant_id" not in command.to_json()
@@ -46,23 +51,20 @@ def test_submit_operation_intent_v2_is_strict_and_contains_no_caller_authority()
             SubmitOperationIntentV2.from_json(_wire() | injected)
 
 
-def test_user_command_cannot_smuggle_origin_and_authorized_slot_is_complete() -> None:
-    smuggled = _wire()
-    smuggled["intent_source"] = {
-        "kind": "USER_COMMAND",
-        "origin_receipt_id": "receipt-1",
-        "slot_key": "slot-1",
-    }
-    with pytest.raises(ContractError):
-        SubmitOperationIntentV2.from_json(smuggled)
+def test_only_a_complete_authorized_slot_is_a_source() -> None:
+    """人提交申请单的来源已删（用户 2026-10-20）：旧种类与缺授权字段都是合同错。"""
 
-    authorized = _wire()
-    authorized["intent_source"] = {
-        "kind": "AUTHORIZED_SLOT",
-        "origin_receipt_id": "receipt-1",
-        "slot_key": "slot-1",
-    }
-    command = SubmitOperationIntentV2.from_json(authorized)
+    for source in (
+        {"kind": "USER_COMMAND"},
+        {"kind": "AUTHORIZED_SLOT"},
+        {"kind": "AUTHORIZED_SLOT", "origin_receipt_id": "receipt-1"},
+    ):
+        broken = _wire()
+        broken["intent_source"] = source
+        with pytest.raises(ContractError):
+            SubmitOperationIntentV2.from_json(broken)
+
+    command = SubmitOperationIntentV2.from_json(_wire())
     assert command.intent_source.origin_receipt_id == "receipt-1"
 
 
@@ -112,12 +114,18 @@ def test_sources_resolve_real_preparation_and_reject_invalid_authority(tmp_path,
             [artifact] = [
                 a for a in store.list_mission_artifacts(case.mission_id) if a.path == TARGET
             ]
-            spec_hash = store.connection.execute(
-                "SELECT spec_hash FROM operation_completion_specs WHERE mission_id=?",
+            spec_hash, approval_receipt = store.connection.execute(
+                "SELECT spec_hash, approval_receipt_id FROM operation_completion_specs "
+                "WHERE mission_id=?",
                 (case.mission_id,),
-            ).fetchone()[0]
+            ).fetchone()
             wire = _wire() | {
                 "mission_id": case.mission_id,
+                "intent_source": {
+                    "kind": "AUTHORIZED_SLOT",
+                    "origin_receipt_id": approval_receipt,
+                    "slot_key": "publish-weekly",
+                },
                 "candidate_artifact_ref": TypedRef(
                     TypedRefKind.ARTIFACT,
                     artifact.id,
@@ -180,7 +188,10 @@ def test_sources_resolve_real_preparation_and_reject_invalid_authority(tmp_path,
                 [leaf] = [t for t in store.list_tasks(case.mission_id) if t.accepted_result_id]
                 assert sources.producer_result.envelope.id == leaf.accepted_result_id
                 assert sources.producer_scope.task_ref.id == leaf.id
-                assert sources.raw_candidate_bytes == cas.read(artifact.content_hash)
+                # 申请单由系统按已批准效果生成，不是产物字节本身
+                candidate = json.loads(sources.raw_candidate_bytes)
+                assert candidate["connector"] == "file_publish"
+                assert candidate["params"]["artifact_path"] == TARGET
             assert store.connection.total_changes == before
 
     asyncio.run(run())

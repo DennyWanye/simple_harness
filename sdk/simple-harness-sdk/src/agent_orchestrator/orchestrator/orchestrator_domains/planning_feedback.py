@@ -23,7 +23,6 @@ from ...storage.store import DispatchIntent, StoreError
 from ..assurance_review_collect import collect_assurance_review
 from ..failure_classes import output_exhausted
 from ..hierarchical_dispatch import HierarchicalDispatch
-from ..operation_runtime import ensure_operation_runtime
 from ..planning_method_proposal import MAX_METHOD_PROPOSALS_PER_GOAL, proposals_for
 from ..planning_repair_requests import pending_requests, record_request
 from ..planning_retry import retry_decision_required
@@ -331,15 +330,6 @@ class PlanningFeedbackMixin(OrchestratorCore):
             self._note(f"{intent.subject_id}: planner reply with no assembly installed")
             return
         await self._collect_plan_hierarchical(intent, result, mission, text, new_mode)
-
-    def submit_operation_intent(
-        self, command: Any, *, tenant_id: str, principal: Any
-    ) -> dict[str, Any]:
-
-        ensure_operation_runtime(self)
-        return self.commit.submit_operation_intent(
-            command, tenant_id=tenant_id, principal=principal
-        )
 
     def _planner_intents_in_flight(self, mission_id: str) -> bool:
         """An open ``plan`` intent that is a *Planner* round, not a synthesis round.

@@ -341,7 +341,7 @@ def confirm_completion(world: Any) -> dict[str, Any]:
     actions = [c["id"] for c in workspace["criteria"] if c["statement"].startswith("action:")]
     content = [c["id"] for c in workspace["criteria"] if c["required"] and c["id"] not in actions]
     [obligation] = workspace["obligations"]
-    milestone = next(m for m in workspace["milestones"] if m["id"] == "CONTENT_HASH_VERIFIED")
+    milestone = next(m for m in workspace["operations"][0]["milestones"] if m["id"] == "CONTENT_HASH_VERIFIED")
     ref = workspace["requirements_ref"]
     return world.control.approve_operation_completion_spec(
         {

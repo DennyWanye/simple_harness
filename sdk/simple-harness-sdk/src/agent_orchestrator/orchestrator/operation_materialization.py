@@ -339,14 +339,10 @@ class OperationMaterializationCommitsMixin:
                     "principal_id": principal.principal_id,
                     "scope_id": "mission",
                     "source_kind": str(command.intent_source.kind),
-                    "origin_receipt_id": command.intent_source.origin_receipt_id or receipt_id,
+                    "origin_receipt_id": command.intent_source.origin_receipt_id,
                     # 同一授权槽可替代重交（审阅没做成、内容换了新版本）：行上的槽键带上本次
                     # 申请号，唯一约束（任务+来源回执+槽键）仍成立；授权核对用命令里的槽键。
-                    "slot_key": (
-                        f"{command.intent_source.slot_key}@{intent_id}"
-                        if command.intent_source.slot_key
-                        else "operation"
-                    ),
+                    "slot_key": f"{command.intent_source.slot_key}@{intent_id}",
                     "submission_receipt_id": receipt_id,
                     "submission_hash": submission_hash,
                     "supersedes_intent_id": command.supersedes_intent_id,

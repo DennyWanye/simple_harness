@@ -35,6 +35,7 @@ from agent_orchestrator.runtime.connectors_publish import FilePublishConnector
 from agent_orchestrator.storage.htn_store import HtnStore
 from agent_orchestrator.storage.operation_completion_store import OperationCompletionStore
 from agent_orchestrator.storage.operation_intent_store import OperationIntentStore
+from agent_orchestrator.testing.connectors import person_approves
 from agent_orchestrator.testing.product_world import product_world
 from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider
 
@@ -131,7 +132,9 @@ def _confirm_completion(world: Any, mission_id: str) -> dict[str, Any]:
     actions = [c["id"] for c in workspace["criteria"] if c["statement"].startswith("action:")]
     content = [c["id"] for c in workspace["criteria"] if c["required"] and c["id"] not in actions]
     [obligation] = workspace["obligations"]
-    milestone = next(m for m in workspace["milestones"] if m["id"] == "CONTENT_HASH_VERIFIED")
+    milestone = next(
+        m for m in workspace["operations"][0]["milestones"] if m["id"] == "CONTENT_HASH_VERIFIED"
+    )
     ref = workspace["requirements_ref"]
     return world.control.approve_operation_completion_spec(
         {
@@ -209,7 +212,7 @@ async def _publish_with_an_unknown_result(
             "idempotency_key": key,
         }
     )["mission_id"]
-    await world.drain()
+    # 自动模式会代签确认页（用户 2026-10-20）；这里由人在主循环开跑前先确认
     _confirm_completion(world, mission_id)
     card = None
     for _ in range(30):
@@ -270,6 +273,7 @@ def test_an_unknown_publish_result_holds_the_mission_open(tmp_path, monkeypatch)
         connector = FilePublishConnector(
             published, tmp_path / "root" / "connectors" / "file_publish"
         )
+        person_approves(connector)  # 测人批准：自动模式会代批（用户 2026-10-20），标成总要人批
         policy = DeploymentPolicy(enabled_connectors=("file_publish",), max_action_level="L2")
         async with product_world(
             tmp_path / "root",
@@ -354,6 +358,7 @@ def test_a_person_ruling_the_unknown_publish_applied_lets_the_mission_complete(
         connector = FilePublishConnector(
             published, tmp_path / "root" / "connectors" / "file_publish"
         )
+        person_approves(connector)  # 测人批准：自动模式会代批（用户 2026-10-20），标成总要人批
         policy = DeploymentPolicy(enabled_connectors=("file_publish",), max_action_level="L2")
         async with product_world(
             tmp_path / "root",
@@ -456,6 +461,7 @@ def test_a_succeeded_action_without_a_receipt_is_a_named_stop_not_an_endless_def
         connector = FilePublishConnector(
             published, tmp_path / "root" / "connectors" / "file_publish"
         )
+        person_approves(connector)  # 测人批准：自动模式会代批（用户 2026-10-20），标成总要人批
         policy = DeploymentPolicy(enabled_connectors=("file_publish",), max_action_level="L2")
         provider = LayeredScriptedProvider(planner=_no_change_planner(asked))
         async with product_world(
@@ -521,6 +527,7 @@ def test_the_closeout_row_names_the_unknown_effect_as_blocked_unknown(tmp_path, 
         connector = FilePublishConnector(
             published, tmp_path / "root" / "connectors" / "file_publish"
         )
+        person_approves(connector)  # 测人批准：自动模式会代批（用户 2026-10-20），标成总要人批
         policy = DeploymentPolicy(enabled_connectors=("file_publish",), max_action_level="L2")
         async with product_world(
             tmp_path / "root",

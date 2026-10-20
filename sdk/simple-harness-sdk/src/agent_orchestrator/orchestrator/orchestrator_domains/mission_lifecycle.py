@@ -26,6 +26,7 @@ from ...governance.domains import resolve_domain
 from ...governance.permissions import Principal
 from ...governance.policies import action_decision
 from ...runtime import operation_reconciliation
+from ...runtime.action_params import check_action_params
 from ...runtime.action_schema import parse_action_criterion
 from ...runtime.actions import publication_overlaps_storage
 from ...runtime.planning_operations import SourceUnavailable
@@ -245,15 +246,21 @@ class MissionLifecycleMixin(OrchestratorCore):
                 raise MissionRequestError(
                     f"runtime profile {spec.runtime_profile_id!r} is not configured"
                 )
-        self.check_requirement_statements(spec.success_criteria)
+        self.check_requirements(
+            [
+                (statement, spec.action_params.get(f"c-user-{index + 1}"))
+                for index, statement in enumerate(spec.success_criteria)
+            ]
+        )
         self._check_source_publish_roots(spec)
 
-    def check_requirement_statements(self, statements: Sequence[str]) -> None:
-        """What this deployment can do with these requirement statements: an ``action:`` one
-        must be well-formed and name an operation the deployment would run; a ``pytest:`` one
-        needs local code execution.  One door for creating a Mission and for amending its
-        requirements (阶段 E)."""
-        self._check_action_criteria(statements)
+    def check_requirements(self, items: Sequence[tuple[str, Mapping[str, Any] | None]]) -> None:
+        """What this deployment can do with these requirements (statement, action params): an
+        ``action:`` one must be well-formed, name an operation the deployment would run and
+        carry the parameters it needs; a ``pytest:`` one needs local code execution.  One door
+        for creating a Mission and for amending its requirements (阶段 E)."""
+        self._check_action_criteria(items)
+        statements = [statement for statement, _ in items]
         if not self._config.deployment_policy.local_code_execution:
             tests = [c for c in statements if c.startswith("pytest:")]
             if tests:
@@ -295,20 +302,23 @@ class MissionLifecycleMixin(OrchestratorCore):
             if publication_overlaps_storage(root, protected):
                 raise ContractError("source_publish_root_overlap")
 
-    def _check_action_criteria(self, criteria: Sequence[str]) -> None:
+    def _check_action_criteria(self, items: Sequence[tuple[str, Mapping[str, Any] | None]]) -> None:
         """D7-3' / review P2-10: an action criterion must name an enabled connector and an
-        operation this deployment would run; otherwise the Mission is refused up front."""
+        operation this deployment would run, with the parameters it needs; otherwise the
+        Mission is refused up front.  Parameters belong to action criteria only."""
 
-        for criterion in criteria:
+        for criterion, params in items:
             parsed = parse_action_criterion(criterion)  # malformed → ContractError
             if parsed is None:
+                if params is not None:
+                    raise ContractError(f"only an action: requirement takes params: {criterion!r}")
                 continue
             name, operation, _target = parsed
-            decision = action_decision(
-                self._config.deployment_policy, self._connectors.get(name), operation
-            )
-            if decision.refused is not None:
+            connector = self._connectors.get(name)
+            decision = action_decision(self._config.deployment_policy, connector, operation)
+            if connector is None or decision.refused is not None:
                 raise ContractError(f"action criterion {criterion!r} refused: {decision.refused}")
+            check_action_params(name, operation, connector.operations[operation], params)
 
     def _domain_unreadable(self, mission_id: str) -> bool:
         """A Mission this build does not serve: a frozen domain it cannot read (another

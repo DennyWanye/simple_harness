@@ -75,9 +75,6 @@ class CommandMixin(OrchestrationServiceCore):
     def approve_operation_completion_spec(self, request: Mapping[str, Any]) -> dict[str, Any]:
         return self._h(self._host.approve_operation_completion_spec, request)
 
-    def submit_operation_intent(self, request: Mapping[str, Any]) -> dict[str, Any]:
-        return self._h(self._host.submit_operation_intent, request)
-
     def operation_intent_status(self, intent_id: str) -> dict[str, Any]:
         return self._h(self._host.operation_intent_status, intent_id)
 

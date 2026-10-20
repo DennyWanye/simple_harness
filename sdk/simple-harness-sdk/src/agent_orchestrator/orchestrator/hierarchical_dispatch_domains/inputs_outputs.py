@@ -47,7 +47,6 @@ from ...graph.projection_validation import ordering_of
 from ...graph.task_network import TaskNetworkSnapshot
 from ...planning.htn.compiler import _derive_requirement_id
 from ...planning.htn.registry import iter_values
-from ...runtime.action_schema import is_operation_candidate_path
 from ...storage.operation_completion_store import OperationCompletionStore
 from ...storage.store import StoreError
 from ..accepted_outputs import (
@@ -760,7 +759,6 @@ class InputOutputMixin(HierarchicalDispatchCore):
                 if (
                     artifact is None
                     or artifact.content_hash != ref.content_hash
-                    or is_operation_candidate_path(artifact.path)
                     or artifact.path.startswith(".")
                 ):
                     continue
@@ -838,8 +836,6 @@ class InputOutputMixin(HierarchicalDispatchCore):
             entries: list[DeliveredFile] = []
             for port in frozen.bindings:
                 path = rules.target_for(port).path
-                if is_operation_candidate_path(path):
-                    continue
                 entries.append(
                     DeliveredFile(
                         port.producer_task_ref,
@@ -888,7 +884,7 @@ class InputOutputMixin(HierarchicalDispatchCore):
                         (acceptance_id, f"accepted artifact {ref.id} is missing or changed")
                     )
                     continue
-                if is_operation_candidate_path(artifact.path) or artifact.path.startswith("."):
+                if artifact.path.startswith("."):
                     continue
                 if read_only and artifact.path not in seed:
                     continue

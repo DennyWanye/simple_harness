@@ -47,6 +47,7 @@ from .semantic_base import (
     identifier,
     identifiers,
     index,
+    json_object,
     optional_hash_hex,
     optional_identifier,
     optional_index,
@@ -202,6 +203,9 @@ class Criterion:
     required_evidence_policy: RequiredEvidencePolicy = field(default_factory=RequiredEvidencePolicy)
     temporal_use: TemporalUse = TemporalUse.CURRENT_AT_USE
     amendment_policy: AmendmentPolicy = field(default_factory=AmendmentPolicy)
+    #: 只用在 ``action:`` 要求上：建任务（或改要求）时写下的操作参数（第 2 片裁决 2）。随要求
+    #: 版本一起哈希，确认页确认的、自动审批批的、执行用的都是这一份；没有参数时不出现在 JSON 里。
+    action_params: Mapping[str, Any] | None = field(default=None, hash=False)
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -237,8 +241,20 @@ class Criterion:
             and self.amendment_policy.model_exemptible
         ):
             raise ContractError("a HARD_CONSTRAINT may not be declared model-exemptible (AER §4.1)")
+        if self.action_params is not None:
+            if not self.statement.startswith("action:"):
+                raise ContractError("criterion.action_params belongs to an action: requirement")
+            object.__setattr__(
+                self, "action_params", json_object(self.action_params, "criterion.action_params")
+            )
 
     def to_json(self) -> dict[str, Any]:
+        body = self._fields_json()
+        if self.action_params is not None:
+            body["action_params"] = dict(self.action_params)
+        return body
+
+    def _fields_json(self) -> dict[str, Any]:
         return {
             "criterion_id": self.criterion_id,
             "revision": self.revision,
@@ -272,6 +288,7 @@ class Criterion:
                 "required_evidence_policy",
                 "temporal_use",
                 "amendment_policy",
+                "action_params",
             ),
         )
         raw_source = data.get("source_ref")
@@ -293,6 +310,7 @@ class Criterion:
             amendment_policy=AmendmentPolicy.from_json(
                 data.get("amendment_policy", {}), f"{name}.amendment_policy"
             ),
+            action_params=data.get("action_params"),
         )
 
 

@@ -51,14 +51,28 @@ const requirements = {
 };
 const criteria = [
   { id: "criterion-created", statement: "生成报告", required: true },
-  { id: "criterion-sent", statement: "发送报告", required: true },
+  { id: "criterion-sent", statement: "action:mail.send:boss@example.com", required: true },
 ];
 const milestone = {
-  id: "FILE_PUBLISHED",
-  label: "文件已发布，并已读取核对内容",
+  id: "APPLIED",
+  label: "连接器回执确认已执行",
   milestone_policy_ref: { id: "milestone-policy", revision: 1, content_hash: "b".repeat(64) },
   evidence_policy_ref: { id: "evidence-policy", revision: 1, content_hash: "c".repeat(64) },
 };
+
+/** SDK 给每条 action: 要求的操作：它能用的完成标准与默认标准（2026-10-20 起按操作给）。 */
+function operation(criterionId: string, extra: Record<string, unknown> = {}) {
+  return {
+    criterion_id: criterionId,
+    connector: "mail",
+    operation: "send",
+    milestones: [milestone],
+    default_milestone: milestone.id,
+    description: "",
+    always_needs_approval: false,
+    ...extra,
+  };
+}
 
 function confirmation() {
   return {
@@ -70,10 +84,9 @@ function confirmation() {
     obligations: [
       { id: "obligation-1", label: "deliver", criterion_ids: criteria.map((item) => item.id) },
     ],
-    milestones: [milestone],
+    operations: [operation("criterion-sent")],
     spec: null,
     spec_hash: null,
-    candidates: [],
     intents: [],
   };
 }
@@ -94,26 +107,6 @@ function approved(intents: unknown[] = []) {
         },
       ],
     },
-    candidates: [
-      {
-        artifact_path: "actions/publish.json",
-        candidate: {
-          operation: "file_publish",
-          target: "REPORT.md",
-          reason: "deliver",
-          params: { path: "REPORT.md" },
-        },
-        candidate_artifact_ref: {
-          kind: "artifact",
-          id: "artifact-1",
-          revision: 1,
-          content_hash: "e".repeat(64),
-        },
-        prepared_acceptance_refs: [
-          { kind: "acceptance", id: "acceptance-1", revision: 1, content_hash: "f".repeat(64) },
-        ],
-      },
-    ],
   };
 }
 
@@ -127,9 +120,9 @@ describe("OperationWorkspace", () => {
     const channel = new Channel();
     render(<OperationWorkspace value={confirmation()} channel={channel} onChanged={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "全部取消" })); // 默认预填了内容要求，这里改成全放进效果
-    fireEvent.click(screen.getByRole("button", { name: "添加必须完成的效果" }));
+    // 操作要求默认已配好一个效果；把内容要求也勾进同一个效果
     const effect = screen.getByRole("group", { name: "这一次效果覆盖的要求（可多选）" });
-    for (const item of criteria) fireEvent.click(within(effect).getByText(item.statement));
+    fireEvent.click(within(effect).getByText("生成报告"));
     // NEXT-TG-1.0 §9: only one choice each → already selected, no dropdown to operate
     const obligationGroup = screen.getByRole("radiogroup", { name: "效果所属目标" });
     const milestoneGroup = screen.getByRole("radiogroup", { name: "效果完成标准" });
@@ -146,7 +139,11 @@ describe("OperationWorkspace", () => {
     const payload = sent[0].payload as ApprovePayload;
     expect(payload.expected_requirements_ref).toEqual(requirements);
     expect(payload.proposal.effects).toHaveLength(1);
-    expect(payload.proposal.effects[0].criterion_ids).toEqual(criteria.map((item) => item.id));
+    expect(payload.proposal.effects[0].criterion_ids).toEqual([
+      "criterion-sent",
+      "criterion-created",
+    ]);
+    expect(payload.proposal.effects[0].required_milestone).toBe("APPLIED");
   });
 
   it("retries an unchanged requirements body with the same command identity", () => {
@@ -166,7 +163,7 @@ describe("OperationWorkspace", () => {
     expect(requests[0].payload!.proposal).toEqual(requests[1].payload!.proposal);
   });
 
-  it("发布申请由系统准备：不再挑候选、点提交，只显示进度（2026-09-29）", () => {
+  it("操作申请由系统准备：没有提交按钮，只显示进度", () => {
     const publishReadme = {
       id: "criterion-readme",
       statement: "action:file_publish.publish:README.md",
@@ -176,6 +173,9 @@ describe("OperationWorkspace", () => {
     const value = {
       ...base,
       criteria: [publishReadme],
+      operations: [
+        operation(publishReadme.id, { connector: "file_publish", operation: "publish" }),
+      ],
       spec: {
         ...base.spec,
         effects: [{ ...base.spec.effects[0], criterion_ids: [publishReadme.id] }],
@@ -183,7 +183,7 @@ describe("OperationWorkspace", () => {
     };
     const channel = new Channel();
     const view = render(<OperationWorkspace value={value} channel={channel} onChanged={vi.fn()} />);
-    expect(screen.getByText(/系统会自动准备发布 README.md 的申请/)).toBeTruthy();
+    expect(screen.getByText(/系统会自动准备对 README.md 的操作申请/)).toBeTruthy();
     expect(screen.queryByRole("radiogroup", { name: "选择已接受的操作准备产物" })).toBeNull();
     expect(screen.queryByRole("button", { name: /提交/ })).toBeNull();
 
@@ -211,9 +211,23 @@ describe("OperationWorkspace", () => {
       />,
     );
     expect(screen.getByText(/系统会自动准备/)).toBeTruthy(); // 被替代的旧申请不算当前进度
-    expect(
-      channel.sent.filter((message) => message.type === "mission_operation_intent_submit"),
-    ).toEqual([]);
+    expect(channel.sent).toEqual([]);
+  });
+
+  it("显示操作说明；标了总要人批的操作提示要人点批准", () => {
+    const base = approved();
+    const value = {
+      ...base,
+      operations: [
+        operation("criterion-sent", {
+          description: "给老板发周报邮件",
+          always_needs_approval: true,
+        }),
+      ],
+    };
+    render(<OperationWorkspace value={value} channel={new Channel()} onChanged={vi.fn()} />);
+    expect(screen.getByText("说明：给老板发周报邮件")).toBeTruthy();
+    expect(screen.getByText(/总要人批准/)).toBeTruthy();
   });
 
   it("recovers a lost reply without changing the command and ignores a late response", () => {
@@ -278,8 +292,13 @@ describe("OperationWorkspace", () => {
 
 describe("默认预填（2026-09-29 真机：对话卡片里确认要点十几下）", () => {
   it("普通要求默认算内容交付；全部取消后可再全选", () => {
+    const contentOnly = [
+      { id: "criterion-created", statement: "生成报告", required: true },
+      { id: "criterion-checked", statement: "核对报告", required: true },
+    ];
+    const value = { ...confirmation(), criteria: contentOnly, operations: [] };
     const channel = new Channel();
-    render(<OperationWorkspace value={confirmation()} channel={channel} onChanged={vi.fn()} />);
+    render(<OperationWorkspace value={value} channel={channel} onChanged={vi.fn()} />);
     for (const box of screen.getAllByRole("checkbox"))
       expect((box as HTMLInputElement).checked).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "全部取消" }));
@@ -291,23 +310,30 @@ describe("默认预填（2026-09-29 真机：对话卡片里确认要点十几�
       (message) => message.type === "mission_operation_completion_approve",
     );
     expect((sent[0].payload as ApprovePayload).proposal.content_criterion_ids).toEqual(
-      criteria.map((item) => item.id),
+      contentOnly.map((item) => item.id),
     );
   });
 
-  it("每条发布要求默认各配一个效果（目标唯一时自动选好、完成标准默认哈希一致），一次点确认", () => {
+  it("每条操作要求默认各配一个效果（目标唯一时自动选好、完成标准取操作的默认标准），一次点确认", () => {
     const withPublish = [
       { id: "c-1", statement: "写 README", required: true },
       { id: "c-2", statement: "file:README.md", required: true },
       { id: "c-3", statement: "action:file_publish.publish:README.md", required: true },
       { id: "c-4", statement: "action:file_publish.publish:wordfreq.py", required: true },
     ];
-    const hash = {
-      ...milestone,
-      id: "PUBLISHED_HASH_MATCHES",
-      label: "已发布文件的内容哈希与批准产物一致",
+    const hash = { ...milestone, id: "CONTENT_HASH_VERIFIED", label: "内容哈希一致" };
+    const publish = (id: string) =>
+      operation(id, {
+        connector: "file_publish",
+        operation: "publish",
+        milestones: [milestone, hash],
+        default_milestone: hash.id,
+      });
+    const value = {
+      ...confirmation(),
+      criteria: withPublish,
+      operations: [publish("c-3"), publish("c-4")],
     };
-    const value = { ...confirmation(), criteria: withPublish, milestones: [milestone, hash] };
     const channel = new Channel();
     render(<OperationWorkspace value={value} channel={channel} onChanged={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "确认上述完成要求" }));
@@ -318,7 +344,7 @@ describe("默认预填（2026-09-29 真机：对话卡片里确认要点十几�
     expect(
       proposal.effects.every(
         (e) =>
-          e.required_milestone === "PUBLISHED_HASH_MATCHES" && e.obligation_id === "obligation-1",
+          e.required_milestone === "CONTENT_HASH_VERIFIED" && e.obligation_id === "obligation-1",
       ),
     ).toBe(true);
   });

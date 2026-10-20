@@ -35,6 +35,7 @@ from agent_orchestrator.governance.policies import DeploymentPolicy
 from agent_orchestrator.runtime.actions import ActionExecutor, publication_overlaps_storage
 from agent_orchestrator.runtime.connectors import ConnectorTransportError
 from agent_orchestrator.runtime.connectors_publish import FilePublishConnector
+from agent_orchestrator.testing.connectors import person_approves
 from agent_orchestrator.testing.product_world import product_world
 from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider
 
@@ -74,7 +75,8 @@ def observed(root, ledger, **behaviour: Any) -> FilePublishConnector:
 
     publisher.execute = counted_execute
     publisher.lookup = counted_lookup
-    return publisher
+    # 测人批准之后的交接：自动模式会代批（用户 2026-10-20），标成总要人批
+    return person_approves(publisher)
 
 
 def _confirm_completion(world: Any, mission_id: str) -> None:
@@ -84,7 +86,9 @@ def _confirm_completion(world: Any, mission_id: str) -> None:
     actions = [c["id"] for c in workspace["criteria"] if c["statement"].startswith("action:")]
     content = [c["id"] for c in workspace["criteria"] if c["required"] and c["id"] not in actions]
     [obligation] = workspace["obligations"]
-    milestone = next(m for m in workspace["milestones"] if m["id"] == "CONTENT_HASH_VERIFIED")
+    milestone = next(
+        m for m in workspace["operations"][0]["milestones"] if m["id"] == "CONTENT_HASH_VERIFIED"
+    )
     ref = workspace["requirements_ref"]
     world.control.approve_operation_completion_spec(
         {
@@ -127,7 +131,7 @@ async def _confirmed(world: Any) -> str:
             "idempotency_key": "publish-guard",
         }
     )["mission_id"]
-    await world.drain()
+    # 自动模式会代签确认页（用户 2026-10-20）；这里由人在主循环开跑前先确认
     _confirm_completion(world, mission_id)
     return mission_id
 

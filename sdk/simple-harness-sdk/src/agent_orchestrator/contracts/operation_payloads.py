@@ -64,6 +64,8 @@ class NonapplicationProofKind(StrEnum):
     CONNECTOR_LEDGER_NOT_LINKED = "CONNECTOR_LEDGER_NOT_LINKED"
     #: 阶段 B 裁决第 3 类：人裁定这次对外动作没有生效——人的裁定本身就是结论，不是连接器的能力。
     HUMAN_RULED_NOT_APPLIED = "HUMAN_RULED_NOT_APPLIED"
+    #: 第 2 片裁决 A2：权威且声明"查询即封口"的连接器查询为空——这个键再也不会执行。
+    CONNECTOR_LOOKUP_FENCED = "CONNECTOR_LOOKUP_FENCED"
 
 
 def _no_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:

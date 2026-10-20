@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
-"""NEXT-TG-1.0 2A upstream runs (2026-09-27): two desktop chain defects.
+"""NEXT-TG-1.0 2A upstream runs (2026-09-27): a desktop chain defect.
 
-1. A continuation step (every input port is also an output port, e.g.
+A continuation step (every input port is also an output port, e.g.
    ``desktop.continue-delivery``) delivers the next version of what it received,
    but only its own file reached the next step: in "slugify.py → test_slugify.py →
    NOTES.md" the third step had the tests but not the module, pytest failed on the
@@ -9,9 +9,6 @@
    frozen with — read from that acceptance's own frozen manifest (2026-10-11 第三批:
    ``delivery_sources``), never from its latest result — and every delivered file
    carries the consumer's licence over the real producer's acceptance.
-2. A hierarchical primitive with the operation candidate port was never given the
-   candidate contract (its Task declares no file outputs), so it invented a format
-   outside ``actions/`` and the operation workspace found no candidate.
 """
 
 from __future__ import annotations
@@ -19,15 +16,11 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
+
 from agent_orchestrator.artifacts.input_bindings import TargetRules
-from agent_orchestrator.artifacts.versioning import UpstreamInput
 from agent_orchestrator.contracts.semantic_base import VersionedRef
 from agent_orchestrator.orchestrator import hierarchical_dispatch as hd
 from agent_orchestrator.orchestrator.hierarchical_dispatch_domains import core as hd_core
-from agent_orchestrator.runtime.action_schema import (
-    OPERATION_CANDIDATE_FILE,
-    OPERATION_CANDIDATE_PORT,
-)
 
 SCHEMA = VersionedRef("desktop.workspace-outputs", 1, "a" * 64)
 M = "mission-chain"
@@ -40,43 +33,6 @@ def _port(key):
 def _artifact(task, path, digest, artifact_id):
     return SimpleNamespace(
         id=artifact_id, mission_id=M, task_id=task, path=path, content_hash=digest
-    )
-
-
-def test_the_operation_candidate_port_brings_the_candidate_contract(monkeypatch):
-    """**Mutation**: return ``task.outputs`` unchanged → red."""
-    import agent_orchestrator.storage.htn_store as htn
-    from agent_orchestrator.orchestrator import event_handler as eh
-
-    ports = {
-        "with": (_port("delivery"), _port(OPERATION_CANDIDATE_PORT)),
-        "without": (_port("delivery"),),
-    }
-
-    class _Htn:
-        def __init__(self, store):
-            pass
-
-        def task_semantics_of(self, mission_id, task_id):
-            return SimpleNamespace(output_ports=ports[task_id])
-
-    monkeypatch.setattr(htn, "HtnStore", _Htn)
-    # 一步负责几个操作就声明几个申请单文件（2026-09-28），此处任务没有操作要求：照旧一个
-    fake = SimpleNamespace(
-        store=SimpleNamespace(get_mission=lambda mission_id: SimpleNamespace(success_criteria=()))
-    )
-    mission = SimpleNamespace(id=M)
-    outputs = eh.Orchestrator._action_candidate_outputs
-
-    def task(task_id, declared=()):
-        return SimpleNamespace(id=task_id, outputs=declared, success_criteria=())
-
-    assert outputs(fake, mission, task("with")) == (OPERATION_CANDIDATE_FILE,)
-    assert outputs(fake, mission, task("without")) == ()
-    declared = ("actions/mine.json",)
-    assert outputs(fake, mission, task("with", declared)) == declared
-    assert OPERATION_CANDIDATE_FILE.startswith("actions/") and OPERATION_CANDIDATE_FILE.endswith(
-        ".json"
     )
 
 
@@ -171,8 +127,8 @@ def _acceptance(task, acceptance_id, refs, manifest_hash="m" * 64):
 
 def _sources_world(monkeypatch, *, read_only_module=False):
     """三步：t-module 起始写 slugify.py + notes.md；t-tests 接着交付（收到 slugify.py）写 test_slugify.py、
-    README.md、wordfreq.py 与一份操作申请单；下游 t-notes 接 t-tests 的端口文件 README.md。"""
-    from agent_orchestrator.artifacts.input_bindings import DeliveryBinding, InputManifest
+    README.md、wordfreq.py；下游 t-notes 接 t-tests 的端口文件 README.md。"""
+    from agent_orchestrator.artifacts.input_bindings import InputManifest
     from agent_orchestrator.contracts.htn import SideEffectKind, TaskRef
 
     artifacts = {
@@ -181,7 +137,6 @@ def _sources_world(monkeypatch, *, read_only_module=False):
         "a-tests": _artifact("t-tests", "test_slugify.py", "2" * 64, "a-tests"),
         "a-readme": _artifact("t-tests", "README.md", "3" * 64, "a-readme"),
         "a-mod2": _artifact("t-tests", "wordfreq.py", "4" * 64, "a-mod2"),
-        "a-act": _artifact("t-tests", "actions/action_candidate.json", "5" * 64, "a-act"),
         "a-hidden": _artifact("t-tests", ".cache/x", "7" * 64, "a-hidden"),
     }
     acceptances = {
@@ -195,7 +150,6 @@ def _sources_world(monkeypatch, *, read_only_module=False):
                 ("a-tests", "2" * 64),
                 ("a-readme", "3" * 64),
                 ("a-mod2", "4" * 64),
-                ("a-act", "5" * 64),
                 ("a-hidden", "7" * 64),
             ],
             "f" * 64,
@@ -270,9 +224,10 @@ def test_delivery_sources_hand_on_every_accepted_file_and_what_a_continuation_re
     标明）；``received`` 记下每个验收冻结过的版本集合，供版本证明。
 
     **Mutation**: ``delivery_sources`` 不读接续上游的冻结清单（去掉 carried 段）→ red."""
+    from test_delivery_bindings import _port as _bound_port
+
     from agent_orchestrator.artifacts.input_bindings import InputManifest
     from agent_orchestrator.contracts.htn import TaskRef
-    from test_delivery_bindings import _port as _bound_port
 
     fake, artifacts, _ = _sources_world(monkeypatch)
     consumer = InputManifest(
@@ -314,9 +269,10 @@ def test_a_read_only_producer_hands_on_only_its_copies_of_original_workspace_fil
     """只读上游（核对、报告类）不改文件：它新写的非原工作区文件不交接；原工作区文件的副本照交。
 
     **Mutation**: 去掉 ``read_only and artifact.path not in seed`` 的跳过 → red."""
+    from test_delivery_bindings import _port as _bound_port
+
     from agent_orchestrator.artifacts.input_bindings import InputManifest
     from agent_orchestrator.contracts.htn import TaskRef
-    from test_delivery_bindings import _port as _bound_port
 
     fake, _, _ = _sources_world(monkeypatch, read_only_module=True)
     consumer = InputManifest(
@@ -338,9 +294,10 @@ def test_a_read_only_producer_hands_on_only_its_copies_of_original_workspace_fil
 
 def test_an_unreadable_source_is_named_not_skipped(monkeypatch):
     """验收指向的产物没了或哈希变了：点名报不可用，不悄悄少交。"""
+    from test_delivery_bindings import _port as _bound_port
+
     from agent_orchestrator.artifacts.input_bindings import InputManifest
     from agent_orchestrator.contracts.htn import TaskRef
-    from test_delivery_bindings import _port as _bound_port
 
     fake, artifacts, _ = _sources_world(monkeypatch)
     del artifacts["a-mod2"]

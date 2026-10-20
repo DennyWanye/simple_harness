@@ -429,7 +429,6 @@ class AttemptJudgmentMixin(OrchestratorCore):
                 role=role.name,
                 domain=self.commit.domain_for(mission.id),
                 source_versions=source_versions,
-                action_candidate_contract=self._worker_action_contract(mission, task),
             )
         except ContextRejected as error:
             self._commit_stop_task(

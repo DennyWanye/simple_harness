@@ -39,24 +39,29 @@ function defaultContent(w: Json): string[] {
     .map((c) => asText(c.id));
 }
 
-function defaultEffects(w: Json): Effect[] {
-  const milestones = asList(w.milestones),
-    obligations = asList(w.obligations);
-  if (w.editable !== true || !milestones.length) return [];
-  const hash =
-    milestones.find((m) => asText(m.label).includes("哈希")) ??
-    (milestones.length === 1 ? milestones[0] : undefined);
-  return asList(w.criteria)
-    .filter(isAction)
-    .map((c) => ({
-      key: `effect-${newRequestKey()}`,
-      criteria: [asText(c.id)],
-      obligation: obligations.length === 1 ? asText(obligations[0].id) : "",
-      milestone: hash ? asText(hash.id) : "",
-    }));
+/** 一条 action: 要求对应的操作（SDK 给出它能用的完成标准与默认标准）。 */
+function operationOf(w: Json, criterionId: string): Json | undefined {
+  return asList(w.operations).find((op) => asText(op.criterion_id) === criterionId);
 }
 
-/** 系统准备的发布申请走到了哪一步（operation_intent_status 的 state）。 */
+/** 一个效果可选的完成标准：取它覆盖的第一条操作要求的标准。 */
+function milestonesOf(w: Json, criteria: string[]): Json[] {
+  const op = criteria.map((id) => operationOf(w, id)).find(Boolean);
+  return op ? asList(op.milestones) : [];
+}
+
+function defaultEffects(w: Json): Effect[] {
+  const obligations = asList(w.obligations);
+  if (w.editable !== true) return [];
+  return asList(w.operations).map((op) => ({
+    key: `effect-${newRequestKey()}`,
+    criteria: [asText(op.criterion_id)],
+    obligation: obligations.length === 1 ? asText(obligations[0].id) : "",
+    milestone: asText(op.default_milestone),
+  }));
+}
+
+/** 系统准备的操作申请走到了哪一步（operation_intent_status 的 state）。 */
 const INTENT_STATE: Record<string, string> = {
   AWAITING_REVIEW: "系统已准备好申请，审阅员检查中",
   REVIEW_FAILED: "审阅没能完成",
@@ -66,11 +71,11 @@ const INTENT_STATE: Record<string, string> = {
   REJECTED: "没有通过（被拒绝）",
   PROPOSED: "正在生成批准请求",
   AWAITING_APPROVAL: "等你批准（请在批准卡片上点「批准」）",
-  APPROVED: "已批准，正在发布",
-  HANDED_OFF: "正在发布",
-  UNKNOWN: "发布结果待核对",
-  SUCCEEDED: "已发布，正在核对",
-  FAILED: "发布失败",
+  APPROVED: "已批准，正在执行",
+  HANDED_OFF: "正在执行",
+  UNKNOWN: "执行结果待核对",
+  SUCCEEDED: "已执行，正在核对",
+  FAILED: "执行失败",
   REFUSED: "被拒绝执行",
   REVOKED: "已撤回",
   EXPIRED: "已过期",
@@ -110,7 +115,7 @@ function Workspace({
 }) {
   // 2026-09-29 真机（对话任务卡片）：原来要逐条勾选、逐个加效果，确认一次点十几下。改为默认预填：
   // 普通要求默认算"内容交付"，每条 action: 要求默认各配一个效果（唯一的目标自动选上，完成标准
-  // 默认"内容哈希一致"）；人看一眼点确认即可，仍可改。
+  // 取这个操作的默认标准）；人看一眼点确认即可，仍可改。
   const [content, setContent] = useState<string[]>(() => defaultContent(w));
   const [effects, setEffects] = useState<Effect[]>(() => defaultEffects(w));
   const [pending, setPending] = useState(false);
@@ -178,7 +183,7 @@ function Workspace({
     setError("连接不可用，结果尚未确认；请重试");
   };
   const criteria = asList(w.criteria),
-    milestones = asList(w.milestones),
+    operations = asList(w.operations),
     obligations = asList(w.obligations);
   const spec = asRecord(w.spec);
   const approved = w.state === "APPROVED";
@@ -191,7 +196,7 @@ function Workspace({
       (e) =>
         e.criteria.length &&
         e.obligation &&
-        e.milestone &&
+        milestonesOf(w, e.criteria).some((m) => m.id === e.milestone) &&
         e.criteria.every((id) => !content.includes(id)),
     ) &&
     criteria
@@ -215,7 +220,7 @@ function Workspace({
           mode: effects.length ? "REQUIRED_EFFECTS" : "CONTENT_ONLY",
           content_criterion_ids: content,
           effects: effects.map((e) => {
-            const milestone = milestones.find((m) => m.id === e.milestone)!;
+            const milestone = milestonesOf(w, e.criteria).find((m) => m.id === e.milestone)!;
             return {
               effect_key: e.key,
               source_slot_key: e.key,
@@ -257,8 +262,11 @@ function Workspace({
                     .map((c) => asText(c.statement))
                     .join("；")}{" "}
                   —
-                  {asText(milestones.find((m) => m.id === e.required_milestone)?.label) ||
-                    asText(e.required_milestone)}
+                  {asText(
+                    milestonesOf(w, (e.criterion_ids as string[]) ?? []).find(
+                      (m) => m.id === e.required_milestone,
+                    )?.label,
+                  ) || asText(e.required_milestone)}
                 </p>
               ))}
             </>
@@ -345,7 +353,7 @@ function Workspace({
                     </fieldset>
                     <fieldset role="radiogroup" aria-label="效果完成标准">
                       <legend>完成标准</legend>
-                      {milestones.map((m) => (
+                      {milestonesOf(w, e.criteria).map((m) => (
                         <label key={asText(m.id)} className="sh-OperationWorkspace-3">
                           <input
                             type="radio"
@@ -368,7 +376,7 @@ function Workspace({
                 ))}
                 <button
                   type="button"
-                  disabled={!milestones.length || effects.length >= 64}
+                  disabled={!operations.length || effects.length >= 64}
                   onClick={() =>
                     setEffects((rows) => [
                       ...rows,
@@ -376,14 +384,14 @@ function Workspace({
                         key: `effect-${newRequestKey()}`,
                         criteria: [],
                         obligation: obligations.length === 1 ? asText(obligations[0].id) : "",
-                        milestone: milestones.length === 1 ? asText(milestones[0].id) : "",
+                        milestone: "",
                       },
                     ])
                   }
                 >
                   添加必须完成的效果
                 </button>
-                {!milestones.length && <p>当前还不能验证真实操作，只能确认交付内容类的要求。</p>}
+                {!operations.length && <p>这个任务没有需要真实操作的要求，只确认交付内容。</p>}
                 <p>这里确认的是"怎样算完成"，不会立刻执行任何操作。</p>
                 <button type="button" disabled={!mappingValid} onClick={confirm}>
                   {pending ? "正在确认…" : "确认上述完成要求"}
@@ -393,8 +401,8 @@ function Workspace({
           )}
           {approved &&
             asList(spec.effects).map((effect) => {
-              // 2026-09-29：发布申请由系统按这里确认的效果自动准备（不再挑候选、点提交），
-              // 这里只显示每个效果走到了哪一步；批准仍在批准卡片上点。
+              // 操作申请由系统按这里确认的效果自动准备，这里只显示每个效果走到了哪一步；
+              // 要人批的在批准卡片上点（自动模式下系统代批，标了"总要人批"的除外）。
               const key = asText(effect.effect_key);
               const heads = asList(w.intents).filter(
                 (i) => i.effect_key === key && i.spec_hash === w.spec_hash && i.current === true,
@@ -404,14 +412,24 @@ function Workspace({
                 .map((c) => asText(c.statement));
               const targets = [...actionTargets(statements)];
               const state = heads.length ? asText(heads[heads.length - 1].state) : "";
+              const ops = ((effect.criterion_ids as string[]) ?? [])
+                .map((id) => operationOf(w, id))
+                .filter((op): op is Json => Boolean(op));
+              const person = ops.some((op) => op.always_needs_approval === true);
               return (
                 <div key={key} className="sh-OperationWorkspace-4">
                   <p>操作要求：{statements.join("；")}</p>
+                  {ops
+                    .filter((op) => asText(op.description))
+                    .map((op) => (
+                      <p key={asText(op.criterion_id)}>说明：{asText(op.description)}</p>
+                    ))}
                   <p>
                     {state
                       ? `进度：${INTENT_STATE[state] ?? state}`
-                      : `进度：等内容全部通过后，系统会自动准备${targets.length ? "发布 " + targets.join("、") + " 的" : ""}申请，审阅后请你批准。`}
+                      : `进度：等内容全部通过后，系统会自动准备${targets.length ? "对 " + targets.join("、") + " 的" : ""}操作申请，审阅后执行。`}
                   </p>
+                  {person && <p>这个操作总要人批准，自动模式下也会等你点「批准」。</p>}
                 </div>
               );
             })}

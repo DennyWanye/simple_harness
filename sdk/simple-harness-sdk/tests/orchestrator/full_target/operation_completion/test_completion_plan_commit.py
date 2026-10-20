@@ -155,13 +155,14 @@ def test_occ09_scope_fault_rolls_back_plan_receipt_membership_scope_and_event(
 
 
 def test_occ09_no_plan_is_published_before_the_completion_mapping_is_confirmed(tmp_path) -> None:
-    """要求里有 action: 的任务，确认页没点确认之前主循环不开工：规划器一次都没被问，没有计划、
-    没有范围，任务停在 CREATED——要求不会被悄悄降成"只有内容"。"""
+    """手动模式下要求里有 action: 的任务，确认页没点确认之前主循环不开工：规划器一次都没被问，
+    没有计划、没有范围，任务停在 CREATED——要求不会被悄悄降成"只有内容"。（自动模式由系统按默认
+    映射代签，用户 2026-10-20。）"""
 
     provider = LayeredScriptedProvider()
 
     async def run() -> None:
-        async with publishing(tmp_path, provider=provider, confirm=False) as case:
+        async with publishing(tmp_path, provider=provider, confirm=False, auto=False) as case:
             for _ in range(3):
                 await case.world.drain()
             assert case.status() == "CREATED"

@@ -28,6 +28,7 @@ from ..contracts.resolution import (
     WorkspaceAccess,
 )
 from ..contracts.semantic_base import Provenance, TypedRef, TypedRefKind, content_hash_of
+from ..runtime.action_params import PUBLISH
 from ..runtime.connectors import Receipt, human_ruling_in, human_ruling_receipt, params_hash
 from ..runtime.operation_outcomes import ObservedOperationMilestone, resolve_receipt_adapter
 from ..runtime.operation_payloads import require_connector_profile
@@ -180,11 +181,16 @@ def _ruling_observation(
     )
 
 
-def _facts_differ(facts: Any, *, ruling: dict[str, Any] | None, resolved: Any) -> bool:
+def _facts_differ(
+    facts: Any, *, ruling: dict[str, Any] | None, resolved: Any, publish: bool
+) -> bool:
     """Whether a stored observation's facts no longer match their source (the ruling on the books,
-    or the frozen parameters the connector receipt was checked against)."""
+    or the frozen parameters the connector receipt was checked against).  通用连接器的事实只有
+    回执本身（调用方已逐字比对）；文件发布还核读回的内容哈希与大小。"""
     if ruling is not None:
         return facts.get("ruling") != ruling or facts.get("milestone_source") != HUMAN_RULING_SOURCE
+    if not publish:
+        return False
     return facts.get("content_hash") != resolved.parameters.effective_params.get(
         "content_hash"
     ) or facts.get("bytes") != resolved.parameters.effective_params.get("size")
@@ -604,7 +610,12 @@ def validate_scoped_outcome_command(
             or tuple(sorted(event.id for event in handoffs)) != binding.covered_handoff_ids
             or len(handoffs) != action["handoffs"]
             or facts.get("receipt") != action["receipt"]
-            or _facts_differ(facts, ruling=ruling, resolved=resolved)
+            or _facts_differ(
+                facts,
+                ruling=ruling,
+                resolved=resolved,
+                publish=(action["connector"], action["operation"]) == PUBLISH,
+            )
             or any(
                 not set(c.required_evidence_policy.required_check_ids).issubset(
                     facts.get("executed_check_ids", ())
@@ -659,7 +670,7 @@ def validate_scoped_outcome_command(
         or action["params_hash"] != binding.params_hash
     ):
         raise OperationOutcomeError("OP_OUTCOME_SOURCE_UNAVAILABLE")
-    if binding.observed_milestone not in {"FILE_PUBLISHED", "CONTENT_HASH_VERIFIED"}:
+    if binding.observed_milestone not in profile.supported_milestones:
         raise OperationOutcomeError(
             "OP_OUTCOME_MILESTONE_UNVERIFIABLE", "delivery mapping is unregistered"
         )

@@ -19,7 +19,8 @@ from typing import Any
 import pytest
 from agent_orchestrator.governance.policies import DeploymentPolicy, action_decision
 from agent_orchestrator.runtime.actions import lookup_verdict
-from agent_orchestrator.runtime.connectors import OperationSpec, Receipt, TestConfigService
+from agent_orchestrator.runtime.connectors import OperationSpec, Receipt
+from agent_orchestrator.testing.connectors import TestConfigService
 
 
 class _BestEffort:

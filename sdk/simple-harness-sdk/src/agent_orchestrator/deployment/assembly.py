@@ -160,6 +160,7 @@ class UserMissionDeployment:
         done = self.duties.project_check_policies()
         done += self.duties.auto_authorize_planning(auto=auto)
         done += self.duties.auto_confirm_content_completion(auto=auto)
+        done += self.duties.auto_approve_actions(auto=auto)
         return done
 
 

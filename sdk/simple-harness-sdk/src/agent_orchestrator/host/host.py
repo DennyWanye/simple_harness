@@ -49,6 +49,7 @@ from ..orchestrator.commit_service import GLOBAL_ACCOUNT_PREFIX, global_account_
 from ..orchestrator.taskgraph_deployment import InstalledHtnWiringAcceptance
 from ..runtime import sandbox
 from ..runtime.assembly import OrchestratorConfig
+from ..runtime.connectors import OperationSpec
 from ..runtime.connectors_publish import FilePublishConnector
 from ..runtime.deepseek_meter import deepseek_meter_binding
 from ..runtime.domain_tools import DomainTool
@@ -67,6 +68,7 @@ logger = logging.getLogger(__name__)
 
 KNOWLEDGE_TOOLS = ("knowledge_list", "knowledge_read")
 TERMINAL = frozenset({"COMPLETED", "FAILED", "CANCELLED"})
+PUBLISH_CONNECTOR = "file_publish"
 PUBLISH_PREFIX = "action:file_publish.publish:"
 QUARANTINE_REASON = (
     "保证通道根已隔离（库标记不符或状态文件缺失）：只开非披露诊断，不派发任务，不自动写回"
@@ -111,20 +113,66 @@ def _checked_tools(tools: Sequence[DomainTool]) -> dict[str, DomainTool]:
     return checked
 
 
+def _checked_connectors(connectors: Sequence[Any], settings: HostSettings) -> dict[str, Any]:
+    """注册时把能拒的拒掉：没写最高风险等级、重名（含内置的文件发布）、没有操作、只读操作
+    （只读走工具）、不能按幂等键去重或不能查询的连接器（结果不明时没法核对）。风险等级与权威性
+    由部署策略在每次动作时判（L2 以上要权威查询）。"""
+
+    if connectors and settings.max_action_level is None:
+        raise ValueError("registering connectors needs an explicit settings.max_action_level")
+    checked: dict[str, Any] = {}
+    for connector in connectors:
+        name = getattr(connector, "name", None)
+        if not isinstance(name, str) or not name.strip() or "." in name or ":" in name:
+            raise ValueError(f"connector name must be a plain non-empty word, got {name!r}")
+        if name == PUBLISH_CONNECTOR or name in checked:
+            raise ValueError(f"connector {name!r} is registered twice or is built in")
+        operations = getattr(connector, "operations", None)
+        if not isinstance(operations, Mapping) or not operations:
+            raise ValueError(f"connector {name!r} declares no operations")
+        for operation, spec in operations.items():
+            if not isinstance(spec, OperationSpec) or spec.name != operation:
+                raise ValueError(f"{name}.{operation} must be an OperationSpec with that name")
+            if not spec.mutates:
+                raise ValueError(f"{name}.{operation} is read-only; register reads as a DomainTool")
+        if not (
+            getattr(connector, "supports_idempotency", False)
+            and getattr(connector, "supports_reconciliation", False)
+        ):
+            raise ValueError(f"connector {name!r} must deduplicate by key and support lookup")
+        if getattr(connector, "lookup_authority", None) not in {"authoritative", "best_effort"}:
+            raise ValueError(f"connector {name!r} lookup_authority must be declared")
+        if not all(
+            callable(getattr(connector, method, None))
+            for method in ("execute", "lookup", "normalize_target")
+        ):
+            raise ValueError(f"connector {name!r} must implement execute/lookup/normalize_target")
+        checked[name] = connector
+    return checked
+
+
 def backoff_delay(failures: int, maximum: float) -> float:
     """连续失败 ``failures`` 轮后等多少秒；指数封顶，``2.0 ** 1024`` 会溢出。"""
 
     return min(maximum, 2.0 ** min(max(failures, 0), 16))
 
 
-def with_publish_sources(criteria: list[str]) -> list[str]:
+def criterion_statement(item: Any) -> str:
+    """一条要求的文字：字符串本身，或 ``{"statement", "params"}`` 里的 ``statement``。"""
+
+    if isinstance(item, Mapping):
+        return str(item.get("statement") or "").strip()
+    return str(item).strip()
+
+
+def with_publish_sources(criteria: list[Any]) -> list[Any]:
     """每条 ``action:file_publish.publish:X`` 前补一条 ``file:X``（已有就不补）：那一步就是 X 的
     声明产出者，核对时检查文件存在，系统发布时只从那一步取。"""
 
-    present = {str(item).strip() for item in criteria}
-    result: list[str] = []
+    present = {criterion_statement(item) for item in criteria}
+    result: list[Any] = []
     for item in criteria:
-        text = str(item).strip()
+        text = criterion_statement(item)
         if text.startswith(PUBLISH_PREFIX):
             source = "file:" + text[len(PUBLISH_PREFIX) :].strip()
             if source != "file:" and source not in present:
@@ -194,16 +242,21 @@ class OrchestrationHost:
         provider_kind: str | None = None,
         extra_secrets: tuple[str, ...] = (),
         tools: Sequence[DomainTool] = (),
+        connectors: Sequence[Any] = (),
         sandbox: SandboxOptions | None = None,
     ) -> None:
         """
         ``model`` + ``tokenizer_path``：用 DeepSeek 端点（正常用法）。
         ``provider`` [+ ``thinking_provider``] + ``counter`` [+ ``thinking_counter``]：调用方自带的
         提供方与认证计数器（测试替身，或别的接法）；给了就不再按 ``model`` 构建。
-        ``auto_mode``：自动模式下 SDK 代签"授权本轮规划"与"确认纯内容完成要求"；可以是布尔，
+        ``auto_mode``：自动模式下 SDK 代签"授权本轮规划"、"确认完成要求"与动作审批（标了
+        ``always_needs_approval`` 的操作除外），都记成 ``HOST_AUTO_PERMISSION``；可以是布尔，
         也可以是每轮现读的函数。
         ``tools``：应用注册的只读工具（:class:`DomainTool`）。名字不能与内置工具、技能工具重复；
         有副作用的工具（``read_only=False``）在这里被拒——副作用走连接器。
+        ``connectors``：应用的连接器（实现 :class:`Connector`）。任务用 ``action:名字.操作:目标``
+        要求它执行；注册了连接器就必须在 ``settings.max_action_level`` 写明最高风险等级。
+        ``kind="event"`` 的操作随注册启用。
         ``sandbox``：模型写的代码在哪个隔离区里跑（:class:`SandboxOptions`）；默认按系统自动选。
         """
         self.tools = _checked_tools(tools)
@@ -211,6 +264,7 @@ class OrchestrationHost:
 
         self.root = Path(root)
         self.settings = settings or HostSettings()
+        self._app_connectors = _checked_connectors(connectors, self.settings)
         self.tenant_id = tenant_id
         self.principal = principal
         self.owner = owner or f"orchestration-host-{os.getpid()}-{secrets.token_hex(4)}"
@@ -538,8 +592,16 @@ class OrchestrationHost:
         publish = self._publish_connector()
         enabled_connectors: tuple[str, ...] = ()
         if publish is not None:
-            self.connectors["file_publish"] = publish
-            enabled_connectors = ("file_publish",)
+            self.connectors[PUBLISH_CONNECTOR] = publish
+            enabled_connectors = (PUBLISH_CONNECTOR,)
+        self.connectors.update(self._app_connectors)
+        enabled_connectors = (*enabled_connectors, *self._app_connectors)
+        event_operations = tuple(
+            f"{name}.{operation}"
+            for name, connector in self._app_connectors.items()
+            for operation, spec in connector.operations.items()
+            if spec.kind == "event"
+        )
         self.sandbox = await self._probe_sandbox()
         sandboxed = bool(self.sandbox.get("ok"))
         skill_tools = tuple(SKILL_TOOL_NAMES)
@@ -556,7 +618,8 @@ class OrchestrationHost:
             domain_read_only_tools=tool_names,
             code_execution="sandboxed" if sandboxed else "off",
             enabled_connectors=enabled_connectors,
-            max_action_level=self.settings.max_action_level,
+            enabled_event_operations=event_operations,
+            max_action_level=self.settings.max_action_level or "L2",
         )
         # 真实模型：思考与输出共用输出上限，8K 会把审阅结论截在信封闭合前；起步 16K，写满翻倍。
         knobs: dict[str, Any] = (
@@ -696,7 +759,7 @@ class OrchestrationHost:
             return False
 
     async def _host_duties(self) -> None:
-        """每轮：保证通道检查策略投影、自动授权规划、自动确认纯内容完成要求。"""
+        """每轮：保证通道检查策略投影、自动授权规划、自动确认完成要求、自动代批动作。"""
 
         if self.assurance is not None:
             try:
@@ -706,6 +769,7 @@ class OrchestrationHost:
         auto = await self._auto()
         self.duties.auto_authorize_planning(auto=auto)
         self.duties.auto_confirm_content_completion(auto=auto)
+        self.duties.auto_approve_actions(auto=auto)
 
     def _degraded_recovery(self) -> bool:
         if self.orchestrator is None:
@@ -897,7 +961,7 @@ class OrchestrationHost:
                     "action_criteria_disabled", "这个部署没有启用真实动作：成功条件不能使用 action:"
                 )
             if connector not in enabled:
-                reason = self.publish.get("reason") if connector == "file_publish" else None
+                reason = self.publish.get("reason") if connector == PUBLISH_CONNECTOR else None
                 raise HostRequestError(
                     "action_criteria_disabled",
                     f"连接器 {connector} 未启用" + (f"：{reason}" if reason else ""),
@@ -973,11 +1037,14 @@ class OrchestrationHost:
         if (
             not isinstance(criteria, list)
             or not criteria
-            or not all(isinstance(c, str) and c.strip() for c in criteria)
+            or not all(isinstance(c, (str, Mapping)) and criterion_statement(c) for c in criteria)
         ):
-            raise HostRequestError("invalid_request", "成功条件不能为空，每行一条")
+            raise HostRequestError(
+                "invalid_request",
+                '成功条件不能为空，每行一条（文字，或带参数的 {"statement", "params"}）',
+            )
         self.refuse_secrets(body)
-        self.check_criteria(criteria)
+        self.check_criteria([criterion_statement(c) for c in criteria])
         body["success_criteria"] = with_publish_sources(criteria)
         found = (
             self.orchestrator.store.find_mission(
@@ -1036,8 +1103,10 @@ class OrchestrationHost:
             raise HostRequestError(FACADE_CODES.get(error.code, error.code), str(error)) from error
 
     def create_mission(self, request: Mapping[str, Any]) -> dict[str, Any]:
-        """建一个任务：``goal``、``success_criteria``（每行一条）、可选 ``idempotency_key``、
-        ``budget``、``runtime_profile_id``、``stop_conditions``、``workspace_seed``。
+        """建一个任务：``goal``、``success_criteria``（每行一条；要连接器执行的
+        ``action:名字.操作:目标`` 可以写成 ``{"statement", "params"}`` 带上参数）、可选
+        ``idempotency_key``、``budget``、``runtime_profile_id``、``stop_conditions``、
+        ``workspace_seed``。
         返回 ``{"mission_id", "created", "spec_hash"}``。"""
 
         self._require()
@@ -1142,15 +1211,6 @@ class OrchestrationHost:
         receipt = self._call(
             "amend_requirements", {**dict(request), "changes": [*sources, *changes]}
         )
-        self.wake()
-        return dict(receipt)
-
-    def submit_operation_intent(self, request: Mapping[str, Any]) -> dict[str, Any]:
-        self._require()
-        if self.state == "degraded":
-            raise HostRequestError("orchestration_degraded", "编排循环异常，暂不接受新操作")
-        self.refuse_secrets(request)
-        receipt = self._call("submit_operation_intent", dict(request))
         self.wake()
         return dict(receipt)
 
@@ -1350,6 +1410,7 @@ __all__ = (
     "HostUnavailable",
     "OrchestrationHost",
     "backoff_delay",
+    "criterion_statement",
     "default_host_fingerprint",
     "with_publish_sources",
 )

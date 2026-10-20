@@ -184,6 +184,15 @@ class MissionLifecycleCommitsMixin(CommitServiceCore):
                             "runtime_profile_id": spec.runtime_profile_id,
                         }
                     ),
+                    **(
+                        {}
+                        if not spec.action_params
+                        else {
+                            "action_params": {
+                                key: dict(value) for key, value in spec.action_params.items()
+                            }
+                        }
+                    ),
                     SEMANTICS_KEY: semantics_version,
                 },
             )

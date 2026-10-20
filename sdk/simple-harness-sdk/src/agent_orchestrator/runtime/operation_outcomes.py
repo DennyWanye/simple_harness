@@ -27,6 +27,37 @@ class ObservedOperationMilestone:
     covered_handoff_ids: tuple[str, ...]
 
 
+def check_handoff_coverage(
+    action: Mapping[str, Any], handoff_events: Sequence[Any]
+) -> tuple[str, ...]:
+    """交接事件恰好覆盖这个动作的每一次交接（同一动作、同一幂等键、编号 1..n 不缺不重）。"""
+
+    events = tuple(handoff_events)
+    if len(events) != int(action.get("handoffs", 0)) or not events:
+        raise OutcomeReceiptError("OP_OUTCOME_MILESTONE_UNVERIFIABLE", "handoff count")
+    ids = []
+    ordinals: list[int] = []
+    for event in events:
+        payload = getattr(event, "payload", None)
+        if (
+            getattr(event, "type", None) != "ActionHandedOff"
+            or not isinstance(payload, Mapping)
+            or payload.get("action_key") != action.get("action_key")
+            or payload.get("idempotency_key") != action.get("idempotency_key")
+        ):
+            raise OutcomeReceiptError("OP_OUTCOME_MILESTONE_UNVERIFIABLE", "handoff event")
+        ids.append(str(event.id))
+        ordinal = payload.get("handoff")
+        if type(ordinal) is not int:
+            raise OutcomeReceiptError("OP_OUTCOME_MILESTONE_UNVERIFIABLE", "handoff ordinal")
+        ordinals.append(ordinal)
+        if event.mission_id != action.get("mission_id"):
+            raise OutcomeReceiptError("OP_OUTCOME_MILESTONE_UNVERIFIABLE", "handoff mission")
+    if len(set(ids)) != len(ids) or sorted(ordinals) != list(range(1, len(events) + 1)):
+        raise OutcomeReceiptError("OP_OUTCOME_MILESTONE_UNVERIFIABLE", "handoff coverage")
+    return tuple(ids)
+
+
 class OperationReceiptAdapter(Protocol):
     adapter_id: str
     adapter_version: str
@@ -93,33 +124,7 @@ class FilePublishReceiptAdapterV1:
             raise OutcomeReceiptError("OP_OUTCOME_MILESTONE_UNVERIFIABLE", "receipt identity")
         if receipt.idempotency_key != str(action.get("idempotency_key")):
             raise OutcomeReceiptError("OP_OUTCOME_MILESTONE_UNVERIFIABLE", "idempotency key")
-        events = tuple(handoff_events)
-        if len(events) != int(action.get("handoffs", 0)) or not events:
-            raise OutcomeReceiptError("OP_OUTCOME_MILESTONE_UNVERIFIABLE", "handoff count")
-        ids = []
-        ordinals: list[int] = []
-        for event in events:
-            payload = getattr(event, "payload", None)
-            if (
-                getattr(event, "type", None) != "ActionHandedOff"
-                or not isinstance(payload, Mapping)
-                or payload.get("action_key") != action.get("action_key")
-                or payload.get("idempotency_key") != action.get("idempotency_key")
-            ):
-                raise OutcomeReceiptError("OP_OUTCOME_MILESTONE_UNVERIFIABLE", "handoff event")
-            ids.append(str(event.id))
-            ordinal = payload.get("handoff")
-            if type(ordinal) is not int:
-                raise OutcomeReceiptError("OP_OUTCOME_MILESTONE_UNVERIFIABLE", "handoff ordinal")
-            ordinals.append(ordinal)
-            if event.mission_id != action.get("mission_id"):
-                raise OutcomeReceiptError("OP_OUTCOME_MILESTONE_UNVERIFIABLE", "handoff mission")
-        if (
-            len(set(ids)) != len(ids)
-            or any(type(value) is not int for value in ordinals)
-            or sorted(ordinals) != list(range(1, len(events) + 1))
-        ):
-            raise OutcomeReceiptError("OP_OUTCOME_MILESTONE_UNVERIFIABLE", "handoff coverage")
+        ids = list(check_handoff_coverage(action, handoff_events))
         found = self.connector.lookup(receipt.idempotency_key)
         if found is None or found.to_json() != receipt.to_json():
             raise OutcomeReceiptError("OP_OUTCOME_MILESTONE_UNVERIFIABLE", "ledger lookup")

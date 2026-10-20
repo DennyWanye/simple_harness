@@ -78,6 +78,23 @@ OUTCOME_EVENTS = {
 }
 
 
+def _decision_source(principal: Any, decision: str, nonce: str, approval_source: str) -> bool:
+    """决定的形状：调用方身份、决定种类、去重号、来源；返回是不是主机代批。"""
+
+    if not isinstance(principal, Principal):
+        raise ActionCommitError("a decision needs an authenticated Principal from the caller")
+    if decision not in {"grant", "reject"}:
+        raise ActionCommitError(f"unknown decision {decision!r}")
+    if approval_source not in {"HUMAN", "HOST_AUTO_PERMISSION"}:
+        raise ActionCommitError(f"unknown approval source {approval_source!r}")
+    automatic = approval_source == "HOST_AUTO_PERMISSION"
+    if automatic and decision != "grant":
+        raise ActionCommitError("the host only grants on the user's behalf")
+    if not nonce.strip():
+        raise ActionCommitError("a decision needs a nonce")
+    return automatic
+
+
 class ActionCommitError(RuntimeError):
     """A decision or transition the ledger refuses (nothing was written)."""
 
@@ -92,7 +109,7 @@ class CandidateRejected(ContractError):
 
 
 def validate_candidate(candidate: Mapping[str, Any]) -> dict[str, Any]:
-    """The ``actions/<name>.json`` schema (plan D7-2); anything else is not a candidate."""
+    """申请单（系统按已批准效果生成的 candidate）的字段形状；别的都不是申请单。"""
 
     if not isinstance(candidate, Mapping):
         raise ContractError("an action candidate must be a JSON object")
@@ -137,9 +154,8 @@ def check_candidate(
     deployment: DeploymentPolicy,
 ) -> tuple[dict[str, Any], ActionDecision]:
     """Schema, deployment policy and Mission scope, in that order; raises
-    ``CandidateRejected`` with a stable reason.  The same check runs in verification (the
-    rule_check layer, forced whenever a result carries ``actions/``) and again inside the
-    accept transaction on the accepted bytes."""
+    ``CandidateRejected`` with a stable reason.  The system's operation preparation and the
+    proposal transaction both run it on the exact candidate bytes."""
 
     try:
         cand = validate_candidate(candidate)
@@ -581,6 +597,7 @@ class ActionCommitsMixin:
                     # D7-4': the deployment's rules are frozen into the request
                     "required_count": decision.required_approvals,
                     "distinct_principals": bool(deployment.l3_distinct_principals),
+                    "person_required": decision.person_required,
                     "expires_at": self._store.now + float(deployment.approval_ttl_seconds),
                     "grant_count": 0,
                     "granted_by": [],
@@ -694,17 +711,17 @@ class ActionCommitsMixin:
         nonce: str,
         deployment: DeploymentPolicy,
         reason: str = "",
+        approval_source: str = "HUMAN",
     ) -> tuple[dict[str, Any], str]:
-        """A human decision (original §22 ApprovalGranted / ApprovalRejected).  Returns the
-        request after the decision and the decision's receipt hash; replaying the same
-        nonce returns the original receipt and changes nothing."""
+        """A decision on an approval request (original §22 ApprovalGranted / ApprovalRejected).
+        Returns the request after the decision and the decision's receipt hash; replaying the
+        same nonce returns the original receipt and changes nothing.
 
-        if not isinstance(principal, Principal):
-            raise ActionCommitError("a decision needs an authenticated Principal from the caller")
-        if decision not in {"grant", "reject"}:
-            raise ActionCommitError(f"unknown decision {decision!r}")
-        if not nonce.strip():
-            raise ActionCommitError("a decision needs a nonce")
+        ``approval_source="HOST_AUTO_PERMISSION"``（用户 2026-10-20）：自动模式下主机按用户的
+        模式代批一个动作。如实记成主机的决定（事件执行者是主机，不是人），一次决定就让请求
+        成为 GRANTED——L3 不伪造第二个人；应用标了"总要人批"的请求不接受代批。"""
+
+        automatic = _decision_source(principal, decision, nonce, approval_source)
         pre = self._store.get_approval(request_id)
         if pre is not None and pre["kind"] in {"action", "source_change"}:
             # review P2-3: an expiry is committed on its own, never rolled back with a refusal
@@ -715,6 +732,8 @@ class ActionCommitsMixin:
                 raise ActionCommitError(f"unknown approval request {request_id}")
             if request["kind"] not in {"action", "source_change"}:
                 raise ActionCommitError(f"{request_id} is a {request['kind']} request")
+            if automatic and (request["kind"] != "action" or request.get("person_required")):
+                raise ActionCommitError(f"{request_id} needs a person's decision")
             receipt = decision_receipt_hash(
                 request_id=request_id,
                 binding=request["binding"],
@@ -768,13 +787,17 @@ class ActionCommitsMixin:
                     "nonce": nonce,
                     "reason": reason,
                     "principal": principal.to_json(),
+                    "approval_source": approval_source,
                     "at": self._store.now,
                 }
             )
             if not inserted:  # the same nonce with a different decision / person
                 raise ActionCommitError(f"nonce {nonce!r} was already used on {request_id}")
             action_key = str(request["subject_key"])
-            actor = {"actor_type": "user", "actor_id": principal.principal_id}
+            actor = {
+                "actor_type": "system" if automatic else "user",
+                "actor_id": ("host-auto:" if automatic else "") + principal.principal_id,
+            }
             if decision == "reject":
                 request.update(
                     state="REJECTED",
@@ -798,7 +821,9 @@ class ActionCommitsMixin:
             request["granted_by"] = [*list(request.get("granted_by") or []), principal.principal_id]
             request["grant_count"] = int(request.get("grant_count", 0)) + 1
             request["version"] = int(request["version"]) + 1
-            if int(request["grant_count"]) >= int(request["required_count"]):
+            if automatic:
+                request["approval_source"] = approval_source
+            if automatic or int(request["grant_count"]) >= int(request["required_count"]):
                 request["state"] = "GRANTED"
                 request["closed_at"] = self._store.now
                 request["granted_at"] = self._store.now
@@ -814,6 +839,7 @@ class ActionCommitsMixin:
                     "grant_count": request["grant_count"],
                     "required_count": request["required_count"],
                     "state": request["state"],
+                    "approval_source": approval_source,
                 },
                 **actor,
             )
@@ -971,8 +997,10 @@ class ActionCommitsMixin:
                         reason = "operation_link_mismatch"
                     if reason is None:
                         # Every link is a T0 link: a broken chain cannot reserve or send.
-                        # 按需导入：循环依赖（action_commits ↔ operation_profiles）
-                        from ..runtime.operation_profiles import BuiltinOperationProfiles
+                        # 按需导入：循环依赖（action_commits ↔ operation_profiles_deployment）
+                        from ..runtime.operation_profiles_deployment import (
+                            DeploymentOperationProfiles,
+                        )
 
                         # 按需导入：循环依赖（action_commits ↔ operation_materialization_inputs）
                         from .operation_materialization_inputs import (
@@ -990,7 +1018,7 @@ class ActionCommitsMixin:
                                     ).profiles
                                     if getattr(self, "_operation_materialization_runtime", None)
                                     is not None
-                                    else BuiltinOperationProfiles(connectors)
+                                    else DeploymentOperationProfiles(connectors)
                                 ),
                             )
                             resolver.resolve_for_handoff(action, bridge)

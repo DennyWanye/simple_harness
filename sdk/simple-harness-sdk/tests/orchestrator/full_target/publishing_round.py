@@ -25,6 +25,7 @@ from typing import Any
 from agent_orchestrator.governance.policies import DeploymentPolicy
 from agent_orchestrator.runtime.connectors_publish import FilePublishConnector
 from agent_orchestrator.storage.planning_decision_store import PlanningDecisionStore
+from agent_orchestrator.testing.connectors import person_approves
 from agent_orchestrator.testing.product_world import ProductWorld, product_world
 from agent_orchestrator.testing.scripted_replies import (
     LayeredScriptedProvider,
@@ -48,7 +49,9 @@ def confirm_completion(world: ProductWorld, mission_id: str) -> dict[str, Any]:
     actions = [c["id"] for c in workspace["criteria"] if c["statement"].startswith("action:")]
     content = [c["id"] for c in workspace["criteria"] if c["required"] and c["id"] not in actions]
     [obligation] = workspace["obligations"]
-    milestone = next(m for m in workspace["milestones"] if m["id"] == "CONTENT_HASH_VERIFIED")
+    milestone = next(
+        m for m in workspace["operations"][0]["milestones"] if m["id"] == "CONTENT_HASH_VERIFIED"
+    )
     ref = workspace["requirements_ref"]
     return world.control.approve_operation_completion_spec(
         {
@@ -134,7 +137,10 @@ async def publishing_round(
 ) -> AsyncIterator[PublishingRound]:
     published = root / "published"
     published.mkdir(parents=True)
-    connector = FilePublishConnector(published, root / "world" / "connectors" / "file_publish")
+    # 自动模式会代批发布（用户 2026-10-20）；这里测人批准，所以标成总要人批。
+    connector = person_approves(
+        FilePublishConnector(published, root / "world" / "connectors" / "file_publish")
+    )
     async with product_world(
         root / "world",
         LayeredScriptedProvider(),
@@ -149,7 +155,7 @@ async def publishing_round(
                 "success_criteria": ["file:" + TARGET, PUBLISH],
             }
         )["mission_id"]
-        await world.drain()
+        # 自动模式会代签确认页（用户 2026-10-20）；这里由人在主循环开跑前先确认
         confirm_completion(world, mission_id)
 
         def pending() -> list[dict[str, Any]]:
@@ -280,7 +286,10 @@ async def refused_final_round(root: Path, *, key: str) -> AsyncIterator[RefusedF
 
     published = root / "published"
     published.mkdir(parents=True)
-    connector = FilePublishConnector(published, root / "world" / "connectors" / "file_publish")
+    # 自动模式会代批发布（用户 2026-10-20）；这里测人批准，所以标成总要人批。
+    connector = person_approves(
+        FilePublishConnector(published, root / "world" / "connectors" / "file_publish")
+    )
     seen: dict[str, Any] = {"refused": False, "write": None, "type_ref": None}
     answered: list[str] = []
 
@@ -353,7 +362,7 @@ async def refused_final_round(root: Path, *, key: str) -> AsyncIterator[RefusedF
                 "success_criteria": ["file:" + TARGET, PUBLISH],
             }
         )["mission_id"]
-        await world.drain()
+        # 自动模式会代签确认页（用户 2026-10-20）；这里由人在主循环开跑前先确认
         confirm_completion(world, mission_id)
 
         def pending() -> list[dict[str, Any]]:

@@ -2,7 +2,8 @@
 """产品同形测试世界的代表用例三：带对外操作（发布文件）的任务（HTN 补齐阶段 A′ 第 2 步）。
 
 产品流程见 plans/2026-09-28-system-operations/00-PLAN.md 第一部分"改完后，一个带发布的任务怎么走"：
-建任务 → 人在确认页确认完成映射并选上必须完成的效果（自动模式不代签带 ``action:`` 的任务）→
+建任务 → 人在确认页确认完成映射并选上必须完成的效果（自动模式会代签、代批，用户 2026-10-20；
+这里由人确认、发布标成总要人批）→
 内容步骤写出文件 → 系统按已批准效果自动准备申请单、审阅员通过 → 人点"批准" → 真实的
 ``FilePublishConnector`` 发布到授权目录 → 系统读回核对、结果审阅通过 → 任务完成。
 """
@@ -18,6 +19,7 @@ from typing import Any
 import pytest
 from agent_orchestrator.governance.policies import DeploymentPolicy
 from agent_orchestrator.runtime.connectors_publish import FilePublishConnector
+from agent_orchestrator.testing.connectors import person_approves
 from agent_orchestrator.testing.product_world import product_world
 from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider
 
@@ -47,7 +49,9 @@ def _confirm_completion(world: Any, mission_id: str) -> dict[str, Any]:
     actions = [c["id"] for c in workspace["criteria"] if c["statement"].startswith("action:")]
     content = [c["id"] for c in workspace["criteria"] if c["required"] and c["id"] not in actions]
     [obligation] = workspace["obligations"]
-    milestone = next(m for m in workspace["milestones"] if m["id"] == "CONTENT_HASH_VERIFIED")
+    milestone = next(
+        m for m in workspace["operations"][0]["milestones"] if m["id"] == "CONTENT_HASH_VERIFIED"
+    )
     ref = workspace["requirements_ref"]
     return world.control.approve_operation_completion_spec(
         {
@@ -87,6 +91,7 @@ def test_a_publishing_mission_completes_on_the_product_deployment(tmp_path):
         connector = FilePublishConnector(
             published, tmp_path / "root" / "connectors" / "file_publish"
         )
+        person_approves(connector)  # 测人批准：自动模式会代批（用户 2026-10-20），标成总要人批
         policy = DeploymentPolicy(enabled_connectors=("file_publish",), max_action_level="L2")
         provider = LayeredScriptedProvider()
         async with product_world(
@@ -104,8 +109,7 @@ def test_a_publishing_mission_completes_on_the_product_deployment(tmp_path):
             )
             mission_id = created["mission_id"]
 
-            # 1～2. 自动模式不代签带 action: 的任务：确认页等着人
-            await world.drain()
+            # 1～2. 自动模式会代签确认页（用户 2026-10-20）；这里由人在主循环开跑前先确认
             assert str(world.store.get_mission(mission_id).status.value) == "CREATED"
             receipt = _confirm_completion(world, mission_id)
             assert receipt["authority"]["kind"] == "USER_CONFIRMED"
@@ -206,6 +210,7 @@ def test_a_fenced_publish_waits_instead_of_failing(tmp_path, monkeypatch):
         connector = FilePublishConnector(
             published, tmp_path / "root" / "connectors" / "file_publish"
         )
+        person_approves(connector)  # 测人批准：自动模式会代批（用户 2026-10-20），标成总要人批
         policy = DeploymentPolicy(enabled_connectors=("file_publish",), max_action_level="L2")
         async with product_world(
             tmp_path / "root",
@@ -220,7 +225,7 @@ def test_a_fenced_publish_waits_instead_of_failing(tmp_path, monkeypatch):
                     "idempotency_key": "fenced-publish",
                 }
             )["mission_id"]
-            await world.drain()
+            # 自动模式会代签确认页（用户 2026-10-20）；这里由人在主循环开跑前先确认
             _confirm_completion(world, mission_id)
             approvals: list[dict[str, Any]] = []
             for _ in range(20):
@@ -256,6 +261,7 @@ def test_the_confirmation_page_refuses_a_milestone_the_profile_cannot_reach(tmp_
         connector = FilePublishConnector(
             published, tmp_path / "root" / "connectors" / "file_publish"
         )
+        person_approves(connector)  # 测人批准：自动模式会代批（用户 2026-10-20），标成总要人批
         policy = DeploymentPolicy(enabled_connectors=("file_publish",), max_action_level="L2")
         async with product_world(
             tmp_path / "root",
@@ -270,10 +276,10 @@ def test_the_confirmation_page_refuses_a_milestone_the_profile_cannot_reach(tmp_
                     "idempotency_key": "delivered",
                 }
             )["mission_id"]
-            await world.drain()
+            # 自动模式会代签确认页（用户 2026-10-20）；主循环开跑前人读确认页
             workspace = _workspace(world, mission_id)
             assert "DELIVERED" not in {
-                m["id"] for m in workspace["milestones"]
+                m["id"] for m in workspace["operations"][0]["milestones"]
             }  # the page never offers it
             actions = [
                 c["id"] for c in workspace["criteria"] if c["statement"].startswith("action:")
@@ -282,7 +288,7 @@ def test_the_confirmation_page_refuses_a_milestone_the_profile_cannot_reach(tmp_
                 c["id"] for c in workspace["criteria"] if c["required"] and c["id"] not in actions
             ]
             [obligation] = workspace["obligations"]
-            milestone = workspace["milestones"][0]
+            milestone = workspace["operations"][0]["milestones"][0]
             ref = workspace["requirements_ref"]
             with pytest.raises(FacadeError) as refused:
                 world.control.approve_operation_completion_spec(
@@ -369,6 +375,7 @@ def test_a_publish_the_service_refuses_is_proven_unapplied_and_offered_again(tmp
         connector = FilePublishConnector(
             published, tmp_path / "root" / "connectors" / "file_publish"
         )
+        person_approves(connector)  # 测人批准：自动模式会代批（用户 2026-10-20），标成总要人批
         policy = DeploymentPolicy(enabled_connectors=("file_publish",), max_action_level="L2")
         async with product_world(
             tmp_path / "root",
@@ -383,7 +390,7 @@ def test_a_publish_the_service_refuses_is_proven_unapplied_and_offered_again(tmp
                     "idempotency_key": f"refused-{refusals}",
                 }
             )["mission_id"]
-            await world.drain()
+            # 自动模式会代签确认页（用户 2026-10-20）；这里由人在主循环开跑前先确认
             _confirm_completion(world, mission_id)
             card = await _until_card(world, mission_id, 0)
             for attempt in range(1, refusals + 1):
@@ -454,6 +461,7 @@ def test_a_link_that_succeeded_before_an_error_is_never_proven_unapplied(tmp_pat
         connector = FilePublishConnector(
             published, tmp_path / "root" / "connectors" / "file_publish"
         )
+        person_approves(connector)  # 测人批准：自动模式会代批（用户 2026-10-20），标成总要人批
         policy = DeploymentPolicy(enabled_connectors=("file_publish",), max_action_level="L2")
         async with product_world(
             tmp_path / "root",
@@ -468,7 +476,7 @@ def test_a_link_that_succeeded_before_an_error_is_never_proven_unapplied(tmp_pat
                     "idempotency_key": "linked-then-error",
                 }
             )["mission_id"]
-            await world.drain()
+            # 自动模式会代签确认页（用户 2026-10-20）；这里由人在主循环开跑前先确认
             _confirm_completion(world, mission_id)
             card = await _until_card(world, mission_id, 0)
             world.control.decide(card["request_id"], "approve")
@@ -526,6 +534,7 @@ def test_a_cancelled_mission_names_its_unsettled_publish_and_says_when_it_is_kno
         connector = FilePublishConnector(
             published, tmp_path / "root" / "connectors" / "file_publish"
         )
+        person_approves(connector)  # 测人批准：自动模式会代批（用户 2026-10-20），标成总要人批
         policy = DeploymentPolicy(enabled_connectors=("file_publish",), max_action_level="L2")
         async with product_world(
             tmp_path / "root",
@@ -540,7 +549,7 @@ def test_a_cancelled_mission_names_its_unsettled_publish_and_says_when_it_is_kno
                     "idempotency_key": "cancel-unsettled",
                 }
             )["mission_id"]
-            await world.drain()
+            # 自动模式会代签确认页（用户 2026-10-20）；这里由人在主循环开跑前先确认
             _confirm_completion(world, mission_id)
             card = await _until_card(world, mission_id, 0)
             world.control.decide(card["request_id"], "approve")
@@ -614,6 +623,7 @@ def test_an_unproven_failure_with_no_publisher_bound_lets_the_loop_go_idle(tmp_p
         connector = FilePublishConnector(
             published, tmp_path / "root" / "connectors" / "file_publish"
         )
+        person_approves(connector)  # 测人批准：自动模式会代批（用户 2026-10-20），标成总要人批
 
         def down(key):  # type: ignore[no-untyped-def]
             raise ConnectorTransportError("down")
@@ -633,7 +643,7 @@ def test_an_unproven_failure_with_no_publisher_bound_lets_the_loop_go_idle(tmp_p
                     "idempotency_key": "no-publisher",
                 }
             )["mission_id"]
-            await world.drain()
+            # 自动模式会代签确认页（用户 2026-10-20）；这里由人在主循环开跑前先确认
             _confirm_completion(world, mission_id)
             card = await _until_card(world, mission_id, 0)
             _block_with_someone_elses_file(published, mission_id, world)

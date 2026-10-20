@@ -25,6 +25,7 @@ from typing import Any
 from agent_orchestrator.governance.policies import DeploymentPolicy
 from agent_orchestrator.runtime.connectors import ConnectorTransportError
 from agent_orchestrator.runtime.connectors_publish import FilePublishConnector
+from agent_orchestrator.testing.connectors import person_approves
 from agent_orchestrator.testing.product_world import ProductWorld, product_world
 from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider
 
@@ -91,7 +92,8 @@ def flaky_connector(connector: FilePublishConnector, faults: Faults) -> FilePubl
     connector.execute = execute  # type: ignore[method-assign]
     connector.lookup = lookup  # type: ignore[method-assign]
     connector.ledger_record = ledger_record  # type: ignore[method-assign]
-    return connector
+    # 这些用例测"人批了才发布"：自动模式下主机会代批，所以把发布标成总要人批。
+    return person_approves(connector)
 
 
 @dataclass
@@ -189,7 +191,9 @@ def confirm_completion(
     actions = [c["id"] for c in current["criteria"] if c["statement"].startswith("action:")]
     content = [c["id"] for c in current["criteria"] if c["required"] and c["id"] not in actions]
     [obligation] = current["obligations"]
-    milestone = next(m for m in current["milestones"] if m["id"] == "CONTENT_HASH_VERIFIED")
+    milestone = next(
+        m for m in current["operations"][0]["milestones"] if m["id"] == "CONTENT_HASH_VERIFIED"
+    )
     ref = current["requirements_ref"]
     return world.control.approve_operation_completion_spec(
         {
@@ -264,8 +268,8 @@ async def publishing(
         )
         mission_id = created["mission_id"]
         if confirm:
-            # 自动模式不代签带 action: 的任务：确认页等着人（这一轮主循环只走到确认页）。
-            await world.drain()
+            # 自动模式会按默认映射代签确认页（用户 2026-10-20）；这里由人在主循环开跑前先确认，
+            # 用例用的是人选的映射。
             assert str(world.store.get_mission(mission_id).status.value) == "CREATED"
             receipt = confirm_completion(world, mission_id)
             assert receipt["authority"]["kind"] == "USER_CONFIRMED"

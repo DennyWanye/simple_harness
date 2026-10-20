@@ -9,14 +9,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..contracts.models import ContractError
-from ..contracts.semantic_base import TypedRef, TypedRefKind, content_hash_of
-from ..observability.secrets import find_secrets
-from ..orchestrator.action_commits import validate_candidate
-from ..orchestrator.operation_materialization_inputs import _candidate
-from ..runtime.action_schema import is_operation_candidate_path
-from ..runtime.connectors_publish import PUBLISH_NAME, FilePublishConnector
-from ..runtime.operation_profiles import BuiltinOperationProfiles
+from ..contracts.semantic_base import TypedRef, TypedRefKind
+from ..governance.policies import action_decision
+from ..runtime.action_schema import parse_action_criterion
+from ..runtime.operation_profiles_deployment import DeploymentOperationProfiles
 from ..storage.htn_store import HtnStore
 from ..storage.obligation_store import ObligationStore
 from ..storage.operation_completion_store import OperationCompletionStore
@@ -44,66 +40,37 @@ def operation_workspace(loop: Any, mission: Any, *, principal: Any) -> dict[str,
         mission.id, requirements.revision, requirements.content_hash()
     )
     spec = None if row is None else row["document"]
-    # The desktop's registered file publisher is the current product capability.
-    # A custom deployment must publish its own concrete choices; never fabricate
-    # milestone/policy identities from connector names or model text.
-    choices = []
-    if type(loop.connectors.get(PUBLISH_NAME)) is FilePublishConnector:
-        registry = BuiltinOperationProfiles(loop.connectors)
-        labels = {
-            "FILE_PUBLISHED": "文件已发布，并已读取核对内容",
-            "CONTENT_HASH_VERIFIED": "已发布文件的内容哈希与批准产物一致",
-        }
-        choices = [
-            {
-                "id": milestone,
-                "label": labels[milestone],
-                "milestone_policy_ref": registry.milestone_policy_ref.to_json(),
-                "evidence_policy_ref": registry.evidence_policy_ref.to_json(),
-            }
-            for milestone in registry.supported_milestones
-        ]
-    candidates: list[dict[str, Any]] = []
-    artifacts = loop.assembled.workspaces.artifact_store
-    for acceptance in htn.list_acceptances(mission.id):
-        if str(acceptance.validity) != "CURRENT":
+    # 每条 action: 要求自带它能选的里程碑（只列这个操作的档案能证明的）和自动确认用的默认项；
+    # 部署没有这个操作的档案时列表为空，页面就不能把它确认成效果。
+    registry = getattr(loop, "_operation_profiles", None) or DeploymentOperationProfiles(
+        loop.connectors
+    )
+    operations = []
+    for criterion in requirements.criteria:
+        parsed = parse_action_criterion(str(criterion.statement))
+        if parsed is None:
             continue
-        for ref in acceptance.artifact_refs:
-            artifact = store.get_artifact(ref.id)
-            if (
-                artifact is None
-                or artifact.mission_id != mission.id
-                or not is_operation_candidate_path(artifact.path)
-                or not artifact.path.endswith(".json")
-                or artifact.verification_status != "VERIFIED"
-                or artifact.size_bytes > 262144
-                or artifact.content_hash != ref.content_hash
-            ):
-                continue
-            try:
-                raw = artifacts.read(artifact.content_hash)
-                candidate = validate_candidate(_candidate(raw))
-                if find_secrets(raw.decode("utf-8")):
-                    continue
-            except (ContractError, OSError, ValueError):
-                continue
-            candidates.append(
-                {
-                    "artifact_path": artifact.path,
-                    "candidate": candidate,
-                    "candidate_artifact_ref": TypedRef(
-                        TypedRefKind.ARTIFACT, artifact.id, artifact.version, artifact.content_hash
-                    ).to_json(),
-                    "prepared_acceptance_refs": [
-                        TypedRef(
-                            TypedRefKind.ACCEPTANCE,
-                            str(acceptance.acceptance_id),
-                            1,
-                            content_hash_of(acceptance.to_json()),
-                        ).to_json()
-                    ],
-                }
-            )
+        connector_id, operation_name, target = parsed
+        connector = loop.connectors.get(connector_id)
+        declared = (getattr(connector, "operations", None) or {}).get(operation_name)
+        decision = action_decision(loop.config.deployment_policy, connector, operation_name)
+        operations.append(
+            {
+                "criterion_id": criterion.criterion_id,
+                "connector": connector_id,
+                "operation": operation_name,
+                "target": target,
+                "params": None
+                if criterion.action_params is None
+                else dict(criterion.action_params),
+                "level": decision.level,
+                "required_approvals": decision.required_approvals,
+                "always_needs_approval": bool(getattr(declared, "always_needs_approval", False)),
+                "description": str(getattr(declared, "description", "") or ""),
+                "milestones": registry.milestone_choices(connector_id, operation_name),
+                "default_milestone": registry.default_milestone(connector_id, operation_name),
+            }
+        )
     intent_rows = OperationIntentStore(store).for_mission(mission.id)
     superseded = {
         item["supersedes_intent_id"] for item in intent_rows if item["supersedes_intent_id"]
@@ -148,9 +115,8 @@ def operation_workspace(loop: Any, mission: Any, *, principal: Any) -> dict[str,
             for o in ObligationStore(store).list_obligations(mission.id)
             if str(o.lifecycle) == "UNSATISFIED"
         ],
-        "milestones": choices,
+        "operations": operations,
         "spec": None if spec is None else spec.to_json(),
         "spec_hash": None if spec is None else spec.content_hash(),
-        "candidates": candidates,
         "intents": intents,
     }

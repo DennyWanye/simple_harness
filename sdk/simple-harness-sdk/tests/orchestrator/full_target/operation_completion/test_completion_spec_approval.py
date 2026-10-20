@@ -74,20 +74,23 @@ def _command(
     actions = [c["id"] for c in page["criteria"] if c["statement"].startswith("action:")]
     content = [c["id"] for c in page["criteria"] if c["id"] not in actions]
     [obligation] = page["obligations"]
-    policy = next(m for m in page["milestones"] if m["id"] == "CONTENT_HASH_VERIFIED")
-    effects = [
-        {
-            "effect_key": "publish-weekly",
-            "source_slot_key": "publish-weekly",
-            "obligation_id": obligation["id"],
-            "criterion_ids": actions,
-            "required_milestone": milestone,
-            "milestone_policy_ref": policy["milestone_policy_ref"],
-            "evidence_policy_ref": policy["evidence_policy_ref"],
-        }
-    ]
     if mode == "CONTENT_ONLY":
         content, effects = [c["id"] for c in page["criteria"]], []
+    else:
+        policy = next(
+            m for m in page["operations"][0]["milestones"] if m["id"] == "CONTENT_HASH_VERIFIED"
+        )
+        effects = [
+            {
+                "effect_key": "publish-weekly",
+                "source_slot_key": "publish-weekly",
+                "obligation_id": obligation["id"],
+                "criterion_ids": actions,
+                "required_milestone": milestone,
+                "milestone_policy_ref": policy["milestone_policy_ref"],
+                "evidence_policy_ref": policy["evidence_policy_ref"],
+            }
+        ]
     return {
         "mission_id": case.mission_id,
         "command_id": command_id,
@@ -487,16 +490,23 @@ def test_a_person_confirming_is_still_recorded_as_the_person(tmp_path) -> None:
     asyncio.run(run())
 
 
-def test_the_host_never_confirms_an_operation_effect(tmp_path) -> None:
+def test_the_host_confirms_an_operation_effect_only_in_auto_mode(tmp_path) -> None:
+    """用户 2026-10-20：自动模式下系统按档案默认映射代签带 action: 的确认页（每条一个效果、
+    默认里程碑），如实记成 HOST_AUTO_PERMISSION；手动模式不代签；来源只认两种。"""
+
     async def body(case: Publishing) -> None:
-        # 部署职责本身就跳过带 action: 的任务。
-        assert case.world.deployment.duties.auto_confirm_content_completion(auto=True) == 0
-        with pytest.raises(OperationCompletionError) as refused:
-            _api(case).approve(_command(case, approval_source="HOST_AUTO_PERMISSION"))
-        assert refused.value.code == "OP_REQUIREMENT_MAPPING_UNAPPROVED"
+        duties = case.world.deployment.duties
+        assert duties.auto_confirm_content_completion(auto=False) == 0
         with pytest.raises(OperationCompletionError) as unknown:
             _api(case).approve(_command(case, mode="CONTENT_ONLY", approval_source="MODEL"))
         assert unknown.value.code == "invalid_request"
         assert not case.events("OperationCompletionSpecApproved")
+        assert duties.auto_confirm_content_completion(auto=True) == 1
+        [event] = case.events("OperationCompletionSpecApproved")
+        assert event.payload["approval_source"] == "HOST_AUTO_PERMISSION"
+        spec = workspace(case.world, case.mission_id)["spec"]
+        [effect] = spec["effects"]
+        assert spec["mode"] == "REQUIRED_EFFECTS"
+        assert effect["required_milestone"] == "CONTENT_HASH_VERIFIED"
 
     _confirming(tmp_path, body)

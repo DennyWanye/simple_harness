@@ -60,6 +60,7 @@ class DeploymentDuties:
         self.unassured_missions: set[str] = set()  # Missions outside the assured lane
         self.completion_done: set[str] = set()  # requirements confirmed here (or that must not be)
         self.planning_requests: set[str] = set()  # requests already issued for
+        self.action_approvals: set[str] = set()  # action requests the host already granted
 
     def bind(self, orchestrator: Any, control: Any) -> None:
         """Point the duties at a (re)built Orchestrator lifetime; what was done is kept."""
@@ -72,18 +73,21 @@ class DeploymentDuties:
     # ---- auto permission -------------------------------------------------------------------
 
     def auto_confirm_content_completion(self, *, auto: bool) -> int:
-        """Auto permission mode: confirm content-only completion requirements.
+        """Auto permission mode: confirm the completion requirements the page shows.
 
         User decision 2026-09-26: a new Mission waited in CREATED for the person to confirm
-        its completion requirements and looked stuck.  When every criterion is content (no
-        ``action:`` criterion, so no operation effect) the deployment confirms the exact
-        mapping the page would send — every required criterion as content — recorded as
-        ``HOST_AUTO_PERMISSION`` on the principal's behalf, never as a person's click.
-        Anything with an operation, or manual mode, keeps the button.
+        its completion requirements and looked stuck.  The deployment confirms the exact
+        mapping the page would send, recorded as ``HOST_AUTO_PERMISSION`` on the principal's
+        behalf, never as a person's click; manual mode keeps the button.
 
-        2026-10-02: "an operation" is exactly a criterion with the structured ``action:``
-        prefix, which the main Agent writes when it puts the task together; guessing from
-        words was the program judging meaning, and it is gone.
+        * every required non-``action:`` criterion is content;
+        * user decision 2026-10-20: every ``action:`` criterion becomes a required effect
+          with its operation's default milestone, owned by the one unsatisfied obligation.
+          With more than one obligation the system does not guess: the Mission stays on the
+          page and an event says why.
+
+        "An operation" is exactly a criterion with the structured ``action:`` prefix, which
+        the main Agent writes when it puts the task together (2026-10-02).
         """
         if not auto or not self.bound:
             return 0
@@ -123,16 +127,18 @@ class DeploymentDuties:
             key = f"{mission.id}:{ref.get('revision')}:{ref.get('content_hash')}"
             if key in self.completion_done:
                 continue
-            # 带操作要求（action:）的那一版等人点；看的是确认页上这一版要求，不是建任务时的章程
-            if any(
-                str(c.get("statement") or "").strip().startswith("action:")
-                for c in workspace.get("criteria") or ()
-            ):
-                continue
+            operations = list(workspace.get("operations") or ())
+            actions = {str(item["criterion_id"]) for item in operations}
             content = [
-                str(c["id"]) for c in workspace.get("criteria") or () if c.get("required") is True
+                str(c["id"])
+                for c in workspace.get("criteria") or ()
+                if c.get("required") is True and str(c["id"]) not in actions
             ]
-            if not content:
+            effects, why_not = self._auto_effects(workspace, operations)
+            if why_not is not None:
+                self._defer_auto_confirmation(mission.id, key, why_not)
+                continue
+            if not content and not effects:
                 self.completion_done.add(key)
                 continue
             try:
@@ -150,9 +156,9 @@ class DeploymentDuties:
                                 "revision": ref["revision"],
                                 "content_hash": ref["content_hash"],
                             },
-                            "mode": "CONTENT_ONLY",
+                            "mode": "REQUIRED_EFFECTS" if effects else "CONTENT_ONLY",
                             "content_criterion_ids": content,
-                            "effects": [],
+                            "effects": effects,
                         },
                         "approval_source": "HOST_AUTO_PERMISSION",
                     }
@@ -165,6 +171,62 @@ class DeploymentDuties:
         if confirmed:
             self.wake()
         return confirmed
+
+    @staticmethod
+    def _auto_effects(
+        workspace: Mapping[str, Any], operations: list[Any]
+    ) -> tuple[list[dict[str, Any]], str | None]:
+        """每条 action: 要求一个必须完成的效果：挂在唯一的未满足义务上、取它的档案默认里程碑。
+        返回（效果，做不了时的原因）。"""
+
+        if not operations:
+            return [], None
+        obligations = list(workspace.get("obligations") or ())
+        if len(obligations) != 1:
+            return [], f"auto confirmation needs a person: {len(obligations)} obligations"
+        effects = []
+        for item in operations:
+            chosen = next(
+                (
+                    m
+                    for m in item.get("milestones") or ()
+                    if m.get("id") == item.get("default_milestone")
+                ),
+                None,
+            )
+            if chosen is None:
+                return [], f"no profile can verify {item['connector']}.{item['operation']}"
+            key = f"effect-{item['criterion_id']}"
+            effects.append(
+                {
+                    "effect_key": key,
+                    "source_slot_key": key,
+                    "obligation_id": str(obligations[0]["id"]),
+                    "criterion_ids": [str(item["criterion_id"])],
+                    "required_milestone": str(chosen["id"]),
+                    "milestone_policy_ref": dict(chosen["milestone_policy_ref"]),
+                    "evidence_policy_ref": dict(chosen["evidence_policy_ref"]),
+                }
+            )
+        return effects, None
+
+    def _defer_auto_confirmation(self, mission_id: str, key: str, reason: str) -> None:
+        """自动确认做不了：写一条事件说明为什么（每版要求一次），任务停在确认页等人。"""
+
+        if key in self.completion_done:
+            return
+        self.completion_done.add(key)
+        commit = self.orchestrator.commit
+        try:
+            with self.orchestrator.store.transaction():
+                commit._emit(
+                    "OperationCompletionNeedsPerson",
+                    mission_id,
+                    key="auto-confirm:" + key,
+                    payload={"mission_id": mission_id, "reason": reason},
+                )
+        except Exception:  # noqa: BLE001 - 说明写不进去不挡别的任务
+            logger.exception("auto confirmation deferral event failed for %s", mission_id)
 
     def auto_authorize_planning(self, *, auto: bool) -> int:
         """Auto permission mode: issue each pending planning authority for the person.
@@ -205,6 +267,41 @@ class DeploymentDuties:
         if issued:
             self.wake()
         return issued
+
+    def auto_approve_actions(self, *, auto: bool) -> int:
+        """自动模式：主机代批等审批的动作（用户 2026-10-20：auto 模式系统自动审批）。
+
+        代批如实记成 ``HOST_AUTO_PERMISSION``，事件执行者是主机，不是人。应用标了"总要人批"
+        的操作（``person_required``）留给人；资料换版本等别的审批也留给人。"""
+
+        if not auto or not self.bound:
+            return 0
+        granted = 0
+        try:
+            pending = self.control.approvals()
+        except Exception:  # noqa: BLE001 - never stops the loop; retried next round
+            logger.exception("pending approvals read failed")
+            return 0
+        for row in pending:
+            request_id = str(row.get("request_id"))
+            if (
+                row.get("kind") != "action"
+                or row.get("state") != "PENDING"
+                or row.get("person_required")
+                or request_id in self.action_approvals
+                or self.orchestrator.recovery_isolated(str(row.get("mission_id")))
+            ):
+                continue
+            try:
+                self.control.host_auto_approve_action(request_id)
+            except Exception:  # noqa: BLE001 - one refusal must not block the others
+                logger.exception("auto action approval failed for %s", request_id)
+                continue
+            self.action_approvals.add(request_id)
+            granted += 1
+        if granted:
+            self.wake()
+        return granted
 
     # ---- check policies --------------------------------------------------------------------
 

@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from ..artifacts.store import ArtifactStore, ArtifactStoreError
+from ..artifacts.store import ArtifactStore
 from ..contracts.evidence_state import Validity
 from ..contracts.models import ContractError
 from ..contracts.operation_completion import (
@@ -19,16 +19,23 @@ from ..contracts.operation_completion import (
     PlanRevisionPinV1,
     RequiredEffectSlotV1,
 )
-from ..contracts.operation_intents import OperationIntentSourceKind, SubmitOperationIntentV2
+from ..contracts.operation_intents import SubmitOperationIntentV2
 from ..contracts.resolution import Acceptance, RequirementsRevision
 from ..contracts.semantic_base import TypedRef, TypedRefKind, content_hash_of
 from ..governance.permissions import Principal
+from ..runtime.action_params import artifact_paths
 from ..storage.htn_store import HtnStore
 from ..storage.operation_completion_store import OperationCompletionStore
 from ..storage.store import Store, StoredResult, StoreError
 from .completion_status import read_occurrence_completion
 from .operation_completion import OperationCompletionReader
-from .system_operations import authorized_slot_operation, source_matches, system_candidate_bytes
+from .system_operations import (
+    authorized_slot_operation,
+    effect_params,
+    is_publish,
+    source_matches,
+    system_candidate_bytes,
+)
 
 
 class OperationIntentSourceError(ValueError):
@@ -75,7 +82,6 @@ def prepare_operation_intent_sources(
         raise _fail("OP_INTENT_COMMAND_INVALID", "SubmitOperationIntentV2 is required")
     if not isinstance(principal, Principal) or not str(tenant_id).strip():
         raise _fail("OP_INTENT_CALLER_UNAUTHENTICATED", "authenticated caller is required")
-    system = command.intent_source.kind is OperationIntentSourceKind.AUTHORIZED_SLOT
 
     with store.read_view():
         mission = store.get_mission(command.mission_id)
@@ -125,17 +131,12 @@ def prepare_operation_intent_sources(
         requirements = htn.get_requirements_revision(
             command.mission_id, owner.requirements_ref.revision
         )
-        operation = None
-        if system:
-            # 2026-09-29：系统按已批准效果准备的申请单（system_operations）。候选引用指向那份
-            # 审过的真实文件本身；申请单 JSON 由系统从效果生成，不来自任何模型产出。
-
-            try:
-                operation = authorized_slot_operation(
-                    store, command, principal, effect, requirements
-                )
-            except ContractError as error:
-                raise _fail("OP_INTENT_SOURCE_UNRESOLVED", str(error)) from error
+        # 申请单只由系统按已批准效果准备（system_operations）。候选引用指向那份审过的真实
+        # 文件本身；申请单 JSON 由系统从效果生成，不来自任何模型产出。
+        try:
+            operation = authorized_slot_operation(store, command, principal, effect, requirements)
+        except ContractError as error:
+            raise _fail("OP_INTENT_SOURCE_UNRESOLVED", str(error)) from error
 
         artifact = store.get_artifact(command.candidate_artifact_ref.id)
         if (
@@ -144,19 +145,21 @@ def prepare_operation_intent_sources(
             or artifact.version != command.candidate_artifact_ref.revision
             or artifact.content_hash != command.candidate_artifact_ref.content_hash
             or artifact.verification_status != "VERIFIED"
-            or (not system and artifact.size_bytes > 262144)
             or Path(artifact.storage_uri) != artifact_store.path_for(artifact.content_hash)
         ):
             raise _fail("OP_INTENT_CANDIDATE_UNAVAILABLE", "candidate Artifact differs")
-        if operation is not None:
+        if is_publish(operation):
             if not source_matches(artifact.path, operation[2]):
                 raise _fail("OP_INTENT_SOURCE_UNRESOLVED", "source file does not match the target")
             raw = system_candidate_bytes(operation, artifact.path)
         else:
-            try:
-                raw = artifact_store.read(artifact.content_hash)
-            except (ArtifactStoreError, OSError) as error:
-                raise _fail("OP_INTENT_CANDIDATE_UNAVAILABLE", str(error)) from error
+            params = effect_params(effect, requirements)
+            references = artifact_paths(params)
+            if references and artifact.path != references[0]:
+                raise _fail(
+                    "OP_INTENT_SOURCE_UNRESOLVED", "candidate is not the referenced artifact"
+                )
+            raw = system_candidate_bytes(operation, artifact.path, params)
 
         acceptances: list[Acceptance] = []
         producer_rows: list[tuple[Acceptance, AcceptanceContributionScopeV1]] = []

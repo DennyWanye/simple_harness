@@ -16,8 +16,10 @@
   与里程碑，确认页才能把 ``action:`` 要求映射成效果；``TestConfigService`` 的 ``action:`` 要求在
   确认页上映射不了，任务永远开不了工）。所以台账用例的连接器是真实的文件发布服务，候选动作是
   ``file_publish.publish:<目标>``。
-* 带 ``action:`` 要求的任务，自动模式不代签完成映射：由"人"在确认页把内容要求照单确认、把每条
-  ``action:`` 要求作为必须完成的效果（:func:`confirm_effects`，与代表用例 3 同一份确认）。
+* 带 ``action:`` 要求的任务，自动模式会按默认映射代签确认页、代批动作（用户 2026-10-20）；这里
+  由"人"在主循环开跑前先在确认页把内容要求照单确认、把每条 ``action:`` 要求作为必须完成的效果
+  （:func:`confirm_effects`，与代表用例 3 同一份确认），发布连接器标成"总要人批"
+  （:func:`~agent_orchestrator.testing.connectors.person_approves`），由人批准动作。
 
 :func:`ledger_world`（D′）：主循环真跑到第一版计划提交，执行者那次模型调用被扣住（叶子刚派发、
 尝试在跑），此时台账还是空的。之后用例只能经动作台账自己对外公开的写入口（``propose_action`` /
@@ -42,6 +44,7 @@ from agent_orchestrator.governance.permissions import Principal
 from agent_orchestrator.governance.policies import DeploymentPolicy
 from agent_orchestrator.runtime.connectors_publish import FilePublishConnector
 from agent_orchestrator.storage.htn_store import HtnStore
+from agent_orchestrator.testing.connectors import person_approves
 from agent_orchestrator.testing.product_world import USER_GOAL_NAMES, ProductWorld, product_world
 from agent_orchestrator.testing.scripted_replies import LayeredScriptedProvider
 
@@ -191,15 +194,29 @@ class OperationWorld:
 
 
 def confirm_effects(product: ProductWorld, mission_id: str) -> dict[str, Any]:
-    """人在确认页做的事（与代表用例 3 同一份）：内容要求照单确认；全部 ``action:`` 要求作为一个
-    必须完成的效果，挂在根义务上，完成标准选"内容哈希一致"。"""
+    """人在确认页做的事（与代表用例 3 同一份）：内容要求照单确认；每条 ``action:`` 要求各作为一个
+    必须完成的效果（一个效果只对应一个操作），挂在根义务上，完成标准选"内容哈希一致"。"""
 
     workspace = product.control.snapshot(mission_id)["snapshot"]["operation_workspace"]
     assert workspace["state"] == "CONFIRMATION_REQUIRED", workspace
     actions = [c["id"] for c in workspace["criteria"] if c["statement"].startswith("action:")]
     content = [c["id"] for c in workspace["criteria"] if c["required"] and c["id"] not in actions]
     [obligation] = workspace["obligations"]
-    milestone = next(m for m in workspace["milestones"] if m["id"] == "CONTENT_HASH_VERIFIED")
+    effects = []
+    for index, operation in enumerate(workspace["operations"]):
+        milestone = next(m for m in operation["milestones"] if m["id"] == "CONTENT_HASH_VERIFIED")
+        key = "publish" if len(workspace["operations"]) == 1 else f"publish-{index}"
+        effects.append(
+            {
+                "effect_key": key,
+                "source_slot_key": key,
+                "obligation_id": obligation["id"],
+                "criterion_ids": [operation["criterion_id"]],
+                "required_milestone": milestone["id"],
+                "milestone_policy_ref": milestone["milestone_policy_ref"],
+                "evidence_policy_ref": milestone["evidence_policy_ref"],
+            }
+        )
     ref = workspace["requirements_ref"]
     return product.control.approve_operation_completion_spec(
         {
@@ -216,17 +233,7 @@ def confirm_effects(product: ProductWorld, mission_id: str) -> dict[str, Any]:
                 },
                 "mode": "REQUIRED_EFFECTS",
                 "content_criterion_ids": content,
-                "effects": [
-                    {
-                        "effect_key": "publish",
-                        "source_slot_key": "publish",
-                        "obligation_id": obligation["id"],
-                        "criterion_ids": actions,
-                        "required_milestone": milestone["id"],
-                        "milestone_policy_ref": milestone["milestone_policy_ref"],
-                        "evidence_policy_ref": milestone["evidence_policy_ref"],
-                    }
-                ],
+                "effects": effects,
             },
         }
     )
@@ -253,6 +260,8 @@ async def operation_world(
     publish = FilePublishConnector(published, tmp_path / "root" / "connectors" / "file_publish")
     if publish_setup is not None:
         publish_setup(publish)
+    # 这些用例测"人批了才发布"：自动模式下主机会代批（用户 2026-10-20），所以标成总要人批。
+    publish = person_approves(publish)
     provider = (
         LayeredScriptedProvider() if worker is None else LayeredScriptedProvider(worker=worker)
     )
@@ -270,8 +279,7 @@ async def operation_world(
                 {"goal": goal, "success_criteria": list(criteria), "idempotency_key": key}
             )
             mission_id = created["mission_id"]
-            await product.drain()
-            # 自动模式不代签带 action: 的任务：确认页等着人
+            # 自动模式会代签确认页（用户 2026-10-20）；这里由人在主循环开跑前先确认
             assert str(product.store.get_mission(mission_id).status.value) == "CREATED"
             assert confirm_effects(product, mission_id)["authority"]["kind"] == "USER_CONFIRMED"
             yield OperationWorld(product, mission_id, publish, published, provider)

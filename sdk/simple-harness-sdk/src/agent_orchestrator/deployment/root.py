@@ -48,8 +48,9 @@ def build_requirements(
     mission_id: str, revision: int, entries: Any, principal_id: str, credential: str | None = None
 ) -> RequirementsRevision:
     """The one rule for a user's requirements: ``req-<mission>-<n>``, each entry
-    ``(criterion id, entry revision, statement)`` a required outcome, combined with "all of"
-    (also for a single one).  Revision 1 and every amendment are built here."""
+    ``(criterion id, entry revision, statement, action params or None)`` a required outcome,
+    combined with "all of" (also for a single one).  Revision 1 and every amendment are built
+    here."""
 
     criteria = tuple(
         Criterion(
@@ -59,8 +60,9 @@ def build_requirements(
             statement,
             RequirementClass.REQUIRED_OUTCOME,
             EvaluationKind.SEMANTIC,
+            action_params=params,
         )
-        for identifier, entry_revision, statement in entries
+        for identifier, entry_revision, statement, params in entries
     )
     return RequirementsRevision(
         revision_id=cast("RequirementsRevisionId", f"req-{mission_id}-{int(revision)}"),
@@ -73,14 +75,24 @@ def build_requirements(
     )
 
 
-def user_requirements(mission: Any, principal: Any) -> RequirementsRevision:
-    """Revision 1 of the user's explicit criteria, from the charter: ``c-user-<n>`` by position."""
+def charter_action_params(mission: Any) -> Mapping[str, Any]:
+    """建任务时写下的操作参数（要求编号 → 参数），存在章程里；没有就是空。"""
 
+    report = getattr(mission, "final_report", None) or {}
+    params = report.get("action_params") if isinstance(report, Mapping) else None
+    return params if isinstance(params, Mapping) else {}
+
+
+def user_requirements(mission: Any, principal: Any) -> RequirementsRevision:
+    """Revision 1 of the user's explicit criteria, from the charter: ``c-user-<n>`` by position,
+    each ``action:`` one with the parameters written at creation."""
+
+    params = charter_action_params(mission)
     return build_requirements(
         mission.id,
         1,
         tuple(
-            (identifier, 1, statement)
+            (identifier, 1, statement, params.get(identifier))
             for identifier, statement in zip(
                 criterion_ids(mission), mission.success_criteria, strict=True
             )
@@ -148,28 +160,33 @@ def split_goal_change(
     return statement, entries
 
 
-def unchanged_entries(previous: RequirementsRevision) -> tuple[tuple[str, int, str], ...]:
+RequirementEntry = tuple[str, int, str, "Mapping[str, Any] | None"]
+
+
+def unchanged_entries(previous: RequirementsRevision) -> tuple[RequirementEntry, ...]:
     """The previous revision's entries carried as they are (an amendment that only changes
     the goal still writes the next requirements revision, with the same entries)."""
     return tuple(
-        (str(item.criterion_id), int(item.revision), str(item.statement))
+        (str(item.criterion_id), int(item.revision), str(item.statement), item.action_params)
         for item in previous.criteria
     )
 
 
 def apply_changes(
     previous: RequirementsRevision, changes: Any, *, highest_used: int
-) -> tuple[tuple[str, int, str], ...]:
+) -> tuple[RequirementEntry, ...]:
     """The entries of the next revision: untouched entries carried as they are, a rewrite
     keeps its id and raises the entry revision, a removal drops the entry, an addition gets
     ``c-user-<highest_used + 1>`` — ``highest_used`` is the highest number any revision of this
-    Mission ever used, so an id is never reused.  Raises :class:`AmendmentRefused` with the
-    code (``AMEND_EMPTY`` / ``AMEND_UNKNOWN_CRITERION`` / ``AMEND_DUPLICATE``) and detail."""
+    Mission ever used, so an id is never reused.  An addition or rewrite of an ``action:``
+    requirement may carry ``params`` (a rewrite without them drops the old ones).  Raises
+    :class:`AmendmentRefused` with the code (``AMEND_EMPTY`` / ``AMEND_UNKNOWN_CRITERION`` /
+    ``AMEND_DUPLICATE``) and detail."""
 
     if not changes:
         raise AmendmentRefused("AMEND_EMPTY", "no change was given")
-    entries = {
-        str(item.criterion_id): (int(item.revision), str(item.statement))
+    entries: dict[str, tuple[int, str, Mapping[str, Any] | None]] = {
+        str(item.criterion_id): (int(item.revision), str(item.statement), item.action_params)
         for item in previous.criteria
     }
     order = [str(item.criterion_id) for item in previous.criteria]
@@ -180,12 +197,15 @@ def apply_changes(
             raise AmendmentRefused("AMEND_EMPTY", "each change is {op: add|rewrite|remove, ...}")
         operation = change["op"]
         statement = str(change.get("statement") or "").strip()
+        params = change.get("params")
+        if params is not None and not isinstance(params, Mapping):
+            raise AmendmentRefused("AMEND_EMPTY", "params is an object")
         if operation == "add":
-            if set(change) != {"op", "statement"} or not statement:
-                raise AmendmentRefused("AMEND_EMPTY", "an addition is {op, statement}")
+            if set(change) - {"params"} != {"op", "statement"} or not statement:
+                raise AmendmentRefused("AMEND_EMPTY", "an addition is {op, statement[, params]}")
             highest += 1
             name = f"c-user-{highest}"
-            entries[name] = (1, statement)
+            entries[name] = (1, statement, None if params is None else dict(params))
             order.append(name)
             continue
         name = str(change.get("criterion_id") or "")
@@ -201,17 +221,20 @@ def apply_changes(
             del entries[name]
             order.remove(name)
         else:
-            if set(change) != {"op", "criterion_id", "statement"} or not statement:
-                raise AmendmentRefused("AMEND_EMPTY", "a rewrite is {op, criterion_id, statement}")
-            if statement == entries[name][1]:
+            if set(change) - {"params"} != {"op", "criterion_id", "statement"} or not statement:
+                raise AmendmentRefused(
+                    "AMEND_EMPTY", "a rewrite is {op, criterion_id, statement[, params]}"
+                )
+            new_params = None if params is None else dict(params)
+            if statement == entries[name][1] and new_params == entries[name][2]:
                 raise AmendmentRefused("AMEND_DUPLICATE", f"{name!r} already says exactly that")
-            entries[name] = (entries[name][0] + 1, statement)
+            entries[name] = (entries[name][0] + 1, statement, new_params)
     if not order:
         raise AmendmentRefused("AMEND_EMPTY", "a Mission keeps at least one requirement")
     statements = [entries[name][1] for name in order]
     if len(set(statements)) != len(statements):
         raise AmendmentRefused("AMEND_DUPLICATE", "two requirements would say the same thing")
-    return tuple((name, entries[name][0], entries[name][1]) for name in order)
+    return tuple((name, *entries[name]) for name in order)
 
 
 def root_binding(

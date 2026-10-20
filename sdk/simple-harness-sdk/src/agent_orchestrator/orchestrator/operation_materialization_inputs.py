@@ -11,7 +11,6 @@ from typing import Any
 
 from ..contracts import ContractError
 from ..contracts.operation_completion import CompletionPinV1
-from ..contracts.operation_intents import OperationIntentSourceKind
 from ..contracts.operation_payloads import (
     ConditionalWriteKind,
     ConnectorOperationProfileV1,
@@ -24,6 +23,7 @@ from ..contracts.operation_payloads import (
 from ..contracts.semantic_base import TypedRef, TypedRefKind, VersionedRef, identifier
 from ..deployment.root import current_statements
 from ..governance.policies import DeploymentPolicy
+from ..runtime.action_params import PUBLISH, bind_artifact_refs
 from ..runtime.connectors import params_hash
 from ..runtime.operation_payloads import (
     ConnectorProfileRegistry,
@@ -259,26 +259,22 @@ def build_operation_materialization_inputs(
 
     raw = _candidate(sources.raw_candidate_bytes)
     try:
-        candidate, decision = check_candidate(
+        candidate, _decision = check_candidate(
             raw,
             criteria=current_statements(store, mission),
             connectors=connectors,
             deployment=deployment,
         )
 
-        if (
-            sources.command.intent_source.kind is OperationIntentSourceKind.AUTHORIZED_SLOT
-            and decision.required_approvals < 1
-        ):
-            # 2026-09-29：系统只代办需要人批准的操作；不需要批准的会被自动执行，不能由系统
-            # 代为提交（审阅：AppWorld 注册了 L1 操作）。
-            raise OperationMaterializationInputError(
-                "OP_CAPABILITY_UNSUPPORTED",
-                "a system-prepared operation must require human approval",
-            )
-        effective = bind_artifact_params(
-            candidate["params"], _actual_accepted_artifacts(store, sources)
-        )
+        accepted = _actual_accepted_artifacts(store, sources)
+        if (str(candidate["connector"]), str(candidate["operation"])) == PUBLISH:
+            effective = bind_artifact_params(candidate["params"], accepted)
+        else:
+            # 应用连接器：参数里的产物引用换成它的路径、内容哈希、大小与存储位置（只绑引用）
+            try:
+                effective = bind_artifact_refs(candidate["params"], accepted)
+            except ContractError as error:
+                raise CandidateRejected("artifact_not_in_result", str(error)) from error
     except CandidateRejected as error:
         raise OperationMaterializationInputError(
             "OP_INTENT_CANDIDATE_REJECTED", error.reason

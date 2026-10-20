@@ -27,6 +27,7 @@ from agent_orchestrator.contracts.semantic_base import TypedRef, TypedRefKind
 from agent_orchestrator.governance.policies import DeploymentPolicy
 from agent_orchestrator.runtime.connectors_publish import FilePublishConnector
 from agent_orchestrator.storage.htn_store import HtnStore
+from agent_orchestrator.testing.connectors import person_approves
 from agent_orchestrator.testing.fixtures import package_of
 from agent_orchestrator.testing.product_world import product_world
 from agent_orchestrator.testing.scripted_replies import (
@@ -61,6 +62,7 @@ def test_handoff_refused_when_scope_epoch_moved(tmp_path):
         connector = FilePublishConnector(
             published, tmp_path / "root" / "connectors" / "file_publish"
         )
+        person_approves(connector)  # 测人批准：自动模式会代批（用户 2026-10-20），标成总要人批
         policy = DeploymentPolicy(enabled_connectors=("file_publish",), max_action_level="L2")
 
         def planner(request: Any) -> Any:
@@ -97,7 +99,7 @@ def test_handoff_refused_when_scope_epoch_moved(tmp_path):
                     "idempotency_key": "validity-handoff",
                 }
             )["mission_id"]
-            await world.drain()
+            # 自动模式会代签确认页（用户 2026-10-20）；这里由人在主循环开跑前先确认
             _confirm_completion(world, mission_id)
             approvals: list[dict[str, Any]] = []
             for _ in range(20):
@@ -185,6 +187,7 @@ def test_handoff_goes_through_once_the_witness_is_reissued(tmp_path):
         connector = FilePublishConnector(
             published, tmp_path / "root" / "connectors" / "file_publish"
         )
+        person_approves(connector)  # 测人批准：自动模式会代批（用户 2026-10-20），标成总要人批
         policy = DeploymentPolicy(enabled_connectors=("file_publish",), max_action_level="L2")
         async with product_world(
             tmp_path / "root",
@@ -200,7 +203,7 @@ def test_handoff_goes_through_once_the_witness_is_reissued(tmp_path):
                     "idempotency_key": "validity-reissue",
                 }
             )["mission_id"]
-            await world.drain()
+            # 自动模式会代签确认页（用户 2026-10-20）；这里由人在主循环开跑前先确认
             _confirm_completion(world, mission_id)
             approvals: list[dict[str, Any]] = []
             for _ in range(30):

@@ -610,11 +610,13 @@ def test_two_required_publishes_each_need_their_own_chain(tmp_path):
 
     async def run() -> None:
         async with publishing(tmp_path, criteria=criteria, confirm=False) as case:
-            await case.world.drain()
+            # 主循环开跑前由人确认（自动模式会按默认映射代签，用户 2026-10-20）
             page = case.world.control.snapshot(case.mission_id)["snapshot"]["operation_workspace"]
             actions = [c for c in page["criteria"] if c["statement"].startswith("action:")]
             [obligation] = page["obligations"]
-            policy = next(m for m in page["milestones"] if m["id"] == "CONTENT_HASH_VERIFIED")
+            policy = next(
+                m for m in page["operations"][0]["milestones"] if m["id"] == "CONTENT_HASH_VERIFIED"
+            )
             ref = page["requirements_ref"]
             keys = {
                 "action:file_publish.publish:" + weekly: "publish-weekly",

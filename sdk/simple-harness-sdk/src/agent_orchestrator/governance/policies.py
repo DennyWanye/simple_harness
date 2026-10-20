@@ -210,6 +210,8 @@ class ActionDecision:
     level: str
     required_approvals: int
     refused: str | None = None  # a reason when the deployment will not run it at all
+    #: 应用标了"总要人批"：自动模式也不代批（用户 2026-10-20）
+    person_required: bool = False
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -263,8 +265,12 @@ def action_decision(deployment: DeploymentPolicy, connector: Any, operation: str
         refused = "event_operation_not_supported"
     elif level_rank(level) > level_rank(deployment.max_action_level):
         refused = f"above_deployment_ceiling:{deployment.max_action_level}"
+    approvals = required_approvals(level)
+    person = bool(spec is not None and getattr(spec, "always_needs_approval", False))
+    if person:
+        approvals = max(approvals, 1)  # 应用标了"总要人批"（用户 2026-10-20）
     return ActionDecision(
-        level=level, required_approvals=required_approvals(level), refused=refused
+        level=level, required_approvals=approvals, refused=refused, person_required=person
     )
 
 

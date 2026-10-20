@@ -424,9 +424,6 @@ def test_an_inconsistent_mission_is_isolated_and_the_others_go_on(tmp_path):
                 "approve_operation_completion_spec": lambda mid: (
                     control.approve_operation_completion_spec({**spec, "mission_id": mid})
                 ),
-                "submit_operation_intent": lambda mid: control.submit_operation_intent(
-                    {"schema_version": 2, "mission_id": mid}
-                ),
                 "register_source": lambda mid: control.register_source(
                     {
                         "mission_id": mid,

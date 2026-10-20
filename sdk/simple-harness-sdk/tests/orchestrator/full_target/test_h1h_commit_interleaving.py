@@ -216,12 +216,13 @@ from agent_orchestrator.orchestrator.planning_protocol_binding import (  # noqa:
     bind_planning_protocol,
 )
 from agent_orchestrator.planning.plan_preview import _source_snapshot_payload  # noqa: E402
-from agent_orchestrator.runtime.connectors import TestConfigService, params_hash  # noqa: E402
+from agent_orchestrator.runtime.connectors import params_hash  # noqa: E402
 from agent_orchestrator.runtime.planning_operations import (  # noqa: E402
     StoreOperationReader,
     build_operation_snapshot,
     read_running_work,
 )
+from agent_orchestrator.testing.connectors import TestConfigService  # noqa: E402
 from simple_harness.contracts import canonical_json  # noqa: E402
 from test_htn_store import envelope  # noqa: E402
 from test_plan_commits import ROOT_TASK  # noqa: E402

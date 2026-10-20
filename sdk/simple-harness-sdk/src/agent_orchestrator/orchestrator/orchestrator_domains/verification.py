@@ -33,15 +33,10 @@ from ...contracts import (
 )
 from ...contracts.models import jsonable, sha256_hex
 from ...contracts.state_machines import IllegalTransition
-from ...deployment.root import current_criteria, current_statements
+from ...deployment.root import current_statements
 from ...governance.budgets import BudgetExhausted
 from ...graph.projection_validation import GraphIntegrityError
 from ...memory.verified_knowledge import KnowledgeIndex
-from ...runtime.action_schema import (
-    declared_action_outputs,
-    with_candidate_targets,
-    worker_action_contract,
-)
 from ...runtime.model_router import RoutingUnavailable, classify_turn_error
 from ...runtime.output_blocks import (
     BlockError,
@@ -606,10 +601,6 @@ class VerificationMixin(OrchestratorCore):
         claims = self._port_claims_from(raw, attempt)
 
         resource_request = resource_requests.pop_request(raw)  # H10: shape errors are ContractError
-        if isinstance(raw.get("artifacts"), list):
-            raw["artifacts"] = with_candidate_targets(
-                raw["artifacts"], self.assembled.workspaces.get(attempt.id)
-            )
         client_ids = {raw.get("id"), raw.get("result_id")} - {None}
         if len(client_ids) > 1:
             raise ContractError("result carries both id and result_id with different values")
@@ -1369,23 +1360,6 @@ class VerificationMixin(OrchestratorCore):
             ):
                 protected[path] = content
         return protected
-
-    def _action_candidate_outputs(self, mission: Mission, task: Task) -> tuple[str, ...]:
-        """See :func:`..runtime.action_schema.declared_action_outputs` (2A.1e/1f)."""
-
-        return declared_action_outputs(self.store, mission.id, task)
-
-    def _worker_action_contract(self, mission: Mission, task: Task) -> dict[str, Any] | None:
-        """What the Worker is told about operation candidates, and whether the system
-        writes the candidate itself (the same answer for its package and its result)."""
-
-        return worker_action_contract(
-            mission_criteria=dict(current_criteria(self.store, mission)),
-            task_criteria=task.success_criteria,
-            task_outputs=self._action_candidate_outputs(mission, task),
-            connectors=self._connectors,
-            deployment=self._config.deployment_policy,
-        )
 
     def _revises_its_inputs(self, mission_id: str, task_id: str) -> bool:
         """Every declared input port is also an output port of the same schema."""

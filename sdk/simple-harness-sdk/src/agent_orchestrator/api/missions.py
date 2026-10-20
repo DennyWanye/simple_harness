@@ -54,14 +54,45 @@ def validate_spec(spec: MissionSpec, *, available_tools: Sequence[str] = TOOL_NA
         raise MissionRequestError("runtime_profile_id must be a nonempty profile reference")
 
 
+def criteria_from_request(
+    value: Any,
+) -> tuple[tuple[str, ...], dict[str, dict[str, Any]]]:
+    """成功条件的两种写法：一句话，或带参数的 ``action:`` 要求
+    ``{"statement": "action:…", "params": {...}}``。返回（要求原文，按 ``c-user-<n>`` 的参数）。"""
+
+    if value is None:
+        return (), {}
+    if isinstance(value, (str, Mapping)) or not isinstance(value, (list, tuple)):
+        raise MissionRequestError("success_criteria must be a list")
+    statements: list[str] = []
+    params: dict[str, dict[str, Any]] = {}
+    for index, item in enumerate(value):
+        if isinstance(item, str):
+            statements.append(item)
+            continue
+        if (
+            not isinstance(item, Mapping)
+            or set(item) != {"statement", "params"}
+            or not isinstance(item["statement"], str)
+            or not isinstance(item["params"], Mapping)
+        ):
+            raise MissionRequestError(
+                "a success criterion is a string or {statement, params} (params: an object)"
+            )
+        statements.append(item["statement"])
+        params[f"c-user-{index + 1}"] = dict(item["params"])
+    return tuple(statements), params
+
+
 def spec_from_request(
     tenant_id: str, request: Mapping[str, Any], *, default_tools: Sequence[str] = TOOL_NAMES
 ) -> MissionSpec:
     """The charter a caller's request describes; an omitted tool set is ``default_tools``
     (the deployment's, when an orchestrator parses it — host support 0.9.8)."""
 
+    criteria, action_params = criteria_from_request(request.get("success_criteria", ()))
     # review round 2 P2-1: a string is not a list of strings (it would split into characters)
-    for name in ("success_criteria", "stop_conditions", "untrusted_sources", "allowed_tools"):
+    for name in ("stop_conditions", "untrusted_sources", "allowed_tools"):
         value = request.get(name)
         if value is not None and (
             isinstance(value, str) or not all(isinstance(item, str) for item in value)
@@ -101,7 +132,8 @@ def spec_from_request(
     try:
         return MissionSpec(
             goal=str(request.get("goal", "")),
-            success_criteria=tuple(request.get("success_criteria", ())),
+            success_criteria=criteria,
+            action_params=action_params,
             tenant_id=tenant_id,
             idempotency_key=str(request.get("idempotency_key", "")),
             stop_conditions=tuple(

@@ -38,6 +38,8 @@ LIST_FIELDS = (
     "options",
     "created_at",
     "closed_at",
+    "person_required",
+    "approval_source",
 )
 
 
@@ -101,13 +103,16 @@ class ApprovalApi:
         return items
 
     # ------------------------------------------------------------ decisions
-    def approve(self, request_id: str, *, nonce: str | None = None) -> dict[str, Any]:
+    def approve(
+        self, request_id: str, *, nonce: str | None = None, approval_source: str = "HUMAN"
+    ) -> dict[str, Any]:
         request, receipt = self._commit.decide_approval(
             request_id,
             principal=self._principal,
             decision="grant",
             nonce=self._nonce(nonce),
             deployment=self._deployment,
+            approval_source=approval_source,
         )
         return {"request": request, "receipt_hash": receipt}
 

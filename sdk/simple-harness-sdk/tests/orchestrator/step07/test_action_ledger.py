@@ -34,8 +34,6 @@ from agent_orchestrator.runtime.connectors import (
     ConnectorRejected,
     ConnectorTransportError,
     OperationSpec,
-    PaymentConnectorStub,
-    TestConfigService,
     params_hash,
 )
 from agent_orchestrator.runtime.connectors_publish import _name_for
@@ -46,6 +44,7 @@ from agent_orchestrator.runtime.planning_operations import (
     build_operation_snapshot,
     operation_gate,
 )
+from agent_orchestrator.testing.connectors import PaymentConnectorStub, TestConfigService
 from helpers_step07 import (
     ALICE,
     BOB,

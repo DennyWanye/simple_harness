@@ -47,7 +47,7 @@ async def main() -> None:
             model="deepseek-flash",
             api_key="<你的密钥>",
         ),
-        auto_mode=True,  # 自动授权每轮规划、自动确认纯内容要求
+        auto_mode=True,  # 自动授权每轮规划、自动确认完成要求、自动代批操作
     )
     try:
         receipt = host.create_mission(
@@ -154,7 +154,8 @@ host = await OrchestrationHost.open(
 | 授权本轮规划 | `planning_authorization({"operation": "issue", "request_id": ...})`（自动模式下 SDK 代签） |
 | 回答规划提问 | `answer_planning_question({"decision_id", "answer", "expected_version", "nonce"})` |
 | 人工批准 | `decide(request_id, "approve"/"reject", reason=..., note=...)` |
-| 确认完成要求 | `approve_operation_completion_spec(body)`（自动模式下纯内容要求由 SDK 代签） |
+| 确认完成要求 | `approve_operation_completion_spec(body)`（自动模式下由 SDK 代签，每条 `action:` 配一个效果） |
+| 看操作走到哪 | `operation_intent_status(intent_id)`；快照里 `operation_workspace.intents` |
 | 改要求 | `amend_requirements({"mission_id", "changes": [{"op": "add"/"rewrite"/"remove"/"goal", ...}]})` |
 | 取消／接管 | `cancel(mission_id)`、`takeover(task_id, action, basis=)`、`resolve_unknown(action_key, outcome, basis=)` |
 | 取产物 | `artifact_read(artifact_id)`：只认产物编号，读前重算哈希，正文最多 256 KB |
@@ -194,7 +195,7 @@ host = await OrchestrationHost.open(root, principal=..., model=..., tools=[tool]
 
 | 规则 | 说明 |
 |---|---|
-| 只收只读工具 | `read_only=False` 在构造时被拒。有副作用的操作走连接器（有审批、去重号、对账），见下一版说明 |
+| 只收只读工具 | `read_only=False` 在构造时被拒。有副作用的操作走连接器（有审批、去重号、对账），见 4b 节 |
 | 注册时就拒 | 名字不合法、与内置工具或技能工具同名、重复注册、schema 不是对象或没写 `description`、超时不是正数 |
 | 参数校验 | 模型给的参数先按 schema 校验，不合格不会调到你的函数 |
 | 串行 | 同一任务内的工具调用一个接一个（每任务一把锁），任务之间并行 |
@@ -220,18 +221,82 @@ host = await OrchestrationHost.open(root, principal=..., model=..., tools=[tool]
 可以拿它去重；同一调用号有多条结束事件时（极少见：记完结果后、交回模型前进程崩溃，重启对账又补一条），以 `seq` 最大的那条为准。`on_write` 只是"有新写入"的提醒，内容从事件续读。可运行的例子（用公开模块 `agent_orchestrator.host.offline` 的脚本模型，不联网）见
 `examples/orchestration-host/tools_readonly.py`（同步工具）与 `tools_async.py`（异步工具：抛错一次、超时一次、再成功）。
 
+## 4b. 注册应用自己的连接器（有副作用的操作）
+
+发消息、移动文件、改设置这类会改变外部世界的操作，不给模型当工具调，而是写成任务要求，由系统在
+内容做完后按顺序执行：准备申请单 → 独立审阅 → 审批 → 执行 → 按回执核对 → 结果审阅。
+
+```python
+from agent_orchestrator.runtime.connectors import OperationSpec, Receipt, params_hash
+
+class Photos:
+    name = "photos"                      # 要求里写 action:photos.<操作>:<目标>
+    supports_idempotency = True          # 同一个 idempotency_key 只执行一次
+    supports_reconciliation = True       # 能按 idempotency_key 查（lookup）
+    lookup_authority = "authoritative"   # 执行与记账原子、记录不会被回滚；L2 以上必须是它
+    lookup_fenced = True                 # 查询为空后这个键再来的执行一律拒绝（见下表）
+    operations = {
+        "move": OperationSpec("move", "L2", ("to",), description="把照片移到 to"),
+        "share": OperationSpec("share", "L2", ("with",), always_needs_approval=True),
+    }
+    def normalize_target(self, target): return target.strip()
+    async def execute(self, operation, target, params, *, idempotency_key) -> Receipt: ...
+    def lookup(self, idempotency_key) -> Receipt | None: ...
+
+host = await OrchestrationHost.open(
+    root, principal=..., model=...,
+    settings=HostSettings(max_action_level="L2"),   # 注册连接器必须写明最高风险等级
+    connectors=[Photos()],
+)
+host.create_mission({
+    "goal": "把 a.jpg 移到归档",
+    "success_criteria": [
+        "file:NOTES.md",
+        {"statement": "action:photos.move:/photos/a.jpg", "params": {"to": "/archive/a.jpg"}},
+    ],
+    "idempotency_key": "move-1",
+})
+```
+
+| 规则 | 说明 |
+|---|---|
+| 参数在建任务时写下 | `{"statement", "params"}`；只有 `action:` 要求能带参数。缺必填参数、不是规范 JSON、像密钥都被拒。参数随要求版本记账，系统照原样执行，模型改不了 |
+| 引用一份产物 | 参数里写 `{"$artifact": "工作区路径"}`，执行时换成 `{artifact_path, content_hash, size, storage_uri}`；一个操作最多引用一份 |
+| 自动模式 | 系统确认完成要求、准备申请单、审阅，并代批（记成 `HOST_AUTO_PERMISSION`，事件执行者是主机） |
+| 总要人批 | `always_needs_approval=True` 的操作自动模式也不代批，在 `approvals()` 里等人 `decide(..., "approve")` |
+| 手动模式 | 完成要求、审批都等人 |
+| 注册时就拒 | 重名（含内置 `file_publish`）、没有操作、只读操作（只读走工具）、不能去重或不能查询、`lookup_authority` 没写 |
+| `kind="event"` | 每次执行都产生新事实的操作（付款、追加）；随注册启用 |
+| `execute` / `lookup` | 普通函数在线程里跑；`async def` 在宿主事件循环上跑，里面不能阻塞。`execute` 里不能"等人"，要人批就用审批 |
+| 明确拒绝 | 抛 `ConnectorRejected`：记"失败"，没有生效 |
+| 结果不明 | 抛别的异常、超时、回执不合格（不是 `Receipt`、不是规范 JSON、超过 64 KB）：记"不明"，去 `lookup` 核对 |
+| 回执 | `Receipt` 的键、连接器、操作、目标、参数哈希必须和这次执行一致，`applied=True` |
+| 异常文字 | 截到 500 字；像密钥就只记异常类型名 |
+
+结果不明时怎么核对：
+
+| 连接器 | `lookup` 找到回执 | `lookup` 为空 |
+|---|---|---|
+| 权威且封口（`lookup_fenced=True`） | 按回执结案 | 证明这次没生效：系统换新键重做，迟到的原请求会被封口拒掉，不会生效两次 |
+| 权威不封口 | 按回执结案 | 证明不了（原请求可能还在路上）：停下等人裁定（`resolve_unknown`） |
+| 非权威 | 按回执结案 | 等人裁定；这类连接器只能做 L0/L1 |
+
+可运行的例子：`examples/orchestration-host/tools_effect.py`（自动代批执行一次；"总要人批"等人点批准）。
+
 ## 5. 要求怎么写
 
 - 每行一条，普通文字就行；规划器按它拆步骤，审阅员按它审。
 - `file:路径`：工作区里要有这个文件。
 - `pytest: 路径`：在沙箱里跑测试（需要沙箱可用）。
 - `action:file_publish.publish:路径`：完成后发布到授权目录；入口自动补一条 `file:路径`。
+- `action:连接器.操作:目标`（可带参数）：完成后由应用的连接器执行，见 4b 节。
 - 请求里任何像密钥的文本都会被拒（`secret_rejected`）。
 
 ## 6. 等人的时候
 
 人要把关时用 `auto_mode=False`（或传一个每轮现读的函数）。这时规划每轮要 `planning_authorization`、
-纯内容要求要 `approve_operation_completion_spec`、规划器的提问要 `answer_planning_question`。
+完成要求要 `approve_operation_completion_spec`、操作要 `decide`、规划器的提问要 `answer_planning_question`。
+自动模式下只有标了 `always_needs_approval` 的操作等人。
 `run_until_settled` 等人时也在等，所以把关要在另一个协程里做，或者改用 `run_once()` 自己轮。
 
 ## 7. 进度

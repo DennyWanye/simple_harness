@@ -110,6 +110,7 @@ class ScopedReconciliationObservationV1:
             ),
             "CONNECTOR_LEDGER_NOT_LINKED": "ledger_protocol_id ledger_state ledger_receipt_ref",
             "HUMAN_RULED_NOT_APPLIED": "ruling_principal_id override_receipt_ref",
+            "CONNECTOR_LOOKUP_FENCED": "lookup_protocol_id lookup_receipt_ref",
         }
         origins = {
             "EXECUTOR_NO_SEND_FINAL": "LOCAL_EXECUTOR",

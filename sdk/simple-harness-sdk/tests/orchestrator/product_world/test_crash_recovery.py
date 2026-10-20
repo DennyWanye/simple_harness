@@ -17,6 +17,7 @@ import pytest
 from agent_orchestrator.governance.policies import DeploymentPolicy
 from agent_orchestrator.runtime.connectors_publish import FilePublishConnector
 from agent_orchestrator.storage.store import InjectedCrash
+from agent_orchestrator.testing.connectors import person_approves
 from agent_orchestrator.testing.product_world import product_world
 from agent_orchestrator.testing.scripted_replies import REVIEWER, LayeredScriptedProvider
 from test_operation import PUBLISH, TARGET, _confirm_completion
@@ -122,6 +123,7 @@ def _publishing(tmp_path: Path, provider: LayeredScriptedProvider):  # type: ign
     published = tmp_path / "published"
     published.mkdir(exist_ok=True)
     connector = FilePublishConnector(published, tmp_path / "root" / "connectors" / "file_publish")
+    person_approves(connector)  # 测人批准：自动模式会代批（用户 2026-10-20），标成总要人批
     execute = connector.execute
 
     def counted(*args: Any, **kwargs: Any) -> Any:
@@ -147,7 +149,7 @@ async def _crash_while_publishing(tmp_path: Path, point: str) -> str:
                 "idempotency_key": "crash-" + point,
             }
         )["mission_id"]
-        await world.drain()
+        # 自动模式会代签确认页（用户 2026-10-20）；这里由人在主循环开跑前先确认
         _confirm_completion(world, mission_id)
         approvals: list[dict[str, Any]] = []
         for _ in range(20):

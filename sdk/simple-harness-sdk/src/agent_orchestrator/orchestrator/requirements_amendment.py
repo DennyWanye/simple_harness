@@ -160,7 +160,9 @@ def amend_requirements(
             raise RequirementsAmendmentError(error.code, error.detail) from error
 
         try:  # the same door a new Mission's requirements pass
-            orchestrator.check_requirement_statements([statement for _, _, statement in entries])
+            orchestrator.check_requirements(
+                [(statement, params) for _, _, statement, params in entries]
+            )
         except ContractError as error:
             raise RequirementsAmendmentError("AMEND_REQUIREMENT_REFUSED", str(error)) from error
 
@@ -205,7 +207,7 @@ def amend_requirements(
         )
         # 3 the root duty answers for the new set
         ObligationStore(store).revise_requirement_refs(
-            mission_id, root.obligation_id, [name for name, _, _ in entries]
+            mission_id, root.obligation_id, [name for name, _, _, _ in entries]
         )
         # 4 every licence issued under the old requirements is stale
         epoch = htn.bump_epoch(

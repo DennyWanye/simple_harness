@@ -15,7 +15,7 @@ from ..contracts.resolution import ReviewVerdict
 from ..contracts.semantic_base import TypedRef, TypedRefKind, content_hash_of
 from ..contracts.state_machines import MissionStopReason
 from ..governance.permissions import Principal
-from ..runtime.operation_profiles import BuiltinOperationProfiles
+from ..runtime.operation_profiles_deployment import DeploymentOperationProfiles
 from ..storage.assurance_store import AssuranceStore
 from ..storage.htn_store import HtnStore
 from ..storage.operation_completion_store import OperationCompletionStore
@@ -37,7 +37,7 @@ def ensure_operation_runtime(orchestrator: Any) -> OperationMaterializationRunti
     if existing is not None:
         return existing
 
-    profiles = getattr(orchestrator, "_operation_profiles", None) or BuiltinOperationProfiles(
+    profiles = getattr(orchestrator, "_operation_profiles", None) or DeploymentOperationProfiles(
         orchestrator.connectors
     )
     policy_for = getattr(orchestrator, "_operation_policy_for", None) or profiles.policy_for

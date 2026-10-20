@@ -29,7 +29,6 @@ MESSAGE_TYPES = (
     "mission_operation_completion_approve",
     "mission_planning_answer",
     "mission_planning_authorization",
-    "mission_operation_intent_submit",
     "mission_operation_intent_status",
     "mission_source_register",
     "mission_source_supersede",
@@ -207,10 +206,6 @@ def _completion_approve(service: Any, body: Mapping[str, Any]) -> Any:
     return service.approve_operation_completion_spec(dict(body))
 
 
-def _operation_submit(service: Any, body: Mapping[str, Any]) -> Any:
-    return service.submit_operation_intent(dict(body))
-
-
 def _operation_status(service: Any, body: Mapping[str, Any]) -> Any:
     if set(body) != {"intent_id"} or not _text(body, "intent_id"):
         raise OrchestrationRequestError("invalid_request", "需要 intent_id")
@@ -341,7 +336,6 @@ _ACTIONS: dict[str, Callable[[Any, Mapping[str, Any]], Any | Awaitable[Any]]] = 
         dict(body)
     ),
     "mission_planning_answer": lambda service, body: service.answer_planning_question(dict(body)),
-    "mission_operation_intent_submit": _operation_submit,
     "mission_operation_intent_status": _operation_status,
     "mission_source_register": _source_register,
     "mission_source_supersede": _source_supersede,

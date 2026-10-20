@@ -13,7 +13,7 @@ from .semantic_base import TypedRef, TypedRefKind, fields_of, hash_hex, identifi
 
 
 class OperationIntentSourceKind(StrEnum):
-    USER_COMMAND = "USER_COMMAND"
+    #: 唯一来源：系统按已批准效果的授权槽准备（人提交申请单的入口已删，用户 2026-10-20）
     AUTHORIZED_SLOT = "AUTHORIZED_SLOT"
 
 
@@ -24,34 +24,29 @@ class OperationIntentSourceV2:
     slot_key: str | None = None
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "kind", OperationIntentSourceKind(str(self.kind)))
-        if self.kind is OperationIntentSourceKind.USER_COMMAND:
-            if self.origin_receipt_id is not None or self.slot_key is not None:
-                raise ContractError("USER_COMMAND cannot carry origin authority")
-        elif self.origin_receipt_id is None or self.slot_key is None:
+        try:
+            kind = OperationIntentSourceKind(str(self.kind))
+        except ValueError as error:
+            raise ContractError(f"unknown intent source kind {self.kind!r}") from error
+        object.__setattr__(self, "kind", kind)
+        if self.origin_receipt_id is None or self.slot_key is None:
             raise ContractError("AUTHORIZED_SLOT requires origin_receipt_id and slot_key")
-        else:
-            object.__setattr__(
-                self,
-                "origin_receipt_id",
-                identifier(self.origin_receipt_id, "origin_receipt_id"),
-            )
-            object.__setattr__(self, "slot_key", identifier(self.slot_key, "slot_key"))
+        object.__setattr__(
+            self, "origin_receipt_id", identifier(self.origin_receipt_id, "origin_receipt_id")
+        )
+        object.__setattr__(self, "slot_key", identifier(self.slot_key, "slot_key"))
 
     def to_json(self) -> dict[str, Any]:
-        value: dict[str, Any] = {"kind": str(self.kind)}
-        if self.kind is OperationIntentSourceKind.AUTHORIZED_SLOT:
-            value.update(origin_receipt_id=self.origin_receipt_id, slot_key=self.slot_key)
-        return value
+        return {
+            "kind": str(self.kind),
+            "origin_receipt_id": self.origin_receipt_id,
+            "slot_key": self.slot_key,
+        }
 
     @classmethod
     def from_json(cls, value: object, name: str = "intent_source") -> Self:
-        data = fields_of(
-            value, name, required=("kind",), optional=("origin_receipt_id", "slot_key")
-        )
-        if data["kind"] == "USER_COMMAND" and set(data) != {"kind"}:
-            raise ContractError("USER_COMMAND cannot carry origin authority fields")
-        return cls(data["kind"], data.get("origin_receipt_id"), data.get("slot_key"))
+        data = fields_of(value, name, required=("kind", "origin_receipt_id", "slot_key"))
+        return cls(data["kind"], data["origin_receipt_id"], data["slot_key"])
 
 
 @dataclass(frozen=True, slots=True)

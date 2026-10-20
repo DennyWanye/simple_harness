@@ -175,11 +175,12 @@ def _criteria() -> tuple[Criterion, ...]:
     statements = {
         "operation-intent-scope": "The frozen proposal matches the approved operation intent and scope.",
         "operation-parameters-and-candidate": (
-            "The frozen parameters were derived from the exact candidate bytes, and the "
-            "artifact they will publish is an artifact of the same accepted inputs, with "
-            "the same id and content hash.  The candidate file is the operation's "
-            "description; the published content is that accepted artifact, so the two "
-            "are expected to be different files."
+            "The frozen parameters were derived from the exact candidate bytes.  Any "
+            "artifact the operation sends or publishes is an artifact of the same accepted "
+            "inputs, with the same content hash.  The candidate file is the operation's "
+            "description, not that content, so the two are expected to be different files.  "
+            "The other parameters are the ones written into the requirement when the "
+            "Mission was created, unchanged."
         ),
         "operation-effect-capability": "The current registered adapter profile supports the approved effect milestone.",
         "operation-write-safety": "The registered operation supports the approved conditional-write safety policy.",
@@ -234,12 +235,13 @@ def _published_artifact(
 
     ``None`` when the operation publishes no artifact.  An ``artifact_id`` that is not
     an accepted artifact of the frozen accepted inputs, or whose hash differs, is a
-    refusal here — never a judgement left to the reviewer.
+    refusal here — never a judgement left to the reviewer.  通用连接器的参数里绑定的产物引用
+    （``{artifact_path, content_hash, size, storage_uri}``）按内容哈希同样核对。
     """
     params = payloads.parameters.effective_params
     artifact_id = params.get("artifact_id")
     if artifact_id is None:
-        return None
+        return _referenced_artifact(store, payloads)
 
     htn = htn_store.HtnStore(store)
     for ref in payloads.parameters.accepted_input_refs:
@@ -259,6 +261,44 @@ def _published_artifact(
                 }
     raise ActionProposalReviewError(
         "OP_REVIEW_SOURCE_UNRESOLVED", "published artifact is not an accepted input"
+    )
+
+
+def _bound_refs(value: Any) -> list[Mapping[str, Any]]:
+    """参数里系统绑定的产物引用（``bind_artifact_refs`` 的形状）。"""
+
+    if isinstance(value, Mapping):
+        if set(value) == {"artifact_path", "content_hash", "size", "storage_uri"}:
+            return [value]
+        return [ref for item in value.values() for ref in _bound_refs(item)]
+    if isinstance(value, (list, tuple)):
+        return [ref for item in value for ref in _bound_refs(item)]
+    return []
+
+
+def _referenced_artifact(
+    store: Store, payloads: FrozenOperationPayloadInputs
+) -> dict[str, Any] | None:
+    refs = _bound_refs(payloads.parameters.effective_params)
+    if not refs:
+        return None
+    if len(refs) != 1:
+        raise ActionProposalReviewError("OP_REVIEW_SOURCE_UNRESOLVED", "more than one artifact")
+    bound = refs[0]
+    htn = htn_store.HtnStore(store)
+    for ref in payloads.parameters.accepted_input_refs:
+        acceptance = htn.get_acceptance(str(ref.id))
+        for accepted in acceptance.artifact_refs:
+            if accepted.content_hash == bound["content_hash"]:
+                return {
+                    "artifact_id": accepted.id,
+                    "artifact_path": bound["artifact_path"],
+                    "content_hash": accepted.content_hash,
+                    "accepted_by": str(ref.id),
+                    "in_accepted_inputs": True,
+                }
+    raise ActionProposalReviewError(
+        "OP_REVIEW_SOURCE_UNRESOLVED", "referenced artifact is not an accepted input"
     )
 
 
