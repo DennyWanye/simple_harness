@@ -37,7 +37,6 @@ from ...planning.decision_feedback import refusal_text
 from ...planning.htn.planner_package import attempt_is_indexed
 from ...runtime.planning_operations import SourceUnavailable as RetrySourceUnavailable
 from ...storage.store import StoreError
-from ..assurance_review_runtime import REVIEW_ROUTE_UNAVAILABLE
 from ..hierarchical_dispatch import append_hierarchical_event
 from ..planning_evidence import observe_questions, persist_questions, prepare_questions
 from ..planning_method_proposal import (
@@ -545,10 +544,9 @@ class PlanningDecisionBranchMixin(OrchestratorCore):
                 "assurance_error": error.code,
             }
 
-            if error.code == REVIEW_ROUTE_UNAVAILABLE:
-                # A provider outage, not a wrong answer: it uses the service-failure
-                # grace, never the Planner's answer budget (user 2026-09-28).
-                error_detail["turn_failed"] = True
+            # 做法已被接受，只是开不了独立审阅（审阅线路不可用、时钟回拨……）：不是规划器答错，
+            # 走服务故障宽限、不扣答错次数；宽限用完按运行环境不可用停（用户 2026-09-28）。
+            error_detail["turn_failed"] = True
         with self.store.transaction():
             reply.store.record_planning_decision(
                 request_id=reply.request_id,
