@@ -7,17 +7,17 @@
 
 | 项目 | 值 |
 |---|---|
-| 版本 | `0.13.0.dev20260925+opt.199` |
-| SDK 源码提交 | `7b166fc97920d15397ff4caf6b937f493760f415`（私有 `simple_harness`，子目录 `sdk/simple-harness-sdk/`） |
-| 宿主钉版提交 | `0acf2a624` |
-| wheel | `backend/vendor/simple_harness_sdk-0.13.0.dev20260925+opt.199-py3-none-any.whl`（3 457 979 字节） |
-| wheel SHA-256 | `d4223630719c4c522390ecbbeedce233dccc9cd92f5124a9414cc3c3caf80fd3` |
-| 候选清单 | 同目录 `simple_harness_sdk-0.13.0.dev20260925+opt.199.candidate-manifest.json`，SHA-256 `2e34e2149fe56a47a6afcecddd3cf1c7e450bdafd695d522cf95e3568b93b649` |
+| 版本 | `0.13.0.dev20260925+opt.200` |
+| SDK 源码提交 | `25ce272e1062724233a94e03a56d7acbaf2d3e55`（私有 `simple_harness`，子目录 `sdk/simple-harness-sdk/`） |
+| 宿主钉版提交 | `1e3a42915` |
+| wheel | `backend/vendor/simple_harness_sdk-0.13.0.dev20260925+opt.200-py3-none-any.whl` |
+| wheel SHA-256 | `f5e03d34df04060ddaedffb9a516549cfa1c2a4d85399ac55c8a37ecde28f2a5` |
+| 候选清单 | 同目录 `simple_harness_sdk-0.13.0.dev20260925+opt.200.candidate-manifest.json`，SHA-256 `795795f8a868247deaf82ffe5d697f961ad9976943031f519cb186f56873a37e` |
 | Python | `>=3.11`；纯 Python wheel（`py3-none-any`） |
 | 必需依赖 | `deepseek-recipe==0.1.1`（非 Windows）、`httpx>=0.27,<1`、`pytest>=8.3,<9` |
-| 验收门 | 发版门 167 条通过，wheel 内清单为 `VALIDATED`；独立核验回执 `.local-test-evidence/2026-10-20/taskgraph-gate/review-185451.json` |
+| 验收门 | 发版门 167 条通过，wheel 内清单为 `VALIDATED`；独立核验回执 `.local-test-evidence/2026-10-20/taskgraph-gate/review-232415.json` |
 
-opt.195 之后的版本：opt.196 修 SQLite 3.50/3.51 开库即倒；opt.197 只读工具注册口；opt.198 Linux 隔离区；opt.199 应用连接器（有副作用的操作）。opt.195 的 wheel 不覆盖，旧号不再用。
+opt.195 之后的版本：opt.196 修 SQLite 3.50/3.51 开库即倒；opt.197 只读工具注册口；opt.198 Linux 隔离区；opt.199 应用连接器（有副作用的操作）；opt.200 修参数引用产物的操作在建动作时被拒（真实模型一局发现）。opt.195 的 wheel 不覆盖，旧号不再用。
 
 ## 2. 公开导入与宿主构造
 
@@ -138,7 +138,7 @@ host.create_mission({
 {"hits": [{"path": "/photos/2026/a.jpg", "taken_at": "2026-05-01", "thumb": "nas://t/123"}]}
 ```
 
-操作事件（按 `action_key` 关联；审批按 `request_id`）：见第 6 节真实模型这一局打印出的事件名与次数。审批事件 `ApprovalGranted` 的 `approval_source` 是 `HUMAN` 或 `HOST_AUTO_PERMISSION`。
+操作事件（按 `action_key` 关联；审批按 `request_id`）：见第 6a 节真实模型这一局的事件清单。审批事件 `ApprovalGranted` 的 `approval_source` 是 `HUMAN` 或 `HOST_AUTO_PERMISSION`。
 
 外部结果是"不可信外部内容"：工具结果交给模型时带来源，不能授予权限或改变状态；应用可以在 `invoke` 返回前接自己的输出检查。
 
@@ -163,7 +163,7 @@ host.create_mission({
 - 宿主注册检查、回执与报错文字检查 9 条；改到的相关测试约 450 条通过。
 - 仓库外：只装 opt.197 wheel 的空项目跑三个例子退出码 0（`~/sh-ext-tools`）；opt.199 wheel 在 Linux 虚拟机（Ubuntu 24.04 ARM64、Python 3.12）跑 `tools_effect.py`，两个任务 COMPLETED。
 
-**真实模型**：见第 6a 节（真实 DeepSeek，仓库外只装 opt.199 wheel）。
+**真实模型**：PASS，见第 6a 节（真实 DeepSeek，仓库外只装 opt.200 wheel）。
 
 **真实设备**：NOT_RUN（没有接 AgentOS 的 NAS、桌面 Relay、MCP）。
 
@@ -171,7 +171,17 @@ host.create_mission({
 
 ## 6a. 真实模型一局
 
-2026-10-20 晚尝试：仓库外新项目只装 opt.199 wheel，经本机转发（上游 chunfengapi.com，DeepSeek v4.1 flash），生产验收门开启，跑"写 NOTES.md 并经假留言板连接器发出（参数引用该产物，第一次回执故意丢失）"。**结果：没跑完，原因是线路故障，不是 SDK**。规划器调用连续在约 90 秒处失败；停掉所有任务后单独探线路：一句话的请求 91 秒后返回 HTTP 520（转发站 Cloudflare 源站错误），开思考的请求 224 秒才返回。SDK 把这些记为模型服务故障，按服务故障宽限处理（不扣规划次数），行为符合设计。同一线路上以前成功过的普通任务（不带连接器）对照局也同样失败，进一步说明是线路问题。线路恢复后重跑，结果补到这里。脚本：`~/sh-ext-accept4/connector_real.py`。
+**opt.200 结果：PASS（2026-10-20 深夜～10-21）**。仓库外项目只装 opt.200 wheel，经本机转发（上游 chunfengapi.com，DeepSeek v4.1 flash），生产验收门开启，自动模式。任务：写三条省水办法到 NOTES.md，再经假"留言板"连接器发出（参数 `{"title": "省水三招", "body": {"$artifact": "NOTES.md"}}`，连接器的 `execute` 与 `lookup` 都是 async，声明权威且封口；第一次执行故意丢回执、请求不落地）。
+
+- 任务 COMPLETED，停止原因 `verification_passed`；结清用量 490 462 token，尝试 1 次。
+- 连接器日志：第 1 次执行回执丢失 → 查询该键为空（封口）→ 第 2 版动作换新键执行 → 发帖 1 条。留言板上只有一条，正文就是模型写的 NOTES.md（连接器按 `storage_uri` 读字节并核对了内容哈希）。
+- 动作：`…:v1` FAILED（`proven_not_applied:rehandoff_refused:lookup_fenced_key`，交接 1 次）；`…:v2` SUCCEEDED（交接 1 次）。
+- 事件（按出现顺序）：`OperationCompletionSpecApproved` 1、`OperationIntentSubmitted` 2、`ActionProposed` 2、`ApprovalRequested` 2、`OperationMaterialized` 2、`ApprovalGranted` 2（`approval_source=HOST_AUTO_PERMISSION`，执行者 `system` / `host-auto:demo-user`）、`ActionHandedOff` 2、`ActionOutcomeUnknown` 1、`ActionScopedReconciled` 1、`ActionNonapplicationFinalized` 1、`ActionSucceeded` 1、`OperationOutcomeReviewPrepared` 1、`OperationOutcomeAccepted` 1。
+- 过程中规划器有几次没按格式写完（转发站线路当晚不稳），SDK 按格式重写或服务故障宽限处理，没有扣错次数。
+
+这一局在 opt.199 上先发现了一个缺陷：参数引用产物的操作在建动作时永远被拒（建动作按文件发布的办法绑定参数）。已在 opt.200 修复，修复独立核验 PASS。
+
+更早一次尝试（opt.199，10-20 晚）因线路故障没跑完：转发站 520、单次请求 90～220 秒；SDK 按服务故障宽限处理。
 
 ## 7. 未解决的条件
 

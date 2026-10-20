@@ -7,14 +7,14 @@
 
 | 项目 | 值 |
 |---|---|
-| 版本 | `0.13.0.dev20260925+opt.199`（不覆盖 opt.195） |
-| SDK 源码提交 | `7b166fc97920d15397ff4caf6b937f493760f415` |
-| wheel | `backend/vendor/simple_harness_sdk-0.13.0.dev20260925+opt.199-py3-none-any.whl` |
-| wheel SHA-256 | `d4223630719c4c522390ecbbeedce233dccc9cd92f5124a9414cc3c3caf80fd3` |
-| 候选清单 | 同目录 `...opt.199.candidate-manifest.json`，SHA-256 `2e34e2149fe56a47a6afcecddd3cf1c7e450bdafd695d522cf95e3568b93b649` |
+| 版本 | `0.13.0.dev20260925+opt.200`（不覆盖 opt.195） |
+| SDK 源码提交 | `25ce272e1062724233a94e03a56d7acbaf2d3e55` |
+| wheel | `backend/vendor/simple_harness_sdk-0.13.0.dev20260925+opt.200-py3-none-any.whl` |
+| wheel SHA-256 | `f5e03d34df04060ddaedffb9a516549cfa1c2a4d85399ac55c8a37ecde28f2a5` |
+| 候选清单 | 同目录 `...opt.200.candidate-manifest.json`，SHA-256 `795795f8a868247deaf82ffe5d697f961ad9976943031f519cb186f56873a37e` |
 | Python | `>=3.11`（纯 Python wheel）；已测 3.12、3.13 |
 | 必需依赖 | `deepseek-recipe==0.1.1`（非 Windows）、`httpx>=0.27,<1`、`pytest>=8.3,<9` |
-| 验收门 | 发版门 167 条通过，wheel 内清单 `VALIDATED`；独立核验回执 `review-185451.json` |
+| 验收门 | 发版门 167 条通过，wheel 内清单 `VALIDATED`；独立核验回执 `review-232415.json` |
 
 ## 2. 逐项状态
 
@@ -22,7 +22,7 @@
 |---|---|---|
 | SDK-01 启动阻断 | 已修（opt.196 起） | 原因属实：触发器体内 `INSERT INTO temp.<表>`。改成不带库名，`ON main.<表>` 与查询里的限定名不动。用系统 SQLite 3.51.0 对真库结构装 142 个触发器通过；你们的 `repro_sqlite_trigger.py` 复现成立。原发放 wheel 已对齐：宿主钉版提交 `097bd443c` 里的 `backend/vendor/...opt.195...whl` SHA-256 是 `bbae818a77a977853bf77fd160c0379b52f2928e3da91dbb7950861c65c5c6b2`，与你们本地重建的同字节——你们复现的就是原制品，不是重建差异。opt.195 名下的 `VALIDATED` 只说明发版门在当时机器的 SQLite（3.53，放宽了该规则）上跑过，不覆盖 3.50/3.51。 |
 | SDK-02 Linux 沙箱 | 已实现（opt.198），虚拟机证据 | 见第 3 节。手机真机 NOT_RUN。 |
-| SDK-03 手机工具接入口 | 已实现：只读工具（opt.197）、操作连接器（opt.199） | 见第 4 节。 |
+| SDK-03 手机工具接入口 | 已实现：只读工具（opt.197）、操作连接器（opt.199，opt.200 修参数引用产物） | 见第 4 节。 |
 | SDK-04 发布与宿主契约 | 本回执 + 接入说明 | 手机"预组装 site-packages 层"的发行方式没做，见第 6 节。 |
 | SDK-05 大文件 / 二进制 | 没做 | `artifact_read` 正文上限 256 KB，二进制不给正文。首版只读文本报告可用。 |
 
@@ -83,7 +83,7 @@ host = await OrchestrationHost.open(root, principal=..., model=..., tools=[tool]
 | 编号 | 状态 | 证据 |
 |---|---|---|
 | A-01 | PASS | 仓库外空项目只装 wheel：`demo.py --scripted`、三个工具例子退出码 0（macOS）；opt.198 wheel 在虚拟机 Python 3.12 / 3.13 任务 COMPLETED；opt.199 wheel 在虚拟机跑 `tools_effect.py` 两个任务 COMPLETED。 |
-| A-02 | 见第 5a 节 | 真实 DeepSeek，生产验收门开启（没有改标签、没有绕过验收门）。 |
+| A-02 | PASS | 真实 DeepSeek，生产验收门开启（没有改标签、没有绕过验收门），带连接器与回执丢失的一局 COMPLETED，见第 5a 节。 |
 | A-03 | 虚拟机 PASS，真机 NOT_RUN | Linux 测试 20 项、两轮独立核验；macOS Seatbelt 没有回退。 |
 | A-04 | PASS（测试适配器） | 只读工具注册、调用、事件、结果进证据。真实 Mobile Host 调用归 AIPhone。 |
 | A-05 | SDK 既有测试覆盖，本候选未单独列跑 | 依赖任务、同幂等键重发、等人回答、版本冲突、预算耗尽、不明结果在 SDK 产品同形测试里；发版门 167 条通过。 |
@@ -93,7 +93,17 @@ host = await OrchestrationHost.open(root, principal=..., model=..., tools=[tool]
 
 ## 5a. 真实模型一局
 
-2026-10-20 晚尝试：仓库外新项目只装 opt.199 wheel，经本机转发（上游 chunfengapi.com，DeepSeek v4.1 flash），生产验收门开启，跑"写 NOTES.md 并经假留言板连接器发出（参数引用该产物，第一次回执故意丢失）"。**结果：没跑完，原因是线路故障，不是 SDK**。规划器调用连续在约 90 秒处失败；停掉所有任务后单独探线路：一句话的请求 91 秒后返回 HTTP 520（转发站 Cloudflare 源站错误），开思考的请求 224 秒才返回。SDK 把这些记为模型服务故障，按服务故障宽限处理（不扣规划次数），行为符合设计。同一线路上以前成功过的普通任务（不带连接器）对照局也同样失败，进一步说明是线路问题。线路恢复后重跑，结果补到这里。脚本：`~/sh-ext-accept4/connector_real.py`。
+**opt.200 结果：PASS（2026-10-20 深夜～10-21）**。仓库外项目只装 opt.200 wheel，经本机转发（上游 chunfengapi.com，DeepSeek v4.1 flash），生产验收门开启，自动模式。任务：写三条省水办法到 NOTES.md，再经假"留言板"连接器发出（参数 `{"title": "省水三招", "body": {"$artifact": "NOTES.md"}}`，连接器的 `execute` 与 `lookup` 都是 async，声明权威且封口；第一次执行故意丢回执、请求不落地）。
+
+- 任务 COMPLETED，停止原因 `verification_passed`；结清用量 490 462 token，尝试 1 次。
+- 连接器日志：第 1 次执行回执丢失 → 查询该键为空（封口）→ 第 2 版动作换新键执行 → 发帖 1 条。留言板上只有一条，正文就是模型写的 NOTES.md（连接器按 `storage_uri` 读字节并核对了内容哈希）。
+- 动作：`…:v1` FAILED（`proven_not_applied:rehandoff_refused:lookup_fenced_key`，交接 1 次）；`…:v2` SUCCEEDED（交接 1 次）。
+- 事件（按出现顺序）：`OperationCompletionSpecApproved` 1、`OperationIntentSubmitted` 2、`ActionProposed` 2、`ApprovalRequested` 2、`OperationMaterialized` 2、`ApprovalGranted` 2（`approval_source=HOST_AUTO_PERMISSION`，执行者 `system` / `host-auto:demo-user`）、`ActionHandedOff` 2、`ActionOutcomeUnknown` 1、`ActionScopedReconciled` 1、`ActionNonapplicationFinalized` 1、`ActionSucceeded` 1、`OperationOutcomeReviewPrepared` 1、`OperationOutcomeAccepted` 1。
+- 过程中规划器有几次没按格式写完（转发站线路当晚不稳），SDK 按格式重写或服务故障宽限处理，没有扣错次数。
+
+这一局在 opt.199 上先发现了一个缺陷：参数引用产物的操作在建动作时永远被拒（建动作按文件发布的办法绑定参数）。已在 opt.200 修复，修复独立核验 PASS。
+
+更早一次尝试（opt.199，10-20 晚）因线路故障没跑完：转发站 520、单次请求 90～220 秒；SDK 按服务故障宽限处理。
 
 ## 6. 已知限制与仍需 AIPhone 提供的事实
 
