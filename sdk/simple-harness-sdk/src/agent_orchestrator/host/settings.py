@@ -107,6 +107,10 @@ class HostSettings:
     max_step_actions_per_mission: int = 20
     #: 连接器一次执行 / 查询 / 整理参数的时限（秒）；超时记"结果不明"，不自动重做。
     connector_timeout_seconds: float = 30.0
+    #: 快速聊天一回合的上限：模型调用次数、工具次数、时限（秒）。到了上限这一回合按失败返回。
+    chat_max_model_calls: int = 8
+    chat_max_tool_calls: int = 8
+    chat_turn_seconds: float = 180.0
 
     def __post_init__(self) -> None:
         if self.context_input_tokens not in CONTEXT_INPUT_CHOICES:
@@ -126,6 +130,11 @@ class HostSettings:
             raise ValueError("max_step_actions_per_mission 必须是正整数")
         if not float(self.connector_timeout_seconds) > 0:
             raise ValueError("connector_timeout_seconds 必须是正数")
+        for name in ("chat_max_model_calls", "chat_max_tool_calls"):
+            if type(getattr(self, name)) is not int or getattr(self, name) < 1:
+                raise ValueError(f"{name} 必须是正整数")
+        if not float(self.chat_turn_seconds) > 0:
+            raise ValueError("chat_turn_seconds 必须是正数")
 
 
 @dataclass(frozen=True)

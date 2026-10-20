@@ -139,6 +139,7 @@ def read_planner_package(
     budget: Mapping[str, int],
     package_version: int,
     previous_feedback: Any = None,
+    executor_capabilities: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Everything one hierarchical Planner request carries, read from the live records.
 
@@ -397,6 +398,9 @@ def read_planner_package(
             and observers.observer_for(signature.predicate_ref.id) is not None
         ],
     }
+    if executor_capabilities is not None:
+        # 执行者在这台机器上能用的只读工具与能提议的动作（事实，不是建议）
+        sections["executor_capabilities"] = dict(executor_capabilities)
     latest = htn.latest_requirements_revision(mission.id)
     return assemble_planner_package(
         requirements=None

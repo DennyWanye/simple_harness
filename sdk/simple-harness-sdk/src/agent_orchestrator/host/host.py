@@ -52,12 +52,14 @@ from ..runtime.assembly import OrchestratorConfig
 from ..runtime.connectors import OperationSpec
 from ..runtime.connectors_publish import FilePublishConnector
 from ..runtime.deepseek_meter import deepseek_meter_binding
+from ..runtime.delta_router import OutputStream
 from ..runtime.domain_tools import DomainTool
 from ..runtime.model_fallback import LEDGER_NAME, read_model_calls
 from ..runtime.planning_operations import SourceUnavailable
 from ..runtime.sandbox import SandboxUnavailable
 from ..runtime.tool_gateway import ASSURANCE_REVIEWER_TOOLS, TOOL_NAMES
 from ..version import __version__
+from .chat import ChatService
 from .embedding import embedding_port
 from .instance_lock import InstanceLock
 from .provider import (
@@ -331,6 +333,11 @@ class OrchestrationHost:
         self.quarantine: dict[str, Any] | None = None
         self.recovery: dict[str, Any] | None = None
         self.on_write: Callable[[], None] | None = None
+        #: 快速聊天（第 4 块）：自己的执行池，宿主的工具、预算与当事人。
+        self.chat_service = ChatService(self)
+        #: 逐字输出（第 5 块）：模型正在生成的正文片段与结束 / 出错信号，按运行号分发；
+        #: ``output_stream.subscribe(回调)`` 全局订阅，``chat(on_delta=)`` 只看本回合。
+        self.output_stream = OutputStream(resolver=self._resolve_output_scope)
         #: 重建成功后的回调（宿主应用续读事件、重新探测诊断）。
         self.on_rebuilt: Callable[[], None] | None = None
         # 每轮驱动后的回调（宿主应用自己的轻量杂务，例如存储用量刷新）；只收同步函数，出错只记日志
@@ -436,17 +443,35 @@ class OrchestrationHost:
 
     def _build_providers(self) -> None:
         if self._given_provider is not None:
-            self.provider = self._given_provider
-            self.thinking_provider = self._given_thinking_provider
+            self.provider = self.output_stream.attach(self._given_provider)
+            self.thinking_provider = self.output_stream.attach(self._given_thinking_provider)
             return
         if self.model is None:
             raise HostUnavailable("未配置模型：给 model=ModelConfig(...) 或 provider=")
         if self._http_client is None:
             self._http_client = httpx.AsyncClient()
             self._own_client = True
-        self.provider, self.thinking_provider = build_providers(
-            self.model, self._http_client, state_dir=self.root
-        )
+        plain, thinking = build_providers(self.model, self._http_client, state_dir=self.root)
+        self.provider = self.output_stream.attach(plain)
+        self.thinking_provider = self.output_stream.attach(thinking)
+
+    def _resolve_output_scope(self, run_id: str) -> dict[str, Any] | None:
+        """一个运行的片段属于谁：聊天会话，或任务里的某次尝试（执行者绑定了工作区时）。"""
+
+        chat = self.chat_service.scope_of(run_id)
+        if chat is not None:
+            return chat
+        if self.orchestrator is None:
+            return None
+        binding = self.orchestrator.assembled.gateway.binding_for(run_id)
+        if binding is None:
+            return None
+        return {
+            "scope": "mission",
+            "mission_id": binding.mission_id,
+            "subject_id": binding.attempt_id,
+            "view": binding.view,
+        }
 
     def _counters(self) -> tuple[Any, Any]:
         """``(普通计数器, 思考计数器)``；没有认证计数器就 ``(None, None)``。"""
@@ -681,6 +706,18 @@ class OrchestrationHost:
         )
         self._assemble_runtime()
         await self._enter(self._new_orchestrator())
+        await self._open_chat()
+
+    async def _open_chat(self) -> None:
+        """聊天池在任务池之后起（它是技能目录的成员）；根隔离时不起。"""
+
+        if self.quarantine is not None:
+            return
+        try:
+            await self.chat_service.open()
+        except Exception as error:  # noqa: BLE001 - 聊天起不来不影响任务
+            logger.exception("chat pool open failed")
+            self.chat_service.reason = f"{type(error).__name__}: {error}"[:300]
 
     async def _enter(self, candidate: Any) -> None:
         """进入一个新的 ``Orchestrator``：进入与门面都成功才发布；失败就把它关掉再抛。"""
@@ -717,6 +754,7 @@ class OrchestrationHost:
         self.deployment.bind(None, None)
         self.policy_api = None
         self.quarantine = None
+        await self.chat_service.close()
         if old is not None:
             try:
                 await old.__aexit__(None, None, None)
@@ -727,6 +765,7 @@ class OrchestrationHost:
         if self.quarantine is not None:
             self.state, self.reason = "quarantined", QUARANTINE_REASON
             return
+        await self._open_chat()
         if self.on_rebuilt is not None:
             self.on_rebuilt()
 
@@ -736,6 +775,7 @@ class OrchestrationHost:
         self.deployment.bind(None, None)
         self.policy_api = None
         self.quarantine = None
+        await self.chat_service.close()
         if orchestrator is not None:
             try:
                 await orchestrator.__aexit__(None, None, None)
@@ -1153,6 +1193,32 @@ class OrchestrationHost:
 
         return read_model_calls(self.root / LEDGER_NAME, limit=limit)
 
+    # ------------------------------------------------------------ 快速聊天
+    async def chat(
+        self,
+        body: Mapping[str, Any],
+        *,
+        on_delta: Callable[[Mapping[str, Any]], None] | None = None,
+    ) -> dict[str, Any]:
+        """一句话一个回合，不进任务编排（见接入说明 §2b）。
+        ``session_id``、``text``、``idempotency_key`` 必填；``tools``、``require_tool`` 可选。
+        ``on_delta``：逐字输出——模型每吐一段正文就调一次
+        ``{session_id, turn_id, generation, seq, text}``；片段只是预览，正文以返回的 ``text``
+        为准。"""
+
+        self._require()
+        return await self.chat_service.turn(body, on_delta=on_delta)
+
+    async def chat_cancel(self, body: Mapping[str, Any]) -> dict[str, Any]:
+        """取消一个会话正在跑的回合。"""
+
+        return await self.chat_service.cancel(body)
+
+    def chat_history(self, session_id: str, *, limit: int = 50) -> list[dict[str, Any]]:
+        """台账 ``chat-turns.jsonl`` 里这个会话的回合，最新的在后。"""
+
+        return self.chat_service.history(session_id, limit=limit)
+
     def step_actions(self, mission_id: str) -> list[dict[str, Any]]:
         """一个任务里步骤中途提议过的动作（含被拒、已结案），按提出顺序。"""
 
@@ -1460,6 +1526,7 @@ class OrchestrationHost:
                 "max_attempts": self.settings.default_mission_max_attempts,
             },
             "global_budget": self.global_budget_status(),
+            "chat": self.chat_service.status(),
             "owner": self.owner,
         }
 

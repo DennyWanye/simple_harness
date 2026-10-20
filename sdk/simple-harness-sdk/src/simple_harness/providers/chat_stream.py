@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import io
 import json
+from collections.abc import Callable
 from typing import Any
 
 from .errors import ProviderProtocolError
@@ -62,7 +63,9 @@ class ChatStream:
     SSE keepalives are consumed without being presented as assistant content.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, on_content: Callable[[str], None] | None = None) -> None:
+        # 每段用户可见正文到达时叫一次（逐字输出）；思考与工具参数不叫
+        self._on_content = on_content
         # Buffers, not per-piece lists: a relay sends one token per event, and a list slot
         # per piece is memory the bound would not see.
         self.content = io.StringIO()
@@ -161,6 +164,8 @@ class ChatStream:
                 raise _reject("content is not a string")
             self._keep(content)
             self.content.write(content)
+            if content and self._on_content is not None:
+                self._on_content(content)
         if calls is not None:
             if not isinstance(calls, list):
                 raise _reject("tool_calls is not a list")

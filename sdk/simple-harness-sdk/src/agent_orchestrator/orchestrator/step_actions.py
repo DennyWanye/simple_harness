@@ -219,6 +219,34 @@ def available_actions(
     return listed
 
 
+def executor_capabilities(
+    connectors: Mapping[str, Any],
+    deployment: Any,
+    domain_tools: Mapping[str, Any],
+    *,
+    allowed: frozenset[str],
+) -> dict[str, Any]:
+    """给规划器看的事实：任何工作步骤的执行者在这台机器上能用的只读工具（应用注册的，
+    带说明）和执行时能提议的外部动作（与执行者看到的同一张目录）。真实模型实测（2026-10-21 Sol）：
+    只给工具名不给说明，规划器以为"没有搜照片 / 归档的步骤类型"，反复问人。"""
+
+    tools = [
+        {
+            "name": str(name),
+            "description": str((getattr(tool, "schema", {}) or {}).get("description", "") or ""),
+        }
+        for name, tool in sorted(domain_tools.items())
+    ]
+    return {
+        "note": (
+            "任何工作步骤的执行者都能调用这些只读工具、提议这些外部动作；不需要专门的步骤类型，"
+            "把要查什么、要做什么写进步骤的目标里即可。动作由执行者在步骤中途提议，系统审批后执行。"
+        ),
+        "tools": tools,
+        "actions": available_actions(connectors, deployment, allowed=allowed),
+    }
+
+
 def pending_step_action(store: Any, task_id: str) -> dict[str, Any] | None:
     """这一步还没结案的中途动作（等批准、在途、结果不明）；有一个就不开新尝试。"""
 
@@ -305,6 +333,7 @@ __all__ = (
     "available_actions",
     "continuation_ready",
     "delivery_of",
+    "executor_capabilities",
     "is_step_action",
     "pending_step_action",
     "pop_request",

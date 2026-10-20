@@ -313,9 +313,10 @@ class LayeredScriptedProvider(RoleScriptedProvider):
         planner: Callable[[Any], Reply | None] = planner_reply,
         reviewer: Callable[[Any], Reply | None] = reviewer_reply,
         worker: Callable[[Any], Reply | None] = worker_reply,
+        chat: Callable[[Any], Reply | None] | None = None,
     ) -> None:
         super().__init__({})
-        self._answer = {"planner": planner, REVIEWER: reviewer, "worker": worker}
+        self._answer = {"planner": planner, REVIEWER: reviewer, "worker": worker, "chat": chat}
         self.asked: list[str] = []
         #: 被扣住的角色：对它的调用停在半路不返回，直到 ``release`` 被置位（模拟一次很慢
         #: 的模型调用，用来在调用进行中重启服务或取消任务）。

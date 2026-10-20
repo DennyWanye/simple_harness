@@ -358,7 +358,7 @@ def _read_page(
 @dataclass(frozen=True, slots=True)
 class WorkspaceBinding:
     attempt_id: str
-    view: str  # "work" | "verify"
+    view: str  # "work" | "verify" | "chat"（快速聊天：没有任务与尝试，attempt_id 是会话工作区）
     writable: bool
     allowed_tools: tuple[str, ...]
     untrusted_sources: tuple[str, ...] = ()  # step 4 (D4-12): path prefixes marked as data
@@ -573,6 +573,11 @@ class WorkspaceToolGateway:
 
     def bind(self, run_id: str, binding: WorkspaceBinding) -> None:
         self._bindings[run_id] = binding
+
+    def binding_for(self, run_id: str) -> WorkspaceBinding | None:
+        """一个运行现在的绑定（只读；输出流用它标片段属于哪个任务 / 步骤）。"""
+
+        return self._bindings.get(run_id)
 
     async def observe(self, effect):  # type: ignore[no-untyped-def]
         """Reconcile a lost write result from durable Host identity AND exact bytes.
@@ -864,8 +869,8 @@ class WorkspaceToolGateway:
                     )
                 )
             elif call.name in self._domain_tools:
-                if binding.mission_id is None:
-                    raise WorkspaceError("domain tool requires a Mission binding")
+                if binding.mission_id is None and binding.view != "chat":
+                    raise WorkspaceError("domain tool requires a Mission or chat binding")
                 tool = self._domain_tools[call.name]
                 refusal = (
                     None
@@ -993,7 +998,6 @@ class WorkspaceToolGateway:
         """跑一个领域工具：成功把值放进 ``record["_value"]`` 返回 None；失败/不确定直接给结果。
         每个阶段都经 ``on_external_tool`` 审计（成功的在 ``on_executed`` 之外再记一次，带结果）。"""
 
-        assert binding.mission_id is not None
         call_key = f"{run_id}:{record['call_id']}"
         context = ToolCallContext(
             mission_id=binding.mission_id,
@@ -1010,7 +1014,10 @@ class WorkspaceToolGateway:
             started.append(True)
             self._external(run_id, "started", record)
 
-        lock = self._domain_locks.setdefault(binding.mission_id, asyncio.Lock())
+        # 同一任务内的调用串行；快速聊天没有任务，按会话（attempt_id）串行
+        lock = self._domain_locks.setdefault(
+            binding.mission_id or binding.attempt_id, asyncio.Lock()
+        )
         try:
             outcome = await run_domain_tool(tool, arguments, context, lock=lock, on_start=on_start)
         except asyncio.CancelledError:

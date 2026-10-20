@@ -31,7 +31,7 @@ DEFAULT_TIMEOUT_SECONDS = 60.0
 class ToolCallContext:
     """SDK 交给工具的可信上下文；全部由 SDK 填写，模型参数里的同名字段不算数。"""
 
-    mission_id: str
+    mission_id: str | None  # 快速聊天里没有任务：None，这时 attempt_id 是 ``chat-<会话号>``
     attempt_id: str
     call_id: str  # 稳定调用号（``<run_id>:<call_id>``），重启后不变；副作用去重用它
     principal_id: str | None = None

@@ -105,7 +105,7 @@ def register_template(template: RoleTemplate) -> None:
 #:   审阅员按任务要求判断，这里不写领域补丁。
 #:
 #: 要改就改这一份并换版本号；不保留历史版本，也不从旧版本拼接。
-PLANNER_HIERARCHICAL_VERSION = "planner-hierarchical-v30"
+PLANNER_HIERARCHICAL_VERSION = "planner-hierarchical-v31"
 PLANNER_HIERARCHICAL = RoleTemplate(
     name="planner",
     prompt_version=PLANNER_HIERARCHICAL_VERSION,
@@ -191,6 +191,11 @@ PLANNER_HIERARCHICAL = RoleTemplate(
         "它们不是引用四元组，不要写进 reason_refs，要引用事实用 views.facts 里的 observation_ref。\n"
         "  - method_proposal_contexts：为每个还没有做法的目标、以及 under_repair 的目标，给出写新做法要用的"
         "全部材料（见下面的 PROPOSE_METHOD）。\n"
+        "  - executor_capabilities：步骤的执行者在这台机器上能用的东西。tools 是应用注册的只读工具"
+        "（名字、说明），actions 是执行时能提议的外部动作（连接器.操作、说明、风险等级、要不要人批、"
+        "in_mission_scope 表示在不在本任务的授权范围内）。任何工作步骤的执行者都能调用这些工具、提议这些动作，"
+        "不需要专门的步骤类型：把要查什么、要做什么写进步骤的目标里即可；动作由执行者在步骤中途提议、"
+        "系统审批后执行，它的结果（例如移动后的新路径）会交回同一步骤。\n"
         "  - repair_requests：真实发生的失败和程序算出的影响范围，失败的完整记录只在这里。"
         "context 里是事实：哪个事件、"
         "审阅员的全部意见（findings）、这一步第几次失败（step_failures）、连续几次是同样的失败"

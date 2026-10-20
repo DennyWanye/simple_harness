@@ -59,6 +59,7 @@ from ...storage import planning_decision_store
 from ...storage.obligation_store import ObligationStore
 from ...storage.planning_admission_store import PlanningAdmissionStore
 from ...storage.store import DispatchIntent, StoreConflict, StoreError
+from .. import step_actions
 from ..assurance_point_use import (
     PLANNING_REQUEST_CONSUMER,
     PointUseRefused,
@@ -437,6 +438,12 @@ class PlanningRoundMixin(OrchestratorCore):
                 reports=reports,
                 previous_feedback=previous_feedback,
                 package_version=role_templates.PLANNING_DECISION_PACKAGE_VERSION,
+                executor_capabilities=step_actions.executor_capabilities(
+                    self._connectors,
+                    self._config.deployment_policy,
+                    self._config.domain_tools,
+                    allowed=step_actions.scope_names(mission),
+                ),
                 budget={
                     "planning_remaining": max(
                         0, self._config.max_planning_attempts - self._planning_attempts(mission.id)

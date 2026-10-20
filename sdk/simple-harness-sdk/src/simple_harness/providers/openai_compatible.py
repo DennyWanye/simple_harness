@@ -7,7 +7,8 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import Mapping, Sequence
+import logging
+from collections.abc import Callable, Mapping, Sequence
 from enum import StrEnum
 from ipaddress import ip_address, ip_network
 from typing import Any, cast
@@ -93,6 +94,8 @@ def openai_chat_request_payload(
     return payload
 
 
+logger = logging.getLogger(__name__)
+
 _THINKING_FIELDS = frozenset({"thinking", "reasoning_effort"})
 _REQUEST_BODY_FIELDS = frozenset(
     {
@@ -177,6 +180,7 @@ class OpenAICompatibleProvider:
         "_timeout",
         "_tool_schema_mode",
         "_stream",
+        "delta_sink",
     )
 
     def __init__(
@@ -299,6 +303,9 @@ class OpenAICompatibleProvider:
         self._secret = secret
         self._tool_schema_mode = tool_schema_mode
         self._stream = stream
+        #: 逐字输出：流式回复里每段用户可见正文调一次 ``(request, text)``；None 不转发。
+        #: 回调抛错只记日志，不影响这次调用；片段只是预览，正文以回执为准。
+        self.delta_sink: Callable[[ProviderRequest, str], None] | None = None
         if isinstance(timeout, bool) or (isinstance(timeout, (int, float)) and timeout <= 0):
             raise ValueError("timeout must be positive")
         self._timeout = timeout
@@ -426,8 +433,7 @@ class OpenAICompatibleProvider:
         self._raise_for_status(response.status_code)
 
     async def _stream_once(self, request: ProviderRequest) -> ProviderResponse:
-
-        accumulator = ChatStream()
+        accumulator = ChatStream(on_content=self._content_sink(request))
         async with self._client.stream(
             "POST",
             self._endpoint,
@@ -473,6 +479,19 @@ class OpenAICompatibleProvider:
                     raise _ProtocolErrorWithUsage(usage, cause, None) from None
                 raise
             return self._parse_response(request, payload, response)
+
+    def _content_sink(self, request: ProviderRequest) -> Callable[[str], None] | None:
+        sink = self.delta_sink
+        if sink is None:
+            return None
+
+        def forward(text: str) -> None:
+            try:
+                sink(request, text)
+            except Exception:  # noqa: BLE001 - 预览回调出错不碰这次调用
+                logger.warning("delta sink failed", exc_info=True)
+
+        return forward
 
     def _request_payload(self, request: ProviderRequest) -> dict[str, Any]:
         payload = openai_chat_request_payload(

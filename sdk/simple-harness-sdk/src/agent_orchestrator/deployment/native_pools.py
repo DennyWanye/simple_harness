@@ -55,15 +55,19 @@ NATIVE_OUTPUT_TOKENS = 131_072
 CONTEXT_INPUT_LIMITS = (262_144, 524_288, 614_400)
 
 
-def native_profile_id(tokens: int, *, thinking: bool = False, model: str | None = None) -> str:
+def native_profile_id(
+    tokens: int, *, thinking: bool = False, model: str | None = None, chat: bool = False
+) -> str:
     """A native pool's id.  Thinking-mode pools are separate pools (own id, own execution
     library, own provider and counter): an Agent's thinking mode is frozen by the pool its
     Mission was frozen on, so changing the deployment setting never breaks existing Agents.
 
     非 DeepSeek 模型的池编号带模型（``model``）：计数器身份含模型名，同一数据目录换模型就开新的池，
-    旧池的数据留着不再用（2026-10-21 核验）。DeepSeek 与测试计数器的编号不变。"""
+    旧池的数据留着不再用（2026-10-21 核验）。DeepSeek 与测试计数器的编号不变。
+    ``chat``：快速聊天池（STANDALONE_CHAT），任务永远不会选到它。"""
     slot = f"{model}-" if model else ""
-    return f"{NATIVE_PROFILE_PREFIX}{tokens // 1024}k-{slot}{'thinking-' if thinking else ''}v1"
+    kind = "chat-" if chat else ("thinking-" if thinking else "")
+    return f"{NATIVE_PROFILE_PREFIX}{tokens // 1024}k-{slot}{kind}v1"
 
 
 def is_native_profile(profile_id: str | None) -> bool:
@@ -156,6 +160,7 @@ class NativePools:
         self.script_runner = script_runner
         self.script_runner_label = script_runner_label
         self.authorization = DeploymentToolAuthorization(allowed_tools)
+        self._allowed_tools = tuple(allowed_tools)
         self.owner_contract = Pin(
             "policy",
             f"host-owner:{tenant_id}",
@@ -277,7 +282,10 @@ class NativePools:
         tokens: int,
         counter: Any,
         output_tokens: int = NATIVE_OUTPUT_TOKENS,
+        owner_mode: str = "MISSION",
     ) -> NativePlaneAssembly:
+        if owner_mode not in {"MISSION", "STANDALONE_CHAT"}:
+            raise ValueError("owner_mode must be MISSION or STANDALONE_CHAT")
         acceptance = AssuranceSkillAcceptance(
             store=None, clock_ms=self.clock_ms, root_incarnation=self._root_incarnation
         )
@@ -325,10 +333,11 @@ class NativePools:
         # claimed dispatch intent, and each new request re-checks them.  Revision 2: the
         # revision-1 STANDALONE_CHAT profile row stays in existing libraries and its old
         # Sessions keep running under it; a profile row is never rewritten in place.
+        # 快速聊天池用 STANDALONE_CHAT：Agent 由宿主当事人直接创建，没有调度意图可对。
         profile = ArpRuntimeProfile(
             profile_id=profile_id,
             profile_revision=2,
-            owner_mode="MISSION",
+            owner_mode=owner_mode,
             allow_lexical_degradation=True,
             context_policy=policy,
             refs=refs,
@@ -345,7 +354,7 @@ class NativePools:
             if self.script_runner is None
             else self.script_runner_label,
             "catalogue_namespace_id": namespace,
-            "owner_mode": "MISSION",
+            "owner_mode": owner_mode,
             "catalogue_role": "owner" if owner else "member",
         }
 
@@ -386,7 +395,12 @@ class NativePools:
 
         return NativePlaneAssembly(
             arp_ports=arp_ports,
-            authorization=self.authorization,
+            # 聊天池有自己的网关，审计回调不能挂到任务池共用的授权口上（会把任务的拒绝事件带走）
+            authorization=(
+                self.authorization
+                if owner_mode == "MISSION"
+                else DeploymentToolAuthorization(self._allowed_tools)
+            ),
             caller_for=self.intent_caller,
             after_build=after_build,
         )

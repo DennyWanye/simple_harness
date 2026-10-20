@@ -102,6 +102,74 @@ model = ModelConfig(
 
 图片：不接多模态提供方；应用把"看图"做成只读工具（`DomainTool`）交给 SDK 调。
 
+## 2b. 快速聊天（不进任务编排）
+
+一句话一个回合，直接答：没有规划器、没有审阅员。用的是同一个引擎（执行池里的工具循环、工具网关、
+预算账本），只是跑在一个单独的聊天执行池上（数据目录 `chat/`，池编号带 `-chat-`）。
+
+```python
+reply = await host.chat({
+    "session_id": "chat-1",          # 一个会话一个 Agent；第二句能看到第一句
+    "text": "今天家里哪台设备没电了？",
+    "idempotency_key": "chat-1-7",   # 同一键再发：原样返回，不再调模型
+    "tools": ["device_status"],      # 可选：只给这几个已注册的只读工具；默认全部。会话第一句定下，后面不能换
+    "require_tool": False,           # 可选：必须先查工具；首轮没查就提醒一次，仍不查如实返回 tool_not_used
+})
+# reply = {"text", "state": "committed"|"failed", "error", "turn_id", "agent_id", "session_id",
+#          "tool_calls": [{"tool", "call_id", "outcome"}], "model_calls", "model",
+#          "usage": {"input_tokens", "output_tokens", "unknown"}, "nudged", "tool_not_used",
+#          "history_reset"（见下）, "total_ms", "first_output_ms"（给了 on_delta 才有，见 §2c）}
+await host.chat_cancel({"session_id": "chat-1"})   # 取消这个会话正在跑的回合
+host.chat_history("chat-1", limit=50)              # 台账 chat-turns.jsonl 里这个会话的回合
+```
+
+| 项目 | 做法 |
+|---|---|
+| 身份 | Agent 由宿主当事人建；模型参数里的身份不算数；工具拿到的 `ToolCallContext.mission_id` 是 `None`、`attempt_id` 是 `chat-<会话号>` |
+| 工具 | 只有应用注册的只读工具；有副作用的事模型只能说"这要建一个任务"（由应用拿去建任务） |
+| 上限 | `HostSettings.chat_max_model_calls`（默认 8）、`chat_max_tool_calls`（默认 8）、`chat_turn_seconds`（默认 180）；到了上限这一回合按失败返回 |
+| 预算 | 每回合先在全局月账上预留"模型调用上限 ×（窗口 + 输出上限）"，结束按模型报告的真实用量结清；报告缺失的调用按预留上限结清；月配额不够直接拒（`budget_exhausted`），不调模型 |
+| 记录 | SDK 执行库里有完整的模型调用与工具记录；宿主另记 `chat-turns.jsonl` |
+| 宿主中途关掉 | 在途回合的预留按上限结清（启动时也会把遗留的结清）；那次模型调用结果丢了的 Agent 不能再用（内核如实记"结果不明"，不重放），这个会话换一个新 Agent 接着聊，那一句回执 `history_reset=true`，之前的对话它看不到 |
+| 用量 | 线路报 0/0 或没报的调用记"未知"，按预留上限结清（可以多算不可以少算） |
+| 不做 | 聊天里不做审阅——要把关的事走任务；应用自己保存界面上的对话 |
+
+被拒的请求抛 `ChatRequestError`（`code`：`invalid_request` / `chat_tools_frozen` / `budget_exhausted` /
+`chat_unavailable` / `chat_timeout`）。
+
+## 2c. 逐字输出（正在生成的文字）
+
+片段只是预览；终稿以持久记录为准（聊天回执的 `text`、任务的快照与产物）。
+
+```python
+# 聊天：只看本回合
+reply = await host.chat(body, on_delta=lambda piece: ui.append(piece["text"]))
+#   piece = {"session_id", "turn_id", "generation", "seq", "text"}；reply["first_output_ms"] 是首段正文到达时间
+
+# 任务与聊天都看：全局订阅
+stop = host.output_stream.subscribe(lambda event: ...)   # 返回退订函数
+```
+
+事件格式 v1（加字段不升版本，改字段含义才升）：
+
+| 字段 | 说明 |
+|---|---|
+| `v` | 1 |
+| `kind` | `piece`（一段正文）/ `end`（这次模型调用结束）/ `error`（这次调用抛错） |
+| `scope` | `chat`（带 `session_id`、`turn_id`）/ `mission`（带 `mission_id`、`subject_id`、`view`——执行者绑定了工作区时能对上；规划器、审阅员的调用只有运行号）/ `unknown` |
+| `run_id` | 运行号（一个聊天会话或一次尝试的 Agent） |
+| `generation` | 一次模型调用的请求号；换了就是新一次生成，从头拼，不会把两次生成拼在一起 |
+| `seq` | 片段在这次 generation 里的序号，从 1 递增；`end` / `error` 带最后一个序号 |
+| `text` | 片段正文（只有用户可见正文；思考内容与工具调用参数不发） |
+| `finish` / `tool_calls` | `end`：结束原因、这次调用带了几个工具调用 |
+| `error` | `error`：错误码 |
+
+规则：
+- 去重键 `(generation, seq)`；片段不落盘、不重放（保留期 0、没有分页）。
+- 断线重连后读持久记录，再从新的 generation 开始拼。
+- 审阅否决或重写的尝试，它的片段只是草稿；终稿只认验收通过的产物。
+- 订阅者抛异常只记日志，不影响模型调用。
+
 ## 3. 入口做了什么
 
 `OrchestrationHost.open(root, ...)` 按产品（桌面端）的接法把编排拼起来：
@@ -179,6 +247,17 @@ host = await OrchestrationHost.open(
 
 没有隔离区时宿主照常启动：`file:` 要求照样核对（直接看文件在不在）；`pytest:` 要求建任务时就被拒
 （`local_tests_disabled`，原因带上）；模型拿不到 `run_tests` 工具。
+
+### x86_64 与 NixOS
+
+- x86_64（Ubuntu 24.04，内核 6.8，glibc 2.39，bubblewrap 0.9.0）已实测：启动检查 9 项全过，带 `run_tests` 与 `pytest:` 核对的任务 COMPLETED，越界读取被拒（2026-10-21，本机 QEMU 虚拟机）。做法与 ARM 机完全相同。
+- NixOS（按打包方式写的要点，未实测）：
+  - `bwrap` 装在 `/run/current-system/sw/bin/bwrap`（`environment.systemPackages = [ pkgs.bubblewrap ]`），不是 setuid；宿主按 `PATH` 找得到即可。
+  - 用户命名空间：`boot.kernel.sysctl."kernel.unprivileged_userns_clone" = 1`（NixOS 默认允许）；NixOS 没有 Ubuntu 那条 AppArmor 限制。
+  - `/nix/store` 要只读挂进隔离区（Python 解释器与轮子都在里面）：现在的两层做法外层 `--dev-bind / /`、内层 `--cap-drop ALL` 已经覆盖，不用另加 `--ro-bind`。
+  - `/etc/ssl`、`/etc/resolv.conf` 不需要（隔离区断网）。
+  - 需要的内核功能：user / pid / net / ipc / uts 命名空间、`no_new_privs`、pidfd（5.3+；没有时退回命名空间核对）。
+- 缺依赖时（`bwrap` 找不到、版本 < 0.8、开不了用户命名空间）：`status()["sandbox"]` 写明原因，`code_execution="off"`，`run_tests` 等按名拒绝；**不会悄悄关掉隔离继续跑**。
 
 ## 4. 操作一览
 
