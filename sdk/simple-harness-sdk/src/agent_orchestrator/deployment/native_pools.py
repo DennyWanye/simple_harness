@@ -300,7 +300,11 @@ class NativePools:
         )
         if self._orchestrator is not None:
             acceptance.store = self._orchestrator.store
-        self.acceptances[profile_id] = acceptance
+        # 快速聊天池不是任务池：没有技能验收读方，也不是技能目录的成员（它只有只读工具），
+        # 它的状态在宿主 status()["chat"]；任务池的清单、技能镜像、验收读方都不含它
+        chat = owner_mode == "STANDALONE_CHAT"
+        if not chat:
+            self.acceptances[profile_id] = acceptance
         # Wire-only scope (2026-09-24): the DeepSeek endpoint keeps no output beyond the wire,
         # so no prior-output reserve reader is bound — one would double-charge every earlier
         # output of the run and shrink the window over a long session.
@@ -374,6 +378,8 @@ class NativePools:
             # 2026-09-25 主流程优化条目 6: keep the live runtime so status() can report
             # the health of its background loops (a rebuild re-registers it).
             self._runtimes[profile_id] = runtime
+            if chat:
+                return  # 聊天池不进技能目录
             if owner:
                 self.shared_catalogue.bind_owner(profile_id, runtime)
             else:
