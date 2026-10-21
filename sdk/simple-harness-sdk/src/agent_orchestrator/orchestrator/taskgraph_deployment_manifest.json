@@ -1,6 +1,6 @@
 {
   "acceptance_evidence": null,
-  "deployment_id": "f65793f8e1453ae8f29627f18d3a2d59fd0d2b20519ea01cbe440314a1c44201",
+  "deployment_id": "14eecbf1064bea17a768e39e1cbc78661e98ab4bed23e295b0bec0b8f833523b",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -95,7 +95,7 @@
     "agent_orchestrator/deployment/assembly.py": "d60e66de40ab9b99df0236ba5217a3555271220bbe260cb795a1c48076d2e923",
     "agent_orchestrator/deployment/duties.py": "2158329afb70776551350d91eede28b4bf558a41e8aa5bf2949c19b7086f12d1",
     "agent_orchestrator/deployment/goal_world.py": "0f117e617d403d679547172b0c8b4ebc4413315692fc5e67f61cadcb5be19da1",
-    "agent_orchestrator/deployment/native_pools.py": "973773bde02fc0dab4993379ae96c90f13bb88e7f009164bae5fd4bbad77c3ee",
+    "agent_orchestrator/deployment/native_pools.py": "d1d5621c6b4406e08db438742fc195b127595041a9135fa2c65592d5129709eb",
     "agent_orchestrator/deployment/root.py": "c0734536d8c2bd05f97658f1fdec9e67c7148ab52987fcb2f8845feaf7ec5dc0",
     "agent_orchestrator/domains/__init__.py": "8fc9e932a491ce64f5e687a047a71b0e191c49b9e89a45a1011dd7771ea4b711",
     "agent_orchestrator/domains/drone_sim.py": "b94f8972f92003e133e006ac36d35093cb3dc49e575d5be659b9978d87a29c0a",
@@ -163,7 +163,7 @@
     "agent_orchestrator/host/__init__.py": "258994df78044ead94e2b041e0828e53a4c320a52002113e4652a0aeab0b8872",
     "agent_orchestrator/host/chat.py": "30c3a41dd0a9430435b8a48aaaed185c19cb29ee5749e33012c481e2c6ecb4ca",
     "agent_orchestrator/host/embedding.py": "ac37172e30842aec43c0af0ac81a4a7b35094fadda0c5fcae8f8efddcef22d48",
-    "agent_orchestrator/host/host.py": "3eae8eb9c96da43dae8907253858b0116ce78494cc0db39c8bc5a83faa3aeadf",
+    "agent_orchestrator/host/host.py": "8a4217582049a78326131d5dcbf21ac464d91101802c606b8cbff548fa6fb93c",
     "agent_orchestrator/host/instance_lock.py": "de30c4b0c87ac371fdf200f14a9f2e519efbf9194249743e128e3e0cd34d03d9",
     "agent_orchestrator/host/offline.py": "28cb5277259b6fcbc4f7c9155a4cfd2862a8a50a637d68b9e994d766bb77d02a",
     "agent_orchestrator/host/provider.py": "c30023cdbbd2559edc036bbf8aa03ab7961ff9846655b9dc6eaa50f81df11714",

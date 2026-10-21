@@ -1088,7 +1088,7 @@ class OrchestrationHost:
         return [
             key
             for key in self.runtime_options.get("profiles", {})
-            if is_native_profile(key) and not is_chat_profile(key)
+            if is_native_profile(key) and not is_chat_profile(key, model=self._profile_model)
         ]
 
     def native_pool(self, profile_id: str | None) -> Any:

@@ -371,3 +371,26 @@ def test_closing_the_host_mid_turn_settles_and_the_session_survives(tmp_path):
             await host2.close()
 
     _run(case())
+
+
+def test_a_chat_pool_is_recognised_by_its_whole_id_not_by_a_substring():
+    """聊天池不进原生任务池清单（技能目录、运行平面动词、默认池都不认它）；模型名里带 chat 的任务池
+    不能被误判成聊天池（核验员 2026-10-21 实测 glm-4-chat-vision 这类名字）。"""
+
+    from agent_orchestrator.deployment.native_pools import (
+        CONTEXT_INPUT_LIMITS,
+        is_chat_profile,
+        native_profile_id,
+    )
+
+    for tokens in CONTEXT_INPUT_LIMITS:
+        assert is_chat_profile(native_profile_id(tokens, chat=True))
+        assert is_chat_profile(
+            native_profile_id(tokens, model="glm-4-chat-vision", chat=True),
+            model="glm-4-chat-vision",
+        )
+        assert not is_chat_profile(
+            native_profile_id(tokens, model="glm-4-chat-vision"), model="glm-4-chat-vision"
+        )
+        assert not is_chat_profile(native_profile_id(tokens))
+        assert not is_chat_profile(native_profile_id(tokens, thinking=True))
