@@ -1,4 +1,4 @@
-# 交付回执：AgentOS 迁移 8 块（SDK opt.201 → opt.206）
+# 交付回执：AgentOS 迁移 8 块（SDK opt.201 → opt.209）
 
 日期：2026-10-21。对应 AgentOS《迁移交接》8 块要求与 AIPhone 手机隔离区阻断。接入说明统一在 `sdk/simple-harness-sdk/docs/orchestration-host.md`（下面用 §号引用）。
 
@@ -6,12 +6,12 @@
 
 | 项目 | 值 |
 |---|---|
-| 版本 | `0.13.0.dev20260925+opt.206` |
+| 版本 | `0.13.0.dev20260925+opt.209` |
 | SDK 源码提交 | （发版后补） |
 | Host 钉版提交 | （发版后补） |
-| wheel | `backend/vendor/simple_harness_sdk-0.13.0.dev20260925+opt.206-py3-none-any.whl` |
+| wheel | `backend/vendor/simple_harness_sdk-0.13.0.dev20260925+opt.209-py3-none-any.whl` |
 | wheel SHA-256 | （发版后补） |
-| 候选清单 | 同目录 `...opt.206.candidate-manifest.json` |
+| 候选清单 | 同目录 `...opt.209.candidate-manifest.json` |
 | Python / 依赖 | `>=3.11`；已测 3.12、3.13 |
 | 验收门 | 每版发版门 167 条通过、清单 `VALIDATED`；每块独立核验回执在 `.local-test-evidence/2026-10-21/taskgraph-gate/` |
 
@@ -28,7 +28,7 @@
 | 6 看计划、执行某步、跳过、停止 | opt.205 | `host.plan()`；`takeover(task_id, "skip"/"run_now"/"stop"/"retry_with_note", expected_version=, command_id=)`；跳过不算成功、规划器看到接管记录；重复点击幂等、过期决定被拒 | §4d |
 | 7 子 Agent、多成员、完整结果 | opt.205 | 子步骤即子 Agent，工具只缩不放，预算挂任务账；一人一个宿主目录；换工具集重开宿主在途待批不丢；超限工具结果回读修通（预览 + `session_history_read` 分页） | §4e |
 | 8 Linux x86_64 / NixOS | opt.205 | x86_64 在 Lima qemu 虚拟机实测（启动检查 + 一局任务）；NixOS 无实机，只写了 bwrap/AppArmor 要求 | §3a |
-| 顺手 | opt.204～206 | 规划器看得到应用工具与动作目录（`executor_capabilities`）；做法提案额度 = 3 + 真人答过的规划提问数；审阅员说明写清 ordering 读法 | — |
+| 真实模型局修出的 | opt.206～209 | 审阅员说明写清步骤先后的读法；驳回原因随 `action_results.decision_note` 交给模型；"连续没有新知识"计数在开着的一轮有新验收即归零；线路出错后的用量未知预留只等 300 秒；L2/L3 都一人批 | §4b/§4c |
 
 ## 3. 真实模型三局（MEETRAN Sol，仓库外只装轮子）
 
