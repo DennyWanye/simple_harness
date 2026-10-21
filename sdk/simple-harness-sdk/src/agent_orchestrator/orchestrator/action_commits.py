@@ -989,15 +989,6 @@ class ActionCommitsMixin:
                 self._validate_source_binding(request)
                 if decision == "grant":
                     self._validate_source_approval(request)
-            if (
-                decision == "grant"
-                and request.get("distinct_principals", True)
-                and principal.principal_id in (request.get("granted_by") or [])
-            ):  # review P1-1 / S7-05: refused, not silently uncounted — nothing is written
-                raise ActionCommitError(
-                    f"{principal.principal_id} already approved {request_id};"
-                    " the second approval must come from a different principal"
-                )
             inserted = self._store.insert_decision(
                 {
                     "receipt_hash": receipt,

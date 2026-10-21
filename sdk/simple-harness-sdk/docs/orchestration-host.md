@@ -384,6 +384,7 @@ host.create_mission({
 | 自动模式 | 系统确认完成要求、准备申请单、审阅，并代批（记成 `HOST_AUTO_PERMISSION`，事件执行者是主机） |
 | 总要人批 | `always_needs_approval=True` 的操作自动模式也不代批，在 `approvals()` 里等人 `decide(..., "approve")` |
 | 手动模式 | 完成要求、审批都等人 |
+| 风险等级与批准人数 | L0/L1 自动执行；L2、L3 都只要一个人批准（单人部署，用户 2026-10-21 定；原计划的 L3 双人批准不用） |
 | 注册时就拒 | 重名（含内置 `file_publish`）、没有操作、只读操作（只读走工具）、不能去重或不能查询（`delivery="at_most_once"` 的除外，见 4c 节）、`lookup_authority` 没写 |
 | `kind="event"` | 每次执行都产生新事实的操作（付款、追加）；随注册启用 |
 | `execute` / `lookup` | 普通函数在线程里跑；`async def` 在宿主事件循环上跑，里面不能阻塞。`execute` 里不能"等人"，要人批就用审批 |

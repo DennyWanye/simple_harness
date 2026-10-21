@@ -72,9 +72,13 @@ def decision_receipt_hash(
 
 
 def required_approvals(level: str) -> int:
-    """Original §22: L2 needs one approval, L3 a double approval; L0/L1 run automatically."""
+    """L2、L3 要一个人批准；L0、L1 自动执行。
 
-    return {"L0": 0, "L1": 0, "L2": 1, "L3": 2}.get(level, 2)
+    原计划 §22 的 L3 双人批准在单人部署（桌面端、AgentOS 都是一个人用）永远批不完；
+    用户 2026-10-21 定：单人部署一人批就行。不认识的等级按最严（一人批）。
+    """
+
+    return {"L0": 0, "L1": 0, "L2": 1, "L3": 1}.get(level, 1)
 
 
 __all__ = (

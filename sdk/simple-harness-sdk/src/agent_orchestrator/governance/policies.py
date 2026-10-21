@@ -57,8 +57,8 @@ class DeploymentPolicy:
     denied_path_prefixes: tuple[str, ...] = ()  # workspace paths no Agent may read or write
     # step 7 (D7-3): real actions — which connectors this deployment enables, the highest
     # level it will run at all, per-operation level overrides (only ever *raise* a level),
-    # whether an L3 double approval needs two different people (this build's deployment
-    # convention, not an original rule), and how long an approval stays valid
+    # l3_distinct_principals：历史字段，L3 现在只要一人批（用户 2026-10-21），不再读；留着是因为
+    # 政策字节是准入身份。approval_ttl_seconds：一次批准多久有效
     enabled_connectors: tuple[str, ...] = ()  # D7-3': off unless a deployment enables one
     # New Operation deployments may explicitly enable journalled event writes.
     # Historical deployments keep their original state-only permission and bytes.

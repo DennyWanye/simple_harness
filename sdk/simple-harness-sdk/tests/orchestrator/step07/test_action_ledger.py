@@ -82,7 +82,7 @@ def test_levels_follow_the_connector_declaration_and_only_rise_with_overrides(tm
     assert action_decision(plain, config, "set").required_approvals == 1
     assert action_decision(plain, config, "delete").to_json() == {
         "level": "L3",
-        "required_approvals": 2,
+        "required_approvals": 1,  # 单人部署一人批（用户 2026-10-21）
         "refused": None,
     }
     raised = DeploymentPolicy(
@@ -527,3 +527,12 @@ def test_the_ledger_never_rewrites_what_reality_did(tmp_path, outcome):
     started = time.monotonic()
     asyncio.run(case())
     assert time.monotonic() - started < 30
+
+
+def test_l2_and_l3_each_need_one_person_and_l0_l1_none() -> None:
+    """单人部署一人批就行（用户 2026-10-21）：原计划的 L3 双人批准在桌面端 / AgentOS 永远批不完。"""
+
+    from agent_orchestrator.governance.permissions import required_approvals
+
+    assert [required_approvals(level) for level in ("L0", "L1", "L2", "L3")] == [0, 0, 1, 1]
+    assert required_approvals("L9") == 1  # 不认识的等级按最严：一人批
