@@ -144,9 +144,8 @@ def test_profile_bind_provisions_owner_inbox_before_identity_broadcast() -> None
         'if msg_type == "companion_profile_bind":',
         len('if msg_type == "companion_profile_bind":'),
     )
-    bind_branch = control[
-        settle : control.index('elif msg_type == "companion_profile_unbind":', settle)
-    ]
+    # 绑定分支到下一段"就绪帧广播"（if msg_type in {...}）为止；旧的 elif unbind 分支已随旧语音通道删除
+    bind_branch = control[settle : control.index("if msg_type in {", settle)]
     # Since 00b2d0829 (事件 AK) provisioning is bounded inside
     # _settle_companion_bind_projection, which receives the inbox-route
     # provisioner; the routed session id is then folded into the response.

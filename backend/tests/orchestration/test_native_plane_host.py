@@ -100,6 +100,7 @@ async def test_native_pools_answer_runtime_plane_reads_writes_and_replays(
         status = service.status()
         assert status["state"] == "available", status["reason"]
         native = status["native_plane"]
+        # 任务池三档；快速聊天的聊天池（…-chat-v1）是单独装配的，不在原生任务池清单里
         assert native["available"] is True and {p["profile_id"] for p in native["profiles"]} == {
             "deepseek-native-256k-v1",
             "deepseek-native-512k-v1",

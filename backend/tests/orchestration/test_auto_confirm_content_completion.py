@@ -85,12 +85,12 @@ def test_content_only_requirements_are_confirmed_by_the_host_once():
     assert _run(fake) == 0  # the same requirements are never confirmed twice
 
 
-def test_an_operation_manual_mode_or_an_approved_spec_keeps_the_button():
-    for fake, _ in (
-        _service(criteria=("file:a.md", "action:file_publish.x")),
-        _service(mode="manual"),
-        _service(state="APPROVED"),
-    ):
+def test_an_operation_is_signed_too_while_manual_mode_or_an_approved_spec_keeps_the_button():
+    # 用户 2026-10-20：自动模式连带 action: 要求的任务也代签（动作另有审批，"总要人批"的等人）
+    fake, calls = _service(criteria=("file:a.md", "action:file_publish.x"))
+    assert _run(fake) == 1
+    assert [c for c in calls if c[0] == "approve_operation_completion_spec"]
+    for fake, _ in (_service(mode="manual"), _service(state="APPROVED")):
         assert _run(fake) == 0
 
 
@@ -110,7 +110,7 @@ def test_only_the_structured_prefix_marks_an_operation():
         fake, calls = _service(criteria=criteria)
         assert _run(fake) == 1
         assert [c for c in calls if c[0] == "approve_operation_completion_spec"]
-    # the structured prefix keeps the button wherever it stands in the list
+    # 结构化前缀在哪一行都认得出是操作：按"内容 + 必须完成的效果"代签（用户 2026-10-20）
     fake, calls = _service(criteria=("写 NOTES.md", "  action:file_publish.publish:NOTES.md"))
-    assert _run(fake) == 0
-    assert not [c for c in calls if c[0] == "approve_operation_completion_spec"]
+    assert _run(fake) == 1
+    assert [c for c in calls if c[0] == "approve_operation_completion_spec"]
