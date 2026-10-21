@@ -1,11 +1,6 @@
 {
-  "acceptance_evidence": {
-    "gate_run_at": "2026-10-21T10:06:09+00:00",
-    "gate_sha256": "9d4d77f4dfa9192984dd91ed5ee880c927a8a239c47f793c08e986c4f4f156d6",
-    "gate_status": "PASS",
-    "source_files_sha256": "6bc5a4eec28a5b31886bae5539292808d7d9345fa187cce695ae5504b41af998"
-  },
-  "deployment_id": "021d39c4ee94af803cfe1403cd5e5d8e37219682a818d6ca199c830878c62b82",
+  "acceptance_evidence": null,
+  "deployment_id": "80382ca5ce69093fe57e846e660b5713935a5c57f3361244be7d91385d2fc619",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -100,7 +95,7 @@
     "agent_orchestrator/deployment/assembly.py": "d60e66de40ab9b99df0236ba5217a3555271220bbe260cb795a1c48076d2e923",
     "agent_orchestrator/deployment/duties.py": "2158329afb70776551350d91eede28b4bf558a41e8aa5bf2949c19b7086f12d1",
     "agent_orchestrator/deployment/goal_world.py": "0f117e617d403d679547172b0c8b4ebc4413315692fc5e67f61cadcb5be19da1",
-    "agent_orchestrator/deployment/native_pools.py": "d1d5621c6b4406e08db438742fc195b127595041a9135fa2c65592d5129709eb",
+    "agent_orchestrator/deployment/native_pools.py": "b3e460585fa3dfb96ea74539d37ace84d69a05705f728b6e77adc0998f1699b3",
     "agent_orchestrator/deployment/root.py": "c0734536d8c2bd05f97658f1fdec9e67c7148ab52987fcb2f8845feaf7ec5dc0",
     "agent_orchestrator/domains/__init__.py": "8fc9e932a491ce64f5e687a047a71b0e191c49b9e89a45a1011dd7771ea4b711",
     "agent_orchestrator/domains/drone_sim.py": "b94f8972f92003e133e006ac36d35093cb3dc49e575d5be659b9978d87a29c0a",
@@ -848,7 +843,7 @@
     "simple_harness/workflows/personal_v1/ports.py": "1e5ec7df071b3ab19729f0768811fcc5544fd6a89421b4b34f7f5dde28ead1de",
     "simple_harness/workflows/personal_v1/selection.py": "c65c5e41abebfacc359bff6fe79f39b3cd87f0ff2739e2b398215ccd9dde033f"
   },
-  "taskgraph_acceptance": "VALIDATED",
+  "taskgraph_acceptance": "NOT_RUN",
   "upstream": {
     "business_replay": "CONSISTENT",
     "business_replay_receipt_sha256": "ba06c71d6123c2726041d11fe385cfec01cb57bef29ff9b22f6d9551cda05887",

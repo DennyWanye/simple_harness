@@ -209,11 +209,12 @@ def test_chat_pool_is_separate_from_mission_pools(tmp_path):
             assert chat["available"] is True and chat["profile_id"].endswith("-chat-v1")
             # 任务不能选聊天池；任务池列表里没有它
             assert chat["profile_id"] not in {p["profile_id"] for p in status["context_profiles"]}
+            # 原生任务池清单里也没有它（技能目录按这张清单逐池装技能、运行平面动词按它找池）；
+            # 清单里只有任务池
             rows = {p["profile_id"]: p for p in status["native_plane"]["profiles"]}
-            assert rows[chat["profile_id"]]["owner_mode"] == "STANDALONE_CHAT"
-            assert all(
-                p["owner_mode"] == "MISSION" for k, p in rows.items() if k != chat["profile_id"]
-            )
+            assert chat["profile_id"] not in rows and rows
+            assert all(p["owner_mode"] == "MISSION" for p in rows.values())
+            assert chat["profile_id"] not in host.native_profile_ids()
             # 聊天的执行库与工作区都在自己的目录下
             assert (tmp_path / "host" / "chat").is_dir()
         finally:

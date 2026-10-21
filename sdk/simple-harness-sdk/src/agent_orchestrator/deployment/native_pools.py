@@ -430,11 +430,16 @@ class NativePools:
             return []
 
     def status(self) -> dict[str, Any]:
+        # 只列任务池：快速聊天池（STANDALONE_CHAT）单独装配、任务选不到、技能目录不给它装，
+        # 它的状态在宿主 ``status()["chat"]``
+        task_pools = {
+            k: v for k, v in self.profiles.items() if v["owner_mode"] != "STANDALONE_CHAT"
+        }
         return {
             "enabled": True,
-            "available": bool(self.profiles),
+            "available": bool(task_pools),
             "profiles": [
-                {**v, "background": self.background_health(k)} for k, v in self.profiles.items()
+                {**v, "background": self.background_health(k)} for k, v in task_pools.items()
             ],
             "embedding": "bge-m3-int8" if self.embedding is not None else "lexical-only",
             "embedding_reason": self.embedding_reason,
