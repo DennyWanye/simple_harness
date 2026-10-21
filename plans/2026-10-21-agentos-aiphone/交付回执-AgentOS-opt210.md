@@ -7,7 +7,7 @@
 | 项目 | 值 |
 |---|---|
 | 版本 | `0.13.0.dev20260925+opt.210` |
-| SDK 源码提交 | `d2d4c5558bcf8adcada2166b4f603307427c0dd1` |
+| SDK 源码提交 | `edac2196a9b15ed2ffb2d0de4370493ac557c807` |
 | Host 钉版提交 | `d2d4c5558bcf8adcada2166b4f603307427c0dd1` |
 | wheel | `backend/vendor/simple_harness_sdk-0.13.0.dev20260925+opt.210-py3-none-any.whl` |
 | wheel SHA-256 | `f58ddce9e6f60c8dcc3e94913c79a8467a204514c47fb9bf934de481ca6e2b5b` |
