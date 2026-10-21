@@ -18,3 +18,13 @@ def test_the_instructions_state_how_a_sub_goal_step_is_planned_and_gated() -> No
         assert fact in section, fact
     # still the reviewer's judgement: nothing here tells it what verdict to give a sub-goal
     assert "由你判断" in section
+
+
+def test_the_reviewer_is_told_how_to_read_ordering_and_output_bindings() -> None:
+    """2026-10-21 Sol 真实模型局：做法原文键按字母排序，after 排在 before 前面，审阅员把先后读反了，
+    四版做法都因"顺序反了"被打回。说明里要写清 before 先做、按字段名读。"""
+
+    paragraph = REVIEW_INSTRUCTIONS[REVIEW_INSTRUCTIONS.index("METHOD_PLAN") :]
+    assert '{"before": 步骤甲, "after": 步骤乙}' in paragraph and "甲先做" in paragraph
+    assert "按字母" in paragraph and "不要按出现顺序读" in paragraph
+    assert '"op":"output"' in paragraph

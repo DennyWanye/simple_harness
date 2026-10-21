@@ -42,7 +42,7 @@ KNOWLEDGE_TOOLS = ("knowledge_list", "knowledge_read")
 
 def test_the_reviewer_tool_set_is_the_evidence_tools_plus_the_blackboard_readers() -> None:
     assert ASSURANCE_REVIEWER_TOOLS == (*ASSURANCE_EVIDENCE_TOOLS, *KNOWLEDGE_TOOLS)
-    assert REVIEW_INSTRUCTIONS_VERSION == "assurance-review-instructions-v3"
+    assert REVIEW_INSTRUCTIONS_VERSION == "assurance-review-instructions-v4"
     for name in KNOWLEDGE_TOOLS:
         assert name in REVIEW_INSTRUCTIONS, name
     # 查到的知识不是证据：不能写进 evidence_ids；审查包里的相关条目仍然在提示词里
