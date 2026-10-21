@@ -1,4 +1,4 @@
-# 交付回执：AgentOS 迁移 8 块（SDK opt.201 → opt.210）
+# 交付回执：AgentOS 迁移 8 块（SDK opt.201 → opt.213）
 
 日期：2026-10-21。对应 AgentOS《迁移交接》8 块要求与 AIPhone 手机隔离区阻断。接入说明统一在 `sdk/simple-harness-sdk/docs/orchestration-host.md`（下面用 §号引用）。
 
@@ -6,12 +6,12 @@
 
 | 项目 | 值 |
 |---|---|
-| 版本 | `0.13.0.dev20260925+opt.210` |
-| SDK 源码提交 | `edac2196a9b15ed2ffb2d0de4370493ac557c807` |
-| Host 钉版提交 | `d2d4c5558bcf8adcada2166b4f603307427c0dd1` |
-| wheel | `backend/vendor/simple_harness_sdk-0.13.0.dev20260925+opt.210-py3-none-any.whl` |
-| wheel SHA-256 | `f58ddce9e6f60c8dcc3e94913c79a8467a204514c47fb9bf934de481ca6e2b5b` |
-| 候选清单 | 同目录 `...opt.210.candidate-manifest.json`，SHA-256 `b0c4184bf892143d255e6f28c8a2cadad97c026f13a9502f248c1f29a7cf3eb3` |
+| 版本 | `0.13.0.dev20260925+opt.213` |
+| SDK 源码提交 | `ce0e91ef5d8b77a65f2641f8630999e91f7d463b` |
+| Host 钉版提交 | `5efc61c8fa1397f4b34f5cb2ea2228cbe2de532c` |
+| wheel | `backend/vendor/simple_harness_sdk-0.13.0.dev20260925+opt.213-py3-none-any.whl` |
+| wheel SHA-256 | `4718a39a94a8a596ca1f44b3f2edfe2350ed1e796fff74a0b34f1613ee5a1f6d` |
+| 候选清单 | 同目录 `...opt.213.candidate-manifest.json`，SHA-256 `1ba300a36c7d4aa67e6b6ebdf588c8da0031ed08053b3cb82cfdd87ea1c26ca3` |
 | Python / 依赖 | `>=3.11`；已测 3.12、3.13 |
 | 验收门 | 每版发版门 167 条通过、清单 `VALIDATED`；每块独立核验回执在 `.local-test-evidence/2026-10-21/taskgraph-gate/` |
 
@@ -45,6 +45,13 @@
 - 做法提案额度按任务里任何真人回答给每个目标各加一次（可改为同主题，留项）。
 - AIPhone 手机实测、三个手机工具接入、语音并行归 AIPhone。
 
-## 5. 全量回归
+## 5. 全量回归（2026-10-21，唯一一次授权）
 
-（跑完后补：时间、命令、结果）
+| 套 | 用例 | 结果 |
+|---|---|---|
+| 前端 | 724 | 全过 |
+| SDK（逐文件） | 7737 | 14 失败 + 1 文件看门狗误判；除基线已红的 1 条外，全是测试过期 / 本次新功能的钉死值变化，已更新；真正改代码的一处是"聊天池不该进任务池清单 / 技能目录 / 验收读方"（opt.211～213）；卡住文件单独重跑 23 项全过 |
+| Host | 5140 | 7 失败：1 条旧真实线路测试引用已删函数、1 条源码结构锚点过期、2 条按用户 10-20 自动代签决定反过来、2 条工具边界加回读工具、1 条原生池清单；全部处理后 7 条所在 5 个文件 22 项全过（opt.213） |
+
+归类与证据：`plans/2026-10-21-agentos-aiphone/全量回归-记录.md`、`.local-test-evidence/2026-10-21/full-regression*/`。
+回归后补发 opt.211～213（任务池清单 / 原生平面状态 / 技能目录与验收读方不含聊天池；依赖锁哈希），每版独立核验 PASS。
