@@ -24,14 +24,14 @@ from deskpet.sdk_adapters.runtime_paths import (
     verify_runtime_identity,
 )
 
-SDK_VERSION = "0.13.0.dev20260925+opt.206"
-SDK_WHEEL_FILENAME = "simple_harness_sdk-0.13.0.dev20260925+opt.206-py3-none-any.whl"
-SDK_WHEEL_SHA256 = "4a6edb9cfa0d50e9ffa6436ddd81e15ae2143dddbd8e5c12fc71d9b8c3b14751"
+SDK_VERSION = "0.13.0.dev20260925+opt.207"
+SDK_WHEEL_FILENAME = "simple_harness_sdk-0.13.0.dev20260925+opt.207-py3-none-any.whl"
+SDK_WHEEL_SHA256 = "b875480bc13b2e229cb569636e33289245e536dc64f8906ec59dd9eba45eb7e6"
 SDK_CANDIDATE_MANIFEST_FILENAME = (
-    "simple_harness_sdk-0.13.0.dev20260925+opt.206.candidate-manifest.json"
+    "simple_harness_sdk-0.13.0.dev20260925+opt.207.candidate-manifest.json"
 )
-SDK_CANDIDATE_MANIFEST_SHA256 = "193712d08d477a09c07cf8b025a91d836d8ba567a8ceddd6d84ae43ba42fe071"
-SDK_SOURCE_COMMIT = "43656722f713ebd17ba35bcb18ac8b6606505547"
+SDK_CANDIDATE_MANIFEST_SHA256 = "7eb86376ae8803d86f66d3f6c4719d3664f32f6dde91b1fe3586f144c6c66906"
+SDK_SOURCE_COMMIT = "78b023270a139a49a7a24acc233d4bdc2c65afb9"
 SDK_CI_RUN_ID = None
 SDK_CI_ARTIFACT_ID = None
 
