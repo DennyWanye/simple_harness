@@ -995,7 +995,9 @@ def test_each_product_writer_class_moves_the_barrier_in_its_own_transaction(tmp_
     async def case():
         async with publishing(tmp_path, confirm=False, key="findings-f08-writers") as case:
             world, mission_id, store = case.world, case.mission_id, case.store
-            await world.drain()  # 自动模式不代签带 action: 的任务：停在确认页
+            # 测"人确认"这一类写入点：自动模式（用户 2026-10-20）会代签带动作的任务，这里关掉代签
+            world.deployment.duties.auto_confirm_content_completion = lambda **_: 0
+            await world.drain()  # 停在确认页，等人
             assert case.status() == "CREATED"
 
             def epochs():

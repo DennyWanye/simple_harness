@@ -201,6 +201,9 @@ async def _publish_until_outcome_question(tmp_path, key: str):  # type: ignore[n
             "idempotency_key": key,
         }
     )["mission_id"]
+    # 人在确认页确认的路径；自动模式（用户 2026-10-20）会代签带动作的任务，这里关掉代签
+    world.deployment.duties.auto_confirm_content_completion = lambda **_: 0
+    world.deployment.duties.auto_approve_actions = lambda **_: 0  # 动作也由人批
     await world.drain()
     _confirm_completion(world, mission_id)
     approvals: list[dict[str, Any]] = []

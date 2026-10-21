@@ -74,6 +74,13 @@ def is_native_profile(profile_id: str | None) -> bool:
     return isinstance(profile_id, str) and profile_id.startswith(NATIVE_PROFILE_PREFIX)
 
 
+def is_chat_profile(profile_id: str | None) -> bool:
+    """快速聊天池的编号（``native_profile_id(..., chat=True)``）：不是任务池，技能目录、运行平面
+    动词、任务默认池都不认它。"""
+
+    return is_native_profile(profile_id) and "-chat-v" in str(profile_id)
+
+
 #: NEXT-TG-1.0 §11: the one pool whose catalogue is the deployment's Skill authority; every
 #: other native pool mirrors it.  Fixed (the first native pool), so it never moves between
 #: restarts.

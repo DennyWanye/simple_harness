@@ -283,6 +283,8 @@ async def _publishing(tmp_path, planner):
     scripted = _held(planner)
     context = assured_loop(tmp_path, scripted, success_criteria=PUBLISH_STATEMENTS, publishing=True)
     world = await context.__aenter__()
+    # 这里测的是人在确认页确认的路径；自动模式（用户 2026-10-20）会代签带动作的任务，关掉代签
+    world.product.deployment.duties.auto_confirm_content_completion = lambda **_: 0
     await run_until(world, lambda w: False, cycles=3)
     confirm_completion(world)  # the person confirms a Mission with an operation
     return context, world

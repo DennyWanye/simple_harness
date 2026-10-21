@@ -38,6 +38,7 @@ from ..deployment.native_pools import (
     CONTEXT_INPUT_LIMITS,
     NATIVE_OUTPUT_TOKENS,
     NativePools,
+    is_chat_profile,
     is_native_profile,
     native_profile_id,
     pool_options,
@@ -1082,7 +1083,13 @@ class OrchestrationHost:
         return None
 
     def native_profile_ids(self) -> list[str]:
-        return [key for key in self.runtime_options.get("profiles", {}) if is_native_profile(key)]
+        """原生任务池的编号；快速聊天池单独装配、任务选不到，不在其中（它在 ``status()["chat"]``）。"""
+
+        return [
+            key
+            for key in self.runtime_options.get("profiles", {})
+            if is_native_profile(key) and not is_chat_profile(key)
+        ]
 
     def native_pool(self, profile_id: str | None) -> Any:
         """某个运行档的原生执行池（技能目录、运行平面动词走它）。"""

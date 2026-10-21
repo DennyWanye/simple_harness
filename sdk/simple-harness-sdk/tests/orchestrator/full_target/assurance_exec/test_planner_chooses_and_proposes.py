@@ -225,7 +225,8 @@ def test_a_file_to_publish_must_be_written_by_exactly_one_step(tmp_path):
         async with assured_loop(
             tmp_path, scripted, success_criteria=criteria, publishing=True
         ) as world:
-            # auto mode never signs a Mission with an operation: the person confirms it
+            # 人在确认页确认的路径（自动模式会代签带动作的任务，用户 2026-10-20；这里关掉代签）
+            world.product.deployment.duties.auto_confirm_content_completion = lambda **_: 0
             await run_until(world, lambda w: False, cycles=3)
             assert str(world.store.get_mission(world.mission.id).status.value) == "CREATED"
             confirm_completion(world)
