@@ -66,6 +66,7 @@ TOP_LEVEL = {
     "sharing_candidates",
     "successor_types",
     "evidence_predicates",
+    "executor_capabilities",  # 2026-10-21：执行者能用的工具与可提议的动作目录（与执行者看到的同一张）
     "truncated",
     "omitted_counts",
 }

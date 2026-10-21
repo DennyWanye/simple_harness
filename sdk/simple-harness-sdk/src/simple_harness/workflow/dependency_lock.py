@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import re
 
-SDK_DEPENDENCY_LOCK_HASH = "2793f532ac3e6b77b55d3abc41ca92aeb13bdca56b2a49b2af04b9bd81944ae2"
+SDK_DEPENDENCY_LOCK_HASH = "89cf7198a98887e61fd3fc02e4310aa5844225ddbcef48d6a22f229f1aa8f921"
 
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 

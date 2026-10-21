@@ -626,7 +626,8 @@ def test_candidate_docs_do_not_overstate_product_integration() -> None:
     contracts = (root / "docs/api/contracts.md").read_text(encoding="utf-8")
     normalized_status = " ".join(status.split())
 
-    assert "`simple_harness` has completed exact-wheel product" in readme
+    # 2026-10-19 起 README 只写两层运行时各做什么、怎么装（没有发到 PyPI），不写产品集成完成度
+    assert "没有发到 PyPI" in readme and "| `simple_harness` |" in readme
     assert (
         "| `simple_harness` | 0.6.2 candidate vendored locally; SDK release not authorized |"
         in status

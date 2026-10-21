@@ -67,8 +67,9 @@ def test_knowledge_is_the_twelfth_view_and_the_prompt_is_the_new_pair() -> None:
     # 改了包或提示词就换版本号：包 17（operators/类型行带 input_port_cardinality）配提示词 v30（2026-10-09 第 4 条：
     # 集合端口可接多个上游的写法），旧对不再合法
     assert PLANNING_DECISION_PACKAGE_VERSION == 17
-    assert PLANNER_HIERARCHICAL.prompt_version == "planner-hierarchical-v30"
-    assert hierarchical_planner_pairing_is_valid("planner-hierarchical-v30", 17)
+    # 2026-10-21：提示词 v32（执行者能力表 executor_capabilities、人接管记录 human_takeovers 两段说明）
+    assert PLANNER_HIERARCHICAL.prompt_version == "planner-hierarchical-v32"
+    assert hierarchical_planner_pairing_is_valid("planner-hierarchical-v32", 17)
     assert not hierarchical_planner_pairing_is_valid("planner-hierarchical-v29", 16)
     prompt = PLANNER_HIERARCHICAL.instructions
     assert (

@@ -1,11 +1,6 @@
 {
-  "acceptance_evidence": {
-    "gate_run_at": "2026-10-21T05:47:55+00:00",
-    "gate_sha256": "2f43c5e365810a8239c5f6d665079437c3593bd3e0848cb125892573e3e028b8",
-    "gate_status": "PASS",
-    "source_files_sha256": "568faad3d983430fa406bc76d58587c920411aebaabe2177c03b3a679551963e"
-  },
-  "deployment_id": "1744053bfc8dc0c3697e963d9a1bc25f38bf87f75651a375a3026cd69204e501",
+  "acceptance_evidence": null,
+  "deployment_id": "39ddf662796e028952bc20c2718f30662625d7299fe1b9bb07c467c86758f9c0",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -820,7 +815,7 @@
     "simple_harness/workflow/contracts.py": "9c2cebae8352439046256288bd13ad5e013937a25415481b4172ca1513050f14",
     "simple_harness/workflow/control.py": "640e00247db14e15a956c54bdea08f9377294dc4fc5787fa3a3ed783b25a7edc",
     "simple_harness/workflow/definition.py": "235c355968d60e017ac884b3e2deb51418a24b920cae765b075320763abe87f9",
-    "simple_harness/workflow/dependency_lock.py": "b190e8ea674c9a33f03249ee69ce623a9d352de8f9e1b081bcdcf494bf41bdce",
+    "simple_harness/workflow/dependency_lock.py": "9cba3d1fbecc95c74bdc17cba22e99542f226a058356516677e4510d4f5f7045",
     "simple_harness/workflow/errors.py": "1b219af4f56c5df034093d9110841e33aad70b80e1be5576a081f18811a2629f",
     "simple_harness/workflow/execution_ports.py": "6e8443d61f9b1d72501b653c9789c07238c65eaa60680539486b0b791b744bbf",
     "simple_harness/workflow/lease.py": "c206de6b82783bc32644f356df3c9423d5c009b2c0c35fdf9bb0817d9ac5a7ec",
@@ -848,7 +843,7 @@
     "simple_harness/workflows/personal_v1/ports.py": "1e5ec7df071b3ab19729f0768811fcc5544fd6a89421b4b34f7f5dde28ead1de",
     "simple_harness/workflows/personal_v1/selection.py": "c65c5e41abebfacc359bff6fe79f39b3cd87f0ff2739e2b398215ccd9dde033f"
   },
-  "taskgraph_acceptance": "VALIDATED",
+  "taskgraph_acceptance": "NOT_RUN",
   "upstream": {
     "business_replay": "CONSISTENT",
     "business_replay_receipt_sha256": "ba06c71d6123c2726041d11fe385cfec01cb57bef29ff9b22f6d9551cda05887",

@@ -325,6 +325,12 @@ WHITELIST: dict[Site, str] = {
         "stop_task",
     ): "人接管停止一步（HumanOverride 先落库再 stop_task）",
     (
+        "task",
+        "orchestrator/human_commits.py",
+        "HumanCommitsMixin._skip_task",
+        "CANCELLED",
+    ): "人跳过一步（2026-10-21 第 6 块）：步骤记 CANCELLED、原因 skipped_by_human，开着的尝试关闭；不算成功",
+    (
         "entry",
         "orchestrator/orchestrator_domains/attempt_judgment.py",
         "AttemptJudgmentMixin._judge",
