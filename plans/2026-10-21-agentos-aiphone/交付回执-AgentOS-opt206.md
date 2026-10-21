@@ -1,0 +1,48 @@
+# 交付回执：AgentOS 迁移 8 块（SDK opt.201 → opt.206）
+
+日期：2026-10-21。对应 AgentOS《迁移交接》8 块要求与 AIPhone 手机隔离区阻断。接入说明统一在 `sdk/simple-harness-sdk/docs/orchestration-host.md`（下面用 §号引用）。
+
+## 1. 最终候选身份
+
+| 项目 | 值 |
+|---|---|
+| 版本 | `0.13.0.dev20260925+opt.206` |
+| SDK 源码提交 | （发版后补） |
+| Host 钉版提交 | （发版后补） |
+| wheel | `backend/vendor/simple_harness_sdk-0.13.0.dev20260925+opt.206-py3-none-any.whl` |
+| wheel SHA-256 | （发版后补） |
+| 候选清单 | 同目录 `...opt.206.candidate-manifest.json` |
+| Python / 依赖 | `>=3.11`；已测 3.12、3.13 |
+| 验收门 | 每版发版门 167 条通过、清单 `VALIDATED`；每块独立核验回执在 `.local-test-evidence/2026-10-21/taskgraph-gate/` |
+
+## 2. 八块各做了什么、怎么接
+
+| 块 | 版本 | 做了什么 | 接入 |
+|---|---|---|---|
+| 0 手机隔离区 | opt.201 | 两层 bwrap（先用户命名空间、再其余），no_new_privs，bwrap≥0.8，启动检查 9 项，无 pidfd 的收尾 | 《交付回执-AIPhone-opt201.md》；手机实测归 AIPhone |
+| 1 中途决定动作 | opt.202 | 执行步骤的模型在结果块里写 `action_request` 提议动作；连接器 `prepare` 整理参数→冻结→批准（名单内自动代批、名单外一律人批）→执行→结果交回同一步续做 | §4c；`allowed_actions`、`host.step_actions()`、`approvals()`/`decide()` |
+| 2 动作兜底 | opt.202 | 动作编号贯穿提议/审批/执行/回执/对账；重复提交不重复执行；`delivery="at_most_once"` 只交接一次、结果不明等人 `resolve_unknown`；上限跨尝试跨重启累计 | §4b/§4c；`HostSettings.max_step_actions_per_mission`、`connector_timeout_seconds` |
+| 3 接 Luna/Sol | opt.203 | 通用 OpenAI 协议模型；非 DeepSeek 按字节上界计数（可多算不少算）；`fallback_model` 首选失败换备用一次、同运行黏住；台账 `model-calls.jsonl` | §2a；`ModelConfig(base_url, model, api_key, thinking, fallback_model)`。**Luna 账号 404，NOT_RUN** |
+| 4 快速聊天 | opt.204 | `host.chat()` 一句一回合，不进编排；单独聊天池；一个会话一个 Agent；只读工具；月账预留后按真实用量结清；取消、同键幂等、台账 | §2b；`chat` / `chat_cancel` / `chat_history`、`HostSettings.chat_*` |
+| 5 逐字输出 | opt.204 | 提供方正文片段经 `OutputStream` 按运行号分发；事件 v1（piece/end/error，generation，seq）；片段不落盘，终稿以回执与产物为准 | §2c；`chat(on_delta=)`、`host.output_stream.subscribe()` |
+| 6 看计划、执行某步、跳过、停止 | opt.205 | `host.plan()`；`takeover(task_id, "skip"/"run_now"/"stop"/"retry_with_note", expected_version=, command_id=)`；跳过不算成功、规划器看到接管记录；重复点击幂等、过期决定被拒 | §4d |
+| 7 子 Agent、多成员、完整结果 | opt.205 | 子步骤即子 Agent，工具只缩不放，预算挂任务账；一人一个宿主目录；换工具集重开宿主在途待批不丢；超限工具结果回读修通（预览 + `session_history_read` 分页） | §4e |
+| 8 Linux x86_64 / NixOS | opt.205 | x86_64 在 Lima qemu 虚拟机实测（启动检查 + 一局任务）；NixOS 无实机，只写了 bwrap/AppArmor 要求 | §3a |
+| 顺手 | opt.204～206 | 规划器看得到应用工具与动作目录（`executor_capabilities`）；做法提案额度 = 3 + 真人答过的规划提问数；审阅员说明写清 ordering 读法 | — |
+
+## 3. 真实模型三局（MEETRAN Sol，仓库外只装轮子）
+
+见 `plans/2026-10-21-agentos-aiphone/真实模型三局-记录.md`（结果表随最后一次运行更新）。脚本与说明在 `~/sh-ext-accept5/README.md`（不进仓库，可按需交付副本）。
+
+## 4. 已知限制与留项
+
+- Luna（gpt-5.6-luna）账号 404，未验。
+- NixOS 没有实机。
+- `run_now` 在"等待满 300 秒"的步骤前不一定排最前（留项）。
+- 宿主以外的部署入口没放行 `session_history_read`（留项）。
+- 做法提案额度按任务里任何真人回答给每个目标各加一次（可改为同主题，留项）。
+- AIPhone 手机实测、三个手机工具接入、语音并行归 AIPhone。
+
+## 5. 全量回归
+
+（跑完后补：时间、命令、结果）
