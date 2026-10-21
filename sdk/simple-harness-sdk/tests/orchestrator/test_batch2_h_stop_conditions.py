@@ -134,6 +134,10 @@ def test_the_streak_counts_closed_planning_rounds_with_no_new_knowledge_or_accep
     assert sc.knowledge_streak([commit]) == 0
     assert sc.knowledge_streak([]) == 0
     assert sc.knowledge_streak([commit, _event("KnowledgeCommitted"), commit]) == 0
+    # 还没关上的这一轮里已有新验收：连续计数到此为止（真实模型局：结果刚被人复核通过却按
+    # "没有新知识"停掉）
+    assert sc.knowledge_streak([commit, commit, commit, _event("AcceptanceCommitted")]) == 0
+    assert sc.knowledge_streak([commit, commit, commit]) == 2
 
 
 def test_the_streak_ignores_the_systems_own_infrastructure_retries() -> None:

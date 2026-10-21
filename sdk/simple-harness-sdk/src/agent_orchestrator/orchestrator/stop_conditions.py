@@ -95,6 +95,10 @@ def knowledge_streak(events: Iterable[Any]) -> int:
 
     系统自己做的原地重试决定（``decision_origin == SYSTEM_RETRY_ORIGIN``）不算一轮：既不往上数，
     也不清零——执行者连续结果不明只走"非模型原因失败到上限"那条路。
+
+    还没关上的那一轮里已经来了新知识或新验收，连续计数就到此为止（返回 0）：真实模型局里一份
+    结果刚被人复核通过（AcceptanceCommitted），同一轮还没关上，旧的连续数仍是 14，任务被按
+    "没有新知识"停掉了。
     """
     streak = 0
     open_round = False
@@ -111,7 +115,7 @@ def knowledge_streak(events: Iterable[Any]) -> int:
             open_round, fresh = True, 0
         elif kind in NEW_KNOWLEDGE_EVENTS:
             fresh += 1
-    return streak
+    return 0 if (open_round and fresh) else streak
 
 
 def result_content_hash(artifact_hashes: Sequence[str], summary: str) -> str:

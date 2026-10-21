@@ -254,14 +254,18 @@ def _settle_expired_ended_holds(orch) -> bool:
 
     2026-10-10（docopt 局）：一个还在跑的任务里，某次尝试的回合早已结束（意图 SETTLED/FAILED），
     但它有一笔用量未知（服务出错、调用没回执），这笔预留同样永远不会有真实用量来结清；它卡住的
-    不只是账，还有执行图收敛（上游要取消/换做法时等它安静）。同一条规则：三个整轮之后按上限计，
-    事件写明原因是"尝试已结束、用量未知"。仍在跑的尝试（意图 SUBMITTED）不碰；用量都知道、只是
-    还没导入的留给导入路径。
+    不只是账，还有执行图收敛（上游要取消/换做法时等它安静）。事件写明原因是"尝试已结束、用量
+    未知"。仍在跑的尝试（意图 SUBMITTED）不碰；用量都知道、只是还没导入的留给导入路径。
+
+    2026-10-21（Sol 真实模型局）：这种"尝试已结束、用量未知"等三个整轮（900 秒以上）才按上限计，
+    期间整个任务的执行图收敛都停着——一局里线路出错两次，就白等了 2000 秒。任务还在跑、有人在等，
+    这一种只等一个整轮（``ENDED_MISSION_RECHECK_SECONDS``）就按上限计；任务已结束、没人等的仍等三轮。
     """
 
     store = orch.store
     ended = sorted(str(status) for status in TERMINAL_MISSION)
     cutoff = store.now - ENDED_MISSION_RECHECK_SECONDS * 3
+    attempt_cutoff = store.now - ENDED_MISSION_RECHECK_SECONDS
     marks = ",".join("?" * len(ended))
     rows = store.connection.execute(
         "SELECT i.subject_id, i.mission_id, 'mission_ended_usage_unknown' AS reason FROM dispatch_intents i"
@@ -275,7 +279,7 @@ def _settle_expired_ended_holds(orch) -> bool:
         " JOIN missions m ON m.mission_id=i.mission_id"
         " WHERE r.state='RESERVED' AND i.state IN ('SETTLED','FAILED') AND i.kind='attempt'"
         f" AND m.status NOT IN ({marks}) AND i.updated_at <= ?",
-        (*ended, cutoff, *ended, cutoff),
+        (*ended, cutoff, *ended, attempt_cutoff),
     ).fetchall()
     progressed = False
     for subject_id, mission_id, reason in rows:
