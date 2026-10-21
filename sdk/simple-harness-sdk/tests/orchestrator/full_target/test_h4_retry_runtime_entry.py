@@ -157,7 +157,10 @@ def test_an_ended_attempts_unknown_charge_is_counted_at_the_upper_bound_after_th
     三个整轮之后按上限计（与"任务结束后"同一条规则），事件原因写"尝试已结束、用量未知"；
     还在跑的第二次尝试不碰。
 
-    **Mutation**: drop the ``attempt_ended_usage_unknown`` half of the query → red."""
+    2026-10-21：不只执行者的回合，审阅员 / 规划器的回合同样算（Sol 局审阅员线路出错后预留卡住收敛 75 分钟），
+    原因名改 ``turn_ended_usage_unknown``。
+
+    **Mutation**: drop the ``turn_ended_usage_unknown`` half of the query → red."""
     from agent_orchestrator.orchestrator import accounting_recovery as accounting
 
     async def case():
@@ -184,7 +187,7 @@ def test_an_ended_attempts_unknown_charge_is_counted_at_the_upper_bound_after_th
                 e.payload for e in events(loop, mission.id, "ReservationCountedAtUpperBound")
             ]
             assert [(c["subject_id"], c["reason"]) for c in counted] == [
-                (first.id, "attempt_ended_usage_unknown")
+                (first.id, "turn_ended_usage_unknown")
             ]
             assert loop.commit.ledger.reservation(second.id)["state"] != "SETTLED"  # 在跑的那次不碰
 

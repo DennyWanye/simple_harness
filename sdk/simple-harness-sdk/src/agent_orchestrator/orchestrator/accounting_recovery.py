@@ -257,9 +257,11 @@ def _settle_expired_ended_holds(orch) -> bool:
     不只是账，还有执行图收敛（上游要取消/换做法时等它安静）。事件写明原因是"尝试已结束、用量
     未知"。仍在跑的尝试（意图 SUBMITTED）不碰；用量都知道、只是还没导入的留给导入路径。
 
-    2026-10-21（Sol 真实模型局）：这种"尝试已结束、用量未知"等三个整轮（900 秒以上）才按上限计，
+    2026-10-21（Sol 真实模型局）：这种"回合已结束、用量未知"等三个整轮（900 秒以上）才按上限计，
     期间整个任务的执行图收敛都停着——一局里线路出错两次，就白等了 2000 秒。任务还在跑、有人在等，
     这一种只等一个整轮（``ENDED_MISSION_RECHECK_SECONDS``）就按上限计；任务已结束、没人等的仍等三轮。
+    同一局还发现：原来只处理执行者的回合（kind=attempt），审阅员（critic）、规划器（plan）的回合
+    线路出错后预留同样永远结不了，执行图收敛等它等了 75 分钟。现在不分回合种类。
     """
 
     store = orch.store
@@ -274,10 +276,10 @@ def _settle_expired_ended_holds(orch) -> bool:
         " WHERE r.state='RESERVED' AND i.state IN ('SETTLED','FAILED')"
         f" AND m.status IN ({marks}) AND m.updated_at <= ?"
         " UNION ALL"
-        " SELECT i.subject_id, i.mission_id, 'attempt_ended_usage_unknown' AS reason FROM dispatch_intents i"
+        " SELECT i.subject_id, i.mission_id, 'turn_ended_usage_unknown' AS reason FROM dispatch_intents i"
         " JOIN budget_reservations r ON r.subject_id=i.subject_id"
         " JOIN missions m ON m.mission_id=i.mission_id"
-        " WHERE r.state='RESERVED' AND i.state IN ('SETTLED','FAILED') AND i.kind='attempt'"
+        " WHERE r.state='RESERVED' AND i.state IN ('SETTLED','FAILED')"
         f" AND m.status NOT IN ({marks}) AND i.updated_at <= ?",
         (*ended, cutoff, *ended, attempt_cutoff),
     ).fetchall()
@@ -287,7 +289,7 @@ def _settle_expired_ended_holds(orch) -> bool:
             reservation = orch.commit.ledger.reservation(subject_id)
             if reservation is None or reservation["state"] == "SETTLED":
                 continue
-            if reason == "attempt_ended_usage_unknown" and not orch.commit.ledger.has_unknown_usage(
+            if reason == "turn_ended_usage_unknown" and not orch.commit.ledger.has_unknown_usage(
                 subject_id
             ):
                 continue
