@@ -399,6 +399,8 @@ def test_always_needs_approval_rejected_then_the_step_continues_with_the_fact(tm
             # 下一次尝试的工作包里带着结构化结果与动作目录
             last = seen[-1]
             assert last["action_results"][0]["state"] == "REJECTED"
+            # 驳回原因随结果交给下一次尝试（模型才知道该怎么改）
+            assert last["action_results"][0]["decision_note"] == "不分享"
             assert any(a["operation"] == "share" for a in last["available_actions"]["actions"])
         finally:
             await host.close()

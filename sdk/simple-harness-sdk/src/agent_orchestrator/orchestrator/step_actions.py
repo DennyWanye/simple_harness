@@ -273,6 +273,8 @@ def action_result_view(action: Mapping[str, Any]) -> dict[str, Any]:
         "service_ref": None if receipt is None else receipt.get("service_ref"),
         "error": action.get("error"),
         "refused": action.get("refused"),
+        # 人驳回时写的原因（没有就是 None）：是数据，不是新的指令或授权
+        "decision_note": action.get("decision_note"),
         "data_not_instruction": True,
     }
     if action.get("reconcile_note"):

@@ -270,7 +270,7 @@ host = await OrchestrationHost.open(
 | 等人的事 | `pending_planning_authorizations()`、`approvals(mission_id)`、快照里的 `planning_questions` |
 | 授权本轮规划 | `planning_authorization({"operation": "issue", "request_id": ...})`（自动模式下 SDK 代签） |
 | 回答规划提问 | `answer_planning_question({"decision_id", "answer", "expected_version", "nonce"})` |
-| 人工批准 | `decide(request_id, "approve"/"reject", reason=..., note=...)` |
+| 人工批准 | `decide(request_id, 决定, ...)`，决定按卡的 `kind`：动作 / 改源 / 发布卡用 `"approve"` 或 `"reject"`（驳回必须带 `reason`，原因会随 `action_results.decision_note` 交给提议的那一步）；`kind="review"`（审阅员判不了、等人复核结果）用 `"review_pass"` / `"review_fail"`（`note=`）；结果不明等人裁定的用 `"arbitrate"`（`ruling=`、`basis=`）。用错会被拒并说明是哪种卡 |
 | 确认完成要求 | `approve_operation_completion_spec(body)`（自动模式下由 SDK 代签，每条 `action:` 配一个效果） |
 | 看操作走到哪 | `operation_intent_status(intent_id)`；快照里 `operation_workspace.intents` |
 | 中途提议的动作 | `step_actions(mission_id)`（4c 节） |

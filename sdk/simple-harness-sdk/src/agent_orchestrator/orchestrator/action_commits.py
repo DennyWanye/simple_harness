@@ -1028,7 +1028,9 @@ class ActionCommitsMixin:
                 )
                 self._store.put_approval(request)
                 if request["kind"] == "action":
-                    self._set_action_state(action_key, "REJECTED")
+                    # 驳回原因要让提议的那一步看到（真实模型局：模型拿到 REJECTED 却不知为何，
+                    # 原样再提一遍）
+                    self._set_action_state(action_key, "REJECTED", decision_note=reason)
                 self._emit(
                     "ApprovalRejected",
                     request["mission_id"],
