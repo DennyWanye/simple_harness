@@ -21,7 +21,7 @@ import time
 from pathlib import Path
 
 import pytest
-from deskpet.orchestration.provider import ProviderSnapshot, build_provider, requested_model
+from deskpet.orchestration.provider import ProviderSnapshot, requested_model
 from deskpet.orchestration.service import OrchestrationService, OrchestrationSettings
 
 pytestmark = pytest.mark.real_provider
@@ -48,14 +48,12 @@ def _snapshot() -> ProviderSnapshot:
 @pytest.mark.asyncio
 async def test_real_model_mission_reaches_a_terminal_state(orchestration_root, principal):
     snapshot = _snapshot()
-    provider, client = build_provider(snapshot)
+    # 2026-10-19 起后端走 SDK 宿主入口：只传线路快照，宿主自己按它建模型配置与提供方
     service = OrchestrationService(
         orchestration_root,
         OrchestrationSettings(),
         principal=principal,
-        provider=provider,
         provider_snapshot=snapshot,
-        http_client=client,
     )
     await service.start()
     started = time.monotonic()
