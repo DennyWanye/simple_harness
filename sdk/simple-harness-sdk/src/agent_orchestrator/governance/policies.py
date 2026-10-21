@@ -33,6 +33,8 @@ from .permissions import required_approvals
 #: (catalogue discovery, instruction load, execution).  They are not gateway tools; a
 #: deployment whose pools serve them declares them in ``skill_tools``.
 SKILL_TOOL_NAMES: tuple[str, ...] = ("skill_discover", "skill_load", "skill_execute")
+#: 原生运行平面自己提供的只读工具（不走工作区网关）：执行者用它读回超限工具结果的全文。
+NATIVE_HISTORY_TOOLS: tuple[str, ...] = ("session_history_read",)
 
 POLICY_VERSION = "deployment-policy-v1"
 CODE_EXECUTION_MODES = ("off", "sandboxed", "process_only")  # P3.2 plan v3 D2
@@ -127,6 +129,7 @@ class DeploymentPolicy:
         unknown = (
             set(self.allowed_tools)
             - set(TOOL_NAMES)
+            - set(NATIVE_HISTORY_TOOLS)
             - set(self.domain_tools)
             - set(self.skill_tools)
         )
@@ -340,6 +343,7 @@ __all__ = (
     "DeploymentPolicy",
     "action_decision",
     "effective_tools",
+    "NATIVE_HISTORY_TOOLS",
     "SKILL_TOOL_NAMES",
 )
 

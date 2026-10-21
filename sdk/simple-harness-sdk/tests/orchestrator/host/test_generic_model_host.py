@@ -66,6 +66,8 @@ def test_the_host_opens_pools_for_a_generic_model_without_calling_it(tmp_path):
             profiles = host.context_profiles()
             assert profiles and all(not p["profile_id"].endswith("thinking") for p in profiles)
             assert host.model_calls() == []
+            # 聊天池也要起来：它必须用任务池同一个上界计数器实例
+            assert status["chat"]["available"] is True, status["chat"]
         finally:
             await host.close()
 

@@ -112,7 +112,9 @@ class ChatService:
 
     async def open(self) -> None:
         host = self._host
-        counter, _ = host._counters()
+        # 与任务池同一个计数器实例：上界计数器的 meter_factory 只认自己，另建一个就起不来
+        # （2026-10-21 Sol 真实模型局发现）
+        counter = host._pool_counter
         if counter is None or host.provider is None or host.native is None:
             self.reason = "没有认证计数器或模型提供方"
             return

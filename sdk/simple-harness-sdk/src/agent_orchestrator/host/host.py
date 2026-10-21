@@ -320,6 +320,8 @@ class OrchestrationHost:
         self.control: Any = None
         self.provider: Any = None
         self._profile_model: str | None = None
+        #: 任务池在用的认证计数器实例（聊天池必须用同一个：上界计数器的 meter_factory 只认自己）
+        self._pool_counter: Any = None
         self.thinking_provider: Any = None
         self.config: Any = None
         self.policy: Any = None  # DeploymentPolicy
@@ -580,6 +582,7 @@ class OrchestrationHost:
         """执行池与运行选项（启动与重建共用）。"""
 
         counter, thinking_counter = self._counters()
+        self._pool_counter = counter
         meter_factory = (
             counter.meter_factory
             if counter is not None and hasattr(counter, "meter_factory")
@@ -661,10 +664,11 @@ class OrchestrationHost:
         self.sandbox = await self._probe_sandbox()
         sandboxed = bool(self.sandbox.get("ok"))
         skill_tools = tuple(SKILL_TOOL_NAMES)
+        # session_history_read：超限的工具结果只给预览，执行者用它读全文（执行库里的记录）
         base_tools = (
-            (*WORKSPACE_TOOLS, *KNOWLEDGE_TOOLS, "run_tests")
+            (*WORKSPACE_TOOLS, *KNOWLEDGE_TOOLS, "run_tests", "session_history_read")
             if sandboxed
-            else (*WORKSPACE_TOOLS, *KNOWLEDGE_TOOLS)
+            else (*WORKSPACE_TOOLS, *KNOWLEDGE_TOOLS, "session_history_read")
         )
         tool_names = tuple(self.tools)
         self.policy = DeploymentPolicy(
@@ -1372,9 +1376,65 @@ class OrchestrationHost:
         self.wake()
         return result
 
-    def takeover(self, task_id: str, action: str, *, basis: str, note: str = "") -> dict[str, Any]:
+    def plan(self, mission_id: str) -> dict[str, Any]:
+        """看计划：执行图的每一步（稳定编号 occurrence_id、步骤 task_id、当前版本 version、状态、
+        是否暂停、阶段与就绪原因）与计划版本 plan_revision。`takeover(expected_version=)` 用这里的
+        version；没就绪的原因用 `taskgraph.why_not_ready(mission_id, occurrence_id)` 细看。"""
+
+        self._require()
+        graph = self.taskgraph
+        if graph is None:
+            raise HostRequestError("orchestration_unavailable", "执行图读不到")
+        snapshot = graph.reads.snapshot(mission_id)
+        tasks = {str(task["id"]): task for task in self.snapshot(mission_id)["snapshot"]["tasks"]}
+        steps = []
+        for node in snapshot["nodes"]:
+            task = tasks.get(str(node["task_id"]), {})
+            steps.append(
+                {
+                    "occurrence_id": node["occurrence_id"],
+                    "task_id": node["task_id"],
+                    "form": node.get("form"),
+                    "version": task.get("version"),
+                    "status": task.get("status"),
+                    "paused": task.get("paused", False),
+                    "goal": task.get("goal"),
+                    "phase": node.get("phase"),
+                    "readiness": node.get("readiness"),
+                    "reason_codes": list(node.get("reason_codes") or ()),
+                }
+            )
+        return {
+            "mission_id": mission_id,
+            "plan_revision": snapshot["read_token"]["plan_revision"],
+            "steps": steps,
+            "edges": list(snapshot.get("edges") or ()),
+        }
+
+    def takeover(
+        self,
+        task_id: str,
+        action: str,
+        *,
+        basis: str,
+        note: str = "",
+        expected_version: int | None = None,
+        command_id: str | None = None,
+    ) -> dict[str, Any]:
+        """人工接管一步：``stop`` / ``retry_with_note`` / ``skip``（跳过，不算成功）/ ``run_now``
+        （排到最前）。``expected_version`` 是看计划时拿到的步骤版本，变了就拒；``command_id``
+        相同的重复点击原样返回第一次的记录。"""
+
         self.refuse_secrets(basis, note)
-        result = self._call("takeover", task_id, action, basis=basis, note=note)
+        result = self._call(
+            "takeover",
+            task_id,
+            action,
+            basis=basis,
+            note=note,
+            expected_version=expected_version,
+            command_id=command_id,
+        )
         self.wake()
         return result
 

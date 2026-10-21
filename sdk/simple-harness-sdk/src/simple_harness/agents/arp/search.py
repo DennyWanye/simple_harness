@@ -1078,8 +1078,11 @@ class SessionSearchService:
         # Greedy fill with a generous budget; the exact canonical size is enforced below.
         used = 0
         by_seq: dict[int, Any] = {}
+        # journal_only 记录（超限的工具结果整条入库，模型只拿到预览 + journal_read_back.seq）
+        # 正是这条读回路要读的东西，不隐藏；它不进窗口预算，读回按 max_bytes 分页，安全。
+        # 只认得 context / journal_only 两种可见性，别的一律隐藏并报 hidden_seq_ranges。
         for record in records:
-            if record.visibility != "context":
+            if record.visibility not in ("context", "journal_only"):
                 hidden.append({"start": record.seq, "end": record.seq})
                 continue
             text = _text_of(record)

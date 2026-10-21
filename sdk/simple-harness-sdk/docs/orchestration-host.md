@@ -445,6 +445,39 @@ host.create_mission({
 事件 `StepActionRequested`、`StepActionRefused`、`ActionHandedOff`、`ActionSucceeded`、`ActionFailed`、
 `ActionOutcomeUnknown`、`ActionReconciled`。可运行的例子：`examples/orchestration-host/tools_step_action.py`。
 
+## 4d. 看计划、执行某步、跳过、停止
+
+```python
+plan = host.plan(mission_id)
+# {"plan_revision": 3, "steps": [{"occurrence_id", "task_id", "form", "version", "status", "paused",
+#                                 "goal", "phase", "readiness", "reason_codes"}, ...], "edges": [...]}
+host.takeover(task_id, "skip", basis="用户说不要这一步", expected_version=step["version"], command_id="click-7")
+host.takeover(task_id, "run_now", basis="用户点了现在执行")
+host.takeover(task_id, "stop", basis="…")            # 停这一步与整个任务
+host.cancel(mission_id)                              # 停整个任务
+host.taskgraph.reads.why_not_ready(mission_id, occurrence_id)   # 没就绪的原因
+```
+
+| 命令 | 做什么 | 拒绝 |
+|---|---|---|
+| `skip` | 步骤记 CANCELLED（**不算成功**），开着的尝试取消；规划器下一轮在 `human_takeovers` 里看到这条记录，剩下的目标怎么办由它判断 | 已完成 / 已失败 / 已取消的；BLOCKED 的（它随上级目标结束）；有已交出、结果未明的外部动作的 |
+| `run_now` | 优先级置顶、解除暂停；调度下一轮先挑它 | 不是 READY 的（原因用 `why_not_ready` 看） |
+| `expected_version` | 看计划时拿到的步骤 `version`；变了就拒（`stale_decision`） | |
+| `command_id` | 同一命令号第二次原样返回第一次的记录，不重复执行 | 同一命令号用在别的步骤或别的动作上会被拒 |
+
+停止后旧审批卡批准不会再唤醒动作（交接前复核"任务还在跑"）；审批卡与规划提问都持久，重启后还在。
+
+## 4e. 子 Agent、多成员、外部内容、工具集更新、大结果
+
+| 事 | 做法 |
+|---|---|
+| 子 Agent | 编排里的"子 Agent"就是计划里的子步骤：规划器把目标拆成子目标，每个叶子步骤是一个独立 Agent。工具 = 任务 ∩ 步骤 ∩ 角色 ∩ 部署（只缩不放）；预算从任务总账扣；层数、扩展次数、候选数都在计划预算里。每个步骤提议的动作各自审批：批准了上一步的动作不等于批准下一步的 |
+| 多成员 | 一人一个宿主（各自数据目录、各自 `Principal`）；对方的任务号在自己这里一律 `not_found`；同一个数据目录第二个宿主起不来（实例锁） |
+| 资料与技能 | 资料 `register_source` / `supersede_source` / `revoke_source` 带版本；技能目录按安装版本钉死 |
+| 外部内容 | 任务里 `untrusted_sources` 标出的路径当作数据；网页、NAS、MCP 回来的内容里写的"批准 / 允许"不产生任何审批——授权只认宿主与 SDK 给的身份 |
+| 工具集更新 | 任务建立时冻结工具名单：换工具集重开宿主，旧任务仍按旧名单（名单外的调用被拒成事件），新任务用新名单；在途的待批审批卡与未结清动作都在，批准后照常执行 |
+| 超过 32 KB 的工具结果 | 完整记录进执行库；模型拿到预览 + `journal_read_back.seq`，用 `session_history_read(seq_from=seq, seq_to=seq, max_bytes=65536)` 回读：一页压到单条工具结果预算内（页不会再被截成预览），`has_more=true` 带 `next_cursor` 读下一页，拼起来就是原文。工作区大文件 `workspace_read_file` 自动分页（`next_offset` + `expected_sha256`） |
+
 ## 5. 要求怎么写
 
 - 每行一条，普通文字就行；规划器按它拆步骤，审阅员按它审。

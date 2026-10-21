@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any, cast
 from simple_harness.contracts import CallId, FrozenJsonValue, JsonValue
 from simple_harness.tools import FunctionTool, ToolContext, ToolHandler, ToolResult, ToolSpec
 
+from ..context.port import READ_BACK_TOOL_NAME
 from . import store
 from .errors import ArpError
 from .pins import Pin
@@ -35,9 +36,13 @@ SEARCH_TOOL_NAME = "session_history_search"
 # description tells the model to continue with the same cursor.
 ADVANCE_BUDGET_S = 5.0
 MAX_ADVANCE_STEPS = 256
-READ_TOOL_NAME = "session_history_read"
+READ_TOOL_NAME = READ_BACK_TOOL_NAME
 DEFAULT_LIMIT = 8
 DEFAULT_MAX_BYTES = 16384
+# 一页的元数据（record_ref、哈希、游标等）占的字节，从工具结果预算里先扣掉；
+# 一页至少要能装下元数据加一段正文，再小就只剩元数据了。
+PAGE_METADATA_BYTES = 1024
+MIN_PAGE_BYTES = 2048
 
 SEARCH_SCHEMA: dict[str, JsonValue] = {
     "type": "object",
@@ -126,6 +131,23 @@ class ArpSessionHistoryTools:
         turn = runtime.uow.read_open_agent_turn(context.run_id.value)
         return retriever, session, None if turn is None else turn.turn_id
 
+    def _fit_page_bytes(self, requested: int) -> int:
+        """把一页压到 Context 策略的单条工具结果预算之内。
+
+        超限的工具结果会被 Context 端整条入库、只给模型预览 + 回读引用；这条回读工具的页
+        要是也超限，就会被再次截成预览，模型永远读不到原文。所以页的大小由这里按策略钉死：
+        所有在用的计数器一个字节最多算一个 token（上界计数器算半个，BPE 不会超过一个），
+        按字节数 ≤ token 预算减去页元数据来压，只看请求的 max_bytes、与游标无关，
+        这样同一次读的每一页口径一致。预算很小时按最小页走：那时 Context 端对回读页
+        不再截（见 JournalContextPort），请求守卫仍按真实计数把关。
+        """
+
+        runtime = self._runtime
+        if runtime is None:
+            return max(MIN_PAGE_BYTES, requested)
+        budget = int(runtime.ports.context_policy.max_tool_result_tokens) - PAGE_METADATA_BYTES
+        return min(requested, max(MIN_PAGE_BYTES, budget))
+
     @staticmethod
     def _caller(session: store.SessionRow) -> Pin:
         return Pin(
@@ -206,7 +228,7 @@ class ArpSessionHistoryTools:
             "seq_from": seq_from,
             "seq_to": int(seq_to),
             "cursor": arguments.get("cursor"),
-            "max_bytes": int(arguments.get("max_bytes", DEFAULT_MAX_BYTES)),
+            "max_bytes": self._fit_page_bytes(int(arguments.get("max_bytes", DEFAULT_MAX_BYTES))),
         }
         try:
             access = retriever.access_for(

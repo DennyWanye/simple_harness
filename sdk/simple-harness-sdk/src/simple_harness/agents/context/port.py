@@ -40,6 +40,9 @@ from .composer import assemble
 from .protocol_groups import build_units
 from .tokenizer import TokenizerPort, count_message, count_tools
 
+#: 模型按 seq 回读会话记录原文的工具名（预览里的 journal_read_back.tool 指向它）。
+READ_BACK_TOOL_NAME = "session_history_read"
+
 ToolSpecsResolver = Callable[[str], tuple[ProviderToolSpec, ...]]
 
 
@@ -393,6 +396,10 @@ class JournalContextPort:
     # ---- large tool results --------------------------------------------------
 
     def _tool_result_is_large(self, message: Message) -> bool:
+        # 回读工具自己的页不再截：它已经按策略压到预算内，再截成预览就循环了（预览指回读，
+        # 回读又成预览）。页的大小由 session_history_read 按同一份策略钉死。
+        if message.name == READ_BACK_TOOL_NAME:
+            return False
         return count_message(self._tokenizer, message) > self._policy.max_tool_result_tokens
 
     def _preview_of(self, message: Message, *, full_seq: int) -> Message:
@@ -417,7 +424,7 @@ class JournalContextPort:
         else:
             preview_payload = {"value_preview": content[:limit]}
         preview_payload["truncated"] = True
-        preview_payload["journal_read_back"] = {"seq": full_seq, "tool": "session_history.read"}
+        preview_payload["journal_read_back"] = {"seq": full_seq, "tool": READ_BACK_TOOL_NAME}
         return Message(
             message.role,
             canonical_json(preview_payload),

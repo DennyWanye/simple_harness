@@ -23,7 +23,7 @@ from ...storage.store import DispatchIntent, StoreError
 from ..assurance_review_collect import collect_assurance_review
 from ..failure_classes import output_exhausted
 from ..hierarchical_dispatch import HierarchicalDispatch
-from ..planning_method_proposal import MAX_METHOD_PROPOSALS_PER_GOAL, proposals_for
+from ..planning_method_proposal import proposal_allowance, proposals_for
 from ..planning_repair_requests import pending_requests, record_request
 from ..planning_retry import retry_decision_required
 from .core import OrchestratorCore
@@ -447,9 +447,9 @@ class PlanningFeedbackMixin(OrchestratorCore):
             if spec.form is TaskForm.COMPOUND
             and network.adopted_instance_for(spec.occurrence_id) is None
         ]
+        allowance = proposal_allowance(self.store, mission.id)
         return sum(
-            max(0, MAX_METHOD_PROPOSALS_PER_GOAL - proposals_for(self.store, mission.id, goal))
-            for goal in open_goals
+            max(0, allowance - proposals_for(self.store, mission.id, goal)) for goal in open_goals
         )
 
     async def _collect_plan_hierarchical(  # type: ignore[no-untyped-def]

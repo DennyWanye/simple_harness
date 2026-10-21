@@ -66,12 +66,12 @@ def structural_summary(
         )
     ).hexdigest()
     if compact:
-        text = f"[历史已折叠] seq {seq_from}–{seq_to} 已退出窗口，可用 session_history.read 回读。"
+        text = f"[历史已折叠] seq {seq_from}–{seq_to} 已退出窗口，可用 session_history_read 回读。"
     else:
         text = (
             f"[历史已折叠] 本会话更早的 {turns} 条用户输入与 {groups} 个工具协议组"
             f"（记录 seq {seq_from}–{seq_to}）已退出工作窗口；原文完整保存在会话 Journal，"
-            f"可用 session_history.read(seq) 精确回读。"
+            f"可用 session_history_read(seq_from, seq_to) 精确回读。"
             "此摘要为结构性派生内容，不是执行状态或授权依据。"
         )
     return (

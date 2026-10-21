@@ -398,6 +398,20 @@ def read_planner_package(
             and observers.observer_for(signature.predicate_ref.id) is not None
         ],
     }
+    takeovers = [
+        {
+            "override_id": item.get("override_id"),
+            "action": item.get("action"),
+            "task_id": item.get("subject"),
+            "basis": item.get("basis"),
+            "note": item.get("note"),
+            "at": item.get("at"),
+        }
+        for item in store.list_overrides(mission.id)
+        if str(item.get("action") or "").startswith("takeover_")
+    ]
+    if takeovers:  # 人工接管过的步骤（跳过、停止、重试、排前）：事实，怎么办由规划器判断
+        sections["human_takeovers"] = takeovers[-16:]
     if executor_capabilities is not None:
         # 执行者在这台机器上能用的只读工具与能提议的动作（事实，不是建议）
         sections["executor_capabilities"] = dict(executor_capabilities)

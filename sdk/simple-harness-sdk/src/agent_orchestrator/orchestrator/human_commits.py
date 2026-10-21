@@ -27,12 +27,15 @@ from ..verification.human_review import arbitration_request_id, review_request_i
 from .action_commits import ActionCommitError
 from .completion_inputs import frozen_requirements_revision
 from .state_machine import next_task
+from .step_actions import pending_step_action
 
 if TYPE_CHECKING:
     from ..contracts import Attempt, Event, Mission, Task
     from ..storage.store import Store, StoredResult
 
-TAKEOVER_ACTIONS = ("stop", "retry_with_note")
+#: stop：停这一步与整个任务；retry_with_note：关掉开着的尝试、带话重试；skip：跳过没做完的步骤
+#: （不算成功，规划器重新评估剩下的目标）；run_now：把就绪的步骤排到最前。
+TAKEOVER_ACTIONS = ("stop", "retry_with_note", "skip", "run_now")
 _ENDED_TASK = frozenset({TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED})
 
 
@@ -544,10 +547,17 @@ class HumanCommitsMixin:
         action: str,
         basis: str,
         note: str = "",
+        expected_version: int | None = None,
+        command_id: str | None = None,
     ) -> dict[str, Any]:
         """A person takes over a stalled or disputed Task: ``stop`` ends it (and, as every
         Task stop, the Mission); ``retry_with_note`` closes its open Attempt and the next
-        one — within the Task's own attempt limit — carries the note as feedback."""
+        one — within the Task's own attempt limit — carries the note as feedback;
+        ``skip`` 把没做完的步骤记 CANCELLED（不算成功），规划器下一轮重新评估剩下的目标；
+        ``run_now`` 把就绪的步骤排到最前（优先级置顶、解除暂停）。
+
+        ``expected_version``：人看计划时拿到的步骤版本，变了就拒（过期的决定不执行）。
+        ``command_id``：重复点击——同一个命令号第二次原样返回第一次的记录，不重复执行。"""
 
         if not isinstance(principal, Principal):
             raise ActionCommitError("a takeover needs an authenticated Principal from the caller")
@@ -555,12 +565,46 @@ class HumanCommitsMixin:
             raise ActionCommitError(f"a takeover is one of {TAKEOVER_ACTIONS}, not {action!r}")
         if not basis.strip():
             raise ActionCommitError("a takeover needs a basis")
+        if expected_version is not None and (
+            isinstance(expected_version, bool) or type(expected_version) is not int
+        ):
+            raise ActionCommitError("expected_version must be an integer")
+        if command_id is not None and (not isinstance(command_id, str) or not command_id.strip()):
+            raise ActionCommitError("command_id must be a non-empty string")
         self._refuse_secrets(basis + "\n" + note)
         with self._store.transaction():
             task = self._require_task(task_id)
+            if command_id is not None:
+                # 查重放在"任务还在跑"之前：stop 第一次就结束了整个任务，重复点击也要原样拿回第一次的记录
+                for existing in self._store.list_overrides(task.mission_id):
+                    if existing.get("command_id") != command_id:
+                        continue
+                    if existing.get("subject") != task_id or existing.get("action") != (
+                        f"takeover_{action}"
+                    ):
+                        raise ActionCommitError("command_id reused for a different takeover")
+                    return existing  # 重复点击：原样返回，不再执行
             mission = self._require_active(task.mission_id)
+            if expected_version is not None and int(task.version) != expected_version:
+                raise ActionCommitError(
+                    f"stale_decision: task {task_id} is at version {task.version}, "
+                    f"the decision was made at version {expected_version}"
+                )
             if task.status in _ENDED_TASK:  # §25 has no edge back: nothing is revived
                 raise ActionCommitError(f"task {task_id} is {task.status}; it cannot be taken over")
+            if action == "skip":
+                if task.status is TaskStatus.BLOCKED:
+                    raise ActionCommitError(
+                        f"task {task_id} is BLOCKED; a blocked step ends with its goal and cannot be skipped"
+                    )
+                if pending_step_action(self._store, task_id) is not None:
+                    raise ActionCommitError(
+                        f"task {task_id} has an unsettled external action; it cannot be skipped"
+                    )
+            if action == "run_now" and task.status is not TaskStatus.READY:
+                raise ActionCommitError(
+                    f"task {task_id} is {task.status}; run_now needs a READY step (see why_not_ready)"
+                )
             limit = task.budget.max_attempts
             if action == "retry_with_note" and limit is not None and task.attempt_count >= limit:
                 raise ActionCommitError(
@@ -580,6 +624,9 @@ class HumanCommitsMixin:
                 "note": note,
                 "scope": "this Task only; no approval, tool, budget or verification-layer change",
                 "at": self._store.now,
+                "command_id": command_id,
+                "expected_version": expected_version,
+                "task_version": task.version,
             }
             self._store.insert_override(record)
             self._emit(
@@ -601,6 +648,18 @@ class HumanCommitsMixin:
                     },
                 )
                 return record
+            if action == "skip":
+                return self._skip_task(task, override_id, basis, record)
+            if action == "run_now":
+                top = max(
+                    (float(item.priority) for item in self._store.list_tasks(mission.id)),
+                    default=1.0,
+                )
+                self._store.update_task(
+                    next_task(task, priority=top + 1.0, paused=False, pause_reason=None),
+                    expected_version=task.version,
+                )
+                return record
             for attempt in self._store.list_attempts(task_id):
                 if attempt.status in OPEN_ATTEMPT_STATES:
                     self._close_attempt(
@@ -614,6 +673,40 @@ class HumanCommitsMixin:
             if note:
                 self._comment(mission.id, task_id, principal, note, via=override_id)
             return record
+
+    def _skip_task(
+        self, task: Task, override_id: str, basis: str, record: dict[str, Any]
+    ) -> dict[str, Any]:
+        """跳过：开着的尝试取消，步骤记 CANCELLED（不是成功）；终态事件照常进执行图，
+        规划器下一轮看到这一步被人跳过，剩下的目标怎么办由它判断。"""
+
+        for attempt in self._store.list_attempts(task.id):
+            if attempt.status in OPEN_ATTEMPT_STATES:
+                self._close_attempt(attempt, AttemptStatus.CANCELLED, reason="human_skip")
+        task = self._require_task(task.id)
+        if task.status is TaskStatus.VERIFYING:
+            active = next_task(task, TaskStatus.ACTIVE)
+            self._store.update_task(active, expected_version=task.version)
+            self._emit(
+                "TaskVerificationAbandoned",
+                task.mission_id,
+                key=task.id,
+                task_id=task.id,
+                payload={"override_id": override_id},
+            )
+            task = active
+        self._store.update_task(
+            next_task(task, TaskStatus.CANCELLED, failure_reason=f"skipped_by_human: {basis}"),
+            expected_version=task.version,
+        )
+        self._emit(
+            "TaskCancelled",
+            task.mission_id,
+            key=task.id,
+            task_id=task.id,
+            payload={"reason": "skipped_by_human", "override_id": override_id},
+        )
+        return record
 
     def add_comment(self, target_id: str, *, principal: Principal, text: str) -> Event:
         """``HumanCommentAdded`` (original §22): data, not an instruction.  On a Task it

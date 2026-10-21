@@ -161,10 +161,25 @@ class ApprovalApi:
             nonce=self._nonce(nonce),
         )
 
-    def takeover(self, task_id: str, *, action: str, basis: str, note: str = "") -> dict[str, Any]:
+    def takeover(
+        self,
+        task_id: str,
+        *,
+        action: str,
+        basis: str,
+        note: str = "",
+        expected_version: int | None = None,
+        command_id: str | None = None,
+    ) -> dict[str, Any]:
         self._clean(basis, note)
         return self._commit.takeover(
-            task_id, principal=self._principal, action=action, basis=basis, note=note
+            task_id,
+            principal=self._principal,
+            action=action,
+            basis=basis,
+            note=note,
+            expected_version=expected_version,
+            command_id=command_id,
         )
 
     def resolve_unknown(

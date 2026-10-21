@@ -47,6 +47,7 @@ from ..observability.secrets import find_secrets
 from ..orchestrator import assurance_point_use, planning_selection
 from ..orchestrator.action_commits import ActionCommitError
 from ..orchestrator.commit_service import MissionConflict
+from ..orchestrator.human_commits import TAKEOVER_ACTIONS as HUMAN_TAKEOVER_ACTIONS
 from ..orchestrator.method_library import LibraryCommandError, library_listing, retire_by_command
 from ..orchestrator.obligation_accounts import obligation_accounts, obligation_rows
 from ..orchestrator.operation_completion import OperationCompletionError
@@ -103,7 +104,7 @@ MAX_EVENT_PAGE = 200
 MAX_ARTIFACT_BYTES = 256 * 1024
 TERMINAL = frozenset({"COMPLETED", "FAILED", "CANCELLED"})
 DECISIONS = ("approve", "reject", "review_pass", "review_fail", "arbitrate")
-TAKEOVER_ACTIONS = ("stop", "retry_with_note")
+TAKEOVER_ACTIONS = HUMAN_TAKEOVER_ACTIONS
 NOT_FOUND = "no such object for this caller"
 
 
@@ -865,7 +866,16 @@ class MissionControlV1:
             "receipt_hash": result.get("receipt_hash"),
         }
 
-    def takeover(self, task_id: str, action: str, *, basis: str, note: str = "") -> dict[str, Any]:
+    def takeover(
+        self,
+        task_id: str,
+        action: str,
+        *,
+        basis: str,
+        note: str = "",
+        expected_version: int | None = None,
+        command_id: str | None = None,
+    ) -> dict[str, Any]:
         if action not in TAKEOVER_ACTIONS:
             raise FacadeError("invalid_request", f"action must be one of {list(TAKEOVER_ACTIONS)}")
         if not basis.strip():
@@ -878,7 +888,14 @@ class MissionControlV1:
         self._refuse_isolated(task.mission_id)
         try:
             return dict(
-                self._approvals.takeover(str(task_id), action=action, basis=basis, note=note)
+                self._approvals.takeover(
+                    str(task_id),
+                    action=action,
+                    basis=basis,
+                    note=note,
+                    expected_version=expected_version,
+                    command_id=command_id,
+                )
             )
         except ApprovalRequestError as error:
             raise FacadeError("invalid_request", str(error)) from error

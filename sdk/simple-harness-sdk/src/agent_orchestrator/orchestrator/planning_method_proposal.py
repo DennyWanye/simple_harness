@@ -15,6 +15,8 @@
 
 from __future__ import annotations
 
+import json
+
 from typing import Any
 
 from ..contracts.htn import TaskRef
@@ -65,6 +67,27 @@ def proposals_for(store: Any, mission_id: str, task_id: str) -> int:
         if event.type == "PlanningMethodProposed"
         and str(event.payload.get("subject_task_id", "")) == str(task_id)
     )
+
+
+def proposal_allowance(store: Any, mission_id: str) -> int:
+    """一个目标最多能提几个做法：固定上限 + 这个任务里**真人**答过的规划提问数。
+
+    上限是为了挡住没人管的空转；用户每答一次问题就是人在场、要它继续，多给一次提案
+    （2026-10-21 Sol 真实模型局：提案用完后规划器反复请用户"恢复额度"，系统却没有这个口子）。
+    重复的问题系统会自动登记成"已答"、沿用上次答案（答案里带 ``reused_from``），那不是人在场，
+    不加额度——否则规划器反复问同一句就能无人地把上限绕开。
+    """
+
+    rows = store.connection.execute(
+        "SELECT answer_json FROM planning_human_requests WHERE mission_id=? AND state='ANSWERED'",
+        (mission_id,),
+    ).fetchall()
+    human = 0
+    for (answer_json,) in rows:
+        answer = json.loads(answer_json) if answer_json else {}
+        if not (isinstance(answer, dict) and answer.get("reused_from")):
+            human += 1
+    return MAX_METHOD_PROPOSALS_PER_GOAL + human
 
 
 def _identity_problems(dispatch: Any, mission_id: str, method: Any) -> list[str]:
@@ -186,15 +209,13 @@ def prepare_method(
     dispatch: Any, mission_id: str, payload: Any, subject: Any
 ) -> tuple[Any, Any, Any]:
     world = dispatch.require_planning_world()
-    if (
-        proposals_for(dispatch.store, mission_id, str(subject["task_id"]))
-        >= MAX_METHOD_PROPOSALS_PER_GOAL
-    ):
+    allowance = proposal_allowance(dispatch.store, mission_id)
+    if proposals_for(dispatch.store, mission_id, str(subject["task_id"])) >= allowance:
         raise MethodProposalRefused(
             (
-                f"METHOD_PROPOSALS_EXHAUSTED: {MAX_METHOD_PROPOSALS_PER_GOAL} methods were already "
+                f"METHOD_PROPOSALS_EXHAUSTED: {allowance} methods were already "
                 "proposed for this goal in this Mission; choose among the methods in the library or "
-                "ask the user",
+                "ask the user (each answered question allows one more proposal)",
             ),
             code="PLANNING_BOUND_REACHED",
         )

@@ -87,6 +87,7 @@ def test_the_hierarchical_worker_lists_the_skill_tools():
         "run_tests",
         "knowledge_list",
         "knowledge_read",
+        "session_history_read",  # 超限工具结果的回读
     )
     assert current.tool_names == (*base, *SKILLS)
     assert SKILL_DISCOVER_TOOL_NAME in current.instructions
