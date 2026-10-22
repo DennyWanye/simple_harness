@@ -72,6 +72,7 @@ def _loop(*, closeout: bool, actions=(), approvals=(), dead_end: bool = False, d
             ),
         ),
         store=SimpleNamespace(
+            now=100.0,
             list_tasks=lambda mission_id: [SimpleNamespace(id="t1", status="READY")],
             list_actions=lambda mission_id: list(actions),
             list_approvals=lambda mission_id, *states: [
@@ -93,6 +94,7 @@ def _loop(*, closeout: bool, actions=(), approvals=(), dead_end: bool = False, d
         _wiring=DeploymentWiring(taskgraph_notifications=None),
         _rounds=MissionRoundState(unrecovered=set()),
         _attempts=SimpleNamespace(deferred=dict(deferred or {})),
+        _config=SimpleNamespace(profile_wait_seconds=300.0),
     )
     fake._root_resolved = lambda mission, new_mode: False
     return fake, mission
@@ -111,6 +113,10 @@ def test_a_step_waiting_for_a_cooling_runtime_profile_is_not_a_stall_candidate()
     fake, mission = _loop(closeout=False, actions=[{"state": "SUCCEEDED"}], deferred={"gone": 1.0})
     facts, _, _ = Orchestrator._idle_facts(fake, mission)
     assert not facts.profile_wait and idle_verdict(facts).route is Route.STOP
+    # 等超过时限的记录不算（漏删的记录挡不住停滞检测）
+    fake, mission = _loop(closeout=False, actions=[{"state": "SUCCEEDED"}], deferred={"t1": -500.0})
+    facts, _, _ = Orchestrator._idle_facts(fake, mission)
+    assert not facts.profile_wait
 
 
 def test_a_judged_mission_converging_its_closeout_is_not_a_stall_candidate():

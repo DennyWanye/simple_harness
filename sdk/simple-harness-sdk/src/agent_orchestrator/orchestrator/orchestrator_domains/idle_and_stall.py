@@ -449,8 +449,13 @@ class IdleStallMixin(OrchestratorCore):
             ),
             # 2026-10-22 Sol 真实局：执行池线路连错进入冷却，步骤被 _defer_for_profile 记在 deferred 里
             # 等池（有自己的时限 profile_wait_seconds），停滞检测却在 3 秒内把任务判成"没有可派发的工作"停掉
+            # 加时间界（核验建议）：等待只在 profile_wait_seconds 以内成立，漏删的记录挡不住停滞检测
             "profile_wait": any(
-                task.id in planned and task.id in self._attempts.deferred for task in rows
+                task.id in planned
+                and task.id in self._attempts.deferred
+                and self.store.now - self._attempts.deferred[task.id]
+                <= self._config.profile_wait_seconds
+                for task in rows
             ),
             "unknown_actions": any(a["state"] in IN_FLIGHT_ACTION_STATES for a in actions),
             # A person's pending approval of any kind: an action awaiting approval, or a
