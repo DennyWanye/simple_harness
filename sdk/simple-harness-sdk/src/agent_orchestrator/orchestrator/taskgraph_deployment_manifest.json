@@ -1,6 +1,11 @@
 {
-  "acceptance_evidence": null,
-  "deployment_id": "8a7ac4f9aca946334b8a605282e7bcf2d61da39c3acd5c85bf65018495fa96a9",
+  "acceptance_evidence": {
+    "gate_run_at": "2026-10-22T06:36:42+00:00",
+    "gate_sha256": "e27843214d3d04db97f7a4334b1a16a1e959776d8a6eed9e38cac76fdae73b3f",
+    "gate_status": "PASS",
+    "source_files_sha256": "7b9132252df9785c8d384e936d431302c068adb1ec79455109af5fc744b7a5ba"
+  },
+  "deployment_id": "eebd27faf8e939b84e9f008c30b964870f5e1d1f794715380096b6120886ccd5",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -275,7 +280,7 @@
     "agent_orchestrator/orchestrator/orchestrator_domains/core.py": "45ddc14561dd6e87fde9f4a488ff23f6a1a9543323f56973256ee29141d7082d",
     "agent_orchestrator/orchestrator/orchestrator_domains/cycle.py": "7696db1c65fc7dad13c84e154f2aa7c78cc043602719d81899a041f16bacc062",
     "agent_orchestrator/orchestrator/orchestrator_domains/deployment.py": "fe02a4c9d82d572c106119fbc4c899e26ef3186e33f61937764806fe153f01be",
-    "agent_orchestrator/orchestrator/orchestrator_domains/idle_and_stall.py": "02923a5dba0dae8a3c454265bb6edfe80f6d2b4227dac0585e40887963242314",
+    "agent_orchestrator/orchestrator/orchestrator_domains/idle_and_stall.py": "c6f4253ae25bcadce6664d87ae146a55335a28771207ec98d491b0f0dfc302db",
     "agent_orchestrator/orchestrator/orchestrator_domains/mission_lifecycle.py": "6aee9417cbe92d20f3f66b2ea90686e59d01d4550ff8a155af6b158c9e0ca208",
     "agent_orchestrator/orchestrator/orchestrator_domains/planning_decision_branches.py": "265943ae90c96264cd41ce8d2005ef1576f4230ab2b4a4ed8f6949fb57149098",
     "agent_orchestrator/orchestrator/orchestrator_domains/planning_decisions.py": "4e94e766cc2bdcfec9fc5df1ab5772e4df1570be98bbbad8f3d9ac724c1c87d9",
@@ -539,7 +544,7 @@
     "agent_orchestrator/verification/scoped_acceptance.py": "02db198cfd02453f3f088bee948e6c8e57f164b304d075067ab4bbdcc6cc9d74",
     "agent_orchestrator/verification/scoped_composition.py": "faad4ea026a4ba07946e70c86145db477dad42c9091d066f27f37548d4c76780",
     "agent_orchestrator/verification/verifier_router.py": "a6ec5744f3c30d383a01ee3d724186c8cd56593091c7ac58e8b4bc9f49a068bd",
-    "agent_orchestrator/version.py": "66955d960f643e079be21bbf1bd05d3632025fd2d146d8372a2b2f7eb5fde48f",
+    "agent_orchestrator/version.py": "7a7bc99447303290a2b0924e7fffd238dd5a17c351cf625ce0826227758e5212",
     "simple_harness/__init__.py": "2f24cb8a8aa15852ef84f0f51c89f1dd9a98284d970e2f3f05508927daf52c11",
     "simple_harness/agents/__init__.py": "aefea08f7f250426246cc94e677630de2926a82c68b64c659ddd3abb775c3686",
     "simple_harness/agents/arp/__init__.py": "9f68be0f87b2fa155f7980bbc9be19dacc008b2f3ec1268b1f36f1ade42d21cf",
@@ -808,7 +813,7 @@
     "simple_harness/tools/runtime_catalog.py": "66622237882dafc52ee6df6d2e8058337a874afe1a98d0cd8a17b48c34f59010",
     "simple_harness/tools/schema.py": "c582e7b9e9da66428580a2c8495e32a0bd39a6cd250fc42a2aae48d0bdfe39fb",
     "simple_harness/tools/sidecar.py": "78a7335957d45fc1f202b68829c7cba5c1e9bb98e77b559634b8fba09dacf90d",
-    "simple_harness/version.py": "9fa6880cbd648449fe03600e3f14426963b83d60352ce33e5b109d71f78e3fbe",
+    "simple_harness/version.py": "7ce2a5d98d0a276d93ee27c112d93d207510f0aaeb77d48917b05c66dd4ef11a",
     "simple_harness/workflow/__init__.py": "2705ed448307b1cb05369b8ffa4a46ca70019e1b722665a711b594b30d520003",
     "simple_harness/workflow/checkpoint.py": "00612d57d0bda0146f9a38d59d3e0278decb6e2c91f7f096bfc56d6ab2d85c96",
     "simple_harness/workflow/compiler.py": "a5557881c05bf5869509f15b818a23058f65378fd080a299d28522d6ae9366b6",
@@ -843,7 +848,7 @@
     "simple_harness/workflows/personal_v1/ports.py": "1e5ec7df071b3ab19729f0768811fcc5544fd6a89421b4b34f7f5dde28ead1de",
     "simple_harness/workflows/personal_v1/selection.py": "c65c5e41abebfacc359bff6fe79f39b3cd87f0ff2739e2b398215ccd9dde033f"
   },
-  "taskgraph_acceptance": "NOT_RUN",
+  "taskgraph_acceptance": "VALIDATED",
   "upstream": {
     "business_replay": "CONSISTENT",
     "business_replay_receipt_sha256": "ba06c71d6123c2726041d11fe385cfec01cb57bef29ff9b22f6d9551cda05887",
