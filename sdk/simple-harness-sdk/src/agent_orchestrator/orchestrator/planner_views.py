@@ -455,16 +455,31 @@ def answered_questions_for_planner(store: Any, mission_id: str) -> list[dict[str
     """
 
     questions = planning_human_store.PlanningHumanStore(store)
-    return [
-        {
-            "subject_key": row["subject_key"],
-            "question": row["request"]["payload"]["question"],
-            "answer": row["answer"],
-            "binding_current": questions.binding_current(row),
-        }
-        for row in questions.list(mission_id)
-        if row["state"] == "ANSWERED"
-    ][-16:]
+    rows = []
+    for row in questions.list(mission_id):
+        if row["state"] != "ANSWERED":
+            continue
+        payload = row["request"]["payload"]
+        options = [
+            {"key": str(o.get("key")), "label": str(o.get("label", ""))}
+            for o in (payload.get("options") or [])
+        ]
+        answer = row["answer"]
+        chosen = answer.get("answer") if isinstance(answer, dict) else answer
+        # 2026-10-22 AgentOS 真实页面：回读只带选项的 key，模型把 key 当成"还要再确认"又问了一次。
+        # 把选中项的 key 与 label、当时的全部选项都摆出来；回答是自由文字时 selected_option 为 None。
+        selected = next((o for o in options if o["key"] == chosen), None)
+        rows.append(
+            {
+                "subject_key": row["subject_key"],
+                "question": payload["question"],
+                "answer": answer,
+                "options": options,
+                "selected_option": selected,
+                "binding_current": questions.binding_current(row),
+            }
+        )
+    return rows[-16:]
 
 
 def abandoned_plan_changes_for_planner(store: Any, mission_id: str) -> list[dict[str, Any]]:

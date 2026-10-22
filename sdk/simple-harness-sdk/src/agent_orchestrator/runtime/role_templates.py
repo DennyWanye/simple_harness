@@ -105,7 +105,7 @@ def register_template(template: RoleTemplate) -> None:
 #:   审阅员按任务要求判断，这里不写领域补丁。
 #:
 #: 要改就改这一份并换版本号；不保留历史版本，也不从旧版本拼接。
-PLANNER_HIERARCHICAL_VERSION = "planner-hierarchical-v32"
+PLANNER_HIERARCHICAL_VERSION = "planner-hierarchical-v33"
 PLANNER_HIERARCHICAL = RoleTemplate(
     name="planner",
     prompt_version=PLANNER_HIERARCHICAL_VERSION,
@@ -247,7 +247,9 @@ PLANNER_HIERARCHICAL = RoleTemplate(
         "而冻结清单证明不了哪一份是接着改的最新版，或两份都是接进这一步的端口文件——这种情况给两步加先后没有用。"
         "接在后面的步骤不会开工，系统不替你挑用哪一份：改接法、让一步接着另一步改、重做其中一步、换做法，还是问用户，由你判断。"
         "unknown_coverage 或 unresolved_operations 没解决时不能声称修复完成。\n"
-        "  - human_answers：用户已经回答过的问题。先看这里，答过的不要再问。\n"
+        "  - human_answers：用户已经回答过的问题。先看这里，答过的不要再问。answer 是回答原文；"
+        "你给过选项时 options 是当时的全部选项（key 与 label），selected_option 是用户选中的那一项——"
+        "用户选了它就是已经作了这个决定，不要再问一遍。\n"
         "  - abandoned_plan_changes：用户亲手放弃过的改计划（卡在半路、用户点了「放弃这次改计划」，旧计划已恢复）："
         "decision_type / subject_key / rationale 是当时那个决定，reason 是用户的理由原文。"
         "不要原样再提同一个改法；仍需要改时先读理由，换一种改法或先问用户。\n"

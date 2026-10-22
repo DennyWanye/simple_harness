@@ -43,10 +43,10 @@ def _quick(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(event_handler, "WAIT_BACKOFF_MAX", 0.05)
 
 
-def _ask(request: Any, question: str) -> str:
+def _ask(request: Any, question: str, options: list[dict[str, str]] | None = None) -> str:
     body = json.loads(_FIXTURE.read_text(encoding="utf-8"))
     body["subject_key"] = package_of(request)["planning_subjects"][0]["subject_key"]
-    body["payload"] = {"question": question, "options": [], "blocking": True}
+    body["payload"] = {"question": question, "options": options or [], "blocking": True}
     return "<planning_decision>" + json.dumps(body, ensure_ascii=False) + "</planning_decision>"
 
 
@@ -160,5 +160,44 @@ def test_an_answer_stays_visible_to_the_planner_after_the_binding_moved(tmp_path
                 assert shown["answer"]["answer"] == "没有" and shown["binding_current"] is False
         finally:
             provider.release.set()
+
+    asyncio.run(case())
+
+
+def test_a_chosen_option_is_read_back_with_its_key_and_label(tmp_path):
+    """2026-10-22 AgentOS 真实页面：用户选了"我确认尚未保存，授权再尝试一次"，回读里只有 key
+    ``retry_if_confirmed_not_saved``，模型把它当成"还要再确认"又问了一次。回读要带选中项的 key 与
+    label、当时的全部选项。"""
+
+    options = [
+        {"key": "retry_if_confirmed_not_saved", "label": "我确认尚未保存，授权再尝试一次"},
+        {"key": "stop", "label": "不重试，停止"},
+    ]
+    script = [("retry memory.store 吗？", options), (OTHER, None)]
+
+    def planner(request: Any) -> Any:
+        question, opts = script.pop(0)
+        return _ask(request, question, opts)
+
+    async def case():  # type: ignore[no-untyped-def]
+        provider = LayeredScriptedProvider(planner=planner)
+        async with product_world(tmp_path / "root", provider, **CONFIG) as world:
+            created = world.create(
+                {
+                    "goal": GOAL,
+                    "idempotency_key": "option-label",
+                    "success_criteria": list(CRITERIA),
+                }
+            )
+            loop = world.loop
+            mission = loop.store.get_mission(created["mission_id"])
+            await run_until(world, lambda: bool(_pending(loop, mission.id)))
+            [first] = _pending(loop, mission.id)
+            _answer(world, mission, first, "retry_if_confirmed_not_saved")
+            await run_until(world, lambda: not script and bool(_pending(loop, mission.id)))
+            [shown] = answered_questions_for_planner(loop.store, mission.id)
+            assert shown["answer"]["answer"] == "retry_if_confirmed_not_saved"
+            assert shown["selected_option"] == options[0]
+            assert shown["options"] == options
 
     asyncio.run(case())
