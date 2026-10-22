@@ -163,3 +163,11 @@ def test_an_output_exhausted_turn_is_told_as_one_fact_not_a_raw_dict():
     assert retry_feedback([_attempt(1, TURN)], _attempt(1, TURN))[0][0].startswith(
         "上一轮有一次模型调用没有拿到回复"
     )
+
+
+def test_a_blocked_outcome_is_told_with_the_step_s_own_summary():
+    # 2026-10-22 Sol 复验局：续做那一轮拿到的是 "outcome_blocked: "——步骤自己写的说明丢了
+    blocked = {"reason": "outcome_blocked", "summary": "已提议移动第一张，等执行结果", "risks": []}
+    attempts = [_attempt(1, blocked)]
+    feedback, verifier = retry_feedback(attempts, attempts[0])
+    assert feedback == ["outcome_blocked: 已提议移动第一张，等执行结果"] and verifier == []

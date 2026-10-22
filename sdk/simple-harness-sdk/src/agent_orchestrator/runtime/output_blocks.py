@@ -32,13 +32,37 @@ def extract_block(text: str, tag: str) -> dict[str, Any]:
     pattern = re.compile(rf"<{tag}>(.*?)</{tag}>", re.DOTALL)
     matches = pattern.findall(text)
     if not matches:
+        if text.count(f"<{tag}>") == 1 and f"</{tag}>" not in text:
+            # 开了标签没有关（模型漏写收尾标签）：块内是一个完整的 JSON 对象、后面没有别的东西
+            # 就收下——内容没有歧义；否则按"开了没关"打回，并把缺的标签名告诉它
+            return _unclosed_block(text, tag)
         raise BlockError("block_missing", f"no <{tag}> block in the output")
     if len(matches) > 1:
         raise BlockError("block_ambiguous", f"{len(matches)} <{tag}> blocks")
-    body = matches[0].strip()
+    return _parse_body(matches[0], tag)
+
+
+def _unclosed_block(text: str, tag: str) -> dict[str, Any]:
+    body = _strip_fence(text.split(f"<{tag}>", 1)[1])
+    try:
+        parsed, end = json.JSONDecoder().raw_decode(body)
+    except json.JSONDecodeError as error:
+        raise BlockError("block_unclosed", f"missing </{tag}> ({error.msg})") from error
+    if not isinstance(parsed, dict) or body[end:].strip():
+        raise BlockError("block_unclosed", f"missing </{tag}>")
+    return parsed
+
+
+def _strip_fence(body: str) -> str:
+    body = body.strip()
     if body.startswith("```"):
         body = re.sub(r"^```(?:json)?\s*", "", body)
         body = re.sub(r"\s*```$", "", body)
+    return body
+
+
+def _parse_body(raw: str, tag: str) -> dict[str, Any]:
+    body = _strip_fence(raw)
     try:
         parsed = json.loads(body)
     except json.JSONDecodeError as error:
@@ -136,6 +160,8 @@ def parse_port_claims(
 
 
 def outside_text(text: str, tag: str) -> str:
+    if text.count(f"<{tag}>") == 1 and f"</{tag}>" not in text:
+        return text.split(f"<{tag}>", 1)[0].strip()  # 开了没关的块一直到结尾
     return re.sub(rf"<{tag}>.*?</{tag}>", "", text, flags=re.DOTALL).strip()
 
 
@@ -147,6 +173,9 @@ REPAIR_HINTS: dict[str, str] = {
     "empty_output": "你没有输出任何内容。只输出一个 <{tag}> 块。",
     "block_missing": "没有找到 <{tag}> 块。只输出一个 <{tag}>…</{tag}> 块，块内是 JSON 对象。",
     "block_ambiguous": "输出里有多个 <{tag}> 块。只保留一个。",
+    "block_unclosed": (
+        "<{tag}> 块开了没有关（{detail}）。输出完整的 <{tag}>…</{tag}> 块，块内是一个 JSON 对象。"
+    ),
     "invalid_json": "<{tag}> 块内不是合法 JSON（{detail}）。重新输出完整的 JSON 对象。",
     "not_an_object": "<{tag}> 块内必须是 JSON 对象，不是 {detail}。",
     "outputs_not_an_object": "outputs 必须是对象：{{端口名: 文件路径}}（{detail}）。",

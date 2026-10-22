@@ -184,8 +184,8 @@ FROZEN_PROMPT_DIGESTS: dict[str, tuple[str, str]] = {
     "WORKER": ("worker-v3", "c587ce55ff9a01e38ba5b362f8bb9de518b99404f712e63409f871d2d3f0d285"),
     # the hierarchical Worker: one prompt (HTN 精简 片 C); its digest moves with it
     "WORKER_HIERARCHICAL": (
-        "worker-hierarchical-v10",
-        "5676ff808e569cc799a249f1dc00d3d61e9c80733a6b01cb4ca1eec5e6062708",
+        "worker-hierarchical-v11",
+        "db9ab762e4f039dbac410efcb53c7b990b051ca3e2d2321208c6f4c40fa8541f",
     ),
 }
 

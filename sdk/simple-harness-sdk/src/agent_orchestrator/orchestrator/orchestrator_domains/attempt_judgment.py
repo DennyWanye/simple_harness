@@ -150,6 +150,9 @@ def retry_feedback(
             stalled = failure.get("stalled_seconds")
             how_long = f"{float(stalled):.0f} 秒" if isinstance(stalled, (int, float)) else "太久"
             feedback.append(f"上一次尝试 {how_long}没有进展，被系统终止；这一轮从头做。")
+        elif reason.startswith("outcome_"):
+            # 步骤自己报告的 blocked / failure / no_progress：它写的说明就是事实，原来只给了个空串
+            feedback.append(f"{reason}: {failure.get('summary') or failure.get('error', '')}")
         else:
             feedback.append(f"{reason}: {failure.get('error', '')}")
     return feedback, verifier_feedback
@@ -436,7 +439,7 @@ class AttemptJudgmentMixin(OrchestratorCore):
                     allowed=step_actions.scope_names(mission),
                 ),
                 action_results=[
-                    *step_actions.action_results(self.store, task.id),
+                    *step_actions.action_results(self.store, mission.id, task.id),
                     *step_actions.refused_request_views(
                         self.store.list_events(mission.id), task.id
                     ),

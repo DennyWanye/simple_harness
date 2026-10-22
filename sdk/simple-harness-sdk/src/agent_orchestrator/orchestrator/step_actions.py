@@ -282,19 +282,29 @@ def action_result_view(action: Mapping[str, Any]) -> dict[str, Any]:
     return view
 
 
-def action_results(store: Any, task_id: str) -> list[dict[str, Any]]:
-    """这一步已结案的中途动作，按提出顺序；下一次尝试的工作包带上它们。"""
+def action_results(store: Any, mission_id: str, task_id: str) -> list[dict[str, Any]]:
+    """这个任务里已结案的中途动作，按提出顺序；下一次尝试的工作包带上它们。
+
+    不只这一步的：规划器把一步换成后继步骤后，前一步做成的动作（照片已移走）对后继步骤仍是
+    事实，不给它看它就会说"回执缺失"（2026-10-22 Sol 复验局）。每条标明 ``this_step``。
+    """
 
     rows = [
         action
-        for action in store.list_actions(None)
+        for action in store.list_actions(mission_id)
         if is_step_action(action)
-        and action.get("task_id") == task_id
         and action.get("state") not in UNSETTLED_STATES
         and action.get("state") != "REFUSED"
     ]
     rows.sort(key=lambda row: (float(row.get("created_at") or 0.0), str(row.get("action_key"))))
-    return [action_result_view(row) for row in rows]
+    return [
+        {
+            **action_result_view(row),
+            "task_id": row.get("task_id"),
+            "this_step": row.get("task_id") == task_id,
+        }
+        for row in rows
+    ]
 
 
 def refused_request_views(events: Sequence[Any], task_id: str) -> list[dict[str, Any]]:
