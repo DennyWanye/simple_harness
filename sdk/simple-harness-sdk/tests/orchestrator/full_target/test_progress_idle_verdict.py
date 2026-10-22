@@ -26,6 +26,9 @@ WAITS = (
     ("closeout_pending", "CLOSEOUT_CONVERGING"),
     ("root_resolved", "ROOT_RESOLVED_AWAITING_JUDGMENT"),
     ("running_rows", "WORK_RUNNING"),
+    # 2026-10-22 Sol 真实局：执行池线路连错进入冷却，步骤在等池（profile_wait_seconds 内），
+    # 停滞检测 3 秒内就把任务判成"没有可派发的工作"停掉
+    ("profile_wait", "RUNTIME_PROFILE_COOLING"),
     ("unknown_actions", "OPERATION_RECONCILIATION"),
     ("approvals_pending", "APPROVAL_PENDING"),
     ("operation_completion", "OPERATION_OUTCOME_PENDING"),
@@ -58,16 +61,18 @@ def test_finished_work_is_the_finalizers_business():
     assert decision.route is Route.FAST and decision.action == "FINALIZE"
 
 
-def _loop(*, closeout: bool, actions=(), approvals=(), dead_end: bool = False):
+def _loop(*, closeout: bool, actions=(), approvals=(), dead_end: bool = False, deferred=None):
     notes = []
     mission = SimpleNamespace(id="m1")
     fake = SimpleNamespace(
         _new_mode=lambda mission: SimpleNamespace(
             admissions=lambda mission_id: SimpleNamespace(refusals=("withheld",), readiness=()),
-            network=lambda mission_id: SimpleNamespace(root_occurrence_ids=(), occurrences=()),
+            network=lambda mission_id: SimpleNamespace(
+                root_occurrence_ids=(), occurrences=(SimpleNamespace(task_id="t1"),)
+            ),
         ),
         store=SimpleNamespace(
-            list_tasks=lambda mission_id: [SimpleNamespace(status="READY")],
+            list_tasks=lambda mission_id: [SimpleNamespace(id="t1", status="READY")],
             list_actions=lambda mission_id: list(actions),
             list_approvals=lambda mission_id, *states: [
                 a for a in approvals if not states or a["state"] in states
@@ -87,9 +92,25 @@ def _loop(*, closeout: bool, actions=(), approvals=(), dead_end: bool = False):
         _planning=PlanningRoundState(planning_evidence_waits={}),
         _wiring=DeploymentWiring(taskgraph_notifications=None),
         _rounds=MissionRoundState(unrecovered=set()),
+        _attempts=SimpleNamespace(deferred=dict(deferred or {})),
     )
     fake._root_resolved = lambda mission, new_mode: False
     return fake, mission
+
+
+def test_a_step_waiting_for_a_cooling_runtime_profile_is_not_a_stall_candidate():
+    """2026-10-22 Sol 真实局：线路连错让执行池进入冷却，步骤被记在 deferred 里等池；
+    停滞检测不认这个等待，3 秒内就按"没有可派发的工作"停了任务。等池有自己的时限
+    （profile_wait_seconds 到了由 _defer_for_profile 具名停下），停滞检测只需认它是合法等待。"""
+
+    fake, mission = _loop(closeout=False, actions=[{"state": "SUCCEEDED"}], deferred={"t1": 1.0})
+    facts, admissions, _ = Orchestrator._idle_facts(fake, mission)
+    assert facts.profile_wait and admissions is None
+    assert idle_verdict(facts).reason_code == "RUNTIME_PROFILE_COOLING"
+    # 等的是别的步骤（不在现行计划里）就不算
+    fake, mission = _loop(closeout=False, actions=[{"state": "SUCCEEDED"}], deferred={"gone": 1.0})
+    facts, _, _ = Orchestrator._idle_facts(fake, mission)
+    assert not facts.profile_wait and idle_verdict(facts).route is Route.STOP
 
 
 def test_a_judged_mission_converging_its_closeout_is_not_a_stall_candidate():

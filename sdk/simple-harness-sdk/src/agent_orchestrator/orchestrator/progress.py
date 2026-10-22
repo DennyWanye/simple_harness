@@ -48,6 +48,8 @@ class IdleFacts:
     closeout_pending: bool = False
     root_resolved: bool = False
     running_rows: bool = False
+    #: 步骤在等它的执行池从冷却里出来（线路连错后，profile_wait_seconds 以内）
+    profile_wait: bool = False
     planning_wait: bool = False
     taskgraph_sources: bool = False
     operation_completion: bool = False
@@ -66,6 +68,7 @@ _WAITS: tuple[tuple[str, str, str], ...] = (
     ("closeout_pending", "CLOSEOUT_CONVERGING", "assurance closeout evaluation"),
     ("root_resolved", "ROOT_RESOLVED_AWAITING_JUDGMENT", "mission judgment"),
     ("running_rows", "WORK_RUNNING", "attempt result"),
+    ("profile_wait", "RUNTIME_PROFILE_COOLING", "runtime profile available"),
     ("unknown_actions", "OPERATION_RECONCILIATION", "action reconciliation"),
     ("approvals_pending", "APPROVAL_PENDING", "a person's approval"),
     ("operation_completion", "OPERATION_OUTCOME_PENDING", "operation outcome"),
