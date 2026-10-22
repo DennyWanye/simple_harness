@@ -113,7 +113,7 @@ dependencies = [
     # 2026-08-29: vendored exact Agent Runtime candidate bytes.
     # Wheel identity single source of truth:
     # deskpet/sdk_adapters/sdk_candidate.py
-    "simple-harness-sdk==0.13.0.dev20260925+opt.214",
+    "simple-harness-sdk==0.13.0.dev20260925+opt.215",
     # 钉死的 DeepSeek 官方计数配方（SDK opt.195 起也是 SDK 的正式依赖）；分词文件在用户模型目录。
     "deepseek-recipe==0.1.1",
 ]
@@ -129,7 +129,7 @@ dependencies = [
 # simple-harness-sdk = { path = "../../simple-harness-sdk", editable = true }
 #
 # Production (vendored immutable candidate):
-simple-harness-sdk = { path = "vendor/simple_harness_sdk-0.13.0.dev20260925+opt.214-py3-none-any.whl" }
+simple-harness-sdk = { path = "vendor/simple_harness_sdk-0.13.0.dev20260925+opt.215-py3-none-any.whl" }
 
 [project.optional-dependencies]
 dev = [
