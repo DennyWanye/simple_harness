@@ -1,3 +1,5 @@
+最后更新：2026-10-25 CST（阶段 1 收尾候选，未发版）。三个源码阻断已修复并提交 `5253c7ec4`；定向组合 181 项、最终增量 12 项通过。候选 SDK 为 opt.217，Host 仍钉 opt.216。自动门 SQL 1、核心 186、生产者登记 260 项通过，M01～M12 全部 KILLED，三份保证接缝 PASS；总门因独立回执不绑定修后源码仍为 FAIL，清单保持 NOT_RUN。真实模型在配置阶段被缺少两项指定变量阻断，0 次调用；额外示例目录和独立复核授权待答复。模块状态为“修复及候选准备完成，真实验收/发版/Host 钉版未完成”，未新增 worktree。详见阶段 1 记录第八节。
+
 最后更新：2026-10-25 CST（统一会话阶段 1，源码验收）。编排 SDK 新增文本 `Session` 前门、独立聊天池 v2、持久委派关联、结果 inbox 和统一事件流；v1 聊天与桌面接线保留。当前为离线源码交付，版本仍 opt.216，未发版或替换 Host 轮子。模块事实见 [AGENT_ORCHESTRATION.md](AGENT_ORCHESTRATION.md)，验收范围与留项见 [阶段 1 记录](../plans/2026-10-24-unified-session-realtime/阶段1-记录.md)。
 
 最后更新：2026-10-15 CST（代码质量整治阶段 4：后端与 SDK 边界收口）。边界规则：后端产品代码只从 SDK 声明的公开模块导入（`simple_harness/public_api.py`、`agent_orchestrator/public_api.py` 的 PUBLIC_MODULES，名字须在模块 `__all__` 里），不引用 sqlite 子模块、testing 与下划线模块；后端分层见 `backend/.importlinter`（host → 上层适配 → deskpet 与旧 agent → 模型与提供方 → 日志与监控）与 `scripts/code_quality/backend_layers.py`，CI 阻断。派发上下文、附加请求头、端到端钩子在 `providers/`，请求消息在 `llm/context_messages.py`，脱敏在 `observability/`。
