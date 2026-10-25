@@ -184,6 +184,13 @@ export function PrimaryChatView({ channel, onOpenSettings, active = true }: Prim
     setPreview("");
     try {
       const reply = record(await call("send", { text: value, idempotency_key: frozen.key }));
+      if (reply.state === "failed") {
+        input.current = null;
+        deltaScope.current = "";
+        setPreview("");
+        refresh.current();
+        throw new Error(text(record(reply.error).code) || "本轮执行失败，可以重新发送。");
+      }
       if (reply.state !== "committed")
         throw new Error(text(record(reply.error).code) || "回复未提交，请用原文重试。");
       mergeTurns([{ turn_id: reply.turn_id, input: value, text: reply.text }]);
@@ -235,7 +242,7 @@ export function PrimaryChatView({ channel, onOpenSettings, active = true }: Prim
     const planning = request.request_kind === "planning";
     return rows(planning ? detail.planning_questions : detail.approvals).some(
       (row) =>
-        (row.decision_id ?? row.id ?? row.approval_id) === request.request_id &&
+        (planning ? row.decision_id : row.request_id) === request.request_id &&
         row.state === "PENDING" &&
         (!planning || String(row.version) === String(request.version)),
     );

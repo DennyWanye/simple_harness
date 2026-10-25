@@ -207,3 +207,178 @@ describe("desktop SDK Session", () => {
     expect(screen.queryByRole("button", { name: "批准" })).toBeNull();
   });
 });
+
+describe("implementation review: actual projected request identifiers", () => {
+  it("keeps a pending approval visible when the task snapshot uses request_id", async () => {
+    const h = fixture(
+      [],
+      [
+        {
+          mission_id: "m",
+          delegation_id: "d",
+          status: "ACTIVE",
+          detail: { approvals: [{ request_id: "human", state: "PENDING" }] },
+        },
+      ],
+    );
+    render(<PrimaryChatView channel={h.channel} />);
+    await screen.findByText("stored reply");
+    h.event(
+      "needs_response",
+      {
+        request_id: "human",
+        version: "1152921504606846975",
+        request_kind: "approval",
+        summary: "publish now",
+      },
+      8,
+    );
+    expect(await screen.findByRole("button", { name: "批准" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "批准" }));
+    expect(h.sent.find((message) => message.type === "session_respond")?.payload).toEqual({
+      request_id: "human",
+      version: "1152921504606846975",
+      decision: "approve",
+    });
+  });
+  it("keeps a pending planning question visible with its projected decision_id", async () => {
+    const h = fixture(
+      [],
+      [
+        {
+          mission_id: "m",
+          delegation_id: "d",
+          status: "ACTIVE",
+          detail: {
+            planning_questions: [{ decision_id: "question", version: 3, state: "PENDING" }],
+          },
+        },
+      ],
+    );
+    render(<PrimaryChatView channel={h.channel} />);
+    await screen.findByText("stored reply");
+    h.event(
+      "needs_response",
+      { request_id: "question", version: "3", request_kind: "planning", question: "Which format?" },
+      8,
+    );
+    fireEvent.change(await screen.findByLabelText("回答或拒绝理由"), {
+      target: { value: "Markdown" },
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "提交回答" }));
+    expect(h.sent.find((m) => m.type === "session_respond")?.payload).toMatchObject({
+      request_id: "question",
+      version: "3",
+      decision: "answer",
+      answer: "Markdown",
+    });
+  });
+});
+
+describe("implementation review: terminal failed send", () => {
+  it("uses a new input key when the same text is sent again after a terminal failure", async () => {
+    const h = fixture();
+    render(<PrimaryChatView channel={h.channel} />);
+    await screen.findByText("stored reply");
+    fireEvent.click(screen.getByText("发送测试消息"));
+    const first = h.sent.find((message) => message.type === "session_send")!;
+    h.emit({
+      type: "session_send_response",
+      payload: {
+        request_id: first.request_id,
+        ok: true,
+        data: { turn_id: "failed", state: "failed", text: "", error: { code: "chat_timeout" } },
+      },
+    });
+    await waitFor(() => expect(screen.getByRole("status").textContent).toContain("可以发送消息"));
+    fireEvent.click(screen.getByText("发送测试消息"));
+    const sends = h.sent.filter((message) => message.type === "session_send");
+    expect(sends).toHaveLength(2);
+    expect(sends[1].payload.idempotency_key).not.toBe(first.payload.idempotency_key);
+  });
+  it("allows a fresh draft after a durable failed receipt", async () => {
+    const h = fixture();
+    render(<PrimaryChatView channel={h.channel} />);
+    await screen.findByText("stored reply");
+    fireEvent.click(screen.getByText("发送测试消息"));
+    const send = h.sent.find((m) => m.type === "session_send")!;
+    h.emit({
+      type: "session_send_response",
+      payload: {
+        request_id: send.request_id,
+        ok: true,
+        data: {
+          turn_id: "failed-turn",
+          state: "failed",
+          text: "",
+          error: { code: "agent_turn_cancelled" },
+        },
+      },
+    });
+    await waitFor(() => expect(screen.getByRole("status").textContent).toContain("可以发送消息"));
+    fireEvent.click(screen.getByText("发送不同消息"));
+    expect(h.sent.filter((m) => m.type === "session_send")).toHaveLength(2);
+  });
+});
+
+describe("loaded task approval state", () => {
+  it("submits a rejection with the projected request id, exact version and reason", async () => {
+    const h = fixture(
+      [],
+      [
+        {
+          mission_id: "m",
+          delegation_id: "d",
+          status: "ACTIVE",
+          detail: { approvals: [{ request_id: "human", state: "PENDING" }] },
+        },
+      ],
+    );
+    render(<PrimaryChatView channel={h.channel} />);
+    await screen.findByText("stored reply");
+    h.event(
+      "needs_response",
+      {
+        request_id: "human",
+        version: "1152921504606846975",
+        request_kind: "approval",
+        summary: "publish now",
+      },
+      8,
+    );
+    fireEvent.change(await screen.findByLabelText("回答或拒绝理由"), {
+      target: { value: "needs correction" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "拒绝" }));
+    expect(h.sent.find((message) => message.type === "session_respond")?.payload).toEqual({
+      request_id: "human",
+      version: "1152921504606846975",
+      decision: "reject",
+      reason: "needs correction",
+    });
+  });
+  it.each(["APPROVED", "REJECTED", "EXPIRED"])(
+    "does not show a %s approval as pending",
+    async (state) => {
+      const h = fixture(
+        [],
+        [
+          {
+            mission_id: "m",
+            delegation_id: "d",
+            status: "ACTIVE",
+            detail: { approvals: [{ request_id: "human", state }] },
+          },
+        ],
+      );
+      render(<PrimaryChatView channel={h.channel} />);
+      await screen.findByText("stored reply");
+      h.event(
+        "needs_response",
+        { request_id: "human", version: "1", request_kind: "approval", summary: "old" },
+        8,
+      );
+      expect(screen.queryByRole("button", { name: "批准" })).toBeNull();
+    },
+  );
+});
