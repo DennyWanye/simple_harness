@@ -12,6 +12,7 @@ from test_session import SPEC
 
 from agent_orchestrator.host import OrchestrationHost, Principal, SessionPolicy
 from agent_orchestrator.host.offline import FixtureWordCounter, ScriptedProvider
+from agent_orchestrator.host.session_ledger import SessionError
 
 
 async def running_host(root, replies):
@@ -173,6 +174,272 @@ def test_host_close_releases_all_sessions_when_one_cancel_fails(tmp_path, monkey
         finally:
             await alpha._chat.close()
             await beta.close()
+            await host.close()
+
+    asyncio.run(run())
+
+
+async def lifecycle_host(root, replies, monkeypatch):
+    host = await running_host(root, replies)
+
+    async def idle_driver():
+        while not host._closing:
+            await host._wake.wait()
+            host._wake.clear()
+
+    # Keep OS sandbox recovery outside these lifecycle interleavings.
+    monkeypatch.setattr(host, "run_forever", idle_driver)
+    return host
+
+
+def test_review3_reopen_cannot_settle_a_live_predecessor(tmp_path, monkeypatch):
+    async def run():
+        host = await lifecycle_host(tmp_path, ["Held answer", "New answer"], monkeypatch)
+        session = await host.open_session("desktop")
+        provider = host._given_provider
+        provider.held.add("chat")
+        entered, release = asyncio.Event(), asyncio.Event()
+        original = session._chat.cancel
+
+        async def delayed_cancel(body):
+            entered.set()
+            await release.wait()
+            return await original(body)
+
+        monkeypatch.setattr(session._chat, "cancel", delayed_cancel)
+        sending = asyncio.create_task(session.send("Hello", key="held"))
+        closing = None
+        try:
+            await asyncio.wait_for(provider.entered.wait(), 10)
+            before = host.global_budget_status()
+            assert before["reserved_tokens"] > 0
+            closing = asyncio.create_task(session.close())
+            await asyncio.wait_for(entered.wait(), 10)
+            with pytest.raises(SessionError, match="session_closing"):
+                await host.open_session("desktop")
+            assert not closing.done() and not sending.done() and session._chat.available
+            assert host.global_budget_status() == before
+            release.set()
+            provider.release.set()
+            await asyncio.wait_for(asyncio.gather(sending, closing), 10)
+            assert not session._chat.available
+            replacement = await host.open_session("desktop")
+            assert replacement is not session
+            assert (await replacement.send("Again", key="new"))["state"] == "committed"
+        finally:
+            release.set()
+            provider.release.set()
+            await asyncio.gather(sending, *([closing] if closing else []), return_exceptions=True)
+            await host.close()
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("phase", ["voice", "cancel", "chat_close"])
+def test_close_waiters_survive_caller_cancellation_until_resources_release(
+    tmp_path, monkeypatch, phase
+):
+    from types import SimpleNamespace
+
+    from test_realtime_bridge import Audio, Client
+
+    from agent_orchestrator.host import VoiceProfile
+    from agent_orchestrator.host.realtime_bridge import VoiceBinding
+
+    monkeypatch.setattr(VoiceBinding, "_request", lambda self: SimpleNamespace(tools=[]))
+
+    async def run():
+        host = await lifecycle_host(tmp_path, [], monkeypatch)
+        session = await host.open_session("desktop")
+        audio, client = Audio(), Client()
+        binding = await session.attach_voice(audio, VoiceProfile(client_factory=client))
+        owner, method = {
+            "voice": (binding, "detach"),
+            "cancel": (session._chat, "cancel"),
+            "chat_close": (session._chat, "close"),
+        }[phase]
+        original = getattr(owner, method)
+        entered, release = asyncio.Event(), asyncio.Event()
+        calls = 0
+
+        async def gated(*args):
+            nonlocal calls
+            calls += 1
+            entered.set()
+            await release.wait()
+            return await original(*args)
+
+        monkeypatch.setattr(owner, method, gated)
+        first = asyncio.create_task(session.close())
+        second = None
+        try:
+            await asyncio.wait_for(entered.wait(), 10)
+            second = asyncio.create_task(session.close())
+            await asyncio.wait({second}, timeout=0.05)
+            assert not second.done(), "every close waiter must observe actual teardown"
+            first.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await first
+            with pytest.raises(SessionError, match="session_closing"):
+                await host.open_session("desktop")
+            assert session._chat.available and calls == 1
+            release.set()
+            await asyncio.wait_for(second, 10)
+            assert calls == 1 and not session._chat.available and session._pump_task.done()
+            assert session._voice is None and client.wires[0].closed
+            assert audio.written[-1] is None
+            assert await host.open_session("desktop") is not session
+        finally:
+            release.set()
+            await asyncio.gather(first, *([second] if second else []), return_exceptions=True)
+            await session.close()
+            await host.close()
+
+    asyncio.run(run())
+
+
+def test_close_waits_for_inflight_send_even_if_cancel_returns_early(tmp_path, monkeypatch):
+    async def run():
+        host = await lifecycle_host(tmp_path, ["Held answer"], monkeypatch)
+        session = await host.open_session("desktop")
+        provider = host._given_provider
+        provider.held.add("chat")
+        cancelled = asyncio.Event()
+
+        async def no_cancel(body):
+            cancelled.set()
+            return {"cancelled": False}
+
+        monkeypatch.setattr(session._chat, "cancel", no_cancel)
+        sending = asyncio.create_task(session.send("Hello", key="held"))
+        closing = None
+        try:
+            await asyncio.wait_for(provider.entered.wait(), 10)
+            before = host.global_budget_status()
+            closing = asyncio.create_task(session.close())
+            await asyncio.wait_for(cancelled.wait(), 10)
+            await asyncio.wait({closing}, timeout=0.05)
+            assert not closing.done() and session._chat.available and not sending.done()
+            assert host.global_budget_status() == before
+            with pytest.raises(SessionError, match="session_closing"):
+                await host.open_session("desktop")
+            provider.release.set()
+            await asyncio.wait_for(asyncio.gather(sending, closing), 10)
+            assert await host.open_session("desktop") is not session
+        finally:
+            provider.release.set()
+            await asyncio.gather(sending, *([closing] if closing else []), return_exceptions=True)
+            await host.close()
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("method", ["cancel", "close"])
+def test_close_failure_preserves_ownership_until_executor_is_released(
+    tmp_path, monkeypatch, method
+):
+    async def run():
+        host = await lifecycle_host(tmp_path, [], monkeypatch)
+        session = await host.open_session("desktop")
+        original = getattr(session._chat, method)
+
+        async def fail(*args):
+            raise RuntimeError("teardown unavailable")
+
+        monkeypatch.setattr(session._chat, method, fail)
+        try:
+            with pytest.raises(RuntimeError, match="teardown unavailable"):
+                await session.close()
+            if method == "close":
+                assert session._chat.available and host._sessions["desktop"] is session
+                with pytest.raises(SessionError, match="session_closing"):
+                    await host.open_session("desktop")
+                monkeypatch.setattr(session._chat, method, original)
+                await session.close()
+            else:
+                assert not session._chat.available and "desktop" not in host._sessions
+            replacement = await host.open_session("desktop")
+            assert replacement is not session and replacement._chat.available
+        finally:
+            monkeypatch.setattr(session._chat, method, original)
+            await host.close()
+
+    asyncio.run(run())
+
+
+def test_host_and_session_close_share_teardown_despite_cancelled_host_waiter(
+    tmp_path, monkeypatch
+):
+    from agent_orchestrator.host.instance_lock import InstanceLock
+
+    async def run():
+        host = await lifecycle_host(tmp_path, [], monkeypatch)
+        session = await host.open_session("desktop")
+        entered, release = asyncio.Event(), asyncio.Event()
+        original = session._chat.close
+        calls = 0
+
+        async def gated():
+            nonlocal calls
+            calls += 1
+            entered.set()
+            await release.wait()
+            await original()
+
+        monkeypatch.setattr(session._chat, "close", gated)
+        closing = asyncio.create_task(session.close())
+        first = second = None
+        probe = InstanceLock(tmp_path)
+        try:
+            await asyncio.wait_for(entered.wait(), 10)
+            first = asyncio.create_task(host.close())
+            await asyncio.wait({first}, timeout=0.05)
+            assert not first.done(), "Host must not release a still closing session"
+            first.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await first
+            second = asyncio.create_task(host.close())
+            await asyncio.wait({second}, timeout=0.05)
+            assert not second.done() and not probe.acquire()
+            release.set()
+            await asyncio.wait_for(asyncio.gather(closing, second), 10)
+            assert calls == 1 and host.state == "closed" and not session._chat.available
+            assert probe.acquire()
+        finally:
+            release.set()
+            tasks = [task for task in (closing, first, second) if task is not None]
+            await asyncio.gather(*tasks, return_exceptions=True)
+            probe.release()
+            await host.close()
+
+    asyncio.run(run())
+
+
+def test_host_keeps_root_lock_when_a_session_executor_cannot_close(tmp_path, monkeypatch):
+    from agent_orchestrator.host.instance_lock import InstanceLock
+
+    async def run():
+        host = await lifecycle_host(tmp_path, [], monkeypatch)
+        session = await host.open_session("desktop")
+        original = session._chat.close
+        probe = InstanceLock(tmp_path)
+
+        async def fail():
+            raise RuntimeError("executor still live")
+
+        monkeypatch.setattr(session._chat, "close", fail)
+        try:
+            with pytest.raises(RuntimeError, match="executor still live"):
+                await host.close()
+            assert host.state != "closed" and session._chat.available
+            assert not probe.acquire()
+            monkeypatch.setattr(session._chat, "close", original)
+            await host.close()
+            assert host.state == "closed" and not session._chat.available
+            assert probe.acquire()
+        finally:
+            probe.release()
+            monkeypatch.setattr(session._chat, "close", original)
             await host.close()
 
     asyncio.run(run())

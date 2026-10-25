@@ -350,6 +350,7 @@ class OrchestrationHost:
         self.on_round: Callable[[], Any] | None = None
         self._wake = asyncio.Event()
         self._closing = False
+        self._close_task: asyncio.Task[None] | None = None
         self._failures = 0
         self._quiet_round = False
         self._last_watermark: Any = None
@@ -815,12 +816,22 @@ class OrchestrationHost:
     async def close(self) -> None:
         """有序关闭（测试与正常退出）；被 SIGKILL 时锁由内核释放，重启按持久状态恢复。"""
 
+        if self.state == "closed":
+            return
         self._closing = True
+        if self._close_task is None or self._close_task.done():
+            self._close_task = asyncio.create_task(self._close(), name="host-close")
+        await asyncio.shield(self._close_task)
+
+    async def _close(self) -> None:
         async with self._session_open_lock:
             for session in tuple(self._sessions.values()):
                 try:
                     await session.close()
                 except Exception:
+                    # Do not release the root while a session still owns a live executor.
+                    if self._sessions.get(session.session_id) is session:
+                        raise
                     logger.exception("session close failed")
         self._wake.set()
         driver, self._driver = self._driver, None

@@ -73,6 +73,7 @@ class Session:
             self._store.put("meta", "configuration", configuration)
         self._delegations, self._inbox = Delegations(self), SessionInbox(self)
         self._closed = False
+        self._close_task: asyncio.Task[None] | None = None
         self._current_input: dict[str, Any] | None = None
         self._send_lock = asyncio.Lock()
         self._voice = None
@@ -484,14 +485,23 @@ class Session:
         }
 
     async def close(self) -> None:
-        if self._closed:
-            return
-        self._closed = True
+        task = self._close_task
+        if task is None or (task.done() and (task.cancelled() or task.exception() is not None)):
+            self._closed = True
+            task = self._close_task = asyncio.create_task(
+                self._close(), name=f"session-close-{self.session_id}"
+            )
+        # Cancelling a waiter must not abandon the executor or its registry entry.
+        await asyncio.shield(task)
+
+    async def _close(self) -> None:
         try:
-            if self._voice is not None:
-                await self._voice.detach()
-            if self._chat is not None:
-                await self._chat.cancel({"session_id": self.session_id})
+            try:
+                if self._voice is not None:
+                    await self._voice.detach()
+            finally:
+                if self._chat is not None:
+                    await self._chat.cancel({"session_id": self.session_id})
         finally:
             if self._pump_task is not None:
                 self._pump_task.cancel()
@@ -499,8 +509,11 @@ class Session:
                     await self._pump_task
                 except asyncio.CancelledError:
                     pass
-            if self._chat is not None:
-                await self._chat.close()
+            # Cancellation can be acknowledged before send() finishes its accounting.
+            # Keep ownership until every local writer and the chat executor have exited.
+            async with self._send_lock:
+                if self._chat is not None:
+                    await self._chat.close()
             sessions = getattr(self._host, "_sessions", {})
             if sessions.get(self.session_id) is self:
                 sessions.pop(self.session_id)

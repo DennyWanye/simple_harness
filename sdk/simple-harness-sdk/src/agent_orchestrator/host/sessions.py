@@ -28,7 +28,9 @@ async def open_session(
         if set(host.tools) & set(RESERVED_TOOLS):
             raise SessionError("invalid_request", "tool conflicts with a session command")
         existing = host._sessions.get(session_id)
-        if existing is not None and not existing._closed:
+        if existing is not None:
+            if existing._closed:
+                raise SessionError("session_closing", "await session.close() before reopening")
             if policy is not None and policy != existing.policy:
                 raise SessionError("session_config_frozen")
             return existing
