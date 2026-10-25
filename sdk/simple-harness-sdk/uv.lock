@@ -1811,7 +1811,7 @@ requires-dist = [
     { name = "psutil", marker = "extra == 'local-capacity'", specifier = ">=7.2.2,<8" },
     { name = "pytest", specifier = ">=8.3,<9" },
     { name = "pyyaml", marker = "extra == 'skill-import'", specifier = ">=6.0,<7" },
-    { name = "simple-harness-service-sdk", extras = ["realtime"], marker = "extra == 'realtime'", specifier = "==0.3.16" },
+    { name = "simple-harness-service-sdk", extras = ["realtime"], marker = "extra == 'realtime'", specifier = "==0.3.17" },
     { name = "tokenizers", marker = "extra == 'hf-tokenizer'", specifier = ">=0.22,<1" },
     { name = "transformers", marker = "extra == 'hf-tokenizer'", specifier = ">=4.57,<6" },
     { name = "unified-planning", extras = ["aries"], marker = "extra == 'planning-aries'", specifier = ">=1.2,<2" },
@@ -1830,15 +1830,15 @@ dev = [
 
 [[package]]
 name = "simple-harness-service-sdk"
-version = "0.3.16"
-source = { registry = "../../.local-test-evidence/2026-10-25/unified-session/phase3/live4/inputs" }
+version = "0.3.17"
+source = { registry = "../../.local-test-evidence/2026-10-25/unified-session/phase3/live5/inputs" }
 dependencies = [
     { name = "packaging" },
     { name = "prompt-toolkit" },
     { name = "simple-harness-sdk" },
 ]
 wheels = [
-    { path = "simple_harness_service_sdk-0.3.16-py3-none-any.whl" },
+    { path = "simple_harness_service_sdk-0.3.17-py3-none-any.whl" },
 ]
 
 [package.optional-dependencies]

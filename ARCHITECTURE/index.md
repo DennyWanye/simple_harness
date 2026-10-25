@@ -1,3 +1,20 @@
+最后更新：2026-10-26 CST（阶段3a：Service SDK 0.3.17最终重验，仍未发版）。
+[realtime]、uv.lock及独立Python3.13轮子环境切到0.3.17，21包兼容、848/41源码核对一致。
+原缺键audio.done/助手交错及来源反例14项全绿，其他用户response.*族14项全绿；
+受跟踪联合回环23通过，干净环境合同/驱动36通过。未改Service安装库、旧池或加帧过滤。
+新三轮示例通过：COMPLETED、相册索引交付，结果生成/传输结束且实播6160ms，
+整轮播放39440ms后显式打断与挂断；不能代替原A08较宽范围。
+A08～A11仍0通过/4阻断，两个补充分支另0通过/2阻断。A08因planning_failed，失败结果
+已实播11360ms；A09查询未命中；文字取消/A10建任务是provider_request_rejected/tool_parse。
+A10补充分支另见已确认user item的response_id空字符串，0.3.17仍拒绝，新反例6通过/5失败。
+A11完成断线及同号重绑、不自动重放音频，后续ASR/会话protocol_error阻断，未到新进程恢复。
+不可用开线策略为60秒、最多5次、耗尽即停并记线路不可用，本轮未触发开线耗尽；
+自造1011断线按SDK恢复，不将非模型运行失败归因为模型。真实auto三次，均planning。
+部署清单已重生成，410aa502…/NOT_RUN不变，候选wheel6c8de893…；无SDK生产源码变更。
+等待第七次复核后发版opt.218。Host仍opt.217，未自签/发版/push，无新worktree，不记完成里程碑。
+详见[阶段3a记录第十九节](../plans/2026-10-24-unified-session-realtime/阶段3a-记录.md)
+与[附带事件交接](../plans/2026-10-24-unified-session-realtime/阶段3a-附带转写阻断交接.md)。
+
 最后更新：2026-10-26 03:13 CST（阶段 3b 第四次复评处理）。报告 `e7676992d` 仍为 FAIL，B2/B3 保持关闭；Host 钉版及 vendor 仍 opt.217，按既定条件停止，B1、原后端失败和真实委派验收仍开放。本轮仅改文档、未运行测试或冒烟，不追加完成里程碑。详见 [PROJECT_STATUS.md](PROJECT_STATUS.md) 与[阶段 3b 记录](../plans/2026-10-24-unified-session-realtime/阶段3b-记录.md)末节。
 
 最后更新：2026-10-26 03:11 CST（阶段 3b opt.218 就位复查）。Host 钉版与 vendor 仍 opt.217，按任务明确条件停止；未安装、测试或模型冒烟，阶段仍 BLOCKED。opt.218 到位后原 16 项失败须逐项修复或解释，真实委派及 auto 代答仍须验收；不计完成里程碑。详见 [PROJECT_STATUS.md](PROJECT_STATUS.md) 与[阶段 3b 记录](../plans/2026-10-24-unified-session-realtime/阶段3b-记录.md)末节。
