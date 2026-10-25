@@ -120,6 +120,7 @@ def test_voice_transcripts_and_tools_are_committed_and_idempotent(tmp_path):
             "task_cancel",
         }
         await wire.emit("TranscriptCompleted", item_id="u1", text="Write a report")
+        await wire.emit("ResponseStarted", response_id="r1")
         call = SimpleNamespace(
             call_id="c1",
             item_id="u1",
@@ -222,6 +223,7 @@ def test_reconnect_keeps_session_increments_generation_and_replays_no_audio(tmp_
             Audio(), VoiceProfile(client_factory=client, reconnect_backoff=0, max_reconnects=1)
         )
         await client.wires[0].emit("TranscriptCompleted", item_id="u1", text="Hello")
+        await client.wires[0].emit("ResponseStarted", response_id="r1")
         await client.wires[0].emit("OutputText", response_id="r1", text="Hi", is_delta=False)
         await client.wires[0].emit("ResponseFinished", response_id="r1", status="completed")
         await client.wires[0].emit("SessionFailed", code="disconnected")
@@ -307,6 +309,7 @@ def test_readonly_tool_schema_context_limit_and_idempotency_conflict(tmp_path):
         binding = await session.attach_voice(Audio(), VoiceProfile(client_factory=client))
         wire = client.wires[0]
         await wire.emit("TranscriptCompleted", item_id="u", text="Battery?")
+        await wire.emit("ResponseStarted", response_id="r")
         call = SimpleNamespace(
             response_id="r", call_id="c", name="device_status", arguments_json="{}"
         )
@@ -362,6 +365,7 @@ def test_text_engine_receives_voice_history_without_changing_pool(tmp_path, monk
         binding = await session.attach_voice(Audio(), VoiceProfile(client_factory=Client()))
         wire = binding._wire
         await wire.emit("TranscriptCompleted", item_id="u", text="My device is Orion")
+        await wire.emit("ResponseStarted", response_id="r")
         await wire.emit("OutputText", response_id="r", text="I remember Orion")
         await wire.emit("ResponseFinished", response_id="r", status="completed")
         await binding.detach()
@@ -690,5 +694,354 @@ def test_reconnect_context_has_bounded_summary_and_recent_turns(tmp_path):
         assert '"recent_turns"' in context and '"summary"' in context
         assert not client.wires[0].messages[0][2]
         await binding.detach()
+
+    asyncio.run(run())
+
+
+def test_review_announcement_tool_followup_retains_non_authorizing_origin(tmp_path):
+    async def run():
+        host, session = make_session(tmp_path)
+        audio, client = Audio(), Client()
+        binding = await session.attach_voice(audio, VoiceProfile(client_factory=client))
+        wire = client.wires[0]
+        try:
+            await wire.emit("TranscriptCompleted", item_id="u", text="Hello")
+            await wire.emit("ResponseStarted", response_id="chat")
+            await wire.emit("ResponseFinished", response_id="chat", status="completed")
+            await asyncio.sleep(0.04)
+            await session.announce("The task result is ready")
+            await wire.emit("ResponseStarted", response_id="notice-1")
+            first = await wire.dispatcher.dispatch(
+                SimpleNamespace(
+                    response_id="notice-1",
+                    call_id="status",
+                    name="task_status",
+                    arguments_json="{}",
+                )
+            )
+            assert "error" not in json.loads(first)
+            await wire.emit("OutputAudio", response_id="notice-1", data=b"x" * 48000)
+            await wire.emit("ResponseFinished", response_id="notice-1", status="completed")
+            await wire.emit("ResponseStarted", response_id="notice-2")
+            result = await wire.dispatcher.dispatch(
+                SimpleNamespace(
+                    response_id="notice-2",
+                    call_id="create",
+                    name="delegate_task",
+                    arguments_json=json.dumps(SPEC),
+                )
+            )
+            observed = {"result": json.loads(result), "missions_created": len(host.made)}
+        finally:
+            await binding.detach()
+        assert "permission_denied" in result and not host.made, observed
+
+    asyncio.run(run())
+
+
+def test_review_late_completed_response_preserves_interrupted_playback(tmp_path):
+    async def run():
+        _, session = make_session(tmp_path)
+        audio, client = Audio(), Client()
+        binding = await session.attach_voice(audio, VoiceProfile(client_factory=client))
+        wire = client.wires[0]
+        try:
+            await wire.emit("TranscriptCompleted", item_id="u", text="Tell me the result")
+            await wire.emit("ResponseStarted", response_id="r")
+            await wire.emit("OutputText", response_id="r", text="Partial")
+            await wire.emit("OutputAudio", response_id="r", data=b"x" * 48000)
+            audio.position = 120
+            await binding.barge_in()
+            await wire.emit("OutputText", response_id="r", text="Partial plus unheard conclusion")
+            await wire.emit("ResponseFinished", response_id="r", status="completed")
+            history = session.history()[-1]
+            unheard = session._store.rows("voice_unheard")[-1]
+            observed = {"history": history, "unheard": unheard}
+        finally:
+            await binding.detach()
+        assert history.get("playback", {}).get("state") == "interrupted" and (
+            unheard["text"] == "Partial plus unheard conclusion"
+        ), observed
+
+    asyncio.run(run())
+
+
+def test_review_pending_announcement_cannot_play_over_user_speech(tmp_path):
+    async def run():
+        _, session = make_session(tmp_path)
+        audio, client = Audio(), Client()
+        binding = await session.attach_voice(audio, VoiceProfile(client_factory=client))
+        wire = client.wires[0]
+        try:
+            await session.announce("A task result")
+            assert any(message[2] for message in wire.messages)
+            await wire.emit("SpeechStarted", item_id="new-input")
+            assert binding._user_speaking
+            await wire.emit("ResponseStarted", response_id="late-notice")
+            await wire.emit("OutputAudio", response_id="late-notice", data=b"x" * 4800)
+            observed = {
+                "user_speaking": binding._user_speaking,
+                "played_frame_sizes": [len(frame) for frame in audio.written if frame],
+                "cancelled": wire.cancelled,
+            }
+        finally:
+            await binding.detach()
+        assert not observed["played_frame_sizes"], observed
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("command", ["delegate_task", "task_cancel"])
+def test_review_announcement_origin_survives_multiple_followups_and_playback(tmp_path, command):
+    async def run():
+        host, session = make_session(tmp_path)
+        text_turn = session._commit_input("Create a report", "task-input")
+        task = session._delegations.delegate(text_turn["turn_id"], "task-create", SPEC)
+        client = Client()
+        binding = await session.attach_voice(Audio(), VoiceProfile(client_factory=client))
+        wire = client.wires[0]
+        try:
+            await wire.emit("TranscriptCompleted", item_id="hello", text="Hello")
+            await wire.emit("ResponseStarted", response_id="chat")
+            await wire.emit("ResponseFinished", response_id="chat", status="completed")
+            await asyncio.sleep(0.04)
+            handle = await session.announce("The report has an update")
+            for index in range(2):
+                response_id = f"notice-{index}"
+                await wire.emit("ResponseStarted", response_id=response_id)
+                result = await wire.dispatcher.dispatch(
+                    SimpleNamespace(
+                        response_id=response_id,
+                        call_id=f"status-{index}",
+                        name="task_status",
+                        arguments_json="{}",
+                    )
+                )
+                assert "error" not in json.loads(result)
+                await wire.emit("ResponseFinished", response_id=response_id, status="completed")
+                await asyncio.sleep(0.04)
+            assert handle.done
+            await wire.emit("ResponseStarted", response_id="notice-final")
+            result = await wire.dispatcher.dispatch(
+                SimpleNamespace(
+                    response_id="notice-final",
+                    call_id="forbidden",
+                    name=command,
+                    arguments_json=json.dumps(
+                        SPEC if command == "delegate_task" else {"task_id": task["mission_id"]}
+                    ),
+                )
+            )
+            assert json.loads(result)["error"]["code"] == "permission_denied"
+            assert len(host.made) == 1 and not host.cancelled
+            keys = {binding._response_turns[f"notice-{i}"] for i in range(2)}
+            keys.add(binding._response_turns["notice-final"])
+            assert len(keys) == 1
+            assert session._store.get("turns", keys.pop())["source"] == "announcement"
+        finally:
+            await binding.detach()
+
+    asyncio.run(run())
+
+
+def test_review_unknown_response_cannot_borrow_last_user_authorization(tmp_path):
+    async def run():
+        host, session = make_session(tmp_path)
+        client = Client()
+        binding = await session.attach_voice(Audio(), VoiceProfile(client_factory=client))
+        wire = client.wires[0]
+        try:
+            await wire.emit("TranscriptCompleted", item_id="u", text="Hello")
+            await wire.emit("ResponseStarted", response_id="chat")
+            await wire.emit("ResponseFinished", response_id="chat", status="completed")
+            await wire.emit("ResponseStarted", response_id="unsolicited")
+            for response_id in ("unsolicited", "never-started"):
+                result = await wire.dispatcher.dispatch(
+                    SimpleNamespace(
+                        response_id=response_id,
+                        call_id=response_id,
+                        name="delegate_task",
+                        arguments_json=json.dumps(SPEC),
+                    )
+                )
+                assert json.loads(result)["error"]["code"] == "permission_denied"
+            assert not host.made
+        finally:
+            await binding.detach()
+
+    asyncio.run(run())
+
+
+def test_review_user_tool_followup_keeps_its_original_input(tmp_path):
+    async def run():
+        host, session = make_session(tmp_path)
+        client = Client()
+        binding = await session.attach_voice(Audio(), VoiceProfile(client_factory=client))
+        wire = client.wires[0]
+        try:
+            await wire.emit("TranscriptCompleted", item_id="work", text="Write a report")
+            await wire.emit("ResponseStarted", response_id="user-1")
+            await wire.dispatcher.dispatch(
+                SimpleNamespace(
+                    response_id="user-1",
+                    call_id="status",
+                    name="task_status",
+                    arguments_json="{}",
+                )
+            )
+            await wire.emit("ResponseFinished", response_id="user-1", status="completed")
+            await wire.emit("ResponseStarted", response_id="user-2")
+            result = await wire.dispatcher.dispatch(
+                SimpleNamespace(
+                    response_id="user-2",
+                    call_id="delegate",
+                    name="delegate_task",
+                    arguments_json=json.dumps(SPEC),
+                )
+            )
+            assert json.loads(result)["status"] == "accepted" and len(host.made) == 1
+            assert binding._response_turns["user-1"] == binding._response_turns["user-2"]
+        finally:
+            await binding.detach()
+
+    asyncio.run(run())
+
+
+def test_review_late_text_refreshes_durable_playback_and_next_turn_context(tmp_path):
+    from agent_orchestrator.host import Session
+
+    async def run():
+        host, session = make_session(tmp_path)
+        audio, client = Audio(), Client()
+        binding = await session.attach_voice(audio, VoiceProfile(client_factory=client))
+        wire = client.wires[0]
+        try:
+            await wire.emit("TranscriptCompleted", item_id="u1", text="Give the result")
+            await wire.emit("ResponseStarted", response_id="r")
+            await wire.emit("OutputText", response_id="r", text="Partial")
+            await wire.emit("OutputAudio", response_id="r", data=b"x" * 48000)
+            audio.position = 120
+            await binding.barge_in()
+            await wire.emit("TranscriptCompleted", item_id="u2", text="Wait")
+            await wire.emit("OutputText", response_id="r", text="Full unheard conclusion")
+            await wire.emit("ResponseFinished", response_id="r", status="completed")
+            rows = session._store.rows("voice_playback")
+            assert len(rows) == 1 and rows[0]["response_id"] == "r"
+            assert rows[0]["played_audio_ms"] == 120
+            restored = Session(host, session_id="s")
+            history = next(row for row in restored.history() if row["input"] == "Give the result")
+            assert history["playback"]["state"] == "interrupted"
+            assert history["text"] == "Full unheard conclusion"
+            assert next(row for row in restored.history() if row["input"] == "Wait")["text"] == ""
+            await wire.emit("TranscriptCompleted", item_id="u3", text="What did I miss?")
+            assert any(
+                "Full unheard conclusion" in text and not trigger
+                for text, _, trigger in wire.messages
+            )
+            assert wire.cancelled == 1
+        finally:
+            await binding.detach()
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("stopped", [False, True])
+def test_review_invalidated_pending_response_stays_muted_after_speech_stops(tmp_path, stopped):
+    async def run():
+        _, session = make_session(tmp_path)
+        audio, client = Audio(), Client()
+        binding = await session.attach_voice(audio, VoiceProfile(client_factory=client))
+        wire = client.wires[0]
+        try:
+            handle = await session.announce("An old result")
+            await wire.emit("SpeechStarted", item_id="u")
+            if stopped:
+                await wire.emit("SpeechStopped", item_id="u")
+            await wire.emit("ResponseStarted", response_id="late")
+            await wire.emit("OutputAudio", response_id="late", data=b"x" * 4800)
+            await binding.barge_in()
+            await wire.emit("ResponseFinished", response_id="late", status="completed")
+            assert not any(audio.written) and wire.cancelled == 1
+            assert (await handle.wait())["state"] == "interrupted"
+            assert handle.response_id == "late"
+            assert session._store.rows("voice_unheard")
+        finally:
+            await binding.detach()
+
+    asyncio.run(run())
+
+
+def test_review_media_exit_rejects_unbound_audio_while_user_is_speaking(tmp_path):
+    async def run():
+        _, session = make_session(tmp_path)
+        audio, client = Audio(), Client()
+        binding = await session.attach_voice(audio, VoiceProfile(client_factory=client))
+        wire = client.wires[0]
+        try:
+            await wire.emit("SpeechStarted", item_id="u")
+            await wire.emit("OutputAudio", response_id="unbound", data=b"x" * 4800)
+            assert not any(audio.written)
+        finally:
+            await binding.detach()
+
+    asyncio.run(run())
+
+
+def test_review_media_exit_rechecks_invalidated_origin_after_playback_finished(tmp_path):
+    async def run():
+        _, session = make_session(tmp_path)
+        audio, client = Audio(), Client()
+        binding = await session.attach_voice(audio, VoiceProfile(client_factory=client))
+        wire = client.wires[0]
+        try:
+            await wire.emit("TranscriptCompleted", item_id="old", text="Hello")
+            await wire.emit("ResponseStarted", response_id="old-response")
+            await wire.emit("OutputAudio", response_id="old-response", data=b"x" * 4800)
+            await wire.emit("ResponseFinished", response_id="old-response", status="completed")
+            audio.position = 100
+            await asyncio.sleep(0.04)
+            assert binding._playback_handles["old-response"].done
+            await wire.emit("SpeechStarted", item_id="new")
+            await wire.emit("SpeechStopped", item_id="new")
+            count = len([frame for frame in audio.written if frame])
+            await wire.emit("OutputAudio", response_id="old-response", data=b"x" * 4800)
+            assert len([frame for frame in audio.written if frame]) == count
+            assert wire.cancelled == 0
+        finally:
+            await binding.detach()
+
+    asyncio.run(run())
+
+
+def test_review_fresh_user_input_after_late_notice_can_delegate(tmp_path):
+    async def run():
+        host, session = make_session(tmp_path)
+        audio, client = Audio(), Client()
+        binding = await session.attach_voice(audio, VoiceProfile(client_factory=client))
+        wire = client.wires[0]
+        try:
+            handle = await session.announce("An old result")
+            await wire.emit("SpeechStarted", item_id="new")
+            await wire.emit("ResponseStarted", response_id="late")
+            await wire.emit("OutputAudio", response_id="late", data=b"x" * 4800)
+            await wire.emit("ResponseFinished", response_id="late", status="completed")
+            await wire.emit("TranscriptCompleted", item_id="new", text="Write a report")
+            await wire.emit("SpeechStopped", item_id="new")
+            await wire.emit("ResponseStarted", response_id="new-response")
+            await wire.emit("OutputAudio", response_id="new-response", data=b"x" * 4800)
+            result = await wire.dispatcher.dispatch(
+                SimpleNamespace(
+                    response_id="new-response",
+                    call_id="delegate",
+                    name="delegate_task",
+                    arguments_json=json.dumps(SPEC),
+                )
+            )
+            assert json.loads(result)["status"] == "accepted" and len(host.made) == 1
+            assert handle.interrupted and wire.cancelled == 1
+            assert len([frame for frame in audio.written if frame]) == 1
+            assert binding._response_turns["new-response"] == "voice:new"
+        finally:
+            await binding.detach()
 
     asyncio.run(run())
