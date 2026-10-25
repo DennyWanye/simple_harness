@@ -240,7 +240,7 @@ async def run(root, principal, model, tools, render, last_seen=0):
 | `await Session.open(root, principal, model, tools=(), connectors=(), policy=SessionPolicy(), session_id="default", **host_options)` | 打开或恢复；当事人与租户绑定在持久台账中 |
 | `await session.send(text, idempotency_key=...)` | 回执含 `turn_id/state/text/tool_calls/usage`，`engine_turn_id` 是底层聊天回合号；也可写 `key=`，同一键与相同输入原样回放 |
 | `session.events(after=0)` | 持续异步迭代；补读持久事件并接收当前正文片段 |
-| `session.respond(request_id, decision, version, **fields)` | 同步人工回答；规划问题可给 `answer/nonce/attach_as_source`，审批可给 `reason/note` |
+| `session.respond(request_id, decision, version, **fields)` | 同步回答；规划问题可给 `answer/nonce/attach_as_source`，审批/复核可给 `reason/note/nonce`，裁定 `arbitrate` 可给 `ruling/basis/nonce`；仍校验本会话、版本、过期和请求状态 |
 | `await session.interrupt()` | 只停正在回答的文字回合，任务继续 |
 | `session.tasks()` / `session.task(task_id)` | 本会话关联任务与权威快照；不调用模型，额度耗尽仍可读 |
 | `session.cancel_task(task_id)` | 接受 mission 号或 delegation 号；创建中先记录取消意图，恢复创建后继续取消；终态不倒改 |
@@ -315,22 +315,32 @@ async def run(root, principal, model, tools, render, last_seen=0):
 
 ## 2e. 语音绑定（`[realtime]` 可选扩展，opt.218 候选）
 
-最后更新：2026-10-25。本节是候选接口；Service SDK 0.3.15 的规范化工具确认、工具循环、
-路线 a 内存回环及 Python 3.13 干净轮子环境接缝通过，正常 extra 依赖解析和检查通过。
-上一轮 0.3.14 的 A13 已验证生成、传输和设备播放分别记账；本轮 0.3.15 按任务重跑
-A08～A11 和完整示例，均保留未完成主链的阻断，逐项结论见阶段 3a 记录。不能把旧版本
-结果、工具协商就绪或依赖安装成功视为本轮完整验收或正式发版。
+最后更新：2026-10-25。本节是候选接口；当前 `[realtime]` 使用 Service SDK 0.3.16，
+规范化工具确认、工具循环、路线 a 内存回环及 Python 3.13 干净轮子环境接缝通过。
+当前候选源码与安装一致，正常 extra 解析后 21 包兼容。A08～A11 与三轮完整示例的逐项
+真实结论见阶段 3a 记录第十七节；旧 0.3.14 的 A13 证据不算本组合重验，不以依赖安装、
+工具协商或历史确认成功代替完整验收和正式发版。等待第六次复核后发版 opt.218。
 
-0.3.15 已修复提供方分配消息 item ID 的确认合同，原六项 ACK 反例全部通过；历史注入
-不自动回答，播报在真实确认后才续答，错误正文/角色/状态仍拒绝。真线路已有历史的绑定
-已能就绪，但本轮另观察到缺少 response_id 的 response.audio_transcript.done，被 SDK 以
-`protocol_error: response_id is required` 拒绝。完整场景及未到达步骤须看本轮记录；不忽略
-协议错误，不以绑定就绪或消息已发出代替实际恢复、播报和任务完成。
+0.3.16 保留提供方重新分配消息 item ID 的确认合同，并修复已知用户 item 的无 response_id
+附带转写：空正文不产生助手输出或新确认，非空正文归为用户转写。未知 item 或助手输出
+仍须有正确作用域，不补造 response_id，也不在 Host 桥过滤事件。原两个关键反例已转绿；
+旧反例中“已确认用户的非空转写也必须拒绝”不再符合这个明确的用户侧合同，原件和执行结果
+保留，新的回归改为验证用户来源及正文，不放宽未知/助手作用域拒绝。
+
+当前组合仍有已确认用户 item 随后的 `response.audio.done` 缺少有效 response_id 的线路
+阻断：Service 以协议错误拒绝后重连。历史回灌后继续录音的组合尚未完成验收；原地重试
+能恢复部分输入，不等于该合同已修复。三轮新建会话示例及无历史回灌的打断/取消分支已
+真实通过，不能用这些分支替代历史恢复。Host 桥不增加 provider 帧过滤兼容层。
+
+本轮验收驱动按用户定义的 auto 行为显式调用 `session.respond`：规划问题选择首个非停止/
+放弃选项，审批 approve、复核 review_pass、结果不明 arbitrate，并逐次记录选项与所选。
+裁定可透传 ruling/basis，审批与裁定 nonce 也透传；会话归属、版本、过期及请求状态校验
+不变。这是调用方的授权代答策略，不把播报或实际播放本身视为用户批准。
 
 `Session` 继续是唯一业务前门，Service SDK 负责媒体连接与工具结果回写循环，不反向依赖
 编排层。文本路径不要求安装 Service SDK。`[realtime]` 声明
-`simple-harness-service-sdk[realtime]==0.3.15`，激活 Service SDK 的网络传输依赖。
-0.3.15 要求 Harness `>=0.13.0.dev20260925`，允许本候选 opt.218；工具回显按 Service SDK
+`simple-harness-service-sdk[realtime]==0.3.16`，激活 Service SDK 的网络传输依赖。
+0.3.16 要求 Harness `>=0.13.0.dev20260925`，允许本候选 opt.218；工具回显按 Service SDK
 的工具名称、参数名和必填字段比较，允许提供方规范化描述和嵌套约束。调用时仍按原请求
 schema 校验参数，缺失工具、改名或参数集合变化仍拒绝就绪，工具说明与池身份不改。
 当前测试组合按下面顺序安装：先准备公共依赖，再以 `--no-index --find-links` 解析两个
@@ -339,15 +349,15 @@ schema 校验参数，缺失工具、改名或参数集合变化仍拒绝就绪�
 
 ```sh
 EVIDENCE=./.local-test-evidence/2026-10-25/unified-session/phase3/external
-SERVICE_WHEELS=./.local-test-evidence/2026-10-25/unified-session/phase3/live3/inputs
-uv venv --python 3.13 "$EVIDENCE/.venv-service315"
-uv pip install --python "$EVIDENCE/.venv-service315/bin/python" \
+SERVICE_WHEELS=./.local-test-evidence/2026-10-25/unified-session/phase3/live4/inputs
+uv venv --python 3.13 "$EVIDENCE/.venv-service316"
+uv pip install --python "$EVIDENCE/.venv-service316/bin/python" \
   'httpx>=0.28.1,<1' 'websockets>=15,<16' 'prompt-toolkit>=3.0.52,<4' \
   'packaging>=25,<27' 'pytest>=8.3,<9' 'deepseek-recipe==0.1.1'
-uv pip install --python "$EVIDENCE/.venv-service315/bin/python" --no-index \
-  --find-links "$SERVICE_WHEELS" --find-links "$EVIDENCE/wheels-service315" \
+uv pip install --python "$EVIDENCE/.venv-service316/bin/python" --no-index \
+  --find-links "$SERVICE_WHEELS" --find-links "$EVIDENCE/wheels-service316" \
   'simple-harness-sdk[realtime]==0.13.0.dev20260925+opt.218'
-uv pip check --python "$EVIDENCE/.venv-service315/bin/python"
+uv pip check --python "$EVIDENCE/.venv-service316/bin/python"
 ```
 
 音频示例另显式安装 `sounddevice>=0.5,<0.6`；它是示例的设备实现，不是桥的强制依赖。

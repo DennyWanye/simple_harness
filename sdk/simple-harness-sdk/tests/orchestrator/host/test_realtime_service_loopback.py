@@ -19,7 +19,11 @@ from agent_orchestrator.host import VoiceProfile
 
 pytest.importorskip("simple_harness_service.realtime")
 from simple_harness_service.realtime.adapters.qwen_omni import QWEN_CAPABILITY, QwenOmniAdapter
-from simple_harness_service.realtime.contracts import MintedRealtimeCredential, RealtimeError
+from simple_harness_service.realtime.contracts import (
+    MintedRealtimeCredential,
+    RealtimeError,
+    RealtimeErrorCode,
+)
 from simple_harness_service.realtime.relay_control import RelayControlCodec
 from simple_harness_service.realtime.session import ManagedRealtimeSession
 
@@ -61,9 +65,7 @@ class Connection:
             elif self.mismatch == "required":
                 session["tools"][0]["parameters"]["required"] = ["unexpected"]
             elif self.mismatch == "properties":
-                session["tools"][0]["parameters"]["properties"]["unexpected"] = {
-                    "type": "string"
-                }
+                session["tools"][0]["parameters"]["properties"]["unexpected"] = {"type": "string"}
             elif self.mismatch == "missing":
                 session["tools"].pop()
             await self.event("session.updated", session=session)
@@ -271,10 +273,10 @@ def test_service_loopback_rejects_changed_tool_identity(tmp_path, mismatch):
     asyncio.run(run())
 
 
-def test_realtime_extra_uses_service_315_and_allows_current_harness_candidate():
+def test_realtime_extra_uses_service_316_and_allows_current_harness_candidate():
     project = tomllib.loads((Path(__file__).resolve().parents[3] / "pyproject.toml").read_text())
     assert project["project"]["optional-dependencies"]["realtime"] == [
-        "simple-harness-service-sdk[realtime]==0.3.15"
+        "simple-harness-service-sdk[realtime]==0.3.16"
     ]
     service_requirements = [Requirement(value) for value in requires("simple-harness-service-sdk")]
     harness = next(req for req in service_requirements if req.name == "simple-harness-sdk")
@@ -358,3 +360,163 @@ def test_service_loopback_mismatched_message_cannot_trigger_response(tmp_path, c
             await binding.detach()
 
     asyncio.run(run())
+
+
+def confirmed_context():
+    adapter = QwenOmniAdapter()
+    request = adapter.append_message("Earlier user context", role="user")
+    item = deepcopy(request["item"])
+    item.update(id="item_provider_context", status="completed")
+    ack = adapter.decode_server_event(
+        json.dumps(
+            {"event_id": "event_context_ack", "type": "conversation.item.created", "item": item}
+        )
+    )
+    assert ack.context_ack_id == item["id"]
+    assert ack.context_request_id == request["item"]["id"]
+    return adapter, item["id"]
+
+
+def sideband(item_id, *, transcript="", response_id=None):
+    value = {
+        "event_id": "event_sideband",
+        "type": "response.audio_transcript.done",
+        "item_id": item_id,
+        "output_index": 0,
+        "content_index": 0,
+        "transcript": transcript,
+    }
+    if response_id is not None:
+        value["response_id"] = response_id
+    return value
+
+
+def test_acknowledged_user_empty_sideband_must_not_be_assistant_output():
+    adapter, item_id = confirmed_context()
+    decoded = adapter.decode_server_event(json.dumps(sideband(item_id)))
+    assert not decoded.events
+    assert decoded.introduced_response_id is None
+    assert decoded.context_ack_id is None
+    assert decoded.context_request_id is None
+
+
+def test_context_sideband_must_not_disconnect_bridge_before_next_user_turn(tmp_path):
+    class ContextConnection(Connection):
+        context_item = None
+
+        async def event(self, kind, **fields):
+            if kind == "conversation.item.created" and fields["item"].get("type") == "message":
+                self.context_item = deepcopy(fields["item"])
+            await super().event(kind, **fields)
+
+    async def run():
+        host, session = make_session(tmp_path)
+        committed_history(session)
+        connection = ContextConnection(provider_message_ids=True)
+        binding = await session.attach_voice(
+            Audio(), VoiceProfile(client_factory=factory(connection), max_reconnects=0)
+        )
+        generation = binding.generation
+        try:
+            assert connection.context_item["role"] == "user"
+            assert connection.context_item["status"] == "completed"
+            value = sideband(connection.context_item["id"])
+            kind = value.pop("type")
+            value.pop("event_id")
+            await connection.event(kind, **value)
+            await connection.event(
+                "conversation.item.input_audio_transcription.completed",
+                item_id="fresh_user_item",
+                transcript="Continue the conversation",
+            )
+            await wait_for(
+                lambda: (
+                    binding._detached
+                    or any(r["input"] == "Continue the conversation" for r in session.history())
+                )
+            )
+            assert not binding._detached, "Known user context sideband terminated the live binding"
+            assert binding.generation == generation
+            assert sum(r["input"] == "Continue the conversation" for r in session.history()) == 1
+            assert not host.made
+            assert not any(e["type"] == "response.create" for e in connection.sent)
+        finally:
+            await binding.detach()
+
+    asyncio.run(run())
+
+
+def test_unknown_unscoped_transcript_still_requires_identity():
+    adapter, _ = confirmed_context()
+    with pytest.raises(RealtimeError, match="response_id is required") as error:
+        adapter.decode_server_event(json.dumps(sideband("item_unknown")))
+    assert error.value.code is RealtimeErrorCode.PROTOCOL_ERROR
+
+
+def test_confirmed_user_nonempty_sideband_is_user_transcript():
+    adapter, item_id = confirmed_context()
+    decoded = adapter.decode_server_event(
+        json.dumps(sideband(item_id, transcript="A user transcript"))
+    )
+    assert len(decoded.events) == 1
+    assert decoded.events[0].kind == "TranscriptCompleted"
+    assert decoded.events[0].turn_id == item_id
+    assert decoded.events[0].text == "A user transcript"
+
+
+def test_assistant_transcript_missing_response_must_still_fail():
+    adapter = QwenOmniAdapter()
+    adapter.decode_server_event(
+        json.dumps(
+            {
+                "event_id": "event_response",
+                "type": "response.created",
+                "response": {"id": "response_1"},
+            }
+        )
+    )
+    adapter.decode_server_event(
+        json.dumps(
+            {
+                "event_id": "event_output",
+                "type": "response.output_item.added",
+                "response_id": "response_1",
+                "output_index": 0,
+                "item": {"id": "item_assistant", "type": "message", "role": "assistant"},
+            }
+        )
+    )
+    with pytest.raises(RealtimeError, match="response_id is required"):
+        adapter.decode_server_event(json.dumps(sideband("item_assistant")))
+
+
+def test_scoped_assistant_transcript_is_preserved():
+    adapter, _ = confirmed_context()
+    decoded = adapter.decode_server_event(
+        json.dumps(sideband("item_assistant", transcript="A real answer", response_id="response_1"))
+    )
+    assert len(decoded.events) == 1
+    output = decoded.events[0]
+    assert output.kind == "OutputText"
+    assert output.response_id == "response_1"
+    assert output.item_id == "item_assistant"
+    assert output.text == "A real answer"
+    assert output.is_delta is False
+
+
+def test_user_audio_transcript_is_preserved():
+    adapter, _ = confirmed_context()
+    decoded = adapter.decode_server_event(
+        json.dumps(
+            {
+                "event_id": "event_user_transcript",
+                "type": "conversation.item.input_audio_transcription.completed",
+                "item_id": "fresh_user_item",
+                "transcript": "A real user request",
+            }
+        )
+    )
+    assert len(decoded.events) == 1
+    assert decoded.events[0].kind == "TranscriptCompleted"
+    assert decoded.events[0].turn_id == "fresh_user_item"
+    assert decoded.events[0].text == "A real user request"

@@ -1,3 +1,17 @@
+最后更新：2026-10-26 CST（阶段 3a：Service SDK 0.3.16 与 auto 联合重验，未发版）。
+extra/锁文件及新 Python 3.13 干净候选环境切到 0.3.16，21 包兼容、848/848 源码一致。
+Session.respond 已补 ruling/basis/nonce 透传，仍校验身份、归属、版本与状态；SDK 关联
+49 通过/0 失败、驱动合同 18 通过/0 失败。原两个用户转写关键反例已转绿；后继用户侧
+response.audio.done 仍有合同缺口，新真实 Service 反例 3 通过/2 失败，未改安装库或桥过滤。
+原 A08～A11 基线 0 通过/4 阻断；新三轮完整示例 COMPLETED、交付索引、结果实际播完
+2160 ms 后打断/挂断通过，整轮播放 46240 ms。另语音委派→文字取消、语音前置录音
+打断两个补充分支通过，不回填原历史组合。45 次真实 auto 代答均有请求/选项/所选回执。
+A08 原较宽范围任务 FAILED，但终态结果已实播 25040 ms；A11 未到新进程恢复。
+清单 NOT_RUN，Host 仍 opt.217，无新 worktree，未 push，不记阶段完成或发版里程碑。
+等待第六次复核后发版 opt.218，剩余协议/原组合阻断需先修通复验。
+详见 [阶段 3a 记录第十七节](../plans/2026-10-24-unified-session-realtime/阶段3a-记录.md)
+及 [用户侧附带事件交接](../plans/2026-10-24-unified-session-realtime/阶段3a-附带转写阻断交接.md)。
+
 最后更新：2026-10-25 23:10 CST（阶段 3b 第三次复评处理）。报告 `f9febe9b3` 仍为 FAIL；B2/B3 已关闭，B1 正式依赖、其余 15 项后端失败及真实模型委派验收仍开放。当前钉版及 vendor 仍 opt.217，按任务约定停止，本轮未运行测试或冒烟，阶段 BLOCKED，不追加完成里程碑。详见 [PROJECT_STATUS.md](PROJECT_STATUS.md) 与[阶段 3b 记录](../plans/2026-10-24-unified-session-realtime/阶段3b-记录.md)末节。
 
 最后更新：2026-10-25 23:06 CST（阶段 3b opt.218 就位复查）。Host 钉版与 vendor 仍 opt.217；按任务条件停止，未安装、复跑测试或模型冒烟，阶段保持 BLOCKED。B2/B3 已独立关闭，B1、其他后端失败及真实委派验收仍待完成，不计完成里程碑。见 [PROJECT_STATUS.md](PROJECT_STATUS.md) 与[阶段 3b 记录](../plans/2026-10-24-unified-session-realtime/阶段3b-记录.md)末节。

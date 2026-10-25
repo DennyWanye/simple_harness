@@ -1,6 +1,6 @@
 {
   "acceptance_evidence": null,
-  "deployment_id": "addf003de20f654ce6f493594b4ae7d9e12cfc463b916ffc38073f668c880a23",
+  "deployment_id": "1b51645d68170dc337bd870c6231263984001535a32f8042ede2b717212aeb02",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -173,7 +173,7 @@
     "agent_orchestrator/host/realtime_bridge.py": "79d1a556322d6370a1b109a220f7babe560885e70048f353e4777ce1d08edc33",
     "agent_orchestrator/host/sandbox_doctor.py": "b28434e449bee596487d8ed78eca94fef104f76d7ad50d0d6f3a694ef9161eae",
     "agent_orchestrator/host/script_runner.py": "9ac0b54f3487b6367a7f7b7f4f1a5d9acbc177b9620b7d35aceba2c89fa74736",
-    "agent_orchestrator/host/session.py": "084b41c1160b7390901baa6620249b3d1fe4c155856f80a0f9ee0301bf782fa5",
+    "agent_orchestrator/host/session.py": "76e95633d562654b6fc9afcdd6196346482f9047fbd0c6f9d98701a99038ca72",
     "agent_orchestrator/host/session_chat.py": "18ec4f9f589150f7f5caa10495e3126e0c97b1485bd289eebcf6666e44a092b0",
     "agent_orchestrator/host/session_ledger.py": "26a5aecb535a8145ac67cd4789271c06a990b00a28eed019164c3d071be873f7",
     "agent_orchestrator/host/sessions.py": "048a52d7997717d51fcc1efa0bc97a32dc1948e6df602608aed165f58775beda",

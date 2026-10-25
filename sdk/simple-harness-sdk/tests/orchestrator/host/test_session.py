@@ -383,6 +383,45 @@ def test_approval_binding_version_expiration_and_identity_fields(tmp_path):
         session.respond("a", "approve", version=current)
 
 
+@pytest.mark.parametrize(
+    "decision,fields",
+    [
+        ("approve", {"nonce": "auto-approve"}),
+        ("review_pass", {"nonce": "auto-review", "note": "Auto mode confirmation"}),
+        (
+            "arbitrate",
+            {"ruling": "pass", "basis": "Auto mode confirmation", "nonce": "auto-arbitrate"},
+        ),
+    ],
+)
+def test_session_respond_forwards_bound_approval_decision_fields(tmp_path, decision, fields):
+    host, session = make_session(tmp_path)
+    turn = session._commit_input("do it", "k")["turn_id"]
+    mid = session._delegations.delegate(turn, "c", SPEC)["mission_id"]
+    request = {"request_id": "auto-request", "mission_id": mid, "state": "PENDING"}
+    host.approvals = lambda mission_id: [request]
+    host.decide = lambda rid, command, **values: (
+        host.decisions.append((rid, command, values)) or {"ok": True}
+    )
+    session._inbox.catch_up()
+    event = next(e for e in session._store.events(0) if e["kind"] == "needs_response")
+    assert session.respond(
+        "auto-request", decision, version=event["payload"]["version"], **fields
+    ) == {"ok": True}
+    assert host.decisions == [("auto-request", decision, fields)]
+    with pytest.raises(Exception, match="invalid_request"):
+        session.respond(
+            "auto-request",
+            decision,
+            version=event["payload"]["version"],
+            actor_id="other",
+            **fields,
+        )
+    request["state"] = "DECIDED"
+    with pytest.raises(Exception, match="stale_request"):
+        session.respond("auto-request", decision, version=event["payload"]["version"], **fields)
+
+
 def test_real_mission_result_inbox_next_turn_and_cold_events(tmp_path):
     async def case():
         script = _chat_script([("delegate_task", SPEC), "Accepted.", "The report is ready."])

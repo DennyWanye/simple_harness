@@ -366,7 +366,15 @@ class Session:
                     or str(request.get("state", request.get("status", "PENDING"))) != "PENDING"
                 ):
                     raise SessionError("stale_request")
-                if set(fields) - {"answer", "nonce", "attach_as_source", "reason", "note"}:
+                if set(fields) - {
+                    "answer",
+                    "nonce",
+                    "attach_as_source",
+                    "reason",
+                    "note",
+                    "ruling",
+                    "basis",
+                }:
                     raise SessionError(
                         "invalid_request", "identity and request binding cannot be overridden"
                     )
@@ -385,7 +393,11 @@ class Session:
                 return self._host.decide(
                     request_id,
                     decision,
-                    **{k: v for k, v in fields.items() if k in {"reason", "note"}},
+                    **{
+                        k: v
+                        for k, v in fields.items()
+                        if k in {"reason", "note", "ruling", "basis", "nonce"}
+                    },
                 )
         if self._store.get("requests", request_id) is not None:
             raise SessionError("stale_request", "request is no longer pending")
