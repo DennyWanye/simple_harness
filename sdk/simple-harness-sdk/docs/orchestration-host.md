@@ -336,7 +336,7 @@ TranscriptCompleted，因此桥用 Service 的公开 `context_ack_id` 记录每�
 阻断：Service 以协议错误拒绝后重连。历史回灌后继续录音的组合尚未完成验收；原地重试
 能恢复部分输入，不等于该合同已修复。来源修复前部署的三轮新建会话示例及无历史回灌
 的打断/取消分支已真实通过，不能用这些分支替代历史恢复或最终轮子验收。最终来源修复
-轮子另跑 guard-* 记录；开线持续 unavailable/busy 时如实记阻断。Host 桥不增加 provider
+轮子已另跑 guard-*，四项及示例均因开线持续 unavailable 阻断。Host 桥不增加 provider
 帧过滤兼容层。
 
 本轮验收驱动按用户定义的 auto 行为显式调用 `session.respond`：规划问题选择首个非停止/
