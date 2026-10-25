@@ -5,9 +5,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+import tomllib
 from copy import deepcopy
+from importlib.metadata import requires
+from pathlib import Path
 
 import pytest
+from packaging.requirements import Requirement
 from test_realtime_bridge import Audio
 from test_session import SPEC, make_session
 
@@ -21,11 +25,12 @@ from simple_harness_service.realtime.session import ManagedRealtimeSession
 
 
 class Connection:
-    def __init__(self, normalize=False):
+    def __init__(self, normalize=False, mismatch=None):
         self.queue = asyncio.Queue()
         self.sent = []
         self.counter = 0
         self.normalize = normalize
+        self.mismatch = mismatch
         self.responses = 0
 
     async def event(self, kind, **fields):
@@ -49,6 +54,16 @@ class Connection:
                         if field.get("type") == "array":
                             for key in ("items", "minItems", "maxItems"):
                                 field.pop(key, None)
+            if self.mismatch == "name":
+                session["tools"][0]["name"] += "_unexpected"
+            elif self.mismatch == "required":
+                session["tools"][0]["parameters"]["required"] = ["unexpected"]
+            elif self.mismatch == "properties":
+                session["tools"][0]["parameters"]["properties"]["unexpected"] = {
+                    "type": "string"
+                }
+            elif self.mismatch == "missing":
+                session["tools"].pop()
             await self.event("session.updated", session=session)
         elif value["type"] == "conversation.item.create":
             item = {**value["item"], "status": "completed"}
@@ -105,7 +120,7 @@ async def wait_for(predicate):
             await asyncio.sleep(0.01)
 
 
-async def tool_call(connection, response_id, name="delegate_task"):
+async def tool_call(connection, response_id, name="delegate_task", arguments=None):
     await connection.event(
         "response.output_item.added",
         response_id=response_id,
@@ -119,7 +134,7 @@ async def tool_call(connection, response_id, name="delegate_task"):
         output_index=0,
         call_id="call-1",
         name=name,
-        arguments=json.dumps(SPEC),
+        arguments=json.dumps(SPEC if arguments is None else arguments),
     )
     await connection.event(
         "response.done",
@@ -197,13 +212,59 @@ def test_service_loopback_announcement_context_ack_keeps_control_commands_denied
     asyncio.run(run())
 
 
-def test_service_loopback_rejects_lossy_tool_catalogue_echo(tmp_path):
+def test_service_loopback_accepts_normalized_catalogue_with_original_dispatch_validation(tmp_path):
+    async def run():
+        host, session = make_session(tmp_path)
+        connection = Connection(normalize=True)
+        binding = await session.attach_voice(
+            Audio(), VoiceProfile(client_factory=factory(connection))
+        )
+        try:
+            assert binding.negotiation["status"] == "ready"
+            await connection.event(
+                "conversation.item.input_audio_transcription.completed",
+                item_id="user-1",
+                transcript="Write a report",
+            )
+            await connection.event("response.created", response={"id": "user-response"})
+            # Provider normalization must not relax the local command schema.
+            await tool_call(
+                connection,
+                "user-response",
+                arguments={"goal": "Write a report", "success_criteria": []},
+            )
+            await wait_for(
+                lambda: any(v["type"] == "conversation.item.create" for v in connection.sent)
+            )
+            outputs = [
+                v["item"] for v in connection.sent if v["type"] == "conversation.item.create"
+            ]
+            assert json.loads(outputs[0]["output"])["error"] == "invalid_arguments"
+            assert not host.made
+        finally:
+            await binding.detach()
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("mismatch", ["name", "required", "properties", "missing"])
+def test_service_loopback_rejects_changed_tool_identity(tmp_path, mismatch):
     async def run():
         host, session = make_session(tmp_path)
         with pytest.raises(Exception, match="unsupported"):
             await session.attach_voice(
-                Audio(), VoiceProfile(client_factory=factory(Connection(True)))
+                Audio(), VoiceProfile(client_factory=factory(Connection(mismatch=mismatch)))
             )
         assert session._voice is None and not host.made
 
     asyncio.run(run())
+
+
+def test_realtime_extra_uses_service_314_and_allows_current_harness_candidate():
+    project = tomllib.loads((Path(__file__).resolve().parents[3] / "pyproject.toml").read_text())
+    assert project["project"]["optional-dependencies"]["realtime"] == [
+        "simple-harness-service-sdk[realtime]==0.3.14"
+    ]
+    service_requirements = [Requirement(value) for value in requires("simple-harness-service-sdk")]
+    harness = next(req for req in service_requirements if req.name == "simple-harness-sdk")
+    assert harness.specifier.contains("0.13.0.dev20260925+opt.218", prereleases=True)

@@ -315,33 +315,42 @@ async def run(root, principal, model, tools, render, last_seen=0):
 
 ## 2e. 语音绑定（`[realtime]` 可选扩展，opt.218 候选）
 
-最后更新：2026-10-25。本节是候选接口；离线语音桥测试通过，Service SDK 0.3.13
-候选轮子的工具循环及路线 a 内存回环通过，Python 3.13 轮子环境接缝通过；真线路因有损
-工具回显阻断，普通依赖解析仍有钉版冲突，不能视为阶段 3a 完成或正式发版。
+最后更新：2026-10-25。本节是候选接口；Service SDK 0.3.14 的规范化工具确认、工具循环、
+路线 a 内存回环及 Python 3.13 干净轮子环境接缝通过，正常 extra 依赖解析和检查通过。
+真实 A13 已验证生成、传输和设备播放分别记账；其他场景的逐项结论见阶段 3a 记录，
+不能把工具协商就绪或依赖安装成功视为阶段整体完成或正式发版。
+
+当前真线路仍有消息确认限制：`conversation.item.create` 的消息 item ID 在回显中被改写，
+Service SDK 0.3.14 不能关联确认，报 `context acknowledgement timed out`。已有历史的绑定、
+重连回灌与路线 a 播报尚受此阻断；不忽略确认，不以消息已发出代替实际播完。
 
 `Session` 继续是唯一业务前门，Service SDK 负责媒体连接与工具结果回写循环，不反向依赖
 编排层。文本路径不要求安装 Service SDK。`[realtime]` 声明
-`simple-harness-service-sdk[realtime]==0.3.13`，激活 Service SDK 的网络传输依赖。
-指定私有候选的 SHA-256 已核对，但其发行元数据仍要求 Harness opt.216；与本候选 opt.218
-的普通解析存在实际冲突，`uv pip check` 会报告一项不兼容。此处不伪造元数据或降级 Harness。
-当前测试组合按下面顺序安装，私有轮子目录使用 `--find-links`；在仓库根目录执行，`EVIDENCE`
+`simple-harness-service-sdk[realtime]==0.3.14`，激活 Service SDK 的网络传输依赖。
+0.3.14 要求 Harness `>=0.13.0.dev20260925`，允许本候选 opt.218；工具回显按 Service SDK
+的工具名称、参数名和必填字段比较，允许提供方规范化描述和嵌套约束。调用时仍按原请求
+schema 校验参数，缺失工具、改名或参数集合变化仍拒绝就绪，工具说明与池身份不改。
+当前测试组合按下面顺序安装：先准备公共依赖，再以 `--no-index --find-links` 解析两个
+私有轮子，不使用 `--no-deps`。在仓库根目录执行，`EVIDENCE`
 指向已准备好的忽略目录 `./.local-test-evidence/2026-10-25/unified-session/phase3/external`：
 
 ```sh
 EVIDENCE=./.local-test-evidence/2026-10-25/unified-session/phase3/external
-uv venv --python 3.13 "$EVIDENCE/.venv"
-uv pip install --python "$EVIDENCE/.venv/bin/python" --no-index --no-deps \
-  --find-links "$EVIDENCE/inputs" 'simple-harness-service-sdk==0.3.13'
-uv pip install --python "$EVIDENCE/.venv/bin/python" --no-index --no-deps \
-  --find-links "$EVIDENCE/wheels-final" 'simple-harness-sdk[realtime]==0.13.0.dev20260925+opt.218'
-uv pip install --python "$EVIDENCE/.venv/bin/python" \
+SERVICE_WHEELS=./.local-test-evidence/2026-10-25/unified-session/phase3/live2/inputs
+uv venv --python 3.13 "$EVIDENCE/.venv-service314"
+uv pip install --python "$EVIDENCE/.venv-service314/bin/python" \
   'httpx>=0.28.1,<1' 'websockets>=15,<16' 'prompt-toolkit>=3.0.52,<4' \
-  'pytest>=8.3,<9' 'deepseek-recipe==0.1.1'
+  'packaging>=25,<27' 'pytest>=8.3,<9' 'deepseek-recipe==0.1.1'
+uv pip install --python "$EVIDENCE/.venv-service314/bin/python" --no-index \
+  --find-links "$SERVICE_WHEELS" --find-links "$EVIDENCE/wheels-service314" \
+  'simple-harness-sdk[realtime]==0.13.0.dev20260925+opt.218'
+uv pip check --python "$EVIDENCE/.venv-service314/bin/python"
 ```
 
 音频示例另显式安装 `sounddevice>=0.5,<0.6`；它是示例的设备实现，不是桥的强制依赖。
-上述轮子组合已经在仓库内 Python 3.13 干净环境导入并验证 Host 会话接缝；不能据此宣称
-普通 extra 解析或真线路已通过。依赖锁须等 Service SDK 元数据对齐后再重新解析。
+上述轮子组合已经在仓库内 Python 3.13 干净环境完成正常 extra 解析、依赖检查和 Host 会话
+接缝验证。SDK 的 uv.lock 已重锁，私有包指向上述仓库相对目录；复现锁文件前须先放入校验
+过的私有轮子，公开索引不承担私有候选的分发。
 
 ```python
 from agent_orchestrator.host import VoiceProfile

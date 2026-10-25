@@ -1,3 +1,13 @@
+最后更新：2026-10-25 CST（阶段 3a：Service SDK 0.3.14 与评审失败收口，未发版）。
+可选 extra 已钉 0.3.14，私有轮子校验、正常依赖解析及 uv.lock 检查通过；新 Python 3.13
+干净环境 21 包全部兼容，848/848 安装源码一致。按两次复核原命令分别 205 通过/0 失败、228 通过/0 失败；
+原 25 次失败去重 14 项，旧失败段 25/25 有沙箱探测拒绝，受评旧源码 993f 对照 14 通过/0 失败，
+逐项收口为执行环境差异，未为此修改生产预算、恢复或池身份。真实 A13 通过，生成/传输结束时
+已收 25920 ms、设备只播 5254 ms，随后确实播完；A08/A09/A10/A11 及三轮示例仍阻断，
+消息 item ID 回显改写导致 context ACK 超时，另有任务未终态或语音未走委派。没有忽略确认、
+改提示词或自签 PASS。清单已重生成，仍 NOT_RUN；Host opt.217，无新 worktree、未 push。
+等待第四次复核后发版 opt.218。详见 [阶段 3a 记录第十三节](../plans/2026-10-24-unified-session-realtime/阶段3a-记录.md)。
+
 最后更新：2026-10-25 19:33 CST（阶段 3b 复评修复，仍未放行）。`1e70791f0` 修复已加载任务的审批 request_id 关联、持久 failed 回执后输入键不释放两项缺陷；先失败后修，前端205通过/0失败、typecheck通过。两项待独立复核；B1实际安装SDK仍opt.217，无open_session，合同3通过/1失败，原复评其他15项后端失败未复验清零，不计阶段完成。当前状态见[PROJECT_STATUS.md](PROJECT_STATUS.md)、[UI.md](UI.md)；详见[阶段3b记录](../plans/2026-10-24-unified-session-realtime/阶段3b-记录.md)末节，原独立FAIL报告保留。
 
 最后更新：2026-10-25 CST（阶段 3b 桌面接线已提交，验收 BLOCKED）。主对话改消费 SDK Session，三份桌面通用实现已删除；任务页保留 Host 接口。实现 `b89c1fbe9`；后端去重280通过/1失败，前端197通过、typecheck通过。**实际钉版与安装仍为 opt.217，缺 open_session**；源码 opt.218 接缝尚未成为本机正式运行依赖。隔离后端文字/委派请求均被拒，0 delegated，已清进程与临时目录，不计真实模型或阶段完成。当前事实见 [AGENT_ORCHESTRATION.md](AGENT_ORCHESTRATION.md)、[HOST_ENTRY.md](HOST_ENTRY.md)、[UI.md](UI.md)、[PROJECT_STATUS.md](PROJECT_STATUS.md)；明细与证据索引见 [阶段 3b 记录](../plans/2026-10-24-unified-session-realtime/阶段3b-记录.md)。

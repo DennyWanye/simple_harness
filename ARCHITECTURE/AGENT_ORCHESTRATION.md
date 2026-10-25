@@ -1,3 +1,13 @@
+最后更新：2026-10-25 CST（阶段 3a：Service SDK 0.3.14 与评审失败收口，未发版）。
+可选 extra 已钉 0.3.14，私有轮子校验、正常依赖解析及 uv.lock 检查通过；新 Python 3.13
+干净环境 21 包全部兼容，848/848 安装源码一致。按两次复核原命令分别 205 通过/0 失败、228 通过/0 失败；
+原 25 次失败去重 14 项，旧失败段 25/25 有沙箱探测拒绝，受评旧源码 993f 对照 14 通过/0 失败，
+逐项收口为执行环境差异，未为此修改生产预算、恢复或池身份。真实 A13 通过，生成/传输结束时
+已收 25920 ms、设备只播 5254 ms，随后确实播完；A08/A09/A10/A11 及三轮示例仍阻断，
+消息 item ID 回显改写导致 context ACK 超时，另有任务未终态或语音未走委派。没有忽略确认、
+改提示词或自签 PASS。清单已重生成，仍 NOT_RUN；Host opt.217，无新 worktree、未 push。
+等待第四次复核后发版 opt.218。详见 [阶段 3a 记录第十三节](../plans/2026-10-24-unified-session-realtime/阶段3a-记录.md)。
+
 最后更新：2026-10-25 CST（阶段 3b 桌面源码接线，整体验收 BLOCKED）。Host 实现 `b89c1fbe9` 将主界面文字接到已有 SDK Host 的 `open_session("desktop-main") → Session.send`；当事人继承 Host，数据根和任务页任务库不变。委派、幂等、inbox、ack、结果回传、人工请求与持久事件全部消费 SDK，不再有桌面自建的 chat_tool.py（721 行）、notices.py（150 行）、pump.py（159 行），共删除 1030 行；工具注册与旧通知/广播协议一并清理。任务页仍使用原 Host 创建、读取、审批接口。
 
 主对话通过 session_events 订阅 `Session.events(after)`，仅广播白名单 session_event；断线停止订阅，发送仍由 SDK 收尾。respond 的人工请求号与传输请求号分开，60 位审批版本在线上用十进制字符串；tasks/task/cancel_task、inbox/ack/history/budget 均经 Session，预算账本路径不出门。旧通知文件或已有 foreground_turns 明确拒绝为不兼容，不迁移、不删除。
