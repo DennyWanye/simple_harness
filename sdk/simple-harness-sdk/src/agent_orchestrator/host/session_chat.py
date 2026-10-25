@@ -120,6 +120,35 @@ class SessionChatService(ChatService):
                 self._bind(pool, agent, self.session.session_id, tuple(config.tool_names))
         await super()._recover_pending_turns()
 
+    def _reconcile_reservations(self) -> None:
+        super()._reconcile_reservations()
+        pool = self._pool()
+        store, _ = self._ledger()
+        attempts = self.session._store.connection.execute(
+            "SELECT key FROM records WHERE namespace='budget_attempts'"
+        ).fetchall()
+        for (engine_key,) in attempts:
+            subject = self.session._store.get("budget_attempts", engine_key)
+            if not subject.startswith("session-result:"):
+                continue
+            with store.read_view():
+                row = store.connection.execute(
+                    "SELECT state FROM budget_reservations WHERE subject_id=?", (subject,)
+                ).fetchone()
+            if row is None or row[0] != "RESERVED":
+                continue
+            agent_id, _, input_id = engine_key.partition(":")
+            binding = pool.runtime.binding(agent_id)
+            turn = pool.runtime.uow.read_agent_turn_by_input(agent_id, input_id)
+            # Unclaimed allowances and attempts not yet submitted remain available.
+            if binding is None or turn is None:
+                continue
+            baseline = self.session._store.get("invocation_baselines", engine_key)
+            if baseline is None:
+                continue
+            facts, _, unknown = self._usage(pool, binding.run_id, set(baseline))
+            self._settle(subject, facts, unknown or turn.phase not in ("committed", "failed"), 0)
+
     def _profile_id(self, profile_id: str) -> str:
         return (
             profile_id.removesuffix("chat-v1")

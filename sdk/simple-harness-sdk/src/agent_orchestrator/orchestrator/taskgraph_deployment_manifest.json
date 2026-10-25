@@ -1,6 +1,6 @@
 {
   "acceptance_evidence": null,
-  "deployment_id": "7ac2659e5f7adbc24578e9fe3982997091fcd866472a3c96f6cd28523813c3fd",
+  "deployment_id": "52cc0e352a51ada7d8356b409d17555cb646b721f089ea9b1f11af83e84aa0dd",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -173,7 +173,7 @@
     "agent_orchestrator/host/sandbox_doctor.py": "b28434e449bee596487d8ed78eca94fef104f76d7ad50d0d6f3a694ef9161eae",
     "agent_orchestrator/host/script_runner.py": "9ac0b54f3487b6367a7f7b7f4f1a5d9acbc177b9620b7d35aceba2c89fa74736",
     "agent_orchestrator/host/session.py": "f6fd6de26bd2dfd504a24c9ddb5f466e5a01ef702d29a10f6286fa684ecdb86b",
-    "agent_orchestrator/host/session_chat.py": "c6dc72db60cdc3c14b2513a525838cf2b60e89288b7cc0c966be2061c5e2c101",
+    "agent_orchestrator/host/session_chat.py": "146f966a696ce96bbf313179e21cbc291254448be8c56a362d94bfdab9833cf3",
     "agent_orchestrator/host/session_ledger.py": "26a5aecb535a8145ac67cd4789271c06a990b00a28eed019164c3d071be873f7",
     "agent_orchestrator/host/settings.py": "a5d3e5c17636ccfeba7cb8e486d863f56d240fb885649df3532f4c33a93f4e3c",
     "agent_orchestrator/host/tokenizer.py": "2ac9133c33a53afbd00799348a17921541dea0b2b45c995aac65c62e67eef339",

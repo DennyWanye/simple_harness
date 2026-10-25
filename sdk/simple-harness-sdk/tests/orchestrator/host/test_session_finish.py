@@ -4,6 +4,11 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
 
 import pytest
 from test_chat import _chat_script
@@ -46,6 +51,115 @@ def test_rejected_source_batch_does_not_poison_session_or_hold_budget(tmp_path, 
             await session.close()
 
     asyncio.run(case())
+
+
+@pytest.mark.parametrize("known", [False, True])
+def test_result_retry_process_exit_reconciles_only_claimed_attempts(tmp_path, known):
+    command = [sys.executable, str(Path(__file__).resolve()), str(tmp_path), str(int(known))]
+    crashed = subprocess.run(command, capture_output=True, text=True, timeout=120)
+    assert crashed.returncode == 77, crashed.stderr[-3000:]
+    recovered = subprocess.run([*command, "resume"], capture_output=True, text=True, timeout=120)
+    assert recovered.returncode == 0, recovered.stderr[-5000:]
+
+
+async def result_retry_process(root, known, resume):
+    import agent_orchestrator.orchestrator.recovery_coordinator as recovery
+
+    recovery.process_identity = lambda pid: (
+        {"process_started_at": "session-test-process"} if pid == os.getpid() else None
+    )
+    marker = root / "attempt.json"
+    if not resume:
+        session, settings, _, first = await session_with_result(root)
+        provider = settings["provider"]
+        provider.held.add("chat")
+
+        async def unknown_result(agent, turn_id, deadline):
+            await asyncio.wait_for(provider.entered.wait(), 10)
+            return None
+
+        session._chat._wait = unknown_result
+        with pytest.raises(Exception, match="chat_timeout"):
+            await session.send("Read results", key="retry")
+        agent = await session._chat._pool().runtime.open(first["agent_id"])
+        await agent.close(command_id="abandon-first", drain_timeout=0)
+        await session.close()
+        settings = options(_chat_script(["Recovered result."]))
+        if not known:
+            settings["provider"].held.add("chat")
+        session = await Session.open(root, **settings)
+        session._reserve_result({"delegation_id": "unclaimed"})
+
+        def crash():
+            attempts = session._store.rows("budget_attempts")
+            subject = attempts[-1]
+            assert subject.startswith("session-result:") and subject.count(":") == 2
+            generation, binding = session._chat._session_generation(
+                session._chat._pool().runtime, session.session_id
+            )
+            assert generation == 2
+            reservation = session._host.orchestrator.commit.ledger.reservation(subject)
+            marker.write_text(
+                json.dumps(
+                    {
+                        "subject": subject,
+                        "reservation": reservation,
+                        "agent_id": binding.agent_id,
+                        "used": session._host.global_budget_status()["used_tokens"],
+                    }
+                )
+            )
+            os._exit(77)
+
+        if known:
+            session._chat._close_books = lambda *args: crash()
+        else:
+
+            async def outbound(agent, turn_id, deadline):
+                await asyncio.wait_for(settings["provider"].entered.wait(), 10)
+                crash()
+
+            session._chat._wait = outbound
+        await session.send("Read results", key="retry")
+        raise AssertionError("crash point not reached")
+
+    saved = json.loads(marker.read_text())
+    settings = options(_chat_script(["Recovered result.", "Next."]))
+    session = await Session.open(root, **settings)
+    try:
+        store = session._host.store
+        row = session._host.orchestrator.commit.ledger.reservation(saved["subject"])
+        assert row["state"] == "SETTLED", row
+        after = session._host.global_budget_status()["used_tokens"]
+        delta = after - saved["used"]
+        if known:
+            assert 0 < delta < saved["reservation"]["reserved_tokens"]
+        else:
+            assert delta == saved["reservation"]["reserved_tokens"]
+        session._chat._reconcile_reservations()
+        assert session._host.global_budget_status()["used_tokens"] == after
+        unclaimed = store.connection.execute(
+            "SELECT state FROM budget_reservations WHERE subject_id='session-result:unclaimed'"
+        ).fetchone()
+        assert unclaimed[0] == "RESERVED"
+        agent = await session._chat._pool().runtime.open(saved["agent_id"])
+        await agent.close(command_id="abandon-crashed-retry", drain_timeout=0)
+        reply = await session.send("Read results", key="retry")
+        assert reply["state"] == "committed"
+        reserved = store.connection.execute(
+            "SELECT subject_id FROM budget_reservations WHERE state='RESERVED'"
+        ).fetchall()
+        assert [r[0] for r in reserved] == ["session-result:unclaimed"]
+        assert all(n["applied_turn_id"] == reply["turn_id"] for n in session.inbox())
+    finally:
+        await session.close()
+    session = await Session.open(root, **settings)
+    try:
+        before = session._host.global_budget_status()["used_tokens"]
+        session._chat._reconcile_reservations()
+        assert session._host.global_budget_status()["used_tokens"] == before
+    finally:
+        await session.close()
 
 
 @pytest.mark.parametrize("code", ["conflict", "invalid_request", "sdk_refused", "not_found"])
@@ -280,3 +394,9 @@ def test_legacy_rejected_intent_is_finalized_during_the_first_reopen(tmp_path):
             await session.close()
 
     asyncio.run(case())
+
+
+if __name__ == "__main__":
+    asyncio.new_event_loop().run_until_complete(
+        result_retry_process(Path(sys.argv[1]), bool(int(sys.argv[2])), len(sys.argv) > 3)
+    )
