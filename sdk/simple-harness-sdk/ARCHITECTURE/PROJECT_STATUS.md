@@ -1,3 +1,5 @@
+最后更新：2026-10-25 CST。**统一会话阶段 1：文本源码已实现并完成离线专项验证；制品与真实模型验收待执行。** 会话默认开启委派、历史、inbox 与统一事件；没有灰度开关。聊天月账与任务账继续唯一结算，会话只引用。四个持久点均覆盖真实子进程退出与冷恢复，另覆盖幂等四格、取消、审批版本、预算耗尽读事实与结果预留。现有 Host 方法签名和桌面代码保留；SDK 版本仍 `0.13.0.dev20260925+opt.216`，部署清单重新生成，未标记新验收门 VALIDATED。main 直接开发，无新增 worktree。详细测试数量、证据索引和留项见 [阶段 1 记录](../../../plans/2026-10-24-unified-session-realtime/阶段1-记录.md)。
+
 最后更新：2026-09-23。此目录是私有仓库的 HTN + TaskGraph23 + Assurance 开发源码快照，版本 `0.13.0.dev20260923+assurance.1`。Assurance 尚未 BODY_WIRED/整体验收，Host 仍消费旧 HTN wheel。交接与全部未完成项见 [仓库 HANDOFF](../../../docs/archive/reports-2026-08/HANDOFF-2026-09-23.md)。下文仅为相应历史阶段事实。
 
 <!-- v14-final-integration-current -->

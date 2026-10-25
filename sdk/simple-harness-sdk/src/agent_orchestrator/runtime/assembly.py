@@ -39,6 +39,7 @@ from ..orchestrator.root_review import DEFAULT_MAX_CUTS_PER_REVISION
 from ..planning.htn.backend_port import PlanningBackend, PlanningLimits
 from ..scheduling.backpressure import BackpressureLimits
 from .agent_worker import AgentBridge
+from .control_commands import ControlCommand
 from .domain_tools import DomainTool
 from .model_router import DEFAULT_PROFILE, RuntimeProfile
 from .sandbox import resolve_executor
@@ -109,6 +110,9 @@ class OrchestratorConfig:
         default=None, repr=False, compare=False
     )
     domain_tools: Mapping[str, DomainTool] = field(
+        default_factory=dict, kw_only=True, repr=False, compare=False
+    )
+    control_commands: Mapping[str, ControlCommand] = field(
         default_factory=dict, kw_only=True, repr=False, compare=False
     )
     # 交给领域工具的可信身份（宿主的租户与当事人）
@@ -492,6 +496,7 @@ def assemble_orchestrator_runtime(
         executor=executor,
         appworld_execute=config.appworld_execute,
         domain_tools=config.domain_tools,
+        control_commands=config.control_commands,
         tenant_id=config.tool_call_tenant_id,
         principal_id=config.tool_call_principal_id,
     )
@@ -528,10 +533,11 @@ def assemble_orchestrator_runtime(
             authorization=native.authorization,
             database_path=str(database),
             tool_executor=gateway,
-            tool_names=(*TOOL_NAMES, *config.domain_tools),
+            tool_names=(*TOOL_NAMES, *config.domain_tools, *config.control_commands),
             tool_schemas={
                 **read_tool_schemas(large=profile.context_policy is not None),
                 **{name: dict(tool.schema) for name, tool in config.domain_tools.items()},
+                **{name: dict(cmd.schema) for name, cmd in config.control_commands.items()},
             },
             context_policy=profile.context_policy or ContextPolicy(),
             tokenizer=profile.tokenizer,

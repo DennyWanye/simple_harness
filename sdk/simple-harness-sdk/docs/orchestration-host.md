@@ -170,6 +170,118 @@ stop = host.output_stream.subscribe(lambda event: ...)   # 返回退订函数
 - 审阅否决或重写的尝试，它的片段只是草稿；终稿只认验收通过的产物。
 - 订阅者抛异常只记日志，不影响模型调用。
 
+
+## 2d. 会话（文本主入口）
+
+最后更新：2026-10-25。以下是源码能力；本阶段尚未发版，桌面端仍使用既有接口。
+
+新接入方用 `Session`：同一个对象接收文字、委派后台任务、读取结果和回答人工请求。
+`OrchestrationHost` 的既有方法保留，供高级接入和诊断使用。语音不在本阶段。
+
+```python
+import asyncio
+from agent_orchestrator.host import Session
+
+
+async def run(root, principal, model, tools, render, last_seen=0):
+    session = await Session.open(root, principal, model, tools=tools, session_id="main")
+
+    async def display():
+        async for event in session.events(after=last_seen):
+            await render(event)
+
+    reader = asyncio.create_task(display())
+    try:
+        reply = await session.send("帮我整理照片，生成相册说明文件", key="input-1")
+        await reader
+    finally:
+        reader.cancel()
+        await session.close()
+```
+
+`root`、`session_id`、当事人与工具配置保持相同，再次 `open` 就是恢复。`session_id` 默认
+`default`，只接受字母、数字、下划线和连字符，最长 128 字符。一个数据目录同时由一个 Host
+实例持有；如需隔离用户，分别给数据目录。`model`、`tools`、`connectors` 和其他 Host 组装选项
+沿用前面各节。SDK 自己启动任务驱动与事件泵，接入方不用写 `drain` 或轮询循环。
+
+| 接口 | 返回与行为 |
+|---|---|
+| `await Session.open(root, principal, model, tools=(), connectors=(), policy=SessionPolicy(), session_id="default", **host_options)` | 打开或恢复；当事人与租户绑定在持久台账中 |
+| `await session.send(text, idempotency_key=...)` | 回执含 `turn_id/state/text/tool_calls/usage`，`engine_turn_id` 是底层聊天回合号；也可写 `key=`，同一键与相同输入原样回放 |
+| `session.events(after=0)` | 持续异步迭代；补读持久事件并接收当前正文片段 |
+| `session.respond(request_id, decision, version, **fields)` | 同步人工回答；规划问题可给 `answer/nonce/attach_as_source`，审批可给 `reason/note` |
+| `await session.interrupt()` | 只停正在回答的文字回合，任务继续 |
+| `session.tasks()` / `session.task(task_id)` | 本会话关联任务与权威快照；不调用模型，额度耗尽仍可读 |
+| `session.cancel_task(task_id)` | 接受 mission 号或 delegation 号；创建中先记录取消意图，恢复创建后继续取消；终态不倒改 |
+| `session.inbox()` / `session.ack(event_id)` | 查看结果；只有已认证的人能确认收到，模型没有 ack 命令 |
+| `session.history(limit=50)` / `session.budget()` | 已提交对话及预算引用；会话账不再结算一遍费用 |
+| `await session.close()` | 关闭文字引擎和驱动，保留任务、会话与结果；重开后继续 |
+
+会话只用新池 `…-chat-v2-c1-<配置哈希>`，执行库在 `sessions/<session_id>/chat/`。
+旧 `chat()` 的 v1 编号、提示词、工具名单与行为保留。`SessionPolicy` 默认每回合 16 次模型调用、
+32 次工具调用、180 秒；配置与工具名在会话建立时冻结，改配置请使用新会话号。
+
+模型可见 `delegate_task`、`task_status`、`task_cancel`，以及原生执行层已有的
+`session_history_read/search` 和宿主只读 `DomainTool`。委派属于 SDK 控制命令，不能注册成
+应用工具。历史工具参数沿用原生合同：回读给 `seq_from`，搜索给 `query`，均支持游标分页。
+模型不传当事人、租户、会话或输入回合号。
+
+委派参数只有 `goal/success_criteria/sources/reason`；成功条件 1～12 条、资料最多 8 份（各含
+`path/content`），网关另有整体参数大小限制。SDK 统一规范化 Unicode、目标空白和资料路径，
+用“会话号 + 已持久提交的输入回合号 + 规范化目标哈希”派生幂等键；完整规范另算哈希。
+同意图换 `call_id` 仍回原任务，成功条件或资料变了则拒绝；新输入回合同目标可建新任务。
+默认同时只有一个在途任务。创建走现有 `door/create_mission[_with_sources]`，自动授权和审批
+由原有 Host 职责处理，委派回执不等任务完成。
+
+事件信封如下；`turn_id/delegation_id/mission_id/request_id` 按事件适用范围出现。
+
+```json
+{"schema_version":1,"event_id":"session-event-...","session_id":"main","seq":7,
+ "kind":"result_ready","mission_id":"mission-...","delegation_id":"delegation-...",
+ "payload":{"source":"task_result","instruction":false,"status":"COMPLETED"}}
+```
+
+| `kind` | 持久与补读规则 |
+|---|---|
+| `text_delta` | 正文预览，含 `text/generation/turn_id`；不保存正文、不重放；慢订阅者片段队列有界，终稿仍从回执读取 |
+| `input_committed` / `turn_committed` | 输入已持久提交 / 回复已提交；失败回复走 `error` |
+| `delegated` | 已完成 delegation 与 mission 关联 |
+| `task_progress` | 任务事件的白名单摘要，只带类型、序号、时间和关联号；人工评论可带短摘要，内部 payload 不透传 |
+| `needs_response` | 人工问题或审批；含 `request_id/version/request_kind` 与可显示的提问内容 |
+| `result_ready` | 任务终态进入 inbox；按终态事件号去重 |
+| `error` | 稳定错误码，不把底层异常文字交给模型 |
+
+所有事件的 `seq` 在会话内递增，正文片段也占序号，所以补读可见空隙。只将已收到的事件序号作为
+下一次 `after`；正文是预览，终稿以 `turn_committed.payload.text` 为准。任务泵只读已有 mission
+事件序号，变化时补读并投影。inbox、`result_ready` 和任务补读游标同事务提交，重启后至少一次
+读取、按终态事件号幂等应用。下一次输入把尚未应用的结果冻结成明确标注的“任务结果资料”，
+同键重试使用同一份资料；确认收到与模型读取分开，结果不会自行触发模型或新任务。
+
+预算只有原有聊天月账和任务账。委派额外预留一整回合上限用于结果回传（与冻结的 Agent
+调用上限一致）；真正回传时复用该预留，按真实用量结清。会话只保存账本位置和任务引用。
+没有额度也可以调用 `tasks/task/inbox` 读取事实。
+
+恢复台账是 `sessions/<session_id>/session.sqlite3`（SQLite WAL、FULL 同步），保存输入、回复、
+关联、inbox、游标和事件序号；底层 Agent 沿用聊天 generation 机制。结果不明的模型调用不重放；
+换代时将最近已提交历史作为资料补给新 Agent。未完成输入须先用原键重试，避免新意图顶掉它。
+委派记录已存在但 mission 关联未写完时，用同一派生键恢复创建；取消意图不会因此丢失。
+
+| 错误码 | 处理 |
+|---|---|
+| `idempotency_conflict` | 同一输入键改了文字，或同一委派意图改了完整规范；确认新意图后换输入键 |
+| `busy` | 已有一个在途委派，先查询或取消 |
+| `turn_pending` | 先重试未完成的原输入键 |
+| `permission_denied` | 任务、人工请求不属于本会话，或不是人工身份 |
+| `stale_request` | 请求版本、绑定、有效期或待答状态已变化，重新读取请求 |
+| `session_config_frozen` | 会话策略或工具名单变化，恢复原配置或使用新会话号 |
+| `invalid_request` / `invalid_arguments` | 输入或命令参数不合规 |
+| `session_closed` | 重开会话后继续 |
+| `budget_exhausted` / `chat_unavailable` / `chat_timeout` | 沿用聊天与 Host 的错误语义；任务事实读取仍可用 |
+
+审批的 `version` 由 SDK 对当前审批内容计算，规划问题沿用原有版本号。接入方原样回传事件中的
+版本，不自行生成。版本核对与 `decide/answer_planning_question` 在同一任务库写事务内完成，
+身份和请求绑定字段不能由调用参数覆盖。
+
 ## 3. 入口做了什么
 
 `OrchestrationHost.open(root, ...)` 按产品（桌面端）的接法把编排拼起来：

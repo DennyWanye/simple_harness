@@ -93,6 +93,9 @@ def _usage_of(record: Any) -> tuple[int, int] | None:
 class ChatService:
     """宿主的聊天入口：自己的执行池 + 宿主的工具、预算与当事人。"""
 
+    instructions = CHAT_INSTRUCTIONS
+    reservation_prefix = "chat:"
+
     def __init__(self, host: Any) -> None:
         self._host = host
         self.root: Path = host.root / "chat"
@@ -122,7 +125,8 @@ class ChatService:
         profile_id = native_profile_id(
             tokens, model=getattr(counter, "profile_slug", None), chat=True
         )
-        config = replace(host.config, evidence_root=self.root)
+        profile_id = self._profile_id(profile_id)
+        config = self._configuration(replace(host.config, evidence_root=self.root))
         wanted = ContextPolicy(
             max_input_tokens=tokens,
             output_reserve=NATIVE_OUTPUT_TOKENS,
@@ -143,9 +147,7 @@ class ChatService:
             tokenizer=counter,
             default_max_output_tokens=8192,
             max_output_tokens_ceiling=NATIVE_OUTPUT_TOKENS,
-            native_plane=host.native.assembly(
-                profile_id, tokens=tokens, counter=counter, owner_mode="STANDALONE_CHAT"
-            ),
+            native_plane=self._native_plane(profile_id, tokens, counter),
         )
         assembled = assemble_orchestrator_runtime(
             config, profiles={profile_id: profile}, default_profile=profile_id
@@ -154,10 +156,33 @@ class ChatService:
         self._assembled, self.profile_id, self.reason = assembled, profile_id, None
         # 上次宿主关掉时还在跑的回合：叫醒它跑完（结果进执行库；它的预留已按上限结清）
         try:
-            await assembled.pool(profile_id).runtime.recover_pending_turns()
+            await self._recover_pending_turns()
         except Exception:  # noqa: BLE001 - 恢复失败不挡新回合
             logger.exception("chat pool recovery failed")
         self._reconcile_reservations()
+
+    async def _recover_pending_turns(self) -> None:
+        await self._pool().runtime.recover_pending_turns()
+
+    def _profile_id(self, profile_id: str) -> str:
+        return profile_id
+
+    def _configuration(self, config: Any) -> Any:
+        return config
+
+    def _native_plane(self, profile_id: str, tokens: int, counter: Any) -> Any:
+        return self._host.native.assembly(
+            profile_id, tokens=tokens, counter=counter, owner_mode="STANDALONE_CHAT"
+        )
+
+    def _registered_tools(self) -> tuple[str, ...]:
+        return tuple(self._host.tools)
+
+    def _budget_subject(self, agent: Any, input_id: str) -> str:
+        return f"{self.reservation_prefix}{agent.agent_id}:{input_id}"
+
+    def _seen_before(self, pool: Any, agent: Any, input_id: str) -> set[str]:
+        return set(self._invocations(pool, agent.run_id))
 
     async def close(self) -> None:
         assembled, self._assembled = self._assembled, None
@@ -204,7 +229,8 @@ class ChatService:
         with store.transaction():
             rows = store.connection.execute(
                 "SELECT subject_id FROM budget_reservations"
-                " WHERE subject_id LIKE 'chat:%' AND state = 'RESERVED'"
+                " WHERE subject_id LIKE ? AND state = 'RESERVED'",
+                (self.reservation_prefix + "%",),
             ).fetchall()
             for (subject,) in rows:
                 ledger.settle_at_upper_bound(subject_id=str(subject))
@@ -247,10 +273,10 @@ class ChatService:
         require_tool = bool(body.get("require_tool", False))
         agent, allowed, history_reset = await self._agent(session_id, body.get("tools"))
         self._bind(pool, agent, session_id, allowed)
-        subject = f"chat:{agent.agent_id}:{input_id}"
+        subject = self._budget_subject(agent, input_id)
         gateway = self._assembled.gateway
         calls_before = len(gateway.calls)
-        seen_before = set(self._invocations(pool, agent.run_id))
+        seen_before = self._seen_before(pool, agent, input_id)
         # 提醒是第二个回合，再有一整份调用额度：预留按两回合算
         self._reserve(
             subject, int(self._host.settings.chat_max_model_calls) * (2 if require_tool else 1)
@@ -343,7 +369,7 @@ class ChatService:
         返回 ``(agent, 工具名单, 是否换了新 Agent)``。"""
 
         host = self._host
-        registered = tuple(host.tools)
+        registered = self._registered_tools()
         if tools is None:
             wanted: tuple[str, ...] | None = None
         else:
@@ -390,7 +416,7 @@ class ChatService:
         settings = host.settings
         config = AgentConfig(
             name=f"chat {session_id}"[:128],
-            instructions=CHAT_INSTRUCTIONS,
+            instructions=self.instructions,
             model_profile_ref=str(self.profile_id),
             tool_names=allowed,
             limits=AgentLimits(

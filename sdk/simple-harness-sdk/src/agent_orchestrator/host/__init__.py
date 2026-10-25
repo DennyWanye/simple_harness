@@ -29,6 +29,7 @@ from .host import (
     OrchestrationHost,
     with_publish_sources,
 )
+from .session import Session, SessionError, SessionPolicy
 from .settings import (
     CONTEXT_INPUT_CHOICES,
     NO_COUNTER_REASON,
@@ -50,6 +51,9 @@ __all__ = (
     "OrchestrationHost",
     "Principal",
     "SandboxOptions",
+    "Session",
+    "SessionError",
+    "SessionPolicy",
     "ToolCallContext",
     "host_settings_from_mapping",
     "with_publish_sources",

@@ -1,3 +1,5 @@
+最后更新：2026-10-25 CST（统一会话阶段 1，离线源码交付）。公开前门增加 `agent_orchestrator.host.Session`、`SessionPolicy`、`SessionError`。生产源代码复用聊天原生执行层与现有 Mission 系统，以独立 v2 池承载 SDK 控制命令；v1 身份保持。会话台账、委派恢复、inbox 与事件实现位于 `host/session*.py`、`host/delegation.py`、`host/inbox.py`；通用工具网关增加独立控制命令目录。接入说明见 [§2d](../docs/orchestration-host.md#2d-会话文本主入口)。当前尚未发版，真实验收与制品状态见 [阶段 1 记录](../../../plans/2026-10-24-unified-session-realtime/阶段1-记录.md)。
+
 最后更新：2026-09-23。此目录是私有仓库的 HTN + TaskGraph23 + Assurance 开发源码快照，版本 `0.13.0.dev20260923+assurance.1`。Assurance 尚未 BODY_WIRED/整体验收，Host 仍消费旧 HTN wheel。交接与全部未完成项见 [仓库 HANDOFF](../../../docs/archive/reports-2026-08/HANDOFF-2026-09-23.md)。下文仅为相应历史阶段事实。
 
 ## 宿主入口（2026-10-19）

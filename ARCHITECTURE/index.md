@@ -1,3 +1,5 @@
+最后更新：2026-10-25 CST（统一会话阶段 1，源码验收）。编排 SDK 新增文本 `Session` 前门、独立聊天池 v2、持久委派关联、结果 inbox 和统一事件流；v1 聊天与桌面接线保留。当前为离线源码交付，版本仍 opt.216，未发版或替换 Host 轮子。模块事实见 [AGENT_ORCHESTRATION.md](AGENT_ORCHESTRATION.md)，验收范围与留项见 [阶段 1 记录](../plans/2026-10-24-unified-session-realtime/阶段1-记录.md)。
+
 最后更新：2026-10-15 CST（代码质量整治阶段 4：后端与 SDK 边界收口）。边界规则：后端产品代码只从 SDK 声明的公开模块导入（`simple_harness/public_api.py`、`agent_orchestrator/public_api.py` 的 PUBLIC_MODULES，名字须在模块 `__all__` 里），不引用 sqlite 子模块、testing 与下划线模块；后端分层见 `backend/.importlinter`（host → 上层适配 → deskpet 与旧 agent → 模型与提供方 → 日志与监控）与 `scripts/code_quality/backend_layers.py`，CI 阻断。派发上下文、附加请求头、端到端钩子在 `providers/`，请求消息在 `llm/context_messages.py`，脱敏在 `observability/`。
 上一条：2026-10-14 CST（代码质量整治阶段 3：函数内导入与循环依赖）。导入约定：导入写在模块顶部；确需留在函数里的，上方单独一行写 `# 按需导入：<类别>（细节）`，类别只有可选依赖 / 重型包 / 平台专用 / 测试替身 / 导入隔离 / 按需声明 / 循环依赖 / 死代码待删八种，`scripts/code_quality/tag_inner_imports.py --check` 检查；测试钉住的导入隔离约定登记在 `scripts/code_quality/import_contracts.py`。
 阶段 2：宿主入口已拆成 `backend/main.py`（只做组装）+ `backend/host/` 包，结构与"原主入口函数现在在哪"见 [HOST_ENTRY.md](HOST_ENTRY.md)。本索引里 `main.py:<行号>` 形式的引用已失效。

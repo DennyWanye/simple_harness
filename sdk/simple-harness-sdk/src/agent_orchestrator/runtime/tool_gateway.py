@@ -25,6 +25,7 @@ import re
 from simple_harness.tools.reconciliation import ReconciliationObservation, ReconciliationState
 
 from ..contracts.models import SEARCH_TOOL_NAMES
+from .control_commands import ControlCommand
 from .domain_tool_runner import run_domain_tool
 from .domain_tools import DomainTool, ToolCallContext
 
@@ -49,7 +50,7 @@ from simple_harness.agents.context.tokenizer import (
     UpperBoundTokenizer,
     count_message,
 )
-from simple_harness.contracts import CallId, Message, MessageRole, canonical_json
+from simple_harness.contracts import CallId, Message, MessageRole, canonical_json, thaw_json
 from simple_harness.tools import ToolResult
 from simple_harness.tools.schema import ArgumentsValidationError, validate_arguments
 
@@ -520,6 +521,7 @@ class WorkspaceToolGateway:
         executor: SandboxExecutorPort | None = None,
         appworld_execute: Callable[[str], Mapping[str, Any]] | None = None,
         domain_tools: Mapping[str, DomainTool] | None = None,
+        control_commands: Mapping[str, ControlCommand] | None = None,
         tenant_id: str | None = None,
         principal_id: str | None = None,
     ) -> None:
@@ -531,6 +533,9 @@ class WorkspaceToolGateway:
         self._appworld_execute = appworld_execute
         self._appworld_lock = asyncio.Lock()
         self._appworld_mission_id: str | None = None
+        self._control_commands = dict(control_commands or {})
+        if set(self._control_commands) & (set(TOOL_NAMES) | set(domain_tools or {})):
+            raise ValueError("control commands cannot replace existing tools")
         self._domain_tools = dict(domain_tools or {})
         self._domain_schemas = {
             name: deepcopy(tool.schema) for name, tool in self._domain_tools.items()
@@ -589,6 +594,20 @@ class WorkspaceToolGateway:
         unknown = ReconciliationObservation(
             ReconciliationState.STILL_UNKNOWN, "workspace-write:proof-unavailable"
         )
+        command = self._control_commands.get(effect.tool_name)
+        if command is not None:
+            key = f"{effect.run_id.value}:{effect.call_id.value}"
+            try:
+                arguments = thaw_json(effect.arguments)
+                validate_arguments(arguments, command.schema)
+                value = command.invoke(arguments, effect.run_id.value, effect.call_id.value)
+                result = ToolResult.succeeded(effect.call_id, dict(value))
+            except Exception as error:
+                code = str(getattr(error, "code", "command_failed"))
+                result = ToolResult.rejected(effect.call_id, code, code)
+            return ReconciliationObservation(
+                ReconciliationState.COMPLETED, f"session-command:{key}", result
+            )
         registered = self._domain_tools.get(effect.tool_name)
         if registered is not None and registered.read_only:
             # 应用注册的只读工具：外部什么都没改，被重启打断的调用就是"没拿到结果"，交回模型可再调；
@@ -735,6 +754,29 @@ class WorkspaceToolGateway:
                 message=f"{call.name} is not allowed for this Attempt",
             )
         arguments = dict(call.arguments)
+        if call.name in self._control_commands:
+            arguments = thaw_json(call.arguments)
+            command = self._control_commands[call.name]
+            if binding.view != "chat" or binding.mission_id is not None:
+                return self._reject(
+                    call, record, code="permission_denied", outcome="not_allowed",
+                    stage="permission", message="session command requires a chat binding",
+                )
+            try:
+                validate_arguments(arguments, command.schema)
+                value = command.invoke(arguments, run_id, record["call_id"])
+            except ArgumentsValidationError:
+                return self._reject(
+                    call, record, code="invalid_arguments", outcome="invalid_arguments",
+                    stage="schema", message="invalid session command arguments",
+                )
+            except Exception as error:
+                code = str(getattr(error, "code", "command_failed"))
+                return self._reject(
+                    call, record, code=code, outcome="rejected", stage="control", message=code,
+                )
+            record["outcome"] = "succeeded"
+            return ToolResult.succeeded(call.call_id, dict(value))
         # 2. argument schema
         if call.name in self._domain_schemas:
             problem = None
