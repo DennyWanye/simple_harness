@@ -1,3 +1,5 @@
+最后更新：2026-10-25 19:33 CST（阶段 3b 复评 B2/B3 本地修复，阶段仍 BLOCKED）。修复提交 `1e70791f0`：任务已加载时审批按后端投影 request_id 关联，规划问题按 decision_id 关联，保留 PENDING/终态/版本过滤；批准和拒绝都保留人工请求号与精确字符串版本。收到持久 failed 回执后结束旧输入并清除预览，新正文或相同正文重新发送都生成新键；未知结果和断线重试仍保留原键。先补反例：12通过/4失败；修后主界面16通过，相关14文件共205通过/0失败，typecheck通过。原复评未改为PASS，本地修复待独立复核；实际安装SDK仍opt.217，后端依赖合同3通过/1失败，真实运行链路未重新验收，不计阶段完成。详见[阶段3b记录](../plans/2026-10-24-unified-session-realtime/阶段3b-记录.md)末节。
+
 最后更新：2026-10-25 CST（阶段 3b 主对话源码切换，运行验收 BLOCKED）。`PrimaryChatView` 使用 `primary/sessionClient.ts`，文字发 session_send，历史读 Session.history，逐字预览与终稿读统一 session_event；旧 PrimaryController 的文字队列实现已删，仅保留检查器类型，主界面不再发 human_memory queue.enqueue。相同输入显式重试保留键，未确认前阻止换文；重连按实际收到的会话 seq 补读，不自动重发。预览按 turn/generation 归组，提交撞在途任务刷新时仍补读历史。
 
 `ChatMissionCard` 消费 Session.tasks/task 的投影并用 cancel_task 取消；提问/审批由 needs_response 驱动，respond 保留人工请求号及字符串版本，已终态或不再待答的旧问题不显示。`ChatMissionNotices` 消费 inbox/result_ready，只有点击才 ack；已 ack 项不会被历史事件复活。任务页保留 Host 接口，各组件刷新触发统一改为 session_event；任务页独立创建任务的列表在 15 秒状态读取时刷新，选中详情保留原轮询。不再消费 mission_changed/mission_notices/mission_notice_ack。旧 Primary 上下文环和工作区授权面板没有继续读旧运行，不把旧事实冒充新 SDK 状态；等价公开接口接回另行处理，文字附件仍明确不支持。
