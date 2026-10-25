@@ -26,9 +26,12 @@ import sys
 import time
 from collections.abc import Awaitable, Callable, Iterator, Mapping, Sequence
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
+
+if TYPE_CHECKING:
+    from .session import Session, SessionPolicy
 
 from ..api import facade, policies
 from ..contracts import Budget
@@ -351,6 +354,8 @@ class OrchestrationHost:
         self._quiet_round = False
         self._last_watermark: Any = None
         self._driver: asyncio.Task[None] | None = None
+        self._sessions: dict[str, Any] = {}
+        self._session_open_lock = asyncio.Lock()
 
         def notify_and_wake(payload: Mapping[str, Any]) -> None:
             self._notify(payload)
@@ -384,6 +389,16 @@ class OrchestrationHost:
         if self.state not in ("available", "quarantined"):
             raise HostUnavailable(self.reason or "编排宿主没有启动")
         return self
+
+    async def open_session(
+        self, session_id: str = "default", *, principal: Any = None,
+        policy: SessionPolicy | None = None,
+    ) -> Session:
+        """Borrow this running Host; closing the session does not close the Host."""
+        # Import isolation: the session factory depends on OrchestrationHost.
+        from .sessions import open_session
+
+        return await open_session(self, session_id, principal=principal, policy=policy)
 
     async def __aexit__(self, *exc_info: object) -> None:
         await self.close()
@@ -464,6 +479,10 @@ class OrchestrationHost:
         chat = self.chat_service.scope_of(run_id)
         if chat is not None:
             return chat
+        for session in self._sessions.values():
+            scope = session._chat.scope_of(run_id)
+            if scope is not None:
+                return scope
         if self.orchestrator is None:
             return None
         binding = self.orchestrator.assembled.gateway.binding_for(run_id)
@@ -797,6 +816,12 @@ class OrchestrationHost:
         """有序关闭（测试与正常退出）；被 SIGKILL 时锁由内核释放，重启按持久状态恢复。"""
 
         self._closing = True
+        async with self._session_open_lock:
+            for session in tuple(self._sessions.values()):
+                try:
+                    await session.close()
+                except Exception:
+                    logger.exception("session close failed")
         self._wake.set()
         driver, self._driver = self._driver, None
         if driver is not None:

@@ -963,7 +963,8 @@ def test_review_invalidated_pending_response_stays_muted_after_speech_stops(tmp_
             await wire.emit("ResponseFinished", response_id="late", status="completed")
             assert not any(audio.written) and wire.cancelled == 1
             assert (await handle.wait())["state"] == "interrupted"
-            assert handle.response_id == "late"
+            assert handle.response_id is None
+            assert "late" not in binding._response_turns
             assert session._store.rows("voice_unheard")
         finally:
             await binding.detach()
@@ -1025,6 +1026,10 @@ def test_review_fresh_user_input_after_late_notice_can_delegate(tmp_path):
             await wire.emit("ResponseStarted", response_id="late")
             await wire.emit("OutputAudio", response_id="late", data=b"x" * 4800)
             await wire.emit("ResponseFinished", response_id="late", status="completed")
+            old_wire = wire
+            await binding.detach()
+            binding = await session.attach_voice(audio, VoiceProfile(client_factory=client))
+            wire = client.wires[-1]
             await wire.emit("TranscriptCompleted", item_id="new", text="Write a report")
             await wire.emit("SpeechStopped", item_id="new")
             await wire.emit("ResponseStarted", response_id="new-response")
@@ -1038,10 +1043,208 @@ def test_review_fresh_user_input_after_late_notice_can_delegate(tmp_path):
                 )
             )
             assert json.loads(result)["status"] == "accepted" and len(host.made) == 1
-            assert handle.interrupted and wire.cancelled == 1
+            assert handle.interrupted and old_wire.cancelled == 1
             assert len([frame for frame in audio.written if frame]) == 1
             assert binding._response_turns["new-response"] == "voice:new"
         finally:
             await binding.detach()
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("command", ["delegate_task", "task_cancel"])
+def test_review2_delayed_announcement_followup_cannot_take_new_user_origin(tmp_path, command):
+    from agent_orchestrator.host import DomainTool
+
+    async def run():
+        host, session = make_session(tmp_path)
+        turn = session._commit_input("Write a report", "existing-task")
+        task = session._delegations.delegate(turn["turn_id"], "create-existing", SPEC)
+        if command == "delegate_task":
+            host.finish(task["mission_id"])
+        entered, release = asyncio.Event(), asyncio.Event()
+
+        async def read_status(arguments, context):
+            entered.set()
+            await release.wait()
+            return {"status": "ready"}
+
+        host.tools["slow_status"] = DomainTool(
+            name="slow_status",
+            schema={
+                "type": "object",
+                "description": "Read status",
+                "properties": {},
+                "additionalProperties": False,
+            },
+            invoke=read_status,
+        )
+        audio, client = Audio(), Client()
+        binding = await session.attach_voice(audio, VoiceProfile(client_factory=client))
+        wire = client.wires[0]
+        pending = None
+        try:
+            await session.announce("The task result is ready")
+            await wire.emit("ResponseStarted", response_id="notice-1")
+            pending = asyncio.create_task(
+                wire.dispatcher.dispatch(
+                    SimpleNamespace(
+                        response_id="notice-1",
+                        call_id="slow",
+                        name="slow_status",
+                        arguments_json="{}",
+                    )
+                )
+            )
+            await asyncio.wait_for(entered.wait(), 1)
+            await wire.emit("ResponseFinished", response_id="notice-1", status="completed")
+            await wire.emit("SpeechStarted", item_id="new")
+            await wire.emit("SpeechStopped", item_id="new")
+            await wire.emit("TranscriptCompleted", item_id="new", text="Hello")
+            await wire.emit("ResponseStarted", response_id="user-reply")
+            await wire.emit("ResponseFinished", response_id="user-reply", status="cancelled")
+            release.set()
+            assert "error" not in json.loads(await asyncio.wait_for(pending, 1))
+            await wire.emit("ResponseStarted", response_id="notice-2")
+            await wire.emit("OutputAudio", response_id="notice-2", data=b"x" * 4800)
+            result = json.loads(
+                await wire.dispatcher.dispatch(
+                    SimpleNamespace(
+                        response_id="notice-2",
+                        call_id="forbidden",
+                        name=command,
+                        arguments_json=json.dumps(
+                            SPEC if command == "delegate_task" else {"task_id": task["mission_id"]}
+                        ),
+                    )
+                )
+            )
+            observed = {
+                "command": command,
+                "result": result,
+                "new_missions": len(host.made) - 1,
+                "cancelled_tasks": host.cancelled,
+                "user_response_input": binding._response_turns.get("user-reply"),
+                "notice_followup_input": binding._response_turns.get("notice-2"),
+                "audio_frame_sizes": [len(frame) for frame in audio.written if frame],
+            }
+            (tmp_path / "观察.json").write_text(json.dumps(observed, ensure_ascii=False, indent=2))
+            assert result.get("error", {}).get("code") == "permission_denied", observed
+            assert not observed["audio_frame_sizes"], observed
+        finally:
+            release.set()
+            if pending is not None:
+                await pending
+            await binding.detach()
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("order", ["user_first", "old_first", "old_never_arrives"])
+def test_review4_ambiguous_sources_are_silent_and_reattach_restores_admission(tmp_path, order):
+    from agent_orchestrator.host import DomainTool
+
+    async def run():
+        host, session = make_session(tmp_path)
+        entered, release = asyncio.Event(), asyncio.Event()
+
+        async def slow(arguments, context):
+            entered.set()
+            await release.wait()
+            return {"status": "ready"}
+
+        host.tools["slow_status"] = DomainTool(
+            name="slow_status",
+            schema={
+                "type": "object",
+                "description": "Read status",
+                "properties": {},
+                "additionalProperties": False,
+            },
+            invoke=slow,
+        )
+        audio, client = Audio(), Client()
+        binding = await session.attach_voice(audio, VoiceProfile(client_factory=client))
+        wire = client.wires[0]
+        job = None
+        try:
+            await session.announce("An old result")
+            await wire.emit("ResponseStarted", response_id="notice")
+            job = asyncio.create_task(
+                wire.dispatcher.dispatch(
+                    SimpleNamespace(
+                        response_id="notice",
+                        call_id="slow",
+                        name="slow_status",
+                        arguments_json="{}",
+                    )
+                )
+            )
+            await asyncio.wait_for(entered.wait(), 1)
+            await wire.emit("ResponseFinished", response_id="notice", status="completed")
+            await wire.emit("SpeechStarted", item_id="new")
+            await wire.emit("SpeechStopped", item_id="new")
+            await wire.emit("TranscriptCompleted", item_id="new", text="Hello")
+            responses = (
+                ["user", "old"]
+                if order == "user_first"
+                else ["old", "user"]
+                if order == "old_first"
+                else ["user"]
+            )
+            release.set()
+            await asyncio.wait_for(job, 1)
+            for response_id in responses:
+                await wire.emit("ResponseStarted", response_id=response_id)
+                await wire.emit("OutputAudio", response_id=response_id, data=b"x" * 4800)
+                result = await wire.dispatcher.dispatch(
+                    SimpleNamespace(
+                        response_id=response_id,
+                        call_id=response_id,
+                        name="delegate_task",
+                        arguments_json=json.dumps(SPEC),
+                    )
+                )
+                assert json.loads(result)["error"]["code"] == "permission_denied"
+                await wire.emit("ResponseFinished", response_id=response_id, status="completed")
+            assert not host.made and not any(audio.written)
+            assert any(
+                e["kind"] == "voice_error" and e["payload"]["code"] == "response_origin_ambiguous"
+                for e in session._store.events(0)
+            )
+            generation = binding.generation
+            await binding.detach()
+            binding = await session.attach_voice(audio, VoiceProfile(client_factory=client))
+            assert binding.generation == generation + 1
+            wire = client.wires[-1]
+            await wire.emit("TranscriptCompleted", item_id="repeat", text="Write a report")
+            await wire.emit("ResponseStarted", response_id="fresh")
+            result = await wire.dispatcher.dispatch(
+                SimpleNamespace(
+                    response_id="fresh",
+                    call_id="fresh",
+                    name="delegate_task",
+                    arguments_json=json.dumps(SPEC),
+                )
+            )
+            assert json.loads(result)["status"] == "accepted" and len(host.made) == 1
+        finally:
+            release.set()
+            if job is not None:
+                await job
+            await binding.detach()
+
+    asyncio.run(run())
+
+
+def test_service_sdk_open_request_accepts_the_generated_catalogue(tmp_path, monkeypatch):
+    monkeypatch.undo()
+    _, session = make_session(tmp_path)
+
+    async def run():
+        binding = VoiceBinding(session, Audio(), VoiceProfile(client_factory=Client()))
+        request = binding._request()
+        assert isinstance(request.tools, list)
+        assert {tool["name"] for tool in request.tools} >= {"delegate_task", "task_status"}
 
     asyncio.run(run())

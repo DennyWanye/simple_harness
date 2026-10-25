@@ -124,7 +124,16 @@ class SessionChatService(ChatService):
         await super()._recover_pending_turns()
 
     def _reconcile_reservations(self) -> None:
-        super()._reconcile_reservations()
+        budget_store, budget_ledger = self._ledger()
+        with budget_store.transaction():
+            for subject in self.session._store.rows("budget_attempts"):
+                if not subject.startswith(self.reservation_prefix):
+                    continue
+                reservation = budget_store.connection.execute(
+                    "SELECT state FROM budget_reservations WHERE subject_id=?", (subject,)
+                ).fetchone()
+                if reservation is not None and reservation[0] == "RESERVED":
+                    budget_ledger.settle_at_upper_bound(subject_id=subject)
         for row in self.session._store.rows("voice_budget"):
             if row["state"] in {"reserving", "reserved"}:
                 budget_store, _ = self._ledger()

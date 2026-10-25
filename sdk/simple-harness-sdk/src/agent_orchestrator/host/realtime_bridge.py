@@ -149,6 +149,7 @@ class VoiceBinding:
         self._response_origins: dict[str, _ResponseOrigin] = {}
         self._followups: set[tuple[str, str]] = set()
         self._cancelled_responses: set[str] = set()
+        self._response_origin_ambiguous = False
         self._texts: dict[str, dict[str, str]] = {}
         self._received: dict[str, int] = {}
         self._played_bases: dict[str, int] = {}
@@ -229,7 +230,7 @@ class VoiceBinding:
         except ImportError as error:
             raise SessionError("unsupported", "install the realtime extra") from error
 
-        tools = tuple(
+        tools = [
             {
                 "type": "function",
                 "name": name,
@@ -237,7 +238,7 @@ class VoiceBinding:
                 "parameters": schema,
             }
             for name, schema in self._catalogue.items()
-        )
+        ]
         return RealtimeOpenRequest(
             external_session_id=self.session.session_id,
             instructions=self.profile.instructions,
@@ -379,7 +380,11 @@ class VoiceBinding:
         elif kind == "ResponseStarted":
             self._responding = response_id
             self._awaiting_response = False
-            origin = self._pending_responses.popleft() if self._pending_responses else None
+            origin = (
+                self._pending_responses.popleft()
+                if self._pending_responses and not self._response_origin_ambiguous
+                else None
+            )
             if origin is not None:
                 self._response_origins[response_id] = origin
                 self._response_turns[response_id] = origin.input_key
@@ -391,7 +396,11 @@ class VoiceBinding:
                 handle.response_id = response_id
                 self._playback_handles[response_id] = handle
             self._admit_response(response_id)
-            if self._user_speaking or (origin is not None and origin.interrupted):
+            if (
+                self._response_origin_ambiguous
+                or self._user_speaking
+                or (origin is not None and origin.interrupted)
+            ):
                 if origin is not None:
                     origin.interrupted = True
                 self._muted_responses.add(response_id)
@@ -414,6 +423,7 @@ class VoiceBinding:
                 origin = self._response_origins.get(response_id)
                 if (
                     not self._user_speaking
+                    and not self._response_origin_ambiguous
                     and response_id not in self._muted_responses
                     and (origin is None or not origin.interrupted)
                 ):
@@ -562,6 +572,8 @@ class VoiceBinding:
     async def _dispatch(self, call: Any) -> str:
         if self._detached or not self._ready.is_set():
             raise SessionError("permission_denied")
+        if self._response_origin_ambiguous:
+            raise SessionError("permission_denied", "rebind after ambiguous response origins")
         origin = self._response_origins.get(call.response_id)
         if origin is None or origin.interrupted:
             raise SessionError("permission_denied", "no live response input binding")
@@ -788,6 +800,15 @@ class VoiceBinding:
     async def barge_in(self) -> None:
         async with self._media_lock:
             response_id = self._responding
+            if self._pending_responses and not self._response_origin_ambiguous:
+                self._response_origin_ambiguous = True
+                self._event(
+                    "voice_error",
+                    payload={
+                        "code": "response_origin_ambiguous",
+                        "recovery": "detach_and_attach",
+                    },
+                )
             for origin in (*self._pending_responses, *self._response_origins.values()):
                 origin.interrupted = True
             if response_id:
@@ -847,6 +868,7 @@ class VoiceBinding:
         self._response_origins.clear()
         self._response_turns.clear()
         self._followups.clear()
+        self._response_origin_ambiguous = False
         for response_id in list(self._subjects):
             self._settle_response(response_id)
         self._ready.clear()

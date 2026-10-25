@@ -176,7 +176,31 @@ stop = host.output_stream.subscribe(lambda event: ...)   # 返回退订函数
 最后更新：2026-10-25。本节文本会话接口从 SDK opt.217 提供；桌面端仍使用既有接口。
 
 新接入方用 `Session`：同一个对象接收文字、委派后台任务、读取结果和回答人工请求。
-`OrchestrationHost` 的既有方法保留，供高级接入和诊断使用。语音不在本阶段。
+`OrchestrationHost` 的既有方法保留，供高级接入和诊断使用；语音绑定见 §2e。
+
+**已有运行中的 Host（桌面接入）从 opt.218 候选使用 `host.open_session()`。**
+它直接复用该 Host 的数据根、任务执行库、预算账、驱动与 `output_stream`，不会再构造或启动
+另一个 Host，不重新获取根目录实例锁。`Session.open(root, ...)` 继续用于独立程序；
+不能在桌面已经占有的同一根目录再次用它打开 Host。
+
+```python
+session = await running_host.open_session("desktop-main")
+reply = await session.send("你好", key="input-1")
+binding = await session.attach_voice(audio_io, voice_profile)
+await binding.detach()
+await session.close()
+```
+
+`await host.open_session(session_id="default", *, principal=None, policy=None) -> Session`
+继承 Host 的已认证当事人与租户。`principal` 只允许省略或传入与 Host 相同的当事人，其他值
+返回 `permission_denied`，不能借此切换身份。相同运行中会话号返回同一个对象，并发打开也只
+初始化一次；显式改变已有策略返回 `session_config_frozen`。关闭后再次打开同号恢复原历史。
+
+不同会话号的历史、任务关联、inbox、游标与语音绑定相互隔离；各自聊天运行号都能在同一
+Host 输出流解析到正确会话。打开另一个会话只核对它自己的遗留预算，不结清别人的在途预留。
+会话台账与 v2 聊天库仍位于 `sessions/<session_id>/`，任务继续进入原 Host 的同一套执行库。
+关闭借用会话会释放其聊天、事件泵、语音和网络，**不会关闭 Host**；Host 关闭时先关闭它持有
+的全部会话。公开函数形式是 `agent_orchestrator.host.sessions.open_session(host, ...)`。
 
 ```python
 import asyncio
@@ -285,13 +309,32 @@ async def run(root, principal, model, tools, render, last_seen=0):
 ## 2e. 语音绑定（`[realtime]` 可选扩展，opt.218 候选）
 
 最后更新：2026-10-25。本节是候选接口；离线语音桥测试通过，Service SDK 0.3.13
-候选轮子的联合契约、真线路及仓库外安装尚未验收，不能视为阶段 3a 完成或正式发版。
+候选轮子的工具循环及路线 a 内存回环通过，Python 3.13 轮子环境接缝通过；真线路因有损
+工具回显阻断，普通依赖解析仍有钉版冲突，不能视为阶段 3a 完成或正式发版。
 
 `Session` 继续是唯一业务前门，Service SDK 负责媒体连接与工具结果回写循环，不反向依赖
-编排层。文本路径不要求安装 Service SDK。安装元数据声明了 `[realtime]`；私有候选组合
-须按任务指定顺序安装：先以 `--no-deps` 安装已核对哈希的 Service SDK 0.3.13 轮子，
-再安装 opt.218 候选轮子，最后安装 `httpx websockets prompt-toolkit`。上游私有依赖解析
-与 lock 文件尚待联合安装核验，不应拿公开同版本包替代指定候选。
+编排层。文本路径不要求安装 Service SDK。`[realtime]` 声明
+`simple-harness-service-sdk[realtime]==0.3.13`，激活 Service SDK 的网络传输依赖。
+指定私有候选的 SHA-256 已核对，但其发行元数据仍要求 Harness opt.216；与本候选 opt.218
+的普通解析存在实际冲突，`uv pip check` 会报告一项不兼容。此处不伪造元数据或降级 Harness。
+当前测试组合按下面顺序安装，私有轮子目录使用 `--find-links`；在仓库根目录执行，`EVIDENCE`
+指向已准备好的忽略目录 `./.local-test-evidence/2026-10-25/unified-session/phase3/external`：
+
+```sh
+EVIDENCE=./.local-test-evidence/2026-10-25/unified-session/phase3/external
+uv venv --python 3.13 "$EVIDENCE/.venv"
+uv pip install --python "$EVIDENCE/.venv/bin/python" --no-index --no-deps \
+  --find-links "$EVIDENCE/inputs" 'simple-harness-service-sdk==0.3.13'
+uv pip install --python "$EVIDENCE/.venv/bin/python" --no-index --no-deps \
+  --find-links "$EVIDENCE/wheels-final" 'simple-harness-sdk[realtime]==0.13.0.dev20260925+opt.218'
+uv pip install --python "$EVIDENCE/.venv/bin/python" \
+  'httpx>=0.28.1,<1' 'websockets>=15,<16' 'prompt-toolkit>=3.0.52,<4' \
+  'pytest>=8.3,<9' 'deepseek-recipe==0.1.1'
+```
+
+音频示例另显式安装 `sounddevice>=0.5,<0.6`；它是示例的设备实现，不是桥的强制依赖。
+上述轮子组合已经在仓库内 Python 3.13 干净环境导入并验证 Host 会话接缝；不能据此宣称
+普通 extra 解析或真线路已通过。依赖锁须等 Service SDK 元数据对齐后再重新解析。
 
 ```python
 from agent_orchestrator.host import VoiceProfile
@@ -310,7 +353,8 @@ await binding.detach()
 `client_factory` 接收本次 generation 的 dispatcher，返回配置好的 Service SDK 客户端；
 桥调用客户端的 `open(request)`。提供方、凭据铸造、传输与适配器由接入方组装，密钥只从
 进程环境读取，不传给会话台账。工厂每次重连重新组装客户端，旧 dispatcher 会拒绝新一代调用。
-Service SDK 0.3.13 的具体工厂装配及工具自动循环仍须在指定候选轮子上核验。
+Service SDK 0.3.13 的工厂装配、工具自动循环及路线 a 已在指定轮子上运行；真实就绪仍受上述
+工具回显不一致阻断。可运行的录音驱动及环境说明留在仓库忽略目录 `phase3/external/`。
 
 | 接口 | 行为 |
 |---|---|
@@ -346,6 +390,8 @@ Service SDK 0.3.13 的具体工厂装配及工具自动循环仍须在指定候�
 - 结果和需审批事项进入播报队列；需审批与失败结果优先。普通内部进度不逐条朗读。播报、读取结果与人工 `ack/respond` 分离，不替用户审批。
 - 路线 a 使用 `append_message(..., trigger_response=True)`；历史和播放事实使用同接口并设为不触发回复。桥不发送重复 `session.update`，不使用只含 instructions 的更新，也不依赖 Qwen 不支持的带外生成。
 - Qwen 打断后服务端仍可能保存完整助手回复，服务端历史不代表用户实际听到。未播内容及本地实际播放位置持久保留，在下一语音回合或重连时作为资料注入，不自动重播；未播完不等于已听到或已批准。
+- 当前 Service SDK 不提供请求与 response 的可靠关联。若打断时仍有未分配 response 的请求或工具续答，会产生跨回合歧义。本代绑定发出 `voice_error`（`code=response_origin_ambiguous`、`recovery=detach_and_attach`），拒绝工具执行与播放，不再按 FIFO 猜来源；调用者须挂断后重新绑定，或等待真实断线重连建立新 generation，再重说未被处理的输入。不会自动重放音频。
+- 本轮真线路收到的工具回显删去了参数 schema 的 `description` 和数组 `items/minItems/maxItems`，Service SDK 因 `Qwen tool catalog mismatch` 拒绝就绪。A08～A11/A13 及三轮录音示例均未因此获得通过结论；桥没有放宽回显检查或删改旧池工具说明来绕过。
 - `generated`、`transmission_finished`、`received_audio_ms` 与 `played_audio_ms` 分别记账。不能把 `ResponseFinished` 或音频到达当作播放完成。首版不能从播放毫秒数可靠推导准确的文字断点，因此保留整段文本加播放事实。
 - `VoiceProfile` 可配置重连次数、指数退避、单连接及总通话秒数、每次回复 token 估算和总 token 额度。额度在打开媒体连接前向现有月账预留；有未知用量或进程中断时按上限结算，重开幂等收敛。它是 token/时间限制，不是提供方货币计费承诺。
 - 重连保留业务 `session_id`，递增 generation，注入最近已提交历史，绝不重放 PCM。挂断/重连前排队但被打断的播报保留为未播资料。

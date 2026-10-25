@@ -487,20 +487,25 @@ class Session:
         if self._closed:
             return
         self._closed = True
-        if self._voice is not None:
-            await self._voice.detach()
-        if self._chat is not None:
-            await self._chat.cancel({"session_id": self.session_id})
-        if self._pump_task is not None:
-            self._pump_task.cancel()
-            try:
-                await self._pump_task
-            except asyncio.CancelledError:
-                pass
-        if self._chat is not None:
-            await self._chat.close()
-        if self._own_host:
-            await self._host.close()
+        try:
+            if self._voice is not None:
+                await self._voice.detach()
+            if self._chat is not None:
+                await self._chat.cancel({"session_id": self.session_id})
+        finally:
+            if self._pump_task is not None:
+                self._pump_task.cancel()
+                try:
+                    await self._pump_task
+                except asyncio.CancelledError:
+                    pass
+            if self._chat is not None:
+                await self._chat.close()
+            sessions = getattr(self._host, "_sessions", {})
+            if sessions.get(self.session_id) is self:
+                sessions.pop(self.session_id)
+            if self._own_host:
+                await self._host.close()
 
 
 __all__ = ("Session", "SessionError", "SessionPolicy")
