@@ -207,11 +207,25 @@ class SessionChatService(ChatService):
 
     def _budget_subject(self, agent: Any, input_id: str) -> str:
         active = self.session._current_input
-        subject = (
-            active["result_subject"]
-            if active and active.get("result_subject")
-            else super()._budget_subject(agent, input_id)
-        )
+        engine_key = f"{agent.agent_id}:{input_id}"
+        with self.session._store.transaction():
+            subject = self.session._store.get("budget_attempts", engine_key)
+            if subject is None:
+                subject = super()._budget_subject(agent, input_id)
+                if active and active.get("result_subject"):
+                    base = active["result_subject"]
+                    ledger_store, _ = self._ledger()
+                    with ledger_store.read_view():
+                        reservation = ledger_store.connection.execute(
+                            "SELECT state FROM budget_reservations WHERE subject_id=?", (base,)
+                        ).fetchone()
+                    owner = self.session._store.get("result_consumers", base)
+                    if reservation is not None and reservation[0] == "RESERVED" and owner is None:
+                        subject = base
+                        self.session._store.put("result_consumers", base, engine_key)
+                    else:
+                        subject = f"{base}:{digest(engine_key)[:32]}"
+                self.session._store.put("budget_attempts", engine_key, subject)
         exists = self._pool().runtime.uow.read_agent_turn(agent.turn_id_for(input_id)) is not None
         self._resuming_subject = subject if exists else None
         return subject

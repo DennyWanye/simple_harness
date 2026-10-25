@@ -151,8 +151,6 @@ class Session:
                 "result_subject": None,
             }
             for notice in notices:
-                notice["applied_turn_id"] = turn_id
-                self._store.put("inbox", notice["event_id"], notice)
                 if row["result_subject"] is None:
                     row["result_subject"] = self._result_subject(notice["delegation_id"])
             row["model_input"] = text
@@ -211,8 +209,14 @@ class Session:
                     on_delta=self._piece,
                 )
                 receipt = {**reply, "engine_turn_id": reply["turn_id"], "turn_id": row["turn_id"]}
-                self._release_result_allowances(row)
+                if reply["state"] == "committed":
+                    self._release_result_allowances(row)
                 with self._store.transaction():
+                    if reply["state"] == "committed":
+                        for event_id in row["inbox_ids"]:
+                            notice = self._store.get("inbox", event_id)
+                            notice["applied_turn_id"] = row["turn_id"]
+                            self._store.put("inbox", event_id, notice)
                     row["receipt"] = receipt
                     self._store.put("turns", row["idempotency_key"], row)
                     kind = "turn_committed" if reply["state"] == "committed" else "error"
@@ -222,6 +226,17 @@ class Session:
                 return receipt
             except Exception as error:
                 with self._store.transaction():
+                    if getattr(error, "code", None) == "budget_exhausted":
+                        row["receipt"] = {
+                            "session_id": self.session_id,
+                            "turn_id": row["turn_id"],
+                            "state": "failed",
+                            "text": "",
+                            "tool_calls": [],
+                            "usage": {"input_tokens": 0, "output_tokens": 0, "unknown": False},
+                            "error": {"code": "budget_exhausted"},
+                        }
+                        self._store.put("turns", row["idempotency_key"], row)
                     self._store.event(
                         "error",
                         key=(
@@ -408,6 +423,18 @@ class Session:
             subject = self._result_subject(notice["delegation_id"])
             # Settlement is idempotent; only the selected allowance imports usage.
             self._chat._settle(subject, [], False, 0)
+
+    def _release_unused_result(self, row: Mapping[str, Any]) -> None:
+        if self._chat is None:
+            return
+        store, _ = self._chat._ledger()
+        subject = self._result_subject(row["delegation_id"])
+        with store.transaction():
+            exists = store.connection.execute(
+                "SELECT 1 FROM budget_reservations WHERE subject_id=?", (subject,)
+            ).fetchone()
+            if exists is not None:
+                self._chat._settle(subject, [], False, 0)
 
     def budget(self) -> dict[str, Any]:
         return {

@@ -12,12 +12,12 @@ from __future__ import annotations
 
 import hashlib
 import posixpath
-import unicodedata
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
 from simple_harness.contracts import canonical_json
 
+from ..artifacts.source_paths import source_paths_conflict
 from ..artifacts.store import ArtifactStore, ArtifactStoreError
 from ..governance.permissions import Principal
 from ..governance.policies import DeploymentPolicy
@@ -197,21 +197,11 @@ class SourceCommitsMixin:
     def _check_source_path_available(self, mission_id: str, path: str) -> None:
         """Keep one spelling for shared components, and forbid file ancestors/aliases."""
 
-        parts = [(part, unicodedata.normalize("NFC", part).casefold()) for part in path.split("/")]
         for source in self._store.list_sources(mission_id, active_only=True):
             existing = source["path"]
             if existing == path:
                 continue  # replacing the exact head is checked separately
-            conflict = False
-            for (part, folded), other in zip(parts, existing.split("/"), strict=False):
-                if folded != unicodedata.normalize("NFC", other).casefold():
-                    break  # distinct siblings below identically spelled parents
-                if part != other:
-                    conflict = True  # a shared directory/file has an alias spelling
-                    break
-            else:
-                conflict = True  # one full file path is a prefix of the other
-            if conflict:
+            if source_paths_conflict(path, existing):
                 raise SourceCommitError("conflict", "source path conflicts with an active source")
 
     def _source_head(self, mission_id: str, path: str, expected: str) -> dict[str, Any]:

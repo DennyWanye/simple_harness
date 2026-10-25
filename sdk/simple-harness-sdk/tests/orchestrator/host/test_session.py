@@ -198,7 +198,9 @@ def test_crash_recovery_at_each_durable_boundary(tmp_path, point):
     first = session._commit_input("read result", "result")
     replay = session._commit_input("read result", "result")
     assert first == replay and first["inbox_ids"]
-    assert session._commit_input("next", "next")["inbox_ids"] == []
+    # Freezing an input is not evidence that its result reached committed history.
+    assert session._commit_input("next", "next")["inbox_ids"] == first["inbox_ids"]
+    assert all(n["applied_turn_id"] is None for n in session.inbox())
 
 
 def test_cancel_creation_then_recover_and_completed_is_immutable(tmp_path):

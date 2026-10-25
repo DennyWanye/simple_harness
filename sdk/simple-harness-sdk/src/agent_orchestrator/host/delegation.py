@@ -8,6 +8,7 @@ from collections.abc import Mapping
 from pathlib import PurePosixPath
 from typing import Any
 
+from ..artifacts.source_paths import source_paths_conflict
 from .session_ledger import SessionError, digest
 
 TERMINAL = frozenset({"COMPLETED", "FAILED", "CANCELLED"})
@@ -36,12 +37,14 @@ def normalize_spec(body: Mapping[str, Any]) -> dict[str, Any]:
         if not isinstance(source, Mapping) or set(source) != {"path", "content"}:
             raise SessionError("invalid_arguments", "sources require path and content")
         path, content = source["path"], source["content"]
-        if not isinstance(path, str) or not path.strip() or "\\" in path:
+        if not isinstance(path, str) or not path.strip() or "\\" in path or "\x00" in path:
             raise SessionError("invalid_arguments", "invalid source path")
         path = path.strip()
         if PurePosixPath(path).is_absolute() or ".." in PurePosixPath(path).parts:
             raise SessionError("invalid_arguments", "invalid source path")
         path = str(PurePosixPath(path))
+        if path == ".":
+            raise SessionError("invalid_arguments", "invalid source path")
         if not path.startswith("sources/"):
             path = "sources/" + path
         if not isinstance(content, str) or not content or len(content) > 100000:
@@ -55,6 +58,11 @@ def normalize_spec(body: Mapping[str, Any]) -> dict[str, Any]:
         )
     if len({s["path"] for s in attached}) != len(attached):
         raise SessionError("invalid_arguments", "duplicate source path")
+    for index, source in enumerate(attached):
+        if any(
+            source_paths_conflict(source["path"], previous["path"]) for previous in attached[:index]
+        ):
+            raise SessionError("invalid_arguments", "source paths conflict")
     if not isinstance(body.get("reason", ""), str):
         raise SessionError("invalid_arguments", "reason must be text")
     return {
@@ -113,6 +121,7 @@ class Delegations:
 
     def _create(self, row: dict[str, Any]) -> dict[str, Any]:
         if row.get("error"):
+            self.session._release_unused_result(row)
             raise SessionError(row["error"])
         if row.get("receipt") is not None:
             if row["cancel_requested"] and not row.get("cancel_converged"):
@@ -122,23 +131,27 @@ class Delegations:
             self.session._reserve_result(row)
         except Exception as error:
             if getattr(error, "code", None) == "budget_exhausted":
-                with self.store.transaction():
-                    row["error"] = "budget_exhausted"
-                    self.store.put("delegations", row["key"], row)
-                    self.store.event(
-                        "error",
-                        key=f"rejected:{row['delegation_id']}",
-                        delegation_id=row["delegation_id"],
-                        turn_id=row["turn_id"],
-                        payload={"code": "budget_exhausted"},
-                    )
+                self._reject(row, "budget_exhausted")
             raise
-        if row["sources"]:
-            receipt = self.host.create_mission_with_sources(
-                {"mission": row["request"], "sources": row["sources"]}
-            )
-        else:
-            receipt = self.host.create_mission(row["request"])
+        try:
+            if row["sources"]:
+                receipt = self.host.create_mission_with_sources(
+                    {"mission": row["request"], "sources": row["sources"]}
+                )
+            else:
+                receipt = self.host.create_mission(row["request"])
+        except Exception as error:
+            code = getattr(error, "code", None)
+            if code in {
+                "conflict",
+                "invalid_request",
+                "permission_denied",
+                "secret_rejected",
+                "sdk_refused",
+                "not_found",
+            } and self._creation_absent(row):
+                self._reject(row, code)
+            raise
         self.session._checkpoint("mission_created")
         # A resumed create must preserve cancellation persisted while creation was pending.
         with self.store.transaction():
@@ -163,6 +176,28 @@ class Delegations:
     def status(self, row: Mapping[str, Any]) -> str:
         detail = self.host.snapshot(str(row["mission_id"]))
         return str(detail["snapshot"]["mission"]["status"])
+
+    def _creation_absent(self, row: Mapping[str, Any]) -> bool:
+        orchestrator = getattr(self.host, "orchestrator", None)
+        if orchestrator is None:
+            return False
+        try:
+            return orchestrator.store.find_mission(self.host.tenant_id, row["key"]) is None
+        except Exception:
+            return False
+
+    def _reject(self, row: dict[str, Any], code: str) -> None:
+        with self.store.transaction():
+            row["error"] = code
+            self.store.put("delegations", row["key"], row)
+            self.store.event(
+                "error",
+                key=f"rejected:{row['delegation_id']}",
+                delegation_id=row["delegation_id"],
+                turn_id=row["turn_id"],
+                payload={"code": code},
+            )
+        self.session._release_unused_result(row)
 
     def find(self, task_id: str) -> dict[str, Any]:
         for row in self.store.rows("delegations"):
@@ -200,8 +235,15 @@ class Delegations:
 
     def recover(self) -> None:
         for row in self.store.rows("delegations"):
-            if not row.get("error"):
-                self._create(row)
+            if row.get("error"):
+                self.session._release_unused_result(row)
+            else:
+                try:
+                    self._create(row)
+                except Exception:
+                    current = self.store.get("delegations", row["key"])
+                    if not current.get("error"):
+                        raise
 
 
 __all__ = ("Delegations",)
