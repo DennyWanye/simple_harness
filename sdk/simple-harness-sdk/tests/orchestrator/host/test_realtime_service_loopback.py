@@ -273,10 +273,10 @@ def test_service_loopback_rejects_changed_tool_identity(tmp_path, mismatch):
     asyncio.run(run())
 
 
-def test_realtime_extra_uses_service_317_and_allows_current_harness_candidate():
+def test_realtime_extra_uses_service_318_and_allows_current_harness_candidate():
     project = tomllib.loads((Path(__file__).resolve().parents[3] / "pyproject.toml").read_text())
     assert project["project"]["optional-dependencies"]["realtime"] == [
-        "simple-harness-service-sdk[realtime]==0.3.17"
+        "simple-harness-service-sdk[realtime]==0.3.18"
     ]
     service_requirements = [Requirement(value) for value in requires("simple-harness-service-sdk")]
     harness = next(req for req in service_requirements if req.name == "simple-harness-sdk")

@@ -315,11 +315,12 @@ async def run(root, principal, model, tools, render, last_seen=0):
 
 ## 2e. 语音绑定（`[realtime]` 可选扩展，opt.218 候选）
 
-最后更新：2026-10-26。本节是候选接口；当前 `[realtime]` 使用 Service SDK 0.3.17。
+最后更新：2026-10-26。本节是候选接口；当前 `[realtime]` 使用 Service SDK 0.3.18。
 规范化工具确认、工具循环、路线 a 联合回环及 Python 3.13 干净轮子环境接缝通过，
-正常 extra 解析后 21 包兼容。原“缺少 response_id 键”的用户侧 audio.done 及助手交错十项反例已全部转绿，
-其他 response.* 用户事件族也在缺 response_id 时先按已知用户身份分类，再解析助手内容。
-未知/助手缺作用域仍拒绝，不借当前助手 response 补 ID，不修改 Service 安装库。
+正常 extra 解析后 21 包兼容。原缺键 audio.done、空字符串/null response_id、助手交错、
+跨代身份与资料来源反例共 47 项在 Service SDK 0.3.18 全部通过；未知或助手 item 的
+缺作用域事件仍严格拒绝，不能借当前助手 response 或全局忽略空标识。
+干净轮子环境合同及 auto/重试驱动合计 69 通过，受跟踪 Service 联合回环 23 通过。
 
 Service 的非空用户转写仍可能产生 TranscriptCompleted，桥继续用公开 `context_ack_id`
 记录每代连接中自己追加的历史、未播资料与播报 item ID。这些 ID 的语音活动及转写只发
@@ -328,24 +329,24 @@ Service 的非空用户转写仍可能产生 TranscriptCompleted，桥继续用�
 历史/播报任意文本及精确原文回显的四项越权反例在新干净轮子中仍通过，正常音频输入保留。
 该防护不检查 provider 原始帧，不引入桥内 provider 兼容层。
 
-最终 0.3.17 组合的真实 A08～A11 及三轮示例证据另存 phase3/live5，逐项结论见阶段 3a
-记录第十九节。旧 live4 开线阻断和第六次 FAIL 均保留为历史，不能将离线修复或新示例
-通过直接代替所有最终场景。旧 0.3.14 的 A13 证据不算本轮重验。
-本轮三轮示例通过并实际播完结果，A08～A11及两个补充分支仍分别阻断。真线还观察到
-已确认 user item 的 `response_id: ""`：0.3.17 仅处理缺键，空字符串仍触发协议错误；
-新反例为6通过/5失败。A11另有无适配器拒绝日志的会话级protocol_error，现有证据未能
-定位其首个错误帧，不能归因旧audio.done分支。Host不填造ID、不改写帧绕过。
-等待第七次复核后发版 opt.218，当前仍是开发候选，Host 正式钉版保持 opt.217。
+0.3.18 组合真实录音重验另存 phase3/live6，逐项结论见阶段 3a 记录第二十一节。
+旧 0.3.17 的较窄示例通过、A08～A11 阻断及第七次 FAIL 保留为历史，不能回填本轮。
+旧 0.3.14 的 A13 证据不算本轮重验。最终判断以实际任务终态、对应结果播放及恢复证据为准，
+离线全绿不代替真线路。Host 不填造 ID、不改写帧绕过身份确认。
+本轮原 A08～A11 为 0 通过/4 阻断，完整示例也阻断；文字提供方工具解析、会话协议终止及
+后继 ASR/恢复仍开放。录音打断补充分支的既有断言通过，但当时任务已先失败，不能替代原 A10。
+等待第八次复核后发版 opt.218，当前仍是开发候选，Host 正式钉版保持 opt.217。
 
-本轮验收驱动按用户定义的 auto 行为显式调用 `session.respond`：规划问题选择首个非停止/
-放弃选项，审批 approve、复核 review_pass、结果不明 arbitrate，并逐次记录选项与所选。
-裁定可透传 ruling/basis，审批与裁定 nonce 也透传；会话归属、版本、过期及请求状态校验
-不变。这是调用方的授权代答策略，不把播报或实际播放本身视为用户批准。
+验收驱动收到 `needs_response` 时按产品定义的 auto 行为显式调用 `session.respond`：
+规划问题选择首个非停止/放弃选项，审批 approve、复核 review_pass、结果不明 arbitrate，
+并逐次记录选项与所选。裁定可透传 ruling/basis，审批与裁定 nonce 也透传；会话归属、
+版本、过期及请求状态校验不变。本轮实际没有 needs_response，真实代答次数为 0，
+离线策略通过不外推为真实审批覆盖；不把播报或实际播放本身视为用户批准。
 
 `Session` 继续是唯一业务前门，Service SDK 负责媒体连接与工具结果回写循环，不反向依赖
 编排层。文本路径不要求安装 Service SDK。`[realtime]` 声明
-`simple-harness-service-sdk[realtime]==0.3.17`，激活 Service SDK 的网络传输依赖。
-0.3.17 要求 Harness `>=0.13.0.dev20260925`，允许本候选 opt.218；工具回显按 Service SDK
+`simple-harness-service-sdk[realtime]==0.3.18`，激活 Service SDK 的网络传输依赖。
+0.3.18 要求 Harness `>=0.13.0.dev20260925`，允许本候选 opt.218；工具回显按 Service SDK
 的工具名称、参数名和必填字段比较，允许提供方规范化描述和嵌套约束。调用时仍按原请求
 schema 校验参数，缺失工具、改名或参数集合变化仍拒绝就绪，工具说明与池身份不改。
 当前测试组合按下面顺序安装：先准备公共依赖，再以 `--no-index --find-links` 解析两个
@@ -354,15 +355,15 @@ schema 校验参数，缺失工具、改名或参数集合变化仍拒绝就绪�
 
 ```sh
 EVIDENCE=./.local-test-evidence/2026-10-25/unified-session/phase3/external
-SERVICE_WHEELS=./.local-test-evidence/2026-10-25/unified-session/phase3/live5/inputs
-uv venv --python 3.13 "$EVIDENCE/.venv-service317"
-uv pip install --python "$EVIDENCE/.venv-service317/bin/python" \
+SERVICE_WHEELS=./.local-test-evidence/2026-10-25/unified-session/phase3/live6/inputs
+uv venv --python 3.13 "$EVIDENCE/.venv-service318"
+uv pip install --python "$EVIDENCE/.venv-service318/bin/python" \
   'httpx>=0.28.1,<1' 'websockets>=15,<16' 'prompt-toolkit>=3.0.52,<4' \
   'packaging>=25,<27' 'pytest>=8.3,<9' 'deepseek-recipe==0.1.1'
-uv pip install --python "$EVIDENCE/.venv-service317/bin/python" --no-index \
-  --find-links "$SERVICE_WHEELS" --find-links "$EVIDENCE/wheels-service317" \
+uv pip install --python "$EVIDENCE/.venv-service318/bin/python" --no-index \
+  --find-links "$SERVICE_WHEELS" --find-links "$EVIDENCE/wheels-service318" \
   'simple-harness-sdk[realtime]==0.13.0.dev20260925+opt.218'
-uv pip check --python "$EVIDENCE/.venv-service317/bin/python"
+uv pip check --python "$EVIDENCE/.venv-service318/bin/python"
 ```
 
 音频示例另显式安装 `sounddevice>=0.5,<0.6`；它是示例的设备实现，不是桥的强制依赖。
@@ -387,8 +388,9 @@ await binding.detach()
 `client_factory` 接收本次 generation 的 dispatcher，返回配置好的 Service SDK 客户端；
 桥调用客户端的 `open(request)`。提供方、凭据铸造、传输与适配器由接入方组装，密钥只从
 进程环境读取，不传给会话台账。工厂每次重连重新组装客户端，旧 dispatcher 会拒绝新一代调用。
-Service SDK 0.3.13 的工厂装配、工具自动循环及路线 a 已在指定轮子上运行；真实就绪仍受上述
-工具回显不一致阻断。可运行的录音驱动及环境说明留在仓库忽略目录 `phase3/external/`。
+Service SDK 0.3.18 的工厂装配、工具自动循环及路线 a 已在指定轮子上运行，工具目录确认通过；
+真实联合主链仍受前述协议、文字提供方及任务结果阻断。录音驱动与安装说明位于忽略目录
+`phase3/external/example_service318.py` 与 `phase3/external/README-0.3.18.md`。
 
 | 接口 | 行为 |
 |---|---|
