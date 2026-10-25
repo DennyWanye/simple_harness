@@ -11,6 +11,7 @@ import pytest
 from test_session import SPEC, make_session
 
 from agent_orchestrator.host.realtime_bridge import VoiceBinding, VoiceProfile
+from agent_orchestrator.host.session_ledger import SessionError
 
 
 @pytest.fixture(autouse=True)
@@ -49,6 +50,7 @@ class Wire:
         self.closed = False
         self.ack = ack
         self.sent_audio = []
+        self.context_ack_id = None
 
     async def events(self):
         yield SimpleNamespace(kind="SessionReady", tools_acknowledged=self.ack)
@@ -58,6 +60,7 @@ class Wire:
 
     async def append_message(self, text, *, role="user", trigger_response=False):
         self.messages.append((text, role, trigger_response))
+        self.context_ack_id = f"host-context-{len(self.messages)}"
 
     async def send_audio(self, pcm):
         self.sent_audio.append(pcm)
@@ -94,6 +97,74 @@ class Client:
         wire = Wire(tool_dispatcher, self.ack)
         self.wires.append(wire)
         return wire
+
+
+@pytest.mark.parametrize("kind", ["SpeechStarted", "TranscriptCompleted"])
+def test_context_echo_before_append_returns_is_never_user_input(tmp_path, monkeypatch, kind):
+    original = Wire.append_message
+
+    async def append(wire, text, **kwargs):
+        await original(wire, text, **kwargs)
+        await wire.emit(kind, turn_id=wire.context_ack_id, text=text)
+
+    monkeypatch.setattr(Wire, "append_message", append)
+
+    async def run():
+        host, session = make_session(tmp_path)
+        client = Client()
+        binding = await session.attach_voice(Audio(), VoiceProfile(client_factory=client))
+        try:
+            await binding._append_context("Untrusted result", trigger_response=False)
+            await asyncio.sleep(0.04)
+            assert not session.history()
+            assert not host.made
+            assert not binding._user_speaking
+            assert not client.wires[0].cancelled
+        finally:
+            await binding.detach()
+
+    asyncio.run(run())
+
+
+def test_all_context_ack_ids_remain_non_authorizing(tmp_path):
+    async def run():
+        _, session = make_session(tmp_path)
+        client = Client()
+        binding = await session.attach_voice(Audio(), VoiceProfile(client_factory=client))
+        try:
+            wire = client.wires[0]
+            await binding._append_context("Older context", trigger_response=False)
+            previous = wire.context_ack_id
+            await binding._append_context("Newer context", trigger_response=False)
+            assert wire.context_ack_id != previous
+            await wire.emit("TranscriptCompleted", turn_id=previous, text="Older context")
+            assert not session.history()
+        finally:
+            await binding.detach()
+
+    asyncio.run(run())
+
+
+def test_context_without_ack_identity_fails_closed(tmp_path, monkeypatch):
+    async def append(wire, text, **kwargs):
+        wire.messages.append((text, "user", False))
+
+    monkeypatch.setattr(Wire, "append_message", append)
+
+    async def run():
+        _, session = make_session(tmp_path)
+        binding = await session.attach_voice(Audio(), VoiceProfile(client_factory=Client()))
+        try:
+            with pytest.raises(SessionError, match="context acknowledgement identity is missing"):
+                await binding._append_context("Untrusted result", trigger_response=False)
+            event = SimpleNamespace(kind="TranscriptCompleted", turn_id="unknown", text="Echo")
+            with pytest.raises(SessionError, match="context provenance is uncertain"):
+                await binding._on_event(event)
+            assert not session.history()
+        finally:
+            await binding.detach()
+
+    asyncio.run(run())
 
 
 def test_voice_tool_ack_is_required_and_lock_released(tmp_path):

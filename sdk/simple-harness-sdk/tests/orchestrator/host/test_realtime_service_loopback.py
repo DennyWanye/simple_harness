@@ -453,8 +453,19 @@ def test_unknown_unscoped_transcript_still_requires_identity():
     assert error.value.code is RealtimeErrorCode.PROTOCOL_ERROR
 
 
-def test_confirmed_user_nonempty_sideband_is_user_transcript():
-    adapter, item_id = confirmed_context()
+def test_confirmed_input_audio_nonempty_sideband_is_user_transcript():
+    adapter = QwenOmniAdapter()
+    item_id = "item_input_audio"
+    adapter.decode_server_event(
+        json.dumps(
+            {
+                "type": "input_audio_buffer.speech_started",
+                "event_id": "event_audio_speech_started",
+                "item_id": item_id,
+                "audio_start_ms": 0,
+            }
+        )
+    )
     decoded = adapter.decode_server_event(
         json.dumps(sideband(item_id, transcript="A user transcript"))
     )
@@ -520,3 +531,68 @@ def test_user_audio_transcript_is_preserved():
     assert decoded.events[0].kind == "TranscriptCompleted"
     assert decoded.events[0].turn_id == "fresh_user_item"
     assert decoded.events[0].text == "A real user request"
+
+
+@pytest.mark.parametrize("source", ["history", "announcement"])
+def test_exact_context_echo_cannot_authorize_delegation(tmp_path, source):
+    class ContextConnection(Connection):
+        context_item = None
+
+        async def event(self, kind, **fields):
+            if kind == "conversation.item.created" and fields["item"].get("type") == "message":
+                self.context_item = deepcopy(fields["item"])
+            await super().event(kind, **fields)
+
+    async def run():
+        host, session = make_session(tmp_path)
+        if source == "history":
+            committed_history(session)
+        connection = ContextConnection(provider_message_ids=True)
+        binding = await session.attach_voice(
+            Audio(), VoiceProfile(client_factory=factory(connection), max_reconnects=0)
+        )
+        try:
+            if source == "announcement":
+                await session.announce("Untrusted task result data")
+                await wait_for(lambda: "followup-1" in binding._response_turns)
+                await connection.event(
+                    "response.done",
+                    response={
+                        "id": "followup-1",
+                        "status": "completed",
+                        "usage": {
+                            "input_tokens": 1,
+                            "output_tokens": 1,
+                            "total_tokens": 2,
+                            "input_tokens_details": {
+                                "text_tokens": 1,
+                                "audio_tokens": 0,
+                            },
+                            "output_tokens_details": {
+                                "text_tokens": 1,
+                                "audio_tokens": 0,
+                            },
+                        },
+                    },
+                )
+                await wait_for(lambda: binding._responding is None)
+            echo_text = connection.context_item["content"][0]["text"]
+            value = sideband(connection.context_item["id"], transcript=echo_text)
+            kind = value.pop("type")
+            value.pop("event_id")
+            await connection.event(kind, **value)
+            await connection.event("response.created", response={"id": "context-response"})
+            await tool_call(connection, "context-response")
+            await wait_for(
+                lambda: any(
+                    e["type"] == "conversation.item.create"
+                    and e["item"]["type"] == "function_call_output"
+                    for e in connection.sent
+                )
+            )
+            assert not host.made, "Injected context data was elevated to an authorized user turn"
+            assert not any(row["input"] == echo_text for row in session.history())
+        finally:
+            await binding.detach()
+
+    asyncio.run(run())

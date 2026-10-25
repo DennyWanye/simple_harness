@@ -315,22 +315,29 @@ async def run(root, principal, model, tools, render, last_seen=0):
 
 ## 2e. 语音绑定（`[realtime]` 可选扩展，opt.218 候选）
 
-最后更新：2026-10-25。本节是候选接口；当前 `[realtime]` 使用 Service SDK 0.3.16，
+最后更新：2026-10-26。本节是候选接口；当前 `[realtime]` 使用 Service SDK 0.3.16，
 规范化工具确认、工具循环、路线 a 内存回环及 Python 3.13 干净轮子环境接缝通过。
 当前候选源码与安装一致，正常 extra 解析后 21 包兼容。A08～A11 与三轮完整示例的逐项
 真实结论见阶段 3a 记录第十七节；旧 0.3.14 的 A13 证据不算本组合重验，不以依赖安装、
 工具协商或历史确认成功代替完整验收和正式发版。等待第六次复核后发版 opt.218。
 
-0.3.16 保留提供方重新分配消息 item ID 的确认合同，并修复已知用户 item 的无 response_id
-附带转写：空正文不产生助手输出或新确认，非空正文归为用户转写。未知 item 或助手输出
-仍须有正确作用域，不补造 response_id，也不在 Host 桥过滤事件。原两个关键反例已转绿；
-旧反例中“已确认用户的非空转写也必须拒绝”不再符合这个明确的用户侧合同，原件和执行结果
-保留，新的回归改为验证用户来源及正文，不放宽未知/助手作用域拒绝。
-
+0.3.16 保留提供方重新分配消息 item ID 的确认合同，原两个空转写关键反例已转绿。
+它仍将宿主 append_message 的 user 资料 ID 视为用户来源，非空回显会转成
+TranscriptCompleted，因此桥用 Service 的公开 `context_ack_id` 记录每代连接中自己追加的
+历史、未播资料与播报 item ID。这些 ID 的语音活动及转写只发出
+`voice_context_echo_ignored` 事件，不成为用户回合，也不取得工具准入；不用文本内容判断。
+追加确认未返回时，用户侧事件等待来源登记；确认失败或缺 ID 则关闭该连接的准入。
+重连使用新一代来源集合，不能借旧连接的用户授权。历史与播报精确回显的两项委派反例
+已由红转绿，确认前回显、多个旧 ID 及缺确认 ID 的边界测试也通过。
+原七项中的非空上下文拒绝断言在底层 Service 仍失败，不能称为过期合同；组合层由上述
+公开确认身份完成隔离。只有真正用户输入进入用户回合；未知/助手缺作用域继续拒绝。
+该防护不检查 provider 原始帧，不修改 Service 安装库。
 当前组合仍有已确认用户 item 随后的 `response.audio.done` 缺少有效 response_id 的线路
 阻断：Service 以协议错误拒绝后重连。历史回灌后继续录音的组合尚未完成验收；原地重试
-能恢复部分输入，不等于该合同已修复。三轮新建会话示例及无历史回灌的打断/取消分支已
-真实通过，不能用这些分支替代历史恢复。Host 桥不增加 provider 帧过滤兼容层。
+能恢复部分输入，不等于该合同已修复。来源修复前部署的三轮新建会话示例及无历史回灌
+的打断/取消分支已真实通过，不能用这些分支替代历史恢复或最终轮子验收。最终来源修复
+轮子另跑 guard-* 记录；开线持续 unavailable/busy 时如实记阻断。Host 桥不增加 provider
+帧过滤兼容层。
 
 本轮验收驱动按用户定义的 auto 行为显式调用 `session.respond`：规划问题选择首个非停止/
 放弃选项，审批 approve、复核 review_pass、结果不明 arbitrate，并逐次记录选项与所选。
@@ -350,14 +357,14 @@ schema 校验参数，缺失工具、改名或参数集合变化仍拒绝就绪�
 ```sh
 EVIDENCE=./.local-test-evidence/2026-10-25/unified-session/phase3/external
 SERVICE_WHEELS=./.local-test-evidence/2026-10-25/unified-session/phase3/live4/inputs
-uv venv --python 3.13 "$EVIDENCE/.venv-service316"
-uv pip install --python "$EVIDENCE/.venv-service316/bin/python" \
+uv venv --python 3.13 "$EVIDENCE/.venv-service316-origin-fix"
+uv pip install --python "$EVIDENCE/.venv-service316-origin-fix/bin/python" \
   'httpx>=0.28.1,<1' 'websockets>=15,<16' 'prompt-toolkit>=3.0.52,<4' \
   'packaging>=25,<27' 'pytest>=8.3,<9' 'deepseek-recipe==0.1.1'
-uv pip install --python "$EVIDENCE/.venv-service316/bin/python" --no-index \
-  --find-links "$SERVICE_WHEELS" --find-links "$EVIDENCE/wheels-service316" \
+uv pip install --python "$EVIDENCE/.venv-service316-origin-fix/bin/python" --no-index \
+  --find-links "$SERVICE_WHEELS" --find-links "$EVIDENCE/wheels-service316-origin-fix" \
   'simple-harness-sdk[realtime]==0.13.0.dev20260925+opt.218'
-uv pip check --python "$EVIDENCE/.venv-service316/bin/python"
+uv pip check --python "$EVIDENCE/.venv-service316-origin-fix/bin/python"
 ```
 
 音频示例另显式安装 `sounddevice>=0.5,<0.6`；它是示例的设备实现，不是桥的强制依赖。
