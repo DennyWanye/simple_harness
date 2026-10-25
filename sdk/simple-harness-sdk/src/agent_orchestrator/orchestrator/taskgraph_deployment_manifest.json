@@ -1,11 +1,6 @@
 {
-  "acceptance_evidence": {
-    "gate_run_at": "2026-10-25T07:02:33+00:00",
-    "gate_sha256": "6fea853325125fe2ce40668b67da4db07cd1fd60672284e796c55c22787f9491",
-    "gate_status": "PASS",
-    "source_files_sha256": "eede432c0f3620fbe5c84296a943df69e30a09b6a2a222f9b2391c7cc124537f"
-  },
-  "deployment_id": "33a200f9a9a0f4fa68719657129bfdb2834784b0be9ace7faca89c69d61e01b1",
+  "acceptance_evidence": null,
+  "deployment_id": "c96c4a267f4fa9ce370d83dbf5d5fb5d92fd7d381305c89078ace765bc1b8c36",
   "schema": "taskgraph-htn-wiring-derivation-v1",
   "source_files": {
     "agent_orchestrator/__init__.py": "eb50152258b356bc7866e55823fc45c7209cb6150efe205dd03c40c33beedbc2",
@@ -166,7 +161,7 @@
     "agent_orchestrator/graph/taskgraph_validation.py": "0d1ddd1f88e0b9f0544beaa7e14fe7fd34e74c7527498bbd14354c095125f283",
     "agent_orchestrator/graph/terminal.py": "267a54cdef4567712c3ee9992396d67d5cc50d900f285ed4626240ceeec8196e",
     "agent_orchestrator/graph/view_contracts.py": "105cee92bc3ecaa21c6db44e8a32ac086199d98037540fa13d781b724560830f",
-    "agent_orchestrator/host/__init__.py": "e4ad14c6abfc1488d71cb5c533823873379366afb7570f8b0e4abab33846250e",
+    "agent_orchestrator/host/__init__.py": "7fc98be5f35a9000b3c1298ea4cf10eb126f98fa157abc7b54d9d7853397de95",
     "agent_orchestrator/host/chat.py": "3777c6306e6dcc05a299e034a198c56d5544717e34fbd39b4871b3b097f68d4e",
     "agent_orchestrator/host/delegation.py": "79b4b39d25f893827a036cd34a8096a92898ff142f9843b5895edb575294b2bf",
     "agent_orchestrator/host/embedding.py": "ac37172e30842aec43c0af0ac81a4a7b35094fadda0c5fcae8f8efddcef22d48",
@@ -175,10 +170,11 @@
     "agent_orchestrator/host/instance_lock.py": "de30c4b0c87ac371fdf200f14a9f2e519efbf9194249743e128e3e0cd34d03d9",
     "agent_orchestrator/host/offline.py": "28cb5277259b6fcbc4f7c9155a4cfd2862a8a50a637d68b9e994d766bb77d02a",
     "agent_orchestrator/host/provider.py": "c30023cdbbd2559edc036bbf8aa03ab7961ff9846655b9dc6eaa50f81df11714",
+    "agent_orchestrator/host/realtime_bridge.py": "e635ba1b604f5a0cbbd436285fce2d59da2a4e384039cdb51f7317bbfdb0737e",
     "agent_orchestrator/host/sandbox_doctor.py": "b28434e449bee596487d8ed78eca94fef104f76d7ad50d0d6f3a694ef9161eae",
     "agent_orchestrator/host/script_runner.py": "9ac0b54f3487b6367a7f7b7f4f1a5d9acbc177b9620b7d35aceba2c89fa74736",
-    "agent_orchestrator/host/session.py": "f6fd6de26bd2dfd504a24c9ddb5f466e5a01ef702d29a10f6286fa684ecdb86b",
-    "agent_orchestrator/host/session_chat.py": "012f9bbb1ec980ae2fefa12d6866cf4307ba6f84c4a93e687948e3637d97ea1a",
+    "agent_orchestrator/host/session.py": "f5a00114d8d266d90700c23528f86bc65d9a05cd0eb4daf29759f71c37b46bc4",
+    "agent_orchestrator/host/session_chat.py": "33cd3e23db3772b5d3e0fea1d875ec1fba3fac86b7cce299e6abb9010ac490fc",
     "agent_orchestrator/host/session_ledger.py": "26a5aecb535a8145ac67cd4789271c06a990b00a28eed019164c3d071be873f7",
     "agent_orchestrator/host/settings.py": "a5d3e5c17636ccfeba7cb8e486d863f56d240fb885649df3532f4c33a93f4e3c",
     "agent_orchestrator/host/tokenizer.py": "2ac9133c33a53afbd00799348a17921541dea0b2b45c995aac65c62e67eef339",
@@ -421,7 +417,7 @@
     "agent_orchestrator/planning/htn/world.py": "6703e0d7fd82bfe50923089ffd3df5459d18ba2a607bc0aad6df0d20d93ea4e0",
     "agent_orchestrator/planning/plan_preview.py": "b1ec39b18aee1d59bdac55ca4d31aab1b9b1fbdd263b992bb2e09fda6f4dd319",
     "agent_orchestrator/planning/unknown_fields.py": "026d7001b072e00a4c843845277d039804ffe7d3328180caf3c3fd2a131269a2",
-    "agent_orchestrator/public_api.py": "742f53f516febf5d6057c1777d6bb06e50c2450cc7aa86c95f576660231c2db0",
+    "agent_orchestrator/public_api.py": "d24ffe9598507dfe20c586c90233c074d6a983e6c25bd166aeea83c5b0845b06",
     "agent_orchestrator/py.typed": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "agent_orchestrator/runtime/__init__.py": "3119afdfd9b30ef3ba26e597ff8d8c980c22ca3e2540b1eadd844ac380047815",
     "agent_orchestrator/runtime/action_params.py": "3722faa3bb184faeee7373f304557598add8ef5e20e14aea08f12873715d6625",
@@ -820,7 +816,7 @@
     "simple_harness/tools/runtime_catalog.py": "66622237882dafc52ee6df6d2e8058337a874afe1a98d0cd8a17b48c34f59010",
     "simple_harness/tools/schema.py": "c582e7b9e9da66428580a2c8495e32a0bd39a6cd250fc42a2aae48d0bdfe39fb",
     "simple_harness/tools/sidecar.py": "78a7335957d45fc1f202b68829c7cba5c1e9bb98e77b559634b8fba09dacf90d",
-    "simple_harness/version.py": "4a0fc620119587bdf1b10d6d3cae6970a586d3ee6605cdd73cbdbaf3db795342",
+    "simple_harness/version.py": "29e4bf927200ba4c422f70dfd205b8533f69e625362ddadf8bfe69ca5c9350b6",
     "simple_harness/workflow/__init__.py": "2705ed448307b1cb05369b8ffa4a46ca70019e1b722665a711b594b30d520003",
     "simple_harness/workflow/checkpoint.py": "00612d57d0bda0146f9a38d59d3e0278decb6e2c91f7f096bfc56d6ab2d85c96",
     "simple_harness/workflow/compiler.py": "a5557881c05bf5869509f15b818a23058f65378fd080a299d28522d6ae9366b6",
@@ -855,7 +851,7 @@
     "simple_harness/workflows/personal_v1/ports.py": "1e5ec7df071b3ab19729f0768811fcc5544fd6a89421b4b34f7f5dde28ead1de",
     "simple_harness/workflows/personal_v1/selection.py": "c65c5e41abebfacc359bff6fe79f39b3cd87f0ff2739e2b398215ccd9dde033f"
   },
-  "taskgraph_acceptance": "VALIDATED",
+  "taskgraph_acceptance": "NOT_RUN",
   "upstream": {
     "business_replay": "CONSISTENT",
     "business_replay_receipt_sha256": "ba06c71d6123c2726041d11fe385cfec01cb57bef29ff9b22f6d9551cda05887",

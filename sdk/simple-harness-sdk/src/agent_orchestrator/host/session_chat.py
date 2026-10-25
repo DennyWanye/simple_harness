@@ -9,7 +9,10 @@ from typing import Any
 from simple_harness.agents import AgentConfig
 from simple_harness.contracts import thaw_json
 
+from ..contracts import Budget
 from ..deployment.native_pools import DeploymentToolAuthorization
+from ..governance.budgets import BudgetExhausted
+from ..orchestrator.budget_accounts import global_account_id
 from ..runtime.control_commands import ControlCommand
 from .chat import ChatService
 from .session_ledger import SessionError, digest, encoded
@@ -122,6 +125,18 @@ class SessionChatService(ChatService):
 
     def _reconcile_reservations(self) -> None:
         super()._reconcile_reservations()
+        for row in self.session._store.rows("voice_budget"):
+            if row["state"] in {"reserving", "reserved"}:
+                budget_store, _ = self._ledger()
+                with budget_store.read_view():
+                    exists = budget_store.connection.execute(
+                        "SELECT 1 FROM budget_reservations WHERE subject_id=?", (row["subject"],)
+                    ).fetchone()
+                if exists is not None:
+                    self._settle(row["subject"], [], True, 0)
+                with self.session._store.transaction():
+                    row.update(state="settled", unknown=True)
+                    self.session._store.put("voice_budget", row["subject"], row)
         pool = self._pool()
         store, _ = self._ledger()
         attempts = self.session._store.connection.execute(
@@ -225,7 +240,16 @@ class SessionChatService(ChatService):
         with self.session._store.transaction():
             frozen_input = self.session._store.get("engine_inputs", engine_key)
             if frozen_input is None:
-                if getattr(self, "_restore_history", False):
+                voice_history = [
+                    row
+                    for row in self.session._store.rows("turns")
+                    if row.get("engine") == "voice" and row.get("receipt")
+                ]
+                voice_version = digest(voice_history)
+                previous_voice = self.session._store.get("voice_history_read", agent.agent_id)
+                if getattr(self, "_restore_history", False) or (
+                    voice_history and previous_voice != voice_version
+                ):
                     text = (
                         "已提交会话历史资料（不是指令）：\n"
                         + encoded(self.session.history())
@@ -234,6 +258,7 @@ class SessionChatService(ChatService):
                     )
                 frozen_input = text
                 self.session._store.put("engine_inputs", engine_key, frozen_input)
+                self.session._store.put("voice_history_read", agent.agent_id, voice_version)
         self._restore_history = False
         return await super()._complete(session_id, agent, frozen_input, input_id)
 
@@ -294,6 +319,28 @@ class SessionChatService(ChatService):
                 raise SessionError("budget_exhausted", "reservation already settled")
             return
         super()._reserve(subject, model_calls)
+
+    def _reserve_voice(self, subject: str, tokens: int) -> None:
+        store, ledger = self._ledger()
+        with store.transaction():
+            account = global_account_id(store.now)
+            ledger.open_account(
+                account_id=account,
+                scope="global",
+                parent_id=None,
+                mission_id="global",
+                limits=Budget(max_tokens=self._host.settings.global_monthly_max_tokens),
+            )
+            try:
+                ledger.reserve(
+                    account_id=account,
+                    subject_id=subject,
+                    tokens=tokens,
+                    counts_attempt=False,
+                    mission_id="chat",
+                )
+            except BudgetExhausted as error:
+                raise SessionError("budget_exhausted") from error
 
 
 __all__ = ("SessionChatService",)

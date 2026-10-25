@@ -75,6 +75,7 @@ class Session:
         self._closed = False
         self._current_input: dict[str, Any] | None = None
         self._send_lock = asyncio.Lock()
+        self._voice = None
         self._subscribers: set[asyncio.Queue[dict[str, Any]]] = set()
         self._pump_task: asyncio.Task[None] | None = None
         self._chat = SessionChatService(self) if isinstance(host, OrchestrationHost) else None
@@ -393,9 +394,46 @@ class Session:
         self._check_open()
         return await self._chat.cancel({"session_id": self.session_id})
 
+    async def attach_voice(self, audio_io: Any, profile: Any) -> Any:
+        # Optional dependency: text sessions do not require the realtime extra.
+        from .realtime_bridge import VoiceBinding
+
+        self._check_open()
+        if self._voice is not None:
+            raise SessionError("busy", "a voice binding already owns this session")
+        await self._send_lock.acquire()
+        try:
+            self._check_open()
+            binding = VoiceBinding(self, audio_io, profile)
+            self._voice = binding
+            await binding.start()
+            return binding
+        except BaseException:
+            if self._voice is not None:
+                await self._voice.detach()
+            elif self._send_lock.locked():
+                self._send_lock.release()
+            raise
+
+    async def announce(self, text: str) -> Any:
+        self._check_open()
+        if self._voice is None:
+            raise SessionError("voice_unavailable")
+        return await self._voice.announce(text)
+
     def history(self, *, limit: int = 50) -> list[dict[str, Any]]:
         return [
-            {"turn_id": r["turn_id"], "input": r["input"], "text": r["receipt"]["text"]}
+            {
+                "turn_id": r["turn_id"],
+                "input": r["input"],
+                "text": r["receipt"]["text"],
+                **(
+                    {"tool_calls": r["receipt"].get("tool_calls", [])}
+                    if r.get("engine") == "voice"
+                    else {}
+                ),
+                **({"playback": r["receipt"]["playback"]} if "playback" in r["receipt"] else {}),
+            }
             for r in self._store.rows("turns")
             if r.get("receipt") and r["receipt"]["state"] == "committed"
         ][-max(1, min(50, limit)) :]
@@ -448,9 +486,11 @@ class Session:
     async def close(self) -> None:
         if self._closed:
             return
-        if self._chat is not None:
-            await self.interrupt()
         self._closed = True
+        if self._voice is not None:
+            await self._voice.detach()
+        if self._chat is not None:
+            await self._chat.cancel({"session_id": self.session_id})
         if self._pump_task is not None:
             self._pump_task.cancel()
             try:

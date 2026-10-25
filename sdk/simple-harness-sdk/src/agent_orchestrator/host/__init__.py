@@ -29,6 +29,7 @@ from .host import (
     OrchestrationHost,
     with_publish_sources,
 )
+from .realtime_bridge import AudioIO, SpeechHandle, VoiceBinding, VoiceProfile
 from .session import Session, SessionError, SessionPolicy
 from .settings import (
     CONTEXT_INPUT_CHOICES,
@@ -40,6 +41,7 @@ from .settings import (
 )
 
 __all__ = (
+    "AudioIO",
     "CONTEXT_INPUT_CHOICES",
     "NO_COUNTER_REASON",
     "ChatRequestError",
@@ -54,7 +56,10 @@ __all__ = (
     "Session",
     "SessionError",
     "SessionPolicy",
+    "SpeechHandle",
     "ToolCallContext",
+    "VoiceBinding",
+    "VoiceProfile",
     "host_settings_from_mapping",
     "with_publish_sources",
 )

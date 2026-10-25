@@ -282,6 +282,77 @@ async def run(root, principal, model, tools, render, last_seen=0):
 版本，不自行生成。版本核对与 `decide/answer_planning_question` 在同一任务库写事务内完成，
 身份和请求绑定字段不能由调用参数覆盖。
 
+## 2e. 语音绑定（`[realtime]` 可选扩展，opt.218 候选）
+
+最后更新：2026-10-25。本节是候选接口；离线语音桥测试通过，Service SDK 0.3.13
+候选轮子的联合契约、真线路及仓库外安装尚未验收，不能视为阶段 3a 完成或正式发版。
+
+`Session` 继续是唯一业务前门，Service SDK 负责媒体连接与工具结果回写循环，不反向依赖
+编排层。文本路径不要求安装 Service SDK。安装元数据声明了 `[realtime]`；私有候选组合
+须按任务指定顺序安装：先以 `--no-deps` 安装已核对哈希的 Service SDK 0.3.13 轮子，
+再安装 opt.218 候选轮子，最后安装 `httpx websockets prompt-toolkit`。上游私有依赖解析
+与 lock 文件尚待联合安装核验，不应拿公开同版本包替代指定候选。
+
+```python
+from agent_orchestrator.host import VoiceProfile
+
+# make_service_client(dispatcher) returns a configured Service SDK client.
+# The client owns automatic tool dispatch and result/followup acknowledgements.
+binding = await session.attach_voice(
+    audio_io, VoiceProfile(client_factory=make_service_client)
+)
+handle = await session.announce("任务已经完成，请查看结果。")
+playback = await handle.wait()
+await binding.barge_in()
+await binding.detach()
+```
+
+`client_factory` 接收本次 generation 的 dispatcher，返回配置好的 Service SDK 客户端；
+桥调用客户端的 `open(request)`。提供方、凭据铸造、传输与适配器由接入方组装，密钥只从
+进程环境读取，不传给会话台账。工厂每次重连重新组装客户端，旧 dispatcher 会拒绝新一代调用。
+Service SDK 0.3.13 的具体工厂装配及工具自动循环仍须在指定候选轮子上核验。
+
+| 接口 | 行为 |
+|---|---|
+| `await session.attach_voice(audio_io, profile)` | 返回 `VoiceBinding`；包含 `binding_id`、持久递增的 `generation` 和 `negotiation`；同会话只允许一个语音绑定 |
+| `await session.announce(text)` | 返回 `SpeechHandle`；等待用户说完、模型回复结束及上一段实际播放完后，按路线 a 注入资料并触发回复 |
+| `await handle.wait()` | 回执包含状态、实际播放 ms、接收音频 ms、生成结束和传输结束标志；等待者取消不取消播报 |
+| `await binding.barge_in()` | 清本地播放队列；仅对仍在生成的已知 response 发取消，不取消后台任务 |
+| `await binding.detach()` | 关闭媒体连接、停止音频读取并释放设备，保留业务会话、任务和历史 |
+| `await session.close()` | 同一挂断路径，然后关闭文本引擎及 Host 驱动 |
+
+音频协议只有三个方法。输入为 16 kHz、单声道、s16le PCM，输出为 24 kHz、单声道、s16le：
+
+| 方法 | 合同 |
+|---|---|
+| `await audio_io.read_pcm() -> bytes 或 None` | 返回 PCM 帧，`None` 为输入结束；取消等待时释放输入设备 |
+| `await audio_io.write_pcm(frame)` | PCM 字节写入播放队列；`b""` 清队列；`None` 释放输出设备；清队列不倒退播放时钟 |
+| `audio_io.played_audio_ms() -> int` | 单调累计的实际播放位置，不能用已接收或已排队字节代替 |
+
+桥自动从会话内置控制命令及宿主只读 `DomainTool` 生成目录；不改旧池的工具说明。
+`SessionReady.tools_acknowledged` 必须为真，否则报告 `unsupported` 并释放仲裁。
+工具入口校验目录、参数 schema、会话输入归属、工具次数和调用幂等；可信上下文由 SDK 填入。
+幂等键含业务会话、语音输入 item_id 和 call_id；委派继续用既有规范化目标去重和任务准入。
+委派只等受理回执和任务号，不等待执行完成。主动结果播报不授权创建或取消任务。
+
+用户转写、助手转写、工具调用和回执写入原 `session.sqlite3`，文本下一回合把新提交的语音
+历史作为资料补入，即使文字 Agent 没有换代也能读取。语音事件使用同一 `schema_version=1`
+及全局递增序号，额外带 `binding_id/generation`，按适用范围带 `response_id/item_id/call_id`。
+原始 PCM 和音频 base64 不写入台账或事件流。
+
+**公开限制与语义：**
+
+- 通话期间文字 `send()` 在仲裁锁上按调用顺序排队，挂断后才由文本引擎处理；首版排队是进程内等待，进程退出后调用者须用原幂等键重试。关 App 会释放等待并返回 `session_closed`。
+- 结果和需审批事项进入播报队列；需审批与失败结果优先。普通内部进度不逐条朗读。播报、读取结果与人工 `ack/respond` 分离，不替用户审批。
+- 路线 a 使用 `append_message(..., trigger_response=True)`；历史和播放事实使用同接口并设为不触发回复。桥不发送重复 `session.update`，不使用只含 instructions 的更新，也不依赖 Qwen 不支持的带外生成。
+- Qwen 打断后服务端仍可能保存完整助手回复，服务端历史不代表用户实际听到。未播内容及本地实际播放位置持久保留，在下一语音回合或重连时作为资料注入，不自动重播；未播完不等于已听到或已批准。
+- `generated`、`transmission_finished`、`received_audio_ms` 与 `played_audio_ms` 分别记账。不能把 `ResponseFinished` 或音频到达当作播放完成。首版不能从播放毫秒数可靠推导准确的文字断点，因此保留整段文本加播放事实。
+- `VoiceProfile` 可配置重连次数、指数退避、单连接及总通话秒数、每次回复 token 估算和总 token 额度。额度在打开媒体连接前向现有月账预留；有未知用量或进程中断时按上限结算，重开幂等收敛。它是 token/时间限制，不是提供方货币计费承诺。
+- 重连保留业务 `session_id`，递增 generation，注入最近已提交历史，绝不重放 PCM。挂断/重连前排队但被打断的播报保留为未播资料。
+
+验收现状、原始证据相对索引及未完成项见仓库根目录
+`plans/2026-10-24-unified-session-realtime/阶段3a-记录.md`。
+
 ## 3. 入口做了什么
 
 `OrchestrationHost.open(root, ...)` 按产品（桌面端）的接法把编排拼起来：
