@@ -1,3 +1,5 @@
+最后更新：2026-10-25 23:10 CST（阶段 3b 第三次复评处理）。报告 `f9febe9b3` 仍为 FAIL；B2/B3 已关闭，B1 正式依赖、其余 15 项后端失败及真实模型委派验收仍开放。当前钉版及 vendor 仍 opt.217，按任务约定停止，本轮未运行测试或冒烟，阶段 BLOCKED，不追加完成里程碑。详见 [PROJECT_STATUS.md](PROJECT_STATUS.md) 与[阶段 3b 记录](../plans/2026-10-24-unified-session-realtime/阶段3b-记录.md)末节。
+
 最后更新：2026-10-25 23:06 CST（阶段 3b opt.218 就位复查）。Host 钉版与 vendor 仍 opt.217；按任务条件停止，未安装、复跑测试或模型冒烟，阶段保持 BLOCKED。B2/B3 已独立关闭，B1、其他后端失败及真实委派验收仍待完成，不计完成里程碑。见 [PROJECT_STATUS.md](PROJECT_STATUS.md) 与[阶段 3b 记录](../plans/2026-10-24-unified-session-realtime/阶段3b-记录.md)末节。
 
 最后更新：2026-10-25 CST（阶段 3a 第五次复核 FAIL 后处理，仍不可发）。第五次回执与报告、
