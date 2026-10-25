@@ -1,3 +1,5 @@
+最后更新：2026-10-25 21:08 CST（阶段 3b 第二次复评处理）。独立评审已关闭 B2/B3 两项前端源码缺陷，阶段仍因 B1 缺少正式 SDK 会话工厂而 BLOCKED。钉版与 vendor 仍 opt.217，本轮依赖合同 3 通过/1 失败；原 15 项其他后端失败及真实模型委派验收仍待完成，不记完成里程碑。当前状态见 [PROJECT_STATUS.md](PROJECT_STATUS.md)、[UI.md](UI.md)，明细见[阶段 3b 记录](../plans/2026-10-24-unified-session-realtime/阶段3b-记录.md)末节；不倒改独立 FAIL 报告。
+
 最后更新：2026-10-25 21:00 CST（阶段 3b 安装前核对，按要求停止）。本地 main 起点 `787f4bea4`，Host 的 `sdk_candidate.py` 仍钉 opt.217，`backend/vendor/` 仅有 opt.217 轮子及清单，没有 opt.218 安装产物。遵照本轮任务“若 Host 仍是 opt.217，停下并在记录里写明”，未重装依赖、未复验原 16 项后端失败、未启动真实模型冒烟；本轮测试 0 通过/0 失败（未运行）。阶段仍 BLOCKED，不追加完成里程碑。待正式钉版及轮子就位后继续；详见[阶段 3b 记录](../plans/2026-10-24-unified-session-realtime/阶段3b-记录.md)末节。
 
 最后更新：2026-10-25 CST（阶段 3a 第四次复核 FAIL，未发版）。第四次认可 R4/R5 源码修复，

@@ -1,3 +1,5 @@
+最后更新：2026-10-25 21:08 CST（阶段 3b 第二次复评：B2/B3 源码缺陷关闭）。独立评审 `193b8d081` 确认 `1e70791f0` 的已加载审批关联、终态 failed 回执释放输入两项修复成立；主界面 16 项包括在相关前端 205 通过/0 失败中，typecheck 通过。原先“本地修复待独立复核”在两项源码缺陷上已解除；实际模型与人工审批链路仍受 B1 阻断。Host 钉版及 vendor 仍 opt.217，本轮实际安装依赖合同 3 通过/1 失败，缺少 open_session；不计阶段或 UI E2E 完成。见[阶段 3b 记录](../plans/2026-10-24-unified-session-realtime/阶段3b-记录.md)末节及[独立评审第二次复评](../plans/2026-10-24-unified-session-realtime/阶段3b-独立评审.md#第二次复评)。
+
 最后更新：2026-10-25 19:33 CST（阶段 3b 复评 B2/B3 本地修复，阶段仍 BLOCKED）。修复提交 `1e70791f0`：任务已加载时审批按后端投影 request_id 关联，规划问题按 decision_id 关联，保留 PENDING/终态/版本过滤；批准和拒绝都保留人工请求号与精确字符串版本。收到持久 failed 回执后结束旧输入并清除预览，新正文或相同正文重新发送都生成新键；未知结果和断线重试仍保留原键。先补反例：12通过/4失败；修后主界面16通过，相关14文件共205通过/0失败，typecheck通过。原复评未改为PASS，本地修复待独立复核；实际安装SDK仍opt.217，后端依赖合同3通过/1失败，真实运行链路未重新验收，不计阶段完成。详见[阶段3b记录](../plans/2026-10-24-unified-session-realtime/阶段3b-记录.md)末节。
 
 最后更新：2026-10-25 CST（阶段 3b 主对话源码切换，运行验收 BLOCKED）。`PrimaryChatView` 使用 `primary/sessionClient.ts`，文字发 session_send，历史读 Session.history，逐字预览与终稿读统一 session_event；旧 PrimaryController 的文字队列实现已删，仅保留检查器类型，主界面不再发 human_memory queue.enqueue。相同输入显式重试保留键，未确认前阻止换文；重连按实际收到的会话 seq 补读，不自动重发。预览按 turn/generation 归组，提交撞在途任务刷新时仍补读历史。
