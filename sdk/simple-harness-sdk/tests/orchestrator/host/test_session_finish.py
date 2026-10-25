@@ -16,6 +16,7 @@ from test_session import SPEC, Crash
 
 from agent_orchestrator.host import HostRequestError, Principal, Session
 from agent_orchestrator.host.offline import FixtureWordCounter, ScriptedProvider
+from agent_orchestrator.host.session_ledger import digest
 from agent_orchestrator.orchestrator.budget_accounts import global_account_id
 
 
@@ -231,6 +232,81 @@ async def session_with_result(root):
     session._inbox.catch_up()
     assert session.inbox()
     return session, settings, script, first
+
+
+@pytest.mark.parametrize("first_unknown", [False, True])
+def test_recovery_keeps_later_result_turn_usage_on_its_own_subject(
+    tmp_path, monkeypatch, first_unknown
+):
+    async def case():
+        script = _chat_script(
+            [
+                ("delegate_task", SPEC),
+                "Accepted.",
+                "First result.",
+                ("delegate_task", SPEC),
+                "Accepted again.",
+                "Second result.",
+            ]
+        )
+        settings = options(script)
+        session = await Session.open(tmp_path, **settings)
+        subjects = []
+        try:
+            settle = session._chat._settle
+
+            def unavailable(subject, *args):
+                if not subject.startswith("session-result:"):
+                    settle(subject, *args)
+
+            # Both result settlements are deferred to startup; ordinary calls settle normally.
+            monkeypatch.setattr(session._chat, "_settle", unavailable)
+            monkeypatch.setattr(session, "_release_result_allowances", lambda *args: None)
+            keys = sorted(("attempt-a", "attempt-b"), key=lambda key: digest(["default", key]))
+            agents = []
+            ordinary_spend = 0
+            for index, key in enumerate(keys):
+                settings["provider"].usage_tokens = 100
+                created = await session.send("Write a report", key=f"delegate-{index}")
+                ordinary_spend += sum(
+                    created["usage"][k] for k in ("input_tokens", "output_tokens")
+                )
+                task = session.tasks()[-1]
+                session.cancel_task(task["mission_id"])
+                session._inbox.catch_up()
+                settings["provider"].usage_tokens = 0 if first_unknown and index == 0 else 100
+                reply = await session.send("Read result", key=key)
+                assert reply["state"] == "committed"
+                assert reply["usage"]["unknown"] == (first_unknown and index == 0)
+                agents.append(reply["agent_id"])
+                subjects.append(
+                    session._store.get(
+                        "budget_attempts", f"{reply['agent_id']}:{reply['input_id']}"
+                    )
+                )
+            assert agents[0] == agents[1]
+        finally:
+            await session.close()
+        session = await Session.open(tmp_path, **options(_chat_script(["Next."])))
+        try:
+            ledger = session._host.orchestrator.commit.ledger
+            old = ledger.reservation(subjects[0])
+            expected = [old["reserved_tokens"] if first_unknown else 150, 150]
+            assert [
+                ledger.reservation(subject)["settled_tokens"] for subject in subjects
+            ] == expected
+            assert [ledger.known_usage_for(subject) for subject in subjects] == [
+                0 if first_unknown else 150,
+                150,
+            ]
+            assert session._host.global_budget_status()["used_tokens"] == ordinary_spend + sum(
+                expected
+            )
+            assert session._host.global_budget_status()["reserved_tokens"] == 0
+        finally:
+            await session.close()
+
+    asyncio.run(asyncio.wait_for(case(), 60))
 
 
 def test_cancel_before_history_keeps_result_pending_across_restart(tmp_path, monkeypatch):

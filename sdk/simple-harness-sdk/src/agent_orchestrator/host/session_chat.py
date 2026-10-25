@@ -146,7 +146,31 @@ class SessionChatService(ChatService):
             baseline = self.session._store.get("invocation_baselines", engine_key)
             if baseline is None:
                 continue
-            facts, _, unknown = self._usage(pool, binding.run_id, set(baseline))
+            seen = set(baseline)
+            lower = turn.provider_turn_ordinal_from or 0
+            upper = turn.provider_turn_ordinal_to
+            if upper is None:
+                later = [
+                    candidate.provider_turn_ordinal_from
+                    for candidate in pool.runtime.uow.list_agent_turns(agent_id)
+                    if candidate.seq > turn.seq and candidate.provider_turn_ordinal_from is not None
+                ]
+                upper = min(later) if later else None
+            prefix = f"{binding.run_id}:provider-turn:"
+            # A baseline alone also includes later turns on the same Agent.
+            for invocation_id, record in self._invocations(pool, binding.run_id).items():
+                if record is None:
+                    continue
+                request_id = record.request_id.value
+                ordinal = request_id.removeprefix(prefix)
+                if (
+                    not request_id.startswith(prefix)
+                    or not ordinal.isdecimal()
+                    or int(ordinal) <= lower
+                    or (upper is not None and int(ordinal) > upper)
+                ):
+                    seen.add(invocation_id)
+            facts, _, unknown = self._usage(pool, binding.run_id, seen)
             self._settle(subject, facts, unknown or turn.phase not in ("committed", "failed"), 0)
 
     def _profile_id(self, profile_id: str) -> str:
