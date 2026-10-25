@@ -152,7 +152,6 @@ _VALID_SERVICES = frozenset(
         # Phase3 P3.1）：编排服务与 mission_changed 推送。未登记会让 register 抛
         # "Unknown service" 并使启动失败（2026-09-09 事故形态）。
         "orchestration",
-        "orchestration_pump",
     }
 )
 

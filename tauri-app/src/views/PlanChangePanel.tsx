@@ -106,7 +106,7 @@ export function PlanChangePanel({
       const message = incoming as unknown as { type?: unknown; payload?: unknown };
       const type = text(message.type);
       const payload = record(message.payload);
-      if (type === "mission_changed") {
+      if (type === "session_event") {
         if (text(payload.mission_id) === missionId) refresh();
         return;
       }

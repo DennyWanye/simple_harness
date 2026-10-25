@@ -60,32 +60,6 @@ def describe_call_zh(tool_name: str, arguments: Mapping[str, Any]) -> str:
         return "启用一个可用工具，供这次对话使用"
     if tool_name == "task_scope_search":
         return f"搜索以前的任务：{_clip(args.get('query'), 60)}"
-    if tool_name == "mission_start":
-        return f"在任务编排里新建后台任务「{_clip(args.get('goal'), 60)}」"
-    if tool_name == "mission_status":
-        return "查看后台任务的进度"
-    if tool_name == "mission_list":
-        return "查看有哪些后台任务"
-    if tool_name == "mission_source_update":
-        return f"把后台任务的资料 {_clip(args.get('path'), 60)} 换成新版本（提交后仍需你批准）"
-    if tool_name == "mission_amend":
-        changes = [c for c in args.get("changes") or () if isinstance(c, dict)]
-        count = {
-            op: sum(1 for c in changes if c.get("op") == op)
-            for op in ("add", "rewrite", "remove", "goal")
-        }
-        goal = "、并换任务目标" if count["goal"] else ""
-        return (
-            f"修改后台任务的要求：新增 {count['add']} 条、改写 {count['rewrite']} 条、"
-            f"删除 {count['remove']} 条{goal}"
-        )
-    if tool_name == "method_library":
-        if args.get("action") == "retire":
-            return (
-                f"把全库做法 {_clip(args.get('entry_id'), 40)} 退役（理由：{_clip(args.get('reason'), 60)}），"
-                "之后不再列给新任务"
-            )
-        return "查看全库做法"
     if tool_name == "write_file":
         return f"写入文件：{_clip(args.get('path'))}"
     if tool_name == "edit_file":

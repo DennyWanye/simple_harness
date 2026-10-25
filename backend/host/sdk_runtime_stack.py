@@ -25,33 +25,6 @@ from deskpet.execution.termination_budget import resolve_max_wall_seconds
 from deskpet.memory.evidence_kind_schema import initialize_evidence_kind_state_db
 from deskpet.memory.identity import ValidatedLocalMemoryIdentityAuthority
 from deskpet.operation_audit.page_in_receipts import ContextPageInReceiptLedger
-from deskpet.orchestration.chat_tool import (
-    METHOD_LIBRARY_DESCRIPTION,
-    METHOD_LIBRARY_SCHEMA,
-    METHOD_LIBRARY_TOOL_NAME,
-    MISSION_AMEND_DESCRIPTION,
-    MISSION_AMEND_SCHEMA,
-    MISSION_AMEND_TOOL_NAME,
-    MISSION_LIST_DESCRIPTION,
-    MISSION_LIST_SCHEMA,
-    MISSION_LIST_TOOL_NAME,
-    MISSION_SOURCE_UPDATE_DESCRIPTION,
-    MISSION_SOURCE_UPDATE_SCHEMA,
-    MISSION_SOURCE_UPDATE_TOOL_NAME,
-    MISSION_START_DESCRIPTION,
-    MISSION_START_SCHEMA,
-    MISSION_START_TOOL_NAME,
-    MISSION_STATUS_DESCRIPTION,
-    MISSION_STATUS_SCHEMA,
-    MISSION_STATUS_TOOL_NAME,
-    MissionStartRefused,
-    amend_mission,
-    method_library,
-    mission_list,
-    mission_status,
-    start_mission,
-    update_mission_source,
-)
 from deskpet.product_state.authorization_saga import AuthorizationSagaRepository
 from deskpet.product_state.database import ProductStateDatabase
 from deskpet.product_state.task_grants import DurableTaskGrantAuthority
@@ -238,12 +211,6 @@ class _SdkRuntimeStackBuild:
     initial_authorization_policy: Any = None
     memory_identity_authority: Any = None
     memory_identity_resolver: Any = None
-    method_library_handler: Any = None
-    mission_amend_handler: Any = None
-    mission_list_handler: Any = None
-    mission_source_update_handler: Any = None
-    mission_start_handler: Any = None
-    mission_status_handler: Any = None
     ports_factory: Any = None
     product_state_db: Any = None
     production_ports: Any = None
@@ -343,12 +310,8 @@ async def _build_product_sdk_runtime_stack(
     await _prepare_context_route_service(st)
 
     _register_context_route_tools(st)
-    # NEXT-TG-1.0 §9：主 Agent 在聊天里发起后台任务——与任务页同一个 create_mission。
 
-    _register_mission_start_status_amend_tools(st)
-    # 2026-10-05：主 Agent 查有哪些后台任务（任务页建的它也要找得到）。
 
-    _register_mission_list_source_method_tools(st)
     _freeze_catalog_and_authorization(st)
 
     _prepare_reconciliation_and_gates(st)
@@ -865,219 +828,6 @@ def _register_context_route_tools(st: _SdkRuntimeStackBuild) -> None:
                 "source": "product-task-scope-closure",
                 "version": "1",
                 "stable_handler_id": "core.task_scope_update.v1",
-            },
-        ),
-    )
-
-
-def _register_mission_start_status_amend_tools(st: _SdkRuntimeStackBuild) -> None:
-    """登记任务开始、状态与修改三个工具。"""
-
-    async def mission_start_handler(arguments, _context):
-
-        try:
-            value = start_mission(
-                lambda: service_context.get("orchestration"),
-                arguments,
-                run_id=str(_context.run_id),
-                call_id=str(_context.call_id or _context.request_id),
-            )
-        except MissionStartRefused as refused:
-            return ToolResult.failed(
-                _context.call_id, refused.code, str(refused), retryable=refused.retryable
-            )
-        return ToolResult.succeeded(_context.call_id, value)
-
-    st.mission_start_handler = mission_start_handler
-
-    st.projected_registrations = (
-        *st.projected_registrations,
-        ProductToolRegistration(
-            name=MISSION_START_TOOL_NAME,
-            description=MISSION_START_DESCRIPTION,
-            input_schema=MISSION_START_SCHEMA,
-            handler=st.mission_start_handler,
-            dispatch_kind="async",
-            permission_category="mission_start",
-            projectless_admission="safe",
-            metadata={
-                "source": "product-mission-start",
-                "version": "1",
-                "stable_handler_id": "core.mission_start.v1",
-            },
-        ),
-    )
-    # 2026-09-29：主 Agent 读后台任务进度（只读；确认与批准只能由人在卡片/任务页上点）。
-
-    async def mission_status_handler(arguments, _context):
-
-        try:
-            value = mission_status(lambda: service_context.get("orchestration"), arguments)
-        except MissionStartRefused as refused:
-            return ToolResult.failed(
-                _context.call_id, refused.code, str(refused), retryable=refused.retryable
-            )
-        return ToolResult.succeeded(_context.call_id, value)
-
-    st.mission_status_handler = mission_status_handler
-
-    st.projected_registrations = (
-        *st.projected_registrations,
-        ProductToolRegistration(
-            name=MISSION_STATUS_TOOL_NAME,
-            description=MISSION_STATUS_DESCRIPTION,
-            input_schema=MISSION_STATUS_SCHEMA,
-            handler=st.mission_status_handler,
-            dispatch_kind="async",
-            permission_category="mission_status",
-            projectless_admission="safe",
-            metadata={
-                "source": "product-mission-status",
-                "version": "1",
-                "stable_handler_id": "core.mission_status.v1",
-            },
-        ),
-    )
-    # 阶段 E：主 Agent 替用户改后台任务的要求（与建任务同一条把关规矩）。
-
-    async def mission_amend_handler(arguments, _context):
-
-        try:
-            value = amend_mission(
-                lambda: service_context.get("orchestration"),
-                arguments,
-                run_id=str(_context.run_id),
-                call_id=str(_context.call_id or _context.request_id),
-                permission_mode=str(getattr(_context, "permission_mode", "") or ""),
-            )
-        except MissionStartRefused as refused:
-            return ToolResult.failed(
-                _context.call_id, refused.code, str(refused), retryable=refused.retryable
-            )
-        return ToolResult.succeeded(_context.call_id, value)
-
-    st.mission_amend_handler = mission_amend_handler
-
-    st.projected_registrations = (
-        *st.projected_registrations,
-        ProductToolRegistration(
-            name=MISSION_AMEND_TOOL_NAME,
-            description=MISSION_AMEND_DESCRIPTION,
-            input_schema=MISSION_AMEND_SCHEMA,
-            handler=st.mission_amend_handler,
-            dispatch_kind="async",
-            permission_category="mission_amend",
-            projectless_admission="safe",
-            metadata={
-                "source": "product-mission-amend",
-                "version": "1",
-                "stable_handler_id": "core.mission_amend.v1",
-            },
-        ),
-    )
-
-
-def _register_mission_list_source_method_tools(st: _SdkRuntimeStackBuild) -> None:
-    """登记任务列表、换资料与做法库三个工具。"""
-
-    async def mission_list_handler(arguments, _context):
-
-        try:
-            value = mission_list(lambda: service_context.get("orchestration"), arguments)
-        except MissionStartRefused as refused:
-            return ToolResult.failed(
-                _context.call_id, refused.code, str(refused), retryable=refused.retryable
-            )
-        return ToolResult.succeeded(_context.call_id, value)
-
-    st.mission_list_handler = mission_list_handler
-
-    st.projected_registrations = (
-        *st.projected_registrations,
-        ProductToolRegistration(
-            name=MISSION_LIST_TOOL_NAME,
-            description=MISSION_LIST_DESCRIPTION,
-            input_schema=MISSION_LIST_SCHEMA,
-            handler=st.mission_list_handler,
-            dispatch_kind="async",
-            permission_category="mission_list",
-            projectless_admission="safe",
-            metadata={
-                "source": "product-mission-list",
-                "version": "1",
-                "stable_handler_id": "core.mission_list.v1",
-            },
-        ),
-    )
-    # 2026-10-05：主 Agent 替用户把任务的资料换成新版本（变更仍等人批准）。
-
-    async def mission_source_update_handler(arguments, _context):
-
-        try:
-            value = update_mission_source(
-                lambda: service_context.get("orchestration"),
-                arguments,
-                run_id=str(_context.run_id),
-                call_id=str(_context.call_id or _context.request_id),
-            )
-        except MissionStartRefused as refused:
-            return ToolResult.failed(
-                _context.call_id, refused.code, str(refused), retryable=refused.retryable
-            )
-        return ToolResult.succeeded(_context.call_id, value)
-
-    st.mission_source_update_handler = mission_source_update_handler
-
-    st.projected_registrations = (
-        *st.projected_registrations,
-        ProductToolRegistration(
-            name=MISSION_SOURCE_UPDATE_TOOL_NAME,
-            description=MISSION_SOURCE_UPDATE_DESCRIPTION,
-            input_schema=MISSION_SOURCE_UPDATE_SCHEMA,
-            handler=st.mission_source_update_handler,
-            dispatch_kind="async",
-            permission_category="mission_source_update",
-            projectless_admission="safe",
-            metadata={
-                "source": "product-mission-source-update",
-                "version": "1",
-                "stable_handler_id": "core.mission_source_update.v1",
-            },
-        ),
-    )
-    # 阶段 C3：主 Agent 替用户查看全库做法、按用户的话退役一条。
-
-    async def method_library_handler(arguments, _context):
-
-        try:
-            value = method_library(
-                lambda: service_context.get("orchestration"),
-                arguments,
-                run_id=str(_context.run_id),
-                call_id=str(_context.call_id or _context.request_id),
-            )
-        except MissionStartRefused as refused:
-            return ToolResult.failed(
-                _context.call_id, refused.code, str(refused), retryable=refused.retryable
-            )
-        return ToolResult.succeeded(_context.call_id, value)
-
-    st.method_library_handler = method_library_handler
-
-    st.projected_registrations = (
-        *st.projected_registrations,
-        ProductToolRegistration(
-            name=METHOD_LIBRARY_TOOL_NAME,
-            description=METHOD_LIBRARY_DESCRIPTION,
-            input_schema=METHOD_LIBRARY_SCHEMA,
-            handler=st.method_library_handler,
-            dispatch_kind="async",
-            permission_category="method_library",
-            projectless_admission="safe",
-            metadata={
-                "source": "product-method-library",
-                "version": "1",
-                "stable_handler_id": "core.method_library.v1",
             },
         ),
     )

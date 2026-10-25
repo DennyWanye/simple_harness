@@ -37,10 +37,10 @@ import { PROTOCOL_ERROR, STALE_NOTE } from "../ws/orchestrationContracts";
 import {
   TERMINAL,
   ERROR_TEXT,
+  NOISE_EVENTS,
   OWN_RESPONSES,
   EVENT_PAGE_LIMIT,
   STRICT_QUOTES_CRITERION,
-  NOISE_EVENTS,
   MAX_AUTO_PAGES,
   TIMELINE_SIZE,
 } from "./missionsViewShared";
@@ -240,26 +240,14 @@ export const MissionsView: React.FC<MissionsViewProps> = ({ channel }) => {
       const payload = record(message.payload);
       const state = useMissionsStore.getState();
 
-      if (type === "mission_changed") {
-        // the resident feed applies the change to the list; here only the open detail
+      if (type === "session_event") {
         const missionId = text(payload.mission_id);
         if (!missionId || missionId !== selectedRef.current) return;
-        const pushed = Array.isArray(payload.events) ? (payload.events as MissionEvent[]) : [];
-        const onlyNoise =
-          payload.truncated !== true &&
-          pushed.length > 0 &&
-          pushed.every((e) => NOISE_EVENTS.has(e.type)) &&
-          text(payload.status) === text(record(state.detail?.mission).status);
-        if (!onlyNoise) fetchDetail(missionId);
-        // 2026-09-26 推送带事件：接得上就直接追加；有缺口、没带全或分页在途时照旧分页补齐
-        const lastSeq = Number(payload.last_seq) || 0;
-        const events = Array.isArray(payload.events) ? (payload.events as MissionEvent[]) : [];
-        const appended =
-          payload.truncated !== true &&
-          !state.eventsLoading[missionId] &&
-          state.appendPushed(missionId, Number(payload.from_seq) || 0, events, lastSeq);
-        if (!appended && lastSeq > (state.eventCursor[missionId] ?? 0))
-          fetchEvents(missionId, true);
+        const progress = record(payload.payload);
+        const taskEvent = payload.kind === "task_progress";
+        if (!taskEvent || !NOISE_EVENTS.has(text(progress.type))) fetchDetail(missionId);
+        const seq = taskEvent ? Number(progress.seq) : Number.POSITIVE_INFINITY;
+        if (seq > (state.eventCursor[missionId] ?? 0)) fetchEvents(missionId, true);
         return;
       }
       if (!OWN_RESPONSES.has(type)) return;

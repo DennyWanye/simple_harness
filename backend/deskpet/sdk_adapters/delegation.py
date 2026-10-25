@@ -20,7 +20,7 @@ The child is an ordinary ``react`` Run that answers one task:
   wait times out.
 
 The answer text is the child's last assistant message (the terminal result only carries
-the state).  Long-running, accepted or effectful work still belongs to ``mission_start``.
+the state).  Long-running, accepted or effectful work still belongs to the SDK Session delegation command.
 """
 
 from __future__ import annotations

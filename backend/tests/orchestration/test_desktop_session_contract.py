@@ -8,11 +8,8 @@ from deskpet.orchestration.projection import CONTRACT_VERBS
 
 
 def test_pinned_session_can_open_on_the_existing_task_page_host():
-    # A second Session.open(root) cannot acquire the same host directory lock.
-    # A public attachment lifecycle is required; desktop code must not start
-    # Session._chat or Session._pump itself or extract Session._host.
-    assert callable(getattr(Session, "open_on_host", None)), (
-        "SDK Session needs a public open_on_host lifecycle before desktop cutover"
+    assert callable(getattr(OrchestrationHost, "open_session", None)), (
+        "The installed SDK must provide the published Host session factory"
     )
 
 

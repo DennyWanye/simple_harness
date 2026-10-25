@@ -81,7 +81,7 @@ class FakeChannel {
   }
   push(mission = M) {
     this.emit({
-      type: "mission_changed",
+      type: "session_event",
       payload: { mission_id: mission, status: "ACTIVE", last_seq: 1 },
     });
   }

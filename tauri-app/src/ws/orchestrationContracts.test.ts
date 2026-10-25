@@ -219,7 +219,7 @@ describe("U02 编排回复按公开 Schema 核", () => {
       payload: { request_id: "r1", ok: true, data: { done: 1 } },
     };
     expect(guardIncoming(operate)).toBe(operate);
-    const push = { type: "mission_changed", payload: { mission_id: "m1" } };
+    const push = { type: "session_event", payload: { mission_id: "m1" } };
     expect(guardIncoming(push)).toBe(push);
   });
 });
@@ -340,18 +340,7 @@ const APPROVAL = {
   },
   comments: [],
 };
-const NOTICE = {
-  notice_id: "ev-1",
-  mission_id: "m1",
-  state_version: 7,
-  notified_at: 1791365208.4,
-  acked_at: null,
-  status: "COMPLETED",
-  status_zh: "已完成",
-  goal: "写一份 NOTES.md",
-  stop_reason: null,
-  unresolved_actions: 0,
-};
+
 
 describe("U09 执行图主画面、回合详情、任务列表、任务详情、事件、待批准列表、通知也按公开 Schema 核", () => {
   const examples = graphExamples as Record<string, Record<string, unknown>>;
@@ -379,7 +368,6 @@ describe("U09 执行图主画面、回合详情、任务列表、任务详情、
     for (const name of [
       "host-mission-events-v1",
       "host-mission-approval-list-v1",
-      "host-mission-notices-v1",
     ] as const) {
       expect(CONTRACT_SCHEMAS[name].$id).toMatch(new RegExp("host/" + name + "\\.schema\\.json$"));
     }
@@ -387,7 +375,6 @@ describe("U09 执行图主画面、回合详情、任务列表、任务详情、
     expect(
       contractViolation("host-mission-approval-list-v1", { approvals: [APPROVAL] }),
     ).toBeNull();
-    expect(contractViolation("host-mission-notices-v1", [NOTICE])).toBeNull();
   });
 
   it.each([
@@ -433,8 +420,6 @@ describe("U09 执行图主画面、回合详情、任务列表、任务详情、
       { approvals: [APPROVAL] },
       { approvals: [{ ...APPROVAL, summary: "发布" }] },
     ],
-    ["mission_notices", [NOTICE], [{ ...NOTICE, acked_at: 1791365300 }]],
-    ["mission_notices", [NOTICE], { notices: [NOTICE] }],
   ])("%s：合格放行（同一个对象），漂移改成协议错", (verb, good, drifted) => {
     const ok = reply(verb, { ok: true, data: good });
     expect(guardIncoming(ok)).toBe(ok);

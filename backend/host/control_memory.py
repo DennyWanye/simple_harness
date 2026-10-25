@@ -122,6 +122,12 @@ async def _cc_memory_archive_list(conn: _ControlConnection, raw: dict, msg_type:
 async def _cc_human_memory_request(conn: _ControlConnection, raw: dict, msg_type: str) -> None:
     """控制消息：human_memory_request。"""
     ws = conn.ws
+    if raw.get("operation") == "queue.enqueue":
+        await ws.send_json({
+            "type": "human_memory_response", "request_id": raw.get("request_id"),
+            "payload": {"ok": False, "error": {"code": "human_memory_operation_unavailable"}},
+        })
+        return
     companion_challenge = conn.companion_challenge
     human_memory_control_binding = conn.human_memory_control_binding
 

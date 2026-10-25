@@ -24,7 +24,7 @@ describe("missionsStore", () => {
     expect(useMissionsStore.getState().events.m1.map((e) => e.seq)).toEqual([1, 2, 3]);
   });
 
-  it("mission_changed 只前进 last_seq，不回退", () => {
+  it("session_event 只前进 last_seq，不回退", () => {
     const store = useMissionsStore.getState();
     store.setMissions([
       {

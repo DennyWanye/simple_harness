@@ -36,6 +36,8 @@ from host.control_capabilities import (
     _cc_skill_uninstall,
 )
 from host.control_chat import _cc_chat
+from host.control_session import _cc_session
+from deskpet.orchestration.session_bridge import SESSION_MESSAGES
 from host.control_connection import _ControlConnection
 from host.control_decisions import (
     _cc_chat_v2_interrupt,
@@ -146,6 +148,7 @@ async def _cc_unknown(conn: _ControlConnection, raw: dict, msg_type: str) -> Non
 
 # 有序路由表：与原 if/elif 分发链顺序一致。每项是消息类型集合或判断函数。
 _CONTROL_ROUTES: list[tuple[Any, Any]] = [
+    (SESSION_MESSAGES, _cc_session),
     (frozenset(["ping"]), _cc_ping),
     (frozenset(["memory_summarize_now"]), _cc_memory_summarize_now),
     (frozenset(["memory_thumbs_up"]), _cc_memory_thumbs_up),
@@ -585,6 +588,9 @@ async def control_channel(ws: WebSocket):
             await _dispatch_control_message(conn, raw, msg_type)
 
     except WebSocketDisconnect:
+        service = service_context.get("orchestration")
+        if service is not None:
+            await service.session_bridge.unsubscribe(ws)
         _cancel_harness_inspector_tasks(ws)
         # only clear the dict entry if it's still pointing at
         # OUR ws — a later connection may have replaced us already.

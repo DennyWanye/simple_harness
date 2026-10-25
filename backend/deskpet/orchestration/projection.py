@@ -602,7 +602,6 @@ MISSION_REPLIES = {
     # 另三个界面会画的读回复
     "mission_events": "host-mission-events-v1",
     "mission_approval_list": "host-mission-approval-list-v1",
-    "mission_notices": "host-mission-notices-v1",
 }
 CONTRACT_VERBS = (
     frozenset(ASSURANCE_REPLIES) | frozenset(TASKGRAPH_REPLIES) | frozenset(MISSION_REPLIES)

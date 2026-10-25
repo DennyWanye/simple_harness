@@ -109,8 +109,7 @@ describe("ControlChannel connection-scoped message cache", () => {
 
 // Same installed bridge/transport: these tests do not replace binding with the
 // global companion_identity_status broadcast.
-import { boundPrimaryPort } from "../primary/boundPort";
-import { PrimaryController } from "../primary/controller";
+import { SessionClient } from "../primary/sessionClient";
 
 describe("primary bound connection lifecycle", () => {
   afterEach(() => {
@@ -127,14 +126,19 @@ describe("primary bound connection lifecycle", () => {
       type: "companion_profile_bound",
       payload: { profile_id: "p", profile_generation: 1 },
     });
-    const controller = new PrimaryController(boundPrimaryPort(channel));
-    const stop = controller.start();
-    await Promise.resolve();
+    const client = new SessionClient(channel);
+    const pending = client.request("history");
+    const request = JSON.parse(socket.sent.at(-1)!);
+    socket.receive({
+      type: "session_history_response",
+      payload: { request_id: request.request_id, ok: true, data: [] },
+    });
+    await pending;
     expect(
-      socket.sent.map((s) => JSON.parse(s)).filter((r) => r.type === "human_memory_request"),
-    ).toEqual([expect.objectContaining({ operation: "primary.open" })]);
+      socket.sent.map((s) => JSON.parse(s)).filter((r) => r.type === "session_history"),
+    ).toEqual([expect.objectContaining({ type: "session_history" })]);
     expect(FakeWebSocket.instances).toHaveLength(1);
-    stop();
+    client.close();
     channel.disconnect();
     await Promise.resolve();
   });
@@ -151,10 +155,9 @@ describe("primary bound connection lifecycle", () => {
     expect(channel.getLatestMessage("companion_profile_bound")).toBeNull();
     expect(
       channel.send({
-        type: "human_memory_request",
+        type: "session_send",
         request_id: "r",
-        operation: "queue.enqueue",
-        request: { text: "x" },
+        payload: { text: "x", idempotency_key: "k" },
       }),
     ).toBe(false);
     const seen: unknown[] = [];
@@ -164,7 +167,7 @@ describe("primary bound connection lifecycle", () => {
     channel.connect();
     FakeWebSocket.instances[1].open();
     expect(seen).toEqual([null]);
-    expect(FakeWebSocket.instances[1].sent.some((s) => s.includes("queue.enqueue"))).toBe(false);
+    expect(FakeWebSocket.instances[1].sent.some((s) => s.includes("session_send"))).toBe(false);
     channel.disconnect();
   });
   it("an unbind or rechallenge invalidates a cached bound on the same connection", async () => {
@@ -178,11 +181,8 @@ describe("primary bound connection lifecycle", () => {
       payload: { profile_id: "p", profile_generation: 1 },
     });
     socket.receive({ type: "companion_control_rechallenge" });
-    const controller = new PrimaryController(boundPrimaryPort(channel));
-    const stop = controller.start();
-    await Promise.resolve();
+    expect(channel.getLatestMessage("companion_profile_bound")).toBeNull();
     expect(socket.sent.some((s) => s.includes("human_memory_request"))).toBe(false);
-    stop();
     channel.disconnect();
   });
 });

@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import pytest
 from agent_orchestrator.testing.word_counter import FixtureWordCounter
-from deskpet.orchestration.chat_tool import mission_list, mission_status
 from deskpet.orchestration.handlers import handle
 from deskpet.orchestration.service import (
     RECOVERY_ISOLATED_NOTE,
@@ -69,20 +68,6 @@ async def test_an_isolated_mission_is_marked_in_the_list_the_detail_and_the_chat
         assert service.mission_detail(bad)["recovery_isolated"] == {"tables": ["attempts", "tasks"]}
         assert service.mission_detail(good)["recovery_isolated"] is None
 
-        shown = mission_status(lambda: service, {"mission_id": bad})
-        assert shown["recovery_isolated"] == {
-            "tables": ["attempts", "tasks"],
-            "note": RECOVERY_ISOLATED_NOTE,
-        }
-        assert shown["note"] == RECOVERY_ISOLATED_NOTE
-        plain = mission_status(lambda: service, {"mission_id": good})
-        assert plain["recovery_isolated"] is None and plain["note"] != RECOVERY_ISOLATED_NOTE
-        chat_rows = {
-            row["mission_id"]: row for row in mission_list(lambda: service, {})["missions"]
-        }
-        assert chat_rows[bad]["recovery_isolated"]["note"] == RECOVERY_ISOLATED_NOTE
-        assert chat_rows[good]["recovery_isolated"] is None
-
         # 取消后任务结束：SDK 名单里还在，也不再标"不再推进；可以取消"
         service.cancel_mission(bad)
         assert {row["id"]: row for row in service.list_missions()}[bad]["recovery_isolated"] is None
@@ -128,7 +113,6 @@ async def test_a_write_to_an_isolated_mission_is_refused_with_the_sdks_code_and_
     ``RECOVERY_ISOLATED_NOTE``；取消照常。没被隔离的任务同一个请求不报这个码。
 
     这里直接把任务放进 SDK 第 3 步写的那张隔离名单（``Orchestrator.recovery_isolated`` 只读它）。"""
-    from deskpet.orchestration.chat_tool import MissionStartRefused, amend_mission
 
     service = OrchestrationService(
         orchestration_root,
@@ -167,26 +151,6 @@ async def test_a_write_to_an_isolated_mission_is_refused_with_the_sdks_code_and_
             {"request_id": "a2", "mission_id": good, **approve},
         )
         assert other["payload"]["error_code"] != "MISSION_RECOVERY_ISOLATED"
-
-        revision = int(
-            service.mission_detail(bad)["operation_workspace"]["requirements_ref"]["revision"]
-        )
-        with pytest.raises(MissionStartRefused) as caught:
-            amend_mission(
-                lambda: service,
-                {
-                    "mission_id": bad,
-                    "expected_revision": revision,
-                    "reason": "加一条",
-                    "changes": [{"op": "add", "statement": "file:MORE.md"}],
-                },
-                run_id="run-iso",
-                call_id="call-iso",
-            )
-        assert (
-            caught.value.code == "MISSION_RECOVERY_ISOLATED"
-            and str(caught.value) == RECOVERY_ISOLATED_NOTE
-        )
 
         cancelled = await handle(service, "mission_cancel", {"request_id": "c1", "mission_id": bad})
         assert (

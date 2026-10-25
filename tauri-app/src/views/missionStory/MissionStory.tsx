@@ -5,7 +5,7 @@
  *
  * - 数据（2026-09-30 改走 SDK 正式只读接口）：卡片来自 `taskgraph.execution_snapshot`（分页读完），
  *   展开一张模型回合卡片才读它的 `taskgraph.execution_detail`（SDK 已去掉思考内容与系统提醒、做密钥脱敏）。
- * - 实时：本任务的 `mission_changed` 到了就重读，最快 2 秒一次，读取在途只合并成一次后续读取；
+ * - 实时：本任务的 `session_event` 到了就重读，最快 2 秒一次，读取在途只合并成一次后续读取；
  *   展开着且还在进行的回合随每次重读刷新明细；任务结束后再读一次收尾。
  * - 性能：内容没变的卡片沿用旧对象（React.memo 不重画）；卡片默认折叠只画一行，展开才画明细；
  *   正在进行的回合自动展开。
@@ -279,7 +279,7 @@ export function MissionStory({
     const off = channel?.onMessage((raw) => {
       const message = raw as unknown as { type?: string; payload?: unknown };
       const body = asRecord(message.payload);
-      if (message.type === "mission_changed") {
+      if (message.type === "session_event") {
         if (body.mission_id === missionId) send();
         return;
       }

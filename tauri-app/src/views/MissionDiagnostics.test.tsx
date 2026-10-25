@@ -185,9 +185,9 @@ describe("P36 selected Mission diagnostics", () => {
     render(<MissionDiagnostics missionId="m1" channel={channel} />);
     read();
     channel.reply(channel.last(), report());
-    channel.emit("mission_changed", { mission_id: "m2" });
+    channel.emit("session_event", { mission_id: "m2" });
     expect(screen.queryByText(/任务已有新事件/)).toBeNull();
-    channel.emit("mission_changed", { mission_id: "m1" });
+    channel.emit("session_event", { mission_id: "m1" });
     expect(screen.getByText(/任务已有新事件/)).toBeTruthy();
     expect(channel.sent).toHaveLength(1);
   });
@@ -218,7 +218,7 @@ describe("P36 selected Mission diagnostics", () => {
     const channel = new Channel();
     render(<MissionDiagnostics missionId="m1" channel={channel} />);
     read();
-    channel.emit("mission_changed", { mission_id: "m1", last_seq: 13 });
+    channel.emit("session_event", { mission_id: "m1", last_seq: 13 });
     channel.reply(channel.last(), report());
     expect(screen.getByText(/任务已有新事件/)).toBeTruthy();
     read();

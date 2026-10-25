@@ -1,11 +1,10 @@
 # SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: BUSL-1.1
 
-"""Construction, start, close and the SDK host underneath.
+"""Desktop lifecycle and diagnostics around the SDK Host and Session.
 
-编排的拼装、驱动与命令只有 SDK 那一份（``agent_orchestrator.host.OrchestrationHost``）；这里只补桌面
-自己的：提供方链快照、钉版核对与部署清单、通知存档、存储用量、诊断探测、进度推送的唤醒钩子。
-服务的私有属性名保留，都是对宿主同名东西的转发（界面投影、诊断、技能目录与测试都在读）。
+The SDK owns task execution, delegation, result inbox and event persistence.
+Desktop forwarding properties support its existing task-page interfaces.
 """
 
 from __future__ import annotations
@@ -13,7 +12,7 @@ from __future__ import annotations
 import logging
 import os
 import secrets
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable
 from dataclasses import asdict
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -24,7 +23,7 @@ from agent_orchestrator.host import HostRequestError, OrchestrationHost
 
 from ..assurance import host_fingerprint
 from ..manifest import MANIFEST_SCHEMA, build_manifest, distributions, write_manifest
-from ..notices import MissionNotices
+from ..session_bridge import DesktopSessionBridge
 from ..provider import (
     NO_MODEL,
     ProviderSnapshot,
@@ -84,15 +83,7 @@ class OrchestrationServiceCore:
         # 2026-09-25 条目 7: disk taken by task/session data, measured off the loop; the
         # Settings page reads it and warns past ``storage_warn_bytes`` — nothing is deleted.
         self._storage = StorageUsage(self.root, warn_bytes=settings.storage_warn_bytes)
-        # 任务结束通知的唯一 Host 记录（主对话卡片、主 Agent 上下文都读它）
-        self._notices = MissionNotices(self.root)
         self._permission_mode_reader = permission_mode_reader
-
-        def notify(payload: Mapping[str, Any]) -> None:
-            # At-least-once local status transport: the notice is kept (de-duplicated by
-            # event id) until the person acknowledges it in the main conversation; the
-            # change pump pushes ``mission_changed`` so the cards re-read.
-            self._notices.record(payload)
 
         model = None if provider_snapshot is None else model_config(provider_snapshot, settings)
         self._host = OrchestrationHost(
@@ -107,7 +98,6 @@ class OrchestrationServiceCore:
             counter=native_test_counter,
             world_domain=WORLD_DOMAIN,
             host_fingerprint=host_fingerprint(),
-            notify=notify,
             auto_mode=self._auto_mode,
             models_dir=models_dir(),
             taskgraph_ports=taskgraph_deployment,
@@ -116,6 +106,7 @@ class OrchestrationServiceCore:
             provider_kind=None if provider_snapshot is None else "env",
             extra_secrets=() if provider_snapshot is None else (provider_snapshot.api_key,),
         )
+        self.session_bridge = DesktopSessionBridge(self._host, legacy_state_path=self.root.parent / "state.db")
         self._host.on_rebuilt = self._after_rebuild
         self._host.on_round = self._storage.schedule_if_stale  # 每轮看一眼存储用量是否该刷新
 
@@ -275,8 +266,7 @@ class OrchestrationServiceCore:
             return False
 
     def _after_rebuild(self) -> None:
-        """重建是一次重连：从已读序号续读通知，重新探测诊断接口。"""
-        self._notices.catch_up(self._host.orchestrator.store)
+        """Refresh desktop diagnostics after the SDK rebuilds its runtime."""
         self._diagnostics_available = self._detect_diagnostics()
 
     # ------------------------------------------------------------ lifecycle
@@ -329,7 +319,6 @@ class OrchestrationServiceCore:
             if self._host.quarantine is not None:
                 # 根隔离：服务起来了，但不是"可用"——只开非披露诊断与隔离只读分支，不驱动循环
                 return
-            self._notices.catch_up(self._host.orchestrator.store)  # from the last read seq
             self._diagnostics_available = self._detect_diagnostics()
             if self._drive_enabled:
                 self._host.start_driver()
@@ -354,6 +343,7 @@ class OrchestrationServiceCore:
     async def close(self) -> None:
         """Test and orderly-shutdown path only; SIGKILL never reaches it."""
 
+        await self.session_bridge.close()
         await self._host.close()
         await self._close_client()
         self._local_state, self._local_reason = "closed", None

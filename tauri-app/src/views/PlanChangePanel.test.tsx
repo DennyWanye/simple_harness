@@ -113,9 +113,9 @@ describe("改计划进度面板", () => {
   it("读失败时保留上次画面并标已过期；本任务有变化就重读", () => {
     const fake = mount();
     fake.reply("taskgraph.convergence", STUCK);
-    fake.push({ type: "mission_changed", payload: { mission_id: "other" } });
+    fake.push({ type: "session_event", payload: { mission_id: "other" } });
     expect(fake.sent.filter((m) => m.type === "taskgraph.convergence")).toHaveLength(1);
-    fake.push({ type: "mission_changed", payload: { mission_id: "m-1" } });
+    fake.push({ type: "session_event", payload: { mission_id: "m-1" } });
     fake.reply("taskgraph.convergence", null, false, "执行图来源不可读");
     expect(screen.getByText(/已过期/)).toBeTruthy();
     expect(screen.getByRole("button", { name: "重新发送" })).toBeTruthy();
@@ -124,7 +124,7 @@ describe("改计划进度面板", () => {
   it("收到不合合同的回复（协议错）时保留上次画面，用一句大白话标已过期", () => {
     const fake = mount();
     fake.reply("taskgraph.convergence", STUCK);
-    fake.push({ type: "mission_changed", payload: { mission_id: "m-1" } });
+    fake.push({ type: "session_event", payload: { mission_id: "m-1" } });
     const request = [...fake.sent].reverse().find((m) => m.type === "taskgraph.convergence")!;
     fake.push({
       type: "taskgraph.convergence_response",

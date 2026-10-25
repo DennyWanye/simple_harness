@@ -302,9 +302,9 @@ describe("C07 Assurance view", () => {
     const view = render(<MissionAssurance missionId="m1" channel={channel} />);
     read();
     const request = channel.last();
-    channel.emit("mission_changed", { mission_id: "m2", status: "RUNNING" });
+    channel.emit("session_event", { mission_id: "m2", status: "RUNNING" });
     expect(screen.queryByRole("status")).toBeNull();
-    channel.emit("mission_changed", { mission_id: "m1", status: "RUNNING" });
+    channel.emit("session_event", { mission_id: "m1", status: "RUNNING" });
     channel.reply(request, snapshot(request, [item("CRITERION", "c-user-1")]));
     expect(screen.getByRole("status").textContent).toMatch(/任务已变化/);
     read();

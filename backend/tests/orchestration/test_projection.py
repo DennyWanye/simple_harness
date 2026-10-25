@@ -20,7 +20,6 @@ from deskpet.orchestration.projection import (
     project_event,
     ui_state,
 )
-from deskpet.orchestration.pump import MissionChangePump
 
 from ._layered_lane import layered_service, notes_mission, quick_runtime, run_until_settled
 
@@ -236,43 +235,6 @@ async def test_event_paging_is_gap_free(orchestration_root, principal):
     finally:
         await service.close()
 
-
-@pytest.mark.asyncio
-async def test_pump_announces_a_status_change_within_two_seconds(orchestration_root, principal):
-    service = layered_service(
-        orchestration_root, principal, drive=True, tick_active_seconds=0.05, tick_idle_seconds=0.2
-    )
-    await service.start()
-    pushed: list[tuple[float, dict]] = []
-
-    async def broadcast(message: dict) -> None:
-        pushed.append((time.monotonic(), message))
-
-    pump = MissionChangePump(service, broadcast, interval=0.1)
-    pump.start()
-    try:
-        created = service.create_mission(notes_mission("k-pump"))
-        deadline = time.monotonic() + 20
-        completed_at = None
-        while time.monotonic() < deadline and completed_at is None:
-            if service.mission_detail(created["mission_id"])["mission"]["status"] == "COMPLETED":
-                completed_at = time.monotonic()
-            await asyncio.sleep(0.02)
-        assert completed_at is not None
-        await asyncio.sleep(2.0)
-        done = [
-            at
-            for at, message in pushed
-            if message["type"] == "mission_changed"
-            and message["payload"]["mission_id"] == created["mission_id"]
-            and message["payload"]["status"] == "COMPLETED"
-        ]
-        assert done and done[0] - completed_at <= 2.0
-        # 密钥形如 sk-xxxx；按词首匹配，Task id（"...:task-1"）里的 "sk-" 不是密钥。
-        assert not any(re.search(r"\bsk-", str(message)) for _, message in pushed)
-    finally:
-        await pump.stop()
-        await service.close()
 
 
 @pytest.mark.parametrize(

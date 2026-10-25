@@ -7,7 +7,7 @@
  *   点节点再读 `taskgraph.execution_detail`（这一回合模型实际说了什么、调了哪些工具、交了什么、
  *   审阅理由）。Host 不直读 SDK 表。
  * - 每个步骤框里是它的"执行 → 审阅 → 修补请求 → 规划 → 再执行"链，失败回路画出来；旧的失败不被新成功覆盖。
- * - 实时：本任务的 `mission_changed` 到了就 800ms 防抖重读（分页读完再换画面）；读取在途再来推送只合并
+ * - 实时：本任务的 `session_event` 到了就 800ms 防抖重读（分页读完再换画面）；读取在途再来推送只合并
  *   成一次后续读取。执行过程与步骤状态都没变就不换画面；节点集合不变不重新排版。
  * - 第二个标签「时间线」：同一份执行过程按时间排开，点开看同样的回合详情。
  * - 读不到时保留旧画面并标明"可能已过期"；未启用/启用中的任务说清楚原因，不伪造图。
@@ -323,7 +323,7 @@ export function LiveGraph({ missionId, channel, detail, onLoadMoreEvents, onStal
         reset();
         return;
       }
-      if (type === "mission_changed") {
+      if (type === "session_event") {
         if (body.mission_id !== missionId) return;
         if (debounce.current) clearTimeout(debounce.current);
         debounce.current = setTimeout(() => {

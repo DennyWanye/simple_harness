@@ -135,18 +135,6 @@ SDK_DIRECT_TOOL_KERNEL = frozenset(
         # semantic closure must be reachable every provider turn
         # (a hidden Tool call is a whole-Run fault in the frozen SDK).
         "task_scope_update",
-        # NEXT-TG-1.0 §9: starting a background Mission from chat must never be a
-        # hidden-tool Run fault; its schema is two fields.
-        "mission_start",
-        # 2026-09-29：主 Agent 读后台任务进度（只读，一个字段）。
-        "mission_status",
-        # 阶段 E：改后台任务的要求——用户开口就要能用，四个字段。
-        "mission_amend",
-        # 阶段 C3：查看 / 退役全库做法——用户开口就要能用，三个字段。
-        "method_library",
-        # 2026-10-05：查有哪些后台任务（只读，一个可选字段）；把任务的资料换成新版本（四个字段，仍等人批准）。
-        "mission_list",
-        "mission_source_update",
         "skill_invoke",
         # Project Skill installation is a core product control surface, not a
         # generic deferred capability. Its one-field schema is cheap to expose

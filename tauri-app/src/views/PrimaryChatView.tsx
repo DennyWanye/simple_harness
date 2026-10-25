@@ -1,475 +1,360 @@
-// SPDX-FileCopyrightText: 2026 DennyWanye
-// SPDX-License-Identifier: BUSL-1.1
-/**
- * 主对话视图（2026-09-09「克制的高级感」改版）。
- *
- * 版式：顶栏（标题 20/600 + 幽灵按钮）→ 单行 meta 状态 →
- * 消息区（最大宽 760 居中；用户右对齐强调色极淡填充 + 细描边，助手左
- * 对齐带小头像点，工具记录为可折叠等宽灰条）→ 悬浮输入卡片。
- *
- * 无障碍名称锁（自动化脚本依赖，不得改动）：按钮「模型与设置 /
- * 刷新状态 / 查看更早消息」，状态文本「空闲 · 排队 N」「等待主对话就绪」，
- * 工具折叠条「▸ 工具 · 名称」，`data-testid="primary-message-<role>"`。
- */
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { ChatMissionCard } from "./ChatMissionCard";
-import { ChatMissionNotices } from "./ChatMissionNotices";
-import { MISSION_CARD_TOOLS, missionIdFromToolResult } from "./chatMission";
+import { useEffect, useRef, useState } from "react";
 import type { ControlChannel } from "../ws/ControlChannel";
 import { InputBar } from "../code-panel/InputBar";
-import { ContextRing } from "../components/ContextRing";
-import { ContextBreakdownModal } from "../components/ContextBreakdownModal";
 import { ChangeModelModal } from "../code-panel/ChangeModelModal";
-import { effective_provider_model, useProvidersStore } from "../code-panel/providersStore";
-import {
-  contextWindowForModel,
-  formatContextWindow,
-  useSessionModelsStore,
-} from "../code-panel/sessionModelsStore";
 import { MarkdownMessage } from "../components/MarkdownMessage";
-import { Icon } from "../components/Icon";
-import { INTERACTIVE_CLASS, dark, metaText, textLinkStyle } from "../theme/components";
-import { tokens } from "../theme/tokens";
-import { boundPrimaryPort } from "../primary/boundPort";
-import { PrimaryController, type PrimaryMessage, type PrimaryPort } from "../primary/controller";
-import { PrimaryRunPanel } from "../primary/PrimaryRunPanel";
-import { PrimaryWorkspaceBindings } from "../primary/PrimaryWorkspaceBindings";
-import { PrimaryBindingRecovery } from "../primary/bindingRecovery";
-import { toolHeadline } from "./toolHeadline";
+import { SessionClient, SESSION_ID, record, rows, text, type Json } from "../primary/sessionClient";
+import { ChatMissionCard } from "./ChatMissionCard";
+import { ChatMissionNotices } from "./ChatMissionNotices";
 import "./PrimaryChatView.styles.css";
 
-const disconnected: PrimaryPort = {
-  state: () => "disconnected",
-  send_command: () => false,
-  on_message: () => () => {},
-  on_state_change: () => () => {},
-};
 export interface PrimaryChatViewProps {
   channel?: ControlChannel | null;
   onOpenSettings?: () => void;
   active?: boolean;
 }
-const runLabels: Record<string, string> = {
-  CLAIMED: "已领取，等待执行进展",
-  RUNNING: "执行中",
-  WAITING: "等待处理",
-  PAUSED: "已暂停",
-  SUCCEEDED: "执行已结束",
-  FAILED: "执行失败",
-  CANCELLED: "已取消",
-  STOPPED: "已停止",
-};
 export function PrimaryChatView({ channel, onOpenSettings, active = true }: PrimaryChatViewProps) {
-  const [controller] = useState(() => new PrimaryController(disconnected));
-  const [bindingRecovery] = useState(() => new PrimaryBindingRecovery());
-  const [decisionRefresh, setDecisionRefresh] = useState(0);
-  const [bindingRefresh, setBindingRefresh] = useState(0);
-  const [showModelModal, setShowModelModal] = useState(false);
-  const [showBreakdown, setShowBreakdown] = useState(false);
-  // 主对话的模型就是链首提供方的默认模型（前台运行不按会话记模型）。
-  const providers = useProvidersStore((s) => s.providers);
-  const catalog = useSessionModelsStore((s) => s.models);
-  const catalogDefault = useSessionModelsStore((s) => s.default_model);
-  const headModel = effective_provider_model(null, providers) || catalogDefault;
-  const headWindow = formatContextWindow(contextWindowForModel(headModel, catalog));
-  const modelLabel = headModel ? [headModel, headWindow].filter(Boolean).join(" · ") : "选择模型";
-  const refreshBindings = useCallback(() => setBindingRefresh((value) => value + 1), []);
-  const snapshot = useSyncExternalStore(controller.subscribe, controller.getSnapshot);
-  const primaryPort = useMemo(
-    () => (channel ? boundPrimaryPort(channel) : disconnected),
-    [channel],
-  );
-  useEffect(() => controller.start(primaryPort), [controller, primaryPort]);
+  const client = useRef<SessionClient | null>(null);
+  const cursor = useRef(0);
+  const deltaScope = useRef("");
+  const [turns, setTurns] = useState<Json[]>([]);
+  const [tasks, setTasks] = useState<Json[]>([]);
+  const [inbox, setInbox] = useState<Json[]>([]);
+  const acknowledged = useRef(new Set<string>());
+  const [requests, setRequests] = useState<Record<string, Json>>({});
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [preview, setPreview] = useState("");
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState("");
+  const [showModel, setShowModel] = useState(false);
+  const [connected, setConnected] = useState(channel?.state === "connected");
+  const input = useRef<{ text: string; key: string } | null>(null);
+  const history = useRef<HTMLDivElement>(null);
+  const refresh = useRef<() => void>(() => {});
+  const mergeTurns = (incoming: Json[]) =>
+    setTurns((previous) => {
+      const byId = new Map(previous.map((turn) => [text(turn.turn_id), turn]));
+      incoming.forEach((turn) =>
+        byId.set(text(turn.turn_id), { ...byId.get(text(turn.turn_id)), ...turn }),
+      );
+      return Array.from(byId.values());
+    });
   useEffect(() => {
-    const focus = () => {
-      void controller.refreshLatest();
+    if (!channel) return;
+    let live = true;
+    let reading = false;
+    let readAgain = false;
+    let historyAgain = false;
+    const transport = new SessionClient(channel);
+    client.current = transport;
+    const report = (err: unknown) => {
+      if (live) setError(err instanceof Error ? err.message : "读取失败");
     };
-    window.addEventListener("focus", focus);
-    return () => window.removeEventListener("focus", focus);
-  }, [controller]);
-  // 2026-09-25 UI 全量点击：新消息出现后列表不跟到底，要手动往下翻。只在用户本来就
-  // 停在底部时跟随；往上翻看历史、加载更早消息（最后一条不变）时都不跳。
-  const historyRef = useRef<HTMLDivElement>(null);
-  const followBottom = useRef(true);
-  const lastMessage = snapshot.messages[snapshot.messages.length - 1]?.message_ref;
+    const read = async (includeHistory = false) => {
+      if (reading) {
+        readAgain = true;
+        historyAgain ||= includeHistory;
+        return;
+      }
+      reading = true;
+      try {
+        const [taskData, inboxData, historyData] = await Promise.all([
+          transport.request("tasks"),
+          transport.request("inbox"),
+          includeHistory ? transport.request("history") : Promise.resolve(null),
+        ]);
+        if (!live) return;
+        setTasks(rows(taskData));
+        rows(inboxData)
+          .filter((row) => row.acked === true)
+          .forEach((row) => acknowledged.current.add(text(row.event_id)));
+        setInbox((previous) => {
+          const merged = new Map(previous.map((row) => [text(row.event_id), row]));
+          rows(inboxData).forEach((row) => merged.set(text(row.event_id), row));
+          return Array.from(merged.values()).filter(
+            (row) => !acknowledged.current.has(text(row.event_id)),
+          );
+        });
+        if (historyData) mergeTurns(rows(historyData));
+      } catch (err) {
+        report(err);
+      } finally {
+        reading = false;
+        if (live && readAgain) {
+          const history = historyAgain;
+          readAgain = historyAgain = false;
+          void read(history);
+        }
+      }
+    };
+    const connect = () => {
+      setConnected(true);
+      void transport.request("events", { after: cursor.current }).catch(report);
+      void read(true);
+    };
+    refresh.current = () => void read(true);
+    const off = channel.onMessage((incoming) => {
+      const message = record(incoming);
+      const event = record(message.payload);
+      if (
+        message.type !== "session_event" ||
+        event.session_id !== SESSION_ID ||
+        event.schema_version !== 1
+      )
+        return;
+      const seq = Number(event.seq);
+      if (!Number.isSafeInteger(seq) || seq <= cursor.current) return;
+      cursor.current = seq;
+      const payload = record(event.payload);
+      switch (event.kind) {
+        case "text_delta":
+          {
+            const scope = JSON.stringify([event.turn_id, payload.generation]);
+            const continued = deltaScope.current === scope;
+            deltaScope.current = scope;
+            setPreview((previous) => (continued ? previous : "") + text(payload.text));
+          }
+          break;
+        case "turn_committed":
+          deltaScope.current = "";
+          setPreview("");
+          mergeTurns([
+            {
+              turn_id: event.turn_id ?? payload.turn_id,
+              text: payload.text,
+              ...(input.current ? { input: input.current.text } : {}),
+            },
+          ]);
+          void read(true);
+          break;
+        case "needs_response":
+          setRequests((previous) => ({
+            ...previous,
+            [text(payload.request_id)]: { ...payload, mission_id: event.mission_id },
+          }));
+          void read();
+          break;
+        case "result_ready":
+          if (acknowledged.current.has(text(payload.event_id))) break;
+          setInbox((previous) => [
+            ...previous.filter((item) => item.event_id !== payload.event_id),
+            payload,
+          ]);
+          void read();
+          break;
+        case "delegated":
+        case "task_progress":
+          void read();
+          break;
+        case "error":
+          setError(text(payload.code) || "会话执行失败");
+          break;
+      }
+    });
+    const offState = channel.onStateChange((state) => {
+      if (state === "connected") connect();
+      else setConnected(false);
+    });
+    if (channel.state === "connected") connect();
+    return () => {
+      live = false;
+      off();
+      offState();
+      transport.close();
+      client.current = null;
+    };
+  }, [channel]);
   useEffect(() => {
-    const el = historyRef.current;
-    if (el && followBottom.current) el.scrollTop = el.scrollHeight;
-  }, [lastMessage, snapshot.messages.length]);
-  const run = snapshot.state?.current_run;
-  const runLabel = run ? (runLabels[run.state.toUpperCase()] ?? run.state) : "空闲";
-  const canSend = snapshot.ready && snapshot.state !== null;
-  const status = canSend
-    ? `${runLabel} · 排队 ${snapshot.state?.queued_count_truncated ? "至少 " : ""}${snapshot.state?.queued_count ?? 0}`
-    : "等待主对话就绪";
+    history.current?.scrollTo?.({ top: history.current.scrollHeight });
+  }, [turns, preview]);
+  const call = async (operation: string, payload: Json = {}) => {
+    if (!client.current || !connected) throw new Error("连接不可用，请稍后重试。");
+    return client.current.request(operation, payload);
+  };
+  const submit = async (value: string, attachments: Json[]) => {
+    if (attachments.length) throw new Error("请将资料内容作为文字发送，或交由后台任务处理。");
+    if (sending) throw new Error("正在等待当前回复。");
+    if (input.current && input.current.text !== value)
+      throw new Error("上一条输入结果尚未确认，请先用原文重试。");
+    if (!input.current || input.current.text !== value)
+      input.current = { text: value, key: crypto.randomUUID() };
+    const frozen = input.current;
+    setSending(true);
+    setError("");
+    setPreview("");
+    try {
+      const reply = record(await call("send", { text: value, idempotency_key: frozen.key }));
+      if (reply.state !== "committed")
+        throw new Error(text(record(reply.error).code) || "回复未提交，请用原文重试。");
+      mergeTurns([{ turn_id: reply.turn_id, input: value, text: reply.text }]);
+      input.current = null;
+      setPreview("");
+      refresh.current();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "发送失败");
+      throw err;
+    } finally {
+      setSending(false);
+    }
+  };
+  const perform = async (operation: string, payload: Json, after?: () => void) => {
+    try {
+      await call(operation, payload);
+      after?.();
+      setError("");
+      refresh.current();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "操作失败");
+    }
+  };
+  const respond = (request: Json, decision: string) =>
+    void perform(
+      "respond",
+      {
+        request_id: request.request_id,
+        version: request.version,
+        decision,
+        ...(request.request_kind === "planning"
+          ? { answer: answers[text(request.request_id)] ?? "" }
+          : decision === "reject"
+            ? { reason: answers[text(request.request_id)] ?? "" }
+            : {}),
+      },
+      () =>
+        setRequests((previous) => {
+          const next = { ...previous };
+          delete next[text(request.request_id)];
+          return next;
+        }),
+    );
+  const pendingRequests = Object.values(requests).filter((request) => {
+    const task = tasks.find((row) => row.mission_id === request.mission_id);
+    if (!task) return true;
+    if (["COMPLETED", "FAILED", "CANCELLED", "REJECTED"].includes(text(task.status))) return false;
+    const detail = record(task.detail);
+    const planning = request.request_kind === "planning";
+    return rows(planning ? detail.planning_questions : detail.approvals).some(
+      (row) =>
+        (row.decision_id ?? row.id ?? row.approval_id) === request.request_id &&
+        row.state === "PENDING" &&
+        (!planning || String(row.version) === String(request.version)),
+    );
+  });
   return (
-    <section data-testid="view-chat" aria-label="主对话" className="sh-PrimaryChatView-1">
+    <section data-testid="view-chat" className="sh-PrimaryChatView-1">
       <header data-testid="chat-header" className="sh-PrimaryChatView-2">
-        <h1 data-testid="chat-title" className="sh-PrimaryChatView-3">
-          主对话
-        </h1>
-        {/* 最近一轮运行的上下文用量；没有测量时环显示"不可用"；点开看各部分明细。 */}
-        <ContextRing
-          snapshot={snapshot.contextUsage}
-          size={18}
-          showLabel
-          onClick={() => setShowBreakdown(true)}
-        />
-        <button
-          className={`${INTERACTIVE_CLASS} sh-PrimaryChatView-4`}
-          aria-label="切换模型"
-          title="改的是默认模型，所有对话都会使用它"
-          onClick={() => setShowModelModal(true)}
-        >
-          {modelLabel}
-        </button>
-        <button
-          className={`${INTERACTIVE_CLASS} sh-PrimaryChatView-4`}
-          onClick={onOpenSettings}
-          title="前台任务使用全局 Provider 模型与参数"
-        >
-          模型与设置
-        </button>
-        <button
-          className={`${INTERACTIVE_CLASS} sh-PrimaryChatView-4`}
-          disabled={!snapshot.ready || snapshot.loading}
-          onClick={() => {
-            setDecisionRefresh((value) => value + 1);
-            void controller.refreshLatest();
-          }}
-        >
+        <h1 className="sh-PrimaryChatView-3">主对话</h1>
+        <button onClick={() => setShowModel(true)}>切换模型</button>
+        <button onClick={onOpenSettings}>模型与设置</button>
+        <button onClick={() => refresh.current()} disabled={!connected}>
           刷新状态
         </button>
       </header>
-      {showModelModal && <ChangeModelModal onClose={() => setShowModelModal(false)} />}
-      <ContextBreakdownModal
-        open={showBreakdown}
-        onClose={() => setShowBreakdown(false)}
-        snapshot={snapshot.contextUsage}
-        query={controller.contextBreakdown}
-      />
-
-      {/* 状态与通知：低调的单行 meta，不再是抢眼的横条。 */}
-      <div className="sh-PrimaryChatView-5">
-        <div role="status" aria-live="polite" className="sh-PrimaryChatView-6">
-          {status}
-          {snapshot.loading ? " · 正在读取" : ""}
-        </div>
-        {snapshot.notice && <p className="sh-PrimaryChatView-7">{snapshot.notice}</p>}
-        {snapshot.error && (
-          <p role="alert" className="sh-PrimaryChatView-8">
-            {snapshot.error}
-          </p>
-        )}
+      {showModel && <ChangeModelModal onClose={() => setShowModel(false)} />}
+      <div role="status" className="sh-PrimaryChatView-6">
+        {!connected ? "连接未就绪" : sending ? "正在回复" : "可以发送消息"}
       </div>
-
-      <div
-        aria-label="主对话历史"
-        ref={historyRef}
-        onScroll={(event) => {
-          const el = event.currentTarget;
-          followBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
-        }}
-        style={{
-          overflowY: "auto",
-          flex: 1,
-          minHeight: 0,
-          padding: `${tokens.space.lg}px ${tokens.space.xl}px 0`,
-        }}
-      >
-        <div className="sh-PrimaryChatView-9">
-          {/* 「查看更早消息」是消息区顶部的细文字链接，不是按钮块。 */}
-          {snapshot.nextCursor && (
-            <div className="sh-PrimaryChatView-10">
-              <button
-                className={INTERACTIVE_CLASS}
-                style={textLinkStyle(snapshot.loading)}
-                disabled={snapshot.loading}
-                onClick={() => void controller.loadOlder()}
-              >
-                查看更早消息
-              </button>
-            </div>
-          )}
-          {snapshot.messages.length === 0 && canSend && !snapshot.loading && (
-            <div className="sh-PrimaryChatView-11">
-              <Icon name="message" size={28} strokeWidth={1.2} style={{ color: dark.textFaint }} />
-              <p className="sh-PrimaryChatView-12">继续在这里交流，历史由主对话保存。</p>
-            </div>
-          )}
-          {snapshot.messages.map((message) => (
-            <PrimaryMessageRow
-              key={`${snapshot.viewEpoch}:${message.message_ref}`}
-              message={message}
-              controller={controller}
-            />
-          ))}
-        </div>
-      </div>
-
-      {/* 后台任务结束通知，人点"已收到"才算收到。 */}
-      {active && (
-        <div className="sh-PrimaryChatView-13">
-          <ChatMissionNotices />
-        </div>
-      )}
-      {/* 2026-09-25 UI 全量点击：授权卡以前不限高，多张时把消息区挤没、压在消息上。 */}
-      {active && snapshot.primaryRef && (
-        <div className="sh-PrimaryChatView-14">
-          <PrimaryWorkspaceBindings
-            port={primaryPort}
-            primaryRef={snapshot.primaryRef}
-            ownerKey={snapshot.verifiedOwnerKey}
-            ready={snapshot.ready}
-            recovery={bindingRecovery}
-            refreshVersion={decisionRefresh + bindingRefresh}
-          />
-        </div>
-      )}
-      {snapshot.ready && snapshot.state && run?.execution_session_ref && run.sdk_run_ref && (
-        <div className="sh-PrimaryChatView-15">
-          <PrimaryRunPanel
-            key={`${snapshot.draftEpoch}:${run.run_ref}:${run.generation}:${run.execution_session_ref}:${run.sdk_run_ref}`}
-            run={run}
-            port={primaryPort}
-            primaryRef={snapshot.state.primary_ref}
-            visible={active}
-            refreshVersion={decisionRefresh}
-            onToolResult={refreshBindings}
-            onStop={() => void controller.control("stop", run)}
-          />
-        </div>
-      )}
-      {run && (!run.execution_session_ref || !run.sdk_run_ref) && (
-        <div className="sh-PrimaryChatView-16">
-          <p className="sh-PrimaryChatView-17">正在等待执行绑定；权限与工具详情将在绑定后恢复。</p>
-        </div>
-      )}
-
-      <div className="sh-PrimaryChatView-18">
-        <InputBar
-          key={snapshot.draftEpoch}
-          disabled={!canSend}
-          placeholder="输入消息，Enter 发送…"
-          primary={{
-            submit: controller.submit,
-            status,
-            stop: run && snapshot.ready ? () => void controller.control("stop", run) : undefined,
-          }}
-        />
-      </div>
-
-      {/* 2026-09-10：认知记忆抽屉（记忆列表 / 关系图 / 记忆审计）随
-        simple-harness-memory-sdk 一并下线。 */}
-    </section>
-  );
-}
-const roleLabels: Record<PrimaryMessage["role"], string> = {
-  user: "你",
-  assistant: "助手",
-  tool: "工具",
-  artifact: "产物",
-  reminder: "提醒",
-};
-/**
- * 三种角色必须一眼分得开（UAT 2026-09-09：「我分不清哪句话是我说的，哪句话是
- * AI 回答的」）。用户靠右、强调色极淡填充 + 细描边；助手靠左、面色卡片带小
- * 头像点；工具灰底等宽、整行可点折叠。
- */
-const roleSkins: Record<
-  PrimaryMessage["role"],
-  { align: "flex-end" | "flex-start"; background: string; border: string; accent: string }
-> = {
-  user: {
-    align: "flex-end",
-    background: dark.accentSoft,
-    border: dark.accentBorder,
-    accent: dark.accentText,
-  },
-  assistant: {
-    align: "flex-start",
-    background: dark.card,
-    border: dark.cardBorder,
-    accent: dark.text,
-  },
-  tool: {
-    align: "flex-start",
-    background: dark.raised,
-    border: dark.insetBorder,
-    accent: dark.textMuted,
-  },
-  artifact: {
-    align: "flex-start",
-    background: dark.card,
-    border: dark.insetBorder,
-    accent: dark.textMuted,
-  },
-  reminder: {
-    align: "flex-start",
-    background: dark.card,
-    border: dark.insetBorder,
-    accent: dark.textMuted,
-  },
-};
-function PrimaryMessageRow({
-  message,
-  controller,
-}: {
-  message: PrimaryMessage;
-  controller: PrimaryController;
-}) {
-  const [detail, setDetail] = useState<{ text: string; offset: number | null } | null>(null);
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [toolOpen, setToolOpen] = useState(false);
-  const load = async (offset: number) => {
-    if (busy) return;
-    setBusy(true);
-    setDetail(null);
-    try {
-      const chunk = await controller.detail(message.message_ref, offset);
-      setDetail({ text: chunk.text, offset: chunk.next_offset });
-      setError("");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "详情读取失败");
-    } finally {
-      setBusy(false);
-    }
-  };
-  const skin = roleSkins[message.role];
-  const isTool = message.role === "tool";
-  const isUser = message.role === "user";
-  const isAssistant = message.role === "assistant";
-  const tool = isTool ? toolHeadline(message.text) : null;
-  const label = isTool ? `工具 · ${tool!.name || "未命名"}` : roleLabels[message.role];
-  // 2026-09-29：主 Agent 发起的后台任务在对话里常驻显示任务卡片（进度 + 人亲手点的确认/批准）
-  const missionId =
-    isTool && MISSION_CARD_TOOLS.has(tool!.name) ? missionIdFromToolResult(tool!.body) : "";
-  const body = (
-    <>
-      {message.has_more && (
-        <button
-          className={INTERACTIVE_CLASS}
-          style={{ ...textLinkStyle(busy), marginTop: tokens.space.sm, paddingLeft: 0 }}
-          disabled={busy}
-          onClick={() => void load(0)}
-        >
-          读取完整消息（{message.total_chars} 字符）
-        </button>
-      )}
-      {detail && (
-        <div aria-label="消息详情" className="sh-PrimaryChatView-19">
-          <MarkdownMessage>{detail.text}</MarkdownMessage>
-          {detail.offset !== null && (
-            <button
-              className={INTERACTIVE_CLASS}
-              style={textLinkStyle(busy)}
-              disabled={busy}
-              onClick={() => void load(detail.offset!)}
-            >
-              下一段
-            </button>
-          )}
-          <button
-            className={`${INTERACTIVE_CLASS} sh-PrimaryChatView-20`}
-            onClick={() => {
-              setDetail(null);
-              setError("");
-            }}
-          >
-            关闭详情
-          </button>
-        </div>
-      )}
       {error && (
         <p role="alert" className="sh-PrimaryChatView-8">
           {error}
         </p>
       )}
-    </>
-  );
-  return (
-    <div
-      style={{
-        display: "flex",
-        justifyContent: skin.align,
-        alignItems: "flex-start",
-        gap: tokens.space.sm,
-        marginBottom: tokens.space.lg,
-      }}
-    >
-      {/* 助手的小头像点 —— 唯一强调色，直径 8，与首行文字对齐。 */}
-      {isAssistant && <span aria-hidden className="sh-PrimaryChatView-21" />}
-      <article
-        data-testid={`primary-message-${message.role}`}
-        data-role={message.role}
-        style={{
-          padding: isTool
-            ? `${tokens.space.xs}px ${tokens.space.md}px`
-            : `${tokens.space.md}px ${tokens.space.lg}px`,
-          borderRadius: isTool ? tokens.radius.md : tokens.radius.bubble,
-          maxWidth: isTool ? "100%" : "82%",
-          width: isTool ? "100%" : undefined,
-          background: skin.background,
-          border: `1px solid ${skin.border}`,
-          overflowWrap: "anywhere",
-          fontFamily: isTool ? tokens.font.mono : tokens.font.ui,
-          fontSize: isTool ? tokens.text.sm.size : tokens.text.md.size,
-          lineHeight: tokens.text.md.lh,
-          color: dark.text,
-          textAlign: isUser ? "right" : "left",
-          boxSizing: "border-box",
-        }}
+      <div
+        aria-label="主对话历史"
+        ref={history}
+        style={{ overflowY: "auto", flex: 1, minHeight: 0, padding: 24 }}
       >
-        {isTool ? (
-          <button
-            aria-expanded={toolOpen}
-            onClick={() => setToolOpen((open) => !open)}
-            className={`${INTERACTIVE_CLASS} sh-tool-row`}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: tokens.space.xs,
-              width: "100%",
-              height: 28,
-              padding: 0,
-              border: 0,
-              background: "transparent",
-              fontFamily: tokens.font.mono,
-              fontSize: tokens.text.sm.size,
-              color: skin.accent,
-              justifyContent: "flex-start",
-            }}
-          >
-            {toolOpen ? "▾ " : "▸ "}
-            {label}
-          </button>
-        ) : isUser || isAssistant ? null : (
-          <div
-            style={{
-              ...metaText,
-              color: skin.accent,
-              fontWeight: tokens.weight.semibold,
-              marginBottom: tokens.space.xs,
-            }}
-          >
-            {label}
+        {turns.map((turn) => (
+          <div key={text(turn.turn_id)} className="sh-PrimaryChatView-9">
+            {text(turn.input) && (
+              <div aria-label="用户消息">
+                <strong>你</strong>
+                <MarkdownMessage>{text(turn.input)}</MarkdownMessage>
+              </div>
+            )}
+            <div aria-label="助手消息">
+              <strong>助手</strong>
+              <MarkdownMessage>{text(turn.text)}</MarkdownMessage>
+            </div>
+          </div>
+        ))}
+        {sending && input.current && <p aria-label="正在发送">{input.current.text}</p>}
+        {preview && (
+          <div aria-label="回复预览">
+            <MarkdownMessage>{preview}</MarkdownMessage>
           </div>
         )}
-        {/* 气泡整体右对齐，但气泡内正文始终左对齐 —— 右对齐的多行中文
-          会出现锯齿状左边缘，正是"难看"的来源。 */}
-        {missionId && (
-          <div className="sh-PrimaryChatView-22">
-            <ChatMissionCard missionId={missionId} />
-          </div>
-        )}
-        {(!isTool || toolOpen) && (
-          <div className="sh-PrimaryChatView-23">
-            <MarkdownMessage>{isTool ? tool!.body : message.text}</MarkdownMessage>
-            {body}
-          </div>
-        )}
-      </article>
-    </div>
+        {tasks.map((task) => (
+          <ChatMissionCard
+            key={text(task.delegation_id) || text(task.mission_id)}
+            task={task}
+            cancel={() =>
+              void perform("cancel_task", { task_id: task.delegation_id || task.mission_id })
+            }
+            inspect={() =>
+              void call("task", { task_id: task.delegation_id || task.mission_id })
+                .then((value) =>
+                  setTasks((previous) =>
+                    previous.map((row) =>
+                      row.delegation_id === task.delegation_id ? record(value) : row,
+                    ),
+                  ),
+                )
+                .catch((err) => setError(String(err)))
+            }
+          />
+        ))}
+      </div>
+      {active && (
+        <div className="sh-PrimaryChatView-13">
+          {pendingRequests.map((request) => (
+            <div key={text(request.request_id)} aria-label="需要你回答">
+              <p>
+                {text(request.question) ||
+                  text(request.summary) ||
+                  text(request.reason) ||
+                  "后台任务需要你确认"}
+              </p>
+              <input
+                aria-label="回答或拒绝理由"
+                value={answers[text(request.request_id)] ?? ""}
+                onChange={(event) =>
+                  setAnswers((previous) => ({
+                    ...previous,
+                    [text(request.request_id)]: event.target.value,
+                  }))
+                }
+              />
+              {request.request_kind === "planning" ? (
+                <button onClick={() => respond(request, "answer")}>提交回答</button>
+              ) : (
+                <>
+                  <button onClick={() => respond(request, "approve")}>批准</button>
+                  <button
+                    onClick={() => respond(request, "reject")}
+                    disabled={!answers[text(request.request_id)]?.trim()}
+                  >
+                    拒绝
+                  </button>
+                </>
+              )}
+            </div>
+          ))}
+          <ChatMissionNotices
+            notices={inbox}
+            acknowledge={(eventId) =>
+              void perform("ack", { event_id: eventId }, () => {
+                acknowledged.current.add(eventId);
+                setInbox((previous) => previous.filter((item) => item.event_id !== eventId));
+              })
+            }
+          />
+        </div>
+      )}
+      <InputBar
+        disabled={!connected}
+        primary={{ submit, ...(sending ? { stop: () => void perform("interrupt", {}) } : {}) }}
+      />
+    </section>
   );
 }

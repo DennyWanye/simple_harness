@@ -80,12 +80,6 @@ PRODUCT_TOOL_NAMES: tuple[str, ...] = tuple(
         "image_ocr",
         "list_directory",
         "context_route",
-        "mission_start",
-        "mission_amend",
-        "method_library",
-        "mission_status",
-        "mission_list",
-        "mission_source_update",
         "move_file",
         "office_pick_file",
         "pdf_export",
@@ -143,12 +137,6 @@ HOST_COMPOSED_TOOL_NAMES = frozenset(
         "context_route",
         "task_scope_search",
         "task_scope_update",
-        "mission_start",
-        "mission_status",
-        "mission_amend",
-        "method_library",
-        "mission_list",
-        "mission_source_update",
     }
 )
 

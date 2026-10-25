@@ -1,20 +1,7 @@
 # SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: BUSL-1.1
 
-"""推后第 2 批 U03：有公开合同的读动词，SDK 回复只能经 Host 投影出门。
-
-原计划：Assurance §13.1（L350、L354）"DTO 完整见 host-*-v1.schema.json""非法 DTO 显示协议错误"；
-HTN §17.2（L856）"后端输出权威投影；前端用同一公开 Schema 验证"。
-
-假的 SDK 读接口吐出不合合同的回复（多字段、错枚举、坏错误回执），Host 必须拒绝：
-回 ``protocol_error`` 一句大白话，不带数据、不带原回执。合格回复照常出门。
-最后一条核"Host 用的包内 Schema 与仓库 SDK 源码（前端 import 的那一份）字节相同"。
-
-推后第 3 批 U09 加七个动词：执行图主画面（``taskgraph.execution_snapshot``）、回合详情
-（``taskgraph.execution_detail``）、任务列表（``mission_list``）、任务详情（``mission_get``）、事件
-（``mission_events``）、待批准列表（``mission_approval_list``）、任务结束通知（``mission_notices``）。
-另有一条产品同形：脚本化任务整圈跑完，七个动词经 ``handle`` 读出的真实数据全部合合同。
-"""
+"""Contract projection for current Host task-page and assurance reads."""
 
 from __future__ import annotations
 
@@ -155,8 +142,6 @@ class _Service:
             "approvals"
         ]  # handlers 外面再包一层 {"approvals": …}
 
-    def pending_notices(self, body: Any = None) -> Any:
-        return self._control.assurance_snapshot({})
 
 
 def _assurance_request() -> dict[str, Any]:
@@ -320,7 +305,6 @@ def test_host_package_schemas_are_the_repo_files_the_frontend_imports() -> None:
         "assurance/contracts/host-mission-detail-v1.schema.json",
         "assurance/contracts/host-mission-events-v1.schema.json",
         "assurance/contracts/host-mission-approval-list-v1.schema.json",
-        "assurance/contracts/host-mission-notices-v1.schema.json",
     ]
     for name in names:
         assert (package / name).read_bytes() == (REPO_SDK / name).read_bytes(), name
@@ -528,18 +512,6 @@ _APPROVAL = {
     },
     "comments": [],
 }
-_NOTICE = {
-    "notice_id": "ev-1",
-    "mission_id": "m1",
-    "state_version": 7,
-    "notified_at": 1791365208.4,
-    "acked_at": None,
-    "status": "COMPLETED",
-    "status_zh": "已完成",
-    "goal": "写一份 NOTES.md",
-    "stop_reason": None,
-    "unresolved_actions": 0,
-}
 
 
 @pytest.mark.asyncio
@@ -568,16 +540,6 @@ _NOTICE = {
                 {"approvals": [{**_APPROVAL, "summary": "发布"}]},
             ],
         ),  # 模型的话没标来源
-        (
-            "mission_notices",
-            {},
-            [_NOTICE],
-            [
-                [{**_NOTICE, "acked_at": 1791365300.0}],
-                [{**_NOTICE, "unresolved_actions": "0"}],
-                {"notices": [_NOTICE]},
-            ],
-        ),
         (
             "taskgraph.execution_snapshot",
             {"mission_id": "m1"},
@@ -663,7 +625,6 @@ async def test_real_replies_of_a_finished_mission_fit_the_public_contracts(
             ("mission_get", {"mission_id": mission_id}),
             ("mission_events", {"mission_id": mission_id, "limit": 200}),
             ("mission_approval_list", {}),
-            ("mission_notices", {}),
             ("taskgraph.execution_snapshot", {"mission_id": mission_id}),
         ]
         replies = {verb: (await handle(service, verb, body))["payload"] for verb, body in reads}

@@ -112,7 +112,6 @@ async def test_a_quarantined_root_starts_the_service_in_quarantine_with_only_the
         for msg_type, body in (
             ("mission_create", notes_request("q-1")),
             ("mission_list", {}),
-            ("mission_notices", {}),
             ("orchestration_policy_status", {}),
         ):
             answer = await handle(service, msg_type, {"request_id": "r", **body})
@@ -227,7 +226,6 @@ async def test_a_really_deleted_root_state_file_restarts_the_host_in_quarantine(
         for msg_type, body in (
             ("mission_create", notes_request("q-real")),
             ("mission_list", {}),
-            ("mission_notices", {}),
             ("orchestration_policy_status", {}),
         ):
             answer = await handle(second, msg_type, {"request_id": "r", **body})

@@ -275,11 +275,6 @@ async def _activate_human_memory_host_ports(
             # ``compose_human_memory_runtime(clock=clock)``，``clock`` 默认
             # ``time.time``）。记忆运行时移除后直接用同一个物理时钟。
             clock=time.time,
-            notices=lambda: (
-                service_context.get("orchestration").notice_context_text()
-                if service_context.get("orchestration") is not None
-                else ""
-            ),
             policy=_primary_history_policy("deskpet-local-owner-v1"),
             stack_getter=lambda: host_state.sdk_runtime_stack,
             route_ledger=_foreground_route_ledger(),

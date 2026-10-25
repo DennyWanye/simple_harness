@@ -39,8 +39,6 @@ def test_message_types_are_the_planned_set():
         "mission_takeover",
         "mission_action_resolve",
         "mission_comment",
-        "mission_notices",
-        "mission_notice_ack",
         "mission_artifact_read",
         "mission_diagnostics",
         "mission_support_export",

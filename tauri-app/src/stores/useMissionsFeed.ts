@@ -7,7 +7,7 @@
  * 在 App 层挂一次，始终挂载，与编排视图是否打开无关：
  * - 连上控制通道时发 `orchestration_status`、`mission_list`；
  * - 处理 `orchestration_status_response`、`mission_list_response`；
- * - 收到 `mission_changed` 推送 → `applyChange`，并节流（≤1 次/秒）重拉 `mission_list`，
+ * - 收到 `session_event` 推送 → `applyChange`，并节流（≤1 次/秒）重拉 `mission_list`，
  *   让侧栏「任务编排」角标（待审批总数）和列表里的 ui_state 实时更新。
  *
  * MissionsView 不再做这些，只处理详情、事件、各命令的应答和选中 Mission 的刷新。
@@ -22,7 +22,6 @@ import {
   asText,
   newRequestKey,
   useMissionsStore,
-  type MissionEvent,
   type OrchestrationStatus,
   type MissionsChannel,
 } from "./missionsStore";
@@ -118,20 +117,18 @@ export function useMissionsFeed(channel: MissionsChannel | null): void {
           else if (payload.error_code === PROTOCOL_ERROR)
             state.setListError(asText(payload.error) || PROTOCOL_ERROR_TEXT);
           break;
-        case "mission_changed": {
-          const missionId = asText(payload.mission_id);
-          if (!missionId) break;
-          const row = state.missions.find((item) => item.id === missionId);
-          const urgent = !row || row.status !== asText(payload.status);
-          state.applyChange({
-            mission_id: missionId,
-            status: asText(payload.status),
-            last_seq: Number(payload.last_seq) || 0,
-            from_seq: Number(payload.from_seq) || 0,
-            events: asList(payload.events) as unknown as MissionEvent[],
-            truncated: payload.truncated === true,
-          });
-          refreshList(urgent);
+        case "session_event": {
+          if (
+            ["delegated", "task_progress", "needs_response", "result_ready"].includes(
+              asText(payload.kind),
+            )
+          ) {
+            const eventType = asText(asRecord(payload.payload).type);
+            refreshList(
+              payload.kind !== "task_progress" ||
+                ["MissionCompleted", "MissionFailed", "MissionCancelled"].includes(eventType),
+            );
+          }
           break;
         }
         default:
@@ -143,7 +140,10 @@ export function useMissionsFeed(channel: MissionsChannel | null): void {
     sendList();
     // 2026-09-25 UI 全量点击：编排后台连续出错时任务停在原地、界面仍显示"正在自动进行"。
     // 状态以前只在打开/重连时取一次；定时重取，出错能在 15 秒内显示出来。
-    const statusTimer = setInterval(() => request("orchestration_status"), 15000);
+    const statusTimer = setInterval(() => {
+      request("orchestration_status");
+      refreshList(false);
+    }, 15000);
     const offState = channel.onStateChange?.((connection) => {
       statusRequest = null;
       useMissionsStore.getState().setListRequest(null);

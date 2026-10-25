@@ -27,7 +27,6 @@ from providers.extra_headers import install_httpx_extra_headers_hook
 
 from .paths import orchestration_root
 from .provider import NO_MODEL, ProviderUnavailable, snapshot_from_registry
-from .pump import MissionChangePump
 from .service import OrchestrationService
 from .settings import load_settings, response_model_aliases
 
@@ -68,7 +67,7 @@ def _broadcaster(
             try:
                 await asyncio.wait_for(socket.send_json(envelope), timeout=1.0)
             except Exception:  # noqa: BLE001 - a closed socket must not stop the others
-                logger.debug("mission_changed push to one socket failed")
+                logger.debug("session event push to one socket failed")
 
     return broadcast
 
@@ -112,11 +111,6 @@ async def activate_orchestration(
     if status["state"] == "unavailable" and not str(status["reason"] or "").startswith(NO_MODEL):
         record_startup_error("orchestration", RuntimeError(str(status["reason"])))
     service_context.register("orchestration", service)
-    pump = MissionChangePump(service, _broadcaster(broadcast_targets), interval=1.0)
-    service.on_write = pump.poke
-    if status["available"]:
-        pump.start()
-    service_context.register("orchestration_pump", pump)
     logger.info("orchestration_ready state=%s root=%s", status["state"], root.name)
     return service
 
@@ -134,10 +128,6 @@ def _permission_mode_reader(service_context: Any) -> Callable[[], Any]:
 
 
 async def deactivate_orchestration(service_context: Any) -> None:
-    pump = service_context.get("orchestration_pump")
-    if pump is not None:
-        await pump.stop()
-        service_context.register("orchestration_pump", None)
     service = service_context.get("orchestration")
     if service is not None:
         await service.close()

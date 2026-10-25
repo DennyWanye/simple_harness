@@ -48,7 +48,7 @@ const DiagnosticsSession: React.FC<Props> = ({ missionId, channel }) => {
     const off = channel?.onMessage((raw) => {
       const message = raw as unknown as { type?: string; payload?: unknown };
       const body = asRecord(message.payload);
-      if (message.type === "mission_changed" && body.mission_id === missionId) {
+      if (message.type === "session_event" && body.mission_id === missionId) {
         if (pending.current) pending.current.changed = true;
         setStale(true);
         return;

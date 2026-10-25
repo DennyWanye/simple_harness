@@ -56,10 +56,10 @@ async def test_no_model_is_unavailable_but_not_a_startup_error(tmp_path):
         assert status["state"] == "unavailable"
         assert str(status["reason"]).startswith(NO_MODEL)
         assert errors == []
-        assert context.get("orchestration_pump") is not None
+        assert service.session_bridge is not None
     finally:
         await deactivate_orchestration(context)
-    assert context.get("orchestration") is None and context.get("orchestration_pump") is None
+    assert context.get("orchestration") is None
 
 
 @pytest.mark.asyncio

@@ -769,18 +769,6 @@ describe("MissionsView（HA-10）", () => {
       expect(channel.last("mission_cancel")?.payload).toMatchObject({ mission_id: "mission-1" }),
     );
   });
-
-  it("mission_changed 推送更新列表里的状态", () => {
-    const channel = renderAvailable();
-    channel.reply("mission_list", { missions: [MISSION_ROW] });
-    channel.emit({
-      type: "mission_changed",
-      payload: { mission_id: "mission-1", status: "COMPLETED", last_seq: 20 },
-    });
-    expect(screen.getByTestId("mission-row-mission-1").getAttribute("data-status")).toBe(
-      "COMPLETED",
-    );
-  });
 });
 
 describe("ui_state 词汇（P3.1 §3.4）", () => {
@@ -853,7 +841,7 @@ describe("P1-1 事件游标", () => {
     });
     const gets = channel.all("mission_get").length;
     channel.emit({
-      type: "mission_changed",
+      type: "session_event",
       payload: { mission_id: "mission-1", status: "RUNNING", last_seq: 12 },
     });
     expect(channel.last("mission_events")?.payload).toMatchObject({
@@ -876,7 +864,7 @@ describe("P1-1 事件游标", () => {
     const channel = renderAvailable();
     channel.reply("mission_list", { missions: [MISSION_ROW] });
     channel.emit({
-      type: "mission_changed",
+      type: "session_event",
       payload: { mission_id: "mission-1", status: "RUNNING", last_seq: 12 },
     });
     fireEvent.click(screen.getByTestId("mission-row-mission-1"));
@@ -890,7 +878,7 @@ describe("P1-1 事件游标", () => {
     const channel = openMission();
     expect(channel.all("mission_events")).toHaveLength(1);
     channel.emit({
-      type: "mission_changed",
+      type: "session_event",
       payload: { mission_id: "mission-1", status: "RUNNING", last_seq: 8 },
     });
     expect(channel.all("mission_events")).toHaveLength(1); // one page in flight at a time
@@ -909,21 +897,6 @@ describe("P1-1 事件游标", () => {
       has_more: false,
     });
     expect(channel.all("mission_events")).toHaveLength(2); // caught up: no loop
-  });
-
-  it("推送没有超过游标时不拉事件", () => {
-    const channel = openMission();
-    channel.reply("mission_events", {
-      mission_id: "mission-1",
-      events: events(1, 5),
-      through_seq: 5,
-      has_more: false,
-    });
-    channel.emit({
-      type: "mission_changed",
-      payload: { mission_id: "mission-1", status: "RUNNING", last_seq: 5 },
-    });
-    expect(channel.all("mission_events")).toHaveLength(1);
   });
 
   it("快照游标落后于已加载事件时重取快照", () => {
@@ -1646,31 +1619,6 @@ describe("结束态与产物排序（2026-09-25 真机点击）", () => {
 });
 
 describe("2026-09-26 推送带事件", () => {
-  it("接得上游标：直接追加，不再发 mission_events", () => {
-    const channel = openMission();
-    channel.reply("mission_events", {
-      mission_id: "mission-1",
-      events: events(1, 5),
-      through_seq: 5,
-      has_more: false,
-    });
-    channel.emit({
-      type: "mission_changed",
-      payload: {
-        mission_id: "mission-1",
-        status: "ACTIVE",
-        last_seq: 7,
-        from_seq: 5,
-        events: events(6, 7),
-        truncated: false,
-      },
-    });
-    expect(channel.all("mission_events")).toHaveLength(1);
-    expect(useMissionsStore.getState().events["mission-1"].map((e) => e.seq)).toEqual([
-      1, 2, 3, 4, 5, 6, 7,
-    ]);
-    expect(useMissionsStore.getState().eventCursor["mission-1"]).toBe(7);
-  });
 
   it("有缺口或没带全：从本地游标分页补齐", () => {
     const channel = openMission();
@@ -1681,7 +1629,7 @@ describe("2026-09-26 推送带事件", () => {
       has_more: false,
     });
     channel.emit({
-      type: "mission_changed",
+      type: "session_event",
       payload: {
         mission_id: "mission-1",
         status: "ACTIVE",
@@ -1699,7 +1647,7 @@ describe("2026-09-26 推送带事件", () => {
       has_more: false,
     });
     channel.emit({
-      type: "mission_changed",
+      type: "session_event",
       payload: {
         mission_id: "mission-1",
         status: "ACTIVE",
@@ -1722,7 +1670,7 @@ describe("2026-09-26 推送带事件", () => {
       has_more: false,
     });
     channel.emit({
-      type: "mission_changed",
+      type: "session_event",
       payload: {
         mission_id: "mission-2",
         status: "ACTIVE",
@@ -1762,47 +1710,6 @@ describe("2026-09-27 任务过程与性能", () => {
   const beat = (from: number, to: number) =>
     events(from, to).map((e) => ({ ...e, type: "HeartbeatReceived" }));
 
-  it("任务过程标签；推送只有心跳时不重拉详情，有实质事件才拉", () => {
-    const channel = openMission({ ...DETAIL, mission: { ...DETAIL.mission, status: "ACTIVE" } });
-    fireEvent.click(screen.getByRole("tab", { name: "任务过程" }));
-    expect(screen.getByTestId("mission-story")).toBeTruthy();
-    // 2026-09-30：任务过程改走 SDK 正式接口，不再有 mission_story
-    expect(channel.all("mission_story")).toHaveLength(0);
-    expect(channel.all("taskgraph.execution_snapshot").length).toBeGreaterThan(0);
-    channel.reply("mission_events", {
-      mission_id: "mission-1",
-      events: events(1, 5),
-      through_seq: 5,
-      has_more: false,
-    });
-    const gets = channel.all("mission_get").length;
-    channel.emit({
-      type: "mission_changed",
-      payload: {
-        mission_id: "mission-1",
-        status: "ACTIVE",
-        last_seq: 7,
-        from_seq: 5,
-        events: beat(6, 7),
-        truncated: false,
-      },
-    });
-    expect(channel.all("mission_get")).toHaveLength(gets);
-    expect(useMissionsStore.getState().eventCursor["mission-1"]).toBe(7); // events still appended
-    channel.emit({
-      type: "mission_changed",
-      payload: {
-        mission_id: "mission-1",
-        status: "ACTIVE",
-        last_seq: 8,
-        from_seq: 7,
-        events: events(8, 8),
-        truncated: false,
-      },
-    });
-    expect(channel.all("mission_get")).toHaveLength(gets + 1);
-  });
-
   it("状态变了即使只有心跳也拉详情", () => {
     const channel = openMission({ ...DETAIL, mission: { ...DETAIL.mission, status: "ACTIVE" } });
     channel.reply("mission_events", {
@@ -1813,7 +1720,7 @@ describe("2026-09-27 任务过程与性能", () => {
     });
     const gets = channel.all("mission_get").length;
     channel.emit({
-      type: "mission_changed",
+      type: "session_event",
       payload: {
         mission_id: "mission-1",
         status: "COMPLETED",
@@ -1840,7 +1747,7 @@ describe("U09 任务列表与任务详情收到坏消息", () => {
     const channel = renderAvailable();
     channel.reply("mission_list", { missions: [MISSION_ROW] });
     channel.emit({
-      type: "mission_changed",
+      type: "session_event",
       payload: { mission_id: "mission-1", status: "COMPLETED", last_seq: 3 },
     });
     const again = channel.last("mission_list")!;
@@ -1866,7 +1773,7 @@ describe("U09 任务列表与任务详情收到坏消息", () => {
     const channel = openMission();
     expect(screen.getByText("写好了 NOTES.md")).toBeTruthy();
     channel.emit({
-      type: "mission_changed",
+      type: "session_event",
       payload: {
         mission_id: "mission-1",
         status: "COMPLETED",
@@ -1900,7 +1807,7 @@ describe("U09 任务列表与任务详情收到坏消息", () => {
       has_more: false,
     });
     channel.emit({
-      type: "mission_changed",
+      type: "session_event",
       payload: {
         mission_id: "mission-1",
         status: "COMPLETED",

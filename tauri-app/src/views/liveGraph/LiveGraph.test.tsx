@@ -230,11 +230,11 @@ describe("LiveGraph（SDK 执行过程接口）", () => {
     const channel = mount();
     channel.reply(SNAP, snapshot());
     channel.emit({
-      type: "mission_changed",
+      type: "session_event",
       payload: { mission_id: M, status: "ACTIVE", last_seq: 11 },
     });
     channel.emit({
-      type: "mission_changed",
+      type: "session_event",
       payload: { mission_id: M, status: "ACTIVE", last_seq: 12 },
     });
     expect(channel.all(SNAP)).toHaveLength(1);
@@ -302,7 +302,7 @@ describe("LiveGraph（SDK 执行过程接口）", () => {
     channel.reply(SNAP, snapshot());
     expect(screen.getByText("全部步骤（3）")).toBeTruthy();
     channel.emit({
-      type: "mission_changed",
+      type: "session_event",
       payload: { mission_id: M, status: "ACTIVE", last_seq: 2 },
     });
     act(() => {

@@ -72,7 +72,7 @@ function mount() {
 
 function reread(channel: FakeChannel, data: unknown) {
   channel.emit({
-    type: "mission_changed",
+    type: "session_event",
     payload: { mission_id: M, status: "ACTIVE", last_seq: 11 },
   });
   act(() => {

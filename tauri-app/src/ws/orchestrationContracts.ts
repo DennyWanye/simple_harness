@@ -29,7 +29,6 @@ import missionList from "../../../sdk/simple-harness-sdk/src/agent_orchestrator/
 import missionDetail from "../../../sdk/simple-harness-sdk/src/agent_orchestrator/assurance/contracts/host-mission-detail-v1.schema.json";
 import missionEvents from "../../../sdk/simple-harness-sdk/src/agent_orchestrator/assurance/contracts/host-mission-events-v1.schema.json";
 import missionApprovals from "../../../sdk/simple-harness-sdk/src/agent_orchestrator/assurance/contracts/host-mission-approval-list-v1.schema.json";
-import missionNotices from "../../../sdk/simple-harness-sdk/src/agent_orchestrator/assurance/contracts/host-mission-notices-v1.schema.json";
 
 type Schema = { [key: string]: unknown };
 
@@ -55,7 +54,6 @@ export const CONTRACT_SCHEMAS = {
   "host-mission-detail-v1": missionDetail as Schema,
   "host-mission-events-v1": missionEvents as Schema,
   "host-mission-approval-list-v1": missionApprovals as Schema,
-  "host-mission-notices-v1": missionNotices as Schema,
 } as const;
 export type ContractName = keyof typeof CONTRACT_SCHEMAS;
 
@@ -82,7 +80,6 @@ const REPLIES: Record<string, ContractName> = {
   mission_get: "host-mission-detail-v1",
   mission_events: "host-mission-events-v1",
   mission_approval_list: "host-mission-approval-list-v1",
-  mission_notices: "host-mission-notices-v1",
 };
 
 export const supportedKeywords: ReadonlySet<string> = new Set([
